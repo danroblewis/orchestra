@@ -67,6 +67,17 @@ def _assistant_text(text):
     )
 
 
+def _message_end_event(text):
+    # A stream event carrying the assistant's reply inline (role: assistant),
+    # as ``pi --mode rpc`` writes on ``message_end`` / ``turn_end``.
+    return json.dumps(
+        {
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+        }
+    )
+
+
 def test_run_prompt_settles_and_reads_assistant_text():
     # subscribe has no response; then prompt accepted, then settle, then text.
     lines = [
@@ -79,6 +90,32 @@ def test_run_prompt_settles_and_reads_assistant_text():
     result = sess.run_prompt("do the task")
     assert result["settled"]["type"] == "agent_settled"
     assert result["text"] == "worker response"
+
+
+def test_run_prompt_captures_text_from_message_end_event():
+    # The assistant reply arrives inline on the stream (message_end / turn_end),
+    # because ``pi --mode rpc`` does not persist the session log. run_prompt must
+    # capture that text directly from the event instead of reading the log.
+    lines = [
+        _message_end_event("captured from stream"),
+        json.dumps({"type": "agent_settled"}),
+    ]
+    sess = _make_session(lines)
+    result = sess.run_prompt("do the task")
+    assert result["settled"]["type"] == "agent_settled"
+    assert result["text"] == "captured from stream"
+
+
+def test_run_prompt_message_end_wins_over_empty_log():
+    # Last assistant text wins; a later message_end overrides an earlier one.
+    lines = [
+        _message_end_event("first"),
+        _message_end_event("second"),
+        json.dumps({"type": "agent_settled"}),
+    ]
+    sess = _make_session(lines)
+    result = sess.run_prompt("do the task")
+    assert result["text"] == "second"
 
 
 def test_run_prompt_raises_on_rejection():
