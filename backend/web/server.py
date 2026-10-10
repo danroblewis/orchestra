@@ -39,7 +39,7 @@ from shared.repositories.session_log_repository import SessionLogRepository
 
 DATA_DIR = Path(os.environ.get("ORCHESTRA_DATA_DIR", str(Path(__file__).resolve().parents[2] / "data")))
 STORE_PATH = DATA_DIR / "orchestra.json"
-STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def build_state() -> dict:
@@ -146,13 +146,20 @@ def create_app(web_port: int, tunnel_proc: subprocess.Popen | None = None, tunne
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+        # Serve the full index.html from the static directory at the root.
+        @app.get("/", response_class=HTMLResponse)
+        async def index() -> HTMLResponse:
+            index_path = STATIC_DIR / "index.html"
+            return HTMLResponse(index_path.read_text(encoding="utf-8"))
+    else:
+        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(
-            "<!doctype html><html><head><title>Orchestra</title></head>"
-            "<body><div id='root'></div></body></html>"
-        )
+        @app.get("/", response_class=HTMLResponse)
+        async def index() -> HTMLResponse:
+            return HTMLResponse(
+                "<!doctype html><html><head><title>Orchestra</title></head>"
+                "<body><div id='root'></div></body></html>"
+            )
 
     app.state.web_port = web_port
     app.state.tunnel_proc = tunnel_proc
