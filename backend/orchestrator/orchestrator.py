@@ -54,7 +54,7 @@ class MockTransport(Transport):
     def __init__(self):
         self.sent: list[dict[str, Any]] = []
 
-    def send(self, session_file: str, prompt: str) -> dict[str, Any]:
+    def send(self, session_file: str, prompt: str, system_prompt: str = "") -> dict[str, Any]:
         text = f"[mock] processed: {prompt}"
         entry = {"session_file": session_file, "prompt": prompt, "text": text, "ts": time.time()}
         self.sent.append(entry)
@@ -142,13 +142,21 @@ class Orchestrator:
             log.status = "idle"
             self.session_logs.save(log)
 
-    def drive(self, session_name: str, layer: str, prompt: str) -> str:
-        """Send a prompt to a named agent session and return assistant text."""
+    def drive(self, session_name: str, layer: str, prompt: str, system_prompt: str = "") -> str:
+        """Send a prompt to a named agent session and return assistant text.
+
+        ``system_prompt`` is layered via the transport (``--append-system-prompt``);
+        it is also persisted to the session log so the session can be resumed later.
+        """
         log = self._ensure_session(session_name, layer)
-        result = self.transport.send(log.session_file_path, prompt)
+        result = self.transport.send(log.session_file_path, prompt, system_prompt=system_prompt)
         text = self.transport.read_last_assistant_text(log.session_file_path)
         if text is None:
             text = json.dumps(result)
+        # Persist the system prompt as an assistant preamble so a resumed session
+        # still knows which layer it is.
+        if system_prompt:
+            self._write_session_entry(log.session_file_path, "assistant", f"[system] {system_prompt}")
 
         # Persist the exchange to the session log JSONL file so the web viewer
         # can render it. Each line is one entry (user or assistant).

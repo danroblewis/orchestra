@@ -27,7 +27,8 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
-from orchestrator.orchestrator import Orchestrator, MockTransport, RpcTransport  # noqa: E402
+from orchestrator.orchestrator import Orchestrator, MockTransport  # noqa: E402
+from orchestra.rpc_transport import RpcTransport  # noqa: E402
 
 from orchestra.gitops import Git  # noqa: E402
 from orchestra.project import (  # noqa: E402
@@ -63,7 +64,15 @@ def _build_orchestrator(project) -> WorktreeOrchestrator:
     from shared.repositories.json_store import JsonStore
 
     store = JsonStore(project.state_dir / "orchestra.json")
-    orchestrator = Orchestrator(store, MockTransport())
+
+    transport: Transport
+    if os.environ.get("ORCHESTRA_TRANSPORT", "mock") == "rpc":
+        pi_binary = os.environ.get("PI_BINARY", "pi")
+        transport = RpcTransport(pi_binary=pi_binary, cwd=project.repo_root)
+    else:
+        transport = MockTransport()
+
+    orchestrator = Orchestrator(store, transport)
     git = Git(project.repo_root)
     manifest = git.load_manifest()
     return WorktreeOrchestrator(orchestrator, git, manifest)
@@ -101,28 +110,51 @@ def cmd_run(args: argparse.Namespace) -> int:
     for t in picked:
         print(f"  -> {t.title} [{t.id}]")
 
-    if not picked:
-        print("[orchestra] Nothing to do. All ready tickets are already assigned.")
-        return 0
+    from orchestra import agents
 
-    # Simple single-flight demo loop: spawn the first ready ticket.
-    task = picked[0]
-    rec = orch.create_worktree(task.id, task.slug)
-    print(f"[orchestra] Spawned worker on branch {rec.branch} at {rec.path}")
+    transport = orch.orch.transport
+    if transport is None:
+        print("[orchestra] No transport configured; set ORCHESTRA_TRANSPORT=rpc and a Pi model.")
+        return 1
 
-    from orchestra.ticket_contract import worker_prompt
+    # Drive up to N ready tickets through the full worker -> reviewer -> merge loop.
+    max_tickets = min(len(picked), 1)
+    for task in picked[:max_tickets]:
+        print(f"[orchestra] Working ticket: {task.title} [{task.id}]")
+        rec = orch.create_worktree(task.id, task.slug)
+        print(f"[orchestra] Worker branch {rec.branch} at {rec.path}")
 
-    prompt = worker_prompt(task, rec.branch)
-    text = orch.orch.drive(f"worker-{rec.slug}", "worker", prompt)
-    outcome = orch.apply_ticket_response(task.id, text)
-    print(f"[orchestra] Worker response state: {outcome.response.state}")
+        # 1) Spawn the worker inside the worktree and let it do the work.
+        session = f"worker-{rec.slug}"
+        session_file = project.session_path(session)
+        prompt = agents.spawn_worker(
+            orch, task.to_dict(), rec.branch, rec.path, session_file, project=project
+        )
+        text = agents.collect_worker(orch, session_file)
+        print(f"[orchestra] Worker finished; state={rec.branch} -> reading response")
 
-    if outcome.response.state == "DONE":
-        orch.merge_worktree(rec.slug, project.base_branch)
-        orch.remove_worktree(rec.slug)
-        print(f"[orchestra] Merged and cleaned up {rec.slug}")
-    else:
-        print(f"[orchestra] Ticket not done; leaving worktree {rec.slug} in place")
+        # 2) Build the diff and run the repo's tests; pass them to the reviewer.
+        diff_info = agents.build_diff(orch.git, rec.branch, project.base_branch)
+        review_session = f"reviewer-{rec.slug}"
+        review_session_file = project.session_path(review_session)
+        agents.spawn_reviewer(
+            orch, task.to_dict(), diff_info, review_session_file
+        )
+        verdict = agents.collect_reviewer(orch, review_session_file)
+        print(f"[orchestra] Reviewer verdict: passed={verdict.review.get('passed')}")
+
+        # 3) Apply the worker response, informed by the reviewer + CI.
+        outcome = orch.apply_ticket_response(task.id, text, review=verdict)
+        print(f"[orchestra] Ticket state after apply: {outcome.task.status.value}")
+
+        if outcome.response.state == "DONE":
+            orch.merge_worktree(rec.slug, project.base_branch)
+            orch.remove_worktree(rec.slug)
+            print(f"[orchestra] Merged and cleaned up {rec.slug}")
+        else:
+            print(f"[orchestra] Ticket not done; leaving worktree {rec.slug} in place")
+        transport.close(session)
+        transport.close(review_session)
     return 0
 
 

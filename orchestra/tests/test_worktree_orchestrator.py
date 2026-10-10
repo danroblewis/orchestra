@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))  # back
 from orchestrator.orchestrator import Orchestrator, MockTransport  # noqa: E402
 
 from orchestra.gitops import Git  # noqa: E402
+from orchestra.ticket_contract import parse_ticket_response  # noqa: E402
 from orchestra.worktree_orchestrator import WorktreeExistsError, WorktreeOrchestrator  # noqa: E402
 
 
@@ -59,6 +60,15 @@ def test_create_and_reconcile_worktree(orch: WorktreeOrchestrator, repo: Path):
     cleaned = orch.reconcile()
     assert cleaned == ["login"]
     assert orch.active_worktrees() == []
+
+
+def test_reconcile_orphaned_worktree(orch: WorktreeOrchestrator, repo: Path):
+    # A worktree exists on disk but has no manifest record (crashed run).
+    orphan = repo / ".orchestra-wt" / "orphan"
+    subprocess.run(["git", "-C", str(repo), "worktree", "add", "-b", "orchestra-orphan", str(orphan), "HEAD"], check=True)
+    cleaned = orch.reconcile()
+    assert "orphan" in cleaned
+    assert not orphan.exists()
 
 
 def test_create_worktree_duplicate_raises(orch: WorktreeOrchestrator):
@@ -124,3 +134,31 @@ def test_apply_invalid_response_blocks(orch: WorktreeOrchestrator):
     t = orch.create_task("T", status=Status.BACKLOG)
     out = orch.apply_ticket_response(t.id, "not json at all")
     assert out.task.status == Status.BLOCKED
+
+
+def test_reviewer_verdict_overrides_worker_claim(orch: WorktreeOrchestrator):
+    # Worker claims DONE with its own review.passed=true, but the Reviewer layer
+    # did NOT pass -> the orchestrator must coerce to FAILED.
+    t = orch.create_task("T", status=Status.BACKLOG)
+    worker_text = (
+        '{"task_id": "%s", "state": "DONE", '
+        '"review": {"passed": true}, "ci": {"status": "passed"}}'
+    ) % t.id
+    reviewer = parse_ticket_response(
+        '{"task_id": "%s", "review": {"passed": false}, "verdict": "tests failed"}' % t.id
+    )
+    out = orch.apply_ticket_response(t.id, worker_text, review=reviewer)
+    assert out.task.status == Status.FAILED
+
+
+def test_reviewer_approval_confirms_done(orch: WorktreeOrchestrator):
+    t = orch.create_task("T", status=Status.BACKLOG)
+    worker_text = (
+        '{"task_id": "%s", "state": "DONE", '
+        '"review": {"passed": true}, "ci": {"status": "passed"}}'
+    ) % t.id
+    reviewer = parse_ticket_response(
+        '{"task_id": "%s", "review": {"passed": true}, "verdict": "good"}' % t.id
+    )
+    out = orch.apply_ticket_response(t.id, worker_text, review=reviewer)
+    assert out.task.status == Status.DONE

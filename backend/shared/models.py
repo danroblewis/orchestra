@@ -46,6 +46,12 @@ class Task:
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
+    @property
+    def slug(self) -> str:
+        """URL-safe identifier derived from the title (e.g. worktree branch)."""
+        base = "".join(c if (c.isalnum() or c == " ") else " " for c in self.title).strip()
+        return "-".join(base.lower().split())
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,

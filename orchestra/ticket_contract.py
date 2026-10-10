@@ -225,15 +225,20 @@ def reviewer_prompt(task: dict[str, Any], diff: str) -> str:
 2. Run the repo's test suite (via bash) and report the outcome.
 3. Judge whether the work is correct and complete.
 
-Reply with **only** a single JSON document:
+Reply with **only** a single JSON document (this is the ticket-hygiene schema):
 
 ```json
 {{
   "task_id": "{task.get('id', '')}",
-  "passed": true | false,
-  "verdict": "short summary of your judgment",
-  "tests": {{"status": "passed | failed | skipped", "output": "..."}},
-  "suggested_fix": "if not passed, what to change; else empty string"
+  "state": "DONE" | "BLOCKED",
+  "summary": "short summary of your judgment",
+  "branch": "",
+  "blockers": [],
+  "review": {{"passed": true | false, "verdict": "..."}},
+  "ci": {{"status": "passed" | "failed", "output": "..."}}
 }}
 ```
+
+Set ``review.passed`` true only if the changes are correct AND the test suite passes.
+Set ``state`` to ``DONE`` only when ``review.passed`` is true and ``ci.status`` is ``passed``; otherwise ``BLOCKED``.
 """

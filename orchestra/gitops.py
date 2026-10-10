@@ -204,7 +204,7 @@ class Git:
     def _branch_for_worktree(self, path: Path) -> str | None:
         """Return the short branch name bound to a worktree path, if any."""
         for block in self.list_worktrees():
-            if Path(block.get("dir", "")).resolve() == Path(path).resolve():
+            if Path(block.get("worktree", "")).resolve() == Path(path).resolve():
                 ref = block.get("branch")
                 if not ref:
                     return None

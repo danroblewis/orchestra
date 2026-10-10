@@ -27,7 +27,7 @@ from shared.repositories.json_store import JsonStore  # noqa: E402
 
 from orchestrator.orchestrator import Orchestrator  # noqa: E402
 from orchestra.gitops import Git, WorktreeManifest, WorktreeRecord  # noqa: E402
-from orchestra.ticket_contract import parse_ticket_response  # noqa: E402
+from orchestra.ticket_contract import TicketResponse, parse_ticket_response  # noqa: E402
 
 
 class WorktreeExistsError(Exception):
@@ -86,10 +86,26 @@ class WorktreeOrchestrator:
         branch = self._branch_for(slug)
         if self.manifest.by_task(task_id):
             raise WorktreeExistsError(f"Task {task_id} already has a worktree record.")
-        if self.git.branch_exists(branch):
-            raise WorktreeExistsError(f"Branch {branch} already exists in git.")
 
         wt_path = self.git.worktrees_dir() / slug
+        if self.git.branch_exists(branch):
+            # A prior run created this branch but did not finish (crashed). Reclaim it
+            # by pointing the manifest at the existing worktree instead of failing.
+            if Path(wt_path).exists() and self.git._branch_for_worktree(wt_path) == branch:
+                record = WorktreeRecord(
+                    slug=slug,
+                    task_id=task_id,
+                    branch=branch,
+                    path=str(wt_path),
+                    status="working",
+                )
+                self.manifest.upsert(record)
+                self.save_manifest()
+                self.orch.assign_worker(task_id, f"worker-{slug}")
+                print(f"[orchestra] Reclaimed leftover worktree for {slug}")
+                return record
+            # Orphaned branch from a different slug or stale ref: delete it.
+            self.git._run("branch", "-D", branch, check=False)
         self.git.create_worktree(branch, wt_path)
         record = WorktreeRecord(
             slug=slug,
@@ -125,16 +141,39 @@ class WorktreeOrchestrator:
     def reconcile(self) -> list[str]:
         """Remove manifest records whose on-disk worktree directory is gone.
 
+        Also removes any Orchestra worktree/branch that exists on disk but is not
+        tracked by the manifest (e.g. from a run that crashed mid-worktree-create).
         Returns the slugs that were cleaned up.
         """
         cleaned: list[str] = []
+        tracked_dirs = {Path(r.path).resolve(): r.slug for r in self.manifest.records}
+
+        # 1) Records whose directory is gone.
         for record in list(self.manifest.records):
             if not Path(record.path).exists():
                 self.git.prune()
                 record.status = "removed"
                 self.manifest.remove(record.slug)
                 cleaned.append(record.slug)
+
+        # 2) Orphaned worktrees on disk (dir exists, not tracked, Orchestra-branded).
+        for block in self.git.list_worktrees():
+            d = Path(block.get("worktree", "")).resolve()
+            if d in tracked_dirs:
+                continue
+            if ".orchestra-wt" not in d.parts:
+                continue
+            # Find the branch this orphaned worktree points at, then remove both.
+            branch = block.get("branch", "").rsplit("/", 1)[-1]
+            try:
+                self.git.remove_worktree(d, branch or None)
+            except Exception:
+                self.git._run("worktree", "remove", "--force", str(d), check=False)
+                self.git._run("branch", "-D", branch, check=False) if branch else None
+            cleaned.append(d.name)
+
         if cleaned:
+            self.git.prune()
             self.save_manifest()
         return cleaned
 
@@ -184,20 +223,36 @@ class WorktreeOrchestrator:
 
     # -- ticket-response application ---------------------------------------- #
 
-    def apply_ticket_response(self, task_id: str, text: str | None) -> WorkerOutcome:
+    def apply_ticket_response(
+        self, task_id: str, text: str | None, review: TicketResponse | None = None
+    ) -> WorkerOutcome:
         """Parse a Worker's JSON response and apply it to the task state.
 
-        Enforces the DONE-invariant (review + CI must have passed). Returns the
-        outcome for the caller to decide on worktree/merge cleanup.
+        Enforces the DONE-invariant (review + CI must have passed). When a
+        ``review`` (from the Reviewer layer) is supplied, its ``passed`` verdict is
+        authoritative: a worker claiming ``DONE`` while the reviewer did not pass is
+        coerced to ``FAILED`` even if the worker's own ``review.passed`` said true.
+        Returns the outcome for the caller to decide on worktree/merge cleanup.
         """
         resp = parse_ticket_response(text)
         task = self.tasks.find(task_id)
         applied = False
 
+        # A reviewer verdict overrides/annotates the worker's self-assessment.
+        if review is not None and review.valid:
+            resp.review = review.review
+            resp.ci = resp.ci or review.ci
+
         if not resp.valid:
             # Unparseable -> don't advance; record the error on the ticket.
             task.status = Status.BLOCKED
             task.description = (task.description or "") + f"\\n[orchestra] invalid response: {resp.error}"
+            self.tasks.save(task)
+            applied = True
+        elif review is not None and not review.review.get("passed", False):
+            # Worker claims DONE but the reviewer did not approve -> FAILED.
+            task.status = Status.FAILED
+            task.description = (task.description or "") + "\n[orchestra] review did not pass"
             self.tasks.save(task)
             applied = True
         elif resp.state == "DONE":
