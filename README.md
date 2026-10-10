@@ -74,6 +74,11 @@ WEB_PORT=8000 python3 web/server.py
 
 Then open the printed cloudflared URL (or `http://127.0.0.1:8000`).
 
+### Live demo
+
+- Orchestra can orchestrate its own development: it can plan and build features
+  on the Orchestra repository itself (self-orchestration).
+
 ## Testing
 
 ```bash
