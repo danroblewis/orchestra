@@ -150,6 +150,57 @@ def test_gate_discovery_branches_from_manifest(temp_repo):
     assert set(found_all) == {"orchestra-fix-one", "orchestra-fix-two"}
 
 
+def test_classify_fast_forward_branches(temp_repo):
+    """A branch that is an ancestor of ``main`` (or equal to it) is fast-forward;
+    a branch that has diverged (a committed change off its own base commit) is
+    NOT fast-forward-mergeable and must be reported separately so the gate can
+    drop it instead of aborting."""
+
+    from orchestra.gitops import Git
+    from orchestra.cli import _classify_fast_forward_branches
+
+    git = Git(temp_repo)
+
+    # All three branches start from the same base commit (the initial "init" commit).
+    # ``already-merged`` is later fast-forwarded onto ``main``, so it ends up an
+    # ancestor of the base. ``divergent-branch`` and ``feature-todo`` stay behind
+    # at the base commit, so ``main`` has moved past them (diverged) -- they are
+    # not fast-forward-mergeable onto the (now-advanced) base.
+
+    # A divergent branch: a committed change off the shared base commit.
+    subprocess.run(["git", "-C", temp_repo, "checkout", "-q", "-b", "divergent-branch"])
+    (Path(temp_repo) / "b.txt").write_text("b")
+    subprocess.run(["git", "-C", temp_repo, "add", "."], check=True)
+    subprocess.run(["git", "-C", temp_repo, "commit", "-q", "-m", "divergent-change"])
+
+    # A normal in-progress feature branch off the same base commit.
+    subprocess.run(["git", "-C", temp_repo, "checkout", "-q", "main"])
+    subprocess.run(["git", "-C", temp_repo, "checkout", "-q", "-b", "feature-todo"])
+    (Path(temp_repo) / "c.txt").write_text("c")
+    subprocess.run(["git", "-C", temp_repo, "add", "."], check=True)
+    subprocess.run(["git", "-C", temp_repo, "commit", "-q", "-m", "feature-change"])
+
+    # ``already-merged``: create from the shared base, then fast-forward main
+    # onto it so it becomes a full ancestor of the base branch.
+    subprocess.run(["git", "-C", temp_repo, "checkout", "-q", "main"])
+    subprocess.run(["git", "-C", temp_repo, "checkout", "-q", "-b", "already-merged"])
+    (Path(temp_repo) / "a.txt").write_text("a")
+    subprocess.run(["git", "-C", temp_repo, "add", "."], check=True)
+    subprocess.run(["git", "-C", temp_repo, "commit", "-q", "-m", "merged-change"])
+    subprocess.run(["git", "-C", temp_repo, "checkout", "-q", "main"])
+    subprocess.run(["git", "-C", temp_repo, "merge", "--ff", "already-merged"], check=True)
+
+    ff, non_ff = _classify_fast_forward_branches(
+        git, ["already-merged", "divergent-branch", "feature-todo", "main"], "main"
+    )
+
+    # ``already-merged`` and ``main`` are ancestors of (or equal to) main.
+    assert set(ff) == {"already-merged", "main"}
+    # ``divergent-branch`` has diverged and ``feature-todo`` branched off before
+    # the ff-merge, so neither can be fast-forwarded onto the base.
+    assert non_ff == ["divergent-branch", "feature-todo"]
+
+
 def test_gate_runs_and_reports_all_pass(tmp_path):
     """MergeGateEngine with a FakeRunner (all pass) + FakeGit -> gate.status == completed."""
 
