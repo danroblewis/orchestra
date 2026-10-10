@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orchestra</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --accent: #58a6ff;
+        --backlog: #8b949e;
+        --in-progress: #d29922;
+        --done: #3fb950;
+        --blocked: #f85149;
+        --failed: #f85149;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 { font-size: 20px; margin: 0; }
+      .tunnel { font-size: 13px; color: var(--accent); }
+      .tunnel a { color: var(--accent); }
+      .layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 61px); }
+      .sidebar { border-right: 1px solid var(--border); overflow-y: auto; padding: 16px; }
+      .main { overflow: auto; padding: 24px; }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .card h3 { margin: 0 0 8px; font-size: 14px; }
+      .task {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--backlog);
+        border-radius: 6px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+      }
+      .task.done { border-left-color: var(--done); }
+      .task.in-progress { border-left-color: var(--in-progress); }
+      .task.blocked { border-left-color: var(--blocked); }
+      .task.failed { border-left-color: var(--failed); }
+      .task .title { font-weight: 600; font-size: 14px; }
+      .task .meta { font-size: 12px; color: var(--backlog); margin-top: 4px; }
+      .badge {
+        display: inline-block;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 10px;
+        background: var(--border);
+        margin-top: 6px;
+      }
+      .milestone { margin-bottom: 20px; }
+      .milestone h2 { font-size: 16px; margin: 0 0 10px; color: var(--accent); }
+      .empty { color: var(--backlog); font-size: 13px; }
+      .dep { font-size: 11px; color: var(--backlog); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Orchestra</h1>
+      <div class="tunnel" id="tunnel"></div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="card">
+          <h3>Next In Queue</h3>
+          <div id="next-in-queue"></div>
+        </div>
+        <div class="card">
+          <h3>Agent Sessions</h3>
+          <div id="session-logs"></div>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="card">
+          <h2>Milestones &amp; Tasks</h2>
+          <div id="milestones"></div>
+        </div>
+        <div class="card">
+          <h2>Build Outputs</h2>
+          <div id="builds"></div>
+        </div>
+      </main>
+    </div>
+    <script>
+      async function loadState() {
+        const res = await fetch("/api/state");
+        return await res.json();
+      }
+
+      function statusClass(status) {
+        return status.replace(/_/g, "-");
+      }
+
+      function renderTask(t, allTasks) {
+        const deps = (t.dependency_ids || [])
+          .map((id) => {
+            const dep = allTasks.find((x) => x.id === id);
+            return dep ? dep.title : id;
+          })
+          .join(", ");
+        return `
+          <div class="task ${statusClass(t.status)}">
+            <div class="title">${t.title}</div>
+            <div class="meta">Priority ${t.priority}${t.milestone_id ? " · Milestone " + t.milestone_id.slice(0, 8) : ""}</div>
+            <div class="badge">${t.status}${t.build_status ? " · build: " + t.build_status : ""}</div>
+            ${deps ? `<div class="dep">Depends on: ${deps}</div>` : ""}
+          </div>
+        `;
+      }
+
+      function render() {
+        loadState().then((state) => {
+          // Milestones & tasks
+          const msDiv = document.getElementById("milestones");
+          if (state.milestones.length === 0) {
+            msDiv.innerHTML = '<div class="empty">No milestones yet.</div>';
+          } else {
+            msDiv.innerHTML = state.milestones
+              .map((m) => {
+                const tasks = state.tasks.filter((t) => t.milestone_id === m.id);
+                return `
+                  <div class="milestone">
+                    <h2>${m.name} (${tasks.length})</h2>
+                    ${tasks.map((t) => renderTask(t, state.tasks)).join("")}
+                  </div>
+                `;
+              })
+              .join("");
+          }
+
+          // Next in queue
+          const nextDiv = document.getElementById("next-in-queue");
+          if (state.nextInQueue.length === 0) {
+            nextDiv.innerHTML = '<div class="empty">Nothing ready yet.</div>';
+          } else {
+            nextDiv.innerHTML = state.nextInQueue
+              .map((t) => renderTask(t, state.tasks))
+              .join("");
+          }
+
+          // Agent sessions
+          const logsDiv = document.getElementById("session-logs");
+          if (state.sessionLogs.length === 0) {
+            logsDiv.innerHTML = '<div class="empty">No sessions started.</div>';
+          } else {
+            logsDiv.innerHTML = state.sessionLogs
+              .map(
+                (s) => `
+                  <div class="task">
+                    <div class="title">${s.session_name}</div>
+                    <div class="meta">${s.layer}</div>
+                    <div class="badge">status: ${s.status} · ${s.message_count} messages</div>
+                  </div>
+                `
+              )
+              .join("");
+          }
+
+          // Builds
+          const buildsDiv = document.getElementById("builds");
+          if (state.builds.length === 0) {
+            buildsDiv.innerHTML = '<div class="empty">No builds recorded.</div>';
+          } else {
+            buildsDiv.innerHTML = state.builds
+              .map(
+                (b) => `
+                  <div class="task ${statusClass(b.status)}">
+                    <div class="title">Build ${b.task_id.slice(0, 8)}</div>
+                    <div class="meta">${b.status}${b.duration_seconds ? " · " + b.duration_seconds + "s" : ""}</div>
+                    <div class="badge">${b.started_at}</div>
+                  </div>
+                `
+              )
+              .join("");
+          }
+        });
+      }
+
+      // Tunnel URL
+      fetch("/api/tunnel").then((r) => r.json()).then((j) => {
+        const el = document.getElementById("tunnel");
+        if (j.url) {
+          el.innerHTML = `<a href="${j.url}" target="_blank">🔗 ${j.url}</a>`;
+        }
+      });
+
+      // Render immediately and refresh every 2 seconds.
+      render();
+      setInterval(render, 2000);
+    </script>
+  </body>
+</html>
