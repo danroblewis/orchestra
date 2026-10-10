@@ -21,6 +21,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any, Sequence
 
 # Ensure the backend root is importable (the orchestrator core lives in backend/).
 _BACKEND_ROOT = Path(__file__).resolve().parents[1] / "backend"
@@ -250,7 +251,26 @@ def _run_gate_for_run(project, orch) -> None:
 
         test_spec_repo, build_result_repo = _build_gate_store(project)
         engine = _make_gate_engine(project, git, test_spec_repo, build_result_repo)
-        gate = engine.run_gate(branch_ids, project.base_branch)
+
+        # Stale branches left behind by BLOCKED tickets often diverge from the
+        # base branch, so ``git merge --no-ff`` against the base worktree is not
+        # a fast-forward and raises MergeConflict, aborting the whole gate. Pre
+        #-check each candidate: only branches that are fast-forward-mergeable
+        # (already an ancestor of the base, or equal to it) are gated. The rest
+        # are recorded as dropped so they no longer clog the merge gate.
+        ff_branches, non_ff_branches = _classify_fast_forward_branches(git, branch_ids, project.base_branch)
+        if non_ff_branches:
+            print(
+                f"[orchestra] Merge gate skipping non-fast-forward branches: "
+                f"{', '.join(non_ff_branches)} (dropped)"
+            )
+
+        if not ff_branches:
+            print("[orchestra] Merge gate: no fast-forward-mergeable branches to gate this run.")
+            return None
+
+        gate = engine.run_gate(ff_branches, project.base_branch)
+        gate.dropped_branch_ids = list(set(gate.dropped_branch_ids) | set(non_ff_branches))
 
         if gate.dropped_branch_ids:
             print(
@@ -264,6 +284,39 @@ def _run_gate_for_run(project, orch) -> None:
     except Exception as exc:  # pragma: no cover - defensive, additive path
         print(f"[orchestra] Merge gate step skipped due to error: {exc}")
     return None
+
+
+def _classify_fast_forward_branches(
+    git: Any, branch_ids: Sequence[str], base_branch: str
+) -> tuple[list[str], list[str]]:
+    """Split ``branch_ids`` into fast-forward-mergeable vs non-fast-forward.
+
+    A branch is fast-forward-mergeable into ``base_branch`` when it is already
+    an ancestor of the base (nothing to do) or equal to it -- i.e. merging it
+    onto the base is a clean fast-forward. A branch that has diverged from the
+    base (the common case for stale branches left by BLOCKED tickets) is not
+    fast-forwardable: ``git merge --no-ff`` against the base worktree would
+    abort the gate. Those are returned in the second list so the caller can
+    drop them instead of failing the whole merge gate.
+
+    Returns ``(fast_forward_branches, non_fast_forward_branches)``.
+    """
+
+    if not base_branch or not git.branch_exists(base_branch):
+        # Cannot assess fast-forward-ness; keep every branch in the gate rather
+        # than silently dropping candidates.
+        return list(branch_ids), []
+
+    ff: list[str] = []
+    non_ff: list[str] = []
+    for branch in branch_ids:
+        if not git.branch_exists(branch):
+            continue
+        if git.is_merged_into(branch, base_branch):
+            ff.append(branch)
+        else:
+            non_ff.append(branch)
+    return ff, non_ff
 
 
 def cmd_web(args: argparse.Namespace) -> int:
