@@ -441,15 +441,14 @@ def _read_session_messages(session_file_path: str, message_count: int) -> list:
     return messages
 
 
-def main():
+def run_server(web_port: int = 8000, tunnel: bool = True) -> int:
+    """Start the web server, returning after it exits.
+
+    Resolves the (reusable) cloudflared tunnel when ``tunnel`` is True, reusing a
+    healthy persisted named tunnel and only starting a new one if needed.
+    """
     import uvicorn
 
-    web_port = int(os.environ.get("WEB_PORT", "8000"))
-
-    # Reuse a healthy persisted tunnel if we have one. Always resolve to the
-    # canonical public URL (the configured ingress hostname); a stale persisted
-    # URL (e.g. a typo'd domain from an earlier session) must not leak into the
-    # API or viewer.
     canonical_url = f"https://{TUNNEL_DOMAIN}"
     meta = _read_tunnel_meta()
     persisted_url = meta.get("url")
@@ -460,8 +459,7 @@ def main():
     )
     tunnel_url = canonical_url if reused else None
 
-    if not tunnel_url and shutil.which("cloudflared"):
-        # Persisted tunnel missing or dead -> start a new one.
+    if tunnel and not tunnel_url and shutil.which("cloudflared"):
         tunnel_proc, tunnel_url = start_tunnel(web_port, persisted_url)
     elif not tunnel_url and not shutil.which("cloudflared"):
         print(f"[web] Web server on http://127.0.0.1:{web_port} (no cloudflared)", flush=True)
@@ -486,6 +484,11 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
 
     server.run()
+    return 0
+
+
+def main():
+    run_server(web_port=int(os.environ.get("WEB_PORT", "8000")), tunnel=True)
 
 
 if __name__ == "__main__":
