@@ -30,7 +30,7 @@ if str(_BACKEND_ROOT) not in sys.path:
 from orchestrator.orchestrator import Orchestrator, MockTransport  # noqa: E402
 from orchestra.rpc_transport import RpcTransport  # noqa: E402
 
-from orchestra.gitops import Git  # noqa: E402
+from orchestra.gitops import Git, WorktreeManifest, WorktreeRecord  # noqa: E402
 from orchestra.project import (  # noqa: E402
     find_repo_root,
     get_repo_slug,
@@ -40,6 +40,74 @@ from orchestra.project import (  # noqa: E402
     resolve_from_cwd,
 )
 from orchestra.worktree_orchestrator import WorktreeOrchestrator  # noqa: E402
+
+from shared.models import TestSpec  # noqa: E402
+from shared.repositories.test_spec_repository import TestSpecRepository  # noqa: E402
+from shared.repositories.build_result_repository import BuildResultRepository  # noqa: E402
+
+
+def _build_gate_store(project) -> tuple:
+    """Return ``(test_spec_repo, build_result_repo)`` from the project's state."""
+
+    from shared.repositories.json_store import JsonStore
+
+    store = JsonStore(project.state_dir / "orchestra.json")
+    return (
+        TestSpecRepository(store),
+        BuildResultRepository(store),
+    )
+
+
+def _discover_gate_branches(project, git, manifest=None, active_only=True) -> list[str]:
+    """Discover candidate branches to gate from the worktree manifest.
+
+    Returns branch slugs for manifest records. When ``active_only`` is True only
+    records whose status is merged/removed are returned (branches worked this run
+    and now ready to gate); otherwise every record is returned.
+
+    When the manifest has no records we fall back to any branch that currently
+    exists as an Orchestra worktree on disk.
+    """
+
+    if manifest is None:
+        manifest = git.load_manifest()
+
+    branches: list[str] = []
+    seen: set[str] = set()
+
+    for rec in manifest.records:
+        branch = rec.branch
+        if not branch or branch in seen:
+            continue
+        # Skip worktrees whose branch no longer exists (e.g. cleaned up).
+        if not git.branch_exists(branch):
+            continue
+        if active_only:
+            if rec.status in ("merged", "removed"):
+                branches.append(branch)
+                seen.add(branch)
+        else:
+            branches.append(branch)
+            seen.add(branch)
+
+    return branches
+
+
+def _make_gate_engine(project, git, test_spec_repo, build_result_repo, base_branch=None):
+    """Build a :class:`MergeGateEngine` backed by the real git worktree adapter.
+
+    The engine expects its ``git`` argument to expose ``create_worktree`` /
+    ``checkout`` / ``merge`` / ``current_branch`` / ``branch_exists`` /
+    ``remove_worktree`` / ``run``. :class:`GitWorktreeAdapter` adapts
+    :class:`orchestra.gitops.Git` to that interface (adding ``merge``/``run`` on
+    top of ``Git``'s existing helpers), so the production path and the test
+    ``FakeGit`` path share one interface.
+    """
+
+    from orchestrator.merge_queue import MergeGateEngine, GitWorktreeAdapter
+
+    base = base_branch or project.base_branch
+    return MergeGateEngine(GitWorktreeAdapter(git), test_spec_repo, build_result_repo, base_branch=base)
 
 
 def _resolve_project(args: argparse.Namespace):
@@ -155,7 +223,47 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[orchestra] Ticket not done; leaving worktree {rec.slug} in place")
         transport.close(session)
         transport.close(review_session)
+
+    # OPTIONAL merge-gate step. Off by default so the existing worker -> reviewer
+    # -> merge behavior is 100% unchanged; set ORCHESTRA_RUN_GATE=1 to gate the
+    # branches worked this run. Kept purely additive.
+    if os.environ.get("ORCHESTRA_RUN_GATE") == "1":
+        _run_gate_for_run(project, orch)
+
     return 0
+
+
+def _run_gate_for_run(project, orch) -> None:
+    """Run the merge gate over branches worked this run (env-gated, additive).
+
+    Discards branches flagged as offenders and prints a warning. Never raises: a
+    failed gate here must not crash the orchestrator.
+    """
+
+    try:
+        git = Git(project.repo_root)
+        manifest = git.load_manifest()
+        branch_ids = _discover_gate_branches(project, git, manifest, active_only=False)
+        if not branch_ids:
+            print("[orchestra] Merge gate: no branches to gate this run.")
+            return
+
+        test_spec_repo, build_result_repo = _build_gate_store(project)
+        engine = _make_gate_engine(project, git, test_spec_repo, build_result_repo)
+        gate = engine.run_gate(branch_ids, project.base_branch)
+
+        if gate.dropped_branch_ids:
+            print(
+                f"[orchestra] Merge gate dropped offender branches: "
+                f"{', '.join(gate.dropped_branch_ids)}"
+            )
+        elif gate.status == "escalated":
+            print(f"[orchestra] Merge gate escalated: {gate.notes}")
+        else:
+            print(f"[orchestra] Merge gate completed for run: {', '.join(gate.merged_branch_ids)}")
+    except Exception as exc:  # pragma: no cover - defensive, additive path
+        print(f"[orchestra] Merge gate step skipped due to error: {exc}")
+    return None
 
 
 def cmd_web(args: argparse.Namespace) -> int:
@@ -201,6 +309,149 @@ def cmd_clean(args: argparse.Namespace) -> int:
     return 0
 
 
+_GROUP_ORDER = {g: i for i, g in enumerate(["unit", "ci", "daily"])}
+
+
+def cmd_test_specs(args: argparse.Namespace) -> int:
+    project, _ = _resolve_project(args)
+    test_spec_repo, build_result_repo = _build_gate_store(project)
+
+    # --health: gate health summary via the Pipeline Agent.
+    if getattr(args, "health", False):
+        from orchestrator.pipeline_agent import PipelineAgent
+
+        agent = PipelineAgent(test_spec_repo, build_result_repo)
+        summary = agent.summarize_gate_health(build_result_repo)
+        print("[orchestra] Merge gate health")
+        print(f"  total_runs:      {summary['total_runs']}")
+        print(f"  overall_pass_rate: {summary['overall_pass_rate']}")
+        print(f"  flaky_specs:     {summary['flaky_specs']}")
+        print(f"  always_failing:  {summary['always_failing_specs']}")
+        for s in summary["slowest_specs"][:5]:
+            print(f"    slowest: {s['label']} ({s['max_duration_seconds']}s)")
+        return 0
+
+    # --promote-flaky / --daily-flaky: promote flaky unit/ci specs to daily.
+    if getattr(args, "promote_flaky", False) or getattr(args, "daily_flaky", False):
+        from orchestrator.pipeline_agent import PipelineAgent
+
+        agent = PipelineAgent(test_spec_repo, build_result_repo)
+        assessments = agent.detect_flaky_tests(build_result_repo)
+        promoted = agent.promote_flaky_to_daily(assessments, test_spec_repo)
+        if promoted:
+            print(f"[orchestra] Promoted {len(promoted)} flaky spec(s) to daily: {', '.join(promoted)}")
+        else:
+            print("[orchestra] No flaky specs to promote.")
+            for a in assessments:
+                if a.flaky:
+                    print(f"  flaky: {a.label} ({a.failures}/{a.runs} failures)")
+        return 0
+
+    # --enable / --disable by id.
+    if getattr(args, "enable", None):
+        spec = test_spec_repo.find(args.enable)
+        spec.enabled = True
+        test_spec_repo.save(spec)
+        print(f"[orchestra] Enabled test spec {spec.id} ({spec.label})")
+        return 0
+    if getattr(args, "disable", None):
+        spec = test_spec_repo.find(args.disable)
+        spec.enabled = False
+        test_spec_repo.save(spec)
+        print(f"[orchestra] Disabled test spec {spec.id} ({spec.label})")
+        return 0
+
+    # --add <label> <command> [--group ...].
+    if getattr(args, "add", None):
+        label, command = args.add
+        from shared.models import TestSpecGroup
+
+        group = TestSpecGroup(args.group or "unit")
+        new_spec = TestSpec(label=label, command=command, group=group)
+        test_spec_repo.save(new_spec)
+        print(f"[orchestra] Added test spec {new_spec.id!r} ({label!r}) group={group.value}: {command!r}")
+        return 0
+
+    # --list (default): show every spec with group, enabled status, failure_count.
+    specs = test_spec_repo.all_ordered()
+    print(f"[orchestra] Test specs ({len(specs)}):")
+    if not specs:
+        print("  (none -- add one with: orchestra test-specs --add <label> <command>)")
+    for s in specs:
+        flags = "enabled" if s.enabled else "disabled"
+        print(f"  {s.id}  [{s.group.value:4}] {flags:8} fails={s.failure_count}  {s.label} :: {s.command}")
+    return 0
+
+
+def cmd_gate(args: argparse.Namespace) -> int:
+    project, _ = _resolve_project(args)
+    git = Git(project.repo_root)
+    test_spec_repo, build_result_repo = _build_gate_store(project)
+    engine = _make_gate_engine(project, git, test_spec_repo, build_result_repo)
+
+    base = args.base or project.base_branch
+
+    # Branch selection: explicit --branches wins, else discover from the manifest.
+    if args.branches:
+        branch_ids = [b.strip() for b in args.branches.split(",") if b.strip()]
+    else:
+        branch_ids = _discover_gate_branches(project, git, git.load_manifest(), active_only=False)
+
+    if not branch_ids:
+        print("[orchestra] No branches to gate. Pass --branches a,b,c or add worktrees to the manifest.")
+        return 0
+
+    print(f"[orchestra] Running merge gate on {len(branch_ids)} branch(es) against {base!r}: {', '.join(branch_ids)}")
+
+    gate = engine.run_gate(branch_ids, base)
+
+    # Per-spec report: pass/fail counts.
+    from orchestrator.merge_queue import classify_build_results
+
+    report = classify_build_results(gate.results)
+    print(f"[orchestra] Gate {gate.status.upper()}")
+    print(f"  results: {report['passed']} passed, {report['failed']} failed, {report['slow']} slow, {report['unknown']} unknown")
+    if report["failed_tests"]:
+        print(f"  failed tests: {', '.join(report['failed_tests'])}")
+
+    # Bisection outcome (if the gate failed and was resolved).
+    if gate.bisection is not None:
+        b = gate.bisection
+        print(f"  bisection rounds: {b.rounds}")
+        print(f"  offender: {b.offender if b.offender else 'none'}")
+        print(f"  merged safe: {', '.join(b.merged_branches) or '-'}")
+        print(f"  dropped: {', '.join(b.dropped_branches) or '-'}")
+    if gate.notes:
+        print(f"  notes: {gate.notes}")
+
+    # --auto: resolve failures automatically; escalate -> brainstorm recovery.
+    if args.auto and gate.status != "completed":
+        gate = engine.resolve_failure(gate, base)
+        print(f"[orchestra] Auto-resolved gate -> {gate.status.upper()}")
+        print(f"  merged safe: {', '.join(gate.merged_branch_ids) or '-'}")
+        print(f"  dropped: {', '.join(gate.dropped_branch_ids) or '-'}")
+        if gate.notes:
+            print(f"  notes: {gate.notes}")
+        if gate.status == "escalated":
+            from orchestrator.pipeline_agent import PipelineAgent
+
+            report = PipelineAgent().brainstorm_recovery(gate.notes, str(project.repo_root))
+            print("[orchestra] Recovery brainstorm:")
+            for finding in report.findings:
+                print(f"  finding: {finding}")
+            for suggestion in report.suggestions:
+                print(f"  suggestion: {suggestion}")
+            for ticket in report.proposed_tickets:
+                print(f"  proposed ticket: {ticket}")
+
+    # Final status.
+    if gate.status == "escalated":
+        print("[orchestra] Final status: ESCALATED -- Pipeline Agent takeover required.")
+        return 1
+    print("[orchestra] Final status: completed.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="orchestra", description="Orchestra orchestration CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -238,6 +489,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_clean = sub.add_parser("clean", help="remove stale Orchestra worktrees")
     add_common(p_clean)
     p_clean.set_defaults(func=cmd_clean)
+
+    p_specs = sub.add_parser("test-specs", help="manage merge-test test specs")
+    add_common(p_specs)
+    p_specs.add_argument("--add", nargs=2, metavar=("LABEL", "COMMAND"), help="register a new test spec")
+    p_specs.add_argument("--group", choices=["unit", "ci", "daily"], default="unit", help="test spec group (default: unit)")
+    p_specs.add_argument("--list", action="store_true", help="list all test specs (default)")
+    p_specs.add_argument("--enable", metavar="ID", help="enable a test spec by id")
+    p_specs.add_argument("--disable", metavar="ID", help="disable a test spec by id")
+    p_specs.add_argument("--promote-flaky", action="store_true", help="promote flaky unit/ci specs to the daily round")
+    p_specs.add_argument("--daily-flaky", action="store_true", help="alias for --promote-flaky")
+    p_specs.add_argument("--health", action="store_true", help="print merge-gate health summary")
+    p_specs.set_defaults(func=cmd_test_specs)
+
+    p_gate = sub.add_parser("gate", help="run the merge gate for pending branches")
+    add_common(p_gate)
+    p_gate.add_argument("--branches", metavar="A,B,C", help="explicit branch slugs/ids to gate (default: discover from manifest)")
+    p_gate.add_argument("--base", metavar="BRANCH", help="base branch to gate against (default: project base)")
+    p_gate.add_argument("--auto", action="store_true", help="auto-resolve failures (bisect + merge safe + drop offender)")
+    p_gate.set_defaults(func=cmd_gate)
 
     return parser
 

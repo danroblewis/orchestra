@@ -66,3 +66,22 @@ class BuildResultRepository(Repository[BuildResult]):
             key=lambda b: b.created_at,
             reverse=True,
         )
+
+    def enabled(self) -> list[TestSpec]:
+        """Test specs that produced build results (needed by the Pipeline Agent).
+
+        The gate health / flaky-detection logic keys off the set of enabled merge-gate
+        specs; the build-result store holds both collections under one JsonStore, so we
+        surface the enabled specs from the sibling ``test_specs`` collection here rather
+        than requiring the caller to thread a :class:`TestSpecRepository` alongside it.
+        """
+
+        from ..models import TestSpec, TestSpecGroup
+
+        return [
+            TestSpec.from_dict(t)
+            for t in self.store.get("test_specs")
+            if t.get("enabled", True)
+            and TestSpecGroup(t.get("group", TestSpecGroup.UNIT.value)).value
+            in (TestSpecGroup.UNIT.value, TestSpecGroup.CI.value)
+        ]
