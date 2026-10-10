@@ -101,3 +101,41 @@ def test_web_server_reads_orchestrator_state(monkeypatch):
         assert len(tasks) == 1
         assert tasks[0].status == Status.DONE
         assert len(session_logs) >= 3
+
+
+def test_web_server_reads_session_jsonl(monkeypatch):
+    """Orchestrator-written JSONL session files are readable via the web API."""
+    import importlib
+    import web.server as server_mod
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # Point the web server's module-level store at the temp dir and reload
+        # it so STORE / STORE_PATH pick up the new data directory.
+        monkeypatch.setenv("ORCHESTRA_DATA_DIR", tmp)
+        importlib.reload(server_mod)
+        store = JsonStore(os.path.join(tmp, "orchestra.json"))
+        orch = Orchestrator(store, MockTransport())
+
+        # Drive a session through the transport (writes JSONL + a SessionLog).
+        orch.drive("supervisor", "supervisor", "User request: plan a login feature")
+
+        # The SessionLog row exists.
+        logs = [s for s in store.get("session_logs") if s["session_name"] == "supervisor"]
+        assert len(logs) == 1
+        sup_id = logs[0]["id"]
+
+        # The JSONL file exists on disk under <data>/sessions/.
+        assert Path(tmp, "sessions", "supervisor.jsonl").exists()
+
+        # The read-only web server can read it back via /api/sessions/{id}.
+        from starlette.testclient import TestClient
+
+        app = server_mod.create_app(web_port=8000)
+        client = TestClient(app)
+        resp = client.get(f"/api/sessions/{sup_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session_name"] == "supervisor"
+        assert len(data["messages"]) >= 2
+        assert any(m["role"] == "user" for m in data["messages"])
+        assert any(m["role"] == "assistant" for m in data["messages"])
