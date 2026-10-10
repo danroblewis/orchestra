@@ -197,7 +197,14 @@ class _PiSession:
     # -- public operations --------------------------------------------------- #
 
     def run_prompt(self, prompt: str) -> dict[str, Any]:
-        """Send a prompt, await ``agent_settled``, then return ``get_last_assistant_text``."""
+        """Send a prompt, await ``agent_settled``, then return the assistant's text.
+
+        The final assistant message is captured directly from the event stream
+        (the ``message_end``/``turn_end`` events carry ``role: assistant`` with the
+        reply). This is required because ``pi --mode rpc`` never persists the
+        ``--session`` JSONL file, so reading it back -- or issuing a separate
+        ``get_last_assistant_text`` RPC command -- returns empty.
+        """
         self._settle_event.clear()
         deadline = time.time() + self.timeout
 
@@ -209,6 +216,7 @@ class _PiSession:
 
         settled = False
         settle_record: dict[str, Any] | None = None
+        assistant_text = ""
         while not settled and time.time() < deadline:
             rec = self._read_line(deadline)
             if rec is None:
@@ -217,6 +225,13 @@ class _PiSession:
             if t == "agent_settled":
                 settled = True
                 settle_record = rec
+            elif t in ("message_end", "turn_end") and rec.get("message", {}).get("role") == "assistant":
+                # Last assistant text wins.
+                parts = rec.get("message", {}).get("content", [])
+                if isinstance(parts, list):
+                    chunks = [p.get("text", "") for p in parts if isinstance(p, dict) and p.get("type") == "text"]
+                    if chunks:
+                        assistant_text = "".join(chunks).strip()
             elif t == "response" and rec.get("command") == "prompt" and not rec.get("success", False):
                 raise RpcError(f"Prompt rejected by Pi: {rec.get('error')}")
 
@@ -224,7 +239,14 @@ class _PiSession:
             self.close()
             raise RpcError(f"Agent did not settle within {self.timeout}s")
 
-        return {"settled": settle_record, "text": self.get_last_assistant_text()}
+        # Fall back to the durable log, then the RPC cursor, if the stream gave
+        # nothing. (``pi --mode rpc`` never persists the --session JSONL, so both
+        # are empty in practice -- but the scripted tests rely on these paths.)
+        if not assistant_text.strip():
+            assistant_text = _read_log_assistant_text(self.session_file)
+        if not assistant_text.strip():
+            assistant_text = self.get_last_assistant_text() or ""
+        return {"settled": settle_record, "text": assistant_text}
 
     def wait_settled(self) -> dict[str, Any]:
         deadline = time.time() + self.timeout
