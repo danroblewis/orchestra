@@ -91,6 +91,13 @@ The test suite covers:
 - Flat-file persistence round-trip (`shared/tests/test_persistence.py`)
 - End-to-end orchestration flow + web-server read (`tests/test_end_to_end.py`)
 
+### Merge gate
+
+- The **merge gate** (`MergeGateEngine`) keeps candidate worktree branches safe to merge by **bisecting** them: it isolates which branches fail the test suite and separates the offenders from the safe work.
+- Each candidate branch is tested in isolation; the failing subset is bisected (halved) repeatedly until a single offender is pinpointed, while the passing halves are verified mergeable.
+- Offending branches are **dropped** and the gate recovers by re-running on the remaining branches, so a bad commit never blocks a safe merge.
+- It runs **off by default**; set `ORCHESTRA_RUN_GATE=1` to gate the branches worked on in a run (the `orchestra gate` subcommand is the manual, always-tested path).
+
 ## Notes
 
 - **Web server is read-only.** All state mutations go through the orchestrator
