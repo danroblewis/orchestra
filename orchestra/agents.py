@@ -71,15 +71,29 @@ def spawn_worker(
     session_file: str,
     project=None,
 ) -> str:
-    """Start a worker ``pi`` session bound to the worktree and return its prompt."""
+    """Start a worker ``pi`` session bound to the worktree and return its prompt.
+
+    Drives the session through ``Orchestrator.drive`` so the session log is
+    created/persisted (the web viewer can render it) exactly as the Supervisor /
+    Coordinator layers are.
+    """
     prompt = worker_prompt(task, branch)
     system_prompt = "You are the Orchestra **Worker** layer.\n" + (
         _repo_config_prompt(project) if project else ""
     )
-    # The orchestrator drives this; we hand the transport + paths to a driver.
-    # ``send`` already waits for ``agent_settled`` and returns the assistant text,
-    # so we do NOT call ``settle`` again (the agent is idle and would hang).
-    orch.orch.transport.send(session_file, prompt, system_prompt=system_prompt)
+    # ``drive`` layers the system prompt via the transport (``--append-system-prompt``),
+    # waits for ``agent_settled``, and persists the session log. We do NOT call
+    # ``settle`` again (the agent is idle and would hang).
+    # Derive the session slug from the dict (``to_dict`` exposes ``slug`` when set,
+    # otherwise fall back to the id) so it matches the worktree branch slug the
+    # driver recorded.
+    slug = task.get("slug") or task.get("title")
+    if slug:
+        base = "".join(c if (c.isalnum() or c == " ") else " " for c in slug).strip()
+        session_slug = "-".join(base.lower().split())
+    else:
+        session_slug = task.get("id", "worker")
+    orch.orch.drive(f"worker-{session_slug}", "worker", prompt, system_prompt=system_prompt)
     return prompt
 
 
@@ -129,7 +143,15 @@ def spawn_reviewer(
     """Start a reviewer ``pi`` session that judges the diff and test output."""
     prompt = reviewer_prompt(task, diff_info.diff)
     system_prompt = "You are the Orchestra **Reviewer** layer.\n"
-    orch.orch.transport.send(session_file, prompt, system_prompt=system_prompt)
+    slug = task.get("slug") or task.get("title")
+    if slug:
+        base = "".join(c if (c.isalnum() or c == " ") else " " for c in slug).strip()
+        session_slug = "-".join(base.lower().split())
+    else:
+        session_slug = task.get("id", "reviewer")
+    orch.orch.drive(
+        f"reviewer-{session_slug}", "reviewer", prompt, system_prompt=system_prompt
+    )
     return prompt
 
 
