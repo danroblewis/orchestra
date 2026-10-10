@@ -174,6 +174,7 @@ class TestSpec:
     enabled: bool = True
     failure_count: int = 0
     last_failure: str | None = None
+    notes: str = ""
     created_at: str = field(default_factory=_now)
     updated_at: str = field(default_factory=_now)
 
@@ -208,6 +209,7 @@ class TestSpec:
             "enabled": self.enabled,
             "failure_count": self.failure_count,
             "last_failure": self.last_failure,
+            "notes": self.notes,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -222,6 +224,7 @@ class TestSpec:
             enabled=d.get("enabled", True),
             failure_count=d.get("failure_count", 0),
             last_failure=d.get("last_failure"),
+            notes=d.get("notes", ""),
             created_at=d.get("created_at", _now()),
             updated_at=d.get("updated_at", _now()),
         )
