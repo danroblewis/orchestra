@@ -93,9 +93,17 @@ The test suite covers:
   can update the viewer frequently without contention.
 - **The orchestrator is a separate process.** This keeps the web server
   read-only and lets the two scales independently.
-- **Cloudflared tunnel.** The web server starts a `cloudflared` tunnel on
-  startup if one is not already running, and exposes the public URL at
-  `/api/tunnel`.
+- **Cloudflared tunnel.** The web server runs an authenticated **named
+  cloudflared tunnel** (`orchestra`, tied to the `cloudflared login` and the
+  `dansprojects.space` zone) instead of an ephemeral quick tunnel. This avoids
+  the per-IP rate limit that quick tunnels hit under repeated use. The tunnel
+  config is (re)written to `~/.cloudflared/orchestra.yaml` on startup with the
+  current web port, the public URL is `https://orchestra.dansprojects.space`,
+  and it is exposed at `/api/tunnel`. A restart **reuses** the already-running
+  tunnel when it is healthy, and only relaunches cloudflared when the public
+  URL is unreachable while the local app is healthy (so a broken web app never
+  triggers a needless tunnel restart). The tunnel DNS record must be valid in
+  the Cloudflare zone for the public URL to resolve.
 - **Storage is swappable.** The Repository pattern hides the flat JSON file
   behind a clean interface; swap in a database later without touching business
   logic.
