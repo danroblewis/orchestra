@@ -107,7 +107,7 @@ class RpcTransport(Transport):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            cwd=str(self.cwd),
+            cwd=str(self.cwd) if self.cwd else None,
         )
         sess = _PiSession(session_file, proc, self.timeout)
         with self._lock:
