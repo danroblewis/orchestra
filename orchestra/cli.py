@@ -405,12 +405,14 @@ def cmd_gate(args: argparse.Namespace) -> int:
 
     gate = engine.run_gate(branch_ids, base)
 
-    # Per-spec report: pass/fail counts.
-    from orchestrator.merge_queue import classify_build_results
-
-    report = classify_build_results(gate.results)
+    # Canonical gate report: pass/fail counts + failed tests + bisection outcome.
+    report = gate.to_report()
     print(f"[orchestra] Gate {gate.status.upper()}")
-    print(f"  results: {report['passed']} passed, {report['failed']} failed, {report['slow']} slow, {report['unknown']} unknown")
+    print(
+        f"  results: {report['total_results']} total, "
+        f"{report['total_results'] - report['failed_results']} passed, "
+        f"{report['failed_results']} failed"
+    )
     if report["failed_tests"]:
         print(f"  failed tests: {', '.join(report['failed_tests'])}")
 
