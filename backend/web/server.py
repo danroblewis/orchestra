@@ -240,10 +240,34 @@ def start_tunnel(
         print("[tunnel] cloudflared not found in PATH; skipping tunnel startup", flush=True)
         return None, None
 
-    # Reuse a healthy persisted tunnel if we have one.
-    if tunnel_url and _probe_tunnel(tunnel_url, port):
-        print(f"[tunnel] Persisted tunnel still healthy: {tunnel_url}", flush=True)
-        return None, tunnel_url
+    # The canonical public URL is always the configured ingress hostname.
+    # The persisted ``tunnel_url`` may be stale (e.g. a typo'd domain from an
+    # earlier session), so we probe whatever was persisted AND the canonical
+    # domain, then always report the canonical one.
+    canonical_url = f"https://{TUNNEL_DOMAIN}"
+    reuse = False
+    if tunnel_url and tunnel_url != canonical_url and _probe_tunnel(tunnel_url, port):
+        print(f"[tunnel] Reusing persisted tunnel: {tunnel_url}", flush=True)
+        reuse = True
+    elif _probe_tunnel(canonical_url, port):
+        print(f"[tunnel] Reusing persisted tunnel: {canonical_url}", flush=True)
+        reuse = True
+
+    if reuse:
+        # Refresh the config for the current port and persist the canonical URL
+        # so the live config and the API always agree.
+        try:
+            _write_tunnel_config(port)
+        except Exception as exc:  # pragma: no cover - yaml import guard
+            print(f"[tunnel] Failed to refresh tunnel config ({exc})", flush=True)
+        meta = {
+            "url": canonical_url,
+            "port": port,
+            "tunnel_name": TUNNEL_NAME,
+            "started_at": datetime.now(UTC).isoformat(),
+        }
+        _write_tunnel_meta(meta)
+        return None, canonical_url
 
     # A named tunnel has a stable, known public URL (the ingress hostname),
     # so there is no quick-tunnel URL to "capture". We simply confirm the
@@ -422,14 +446,22 @@ def main():
 
     web_port = int(os.environ.get("WEB_PORT", "8000"))
 
-    # Reuse a healthy persisted tunnel if we have one.
+    # Reuse a healthy persisted tunnel if we have one. Always resolve to the
+    # canonical public URL (the configured ingress hostname); a stale persisted
+    # URL (e.g. a typo'd domain from an earlier session) must not leak into the
+    # API or viewer.
+    canonical_url = f"https://{TUNNEL_DOMAIN}"
     meta = _read_tunnel_meta()
     persisted_url = meta.get("url")
     tunnel_proc = None
-    tunnel_url = persisted_url if (persisted_url and _probe_tunnel(persisted_url, web_port)) else None
+    reused = (
+        (persisted_url and _probe_tunnel(persisted_url, web_port))
+        or _probe_tunnel(canonical_url, web_port)
+    )
+    tunnel_url = canonical_url if reused else None
 
     if not tunnel_url and shutil.which("cloudflared"):
-        # Persisted tunnel missing or dead -> start a new one and capture it.
+        # Persisted tunnel missing or dead -> start a new one.
         tunnel_proc, tunnel_url = start_tunnel(web_port, persisted_url)
     elif not tunnel_url and not shutil.which("cloudflared"):
         print(f"[web] Web server on http://127.0.0.1:{web_port} (no cloudflared)", flush=True)
