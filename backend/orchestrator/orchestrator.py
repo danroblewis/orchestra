@@ -26,7 +26,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from shared.models import Task, Milestone, Status, SessionLog
+from shared.models import Task, Milestone, Status, SessionLog, _now
 from shared.repositories.json_store import JsonStore
 from shared.repositories.task_repository import TaskRepository
 from shared.repositories.milestone_repository import MilestoneRepository
@@ -135,6 +135,27 @@ class Orchestrator:
             status="running",
         )
         return self.session_logs.save(log)
+
+    def set_running_session(self, name: str) -> None:
+        """Mark a named session as ``running`` so the web viewer shows it as an
+        active agent. Used by drivers that manage session lifecycles themselves
+        (e.g. the live demo) so a web refresh catches the session mid-work.
+        """
+        log = self.session_logs.by_name(name)
+        if log:
+            log.status = "running"
+            log.updated_at = _now()
+            self.session_logs.save(log)
+        else:
+            # Create it if it does not exist yet (session not started but about
+            # to be engaged).
+            log = SessionLog(
+                session_name=name,
+                layer=name.split("-")[0] if name.split("-")[0] in ("worker", "reviewer", "supervisor", "coordinator", "pipeline-manager") else "worker",
+                session_file_path=os.path.join("sessions", f"{name}.jsonl"),
+                status="running",
+            )
+            self.session_logs.save(log)
 
     def set_idle(self, name: str) -> None:
         log = self.session_logs.by_name(name)

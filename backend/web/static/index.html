@@ -8,9 +8,13 @@
       :root {
         --bg: #0d1117;
         --panel: #161b22;
+        --panel-alt: #0d1117;
         --border: #30363d;
         --text: #c9d1d9;
+        --muted: #8b949e;
         --accent: #58a6ff;
+        --active: #3fb950;
+        --idle: #6e7681;
         --backlog: #8b949e;
         --in-progress: #d29922;
         --done: #3fb950;
@@ -32,6 +36,7 @@
         align-items: center;
       }
       header h1 { font-size: 20px; margin: 0; }
+      header h1 .dot { color: var(--active); }
       .tunnel { font-size: 13px; color: var(--accent); }
       .tunnel a { color: var(--accent); }
       .layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 61px); }
@@ -44,7 +49,7 @@
         padding: 12px;
         margin-bottom: 12px;
       }
-      .card h3 { margin: 0 0 8px; font-size: 14px; }
+      .card h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
       .task {
         background: var(--panel);
         border: 1px solid var(--border);
@@ -52,13 +57,15 @@
         border-radius: 6px;
         padding: 10px 12px;
         margin-bottom: 8px;
+        cursor: pointer;
       }
+      .task:hover { border-color: var(--accent); }
       .task.done { border-left-color: var(--done); }
       .task.in-progress { border-left-color: var(--in-progress); }
       .task.blocked { border-left-color: var(--blocked); }
       .task.failed { border-left-color: var(--failed); }
       .task .title { font-weight: 600; font-size: 14px; }
-      .task .meta { font-size: 12px; color: var(--backlog); margin-top: 4px; }
+      .task .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
       .badge {
         display: inline-block;
         font-size: 11px;
@@ -67,11 +74,48 @@
         background: var(--border);
         margin-top: 6px;
       }
+      .badge.active { background: rgba(63, 185, 80, 0.2); color: var(--active); }
+      .badge.idle { background: var(--panel-alt); color: var(--muted); }
+      .badge.in-progress { background: rgba(210, 153, 34, 0.2); color: var(--in-progress); }
       .milestone { margin-bottom: 20px; }
       .milestone h2 { font-size: 16px; margin: 0 0 10px; color: var(--accent); }
-      .empty { color: var(--backlog); font-size: 13px; }
-      .dep { font-size: 11px; color: var(--backlog); }
+      .empty { color: var(--muted); font-size: 13px; }
+      .dep { font-size: 11px; color: var(--muted); }
       .session-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+      .agent-row {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        cursor: pointer;
+      }
+      .agent-row:hover { border-color: var(--accent); }
+      .agent-row .agent-title { display: flex; align-items: center; gap: 8px; }
+      .agent-row .agent-title .name { font-size: 13px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .agent-row .agent-meta { font-size: 11px; color: var(--muted); margin-top: 3px; padding-left: 20px; }
+      .agent-row.running .dot { background: var(--active); }
+      .agent-row.idle .dot { background: var(--idle); }
+      .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        display: inline-block; flex-shrink: 0;
+      }
+      .dot.active { background: var(--active); box-shadow: 0 0 6px var(--active); animation: pulse 1.5s infinite; }
+      .dot.idle { background: var(--idle); }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      .agent-section { margin-bottom: 12px; }
+      .agent-section-head {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+        color: var(--muted); margin: 10px 0 6px; cursor: pointer;
+        display: flex; align-items: center; gap: 6px;
+      }
+      .agent-section-head .chevron { transition: transform 0.15s; display: inline-block; }
+      .agent-section-head.collapsed .chevron { transform: rotate(-90deg); }
+      .agent-section-body.collapsed { display: none; }
+      .section-count {
+        background: var(--border); color: var(--muted); border-radius: 10px;
+        padding: 0 6px; font-size: 10px; margin-left: auto;
+      }
       .modal-overlay {
         position: fixed; inset: 0;
         background: rgba(0, 0, 0, 0.7);
@@ -83,14 +127,21 @@
         border: 1px solid var(--border);
         border-radius: 8px;
         max-width: 90%;
-        max-height: 80%;
-        overflow: auto;
-        padding: 20px;
-        min-width: 600px;
+        max-height: 85%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding: 0;
+        min-width: 640px;
       }
-      .modal h2 { margin-top: 0; color: var(--accent); }
+      .modal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      .modal-header h2 { margin: 0; font-size: 17px; color: var(--accent); }
       .modal-close {
-        float: right;
         background: var(--border);
         border: none;
         color: var(--text);
@@ -99,21 +150,54 @@
         cursor: pointer;
       }
       .modal-close:hover { background: var(--accent); color: var(--bg); }
-      .modal-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-      .modal-table th, .modal-table td {
+      .modal-body { padding: 20px; overflow: auto; flex: 1; }
+      .modal-detail-grid { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px; margin-bottom: 16px; }
+      .modal-detail-grid dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+      .modal-detail-grid dd { margin: 0; font-size: 14px; }
+      .modal-desc {
+        background: var(--panel-alt);
         border: 1px solid var(--border);
-        padding: 8px;
-        text-align: left;
+        border-radius: 6px;
+        padding: 12px;
         font-size: 13px;
-        vertical-align: top;
+        white-space: pre-wrap;
+        margin: 12px 0;
       }
-      .modal-table th { background: var(--bg); }
-      .modal-table td.pre { font-family: monospace; white-space: pre-wrap; }
+      .transcript { margin-top: 16px; }
+      .transcript h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 10px; }
+      .msg {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin-bottom: 10px;
+        overflow: hidden;
+      }
+      .msg-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 6px 12px;
+        background: var(--panel-alt);
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+      .msg-head .role { font-weight: 600; }
+      .msg-head .role.user { color: var(--accent); }
+      .msg-head .role.assistant { color: var(--active); }
+      .msg-head .role.system { color: var(--in-progress); }
+      .msg-head .ts { color: var(--muted); margin-left: auto; font-size: 11px; }
+      .msg-body { padding: 10px 12px; font-size: 13px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.4; max-height: 320px; overflow: auto; }
+      .status-pill {
+        display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+        font-weight: 600;
+      }
+      .status-pill.done { background: rgba(63, 185, 80, 0.2); color: var(--done); }
+      .status-pill.in-progress { background: rgba(210, 153, 34, 0.2); color: var(--in-progress); }
+      .status-pill.blocked { background: rgba(248, 81, 73, 0.2); color: var(--blocked); }
+      .status-pill.failed { background: rgba(248, 81, 73, 0.2); color: var(--failed); }
+      .status-pill.backlog { background: var(--border); color: var(--muted); }
     </style>
   </head>
   <body>
     <header>
-      <h1>Orchestra</h1>
+      <h1><span class="dot active"></span> Orchestra</h1>
       <div class="tunnel" id="tunnel"></div>
     </header>
     <div class="layout">
@@ -123,6 +207,8 @@
           <div id="next-in-queue"></div>
         </div>
         <div class="card">
+          <h3>Active Agents</h3>
+          <div id="active-agents" class="empty" style="margin-bottom: 8px;">No agents active.</div>
           <h3>Agent Sessions</h3>
           <div id="session-logs"></div>
         </div>
@@ -139,12 +225,14 @@
       </main>
     </div>
 
-    <!-- Modal for session details -->
+    <!-- Agent / Task / Session modal -->
     <div id="modal-overlay" class="modal-overlay" style="display: none;">
       <div class="modal">
-        <button class="modal-close" onclick="closeModal()">Close</button>
-        <h2 id="modal-title">Session Details</h2>
-        <div id="modal-content"></div>
+        <div class="modal-header">
+          <h2 id="modal-title">Details</h2>
+          <button class="modal-close" onclick="closeModal()">Close</button>
+        </div>
+        <div class="modal-body" id="modal-content"></div>
       </div>
     </div>
     <script>
@@ -157,6 +245,17 @@
         return status.replace(/_/g, "-");
       }
 
+      function statusPill(status) {
+        return `<span class="status-pill ${statusClass(status)}">${status}</span>`;
+      }
+
+      // Truncate a long session/task name for compact sidebar display.
+      function shortName(name) {
+        if (!name) return "";
+        // Strip common prefixes like "worker-" / "reviewer-"
+        return name.replace(/^(worker|reviewer|supervisor|coordinator|pipeline-manager)-/, "");
+      }
+
       function renderTask(t, allTasks) {
         const deps = (t.dependency_ids || [])
           .map((id) => {
@@ -165,18 +264,35 @@
           })
           .join(", ");
         return `
-          <div class="task ${statusClass(t.status)}">
-            <div class="title">${t.title}</div>
-            <div class="meta">Priority ${t.priority}${t.milestone_id ? " · Milestone " + t.milestone_id.slice(0, 8) : ""}</div>
-            <div class="badge">${t.status}${t.build_status ? " · build: " + t.build_status : ""}</div>
-            ${deps ? `<div class="dep">Depends on: ${deps}</div>` : ""}
+          <div class="task ${statusClass(t.status)}" onclick="openTask('${t.id}')" title="Click to view details">
+            <div class="title">${esc(t.title)}</div>
+            <div class="meta">Priority ${t.priority}${t.milestone_id ? " · " + shortMilestone(t.milestone_id) : ""}</div>
+            <div class="badge">${statusPill(t.status)}${t.build_status ? " · build: " + t.build_status : ""}</div>
+            ${deps ? `<div class="dep">Depends on: ${esc(deps)}</div>` : ""}
           </div>
         `;
       }
 
+      function shortMilestone(id) { return id.slice(0, 8); }
+
+      function esc(s) {
+        if (s == null) return "";
+        return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      }
+
+      // Collapse a long name for the agent sidebar.
+      function agentShortName(name) {
+        if (!name) return name;
+        // Keep the layer prefix for readability: "worker-slug" -> "worker: slug"
+        return name.replace("-", ": ");
+      }
+
       function render() {
         loadState().then((state) => {
-          // Milestones & tasks
+          const taskById = {};
+          state.tasks.forEach((t) => { taskById[t.id] = t; });
+
+          // -- Milestones & tasks (clickable -> openTask) --
           const msDiv = document.getElementById("milestones");
           if (state.milestones.length === 0) {
             msDiv.innerHTML = '<div class="empty">No milestones yet.</div>';
@@ -186,7 +302,7 @@
                 const tasks = state.tasks.filter((t) => t.milestone_id === m.id);
                 return `
                   <div class="milestone">
-                    <h2>${m.name} (${tasks.length})</h2>
+                    <h2>${esc(m.name)} (${tasks.length})</h2>
                     ${tasks.map((t) => renderTask(t, state.tasks)).join("")}
                   </div>
                 `;
@@ -194,7 +310,7 @@
               .join("");
           }
 
-          // Next in queue
+          // -- Next in queue --
           const nextDiv = document.getElementById("next-in-queue");
           if (state.nextInQueue.length === 0) {
             nextDiv.innerHTML = '<div class="empty">Nothing ready yet.</div>';
@@ -204,30 +320,28 @@
               .join("");
           }
 
-          // Agent sessions
-          const logsDiv = document.getElementById("session-logs");
-          if (state.sessionLogs.length === 0) {
-            logsDiv.innerHTML = '<div class="empty">No sessions started.</div>';
+          // -- Agents: only active (running) ones in the top section --
+          const logs = state.sessionLogs || [];
+          const running = logs.filter((s) => s.status === "running");
+          const activeDiv = document.getElementById("active-agents");
+          if (running.length === 0) {
+            activeDiv.innerHTML = '<div class="empty">No agents active.</div>';
           } else {
-            logsDiv.innerHTML = state.sessionLogs
-              .map(
-                (s) => `
-                  <div class="task">
-                    <div class="title">
-                      ${s.layer === 'coordinator' || s.layer === 'pipeline-manager'
-                        ? `<span class="session-link" onclick="openSession('${s.id}')">${s.session_name}</span>`
-                        : s.session_name}
-                    </div>
-                    <div class="meta">${s.layer}</div>
-                    <div class="badge">status: ${s.status} · ${s.message_count} messages</div>
-                    ${s.layer === 'coordinator' || s.layer === 'pipeline-manager' ? '<div class="meta">Click to view session log</div>' : ''}
-                  </div>
-                `
-              )
+            activeDiv.className = "";
+            activeDiv.innerHTML = running
+              .map((s) => renderAgent(s))
               .join("");
           }
 
-          // Builds
+          // -- All agent sessions (grouped by layer, idle ones collapsed) --
+          const logsDiv = document.getElementById("session-logs");
+          if (logs.length === 0) {
+            logsDiv.innerHTML = '<div class="empty">No sessions started.</div>';
+          } else {
+            logsDiv.innerHTML = renderSessionGroups(logs);
+          }
+
+          // -- Builds --
           const buildsDiv = document.getElementById("builds");
           if (state.builds.length === 0) {
             buildsDiv.innerHTML = '<div class="empty">No builds recorded.</div>';
@@ -247,6 +361,63 @@
         });
       }
 
+      // Group sessions by layer. Active (running) sessions are shown in an
+      // expanded "Active" group; idle/recoverable sessions are grouped by layer
+      // and *collapsed* by default so the sidebar doesn't clutter.
+      function renderSessionGroups(logs) {
+        const byLayer = {};
+        logs.forEach((s) => {
+          const layer = s.layer || "other";
+          if (!byLayer[layer]) byLayer[layer] = [];
+          byLayer[layer].push(s);
+        });
+
+        let html = "";
+        Object.keys(byLayer).sort().forEach((layer) => {
+          const group = byLayer[layer];
+          const hasRunning = group.some((s) => s.status === "running");
+          // Collapse groups that have no active work.
+          const collapsed = !hasRunning ? " collapsed" : "";
+          const count = group.length;
+          html += `
+            <div class="agent-section">
+              <div class="agent-section-head${collapsed}" onclick="toggleSection(this)">
+                <span class="chevron">▼</span>
+                <span>${layer}</span>
+                <span class="section-count">${count}</span>
+              </div>
+              <div class="agent-section-body${collapsed}">
+                ${group.map((s) => renderAgent(s)).join("")}
+              </div>
+            </div>
+          `;
+        });
+        return html;
+      }
+
+      function toggleSection(head) {
+        head.classList.toggle("collapsed");
+        const body = head.nextElementSibling;
+        if (body) body.classList.toggle("collapsed");
+      }
+
+      function renderAgent(s) {
+        const cls = s.status === "running" ? "running" : "idle";
+        const pill = s.status === "running"
+          ? '<span class="badge active">active</span>'
+          : `<span class="badge ${s.status === 'running' ? 'active' : 'idle'}">${s.status}</span>`;
+        const shown = agentShortName(s.session_name);
+        return `
+          <div class="agent-row ${cls}" onclick="openAgent('${s.id}')" title="Click to view transcript">
+            <div class="agent-title">
+              <span class="dot ${cls}"></span>
+              <span class="name">${esc(shown)}</span>
+            </div>
+            <div class="agent-meta">${pill} · ${s.message_count} messages</div>
+          </div>
+        `;
+      }
+
       // Tunnel URL
       fetch("/api/tunnel").then((r) => r.json()).then((j) => {
         const el = document.getElementById("tunnel");
@@ -255,32 +426,107 @@
         }
       });
 
-      // Modal functions
+      // -- Modals --
       async function openSession(sessionId) {
+        const agentId = sessionId;
+        openAgent(agentId);
+      }
+
+      async function openAgent(sessionId) {
         const res = await fetch(`/api/sessions/${sessionId}`);
+        if (!res.ok) { alert("Session not found"); return; }
         const session = await res.json();
 
-        document.getElementById("modal-title").textContent =
-          `${session.session_name} (${session.layer})`;
+        document.getElementById("modal-title").textContent = session.session_name;
 
-        if (!session.messages || session.messages.length === 0) {
-          document.getElementById("modal-content").innerHTML =
-            '<div class="empty">No messages in this session yet.</div>';
+        // Build the detail grid.
+        let html = '<dl class="modal-detail-grid">';
+        html += `<dt>Layer</dt><dd>${esc(session.layer || "—")}</dd>`;
+        html += `<dt>Status</dt><dd>${statusPill(session.status)}</dd>`;
+        html += `<dt>Messages</dt><dd>${session.message_count}</dd>`;
+        html += `<dt>Created</dt><dd>${esc(session.created_at || "—")}</dd>`;
+        html += `<dt>Updated</dt><dd>${esc(session.updated_at || "—")}</dd>`;
+        html += '</dl>';
+
+        // Transcript (scrollable).
+        const msgs = session.messages || [];
+        if (msgs.length === 0) {
+          html += '<div class="transcript"><div class="empty">No messages in this session yet.</div></div>';
         } else {
-          let html = '<table class="modal-table"><thead><tr><th>#</th><th>Role</th><th>Time</th><th>Content</th></tr></thead><tbody>';
-          session.messages.forEach((msg, idx) => {
-            const roleClass = msg.role === 'assistant' ? 'badge' : '';
-            html += `<tr>
-              <td>${idx + 1}</td>
-              <td><span class="${roleClass}">${msg.role}</span></td>
-              <td>${msg.created_at || ''}</td>
-              <td class="pre">${msg.content}</td>
-            </tr>`;
+          html += '<div class="transcript"><h3>Transcript</h3>';
+          msgs.forEach((msg) => {
+            const roleClass = (msg.role || "assistant").toLowerCase();
+            html += `
+              <div class="msg">
+                <div class="msg-head">
+                  <span class="role ${roleClass}">${esc(msg.role)}</span>
+                  <span class="ts">${esc(msg.created_at || "")}</span>
+                </div>
+                <div class="msg-body">${esc(msg.content)}</div>
+              </div>
+            `;
           });
-          html += '</tbody></table>';
-          document.getElementById("modal-content").innerHTML = html;
+          html += '</div>';
+        }
+        document.getElementById("modal-content").innerHTML = html;
+        document.getElementById("modal-overlay").style.display = 'flex';
+      }
+
+      async function openTask(taskId) {
+        const res = await fetch("/api/state");
+        const state = await res.json();
+        const t = state.tasks.find((x) => x.id === taskId);
+        if (!t) { alert("Task not found"); return; }
+
+        document.getElementById("modal-title").textContent = t.title;
+
+        // Find the agent assigned to this task (by assignee_session_id).
+        const assignee = state.sessionLogs.find((s) => s.id === t.assignee_session_id) ||
+          state.sessionLogs.find((s) => s.session_name === t.assignee_session_id);
+
+        let html = '<dl class="modal-detail-grid">';
+        html += `<dt>Status</dt><dd>${statusPill(t.status)}</dd>`;
+        html += `<dt>Priority</dt><dd>${t.priority}</dd>`;
+        html += `<dt>Milestone</dt><dd>${esc((state.milestones.find((m) => m.id === t.milestone_id) || {}).name || "—")}</dd>`;
+        const deps = (t.dependency_ids || []).map((id) => {
+          const dep = state.tasks.find((x) => x.id === id);
+          return dep ? dep.title : id;
+        }).join(", ");
+        html += `<dt>Dependencies</dt><dd>${esc(deps) || "—"}</dd>`;
+        if (t.build_status) html += `<dt>Build</dt><dd>${esc(t.build_status)}</dd>`;
+        if (assignee) html += `<dt>Assigned agent</dt><dd><span class="session-link" onclick="openAgent('${assignee.id}')">${esc(assignee.session_name)}</span></dd>`;
+        html += '</dl>';
+
+        // Description.
+        html += '<h3 style="font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin:16px 0 8px;">Description</h3>';
+        html += `<div class="modal-desc">${esc(t.description || "No description provided.")}</div>`;
+
+        // Transcript of the assigned agent, if any.
+        if (assignee) {
+          const sres = await fetch(`/api/sessions/${assignee.id}`);
+          if (sres.ok) {
+            const session = await sres.json();
+            const msgs = session.messages || [];
+            if (msgs.length > 0) {
+              html += '<div class="transcript"><h3>Agent Transcript</h3>';
+              msgs.forEach((msg) => {
+                const roleClass = (msg.role || "assistant").toLowerCase();
+                html += `
+                  <div class="msg">
+                    <div class="msg-head">
+                      <span class="role ${roleClass}">${esc(msg.role)}</span>
+                      <span class="ts">${esc(msg.created_at || "")}</span>
+                    </div>
+                    <div class="msg-body">${esc(msg.content)}</div>
+                  </div>
+                `;
+              });
+              html += '</div>';
+            }
+          }
         }
 
+        document.getElementById("modal-content").innerHTML = html;
         document.getElementById("modal-overlay").style.display = 'flex';
       }
 
