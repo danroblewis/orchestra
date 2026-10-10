@@ -33,6 +33,15 @@ _MIN_RUNS_FOR_FLAKY = 3
 # to the daily round so we do not re-promote it on a later pass.
 _PROMOTED_TO_DAILY_NOTE = "promoted_to_daily"
 
+# Marker stored when the Pipeline Agent has *demoted* a test back out of the
+# daily round because it stopped being flaky (it now belongs in the gate again).
+_DEMOTED_FROM_DAILY_NOTE = "demoted_from_daily"
+
+# How many consecutive passing gate runs a daily test needs before the agent
+# will consider demoting it back into the merge-gate round. A single clean run
+# is not enough evidence that the flakiness has resolved.
+_MIN_CONSECUTIVE_PASSES_TO_DEMOTE = 3
+
 
 @dataclass
 class FlakyAssessment:
@@ -43,7 +52,9 @@ class FlakyAssessment:
     runs: int  # total gate runs observed for this spec
     failures: int  # times it failed
     flaky: bool  # failures > 0 and failures < runs (not always failing/passing)
-    promote_to_daily: bool  # Pipeline Agent's decision
+    promote_to_daily: bool  # Pipeline Agent's decision (see decide_flaky_promotion)
+    consecutive_passes: int = 0  # clean runs since the last failure (0 if last run failed)
+    test_group: str | None = None  # group id resolved by decide_flaky_promotion
 
 
 @dataclass
@@ -88,13 +99,25 @@ class PipelineAgent:
         test_spec_repo=None,
         build_result_repo=None,
         llm: Optional[Callable[[str], str]] = None,
+        judgment: Optional[Callable[[FlakyAssessment], bool]] = None,
     ):
-        # Repos are optional: the repo-backed methods accept them explicitly,
-        # but constructors may also hold a default so a Pi session can call
-        # them with no arguments.
+        """``judgment`` decides, per assessment, whether a flaky test is promoted
+        to daily or (if it lives in daily) demoted back into the gate.
+
+        It is an injected dependency so the *decision* logic can be exercised in
+        tests without a real model. The default judgment is deterministic:
+          * promote a flaky unit/ci test to daily,
+          * demote a daily test back to unit if it has stopped being flaky.
+        A real Pi session would supply an LLM-backed judgment instead.
+
+        Repos are optional: the repo-backed methods accept them explicitly, but
+        constructors may also hold a default so a Pi session can call them with
+        no arguments.
+        """
         self.test_spec_repo = test_spec_repo
         self.build_result_repo = build_result_repo
         self.llm = llm or _default_llm
+        self.judgment = judgment
 
     # --- 1. flaky detection --------------------------------------------------
 
@@ -164,45 +187,135 @@ class PipelineAgent:
                 )
             )
 
+        # Track how many consecutive passing runs each spec has most recently
+        # seen. This is what lets the agent *demote* a daily test once the
+        # flakiness has clearly resolved -- evidence must accumulate in both
+        # directions.
+        for a in assessments:
+            a.consecutive_passes = self._consecutive_passes(grouped.get(a.test_id, []))
+
         assessments.sort(key=lambda a: (-a.failures, a.label))
         return assessments
 
-    # --- 2. promotion --------------------------------------------------------
+    @staticmethod
+    def _consecutive_passes(results: list[BuildResult]) -> int:
+        """Number of trailing passing runs in ``results`` (newest last)."""
+
+        count = 0
+        for r in reversed(results):
+            if r.status == "passed":
+                count += 1
+            else:
+                break
+        return count
+
+    # --- 2. promotion + demotion --------------------------------------------
+
+    # Decision vocabulary used by the judgment callable.
+    JUDGE_PROMOTE = "promote"   # move to the daily round
+    JUDGE_DEMOTE = "demote"     # move back into the merge gate
+    JUDGE_NONE = "none"         # leave the round as-is
+
+    def default_judgment(self, a: FlakyAssessment) -> str:
+        """Deterministic judgment for a single flaky assessment.
+
+        This is the Pipeline Agent's *judgment*: given the evidence from
+        :meth:`detect_flaky_tests`, decide whether the spec should change rounds.
+          * A flaky unit/ci test -> promote to daily (do not let it block merges).
+          * A daily test that has stopped being flaky (enough consecutive clean
+            runs) -> demote back into the merge gate.
+          * Otherwise -> no change.
+
+        Returns one of ``JUDGE_PROMOTE`` / ``JUDGE_DEMOTE`` / ``JUDGE_NONE``.
+        """
+
+        if a.flaky:
+            # Flaky and currently in a blocking round -> move to daily.
+            return (self.JUDGE_PROMOTE if a.test_group != TestSpecGroup.DAILY.value
+                    else self.JUDGE_NONE)
+        # Not flaky (stable). If it is trapped in daily, demote it to unit.
+        return (self.JUDGE_DEMOTE if a.test_group == TestSpecGroup.DAILY.value
+                else self.JUDGE_NONE)
+
+    def decide_flaky_promotion(
+        self,
+        assessments: list[FlakyAssessment],
+        test_spec_repo=None,
+        judgment: Optional[Callable[[FlakyAssessment], str]] = None,
+    ) -> dict[str, list[str]]:
+        """Apply the Pipeline Agent's judgment to each flaky assessment.
+
+        The *judgment* step: given the evidence from
+        :meth:`detect_flaky_tests`, decide per spec whether it moves to the
+        daily round or (if it already lives there) back into the merge gate,
+        then persist those changes. The judgment function is injected so the
+        decision can be reasoned about in tests without a real model.
+
+        Returns ``{promoted: [...], demoted: [...]}`` lists of spec ids, and
+        updates each assessment's ``promote_to_daily`` flag in place.
+        """
+
+        decide = judgment or self.judgment or self.default_judgment
+        repo = test_spec_repo or self.test_spec_repo
+        promoted: list[str] = []
+        demoted: list[str] = []
+
+        for a in assessments:
+            spec = repo.find(a.test_id)
+            # Resolve where the spec currently lives so judgment sees it.
+            a.test_group = spec.group.value
+            decision = decide(a)
+            a.promote_to_daily = (decision == self.JUDGE_PROMOTE)
+
+            if decision == self.JUDGE_PROMOTE:
+                # Skip if it already lives in the daily round (no-op re-promotion).
+                if spec.group.value == TestSpecGroup.DAILY.value:
+                    continue
+                self._set_group(spec, TestSpecGroup.DAILY, _PROMOTED_TO_DAILY_NOTE)
+                repo.save(spec)
+                promoted.append(spec.id)
+            elif decision == self.JUDGE_DEMOTE:
+                # Only demote a test that actually lives in the daily round.
+                if spec.group.value != TestSpecGroup.DAILY.value:
+                    continue
+                self._set_group(spec, TestSpecGroup.UNIT, _DEMOTED_FROM_DAILY_NOTE)
+                repo.save(spec)
+                demoted.append(spec.id)
+
+        return {"promoted": promoted, "demoted": demoted}  
+
+    @staticmethod
+    def _set_group(spec, target_group: TestSpecGroup, note: str) -> None:
+        """Set ``spec.group`` to ``target_group`` and stamp ``note`` on ``notes``."""
+
+        spec.group = target_group
+        existing_notes = (spec.notes or "").strip()
+        marker = f" {note}"
+        spec.notes = f"{existing_notes}{marker}" if existing_notes else marker.strip()
 
     def promote_flaky_to_daily(
         self,
         assessments: list[FlakyAssessment],
         test_spec_repo=None,
     ) -> list[str]:
-        """Promote flaky specs to the daily round and persist them.
+        """Backwards-compatible helper: promote flaky specs to daily only.
 
-        For each assessment with ``promote_to_daily=True`` the corresponding
-        TestSpec's ``group`` is set to DAILY (it stays enabled), a marker is
-        written to ``notes`` so it will not be re-promoted, and the change is
-        saved. Returns the list of promoted spec ids.
+        Kept for callers that pre-computed ``promote_to_daily`` on each
+        assessment. New code should use :meth:`decide_flaky_promotion`, which
+        also handles demotion. Returns the list of promoted spec ids.
         """
 
-        repo = test_spec_repo or self.test_spec_repo
-        promoted: list[str] = []
+        def _judge(a: FlakyAssessment) -> str:
+            return (
+                self.JUDGE_PROMOTE
+                if a.promote_to_daily
+                else self.JUDGE_NONE
+            )
 
-        for a in assessments:
-            if not a.promote_to_daily:
-                continue
-            spec = repo.find(a.test_id)
-            if spec.group.value == TestSpecGroup.DAILY.value:
-                # Already promoted; leave the marker as-is and skip re-saving.
-                continue
-            spec.group = TestSpecGroup.DAILY
-            existing_notes = (spec.notes or "").strip()
-            marker = f" {_PROMOTED_TO_DAILY_NOTE}"
-            if existing_notes:
-                spec.notes = f"{existing_notes}{marker}"
-            else:
-                spec.notes = marker.strip()
-            repo.save(spec)
-            promoted.append(spec.id)
-
-        return promoted
+        result = self.decide_flaky_promotion(
+            assessments, test_spec_repo, judgment=_judge
+        )
+        return result["promoted"]
 
     # --- 3. recovery brainstorm ---------------------------------------------
 

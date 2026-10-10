@@ -217,6 +217,10 @@ class FakeGit:
         self.merges.append((branch, base))
         return True
 
+    def merge_into_base(self, branch, base):
+        self.merges.append((branch, base))
+        return True
+
     def current_branch(self):
         if self.current is None:
             return ""

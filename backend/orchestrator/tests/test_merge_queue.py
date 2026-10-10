@@ -79,6 +79,13 @@ class FakeGit:
         self.merges.append((branch, base))
         return True
 
+    def merge_into_base(self, branch: str, base: str) -> bool:
+        # The fakes model worktree merges; a real fast-forward onto the base
+        # branch is not observable to the injected runner, so record it and
+        # return success without needing a base-branch model.
+        self.merges.append((branch, base))
+        return True
+
     def current_branch(self) -> str:
         if self.current is None:
             return ""

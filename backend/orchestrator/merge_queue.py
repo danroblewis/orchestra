@@ -341,9 +341,15 @@ class GitWorktreeAdapter:
 
     def __init__(self, real_git: Any):
         self._git = real_git
+        # The worktree directory that the next merge() operates against.
+        # ``Git._run`` is hardcoded to the base repo, so merges (and the checkout
+        # that precedes them) must run with ``-C <worktree>`` instead.
+        self._current_worktree: str | None = None
 
     def create_worktree(self, branch: str, path: str) -> str:
-        return str(self._git.create_worktree(branch, Path(path)))
+        result = str(self._git.create_worktree(branch, Path(path)))
+        self._current_worktree = result
+        return result
 
     def checkout(self, name: str) -> None:
         # ``Git`` has no checkout-by-name; fall back to the current branch if the
@@ -353,10 +359,43 @@ class GitWorktreeAdapter:
     def merge(self, branch: str, base: str) -> bool:
         """Fast-forward ``branch`` into the current worktree (already at ``base``).
 
-        Returns ``False`` if git reports a conflict / non-fast-forward.
+        Runs the merge *inside the worktree* (``-C <worktree path>``) because the
+        base ``Git._run`` is pinned to the repo root and would otherwise merge
+        into the wrong working directory. Returns ``False`` on a conflict /
+        non-fast-forward.
         """
 
-        proc = self._git._run("merge", "--no-ff", branch, check=False)
+        import subprocess
+
+        wt = self._current_worktree
+        if not wt:
+            return False
+        # The worktree was created at ``HEAD`` (the base commit) by
+        # ``create_worktree`` and is already checked out there; we only need the
+        # merge. (Checking out ``base`` again would fail when the base branch is
+        # already checked out in the repo, which is the common case.)
+        proc = subprocess.run(
+            ["git", "-C", wt, "merge", "--no-ff", branch],
+            capture_output=True,
+            text=True,
+        )
+        return proc.returncode == 0
+
+    def merge_into_base(self, branch: str, base: str) -> bool:
+        """Merge ``branch`` into the real ``base`` branch of the repo (not a
+        worktree). This is used by ``_complete_gate`` to fast-forward proven-safe
+        candidate branches onto the base branch once the gate resolves -- it must
+        run in the repo root, unlike :meth:`merge` which operates in the active
+        gate worktree.
+        """
+
+        import subprocess
+
+        proc = subprocess.run(
+            ["git", "-C", str(self._git.repo_root), "merge", "--no-ff", branch],
+            capture_output=True,
+            text=True,
+        )
         return proc.returncode == 0
 
     def current_branch(self) -> str:
@@ -482,10 +521,15 @@ def _status_from_returncode(proc: Any) -> tuple[str, list[str], str]:
     ``status`` is ``"failed"`` for a non-zero return code, else ``"passed"``.
     ``failed_tests`` is parsed best-effort from the logs; if nothing recognizable
     is found it is left empty and the caller may rely on isolation re-runs.
+
+    pytest exit code ``5`` means "no tests were collected / all deselected" (for
+    example an isolation ``-k`` selector that matched nothing). That is *not* a
+    real test failure -- it means the run could not reproduce the thing we were
+    looking for -- so it is reported as ``"passed"`` rather than ``"failed"``.
     """
 
     logs = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    if proc.returncode == 0:
+    if proc.returncode == 0 or proc.returncode == 5:
         return "passed", [], logs
 
     failed = _parse_pytest_failures(logs)
@@ -688,7 +732,8 @@ class MergeGateEngine:
             )
 
         gate.merged_branch_ids = list(result.merged_branches)
-        gate.status = "completed"
+        # Physically fast-forward the proven-safe branches onto the base branch.
+        self._complete_gate(gate, result.merged_branches)
         gate.notes = (
             f"isolated offender {result.offender!r}; merged "
             f"{len(result.merged_branches)} safe branch(es), dropped "
@@ -756,7 +801,8 @@ class MergeGateEngine:
         """Fast-forward every candidate branch into the base branch."""
 
         for branch in branch_ids:
-            self.git.merge(branch, gate.base_branch)
+            # Merge onto the real base branch of the repo (not a worktree).
+            self.git.merge_into_base(branch, gate.base_branch)
         gate.merged_branch_ids = list(branch_ids)
         gate.status = "completed"
 
@@ -778,7 +824,7 @@ class MergeGateEngine:
                 selector = selectors.get(spec.id, "")
                 command = spec.run_in_isolation(selector) if selector else spec.command
                 proc = self.runner(command, self._active_cwd, self.timeout)
-                if proc.returncode != 0:
+                if not self._is_clean_run(proc):
                     return False
             return True
 
@@ -792,10 +838,36 @@ class MergeGateEngine:
         """
 
         selectors: dict[str, str] = {}
+        # pytest reports failures as ``file.py::test_name``. A ``-k`` expression
+        # matches test *names*, not file paths, so isolate on the node-id (after
+        # ``::``) which is a plain identifier and safe as a ``-k`` keyword.
+        clean = [t.split("::")[-1] for t in failed_tests]
         for spec in self._specs_for_gate():
-            matched = [t for t in failed_tests if spec.label and spec.label in t]
-            selectors[spec.id] = matched or failed_tests
+            matched = [t for t in clean if spec.label and spec.label in t]
+            # A ``-k`` expression is an OR of keyword substrings; join the
+            # matched node-ids so ``run_in_isolation`` receives a string, not a
+            # list. Falls back to *all* failed node-ids when the label matches
+            # nothing (a safe superset for the spec).
+            selectors[spec.id] = " or ".join(matched or clean)
         return selectors
+
+    @staticmethod
+    def _is_reproducing_failure(proc: Any) -> bool:
+        """True if a spec run reproduces the failing test(s).
+
+        A real failure (non-zero exit) reproduces. pytest exit code ``5`` (no
+        tests collected / all deselected) means the isolation selector matched
+        nothing -- we therefore cannot attribute the failure to this run, so it
+        does *not* reproduce. Any other non-zero code is a genuine failure.
+        """
+
+        rc = getattr(proc, "returncode", 0)
+        return rc != 0 and rc != 5
+
+    def _is_clean_run(self, proc: Any) -> bool:
+        """A run that does not reproduce the failure (pass or no-tests-collected)."""
+
+        return not self._is_reproducing_failure(proc)
 
     # -- internal: bisection -------------------------------------------------
 
@@ -828,6 +900,6 @@ class MergeGateEngine:
                 selector = selectors.get(spec.id, "")
                 command = spec.run_in_isolation(selector) if selector else spec.command
                 proc = self.runner(command, self._active_cwd, self.timeout)
-                if proc.returncode != 0:
+                if self._is_reproducing_failure(proc):
                     return True
             return False

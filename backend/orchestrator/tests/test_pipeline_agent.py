@@ -201,6 +201,105 @@ def test_promote_skips_already_promoted(tmp_path):
     assert promoted == []
 
 
+# --- decide_flaky_promotion (follow-up #1: judgment + demotion) --------------
+
+def _repo_with(spec_groups):
+    """A repo holding specs with the given id->group mapping (default UNIT)."""
+    specs = [
+        _spec(
+            tid,
+            tid,
+            group=group,
+        )
+        for tid, group in spec_groups.items()
+    ]
+    return FakeTestSpecRepo(specs)
+
+
+def test_decide_flaky_promotion_promotes_flaky_unit():
+    repo = _repo_with({"spec-a": TestSpecGroup.UNIT})
+    agent = PipelineAgent(test_spec_repo=repo)
+    assessments = [
+        FlakyAssessment("spec-a", "spec-a", runs=5, failures=1, flaky=True, promote_to_daily=False)
+    ]
+    result = agent.decide_flaky_promotion(assessments)
+    assert result["promoted"] == ["spec-a"]
+    assert result["demoted"] == []
+    # The assessment flag is updated to mirror the decision.
+    assert assessments[0].promote_to_daily is True
+    # Persisted to daily, still enabled.
+    reloaded = repo.find("spec-a")
+    assert reloaded.group.value == TestSpecGroup.DAILY.value
+    assert reloaded.enabled is True
+
+
+def test_decide_flaky_promotion_does_not_repromote():
+    # Already daily + judgment says promote -> no-op.
+    repo = _repo_with({"spec-a": TestSpecGroup.DAILY})
+    agent = PipelineAgent(test_spec_repo=repo)
+    assessments = [
+        FlakyAssessment("spec-a", "spec-a", runs=5, failures=1, flaky=True, promote_to_daily=True)
+    ]
+    result = agent.decide_flaky_promotion(assessments)
+    assert result["promoted"] == []
+    assert result["demoted"] == []
+
+
+def test_decide_flaky_promotion_demotes_stable_daily():
+    # A daily test that has stopped being flaky (enough consecutive passes) -> demote.
+    repo = _repo_with({"spec-a": TestSpecGroup.DAILY})
+    agent = PipelineAgent(test_spec_repo=repo)
+    assessments = [
+        FlakyAssessment(
+            "spec-a",
+            "spec-a",
+            runs=5,
+            failures=0,
+            consecutive_passes=3,
+            flaky=False,
+            promote_to_daily=False,
+        )
+    ]
+    result = agent.decide_flaky_promotion(assessments)
+    assert result["demoted"] == ["spec-a"]
+    assert result["promoted"] == []
+    reloaded = repo.find("spec-a")
+    assert reloaded.group.value == TestSpecGroup.UNIT.value
+    assert "demoted_from_daily" in reloaded.notes
+
+
+def test_decide_flaky_promotion_keeps_daily_when_still_flaky():
+    # Still flaky and already daily -> the default judgment returns NONE (a
+    # flaky daily test stays put; the judgment only promotes *blocking* tests).
+    repo = _repo_with({"spec-a": TestSpecGroup.DAILY})
+    agent = PipelineAgent(test_spec_repo=repo)
+    assessments = [
+        FlakyAssessment("spec-a", "spec-a", runs=5, failures=1, flaky=True, promote_to_daily=False)
+    ]
+    result = agent.decide_flaky_promotion(assessments)
+    assert result["promoted"] == []
+    assert result["demoted"] == []
+    assert repo.find("spec-a").group.value == TestSpecGroup.DAILY.value
+
+
+def test_decide_flaky_promotion_custom_judgment():
+    # A custom judgment can force demotion regardless of the default.
+    repo = _repo_with({"spec-a": TestSpecGroup.DAILY, "spec-b": TestSpecGroup.UNIT})
+    agent = PipelineAgent(test_spec_repo=repo)
+
+    def always_demote(a):
+        return agent.JUDGE_DEMOTE
+
+    assessments = [
+        FlakyAssessment("spec-a", "spec-a", runs=3, failures=1, flaky=True, promote_to_daily=True),
+        FlakyAssessment("spec-b", "spec-b", runs=3, failures=1, flaky=True, promote_to_daily=True),
+    ]
+    result = agent.decide_flaky_promotion(assessments, judgment=always_demote)
+    # spec-b is unit (not daily), so demote is a no-op for it; only spec-a moves.
+    assert result["demoted"] == ["spec-a"]
+    assert result["promoted"] == []
+
+
 # --- brainstorm_recovery ----------------------------------------------------
 
 def test_brainstorm_recovery_parses_json():

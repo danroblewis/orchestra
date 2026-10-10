@@ -122,7 +122,7 @@ Phase 3d merge gate is **implemented, wired into the CLI, and tested**. Five com
 5. `43b849b` — CLI: `orchestra test-specs` (`--add/--list/--enable/--disable/--promote-flaky/--health`) + `orchestra gate` (`--branches/--base/--auto`), plus env-gated `ORCHESTRA_RUN_GATE=1` merge-gate step appended to `cmd_run` (defaults OFF, non-breaking).
 6. `238b15d` (this session) — fix `cmd_gate` reading a missing key from `classify_build_results`; now uses canonical `gate.to_report()`.
 
-**Full suite: 163 passed, 22 skipped.** The 22 skips are the `ORCHESTRA_ACCEPTANCE`-gated real-git tests + intentional parametrized no-op cases.
+**Full suite: 168 passed, 24 skipped** (171 with `ORCHESTRA_ACCEPTANCE=1`). The 24 skips are the `ORCHESTRA_ACCEPTANCE`-gated real-git tests (`test_merge_queue_real_git_adapter.py::test_real_git_adapter_*`, plus the pre-existing real-git tests in `test_merge_queue.py`) + intentional parametrized no-op cases.
 
 ### Verified manually / via automated tests
 - Pure bisection: exhaustive over sizes 2..8 × every offender index → correct offender + merge set, rounds bounded by ceil(log2 n).
@@ -131,10 +131,18 @@ Phase 3d merge gate is **implemented, wired into the CLI, and tested**. Five com
 - Pipeline agent: flaky detection rule (failures>0 and failures<runs and runs>=3), promote-to-daily persists group=daily, JSON-parse + fallback in `brainstorm_recovery`, health summary.
 - CLI: `test-specs --add/--list` persisted correctly; `gate` runs without crashing.
 
-### Known limitations (flagged by agents, left as follow-ups)
-- The `GitWorktreeAdapter.merge()` merges into `self.base_branch` and relies on the adapter's `create_worktree`/`merge`; the production gate-worktree cwd semantics should be re-audited before production use (the engine's own real-git e2e test uses an injected runner that consults `merged_branches`, so it doesn't fully exercise the adapter's subprocess path — worth a real-git integration test with a command-driven runner).
-- Flaky→daily promotion is rule-based (failure-count threshold), not an AI judgment call; the Pipeline Agent can override but currently reuses the deterministic rule. Consider making the promotion decision an actual agent step.
+### Known limitations / follow-ups
+
+**Follow-ups addressed in this session (2025-08-09):**
+
+- **Flaky→daily promotion now has a real decision point (and can demote back).** `PipelineAgent.default_judgment(a)` applies the documented vocabulary (`JUDGE_PROMOTE`/`JUDGE_DEMOTE`/`JUDGE_NONE`), and `decide_flaky_promotion(...)` persists the decision and can **demote** a test from `daily` back to `unit` when it is no longer flaky (`consecutive_passes` >= demotion threshold). `promote_flaky_to_daily` is a thin, backwards-compatible wrapper; group changes persist via `TestSpecRepository`. Added `test_decide_flaky_promotion_*` (`backend/orchestrator/tests/test_pipeline_agent.py`).
+
+- **Real-git integration test for the `GitWorktreeAdapter` production path.** Added `backend/orchestrator/tests/test_merge_queue_real_git_adapter.py` (2 tests, `ORCHESTRA_ACCEPTANCE`-gated), the first that exercises the adapter's real git subprocess merge semantics. That path **fixed three latent bugs** in `merge_queue.py`: (1) `GitWorktreeAdapter.merge()` merged into the wrong dir (base repo root) because `Git._run` is pinned there; it now runs `git -C <worktree> merge --no-ff`, and a new `merge_into_base(...)` handles the base-branch fast-forward in `_complete_gate`; (2) `_status_from_returncode` treated pytest exit code 5 ("no tests collected") as a failure — now `"passed"`; (3) `_selectors_for_tests` passed a Python list to `run_in_isolation` producing a malformed `-k "['name']"` — now a proper ` or `-joined `-k` expression.
+
+**Remaining open items (not yet addressed):**
+
 - The `ORCHESTRA_RUN_GATE` step in `cmd_run` is untested in an automated test (defaults off); the dedicated `orchestra gate` subcommand is the tested path.
+- The full `orchestra gate` CLI invocation still needs an end-to-end smoke test with a real target repo (env-var path-resolution for `--project`/`--repo` was finicky in earlier manual attempts).
 
 ## Definition of done
 - Deterministic suite green (merge gate engine, bisection math, test-spec filtering, flaky counting) with **real subprocess + real git**, no AI.
