@@ -98,6 +98,37 @@ def test_pick_ready_ignores_active_and_unmet_deps(orch: WorktreeOrchestrator):
     assert t2.id in ready2
 
 
+def test_pick_ready_returns_only_task_with_met_deps(orch: WorktreeOrchestrator):
+    """A DONE task unlocks exactly one dependent BACKLOG task.
+
+    - t1 becomes DONE,
+    - t2 depends on t1 (dep now met) and is BACKLOG -> ready,
+    - t3 has an unmet dependency (an IN_PROGRESS task, never DONE) -> not ready.
+
+    pick_ready must return only t2.
+    """
+    # The "done" task that unlocks the one ready dependent.
+    t1 = orch.create_task("Done task", status=Status.BACKLOG)
+    t2 = orch.create_task("Depends on done", status=Status.BACKLOG, dependency_ids=[t1.id])
+    # A task held up by a dependency that is in progress (never DONE here):
+    # ``holding_task`` is not BACKLOG so pick_ready never returns it, and t3's
+    # dependency is therefore never satisfied, so t3 is never ready.
+    holding_task = orch.create_task("Held up", status=Status.IN_PROGRESS)
+    t3 = orch.create_task("Depends on held-up", status=Status.BACKLOG, dependency_ids=[holding_task.id])
+
+    # Unlock t1 by marking it DONE.
+    t1_done = orch.tasks.find(t1.id)
+    t1_done.status = Status.DONE
+    orch.tasks.save(t1_done)
+
+    ready = orch.pick_ready()
+    ready_ids = {t.id for t in ready}
+    assert ready_ids == {t2.id}
+    assert t1.id not in ready_ids  # DONE tasks are not picked again
+    assert t3.id not in ready_ids  # its dependency is IN_PROGRESS, never DONE
+    assert holding_task.id not in ready_ids  # not BACKLOG, so never picked
+
+
 def test_merge_and_apply_response(orch: WorktreeOrchestrator, repo: Path):
     t = orch.create_task("Feature", status=Status.BACKLOG)
     rec = orch.create_worktree(t.id, "feature")
