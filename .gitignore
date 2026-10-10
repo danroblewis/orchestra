@@ -23,3 +23,6 @@ npm-debug.log*
 
 # Logs
 *.log
+
+# Test
+.pytest_cache/
