@@ -32,3 +32,17 @@ def milestone_repo(store):
     from shared.repositories.milestone_repository import MilestoneRepository
 
     return MilestoneRepository(store)
+
+
+@pytest.fixture()
+def test_spec_repo(store):
+    from shared.repositories.test_spec_repository import TestSpecRepository
+
+    return TestSpecRepository(store)
+
+
+@pytest.fixture()
+def build_result_repo(store):
+    from shared.repositories.build_result_repository import BuildResultRepository
+
+    return BuildResultRepository(store)
