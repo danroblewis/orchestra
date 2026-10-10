@@ -39,6 +39,7 @@ from shared.repositories.session_log_repository import SessionLogRepository
 
 DATA_DIR = Path(os.environ.get("ORCHESTRA_DATA_DIR", str(Path(__file__).resolve().parents[2] / "data")))
 STORE_PATH = DATA_DIR / "orchestra.json"
+STORE = JsonStore(STORE_PATH)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
@@ -144,6 +145,36 @@ def create_app(web_port: int, tunnel_proc: subprocess.Popen | None = None, tunne
     async def read_tunnel() -> dict:
         return {"url": tunnel_url}
 
+    @app.get("/api/sessions/{session_id}", summary="Get a session's message history")
+    async def read_session(session_id: str) -> dict:
+        """Return the full message history for a given session log.
+
+        The message text is parsed from the session log file to render the
+        Coordinator / Pipeline Manager session details in a modal dialog.
+        """
+        from shared.repositories.session_log_repository import SessionLogRepository
+        from shared.models import SessionLog
+
+        repo = SessionLogRepository(STORE)
+        log = repo.find(session_id)
+        if not log:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Re-read the session log file to get the full message history.
+        messages = _read_session_messages(log.session_file_path, log.message_count)
+
+        return {
+            "id": log.id,
+            "session_name": log.session_name,
+            "layer": log.layer,
+            "status": log.status,
+            "message_count": log.message_count,
+            "last_entry_id": log.last_entry_id,
+            "created_at": log.created_at,
+            "updated_at": log.updated_at,
+            "messages": messages,
+        }
+
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
         # Serve the full index.html from the static directory at the root.
@@ -165,6 +196,74 @@ def create_app(web_port: int, tunnel_proc: subprocess.Popen | None = None, tunne
     app.state.tunnel_proc = tunnel_proc
     app.state.tunnel_url = tunnel_url
     return app
+
+
+def _read_session_messages(session_file_path: str, message_count: int) -> list:
+    """Read session messages from the JSONL log file.
+
+    Falls back to a simple line-based parse if the rich entry structure
+    isn't present. Returns a list of {role, content, created_at} dicts.
+    """
+    from datetime import datetime, UTC
+
+    messages = []
+    try:
+        import json
+
+        # Resolve relative paths against the data directory.
+        if session_file_path and not os.path.isabs(session_file_path):
+            data_dir = os.environ.get(
+                "ORCHESTRA_DATA_DIR",
+                str(Path(__file__).resolve().parents[2] / "data"),
+            )
+            session_file_path = os.path.normpath(
+                os.path.join(data_dir, session_file_path)
+            )
+
+        if session_file_path and Path(session_file_path).exists():
+            with open(session_file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            for i, line in enumerate(lines):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                # Rich entry structure (from the session log format).
+                if entry.get("type") == "assistant" or "role" in entry:
+                    role = entry.get("role", "assistant")
+                    content = entry.get("text") or entry.get("content") or ""
+                elif "message" in entry:
+                    msg = entry["message"]
+                    role = msg.get("role", "assistant")
+                    content = msg.get("text") or msg.get("content") or ""
+                else:
+                    # Unknown structure — include the raw line.
+                    continue
+
+                created_at = entry.get("ts") or entry.get("created_at") or ""
+                if isinstance(created_at, (int, float)):
+                    created_at = datetime.fromtimestamp(
+                        created_at, tz=UTC
+                    ).isoformat()
+                elif isinstance(created_at, str):
+                    created_at = created_at
+
+                messages.append(
+                    {"role": role, "content": content[:5000], "created_at": created_at}
+                )
+
+                if message_count and len(messages) >= message_count:
+                    break
+    except Exception:
+        # If anything goes wrong reading the log, return what we have.
+        pass
+
+    return messages
 
 
 def main():

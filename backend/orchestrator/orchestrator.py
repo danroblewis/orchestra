@@ -149,11 +149,45 @@ class Orchestrator:
         text = self.transport.read_last_assistant_text(log.session_file_path)
         if text is None:
             text = json.dumps(result)
-        log.message_count += 1
+
+        # Persist the exchange to the session log JSONL file so the web viewer
+        # can render it. Each line is one entry (user or assistant).
+        self._write_session_entry(log.session_file_path, "user", prompt)
+        self._write_session_entry(log.session_file_path, "assistant", text)
+
+        log.message_count += 2
         log.last_entry_id = "n/a"
         log.status = "idle"
         self.session_logs.save(log)
         return text
+
+    @staticmethod
+    def _write_session_entry(session_file_path: str, role: str, content: str) -> None:
+        """Append a single entry to a session's JSONL log file."""
+        import json as _json
+        from datetime import datetime, UTC
+
+        if not session_file_path:
+            return
+        # Resolve relative paths against the data directory.
+        if not os.path.isabs(session_file_path):
+            data_dir = os.environ.get(
+                "ORCHESTRA_DATA_DIR",
+                str(Path(__file__).resolve().parents[2] / "data"),
+            )
+            session_file_path = os.path.join(data_dir, session_file_path)
+        # Ensure the parent directory exists.
+        parent = os.path.dirname(session_file_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        entry = {
+            "type": "message",
+            "role": role,
+            "text": content,
+            "ts": datetime.now(UTC).isoformat(),
+        }
+        with open(session_file_path, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(entry) + "\n")
 
     # --- task graph construction --------------------------------------------
 

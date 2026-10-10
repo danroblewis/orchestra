@@ -71,6 +71,44 @@
       .milestone h2 { font-size: 16px; margin: 0 0 10px; color: var(--accent); }
       .empty { color: var(--backlog); font-size: 13px; }
       .dep { font-size: 11px; color: var(--backlog); }
+      .session-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+      .modal-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 1000;
+      }
+      .modal {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        max-width: 90%;
+        max-height: 80%;
+        overflow: auto;
+        padding: 20px;
+        min-width: 600px;
+      }
+      .modal h2 { margin-top: 0; color: var(--accent); }
+      .modal-close {
+        float: right;
+        background: var(--border);
+        border: none;
+        color: var(--text);
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .modal-close:hover { background: var(--accent); color: var(--bg); }
+      .modal-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      .modal-table th, .modal-table td {
+        border: 1px solid var(--border);
+        padding: 8px;
+        text-align: left;
+        font-size: 13px;
+        vertical-align: top;
+      }
+      .modal-table th { background: var(--bg); }
+      .modal-table td.pre { font-family: monospace; white-space: pre-wrap; }
     </style>
   </head>
   <body>
@@ -99,6 +137,15 @@
           <div id="builds"></div>
         </div>
       </main>
+    </div>
+
+    <!-- Modal for session details -->
+    <div id="modal-overlay" class="modal-overlay" style="display: none;">
+      <div class="modal">
+        <button class="modal-close" onclick="closeModal()">Close</button>
+        <h2 id="modal-title">Session Details</h2>
+        <div id="modal-content"></div>
+      </div>
     </div>
     <script>
       async function loadState() {
@@ -166,9 +213,14 @@
               .map(
                 (s) => `
                   <div class="task">
-                    <div class="title">${s.session_name}</div>
+                    <div class="title">
+                      ${s.layer === 'coordinator' || s.layer === 'pipeline-manager'
+                        ? `<span class="session-link" onclick="openSession('${s.id}')">${s.session_name}</span>`
+                        : s.session_name}
+                    </div>
                     <div class="meta">${s.layer}</div>
                     <div class="badge">status: ${s.status} · ${s.message_count} messages</div>
+                    ${s.layer === 'coordinator' || s.layer === 'pipeline-manager' ? '<div class="meta">Click to view session log</div>' : ''}
                   </div>
                 `
               )
@@ -201,6 +253,49 @@
         if (j.url) {
           el.innerHTML = `<a href="${j.url}" target="_blank">🔗 ${j.url}</a>`;
         }
+      });
+
+      // Modal functions
+      async function openSession(sessionId) {
+        const res = await fetch(`/api/sessions/${sessionId}`);
+        const session = await res.json();
+
+        document.getElementById("modal-title").textContent =
+          `${session.session_name} (${session.layer})`;
+
+        if (!session.messages || session.messages.length === 0) {
+          document.getElementById("modal-content").innerHTML =
+            '<div class="empty">No messages in this session yet.</div>';
+        } else {
+          let html = '<table class="modal-table"><thead><tr><th>#</th><th>Role</th><th>Time</th><th>Content</th></tr></thead><tbody>';
+          session.messages.forEach((msg, idx) => {
+            const roleClass = msg.role === 'assistant' ? 'badge' : '';
+            html += `<tr>
+              <td>${idx + 1}</td>
+              <td><span class="${roleClass}">${msg.role}</span></td>
+              <td>${msg.created_at || ''}</td>
+              <td class="pre">${msg.content}</td>
+            </tr>`;
+          });
+          html += '</tbody></table>';
+          document.getElementById("modal-content").innerHTML = html;
+        }
+
+        document.getElementById("modal-overlay").style.display = 'flex';
+      }
+
+      function closeModal() {
+        document.getElementById("modal-overlay").style.display = 'none';
+      }
+
+      // Close modal on overlay click (outside modal)
+      document.getElementById("modal-overlay").addEventListener('click', (e) => {
+        if (e.target.id === 'modal-overlay') closeModal();
+      });
+
+      // Close modal on Escape key
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
       });
 
       // Render immediately and refresh every 2 seconds.
