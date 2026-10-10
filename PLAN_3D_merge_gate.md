@@ -111,6 +111,31 @@
 
 Each agent commits its own layer. After all done: full `pytest` (deterministic) + gated acceptance run.
 
+## Status (all done — 2026-10-10)
+
+Phase 3d merge gate is **implemented, wired into the CLI, and tested**. Five commits on `main`:
+
+1. `c507a48` — data models (`TestSpec`, `BuildResult`, `TestSpecGroup`) + `TestSpecRepository` + `BuildResultRepository` (22 new tests).
+2. `bbcafb3` — **pure bisection** `bisect_branches` + `merge_order_for_safe` + `BisectionResult` (exhaustive tests over candidate sizes 2..8, every offender index).
+3. `c4885ff` — `MergeGateEngine` (real git+subprocess wrapper; injection points for tests), `GitWorktreeAdapter`, `Gate`, `classify_build_results`, isolation-then-bisect `resolve_failure`, `drop_offender_and_rerun`, `escalate`. 8 tests incl. a real-git e2e (skipped unless `ORCHESTRA_ACCEPTANCE=1`).
+4. `f6cba6d` — `PipelineAgent` (detect flaky, promote to daily, brainstorm recovery, gate health). LLM injected/deterministic-stub default so all logic is testable with no model.
+5. `43b849b` — CLI: `orchestra test-specs` (`--add/--list/--enable/--disable/--promote-flaky/--health`) + `orchestra gate` (`--branches/--base/--auto`), plus env-gated `ORCHESTRA_RUN_GATE=1` merge-gate step appended to `cmd_run` (defaults OFF, non-breaking).
+6. `238b15d` (this session) — fix `cmd_gate` reading a missing key from `classify_build_results`; now uses canonical `gate.to_report()`.
+
+**Full suite: 163 passed, 22 skipped.** The 22 skips are the `ORCHESTRA_ACCEPTANCE`-gated real-git tests + intentional parametrized no-op cases.
+
+### Verified manually / via automated tests
+- Pure bisection: exhaustive over sizes 2..8 × every offender index → correct offender + merge set, rounds bounded by ceil(log2 n).
+- Engine real-git e2e (`ORCHESTRA_ACCEPTANCE=1`): 3-branch queue, branch-2 is offender → isolated, branch-0/1 merged, branch-2 dropped.
+- Engine fake-git: all-pass, isolate-and-bisect, transient-no-blame, isolation uses `run_in_isolation` filter, drop+rerun, escalate-on-multiple-offenders.
+- Pipeline agent: flaky detection rule (failures>0 and failures<runs and runs>=3), promote-to-daily persists group=daily, JSON-parse + fallback in `brainstorm_recovery`, health summary.
+- CLI: `test-specs --add/--list` persisted correctly; `gate` runs without crashing.
+
+### Known limitations (flagged by agents, left as follow-ups)
+- The `GitWorktreeAdapter.merge()` merges into `self.base_branch` and relies on the adapter's `create_worktree`/`merge`; the production gate-worktree cwd semantics should be re-audited before production use (the engine's own real-git e2e test uses an injected runner that consults `merged_branches`, so it doesn't fully exercise the adapter's subprocess path — worth a real-git integration test with a command-driven runner).
+- Flaky→daily promotion is rule-based (failure-count threshold), not an AI judgment call; the Pipeline Agent can override but currently reuses the deterministic rule. Consider making the promotion decision an actual agent step.
+- The `ORCHESTRA_RUN_GATE` step in `cmd_run` is untested in an automated test (defaults off); the dedicated `orchestra gate` subcommand is the tested path.
+
 ## Definition of done
 - Deterministic suite green (merge gate engine, bisection math, test-spec filtering, flaky counting) with **real subprocess + real git**, no AI.
 - Bisection algorithm proven correct across candidate sizes 2–8 (exhaustive pure test).
