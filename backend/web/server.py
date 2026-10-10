@@ -199,7 +199,7 @@ def _probe_tunnel(url: str, web_port: int) -> bool:
 # created via `cloudflared tunnel create orchestra`.
 TUNNEL_NAME = "orchestra"
 TUNNEL_ID = "bd709956-314f-48b0-bc9e-949b313f1a3e"
-TUNNEL_DOMAIN = "orchestra.dansprojects.space"
+TUNNEL_DOMAIN = "orchestra.dansproject.space"
 CLOUDFLARED_BIN = "cloudflared"  # on PATH
 
 
@@ -212,8 +212,11 @@ def _write_tunnel_config(port: int) -> Path:
     """Write (or refresh) the named-tunnel YAML config for ``port``."""
     cfg = {
         "tunnel": TUNNEL_ID,
-        "credential-file": str(Path("~") / ".cloudflared" / f"{TUNNEL_ID}.json"),
-        "ingress": [{"service": f"http://127.0.0.1:{port}"}],
+        "credentials-file": str(Path("~/.cloudflared").expanduser() / f"{TUNNEL_ID}.json"),
+        "ingress": [
+            {"hostname": TUNNEL_DOMAIN, "service": f"http://127.0.0.1:{port}"},
+            {"service": "http_status:404"},
+        ],
     }
     path = _tunnel_config_path()
     import yaml

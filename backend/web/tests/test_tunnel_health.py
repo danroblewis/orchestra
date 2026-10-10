@@ -98,11 +98,11 @@ def test_probe_tunnel_falls_back_to_cloudflared_alive(fake_probe, monkeypatch):
     fake_probe(
         {
             "http://127.0.0.1:8000/": 200,
-            "https://orchestra.dansprojects.space": None,  # DNS not propagated
+            "https://orchestra.dansproject.space": None,  # DNS not propagated
         }
     )
     monkeypatch.setattr(server, "_cloudflared_tunnel_alive", lambda name: True)
-    assert server._probe_tunnel("https://orchestra.dansprojects.space", 8000) is True
+    assert server._probe_tunnel("https://orchestra.dansproject.space", 8000) is True
 
 
 def test_probe_tunnel_no_reuse_when_cloudflared_down(fake_probe, monkeypatch):
@@ -110,11 +110,11 @@ def test_probe_tunnel_no_reuse_when_cloudflared_down(fake_probe, monkeypatch):
     fake_probe(
         {
             "http://127.0.0.1:8000/": 200,
-            "https://orchestra.dansprojects.space": None,
+            "https://orchestra.dansproject.space": None,
         }
     )
     monkeypatch.setattr(server, "_cloudflared_tunnel_alive", lambda name: False)
-    assert server._probe_tunnel("https://orchestra.dansprojects.space", 8000) is False
+    assert server._probe_tunnel("https://orchestra.dansproject.space", 8000) is False
 
 
 def test_5xx_from_tunnel_marks_unhealthy(fake_probe):
