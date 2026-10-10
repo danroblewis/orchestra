@@ -91,6 +91,26 @@ The test suite covers:
 - Flat-file persistence round-trip (`shared/tests/test_persistence.py`)
 - End-to-end orchestration flow + web-server read (`tests/test_end_to_end.py`)
 
+### Self-orchestration
+
+Run [`orchestra/self_orchest.py`](./orchestra/self_orchest.py) to drive a *real*
+end-to-end orchestration of the Orchestra project itself, wiring the four agent
+layers to the live Pi harness via RPC:
+
+- Set `ORCHESTRA_TRANSPORT=rpc` so the layers talk to real Pi sessions
+  (`pi --mode rpc`) instead of the demo mock transport.
+- Launch it with `python3 -m orchestra.self_orchest --project orchestra --force`
+  while `orchestra web` is open against the same project; it seeds one milestone
+  of small, safe doc tasks and watches tickets flow `BACKLOG -> IN_PROGRESS -> DONE`.
+- Each worker session runs the `worker -> reviewer` loop: the worker edits its
+  worktree and a reviewer (a real Pi session) checks the change before the ticket
+  is marked DONE.
+- For a real merge, use the merge gate (`ORCHESTRA_RUN_GATE=1` or the manual
+  `orchestra gate` subcommand), which **bisects** candidate worktree branches to
+  isolate any that fail the test suite — see below.
+- Watch the live graph update in the web viewer as each session is marked active
+  and tickets move through their statuses.
+
 ### Merge gate
 
 - The **merge gate** (`MergeGateEngine`) keeps candidate worktree branches safe to merge by **bisecting** them: it isolates which branches fail the test suite and separates the offenders from the safe work.
