@@ -236,7 +236,9 @@ def run_gate(project: Project, store: LocalStore, events: Events, ticket_ids: li
             t = store.get_ticket(tid)
             if t.state == State.MERGING:
                 store.transition(tid, t.version, State.APPROVED)
-        store.add_wakeup("pipeline_manager", f"gate run {run_id} hit a git error: {e}")
+        store.set_pipeline(True, f"gate run {run_id} git error: {e}")
+        store.add_wakeup("pipeline_manager", f"gate run {run_id} hit a git error and the pipeline is paused: {e}. "
+                         "Fix the cause (or ask the human to), then call resume_pipeline.")
         events.emit("gate_error", gate_run=run_id, error=str(e))
         return run
     finally:
