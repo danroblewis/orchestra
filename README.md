@@ -1,6 +1,6 @@
 # Orchestra
 
-A ticket tracker, sprint planner, and CI/CD workflow operated by AI agents on
+A ticket tracker, milestone planner, and CI/CD workflow operated by AI agents on
 the [Pi](https://github.com/earendil-works/pi) harness. Point it at a git
 repository; describe work to the Supervisor; workers build tickets on their
 own branches, reviewers check them, and a batched, bisecting merge gate lands

@@ -11,9 +11,11 @@ that must not be broken without updating the spec and saying so in the commit.
 2. **No zombies.** A ticket is `IN_PROGRESS`, `IN_REVIEW`, or `MERGING` only
    while a live process owns it. When the process stops, the ticket moves to a
    waiting state in the same code path.
-3. **One worktree per ticket, outside the repository.** Workers and reviewers
-   run with their working directory set to the ticket's worktree. Nothing is
-   ever written inside the user's checkout except `orchestra.toml`.
+3. **One worktree per ticket.** Created when the ticket first starts, reused
+   by every agent that touches the ticket, deleted when the ticket is `DONE`
+   or `CANCELLED`. Workers and reviewers run with their working directory set
+   to it. Nothing is ever written inside the user's checkout except
+   `orchestra.toml`.
 4. **Merging is programmatic.** No agent runs `git merge`, `git push`, or
    touches the base branch. Only the gate lands code.
 5. **State lives in `~/.orchestrator/<key>/`.** Business logic goes through
@@ -21,10 +23,13 @@ that must not be broken without updating the spec and saying so in the commit.
    writes those JSON files directly except `orchestra/store/`.
 6. **Pi's session file is the only transcript.** Do not write a parallel log
    of agent messages.
-7. **Humans converse only with the Supervisor.** Humans may edit tickets via
-   CLI and UI; they do not prompt the Coordinator, Pipeline Manager, workers,
-   or reviewers.
-8. **One package, no path hacks.** Everything importable is under
+7. **Humans talk only to the Supervisor.** There is no human path to create or
+   edit tickets or milestones; the CLI and UI are read-only for them. Humans
+   never prompt the Coordinator, Pipeline Manager, workers, or reviewers.
+8. **Every ticket has a milestone, and closed milestones are final.** A
+   milestone closes only when all its tickets are terminal, can never reopen,
+   and can never receive tickets. The store enforces this, not the agents.
+9. **One package, no path hacks.** Everything importable is under
    `orchestra/`. No `sys.path` manipulation.
 
 ## Pi facts the code depends on
