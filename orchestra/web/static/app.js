@@ -248,12 +248,14 @@ function sessionPhase(s, now) {
   if (s.status !== "running") return alive ? { cls: "resident", text: "resident", title: "waiting for work" } : { cls: "down", text: "down", title: "" };
   const age = (t) => ago(now - (t || now));
   const turn = `turn ${age(s.started_at)}`;
-  if (!s.slot_acquired_at || s.phase === "queued") return { cls: "queued", text: `queued for a model slot · ${age(s.started_at)}`, title: turn };
+  // Before the turn is sent: held by Orchestra's own concurrency limit (it does not see the
+  // model server's queue, and agents may spawn subagents it cannot see either).
+  if (!s.slot_acquired_at || s.phase === "queued") return { cls: "queued", text: `held by concurrency limit · ${age(s.started_at)}`, title: turn + " · not yet sent to the model" };
   const sinceTok = s.last_token_at ? now - s.last_token_at : null;
   if (s.phase === "tool") return { cls: "working", text: `running ${s.tool_name || "tool"} · ${age(s.phase_since)}`, title: turn };
   if (s.phase === "generating") {
-    if (sinceTok !== null && sinceTok > 120) return { cls: "stalled", text: `no tokens for ${ago(sinceTok)}`, title: turn + " · generation stalled" };
-    return { cls: "working", text: `generating · ${age(s.phase_since)}`, title: turn };
+    if (sinceTok !== null && sinceTok > 120) return { cls: "stalled", text: `LLM stopped streaming ${ago(sinceTok)} ago`, title: turn + " · tokens were arriving, then stopped" };
+    return { cls: "working", text: `receiving tokens · ${age(s.phase_since)}`, title: turn };
   }
   // prompting: the request is at the model and no token has come back yet
   const wait = now - (s.phase_since || s.started_at || now);
