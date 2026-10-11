@@ -53,6 +53,9 @@ def create_app(project: Project) -> FastAPI:
         snap["now"] = time.time()
         snap["gate_runs"] = store.gate_runs()[-30:]
         snap["batch_size"] = 1  # the gate takes one ticket per run until batching lands
+        for s in snap["sessions"]:
+            s["alive"] = bool(s.get("pid")) and psutil.pid_exists(int(s["pid"]))
+        snap["loop"] = store.runtime().get("control") or {}
         return snap
 
     @app.get("/api/system")
@@ -94,8 +97,11 @@ def create_app(project: Project) -> FastAPI:
         s = next((s for s in store.sessions() if s["id"] == session_id), None)
         if not s:
             raise HTTPException(404)
-        msgs = read_transcript(s["pi_session_file"]) if s.get("pi_session_file") else []
-        return {"session": s, "messages": msgs[-200:]}
+        f = s.get("pi_session_file")
+        exists = bool(f) and Path(f).exists()
+        msgs = read_transcript(f) if exists else []
+        s = {**s, "alive": bool(s.get("pid")) and psutil.pid_exists(int(s["pid"])), "file_exists": exists}
+        return {"session": s, "messages": msgs[-200:], "turns": sum(1 for m in msgs if m["role"] == "user")}
 
     @app.get("/api/gate/runs/{run_id}")
     async def gate_run(run_id: str) -> dict:

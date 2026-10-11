@@ -28,7 +28,19 @@ def sh(*args: str, cwd: Path | None = None, env: dict | None = None) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--project", help="serve this existing demo project instead of a throwaway one")
     args = ap.parse_args()
+
+    if args.project:
+        # Staging mode: the new build serves a persistent demo project, sharing the
+        # operator's ~/.orchestrator state so tickets and history survive redeploys.
+        repo = Path(args.project).expanduser().resolve()
+        env = {**os.environ, "ORCHESTRA_REPO": str(repo)}
+        if not (repo / "orchestra.toml").exists():
+            sh(sys.executable, "-m", "orchestra", "init", "--prefix", "DEMO", env=env, cwd=repo)
+        print(f"[acceptance_target] serving demo project {repo}", flush=True)
+        os.chdir(repo)
+        os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(args.port)], env)
 
     tmp = Path(tempfile.mkdtemp(prefix="orchestra-acceptance-"))
     home = tmp / "home"

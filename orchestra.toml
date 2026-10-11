@@ -49,10 +49,12 @@ select = "uv run pytest -q {selector}"
 name = "acceptance"
 command = "ORCHESTRA_TARGET_URL={url} uv run pytest tests/acceptance -q"
 
-# Staging: the most recently landed wheel, running as a live instance on port 8001.
-# It serves a seeded throwaway project the same way the acceptance target does.
+# Staging: the most recently landed wheel, running as a live instance on port 8001
+# against the persistent demo project at ~/orchestra-demo (not this repository), so a
+# new build can be tried on real tickets there before the tooling on this repo is
+# upgraded to it. Only the web UI runs in staging; no second agent loop is started.
 [staging]
-start = "uv run --isolated --no-project --with {artifact} python scripts/acceptance_target.py --port {port}"
+start = "uv run --isolated --no-project --with {artifact} python scripts/acceptance_target.py --port {port} --project ~/orchestra-demo"
 port = 8001
 health = "/api/state"
 health_timeout = "120s"

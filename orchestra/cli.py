@@ -124,12 +124,64 @@ def cmd_api(args) -> int:
     return 0
 
 
+def _print_event(ev: dict) -> None:
+    t = ev.get("type")
+    if t == "tool_execution_start":
+        print(f"  ⚙ {ev.get('toolName') or ev.get('name', 'tool')} {json.dumps(ev.get('args', ev.get('arguments', {})))[:160]}", flush=True)
+    elif t == "message_end" and ev.get("message", {}).get("role") == "assistant":
+        content = ev["message"].get("content")
+        if isinstance(content, list):
+            txt = "".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+            if txt.strip():
+                print(f"\n{txt.strip()}\n", flush=True)
+
+
+def _chat_attached(project: Project, store: LocalStore, port: int) -> int:
+    import urllib.request
+
+    print(f"Supervisor for {project.key} via orchestra run on 127.0.0.1:{port}. Ctrl-D or 'exit' to leave.\n")
+    while True:
+        try:
+            line = input("you> ").strip()
+        except EOFError:
+            break
+        if line in ("exit", "quit"):
+            break
+        if not line:
+            continue
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/supervisor", method="POST",
+                                     data=json.dumps({"message": line}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=project.config.turn_timeout + 30) as resp:
+                for raw in resp:
+                    ev = json.loads(raw)
+                    if ev.get("type") == "done":
+                        if ev.get("error") or ev.get("timed_out"):
+                            print(f"[orchestra] turn ended: {ev.get('error') or 'timed out'}")
+                    else:
+                        _print_event(ev)
+        except Exception as e:
+            print(f"[orchestra] lost the loop: {e}. Is `orchestra run` still up?")
+            return 1
+    return 0
+
+
 def cmd_chat(args) -> int:
     from .pi import PiProcess
 
     project = _project(args)
     store, events = _store(project)
     cfg = project.config
+    ctl = store.runtime().get("control") or {}
+    if ctl.get("port"):
+        import urllib.request
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{ctl['port']}/health", timeout=3)
+            return _chat_attached(project, store, int(ctl["port"]))
+        except Exception:
+            pass
+    print("[orchestra] `orchestra run` is not running; starting a temporary supervisor session for this chat.")
     sid = "supervisor"
     proc = PiProcess(session_id=sid, session_dir=project.sessions_dir, cwd=project.repo_root,
                      system_prompt=agents.role_prompt(project, "supervisor"),
@@ -140,21 +192,9 @@ def cmd_chat(args) -> int:
         proc.get_state()
     except Exception:
         pass
-    store.set_session(sid, kind="supervisor", status="idle", pi_session_file=proc.session_file)
+    store.set_session(sid, kind="supervisor", status="idle", pid=proc.proc.pid, pi_session_file=proc.session_file)
     _, offset = events.read(0, limit=1)
     print(f"Supervisor for {project.key} ({cfg.provider}/{cfg.model}). Ctrl-D or 'exit' to leave.\n")
-
-    def on_event(ev: dict) -> None:
-        t = ev.get("type")
-        if t == "tool_execution_start":
-            print(f"  ⚙ {ev.get('toolName') or ev.get('name', 'tool')} {json.dumps(ev.get('args', ev.get('arguments', {})))[:160]}", flush=True)
-        elif t == "message_end" and ev.get("message", {}).get("role") == "assistant":
-            content = ev["message"].get("content")
-            if isinstance(content, list):
-                txt = "".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
-                if txt.strip():
-                    print(f"\n{txt.strip()}\n", flush=True)
-
     try:
         while True:
             try:
@@ -170,14 +210,14 @@ def cmd_chat(args) -> int:
             prefix = agents.supervisor_context(store.snapshot(), new)
             store.set_session(sid, status="running", started_at=time.time())
             events.emit("session_started", session=sid, kind="supervisor")
-            res = proc.prompt(prefix + line, cfg.turn_timeout, on_event=on_event)
+            res = proc.prompt(prefix + line, cfg.turn_timeout, on_event=_print_event)
             store.set_session(sid, status="idle", last_text=(res.text or "")[-500:], settled_at=time.time())
             events.emit("session_settled", session=sid)
             if res.error or res.timed_out:
                 print(f"[orchestra] turn ended: {res.error or 'timed out'}")
     finally:
         proc.close()
-        store.set_session(sid, status="idle")
+        store.set_session(sid, status="idle", pid=None)
     return 0
 
 

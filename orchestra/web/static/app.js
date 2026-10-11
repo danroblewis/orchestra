@@ -11,7 +11,27 @@ function renderNav(active, project) {
   if (project) $("proj").textContent = `${project.key} · ${project.base_branch} · ${project.model || "no model"}`;
 }
 
-function openDrawer(html) { $("drawer").innerHTML = html; $("overlay").classList.add("open"); }
+// Agent prose and human input are markdown. Render it sanitized, then highlight code
+// blocks, guessing the language when the fence does not name one.
+function md(text) {
+  if (!text) return "";
+  if (!(window.marked && window.DOMPurify)) return `<pre>${esc(text)}</pre>`;
+  return `<div class="md">${DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }))}</div>`;
+}
+function highlightCode(root) {
+  if (!window.hljs) return;
+  root.querySelectorAll("pre code").forEach((el) => {
+    if (el.dataset.highlighted) return;
+    const named = [...el.classList].find((c) => c.startsWith("language-"));
+    if (named && hljs.getLanguage(named.slice(9))) hljs.highlightElement(el);
+    else {
+      const r = hljs.highlightAuto(el.textContent);
+      el.innerHTML = r.value; el.classList.add("hljs", `language-${r.language || "plaintext"}`);
+      el.dataset.highlighted = "yes";
+    }
+  });
+}
+function openDrawer(html) { $("drawer").innerHTML = html; highlightCode($("drawer")); $("overlay").classList.add("open"); }
 function closeDrawer() { $("overlay").classList.remove("open"); }
 
 async function openTicket(id) {
@@ -20,17 +40,25 @@ async function openTicket(id) {
     <div class="kv"><div>milestone</div><div>${esc(t.milestone_id)}</div><div>priority</div><div>${t.priority}</div><div>depends on</div><div>${t.depends_on.join(", ") || "—"}</div>
     <div>branch</div><div>${esc(t.branch || "—")}</div><div>reviewed commit</div><div>${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
     <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div></div>
-    ${t.blocked_reason ? `<h2>Blocked</h2><pre>${esc(t.blocked_reason)}</pre>` : ""}${t.feedback ? `<h2>Feedback (${esc(t.rejected_by || "")})</h2><pre>${esc(t.feedback)}</pre>` : ""}
-    <h2>Description</h2><pre>${esc(t.description)}</pre><h2>Acceptance</h2><pre>${esc(t.acceptance)}</pre>
-    <h2>Notes</h2>${t.notes.map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b><br>${esc(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
+    ${t.blocked_reason ? `<h2>Blocked</h2>${md(t.blocked_reason)}` : ""}${t.feedback ? `<h2>Feedback (${esc(t.rejected_by || "")})</h2>${md(t.feedback)}` : ""}
+    <h2>Description</h2>${md(t.description) || '<div class="empty">none</div>'}<h2>Acceptance</h2>${md(t.acceptance) || '<div class="empty">none</div>'}
+    <h2>Notes</h2>${t.notes.map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b>${md(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
 }
 
 async function openTranscript(id) {
   const r = await fetch(`/api/sessions/${id}/transcript`);
-  if (!r.ok) return openDrawer(`<h3>${esc(id)}</h3><div class="empty">no transcript yet</div>`);
-  const d = await r.json();
-  openDrawer(`<h3>${esc(id)} <span class="muted">${d.session.status}</span></h3>` +
-    (d.messages.map((m) => `<div class="msg ${m.role}"><div class="r">${m.role} ${m.tool_calls.map((t) => `[${esc(t.name)} ${esc(JSON.stringify(t.args || {}).slice(0, 120))}]`).join(" ")}</div>${esc(m.text).slice(0, 4000)}</div>`).join("") || '<div class="empty">empty</div>'));
+  if (!r.ok) return openDrawer(`<h3>${esc(id)}</h3><div class="empty">This session has not been started. It comes up with <code>orchestra run</code>.</div>`);
+  const d = await r.json(); const s = d.session;
+  const state = s.status === "running" ? "working" : s.alive ? "resident, waiting for work" : "not running";
+  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
+  let html = `<h3>${esc(id)} <span class="muted">${state}</span></h3>
+    <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
+    ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
+    <div>last started</div><div>${when(s.started_at)}</div><div>last settled</div><div>${when(s.settled_at)}</div>
+    <div>turns</div><div>${d.turns}</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div><h2>Transcript</h2>`;
+  if (!d.messages.length) html += `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events (ticket created, landed, blocked, gate failure) or, for the supervisor, by <code>orchestra chat</code>."}</div>`;
+  else html += d.messages.map((m) => `<div class="msg ${m.role}"><div class="r">${m.role} ${m.tool_calls.map((t) => `[${esc(t.name)} ${esc(JSON.stringify(t.args || {}).slice(0, 120))}]`).join(" ")}</div>${m.role === "toolResult" ? `<pre>${esc(m.text).slice(0, 4000)}</pre>` : md(m.text.slice(0, 12000))}</div>`).join("");
+  openDrawer(html);
 }
 
 async function openGateRun(id) {
@@ -85,3 +113,10 @@ function highlightLog(text) {
   }
   return out;
 }
+
+function openFromHash() {
+  const m = location.hash.match(/^#(session|ticket|gate)=([^&]+)/);
+  if (!m) return;
+  ({ session: openTranscript, ticket: openTicket, gate: openGateRun })[m[1]](decodeURIComponent(m[2]));
+}
+window.addEventListener("hashchange", openFromHash);

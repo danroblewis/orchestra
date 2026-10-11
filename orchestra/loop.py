@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 import time
@@ -13,11 +14,13 @@ from .events import Events
 from .gate import run_gate, run_specs
 from .git import Git, GitError
 from .model import ACTIVE, RECOVERY, Note, State, Ticket, is_ready
+from .control import ControlServer
 from .pi import PiProcess
 from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
 
 PROJECT_AGENTS = ("coordinator", "pipeline_manager")
+RESIDENT_AGENTS = ("supervisor",) + PROJECT_AGENTS
 
 
 def log(msg: str) -> None:
@@ -38,6 +41,8 @@ class Loop:
         self.agent_procs: dict[str, PiProcess] = {}
         self.stop = threading.Event()
         self.staging = Staging(project, store, events)
+        self.control: ControlServer | None = None
+        self._events_offset = 0
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -47,8 +52,7 @@ class Loop:
                 self.store.transition(t.id, t.version, RECOVERY[t.state])
                 log(f"recovered {t.id}: {t.state} -> {RECOVERY[t.state]}")
         for s in self.store.sessions():
-            if s.get("status") == "running":
-                self.store.set_session(s["id"], status="idle")
+            self.store.set_session(s["id"], status="idle", pid=None)
         for p in self.project.gate_dir.glob("*"):
             self.git.worktree_remove(p)
         self.git.run("worktree", "prune", check=False)
@@ -60,6 +64,7 @@ class Loop:
         self.events.emit("loop_started")
         log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
         self._start_project_agents()
+        self._start_control()
         if self.cfg.staging_configured and self.staging.state().get("current_build_id"):
             threading.Thread(target=self.staging.restart, daemon=True, name="staging").start()
         try:
@@ -72,8 +77,12 @@ class Loop:
                     break
                 time.sleep(3)
         finally:
-            for p in self.agent_procs.values():
+            if self.control:
+                self.control.stop()
+            for name, p in self.agent_procs.items():
                 p.close()
+                self.store.set_session(name.replace("_", "-"), status="idle", pid=None)
+            self.store._mutate_runtime(lambda d: d.pop("control", None))
             self.events.emit("loop_stopped")
 
     def _busy(self) -> bool:
@@ -145,12 +154,13 @@ class Loop:
             proc.get_state()
         except Exception:
             pass
-        self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id,
+        self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=proc.proc.pid,
                                pi_session_file=proc.session_file, started_at=time.time(), last_text="")
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
 
-    def _session_idle(self, sid: str, text: str) -> None:
-        self.store.set_session(sid, status="idle", last_text=(text or "")[-500:], settled_at=time.time())
+    def _session_idle(self, sid: str, text: str, resident: bool = False) -> None:
+        self.store.set_session(sid, status="idle", last_text=(text or "")[-500:], settled_at=time.time(),
+                               **({} if resident else {"pid": None}))
         self.events.emit("session_settled", session=sid)
 
     def _prompt_with_retry(self, proc: PiProcess, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
@@ -325,18 +335,50 @@ class Loop:
     # -- project agents --------------------------------------------------------
 
     def _start_project_agents(self) -> None:
-        """Start the long-lived coordinator and pipeline-manager sessions up front so
-        they are resident for the life of `orchestra run`, not created on first wake."""
-        for target in PROJECT_AGENTS:
+        """Start the resident supervisor, coordinator, and pipeline-manager sessions up
+        front so they live for the life of `orchestra run`."""
+        for target in RESIDENT_AGENTS:
             sid = target.replace("_", "-")
             try:
                 proc = self._pi(sid, target, self.project.repo_root)
                 proc.get_state()
                 self.agent_procs[target] = proc
-                self.store.set_session(sid, kind=target, status="idle", pi_session_file=proc.session_file)
-                log(f"{sid}: session resident")
+                self.store.set_session(sid, kind=target, status="idle", pid=proc.proc.pid,
+                                       pi_session_file=proc.session_file)
+                log(f"{sid}: session resident (pid {proc.proc.pid})")
             except Exception as e:
                 log(f"{sid}: could not start: {e}")
+
+    def _start_control(self) -> None:
+        port = int(self.cfg.raw.get("agents", {}).get("control_port", 8010))
+        try:
+            self.control = ControlServer(port, self.prompt_supervisor)
+            self.control.start()
+            self.store._mutate_runtime(lambda d: d.__setitem__("control", {"port": port, "pid": os.getpid()}))
+            log(f"control endpoint on 127.0.0.1:{port} (orchestra chat attaches here)")
+        except OSError as e:
+            log(f"control endpoint unavailable on port {port}: {e}")
+
+    def prompt_supervisor(self, message: str, emit) -> dict:
+        """One supervisor turn on the resident session, with the event digest prefix."""
+        proc = self.agent_procs.get("supervisor")
+        if proc is None or not proc.alive():
+            proc = self._pi("supervisor", "supervisor", self.project.repo_root)
+            proc.get_state()
+            self.agent_procs["supervisor"] = proc
+        new, self._events_offset = self.events.read(self._events_offset)
+        new = [e for e in new if e["type"] not in ("session_started", "session_settled")]
+        prefix = agents.supervisor_context(self.store.snapshot(), new)
+        self._session_running("supervisor", "supervisor", proc)
+
+        def on_event(ev: dict) -> None:
+            self._on_event("supervisor")(ev)
+            if ev.get("type") in ("tool_execution_start", "message_end"):
+                emit(ev)
+
+        res = proc.prompt(prefix + message, self.cfg.turn_timeout, on_event=on_event)
+        self._session_idle("supervisor", res.text, resident=True)
+        return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
     def _wake(self, target: str, reasons: list[str]) -> None:
         sid = target.replace("_", "-")
@@ -348,6 +390,6 @@ class Loop:
         self._session_running(sid, target, proc)
         res = proc.prompt(agents.wake_task(target, reasons, self.store.snapshot()), self.cfg.turn_timeout,
                           on_event=self._on_event(sid))
-        self._session_idle(sid, res.text)
+        self._session_idle(sid, res.text, resident=True)
         self.events.emit("agent_said", session=sid, summary=(res.text or "")[:500])
         log(f"{sid}: {(res.text or '(no text)')[:160]!r}")

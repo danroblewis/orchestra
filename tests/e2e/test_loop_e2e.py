@@ -63,7 +63,7 @@ def test_ticket_goes_open_to_done(env):
     assert "Merge E2E-1" in git("log", "-1", "--format=%s", "main", cwd=repo)
     assert not (project.worktrees_dir / t.id).exists()
     assert not git("branch", "--list", "orchestra/*", cwd=repo).strip()
-    assert {s["id"] for s in store.sessions()} == {"coordinator", "pipeline-manager"}
+    assert {s["id"] for s in store.sessions()} == {"supervisor", "coordinator", "pipeline-manager"}
     assert store.gate_runs()[-1]["status"] == "landed"
     assert store.get_milestone(ms.id).status == "open"  # fake coordinator does not close it
 

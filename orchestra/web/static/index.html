@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 </head>
 <body>
@@ -43,9 +47,13 @@ async function refresh() {
 
 function baseCard(id, kind, s) {
   const running = s && s.status === "running";
-  return `<div class="card ${running ? "" : "idle"}" style="border-left-color:${kindColor(kind)}" onclick="openTranscript('${id}')">
-    <div class="t"><span><span class="dot ${running ? "" : "off"}"></span>${id}</span><span class="muted">${running ? ago(STATE.now - (s.started_at || STATE.now)) : (s ? "idle" : "no session yet")}</span></div>
-    <div class="m">${esc(s ? (s.last_text || "") : "")}</div></div>`;
+  const resident = s && s.alive && !running;
+  const cls = running ? "" : resident ? "resident" : "idle";
+  const right = running ? ago(STATE.now - (s.started_at || STATE.now)) : resident ? "resident" : "not running";
+  const last = s && s.alive ? (s.last_text || "waiting") : "start `orchestra run` to bring this session up";
+  return `<div class="card ${cls}" style="border-left-color:${kindColor(kind)}" onclick="openTranscript('${id}')">
+    <div class="t"><span><span class="dot ${running ? "" : resident ? "steady" : "off"}"></span>${id}</span><span class="muted">${right}</span></div>
+    <div class="m">${esc(last)}</div></div>`;
 }
 
 function agentLine(label, s) {
@@ -142,6 +150,7 @@ async function refreshStaging() {
 }
 
 refresh(); refreshSystem(); refreshStaging();
+openFromHash();
 setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000);
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>

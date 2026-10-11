@@ -9,6 +9,7 @@ import shutil
 import signal
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -18,11 +19,23 @@ from .model import now
 from .store import LocalStore
 
 
-def _probe(url: str, timeout: float = 4) -> bool:
+def _probe(url: str, timeout: float = 6) -> bool:
+    """HTTP probe that treats any response below 500 as alive. Uses urllib first; on an
+    SSL/certificate problem (common for https through a tunnel from a bare Python) it
+    falls back to curl, which uses the system trust store."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return r.status < 500
+    except urllib.error.HTTPError as e:
+        if e.code != 403:
+            return e.code < 500
     except Exception:
+        pass
+    if True:
+        if url.startswith("https") and shutil.which("curl"):
+            p = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", str(int(timeout)), "-w", "%{http_code}", url],
+                               capture_output=True, text=True)
+            return p.stdout.strip().isdigit() and int(p.stdout.strip()) < 500
         return False
 
 
