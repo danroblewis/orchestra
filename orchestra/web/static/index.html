@@ -136,7 +136,7 @@ async function refreshStaging() {
         ${d.previous_build_id ? `<div>previous</div><div>${esc(d.previous_build_id)}</div>` : ""}</div>`;
     }
     const el = $("staging"); const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-    el.textContent = d.log || "";
+    el.innerHTML = highlightLog(d.log || "");
     if (atBottom) el.scrollTop = el.scrollHeight;
   } catch (e) {}
 }

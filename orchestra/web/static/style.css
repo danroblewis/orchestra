@@ -49,3 +49,7 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer } .node
 .drawer h3 { margin:0 0 8px } pre { background:#0b0d12; border:1px solid var(--border); border-radius:6px; padding:8px; white-space:pre-wrap; font-size:12px; max-height:50vh; overflow:auto }
 .msg { border-left:3px solid var(--border); padding:4px 8px; margin:6px 0 } .msg.user { border-color:var(--accent) } .msg.assistant { border-color:#3fb950 } .msg.toolResult { border-color:#8a90a3; color:var(--muted) }
 .msg .r { font-size:11px; color:var(--muted) } .note { border-top:1px solid var(--border); padding:6px 0; font-size:12px } .note b { color:var(--muted) }
+/* log highlighting */
+.lg-ts { color:#8b949e } .lg-tag { color:#79c0ff } .lg-err { color:#ff7b72; font-weight:600 } .lg-warn { color:#d29922 }
+.lg-ok { color:#3fb950 } .lg-method { color:#d2a8ff; font-weight:600 } .lg-url { color:#58a6ff; text-decoration:underline dotted }
+.lg-str { color:#a5d6ff } .lg-path { color:#ffa657 } .lg-key { color:#e3b341 } .lg-num { color:#f2cc60 } .lg-ticket { color:#bc8cff; font-weight:600 }

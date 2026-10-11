@@ -37,7 +37,51 @@ async function openGateRun(id) {
   const r = await (await fetch(`/api/gate/runs/${id}`)).json();
   openDrawer(`<h3>Gate run ${r.id} <span class="${r.status === "landed" ? "ok" : "bad"}">${r.status}</span></h3>
     <div class="kv"><div>batch</div><div>${r.batch.join(", ")}</div><div>merged</div><div>${(r.merged || []).join(", ") || "—"}</div><div>rejected</div><div>${(r.rejected || []).join(", ") || "—"}</div><div>summary</div><div>${esc(r.summary)}</div></div>
-    ${(r.stages || []).map((s) => `<h2>${s.stage}:${s.name} <span class="${s.status === "passed" ? "ok" : "bad"}">${s.status}</span></h2><pre>${esc(s.tail || "")}</pre>`).join("")}`);
+    ${(r.stages || []).map((s) => `<h2>${s.stage}:${s.name} <span class="${s.status === "passed" ? "ok" : "bad"}">${s.status}</span></h2><pre>${highlightLog(s.tail || "")}</pre>`).join("")}`);
 }
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+
+// ---- log highlighting -------------------------------------------------------
+// Logs have no grammar, so this is lexical: each pattern below is tried at the
+// current position, first match wins, and everything else passes through escaped.
+const LOG_RULES = [
+  [/\x1b\[[0-9;]*m/y, null],                                                    // ANSI escapes: dropped
+  [/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/y, "ts"],
+  [/\b\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b/y, "ts"],
+  [/\b(?:ERROR|CRITICAL|FATAL|Traceback|Exception|FAILED|failed|error)\b/y, "err"],
+  [/\b(?:WARN(?:ING)?|warning|deprecated)\b/y, "warn"],
+  [/\b(?:INFO|DEBUG|TRACE|healthy|passed|ok|OK|200|201|204)\b/y, "ok"],
+  [/\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/y, "method"],
+  [/\b[45]\d{2}\b/y, "err"],
+  [/\b3\d{2}\b/y, "warn"],
+  [/https?:\/\/[^\s"'<>)\]]+/y, "url"],
+  [/\[[^\]\n]{1,40}\]/y, "tag"],
+  [/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/y, "str"],
+  [/(?:~|\.{1,2})?\/[\w.\-~+@%]+(?:\/[\w.\-~+@%]*)+/y, "path"],
+  [/\b[A-Za-z_][\w.-]*(?==[^=\s])/y, "key"],
+  [/\b\d+(?:\.\d+)?(?:ms|s|m|h|%|[kMG]i?B)?\b/y, "num"],
+  [/\b[A-Z]{2,}-\d+\b/y, "ticket"],
+];
+
+function highlightLog(text) {
+  let out = "", i = 0;
+  while (i < text.length) {
+    let matched = false;
+    for (const [re, cls] of LOG_RULES) {
+      re.lastIndex = i;
+      const m = re.exec(text);
+      if (m && m.index === i && m[0].length) {
+        out += cls ? `<span class="lg-${cls}">${esc(m[0])}</span>` : "";
+        i += m[0].length; matched = true; break;
+      }
+    }
+    if (!matched) {
+      // Advance to the next candidate start cheaply: copy a run of plain word/space chars.
+      const run = /[^\x1b\d"'\[/~.A-Za-z]+|[A-Za-z]+|./y; run.lastIndex = i;
+      const m = run.exec(text); const chunk = m ? m[0] : text[i];
+      out += esc(chunk); i += chunk.length;
+    }
+  }
+  return out;
+}
