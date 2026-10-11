@@ -59,6 +59,14 @@ class Loop:
                 log(f"recovered {t.id}: {t.state} -> {RECOVERY[t.state]}")
         for s in self.store.sessions():
             self.store.set_session(s["id"], status="idle", pid=None)
+        # A gate run that was in flight when the previous loop died never finished;
+        # mark it so the dashboard does not show it as running forever.
+        for run in self.store.gate_runs():
+            if run.get("status") == "running":
+                run["status"] = "aborted"
+                run["summary"] = "orchestrator restarted during the run"
+                run["finished_at"] = run.get("finished_at") or __import__("orchestra.model", fromlist=["now"]).now()
+                self.store.save_gate_run(run)
         for p in self.project.gate_dir.glob("*"):
             self.git.worktree_remove(p)
         self.git.run("worktree", "prune", check=False)

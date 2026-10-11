@@ -76,6 +76,7 @@ class Staging:
         self.store = store
         self.events = events
         self.log_path = project.staging_dir / "staging.log"
+        self._last_probe = 0.0
 
     @property
     def cfg(self):
@@ -315,8 +316,12 @@ class Staging:
                 finally:
                     fcntl.flock(fh, fcntl.LOCK_UN)
         elif st.get("status") == "running" and st["alive"]:
-            if _probe(self.local_url() + self.cfg.staging_health):
-                self._set(last_health_at=now())
+            # Probe health every 15s, not every tick, so the staging log is not
+            # dominated by Orchestra's own health requests.
+            if time.time() - self._last_probe >= 15:
+                self._last_probe = time.time()
+                if _probe(self.local_url() + self.cfg.staging_health):
+                    self._set(last_health_at=now())
             if self.cfg.tunnel_name and not _pid_alive(st.get("tunnel_pid")):
                 self.ensure_tunnel()
 
