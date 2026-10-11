@@ -5,7 +5,7 @@
 nav { display:flex; align-items:center; gap:18px; padding:0 14px; height:42px; border-bottom:1px solid var(--border); background:var(--panel) }
 nav a { color:var(--muted); text-decoration:none; font-weight:600; padding:4px 0; border-bottom:2px solid transparent } nav a.on { color:var(--text); border-color:var(--accent) }
 .muted { color:var(--muted) }
-.layout { display:grid; grid-template-columns:320px 1fr 380px; height:calc(100vh - 42px) }
+.layout { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); height:calc(100vh - 42px) }
 .col { overflow:auto; padding:10px; border-right:1px solid var(--border) } .col:last-child { border-right:0 }
 .page { padding:10px; height:calc(100vh - 42px); overflow:auto }
 h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:8px 0 6px }
