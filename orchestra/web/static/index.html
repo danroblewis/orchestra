@@ -95,8 +95,6 @@ function renderQueue(s) {
   const n = s.batch_size || 1;
   html += `<h2>Next gate run</h2>` + (queue.slice(0, n).map((t) => ticketRow(t, `approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · commit ${esc((t.reviewed_commit || "").slice(0, 10))}`)).join("") || '<div class="empty">nothing approved yet</div>');
   if (queue.length > n) html += `<h2>Waiting for a later run (${queue.length - n})</h2>` + queue.slice(n).map((t) => ticketRow(t, `approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago`)).join("");
-  const upstream = s.tickets.filter((t) => ["IN_REVIEW", "READY_FOR_REVIEW", "REJECTED", "IN_PROGRESS"].includes(t.state));
-  html += `<h2>On the way (${upstream.length})</h2>` + (upstream.map((t) => `<div class="row" onclick="openTicket('${t.id}')"><span>${esc(t.id)} ${esc(t.title)}</span><span class="badge" style="background:${color(t.state)}">${t.state}</span></div>`).join("") || '<div class="empty">nothing in flight</div>');
   $("queue").innerHTML = html;
 }
 
