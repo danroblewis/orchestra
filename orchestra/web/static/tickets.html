@@ -96,17 +96,29 @@ function layout(model) {
   const key = model.nodes.map((n) => n.id).sort().join("|") + "#" + model.edges.map((e) => e.source + ">" + e.target).sort().join("|");
   if (key === lastKey && sim) return false;
   lastKey = key;
-  simNodes = model.nodes.map((n) => { const p = posMemory.get(n.id); return Object.assign(n, p ? { x: p.x, y: p.y } : { x: 160 + n.depth * 240 + (Math.random() - .5) * 40, y: 120 + n.mi * 190 + (Math.random() - .5) * 60 }); });
+  // Each milestone gets a horizontal band: narrow when collapsed to a single node, wide
+  // enough for its dependency depth when expanded, so the progression stays compact.
+  const bands = []; let x0 = 140;
+  const byMi = {}; model.nodes.forEach((n) => (byMi[n.mi] ??= []).push(n));
+  Object.keys(byMi).map(Number).sort((a, b) => a - b).forEach((mi) => {
+    const maxDepth = Math.max(0, ...byMi[mi].map((n) => n.depth));
+    bands[mi] = x0; x0 += maxDepth ? 260 + maxDepth * 210 : 300;
+  });
+  const targetX = (n) => bands[n.mi] + n.depth * 210;
+  simNodes = model.nodes.map((n) => { const p = posMemory.get(n.id); return Object.assign(n, p ? { x: p.x, y: p.y } : { x: targetX(n) + (Math.random() - .5) * 40, y: 300 + (n.kind === "ticket" ? (Math.random() - .5) * 400 : 0) }); });
   simLinks = model.edges.map((e) => ({ ...e }));
   if (sim) sim.stop();
   sim = d3.forceSimulation(simNodes)
     .force("link", d3.forceLink(simLinks).id((d) => d.id)
-      .distance((l) => l.cls === "ms-chain" ? 190 : l.cls === "ms-edge" ? 150 : l.cls === "collapsed" ? 220 : 170)
+      .distance((l) => l.cls === "ms-chain" ? 300 : l.cls === "ms-edge" ? 170 : l.cls === "collapsed" ? 240 : 190)
       .strength((l) => l.cls === "ms-edge" ? 0.35 : l.cls === "ms-chain" ? 0.5 : 0.8))
     .force("charge", d3.forceManyBody().strength((d) => d.kind === "ms" ? -1100 : -650).distanceMax(900))
     .force("collide", d3.forceCollide((d) => d.kind === "ms" ? 100 : 118).iterations(2))
-    .force("x", d3.forceX((d) => 160 + d.depth * 240).strength(0.22))
-    .force("y", d3.forceY((d) => 120 + d.mi * 190).strength(0.07))
+    // Left-to-right progression: the first milestone is pulled furthest left, each later one
+    // further right, and within a milestone deeper dependencies sit further right. Vertical
+    // position is left to repulsion, so clusters spread by relationship, not by rule.
+    .force("x", d3.forceX(targetX).strength((d) => d.kind === "ms" ? 0.6 : 0.3))
+    .force("y", d3.forceY(300).strength((d) => d.kind === "ms" ? 0.12 : 0.03))
     .alpha(0.9).alphaDecay(0.035)
     .on("tick", tick)
     .on("end", () => { simNodes.forEach((n) => posMemory.set(n.id, { x: n.x, y: n.y })); });
