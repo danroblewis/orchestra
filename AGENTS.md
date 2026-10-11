@@ -16,8 +16,11 @@ that must not be broken without updating the spec and saying so in the commit.
    or `CANCELLED`. Workers and reviewers run with their working directory set
    to it. Nothing is ever written inside the user's checkout except
    `orchestra.toml`.
-4. **Merging is programmatic.** No agent runs `git merge`, `git push`, or
-   touches the base branch. Only the gate lands code.
+4. **Merging and deploying are programmatic.** No agent runs `git merge`,
+   `git push`, touches the base branch, or starts staging. Only the gate
+   lands code, and only the gate's success promotes a build to staging. The
+   gate is not valid without a build artifact and acceptance tests that run
+   against it.
 5. **State lives in `~/.orchestrator/<key>/`.** Business logic goes through
    the `TicketBackend` interface and the runtime store. No module reads or
    writes those JSON files directly except `orchestra/store/`.

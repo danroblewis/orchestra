@@ -31,8 +31,9 @@ rules that must not be broken; this file explains everything else.
 4. **One worktree per ticket, one session per agent run.** Workers never
    touch `main` or each other's files. Sessions are files on disk and resume
    from where they stopped.
-5. **Merging is programmatic.** No agent merges. The merge gate runs the
-   project's tests over a batch of approved branches and bisects on failure.
+5. **Merging is programmatic.** No agent merges. The merge gate builds the
+   project, tests the built artifact, lands a batch of approved branches,
+   bisects on failure, and promotes the artifact to staging on success.
 6. **State is outside the repository.** The target repository gets a
    config file and nothing else. Worktrees, sessions, runs, and the local
    ticket store live under `~/.orchestrator/`.
@@ -117,8 +118,13 @@ machine's execution and live in the project's state directory.
   `idle`), `started_at`, `settled_at`, `last_text`.
 - **Worktree**: `ticket_id`, `path`, `branch`, `created_at`.
 - **GateRun**: `id`, `batch` (ticket IDs), `base_commit`, `gate_commit`,
-  `status`, `results` per test spec, `bisection` record, `merged`,
-  `rejected`, `started_at`, `finished_at`, `log_path`.
+  `status`, `build_id`, `results` per stage and spec, `bisection` record,
+  `merged`, `rejected`, `started_at`, `finished_at`, `log_path`.
+- **Build**: `id`, `gate_run_id`, `commit`, `artifact_path`, `created_at`.
+  The artifact file itself lives at `<state>/artifacts/<build-id>/`.
+- **Staging**: `current_build_id`, `previous_build_id`, `pid`, `port`,
+  `local_url`, `public_url`, `status` (`running`, `starting`, `failed`,
+  `stopped`), `deployed_at`, `last_health_at`.
 - **Event**: append-only log of everything that happened, used by the UI, by
   agent wake-ups, and for debugging. See section 6.5.
 
@@ -202,7 +208,7 @@ when prompted and a JSONL file that persists between prompts.
 |---|---|---|---|
 | Supervisor | one per project | project | The human, in `orchestra chat`. |
 | Coordinator | one per project | project | Orchestra events: ticket created, `DONE`, `BLOCKED`, review threshold reached, milestone created or closed. |
-| Pipeline Manager | one per project | project | Orchestra events: base branch failing with no branches applied, gate run over the time budget, repeated merge rejections of one ticket. |
+| Pipeline Manager | one per project | project | Orchestra events: base branch failing with no branches applied, gate run over the time budget, repeated merge rejections of one ticket, staging deploy failure. |
 | Worker | one per ticket | ticket | The loop, each time the ticket enters `IN_PROGRESS`. |
 | Reviewer | one per ticket | ticket | The loop, each time the ticket enters `IN_REVIEW`. |
 
@@ -236,9 +242,12 @@ clear enough for a worker to act on without asking. Decides what to do with
 a ticket that keeps getting rejected. Never spawns a worker; the loop does
 that, so the Coordinator's latency never gates execution.
 
-**Pipeline Manager.** The on-call engineer for the merge pipeline. Reads gate
-logs. Creates fix tickets when `main` is broken or a test is flaky.
-Quarantines a test spec when told to by configuration policy. Never merges.
+**Pipeline Manager.** The on-call engineer for the merge pipeline and
+staging. Reads gate and staging logs. Creates fix tickets when `main` is
+broken, a build fails on `main`, staging will not come up, or a test is
+flaky. Quarantines a test spec when told to by configuration policy. Never
+merges, never deploys by hand; it can ask for a staging restart through
+`restart_staging`.
 
 **Worker.** Implements one ticket in its worktree on its branch. Reads the
 repository's conventions. Commits as it goes. Runs the project's tests
@@ -266,7 +275,8 @@ emitting exact JSON as prose.
   milestone rules in section 2.3; a tool call that breaks one fails and the
   agent is told why.
 - The Pipeline Manager gets the ticket tools plus `get_gate_run`,
-  `quarantine_test`, `unquarantine_test`.
+  `get_staging_status`, `restart_staging`, `quarantine_test`,
+  `unquarantine_test`.
 
 Tools are provided by one Pi extension that Orchestra ships and loads with
 `--extension`. The extension shells out to `orchestra api <command> --json`,
@@ -350,7 +360,7 @@ In order, each tick:
 1. **Collect.** For each thread that finished: apply the agent's report,
    release the slot, record the session as idle, emit events.
 2. **Review.** While a reviewer slot is free and a `READY_FOR_REVIEW` ticket
-   exists: run the test specs in the worktree, build the diff, start the
+   exists: run the unit specs in the worktree, build the diff, start the
    reviewer, move to `IN_REVIEW`.
 3. **Resume rejected.** While a worker slot is free and a `REJECTED` ticket
    exists (oldest first): deliver feedback to the existing worker session,
@@ -362,7 +372,10 @@ In order, each tick:
    least one `APPROVED` ticket exists, and either the batch is full or the
    oldest approval is older than `gate.batch_wait`: form a batch and start
    the gate.
-6. **Wake.** Deliver any pending wake-ups to the Coordinator or Pipeline
+6. **Staging.** If staging is configured and its process has died or its
+   health probe has failed for longer than the configured tolerance, restart
+   it and emit an event; if it fails again, wake the Pipeline Manager.
+7. **Wake.** Deliver any pending wake-ups to the Coordinator or Pipeline
    Manager if they are idle, coalescing multiple reasons into one prompt.
 
 Review runs before pick so finished work lands before new work starts.
@@ -403,48 +416,56 @@ server's WebSocket, the wake-up scheduler), and are the audit trail.
 
 ## 7. The merge gate
 
-The gate answers "are these branches safe on `main` together?" with the
-project's own tests. It is entirely programmatic.
+The gate answers "are these branches safe on `main` together?" by building
+the project, running its unit tests, starting the built artifact, and running
+acceptance tests against it. It is entirely programmatic. When it succeeds,
+the artifact it built is promoted to the staging environment (section 7.5).
 
-### 7.1 Test specs
+### 7.1 Gate stages
 
-From `orchestra.toml`:
+A gate run has four stages, each configured in `orchestra.toml` (section 9):
 
-```toml
-[gate]
-batch_size = 6          # max branches per batch
-batch_wait = "120s"     # how long to wait for a fuller batch
-timeout = "900s"        # per spec run
+| Stage | Config | What it does |
+|---|---|---|
+| build | `[build]` | Produces the artifact: a binary, a wheel, a container image, a directory. The command runs in the gate worktree and must leave the artifact at the configured path. No artifact, no gate. |
+| unit | `[[gate.unit]]` specs | Fast tests that need no running system. |
+| start | `[acceptance]` | Starts the artifact as the acceptance target on an ephemeral port, waits for the readiness probe. |
+| acceptance | `[[gate.acceptance]]` specs | Tests that exercise the running artifact. They receive the target's URL or path through placeholders. The target is stopped afterwards. |
 
-[[gate.tests]]
-name = "unit"
-command = "uv run pytest -q"
-select = "uv run pytest -q {selector}"   # optional: rerun a subset
+Unit specs may define `select`, a template for rerunning named failures.
+Acceptance specs always rerun in full, since they depend on a fresh start of
+the target.
 
-[[gate.tests]]
-name = "acceptance"
-command = "uv run pytest tests/acceptance -q"
-```
-
-`select` is a template for rerunning named failures. Without it, the gate
-reruns the whole spec.
+Acceptance tests are what make the gate meaningful: they prove the thing
+that would ship actually works, not just that the code compiles and its
+units pass. A project with no `[build]` and no acceptance specs can still use
+the gate, but the spec treats that as a degraded configuration and `orchestra
+doctor` warns about it.
 
 ### 7.2 A gate run
 
 1. **Batch.** Take up to `batch_size` `APPROVED` tickets, oldest approval
    first. Each becomes `MERGING`.
-2. **Build.** Create a gate worktree at `<state>/gate/<run-id>` on a
+2. **Assemble.** Create a gate worktree at `<state>/gate/<run-id>` on a
    temporary branch `orchestra/gate-<run-id>` from the current
    `base_branch` head. For each ticket, `git merge --no-ff
    <reviewed_commit>`. A merge conflict rejects that ticket immediately with
-   the conflict output as feedback, and the build continues without it.
-3. **Test.** Run every enabled spec in the gate worktree. Record a result per
-   spec with status, duration, failing test names when parseable, and the
-   log.
-4. **Land or bisect.** All pass: fast-forward `base_branch` to the gate
+   the conflict output as feedback, and assembly continues without it.
+3. **Build.** Run the build command in the gate worktree. Copy the artifact
+   to `<state>/artifacts/<build-id>/` and record a `Build` with the gate
+   commit it came from. A build failure is treated like a test failure for
+   bisection purposes.
+4. **Unit.** Run every enabled unit spec in the gate worktree. Record a
+   result per spec with status, duration, failing test names when
+   parseable, and the log.
+5. **Start and accept.** Start the artifact per `[acceptance]`, wait for
+   readiness, run every enabled acceptance spec against it, stop it. Record
+   results the same way. Skipped entirely if unit failed.
+6. **Land or bisect.** All pass: fast-forward `base_branch` to the gate
    commit, mark every batched ticket `DONE`, remove their worktrees, delete
-   their branches. Any failure: go to 7.3.
-5. **Clean up.** Remove the gate worktree and branch. Record the `GateRun`.
+   their branches, then promote the build to staging (7.5). Any failure: go
+   to 7.3.
+7. **Clean up.** Remove the gate worktree and branch. Record the `GateRun`.
 
 Landing uses `git merge --ff-only` in the user's checkout when
 `base_branch` is checked out there and the tree is clean; otherwise
@@ -456,7 +477,7 @@ afterwards.
 
 When the batch fails:
 
-1. **Rule out the base.** Run the failing specs on a worktree at
+1. **Rule out the base.** Run the failing stages on a worktree at
    `base_branch` with nothing merged. If that fails, `main` is broken: every
    ticket in the batch returns to `APPROVED`, the pipeline pauses, and the
    Pipeline Manager is woken with the log. Nothing is rejected.
@@ -464,7 +485,10 @@ When the batch fails:
    reproduce the failure", recursively halve: test the first half; if it
    fails, recurse into it and the second half is tested on its own; a half
    that passes is proven safe. This is the pure `bisect_branches` function
-   and is exhaustively unit tested for sizes 1 through `batch_size`.
+   and is exhaustively unit tested for sizes 1 through `batch_size`. The
+   predicate runs only the stages that failed: a unit failure reruns the
+   selected unit tests; a build or acceptance failure reruns build, start,
+   and the full acceptance specs, which is slower but the only honest test.
 3. **Confirm solo.** Every branch not proven safe is tested alone on
    `base_branch`. A branch that fails alone is rejected with the failure as
    feedback. A branch that passes alone but failed in combination is
@@ -485,6 +509,46 @@ test is flaky in N runs within a window, and it may call `quarantine_test`,
 which marks a spec or test name as non-blocking in the project's state.
 Quarantined tests still run and still report.
 
+### 7.5 Staging
+
+Staging is one long-lived instance of the most recent build that passed the
+gate, run on this machine and supervised by `orchestra run`. It exists so
+there is always a running, inspectable version of `main`, and so the
+acceptance tests have proven the exact artifact that is running.
+
+When a gate run lands:
+
+1. Record the new build as the staging candidate.
+2. Stop the current staging process, if any, with the configured stop
+   command or SIGTERM then SIGKILL after a grace period.
+3. Start the new build with the `[staging]` start command on the configured
+   port, with the artifact path and port available as placeholders.
+4. Wait for the health probe to pass within the configured timeout.
+5. If the service is HTTP and a tunnel is configured, ensure `cloudflared`
+   is running the named tunnel against the staging port, then probe the
+   public hostname's health path through the tunnel. Reuse a healthy
+   running tunnel; start one if none is running; restart it if it is
+   running but the public probe fails while the local probe passes.
+6. Emit `staging_deployed` with build id, commit, local URL, and public URL.
+
+If health or the tunnel probe fails, Orchestra restarts the previous build,
+emits `staging_failed` with the logs, and wakes the Pipeline Manager. `main`
+is not rolled back; the gate already proved the code, so a staging failure
+is an environment problem for the Pipeline Manager to turn into a ticket.
+
+Staging is also restarted on `orchestra run` startup with whatever build is
+recorded as current, and can be driven by hand with `orchestra staging
+status|restart|stop|logs`. Projects whose artifact is not a service, such as
+a library or CLI, configure `[staging]` with a start command that installs
+the artifact into a staging location and a health command that exercises
+it; the tunnel section is simply absent.
+
+Tunnel creation, credentials, and DNS are one-time operator setup with
+`cloudflared tunnel create` and `cloudflared tunnel route dns`. Orchestra
+only writes the ingress config for the named tunnel and runs it.
+`orchestra doctor` checks that the named tunnel exists and its credentials
+file is present.
+
 ---
 
 ## 8. Storage
@@ -502,7 +566,9 @@ Quarantined tests still run and still report.
     sessions/                    # Pi session dir for this project
     worktrees/<ticket-id>/
     gate/<run-id>/
-    logs/<run-id>/<spec>.log
+    artifacts/<build-id>/        # built artifacts that passed the gate, plus the candidate under test
+    staging/                     # staging process logs, tunnel config
+    logs/<run-id>/<stage>-<spec>.log
 ```
 
 Every JSON file is written atomically and guarded by a file lock so the loop,
@@ -567,16 +633,46 @@ review_rounds_before_escalation = 3
 [agents.prompts]            # optional per-role overrides, paths relative to repo root
 worker = ".orchestra/worker.md"
 
+[build]
+command = "uv build"                 # runs in the gate worktree
+artifact = "dist/*.whl"              # glob or path, relative to the worktree
+timeout = "600s"
+
+[acceptance]                         # how to run the artifact for acceptance tests
+start = "uv run --with {artifact} myapp serve --port {port}"
+ready = "http://127.0.0.1:{port}/health"   # URL probe, or a shell command with `ready_command`
+ready_timeout = "60s"
+stop = ""                            # optional; default SIGTERM
+
 [gate]
 batch_size = 6
 batch_wait = "120s"
-timeout = "900s"
+timeout = "900s"                     # per spec run
 
-[[gate.tests]]
+[[gate.unit]]
 name = "unit"
-command = "uv run pytest -q"
+command = "uv run pytest tests/unit -q"
 select = "uv run pytest -q {selector}"
+
+[[gate.acceptance]]
+name = "acceptance"
+command = "uv run pytest tests/acceptance -q --base-url {url}"
+
+[staging]
+start = "uv run --with {artifact} myapp serve --port {port}"
+port = 8080
+health = "/health"
+health_timeout = "60s"
+stop = ""
+
+[staging.tunnel]                     # optional; HTTP services only
+name = "myapp-staging"               # existing named cloudflared tunnel
+hostname = "staging.example.com"
 ```
+
+Placeholders: `{artifact}` is the absolute path of the built artifact,
+`{port}` the port Orchestra chose or configured, `{url}` the base URL of the
+running target, `{selector}` the failing test selector.
 
 Project conventions for agents come from the repository's own `AGENTS.md`,
 which Pi reads automatically.
@@ -595,7 +691,9 @@ orchestra ticket list|show <id>     read-only
 orchestra milestone list|show <id>  read-only
 orchestra sessions list|show <id>   transcripts from Pi session files
 orchestra gate run|show <id>        run the gate now, or inspect a run
-orchestra doctor [--fix]            orphaned worktrees, branches, stale sessions, config problems
+orchestra build list|show <id>      artifacts the gate has produced
+orchestra staging status|restart|stop|logs
+orchestra doctor [--fix]            orphaned worktrees, branches, stale sessions, config, tunnel, build setup
 orchestra api <command> --json      machine interface used by the Pi extension and by tests
 ```
 
@@ -616,26 +714,58 @@ static files that the FastAPI app serves. Live updates over one WebSocket
 that forwards the event stream. The UI is read-only: it shows what the
 agents and the loop are doing and never writes.
 
-Pages:
+### 11.1 The main screen
 
-- **Board.** Kanban columns in state order. Cards show ticket ID, title,
-  milestone, owner session when active, review rounds, and a blocked or
-  rejected badge.
-- **Plan.** Milestones as groups with their open/closed status. A dependency
-  graph of tickets using React Flow, nodes colored by state, with the ready
-  frontier highlighted.
-- **Pipeline.** Approved queue, the running gate with per-spec progress,
-  history of gate runs with their bisection trees and logs, flaky and
-  quarantined tests, pipeline pause state.
-- **Agents.** Every session, live or idle, with its transcript rendered from
-  Pi's session file. Live sessions stream.
-- **Ticket.** Detail view: fields, notes, branch, diff of the reviewed
-  commit, review history, gate history.
+One screen, three columns, always live. The center column is the largest.
 
-API surface for the above, all `GET`: `/api/project`, `/api/tickets`,
-`/api/tickets/{id}`, `/api/milestones`, `/api/milestones/{id}`,
-`/api/sessions`, `/api/sessions/{id}/transcript`, `/api/gate/runs`,
-`/api/gate/runs/{id}`, `/api/events?since=`, and `WS /api/events`.
+**Left: active agents.** One card per live session, ordered by start time:
+kind, ticket ID and title when it has one, elapsed time, and the last line
+of assistant text. Idle project agents (Supervisor, Coordinator, Pipeline
+Manager) are shown dimmed below the live ones so their presence is visible.
+Clicking a card opens the transcript drawer.
+
+**Center: ticket graph.** Milestones as labeled groups, open ones first,
+closed ones collapsed. Tickets as nodes colored by state, dependency edges
+between them, the ready frontier highlighted, active tickets pulsing. Built
+with React Flow with automatic layout; pan and zoom. Clicking a node opens
+the ticket drawer. A filter bar narrows by milestone, state, or text.
+
+**Right: pipeline, in three stacked panels.**
+
+- *Merge gate.* The running gate run, if any: batch members, current stage,
+  per-spec progress and elapsed time, bisection tree when one is in
+  progress. Otherwise the last run's outcome and the approved queue waiting
+  for the next batch, in merge order with wait time. Pipeline paused state
+  is shown here in red with its reason.
+- *System stats.* Counts by state; slot usage (workers, reviewers, gate);
+  tickets landed today and this milestone; mean time from `OPEN` to `DONE`;
+  gate pass rate over the last N runs; flaky and quarantined test counts;
+  model and provider in use.
+- *Staging.* Current build: id, commit, when deployed, health status with
+  last probe time, local URL, public tunnel URL with its own reachability
+  status. Previous build id for rollback context. The most recent deploy
+  event and, on failure, the first lines of its log.
+
+### 11.2 Drawers
+
+Drawers slide over the main screen; the URL carries their state so they can
+be linked.
+
+- **Ticket.** Fields, notes, branch, diff of the reviewed commit, review
+  history, gate history, links to its worker and reviewer transcripts.
+- **Transcript.** A session's transcript rendered from Pi's session file,
+  streaming while the session is live.
+- **Gate run.** Full detail of one run: stages, specs, logs, bisection tree,
+  what landed and what was rejected, the build it produced.
+- **Milestone.** Its tickets as a list with states and the counts summary.
+
+### 11.3 API
+
+All `GET`: `/api/project`, `/api/tickets`, `/api/tickets/{id}`,
+`/api/milestones`, `/api/milestones/{id}`, `/api/sessions`,
+`/api/sessions/{id}/transcript`, `/api/gate/runs`, `/api/gate/runs/{id}`,
+`/api/builds`, `/api/staging`, `/api/stats`, `/api/events?since=`, and
+`WS /api/events`.
 
 ---
 
@@ -662,7 +792,11 @@ orchestra/
   loop.py                       tick, slots, scheduling, crash recovery
   gate/
     bisect.py                   pure bisection
-    runner.py                   gate runs, worktree build, landing
+    runner.py                   gate runs: assemble, build, unit, acceptance, bisect, land
+    build.py                    build command, artifact capture and store
+    target.py                   start/stop/ready for the acceptance target
+  staging.py                    staging process supervision, health, rollback
+  tunnel.py                     cloudflared named tunnel config, run, probe
   events.py
   api.py                        service functions used by cli, web, and `orchestra api`
   web/
@@ -689,19 +823,25 @@ project key, `init`, `status`, read-only `ticket` and `milestone` commands,
 the `api` write commands, git worktrees, Pi RPC client, the extension with
 `report_ticket` and `report_review`, worker and reviewer drivers, the loop
 with slots and crash recovery, and a simple gate that lands one approved
-branch at a time with the full test specs.
+branch at a time through all four stages: build, unit, start, acceptance.
+Staging deploy is Phase 2.
 Done when: against a scratch repository and a local model, a ticket created
 through `orchestra api` goes `OPEN` to `DONE` with no human action, a deliberately
 failing ticket ends `REJECTED` then `DONE` after the worker fixes it, and a
 worker that cannot proceed ends `BLOCKED` with a reason.
 
-**Phase 2: batched gate.**
-Batching, gate worktree, bisection with solo confirmation, base-broken
-detection and pipeline pause, flaky recording, `gate run|show`, landing by
-`ff-only` or `update-ref`.
+**Phase 2: batched gate, build, and staging.**
+Batching, gate worktree, the build stage and artifact store, acceptance
+target start and stop, bisection with solo confirmation, base-broken
+detection and pipeline pause, flaky recording, `gate run|show`, `build`,
+landing by `ff-only` or `update-ref`, staging deploy with health probe and
+rollback, cloudflared tunnel reuse and restart, `staging` commands.
 Done when: four approved branches where one breaks a test land three and
 reject one with the right feedback, in a real-git test; `main` broken pauses
-the pipeline and rejects nothing.
+the pipeline and rejects nothing; a landed gate run produces an artifact that
+is running in staging and answering its health probe, and a build whose
+health probe fails is rolled back to the previous one with the Pipeline
+Manager woken.
 
 **Phase 3: the project agents.**
 Supervisor with `orchestra chat` and the ticket tools; Coordinator wake-ups
@@ -711,7 +851,7 @@ a milestone and tickets with dependencies, `run` executes them in order, and
 the Supervisor can report progress when asked.
 
 **Phase 4: web UI.**
-Board, Plan, Pipeline, Agents, Ticket pages with live updates.
+The three-column main screen and the four drawers, live over the WebSocket.
 
 **Phase 5: external backends.**
 `GitHubIssuesBackend` first, then Jira and Linear, each behind the same
@@ -725,6 +865,9 @@ interface with a conformance test suite shared by all backends.
 - Human editing of tickets or milestones outside the Supervisor conversation.
 - Remote execution; everything runs on one machine.
 - Any agent merging, pushing, or editing `main`.
-- Authentication on the web UI; it binds to localhost. A tunnel is the
-  operator's business, not Orchestra's.
+- Authentication on the web UI; it binds to localhost. Only staging gets a
+  tunnel, and the tunnel's existence, credentials, and DNS are operator
+  setup; Orchestra runs it, it does not create it.
+- Production deployment. Staging is the last stop; promoting beyond it is
+  outside Orchestra.
 - Parallel reviewers on one ticket, or multi-reviewer consensus.
