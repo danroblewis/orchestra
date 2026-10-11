@@ -31,6 +31,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PI_BINARY", str(fake))
     monkeypatch.delenv("FAKE_PI_WORKER_BLOCK", raising=False)
     monkeypatch.delenv("FAKE_PI_REJECT_FIRST", raising=False)
+    monkeypatch.delenv("FAKE_PI_BREAK_FIRST", raising=False)
     repo = tmp_path / "repo"
     repo.mkdir()
     git("init", "-q", "-b", "main", cwd=repo)
@@ -101,3 +102,35 @@ def test_dependency_order(env):
     assert store.get_ticket(b.id).state == State.DONE
     log = git("log", "--format=%s", "main", cwd=repo).splitlines()
     assert log.index(f"Merge {b.id}: B") < log.index(f"Merge {a.id}: A")  # B landed after A
+
+
+def test_gate_rejection_reengages_worker_then_lands(env, monkeypatch):
+    """The whole failed-merge flow: the worker's first attempt passes review but fails the
+    gate's tests; the gate sends it back with feedback; the same worker session is
+    re-engaged in the same worktree, fixes it, is re-reviewed, and lands."""
+    project, store, events, ms, repo = env
+    monkeypatch.setenv("FAKE_PI_BREAK_FIRST", "1")
+    t = store.create_ticket(title="Breaks the build first", milestone_id=ms.id)
+    run_loop(project, store, events)
+    t = store.get_ticket(t.id)
+    assert t.state == State.DONE
+    assert t.review_rounds == 1                       # the gate rejection counted as one round
+    runs = store.gate_runs()
+    assert [r["status"] for r in runs] == ["rejected", "landed"]
+    assert runs[0]["rejected"] == [t.id] and runs[1]["merged"] == [t.id]
+    kinds = [(n["author"], n["kind"]) for n in store.notes(t.id)]
+    assert kinds.count(("merge_gate", "gate")) == 2   # the rejection and the landing
+    assert kinds.count(("reviewer", "review")) == 2   # reviewed before each gate run
+    evs, _ = events.read(0, limit=10000)
+    trail = [(e["from"], e["to"]) for e in evs if e["type"] == "ticket_transition" and e["ticket"] == t.id]
+    assert trail == [("OPEN", "IN_PROGRESS"), ("IN_PROGRESS", "READY_FOR_REVIEW"), ("READY_FOR_REVIEW", "IN_REVIEW"),
+                     ("IN_REVIEW", "APPROVED"), ("APPROVED", "MERGING"), ("MERGING", "REJECTED"),
+                     ("REJECTED", "IN_PROGRESS"), ("IN_PROGRESS", "READY_FOR_REVIEW"), ("READY_FOR_REVIEW", "IN_REVIEW"),
+                     ("IN_REVIEW", "APPROVED"), ("APPROVED", "MERGING"), ("MERGING", "DONE")]
+    assert "README.md" in git("ls-tree", "--name-only", "main", cwd=repo)
+    assert "WORK.md" in git("ls-tree", "--name-only", "main", cwd=repo)
+    # One worker session for the ticket, re-engaged rather than replaced.
+    archived = store.runtime()["archived_sessions"]
+    assert set(archived) == {f"worker-{t.id}", f"reviewer-{t.id}"}
+    transcript = Path(archived[f"worker-{t.id}"]["pi_session_file"]).read_text()
+    assert transcript.count('"role": "user"') == 2

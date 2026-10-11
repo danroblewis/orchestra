@@ -6,7 +6,9 @@ Speaks just enough of the RPC protocol for orchestra.pi.client: `get_state`, `pr
 
 - worker: edits a file in the cwd (its worktree), commits, then calls
   `orchestra api report_ticket` exactly like the real extension tool would.
-  If FAKE_PI_WORKER_BLOCK is set it reports BLOCKED instead.
+  If FAKE_PI_WORKER_BLOCK is set it reports BLOCKED instead. If FAKE_PI_BREAK_FIRST
+  is set, its first attempt also deletes README.md (which the e2e unit command
+  requires), so the merge gate rejects it; the next attempt restores the file.
 - reviewer: calls `orchestra api report_review` with APPROVED, or REJECTED the first
   time if FAKE_PI_REJECT_FIRST is set (tracked by a marker file in the worktree).
 - supervisor / coordinator / pipeline_manager: replies with text only.
@@ -78,6 +80,12 @@ def main() -> None:
                 else:
                     f = cwd / "WORK.md"
                     f.write_text((f.read_text() if f.exists() else "") + f"work on {ticket}\n")
+                    broke = cwd / ".fake_broke"
+                    if os.environ.get("FAKE_PI_BREAK_FIRST") and not broke.exists():
+                        broke.write_text("1")
+                        (cwd / "README.md").unlink()
+                    elif broke.exists() and not (cwd / "README.md").exists():
+                        (cwd / "README.md").write_text("# e2e\n")
                     subprocess.run(["git", "add", "-A"], cwd=cwd, check=True)
                     subprocess.run(["git", "commit", "-qm", f"{ticket}: fake work"], cwd=cwd, check=True)
                     api("report_ticket", {"state": "READY_FOR_REVIEW", "summary": "added WORK.md line"})
