@@ -251,7 +251,7 @@ class LocalStore:
 
     def purge_ticket_sessions(self, ticket_id: str) -> list[str]:
         """Retire a finished ticket's worker/reviewer sessions: the records leave the live
-        session list (nothing is running) but are archived with their Pi transcript paths
+        session list (nothing is running) but are archived with their transcript paths
         so the ticket's history stays viewable. Returns nothing to delete."""
         def fn(data):
             archive = data.setdefault("archived_sessions", {})
@@ -393,7 +393,8 @@ class LocalStore:
         return {
             "project": {"key": self.project.key, "repo_root": str(self.project.repo_root),
                         "base_branch": self.project.config.base_branch,
-                        "model": self.project.config.model, "provider": self.project.config.provider},
+                        "model": self.project.config.model, "provider": self.project.config.provider,
+                        "harness": self.project.config.harness},
             "tickets": [ticket_view(x) for x in sorted(tickets, key=lambda x: (eff.get(x.id, {}).get("effective", x.priority), x.created_at))],
             "workers": cap["workers"],
             "capacity": cap,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A fake `pi --mode rpc` for end-to-end tests.
 
-Speaks just enough of the RPC protocol for orchestra.pi.client: `get_state`, `prompt`,
+Speaks just enough of the RPC protocol for orchestra.harness.pi: `get_state`, `prompt`,
 `abort`. On `prompt` it plays the role given by ORCHESTRA_ROLE:
 
 - worker: edits a file in the cwd (its worktree), commits, then calls

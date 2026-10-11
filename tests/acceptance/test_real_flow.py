@@ -117,7 +117,7 @@ def test_supervisor_request_becomes_code_on_main():
     merges = [ln for ln in git(repo, "log", "--format=%s", "main").splitlines() if ln.startswith("Merge ")]
     assert merges, "no gate merge commit on main"
 
-    report = {"model": s["project"].get("model") or os.environ.get("ORCHESTRA_ACCEPTANCE_MODEL"),
+    report = {"harness": s["project"].get("harness"), "model": s["project"].get("model") or os.environ.get("ORCHESTRA_ACCEPTANCE_MODEL"),
               "supervisor_seconds": round(supervisor_seconds), "flow_seconds": round(flow_seconds),
               "tickets": [{"id": t["id"], "title": t["title"], "review_rounds": t.get("review_rounds")} for t in tickets()],
               "supervisor_reply": reply[:2000]}

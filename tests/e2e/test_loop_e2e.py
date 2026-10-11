@@ -1,4 +1,8 @@
-"""End-to-end: the real loop, store, git, and gate driven by a fake Pi."""
+"""End-to-end: the real loop, store, git, and gate driven by a fake harness.
+
+Every test runs once per harness: the fake Pi (RPC protocol, tools via the extension's
+`orchestra api` path) and the fake Claude Code (stream-json, tools via the real MCP
+server). The loop must behave identically on both."""
 
 import os
 import shutil
@@ -14,21 +18,23 @@ from orchestra.loop import Loop
 from orchestra.model import State
 from orchestra.store import LocalStore
 
-FAKE = Path(__file__).parent / "fake_pi.py"
+FAKES = {"pi": Path(__file__).parent / "fake_pi.py", "claude_code": Path(__file__).parent / "fake_claude.py"}
 
 
 def git(*args, cwd):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
 
 
-@pytest.fixture
-def env(tmp_path, monkeypatch):
+@pytest.fixture(params=["pi", "claude_code"])
+def env(tmp_path, monkeypatch, request):
+    harness = request.param
     home = tmp_path / "home"
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(home))
-    fake = tmp_path / "pi"
-    shutil.copy(FAKE, fake)
+    fake = tmp_path / ("pi" if harness == "pi" else "claude")
+    shutil.copy(FAKES[harness], fake)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PI_BINARY", str(fake))
+    monkeypatch.setenv("PI_BINARY" if harness == "pi" else "CLAUDE_BINARY", str(fake))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))
     monkeypatch.delenv("FAKE_PI_WORKER_BLOCK", raising=False)
     monkeypatch.delenv("FAKE_PI_REJECT_FIRST", raising=False)
     monkeypatch.delenv("FAKE_PI_BREAK_FIRST", raising=False)
@@ -41,6 +47,10 @@ def env(tmp_path, monkeypatch):
     git("add", "-A", cwd=repo)
     git("commit", "-qm", "init", cwd=repo)
     project = init_project(repo, prefix="E2E", unit_command="test -f README.md")
+    toml = repo / "orchestra.toml"
+    toml.write_text(toml.read_text().replace('harness = "pi"', f'harness = "{harness}"'))
+    project.reload_config()
+    assert project.config.harness == harness
     git("add", "-A", cwd=repo)
     git("commit", "-qm", "orchestra config", cwd=repo)
     monkeypatch.setenv("ORCHESTRA_REPO", str(repo))
@@ -67,7 +77,8 @@ def test_ticket_goes_open_to_done(env):
     assert {s["id"] for s in store.sessions()} == {"supervisor", "coordinator", "pipeline-manager"}
     archived = store.runtime()["archived_sessions"]
     assert set(archived) == {f"worker-{t.id}", f"reviewer-{t.id}"}
-    assert all(Path(a["pi_session_file"]).exists() for a in archived.values())
+    assert all(Path(a["session_file"]).exists() for a in archived.values())
+    assert {a["harness"] for a in archived.values()} == {project.config.harness}
     assert store.gate_runs()[-1]["status"] == "landed"
     assert store.get_milestone(ms.id).status == "open"  # fake coordinator does not close it
 
@@ -132,5 +143,7 @@ def test_gate_rejection_reengages_worker_then_lands(env, monkeypatch):
     # One worker session for the ticket, re-engaged rather than replaced.
     archived = store.runtime()["archived_sessions"]
     assert set(archived) == {f"worker-{t.id}", f"reviewer-{t.id}"}
-    transcript = Path(archived[f"worker-{t.id}"]["pi_session_file"]).read_text()
-    assert transcript.count('"role": "user"') == 2
+    from orchestra.harness import read_transcript
+    msgs = read_transcript(archived[f"worker-{t.id}"])
+    assert sum(1 for m in msgs if m["role"] == "user") == 2
+    assert any(m["role"] == "assistant" and any(c["name"] == "report_ticket" for c in m["tool_calls"]) for m in msgs)

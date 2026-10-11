@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from ..config import Project
 from ..events import Events
 from ..model import State
-from ..pi.client import read_transcript
+from ..harness import read_transcript
 from ..store import LocalStore, StoreError
 
 STATIC = Path(__file__).parent / "static"
@@ -275,9 +275,9 @@ def create_app(project: Project) -> FastAPI:
         s = store.find_session(session_id)
         if not s:
             raise HTTPException(404)
-        f = s.get("pi_session_file")
+        f = s.get("session_file")
         exists = bool(f) and Path(f).exists()
-        msgs = read_transcript(f) if exists else []
+        msgs = read_transcript(s) if exists else []
         total = len(msgs)
         end = max(0, total - max(0, before))
         page = msgs[max(0, end - max(1, min(limit, 200))):end]

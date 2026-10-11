@@ -355,34 +355,69 @@ acceptance criteria are met and tests pass.
 
 ---
 
-## 5. Pi integration
+## 5. Agent harnesses
 
-- One `pi --mode rpc` process per live session. Launched with:
-  `--session-dir <state>/sessions --session-id <session-id>
-  --provider <p> --model <m> --append-system-prompt <role>
-  --extension <path to orchestra extension>`, with `cwd` set to the worktree
-  for workers and reviewers and to `repo_root` for the three project agents.
-- Session ids: `supervisor`, `coordinator`, `pipeline-manager`,
-  `worker-<ticket-id>`, `reviewer-<ticket-id>`. The session file is wherever
-  Pi puts it under the session dir; Orchestra records the path it observes.
-- The client writes one JSON command per line to stdin, reads events from
-  stdout, drains stderr on a thread, and resolves a turn when
-  `agent_settled` arrives. `message_end` with `role: assistant` is the
-  authoritative final message. `get_last_assistant_text` is used only for
-  the JSON fallback.
-- A per-turn timeout from config. On timeout Orchestra sends `abort`, waits
-  for idle, then applies the no-report rule.
-- Processes for project agents are kept alive between prompts while
-  `orchestra run` or `orchestra chat` is running, and closed on exit.
-  Worker and reviewer processes are closed as soon as their report is
-  applied.
-- Pi's own JSONL session file is the only transcript. The web UI and
-  `orchestra sessions show` parse Pi's session format directly. Orchestra
-  never writes a parallel log.
+Orchestra does not run models; a *harness* does. A harness is the product that turns a
+prompt into an agent turn with tools: Pi, Claude Code, Codex, OpenCode. Orchestra talks
+to every harness through one small interface (`orchestra/harness/base.py`) and knows
+nothing else about it:
 
-Facts about Pi this design relies on: no MCP, no inbound HTTP, no scheduler,
-tools via extensions, `agent_settled` as the completion signal, sessions as
-resumable JSONL files, `--session-dir` to relocate them.
+- `Harness.start(spec)` opens a named, resumable session with a system prompt, a working
+  directory, a model, and a set of Orchestra tool groups.
+- `AgentSession.prompt(text, timeout, on_event)` runs one turn to completion and returns
+  the final text. Events reach the loop in a **normalized vocabulary** (`turn_start`,
+  `assistant_start`, `token`, `tool_start`, `tool_end`, `assistant_end`, `settled`), so
+  the UI's "receiving tokens · last token 3s ago" means the same thing on every harness.
+- `AgentSession.session_file` is the harness's own transcript, the only one Orchestra
+  keeps; `Harness.read_transcript` parses it into a common message list for the UI and
+  `orchestra sessions show`.
+- `kill()` stops a turn (the operator's stop button); `close()` releases the session.
+
+The project picks its harness in `orchestra.toml` (`[agents] harness = "pi" |
+"claude_code"`), with `model` naming the model in that harness's terms and `provider`
+used by Pi only.
+
+### 5.1 Orchestra's tools are data
+
+The tools an agent uses to talk to Orchestra (`report_ticket`, `create_ticket`, ...) are
+defined once, as JSON-schema records in `orchestra/harness/tools.py`, grouped by tool
+group. Each tool maps to an `orchestra api` command. Harnesses expose them in their own
+way; none defines its own copy. `orchestra tools --json` prints the catalogue.
+
+### 5.2 Pi
+
+One `pi --mode rpc` process per live session; the process is the session and stays
+resident between turns. Launched with `--session-dir <state>/sessions --session-id
+<session-id> --provider <p> --model <m> --append-system-prompt <role> --extension
+<orchestra/harness/pi_extension.ts>`, with `cwd` set to the worktree for workers and
+reviewers and to `repo_root` for the project agents. The extension fetches the tool
+catalogue from `orchestra tools --json` at load and registers each tool; calls shell out
+to `orchestra api`. One JSON command per line on stdin, events on stdout;
+`agent_settled` ends a turn; on timeout Orchestra sends `abort`. Transcript: Pi's own
+JSONL session file.
+
+### 5.3 Claude Code
+
+No resident process: each turn is `claude -p` with the prompt on stdin, `--output-format
+stream-json --include-partial-messages`, `--append-system-prompt-file <role>`, `--model
+<m>`, `--dangerously-skip-permissions`, and `--mcp-config <per-session file>
+--strict-mcp-config` pointing at Orchestra's MCP server (`python -m
+orchestra.harness.mcp`), which serves the tool catalogue for the session's role and
+calls `orchestra.api` in-process. The first turn passes `--session-id <uuid>`; later
+turns `--resume <uuid>`. Orchestra keeps the session-id→uuid mapping under
+`<state>/sessions/claude-code/`. Transcript: Claude Code's own JSONL under its config
+directory (`projects/<cwd>/<uuid>.jsonl`). A session is "alive" while the loop holds
+it; the loop's pid stands in where the harness keeps no process.
+
+### 5.4 Adding a harness
+
+Implement `Harness` and `AgentSession`, register the class in
+`orchestra/harness/__init__.py`, give the e2e suite a fake binary that speaks the
+harness's protocol (see `tests/e2e/fake_pi.py` and `fake_claude.py`), and the loop tests
+run against it unchanged. Harnesses that speak MCP get Orchestra's tools for free.
+
+Session ids are harness-independent: `supervisor`, `coordinator`, `pipeline-manager`,
+`worker-<ticket-id>`, `reviewer-<ticket-id>`, and custom roles by name.
 
 ---
 

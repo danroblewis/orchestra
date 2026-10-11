@@ -24,8 +24,9 @@ that must not be broken without updating the spec and saying so in the commit.
 5. **State lives in `~/.orchestrator/<key>/`.** Business logic goes through
    the `TicketBackend` interface and the runtime store. No module reads or
    writes those JSON files directly except `orchestra/store/`.
-6. **Pi's session file is the only transcript.** Do not write a parallel log
-   of agent messages.
+6. **The harness's session file is the only transcript.** Do not write a
+   parallel log of agent messages. Pi and Claude Code each keep their own;
+   `orchestra.harness.read_transcript` parses whichever wrote it.
 7. **Humans talk only to the Supervisor.** There is no human path to create or
    edit tickets or milestones; the CLI and UI are read-only for them except for
    sending a message to the Supervisor (`orchestra chat`, or the box in its
@@ -43,17 +44,33 @@ that must not be broken without updating the spec and saying so in the commit.
 10. **One package, no path hacks.** Everything importable is under
    `orchestra/`. No `sys.path` manipulation.
 
-## Pi facts the code depends on
+## Harness rules
 
-- No MCP, no inbound HTTP, no scheduler. Tools come from the Orchestra Pi
-  extension. Timers live in the loop.
-- `pi --mode rpc` reads one JSON command per line on stdin and writes events
-  on stdout. `agent_settled` is the completion signal. `message_end` with
-  `role: assistant` is the authoritative final message.
-- Sessions are JSONL files. `--session-dir` and `--session-id` place them.
-  `steer` interrupts a running agent; `follow_up` queues; `prompt` starts a
-  turn when idle.
-- Installed docs: `~/.pi/agent/install/releases/<version>/node_modules/@earendil-works/pi-coding-agent/docs/`.
+- **Nothing outside `orchestra/harness/` knows which product runs an agent.**
+  The loop, CLI, web app, and store use `AgentSession`, normalized events,
+  and `read_transcript`. A harness-specific branch anywhere else is a bug.
+- **Orchestra's tools are defined once**, in `orchestra/harness/tools.py`.
+  The Pi extension and the MCP server both read that catalogue; never add a
+  tool to one harness only.
+- **Every harness has a fake** in `tests/e2e/` that speaks its real protocol,
+  and the loop e2e tests run against every fake.
+
+## Harness facts the code depends on
+
+- Pi: no MCP, no inbound HTTP, no scheduler; tools via the extension. `pi
+  --mode rpc` reads one JSON command per line on stdin and writes events on
+  stdout; `agent_settled` is the completion signal; `message_end` with
+  `role: assistant` is the final message. Sessions are JSONL files placed by
+  `--session-dir`/`--session-id`. Docs:
+  `~/.pi/agent/install/releases/<version>/node_modules/@earendil-works/pi-coding-agent/docs/`.
+- Claude Code: `claude -p` is one turn per process; `--output-format
+  stream-json` gives `system/init`, `stream_event`, `assistant`, `user`
+  (tool results), `result`. `--session-id` names a new session,
+  `--resume <uuid>` continues it from the same cwd. Transcripts live under
+  `$CLAUDE_CONFIG_DIR` (default `~/.claude`) at `projects/<cwd with / as
+  ->/<uuid>.jsonl`. Tools come from MCP servers in `--mcp-config`; MCP
+  tools are deferred behind `ToolSearch`, which the model calls itself.
+- Timers live in the loop for every harness.
 
 ## Conventions
 

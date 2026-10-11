@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from . import __version__, agents, api
+from .agents.roles import ROLES
 from .config import ConfigError, Project, init_project, load_project
 from .events import Events
 from .model import STATE_ORDER, State
@@ -96,7 +97,7 @@ def cmd_milestone(args) -> int:
 
 
 def cmd_sessions(args) -> int:
-    from .pi.client import read_transcript
+    from .harness import read_transcript
 
     project = _project(args)
     store, _ = _store(project)
@@ -105,11 +106,24 @@ def cmd_sessions(args) -> int:
             print(f"{s['id']:28} {s.get('status', '?'):8} {s.get('ticket_id') or '':10} {(s.get('last_text') or '')[:60]!r}")
         return 0
     s = next((s for s in store.sessions() if s["id"] == args.id), None)
-    if not s or not s.get("pi_session_file"):
+    if not s or not s.get("session_file"):
         sys.exit(f"no transcript for {args.id}")
-    for m in read_transcript(s["pi_session_file"]):
+    for m in read_transcript(s):
         tools = " ".join(f"[{t['name']}]" for t in m["tool_calls"])
         print(f"--- {m['role']} {tools}\n{m['text'][:3000]}\n")
+    return 0
+
+
+def cmd_tools(args) -> int:
+    from .harness.tools import TOOLS, tools_for
+
+    groups = args.groups or os.environ.get("ORCHESTRA_TOOLS")
+    tools = tools_for([g for g in groups.split(",") if g]) if groups else list(TOOLS)
+    if args.json:
+        print(json.dumps([t.to_dict() for t in tools]))
+        return 0
+    for t in tools:
+        print(f"{t.name:26} {t.group:14} {t.description[:80]}")
     return 0
 
 
@@ -129,10 +143,10 @@ def cmd_api(args) -> int:
 
 def _print_event(ev: dict) -> None:
     t = ev.get("type")
-    if t == "tool_execution_start":
-        print(f"  ⚙ {ev.get('toolName') or ev.get('name', 'tool')} {json.dumps(ev.get('args', ev.get('arguments', {})))[:160]}", flush=True)
-    elif t == "message_end" and ev.get("message", {}).get("role") == "assistant":
-        content = ev["message"].get("content")
+    if t == "tool_start":
+        print(f"  ⚙ {ev.get('name', 'tool')} {json.dumps(ev.get('args') or {})[:160]}", flush=True)
+    elif t == "assistant_end":
+        content = ev.get("text") or ""
         if isinstance(content, list):
             txt = "".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
             if txt.strip():
@@ -171,7 +185,7 @@ def _chat_attached(project: Project, store: LocalStore, port: int) -> int:
 
 
 def cmd_chat(args) -> int:
-    from .pi import PiProcess
+    from .harness import SessionSpec, get_harness
 
     project = _project(args)
     store, events = _store(project)
@@ -186,19 +200,21 @@ def cmd_chat(args) -> int:
             pass
     print("[orchestra] `orchestra run` is not running; starting a temporary supervisor session for this chat.")
     sid = "supervisor"
-    proc = PiProcess(session_id=sid, session_dir=project.sessions_dir, cwd=project.repo_root,
-                     system_prompt=agents.role_prompt(project, "supervisor"),
-                     provider=cfg.provider, model=cfg.model, thinking=cfg.thinking,
-                     env={"ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_REPO": str(project.repo_root),
-                          "ORCHESTRA_TOOLS": "tickets,context,pipeline"},
-                     log_path=project.logs_dir / "pi" / "supervisor.stderr.log")
+    role = ROLES["supervisor"]
+    proc = get_harness(cfg.harness).start(SessionSpec(
+        session_id=sid, session_dir=project.sessions_dir, cwd=project.repo_root,
+        system_prompt=agents.role_prompt(project, "supervisor"), role="supervisor", tool_groups=tuple(role.tools),
+        env={"ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_REPO": str(project.repo_root), "ORCHESTRA_TICKET": ""},
+        log_path=project.logs_dir / "agents" / "supervisor.stderr.log",
+        model=cfg.model, provider=cfg.provider, thinking=cfg.thinking))
     try:
-        proc.get_state()
+        proc.open()
     except Exception:
         pass
-    store.set_session(sid, kind="supervisor", status="idle", pid=proc.proc.pid, pi_session_file=proc.session_file)
+    store.set_session(sid, kind="supervisor", status="idle", pid=proc.pid or os.getpid(),
+                      session_file=proc.session_file, harness=proc.harness_name)
     _, offset = events.read(0, limit=1)
-    print(f"Supervisor for {project.key} ({cfg.provider}/{cfg.model}). Ctrl-D or 'exit' to leave.\n")
+    print(f"Supervisor for {project.key} ({cfg.harness}: {cfg.provider or ''}/{cfg.model or 'default'}). Ctrl-D or 'exit' to leave.\n")
     try:
         while True:
             try:
@@ -369,7 +385,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id", nargs="?")
     s.set_defaults(fn=cmd_sessions)
 
-    s = sub.add_parser("api", help="machine interface used by the Pi extension")
+    s = sub.add_parser("tools", help="the Orchestra tools agents get, as data (used by the Pi extension)")
+    s.add_argument("--json", action="store_true")
+    s.add_argument("--groups", help="comma-separated tool groups (default: ORCHESTRA_TOOLS, else all)")
+    s.set_defaults(fn=cmd_tools)
+
+    s = sub.add_parser("api", help="machine interface the agent tools call")
     s.add_argument("command")
     s.add_argument("--args", default="{}", help="JSON object of arguments")
     s.add_argument("--compact", action="store_true")

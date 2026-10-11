@@ -78,7 +78,7 @@ async function openTranscript(id) {
     <div>doing now</div><div>${sessionChip(s, Date.now() / 1000)}</div>
     <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}</div>
     <div>last settled</div><div>${when(s.settled_at)}</div>
-    <div>turns</div><div>${d.turns} · ${d.total} messages</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div>`;
+    <div>turns</div><div>${d.turns} · ${d.total} messages</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.session_file || "not created yet")}</div></div>`;
   if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
       <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
       <button type="submit" ${s.alive ? "" : "disabled"}>Send</button>
@@ -127,9 +127,9 @@ async function sendToSupervisor(ev) {
       let nl; while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (!line.trim()) continue;
         const e = JSON.parse(line); const body = $("live-body");
-        if (e.type === "tool_execution_start") body.innerHTML += `<div class="tc"><div class="r">⚙ ${esc(e.toolName || e.name || "tool")}</div></div>`;
-        else if (e.type === "message_end" && e.message && e.message.role === "assistant") {
-          const txt = (e.message.content || []).filter((p) => p.type === "text").map((p) => p.text).join("");
+        if (e.type === "tool_start") body.innerHTML += `<div class="tc"><div class="r">⚙ ${esc(e.name || "tool")}</div></div>`;
+        else if (e.type === "assistant_end") {
+          const txt = e.text || "";
           if (txt.trim()) { body.innerHTML += md(txt); highlightCode(body); }
         } else if (e.type === "done") body.previousElementSibling.textContent = e.error ? `supervisor · ${e.error}` : e.timed_out ? "supervisor · timed out" : "supervisor";
       }

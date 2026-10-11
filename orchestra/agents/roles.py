@@ -5,7 +5,7 @@ resident role's Pi session alive, wakes it on the listed events, and on a schedu
 when ``every`` is set. Tools are granted by group name; the Pi extension reads the
 groups from ORCHESTRA_TOOLS so no TypeScript changes are needed for a new role.
 
-Tool groups (see pi/extension/orchestra.ts):
+Tool groups (see harness/tools.py):
   tickets      read and write tickets and milestones, project status
   capacity     the runtime worker/reviewer capacity dial (0..configured max)
   context      read and update the project context document

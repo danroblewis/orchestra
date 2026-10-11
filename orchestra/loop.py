@@ -15,7 +15,7 @@ from .gate import run_gate, run_specs
 from .git import Git, GitError
 from .model import ACTIVE, RECOVERY, Note, State, Ticket, effective_priorities, is_ready
 from .control import ControlServer
-from .pi import PiProcess
+from .harness import AgentSession, SessionSpec, get_harness
 from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
 
@@ -42,14 +42,15 @@ class Loop:
         self.reviewers: dict[str, threading.Thread] = {}
         self.gate_thread: threading.Thread | None = None
         self.agent_threads: dict[str, threading.Thread] = {}
-        self.agent_procs: dict[str, PiProcess] = {}
+        self.agent_procs: dict[str, AgentSession] = {}
+        self.harness = get_harness(self.cfg.harness)
         self.stop = threading.Event()
         self.staging = Staging(project, store, events)
         self.control: ControlServer | None = None
         self._events_offset = 0
         self._started_at = time.time()
         self._last_scheduled: dict[str, float] = {}
-        self.live_procs: dict[str, PiProcess] = {}   # session id -> process, while a turn runs
+        self.live_procs: dict[str, AgentSession] = {}   # session id -> session, while a turn runs
         self.killed: set[str] = set()                # ticket ids whose agent the operator stopped
         self.roles: dict[str, RoleDef] = {}          # all roles (built-in + custom), refreshed each tick
         self._last_token_write: dict[str, float] = {}
@@ -209,23 +210,34 @@ class Loop:
 
     def _start_resident(self, name: str, role: RoleDef) -> None:
         try:
-            proc = self._pi_for(role, role.session_id)
-            proc.get_state()
+            proc = self._session_for(role, role.session_id)
+            proc.open()
             self.agent_procs[name] = proc
-            self.store.set_session(role.session_id, kind=name, status="idle", pid=proc.proc.pid, pi_session_file=proc.session_file)
-            log(f"{role.session_id}: session resident (pid {proc.proc.pid})")
+            self.store.set_session(role.session_id, kind=name, status="idle", pid=self._pid(proc),
+                                   session_file=proc.session_file, harness=proc.harness_name)
+            log(f"{role.session_id}: session resident ({self.harness.name})")
         except Exception as e:
             log(f"{role.session_id}: could not start: {e}")
 
-    def _pi_for(self, role: RoleDef, session_id: str) -> PiProcess:
-        return PiProcess(
-            session_id=session_id, session_dir=self.project.sessions_dir, cwd=self.project.repo_root,
-            system_prompt=agents.role_prompt(self.project, role.name),
-            provider=self.cfg.provider, model=self.cfg.model, thinking=self.cfg.thinking,
-            env={"ORCHESTRA_ROLE": role.name, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": "",
-                 "ORCHESTRA_TOOLS": ",".join(role.tools)},
-            log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
-        )
+    def _session_for(self, role: RoleDef, session_id: str) -> AgentSession:
+        return self._open_session(session_id, role.name, role.name, tuple(role.tools), self.project.repo_root)
+
+    def _open_session(self, session_id: str, role: str, prompt_stem: str, tools: tuple[str, ...], cwd: Path,
+                      ticket_id: str = "") -> AgentSession:
+        """Start a session on the configured harness. Which product runs the agent is
+        invisible past this point: the loop only sees the AgentSession interface."""
+        return self.harness.start(SessionSpec(
+            session_id=session_id, session_dir=self.project.sessions_dir, cwd=cwd,
+            system_prompt=agents.role_prompt(self.project, prompt_stem), role=role, tool_groups=tools,
+            env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id},
+            log_path=self.project.logs_dir / "agents" / f"{session_id}.stderr.log",
+            model=self.cfg.model, provider=self.cfg.provider, thinking=self.cfg.thinking, ticket_id=ticket_id))
+
+    @staticmethod
+    def _pid(proc: AgentSession) -> int:
+        """The process that proves the session is alive: the harness's own when it keeps one
+        (Pi), otherwise this loop, which is what holds the session open."""
+        return proc.pid or os.getpid()
 
     def _wake_on_events(self) -> None:
         """Match new events against every role's wake_on list and queue wake-ups."""
@@ -265,7 +277,7 @@ class Loop:
                     self.killed.add(tid)
                     log(f"{tid}: {sid} stopped by operator")
                     try:
-                        proc.proc.kill()
+                        proc.kill()
                     except OSError:
                         pass
                     self.events.emit("agent_killed", ticket=tid, session=sid)
@@ -284,25 +296,18 @@ class Loop:
 
     # -- pi helpers ------------------------------------------------------------
 
-    def _pi(self, session_id: str, role: str, cwd: Path, ticket_id: str = "") -> PiProcess:
+    def _session(self, session_id: str, role: str, cwd: Path, ticket_id: str = "") -> AgentSession:
         spec = ROLES[role]
-        return PiProcess(
-            session_id=session_id, session_dir=self.project.sessions_dir, cwd=cwd,
-            system_prompt=agents.role_prompt(self.project, spec.prompt),
-            provider=self.cfg.provider, model=self.cfg.model, thinking=self.cfg.thinking,
-            env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
-                 "ORCHESTRA_TOOLS": ",".join(spec.tools)},
-            log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
-        )
+        return self._open_session(session_id, role, spec.prompt, tuple(spec.tools), cwd, ticket_id)
 
-    def _session_running(self, sid: str, role: str, proc: PiProcess, ticket_id: str | None = None) -> None:
+    def _session_running(self, sid: str, role: str, proc: AgentSession, ticket_id: str | None = None) -> None:
         self.live_procs[sid] = proc
         try:
-            proc.get_state()
+            proc.open()
         except Exception:
             pass
-        self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=proc.proc.pid,
-                               pi_session_file=proc.session_file, started_at=time.time(), last_text="",
+        self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=self._pid(proc),
+                               session_file=proc.session_file, harness=proc.harness_name, started_at=time.time(), last_text="",
                                last_output_at=None, phase="prompting", phase_since=time.time(),
                                last_token_at=None, tool_name=None)
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
@@ -314,7 +319,7 @@ class Loop:
                                **({} if resident else {"pid": None}))
         self.events.emit("session_settled", session=sid)
 
-    def _prompt_with_retry(self, proc: PiProcess, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
+    def _prompt_with_retry(self, proc: AgentSession, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id))
         report = self.store.pop_report(ticket_id)
         if report or res.timed_out or res.error:
@@ -323,34 +328,32 @@ class Loop:
         return self.store.pop_report(ticket_id), res.text, res.timed_out or bool(res.error)
 
     def _on_event(self, sid: str):
-        """Translate Pi's stream into a session phase so the UI can say what a running
-        turn is actually doing: waiting for the first token, generating, or in a tool."""
+        """Translate a session's normalized event stream into the phase the UI shows: waiting
+        for the model, generating, or inside a tool. Nothing here is harness-specific."""
         def fn(ev: dict) -> None:
             t = ev.get("type")
             now_t = time.time()
-            if t in ("agent_start", "turn_start"):
+            if t == "turn_start":
                 self.store.set_session(sid, phase="prompting", phase_since=now_t, tool_name=None)
-            elif t == "message_start" and (ev.get("message") or {}).get("role") == "assistant":
+            elif t == "assistant_start":
                 self.store.set_session(sid, phase="generating", phase_since=now_t, last_token_at=now_t)
-            elif t == "message_update":
+            elif t == "token":
                 # Many small events while tokens stream; a timestamp write every few seconds is enough.
                 st = self._last_token_write.get(sid, 0)
                 if now_t - st > 3:
                     self._last_token_write[sid] = now_t
                     self.store.set_session(sid, phase="generating", last_token_at=now_t, last_output_at=now_t)
-            elif t == "tool_execution_start":
-                name = ev.get("toolName") or ev.get("name", "?")
+            elif t == "tool_start":
+                name = ev.get("name", "?")
                 self.store.set_session(sid, phase="tool", phase_since=now_t, tool_name=name, last_output_at=now_t,
                                        last_text=f"tool: {name}")
-            elif t == "tool_execution_end":
+            elif t == "tool_end":
                 self.store.set_session(sid, phase="prompting", phase_since=now_t, tool_name=None, last_output_at=now_t)
-            elif t == "message_end" and (ev.get("message") or {}).get("role") == "assistant":
-                content = ev["message"].get("content")
+            elif t == "assistant_end":
                 fields = {"last_output_at": now_t, "last_token_at": now_t}
-                if isinstance(content, list):
-                    txt = "".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
-                    if txt.strip():
-                        fields["last_text"] = txt.strip()[-500:]
+                txt = (ev.get("text") or "").strip()
+                if txt:
+                    fields["last_text"] = txt[-500:]
                 self.store.set_session(sid, **fields)
         return fn
 
@@ -374,7 +377,7 @@ class Loop:
             log(f"{t.id}: cannot start worker: {e}")
             return
         log(f"{t.id}: worker starting on {branch}")
-        proc = self._pi(sid, "worker", path, t.id)
+        proc = self._session(sid, "worker", path, t.id)
         text = ""
         try:
             self._session_running(sid, "worker", proc, t.id)
@@ -473,7 +476,7 @@ class Loop:
         diff = self.git.diff(base, commit, cwd=path)
         files = self.git.changed_files(base, commit, cwd=path)
         glog = self.git.log(base, commit, cwd=path)
-        proc = self._pi(sid, "reviewer", path, t.id)
+        proc = self._session(sid, "reviewer", path, t.id)
         text = ""
         try:
             self._session_running(sid, "reviewer", proc, t.id)
@@ -543,12 +546,12 @@ class Loop:
         for target in RESIDENT_AGENTS:
             sid = ROLES[target].session_id
             try:
-                proc = self._pi(sid, target, self.project.repo_root)
-                proc.get_state()
+                proc = self._session(sid, target, self.project.repo_root)
+                proc.open()
                 self.agent_procs[target] = proc
-                self.store.set_session(sid, kind=target, status="idle", pid=proc.proc.pid,
-                                       pi_session_file=proc.session_file)
-                log(f"{sid}: session resident (pid {proc.proc.pid})")
+                self.store.set_session(sid, kind=target, status="idle", pid=self._pid(proc),
+                                       session_file=proc.session_file, harness=proc.harness_name)
+                log(f"{sid}: session resident ({self.harness.name})")
             except Exception as e:
                 log(f"{sid}: could not start: {e}")
 
@@ -566,8 +569,8 @@ class Loop:
         """One supervisor turn on the resident session, with the event digest prefix."""
         proc = self.agent_procs.get("supervisor")
         if proc is None or not proc.alive():
-            proc = self._pi("supervisor", "supervisor", self.project.repo_root)
-            proc.get_state()
+            proc = self._session("supervisor", "supervisor", self.project.repo_root)
+            proc.open()
             self.agent_procs["supervisor"] = proc
         new, self._events_offset = self.events.read(self._events_offset)
         new = [e for e in new if e["type"] not in ("session_started", "session_settled")]
@@ -576,7 +579,7 @@ class Loop:
 
         def on_event(ev: dict) -> None:
             self._on_event("supervisor")(ev)
-            if ev.get("type") in ("tool_execution_start", "message_end"):
+            if ev.get("type") in ("tool_start", "assistant_end"):
                 emit(ev)
 
         res = proc.prompt(prefix + message, self.cfg.turn_timeout, on_event=on_event)
@@ -591,11 +594,11 @@ class Loop:
         ephemeral = not role.resident
         if ephemeral:
             sid = f"{role.session_id}-{time.strftime('%Y%m%d-%H%M%S')}"
-            proc = self._pi_for(role, sid)
+            proc = self._session_for(role, sid)
         else:
             proc = self.agent_procs.get(target)
             if proc is None or not proc.alive():
-                proc = self._pi_for(role, sid) if target not in ROLES else self._pi(sid, target, self.project.repo_root)
+                proc = self._session_for(role, sid) if target not in ROLES else self._session(sid, target, self.project.repo_root)
                 self.agent_procs[target] = proc
         self.store.set_role_state(target, last_woken=time.time())
         log(f"{sid}: waking ({len(reasons)} reason(s))")

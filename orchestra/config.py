@@ -53,6 +53,7 @@ class Config:
     base_branch: str = "main"
     ticket_prefix: str = "ORC"
     push: bool = False
+    harness: str = "pi"          # pi | claude_code
     provider: str | None = None
     model: str | None = None
     thinking: str | None = None
@@ -107,6 +108,7 @@ class Config:
             base_branch=p.get("base_branch", "main"),
             ticket_prefix=p.get("ticket_prefix", "ORC"),
             push=bool(p.get("push", False)),
+            harness=(a.get("harness") or "pi").replace("-", "_"),
             provider=a.get("provider") or None,
             model=a.get("model") or None,
             thinking=a.get("thinking"),
@@ -145,8 +147,9 @@ ticket_prefix = "{prefix}"
 push = false
 
 [agents]
-provider = "{provider}"   # leave empty to use Pi's default provider
-model = "{model}"         # leave empty to use Pi's default model
+harness = "pi"           # pi | claude_code: the product that runs the agents
+provider = "{provider}"   # Pi only; leave empty to use Pi's default provider
+model = "{model}"         # leave empty for the harness's default (Claude Code: e.g. haiku, sonnet)
 thinking = "medium"
 workers = 3
 reviewers = 3

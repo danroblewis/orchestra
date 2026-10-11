@@ -81,10 +81,10 @@ if __name__ == "__main__":
 '''
 
 
-def throwaway(port: int, real: bool, provider: str | None, model: str | None) -> None:
-    """A temporary project. With ``real`` the loop runs real Pi agents on the given model
-    and nothing is seeded: the acceptance test talks to the Supervisor. Otherwise the fake
-    Pi plays every role and two tickets are seeded with pickup paused."""
+def throwaway(port: int, real: bool, provider: str | None, model: str | None, harness: str) -> None:
+    """A temporary project. With ``real`` the loop runs real agents on the given harness and
+    model and nothing is seeded: the acceptance test talks to the Supervisor. Otherwise the
+    fake Pi plays every role and two tickets are seeded with pickup paused."""
     tmp = Path(tempfile.mkdtemp(prefix="orchestra-acceptance-"))
     home, repo = tmp / "home", tmp / "repo"
     repo.mkdir()
@@ -115,13 +115,14 @@ def throwaway(port: int, real: bool, provider: str | None, model: str | None) ->
     sh(*cli, *init, env=env, cwd=repo)
     toml = repo / "orchestra.toml"
     text = toml.read_text()
-    assert "[agents]\n" in text, "init template changed; cannot place control_port"
-    toml.write_text(text.replace("[agents]\n", f"[agents]\ncontrol_port = {free_port()}\n", 1))
+    assert "[agents]\n" in text and 'harness = "pi"' in text, "init template changed; cannot place control_port/harness"
+    text = text.replace("[agents]\n", f"[agents]\ncontrol_port = {free_port()}\n", 1)
+    toml.write_text(text.replace('harness = "pi"', f'harness = "{harness if real else "pi"}"', 1))
     sh("git", "add", "-A", cwd=repo)
     sh("git", "commit", "-qm", "orchestra config", cwd=repo)
 
     if real:
-        print(f"[acceptance_target] real agents on provider={provider or 'default'} model={model or 'default'}; "
+        print(f"[acceptance_target] real agents on {harness}: provider={provider or 'default'} model={model or 'default'}; "
               f"project at {repo}, home {home}", flush=True)
         os.chdir(repo)
         subprocess.Popen([sys.executable, "-m", "orchestra", "run"], env=env, cwd=repo)
@@ -161,11 +162,12 @@ def main() -> None:
     ap.add_argument("--real", action="store_true", help="run real Pi agents instead of the fake; nothing is seeded")
     ap.add_argument("--provider", default=os.environ.get("ORCHESTRA_ACCEPTANCE_PROVIDER"))
     ap.add_argument("--model", default=os.environ.get("ORCHESTRA_ACCEPTANCE_MODEL"))
+    ap.add_argument("--harness", default=os.environ.get("ORCHESTRA_ACCEPTANCE_HARNESS") or "pi", help="pi | claude_code")
     args = ap.parse_args()
     if args.project:
         staging(args.project, args.port)
     else:
-        throwaway(args.port, args.real, args.provider, args.model)
+        throwaway(args.port, args.real, args.provider, args.model, args.harness)
 
 
 if __name__ == "__main__":
