@@ -482,8 +482,11 @@ doctor` warns about it.
 2. **Assemble.** Create a gate worktree at `<state>/gate/<run-id>` on a
    temporary branch `orchestra/gate-<run-id>` from the current
    `base_branch` head. For each ticket, `git merge --no-ff
-   <reviewed_commit>`. A merge conflict rejects that ticket immediately with
-   the conflict output as feedback, and assembly continues without it.
+   <reviewed_commit>`. A merge conflict is routine, not a failure: the ticket
+   goes straight back to its own worker session with the conflict output and
+   the instruction to merge the base branch and resolve, it does not count as
+   a review round, and neither the Coordinator nor the Supervisor is told.
+   Assembly continues without it.
 3. **Build.** Run the build command in the gate worktree. Copy the artifact
    to `<state>/artifacts/<build-id>/` and record a `Build` with the gate
    commit it came from. A build failure is treated like a test failure for

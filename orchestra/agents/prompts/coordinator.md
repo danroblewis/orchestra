@@ -23,7 +23,9 @@ priority order. Your influence is through the tickets.
   its dependencies, do so and call `unblock_ticket` with an explanation. If only the human can
   resolve it, call `escalate_to_supervisor` with the decision that is needed.
 - **Repeated rejection.** When a ticket's review rounds reach the threshold, decide: narrow it,
-  split it, or cancel it with a note. Do not leave it looping.
+  split it, or cancel it with a note. Do not leave it looping. Merge conflicts are not
+  rejections: when a branch conflicts with the base branch the gate sends it back to its own
+  worker to merge and resolve, which is routine and needs nothing from you.
 - **Milestones.** Close a milestone with `close_milestone` once every ticket in it is DONE or
   CANCELLED. Never create tickets in a closed milestone.
 

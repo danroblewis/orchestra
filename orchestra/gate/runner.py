@@ -151,14 +151,20 @@ def run_gate(project: Project, store: LocalStore, events: Events, ticket_ids: li
     path = project.gate_dir / run_id
     log_dir = project.logs_dir / run_id
 
-    def reject(tid: str, reason: str) -> None:
+    def reject(tid: str, reason: str, conflict: bool = False) -> None:
         t = store.get_ticket(tid)
         if t.state != State.MERGING:
             return
         store.add_note(tid, Note(author="merge_gate", kind="gate", text=reason[-4000:]))
+        # A merge conflict is routine: the branch simply needs the base merged in. It goes
+        # straight back to the ticket's own worker session and does not count as a review
+        # round, so it never triggers the repeated-rejection escalation.
+        rounds = t.review_rounds if conflict else t.review_rounds + 1
         store.transition(tid, t.version, State.REJECTED, rejected_by="merge_gate", feedback=reason[-8000:],
-                         review_rounds=t.review_rounds + 1)
+                         review_rounds=rounds)
         run["rejected"].append(tid)
+        if conflict:
+            run.setdefault("conflicts", []).append(tid)
 
     try:
         base_commit = git.rev_parse(base)
@@ -170,14 +176,16 @@ def run_gate(project: Project, store: LocalStore, events: Events, ticket_ids: li
             p = git.merge_no_ff(t.reviewed_commit or t.branch or "", path, f"Merge {tid}: {t.title}")
             if p.returncode != 0:
                 git.abort_merge(path)
-                reject(tid, f"Your branch conflicts with `{base}` (another ticket landed first).\n"
-                            f"Run `git merge {base}` in your worktree, resolve every conflict so both changes "
-                            f"survive, run the tests, commit the merge, then call report_ticket.\n\n{p.stdout}\n{p.stderr}")
+                reject(tid, f"Your branch conflicts with `{base}` because another ticket landed first. This is "
+                            f"routine. In your worktree run `git merge {base}`, resolve every conflict so both "
+                            f"sides' changes survive, run the tests, commit the merge, then call report_ticket "
+                            f"with READY_FOR_REVIEW.\n\n{p.stdout}\n{p.stderr}", conflict=True)
             else:
                 merged.append(tid)
         if not merged:
-            run["status"] = "failed"
-            run["summary"] = "every ticket in the batch conflicted"
+            run["status"] = "conflict"
+            run["summary"] = f"{', '.join(run['rejected'])} conflicted with {base}; sent back to their workers to merge {base}"
+            events.emit("gate_conflict", gate_run=run_id, tickets=list(run["rejected"]))
             return run
 
         ok = _stages(project, path, log_dir, run)
