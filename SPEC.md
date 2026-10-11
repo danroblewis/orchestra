@@ -302,7 +302,7 @@ rework, restart, pause, or delete it later. The Agents page lists every role
 with pause, restart, and delete controls for the human. A Product Owner, a
 nightly auditor, or any other long-running monitor is created this way. Teams
 of roles with leads, non-code jobs, and knowledge catalogs are a later stage;
-see `docs/proposals/systems-and-roles.md`.
+see `docs/proposals/teams-and-roles.md`.
 
 ### 4.4 Reporting contract
 

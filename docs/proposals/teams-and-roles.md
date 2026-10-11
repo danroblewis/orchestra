@@ -1,4 +1,4 @@
-# Proposal: Systems and Roles, in four stages
+# Proposal: Teams and Roles, in four stages
 
 Status: Stage 1 decided and being built, 2026-10-11. Stages 2 to 4 remain proposals.
 
@@ -25,7 +25,7 @@ Status: Stage 1 decided and being built, 2026-10-11. Stages 2 to 4 remain propos
 
 ## Why stages
 
-The full idea, teams of agents with leads, members, catalogs, permissions, and
+The full idea, teams of agents with leads, members, resources, permissions, and
 cross-team channels, could absorb weeks and still miss the mark. The honest
 answer to "what if this is a windmill" is to build it in stages where each stage
 is useful on its own, each has a checkpoint that says whether it earned the
@@ -41,13 +41,36 @@ next one, and the first stage covers the one thing we are certain people want:
 
 The vocabulary, fixed now so it stays stable across stages:
 
-- **Role**: one kind of agent, with a prompt, tools, a wake policy, and a session policy.
-- **Team**: a group of roles with one **lead**. The lead decides, delegates, owns the team's catalogs, and is the only member that talks outside the team.
+- **Role**: one kind of agent. Every role has two independent dials:
+  - *session policy*: `resident` (one long-lived process that keeps memory and
+    can be talked to) or `ephemeral` (a fresh session per wake-up);
+  - *wake policy*: events, an interval, a daily time, or messages from its
+    lead, in any combination.
+  "Scheduled" and "long-lived" are not two kinds of agent; they are settings
+  every agent has. A Product Owner is resident and woken daily and on
+  landings; a researcher is ephemeral and woken only by a job; a monitor is
+  resident and woken by events.
+- **Team**: a group of roles with exactly one **lead**. The lead decides,
+  delegates, owns the team's resources, grants its members access to them,
+  and is the only member that talks outside the team.
 - **Member**: a role in a team that is not the lead.
 - **Job**: a unit of non-code work, executed by a member, reviewed by the lead.
-- **Catalog**: a named, owned collection of documents.
-- **Channel**: an explicit permission for two teams to exchange messages.
+- **Resources**: what a team owns and grants access to. Three distinct kinds:
+  - *catalogs*: curated documents, with read, write, propose, and decide grants;
+  - *data stores*: bulk data (captures, datasets) outside the repository and
+    outside the catalog, referenced from catalog documents by URI, with the
+    same grants;
+  - *pages*: the team's view of its work, read-only against Orchestra's API.
+  Other teams read decided documents by default; anything more is an explicit
+  grant from the owning lead.
+- **Channel**: an explicit, visible permission for two teams' leads to exchange
+  messages. The default is the tree: members to their lead, leads to the
+  Supervisor, the Supervisor to the human.
 - **Supervisor**: the human's interface, above every lead.
+
+Stage 1, which exists, is the degenerate case: single roles with the two dials,
+no lead above them but the Supervisor, and no resources beyond tickets and the
+event log. Teams add the lead, the members, the jobs, and the resources.
 
 What exists today in these terms: an Engineering team whose lead is the
 Coordinator and whose members are the per-ticket worker and reviewer, a
@@ -121,9 +144,11 @@ already covers the certain need.
 
 **Goal.** A role can have helpers, and helpers can do work that is not code.
 
-**Teams.** `teams.json` names a lead and its members, and the team's capacity:
-how many member sessions may run at once, separate from the engineering worker
-pool so a lab survey cannot starve code work of the local model.
+**Teams.** `teams.json` names a lead, its members, the team's resources (at
+this stage only a document directory; catalogs, data stores, and pages come in
+Stage 3), and the team's capacity: how many member sessions may run at once,
+separate from the engineering worker pool so a lab survey cannot starve code
+work of the local model.
 
 **Jobs are tickets.** Tickets gain `kind`: `code` is today's path through
 worker, review, and the merge gate; `job` names the member role that executes
@@ -154,10 +179,10 @@ consumed, stop before catalogs.
 
 ---
 
-## Stage 3: Catalogs, access control, channels, and a role library
+## Stage 3: Resources, access control, channels, and a role library
 
-**Goal.** Teams own knowledge that other teams can trust, decisions are
-explicit, and roles are reusable across projects.
+**Goal.** Teams own resources (catalogs, data stores, pages) that other teams
+can trust, decisions are explicit, and roles are reusable across projects.
 
 ### Catalogs
 
@@ -200,7 +225,7 @@ Agents never see the matrix; a disallowed call fails and says who may do it.
 | decide | set `decided`, `rejected`, or `superseded` | the owning team's lead |
 | grant | change the matrix for the team's catalogs | the owning team's lead |
 
-A lead grants access to its members: "the designer may write to `design/`",
+A lead grants access to its members, for catalogs, data stores, and pages alike: "the designer may write to `design/`",
 "the explorer may write to `product/user-studies/` but not read `design/`".
 `decided` documents are the contract between teams: Engineering reads decided
 design documents; the Lab reads decided user stories to know what to research.
