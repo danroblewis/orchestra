@@ -310,11 +310,27 @@ class LocalStore:
         counts = {s.value: 0 for s in State}
         for x in tickets:
             counts[x.state.value] += 1
+        by_id = {x.id: x for x in tickets}
+        milestones = {k: Milestone.from_dict(v) for k, v in t["milestones"].items()}
+        running_workers = sum(1 for s in r["sessions"].values() if s.get("kind") == "worker" and s.get("status") == "running")
+
+        def ticket_view(x: Ticket) -> dict:
+            d = x.to_dict()
+            if x.state == State.OPEN:
+                waiting = [dep for dep in x.depends_on if dep not in by_id or by_id[dep].state != State.DONE]
+                ms = milestones.get(x.milestone_id)
+                d["waiting_on"] = waiting
+                d["ready"] = not waiting and ms is not None and ms.status == MilestoneStatus.OPEN
+                d["why_waiting"] = (f"waiting on {', '.join(waiting)}" if waiting
+                                    else "milestone is closed" if ms is None or ms.status != MilestoneStatus.OPEN
+                                    else f"ready; waiting for a worker slot ({running_workers}/{self.project.config.workers} in use)")
+            return d
         return {
             "project": {"key": self.project.key, "repo_root": str(self.project.repo_root),
                         "base_branch": self.project.config.base_branch,
                         "model": self.project.config.model, "provider": self.project.config.provider},
-            "tickets": [x.to_dict() for x in sorted(tickets, key=lambda x: (x.priority, x.created_at))],
+            "tickets": [ticket_view(x) for x in sorted(tickets, key=lambda x: (x.priority, x.created_at))],
+            "workers": self.project.config.workers,
             "milestones": [d for d in sorted(t["milestones"].values(), key=lambda m: m["order"])],
             "sessions": list(r["sessions"].values()),
             "worktrees": list(r["worktrees"].values()),

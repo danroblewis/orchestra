@@ -51,8 +51,10 @@ function render() {
   for (const t of tickets) for (const dep of t.depends_on) { const a = pos[dep], b = pos[t.id]; if (!a || !b) continue;
     const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2; svg += `<path class="edge" d="M${x1},${y1} C${x1 + 30},${y1} ${x2 - 30},${y2} ${x2},${y2}"/>`; }
   for (const t of tickets) { const p = pos[t.id]; const act = ["IN_PROGRESS", "IN_REVIEW", "MERGING"].includes(t.state);
-    svg += `<g class="node ${act ? "active" : ""}" transform="translate(${p.x},${p.y})" onclick="openTicket('${t.id}')"><rect width="${W}" height="${H}" fill="${color(t.state)}" fill-opacity=".85"/>
-      <text x="8" y="17" style="font-weight:700">${esc(t.id)} <tspan style="font-weight:400;fill:#e6e8ee">${esc(t.state)}</tspan></text><text x="8" y="34">${esc(t.title.slice(0, 32))}${t.title.length > 32 ? "…" : ""}</text></g>`; }
+    const waiting = t.state === "OPEN" && !t.ready;
+    const label = t.state === "OPEN" ? (t.ready ? "OPEN · ready" : "OPEN · " + (t.waiting_on && t.waiting_on.length ? "waits " + t.waiting_on.join(",") : "closed")) : t.state;
+    svg += `<g class="node ${act ? "active" : ""} ${waiting ? "waiting" : ""}" transform="translate(${p.x},${p.y})" onclick="openTicket('${t.id}')"><rect width="${W}" height="${H}" fill="${color(t.state)}" fill-opacity="${waiting ? ".45" : ".85"}" ${waiting ? 'stroke-dasharray="5 3"' : ""}/>
+      <text x="8" y="17" style="font-weight:700">${esc(t.id)} <tspan style="font-weight:400;fill:#e6e8ee">${esc(label)}</tspan></text><text x="8" y="34">${esc(t.title.slice(0, 32))}${t.title.length > 32 ? "…" : ""}</text><title>${esc(t.why_waiting || t.state)}</title></g>`; }
   $("graph").innerHTML = svg + "</svg>";
 }
 $("filter").addEventListener("input", render);
