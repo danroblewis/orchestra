@@ -52,19 +52,22 @@ def cmd_web(args) -> int:
     from .web.app import create_app
 
     project = _project(args)
-    uvicorn.run(create_app(project), host=args.host, port=args.port, log_level="warning")
+    store, _ = _store(project)
+    store._mutate_runtime(lambda d: d.__setitem__("web", {"port": args.port, "pid": os.getpid()}))
+    try:
+        uvicorn.run(create_app(project), host=args.host, port=args.port, log_level="warning")
+    finally:
+        store._mutate_runtime(lambda d: d.pop("web", None))
     return 0
 
 
 def cmd_status(args) -> int:
+    from . import status as st
+
     project = _project(args)
     store, _ = _store(project)
-    snap = store.snapshot()
-    print(f"{snap['project']['key']}  base={snap['project']['base_branch']}  model={snap['project']['model']}")
-    print("pipeline:", "PAUSED " + str(snap["pipeline"].get("reason")) if snap["pipeline"].get("paused") else "running")
-    print("tickets:", "  ".join(f"{s.value}={snap['counts'][s.value]}" for s in STATE_ORDER if snap["counts"][s.value]) or "none")
-    running = [s for s in snap["sessions"] if s.get("status") == "running"]
-    print("sessions running:", ", ".join(s["id"] for s in running) or "none")
+    d = st.collect(project, store)
+    print(json.dumps(d, indent=1) if args.json else st.render(d))
     return 0
 
 
@@ -332,7 +335,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--host", default="127.0.0.1")
     s.set_defaults(fn=cmd_web)
 
-    s = sub.add_parser("status")
+    s = sub.add_parser("status", help="loop, agents, web, tunnels, merge gate, queue, staging")
+    s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_status)
 
     s = sub.add_parser("ticket")
