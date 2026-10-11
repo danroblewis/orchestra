@@ -69,7 +69,7 @@ belongs to exactly one milestone.
 | `objective` | Why: which project objective this ticket serves. Set by the Supervisor; the Coordinator may not change it. |
 | `verification` | How the merge gate proves it: the acceptance test(s) that cover it, or the test the work must add. Part of the work for the worker, checked by the reviewer. |
 | `state` | One of the states in section 3. |
-| `priority` | Integer, lower is sooner. Ties broken by creation order. |
+| `priority` | Integer 1 to 9, lower is sooner; 5 by default. The loop orders pickup by **effective priority**: a ticket inherits the best priority of anything that transitively depends on it, so prioritizing an outcome pulls its whole prerequisite chain forward, and a ticket gains one level per `aging_days_per_level` days of age so old work is finished or cancelled rather than forgotten. Ties broken by creation order. |
 | `milestone_id` | Required. Must refer to an open milestone at creation and whenever changed. |
 | `depends_on` | Ticket IDs that must be `DONE` before this one is ready. |
 | `branch` | `orchestra/<id>-<slug>`. Set when first picked. |
@@ -399,8 +399,8 @@ In order, each tick:
    exists (oldest first): deliver feedback to the existing worker session,
    move to `IN_PROGRESS`.
 4. **Pick.** While a worker slot is free and a ready `OPEN` ticket exists
-   (priority, then age): create or reclaim the worktree, start or resume the
-   worker, move to `IN_PROGRESS`.
+   (effective priority, then age): create or reclaim the worktree, start or
+   resume the worker, move to `IN_PROGRESS`.
 5. **Gate.** If the gate slot is free, the pipeline is not paused, and at
    least one `APPROVED` ticket exists, and either the batch is full or the
    oldest approval is older than `gate.batch_wait`: form a batch and start

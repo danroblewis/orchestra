@@ -13,7 +13,7 @@ from .config import Project
 from .events import Events
 from .gate import run_gate, run_specs
 from .git import Git, GitError
-from .model import ACTIVE, RECOVERY, Note, State, Ticket, is_ready
+from .model import ACTIVE, RECOVERY, Note, State, Ticket, effective_priorities, is_ready
 from .control import ControlServer
 from .pi import PiProcess
 from .staging import Staging
@@ -133,7 +133,8 @@ class Loop:
         tickets = self.store.tickets_by_id()
         milestones = self.store.milestones_by_id()
         cap = self.store.capacity()
-        ordered = sorted(tickets.values(), key=lambda t: (t.priority, t.state_since, t.id))
+        eff = effective_priorities(tickets, self.cfg.aging_days_per_level)
+        ordered = sorted(tickets.values(), key=lambda t: (eff.get(t.id, {}).get("effective", t.priority), t.created_at, t.id))
 
         self._service_kills()
         paused = self.store.pickup_paused()

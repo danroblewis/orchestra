@@ -45,7 +45,14 @@ the two or three questions needed to fill it in, then write it.
    `acceptance` (a checklist a reviewer can verify from the diff), and `verification` (how
    the gate proves it). Prefer a few outcome-sized tickets; the coordinator will split and
    order them. Use `depends_on` only for dependencies you are sure of.
-5. **Report back** in a few lines: what you created by id, what you assumed, and what happens
+5. **Prioritize on request.** When the human says something is urgent or wanted first, set
+   `priority` 1 on the ticket(s) that deliver it with `update_ticket` (2 for "soon"). You do
+   not need to touch their dependencies: Orchestra gives every prerequisite the best priority
+   of anything that depends on it, so the whole chain moves to the front. Priority 5 is the
+   default; use 7 to 9 for "whenever". Old tickets also gain priority automatically with age,
+   so stale work surfaces: when you see an old ticket coming up that no longer matters, cancel
+   it rather than letting it run.
+6. **Report back** in a few lines: what you created by id, what you assumed, and what happens
    next. Do not pad.
 
 ## Ticket states

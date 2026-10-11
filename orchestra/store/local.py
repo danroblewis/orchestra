@@ -13,7 +13,7 @@ from typing import Any, Iterator
 from ..config import Project
 from ..events import Events
 from ..model import (ACTIVE, Milestone, MilestoneStatus, Note, State, Ticket, check_transition,
-                     now)
+                     effective_priorities, now)
 from .base import Conflict, StoreError
 
 EMPTY_TICKETS = {"tickets": {}, "milestones": {}, "notes": {}, "counters": {"ticket": 0, "milestone": 0}}
@@ -364,9 +364,12 @@ class LocalStore:
         milestones = {k: Milestone.from_dict(v) for k, v in t["milestones"].items()}
         running_workers = sum(1 for s in r["sessions"].values() if s.get("kind") == "worker" and s.get("status") == "running")
         cap = self.capacity()
+        eff = effective_priorities(by_id, self.project.config.aging_days_per_level)
 
         def ticket_view(x: Ticket) -> dict:
             d = x.to_dict()
+            d["priority_info"] = eff.get(x.id)
+            d["effective_priority"] = eff.get(x.id, {}).get("effective", x.priority)
             if x.state == State.OPEN:
                 waiting = [dep for dep in x.depends_on if dep not in by_id or by_id[dep].state != State.DONE]
                 ms = milestones.get(x.milestone_id)
@@ -381,7 +384,7 @@ class LocalStore:
             "project": {"key": self.project.key, "repo_root": str(self.project.repo_root),
                         "base_branch": self.project.config.base_branch,
                         "model": self.project.config.model, "provider": self.project.config.provider},
-            "tickets": [ticket_view(x) for x in sorted(tickets, key=lambda x: (x.priority, x.created_at))],
+            "tickets": [ticket_view(x) for x in sorted(tickets, key=lambda x: (eff.get(x.id, {}).get("effective", x.priority), x.created_at))],
             "workers": cap["workers"],
             "capacity": cap,
             "milestones": [d for d in sorted(t["milestones"].values(), key=lambda m: m["order"])],

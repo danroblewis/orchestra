@@ -155,3 +155,41 @@ def is_ready(t: Ticket, tickets: dict[str, Ticket], milestones: dict[str, Milest
     if ms is None or ms.status != MilestoneStatus.OPEN:
         return False
     return all(d in tickets and tickets[d].state == State.DONE for d in t.depends_on)
+
+
+def effective_priorities(tickets: dict[str, "Ticket"], aging_days_per_level: float = 0.0,
+                         at: float | None = None) -> dict[str, dict]:
+    """Effective priority for pickup ordering. Lower is sooner.
+
+    1. A ticket inherits the best priority of anything that (transitively) depends on it,
+       so prioritizing a ticket pulls its whole prerequisite chain forward.
+    2. Age improves priority by one level per `aging_days_per_level` days since creation
+       (0 disables), so old work is finished or cancelled instead of forgotten.
+    Returns {id: {"effective": int, "own": int, "inherited_from": id|None, "age_levels": int}}.
+    """
+    import time as _time
+    from datetime import datetime
+    now_ts = at or _time.time()
+    live = {tid: t for tid, t in tickets.items() if t.state not in TERMINAL}
+    best: dict[str, tuple[int, str | None]] = {tid: (t.priority, None) for tid, t in live.items()}
+    # Propagate along reversed dependency edges until stable (graphs are small).
+    changed = True
+    while changed:
+        changed = False
+        for tid, t in live.items():
+            for dep in t.depends_on:
+                if dep in live and best[tid][0] < best[dep][0]:
+                    best[dep] = (best[tid][0], best[tid][1] or tid)
+                    changed = True
+    out: dict[str, dict] = {}
+    for tid, t in live.items():
+        eff, src = best[tid]
+        levels = 0
+        if aging_days_per_level and aging_days_per_level > 0:
+            try:
+                age_days = (now_ts - datetime.fromisoformat(t.created_at).timestamp()) / 86400
+                levels = int(age_days // aging_days_per_level)
+            except Exception:
+                levels = 0
+        out[tid] = {"effective": max(1, eff - levels), "own": t.priority, "inherited_from": src, "age_levels": levels}
+    return out

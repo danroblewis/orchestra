@@ -72,3 +72,20 @@ def test_bisect_isolates_offender(n, bad):
     assert res.offenders == [f"b{bad}"]
     assert set(res.safe) == set(branches) - {f"b{bad}"}
     assert not res.unresolved
+
+
+def test_effective_priority_propagates_and_ages():
+    from datetime import UTC, datetime, timedelta
+
+    from orchestra.model import Ticket, effective_priorities
+
+    old = (datetime.now(UTC) - timedelta(days=5)).isoformat(timespec="seconds")
+    a = Ticket(id="A", title="a", milestone_id="M1", priority=5)
+    b = Ticket(id="B", title="b", milestone_id="M1", priority=1, depends_on=["A"])
+    c = Ticket(id="C", title="c", milestone_id="M1", priority=6, created_at=old)
+    done = Ticket(id="D", title="d", milestone_id="M1", priority=1, state=State.DONE, depends_on=["C"])
+    eff = effective_priorities({"A": a, "B": b, "C": c, "D": done}, aging_days_per_level=2)
+    assert eff["A"]["effective"] == 1 and eff["A"]["inherited_from"] == "B"   # prerequisite inherits
+    assert eff["B"]["effective"] == 1 and eff["B"]["inherited_from"] is None
+    assert eff["C"]["effective"] == 4 and eff["C"]["age_levels"] == 2          # 5 days / 2 = 2 levels
+    assert "D" not in eff                                                      # terminal tickets are ignored

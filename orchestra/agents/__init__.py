@@ -121,7 +121,7 @@ def execution_health(snapshot: dict) -> list[str]:
     running = [s for s in snapshot["sessions"] if s.get("status") == "running"]
     workers = [s["id"] for s in running if s.get("kind") == "worker"]
     reviewers = [s["id"] for s in running if s.get("kind") == "reviewer"]
-    ready = [t["id"] for t in snapshot["tickets"] if t["state"] == "OPEN" and t.get("ready")]
+    ready = [f"{t['id']}(p{t.get('effective_priority', t['priority'])})" for t in snapshot["tickets"] if t["state"] == "OPEN" and t.get("ready")]
     waiting = [t for t in snapshot["tickets"] if t["state"] == "OPEN" and not t.get("ready")]
     blocked = [t["id"] for t in snapshot["tickets"] if t["state"] == "BLOCKED"]
     out = [f"Worker capacity: {cap.get('workers')} of a configured maximum {cap.get('max_workers')}"

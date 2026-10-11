@@ -44,7 +44,7 @@ async function openTicket(id) {
   if (live && live.state === "OPEN" && !live.ready) alerts += `<div class="alert waiting"><h4>Waiting</h4>${esc(live.why_waiting)}</div>`;
   const stateColor = color(t.state);
   openDrawer(`${alerts}<h3><span class="pill" style="--c:${stateColor};background:${stateColor}">${t.state.replace(/_/g, " ")}</span><span style="font-family:var(--mono)">${esc(t.id)}</span> ${esc(t.title)}</h3>
-    <div class="kv"><div>milestone</div><div>${esc(t.milestone_id)}</div><div>priority</div><div>${t.priority}</div><div>depends on</div><div>${t.depends_on.join(", ") || "—"}</div>
+    <div class="kv"><div>milestone</div><div>${esc(t.milestone_id)}</div><div>priority</div><div>${priorityText(t, live)}</div><div>depends on</div><div>${t.depends_on.join(", ") || "—"}</div>
     <div>branch</div><div class="num">${esc(t.branch || "—")}</div><div>reviewed commit</div><div class="num">${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
     <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div>
     ${live && live.state === "OPEN" && live.ready ? `<div>waiting</div><div>${esc(live.why_waiting)}</div>` : ""}</div>
@@ -219,4 +219,12 @@ async function stopAgent(ticket, sessionId) {
   if (!confirm(`Stop ${sessionId}? Its ticket ${ticket} goes back to OPEN (or back to review); the branch and session are kept.`)) return;
   const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "kill", ticket }) });
   if (!r.ok) alert(await r.text()); else closeDrawer();
+}
+
+function priorityText(t, live) {
+  const pi = live && live.priority_info; if (!pi) return String(t.priority);
+  const bits = [];
+  if (pi.inherited_from) bits.push(`inherited from ${pi.inherited_from}`);
+  if (pi.age_levels) bits.push(`+${pi.age_levels} for age`);
+  return pi.effective === pi.own ? `${pi.own}` : `${pi.effective} <span class="muted">(own ${pi.own}; ${bits.join(", ")})</span>`;
 }

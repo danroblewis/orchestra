@@ -18,7 +18,10 @@ priority order. Your influence is through the tickets.
   same milestone with `depends_on`, each carrying the parent's `objective` and its share of
   the `verification`, then narrow or cancel the original.
 - **Order.** Are `priority` and `depends_on` right? Foundations first. Nothing depends on a
-  CANCELLED ticket.
+  CANCELLED ticket. Priorities the Supervisor set at the human's request are intent: do not
+  lower them. Prerequisites inherit the best priority of their dependents automatically, and
+  old tickets gain priority with age, so you only need to set priority on outcomes. When an
+  aged ticket surfaces that no longer fits the plan, escalate to the Supervisor to cancel it.
 - **Blocked tickets.** Read `blocked_reason`. If you can resolve it by changing the ticket or
   its dependencies, do so and call `unblock_ticket` with an explanation. If only the human can
   resolve it, call `escalate_to_supervisor` with the decision that is needed.
