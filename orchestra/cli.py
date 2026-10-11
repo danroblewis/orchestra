@@ -42,9 +42,38 @@ from orchestra.project import (  # noqa: E402
 )
 from orchestra.worktree_orchestrator import WorktreeOrchestrator  # noqa: E402
 
-from shared.models import TestSpec  # noqa: E402
+from shared.models import TestSpec, TestSpecGroup  # noqa: E402
 from shared.repositories.test_spec_repository import TestSpecRepository  # noqa: E402
 from shared.repositories.build_result_repository import BuildResultRepository  # noqa: E402
+
+
+def _seed_gate_test_specs(project) -> None:
+    """Ensure the merge-gate test specs exist in the project state store.
+
+    Idempotent: only writes when the ``test_specs`` collection is missing or
+    empty, so an operator's custom specs are never clobbered. Guards the merge
+    gate against a false "completed" pass after a state-store reset wipes it.
+    """
+
+    test_spec_repo, _ = _build_gate_store(project)
+    if len(list(test_spec_repo.all_ordered())) > 0:
+        return
+
+    defaults = (
+        ("unit", "python -m pytest backend/orchestrator/tests/ -q"),
+        ("ci", "python -m pytest backend -q"),
+    )
+    for label, command in defaults:
+        if test_spec_repo.find_all(label=label):
+            continue
+        new_spec = TestSpec(
+            label=label,
+            command=command,
+            group=TestSpecGroup.UNIT,
+            enabled=True,
+        )
+        test_spec_repo.save(new_spec)
+    print(f"[orchestra] Seeded {len(defaults)} merge-gate test spec(s).")
 
 
 def _build_gate_store(project) -> tuple:
@@ -168,6 +197,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     project, _ = _resolve_project(args)
     orch = _build_orchestrator(project)
     print(f"[orchestra] Running in project {project.slug!r}")
+
+    # The project state store (orchestra.json) is re-created on each orchestrator
+    # run from the core collections (tasks/milestones/session_logs). That silently
+    # drops the merge-gate ``test_specs`` collection, which would make the gate run
+    # 0 tests and report a false "completed". Re-seed the canonical gate specs here
+    # so the merge gate always has something to run, even after a state reset.
+    _seed_gate_test_specs(project)
 
     # Reconcile stale worktrees first (from a crashed run).
     cleaned = orch.reconcile()

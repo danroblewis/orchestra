@@ -44,6 +44,9 @@ The real `pi --mode rpc` transport and the full worker→reviewer→merge loop a
 
 **Next: Phase 3d** — wire the web viewer's worktrees panel + finalize docs.
 
+> **Note:** Self-orchestration was exercised as a demo — the Coordinator's orchestration loop was
+> run end-to-end against a live model to validate the worker→reviewer→merge flow before Phase 3d.
+
 ---
 
 ## 0. Current state (Phase 1–2, done)

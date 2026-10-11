@@ -82,20 +82,28 @@
       .empty { color: var(--muted); font-size: 13px; }
       .dep { font-size: 11px; color: var(--muted); }
       .session-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
-      .agent-row {
+      /* Single flat agent list: each card has a colored left border per agent
+         type, a fixed height, the ticket it works on, and its last message. */
+      .agent-card {
         background: var(--panel);
         border: 1px solid var(--border);
+        border-left: 5px solid var(--muted);
         border-radius: 6px;
         padding: 8px 10px;
         margin-bottom: 6px;
         cursor: pointer;
+        height: 92px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
       }
-      .agent-row:hover { border-color: var(--accent); }
-      .agent-row .agent-title { display: flex; align-items: center; gap: 8px; }
-      .agent-row .agent-title .name { font-size: 13px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .agent-row .agent-meta { font-size: 11px; color: var(--muted); margin-top: 3px; padding-left: 20px; }
-      .agent-row.running .dot { background: var(--active); }
-      .agent-row.idle .dot { background: var(--idle); }
+      .agent-card:hover { border-color: var(--accent); }
+      .agent-card .agent-head { display: flex; align-items: center; gap: 8px; }
+      .agent-card .agent-title { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+      .agent-card .agent-title .name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .agent-card .agent-ticket { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .agent-card .agent-last { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .dot {
         width: 8px; height: 8px; border-radius: 50%;
         display: inline-block; flex-shrink: 0;
@@ -103,7 +111,13 @@
       .dot.active { background: var(--active); box-shadow: 0 0 6px var(--active); animation: pulse 1.5s infinite; }
       .dot.idle { background: var(--idle); }
       @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-      .agent-section { margin-bottom: 12px; }
+      .agent-card.supervisor { border-left-color: #8b5cf6; }
+      .agent-card.coordinator { border-left-color: #0ea5e9; }
+      .agent-card.pipeline-manager { border-left-color: #f59e0b; }
+      .agent-card.worker { border-left-color: #10b981; }
+      .agent-card.reviewer { border-left-color: #ef4444; }
+      .agent-card.running .dot.active { display: inline-block; }
+      .agent-list-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 14px 0 6px; }
       .agent-section-head {
         font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
         color: var(--muted); margin: 10px 0 6px; cursor: pointer;
@@ -154,6 +168,10 @@
       .modal-detail-grid { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px; margin-bottom: 16px; }
       .modal-detail-grid dt { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
       .modal-detail-grid dd { margin: 0; font-size: 14px; }
+      .session-link { color: var(--accent); cursor: pointer; }
+      .session-link:hover { text-decoration: underline; }
+      .ticket-link { color: var(--accent); cursor: pointer; font-weight: 600; }
+      .ticket-link:hover { text-decoration: underline; }
       .modal-desc {
         background: var(--panel-alt);
         border: 1px solid var(--border);
@@ -207,10 +225,8 @@
           <div id="next-in-queue"></div>
         </div>
         <div class="card">
-          <h3>Active Agents</h3>
-          <div id="active-agents" class="empty" style="margin-bottom: 8px;">No agents active.</div>
-          <h3>Agent Sessions</h3>
-          <div id="session-logs"></div>
+          <div class="agent-list-title">Agents</div>
+          <div id="agent-list"></div>
         </div>
       </aside>
       <main class="main">
@@ -320,25 +336,19 @@
               .join("");
           }
 
-          // -- Agents: only active (running) ones in the top section --
-          const logs = state.sessionLogs || [];
-          const running = logs.filter((s) => s.status === "running");
-          const activeDiv = document.getElementById("active-agents");
-          if (running.length === 0) {
-            activeDiv.innerHTML = '<div class="empty">No agents active.</div>';
-          } else {
-            activeDiv.className = "";
-            activeDiv.innerHTML = running
-              .map((s) => renderAgent(s))
-              .join("");
-          }
-
-          // -- All agent sessions (grouped by layer, idle ones collapsed) --
-          const logsDiv = document.getElementById("session-logs");
+          // -- Single flat agent list: every session as a colored card. --
+          // Only show agents that are currently active (running). Completed
+          // reviewers/workers that have gone idle drop out, keeping the list to
+          // just who's working right now.
+          const logs = (state.sessionLogs || []).filter((s) => s.status === "running");
+          const agentDiv = document.getElementById("agent-list");
           if (logs.length === 0) {
-            logsDiv.innerHTML = '<div class="empty">No sessions started.</div>';
+            agentDiv.innerHTML = '<div class="empty">No agents active.</div>';
           } else {
-            logsDiv.innerHTML = renderSessionGroups(logs);
+            agentDiv.innerHTML = logs
+              .sort((a, b) => (a.status === "running" ? -1 : b.status === "running" ? 1 : 0))
+              .map((s) => renderAgent(s, state))
+              .join("");
           }
 
           // -- Builds --
@@ -364,58 +374,96 @@
       // Group sessions by layer. Active (running) sessions are shown in an
       // expanded "Active" group; idle/recoverable sessions are grouped by layer
       // and *collapsed* by default so the sidebar doesn't clutter.
-      function renderSessionGroups(logs) {
-        const byLayer = {};
-        logs.forEach((s) => {
-          const layer = s.layer || "other";
-          if (!byLayer[layer]) byLayer[layer] = [];
-          byLayer[layer].push(s);
-        });
-
-        let html = "";
-        Object.keys(byLayer).sort().forEach((layer) => {
-          const group = byLayer[layer];
-          const hasRunning = group.some((s) => s.status === "running");
-          // Collapse groups that have no active work.
-          const collapsed = !hasRunning ? " collapsed" : "";
-          const count = group.length;
-          html += `
-            <div class="agent-section">
-              <div class="agent-section-head${collapsed}" onclick="toggleSection(this)">
-                <span class="chevron">▼</span>
-                <span>${layer}</span>
-                <span class="section-count">${count}</span>
-              </div>
-              <div class="agent-section-body${collapsed}">
-                ${group.map((s) => renderAgent(s)).join("")}
-              </div>
-            </div>
-          `;
-        });
-        return html;
+      function agentLayerName(name) {
+        if (!name) return "agent";
+        // "worker-slug" -> "worker", "pipeline-manager" -> "pipeline-manager"
+        const m = name.match(/^(worker|reviewer|supervisor|coordinator|pipeline-manager)/);
+        return m ? m[1] : "agent";
       }
 
-      function toggleSection(head) {
-        head.classList.toggle("collapsed");
-        const body = head.nextElementSibling;
-        if (body) body.classList.toggle("collapsed");
+      // Pick the ticket this agent is working on (workers/reviewers are named
+      // after a task slug) so the card shows which task it owns.
+      function agentTicketName(session, state) {
+        const parts = (session.session_name || "").split("-");
+        const role = agentLayerName(session.session_name);
+        // worker-<task-slug> or reviewer-<task-slug>
+        if ((role === "worker" || role === "reviewer") && parts.length > 1) {
+          const slug = parts.slice(1).join("-");
+          const task = state.tasks.find((t) => t.slug === slug);
+          if (task) return task.title;
+          return slug.replace(/-/g, " ");
+        }
+        // top-layer agents: show the task they are assigned to, if any
+        if (session.assignee_task_id) {
+          const t = state.tasks.find((x) => x.id === session.assignee_task_id);
+          if (t) return t.title;
+        }
+        return null;
       }
 
-      function renderAgent(s) {
+      // Fetch the last message for a session (via the session API) and show it on
+      // the card. Kept simple: a single truncated line.
+      async function loadLastMessage(session, state) {
+        try {
+          const res = await fetch(`/api/sessions/${session.id}`);
+          if (!res.ok) return null;
+          const s = await res.json();
+          const msgs = (s.messages || []);
+          if (!msgs.length) return null;
+          const last = msgs[msgs.length - 1];
+          return last.content || last.text || (last.parts || []).map((p) => p.text || "").join("") || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function renderAgent(s, state) {
         const cls = s.status === "running" ? "running" : "idle";
-        const pill = s.status === "running"
-          ? '<span class="badge active">active</span>'
-          : `<span class="badge ${s.status === 'running' ? 'active' : 'idle'}">${s.status}</span>`;
+        const layer = agentLayerName(s.session_name);
         const shown = agentShortName(s.session_name);
+        const ticket = agentTicketName(s, state);
+        const ticketHtml = ticket
+          ? `<div class="agent-ticket">${esc(ticket)}</div>`
+          : "";
+        const dotCls = s.status === "running" ? "dot active" : "dot";
+        const msgs = s.message_count;
         return `
-          <div class="agent-row ${cls}" onclick="openAgent('${s.id}')" title="Click to view transcript">
-            <div class="agent-title">
-              <span class="dot ${cls}"></span>
-              <span class="name">${esc(shown)}</span>
+          <div class="agent-card ${cls} ${layer}" onclick="openAgent('${s.id}')" data-session-id="${s.id}" title="Click to view transcript">
+            <div class="agent-head">
+              <div class="agent-title">
+                <span class="${dotCls}"></span>
+                <span class="name">${esc(shown)}</span>
+              </div>
+              <span class="badge ${cls === 'running' ? 'active' : 'idle'}">${s.status === 'running' ? 'active' : s.status}</span>
             </div>
-            <div class="agent-meta">${pill} · ${s.message_count} messages</div>
+            ${ticketHtml}
+            <div class="agent-last" data-last-for="${s.id}">${s.status === 'running' ? 'working…' : msgs + ' message' + (msgs === 1 ? '' : 's')}</div>
           </div>
         `;
+      }
+
+      // Populate the last-message line for each card once the session API loads.
+      async function refreshLastMessages() {
+        const cards = document.querySelectorAll('.agent-card');
+        for (const card of cards) {
+          const id = card.getAttribute('data-session-id');
+          const el = card.querySelector('[data-last-for]');
+          if (!el || el.dataset.done === '1') continue;
+          try {
+            const res = await fetch(`/api/sessions/${id}`);
+            if (!res.ok) continue;
+            const s = await res.json();
+            const msgs = (s.messages || []);
+            if (msgs.length) {
+              const last = msgs[msgs.length - 1];
+              const txt = last.content || last.text || (last.parts || []).map((p) => p.text || "").join("") || '';
+              el.textContent = txt.length > 48 ? txt.slice(0, 46) + '…' : (txt || 'no messages');
+            }
+          } catch (e) {
+            // ignore
+            el.dataset.done = '1';
+          }
+        }
       }
 
       // Tunnel URL
@@ -485,6 +533,7 @@
           state.sessionLogs.find((s) => s.session_name === t.assignee_session_id);
 
         let html = '<dl class="modal-detail-grid">';
+        html += `<dt>ID</dt><dd><span class="ticket-link" onclick="openTask('${t.id}')">${esc(t.id)}</span></dd>`;
         html += `<dt>Status</dt><dd>${statusPill(t.status)}</dd>`;
         html += `<dt>Priority</dt><dd>${t.priority}</dd>`;
         html += `<dt>Milestone</dt><dd>${esc((state.milestones.find((m) => m.id === t.milestone_id) || {}).name || "—")}</dd>`;
@@ -547,6 +596,9 @@
       // Render immediately and refresh every 2 seconds.
       render();
       setInterval(render, 2000);
+      // Populate each card's last-message line (async, once per card).
+      refreshLastMessages();
+      setInterval(refreshLastMessages, 4000);
     </script>
   </body>
 </html>
