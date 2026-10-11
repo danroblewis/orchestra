@@ -51,7 +51,7 @@ async function openTicket(id) {
     ${t.objective ? `<h2>Objective</h2>${md(t.objective)}` : ""}
     <h2>Description</h2>${md(t.description) || '<div class="empty">none</div>'}<h2>Acceptance</h2>${md(t.acceptance) || '<div class="empty">none</div>'}
     ${t.verification ? `<h2>Verification</h2>${md(t.verification)}` : ""}
-    ${t.state !== "REJECTED" && t.feedback ? `<h2>Last feedback (${esc(t.rejected_by || "")})</h2>${md(t.feedback)}` : ""}
+    ${t.state !== "REJECTED" && t.feedback ? `<h2>${t.rejected_by ? "Last feedback from the " + esc(t.rejected_by) : "Note for the worker"}</h2>${md(t.feedback)}` : ""}
     <h2>Notes</h2>${t.notes.slice().reverse().map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b>${md(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
 }
 

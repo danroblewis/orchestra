@@ -135,3 +135,6 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer }
 }
 nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 @media (max-width: 900px) { html, body { overflow-x:hidden; max-width:100vw } nav { flex-wrap:nowrap } nav #proj { font-size:11px } }
+/* Grid and flex children default to min-width:auto, so a nowrap line would widen
+   the whole page on a phone; let them shrink and ellipsize instead. */
+.agent, .agent > *, .work, .work > *, .work .lane > *, .qitem, .qitem > *, .col-head > *, .step > * { min-width:0 }
