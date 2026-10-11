@@ -41,7 +41,9 @@ async function openTicket(id) {
     <div>branch</div><div>${esc(t.branch || "—")}</div><div>reviewed commit</div><div>${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
     <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div></div>
     ${t.blocked_reason ? `<h2>Blocked</h2>${md(t.blocked_reason)}` : ""}${t.feedback ? `<h2>Feedback (${esc(t.rejected_by || "")})</h2>${md(t.feedback)}` : ""}
+    ${t.objective ? `<h2>Objective</h2>${md(t.objective)}` : ""}
     <h2>Description</h2>${md(t.description) || '<div class="empty">none</div>'}<h2>Acceptance</h2>${md(t.acceptance) || '<div class="empty">none</div>'}
+    ${t.verification ? `<h2>Verification</h2>${md(t.verification)}` : ""}
     <h2>Notes</h2>${t.notes.map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b>${md(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
 }
 

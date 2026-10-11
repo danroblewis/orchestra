@@ -111,6 +111,8 @@ class Ticket:
     milestone_id: str
     description: str = ""
     acceptance: str = ""
+    objective: str = ""      # why: which project objective this serves
+    verification: str = ""   # how the merge gate's acceptance tests prove it
     state: State = State.OPEN
     priority: int = 5
     depends_on: list[str] = field(default_factory=list)

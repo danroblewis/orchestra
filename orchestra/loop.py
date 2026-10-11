@@ -19,8 +19,12 @@ from .pi import PiProcess
 from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
 
-PROJECT_AGENTS = ("coordinator", "pipeline_manager")
-RESIDENT_AGENTS = ("supervisor",) + PROJECT_AGENTS
+from .agents.roles import ROLES, resident_roles
+
+# Resident roles other than the supervisor are woken by queued wake-ups; the
+# supervisor is woken by humans (chat) and by escalations.
+PROJECT_AGENTS = tuple(r.name for r in resident_roles() if r.name != "supervisor")
+RESIDENT_AGENTS = tuple(r.name for r in resident_roles())
 
 
 def log(msg: str) -> None:
@@ -43,6 +47,8 @@ class Loop:
         self.staging = Staging(project, store, events)
         self.control: ControlServer | None = None
         self._events_offset = 0
+        self._started_at = time.time()
+        self._last_scheduled: dict[str, float] = {}
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -60,6 +66,17 @@ class Loop:
             self.git.branch_delete(b.strip("* "))
 
     def run(self, once: bool = False) -> None:
+        # SIGTERM/SIGINT stop the loop cleanly so resident Pi processes are closed,
+        # not orphaned, and the control port is released.
+        import signal
+
+        def _stop(_sig, _frame):
+            self.stop.set()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                signal.signal(sig, _stop)
+            except ValueError:  # not the main thread (tests)
+                pass
         self.recover()
         self.events.emit("loop_started")
         log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
@@ -81,7 +98,7 @@ class Loop:
                 self.control.stop()
             for name, p in self.agent_procs.items():
                 p.close()
-                self.store.set_session(name.replace("_", "-"), status="idle", pid=None)
+                self.store.set_session(ROLES[name].session_id, status="idle", pid=None)
             self.store._mutate_runtime(lambda d: d.pop("control", None))
             self.events.emit("loop_stopped")
 
@@ -120,11 +137,23 @@ class Loop:
             if t.state == State.CANCELLED and self.store.worktree(t.id):
                 self._drop_worktree(t)
         self.staging.ensure_running()
-        for target in PROJECT_AGENTS:
+        self._schedule_wakeups()
+        for target in RESIDENT_AGENTS:
             if target not in self.agent_threads:
                 reasons = [w["reason"] for w in self.store.drain_wakeups(target)]
                 if reasons:
                     self._spawn(self.agent_threads, target, self._wake, target, reasons)
+
+    def _schedule_wakeups(self) -> None:
+        """Queue a wake-up for any role with a schedule whose interval has elapsed."""
+        now_t = time.time()
+        for role in resident_roles():
+            if not role.every:
+                continue
+            last = self._last_scheduled.get(role.name, self._started_at)
+            if now_t - last >= role.every:
+                self._last_scheduled[role.name] = now_t
+                self.store.add_wakeup(role.name, f"scheduled review (every {int(role.every)}s)")
 
     def _reap(self) -> None:
         for d in (self.workers, self.reviewers, self.agent_threads):
@@ -141,11 +170,13 @@ class Loop:
     # -- pi helpers ------------------------------------------------------------
 
     def _pi(self, session_id: str, role: str, cwd: Path, ticket_id: str = "") -> PiProcess:
+        spec = ROLES[role]
         return PiProcess(
             session_id=session_id, session_dir=self.project.sessions_dir, cwd=cwd,
-            system_prompt=agents.role_prompt(self.project, role),
+            system_prompt=agents.role_prompt(self.project, spec.prompt),
             provider=self.cfg.provider, model=self.cfg.model, thinking=self.cfg.thinking,
-            env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id},
+            env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
+                 "ORCHESTRA_TOOLS": ",".join(spec.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
         )
 
@@ -338,7 +369,7 @@ class Loop:
         """Start the resident supervisor, coordinator, and pipeline-manager sessions up
         front so they live for the life of `orchestra run`."""
         for target in RESIDENT_AGENTS:
-            sid = target.replace("_", "-")
+            sid = ROLES[target].session_id
             try:
                 proc = self._pi(sid, target, self.project.repo_root)
                 proc.get_state()
@@ -368,7 +399,7 @@ class Loop:
             self.agent_procs["supervisor"] = proc
         new, self._events_offset = self.events.read(self._events_offset)
         new = [e for e in new if e["type"] not in ("session_started", "session_settled")]
-        prefix = agents.supervisor_context(self.store.snapshot(), new)
+        prefix = agents.supervisor_context(self.store.snapshot(), new, self.project)
         self._session_running("supervisor", "supervisor", proc)
 
         def on_event(ev: dict) -> None:
@@ -381,15 +412,19 @@ class Loop:
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
     def _wake(self, target: str, reasons: list[str]) -> None:
-        sid = target.replace("_", "-")
+        sid = ROLES[target].session_id
         proc = self.agent_procs.get(target)
         if proc is None or not proc.alive():
             proc = self._pi(sid, target, self.project.repo_root)
             self.agent_procs[target] = proc
         log(f"{sid}: waking ({len(reasons)} reason(s))")
         self._session_running(sid, target, proc)
-        res = proc.prompt(agents.wake_task(target, reasons, self.store.snapshot()), self.cfg.turn_timeout,
-                          on_event=self._on_event(sid))
+        task = agents.wake_task(target, reasons, self.store.snapshot())
+        if target == "supervisor":
+            task = ("[Orchestra: escalation from another agent; the human is not present for this turn. "
+                    "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
+                    + agents.supervisor_context(self.store.snapshot(), [], self.project) + task)
+        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
         self._session_idle(sid, res.text, resident=True)
         self.events.emit("agent_said", session=sid, summary=(res.text or "")[:500])
         log(f"{sid}: {(res.text or '(no text)')[:160]!r}")

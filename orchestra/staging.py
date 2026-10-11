@@ -19,24 +19,24 @@ from .model import now
 from .store import LocalStore
 
 
-def _probe(url: str, timeout: float = 6) -> bool:
-    """HTTP probe that treats any response below 500 as alive. Uses urllib first; on an
-    SSL/certificate problem (common for https through a tunnel from a bare Python) it
-    falls back to curl, which uses the system trust store."""
+def _probe(url: str, timeout: float = 6, max_status: int = 400) -> bool:
+    """HTTP probe: alive when the status is below ``max_status`` (default: 2xx/3xx only,
+    so a 404 on the health path is unhealthy). Uses urllib first; on a 403 from a
+    Cloudflare edge, or an SSL problem from a bare Python, it confirms through curl,
+    which uses the system trust store and a browser-like identity."""
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
-            return r.status < 500
+            return r.status < max_status
     except urllib.error.HTTPError as e:
         if e.code != 403:
-            return e.code < 500
+            return e.code < max_status
     except Exception:
         pass
-    if True:
-        if url.startswith("https") and shutil.which("curl"):
-            p = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", str(int(timeout)), "-w", "%{http_code}", url],
-                               capture_output=True, text=True)
-            return p.stdout.strip().isdigit() and int(p.stdout.strip()) < 500
-        return False
+    if url.startswith("https") and shutil.which("curl"):
+        p = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", str(int(timeout)), "-w", "%{http_code}", url],
+                           capture_output=True, text=True)
+        return p.stdout.strip().isdigit() and int(p.stdout.strip()) < max_status
+    return False
 
 
 def _pid_alive(pid: int | None) -> bool:
@@ -158,7 +158,7 @@ class Staging:
             return True
         public = f"https://{host}{self.cfg.staging_health}"
         st = self.state()
-        if _pid_alive(st.get("tunnel_pid")) and _probe(public):
+        if _pid_alive(st.get("tunnel_pid")) and _probe(public, max_status=500):
             self._set(public_url=f"https://{host}")
             return True
         if not shutil.which("cloudflared"):
@@ -184,7 +184,7 @@ class Staging:
             self._set(tunnel_pid=proc.pid)
         deadline = time.time() + 180  # a freshly routed hostname can take a while to resolve
         while time.time() < deadline:
-            if _probe(public):
+            if _probe(public, max_status=500):
                 self._log(f"tunnel healthy at {public}")
                 self._set(public_url=f"https://{host}")
                 return True

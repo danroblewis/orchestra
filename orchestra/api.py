@@ -59,7 +59,7 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         return {"ok": True, "tickets": [
             {"id": t.id, "title": t.title, "state": t.state.value, "milestone_id": t.milestone_id,
              "priority": t.priority, "depends_on": t.depends_on, "blocked_reason": t.blocked_reason,
-             "review_rounds": t.review_rounds} for t in ts]}
+             "review_rounds": t.review_rounds, "objective": t.objective} for t in ts]}
 
     if command == "get_ticket":
         return {"ok": True, "ticket": _ticket_view(store, a["id"])}
@@ -69,6 +69,7 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
             raise StoreError(f"role {role} may not create tickets")
         t = store.create_ticket(
             title=a["title"], description=a.get("description", ""), acceptance=a.get("acceptance", ""),
+            objective=a.get("objective", ""), verification=a.get("verification", ""),
             milestone_id=a["milestone_id"], priority=int(a.get("priority") or 5),
             depends_on=list(a.get("depends_on") or []), created_by=author,
         )
@@ -77,8 +78,10 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         return {"ok": True, "ticket": t.to_dict()}
 
     if command == "update_ticket":
-        changes = {k: a[k] for k in ("title", "description", "acceptance", "priority", "milestone_id", "depends_on")
-                   if k in a and a[k] is not None}
+        changes = {k: a[k] for k in ("title", "description", "acceptance", "objective", "verification",
+                                     "priority", "milestone_id", "depends_on") if k in a and a[k] is not None}
+        if role == "coordinator" and "objective" in changes:
+            raise StoreError("the coordinator may not change a ticket's objective; use escalate_to_supervisor")
         return {"ok": True, "ticket": store.update_ticket(a["id"], None, **changes).to_dict()}
 
     if command == "add_note":
@@ -133,6 +136,25 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         store.set_report(t.id, {"kind": "reviewer", "verdict": verdict, "summary": a.get("summary", ""),
                                 "feedback": a.get("feedback")})
         return {"ok": True, "message": "Verdict recorded. You may stop now."}
+
+    if command == "get_project_context":
+        from . import agents
+        return {"ok": True, "context": agents.read_context(project)}
+
+    if command == "update_project_context":
+        from . import agents
+        if role and role != "supervisor":
+            raise StoreError("only the supervisor maintains the project context")
+        text = a.get("text") or ""
+        if len(text.strip()) < 20:
+            raise StoreError("context text is too short; write the full document")
+        agents.write_context(project, text)
+        store.events.emit("context_updated", by=author)
+        return {"ok": True}
+
+    if command == "escalate_to_supervisor":
+        store.add_wakeup("supervisor", f"[{author}] {a.get('note', '')}")
+        return {"ok": True, "message": "The supervisor will be woken with your note."}
 
     if command == "list_gate_runs":
         return {"ok": True, "runs": [{k: r.get(k) for k in ("id", "status", "batch", "started_at", "finished_at", "summary")}

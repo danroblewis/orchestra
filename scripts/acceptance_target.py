@@ -38,8 +38,11 @@ def main() -> None:
         env = {**os.environ, "ORCHESTRA_REPO": str(repo)}
         if not (repo / "orchestra.toml").exists():
             sh(sys.executable, "-m", "orchestra", "init", "--prefix", "DEMO", env=env, cwd=repo)
-        print(f"[acceptance_target] serving demo project {repo}", flush=True)
+        print(f"[acceptance_target] staging: full instance on demo project {repo}", flush=True)
         os.chdir(repo)
+        # The loop (resident agents, workers, gate) runs as a child in this process group, so
+        # stopping staging stops it too. The web UI runs in the foreground on --port.
+        subprocess.Popen([sys.executable, "-m", "orchestra", "run"], env=env, cwd=repo)
         os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(args.port)], env)
 
     tmp = Path(tempfile.mkdtemp(prefix="orchestra-acceptance-"))

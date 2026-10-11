@@ -112,6 +112,11 @@ def create_app(project: Project) -> FastAPI:
 
         return StreamingResponse(gen(), media_type="application/x-ndjson")
 
+    @app.get("/api/context")
+    async def context() -> dict:
+        from .. import agents
+        return {"text": agents.read_context(project)}
+
     @app.get("/api/tickets/{ticket_id}")
     async def ticket(ticket_id: str) -> dict:
         try:

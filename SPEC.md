@@ -66,6 +66,8 @@ belongs to exactly one milestone.
 | `id` | Ticket ID: `<PREFIX>-<n>`, sequential per project in the local backend. External backends supply their own. |
 | `title`, `description` | What to build. Description is the worker's brief and must be self-contained. |
 | `acceptance` | Acceptance criteria, free text. Given to worker and reviewer. |
+| `objective` | Why: which project objective this ticket serves. Set by the Supervisor; the Coordinator may not change it. |
+| `verification` | How the merge gate proves it: the acceptance test(s) that cover it, or the test the work must add. Part of the work for the worker, checked by the reviewer. |
 | `state` | One of the states in section 3. |
 | `priority` | Integer, lower is sooner. Ties broken by creation order. |
 | `milestone_id` | Required. Must refer to an open milestone at creation and whenever changed. |
@@ -231,16 +233,25 @@ reading a result.
 
 ### 4.2 Responsibilities
 
-**Supervisor.** Converses with the human. Creates and edits tickets and
-milestones through the ticket tools. Answers questions about state by
-reading it. Never writes code, never spawns anything. Told about events by
-Orchestra so it can relay them to the human.
+**Supervisor.** Converses with the human. Its job is translation, not
+transcription: it places each request against the project's objectives,
+resolves material ambiguity by asking or by stating assumptions, defines the
+outcome and how the gate will verify it, and only then creates tickets, each
+with an `objective` and a `verification`. It maintains the **project context
+document** (`<state>/PROJECT.md`, seeded from `.orchestra/PROJECT.md` in the
+repository when present): objectives, value propositions, non-goals,
+definition of done, verification strategy. Every Supervisor turn begins with
+that document. Never writes code, never spawns anything. Woken by the human
+and by escalations from other agents.
 
-**Coordinator.** Keeps the plan correct: priorities, dependencies, milestone
-membership, splitting tickets that are too big, writing tickets that are
-clear enough for a worker to act on without asking. Decides what to do with
-a ticket that keeps getting rejected. Never spawns a worker; the loop does
-that, so the Coordinator's latency never gates execution.
+**Coordinator.** Keeps the plan executable: priorities, dependencies,
+milestone membership, splitting tickets that are too big, writing tickets
+that are clear enough for a worker to act on without asking. Decides what to
+do with a ticket that keeps getting rejected. Never changes a ticket's intent:
+it may rephrase, split, order, and reprioritize within the `objective`, and
+when it thinks the intent is wrong it calls `escalate_to_supervisor` instead
+of rewriting. Never spawns a worker; the loop does that, so the Coordinator's
+latency never gates execution.
 
 **Pipeline Manager.** The on-call engineer for the merge pipeline and
 staging. Reads gate and staging logs. Creates fix tickets when `main` is
@@ -263,7 +274,24 @@ tests or other checks itself, but that is not its job. Its job is to read
 and comment on the code. Reports exactly one of `APPROVED` or `REJECTED`
 with specific, actionable feedback, as line-level comments where possible.
 
-### 4.3 Reporting contract
+### 4.3 Roles are declarative
+
+Every agent kind is an entry in the role registry, `orchestra/agents/roles.py`:
+name, session id, prompt file, tool groups, whether it is resident, the events
+that wake it, and an optional schedule. The loop keeps resident roles alive,
+delivers queued wake-ups, and queues a scheduled wake-up when a role's `every`
+interval elapses. The Pi extension grants tools by group name from
+`ORCHESTRA_TOOLS`, so adding a role is one registry entry and one prompt file.
+
+This is how future roles join the process without touching the loop: a
+Product Owner reviewing objectives against landed work daily, an R&D role
+doing long-horizon research weekly, a UI/UX Design role woken when tickets
+touch the interface, a knowledge-base curator on an hourly cadence. Each gets
+the tool groups its job needs and the cadence or events that should wake it.
+The Supervisor stays simple and human-facing; other roles reach the human
+only through it, by `escalate_to_supervisor`.
+
+### 4.4 Reporting contract
 
 Agents report through a registered tool, not by formatting their final
 message. Small models are far more reliable calling a tool with a schema than
@@ -295,7 +323,7 @@ BLOCKED with the reason". If it settles again without reporting, Orchestra
 applies the no-report rule from section 3. As a last resort the final
 assistant text is scanned for a JSON object with the same fields.
 
-### 4.4 Prompts
+### 4.5 Prompts
 
 Every session gets two layers: a role prompt via `--append-system-prompt`,
 and the specific task as the first `prompt`. Role prompts live in
@@ -519,7 +547,12 @@ Quarantined tests still run and still report.
 Staging is one long-lived instance of the most recent build that passed the
 gate, run on this machine and supervised by `orchestra run`. It exists so
 there is always a running, inspectable version of `main`, and so the
-acceptance tests have proven the exact artifact that is running.
+acceptance tests have proven the exact artifact that is running. When the
+product is Orchestra itself, staging is a full instance (loop, resident
+agents, and web UI) of the new build managing a separate demo project, so
+features are tried on real tickets there before the tooling on this
+repository is upgraded. The two instances use different control ports and
+different projects and never share state.
 
 When a gate run lands:
 

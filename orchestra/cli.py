@@ -186,7 +186,8 @@ def cmd_chat(args) -> int:
     proc = PiProcess(session_id=sid, session_dir=project.sessions_dir, cwd=project.repo_root,
                      system_prompt=agents.role_prompt(project, "supervisor"),
                      provider=cfg.provider, model=cfg.model, thinking=cfg.thinking,
-                     env={"ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_REPO": str(project.repo_root)},
+                     env={"ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_REPO": str(project.repo_root),
+                          "ORCHESTRA_TOOLS": "tickets,context,pipeline"},
                      log_path=project.logs_dir / "pi" / "supervisor.stderr.log")
     try:
         proc.get_state()
@@ -207,7 +208,7 @@ def cmd_chat(args) -> int:
                 continue
             new, offset = events.read(offset)
             new = [e for e in new if e["type"] not in ("session_started", "session_settled")]
-            prefix = agents.supervisor_context(store.snapshot(), new)
+            prefix = agents.supervisor_context(store.snapshot(), new, project)
             store.set_session(sid, status="running", started_at=time.time())
             events.emit("session_started", session=sid, kind="supervisor")
             res = proc.prompt(prefix + line, cfg.turn_timeout, on_event=_print_event)
