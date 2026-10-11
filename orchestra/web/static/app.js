@@ -57,7 +57,7 @@ async function openTranscript(id) {
     <div>last started</div><div>${when(s.started_at)}</div><div>last settled</div><div>${when(s.settled_at)}</div>
     <div>turns</div><div>${d.turns}</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div><h2>Transcript</h2>`;
   if (!d.messages.length) html += `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events (ticket created, landed, blocked, gate failure) or, for the supervisor, by <code>orchestra chat</code>."}</div>`;
-  else html += d.messages.map((m) => `<div class="msg ${m.role}"><div class="r">${m.role} ${m.tool_calls.map((t) => `[${esc(t.name)} ${esc(JSON.stringify(t.args || {}).slice(0, 120))}]`).join(" ")}</div>${m.role === "toolResult" ? `<pre>${esc(m.text).slice(0, 4000)}</pre>` : md(m.text.slice(0, 12000))}</div>`).join("");
+  else html += d.messages.map((m) => `<div class="msg ${m.role}"><div class="r">${m.role} ${m.tool_calls.map((t) => `[${esc(t.name)} ${esc(JSON.stringify(t.args || {}).slice(0, 120))}]`).join(" ")}</div>${m.role === "toolResult" ? `<pre><code>${esc(m.text).slice(0, 4000)}</code></pre>` : md(m.text.slice(0, 12000))}</div>`).join("");
   openDrawer(html);
 }
 
