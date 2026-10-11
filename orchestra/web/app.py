@@ -32,13 +32,19 @@ def create_app(project: Project) -> FastAPI:
         resp.headers["Cache-Control"] = "no-store"
         return resp
 
+    def page(name: str) -> str:
+        # Cache-bust static assets with the newest asset mtime so browsers never
+        # keep a stale stylesheet or script after an upgrade.
+        v = str(int(max(p.stat().st_mtime for p in STATIC.glob("*"))))
+        return (STATIC / name).read_text(encoding="utf-8").replace("{{v}}", v)
+
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
-        return (STATIC / "index.html").read_text(encoding="utf-8")
+        return page("index.html")
 
     @app.get("/tickets", response_class=HTMLResponse)
     async def tickets_page() -> str:
-        return (STATIC / "tickets.html").read_text(encoding="utf-8")
+        return page("tickets.html")
 
     @app.get("/api/state")
     async def state() -> dict:

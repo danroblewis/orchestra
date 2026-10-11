@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
 </head>
 <body>
 <nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
@@ -26,7 +26,7 @@
   </div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{v}}"></script>
 <script>
 const BASE_AGENTS = [["supervisor", "supervisor"], ["coordinator", "coordinator"], ["pipeline-manager", "pipeline_manager"]];
 const TERMINAL = ["DONE", "CANCELLED"];
@@ -94,7 +94,11 @@ function renderQueue(s) {
 async function refreshSystem() {
   try {
     const d = await (await fetch("/api/system")).json();
-    $("cores").innerHTML = d.cpu_percent.map((p, i) => `<div class="core ${p > 85 ? "hot" : p > 50 ? "warm" : ""}" title="core ${i}: ${p}%"><i style="height:${Math.max(2, Math.round(p))}%"></i></div>`).join("");
+    // Hue runs blue (idle) -> green -> yellow -> red (saturated); each bar is a
+    // vertical gradient from the idle color up to the color for its own load.
+    const hue = (p) => Math.round(210 - 210 * Math.min(100, Math.max(0, p)) / 100);
+    $("cores").innerHTML = d.cpu_percent.map((p, i) =>
+      `<div class="core" title="core ${i}: ${p}%"><i style="height:${Math.max(2, Math.round(p))}%;background:linear-gradient(to top, hsl(210,80%,50%), hsl(${hue(p)},90%,55%))"></i></div>`).join("");
     $("mem-lbl").textContent = `${d.memory.percent}% · ${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`;
     $("mem-bar").style.width = `${d.memory.percent}%`;
     $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`;

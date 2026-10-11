@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra · Tickets</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
 </head>
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets" class="on">Tickets</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
@@ -14,7 +14,7 @@
   <div id="graph"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{v}}"></script>
 <script>
 let STATE = null;
 async function refresh() {
