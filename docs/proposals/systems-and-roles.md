@@ -275,6 +275,66 @@ remain useful on their own.
 
 ---
 
+## Open topic: how a team shows its work
+
+This is unresolved and is recorded here so it is not forgotten. It belongs to
+Stage 2 or later, but it shapes what a team is for.
+
+**The need.** A team that produces something other than code needs a place to
+show it. The R&D lab in an earlier project built its own page: waterfall
+diagrams of radio spectrum, a viewer for its analyses and discoveries. It was
+dynamic and it was good. A Product team would want user stories, study
+results, and design decisions laid out, not a list of catalog files. The
+dashboard, ticket graph, and Agents page are Orchestra's views of Orchestra;
+a team's output needs the team's own view.
+
+**Two things not to do.**
+
+- Not a page assembled from a fixed palette of pre-defined widgets. The work is
+  too variable; a waterfall diagram is not a bar chart with different data.
+- Not teams defined by custom HTML and JavaScript as a matter of course. That
+  makes a team definition a web project, and makes the Supervisor or lead a
+  front-end developer. Sometimes a team genuinely needs a custom page, and
+  that must stay possible, but it should be the exception a team earns.
+
+**Directions worth exploring.**
+
+1. *Pages as a job output.* A team's lead can request a page as a job: a
+   member writes a self-contained page under a team namespace, served by
+   Orchestra at `/teams/<team>/...` with read access to that team's catalogs
+   and data, reviewed by the lead like any job. The page is code, but team
+   code, not Orchestra code, and not committed to the product repository.
+2. *A small document-first default.* Every team gets a default view for free:
+   its decided documents rendered as markdown, its findings as a list with
+   tags and dates, its jobs with status. Markdown can embed images and simple
+   charts a member generated. Most teams would never need more; the lab-style
+   page would be the custom exception.
+3. *Pages built against an API, not a database.* Whatever a team page is, it
+   reads through Orchestra's API, so permissions and the catalog model are
+   respected and a page cannot bypass a lead's decisions.
+
+**Data that is not the catalog.** The lab recorded several gigabytes of radio
+captures. That data is not a catalog document and does not belong in the
+repository or under `~/.orchestrator`. A team needs a *data store* that is
+distinct from its catalog: blob storage or a data warehouse, referenced from
+catalog documents by URI, with the same read/write grants as catalogs. The
+catalog describes and indexes; the data store holds. Which backends, how
+retention works, and how a team page reads large data for display are all
+open.
+
+**Questions.**
+
+- Does a team's page live with the team definition in the role library, so a
+  Lab team installs with its viewer, or is a page always project-specific?
+- Who may change a team's page: the lead only, or members through jobs the
+  lead reviews?
+- What does a page get for free from Orchestra: authentication, the API
+  client, the catalog renderer, a chart helper?
+- Where does team data go by default on a single machine, and how is it
+  routed to blob storage when a project outgrows that?
+
+---
+
 ## Open questions
 
 1. **Stage 1 prompt authoring.** Free-form prompt from the Supervisor, or a
@@ -291,6 +351,7 @@ remain useful on their own.
    Stage 4's rotation makes resident safe, but Stage 1 must pick a default.
 7. **Library format.** A directory of JSON and markdown, or a Pi package so it
    can be published and versioned?
+8. **Team pages and team data.** See the open topic above.
 
 ## Build order
 
