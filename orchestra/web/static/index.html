@@ -67,14 +67,7 @@ async function refresh() {
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
 
-function chip(s) {
-  const running = s && s.status === "running", resident = s && s.alive && !running;
-  const queued = running && !s.slot_acquired_at;
-  const stalled = running && !queued && s.last_output_at && STATE.now - s.last_output_at > 300;
-  const cls = running ? (queued || stalled ? "stalled" : "working") : resident ? "resident" : "down";
-  const txt = running ? (queued ? `queued for model · ${ago(STATE.now - (s.started_at || STATE.now))}` : stalled ? `waiting · no output ${ago(STATE.now - s.last_output_at)}` : `working · ${ago(STATE.now - (s.started_at || STATE.now))}`) : resident ? "resident" : "down";
-  return `<span class="chip ${cls}" title="${running ? "turn started " + ago(STATE.now - (s.started_at || STATE.now)) + " ago" : ""}"><span class="dot"></span>${txt}</span>`;
-}
+function chip(s) { return sessionChip(s, STATE.now); }
 
 function renderAgents(s) {
   const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));

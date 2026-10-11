@@ -52,6 +52,7 @@ class Loop:
         self.live_procs: dict[str, PiProcess] = {}   # session id -> process, while a turn runs
         self.killed: set[str] = set()                # ticket ids whose agent the operator stopped
         self.roles: dict[str, RoleDef] = {}          # all roles (built-in + custom), refreshed each tick
+        self._last_token_write: dict[str, float] = {}
         self._events_tail = self.events.read(0, limit=1)[1]   # only events after startup can wake roles
 
     # -- lifecycle -------------------------------------------------------------
@@ -91,7 +92,7 @@ class Loop:
                 pass
         self.recover()
         self.events.emit("loop_started")
-        log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
+        log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}; host model slots={self._host_slots()}")
         self._start_project_agents()
         self._start_control()
         paused = self.store.pipeline()
@@ -224,7 +225,7 @@ class Loop:
             env={"ORCHESTRA_ROLE": role.name, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": "",
                  "ORCHESTRA_TOOLS": ",".join(role.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
-            host_slots=self.cfg.host_concurrency,
+            host_slots=self._host_slots(),
         )
 
     def _wake_on_events(self) -> None:
@@ -293,8 +294,12 @@ class Loop:
             env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
                  "ORCHESTRA_TOOLS": ",".join(spec.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
-            host_slots=self.cfg.host_concurrency,
+            host_slots=self._host_slots(),
         )
+
+    def _host_slots(self) -> int:
+        from .hostlock import detect_host_slots
+        return detect_host_slots(self.cfg.provider, self.cfg.host_concurrency)
 
     def _session_running(self, sid: str, role: str, proc: PiProcess, ticket_id: str | None = None) -> None:
         self.live_procs[sid] = proc
@@ -304,38 +309,57 @@ class Loop:
             pass
         self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=proc.proc.pid,
                                pi_session_file=proc.session_file, started_at=time.time(), last_text="",
-                               slot_acquired_at=None, last_output_at=None)
+                               slot_acquired_at=None, last_output_at=None, phase="queued", phase_since=time.time(),
+                               last_token_at=None, tool_name=None)
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
 
     def _session_idle(self, sid: str, text: str, resident: bool = False) -> None:
         if not resident:
             self.live_procs.pop(sid, None)
-        self.store.set_session(sid, status="idle", last_text=(text or "")[-500:], settled_at=time.time(),
+        self.store.set_session(sid, status="idle", last_text=(text or "")[-500:], settled_at=time.time(), phase="idle", tool_name=None,
                                **({} if resident else {"pid": None}))
         self.events.emit("session_settled", session=sid)
 
     def _prompt_with_retry(self, proc: PiProcess, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id),
-                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time()))
+                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time(), phase="prompting", phase_since=time.time()))
         report = self.store.pop_report(ticket_id)
         if report or res.timed_out or res.error:
             return report, res.text, res.timed_out or bool(res.error)
         res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id),
-                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time()))
+                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time(), phase="prompting", phase_since=time.time()))
         return self.store.pop_report(ticket_id), res.text, res.timed_out or bool(res.error)
 
     def _on_event(self, sid: str):
+        """Translate Pi's stream into a session phase so the UI can say what a running
+        turn is actually doing: waiting for the first token, generating, or in a tool."""
         def fn(ev: dict) -> None:
-            if ev.get("type") in ("tool_execution_start", "message_end", "turn_end"):
-                self.store.set_session(sid, last_output_at=time.time())
-            if ev.get("type") == "tool_execution_start":
-                self.store.set_session(sid, last_text=f"tool: {ev.get('toolName') or ev.get('name', '?')}")
-            elif ev.get("type") == "message_end" and ev.get("message", {}).get("role") == "assistant":
+            t = ev.get("type")
+            now_t = time.time()
+            if t in ("agent_start", "turn_start"):
+                self.store.set_session(sid, phase="prompting", phase_since=now_t, tool_name=None)
+            elif t == "message_start" and (ev.get("message") or {}).get("role") == "assistant":
+                self.store.set_session(sid, phase="generating", phase_since=now_t, last_token_at=now_t)
+            elif t == "message_update":
+                # Many small events while tokens stream; a timestamp write every few seconds is enough.
+                st = self._last_token_write.get(sid, 0)
+                if now_t - st > 3:
+                    self._last_token_write[sid] = now_t
+                    self.store.set_session(sid, phase="generating", last_token_at=now_t, last_output_at=now_t)
+            elif t == "tool_execution_start":
+                name = ev.get("toolName") or ev.get("name", "?")
+                self.store.set_session(sid, phase="tool", phase_since=now_t, tool_name=name, last_output_at=now_t,
+                                       last_text=f"tool: {name}")
+            elif t == "tool_execution_end":
+                self.store.set_session(sid, phase="prompting", phase_since=now_t, tool_name=None, last_output_at=now_t)
+            elif t == "message_end" and (ev.get("message") or {}).get("role") == "assistant":
                 content = ev["message"].get("content")
+                fields = {"last_output_at": now_t, "last_token_at": now_t}
                 if isinstance(content, list):
                     txt = "".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
                     if txt.strip():
-                        self.store.set_session(sid, last_text=txt.strip()[-500:])
+                        fields["last_text"] = txt.strip()[-500:]
+                self.store.set_session(sid, **fields)
         return fn
 
     # -- worker ----------------------------------------------------------------
@@ -590,7 +614,7 @@ class Loop:
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
                     + agents.supervisor_context(self.store.snapshot(), [], self.project) + task)
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid),
-                          on_slot=lambda: self.store.set_session(sid, slot_acquired_at=time.time()))
+                          on_slot=lambda: self.store.set_session(sid, slot_acquired_at=time.time(), phase="prompting", phase_since=time.time()))
         self._session_idle(sid, res.text, resident=not ephemeral)
         if ephemeral:
             proc.close()

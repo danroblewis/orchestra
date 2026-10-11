@@ -61,7 +61,7 @@ class Config:
     turn_timeout: float = 900.0
     review_rounds_before_escalation: int = 3
     aging_days_per_level: float = 2.0
-    host_concurrency: int = 2
+    host_concurrency: int = 0   # 0 = detect from the model server (llama.cpp /props total_slots)
     prompt_overrides: dict[str, str] = field(default_factory=dict)
     build_command: str | None = None
     build_artifact: str | None = None
@@ -116,7 +116,7 @@ class Config:
             turn_timeout=parse_duration(a.get("turn_timeout"), 900.0),
             review_rounds_before_escalation=int(a.get("review_rounds_before_escalation", 3)),
             aging_days_per_level=float(a.get("aging_days_per_level", 2.0)),
-            host_concurrency=int(a.get("host_concurrency", 2)),
+            host_concurrency=int(a.get("host_concurrency", 0)),
             prompt_overrides=dict(a.get("prompts", {})),
             build_command=b.get("command"),
             build_artifact=b.get("artifact"),
@@ -155,7 +155,7 @@ reviewers = 3
 turn_timeout = "900s"
 review_rounds_before_escalation = 3
 aging_days_per_level = 2        # a ticket gains one priority level per N days of age; 0 disables
-host_concurrency = 2            # model turns in flight at once across every Orchestra instance on this machine
+host_concurrency = 0            # model turns in flight across every Orchestra instance here; 0 = ask the server for its slot count
 
 # [build]
 # command = "uv build"

@@ -41,7 +41,7 @@ async function refresh() {
     $("list").innerHTML = rl.roles.map((r) => {
       const sid = r.name.replace(/_/g, "-"), s = byId[sid];
       const running = s && s.status === "running", alive = s && s.alive;
-      const status = r.paused ? '<span class="chip"><span class="dot"></span>paused</span>' : running ? `<span class="chip working"><span class="dot"></span>working</span>` : alive ? '<span class="chip resident"><span class="dot"></span>resident</span>' : r.session === "ephemeral" ? '<span class="chip"><span class="dot"></span>ephemeral</span>' : '<span class="chip down"><span class="dot"></span>down</span>';
+      const status = r.paused ? '<span class="chip"><span class="dot"></span>paused</span>' : (s || r.session !== "ephemeral") ? sessionChip(s, st.now) : '<span class="chip"><span class="dot"></span>ephemeral</span>';
       const wake = [...(r.wake_on || []).map((w) => `<code>${esc(w)}</code>`), r.every ? `every ${esc(r.every)}` : "", r.at ? `daily at ${esc(r.at)}` : ""].filter(Boolean).join(" · ") || "escalations only";
       return `<div class="rolecard"><div>
           <h3><a href="#" onclick="openTranscript('${sid}');return false">${esc(r.name)}</a> ${status} ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(r.session)}</span></h3>

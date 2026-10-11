@@ -75,7 +75,8 @@ async function openTranscript(id) {
     <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
     ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
     <div>last started</div><div>${when(s.started_at)}${s.status === "running" ? ` <span class="muted">(turn running ${ago((Date.now() / 1000) - s.started_at)})</span>` : ""}</div>
-    <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}${s.status === "running" && s.last_output_at && (Date.now() / 1000) - s.last_output_at > 300 ? ' <span class="bad">no output for over 5 minutes: likely waiting on the model</span>' : ""}</div>
+    <div>doing now</div><div>${sessionChip(s, Date.now() / 1000)}</div>
+    <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}</div>
     <div>last settled</div><div>${when(s.settled_at)}</div>
     <div>turns</div><div>${d.turns} · ${d.total} messages</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div>`;
   if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
@@ -234,4 +235,30 @@ function priorityText(t, live) {
   if (pi.inherited_from) bits.push(`inherited from ${pi.inherited_from}`);
   if (pi.age_levels) bits.push(`+${pi.age_levels} for age`);
   return pi.effective === pi.own ? `${pi.own}` : `${pi.effective} <span class="muted">(own ${pi.own}; ${bits.join(", ")})</span>`;
+}
+
+// One description of what a session is doing right now, from its recorded phase.
+// Returns {cls, text, title}. cls: working | queued | stalled | resident | down | archived.
+function sessionPhase(s, now) {
+  if (!s) return { cls: "down", text: "down", title: "" };
+  if (s.status === "archived") return { cls: "archived", text: "finished", title: "" };
+  const alive = !!s.alive;
+  if (s.status !== "running") return alive ? { cls: "resident", text: "resident", title: "waiting for work" } : { cls: "down", text: "down", title: "" };
+  const age = (t) => ago(now - (t || now));
+  const turn = `turn ${age(s.started_at)}`;
+  if (!s.slot_acquired_at || s.phase === "queued") return { cls: "queued", text: `queued for a model slot · ${age(s.started_at)}`, title: turn };
+  const sinceTok = s.last_token_at ? now - s.last_token_at : null;
+  if (s.phase === "tool") return { cls: "working", text: `running ${s.tool_name || "tool"} · ${age(s.phase_since)}`, title: turn };
+  if (s.phase === "generating") {
+    if (sinceTok !== null && sinceTok > 120) return { cls: "stalled", text: `no tokens for ${ago(sinceTok)}`, title: turn + " · generation stalled" };
+    return { cls: "working", text: `generating · ${age(s.phase_since)}`, title: turn };
+  }
+  // prompting: the request is at the model and no token has come back yet
+  const wait = now - (s.phase_since || s.started_at || now);
+  if (wait > 90) return { cls: "stalled", text: `waiting for first token · ${ago(wait)}`, title: turn + " · the model has not started answering" };
+  return { cls: "working", text: `thinking · ${ago(wait)}`, title: turn };
+}
+function sessionChip(s, now) {
+  const p = sessionPhase(s, now);
+  return `<span class="chip ${p.cls}" title="${esc(p.title)}"><span class="dot"></span>${esc(p.text)}</span>`;
 }
