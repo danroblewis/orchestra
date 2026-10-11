@@ -148,3 +148,8 @@ button.ctl { background:var(--panel3); color:var(--text2); border:1px solid var(
 button.ctl:hover { color:var(--text); border-color:var(--accent) } button.ctl.paused { color:#fde68a; border-color:#92400e; background:#2a1f0e }
 button.ctl.kill { color:#fca5a5; border-color:#7f1d1d; padding:3px 10px; font-weight:600 } button.ctl.kill:hover { background:#2a1215 }
 .chat.top { position:static; border-top:0; border-bottom:1px solid var(--border); padding:4px 0 10px; margin:10px 0 }
+/* chart hover */
+.tip { position:fixed; z-index:20; pointer-events:none; background:#0b0d12; border:1px solid var(--border2); border-radius:6px; padding:6px 9px; font-size:11.5px; color:var(--text2); box-shadow:0 4px 16px rgba(0,0,0,.5); font-family:var(--mono) } .tip b { color:var(--text) }
+.xhair { stroke:#6ea8fe; stroke-opacity:.6; stroke-dasharray:3 3; vector-effect:non-scaling-stroke } .xdot { fill:#6ea8fe; stroke:#0b0d12; stroke-width:1 }
+.landings .lbar.hover { fill:#4ade80 } .landings .lbar.bad.hover { fill:#f87171 }
+.landings, #burndown { cursor:crosshair }
