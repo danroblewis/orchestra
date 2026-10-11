@@ -1,250 +1,278 @@
-# Proposal: Systems and Roles
+# Proposal: Systems and Roles, in four stages
 
-Status: draft for discussion, 2026-10-11. Nothing here is implemented yet.
+Status: draft for discussion, 2026-10-11. Nothing here is implemented.
 
-Orchestra needs a generic way to create agent roles and arrange them into working
-groups: a Product Owner with a designer, an explorer, and a QA function under it;
-an R&D lab with a Principal Investigator and researchers; a Pipeline Manager with
-a daily test run. Today only one such arrangement exists, Coordinator to worker,
-and it is hard-coded. This document proposes the general mechanism, the options
-where there is a real choice, and the questions to settle before building.
+## Why stages
 
----
+The full idea, teams of agents with leads, members, catalogs, permissions, and
+cross-team channels, could absorb weeks and still miss the mark. The honest
+answer to "what if this is a windmill" is to build it in stages where each stage
+is useful on its own, each has a checkpoint that says whether it earned the
+next one, and the first stage covers the one thing we are certain people want:
+**their own long-running monitoring agents that receive events.**
 
-## 1. What exists today
+| Stage | What it adds | Who needs it | Stop here if |
+|---|---|---|---|
+| 1. Custom agents | Roles defined as data: prompt, tools, events, schedule. Create, pause, restart, delete. | Everyone. "I want a Product Owner" or "I want a nightly auditor". | Nobody creates a second role, or created roles are ignored. |
+| 2. Teams and jobs | A lead with members; non-code work as job tickets reviewed by the lead. | Anyone whose agent needs helpers: PO with a designer, PI with researchers. | Jobs produce results nobody reads. |
+| 3. Catalogs, access, channels | Owned knowledge with read/write/decide permissions; role library shared across projects; cross-team channels. | Teams that make decisions other teams must trust. | Decisions do not change what gets built. |
+| 4. Self-organizing teams | Leads request members; templates; rotation; reference teams (Pipeline, Product, Lab); impact metrics. | A project that runs for months. | The metrics say agents' decisions are not better than the human's. |
 
-The role registry (`orchestra/agents/roles.py`) gives a role a prompt file, tool
-groups, a resident flag, wake events, and an optional schedule. The loop keeps
-resident roles alive, delivers queued wake-ups, and queues scheduled ones. The
-Pi extension grants tools by group. Operator controls can pause pickup and stop
-an agent.
+The vocabulary, fixed now so it stays stable across stages:
 
-That covers "a role exists and gets woken". It does not cover:
+- **Role**: one kind of agent, with a prompt, tools, a wake policy, and a session policy.
+- **Team**: a group of roles with one **lead**. The lead decides, delegates, owns the team's catalogs, and is the only member that talks outside the team.
+- **Member**: a role in a team that is not the lead.
+- **Job**: a unit of non-code work, executed by a member, reviewed by the lead.
+- **Catalog**: a named, owned collection of documents.
+- **Channel**: an explicit permission for two teams to exchange messages.
+- **Supervisor**: the human's interface, above every lead.
 
-1. **Hierarchy.** Who reports to whom, and who may send what to whom.
-2. **Jobs that are not code.** A researcher surveying a spectrum or an explorer
-   running a user study is not a worker on a branch, but it is a unit of work
-   with a lifecycle and a result.
-3. **Catalogs.** Structured, owned knowledge such as product metadata, design
-   decisions, research findings, and user-study results, with read, write, and
-   decide permissions.
-4. **Runtime definition.** Roles are Python. The Supervisor needs to create,
-   rework, restart, and delete them as data, and the human needs to pause,
-   resume, or delete them from the web UI.
-
----
-
-## 2. The core idea: Systems
-
-A **System** is a group of roles with exactly one **lead**. The lead is the only
-member that communicates outside the system. Members do the work; the lead
-decides and owns the system's catalogs. The Supervisor sits above every lead and
-remains the only human interface.
-
-Every arrangement in the requirements fits this shape, including the one we
-already have:
-
-| System | Lead | Members | Jobs | Catalogs |
-|---|---|---|---|---|
-| Engineering | Coordinator | worker, reviewer (per ticket) | code tickets | tickets |
-| Pipeline | Pipeline Manager | daily test runner (scheduled) | gate fixes, flaky-test triage | gate runs, flaky tests |
-| Product | Product Owner | UI/UX designer, explorer, user-study coordinator, QA | design jobs, user studies, acceptance-test tickets | product, design, user studies |
-| Lab | Principal Investigator | researcher (per job) | research jobs | research catalog, reference tests |
-
-The pattern is the same in each row: **the lead decides, members do, results land
-in a catalog the lead owns.** Coordinator to worker is the first instance of it.
-
-A System is defined by:
-
-- its lead role and member roles,
-- the job kinds its members execute and which role executes each,
-- the catalogs it owns and the permissions it grants other systems,
-- what wakes the lead: events, a schedule, or messages from the Supervisor,
-- its capacity: how many member sessions may run at once.
+What exists today in these terms: an Engineering team whose lead is the
+Coordinator and whose members are the per-ticket worker and reviewer, a
+Pipeline team whose lead is the Pipeline Manager with no members yet, and the
+Supervisor. All three are defined in Python.
 
 ---
 
-## 3. Jobs: two options
+## Stage 1: Custom agents
 
-### Option A: jobs are tickets
+**Goal.** Anyone can add a long-running agent like the Coordinator or Pipeline
+Manager without writing Python, and control it from the UI.
 
-Add a `kind` field to tickets: `code` (today's path through worker, review, and
-the merge gate) or `job`, with a `role` naming the member that executes it. A job
-ticket runs `OPEN → IN_PROGRESS → READY_FOR_REVIEW → IN_REVIEW → DONE`, skipping
-`APPROVED` and `MERGING`. Its reviewer is the system's lead or a designated
-reviewer role. Its result is one or more catalog entries rather than a branch.
+**A role is a record.** Stored in the project state as `roles.json` plus a
+prompt file per role; built-in roles stay in code and can be overridden by a
+record of the same name.
 
-For:
-- One task graph, one dependency model, one burndown, and milestones that mix
-  research, design, and code. "The spectrum survey must finish before the
-  decoder ticket starts" is a plain dependency.
-- The loop, slots, pause, stop, crash retry, and the drawers all apply unchanged.
-- Effective priority and aging apply to jobs too.
+```json
+{
+  "name": "product_owner",
+  "session_id": "product-owner",
+  "description": "Keeps value propositions and user stories current; asks the Coordinator for tickets.",
+  "prompt": "prompts/product_owner.md",
+  "tools": ["tickets", "escalate"],
+  "session": "resident",
+  "wake_on": ["milestone_closed", "ticket_done"],
+  "every": "24h",
+  "at": "09:00",
+  "paused": false,
+  "source": "project"
+}
+```
 
-Against:
-- `REJECTED` means "redo the research" rather than "fix the code", which the
-  prompts must explain.
-- The graph gets busier; a kind filter will be needed.
+**Wake policy.** `wake_on` is a list of event types from the existing event
+log, so any event the loop already emits can wake a role: ticket created,
+landed, blocked, gate failed, staging deployed, and so on. `every` and `at`
+schedule wake-ups. A woken role gets the same wake-up prompt the Coordinator
+gets today: why it was woken, the execution-health section, and the project
+snapshot.
 
-### Option B: a separate job queue per system
+**Session policy.** `resident` keeps one Pi process alive for the life of
+`orchestra run`; `ephemeral` starts a fresh session per wake-up and closes it,
+which suits daily roles that need no memory and keeps context from growing.
 
-Jobs live in their own store with a smaller lifecycle and their own page.
+**Tools.** Granted by the existing groups: `tickets`, `context`, `pipeline`,
+`capacity`, `escalate`. Stage 1 adds one group, `events`, which lets a role
+read the event log so a monitor can look back over what happened.
 
-For: cleaner semantics; nothing in the engineering graph changes.
-Against: a second scheduler, a second UI, and no dependencies between research
-and code.
+**Supervisor tools.** `create_role`, `update_role`, `delete_role`,
+`restart_role`, `pause_role`, `resume_role`. The Supervisor writes the prompt
+from a short template: who the role is, what it watches, what it may do, how
+it reports. Deleting a role archives its sessions like a finished ticket.
 
-**Recommendation: A.** The survey-guides-implementation example is exactly a
-research job that code tickets depend on.
+**UI.** An **Agents** page listing every role, built-in or custom, with status,
+last activity, next scheduled wake-up, and pause, restart, and delete controls.
+Pause queues wake-ups instead of dropping them, so a resumed role catches up.
+The dashboard's left column shows custom resident roles beneath the three
+built-in ones.
+
+**Done when.** A user creates a Product Owner from chat, it wakes daily and on
+landings, it asks the Coordinator for tickets through `escalate`-style
+messages, and the user pauses and deletes it from the UI.
+
+**Checkpoint.** Does anyone create a second role, and does it change what gets
+built? If created roles are ignored, stop here; the mechanism is cheap and
+already covers the certain need.
 
 ---
 
-## 4. Catalogs
+## Stage 2: Teams and jobs
 
-A catalog is a named collection of documents. Each document is a markdown file
-with a small frontmatter record (id, title, author role, status, created,
-updated, tags). Catalogs live under the project state, each catalog its own git
-repository, so every change has a diff and an author.
+**Goal.** A role can have helpers, and helpers can do work that is not code.
 
-Tools, granted by permission:
+**Teams.** `teams.json` names a lead and its members, and the team's capacity:
+how many member sessions may run at once, separate from the engineering worker
+pool so a lab survey cannot starve code work of the local model.
 
-| Tool | Permission | Meaning |
+**Jobs are tickets.** Tickets gain `kind`: `code` is today's path through
+worker, review, and the merge gate; `job` names the member role that executes
+it. A job runs `OPEN → IN_PROGRESS → READY_FOR_REVIEW → IN_REVIEW → DONE` and
+skips `APPROVED` and `MERGING`. Its reviewer is the team's lead unless the team
+names a reviewer role. Its result is written where the job's brief says, at
+this stage a plain document directory per team (`<state>/teams/<team>/docs/`),
+which Stage 3 turns into catalogs.
+
+Why tickets rather than a second queue: one task graph, one dependency model,
+one burndown, and "the spectrum survey must finish before the decoder ticket
+starts" is an ordinary dependency. The loop, slots, pause, stop, crash retry,
+effective priority, and the drawers apply unchanged. The cost is that
+`REJECTED` means "redo the research" for a job, which the prompts explain.
+
+**Communication, the tree.** A member talks only to its lead; a lead talks to
+its members and to the Supervisor. `send_to(role, note)` queues a wake-up and
+the store rejects calls outside the tree with a message saying why. Leads do
+not talk to each other yet; that is Stage 3.
+
+**Done when.** A Lab team with a Principal Investigator lead and an ephemeral
+researcher member runs a research job created by the PI, the PI reviews and
+accepts the result, and a code ticket that depends on the job becomes ready.
+
+**Checkpoint.** Do job results get read? Measure how often a job's document is
+referenced by a later ticket or decision. If jobs are produced and never
+consumed, stop before catalogs.
+
+---
+
+## Stage 3: Catalogs, access control, channels, and a role library
+
+**Goal.** Teams own knowledge that other teams can trust, decisions are
+explicit, and roles are reusable across projects.
+
+### Catalogs
+
+A catalog is a named collection of markdown documents with frontmatter (id,
+title, author role, status, tags, created, updated). Catalogs are grouped by
+purpose under the team that owns them:
+
+```
+<state>/catalogs/
+  product/            owned by the Product team
+    value-propositions/
+    user-stories/
+    user-studies/
+  design/             owned by the Product team, written by the designer
+    decisions/
+    components/
+  research/           owned by the Lab
+    findings/
+    reference-surveys/
+  pipeline/           owned by the Pipeline team
+    gate-runs/  flaky-tests/
+```
+
+Each top-level catalog is its own git repository, so every change has a diff
+and an author. Documents have a status: `draft`, `proposed`, `decided`,
+`rejected`, `superseded`.
+
+### Access control
+
+Permissions are a matrix of role × catalog × action, stored in `teams.json`
+and enforced in one place, the `orchestra api` layer that every tool goes
+through, keyed by the `ORCHESTRA_ROLE` the loop set when it launched the agent.
+Agents never see the matrix; a disallowed call fails and says who may do it.
+
+| Action | Meaning | Default grant |
 |---|---|---|
-| `catalog_list`, `catalog_read` | read | Browse and read documents. |
-| `catalog_write` | write | Create or update a document as a draft or finding. |
-| `catalog_propose` | write | Submit a document for the lead's decision. |
-| `catalog_decide` | decide | Mark a document `decided` or `rejected`, with a note. |
+| read | list and read documents | every role, every catalog |
+| write | create and edit `draft` documents | members of the owning team |
+| propose | move a document to `proposed` | members of the owning team |
+| decide | set `decided`, `rejected`, or `superseded` | the owning team's lead |
+| grant | change the matrix for the team's catalogs | the owning team's lead |
 
-Permissions are per role per catalog. Typical shape: every role reads most
-catalogs; members write to their own system's catalogs; only the lead decides.
-Other systems treat `decided` documents as settled input. A design decision is a
-decided document in the design catalog; a product value proposition is a
-decided document in the product catalog.
+A lead grants access to its members: "the designer may write to `design/`",
+"the explorer may write to `product/user-studies/` but not read `design/`".
+`decided` documents are the contract between teams: Engineering reads decided
+design documents; the Lab reads decided user stories to know what to research.
+Two catalogs are also code, acceptance tests and reference tests, and those
+enter the merge gate only as code tickets through Engineering.
 
-Two catalogs are special because they are also code:
+### Channels
 
-- **Acceptance tests.** QA's output enters the merge gate the only way code
-  does: QA creates *code tickets* carrying the tests, which are reviewed and
-  gated like any change.
-- **Reference and performance tests.** The Lab's reference survey becomes tests
-  the same way, through code tickets, so the gate owns them.
+Sometimes leads must talk to each other: the Product Owner to the Pipeline
+Manager about a flaky acceptance test, the PI to the Coordinator about a survey
+that changes a ticket's brief. A **channel** is an explicit grant between two
+teams, created by the Supervisor or requested by a lead, that allows
+`send_to` between their leads, and optionally between named members. The
+default remains the tree; channels are the exceptions, and each one is listed
+on the Teams page so the communication pattern is visible. Everything else
+crosses teams through `decided` documents.
 
----
+### Role library
 
-## 5. Communication
+Roles and teams should not be rebuilt per project. The library has three
+sources, resolved in order:
 
-A strict tree:
+1. **Project**: `<repo>/.orchestra/roles/` and `.orchestra/teams/`, versioned
+   with the code, for roles specific to that codebase.
+2. **User**: `~/.orchestrator/library/`, shared by every project on the machine.
+3. **Built-in**: the roles shipped with Orchestra.
 
-- A member talks only to its lead.
-- A lead talks to its members and to the Supervisor.
-- Leads talk to each other only through the Supervisor, or through decided
-  catalog documents.
+A role definition is portable because it names tool groups and event types
+rather than project details; project specifics live in the role's prompt
+template slots (product name, domain, catalogs). `orchestra role install
+<name>` copies a library role into a project; `orchestra role export <name>`
+does the reverse. Teams are packaged the same way, so a "Product team" or "Lab
+team" can be installed into a new project in one step.
 
-Implemented as a `send_to(role, note)` tool that queues a wake-up, with the tree
-enforced in the store so a tool call outside it fails and says why. The explorer
-story is the argument for the tree: moving user studies under the Product Owner
-improved outcomes because the decision-maker received the raw input.
+**Done when.** The Product Owner decides a user story, QA files acceptance-test
+tickets that cite it, the gate runs them, and the same Product team installs
+into a second project from the library.
 
----
-
-## 6. Scheduling and sessions
-
-Each role declares:
-
-- `resident` (one long-lived session, kept alive by the loop) or `ephemeral`
-  (a fresh session per job or per wake-up, closed afterwards),
-- `every` (interval) or `at` (daily time), or neither for purely event-driven
-  roles.
-
-A Product Owner at one session per day should be resident and woken once daily
-so it keeps its memory. Researchers are ephemeral per job. Resident sessions
-grow without bound, so a rotation policy is needed: Pi's compaction, or a fresh
-session every N turns seeded from a summary document the role writes to its
-catalog before rotating.
+**Checkpoint.** Do decided documents change tickets? Measure how many tickets
+cite a decided document and how often a decision is superseded. If decisions
+pile up without affecting work, do not build Stage 4.
 
 ---
 
-## 7. Definition and control
+## Stage 4: Self-organizing teams
 
-Roles and systems become data:
+**Goal.** Teams run for months with little human attention, and we can tell
+whether they help.
 
-```
-<state>/
-  systems.json          # systems, members, catalogs, permissions, schedules, capacity
-  prompts/<role>.md     # role prompts, editable
-  catalogs/<name>/      # one git repository per catalog
-```
+- **Leads request members.** A lead may ask the Supervisor for a role to be
+  added to its team, with a justification. The Supervisor decides, informed by
+  the human. Leads grant their members access themselves.
+- **Templates.** Role templates with slots, so the Supervisor instantiates a
+  lead, specialist, job worker, reviewer, or explorer rather than writing a
+  prompt from nothing.
+- **Session rotation.** Resident roles rotate to a fresh session every N turns
+  or days, writing a handover document to their catalog first, so memory
+  survives but context does not grow without bound.
+- **Reference teams.** Pipeline (gate events: a run over 2.5 times the median,
+  bisection, flaky tests; a daily test run member that files tickets on
+  failure), Product (owner, designer, explorer, user-study coordinator, QA),
+  and Lab (PI, researchers, reference surveys turned into tests). Shipped as
+  library teams.
+- **Impact metrics.** On the Teams page: jobs completed, decisions made and
+  cited, tickets that trace to a decision, time from decision to landing, and
+  the human's overrides of agent decisions. These are the numbers that answer
+  the windmill question.
 
-Built-in roles (supervisor, coordinator, pipeline manager, worker, reviewer)
-stay in code but can be overridden by the same data.
-
-Supervisor tools: `create_system`, `update_system`, `delete_system`,
-`create_role`, `update_role`, `restart_role`, `delete_role`, `set_permissions`.
-Deleting a role archives its sessions the way finished tickets are archived.
-
-Web UI: a **Systems** page showing a tree of systems and roles, each with its
-status, last activity, next scheduled wake-up, and pause, restart, and delete
-controls. Pause means wake-ups queue rather than drop, so a resumed role catches
-up. These are operator controls, like the existing pause and stop.
-
-Prompt quality is the main risk in letting the Supervisor author roles. The
-proposal is role **templates** with slots to fill rather than free-form prompts,
-at least initially:
-
-| Template | Shape |
-|---|---|
-| lead | Owns catalogs, decides, delegates jobs, reports upward. |
-| specialist | Resident member with domain tools; writes findings; proposes decisions. |
-| job worker | Ephemeral per job; produces a catalog entry; reports READY_FOR_REVIEW. |
-| reviewer | Judges a job's output against its brief. |
-| explorer | Simulates a user against staging; files observations and bugs. |
+**Checkpoint.** If the metrics say agent decisions are overridden more often
+than they are kept, the right move is to scale back to Stages 1 to 3, which
+remain useful on their own.
 
 ---
 
-## 8. The Pipeline Manager as the first real System
+## Open questions
 
-The Pipeline Manager's requirements fit this design directly and would be the
-first build:
+1. **Stage 1 prompt authoring.** Free-form prompt from the Supervisor, or a
+   template with slots from day one?
+2. **Job results in Stage 2.** A plain document directory per team, or catalogs
+   immediately with permissions deferred?
+3. **Catalog location.** Under the project state, invisible to the code repo,
+   or inside the repo under `.orchestra/catalogs/` where the gate's
+   dirty-checkout rule applies?
+4. **Decide semantics.** A status the lead sets, or a propose-then-decide flow
+   with feedback, like code review?
+5. **Channels.** Lead-to-lead only, or may a channel name specific members?
+6. **Ephemeral versus resident for daily roles.** Memory versus context growth;
+   Stage 4's rotation makes resident safe, but Stage 1 must pick a default.
+7. **Library format.** A directory of JSON and markdown, or a Pi package so it
+   can be published and versioned?
 
-- Events: a merge gate run taking more than 2.5 times the recent median, a run
-  that entered bisection, a test flaky across N runs.
-- A scheduled **daily test run** member: runs the specs quarantined as daily,
-  records results in the gate-runs catalog, and the lead files tickets for
-  failures.
-- Tools: `quarantine_test`, `unquarantine_test`, `get_gate_run`,
-  `list_gate_runs`, `resume_pipeline`, `restart_staging`.
+## Build order
 
----
-
-## 9. Open questions
-
-1. **Jobs as tickets (A) or a separate queue (B)?** Recommendation: A.
-2. **Catalog storage.** A git repository under the project state, invisible to
-   the code repo? Or inside the code repo under `.orchestra/catalogs/`,
-   versioned with the code but then subject to the gate's dirty-checkout rule?
-3. **Decision semantics.** Is `decide` a status the lead sets, or an approval
-   flow where members propose and the lead accepts or rejects with feedback?
-4. **Strict tree, or may leads talk to leads directly?** For example, Product
-   Owner to Pipeline Manager about a flaky acceptance test.
-5. **Daily roles.** Resident with a once-a-day wake, or fresh ephemeral sessions
-   seeded from a catalog summary? This decides how context growth is handled.
-6. **Prompts.** Templates with parameters, or free-form text the Supervisor
-   writes?
-7. **Capacity.** One global pool, or per-system capacity so a lab survey cannot
-   starve engineering of the local model?
-8. **Reference and performance tests.** May the Lab add tests to the merge gate
-   directly, or always through code tickets?
-9. **Where the Pipeline Manager's new events live.** Part of this work, as the
-   first non-trivial System with a scheduled member, or a separate change?
-
----
-
-## 10. Suggested build order, once decided
-
-1. Ticket `kind` and job lifecycle; the loop routes jobs to their role.
-2. Catalogs: storage, tools, permissions.
-3. Systems data model, `send_to` with the tree enforced, per-system capacity.
-4. Supervisor tools and role templates; the Systems page with pause, restart,
-   and delete.
-5. Pipeline System: gate events, daily test run, flaky quarantine.
-6. A Product System and a Lab System as the proof that the mechanism is generic.
+Stage 1 first, as one piece of work. Then the Pipeline team's events and daily
+run as the first Stage 2 use, since they are already required. Stages 3 and 4
+only after their checkpoints.
