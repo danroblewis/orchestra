@@ -4,164 +4,109 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Orchestra</title>
-<style>
-  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e2230; --border:#2a2f3d; --text:#e6e8ee; --muted:#8a90a3; --accent:#6ea8fe;
-    --OPEN:#8a90a3; --BLOCKED:#f0883e; --IN_PROGRESS:#3fb950; --READY_FOR_REVIEW:#a5d6ff; --IN_REVIEW:#58a6ff; --REJECTED:#f85149;
-    --APPROVED:#bc8cff; --MERGING:#d2a8ff; --DONE:#2ea043; --CANCELLED:#484f58; }
-  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text); font:13px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif }
-  header { display:flex; align-items:center; gap:16px; padding:8px 14px; border-bottom:1px solid var(--border); background:var(--panel) }
-  header h1 { font-size:15px; margin:0 } header .muted { color:var(--muted) }
-  .layout { display:grid; grid-template-columns:300px 1fr 340px; height:calc(100vh - 41px) }
-  .col { overflow:auto; padding:10px; border-right:1px solid var(--border) } .col:last-child { border-right:0 }
-  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:8px 0 6px }
-  .card { background:var(--panel); border:1px solid var(--border); border-left:4px solid var(--muted); border-radius:6px; padding:8px 10px; margin-bottom:8px; cursor:pointer }
-  .card:hover { border-color:var(--accent) } .card .t { font-weight:600; display:flex; justify-content:space-between; gap:8px }
-  .card .m { color:var(--muted); font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .card.idle { opacity:.55 } .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#3fb950; margin-right:6px; animation:pulse 1.4s infinite }
-  @keyframes pulse { 50% { opacity:.3 } }
-  .panel { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:10px; margin-bottom:10px }
-  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:12px } .kv div:nth-child(odd) { color:var(--muted) }
-  .badge { display:inline-block; padding:1px 6px; border-radius:10px; font-size:11px; color:#000; font-weight:600 }
-  .empty { color:var(--muted); font-size:12px }
-  svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer } .node rect { stroke:var(--border); stroke-width:1.5; rx:6 }
-  .node text { fill:#fff; font-size:11px; pointer-events:none } .node .title { font-size:11px } .node.active rect { stroke:#fff; stroke-width:2 }
-  .group text { fill:var(--muted); font-size:12px; font-weight:600 } .group rect { fill:none; stroke:var(--border); stroke-dasharray:4 3; rx:10 }
-  .edge { fill:none; stroke:#4b5368; stroke-width:1.4; marker-end:url(#arrow) }
-  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:9 }
-  .overlay.open { display:flex } .drawer { width:min(920px,94vw); max-height:88vh; overflow:auto; background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:16px }
-  .drawer h3 { margin:0 0 8px } pre { background:#0b0d12; border:1px solid var(--border); border-radius:6px; padding:8px; white-space:pre-wrap; font-size:12px; max-height:50vh; overflow:auto }
-  .msg { border-left:3px solid var(--border); padding:4px 8px; margin:6px 0 } .msg.user { border-color:var(--accent) } .msg.assistant { border-color:#3fb950 } .msg.toolResult { border-color:#8a90a3; color:var(--muted) }
-  .msg .r { font-size:11px; color:var(--muted) } .note { border-top:1px solid var(--border); padding:6px 0; font-size:12px } .note b { color:var(--muted) }
-  .stage { display:flex; justify-content:space-between; font-size:12px } .ok { color:#3fb950 } .bad { color:#f85149 }
-  .filter { width:100%; background:var(--panel); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px; margin-bottom:8px }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header><h1>Orchestra</h1><span id="proj" class="muted"></span><span id="conn" class="muted" style="margin-left:auto"></span></header>
+<nav id="nav"></nav>
 <div class="layout">
   <div class="col"><h2>Agents</h2><div id="agents"></div></div>
-  <div class="col"><input id="filter" class="filter" placeholder="filter tickets (id, title, state, milestone)"><div id="graph"></div></div>
+  <div class="col"><h2>Merge queue</h2><div id="queue"></div></div>
   <div class="col">
-    <h2>Merge gate</h2><div id="gate" class="panel"></div>
-    <h2>System stats</h2><div id="stats" class="panel"></div>
-    <h2>Staging</h2><div id="staging" class="panel"><span class="empty">Not configured. The gate promotes builds here once [staging] is set in orchestra.toml.</span></div>
+    <h2>System</h2>
+    <div class="panel">
+      <div class="cores" id="cores"></div>
+      <div class="meters">
+        <div class="meter"><div class="lbl"><span>memory</span><span id="mem-lbl"></span></div><div class="bar"><i id="mem-bar" style="width:0"></i></div></div>
+        <div class="meter"><div class="lbl"><span>disk</span><span id="disk-lbl"></span></div><div class="bar"><i id="disk-bar" style="width:0"></i></div></div>
+      </div>
+      <div class="muted" id="load" style="font-size:11px;margin-top:6px"></div>
+    </div>
+    <h2>Staging environment</h2>
+    <div class="term" id="staging"></div>
   </div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
+<script src="/static/app.js"></script>
 <script>
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const color = (s) => `var(--${s})`;
-const ago = (sec) => sec < 60 ? `${Math.round(sec)}s` : sec < 3600 ? `${Math.round(sec/60)}m` : `${(sec/3600).toFixed(1)}h`;
+const BASE_AGENTS = [["supervisor", "supervisor"], ["coordinator", "coordinator"], ["pipeline-manager", "pipeline_manager"]];
 let STATE = null;
 
 async function refresh() {
   try {
-    const r = await fetch("/api/state"); STATE = await r.json(); $("conn").textContent = "live";
-    render();
-  } catch (e) { $("conn").textContent = "disconnected"; }
+    STATE = await (await fetch("/api/state")).json();
+    renderNav("dashboard", STATE.project); $("conn").textContent = "live";
+    renderAgents(STATE); renderQueue(STATE);
+  } catch (e) { if ($("conn")) $("conn").textContent = "disconnected"; }
 }
 
-function render() {
-  const s = STATE; if (!s) return;
-  $("proj").textContent = `${s.project.key} · ${s.project.base_branch} · ${s.project.model || "no model"}`;
-  renderAgents(s); renderGraph(s); renderGate(s); renderStats(s);
+function agentCard(s, ticket, fixed) {
+  const running = s && s.status === "running";
+  const elapsed = running && s.started_at ? ago(STATE.now - s.started_at) : "";
+  const kind = s ? s.kind : fixed;
+  const last = s ? (s.last_text || "") : "no session yet";
+  return `<div class="card ${running ? "" : "idle"}" style="border-left-color:${kindColor(kind)}" onclick="openTranscript('${esc(s ? s.id : fixed)}')">
+    <div class="t"><span><span class="dot ${running ? "" : "off"}"></span>${esc(s ? s.id : fixed)}</span><span class="muted">${running ? elapsed : (s ? "idle" : "")}</span></div>
+    ${ticket ? `<div class="tk">${esc(ticket.id)} · ${esc(ticket.title)}</div>` : ""}
+    <div class="m">${esc(last)}</div></div>`;
 }
 
 function renderAgents(s) {
+  const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
   const byT = Object.fromEntries(s.tickets.map((t) => [t.id, t]));
-  const running = s.sessions.filter((x) => x.status === "running").sort((a, b) => (a.started_at || 0) - (b.started_at || 0));
-  const idle = s.sessions.filter((x) => x.status !== "running" && ["supervisor", "coordinator", "pipeline_manager"].includes(x.kind));
-  const card = (x, cls) => {
-    const t = x.ticket_id ? byT[x.ticket_id] : null;
-    const el = x.started_at && cls === "" ? ago(s.now - x.started_at) : "";
-    return `<div class="card ${cls}" style="border-left-color:${kindColor(x.kind)}" onclick="openTranscript('${x.id}')">
-      <div class="t"><span>${cls === "" ? '<span class="dot"></span>' : ""}${esc(x.id)}</span><span class="muted">${el}</span></div>
-      ${t ? `<div class="m">${esc(t.id)} · ${esc(t.title)}</div>` : ""}
-      <div class="m">${esc(x.last_text || "")}</div></div>`;
-  };
-  $("agents").innerHTML = (running.map((x) => card(x, "")).join("") || '<div class="empty">No agents running.</div>') +
-    (idle.length ? "<h2>Idle</h2>" + idle.map((x) => card(x, "idle")).join("") : "");
-}
-const kindColor = (k) => ({supervisor:"#bc8cff", coordinator:"#58a6ff", pipeline_manager:"#f0883e", worker:"#3fb950", reviewer:"#f85149"}[k] || "#8a90a3");
-
-function renderGraph(s) {
-  const q = $("filter").value.trim().toLowerCase();
-  const tickets = s.tickets.filter((t) => !q || [t.id, t.title, t.state, t.milestone_id].join(" ").toLowerCase().includes(q));
-  if (!tickets.length) { $("graph").innerHTML = '<div class="empty">No tickets yet. Talk to the Supervisor with <code>orchestra chat</code>.</div>'; return; }
-  const byId = Object.fromEntries(tickets.map((t) => [t.id, t]));
-  const depth = {}; const d = (t) => depth[t.id] ??= 1 + Math.max(0, ...t.depends_on.filter((x) => byId[x]).map((x) => d(byId[x])));
-  tickets.forEach(d);
-  const W = 190, H = 46, GX = 60, GY = 18, PAD = 24;
-  const groups = s.milestones.map((m) => ({ m, tickets: tickets.filter((t) => t.milestone_id === m.id) })).filter((g) => g.tickets.length);
-  let y = 10; const pos = {}; const gboxes = [];
-  for (const g of groups) {
-    const cols = {}; g.tickets.forEach((t) => (cols[depth[t.id]] ??= []).push(t));
-    const nCols = Math.max(...Object.keys(cols).map(Number));
-    const rows = Math.max(...Object.values(cols).map((c) => c.length));
-    const top = y;
-    Object.entries(cols).forEach(([c, list]) => list.forEach((t, i) => { pos[t.id] = { x: PAD + (c - 1) * (W + GX), y: top + 28 + i * (H + GY) }; }));
-    const h = 28 + rows * (H + GY) + 6; gboxes.push({ g, top, h, w: PAD * 2 + nCols * (W + GX) - GX }); y += h + 24;
-  }
-  const width = Math.max(600, ...gboxes.map((b) => b.w + 10));
-  let svg = `<svg viewBox="0 0 ${width} ${y}" style="min-height:${Math.max(400, y)}px"><defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#4b5368"/></marker></defs>`;
-  for (const b of gboxes) svg += `<g class="group"><rect x="4" y="${b.top}" width="${b.w}" height="${b.h}"/><text x="14" y="${b.top + 17}">${esc(b.g.m.id)} · ${esc(b.g.m.name)} ${b.g.m.status === "closed" ? "(closed)" : ""}</text></g>`;
-  for (const t of tickets) for (const dep of t.depends_on) { const a = pos[dep], b = pos[t.id]; if (!a || !b) continue;
-    const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2; svg += `<path class="edge" d="M${x1},${y1} C${x1 + 30},${y1} ${x2 - 30},${y2} ${x2},${y2}"/>`; }
-  for (const t of tickets) { const p = pos[t.id]; const act = ["IN_PROGRESS", "IN_REVIEW", "MERGING"].includes(t.state);
-    svg += `<g class="node ${act ? "active" : ""}" transform="translate(${p.x},${p.y})" onclick="openTicket('${t.id}')"><rect width="${W}" height="${H}" fill="${color(t.state)}" fill-opacity=".85"/>
-      <text x="8" y="17" style="font-weight:700">${esc(t.id)} <tspan style="font-weight:400;fill:#e6e8ee">${esc(t.state)}</tspan></text><text class="title" x="8" y="34">${esc(t.title.slice(0, 30))}${t.title.length > 30 ? "…" : ""}</text></g>`; }
-  $("graph").innerHTML = svg + "</svg>";
+  let html = BASE_AGENTS.map(([id, kind]) => agentCard(byId[id], null, id)).join("");
+  const others = s.sessions.filter((x) => !BASE_AGENTS.some(([id]) => id === x.id));
+  const running = others.filter((x) => x.status === "running").sort((a, b) => (a.started_at || 0) - (b.started_at || 0));
+  const idle = others.filter((x) => x.status !== "running").sort((a, b) => (b.settled_at || 0) - (a.settled_at || 0)).slice(0, 12);
+  html += `<h2>Working (${running.length})</h2>` + (running.map((x) => agentCard(x, byT[x.ticket_id])).join("") || '<div class="empty">no workers or reviewers running</div>');
+  if (idle.length) html += `<h2>Recent</h2>` + idle.map((x) => agentCard(x, byT[x.ticket_id])).join("");
+  $("agents").innerHTML = html;
 }
 
-function renderGate(s) {
-  const runs = s.gate_runs || []; const cur = runs.find((r) => r.status === "running"); const last = runs[runs.length - 1];
-  const queue = s.tickets.filter((t) => t.state === "APPROVED");
-  let h = s.pipeline.paused ? `<div class="bad">PAUSED: ${esc(s.pipeline.reason)}</div>` : "";
-  const runHtml = (r) => `<div onclick="openGateRun('${r.id}')" style="cursor:pointer"><div class="kv"><div>run</div><div>${r.id} <span class="${r.status === "landed" ? "ok" : r.status === "running" ? "" : "bad"}">${r.status}</span></div>
-    <div>batch</div><div>${r.batch.join(", ")}</div></div>${(r.stages || []).map((st) => `<div class="stage"><span>${st.stage}:${st.name}</span><span class="${st.status === "passed" ? "ok" : "bad"}">${st.status} ${st.duration ? st.duration + "s" : ""}</span></div>`).join("")}
-    ${r.summary ? `<div class="m muted">${esc(r.summary)}</div>` : ""}</div>`;
-  h += cur ? runHtml(cur) : last ? `<div class="muted">last:</div>${runHtml(last)}` : '<div class="empty">No gate runs yet.</div>';
-  h += `<h2>Approved queue (${queue.length})</h2>` + (queue.map((t) => `<div class="stage"><span>${esc(t.id)} ${esc(t.title.slice(0, 28))}</span><span class="muted">${ago(s.now - Date.parse(t.state_since) / 1000)}</span></div>`).join("") || '<div class="empty">empty</div>');
-  $("gate").innerHTML = h;
+function stageLine(st) {
+  return `<div class="stage"><span>${esc(st.stage)}:${esc(st.name)}</span><span class="${st.status === "passed" ? "ok" : "bad"}">${st.status}${st.duration ? " " + st.duration + "s" : ""}</span></div>`;
 }
 
-function renderStats(s) {
-  const c = s.counts, st = s.stats;
-  const counts = Object.entries(c).filter(([, v]) => v).map(([k, v]) => `<span class="badge" style="background:${color(k)}">${k} ${v}</span>`).join(" ");
-  $("stats").innerHTML = `<div style="margin-bottom:8px">${counts || '<span class="empty">no tickets</span>'}</div><div class="kv">
-    <div>workers</div><div>${st.workers.used} / ${st.workers.total}</div><div>reviewers</div><div>${st.reviewers.used} / ${st.reviewers.total}</div>
-    <div>gate</div><div>${st.gate_busy ? "running" : "idle"}</div><div>landed</div><div>${st.done}</div>
-    <div>open→done</div><div>${st.mean_open_to_done_s ? ago(st.mean_open_to_done_s) : "—"}</div>
-    <div>gate pass rate</div><div>${st.gate_pass_rate == null ? "—" : Math.round(st.gate_pass_rate * 100) + "% of " + st.gate_runs}</div>
-    <div>model</div><div>${esc(s.project.provider || "")}/${esc(s.project.model || "")}</div></div>`;
+function renderQueue(s) {
+  const byT = Object.fromEntries(s.tickets.map((t) => [t.id, t]));
+  const runs = s.gate_runs || [];
+  const cur = runs.find((r) => r.status === "running");
+  let html = s.pipeline.paused ? `<div class="panel bad">PIPELINE PAUSED: ${esc(s.pipeline.reason)}</div>` : "";
+  html += `<h2>Now merging</h2>`;
+  if (cur) {
+    html += `<div class="panel" onclick="openGateRun('${cur.id}')" style="cursor:pointer"><div class="kv"><div>run</div><div>${cur.id}</div><div>batch</div><div>${cur.batch.map((id) => `${id} ${esc((byT[id] || {}).title || "")}`).join("<br>")}</div><div>started</div><div>${ago(s.now - Date.parse(cur.started_at) / 1000)} ago</div></div>${(cur.stages || []).map(stageLine).join("")}</div>`;
+  } else html += `<div class="empty">gate idle</div>`;
+  const queue = s.tickets.filter((t) => t.state === "APPROVED").sort((a, b) => a.state_since.localeCompare(b.state_since));
+  html += `<h2>Queued (${queue.length})</h2>` + (queue.map((t, i) => `<div class="queue-item" onclick="openTicket('${t.id}')"><div class="t">${i + 1}. ${esc(t.id)} ${esc(t.title)}</div><div class="m">approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · commit ${esc((t.reviewed_commit || "").slice(0, 10))}</div></div>`).join("") || '<div class="empty">nothing approved</div>');
+  const upstream = s.tickets.filter((t) => ["READY_FOR_REVIEW", "IN_REVIEW", "IN_PROGRESS", "REJECTED"].includes(t.state));
+  html += `<h2>Upstream (${upstream.length})</h2>` + (upstream.map((t) => `<div class="row" onclick="openTicket('${t.id}')"><span>${esc(t.id)} ${esc(t.title)}</span><span class="badge" style="background:${color(t.state)}">${t.state}</span></div>`).join("") || '<div class="empty">nothing in flight</div>');
+  const hist = runs.filter((r) => r.status !== "running").slice(-12).reverse();
+  html += `<h2>History</h2>` + (hist.map((r) => `<div class="row" onclick="openGateRun('${r.id}')"><span><span class="${r.status === "landed" ? "ok" : "bad"}">${r.status}</span> ${r.batch.join(", ")} <span class="muted">${esc(r.summary || "")}</span></span><span class="muted">${r.finished_at ? ago(s.now - Date.parse(r.finished_at) / 1000) : ""}</span></div>`).join("") || '<div class="empty">no gate runs yet</div>');
+  $("queue").innerHTML = html;
 }
 
-function openDrawer(html) { $("drawer").innerHTML = html; $("overlay").classList.add("open"); }
-function closeDrawer() { $("overlay").classList.remove("open"); }
-async function openTicket(id) {
-  const t = await (await fetch(`/api/tickets/${id}`)).json();
-  openDrawer(`<h3>${esc(t.id)} <span class="badge" style="background:${color(t.state)}">${t.state}</span> ${esc(t.title)}</h3>
-    <div class="kv"><div>milestone</div><div>${esc(t.milestone_id)}</div><div>priority</div><div>${t.priority}</div><div>depends on</div><div>${t.depends_on.join(", ") || "—"}</div>
-    <div>branch</div><div>${esc(t.branch || "—")}</div><div>reviewed commit</div><div>${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
-    <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div></div>
-    ${t.blocked_reason ? `<h2>Blocked</h2><pre>${esc(t.blocked_reason)}</pre>` : ""}${t.feedback ? `<h2>Feedback (${esc(t.rejected_by || "")})</h2><pre>${esc(t.feedback)}</pre>` : ""}
-    <h2>Description</h2><pre>${esc(t.description)}</pre><h2>Acceptance</h2><pre>${esc(t.acceptance)}</pre>
-    <h2>Notes</h2>${t.notes.map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b><br>${esc(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
+async function refreshSystem() {
+  try {
+    const d = await (await fetch("/api/system")).json();
+    $("cores").innerHTML = d.cpu_percent.map((p, i) => `<div class="core ${p > 85 ? "hot" : p > 50 ? "warm" : ""}" title="core ${i}: ${p}%"><i style="height:${Math.max(2, p)}%"></i></div>`).join("");
+    $("mem-lbl").textContent = `${d.memory.percent}% · ${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`;
+    $("mem-bar").style.width = `${d.memory.percent}%`;
+    $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`;
+    $("disk-bar").style.width = `${d.disk.percent}%`;
+    $("load").textContent = `${d.cpu_percent.length} cores · load ${d.load.join(" / ")}`;
+  } catch (e) {}
 }
-async function openTranscript(id) {
-  const r = await fetch(`/api/sessions/${id}/transcript`); if (!r.ok) return openDrawer(`<h3>${esc(id)}</h3><div class="empty">no transcript</div>`);
-  const d = await r.json();
-  openDrawer(`<h3>${esc(id)} <span class="muted">${d.session.status}</span></h3>` + (d.messages.map((m) => `<div class="msg ${m.role}"><div class="r">${m.role} ${m.tool_calls.map((t) => `[${esc(t.name)} ${esc(JSON.stringify(t.args || {}).slice(0, 120))}]`).join(" ")}</div>${esc(m.text).slice(0, 4000)}</div>`).join("") || '<div class="empty">empty</div>'));
+
+async function refreshStaging() {
+  try {
+    const d = await (await fetch("/api/staging")).json();
+    const el = $("staging"); const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+    el.textContent = d.log || (d.configured ? `[staging: ${d.status}]` : "[staging not configured: add a [staging] section to orchestra.toml; the gate promotes landed builds here]");
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  } catch (e) {}
 }
-async function openGateRun(id) {
-  const r = await (await fetch(`/api/gate/runs/${id}`)).json();
-  openDrawer(`<h3>Gate run ${r.id} <span class="${r.status === "landed" ? "ok" : "bad"}">${r.status}</span></h3><div class="kv"><div>batch</div><div>${r.batch.join(", ")}</div><div>merged</div><div>${(r.merged || []).join(", ") || "—"}</div><div>rejected</div><div>${(r.rejected || []).join(", ") || "—"}</div><div>summary</div><div>${esc(r.summary)}</div></div>
-    ${(r.stages || []).map((s) => `<h2>${s.stage}:${s.name} <span class="${s.status === "passed" ? "ok" : "bad"}">${s.status}</span></h2><pre>${esc(s.tail || "")}</pre>`).join("")}`);
-}
-$("filter").addEventListener("input", render);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
-refresh(); setInterval(refresh, 2500);
+
+refresh(); refreshSystem(); refreshStaging();
+setInterval(refresh, 2500); setInterval(refreshSystem, 2000); setInterval(refreshStaging, 3000);
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>
 </body>

@@ -1,4 +1,5 @@
-"""Read-only FastAPI app: state snapshot, ticket detail, transcripts, events. SPEC.md section 11."""
+"""Read-only FastAPI app: state snapshot, ticket detail, transcripts, system stats, events.
+SPEC.md section 11."""
 
 from __future__ import annotations
 
@@ -6,61 +7,66 @@ import asyncio
 import time
 from pathlib import Path
 
+import psutil
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..config import Project
 from ..events import Events
-from ..model import State
 from ..pi.client import read_transcript
 from ..store import LocalStore, StoreError
 
 STATIC = Path(__file__).parent / "static"
 
 
-def _stats(store: LocalStore, snap: dict) -> dict:
-    tickets = snap["tickets"]
-    done = [t for t in tickets if t["state"] == State.DONE.value]
-    durations = []
-    for t in done:
-        try:
-            from datetime import datetime
-            a = datetime.fromisoformat(t["created_at"])
-            b = datetime.fromisoformat(t["state_since"])
-            durations.append((b - a).total_seconds())
-        except Exception:
-            pass
-    runs = snap["gate_runs"]
-    landed = sum(1 for r in runs if r.get("status") == "landed")
-    running = [s for s in snap["sessions"] if s.get("status") == "running"]
-    cfg = store.project.config
-    return {
-        "workers": {"used": sum(1 for s in running if s.get("kind") == "worker"), "total": cfg.workers},
-        "reviewers": {"used": sum(1 for s in running if s.get("kind") == "reviewer"), "total": cfg.reviewers},
-        "gate_busy": any(r.get("status") == "running" for r in runs),
-        "done": len(done),
-        "mean_open_to_done_s": round(sum(durations) / len(durations)) if durations else None,
-        "gate_runs": len(runs),
-        "gate_pass_rate": round(landed / len(runs), 2) if runs else None,
-    }
-
-
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
     events = Events(project.events_file)
     store = LocalStore(project, events)
+    app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
         return (STATIC / "index.html").read_text(encoding="utf-8")
 
+    @app.get("/tickets", response_class=HTMLResponse)
+    async def tickets_page() -> str:
+        return (STATIC / "tickets.html").read_text(encoding="utf-8")
+
     @app.get("/api/state")
     async def state() -> dict:
         project.reload_config()
         snap = store.snapshot()
-        snap["stats"] = _stats(store, snap)
         snap["now"] = time.time()
+        snap["gate_runs"] = store.gate_runs()[-30:]
         return snap
+
+    @app.get("/api/system")
+    def system() -> dict:
+        """Host utilization. Sync so the CPU sampling interval runs in a worker thread."""
+        vm = psutil.virtual_memory()
+        try:
+            disk = psutil.disk_usage(str(project.repo_root))
+        except OSError:
+            disk = psutil.disk_usage("/")
+        load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0, 0, 0)
+        return {
+            "cpu_percent": psutil.cpu_percent(percpu=True, interval=0.25),
+            "load": [round(x, 2) for x in load],
+            "memory": {"percent": vm.percent, "used": vm.used, "total": vm.total},
+            "disk": {"percent": disk.percent, "used": disk.used, "total": disk.total, "path": str(project.repo_root)},
+            "now": time.time(),
+        }
+
+    @app.get("/api/staging")
+    async def staging() -> dict:
+        log = project.state_dir / "staging" / "staging.log"
+        configured = "staging" in project.config.raw
+        text = ""
+        if log.exists():
+            text = log.read_text(encoding="utf-8", errors="replace")[-20000:]
+        return {"configured": configured, "log": text, "status": "not implemented" if configured else "not configured"}
 
     @app.get("/api/tickets/{ticket_id}")
     async def ticket(ticket_id: str) -> dict:

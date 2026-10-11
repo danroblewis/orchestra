@@ -719,39 +719,45 @@ static files that the FastAPI app serves. Live updates over one WebSocket
 that forwards the event stream. The UI is read-only: it shows what the
 agents and the loop are doing and never writes.
 
-### 11.1 The main screen
+### 11.1 Navigation
 
-One screen, three columns, always live. The center column is the largest.
+A top bar links the two pages: **Dashboard** and **Tickets**. It also shows
+the project key, base branch, and model.
 
-**Left: active agents.** One card per live session, ordered by start time:
-kind, ticket ID and title when it has one, elapsed time, and the last line
-of assistant text. Idle project agents (Supervisor, Coordinator, Pipeline
-Manager) are shown dimmed below the live ones so their presence is visible.
-Clicking a card opens the transcript drawer.
+### 11.2 Dashboard
 
-**Center: ticket graph.** Milestones as labeled groups, open ones first,
-closed ones collapsed. Tickets as nodes colored by state, dependency edges
-between them, the ready frontier highlighted, active tickets pulsing. Built
-with React Flow with automatic layout; pan and zoom. Clicking a node opens
-the ticket drawer. A filter bar narrows by milestone, state, or text.
+Three panels, always live.
 
-**Right: pipeline, in three stacked panels.**
+**Left: agents.** The three project agents are fixed at the top in this
+order: `supervisor`, `coordinator`, `pipeline-manager`, each shown whether or
+not it has a session yet, with a live dot when running, elapsed time, and the
+last line it said. Below them, every running worker and reviewer, each card
+carrying the ticket ID and ticket title it is working on, then a short list
+of recently finished ones. Clicking any card opens the transcript drawer.
 
-- *Merge gate.* The running gate run, if any: batch members, current stage,
-  per-spec progress and elapsed time, bisection tree when one is in
-  progress. Otherwise the last run's outcome and the approved queue waiting
-  for the next batch, in merge order with wait time. Pipeline paused state
-  is shown here in red with its reason.
-- *System stats.* Counts by state; slot usage (workers, reviewers, gate);
-  tickets landed today and this milestone; mean time from `OPEN` to `DONE`;
-  gate pass rate over the last N runs; flaky and quarantined test counts;
-  model and provider in use.
-- *Staging.* Current build: id, commit, when deployed, health status with
-  last probe time, local URL, public tunnel URL with its own reachability
-  status. Previous build id for rollback context. The most recent deploy
-  event and, on failure, the first lines of its log.
+**Center: merge queue.** Pipeline paused banner in red with the reason when
+applicable. Then: the gate run in progress with its batch, the ticket titles,
+elapsed time, and per-stage results; the queue of `APPROVED` tickets in merge
+order with how long each has waited and its reviewed commit; the tickets
+upstream of the queue (`IN_PROGRESS`, `REJECTED`, `READY_FOR_REVIEW`,
+`IN_REVIEW`) so the next arrivals are visible; and the recent gate run
+history with outcome and summary. Clicking a run opens the gate run drawer.
 
-### 11.2 Drawers
+**Right: system stats and staging.** Host utilization, not Orchestra
+counters: a bar graph with one bar per CPU core, and beneath it on one line
+the memory and disk utilization meters with used/total figures, plus core
+count and load average. Under that, the **staging environment** panel: a
+terminal-style view of the staging process's output, following the tail.
+When staging is not configured the panel says so.
+
+### 11.3 Tickets page
+
+The ticket graph on its own page: milestones as labeled groups, tickets as
+nodes colored by state, dependency edges, active tickets highlighted, a
+filter box, and a legend of counts by state. Clicking a node opens the ticket
+drawer.
+
+### 11.4 Drawers
 
 Drawers slide over the main screen; the URL carries their state so they can
 be linked.
@@ -764,12 +770,12 @@ be linked.
   what landed and what was rejected, the build it produced.
 - **Milestone.** Its tickets as a list with states and the counts summary.
 
-### 11.3 API
+### 11.5 API
 
-All `GET`: `/api/project`, `/api/tickets`, `/api/tickets/{id}`,
-`/api/milestones`, `/api/milestones/{id}`, `/api/sessions`,
-`/api/sessions/{id}/transcript`, `/api/gate/runs`, `/api/gate/runs/{id}`,
-`/api/builds`, `/api/staging`, `/api/stats`, `/api/events?since=`, and
+All `GET`: `/api/state` (project, tickets, milestones, sessions, gate runs,
+pipeline), `/api/tickets/{id}`, `/api/sessions/{id}/transcript`,
+`/api/gate/runs/{id}`, `/api/system` (per-core CPU, memory, disk, load),
+`/api/staging` (status and log tail), `/api/events?since=`, and
 `WS /api/events`.
 
 ---
