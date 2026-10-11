@@ -57,7 +57,7 @@ def cmd_web(args) -> int:
     try:
         uvicorn.run(create_app(project), host=args.host, port=args.port, log_level="warning")
     finally:
-        store._mutate_runtime(lambda d: d.pop("web", None))
+        store._mutate_runtime(lambda d: d.pop("web", None) if (d.get("web") or {}).get("pid") == os.getpid() else None)
     return 0
 
 

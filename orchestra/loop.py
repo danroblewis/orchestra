@@ -99,7 +99,10 @@ class Loop:
             for name, p in self.agent_procs.items():
                 p.close()
                 self.store.set_session(ROLES[name].session_id, status="idle", pid=None)
-            self.store._mutate_runtime(lambda d: d.pop("control", None))
+            # Only drop the control record if it is ours: a replacement loop may already
+            # have registered while this one was shutting down.
+            self.store._mutate_runtime(lambda d: d.pop("control", None)
+                                       if (d.get("control") or {}).get("pid") == os.getpid() else None)
             self.events.emit("loop_stopped")
 
     def _busy(self) -> bool:
