@@ -1,0 +1,704 @@
+# Orchestra Specification
+
+Orchestra is a ticket tracker, sprint planner, and CI/CD workflow in one tool,
+operated by AI agents running on the Pi harness. A human describes work to a
+Supervisor agent; Orchestra turns that into tickets, has worker agents build
+each ticket on its own git branch, has reviewer agents check the work, and
+lands approved branches on `main` through a batched, bisecting merge gate.
+
+It is a `uv`-installable Python package that can be pointed at any git
+repository. Its own state lives in `~/.orchestrator/`, grouped by the
+repository's working directory, behind a storage interface so tickets can
+later live in GitHub Issues, Jira, or Linear instead of a local file.
+
+This document is the source of truth for the design. `AGENTS.md` lists the
+rules that must not be broken; this file explains everything else.
+
+---
+
+## 1. Principles
+
+1. **Agents judge, Orchestra decides.** Every state change to a ticket is made
+   by Orchestra's programmatic loop. Agents report in their own vocabulary and
+   Orchestra applies the transition table. An agent saying it is done never
+   makes a ticket done.
+2. **No zombies.** A ticket is in an active state only while a live agent or
+   process owns it. When that stops, for any reason, the ticket moves to a
+   waiting state immediately.
+3. **The agent's word is the state.** Workers say `READY_FOR_REVIEW` or
+   `BLOCKED`. Reviewers say `APPROVED` or `REJECTED`. Orchestra does not
+   translate one word into another.
+4. **One worktree per ticket, one session per agent run.** Workers never
+   touch `main` or each other's files. Sessions are files on disk and resume
+   from where they stopped.
+5. **Merging is programmatic.** No agent merges. The merge gate runs the
+   project's tests over a batch of approved branches and bisects on failure.
+6. **State is outside the repository.** The target repository gets a
+   config file and nothing else. Worktrees, sessions, runs, and the local
+   ticket store live under `~/.orchestrator/`.
+7. **Storage is an interface.** Business logic talks to a `TicketBackend`.
+   The local JSON backend is the first implementation, not the design.
+
+---
+
+## 2. Domain model
+
+### 2.1 Project
+
+A project is one git repository Orchestra manages.
+
+| Field | Meaning |
+|---|---|
+| `key` | `<dirname>-<8 hex of sha256(realpath)>`. Stable, unique, readable. |
+| `repo_root` | Absolute real path of the repository. |
+| `base_branch` | Branch the gate lands on. Default `main`. |
+| `ticket_prefix` | Human ticket keys, e.g. `ORC` gives `ORC-12`. |
+| `config` | Parsed `orchestra.toml` from the repository root. |
+
+### 2.2 Ticket
+
+The unit of work. Called a ticket everywhere; never "task".
+
+| Field | Meaning |
+|---|---|
+| `key` | `<PREFIX>-<n>`, sequential per project in the local backend. External backends supply their own. |
+| `title`, `description` | What to build. Description is the worker's brief and must be self-contained. |
+| `acceptance` | Acceptance criteria, free text. Given to worker and reviewer. |
+| `state` | One of the states in section 3. |
+| `priority` | Integer, lower is sooner. Ties broken by creation order. |
+| `milestone` | Milestone key or null. |
+| `depends_on` | Ticket keys that must be `DONE` before this one is ready. |
+| `branch` | `orchestra/<key>-<slug>`. Set when first picked. |
+| `worker_session`, `reviewer_session` | Pi session ids. Set when first started, kept for resumption. |
+| `reviewed_commit` | Commit hash the current `APPROVED` applies to. |
+| `blocked_reason` | Required when `BLOCKED`. |
+| `feedback` | Reviewer or gate output handed back to the worker when `REJECTED`. |
+| `rejected_by` | `reviewer` or `merge_gate`. |
+| `review_rounds` | Count of `REJECTED` transitions. |
+| `created_by` | `human`, `supervisor`, `coordinator`, `pipeline_manager`. |
+| `version` | Optimistic concurrency counter. Every write checks it. |
+| `created_at`, `updated_at` | Timestamps. |
+
+Tickets also carry an append-only list of **notes**: timestamped entries from
+agents or humans. Reviews, gate results, and blocker explanations are notes.
+
+### 2.3 Milestone
+
+A milestone is a sprint: an ordered group of tickets with a status.
+
+| Field | Meaning |
+|---|---|
+| `key` | `M1`, `M2`, ... |
+| `name`, `goal` | Human description. |
+| `order` | Position in the plan. |
+| `status` | `planned`, `active`, `done`. |
+| `target_date` | Optional. |
+
+The loop only picks tickets from **active** milestones, plus tickets with no
+milestone. That is what makes it a sprint planner rather than a queue: the
+human and the Supervisor decide what is in scope; the Coordinator orders it;
+the loop executes it.
+
+### 2.4 Local-only records
+
+These never go to an external ticket backend. They are facts about this
+machine's execution and live in the project's state directory.
+
+- **Session**: `id`, `kind` (supervisor, coordinator, pipeline_manager,
+  worker, reviewer), `ticket`, `pi_session_file`, `status` (`running`,
+  `idle`), `started_at`, `settled_at`, `last_text`.
+- **Worktree**: `ticket`, `path`, `branch`, `created_at`.
+- **GateRun**: `id`, `batch` (ticket keys), `base_commit`, `gate_commit`,
+  `status`, `results` per test spec, `bisection` record, `merged`,
+  `rejected`, `started_at`, `finished_at`, `log_path`.
+- **Event**: append-only log of everything that happened, used by the UI, by
+  agent wake-ups, and for debugging. See section 6.5.
+
+---
+
+## 3. Ticket states
+
+Ten states in three groups. Readiness is derived, not stored: a ticket is
+ready when it is `OPEN`, every `depends_on` ticket is `DONE`, and its
+milestone is active or null.
+
+### Waiting states (no agent owns the ticket)
+
+| State | Waiting for | Set by |
+|---|---|---|
+| `OPEN` | A worker slot. | Creation; crash recovery; Coordinator/Supervisor unblocking. |
+| `BLOCKED` | A human or the Coordinator. `blocked_reason` required. | Worker's word; Orchestra when a worker stops without reporting. |
+| `READY_FOR_REVIEW` | A reviewer slot. Pins the commit to review. | Worker's word. |
+| `REJECTED` | A worker slot, to address `feedback`. | Reviewer's word; the merge gate. |
+| `APPROVED` | The next merge batch. Pins `reviewed_commit`. | Reviewer's word. |
+
+### Active states (exactly one live owner)
+
+| State | Owner |
+|---|---|
+| `IN_PROGRESS` | A running worker session. |
+| `IN_REVIEW` | A running reviewer session. |
+| `MERGING` | A running gate on a batch containing this branch. |
+
+### Terminal states
+
+| State | Meaning |
+|---|---|
+| `DONE` | The branch is on `base_branch`. Worktree removed. |
+| `CANCELLED` | Abandoned via the Supervisor or a human. Worktree removed, branch kept. |
+
+### Transitions
+
+| From | To | Cause |
+|---|---|---|
+| `OPEN` | `IN_PROGRESS` | Loop: ready, slot free, worktree created or reclaimed, worker started or resumed. |
+| `IN_PROGRESS` | `READY_FOR_REVIEW` | Worker reports it. Orchestra records the branch head as the commit to review. |
+| `IN_PROGRESS` | `BLOCKED` | Worker reports it with a reason; or worker stopped without reporting (Orchestra sets the reason). |
+| `READY_FOR_REVIEW` | `IN_REVIEW` | Loop: reviewer slot free, tests run in the worktree, reviewer started. |
+| `IN_REVIEW` | `APPROVED` | Reviewer reports it. `reviewed_commit` set. |
+| `IN_REVIEW` | `REJECTED` | Reviewer reports it with feedback; or reviewer stopped without a verdict. |
+| `REJECTED` | `IN_PROGRESS` | Loop: worker slot free, feedback delivered to the worker's session. `review_rounds` incremented. |
+| `APPROVED` | `MERGING` | Loop: picked into a gate batch. |
+| `MERGING` | `DONE` | Gate landed it. |
+| `MERGING` | `REJECTED` | Gate attributed a failure to it. `rejected_by = merge_gate`. |
+| `MERGING` | `APPROVED` | Gate was aborted or `main` was found broken; nothing attributed. |
+| `BLOCKED` | `OPEN` | Supervisor, Coordinator, or human resolved it. |
+| any non-terminal | `CANCELLED` | Supervisor or human. |
+| `IN_PROGRESS` | `OPEN` | Crash recovery only. |
+| `IN_REVIEW` | `READY_FOR_REVIEW` | Crash recovery only. |
+
+Rules:
+
+- A ticket returning to `IN_PROGRESS` must pass through `READY_FOR_REVIEW`
+  and `IN_REVIEW` again. Approvals are pinned to a commit; the gate refuses
+  to merge any other commit.
+- After `review_rounds` reaches the configured threshold, the Coordinator is
+  woken to decide: continue, split, block, or cancel. Nothing fails
+  automatically.
+- If a dependency is `CANCELLED`, dependents stay `OPEN` and never become
+  ready until the Coordinator edits them.
+- On startup, Orchestra moves every ticket in an active state to the waiting
+  state before it. Sessions and branches are untouched, so the next pickup
+  resumes rather than restarts.
+
+---
+
+## 4. Agents
+
+Five session kinds. Each is a Pi session, which means a process that acts only
+when prompted and a JSONL file that persists between prompts.
+
+### 4.1 Lifetimes and communication
+
+| Kind | Sessions | Lifetime | Woken by |
+|---|---|---|---|
+| Supervisor | one per project | project | The human, in `orchestra chat`. |
+| Coordinator | one per project | project | Orchestra events: ticket created, `DONE`, `BLOCKED`, review threshold reached, milestone activated. |
+| Pipeline Manager | one per project | project | Orchestra events: base branch failing with no branches applied, gate run over the time budget, repeated merge rejections of one ticket. |
+| Worker | one per ticket | ticket | The loop, each time the ticket enters `IN_PROGRESS`. |
+| Reviewer | one per ticket | ticket | The loop, each time the ticket enters `IN_REVIEW`. |
+
+No agent talks to another agent. Orchestra reads an agent's output, decides
+what it implies, and prompts the next agent. Who may cause a message to reach
+whom:
+
+| From | To |
+|---|---|
+| Human | Supervisor only (conversation). Humans may also edit tickets directly through the CLI or UI; that is data entry, not conversation. |
+| Supervisor | Coordinator, Pipeline Manager, via Orchestra events. |
+| Coordinator | Pipeline Manager, Workers, via tickets and notes. |
+| Pipeline Manager | Coordinator, Workers, via tickets and notes. |
+| Worker, Reviewer | Nobody. They report. |
+
+Three Pi mechanisms deliver a message: `prompt` when idle, `steer` to
+interrupt a running agent after its current tool call, `follow_up` to queue
+for after the run. Orchestra waits for the `agent_settled` event before
+reading a result.
+
+### 4.2 Responsibilities
+
+**Supervisor.** Converses with the human. Creates and edits tickets and
+milestones through the ticket tools. Answers questions about state by
+reading it. Never writes code, never spawns anything. Told about events by
+Orchestra so it can relay them to the human.
+
+**Coordinator.** Keeps the plan correct: priorities, dependencies, milestone
+membership, splitting tickets that are too big, writing tickets that are
+clear enough for a worker to act on without asking. Decides what to do with
+a ticket that keeps getting rejected. Never spawns a worker; the loop does
+that, so the Coordinator's latency never gates execution.
+
+**Pipeline Manager.** The on-call engineer for the merge pipeline. Reads gate
+logs. Creates fix tickets when `main` is broken or a test is flaky.
+Quarantines a test spec when told to by configuration policy. Never merges.
+
+**Worker.** Implements one ticket in its worktree on its branch. Reads the
+repository's conventions. Commits as it goes. Runs the project's tests
+before reporting. Reports exactly one of `READY_FOR_REVIEW` or `BLOCKED`.
+
+**Reviewer.** Judges one commit against the ticket's acceptance criteria,
+inside the same worktree. Receives the diff against the base branch and the
+test output Orchestra already produced. May run further checks. Reports
+exactly one of `APPROVED` or `REJECTED` with specific, actionable feedback.
+
+### 4.3 Reporting contract
+
+Agents report through a registered tool, not by formatting their final
+message. Small models are far more reliable calling a tool with a schema than
+emitting exact JSON as prose.
+
+- Workers get `report_ticket(state: READY_FOR_REVIEW | BLOCKED, summary,
+  blocked_reason?)`.
+- Reviewers get `report_review(verdict: APPROVED | REJECTED, summary,
+  feedback?)`.
+- Supervisor and Coordinator get the ticket tools: `create_ticket`,
+  `update_ticket`, `add_note`, `cancel_ticket`, `create_milestone`,
+  `update_milestone`, `list_tickets`, `get_ticket`, `project_status`.
+- The Pipeline Manager gets the ticket tools plus `get_gate_run`,
+  `quarantine_test`, `unquarantine_test`.
+
+Tools are provided by one Pi extension that Orchestra ships and loads with
+`--extension`. The extension shells out to `orchestra api <command> --json`,
+which runs against the project's store with file locking, so tools work
+whether or not the main loop is running. The tool result tells the agent
+whether the write succeeded and what the ticket now looks like.
+
+Fallback: if an agent settles without calling its report tool, Orchestra
+prompts the same session once with "call `report_ticket` now, or report
+BLOCKED with the reason". If it settles again without reporting, Orchestra
+applies the no-report rule from section 3. As a last resort the final
+assistant text is scanned for a JSON object with the same fields.
+
+### 4.4 Prompts
+
+Every session gets two layers: a role prompt via `--append-system-prompt`,
+and the specific task as the first `prompt`. Role prompts live in
+`orchestra/agents/prompts/*.md` and can be overridden per project from
+`orchestra.toml`.
+
+The worker's task prompt includes: ticket key, title, description,
+acceptance criteria, the branch name, the fact that its working directory is
+the worktree, the project's test command, and the reporting instructions.
+On resumption after `REJECTED`, the prompt is the feedback and the
+instruction to address it and report again.
+
+The reviewer's task prompt includes: the ticket, the diff, the test output,
+the commit hash under review, and the rule that `APPROVED` means the
+acceptance criteria are met and tests pass.
+
+---
+
+## 5. Pi integration
+
+- One `pi --mode rpc` process per live session. Launched with:
+  `--session-dir <state>/sessions --session-id <session-id>
+  --provider <p> --model <m> --append-system-prompt <role>
+  --extension <path to orchestra extension>`, with `cwd` set to the worktree
+  for workers and reviewers and to `repo_root` for the three project agents.
+- Session ids: `supervisor`, `coordinator`, `pipeline-manager`,
+  `worker-<ticket-key>`, `reviewer-<ticket-key>`. The session file is wherever
+  Pi puts it under the session dir; Orchestra records the path it observes.
+- The client writes one JSON command per line to stdin, reads events from
+  stdout, drains stderr on a thread, and resolves a turn when
+  `agent_settled` arrives. `message_end` with `role: assistant` is the
+  authoritative final message. `get_last_assistant_text` is used only for
+  the JSON fallback.
+- A per-turn timeout from config. On timeout Orchestra sends `abort`, waits
+  for idle, then applies the no-report rule.
+- Processes for project agents are kept alive between prompts while
+  `orchestra run` or `orchestra chat` is running, and closed on exit.
+  Worker and reviewer processes are closed as soon as their report is
+  applied.
+- Pi's own JSONL session file is the only transcript. The web UI and
+  `orchestra sessions show` parse Pi's session format directly. Orchestra
+  never writes a parallel log.
+
+Facts about Pi this design relies on: no MCP, no inbound HTTP, no scheduler,
+tools via extensions, `agent_settled` as the completion signal, sessions as
+resumable JSONL files, `--session-dir` to relocate them.
+
+---
+
+## 6. The orchestration loop
+
+`orchestra run` is a single long-running process. It is the only writer of
+ticket state while it runs, apart from the `orchestra api` writes made by
+agent tools and humans, which are serialized by the store's file lock and
+reconciled by version checks.
+
+### 6.1 Slots
+
+Config defines `workers`, `reviewers`, and `gate` (always 1) slot counts.
+Each live session occupies one slot in its own thread. The loop ticks every
+few seconds and on every event.
+
+### 6.2 Tick
+
+In order, each tick:
+
+1. **Collect.** For each thread that finished: apply the agent's report,
+   release the slot, record the session as idle, emit events.
+2. **Review.** While a reviewer slot is free and a `READY_FOR_REVIEW` ticket
+   exists: run the test specs in the worktree, build the diff, start the
+   reviewer, move to `IN_REVIEW`.
+3. **Resume rejected.** While a worker slot is free and a `REJECTED` ticket
+   exists (oldest first): deliver feedback to the existing worker session,
+   move to `IN_PROGRESS`.
+4. **Pick.** While a worker slot is free and a ready `OPEN` ticket exists
+   (priority, then age): create or reclaim the worktree, start or resume the
+   worker, move to `IN_PROGRESS`.
+5. **Gate.** If the gate slot is free, the pipeline is not paused, and at
+   least one `APPROVED` ticket exists, and either the batch is full or the
+   oldest approval is older than `gate.batch_wait`: form a batch and start
+   the gate.
+6. **Wake.** Deliver any pending wake-ups to the Coordinator or Pipeline
+   Manager if they are idle, coalescing multiple reasons into one prompt.
+
+Review runs before pick so finished work lands before new work starts.
+
+### 6.3 Worktrees and branches
+
+- Worktrees live at `<state>/worktrees/<ticket-key>`, outside the
+  repository, created with `git worktree add -b orchestra/<key>-<slug> <path>
+  <base_branch>`. Nothing is written inside the user's checkout.
+- A ticket keeps its worktree across `REJECTED` cycles and `BLOCKED`. The
+  worktree is removed on `DONE` and `CANCELLED`. The branch is deleted on
+  `DONE` and kept on `CANCELLED`.
+- Before a worker resumes, Orchestra verifies the worktree exists and is on
+  the ticket's branch. If it is missing, it is recreated from the branch.
+- `orchestra doctor` lists worktrees and branches with no matching ticket
+  and offers to remove them. The loop never deletes anything it did not
+  create.
+
+### 6.4 Crash recovery
+
+On startup: kill nothing (previous processes are gone with the previous
+run), move active-state tickets to their preceding waiting state, mark all
+sessions idle, delete any gate worktree, and verify each ticket's worktree.
+
+### 6.5 Events
+
+Every state change, session start and stop, gate step, and wake-up is an
+event: `{ts, type, ticket?, session?, gate_run?, data}`. Events are appended
+to `<state>/events.jsonl`, published in-process to subscribers (the web
+server's WebSocket, the wake-up scheduler), and are the audit trail.
+
+---
+
+## 7. The merge gate
+
+The gate answers "are these branches safe on `main` together?" with the
+project's own tests. It is entirely programmatic.
+
+### 7.1 Test specs
+
+From `orchestra.toml`:
+
+```toml
+[gate]
+batch_size = 6          # max branches per batch
+batch_wait = "120s"     # how long to wait for a fuller batch
+timeout = "900s"        # per spec run
+
+[[gate.tests]]
+name = "unit"
+command = "uv run pytest -q"
+select = "uv run pytest -q {selector}"   # optional: rerun a subset
+
+[[gate.tests]]
+name = "acceptance"
+command = "uv run pytest tests/acceptance -q"
+```
+
+`select` is a template for rerunning named failures. Without it, the gate
+reruns the whole spec.
+
+### 7.2 A gate run
+
+1. **Batch.** Take up to `batch_size` `APPROVED` tickets, oldest approval
+   first. Each becomes `MERGING`.
+2. **Build.** Create a gate worktree at `<state>/gate/<run-id>` on a
+   temporary branch `orchestra/gate-<run-id>` from the current
+   `base_branch` head. For each ticket, `git merge --no-ff
+   <reviewed_commit>`. A merge conflict rejects that ticket immediately with
+   the conflict output as feedback, and the build continues without it.
+3. **Test.** Run every enabled spec in the gate worktree. Record a result per
+   spec with status, duration, failing test names when parseable, and the
+   log.
+4. **Land or bisect.** All pass: fast-forward `base_branch` to the gate
+   commit, mark every batched ticket `DONE`, remove their worktrees, delete
+   their branches. Any failure: go to 7.3.
+5. **Clean up.** Remove the gate worktree and branch. Record the `GateRun`.
+
+Landing uses `git merge --ff-only` in the user's checkout when
+`base_branch` is checked out there and the tree is clean; otherwise
+`git update-ref` with the expected old value, so a concurrent move of `main`
+fails loudly instead of being overwritten. If `push = true` in config, push
+afterwards.
+
+### 7.3 Bisection
+
+When the batch fails:
+
+1. **Rule out the base.** Run the failing specs on a worktree at
+   `base_branch` with nothing merged. If that fails, `main` is broken: every
+   ticket in the batch returns to `APPROVED`, the pipeline pauses, and the
+   Pipeline Manager is woken with the log. Nothing is rejected.
+2. **Bisect.** With the ordered batch and a predicate "does this subset
+   reproduce the failure", recursively halve: test the first half; if it
+   fails, recurse into it and the second half is tested on its own; a half
+   that passes is proven safe. This is the pure `bisect_branches` function
+   and is exhaustively unit tested for sizes 1 through `batch_size`.
+3. **Confirm solo.** Every branch not proven safe is tested alone on
+   `base_branch`. A branch that fails alone is rejected with the failure as
+   feedback. A branch that passes alone but failed in combination is
+   rejected with the names of the branches it was combined with, so the
+   worker can rebase and reconcile.
+4. **Land the safe set.** Rebuild a gate worktree with only the proven-safe
+   branches, run the full specs once more as a final check, and land as in
+   7.2. If that final check fails, treat it as the base being broken.
+
+Rejections from the gate set `rejected_by = merge_gate` and go back to the
+worker like any other rejection.
+
+### 7.4 Flaky tests
+
+A failure that passes on an identical rerun is recorded as flaky on the
+`GateRun`. The gate does not act on it. The Pipeline Manager is woken when a
+test is flaky in N runs within a window, and it may call `quarantine_test`,
+which marks a spec or test name as non-blocking in the project's state.
+Quarantined tests still run and still report.
+
+---
+
+## 8. Storage
+
+### 8.1 Layout
+
+```
+~/.orchestrator/
+  projects.json                  # repo_root -> key index
+  <key>/
+    project.json                 # key, repo_root, prefix, backend choice
+    tickets.json                 # local backend data: tickets, milestones, notes, counters
+    runtime.json                 # sessions, worktrees, gate runs, quarantine
+    events.jsonl
+    sessions/                    # Pi session dir for this project
+    worktrees/<ticket-key>/
+    gate/<run-id>/
+    logs/<run-id>/<spec>.log
+```
+
+Every JSON file is written atomically and guarded by a file lock so the loop,
+the `orchestra api` process spawned by agent tools, and the web server never
+corrupt it.
+
+### 8.2 TicketBackend interface
+
+```python
+class TicketBackend(Protocol):
+    def get_ticket(self, key) -> Ticket
+    def list_tickets(self, *, state=None, milestone=None) -> list[Ticket]
+    def create_ticket(self, draft: TicketDraft) -> Ticket
+    def update_ticket(self, key, expected_version, **changes) -> Ticket   # raises Conflict
+    def transition(self, key, expected_version, to_state, **fields) -> Ticket
+    def add_note(self, key, note: Note) -> None
+    def list_milestones(self) -> list[Milestone]
+    def create_milestone(self, draft) -> Milestone
+    def update_milestone(self, key, expected_version, **changes) -> Milestone
+    def sync(self) -> list[Event]   # pull external changes; no-op locally
+```
+
+Implementations:
+
+- `LocalJsonBackend` (v1).
+- `GitHubIssuesBackend`, `JiraBackend`, `LinearBackend` (later). Each maps
+  ticket states to a native status where one exists and to an
+  `orchestra:<state>` label otherwise, stores Orchestra-only fields in a
+  fenced block in the issue body, and treats the external system as the
+  source of truth for title, description, and human edits. `sync` runs on
+  every tick.
+
+Runtime records always use the local store regardless of ticket backend.
+
+---
+
+## 9. Project configuration
+
+`orchestra.toml` at the repository root is the only thing Orchestra adds to a
+project. `orchestra init` writes a starter.
+
+```toml
+[project]
+base_branch = "main"
+ticket_prefix = "ORC"
+push = false
+
+[agents]
+provider = "ornith-1.5-35b-a3b-q6k"
+model = "ornith-1.5-35b-a3b-q6k"
+thinking = "medium"
+workers = 2
+reviewers = 1
+turn_timeout = "900s"
+review_rounds_before_escalation = 3
+
+[agents.prompts]            # optional per-role overrides, paths relative to repo root
+worker = ".orchestra/worker.md"
+
+[gate]
+batch_size = 6
+batch_wait = "120s"
+timeout = "900s"
+
+[[gate.tests]]
+name = "unit"
+command = "uv run pytest -q"
+select = "uv run pytest -q {selector}"
+```
+
+Project conventions for agents come from the repository's own `AGENTS.md`,
+which Pi reads automatically.
+
+---
+
+## 10. CLI
+
+```
+orchestra init                      register the cwd repo; write orchestra.toml and ~/.orchestrator/<key>
+orchestra run [--once]              start the loop (workers, reviewers, gate, wake-ups)
+orchestra chat                      talk to the Supervisor; streams its output; Ctrl-C to leave
+orchestra web [--port]              start the web UI against this project
+orchestra status                    one-screen summary: slots, counts by state, pipeline state
+orchestra ticket list|show|create|edit|note|cancel|block|unblock
+orchestra milestone list|create|edit|activate|close
+orchestra sessions list|show <id>   transcripts from Pi session files
+orchestra gate run|show <id>        run the gate now, or inspect a run
+orchestra doctor [--fix]            orphaned worktrees, branches, stale sessions, config problems
+orchestra api <command> --json      machine interface used by the Pi extension
+```
+
+`run` and `web` are separate processes sharing the store. `chat` can run
+alongside `run`; the Supervisor's ticket writes are picked up on the next
+tick.
+
+---
+
+## 11. Web UI
+
+A separate `frontend/` package, React with TypeScript and Vite, built into
+static files that the FastAPI app serves. Live updates over one WebSocket
+that forwards the event stream. The UI is a client of the same API the CLI
+uses; it has no logic of its own.
+
+Pages:
+
+- **Board.** Kanban columns in state order. Cards show key, title, milestone,
+  owner session when active, review rounds, and a blocked or rejected badge.
+  Drag between waiting columns is allowed where the transition table allows
+  it; everything else is read-only.
+- **Plan.** Milestones as swimlanes with ordering. A dependency graph of
+  tickets using React Flow, nodes colored by state, with the ready frontier
+  highlighted. Create and edit tickets and milestones here.
+- **Pipeline.** Approved queue, the running gate with per-spec progress,
+  history of gate runs with their bisection trees and logs, flaky and
+  quarantined tests, pipeline pause state.
+- **Agents.** Every session, live or idle, with its transcript rendered from
+  Pi's session file. Live sessions stream.
+- **Ticket.** Detail view: fields, notes, branch, diff of the reviewed
+  commit, review history, gate history.
+
+API surface for the above: `GET /api/project`, `/api/tickets`,
+`/api/tickets/{key}`, `/api/milestones`, `/api/sessions`,
+`/api/sessions/{id}/transcript`, `/api/gate/runs`, `/api/events?since=`,
+`WS /api/events`, and the same write endpoints the CLI uses.
+
+---
+
+## 12. Package layout
+
+```
+pyproject.toml                  uv project; console script `orchestra`
+orchestra/
+  __init__.py
+  cli.py                        argparse or typer; thin, delegates to services
+  config.py                     orchestra.toml parsing, ~/.orchestrator paths, project key
+  model.py                      Ticket, Milestone, Note, states, transition table
+  store/
+    base.py                     TicketBackend protocol, Conflict, locking helpers
+    local.py                    LocalJsonBackend + runtime store
+  git.py                        worktree, branch, merge, ff, update-ref wrappers
+  pi/
+    client.py                   RPC process client
+    sessions.py                 session naming, file discovery, transcript parsing
+    prompts/                    role prompts
+    extension/                  the TypeScript Pi extension (tools) and its build
+  agents/
+    worker.py, reviewer.py, supervisor.py, coordinator.py, pipeline_manager.py
+  loop.py                       tick, slots, scheduling, crash recovery
+  gate/
+    bisect.py                   pure bisection
+    runner.py                   gate runs, worktree build, landing
+  events.py
+  api.py                        service functions used by cli, web, and `orchestra api`
+  web/
+    app.py                      FastAPI, WebSocket, static serving
+frontend/                       Vite + React + TypeScript
+tests/
+  unit/                         model, transitions, bisect, config, store
+  git/                          against throwaway repositories
+  pi/                           against a fake pi process that speaks the RPC protocol
+  acceptance/                   real pi + local model, opt-in via ORCHESTRA_ACCEPTANCE=1
+```
+
+No `sys.path` manipulation anywhere. One package, installed with `uv`.
+
+---
+
+## 13. Build plan
+
+Each phase ends with its definition of done met and the suite green.
+
+**Phase 1: tickets and the worker loop.**
+Model, transition table, local store with locking, config, project key,
+`init`, `ticket`, `milestone`, `status` commands, git worktrees, Pi RPC
+client, the extension with `report_ticket` and `report_review`, worker and
+reviewer drivers, the loop with slots and crash recovery, and a simple gate
+that lands one approved branch at a time with the full test specs.
+Done when: against a scratch repository and a local model, a ticket created
+from the CLI goes `OPEN` to `DONE` with no human action, a deliberately
+failing ticket ends `REJECTED` then `DONE` after the worker fixes it, and a
+worker that cannot proceed ends `BLOCKED` with a reason.
+
+**Phase 2: batched gate.**
+Batching, gate worktree, bisection with solo confirmation, base-broken
+detection and pipeline pause, flaky recording, `gate run|show`, landing by
+`ff-only` or `update-ref`.
+Done when: four approved branches where one breaks a test land three and
+reject one with the right feedback, in a real-git test; `main` broken pauses
+the pipeline and rejects nothing.
+
+**Phase 3: the project agents.**
+Supervisor with `orchestra chat` and the ticket tools; Coordinator wake-ups
+and prompts; Pipeline Manager wake-ups, `quarantine_test`; the event log.
+Done when: a human describes a small feature in chat, the Supervisor creates
+a milestone and tickets with dependencies, `run` executes them in order, and
+the Supervisor can report progress when asked.
+
+**Phase 4: web UI.**
+Board, Plan, Pipeline, Agents, Ticket pages with live updates.
+
+**Phase 5: external backends.**
+`GitHubIssuesBackend` first, then Jira and Linear, each behind the same
+interface with a conformance test suite shared by all backends.
+
+---
+
+## 14. Non-goals for v1
+
+- Multiple repositories per project, or cross-repository tickets.
+- Remote execution; everything runs on one machine.
+- Any agent merging, pushing, or editing `main`.
+- Authentication on the web UI; it binds to localhost. A tunnel is the
+  operator's business, not Orchestra's.
+- Parallel reviewers on one ticket, or multi-reviewer consensus.
