@@ -1,0 +1,313 @@
+"""Local JSON backend plus the runtime store. One file lock serializes every
+read-modify-write across the loop, `orchestra chat`, `orchestra api`, and the web server."""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Iterator
+
+from ..config import Project
+from ..events import Events
+from ..model import (ACTIVE, Milestone, MilestoneStatus, Note, State, Ticket, check_transition,
+                     now)
+from .base import Conflict, StoreError
+
+EMPTY_TICKETS = {"tickets": {}, "milestones": {}, "notes": {}, "counters": {"ticket": 0, "milestone": 0}}
+EMPTY_RUNTIME = {"sessions": {}, "worktrees": {}, "gate_runs": {}, "reports": {},
+                 "pipeline": {"paused": False, "reason": None}, "wakeups": []}
+
+
+def _read(path: Path, empty: dict) -> dict:
+    if not path.exists():
+        return json.loads(json.dumps(empty))
+    text = path.read_text(encoding="utf-8").strip()
+    return json.loads(text) if text else json.loads(json.dumps(empty))
+
+
+def _write(path: Path, data: dict) -> None:
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+class LocalStore:
+    def __init__(self, project: Project, events: Events | None = None):
+        self.project = project
+        self.prefix = project.config.ticket_prefix
+        self.events = events or Events(project.events_file)
+        project.ensure_dirs()
+
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        with self.project.lock_file.open("a+") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+
+    def _t(self) -> dict:
+        return _read(self.project.tickets_file, EMPTY_TICKETS)
+
+    def _r(self) -> dict:
+        return _read(self.project.runtime_file, EMPTY_RUNTIME)
+
+    # -- tickets ---------------------------------------------------------------
+
+    def get_ticket(self, ticket_id: str) -> Ticket:
+        d = self._t()["tickets"].get(ticket_id)
+        if d is None:
+            raise StoreError(f"no ticket {ticket_id}")
+        return Ticket.from_dict(d)
+
+    def list_tickets(self, *, state: State | None = None, milestone_id: str | None = None) -> list[Ticket]:
+        out = [Ticket.from_dict(d) for d in self._t()["tickets"].values()]
+        if state is not None:
+            out = [t for t in out if t.state == state]
+        if milestone_id is not None:
+            out = [t for t in out if t.milestone_id == milestone_id]
+        return sorted(out, key=lambda t: (t.priority, t.created_at, t.id))
+
+    def tickets_by_id(self) -> dict[str, Ticket]:
+        return {k: Ticket.from_dict(v) for k, v in self._t()["tickets"].items()}
+
+    def create_ticket(self, **fields: Any) -> Ticket:
+        with self._locked():
+            data = self._t()
+            ms = data["milestones"].get(fields.get("milestone_id") or "")
+            if ms is None:
+                raise StoreError(f"ticket needs an existing milestone; got {fields.get('milestone_id')!r}")
+            if ms["status"] != MilestoneStatus.OPEN:
+                raise StoreError(f"milestone {ms['id']} is closed and cannot receive tickets")
+            for dep in fields.get("depends_on") or []:
+                if dep not in data["tickets"]:
+                    raise StoreError(f"unknown dependency {dep}")
+            data["counters"]["ticket"] += 1
+            tid = f"{self.prefix}-{data['counters']['ticket']}"
+            t = Ticket(id=tid, **fields)
+            data["tickets"][tid] = t.to_dict()
+            _write(self.project.tickets_file, data)
+        self.events.emit("ticket_created", ticket=tid, title=t.title, by=t.created_by)
+        return t
+
+    def update_ticket(self, ticket_id: str, expected_version: int | None, **changes: Any) -> Ticket:
+        with self._locked():
+            data = self._t()
+            d = data["tickets"].get(ticket_id)
+            if d is None:
+                raise StoreError(f"no ticket {ticket_id}")
+            if expected_version is not None and d["version"] != expected_version:
+                raise Conflict(f"{ticket_id} is at version {d['version']}, expected {expected_version}")
+            if "milestone_id" in changes and changes["milestone_id"] != d["milestone_id"]:
+                ms = data["milestones"].get(changes["milestone_id"] or "")
+                if ms is None or ms["status"] != MilestoneStatus.OPEN:
+                    raise StoreError("tickets can only be moved to an open milestone")
+            if "depends_on" in changes:
+                for dep in changes["depends_on"] or []:
+                    if dep not in data["tickets"] or dep == ticket_id:
+                        raise StoreError(f"bad dependency {dep}")
+            if "state" in changes:
+                raise StoreError("use transition() to change state")
+            for k, v in changes.items():
+                if k in Ticket.__dataclass_fields__:
+                    d[k] = v
+            d["version"] += 1
+            d["updated_at"] = now()
+            _write(self.project.tickets_file, data)
+            t = Ticket.from_dict(d)
+        self.events.emit("ticket_updated", ticket=ticket_id, fields=sorted(changes))
+        return t
+
+    def transition(self, ticket_id: str, expected_version: int | None, to_state: State, **fields: Any) -> Ticket:
+        with self._locked():
+            data = self._t()
+            d = data["tickets"].get(ticket_id)
+            if d is None:
+                raise StoreError(f"no ticket {ticket_id}")
+            if expected_version is not None and d["version"] != expected_version:
+                raise Conflict(f"{ticket_id} is at version {d['version']}, expected {expected_version}")
+            src = State(d["state"])
+            check_transition(src, to_state)
+            if to_state == State.BLOCKED and not fields.get("blocked_reason"):
+                raise StoreError("BLOCKED requires blocked_reason")
+            for k, v in fields.items():
+                if k in Ticket.__dataclass_fields__:
+                    d[k] = v
+            d["state"] = to_state.value
+            d["state_since"] = now()
+            d["updated_at"] = d["state_since"]
+            d["version"] += 1
+            _write(self.project.tickets_file, data)
+            t = Ticket.from_dict(d)
+        self.events.emit("ticket_transition", ticket=ticket_id, **{"from": src.value, "to": to_state.value})
+        return t
+
+    def add_note(self, ticket_id: str, note: Note) -> None:
+        with self._locked():
+            data = self._t()
+            if ticket_id not in data["tickets"]:
+                raise StoreError(f"no ticket {ticket_id}")
+            data["notes"].setdefault(ticket_id, []).append(note.to_dict())
+            _write(self.project.tickets_file, data)
+        self.events.emit("note_added", ticket=ticket_id, author=note.author, kind=note.kind)
+
+    def notes(self, ticket_id: str) -> list[dict]:
+        return list(self._t()["notes"].get(ticket_id, []))
+
+    # -- milestones ------------------------------------------------------------
+
+    def get_milestone(self, milestone_id: str) -> Milestone:
+        d = self._t()["milestones"].get(milestone_id)
+        if d is None:
+            raise StoreError(f"no milestone {milestone_id}")
+        return Milestone.from_dict(d)
+
+    def list_milestones(self) -> list[Milestone]:
+        return sorted((Milestone.from_dict(d) for d in self._t()["milestones"].values()),
+                      key=lambda m: (m.order, m.created_at))
+
+    def milestones_by_id(self) -> dict[str, Milestone]:
+        return {k: Milestone.from_dict(v) for k, v in self._t()["milestones"].items()}
+
+    def create_milestone(self, **fields: Any) -> Milestone:
+        with self._locked():
+            data = self._t()
+            data["counters"]["milestone"] += 1
+            mid = f"M{data['counters']['milestone']}"
+            fields.setdefault("order", data["counters"]["milestone"])
+            m = Milestone(id=mid, **fields)
+            data["milestones"][mid] = m.to_dict()
+            _write(self.project.tickets_file, data)
+        self.events.emit("milestone_created", milestone=mid, name=m.name)
+        return m
+
+    def update_milestone(self, milestone_id: str, expected_version: int | None, **changes: Any) -> Milestone:
+        with self._locked():
+            data = self._t()
+            d = data["milestones"].get(milestone_id)
+            if d is None:
+                raise StoreError(f"no milestone {milestone_id}")
+            if expected_version is not None and d["version"] != expected_version:
+                raise Conflict(f"{milestone_id} is at version {d['version']}")
+            if "status" in changes:
+                raise StoreError("use close_milestone(); milestones cannot be reopened")
+            for k in ("name", "description", "order"):
+                if k in changes:
+                    d[k] = changes[k]
+            d["version"] += 1
+            _write(self.project.tickets_file, data)
+            m = Milestone.from_dict(d)
+        self.events.emit("milestone_updated", milestone=milestone_id)
+        return m
+
+    def close_milestone(self, milestone_id: str, expected_version: int | None) -> Milestone:
+        with self._locked():
+            data = self._t()
+            d = data["milestones"].get(milestone_id)
+            if d is None:
+                raise StoreError(f"no milestone {milestone_id}")
+            if d["status"] == MilestoneStatus.CLOSED:
+                raise StoreError(f"{milestone_id} is already closed")
+            if expected_version is not None and d["version"] != expected_version:
+                raise Conflict(f"{milestone_id} is at version {d['version']}")
+            open_tickets = [t["id"] for t in data["tickets"].values()
+                            if t["milestone_id"] == milestone_id and t["state"] not in ("DONE", "CANCELLED")]
+            if open_tickets:
+                raise StoreError(f"cannot close {milestone_id}: unfinished tickets {', '.join(open_tickets)}")
+            d["status"] = MilestoneStatus.CLOSED.value
+            d["closed_at"] = now()
+            d["version"] += 1
+            _write(self.project.tickets_file, data)
+            m = Milestone.from_dict(d)
+        self.events.emit("milestone_closed", milestone=milestone_id)
+        return m
+
+    # -- runtime ---------------------------------------------------------------
+
+    def runtime(self) -> dict:
+        return self._r()
+
+    def _mutate_runtime(self, fn) -> Any:
+        with self._locked():
+            data = self._r()
+            result = fn(data)
+            _write(self.project.runtime_file, data)
+            return result
+
+    def set_session(self, session_id: str, **fields: Any) -> dict:
+        def fn(data):
+            s = data["sessions"].setdefault(session_id, {"id": session_id, "status": "idle"})
+            s.update(fields)
+            s["updated_at"] = now()
+            return dict(s)
+        return self._mutate_runtime(fn)
+
+    def sessions(self) -> list[dict]:
+        return list(self._r()["sessions"].values())
+
+    def set_worktree(self, ticket_id: str, path: str, branch: str) -> None:
+        self._mutate_runtime(lambda d: d["worktrees"].__setitem__(
+            ticket_id, {"ticket_id": ticket_id, "path": path, "branch": branch, "created_at": now()}))
+
+    def remove_worktree(self, ticket_id: str) -> None:
+        self._mutate_runtime(lambda d: d["worktrees"].pop(ticket_id, None))
+
+    def worktree(self, ticket_id: str) -> dict | None:
+        return self._r()["worktrees"].get(ticket_id)
+
+    def save_gate_run(self, run: dict) -> None:
+        self._mutate_runtime(lambda d: d["gate_runs"].__setitem__(run["id"], run))
+
+    def gate_runs(self) -> list[dict]:
+        return sorted(self._r()["gate_runs"].values(), key=lambda r: r.get("started_at", ""))
+
+    def set_report(self, ticket_id: str, report: dict) -> None:
+        report["ts"] = now()
+        self._mutate_runtime(lambda d: d["reports"].__setitem__(ticket_id, report))
+
+    def pop_report(self, ticket_id: str) -> dict | None:
+        return self._mutate_runtime(lambda d: d["reports"].pop(ticket_id, None))
+
+    def pipeline(self) -> dict:
+        return self._r()["pipeline"]
+
+    def set_pipeline(self, paused: bool, reason: str | None = None) -> None:
+        self._mutate_runtime(lambda d: d.__setitem__("pipeline", {"paused": paused, "reason": reason}))
+        self.events.emit("pipeline_paused" if paused else "pipeline_resumed", reason=reason)
+
+    def add_wakeup(self, target: str, reason: str) -> None:
+        self._mutate_runtime(lambda d: d["wakeups"].append({"target": target, "reason": reason, "ts": now()}))
+
+    def drain_wakeups(self, target: str) -> list[dict]:
+        def fn(data):
+            mine = [w for w in data["wakeups"] if w["target"] == target]
+            data["wakeups"] = [w for w in data["wakeups"] if w["target"] != target]
+            return mine
+        return self._mutate_runtime(fn)
+
+    # -- snapshots -------------------------------------------------------------
+
+    def snapshot(self) -> dict:
+        t = self._t()
+        r = self._r()
+        tickets = [Ticket.from_dict(d) for d in t["tickets"].values()]
+        counts = {s.value: 0 for s in State}
+        for x in tickets:
+            counts[x.state.value] += 1
+        return {
+            "project": {"key": self.project.key, "repo_root": str(self.project.repo_root),
+                        "base_branch": self.project.config.base_branch,
+                        "model": self.project.config.model, "provider": self.project.config.provider},
+            "tickets": [x.to_dict() for x in sorted(tickets, key=lambda x: (x.priority, x.created_at))],
+            "milestones": [d for d in sorted(t["milestones"].values(), key=lambda m: m["order"])],
+            "sessions": list(r["sessions"].values()),
+            "worktrees": list(r["worktrees"].values()),
+            "gate_runs": sorted(r["gate_runs"].values(), key=lambda g: g.get("started_at", ""))[-20:],
+            "pipeline": r["pipeline"],
+            "counts": counts,
+            "active": sum(1 for x in tickets if x.state in ACTIVE),
+        }

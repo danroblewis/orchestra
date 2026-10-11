@@ -253,10 +253,15 @@ merges, never deploys by hand; it can ask for a staging restart through
 repository's conventions. Commits as it goes. Runs the project's tests
 before reporting. Reports exactly one of `READY_FOR_REVIEW` or `BLOCKED`.
 
-**Reviewer.** Judges one commit against the ticket's acceptance criteria,
-inside the same worktree. Receives the diff against the base branch and the
-test output Orchestra already produced. May run further checks. Reports
-exactly one of `APPROVED` or `REJECTED` with specific, actionable feedback.
+**Reviewer.** Reviews one commit the way a pull request reviewer does: reads
+the diff and the changeset, checks that the code is correct, complete
+against the acceptance criteria, consistent with the repository's
+conventions, and does not do more or less than the ticket asks. It runs
+inside the same worktree so it can open any file for context. Orchestra has
+already run the unit tests and hands it the output; the reviewer may run
+tests or other checks itself, but that is not its job. Its job is to read
+and comment on the code. Reports exactly one of `APPROVED` or `REJECTED`
+with specific, actionable feedback, as line-level comments where possible.
 
 ### 4.3 Reporting contract
 
