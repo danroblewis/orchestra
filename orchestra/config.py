@@ -73,12 +73,24 @@ class Config:
     gate_timeout: float = 900.0
     unit: list[TestSpec] = field(default_factory=list)
     acceptance: list[TestSpec] = field(default_factory=list)
+    staging_start: str | None = None
+    staging_port: int = 8001
+    staging_health: str = "/"
+    staging_health_timeout: float = 60.0
+    staging_stop: str | None = None
+    tunnel_name: str | None = None
+    tunnel_hostname: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def staging_configured(self) -> bool:
+        return bool(self.staging_start)
 
     @classmethod
     def from_toml(cls, text: str) -> Config:
         raw = tomllib.loads(text)
-        p, a, b, acc, g = (raw.get(k, {}) for k in ("project", "agents", "build", "acceptance", "gate"))
+        p, a, b, acc, g, st = (raw.get(k, {}) for k in ("project", "agents", "build", "acceptance", "gate", "staging"))
+        tun = st.get("tunnel", {}) or {}
         gt = parse_duration(g.get("timeout"), 900.0)
 
         def specs(items: list[dict]) -> list[TestSpec]:
@@ -114,6 +126,13 @@ class Config:
             gate_timeout=gt,
             unit=specs(g.get("unit", [])),
             acceptance=specs(g.get("acceptance", [])),
+            staging_start=st.get("start"),
+            staging_port=int(st.get("port", 8001)),
+            staging_health=st.get("health", "/"),
+            staging_health_timeout=parse_duration(st.get("health_timeout"), 60.0),
+            staging_stop=st.get("stop"),
+            tunnel_name=tun.get("name"),
+            tunnel_hostname=tun.get("hostname"),
             raw=raw,
         )
 
@@ -197,8 +216,17 @@ class Project:
     def logs_dir(self) -> Path:
         return self.state_dir / "logs"
 
+    @property
+    def staging_dir(self) -> Path:
+        return self.state_dir / "staging"
+
+    @property
+    def artifacts_dir(self) -> Path:
+        return self.state_dir / "artifacts"
+
     def ensure_dirs(self) -> None:
-        for d in (self.state_dir, self.sessions_dir, self.worktrees_dir, self.gate_dir, self.logs_dir):
+        for d in (self.state_dir, self.sessions_dir, self.worktrees_dir, self.gate_dir, self.logs_dir,
+                  self.staging_dir, self.artifacts_dir):
             d.mkdir(parents=True, exist_ok=True)
 
     def reload_config(self) -> None:

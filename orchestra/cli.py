@@ -181,6 +181,62 @@ def cmd_chat(args) -> int:
     return 0
 
 
+def cmd_staging(args) -> int:
+    from .gate.runner import run_specs
+    from .git import Git
+    from .staging import Staging, record_build
+
+    project = _project(args)
+    store, events = _store(project)
+    st = Staging(project, store, events)
+    if not project.config.staging_configured:
+        sys.exit("orchestra: no [staging] section in orchestra.toml")
+    if args.action == "status":
+        print(json.dumps({k: v for k, v in st.state().items()}, indent=2))
+    elif args.action == "logs":
+        print(st.logs())
+    elif args.action == "stop":
+        st.stop(); print("stopped")
+    elif args.action == "restart":
+        print("restarted" if st.restart() else "no build recorded; use `orchestra staging deploy`")
+    elif args.action == "deploy":
+        # Build the current base branch head with the [build] stage and promote it.
+        import glob
+        import shutil
+        import uuid
+
+        cfg = project.config
+        if not (cfg.build_command and cfg.build_artifact):
+            sys.exit("orchestra: [build] command and artifact are required to deploy")
+        git = Git(project.repo_root)
+        commit = git.rev_parse(cfg.base_branch)
+        bid = f"manual-{uuid.uuid4().hex[:8]}"
+        path = project.gate_dir / bid
+        git.worktree_add(f"orchestra/build-{bid}", path, cfg.base_branch)
+        try:
+            from .config import TestSpec
+            ok, res = run_specs([TestSpec("build", cfg.build_command, timeout=cfg.build_timeout)], path,
+                                project.logs_dir / bid, stage="build")
+            if not ok:
+                sys.exit(f"orchestra: build failed:\n{res[-1]['tail']}")
+            matches = sorted(glob.glob(str(path / cfg.build_artifact)))
+            if not matches:
+                sys.exit(f"orchestra: no artifact matched {cfg.build_artifact}")
+            dest = project.artifacts_dir / bid
+            dest.mkdir(parents=True, exist_ok=True)
+            artifact = shutil.copy(matches[-1], dest)
+        finally:
+            git.worktree_remove(path)
+            git.branch_delete(f"orchestra/build-{bid}")
+        build = {"id": bid, "gate_run_id": None, "commit": commit, "artifact_path": str(artifact),
+                 "created_at": __import__("orchestra.model", fromlist=["now"]).now()}
+        record_build(store, build)
+        print(f"built {Path(artifact).name} from {commit[:10]}; deploying")
+        print("deployed" if st.deploy(build) else "deploy FAILED; see `orchestra staging logs`")
+        print(f"local:  {st.local_url()}" + (f"\npublic: {st.public_url()}" if st.public_url() else ""))
+    return 0
+
+
 def cmd_doctor(args) -> int:
     from .git import Git
 
@@ -253,6 +309,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--args", default="{}", help="JSON object of arguments")
     s.add_argument("--compact", action="store_true")
     s.set_defaults(fn=cmd_api)
+
+    s = sub.add_parser("staging", help="staging environment: status, logs, deploy, restart, stop")
+    s.add_argument("action", choices=["status", "logs", "deploy", "restart", "stop"])
+    s.set_defaults(fn=cmd_staging)
 
     s = sub.add_parser("doctor")
     s.add_argument("--fix", action="store_true")

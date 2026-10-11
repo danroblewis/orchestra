@@ -14,6 +14,7 @@ from .gate import run_gate, run_specs
 from .git import Git, GitError
 from .model import ACTIVE, RECOVERY, Note, State, Ticket, is_ready
 from .pi import PiProcess
+from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
 
 PROJECT_AGENTS = ("coordinator", "pipeline_manager")
@@ -36,6 +37,7 @@ class Loop:
         self.agent_threads: dict[str, threading.Thread] = {}
         self.agent_procs: dict[str, PiProcess] = {}
         self.stop = threading.Event()
+        self.staging = Staging(project, store, events)
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -58,6 +60,8 @@ class Loop:
         self.events.emit("loop_started")
         log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
         self._start_project_agents()
+        if self.cfg.staging_configured and self.staging.state().get("current_build_id"):
+            threading.Thread(target=self.staging.restart, daemon=True, name="staging").start()
         try:
             while not self.stop.is_set():
                 try:
@@ -106,6 +110,7 @@ class Loop:
         for t in ordered:
             if t.state == State.CANCELLED and self.store.worktree(t.id):
                 self._drop_worktree(t)
+        self.staging.ensure_running()
         for target in PROJECT_AGENTS:
             if target not in self.agent_threads:
                 reasons = [w["reason"] for w in self.store.drain_wakeups(target)]

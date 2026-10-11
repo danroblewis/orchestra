@@ -144,6 +144,15 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
                 return {"ok": True, "run": r}
         raise StoreError(f"no gate run {a['id']}")
 
+    if command == "get_staging_status":
+        from .staging import Staging
+        st = Staging(project, store, store.events)
+        return {"ok": True, "staging": st.state(), "log_tail": st.logs(3000)}
+
+    if command == "restart_staging":
+        from .staging import Staging
+        return {"ok": True, "restarted": Staging(project, store, store.events).restart()}
+
     if command == "resume_pipeline":
         store.set_pipeline(False, None)
         return {"ok": True}

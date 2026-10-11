@@ -26,7 +26,7 @@ h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(-
 /* system stats */
 .cores { display:flex; flex-direction:row; align-items:stretch; gap:3px; height:90px; width:100%; padding:4px 0 }
 .core { flex:1 1 0; height:100%; background:#2a2f3d; border-radius:2px 2px 0 0; position:relative; min-width:3px }
-.core i { position:absolute; left:0; right:0; bottom:0; display:block; border-radius:2px 2px 0 0; transition:height .4s, background .4s }
+.core i { position:absolute; left:0; right:0; bottom:0; display:block; border-radius:2px 2px 0 0; transition-property:height, background; transition-timing-function:linear; transition-duration:2s }
 .meters { display:flex; flex-direction:row; gap:12px; margin-top:8px; width:100% }
 .meter { flex:1 1 0; min-width:0 }
 .meter .bar { height:10px; width:100%; background:#2a2f3d; border-radius:5px; overflow:hidden }

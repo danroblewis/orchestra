@@ -48,3 +48,15 @@ select = "uv run pytest -q {selector}"
 [[gate.acceptance]]
 name = "acceptance"
 command = "ORCHESTRA_TARGET_URL={url} uv run pytest tests/acceptance -q"
+
+# Staging: the most recently landed wheel, running as a live instance on port 8001.
+# It serves a seeded throwaway project the same way the acceptance target does.
+[staging]
+start = "uv run --isolated --no-project --with {artifact} python scripts/acceptance_target.py --port {port}"
+port = 8001
+health = "/api/state"
+health_timeout = "120s"
+
+# [staging.tunnel]            # optional: route a cloudflared hostname to staging
+# name = "orchestra-staging"
+# hostname = "staging.example.com"

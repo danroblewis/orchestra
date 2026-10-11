@@ -140,6 +140,8 @@ export default function (pi: ExtensionAPI) {
   if (ROLE === "pipeline_manager") {
     pi.registerTool(tool("get_gate_run", "Detail and logs of one merge gate run.", Type.Object({ id: S("Gate run id") })));
     pi.registerTool(tool("list_gate_runs", "Recent merge gate runs.", Type.Object({})));
+    pi.registerTool(tool("get_staging_status", "Status and recent log of the staging environment.", Type.Object({})));
+    pi.registerTool(tool("restart_staging", "Restart the staging process on its current build.", Type.Object({})));
     pi.registerTool(tool("resume_pipeline", "Resume the merge pipeline after a base-branch failure has been fixed.", Type.Object({ note: S("What was fixed") })));
   }
 }

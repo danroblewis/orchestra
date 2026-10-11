@@ -74,12 +74,12 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/staging")
     async def staging() -> dict:
-        log = project.state_dir / "staging" / "staging.log"
-        configured = "staging" in project.config.raw
-        text = ""
-        if log.exists():
-            text = log.read_text(encoding="utf-8", errors="replace")[-20000:]
-        return {"configured": configured, "log": text, "status": "not implemented" if configured else "not configured"}
+        from ..staging import Staging
+        project.reload_config()
+        st = Staging(project, store, events)
+        state = st.state()
+        build = store.runtime().get("builds", {}).get(state.get("current_build_id") or "")
+        return {**state, "build": build, "log": st.logs(), "health_path": project.config.staging_health}
 
     @app.get("/api/tickets/{ticket_id}")
     async def ticket(ticket_id: str) -> dict:

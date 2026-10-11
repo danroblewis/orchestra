@@ -84,7 +84,10 @@ Phase 1 of `SPEC.md` plus the project agents:
   prompts in `orchestra/agents/prompts/`, resident while `orchestra run` is up.
 - A merge gate that assembles a gate branch, runs build, unit, start, and
   acceptance stages, and fast-forwards `main`. One ticket per run for now.
+- Staging: the most recently landed build runs as a live instance, supervised by the
+  loop, redeployed by the gate, rolled back on a failed health probe; optional
+  cloudflared tunnel. `orchestra staging deploy|status|logs|restart|stop`.
 - The dashboard (agents, merge gate, system stats, staging) and the ticket graph page.
 
-Not yet: batched gates with bisection, staging deploy and tunnel, external
+Not yet: batched gates with bisection, external
 ticket backends, the React frontend.

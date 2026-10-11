@@ -20,6 +20,7 @@ from ..config import Project, TestSpec
 from ..events import Events
 from ..git import Git, GitError
 from ..model import Note, State, now
+from ..staging import Staging, record_build
 from ..store import LocalStore
 
 
@@ -202,6 +203,11 @@ def run_gate(project: Project, store: LocalStore, events: Events, ticket_ids: li
             run["status"] = "landed"
             run["summary"] = f"landed {', '.join(merged)} on {base} at {gate_commit[:10]}"
             events.emit("gate_landed", gate_run=run_id, tickets=merged, commit=gate_commit)
+            if run.get("artifact") and cfg.staging_configured:
+                build = {"id": run_id, "gate_run_id": run_id, "commit": gate_commit,
+                         "artifact_path": run["artifact"], "created_at": now()}
+                record_build(store, build)
+                run["staging"] = "deployed" if Staging(project, store, events).deploy(build) else "failed"
             return run
 
         # Failure: is the base itself broken?
