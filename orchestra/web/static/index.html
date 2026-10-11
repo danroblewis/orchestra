@@ -20,6 +20,8 @@
   <div class="col">
     <div class="col-head"><h1>Merge gate</h1><span class="sub" id="gate-sub"></span></div>
     <div id="queue"></div>
+    <h2><span>Landings per hour</span><span class="count" id="land-sum"></span></h2>
+    <div class="panel"><svg id="landings" class="landings" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="lbl-row"><span id="land-from"></span><span>now</span></div></div>
   </div>
   <div class="col">
     <div class="col-head"><h1>Host</h1><span class="sub" id="host-sub"></span></div>
@@ -140,6 +142,24 @@ function renderGpu(d) {
   $("gpu-lbl").textContent = `${d.gpu.utilization}% · ${fmtBytes(d.gpu.memory_used)} in use`;
 }
 
+async function refreshLandings() {
+  try {
+    const d = await (await fetch("/api/landings?hours=24")).json();
+    const W = 300, H = 90, pad = 2, n = d.buckets.length, bw = (W - pad * (n + 1)) / n;
+    const max = Math.max(1, ...d.buckets.map((b) => b.landed));
+    let svg = "";
+    for (let y = 1; y <= max && y <= 8; y++) { const yy = H - 12 - (H - 16) * y / max; svg += `<line x1="0" x2="${W}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`; }
+    d.buckets.forEach((b, i) => {
+      const x = pad + i * (bw + pad), hh = (H - 16) * b.landed / max;
+      svg += `<rect class="lbar ${b.failed && !b.landed ? "bad" : ""}" x="${x.toFixed(1)}" y="${(H - 12 - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hh, b.landed ? 1 : 0).toFixed(1)}"><title>${new Date(b.t * 1000).toLocaleTimeString([], { hour: "2-digit" })}: ${b.landed} landed, ${b.runs} gate run${b.runs === 1 ? "" : "s"}${b.failed ? ", " + b.failed + " failed" : ""}</title></rect>`;
+      if (i % 6 === 0) svg += `<text class="tick" x="${(x + bw / 2).toFixed(1)}" y="${H - 2}" text-anchor="middle">${new Date(b.t * 1000).getHours()}h</text>`;
+    });
+    $("landings").innerHTML = svg;
+    $("land-sum").textContent = `${d.total} in 24h · ${d.per_hour}/h`;
+    $("land-from").textContent = new Date(d.buckets[0].t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {}
+}
+
 async function refreshStaging() {
   try {
     const d = await (await fetch("/api/staging")).json();
@@ -160,8 +180,8 @@ async function refreshStaging() {
   } catch (e) {}
 }
 
-refresh(); refreshSystem(); refreshStaging();
-setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000);
+refresh(); refreshSystem(); refreshStaging(); refreshLandings();
+setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshLandings, 30000);
 openFromHash();
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>

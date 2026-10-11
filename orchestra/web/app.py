@@ -105,6 +105,31 @@ def create_app(project: Project) -> FastAPI:
             "now": time.time(),
         }
 
+    @app.get("/api/landings")
+    async def landings(hours: int = 24) -> dict:
+        """Tickets landed on the base branch per hour, from gate run records."""
+        from datetime import datetime, timezone
+        hours = max(1, min(hours, 24 * 14))
+        now_ts = time.time()
+        start = int(now_ts // 3600) * 3600 - (hours - 1) * 3600
+        buckets = [{"t": start + i * 3600, "landed": 0, "runs": 0, "failed": 0} for i in range(hours)]
+        for r in store.gate_runs():
+            if not r.get("finished_at"):
+                continue
+            try:
+                ts = datetime.fromisoformat(r["finished_at"]).replace(tzinfo=timezone.utc).timestamp()
+            except Exception:
+                continue
+            i = int((ts - start) // 3600)
+            if 0 <= i < hours:
+                buckets[i]["runs"] += 1
+                if r.get("status") == "landed":
+                    buckets[i]["landed"] += len(r.get("merged") or [])
+                elif r.get("status") in ("rejected", "base_broken", "error", "conflict"):
+                    buckets[i]["failed"] += 1
+        total = sum(b["landed"] for b in buckets)
+        return {"hours": hours, "buckets": buckets, "total": total, "per_hour": round(total / hours, 2)}
+
     @app.get("/api/staging")
     async def staging() -> dict:
         from ..staging import Staging

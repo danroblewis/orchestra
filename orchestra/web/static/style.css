@@ -114,3 +114,7 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer }
 .group text { fill:var(--muted); font-size:12px; font-weight:600 } .group rect { fill:none; stroke:var(--border); stroke-dasharray:4 3; rx:10 }
 .filter { width:100%; max-width:480px; background:var(--panel); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px; margin-bottom:8px }
 .badge { display:inline-block; padding:1px 6px; border-radius:10px; font-size:11px; color:#000; font-weight:600 }
+/* landings per hour */
+.landings { width:100%; height:90px; display:block; background:var(--panel); border:1px solid var(--border); border-radius:8px; min-height:0 }
+.landings .lbar { fill:var(--DONE) } .landings .lbar.bad { fill:var(--REJECTED); fill-opacity:.7 } .landings .grid { stroke:var(--border); stroke-width:.5; vector-effect:non-scaling-stroke }
+.landings .tick { fill:var(--muted); font-size:9px; font-family:var(--mono) }
