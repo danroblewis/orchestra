@@ -59,32 +59,73 @@ def staging(project: str, port: int) -> None:
     os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(port)], env)
 
 
-def throwaway(port: int) -> None:
+GREET_PY = '''"""A tiny module for the real-model acceptance flow."""
+
+
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+'''
+
+TEST_GREET_PY = '''import unittest
+
+from greet import greet
+
+
+class GreetTest(unittest.TestCase):
+    def test_greet(self):
+        self.assertEqual(greet("Ada"), "Hello, Ada!")
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
+
+def throwaway(port: int, real: bool, provider: str | None, model: str | None) -> None:
+    """A temporary project. With ``real`` the loop runs real Pi agents on the given model
+    and nothing is seeded: the acceptance test talks to the Supervisor. Otherwise the fake
+    Pi plays every role and two tickets are seeded with pickup paused."""
     tmp = Path(tempfile.mkdtemp(prefix="orchestra-acceptance-"))
     home, repo = tmp / "home", tmp / "repo"
     repo.mkdir()
-    fake = tmp / "pi"
-    shutil.copy(FAKE_PI, fake)
-    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-    env = {**os.environ, "ORCHESTRATOR_HOME": str(home), "ORCHESTRA_REPO": str(repo), "PI_BINARY": str(fake),
-           # fake_pi's shebang is python3; make sure that is the interpreter with the wheel.
+    env = {**os.environ, "ORCHESTRATOR_HOME": str(home), "ORCHESTRA_REPO": str(repo),
+           # the worker, reviewer, and gate run python3 from PATH: make it the one with the wheel.
            "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")}
+    if not real:
+        fake = tmp / "pi"
+        shutil.copy(FAKE_PI, fake)
+        fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+        env["PI_BINARY"] = str(fake)
     sh("git", "init", "-q", "-b", "main", cwd=repo)
     sh("git", "config", "user.email", "acceptance@orchestra", cwd=repo)
     sh("git", "config", "user.name", "acceptance", cwd=repo)
-    (repo / "README.md").write_text("# target\n")
+    (repo / "README.md").write_text("# target\n\nA tiny Python module. Tests: `python3 -m unittest -q`.\n")
+    (repo / "greet.py").write_text(GREET_PY)
+    (repo / "test_greet.py").write_text(TEST_GREET_PY)
+    (repo / ".gitignore").write_text("__pycache__/\n")
     sh("git", "add", "-A", cwd=repo)
     sh("git", "commit", "-qm", "init", cwd=repo)
 
     cli = [sys.executable, "-m", "orchestra"]
-    sh(*cli, "init", "--provider", "fake", "--model", "fake", "--prefix", "ACC",
-       "--unit-command", "test -f README.md", env=env, cwd=repo)
+    init = ["init", "--prefix", "ACC", "--unit-command", "python3 -m unittest -q"]
+    if real:
+        init += (["--provider", provider] if provider else []) + (["--model", model] if model else [])
+    else:
+        init += ["--provider", "fake", "--model", "fake"]
+    sh(*cli, *init, env=env, cwd=repo)
     toml = repo / "orchestra.toml"
     text = toml.read_text()
     assert "[agents]\n" in text, "init template changed; cannot place control_port"
     toml.write_text(text.replace("[agents]\n", f"[agents]\ncontrol_port = {free_port()}\n", 1))
     sh("git", "add", "-A", cwd=repo)
     sh("git", "commit", "-qm", "orchestra config", cwd=repo)
+
+    if real:
+        print(f"[acceptance_target] real agents on provider={provider or 'default'} model={model or 'default'}; "
+              f"project at {repo}, home {home}", flush=True)
+        os.chdir(repo)
+        subprocess.Popen([sys.executable, "-m", "orchestra", "run"], env=env, cwd=repo)
+        os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(port)], env)
 
     sup = {**env, "ORCHESTRA_ROLE": "supervisor"}
     ms = json.loads(sh(*cli, "api", "create_milestone", "--compact", "--args", json.dumps({"name": "Acceptance"}),
@@ -117,11 +158,14 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--project", help="serve this existing demo project instead of a throwaway one")
+    ap.add_argument("--real", action="store_true", help="run real Pi agents instead of the fake; nothing is seeded")
+    ap.add_argument("--provider", default=os.environ.get("ORCHESTRA_ACCEPTANCE_PROVIDER"))
+    ap.add_argument("--model", default=os.environ.get("ORCHESTRA_ACCEPTANCE_MODEL"))
     args = ap.parse_args()
     if args.project:
         staging(args.project, args.port)
     else:
-        throwaway(args.port)
+        throwaway(args.port, args.real, args.provider, args.model)
 
 
 if __name__ == "__main__":

@@ -155,7 +155,7 @@ def test_resume_lands_tickets_in_order():
     gate_ids = {e.get("gate_run") for e in runs if e["type"] == "gate_landed" and e.get("gate_run")}
     for rid in gate_ids:
         assert get_json(f"/api/gate/runs/{rid}")["status"] == "landed"
-    assert get_json("/api/landings")["total"] == 2
+    wait_for(lambda: get_json("/api/landings")["total"] == 2, 30, what="landings to record both gate runs")
     b = get_json("/api/burndown")
     assert b["total"] == 2 and b["remaining"] == 0
 
