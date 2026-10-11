@@ -13,6 +13,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import fcntl
+from contextlib import contextmanager
+
 from .config import Project
 from .events import Events
 from .model import now
@@ -192,9 +195,25 @@ class Staging:
         self._log(f"tunnel probe {public} failed; see {self.project.staging_dir / 'tunnel.log'}")
         return False
 
+    @contextmanager
+    def _exclusive(self):
+        """One deploy/restart at a time per project, across processes (the gate in the
+        loop and a manual `orchestra staging deploy` must not interleave)."""
+        self.project.staging_dir.mkdir(parents=True, exist_ok=True)
+        with (self.project.staging_dir / ".deploy.lock").open("a+") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+
     # -- public ----------------------------------------------------------------
 
     def deploy(self, build: dict) -> bool:
+        with self._exclusive():
+            return self._deploy(build)
+
+    def _deploy(self, build: dict) -> bool:
         """Promote a build: stop the previous, start this one, probe health and tunnel.
         On failure restart the previous build and wake the Pipeline Manager."""
         if not self.cfg.staging_configured:
@@ -237,6 +256,10 @@ class Staging:
 
     def restart(self) -> str:
         """Returns 'ok', 'no_build', 'start_failed', or 'tunnel_failed'."""
+        with self._exclusive():
+            return self._restart()
+
+    def _restart(self) -> str:
         build = self.store.runtime().get("builds", {}).get(self.state().get("current_build_id") or "")
         if not build:
             return "no_build"
