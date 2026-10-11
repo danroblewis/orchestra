@@ -7,17 +7,17 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<nav id="nav"></nav>
+<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="layout">
   <div class="col"><h2>Agents</h2><div id="agents"></div></div>
-  <div class="col"><h2>Merge queue</h2><div id="queue"></div></div>
+  <div class="col"><h2>Merge gate</h2><div id="queue"></div></div>
   <div class="col">
     <h2>System</h2>
     <div class="panel">
       <div class="cores" id="cores"></div>
       <div class="meters">
-        <div class="meter"><div class="lbl"><span>memory</span><span id="mem-lbl"></span></div><div class="bar"><i id="mem-bar" style="width:0"></i></div></div>
-        <div class="meter"><div class="lbl"><span>disk</span><span id="disk-lbl"></span></div><div class="bar"><i id="disk-bar" style="width:0"></i></div></div>
+        <div class="meter"><div class="lbl"><span>memory</span><span id="mem-lbl"></span></div><div class="bar"><i id="mem-bar"></i></div></div>
+        <div class="meter"><div class="lbl"><span>disk</span><span id="disk-lbl"></span></div><div class="bar"><i id="disk-bar"></i></div></div>
       </div>
       <div class="muted" id="load" style="font-size:11px;margin-top:6px"></div>
     </div>
@@ -29,6 +29,7 @@
 <script src="/static/app.js"></script>
 <script>
 const BASE_AGENTS = [["supervisor", "supervisor"], ["coordinator", "coordinator"], ["pipeline-manager", "pipeline_manager"]];
+const TERMINAL = ["DONE", "CANCELLED"];
 let STATE = null;
 
 async function refresh() {
@@ -36,58 +37,64 @@ async function refresh() {
     STATE = await (await fetch("/api/state")).json();
     renderNav("dashboard", STATE.project); $("conn").textContent = "live";
     renderAgents(STATE); renderQueue(STATE);
-  } catch (e) { if ($("conn")) $("conn").textContent = "disconnected"; }
+  } catch (e) { $("conn").textContent = "disconnected"; }
 }
 
-function agentCard(s, ticket, fixed) {
+function baseCard(id, kind, s) {
   const running = s && s.status === "running";
-  const elapsed = running && s.started_at ? ago(STATE.now - s.started_at) : "";
-  const kind = s ? s.kind : fixed;
-  const last = s ? (s.last_text || "") : "no session yet";
-  return `<div class="card ${running ? "" : "idle"}" style="border-left-color:${kindColor(kind)}" onclick="openTranscript('${esc(s ? s.id : fixed)}')">
-    <div class="t"><span><span class="dot ${running ? "" : "off"}"></span>${esc(s ? s.id : fixed)}</span><span class="muted">${running ? elapsed : (s ? "idle" : "")}</span></div>
-    ${ticket ? `<div class="tk">${esc(ticket.id)} · ${esc(ticket.title)}</div>` : ""}
-    <div class="m">${esc(last)}</div></div>`;
+  return `<div class="card ${running ? "" : "idle"}" style="border-left-color:${kindColor(kind)}" onclick="openTranscript('${id}')">
+    <div class="t"><span><span class="dot ${running ? "" : "off"}"></span>${id}</span><span class="muted">${running ? ago(STATE.now - (s.started_at || STATE.now)) : (s ? "idle" : "no session yet")}</span></div>
+    <div class="m">${esc(s ? (s.last_text || "") : "")}</div></div>`;
+}
+
+function agentLine(label, s) {
+  if (!s) return `<div class="line"><span><b>${label}</b> —</span></div>`;
+  const running = s.status === "running";
+  const right = running ? `<span class="dot"></span>${ago(STATE.now - (s.started_at || STATE.now))}` : "idle";
+  return `<div class="line" onclick="event.stopPropagation();openTranscript('${s.id}')" title="open transcript"><span><b>${label}</b> ${esc(s.last_text || "")}</span><span>${right}</span></div>`;
 }
 
 function renderAgents(s) {
   const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
-  const byT = Object.fromEntries(s.tickets.map((t) => [t.id, t]));
-  let html = BASE_AGENTS.map(([id, kind]) => agentCard(byId[id], null, id)).join("");
-  const others = s.sessions.filter((x) => !BASE_AGENTS.some(([id]) => id === x.id));
-  const running = others.filter((x) => x.status === "running").sort((a, b) => (a.started_at || 0) - (b.started_at || 0));
-  const idle = others.filter((x) => x.status !== "running").sort((a, b) => (b.settled_at || 0) - (a.settled_at || 0)).slice(0, 12);
-  html += `<h2>Working (${running.length})</h2>` + (running.map((x) => agentCard(x, byT[x.ticket_id])).join("") || '<div class="empty">no workers or reviewers running</div>');
-  if (idle.length) html += `<h2>Recent</h2>` + idle.map((x) => agentCard(x, byT[x.ticket_id])).join("");
+  let html = BASE_AGENTS.map(([id, kind]) => baseCard(id, kind, byId[id])).join("");
+  // One card per ticket that has a worker or reviewer session and is not finished.
+  const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (byId[`worker-${t.id}`] || byId[`reviewer-${t.id}`]))
+    .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }))
+    .sort((a, b) => ((b.w?.status === "running" || b.r?.status === "running") ? 1 : 0) - ((a.w?.status === "running" || a.r?.status === "running") ? 1 : 0));
+  html += `<h2>Tickets in work (${cards.length})</h2>` + (cards.map(({ t, w, r }) => {
+    const live = (w && w.status === "running") || (r && r.status === "running");
+    return `<div class="card ${live ? "" : "idle"}" style="border-left-color:${color(t.state)}" onclick="openTicket('${t.id}')">
+      <div class="t"><span>${esc(t.id)} <span class="muted" style="font-weight:400">${esc(t.title)}</span></span><span class="badge" style="background:${color(t.state)}">${t.state}</span></div>
+      ${agentLine("worker", w)}${agentLine("reviewer", r)}</div>`;
+  }).join("") || '<div class="empty">no tickets being worked</div>');
   $("agents").innerHTML = html;
 }
 
-function stageLine(st) {
-  return `<div class="stage"><span>${esc(st.stage)}:${esc(st.name)}</span><span class="${st.status === "passed" ? "ok" : "bad"}">${st.status}${st.duration ? " " + st.duration + "s" : ""}</span></div>`;
-}
+const stageLine = (st) => `<div class="stage"><span>${esc(st.stage)}:${esc(st.name)}</span><span class="${st.status === "passed" ? "ok" : "bad"}">${st.status}${st.duration ? " " + st.duration + "s" : ""}</span></div>`;
+const ticketRow = (t, extra) => `<div class="queue-item" onclick="openTicket('${t.id}')"><div class="t">${esc(t.id)} ${esc(t.title)}</div><div class="m">${extra}</div></div>`;
 
 function renderQueue(s) {
   const byT = Object.fromEntries(s.tickets.map((t) => [t.id, t]));
-  const runs = s.gate_runs || [];
-  const cur = runs.find((r) => r.status === "running");
+  const cur = (s.gate_runs || []).find((r) => r.status === "running");
   let html = s.pipeline.paused ? `<div class="panel bad">PIPELINE PAUSED: ${esc(s.pipeline.reason)}</div>` : "";
-  html += `<h2>Now merging</h2>`;
+  html += `<h2>In this gate run</h2>`;
   if (cur) {
-    html += `<div class="panel" onclick="openGateRun('${cur.id}')" style="cursor:pointer"><div class="kv"><div>run</div><div>${cur.id}</div><div>batch</div><div>${cur.batch.map((id) => `${id} ${esc((byT[id] || {}).title || "")}`).join("<br>")}</div><div>started</div><div>${ago(s.now - Date.parse(cur.started_at) / 1000)} ago</div></div>${(cur.stages || []).map(stageLine).join("")}</div>`;
+    html += cur.batch.map((id) => byT[id] ? ticketRow(byT[id], `commit ${esc((byT[id].reviewed_commit || "").slice(0, 10))}`) : "").join("");
+    html += `<div class="panel" onclick="openGateRun('${cur.id}')" style="cursor:pointer"><div class="kv"><div>run</div><div>${cur.id}</div><div>started</div><div>${ago(s.now - Date.parse(cur.started_at) / 1000)} ago</div></div>${(cur.stages || []).map(stageLine).join("") || '<div class="muted">assembling…</div>'}</div>`;
   } else html += `<div class="empty">gate idle</div>`;
   const queue = s.tickets.filter((t) => t.state === "APPROVED").sort((a, b) => a.state_since.localeCompare(b.state_since));
-  html += `<h2>Queued (${queue.length})</h2>` + (queue.map((t, i) => `<div class="queue-item" onclick="openTicket('${t.id}')"><div class="t">${i + 1}. ${esc(t.id)} ${esc(t.title)}</div><div class="m">approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · commit ${esc((t.reviewed_commit || "").slice(0, 10))}</div></div>`).join("") || '<div class="empty">nothing approved</div>');
-  const upstream = s.tickets.filter((t) => ["READY_FOR_REVIEW", "IN_REVIEW", "IN_PROGRESS", "REJECTED"].includes(t.state));
-  html += `<h2>Upstream (${upstream.length})</h2>` + (upstream.map((t) => `<div class="row" onclick="openTicket('${t.id}')"><span>${esc(t.id)} ${esc(t.title)}</span><span class="badge" style="background:${color(t.state)}">${t.state}</span></div>`).join("") || '<div class="empty">nothing in flight</div>');
-  const hist = runs.filter((r) => r.status !== "running").slice(-12).reverse();
-  html += `<h2>History</h2>` + (hist.map((r) => `<div class="row" onclick="openGateRun('${r.id}')"><span><span class="${r.status === "landed" ? "ok" : "bad"}">${r.status}</span> ${r.batch.join(", ")} <span class="muted">${esc(r.summary || "")}</span></span><span class="muted">${r.finished_at ? ago(s.now - Date.parse(r.finished_at) / 1000) : ""}</span></div>`).join("") || '<div class="empty">no gate runs yet</div>');
+  const n = s.batch_size || 1;
+  html += `<h2>Next gate run</h2>` + (queue.slice(0, n).map((t) => ticketRow(t, `approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · commit ${esc((t.reviewed_commit || "").slice(0, 10))}`)).join("") || '<div class="empty">nothing approved yet</div>');
+  if (queue.length > n) html += `<h2>Waiting for a later run (${queue.length - n})</h2>` + queue.slice(n).map((t) => ticketRow(t, `approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago`)).join("");
+  const upstream = s.tickets.filter((t) => ["IN_REVIEW", "READY_FOR_REVIEW", "REJECTED", "IN_PROGRESS"].includes(t.state));
+  html += `<h2>On the way (${upstream.length})</h2>` + (upstream.map((t) => `<div class="row" onclick="openTicket('${t.id}')"><span>${esc(t.id)} ${esc(t.title)}</span><span class="badge" style="background:${color(t.state)}">${t.state}</span></div>`).join("") || '<div class="empty">nothing in flight</div>');
   $("queue").innerHTML = html;
 }
 
 async function refreshSystem() {
   try {
     const d = await (await fetch("/api/system")).json();
-    $("cores").innerHTML = d.cpu_percent.map((p, i) => `<div class="core ${p > 85 ? "hot" : p > 50 ? "warm" : ""}" title="core ${i}: ${p}%"><i style="height:${Math.max(2, p)}%"></i></div>`).join("");
+    $("cores").innerHTML = d.cpu_percent.map((p, i) => `<div class="core ${p > 85 ? "hot" : p > 50 ? "warm" : ""}" title="core ${i}: ${p}%"><i style="height:${Math.max(2, Math.round(p))}%"></i></div>`).join("");
     $("mem-lbl").textContent = `${d.memory.percent}% · ${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`;
     $("mem-bar").style.width = `${d.memory.percent}%`;
     $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`;

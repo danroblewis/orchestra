@@ -26,6 +26,12 @@ def create_app(project: Project) -> FastAPI:
     store = LocalStore(project, events)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
+    @app.middleware("http")
+    async def no_cache(request, call_next):
+        resp = await call_next(request)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
         return (STATIC / "index.html").read_text(encoding="utf-8")
@@ -40,6 +46,7 @@ def create_app(project: Project) -> FastAPI:
         snap = store.snapshot()
         snap["now"] = time.time()
         snap["gate_runs"] = store.gate_runs()[-30:]
+        snap["batch_size"] = 1  # the gate takes one ticket per run until batching lands
         return snap
 
     @app.get("/api/system")

@@ -7,10 +7,8 @@ const kindColor = (k) => ({ supervisor: "#bc8cff", coordinator: "#58a6ff", pipel
 const fmtBytes = (b) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
 
 function renderNav(active, project) {
-  $("nav").innerHTML = `<a href="/" class="${active === "dashboard" ? "on" : ""}">Dashboard</a>
-    <a href="/tickets" class="${active === "tickets" ? "on" : ""}">Tickets</a>
-    <span class="muted" id="proj">${project ? esc(project.key) + " · " + esc(project.base_branch) + " · " + esc(project.model || "no model") : ""}</span>
-    <span class="muted" id="conn" style="margin-left:auto"></span>`;
+  // The links are static HTML; this only fills in the project label.
+  if (project) $("proj").textContent = `${project.key} · ${project.base_branch} · ${project.model || "no model"}`;
 }
 
 function openDrawer(html) { $("drawer").innerHTML = html; $("overlay").classList.add("open"); }

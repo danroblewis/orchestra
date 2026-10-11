@@ -249,6 +249,18 @@ class LocalStore:
     def sessions(self) -> list[dict]:
         return list(self._r()["sessions"].values())
 
+    def purge_ticket_sessions(self, ticket_id: str) -> list[str]:
+        """Drop the worker/reviewer session records for a finished ticket and return
+        their Pi session file paths so the caller can delete them."""
+        def fn(data):
+            files = []
+            for sid in (f"worker-{ticket_id}", f"reviewer-{ticket_id}"):
+                rec = data["sessions"].pop(sid, None)
+                if rec and rec.get("pi_session_file"):
+                    files.append(rec["pi_session_file"])
+            return files
+        return self._mutate_runtime(fn)
+
     def set_worktree(self, ticket_id: str, path: str, branch: str) -> None:
         self._mutate_runtime(lambda d: d["worktrees"].__setitem__(
             ticket_id, {"ticket_id": ticket_id, "path": path, "branch": branch, "created_at": now()}))

@@ -313,6 +313,8 @@ class Loop:
         if wt:
             self.git.worktree_remove(Path(wt["path"]))
             self.store.remove_worktree(t.id)
+        for f in self.store.purge_ticket_sessions(t.id):
+            Path(f).unlink(missing_ok=True)
 
     # -- project agents --------------------------------------------------------
 
