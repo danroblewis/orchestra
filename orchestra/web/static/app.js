@@ -74,7 +74,9 @@ async function openTranscript(id) {
   let html = `<h3>${esc(id)} <span class="muted">${state}</span>${stopBtn}</h3>
     <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
     ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
-    <div>last started</div><div>${when(s.started_at)}</div><div>last settled</div><div>${when(s.settled_at)}</div>
+    <div>last started</div><div>${when(s.started_at)}${s.status === "running" ? ` <span class="muted">(turn running ${ago((Date.now() / 1000) - s.started_at)})</span>` : ""}</div>
+    <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}${s.status === "running" && s.last_output_at && (Date.now() / 1000) - s.last_output_at > 300 ? ' <span class="bad">no output for over 5 minutes: likely waiting on the model</span>' : ""}</div>
+    <div>last settled</div><div>${when(s.settled_at)}</div>
     <div>turns</div><div>${d.turns} · ${d.total} messages</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div>`;
   if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
       <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
@@ -146,13 +148,18 @@ function renderToolCall(t) {
   return `<div class="tc"><div class="r">⚙ ${esc(t.name)}</div>${shown ? `<pre><code class="language-json">${esc(shown).slice(0, 3000)}</code></pre>` : ""}</div>`;
 }
 
+function msgTime(m) {
+  if (!m.ts) return "";
+  const t = m.ts > 1e12 ? m.ts : m.ts * 1000;
+  return `<span class="muted num" style="margin-left:8px">${new Date(t).toLocaleTimeString()} · ${ago((Date.now() - t) / 1000)} ago</span>`;
+}
 function renderMessage(m) {
   if (m.role === "toolResult") {
     const shell = SHELL_TOOLS.has(m.tool_name);
     const body = shell ? `<pre class="term">${highlightLog(m.text)}</pre>` : `<pre><code>${esc(m.text)}</code></pre>`;
-    return `<div class="msg toolResult ${m.is_error ? "err" : ""}"><div class="r">result · ${esc(m.tool_name || "tool")}${m.is_error ? ' <span class="bad">error</span>' : ""}</div>${body}</div>`;
+    return `<div class="msg toolResult ${m.is_error ? "err" : ""}"><div class="r">result · ${esc(m.tool_name || "tool")}${m.is_error ? ' <span class="bad">error</span>' : ""}${msgTime(m)}</div>${body}</div>`;
   }
-  return `<div class="msg ${m.role}"><div class="r">${m.role}</div>${md(m.text.slice(0, 12000))}${m.tool_calls.map(renderToolCall).join("")}</div>`;
+  return `<div class="msg ${m.role}"><div class="r">${m.role}${msgTime(m)}</div>${md(m.text.slice(0, 12000))}${m.tool_calls.map(renderToolCall).join("")}</div>`;
 }
 
 async function openGateRun(id) {

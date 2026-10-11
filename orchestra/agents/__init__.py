@@ -122,7 +122,10 @@ def role_design_reference() -> str:
 def wake_task(target: str, reasons: list[str], snapshot: dict) -> str:
     counts = ", ".join(f"{k}={v}" for k, v in snapshot["counts"].items() if v)
     lines = [f"# Wake-up for the {target.replace('_', ' ')}", "", "## Why you were woken"]
-    lines += [f"- {r}" for r in reasons]
+    shown = reasons[:12]
+    lines += [f"- {r}" for r in shown]
+    if len(reasons) > len(shown):
+        lines.append(f"- ...and {len(reasons) - len(shown)} more of the same kinds; the snapshot below is current")
     lines += ["", "## Execution health"] + execution_health(snapshot)
     lines += ["", "## Project snapshot", f"Ticket counts: {counts or 'none'}",
               f"Pipeline: {'PAUSED: ' + str(snapshot['pipeline'].get('reason')) if snapshot['pipeline'].get('paused') else 'running'}",

@@ -43,8 +43,10 @@ class PiProcess:
 
     def __init__(self, *, session_id: str, session_dir: Path, cwd: Path, system_prompt: str,
                  provider: str | None, model: str | None, thinking: str | None,
-                 env: dict[str, str], log_path: Path, pi_binary: str | None = None):
+                 env: dict[str, str], log_path: Path, pi_binary: str | None = None,
+                 host_slots: int = 0):
         self.session_id = session_id
+        self.host_slots = host_slots
         self.cwd = cwd
         self.log_path = log_path
         args = [pi_binary or os.environ.get("PI_BINARY", "pi"), "--mode", "rpc",
@@ -132,8 +134,10 @@ class PiProcess:
         return data
 
     def prompt(self, text: str, timeout: float, on_event: Callable[[dict], None] | None = None) -> TurnResult:
-        """Send a prompt and wait for agent_settled."""
-        with self._lock:
+        """Send a prompt and wait for agent_settled. Waits for a host turn slot first, so the
+        wait for a busy model server is not counted against the turn's timeout."""
+        from ..hostlock import turn_slot
+        with turn_slot(self.host_slots), self._lock:
             self.busy = True
             result = TurnResult()
             try:

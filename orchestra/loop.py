@@ -52,7 +52,7 @@ class Loop:
         self.live_procs: dict[str, PiProcess] = {}   # session id -> process, while a turn runs
         self.killed: set[str] = set()                # ticket ids whose agent the operator stopped
         self.roles: dict[str, RoleDef] = {}          # all roles (built-in + custom), refreshed each tick
-        self._events_tail = 0                        # offset into the event log for wake_on matching
+        self._events_tail = self.events.read(0, limit=1)[1]   # only events after startup can wake roles
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -171,7 +171,7 @@ class Loop:
                 st = self.store.role_state(target)
                 if st.get("paused") or st.get("deleted"):
                     continue  # wake-ups stay queued until resumed
-                reasons = [w["reason"] for w in self.store.drain_wakeups(target)]
+                reasons = list(dict.fromkeys(w["reason"] for w in self.store.drain_wakeups(target)))
                 if reasons:
                     self._spawn(self.agent_threads, target, self._wake, target, reasons)
 
@@ -224,6 +224,7 @@ class Loop:
             env={"ORCHESTRA_ROLE": role.name, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": "",
                  "ORCHESTRA_TOOLS": ",".join(role.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
+            host_slots=self.cfg.host_concurrency,
         )
 
     def _wake_on_events(self) -> None:
@@ -292,6 +293,7 @@ class Loop:
             env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
                  "ORCHESTRA_TOOLS": ",".join(spec.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
+            host_slots=self.cfg.host_concurrency,
         )
 
     def _session_running(self, sid: str, role: str, proc: PiProcess, ticket_id: str | None = None) -> None:
@@ -321,6 +323,8 @@ class Loop:
 
     def _on_event(self, sid: str):
         def fn(ev: dict) -> None:
+            if ev.get("type") in ("tool_execution_start", "message_end", "turn_end"):
+                self.store.set_session(sid, last_output_at=time.time())
             if ev.get("type") == "tool_execution_start":
                 self.store.set_session(sid, last_text=f"tool: {ev.get('toolName') or ev.get('name', '?')}")
             elif ev.get("type") == "message_end" and ev.get("message", {}).get("role") == "assistant":

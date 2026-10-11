@@ -191,7 +191,7 @@ def cmd_chat(args) -> int:
                      provider=cfg.provider, model=cfg.model, thinking=cfg.thinking,
                      env={"ORCHESTRA_ROLE": "supervisor", "ORCHESTRA_REPO": str(project.repo_root),
                           "ORCHESTRA_TOOLS": "tickets,context,pipeline"},
-                     log_path=project.logs_dir / "pi" / "supervisor.stderr.log")
+                     log_path=project.logs_dir / "pi" / "supervisor.stderr.log", host_slots=cfg.host_concurrency)
     try:
         proc.get_state()
     except Exception:
