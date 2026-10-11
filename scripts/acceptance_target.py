@@ -1,9 +1,16 @@
-"""Acceptance target: run the *installed* orchestra wheel against a throwaway project.
+"""Acceptance target: run the *installed* orchestra wheel as a complete instance.
 
 Invoked by the merge gate's [acceptance] start command inside an isolated environment
-that has the built wheel installed. It creates a temporary ORCHESTRATOR_HOME and git
-repository, initializes a project, seeds a milestone and a ticket through the CLI,
-and serves the web UI on --port. Acceptance tests then talk to that server.
+that has the built wheel installed. Two modes:
+
+- Throwaway (default): a temporary ORCHESTRATOR_HOME and git repository, a project
+  initialised and seeded through the CLI, the agent loop running against a fake Pi
+  (tests/e2e/fake_pi.py, which plays every role over the real RPC protocol), and the
+  web UI on --port. New-worker pickup starts PAUSED so the acceptance tests observe
+  the resting state first, then resume it and watch tickets land.
+- Staging (--project): the same build serving a persistent demo project with real agents.
+
+The CLI's read commands are run once at startup as a smoke test; any failure aborts.
 """
 
 from __future__ import annotations
@@ -11,10 +18,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import socket
+import stat
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+FAKE_PI = HERE.parent / "tests" / "e2e" / "fake_pi.py"
 
 
 def sh(*args: str, cwd: Path | None = None, env: dict | None = None) -> str:
@@ -25,31 +38,37 @@ def sh(*args: str, cwd: Path | None = None, env: dict | None = None) -> str:
     return p.stdout
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, required=True)
-    ap.add_argument("--project", help="serve this existing demo project instead of a throwaway one")
-    args = ap.parse_args()
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
-    if args.project:
-        # Staging mode: the new build serves a persistent demo project, sharing the
-        # operator's ~/.orchestrator state so tickets and history survive redeploys.
-        repo = Path(args.project).expanduser().resolve()
-        env = {**os.environ, "ORCHESTRA_REPO": str(repo)}
-        if not (repo / "orchestra.toml").exists():
-            sh(sys.executable, "-m", "orchestra", "init", "--prefix", "DEMO", env=env, cwd=repo)
-        print(f"[acceptance_target] staging: full instance on demo project {repo}", flush=True)
-        os.chdir(repo)
-        # The loop (resident agents, workers, gate) runs as a child in this process group, so
-        # stopping staging stops it too. The web UI runs in the foreground on --port.
-        subprocess.Popen([sys.executable, "-m", "orchestra", "run"], env=env, cwd=repo)
-        os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(args.port)], env)
 
+def staging(project: str, port: int) -> None:
+    # The new build serves a persistent demo project, sharing the operator's
+    # ~/.orchestrator state so tickets and history survive redeploys.
+    repo = Path(project).expanduser().resolve()
+    env = {**os.environ, "ORCHESTRA_REPO": str(repo)}
+    if not (repo / "orchestra.toml").exists():
+        sh(sys.executable, "-m", "orchestra", "init", "--prefix", "DEMO", env=env, cwd=repo)
+    print(f"[acceptance_target] staging: full instance on demo project {repo}", flush=True)
+    os.chdir(repo)
+    # The loop (resident agents, workers, gate) runs as a child in this process group, so
+    # stopping staging stops it too. The web UI runs in the foreground on --port.
+    subprocess.Popen([sys.executable, "-m", "orchestra", "run"], env=env, cwd=repo)
+    os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(port)], env)
+
+
+def throwaway(port: int) -> None:
     tmp = Path(tempfile.mkdtemp(prefix="orchestra-acceptance-"))
-    home = tmp / "home"
-    repo = tmp / "repo"
+    home, repo = tmp / "home", tmp / "repo"
     repo.mkdir()
-    env = {**os.environ, "ORCHESTRATOR_HOME": str(home), "ORCHESTRA_REPO": str(repo)}
+    fake = tmp / "pi"
+    shutil.copy(FAKE_PI, fake)
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    env = {**os.environ, "ORCHESTRATOR_HOME": str(home), "ORCHESTRA_REPO": str(repo), "PI_BINARY": str(fake),
+           # fake_pi's shebang is python3; make sure that is the interpreter with the wheel.
+           "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")}
     sh("git", "init", "-q", "-b", "main", cwd=repo)
     sh("git", "config", "user.email", "acceptance@orchestra", cwd=repo)
     sh("git", "config", "user.name", "acceptance", cwd=repo)
@@ -58,16 +77,51 @@ def main() -> None:
     sh("git", "commit", "-qm", "init", cwd=repo)
 
     cli = [sys.executable, "-m", "orchestra"]
-    sh(*cli, "init", "--provider", "fake", "--model", "fake", "--prefix", "ACC", env=env, cwd=repo)
+    sh(*cli, "init", "--provider", "fake", "--model", "fake", "--prefix", "ACC",
+       "--unit-command", "test -f README.md", env=env, cwd=repo)
+    toml = repo / "orchestra.toml"
+    text = toml.read_text()
+    assert "[agents]\n" in text, "init template changed; cannot place control_port"
+    toml.write_text(text.replace("[agents]\n", f"[agents]\ncontrol_port = {free_port()}\n", 1))
+    sh("git", "add", "-A", cwd=repo)
+    sh("git", "commit", "-qm", "orchestra config", cwd=repo)
+
+    sup = {**env, "ORCHESTRA_ROLE": "supervisor"}
     ms = json.loads(sh(*cli, "api", "create_milestone", "--compact", "--args", json.dumps({"name": "Acceptance"}),
-                       env={**env, "ORCHESTRA_ROLE": "supervisor"}, cwd=repo))
+                       env=sup, cwd=repo))["milestone"]
+    first = json.loads(sh(*cli, "api", "create_ticket", "--compact", "--args",
+                          json.dumps({"title": "Seeded ticket", "description": "seeded by acceptance_target",
+                                      "acceptance": "WORK.md mentions the ticket", "milestone_id": ms["id"]}),
+                          env=sup, cwd=repo))["ticket"]
     sh(*cli, "api", "create_ticket", "--compact", "--args",
-       json.dumps({"title": "Seeded ticket", "description": "seeded by acceptance_target", "acceptance": "none",
-                   "milestone_id": ms["milestone"]["id"]}),
-       env={**env, "ORCHESTRA_ROLE": "supervisor"}, cwd=repo)
+       json.dumps({"title": "Follow-up ticket", "description": "depends on the seeded ticket",
+                   "acceptance": "WORK.md has two lines", "milestone_id": ms["id"], "depends_on": [first["id"]]}),
+       env=sup, cwd=repo)
+    # Hold new workers until the tests say go (the operator's pause control).
+    sh(sys.executable, "-c",
+       "from orchestra.config import load_project; from orchestra.store import LocalStore; "
+       "LocalStore(load_project()).set_pickup_paused(True, by='acceptance_target')", env=env, cwd=repo)
+
+    # Every human-facing read command must work on the installed wheel.
+    for cmd in (["status"], ["status", "--json"], ["ticket", "list"], ["ticket", "show", first["id"]],
+                ["milestone", "list"], ["sessions", "list"], ["roles", "list"], ["doctor"], ["--version"]):
+        sh(*cli, *cmd, env=env, cwd=repo)
+
     print(f"[acceptance_target] project at {repo}, home {home}", flush=True)
     os.chdir(repo)
-    os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(args.port)], env)
+    subprocess.Popen([sys.executable, "-m", "orchestra", "run"], env=env, cwd=repo)
+    os.execve(sys.executable, [sys.executable, "-m", "orchestra", "web", "--port", str(port)], env)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--project", help="serve this existing demo project instead of a throwaway one")
+    args = ap.parse_args()
+    if args.project:
+        staging(args.project, args.port)
+    else:
+        throwaway(args.port)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,8 @@ timeout = "300s"
 
 # Stage 3: start the built wheel as the acceptance target. {python} is a persistent
 # venv with the wheel installed. The script creates a throwaway project, seeds it
-# through the CLI, and serves the web UI on {port}.
+# through the CLI, smoke-tests every read command, runs the agent loop against the
+# fake Pi from tests/e2e, and serves the web UI on {port}.
 [acceptance]
 start = "{python} scripts/acceptance_target.py --port {port}"
 ready = "http://127.0.0.1:{port}/api/state"
