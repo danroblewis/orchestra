@@ -133,3 +133,5 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer }
   .toolbar { gap:8px } .toolbar .filter { width:100% } .toolbar .hint { display:none }
   #stage { height:calc(100vh - 120px); touch-action:none }
 }
+nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+@media (max-width: 900px) { html, body { overflow-x:hidden; max-width:100vw } nav { flex-wrap:nowrap } nav #proj { font-size:11px } }
