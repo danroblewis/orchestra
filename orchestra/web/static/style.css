@@ -147,3 +147,4 @@ select.range { background:var(--panel3); color:var(--text2); border:1px solid va
 button.ctl { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 8px; cursor:pointer; margin-left:6px }
 button.ctl:hover { color:var(--text); border-color:var(--accent) } button.ctl.paused { color:#fde68a; border-color:#92400e; background:#2a1f0e }
 button.ctl.kill { color:#fca5a5; border-color:#7f1d1d; padding:3px 10px; font-weight:600 } button.ctl.kill:hover { background:#2a1215 }
+.chat.top { position:static; border-top:0; border-bottom:1px solid var(--border); padding:4px 0 10px; margin:10px 0 }

@@ -240,15 +240,22 @@ def create_app(project: Project) -> FastAPI:
         return {**t.to_dict(), "notes": store.notes(ticket_id), "worktree": store.worktree(ticket_id)}
 
     @app.get("/api/sessions/{session_id}/transcript")
-    async def transcript(session_id: str) -> dict:
+    async def transcript(session_id: str, before: int = 0, limit: int = 30) -> dict:
+        """A page of a session's transcript, newest first. `before` counts messages back from
+        the end that are already shown; the page returns the next `limit` older ones."""
         s = store.find_session(session_id)
         if not s:
             raise HTTPException(404)
         f = s.get("pi_session_file")
         exists = bool(f) and Path(f).exists()
         msgs = read_transcript(f) if exists else []
+        total = len(msgs)
+        end = max(0, total - max(0, before))
+        page = msgs[max(0, end - max(1, min(limit, 200))):end]
+        page.reverse()
         s = {**s, "alive": bool(s.get("pid")) and psutil.pid_exists(int(s["pid"])), "file_exists": exists}
-        return {"session": s, "messages": msgs[-200:], "turns": sum(1 for m in msgs if m["role"] == "user")}
+        return {"session": s, "messages": page, "total": total, "before": before, "next_before": total - (end - len(page)) if page else before,
+                "has_more": end - len(page) > 0, "turns": sum(1 for m in msgs if m["role"] == "user")}
 
     @app.get("/api/gate/runs/{run_id}")
     async def gate_run(run_id: str) -> dict:

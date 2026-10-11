@@ -55,8 +55,10 @@ async function openTicket(id) {
     <h2>Notes</h2>${t.notes.slice().reverse().map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b>${md(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
 }
 
+let transcriptPaging = null;   // {id, nextBefore, hasMore, loading}
+
 async function openTranscript(id) {
-  const r = await fetch(`/api/sessions/${id}/transcript`);
+  const r = await fetch(`/api/sessions/${id}/transcript?limit=30`);
   if (!r.ok) {
     const perTicket = /^(worker|reviewer)-/.test(id);
     return openDrawer(`<h3>${esc(id)}</h3><div class="empty">${perTicket
@@ -73,19 +75,36 @@ async function openTranscript(id) {
     <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
     ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
     <div>last started</div><div>${when(s.started_at)}</div><div>last settled</div><div>${when(s.settled_at)}</div>
-    <div>turns</div><div>${d.turns}</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div><h2>Transcript</h2>`;
-  if (!d.messages.length) html += `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events (ticket created, landed, blocked, gate failure) or, for the supervisor, by <code>orchestra chat</code>."}</div>`;
-  else html += d.messages.map(renderMessage).join("");
-  if (id === "supervisor") html += `<div id="live"></div>
-    <form id="chat" class="chat" onsubmit="return sendToSupervisor(event)">
+    <div>turns</div><div>${d.turns} · ${d.total} messages</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div>`;
+  if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
       <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
       <button type="submit" ${s.alive ? "" : "disabled"}>Send</button>
       ${s.alive ? "" : '<div class="empty">The Supervisor is reachable while <code>orchestra run</code> is up.</div>'}
-    </form>`;
+    </form><div id="live"></div>`;
+  html += `<h2>Transcript · newest first</h2><div id="transcript">`;
+  html += d.messages.length ? d.messages.map(renderMessage).join("") : `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events or, for the supervisor, by a message."}</div>`;
+  html += `</div><div id="transcript-more" class="empty" style="margin-top:8px">${d.has_more ? "scroll for older messages…" : "beginning of session"}</div>`;
   openDrawer(html);
+  transcriptPaging = { id, nextBefore: d.next_before, hasMore: d.has_more, loading: false };
   const ta = $("chat-input");
-  if (ta) { ta.focus(); ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat").requestSubmit(); } }); $("drawer").scrollTop = $("drawer").scrollHeight; }
+  if (ta) { ta.focus(); ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat").requestSubmit(); } }); }
 }
+
+async function loadOlderTranscript() {
+  const p = transcriptPaging; if (!p || !p.hasMore || p.loading) return;
+  p.loading = true;
+  try {
+    const d = await (await fetch(`/api/sessions/${p.id}/transcript?before=${p.nextBefore}&limit=30`)).json();
+    const box = $("transcript"); if (!box) return;
+    box.insertAdjacentHTML("beforeend", d.messages.map(renderMessage).join(""));
+    highlightCode(box);
+    p.nextBefore = d.next_before; p.hasMore = d.has_more;
+    $("transcript-more").textContent = p.hasMore ? "scroll for older messages…" : "beginning of session";
+  } finally { p.loading = false; }
+}
+document.addEventListener("DOMContentLoaded", () => {
+  $("drawer").addEventListener("scroll", () => { const el = $("drawer"); if (transcriptPaging && el.scrollTop + el.clientHeight > el.scrollHeight - 300) loadOlderTranscript(); });
+});
 
 async function sendToSupervisor(ev) {
   ev.preventDefault();
@@ -93,8 +112,8 @@ async function sendToSupervisor(ev) {
   const message = ta.value.trim();
   if (!message) return false;
   ta.value = ""; ta.disabled = true; btn.disabled = true;
-  live.innerHTML += `<div class="msg user"><div class="r">you</div>${md(message)}</div><div class="msg assistant"><div class="r">supervisor · working…</div><div id="live-body"></div></div>`;
-  highlightCode(live); $("drawer").scrollTop = $("drawer").scrollHeight;
+  live.insertAdjacentHTML("afterbegin", `<div class="msg assistant"><div class="r">supervisor · working…</div><div id="live-body"></div></div><div class="msg user"><div class="r">you</div>${md(message)}</div>`);
+  highlightCode(live); $("drawer").scrollTop = 0;
   try {
     const resp = await fetch("/api/supervisor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
     if (!resp.ok) { $("live-body").innerHTML = `<div class="bad">${esc((await resp.text()).slice(0, 300))}</div>`; return false; }
@@ -110,7 +129,6 @@ async function sendToSupervisor(ev) {
           const txt = (e.message.content || []).filter((p) => p.type === "text").map((p) => p.text).join("");
           if (txt.trim()) { body.innerHTML += md(txt); highlightCode(body); }
         } else if (e.type === "done") body.previousElementSibling.textContent = e.error ? `supervisor · ${e.error}` : e.timed_out ? "supervisor · timed out" : "supervisor";
-        $("drawer").scrollTop = $("drawer").scrollHeight;
       }
     }
   } catch (err) { $("live-body").innerHTML += `<div class="bad">${esc(String(err))}</div>`; }
