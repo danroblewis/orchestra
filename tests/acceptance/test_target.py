@@ -99,6 +99,9 @@ def test_read_endpoints():
     assert {e["type"] for e in ev["events"]} >= {"milestone_created", "ticket_created", "pickup_paused"}
     roles = get_json("/api/roles")
     assert any(r["name"] == "supervisor" and r["builtin"] for r in roles["roles"]) if isinstance(roles, dict) else roles
+    sup = get_json("/api/roles/supervisor")          # the Agents page shows what makes a role that role
+    assert "Supervisor" in sup["prompt"] and sup["prompt_source"].endswith("supervisor.md")
+    assert "create_ticket" in sup["tool_names"]["tickets"]
 
 
 def test_ticket_detail_and_404s():

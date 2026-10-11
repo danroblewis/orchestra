@@ -169,8 +169,8 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
             r = all_roles(project).get(a["name"])
             if r is None:
                 raise StoreError(f"no role {a['name']!r}")
-            return {"ok": True, "role": {**r.to_dict(), "builtin": r.builtin}, "prompt": rs.prompt(a["name"]) if not r.builtin else "(built in)",
-                    "state": store.role_state(a["name"])}
+            return {"ok": True, "role": {**r.to_dict(), "builtin": r.builtin}, "state": store.role_state(a["name"]),
+                    **role_definition(project, r)}
         if command in ("create_role", "update_role"):
             try:
                 if command == "update_role":
@@ -266,3 +266,21 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         return {"ok": True}
 
     raise StoreError(f"unknown command {command}")
+
+
+def role_definition(project, role) -> dict:
+    """What makes a role that role: the system prompt it is started with (built-in prompts
+    resolved exactly as the loop resolves them, custom prompts with Orchestra's preamble),
+    where that prompt comes from, and the concrete tools its groups grant."""
+    from . import agents
+    from .harness.tools import tools_for
+    from .roles import parse_interval
+    override = project.config.prompt_overrides.get(role.name)
+    if role.builtin:
+        source = str(project.repo_root / override) if override else str(agents.PROMPTS_DIR / f"{role.name}.md")
+    else:
+        source = str(project.repo_root / ".orchestra" / "roles" / f"{role.name}.md")
+    tool_names = {g: [t.name for t in tools_for([g])] for g in role.tools}
+    return {"prompt": agents.role_prompt(project, role.name), "prompt_source": source, "tool_names": tool_names,
+            "every_seconds": parse_interval(role.every) if role.every else None}
+

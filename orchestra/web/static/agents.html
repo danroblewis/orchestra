@@ -12,42 +12,82 @@
 <style>
   .roles { max-width:1100px; margin:0 auto; padding:16px }
   .rolecard { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:8px 16px }
-  .rolecard h3 { margin:0; font-size:14px; display:flex; gap:8px; align-items:center } .rolecard .desc { color:var(--text2); font-size:12.5px; margin-top:2px }
-  .rolecard .meta { color:var(--muted); font-size:11.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .rolecard .meta code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px }
-  .rolecard .ctls { display:flex; gap:6px; align-items:flex-start } .tag { font-size:10.5px; padding:1px 6px; border-radius:999px; border:1px solid var(--border2); color:var(--muted) }
+  .rolecard h3 { margin:0; font-size:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap } .rolecard .desc { color:var(--text2); font-size:12.5px; margin-top:2px }
+  .rolecard .meta { color:var(--muted); font-size:11.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .rolecard .meta code, .role-def code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px }
+  .rolecard .ctls { display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap; justify-content:flex-end } .tag { font-size:10.5px; padding:1px 6px; border-radius:999px; border:1px solid var(--border2); color:var(--muted) }
   .intro { color:var(--text2); font-size:12.5px; margin:0 0 14px }
+  .role-def { display:grid; grid-template-columns:150px 1fr; gap:6px 14px; font-size:12.5px; margin:10px 0 14px } .role-def > div:nth-child(odd) { color:var(--muted) }
+  .role-def .tools code { margin:0 4px 4px 0; display:inline-block }
+  .prompt-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:14px 0 6px } .prompt-head h4 { margin:0; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) }
+  .prompt { border:1px solid var(--border); border-radius:8px; padding:10px 14px; background:#0b0e14; max-height:52vh; overflow:auto }
 </style>
 </head>
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents" class="on">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="roles">
-  <p class="intro">Every agent role in this project. Built-in roles are defined by Orchestra; custom roles live in the repository under <code>.orchestra/roles/</code> and are created in conversation with the Supervisor. Pause queues a role's wake-ups until resumed; restart gives it a fresh process with its transcript kept.</p>
+  <p class="intro">What each agent is, not what it is doing right now (the Dashboard shows that). A role is a prompt plus a grant of tools plus the events or schedule that wake it. Built-in roles ship with Orchestra; custom roles live in the repository under <code>.orchestra/roles/</code> and are created in conversation with the Supervisor. Open a role to read the prompt it is started with, the exact tools it can call, and when it next wakes.</p>
   <div id="list"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script>
-let STATE = null;
+let STATE = null, ROLES = [];
 async function control(body) { const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!r.ok) alert(await r.text()); refresh(); }
 function roleAction(action, name) {
   if (action === "delete_role" && !confirm(`Delete role ${name}? Its sessions are archived. The files are removed from .orchestra/roles/.`)) return;
   control({ action, role: name });
 }
+function sessionIdOf(name) { return name.replace(/_/g, "-"); }
+function triggers(r) {
+  return [...(r.wake_on || []).map((w) => `<code>${esc(w)}</code>`), r.every ? `every ${esc(r.every)}` : "", r.at ? `daily at ${esc(r.at)}` : ""].filter(Boolean).join(" · ") || "escalations only";
+}
+function nextWake(r, st, now) {
+  if (r.paused) return "paused: wake-ups are queued until resumed";
+  const parts = [];
+  if (r.every && st.last_woken && r.every_seconds) { const due = st.last_woken + r.every_seconds - now; parts.push(due > 0 ? `scheduled in ${ago(due)}` : "scheduled wake-up is due"); }
+  else if (r.every) parts.push(`every ${esc(r.every)}, first wake-up pending`);
+  if (r.at) parts.push(`daily at ${esc(r.at)}`);
+  if ((r.wake_on || []).length) parts.push(`or sooner on ${r.wake_on.map((w) => `<code>${esc(w)}</code>`).join(", ")}`);
+  if (r.name === "supervisor") parts.push("when the human sends a message, and on escalations from other agents");
+  return parts.join("; ") || "only when another agent escalates to it";
+}
+async function openRole(name) {
+  const r = await fetch(`/api/roles/${name}`).then((x) => x.json());
+  if (!r.ok) { alert(r.error || "cannot load role"); return; }
+  const role = r.role, st = r.state || {}, now = STATE ? STATE.now : Date.now() / 1000;
+  const sid = sessionIdOf(name), s = STATE && STATE.sessions.find((x) => x.id === sid);
+  const tools = Object.entries(r.tool_names || {}).map(([g, names]) => `<div><b>${esc(g)}</b>: ${names.map((n) => `<code>${esc(n)}</code>`).join(" ")}</div>`).join("") || "none";
+  openDrawer(`<h3>${esc(name)} ${role.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(role.session)}</span> ${s ? sessionChip(s, now) : ""}
+      <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTranscript('${sid}')">transcript</button><button class="ctl" onclick="closeDrawer()">close</button></span></h3>
+    <div class="desc md">${md(role.description || "")}</div>
+    <div class="role-def">
+      <div>what it is for</div><div>${esc(role.description || "(no description)")}</div>
+      <div>wakes on</div><div>${triggers(role)}</div>
+      <div>next wake-up</div><div>${nextWake(role, st, now)}</div>
+      <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
+      <div>session</div><div>${esc(role.session)}: ${role.session === "resident" ? "one long-lived conversation; earlier wake-ups stay in its memory" : "a fresh conversation every wake-up"}</div>
+      <div>tools it can call</div><div class="tools">${tools}</div>
+      <div>defined by</div><div>${role.builtin ? "Orchestra" : `${esc(role.created_by || "supervisor")} on ${esc((role.created_at || "").slice(0, 16).replace("T", " "))}`}</div>
+      <div>prompt file</div><div><code>${esc(r.prompt_source || "")}</code></div>
+    </div>
+    <div class="prompt-head"><h4>The prompt it is started with</h4><span class="muted">Every wake-up message is appended to this: why it was woken, the project snapshot, and the open tickets.</span></div>
+    <div class="prompt md">${md(r.prompt || "(empty)")}</div>`);
+}
 async function refresh() {
   try {
     const [st, rl] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/roles").then((r) => r.json())]);
-    STATE = st; renderNav("agents", st.project); $("conn").textContent = "live";
+    STATE = st; ROLES = rl.roles; renderNav("agents", st.project); $("conn").textContent = "live";
     const byId = Object.fromEntries(st.sessions.map((x) => [x.id, x]));
     $("list").innerHTML = rl.roles.map((r) => {
-      const sid = r.name.replace(/_/g, "-"), s = byId[sid];
-      const running = s && s.status === "running", alive = s && s.alive;
+      const sid = sessionIdOf(r.name), s = byId[sid];
       const status = r.paused ? '<span class="chip"><span class="dot"></span>paused</span>' : (s || r.session !== "ephemeral") ? sessionChip(s, st.now) : '<span class="chip"><span class="dot"></span>ephemeral</span>';
-      const wake = [...(r.wake_on || []).map((w) => `<code>${esc(w)}</code>`), r.every ? `every ${esc(r.every)}` : "", r.at ? `daily at ${esc(r.at)}` : ""].filter(Boolean).join(" · ") || "escalations only";
       return `<div class="rolecard"><div>
-          <h3><a href="#" onclick="openTranscript('${sid}');return false">${esc(r.name)}</a> ${status} ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(r.session)}</span></h3>
+          <h3><a href="#" onclick="openRole('${r.name}');return false">${esc(r.name)}</a> ${status} ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(r.session)}</span></h3>
           <div class="desc">${esc(r.description || "")}</div>
-          <div class="meta"><span>wakes on: ${wake}</span><span>tools: ${(r.tools || []).map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>${r.last_woken ? `<span>last woken ${ago(st.now - r.last_woken)} ago</span>` : ""}</div>
+          <div class="meta"><span>wakes on: ${triggers(r)}</span><span>tools: ${(r.tools || []).map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>${r.last_woken ? `<span>last woken ${ago(st.now - r.last_woken)} ago</span>` : ""}</div>
         </div><div class="ctls">
+          <button class="ctl" onclick="openRole('${r.name}')">role</button>
+          <button class="ctl" onclick="openTranscript('${sid}')">transcript</button>
           ${r.name === "supervisor" ? "" : r.paused ? `<button class="ctl" onclick="roleAction('resume_role','${r.name}')">▶ resume</button>` : `<button class="ctl" onclick="roleAction('pause_role','${r.name}')">⏸ pause</button>`}
           ${r.name === "supervisor" ? "" : `<button class="ctl" onclick="roleAction('restart_role','${r.name}')">↻ restart</button>`}
           ${r.builtin ? "" : `<button class="ctl kill" onclick="roleAction('delete_role','${r.name}')">delete</button>`}
@@ -56,7 +96,7 @@ async function refresh() {
   } catch (e) { if ($("conn")) $("conn").textContent = "disconnected"; }
 }
 refresh(); setInterval(refresh, 4000);
-openFromHash();
+if (location.hash.startsWith("#role=")) openRole(decodeURIComponent(location.hash.slice(6))); else openFromHash();
 </script>
 </body>
 </html>

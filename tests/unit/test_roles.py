@@ -58,3 +58,25 @@ def test_event_matching_and_daily_due():
     assert due_at("12:00", None, noon_today + 60)
     assert not due_at("12:00", noon_today + 30, noon_today + 60)   # already fired today
     assert not due_at("12:00", None, noon_today - 60)              # not yet
+
+
+def test_get_role_explains_what_the_role_is(project):
+    """The Agents page shows what makes a role that role: its effective prompt, where it
+    comes from, the concrete tools behind its groups, and its schedule."""
+    from orchestra import api
+    from orchestra.roles import RoleDef, role_store
+    from orchestra.store import LocalStore
+
+    store = LocalStore(project)
+    r = api.handle(project, store, "get_role", {"name": "coordinator"})
+    assert r["role"]["builtin"] and "Coordinator" in r["prompt"] and r["prompt_source"].endswith("prompts/coordinator.md")
+    assert "create_ticket" in r["tool_names"]["tickets"] and "set_capacity" in r["tool_names"]["capacity"]
+    assert r["every_seconds"] == 600
+    role_store(project).save(RoleDef(name="product_owner", description="Keeps the backlog full", tools=["tickets", "escalate"],
+                                     wake_on=["ticket_transition:DONE"], every="45m"), "Be opinionated about {base_branch}.")
+    r = api.handle(project, store, "get_role", {"name": "product_owner"})
+    assert not r["role"]["builtin"] and r["every_seconds"] == 45 * 60
+    assert r["prompt"].startswith("# You are the `product_owner` agent of Orchestra")   # Orchestra's preamble
+    assert "Be opinionated about main." in r["prompt"]                                   # placeholders resolved
+    assert r["prompt_source"].endswith(".orchestra/roles/product_owner.md")
+    assert r["tool_names"] == {"tickets": r["tool_names"]["tickets"], "escalate": ["escalate_to_supervisor"]}
