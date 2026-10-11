@@ -75,8 +75,13 @@ class Staging:
         self.project = project
         self.store = store
         self.events = events
-        self.cfg = project.config
         self.log_path = project.staging_dir / "staging.log"
+
+    @property
+    def cfg(self):
+        # Always the project's current config: the loop reloads orchestra.toml every
+        # tick, and a stale snapshot here once restarted staging with an old command.
+        return self.project.config
 
     # -- state -----------------------------------------------------------------
 
@@ -284,17 +289,31 @@ class Staging:
         return False
 
     def ensure_running(self) -> None:
-        """Called every tick: restart a staging process that died."""
+        """Called every tick: restart a staging process that died. Takes the deploy lock
+        without waiting, so it never races a deploy or restart already in progress."""
         if not self.cfg.staging_configured:
             return
         st = self.state()
         if st.get("status") in ("running", "starting") and not st["alive"]:
-            build = self.store.runtime().get("builds", {}).get(st.get("current_build_id") or "")
-            if build:
-                self._log("staging process died; restarting")
-                self._start(build)
-                self.ensure_tunnel()
-                self.events.emit("staging_restarted", build=build["id"])
+            self.project.staging_dir.mkdir(parents=True, exist_ok=True)
+            with (self.project.staging_dir / ".deploy.lock").open("a+") as fh:
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    return  # a deploy/restart owns staging right now
+                try:
+                    st = self.state()
+                    if st["alive"]:
+                        return
+                    build = self.store.runtime().get("builds", {}).get(st.get("current_build_id") or "")
+                    if build:
+                        self._log("staging process died; restarting")
+                        self.stop()
+                        self._start(build)
+                        self.ensure_tunnel()
+                        self.events.emit("staging_restarted", build=build["id"])
+                finally:
+                    fcntl.flock(fh, fcntl.LOCK_UN)
         elif st.get("status") == "running" and st["alive"]:
             if _probe(self.local_url() + self.cfg.staging_health):
                 self._set(last_health_at=now())

@@ -1,6 +1,8 @@
 :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e2230; --border:#2a2f3d; --text:#e6e8ee; --muted:#8a90a3; --accent:#6ea8fe;
-  --OPEN:#8a90a3; --BLOCKED:#f0883e; --IN_PROGRESS:#3fb950; --READY_FOR_REVIEW:#a5d6ff; --IN_REVIEW:#58a6ff; --REJECTED:#f85149;
-  --APPROVED:#bc8cff; --MERGING:#d2a8ff; --DONE:#2ea043; --CANCELLED:#484f58; }
+  /* One hue family per phase: grey = waiting, blue = being built, violet = being reviewed,
+     amber = in the merge queue, green = landed, red/orange = needs attention. */
+  --OPEN:#6b7280; --BLOCKED:#f0883e; --IN_PROGRESS:#3b82f6; --READY_FOR_REVIEW:#7c3aed; --IN_REVIEW:#a855f7; --REJECTED:#ef4444;
+  --APPROVED:#d97706; --MERGING:#f59e0b; --DONE:#16a34a; --CANCELLED:#374151; }
 * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--text); font:13px/1.45 -apple-system,Segoe UI,Helvetica,Arial,sans-serif }
 nav { display:flex; align-items:center; gap:18px; padding:0 14px; height:42px; border-bottom:1px solid var(--border); background:var(--panel) }
 nav a { color:var(--muted); text-decoration:none; font-weight:600; padding:4px 0; border-bottom:2px solid transparent } nav a.on { color:var(--text); border-color:var(--accent) }
@@ -70,3 +72,13 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer } .node
 .gpu { width:100%; height:60px; display:block; background:#0b0d12; border:1px solid var(--border); border-radius:6px; min-height:0 }
 #gpu-line { fill:none; stroke:#2dd4bf; stroke-width:1.5; vector-effect:non-scaling-stroke } #gpu-area { fill:#2dd4bf; fill-opacity:.15 }
 #gpu-cursor { stroke:#2dd4bf; stroke-opacity:.5; stroke-dasharray:2 2; vector-effect:non-scaling-stroke }
+/* ticket graph nodes */
+.node .card-bg { fill:#1b1f2a; stroke:#2a2f3d; stroke-width:1.2; rx:7 }
+.node .bar { rx:7 } .node .pill { font-size:10px; font-weight:700; letter-spacing:.03em }
+.node.done .card-bg { fill:#161b1f; opacity:.85 } .node.done text.title { fill:#9aa4b2 }
+.node.waiting .card-bg { stroke-dasharray:5 3 } .node.waiting text.title { fill:#9aa4b2 }
+@keyframes glow { 0%,100% { stroke-opacity:.35; stroke-width:1.5 } 50% { stroke-opacity:1; stroke-width:3 } }
+@keyframes march { to { stroke-dashoffset:-20 } }
+.node.active .card-bg { stroke:var(--c); animation:glow 2.2s ease-in-out infinite }
+.node.queued .card-bg { stroke:var(--c); stroke-dasharray:6 4; animation:march 1.6s linear infinite }
+.edge.into-active { stroke:#4b6ea8; stroke-dasharray:6 4; animation:march 1.2s linear infinite }

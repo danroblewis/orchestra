@@ -117,7 +117,8 @@ function render() {
   for (const e of model.edges) {
     const a = pos[e.from], b = pos[e.to]; if (!a || !b) continue;
     const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2;
-    svg += `<path class="edge ${e.cls}" d="M${x1},${y1} C${x1 + 35},${y1} ${x2 - 35},${y2} ${x2},${y2}" ${e.cls === "collapsed" ? 'marker-end="url(#arrow-c)"' : ""}/>`;
+    const tgt = model.nodes[e.to]; const intoActive = tgt && tgt.kind === "ticket" && ["IN_PROGRESS", "IN_REVIEW", "MERGING"].includes(tgt.t.state);
+    svg += `<path class="edge ${e.cls} ${intoActive ? "into-active" : ""}" d="M${x1},${y1} C${x1 + 35},${y1} ${x2 - 35},${y2} ${x2},${y2}" ${e.cls === "collapsed" ? 'marker-end="url(#arrow-c)"' : ""}/>`;
   }
   for (const [id, n] of Object.entries(model.nodes)) {
     const p = pos[id]; if (!p) continue;
@@ -126,10 +127,18 @@ function render() {
       svg += `<g class="ms ${n.m.status}" transform="translate(${p.x},${p.y})" onclick="toggleMilestone('${n.m.id}')"><rect width="${p.w}" height="${p.h}"/>
         <text x="10" y="18" style="font-weight:700">${esc(n.m.id)} ${esc(n.m.name.slice(0, 16))}</text><text class="sub" x="10" y="34">${esc(sub)}</text><title>${esc(n.m.name)}: click to ${n.collapsed || n.hidden ? "expand" : "collapse"}</title></g>`;
     } else {
-      const t = n.t, act = ["IN_PROGRESS", "IN_REVIEW", "MERGING"].includes(t.state), waiting = t.state === "OPEN" && !t.ready;
-      const label = t.state === "OPEN" ? (t.ready ? "OPEN · ready" : "OPEN · " + (t.waiting_on && t.waiting_on.length ? "waits " + t.waiting_on.join(",") : "closed")) : t.state;
-      svg += `<g class="node ${act ? "active" : ""}" transform="translate(${p.x},${p.y})" onclick="openTicket('${t.id}')"><rect width="${p.w}" height="${p.h}" fill="${color(t.state)}" fill-opacity="${waiting ? ".45" : ".85"}" ${waiting ? 'stroke-dasharray="5 3"' : ""}/>
-        <text x="8" y="17" style="font-weight:700">${esc(t.id)} <tspan style="font-weight:400;fill:#e6e8ee">${esc(label)}</tspan></text><text x="8" y="34">${esc(t.title.slice(0, 32))}${t.title.length > 32 ? "…" : ""}</text><title>${esc(t.why_waiting || t.state)}</title></g>`;
+      const t = n.t;
+      const active = ["IN_PROGRESS", "IN_REVIEW", "MERGING"].includes(t.state);
+      const queued = t.state === "APPROVED" || t.state === "READY_FOR_REVIEW";
+      const done = DONE.has(t.state), waiting = t.state === "OPEN" && !t.ready;
+      const label = t.state === "OPEN" ? (t.ready ? "READY" : (t.waiting_on && t.waiting_on.length ? "WAITS " + t.waiting_on.join(",") : "CLOSED")) : t.state.replace(/_/g, " ");
+      const cls = ["node", active ? "active" : "", queued ? "queued" : "", done ? "done" : "", waiting ? "waiting" : ""].join(" ");
+      svg += `<g class="${cls}" style="--c:${color(t.state)}" transform="translate(${p.x},${p.y})" onclick="openTicket('${t.id}')">
+        <rect class="card-bg" width="${p.w}" height="${p.h}"/><rect class="bar" width="6" height="${p.h}" fill="${color(t.state)}"/>
+        <text x="14" y="17" style="font-weight:700;fill:#e6e8ee">${esc(t.id)}</text>
+        <text class="pill" x="${p.w - 8}" y="17" text-anchor="end" fill="${color(t.state)}">${esc(label)}</text>
+        <text class="title" x="14" y="34" fill="#c9d1d9">${esc(t.title.slice(0, 30))}${t.title.length > 30 ? "…" : ""}</text>
+        <title>${esc(t.why_waiting || t.state)}: ${esc(t.title)}</title></g>`;
     }
   }
   $("view").innerHTML = svg;

@@ -86,8 +86,9 @@ class Loop:
         if paused.get("paused"):
             self.store.add_wakeup("pipeline_manager", f"the pipeline is still paused after a restart: {paused.get('reason')}. "
                                   "Diagnose, fix what you can or escalate, then call resume_pipeline.")
+        # Staging survives loop restarts; only bring it back if its process is gone.
         if self.cfg.staging_configured and self.staging.state().get("current_build_id"):
-            threading.Thread(target=self.staging.restart, daemon=True, name="staging").start()
+            threading.Thread(target=self.staging.ensure_running, daemon=True, name="staging").start()
         try:
             while not self.stop.is_set():
                 try:
