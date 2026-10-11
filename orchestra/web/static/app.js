@@ -151,7 +151,9 @@ function renderToolCall(t) {
 
 function msgTime(m) {
   if (!m.ts) return "";
-  const t = m.ts > 1e12 ? m.ts : m.ts * 1000;
+  // Pi records entry timestamps as ISO strings; some message bodies carry epoch millis.
+  const t = typeof m.ts === "number" ? (m.ts > 1e12 ? m.ts : m.ts * 1000) : Date.parse(m.ts);
+  if (!isFinite(t)) return "";
   return `<span class="muted num" style="margin-left:8px">${new Date(t).toLocaleTimeString()} · ${ago((Date.now() - t) / 1000)} ago</span>`;
 }
 function renderMessage(m) {
