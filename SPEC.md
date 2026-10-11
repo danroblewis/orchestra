@@ -714,6 +714,8 @@ hostname = "staging.example.com"
 ```
 
 Placeholders: `{artifact}` is the absolute path of the built artifact,
+`{python}` an interpreter in a persistent venv created next to the artifact
+with it installed (for wheels and sdists; otherwise Orchestra's own),
 `{port}` the port Orchestra chose or configured, `{url}` the base URL of the
 running target, `{selector}` the failing test selector.
 

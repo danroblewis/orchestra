@@ -156,7 +156,7 @@ review_rounds_before_escalation = 3
 # artifact = "dist/*.whl"
 
 # [acceptance]
-# start = "uv run --with {{artifact}} myapp serve --port {{port}}"
+# start = "{{python}} -m myapp serve --port {{port}}"   # {{python}}: a venv with {{artifact}} installed
 # ready = "http://127.0.0.1:{{port}}/health"
 
 [gate]

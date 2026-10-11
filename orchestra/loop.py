@@ -82,6 +82,10 @@ class Loop:
         log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
         self._start_project_agents()
         self._start_control()
+        paused = self.store.pipeline()
+        if paused.get("paused"):
+            self.store.add_wakeup("pipeline_manager", f"the pipeline is still paused after a restart: {paused.get('reason')}. "
+                                  "Diagnose, fix what you can or escalate, then call resume_pipeline.")
         if self.cfg.staging_configured and self.staging.state().get("current_build_id"):
             threading.Thread(target=self.staging.restart, daemon=True, name="staging").start()
         try:

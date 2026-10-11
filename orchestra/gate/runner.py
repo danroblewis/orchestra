@@ -20,7 +20,7 @@ from ..config import Project, TestSpec
 from ..events import Events
 from ..git import Git, GitError
 from ..model import Note, State, now
-from ..staging import Staging, record_build
+from ..staging import Staging, build_python, record_build
 from ..store import LocalStore
 
 
@@ -75,7 +75,11 @@ class _Target:
         cfg = project.config
         self.port = _free_port()
         self.url = f"http://127.0.0.1:{self.port}"
-        self.placeholders = {"artifact": artifact or "", "port": str(self.port), "url": self.url}
+        try:
+            python = build_python(project, artifact)
+        except subprocess.CalledProcessError:
+            python = os.sys.executable
+        self.placeholders = {"artifact": artifact or "", "port": str(self.port), "url": self.url, "python": python}
         cmd = (cfg.acceptance_start or "").format(**self.placeholders)
         self.log = (log_dir / "target.log").open("w", encoding="utf-8")
         self.proc = subprocess.Popen(cmd, shell=True, cwd=str(cwd), stdout=self.log, stderr=subprocess.STDOUT,

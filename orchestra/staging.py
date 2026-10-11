@@ -42,6 +42,23 @@ def _probe(url: str, timeout: float = 6, max_status: int = 400) -> bool:
     return False
 
 
+def build_python(project: Project, artifact: str | None) -> str:
+    """Interpreter to run an artifact with. For a wheel or sdist, a persistent venv is
+    created next to the artifact (artifacts/<build>/venv) with the artifact installed,
+    so long-lived processes never depend on a uv temp environment that may vanish.
+    For anything else, the current interpreter."""
+    import sys
+    if not artifact or not artifact.endswith((".whl", ".tar.gz")) or not shutil.which("uv"):
+        return sys.executable
+    venv = Path(artifact).parent / "venv"
+    py = venv / "bin" / "python"
+    if not py.exists():
+        subprocess.run(["uv", "venv", "-q", str(venv)], check=True, capture_output=True, text=True)
+        subprocess.run(["uv", "pip", "install", "-q", "--python", str(py), artifact], check=True,
+                       capture_output=True, text=True)
+    return str(py)
+
+
 def _pid_alive(pid: int | None) -> bool:
     if not pid:
         return False
@@ -114,7 +131,13 @@ class Staging:
 
     def _start(self, build: dict) -> bool:
         port = self.cfg.staging_port
-        cmd = self.cfg.staging_start.format(artifact=build.get("artifact_path", ""), port=port)
+        try:
+            python = build_python(self.project, build.get("artifact_path"))
+        except subprocess.CalledProcessError as e:
+            self._log(f"could not provision a venv for build {build['id']}: {e.stderr[-800:]}")
+            self._set(status="failed", pid=None)
+            return False
+        cmd = self.cfg.staging_start.format(artifact=build.get("artifact_path", ""), port=port, python=python)
         self._log(f"starting build {build['id']} ({build.get('commit', '')[:10]}): {cmd}")
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         out = self.log_path.open("a", encoding="utf-8")
