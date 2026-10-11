@@ -59,32 +59,7 @@ def slots_in_use(max_slots: int) -> int:
     return busy
 
 
-_detected: dict[str, int] = {}
-
-
-def detect_host_slots(provider: str | None, configured: int, default: int = 2) -> int:
-    """The number of model slots to allow. `configured` > 0 wins. Otherwise ask the Pi
-    provider's server (llama.cpp's /props reports total_slots); fall back to `default`."""
-    if configured and configured > 0:
-        return configured
-    key = provider or ""
-    if key in _detected:
-        return _detected[key]
-    slots = default
-    try:
-        import json
-        import urllib.request
-        models = json.loads((Path.home() / ".pi" / "agent" / "models.json").read_text())
-        base = ((models.get("providers") or {}).get(key) or {}).get("baseUrl", "")
-        base = base.rstrip("/")
-        if base.endswith("/v1"):
-            base = base[:-3]
-        if base:
-            with urllib.request.urlopen(base + "/props", timeout=3) as r:
-                props = json.loads(r.read())
-            if int(props.get("total_slots") or 0) > 0:
-                slots = int(props["total_slots"])
-    except Exception:
-        pass
-    _detected[key] = slots
-    return slots
+def host_slots(configured: int) -> int:
+    """The in-flight turn limit, or 0 for none. Orchestra does not infer the model server's
+    capacity; a limit exists only when the operator sets one."""
+    return configured if configured and configured > 0 else 0

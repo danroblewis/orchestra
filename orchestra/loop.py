@@ -92,7 +92,7 @@ class Loop:
                 pass
         self.recover()
         self.events.emit("loop_started")
-        log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}; host model slots={self._host_slots()}")
+        log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}; turn limit={self._host_slots() or 'none'}")
         self._start_project_agents()
         self._start_control()
         paused = self.store.pipeline()
@@ -298,8 +298,8 @@ class Loop:
         )
 
     def _host_slots(self) -> int:
-        from .hostlock import detect_host_slots
-        return detect_host_slots(self.cfg.provider, self.cfg.host_concurrency)
+        from .hostlock import host_slots
+        return host_slots(self.cfg.host_concurrency)
 
     def _session_running(self, sid: str, role: str, proc: PiProcess, ticket_id: str | None = None) -> None:
         self.live_procs[sid] = proc

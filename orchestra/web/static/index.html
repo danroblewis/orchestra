@@ -72,7 +72,7 @@ function chip(s) { return sessionChip(s, STATE.now); }
 function renderAgents(s) {
   const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
   const live = s.sessions.filter((x) => x.status === "running").length;
-  $("agents-sub").textContent = `${live} working · ${s.host_slots_used}/${s.host_slots} turns in flight (Orchestra limit) · capacity ${s.capacity ? s.capacity.workers : "?"} workers` + (s.pickup_paused ? " · PAUSED" : "");
+  $("agents-sub").textContent = `${live} turn${live === 1 ? "" : "s"} running` + (s.host_slots ? ` (limit ${s.host_slots})` : "") + ` · capacity ${s.capacity ? s.capacity.workers : "?"} workers` + (s.pickup_paused ? " · PAUSED" : "");
   const pb = $("pause-btn"); pb.textContent = s.pickup_paused ? "▶ resume" : "⏸ pause"; pb.classList.toggle("paused", !!s.pickup_paused);
   const customs = (s.roles || []).filter((r) => !r.builtin).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
   let html = [...BASE_AGENTS, ...customs].map(([id, kind, letter, r]) => {

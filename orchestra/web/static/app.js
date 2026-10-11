@@ -247,20 +247,17 @@ function sessionPhase(s, now) {
   const alive = !!s.alive;
   if (s.status !== "running") return alive ? { cls: "resident", text: "resident", title: "waiting for work" } : { cls: "down", text: "down", title: "" };
   const age = (t) => ago(now - (t || now));
-  const turn = `turn ${age(s.started_at)}`;
-  // Before the turn is sent: held by Orchestra's own concurrency limit (it does not see the
-  // model server's queue, and agents may spawn subagents it cannot see either).
-  if (!s.slot_acquired_at || s.phase === "queued") return { cls: "queued", text: `held by concurrency limit · ${age(s.started_at)}`, title: turn + " · not yet sent to the model" };
-  const sinceTok = s.last_token_at ? now - s.last_token_at : null;
+  const turn = `turn started ${age(s.started_at)} ago`;
+  // Only when an operator configured a turn limit: the prompt has not been sent yet.
+  if (!s.slot_acquired_at || s.phase === "queued") return { cls: "queued", text: `not yet sent (turn limit) · ${age(s.started_at)}`, title: turn };
   if (s.phase === "tool") return { cls: "working", text: `running ${s.tool_name || "tool"} · ${age(s.phase_since)}`, title: turn };
   if (s.phase === "generating") {
-    if (sinceTok !== null && sinceTok > 120) return { cls: "stalled", text: `LLM stopped streaming ${ago(sinceTok)} ago`, title: turn + " · tokens were arriving, then stopped" };
-    return { cls: "working", text: `receiving tokens · ${age(s.phase_since)}`, title: turn };
+    const sinceTok = s.last_token_at ? now - s.last_token_at : 0;
+    return { cls: sinceTok > 60 ? "waiting" : "working", text: `receiving tokens · last token ${ago(sinceTok)} ago`, title: turn };
   }
-  // prompting: the request is at the model and no token has come back yet
+  // A request is out and nothing has come back. We report the wait; we do not know why.
   const wait = now - (s.phase_since || s.started_at || now);
-  if (wait > 90) return { cls: "stalled", text: `waiting for first token · ${ago(wait)}`, title: turn + " · the model has not started answering" };
-  return { cls: "working", text: `thinking · ${ago(wait)}`, title: turn };
+  return { cls: wait > 60 ? "waiting" : "working", text: `waiting for a response · ${ago(wait)}`, title: turn + " · request sent to the model, no token received yet" };
 }
 function sessionChip(s, now) {
   const p = sessionPhase(s, now);

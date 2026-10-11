@@ -13,7 +13,7 @@ workers = 3
 reviewers = 3
 turn_timeout = "900s"
 review_rounds_before_escalation = 3
-host_concurrency = 0   # detect from the model server
+host_concurrency = 0   # no limit on turns in flight
 
 # Stage 1: build the artifact the acceptance tests will run against.
 [build]
