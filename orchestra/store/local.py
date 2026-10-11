@@ -291,6 +291,31 @@ class LocalStore:
     def pop_report(self, ticket_id: str) -> dict | None:
         return self._mutate_runtime(lambda d: d["reports"].pop(ticket_id, None))
 
+    def capacity(self) -> dict:
+        """Effective worker/reviewer capacity: the runtime dial (set by the Coordinator)
+        clamped to the configured ceiling in orchestra.toml."""
+        cfg = self.project.config
+        dial = self._r().get("capacity") or {}
+        return {"workers": max(0, min(int(dial.get("workers", cfg.workers)), cfg.workers)),
+                "reviewers": max(0, min(int(dial.get("reviewers", cfg.reviewers)), cfg.reviewers)),
+                "max_workers": cfg.workers, "max_reviewers": cfg.reviewers,
+                "dial_set": bool(dial), "note": dial.get("note")}
+
+    def set_capacity(self, workers: int | None, reviewers: int | None, note: str = "", by: str = "") -> dict:
+        def fn(d):
+            dial = d.setdefault("capacity", {})
+            if workers is not None:
+                dial["workers"] = int(workers)
+            if reviewers is not None:
+                dial["reviewers"] = int(reviewers)
+            dial["note"] = note
+            dial["by"] = by
+            dial["updated_at"] = now()
+            return dict(dial)
+        out = self._mutate_runtime(fn)
+        self.events.emit("capacity_changed", by=by, workers=out.get("workers"), reviewers=out.get("reviewers"), note=note)
+        return self.capacity()
+
     def pipeline(self) -> dict:
         return self._r()["pipeline"]
 
@@ -320,6 +345,7 @@ class LocalStore:
         by_id = {x.id: x for x in tickets}
         milestones = {k: Milestone.from_dict(v) for k, v in t["milestones"].items()}
         running_workers = sum(1 for s in r["sessions"].values() if s.get("kind") == "worker" and s.get("status") == "running")
+        cap = self.capacity()
 
         def ticket_view(x: Ticket) -> dict:
             d = x.to_dict()
@@ -330,14 +356,16 @@ class LocalStore:
                 d["ready"] = not waiting and ms is not None and ms.status == MilestoneStatus.OPEN
                 d["why_waiting"] = (f"waiting on {', '.join(waiting)}" if waiting
                                     else "milestone is closed" if ms is None or ms.status != MilestoneStatus.OPEN
-                                    else f"ready; waiting for a worker slot ({running_workers}/{self.project.config.workers} in use)")
+                                    else "ready; worker capacity is 0" if cap["workers"] == 0
+                                    else f"ready; waiting for a worker slot ({running_workers}/{cap['workers']} in use)")
             return d
         return {
             "project": {"key": self.project.key, "repo_root": str(self.project.repo_root),
                         "base_branch": self.project.config.base_branch,
                         "model": self.project.config.model, "provider": self.project.config.provider},
             "tickets": [ticket_view(x) for x in sorted(tickets, key=lambda x: (x.priority, x.created_at))],
-            "workers": self.project.config.workers,
+            "workers": cap["workers"],
+            "capacity": cap,
             "milestones": [d for d in sorted(t["milestones"].values(), key=lambda m: m["order"])],
             "sessions": list(r["sessions"].values()),
             "worktrees": list(r["worktrees"].values()),

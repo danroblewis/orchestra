@@ -7,6 +7,7 @@ groups from ORCHESTRA_TOOLS so no TypeScript changes are needed for a new role.
 
 Tool groups (see pi/extension/orchestra.ts):
   tickets      read and write tickets and milestones, project status
+  capacity     the runtime worker/reviewer capacity dial (0..configured max)
   context      read and update the project context document
   pipeline     gate runs, pipeline resume, staging status and restart
   escalate     escalate_to_supervisor
@@ -46,8 +47,8 @@ register(Role(
 ))
 register(Role(
     name="coordinator", session_id="coordinator", prompt="coordinator",
-    tools=("tickets", "escalate"),
-    wake_on=("ticket_created", "ticket_done", "ticket_blocked", "review_threshold", "milestone_changed"),
+    tools=("tickets", "capacity", "escalate"), every=10 * 60,
+    wake_on=("ticket_created", "ticket_done", "ticket_blocked", "review_threshold", "milestone_changed", "scheduled"),
     description="Keeps the plan executable: clarity, size, order, dependencies. Never changes intent.",
 ))
 register(Role(

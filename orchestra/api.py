@@ -152,6 +152,16 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         store.events.emit("context_updated", by=author)
         return {"ok": True}
 
+    if command == "get_capacity":
+        return {"ok": True, "capacity": store.capacity()}
+
+    if command == "set_capacity":
+        if role and role not in ("coordinator", "supervisor"):
+            raise StoreError("only the coordinator or supervisor may change capacity")
+        cap = store.set_capacity(a.get("workers"), a.get("reviewers"), note=a.get("note", ""), by=author)
+        return {"ok": True, "capacity": cap,
+                "message": f"effective workers={cap['workers']} (max {cap['max_workers']}), reviewers={cap['reviewers']} (max {cap['max_reviewers']})"}
+
     if command == "escalate_to_supervisor":
         store.add_wakeup("supervisor", f"[{author}] {a.get('note', '')}")
         return {"ok": True, "message": "The supervisor will be woken with your note."}

@@ -143,6 +143,11 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool(tool("restart_staging", "Restart the staging process on its current build.", Type.Object({})));
     pi.registerTool(tool("resume_pipeline", "Resume the merge pipeline after a base-branch failure has been fixed.", Type.Object({ note: S("What was fixed") })));
   }
+  if (groups.has("capacity")) {
+    pi.registerTool(tool("get_capacity", "Current worker/reviewer capacity: the runtime dial and the configured maximum.", Type.Object({})));
+    pi.registerTool(tool("set_capacity", "Set how many workers and reviewers may run at once, between 0 and the configured maximum. Use 0 to pause pickup while re-planning; raise it again afterwards.",
+      Type.Object({ workers: Type.Optional(Type.Integer()), reviewers: Type.Optional(Type.Integer()), note: S("Why") })));
+  }
   if (groups.has("escalate")) {
     pi.registerTool(tool("escalate_to_supervisor", "Wake the Supervisor with a note when a decision about intent, scope, or priorities is needed.",
       Type.Object({ note: S("What needs deciding and why") })));
@@ -151,5 +156,5 @@ export default function (pi: ExtensionAPI) {
 
 function defaultGroups(role: string): string {
   return { worker: "report_ticket", reviewer: "report_review", supervisor: "tickets,context,pipeline",
-           coordinator: "tickets,escalate", pipeline_manager: "tickets,pipeline,escalate" }[role] ?? "";
+           coordinator: "tickets,capacity,escalate", pipeline_manager: "tickets,pipeline,escalate" }[role] ?? "";
 }

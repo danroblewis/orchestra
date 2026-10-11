@@ -97,6 +97,7 @@ def wake_task(target: str, reasons: list[str], snapshot: dict) -> str:
     counts = ", ".join(f"{k}={v}" for k, v in snapshot["counts"].items() if v)
     lines = [f"# Wake-up for the {target.replace('_', ' ')}", "", "## Why you were woken"]
     lines += [f"- {r}" for r in reasons]
+    lines += ["", "## Execution health"] + execution_health(snapshot)
     lines += ["", "## Project snapshot", f"Ticket counts: {counts or 'none'}",
               f"Pipeline: {'PAUSED: ' + str(snapshot['pipeline'].get('reason')) if snapshot['pipeline'].get('paused') else 'running'}",
               "", "Milestones:"]
@@ -112,6 +113,39 @@ def wake_task(target: str, reasons: list[str], snapshot: dict) -> str:
         lines.append(f"- {t['id']} {t['state']} p{t['priority']} {t['milestone_id']} {t['title']}{extra}{obj}")
     lines += ["", "Use your tools to act, then reply with a two-to-five line summary of what you did and why."]
     return "\n".join(lines)
+
+
+def execution_health(snapshot: dict) -> list[str]:
+    """Plain statements about whether work is flowing, with the likely cause when not."""
+    cap = snapshot.get("capacity", {})
+    running = [s for s in snapshot["sessions"] if s.get("status") == "running"]
+    workers = [s["id"] for s in running if s.get("kind") == "worker"]
+    reviewers = [s["id"] for s in running if s.get("kind") == "reviewer"]
+    ready = [t["id"] for t in snapshot["tickets"] if t["state"] == "OPEN" and t.get("ready")]
+    waiting = [t for t in snapshot["tickets"] if t["state"] == "OPEN" and not t.get("ready")]
+    blocked = [t["id"] for t in snapshot["tickets"] if t["state"] == "BLOCKED"]
+    out = [f"Worker capacity: {cap.get('workers')} of a configured maximum {cap.get('max_workers')}"
+           + (f" (runtime dial set: {cap.get('note') or 'no note'})" if cap.get("dial_set") else ""),
+           f"Reviewer capacity: {cap.get('reviewers')} of {cap.get('max_reviewers')}",
+           f"Workers running: {len(workers)} {workers or ''}".rstrip(), f"Reviewers running: {len(reviewers)}",
+           f"Ready tickets (OPEN, deps DONE, milestone open): {len(ready)} {ready[:8]}",
+           f"OPEN but not ready: {len(waiting)}" + (f" e.g. {waiting[0]['id']}: {waiting[0].get('why_waiting')}" if waiting else ""),
+           f"BLOCKED: {len(blocked)} {blocked[:8]}",
+           f"Pipeline: {'PAUSED: ' + str(snapshot['pipeline'].get('reason')) if snapshot['pipeline'].get('paused') else 'running'}"]
+    if ready and not workers:
+        if cap.get("workers", 0) == 0 and cap.get("max_workers", 0) == 0:
+            out.append("DIAGNOSIS: work is stalled because [agents].workers = 0 in orchestra.toml. Only the human "
+                       "can change that file: escalate_to_supervisor asking for it to be raised.")
+        elif cap.get("workers", 0) == 0:
+            out.append("DIAGNOSIS: work is stalled because the runtime worker capacity dial is 0. "
+                       "Raise it with set_capacity if there is no reason to keep it paused.")
+        else:
+            out.append("DIAGNOSIS: tickets are ready and capacity exists but no worker is running; the loop should "
+                       "pick them up within a tick. If this persists across check-ins, escalate_to_supervisor.")
+    elif not ready and not workers and waiting:
+        out.append("DIAGNOSIS: nothing is ready. Check whether the waiting tickets' dependencies or milestones are "
+                   "wrong and fix them; unblock BLOCKED tickets you can resolve.")
+    return out
 
 
 def supervisor_context(snapshot: dict, events: list[dict], project: Project | None = None) -> str:

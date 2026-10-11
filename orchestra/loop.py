@@ -114,14 +114,15 @@ class Loop:
         self._reap()
         tickets = self.store.tickets_by_id()
         milestones = self.store.milestones_by_id()
+        cap = self.store.capacity()
         ordered = sorted(tickets.values(), key=lambda t: (t.priority, t.state_since, t.id))
 
         # Review before pick: finished work lands before new work starts.
         for t in ordered:
-            if t.state == State.READY_FOR_REVIEW and len(self.reviewers) < self.cfg.reviewers and t.id not in self.reviewers:
+            if t.state == State.READY_FOR_REVIEW and len(self.reviewers) < cap["reviewers"] and t.id not in self.reviewers:
                 self._spawn(self.reviewers, t.id, self._review, t)
         for t in ordered:
-            if len(self.workers) >= self.cfg.workers:
+            if len(self.workers) >= cap["workers"]:
                 break
             if t.id in self.workers:
                 continue
