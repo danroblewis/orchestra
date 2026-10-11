@@ -57,6 +57,7 @@ class Loop:
         self.recover()
         self.events.emit("loop_started")
         log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
+        self._start_project_agents()
         try:
             while not self.stop.is_set():
                 try:
@@ -317,6 +318,20 @@ class Loop:
             Path(f).unlink(missing_ok=True)
 
     # -- project agents --------------------------------------------------------
+
+    def _start_project_agents(self) -> None:
+        """Start the long-lived coordinator and pipeline-manager sessions up front so
+        they are resident for the life of `orchestra run`, not created on first wake."""
+        for target in PROJECT_AGENTS:
+            sid = target.replace("_", "-")
+            try:
+                proc = self._pi(sid, target, self.project.repo_root)
+                proc.get_state()
+                self.agent_procs[target] = proc
+                self.store.set_session(sid, kind=target, status="idle", pi_session_file=proc.session_file)
+                log(f"{sid}: session resident")
+            except Exception as e:
+                log(f"{sid}: could not start: {e}")
 
     def _wake(self, target: str, reasons: list[str]) -> None:
         sid = target.replace("_", "-")

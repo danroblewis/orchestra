@@ -25,7 +25,7 @@ orchestra = "orchestra.cli:main"
 packages = ["orchestra"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/unit", "tests/e2e"]
 
 [tool.ruff]
 line-length = 100

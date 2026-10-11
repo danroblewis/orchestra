@@ -212,13 +212,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("init", help="register this repository and write orchestra.toml")
-    s.add_argument("--provider", required=True)
-    s.add_argument("--model", required=True)
+    s.add_argument("--provider", help="Pi provider (default: Pi's own default)")
+    s.add_argument("--model", help="Pi model id (default: Pi's own default)")
     s.add_argument("--prefix", help="ticket id prefix, e.g. ORC")
     s.add_argument("--unit-command", default="uv run pytest -q")
     s.set_defaults(fn=cmd_init)
 
-    s = sub.add_parser("run", help="run the orchestration loop")
+    s = sub.add_parser("run", help="run the orchestration loop and the long-lived agent sessions")
     s.add_argument("--once", action="store_true", help="one tick, wait for its work, exit")
     s.set_defaults(fn=cmd_run)
 

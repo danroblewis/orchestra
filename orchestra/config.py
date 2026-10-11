@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,8 +94,8 @@ class Config:
             base_branch=p.get("base_branch", "main"),
             ticket_prefix=p.get("ticket_prefix", "ORC"),
             push=bool(p.get("push", False)),
-            provider=a.get("provider"),
-            model=a.get("model"),
+            provider=a.get("provider") or None,
+            model=a.get("model") or None,
             thinking=a.get("thinking"),
             workers=int(a.get("workers", 1)),
             reviewers=int(a.get("reviewers", 1)),
@@ -123,8 +124,8 @@ ticket_prefix = "{prefix}"
 push = false
 
 [agents]
-provider = "{provider}"
-model = "{model}"
+provider = "{provider}"   # leave empty to use Pi's default provider
+model = "{model}"         # leave empty to use Pi's default model
 thinking = "medium"
 workers = 1
 reviewers = 1
@@ -205,41 +206,64 @@ class Project:
 
 
 def find_repo_root(start: Path) -> Path:
-    cur = start.resolve()
-    while True:
-        if (cur / ".git").exists():
-            return cur
-        if cur.parent == cur:
-            raise ConfigError(f"{start} is not inside a git repository")
-        cur = cur.parent
+    """The main repository root containing ``start``.
+
+    Uses git itself, so it works from any subdirectory and from inside a linked
+    worktree: a worktree resolves to the repository it belongs to, since that is
+    the project Orchestra manages."""
+    start = Path(start).resolve()
+    probe = start if start.is_dir() else start.parent
+    p = subprocess.run(["git", "-C", str(probe), "rev-parse", "--git-common-dir"],
+                       capture_output=True, text=True)
+    if p.returncode != 0:
+        raise ConfigError(f"{start} is not inside a git repository")
+    common = Path(p.stdout.strip())
+    if not common.is_absolute():
+        common = (probe / common).resolve()
+    if common.name == ".git":
+        return common.parent.resolve()
+    top = subprocess.run(["git", "-C", str(probe), "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True).stdout.strip()
+    return Path(top).resolve() if top else common.parent.resolve()
 
 
 def load_project(repo: Path | str | None = None) -> Project:
-    root = Path(repo or os.environ.get("ORCHESTRA_REPO") or Path.cwd())
-    root = find_repo_root(root)
+    """Resolve the project for ``repo`` (default: ORCHESTRA_REPO, else the cwd).
+
+    ``orchestra.toml`` must exist at the repository root. The state directory under
+    ``~/.orchestrator`` is created on demand, so a freshly cloned repository that
+    already carries an ``orchestra.toml`` needs no ``orchestra init``."""
+    root = find_repo_root(Path(repo or os.environ.get("ORCHESTRA_REPO") or Path.cwd()))
     toml_path = root / "orchestra.toml"
     if not toml_path.exists():
         raise ConfigError(f"no orchestra.toml in {root}; run `orchestra init` there first")
     project = Project(key=project_key(root), repo_root=root, config=Config.from_toml(toml_path.read_text()))
     if not project.state_dir.exists():
-        raise ConfigError(f"project state missing at {project.state_dir}; run `orchestra init`")
+        _register(project)
     return project
 
 
-def init_project(repo: Path, *, provider: str, model: str, prefix: str | None = None,
-                 unit_command: str = "uv run pytest -q") -> Project:
+def _register(project: Project) -> None:
+    project.ensure_dirs()
+    (project.state_dir / "project.json").write_text(json.dumps(
+        {"key": project.key, "repo_root": str(project.repo_root), "backend": "local"}, indent=2))
+    index = home() / "projects.json"
+    data = json.loads(index.read_text()) if index.exists() else {}
+    data[str(project.repo_root)] = project.key
+    index.write_text(json.dumps(data, indent=2))
+
+
+def init_project(repo: Path, *, provider: str | None = None, model: str | None = None,
+                 prefix: str | None = None, unit_command: str = "uv run pytest -q") -> Project:
+    """Write a starter ``orchestra.toml`` (if missing) and register the project.
+
+    Provider and model may be left empty, in which case Pi's own default model is used."""
     root = find_repo_root(repo)
     toml_path = root / "orchestra.toml"
     if not toml_path.exists():
         pfx = prefix or re.sub(r"[^A-Za-z]", "", root.name.upper())[:4] or "ORC"
-        toml_path.write_text(STARTER_TOML.format(prefix=pfx, provider=provider, model=model,
+        toml_path.write_text(STARTER_TOML.format(prefix=pfx, provider=provider or "", model=model or "",
                                                  unit_command=unit_command))
     project = Project(key=project_key(root), repo_root=root, config=Config.from_toml(toml_path.read_text()))
-    project.ensure_dirs()
-    (project.state_dir / "project.json").write_text(json.dumps(
-        {"key": project.key, "repo_root": str(root), "backend": "local"}, indent=2))
-    index = home() / "projects.json"
-    data = json.loads(index.read_text()) if index.exists() else {}
-    data[str(root)] = project.key
-    index.write_text(json.dumps(data, indent=2))
+    _register(project)
     return project

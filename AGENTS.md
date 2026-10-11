@@ -51,7 +51,13 @@ that must not be broken without updating the spec and saying so in the commit.
 
 - Python 3.12+, `uv` for everything, `pytest` for tests, `ruff` for lint and
   format.
-- Tests that need a real Pi and model are opt-in via `ORCHESTRA_ACCEPTANCE=1`
-  and must never be required for the suite to pass.
+- `tests/unit` is fast and pure. `tests/e2e` drives the real loop, store, git,
+  and gate with `tests/e2e/fake_pi.py`, which speaks Pi's RPC protocol; extend
+  the fake rather than mocking the loop. `tests/acceptance` runs against the
+  built wheel started by `scripts/acceptance_target.py` and skips unless
+  `ORCHESTRA_TARGET_URL` is set. Tests that need a real model are opt-in via
+  `ORCHESTRA_ACCEPTANCE=1` and never required for the suite to pass.
+- `orchestra.toml` in this repository is the gate for Orchestra itself: keep its
+  four stages working when you change the package layout or the CLI.
 - Keep modules small and single-purpose. If a file needs a section divider
   comment, it should be two files.
