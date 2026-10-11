@@ -92,7 +92,9 @@ that must not be broken without updating the spec and saying so in the commit.
   the fake rather than mocking the loop. `tests/acceptance` runs against the
   built wheel started by `scripts/acceptance_target.py` and skips unless
   `ORCHESTRA_TARGET_URL` is set. Tests that need a real model are opt-in via
-  `ORCHESTRA_ACCEPTANCE=1` and never required for the suite to pass.
+  `ORCHESTRA_ACCEPTANCE=1` and never required for the suite to pass;
+  `tests/acceptance/test_real_flow.py` runs the whole flow once per harness
+  with real models and starts its own targets.
 - `orchestra.toml` in this repository is the gate for Orchestra itself: keep its
   four stages working when you change the package layout or the CLI.
 - Keep modules small and single-purpose. If a file needs a section divider

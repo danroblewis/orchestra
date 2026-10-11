@@ -1,34 +1,23 @@
 #!/bin/sh
-# Run the real-model acceptance flow: build the wheel, start it as a full instance with
-# real Pi agents, send the Supervisor a request, and check that the code lands on main.
+# Run the real-model acceptance flow on every harness: build the wheel, install it in a
+# fresh venv, and let tests/acceptance/test_real_flow.py start one full instance per
+# harness (Pi, Claude Code, Codex) with real agents, send the Supervisor a request, and
+# check that the code lands on main. Occasional: it needs the harness binaries and models.
 #
-#   scripts/acceptance_real.sh [provider] [model] [harness]
+#   scripts/acceptance_real.sh [harness,harness,...]
 #
-# harness is pi (default), claude_code, or codex; provider is Pi-only (pass "" to skip). Defaults to
-# the harness's own default model. Prints a REPORT line at the end and writes it to
-# logs/acceptance-<harness>-<model>.json for comparing models and harnesses.
+# Models come from the environment (see the test's docstring); defaults are this repo's
+# orchestra.toml provider/model for Pi, haiku for Claude Code, Codex's default for Codex.
+# A harness whose binary is missing is skipped. Reports land in logs/acceptance-<harness>-<model>.json.
 #
-#   scripts/acceptance_real.sh ornith-1.5-35b-a3b-q6k ornith-1.5-35b-a3b-q6k
-#   scripts/acceptance_real.sh "" haiku claude_code
-#   scripts/acceptance_real.sh "" gpt-5.5 codex
+#   scripts/acceptance_real.sh                 # all three
+#   scripts/acceptance_real.sh pi,claude_code  # a subset
 set -e
 cd "$(dirname "$0")/.."
-PROVIDER=${1:-${ORCHESTRA_ACCEPTANCE_PROVIDER:-}}
-MODEL=${2:-${ORCHESTRA_ACCEPTANCE_MODEL:-}}
-HARNESS=${3:-${ORCHESTRA_ACCEPTANCE_HARNESS:-pi}}
-PORT=${PORT:-8079}
 VENV=$(mktemp -d)/venv
 rm -rf dist && uv build --wheel -q
 uv venv -q "$VENV" && uv pip install -q --python "$VENV/bin/python" dist/orchestra-*.whl
 mkdir -p logs
-LOG=logs/acceptance-target.log
-"$VENV/bin/python" scripts/acceptance_target.py --port "$PORT" --real --harness "$HARNESS" \
-  ${PROVIDER:+--provider "$PROVIDER"} ${MODEL:+--model "$MODEL"} > "$LOG" 2>&1 &
-TARGET=$!
-trap 'pkill -P $TARGET 2>/dev/null; kill $TARGET 2>/dev/null; pkill -f "$VENV/bin/python -m orchestra" 2>/dev/null' EXIT
-# Ready when the web app answers and the loop has registered its control endpoint
-# (the Supervisor is only reachable through it).
-for _ in $(seq 1 60); do curl -s -m 2 "http://127.0.0.1:$PORT/api/state" | grep -q '"loop": *{[^}]*"port"' && break; sleep 2; done
-ORCHESTRA_ACCEPTANCE=1 ORCHESTRA_TARGET_URL="http://127.0.0.1:$PORT" \
-ORCHESTRA_ACCEPTANCE_MODEL="$MODEL" ORCHESTRA_ACCEPTANCE_REPORT="logs/acceptance-${HARNESS}-${MODEL:-default}.json" \
-  uv run pytest tests/acceptance/test_real_flow.py -q -s -p no:cacheprovider
+ORCHESTRA_ACCEPTANCE=1 ORCHESTRA_ACCEPTANCE_PYTHON="$VENV/bin/python" \
+ORCHESTRA_ACCEPTANCE_HARNESSES="${1:-pi,claude_code,codex}" \
+  uv run pytest tests/acceptance/test_real_flow.py -q -s -p no:cacheprovider -rs

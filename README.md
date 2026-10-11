@@ -68,7 +68,7 @@ This repository is configured to be developed by Orchestra. Its
 | build | `uv build --wheel` producing `dist/orchestra-*.whl` |
 | unit | `tests/unit` (model, store, config, harness layer) and `tests/e2e` (the real loop and gate driven by fake harnesses: `tests/e2e/fake_pi.py`, `fake_claude.py`, and `fake_codex.py`, once each) |
 | start | `scripts/acceptance_target.py` installs the built wheel in an isolated environment, creates a throwaway project, seeds it through the CLI, runs the loop on the fake Pi, and serves the web UI |
-| acceptance | `tests/acceptance` against that running instance; `scripts/acceptance_real.sh [provider] [model] [harness]` runs the opt-in real-model flow (a Supervisor message becomes code on main) on any harness |
+| acceptance | `tests/acceptance` against that running instance; `scripts/acceptance_real.sh [harnesses]` runs the opt-in real-model flow (a Supervisor message becomes code on main) once per harness, Pi, Claude Code, and Codex, with real models |
 
 Each unit spec has a `select` template so the gate can rerun individual
 failing tests during bisection. Run the ordinary suite with
