@@ -39,7 +39,8 @@ def _probe(url: str, timeout: float = 6, max_status: int = 400) -> bool:
     if url.startswith("https") and shutil.which("curl"):
         p = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", str(int(timeout)), "-w", "%{http_code}", url],
                            capture_output=True, text=True)
-        return p.stdout.strip().isdigit() and int(p.stdout.strip()) < max_status
+        code = int(p.stdout.strip()) if p.stdout.strip().isdigit() else 0
+        return 100 <= code < max_status   # curl prints 000 when it could not connect at all
     return False
 
 
