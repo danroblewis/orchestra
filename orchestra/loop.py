@@ -306,7 +306,13 @@ class Loop:
             self.store.transition(tid, t.version, State.OPEN, feedback="Your previous turn was interrupted by an orchestrator restart. Check `git status` and `git log`, continue from where you left off, then report.")
             return
         if report is None:
-            crashes = sum(1 for n in self.store.notes(tid) if n.get("kind") == "crash") + (1 if failed else 0)
+            # Count only the trailing run of crash notes, so an unblock or any other note
+            # resets the budget instead of a ticket carrying old crashes forever.
+            crashes = 1 if failed else 0
+            for n in reversed(self.store.notes(tid)):
+                if n.get("kind") != "crash":
+                    break
+                crashes += 1
             if failed and crashes <= 2:
                 # The worker process died or timed out (often an orchestrator restart). That is
                 # not a decision for a human: keep the session and branch, retry from OPEN.
