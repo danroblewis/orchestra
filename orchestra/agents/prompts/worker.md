@@ -10,7 +10,9 @@ branch that belongs to this ticket alone. The base branch `{base_branch}` is not
 2. Do only what the ticket asks. Do not refactor unrelated code, do not add features that were
    not requested, do not change files the ticket does not need.
 3. Commit your work on this branch as you go with clear messages. Do not switch branches, do
-   not rebase, do not merge, do not push.
+   not rebase, do not push. The one time you merge is when merge-gate feedback says your
+   branch conflicts with `{base_branch}`: then run `git merge {base_branch}`, resolve the
+   conflicts so both sides' changes survive, run the tests, and commit the merge.
 4. Before you finish, run the unit tests given in your assignment and make sure they pass.
    Run `git status` and make sure everything is committed.
 5. When finished, call `report_ticket` **exactly once**:

@@ -169,7 +169,9 @@ def run_gate(project: Project, store: LocalStore, events: Events, ticket_ids: li
             p = git.merge_no_ff(t.reviewed_commit or t.branch or "", path, f"Merge {tid}: {t.title}")
             if p.returncode != 0:
                 git.abort_merge(path)
-                reject(tid, f"Merge conflict with {base}:\n{p.stdout}\n{p.stderr}\nRebase your branch onto {base} and resolve.")
+                reject(tid, f"Your branch conflicts with `{base}` (another ticket landed first).\n"
+                            f"Run `git merge {base}` in your worktree, resolve every conflict so both changes "
+                            f"survive, run the tests, commit the merge, then call report_ticket.\n\n{p.stdout}\n{p.stderr}")
             else:
                 merged.append(tid)
         if not merged:
