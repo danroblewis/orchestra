@@ -235,8 +235,17 @@ def read_transcript(session_file: str | Path) -> list[dict]:
                 if part.get("type") == "text":
                     text += part.get("text", "")
                 elif part.get("type") == "toolCall":
-                    tools.append({"name": part.get("name"), "args": part.get("arguments")})
+                    args = part.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except json.JSONDecodeError:
+                            pass
+                    tools.append({"name": part.get("name"), "args": args})
+        entry = {"role": role, "text": text, "tool_calls": tools, "ts": e.get("timestamp")}
         if role == "toolResult":
-            text = text[:2000]
-        out.append({"role": role, "text": text, "tool_calls": tools, "ts": e.get("timestamp")})
+            entry["text"] = text[:6000]
+            entry["tool_name"] = msg.get("toolName")
+            entry["is_error"] = bool(msg.get("isError"))
+        out.append(entry)
     return out

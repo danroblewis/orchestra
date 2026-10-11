@@ -57,8 +57,27 @@ async function openTranscript(id) {
     <div>last started</div><div>${when(s.started_at)}</div><div>last settled</div><div>${when(s.settled_at)}</div>
     <div>turns</div><div>${d.turns}</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div><h2>Transcript</h2>`;
   if (!d.messages.length) html += `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events (ticket created, landed, blocked, gate failure) or, for the supervisor, by <code>orchestra chat</code>."}</div>`;
-  else html += d.messages.map((m) => `<div class="msg ${m.role}"><div class="r">${m.role} ${m.tool_calls.map((t) => `[${esc(t.name)} ${esc(JSON.stringify(t.args || {}).slice(0, 120))}]`).join(" ")}</div>${m.role === "toolResult" ? `<pre><code>${esc(m.text).slice(0, 4000)}</code></pre>` : md(m.text.slice(0, 12000))}</div>`).join("");
+  else html += d.messages.map(renderMessage).join("");
   openDrawer(html);
+}
+
+const SHELL_TOOLS = new Set(["bash", "shell", "sh", "powershell"]);
+
+function renderToolCall(t) {
+  const args = t.args && typeof t.args === "object" ? t.args : {};
+  if (SHELL_TOOLS.has(t.name) && typeof args.command === "string")
+    return `<div class="tc"><div class="r">⚙ ${esc(t.name)}</div><pre><code class="language-bash">${esc(args.command)}</code></pre></div>`;
+  const shown = Object.keys(args).length ? JSON.stringify(args, null, 1) : (typeof t.args === "string" ? t.args : "");
+  return `<div class="tc"><div class="r">⚙ ${esc(t.name)}</div>${shown ? `<pre><code class="language-json">${esc(shown).slice(0, 3000)}</code></pre>` : ""}</div>`;
+}
+
+function renderMessage(m) {
+  if (m.role === "toolResult") {
+    const shell = SHELL_TOOLS.has(m.tool_name);
+    const body = shell ? `<pre class="term">${highlightLog(m.text)}</pre>` : `<pre><code>${esc(m.text)}</code></pre>`;
+    return `<div class="msg toolResult ${m.is_error ? "err" : ""}"><div class="r">result · ${esc(m.tool_name || "tool")}${m.is_error ? ' <span class="bad">error</span>' : ""}</div>${body}</div>`;
+  }
+  return `<div class="msg ${m.role}"><div class="r">${m.role}</div>${md(m.text.slice(0, 12000))}${m.tool_calls.map(renderToolCall).join("")}</div>`;
 }
 
 async function openGateRun(id) {

@@ -59,3 +59,5 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer } .node
 .md pre { padding:0; border:1px solid var(--border); background:#0b0d12 } .md pre code { display:block; padding:8px; border:0; background:#0d1117; font-size:12px; overflow:auto }
 .md blockquote { border-left:3px solid var(--border); margin:6px 0; padding:2px 10px; color:var(--muted) } .md table { border-collapse:collapse } .md td,.md th { border:1px solid var(--border); padding:3px 8px }
 .md strong { color:#fff } .md a { color:var(--accent) }
+.tc { margin:6px 0 } .tc .r { color:var(--muted); font-size:11px } .tc pre { margin:2px 0 }
+.msg.toolResult.err { border-color:#f85149 } .msg pre.term { max-height:40vh; min-height:0 }
