@@ -151,7 +151,7 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
 
     if command == "restart_staging":
         from .staging import Staging
-        return {"ok": True, "restarted": Staging(project, store, store.events).restart()}
+        return {"ok": True, "result": Staging(project, store, store.events).restart()}
 
     if command == "resume_pipeline":
         store.set_pipeline(False, None)

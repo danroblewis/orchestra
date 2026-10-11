@@ -3,6 +3,7 @@ SPEC.md section 7.5. Supervised by the loop; redeployed by the gate on every lan
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -123,36 +124,59 @@ class Staging:
 
     # -- tunnel ----------------------------------------------------------------
 
+    def _tunnel_id(self, name: str) -> str | None:
+        p = subprocess.run(["cloudflared", "tunnel", "list", "-o", "json"], capture_output=True, text=True, timeout=30)
+        try:
+            for t in json.loads(p.stdout or "[]"):
+                if t.get("name") == name:
+                    return t.get("id")
+        except json.JSONDecodeError:
+            pass
+        return None
+
     def ensure_tunnel(self) -> bool:
-        """Run the named cloudflared tunnel against the staging port and probe it."""
+        """Run the named cloudflared tunnel against the staging port and probe it.
+
+        The tunnel, its credentials file, and the DNS route are operator setup
+        (`cloudflared tunnel create` / `tunnel route dns`); Orchestra only writes
+        the ingress config for this port and keeps the process running."""
         name, host = self.cfg.tunnel_name, self.cfg.tunnel_hostname
         if not (name and host):
             return True
         public = f"https://{host}{self.cfg.staging_health}"
-        if _probe(public):
+        st = self.state()
+        if _pid_alive(st.get("tunnel_pid")) and _probe(public):
+            self._set(public_url=f"https://{host}")
             return True
         if not shutil.which("cloudflared"):
             self._log("cloudflared not on PATH; skipping tunnel")
             return False
-        creds = Path("~/.cloudflared").expanduser()
-        cred_file = next(iter(sorted(creds.glob("*.json"))), None)
+        tid = self._tunnel_id(name)
+        if not tid:
+            self._log(f"no cloudflared tunnel named {name!r}; create it with `cloudflared tunnel create {name}` "
+                      f"and route it with `cloudflared tunnel route dns {name} {host}`")
+            return False
+        cred_file = Path("~/.cloudflared").expanduser() / f"{tid}.json"
+        if not cred_file.exists():
+            self._log(f"credentials file {cred_file} missing for tunnel {name}")
+            return False
         cfg = self.project.staging_dir / "tunnel.yml"
-        cfg.write_text(f"tunnel: {name}\n" + (f"credentials-file: {cred_file}\n" if cred_file else "") +
-                       f"ingress:\n  - hostname: {host}\n    service: {self.local_url()}\n  - service: http_status:404\n")
-        st = self.state()
+        cfg.write_text(f"tunnel: {tid}\ncredentials-file: {cred_file}\ningress:\n"
+                       f"  - hostname: {host}\n    service: {self.local_url()}\n  - service: http_status:404\n")
         if not _pid_alive(st.get("tunnel_pid")):
-            self._log(f"starting cloudflared tunnel {name} -> {host}")
+            self._log(f"starting cloudflared tunnel {name} ({tid[:8]}) -> https://{host}")
             out = (self.project.staging_dir / "tunnel.log").open("a", encoding="utf-8")
-            proc = subprocess.Popen(["cloudflared", "--config", str(cfg), "tunnel", "run", name], stdout=out,
-                                    stderr=subprocess.STDOUT, start_new_session=True)
+            proc = subprocess.Popen(["cloudflared", "--no-autoupdate", "--config", str(cfg), "tunnel", "run", name],
+                                    stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
             self._set(tunnel_pid=proc.pid)
-        deadline = time.time() + 45
+        deadline = time.time() + 180  # a freshly routed hostname can take a while to resolve
         while time.time() < deadline:
             if _probe(public):
                 self._log(f"tunnel healthy at {public}")
+                self._set(public_url=f"https://{host}")
                 return True
             time.sleep(3)
-        self._log(f"tunnel probe {public} failed")
+        self._log(f"tunnel probe {public} failed; see {self.project.staging_dir / 'tunnel.log'}")
         return False
 
     # -- public ----------------------------------------------------------------
@@ -190,17 +214,23 @@ class Staging:
             if build:
                 self._log("staging process died; restarting")
                 self._start(build)
+                self.ensure_tunnel()
                 self.events.emit("staging_restarted", build=build["id"])
         elif st.get("status") == "running" and st["alive"]:
             if _probe(self.local_url() + self.cfg.staging_health):
                 self._set(last_health_at=now())
+            if self.cfg.tunnel_name and not _pid_alive(st.get("tunnel_pid")):
+                self.ensure_tunnel()
 
-    def restart(self) -> bool:
+    def restart(self) -> str:
+        """Returns 'ok', 'no_build', 'start_failed', or 'tunnel_failed'."""
         build = self.store.runtime().get("builds", {}).get(self.state().get("current_build_id") or "")
         if not build:
-            return False
+            return "no_build"
         self.stop()
-        return self._start(build)
+        if not self._start(build):
+            return "start_failed"
+        return "ok" if self.ensure_tunnel() else "tunnel_failed"
 
     def logs(self, n: int = 20000) -> str:
         return self.log_path.read_text(encoding="utf-8", errors="replace")[-n:] if self.log_path.exists() else ""

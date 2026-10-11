@@ -198,7 +198,12 @@ def cmd_staging(args) -> int:
     elif args.action == "stop":
         st.stop(); print("stopped")
     elif args.action == "restart":
-        print("restarted" if st.restart() else "no build recorded; use `orchestra staging deploy`")
+        r = st.restart()
+        print({"ok": "restarted", "no_build": "no build recorded; use `orchestra staging deploy`",
+               "start_failed": "start failed; see `orchestra staging logs`",
+               "tunnel_failed": "running locally, but the tunnel probe failed; see staging/tunnel.log"}[r])
+        if r in ("ok", "tunnel_failed"):
+            print(f"local:  {st.local_url()}" + (f"\npublic: {st.public_url()}" if st.public_url() else ""))
     elif args.action == "deploy":
         # Build the current base branch head with the [build] stage and promote it.
         import glob

@@ -57,6 +57,6 @@ port = 8001
 health = "/api/state"
 health_timeout = "120s"
 
-# [staging.tunnel]            # optional: route a cloudflared hostname to staging
-# name = "orchestra-staging"
-# hostname = "staging.example.com"
+[staging.tunnel]              # named cloudflared tunnel, created and DNS-routed by the operator
+name = "orchestra-stage"
+hostname = "orchestra-stage.dansproject.space"
