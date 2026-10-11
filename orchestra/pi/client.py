@@ -133,11 +133,17 @@ class PiProcess:
         self.session_file = data.get("sessionFile") or self.session_file
         return data
 
-    def prompt(self, text: str, timeout: float, on_event: Callable[[dict], None] | None = None) -> TurnResult:
+    def prompt(self, text: str, timeout: float, on_event: Callable[[dict], None] | None = None,
+               on_slot: Callable[[], None] | None = None) -> TurnResult:
         """Send a prompt and wait for agent_settled. Waits for a host turn slot first, so the
         wait for a busy model server is not counted against the turn's timeout."""
         from ..hostlock import turn_slot
         with turn_slot(self.host_slots), self._lock:
+            if on_slot:
+                try:
+                    on_slot()
+                except Exception:
+                    pass
             self.busy = True
             result = TurnResult()
             try:

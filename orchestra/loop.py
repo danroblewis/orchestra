@@ -303,7 +303,8 @@ class Loop:
         except Exception:
             pass
         self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=proc.proc.pid,
-                               pi_session_file=proc.session_file, started_at=time.time(), last_text="")
+                               pi_session_file=proc.session_file, started_at=time.time(), last_text="",
+                               slot_acquired_at=None, last_output_at=None)
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
 
     def _session_idle(self, sid: str, text: str, resident: bool = False) -> None:
@@ -314,11 +315,13 @@ class Loop:
         self.events.emit("session_settled", session=sid)
 
     def _prompt_with_retry(self, proc: PiProcess, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
-        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id))
+        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id),
+                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time()))
         report = self.store.pop_report(ticket_id)
         if report or res.timed_out or res.error:
             return report, res.text, res.timed_out or bool(res.error)
-        res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id))
+        res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id),
+                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time()))
         return self.store.pop_report(ticket_id), res.text, res.timed_out or bool(res.error)
 
     def _on_event(self, sid: str):
@@ -586,7 +589,8 @@ class Loop:
             task = ("[Orchestra: escalation from another agent; the human is not present for this turn. "
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
                     + agents.supervisor_context(self.store.snapshot(), [], self.project) + task)
-        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
+        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid),
+                          on_slot=lambda: self.store.set_session(sid, slot_acquired_at=time.time()))
         self._session_idle(sid, res.text, resident=not ephemeral)
         if ephemeral:
             proc.close()
