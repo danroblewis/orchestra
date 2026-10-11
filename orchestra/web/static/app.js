@@ -51,9 +51,14 @@ async function openTicket(id) {
 
 async function openTranscript(id) {
   const r = await fetch(`/api/sessions/${id}/transcript`);
-  if (!r.ok) return openDrawer(`<h3>${esc(id)}</h3><div class="empty">This session has not been started. It comes up with <code>orchestra run</code>.</div>`);
+  if (!r.ok) {
+    const perTicket = /^(worker|reviewer)-/.test(id);
+    return openDrawer(`<h3>${esc(id)}</h3><div class="empty">${perTicket
+      ? "No record of this session: it has not run yet, or it finished before transcripts were kept (" + esc(id) + ")."
+      : "This session has not been started. It comes up with <code>orchestra run</code>."}</div>`);
+  }
   const d = await r.json(); const s = d.session;
-  const state = s.status === "running" ? "working" : s.alive ? "resident, waiting for work" : "not running";
+  const state = s.status === "running" ? "working" : s.status === "archived" ? "finished (ticket closed)" : s.alive ? "resident, waiting for work" : "not running";
   const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
   let html = `<h3>${esc(id)} <span class="muted">${state}</span></h3>
     <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>

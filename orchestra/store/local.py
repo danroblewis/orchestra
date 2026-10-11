@@ -250,16 +250,23 @@ class LocalStore:
         return list(self._r()["sessions"].values())
 
     def purge_ticket_sessions(self, ticket_id: str) -> list[str]:
-        """Drop the worker/reviewer session records for a finished ticket and return
-        their Pi session file paths so the caller can delete them."""
+        """Retire a finished ticket's worker/reviewer sessions: the records leave the live
+        session list (nothing is running) but are archived with their Pi transcript paths
+        so the ticket's history stays viewable. Returns nothing to delete."""
         def fn(data):
-            files = []
+            archive = data.setdefault("archived_sessions", {})
             for sid in (f"worker-{ticket_id}", f"reviewer-{ticket_id}"):
                 rec = data["sessions"].pop(sid, None)
-                if rec and rec.get("pi_session_file"):
-                    files.append(rec["pi_session_file"])
-            return files
+                if rec:
+                    rec["status"] = "archived"
+                    rec["pid"] = None
+                    archive[sid] = rec
+            return []
         return self._mutate_runtime(fn)
+
+    def find_session(self, session_id: str) -> dict | None:
+        r = self._r()
+        return r["sessions"].get(session_id) or r.get("archived_sessions", {}).get(session_id)
 
     def set_worktree(self, ticket_id: str, path: str, branch: str) -> None:
         self._mutate_runtime(lambda d: d["worktrees"].__setitem__(

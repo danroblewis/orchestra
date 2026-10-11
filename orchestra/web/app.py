@@ -127,7 +127,7 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/sessions/{session_id}/transcript")
     async def transcript(session_id: str) -> dict:
-        s = next((s for s in store.sessions() if s["id"] == session_id), None)
+        s = store.find_session(session_id)
         if not s:
             raise HTTPException(404)
         f = s.get("pi_session_file")

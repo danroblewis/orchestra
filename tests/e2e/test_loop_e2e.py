@@ -64,6 +64,9 @@ def test_ticket_goes_open_to_done(env):
     assert not (project.worktrees_dir / t.id).exists()
     assert not git("branch", "--list", "orchestra/*", cwd=repo).strip()
     assert {s["id"] for s in store.sessions()} == {"supervisor", "coordinator", "pipeline-manager"}
+    archived = store.runtime()["archived_sessions"]
+    assert set(archived) == {f"worker-{t.id}", f"reviewer-{t.id}"}
+    assert all(Path(a["pi_session_file"]).exists() for a in archived.values())
     assert store.gate_runs()[-1]["status"] == "landed"
     assert store.get_milestone(ms.id).status == "open"  # fake coordinator does not close it
 

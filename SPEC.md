@@ -423,7 +423,9 @@ A worktree exists for exactly the span of a ticket's active life:
   across `REJECTED` cycles and `BLOCKED`, and the reviewer, which runs in the
   same worktree so it sees exactly what the worker built.
 - **Deleted** when the ticket is completed, meaning `DONE` or `CANCELLED`.
-  The branch is deleted on `DONE` and kept on `CANCELLED`.
+  The branch is deleted on `DONE` and kept on `CANCELLED`. The worker and
+  reviewer session records are archived with their transcripts, not deleted,
+  so a finished ticket's history stays viewable from its drawer.
 
 The path is an implementation detail; the default is
 `<state>/worktrees/<ticket-id>`. Before an agent resumes, Orchestra verifies
