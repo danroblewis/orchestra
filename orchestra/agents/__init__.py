@@ -13,7 +13,14 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 def role_prompt(project: Project, role: str) -> str:
     override = project.config.prompt_overrides.get(role)
     path = (project.repo_root / override) if override else (PROMPTS_DIR / f"{role}.md")
-    text = path.read_text(encoding="utf-8")
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+    else:  # a custom role: its prompt comes from the role store
+        from ..roles import role_store
+        text = role_store(project).prompt(role)
+        if not text.strip():
+            text = f"You are the {role} agent of Orchestra. Act on the wake-up you receive using your tools, then summarize."
+        text = CUSTOM_PREAMBLE.replace("{role}", role) + text
     return text.replace("{base_branch}", project.config.base_branch).replace(
         "{ticket_prefix}", project.config.ticket_prefix)
 
@@ -55,6 +62,18 @@ def write_context(project: Project, text: str) -> None:
     context_path(project).write_text(text, encoding="utf-8")
 
 
+CUSTOM_PREAMBLE = """# You are the `{role}` agent of Orchestra
+
+You are a long-lived agent in a software project run by Orchestra. Orchestra wakes you with a
+message that says why (an event, a schedule, or a note from another agent) and gives you a
+snapshot of the project. Act using your tools, then reply with a short summary of what you
+did and why. You never write code on the base branch and never start other agents; work is
+done by creating or editing tickets, which the Coordinator orders and workers implement.
+To reach the human, call `escalate_to_supervisor`. Your specific responsibilities follow.
+
+"""
+
+
 def _ticket_block(t: Ticket) -> str:
     deps = ", ".join(t.depends_on) or "none"
     return (f"Ticket: {t.id}\nTitle: {t.title}\nPriority: {t.priority}\nDepends on: {deps}\n\n"
@@ -91,6 +110,13 @@ def reviewer_task(project: Project, t: Ticket, commit: str, diff: str, files: li
             f"{tests}\n## Diff against `{project.config.base_branch}`\n```diff\n{diff}\n```\n\n"
             "Review it like a pull request. Check that the verification named in the ticket was actually "
             "added or extended. Then call `report_review` exactly once.\n")
+
+
+def role_design_reference() -> str:
+    """Reference the Supervisor gets when designing roles: what a role can watch and do."""
+    from ..roles import EVENT_TYPES, TOOL_GROUPS
+    return ("Tool groups: " + ", ".join(TOOL_GROUPS) + ". Event types that can wake a role: " + ", ".join(EVENT_TYPES)
+            + ". A wake_on entry may filter transitions, e.g. 'ticket_transition:DONE' or 'ticket_transition:BLOCKED'.")
 
 
 def wake_task(target: str, reasons: list[str], snapshot: dict) -> str:

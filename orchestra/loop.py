@@ -20,9 +20,9 @@ from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
 
 from .agents.roles import ROLES, resident_roles
+from .roles import RoleDef, all_roles, due_at, parse_interval
 
-# Resident roles other than the supervisor are woken by queued wake-ups; the
-# supervisor is woken by humans (chat) and by escalations.
+# Built-in resident roles; custom roles are loaded from the role store each tick.
 PROJECT_AGENTS = tuple(r.name for r in resident_roles() if r.name != "supervisor")
 RESIDENT_AGENTS = tuple(r.name for r in resident_roles())
 
@@ -51,6 +51,8 @@ class Loop:
         self._last_scheduled: dict[str, float] = {}
         self.live_procs: dict[str, PiProcess] = {}   # session id -> process, while a turn runs
         self.killed: set[str] = set()                # ticket ids whose agent the operator stopped
+        self.roles: dict[str, RoleDef] = {}          # all roles (built-in + custom), refreshed each tick
+        self._events_tail = 0                        # offset into the event log for wake_on matching
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -159,23 +161,97 @@ class Loop:
             if t.state == State.CANCELLED and self.store.worktree(t.id):
                 self._drop_worktree(t)
         self.staging.ensure_running()
+        self._refresh_roles()
         self._schedule_wakeups()
-        for target in RESIDENT_AGENTS:
+        self._wake_on_events()
+        for target in list(self.roles):
+            if target == "supervisor" and self.agent_procs.get("supervisor") is None:
+                continue
             if target not in self.agent_threads:
+                st = self.store.role_state(target)
+                if st.get("paused") or st.get("deleted"):
+                    continue  # wake-ups stay queued until resumed
                 reasons = [w["reason"] for w in self.store.drain_wakeups(target)]
                 if reasons:
                     self._spawn(self.agent_threads, target, self._wake, target, reasons)
 
-    def _schedule_wakeups(self) -> None:
-        """Queue a wake-up for any role with a schedule whose interval has elapsed."""
-        now_t = time.time()
-        for role in resident_roles():
-            if not role.every:
+    def _refresh_roles(self) -> None:
+        """Reload roles from the store; start resident processes for new ones, close
+        processes for roles that were deleted, paused, or asked to restart."""
+        try:
+            roles = all_roles(self.project)
+        except Exception as e:
+            log(f"roles: could not load custom roles: {e}")
+            return
+        for name in list(self.agent_procs):
+            st = self.store.role_state(name)
+            gone = name not in roles or st.get("deleted")
+            if gone or st.get("restart_requested") or st.get("paused"):
+                if name in self.agent_threads:
+                    continue  # let the current turn finish first
+                proc = self.agent_procs.pop(name)
+                proc.close()
+                self.store.set_session(roles[name].session_id if name in roles else name.replace("_", "-"), status="idle", pid=None)
+                if st.get("restart_requested"):
+                    self.store.set_role_state(name, restart_requested=False)
+                    log(f"{name}: session restarted by request")
+        for name, role in roles.items():
+            if name == "supervisor" or name in self.agent_procs or not role.resident:
                 continue
-            last = self._last_scheduled.get(role.name, self._started_at)
-            if now_t - last >= role.every:
-                self._last_scheduled[role.name] = now_t
-                self.store.add_wakeup(role.name, f"scheduled review (every {int(role.every)}s)")
+            st = self.store.role_state(name)
+            if st.get("paused") or st.get("deleted"):
+                continue
+            if name in ROLES and name not in ("coordinator", "pipeline_manager"):
+                continue
+            self._start_resident(name, role)
+        self.roles = roles
+
+    def _start_resident(self, name: str, role: RoleDef) -> None:
+        try:
+            proc = self._pi_for(role, role.session_id)
+            proc.get_state()
+            self.agent_procs[name] = proc
+            self.store.set_session(role.session_id, kind=name, status="idle", pid=proc.proc.pid, pi_session_file=proc.session_file)
+            log(f"{role.session_id}: session resident (pid {proc.proc.pid})")
+        except Exception as e:
+            log(f"{role.session_id}: could not start: {e}")
+
+    def _pi_for(self, role: RoleDef, session_id: str) -> PiProcess:
+        return PiProcess(
+            session_id=session_id, session_dir=self.project.sessions_dir, cwd=self.project.repo_root,
+            system_prompt=agents.role_prompt(self.project, role.name),
+            provider=self.cfg.provider, model=self.cfg.model, thinking=self.cfg.thinking,
+            env={"ORCHESTRA_ROLE": role.name, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": "",
+                 "ORCHESTRA_TOOLS": ",".join(role.tools)},
+            log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
+        )
+
+    def _wake_on_events(self) -> None:
+        """Match new events against every role's wake_on list and queue wake-ups."""
+        evs, self._events_tail = self.events.read(self._events_tail, limit=5000)
+        for ev in evs:
+            for name, role in self.roles.items():
+                if name == "supervisor" or not role.wake_on or not role.matches_event(ev):
+                    continue
+                bits = [f"{k}={ev[k]}" for k in ("ticket", "milestone", "from", "to", "gate_run", "reason", "by") if ev.get(k)]
+                self.store.add_wakeup(name, f"event {ev['type']}" + (" " + " ".join(str(b) for b in bits) if bits else ""))
+
+    def _schedule_wakeups(self) -> None:
+        """Queue a wake-up for roles whose interval has elapsed or whose daily time has come."""
+        now_t = time.time()
+        for name, role in self.roles.items():
+            st = self.store.role_state(name)
+            if st.get("paused") or st.get("deleted"):
+                continue
+            if role.every:
+                secs = parse_interval(role.every)
+                last = self._last_scheduled.get(name, self._started_at)
+                if now_t - last >= secs:
+                    self._last_scheduled[name] = now_t
+                    self.store.add_wakeup(name, f"scheduled check-in (every {role.every})")
+            if role.at and due_at(role.at, st.get("last_at_fire"), now_t):
+                self.store.set_role_state(name, last_at_fire=now_t)
+                self.store.add_wakeup(name, f"scheduled daily session ({role.at})")
 
     def _service_kills(self) -> None:
         """Stop the worker or reviewer process for each ticket the operator asked to kill.
@@ -485,11 +561,20 @@ class Loop:
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
     def _wake(self, target: str, reasons: list[str]) -> None:
-        sid = ROLES[target].session_id
-        proc = self.agent_procs.get(target)
-        if proc is None or not proc.alive():
-            proc = self._pi(sid, target, self.project.repo_root)
-            self.agent_procs[target] = proc
+        role = self.roles.get(target)
+        if role is None:
+            return
+        sid = role.session_id
+        ephemeral = not role.resident
+        if ephemeral:
+            sid = f"{role.session_id}-{time.strftime('%Y%m%d-%H%M%S')}"
+            proc = self._pi_for(role, sid)
+        else:
+            proc = self.agent_procs.get(target)
+            if proc is None or not proc.alive():
+                proc = self._pi_for(role, sid) if target not in ROLES else self._pi(sid, target, self.project.repo_root)
+                self.agent_procs[target] = proc
+        self.store.set_role_state(target, last_woken=time.time())
         log(f"{sid}: waking ({len(reasons)} reason(s))")
         self._session_running(sid, target, proc)
         task = agents.wake_task(target, reasons, self.store.snapshot())
@@ -498,6 +583,8 @@ class Loop:
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
                     + agents.supervisor_context(self.store.snapshot(), [], self.project) + task)
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
-        self._session_idle(sid, res.text, resident=True)
+        self._session_idle(sid, res.text, resident=not ephemeral)
+        if ephemeral:
+            proc.close()
         self.events.emit("agent_said", session=sid, summary=(res.text or "")[:500])
         log(f"{sid}: {(res.text or '(no text)')[:160]!r}")

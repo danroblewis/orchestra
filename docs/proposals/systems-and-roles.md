@@ -1,6 +1,27 @@
 # Proposal: Systems and Roles, in four stages
 
-Status: draft for discussion, 2026-10-11. Nothing here is implemented.
+Status: Stage 1 decided and being built, 2026-10-11. Stages 2 to 4 remain proposals.
+
+## Decisions taken
+
+- **Only Stage 1 is in scope now.** Roles and custom agents. Teams, jobs,
+  catalogs, channels, and the library are not built until Stage 1 has earned
+  them.
+- **Roles are authored in conversation.** Creating a role is a brainstorming
+  and requirements-gathering exercise between the human and the Supervisor:
+  what the agent is for, what should wake it, what it may do, how it reports.
+  When the human agrees to the plan, the Supervisor writes the role and its
+  prompt. There is no form and no template picker in the UI.
+- **Role storage is an interface, like tickets.** A `RoleStore` with one
+  implementation to start: the project repository, under `.orchestra/roles/`,
+  versioned with the code. Not `~/.orchestrator`. Later stores (an external git
+  repository, GCS, Artifactory) implement the same interface, because roles are
+  valuable and people will want them outside any one machine or repo.
+- **The knowledge catalog is deferred, deliberately.** A catalog without a
+  curation policy is a text dump. Its value comes from the coordinated
+  behaviour of agents around it, scheduled curation and strongly worded
+  directives, not from storage or tools. It returns when a team exists to
+  curate it.
 
 ## Why stages
 

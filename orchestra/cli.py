@@ -286,6 +286,21 @@ def cmd_staging(args) -> int:
     return 0
 
 
+def cmd_roles(args) -> int:
+    from . import api as api_mod
+
+    project = _project(args)
+    store, _ = _store(project)
+    if args.action == "list":
+        for r in api_mod.handle(project, store, "list_roles", {})["roles"]:
+            kind = "built-in" if r["builtin"] else "custom"
+            wake = ", ".join(r.get("wake_on") or []) + (f" every {r['every']}" if r.get("every") else "") + (f" at {r['at']}" if r.get("at") else "")
+            print(f"{r['name']:20} {kind:9} {r['session']:9} {'paused' if r['paused'] else '':7} {wake.strip() or '-'}")
+        return 0
+    print(json.dumps(api_mod.handle(project, store, "get_role", {"name": args.name}), indent=2))
+    return 0
+
+
 def cmd_doctor(args) -> int:
     from .git import Git
 
@@ -363,6 +378,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("staging", help="staging environment: status, logs, deploy, restart, stop")
     s.add_argument("action", choices=["status", "logs", "deploy", "restart", "stop"])
     s.set_defaults(fn=cmd_staging)
+
+    s = sub.add_parser("roles", help="agent roles: built-in and custom")
+    s.add_argument("action", choices=["list", "show"])
+    s.add_argument("name", nargs="?")
+    s.set_defaults(fn=cmd_roles)
 
     s = sub.add_parser("doctor")
     s.add_argument("--fix", action="store_true")

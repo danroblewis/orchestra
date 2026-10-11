@@ -48,6 +48,23 @@ def create_app(project: Project) -> FastAPI:
     async def tickets_page() -> str:
         return page("tickets.html")
 
+    @app.get("/agents", response_class=HTMLResponse)
+    async def agents_page() -> str:
+        return page("agents.html")
+
+    @app.get("/api/roles")
+    async def roles() -> dict:
+        from .. import api as api_mod
+        return api_mod.handle(project, store, "list_roles", {})
+
+    @app.get("/api/roles/{name}")
+    async def role_detail(name: str) -> dict:
+        from .. import api as api_mod
+        try:
+            return api_mod.handle(project, store, "get_role", {"name": name})
+        except StoreError:
+            raise HTTPException(404)
+
     @app.get("/api/state")
     async def state() -> dict:
         project.reload_config()
@@ -57,6 +74,12 @@ def create_app(project: Project) -> FastAPI:
         snap["batch_size"] = 1  # the gate takes one ticket per run until batching lands
         for s in snap["sessions"]:
             s["alive"] = bool(s.get("pid")) and psutil.pid_exists(int(s["pid"]))
+        try:
+            from ..roles import all_roles
+            snap["roles"] = [{"name": r.name, "session_id": r.session_id, "description": r.description, "builtin": r.builtin,
+                              "session": r.session, "paused": bool(store.role_state(r.name).get("paused"))} for r in all_roles(project).values()]
+        except Exception:
+            snap["roles"] = []
         snap["loop"] = store.runtime().get("control") or {}
         return snap
 
@@ -229,6 +252,12 @@ def create_app(project: Project) -> FastAPI:
                 raise HTTPException(409, f"{tid} is {t.state}; nothing to stop")
             store.request_kill(tid, by="operator")
             return {"ok": True, "ticket": tid, "will_reset_to": "OPEN" if t.state == State.IN_PROGRESS else "READY_FOR_REVIEW"}
+        if action in ("pause_role", "resume_role", "restart_role", "delete_role"):
+            from .. import api as api_mod
+            try:
+                return api_mod.handle(project, store, action, {"name": body.get("role") or ""}, role="supervisor")
+            except StoreError as e:
+                raise HTTPException(409, str(e))
         raise HTTPException(400, "unknown action")
 
     @app.get("/api/tickets/{ticket_id}")

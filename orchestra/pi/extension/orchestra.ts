@@ -148,6 +148,28 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool(tool("set_capacity", "Set how many workers and reviewers may run at once, between 0 and the configured maximum. Use 0 to pause pickup while re-planning; raise it again afterwards.",
       Type.Object({ workers: Type.Optional(Type.Integer()), reviewers: Type.Optional(Type.Integer()), note: S("Why") })));
   }
+  if (groups.has("events")) {
+    pi.registerTool(tool("read_events", "Recent Orchestra events (ticket changes, gate runs, staging, agents). Use to look back over what happened.",
+      Type.Object({ minutes: Type.Optional(Type.Integer({ description: "How far back, default 60" })), types: Type.Optional(Type.Array(Type.String(), { description: "Event types to include; empty for all" })) })));
+  }
+  if (groups.has("roles")) {
+    pi.registerTool(tool("list_roles", "All agent roles, built-in and custom, with their wake rules and paused state.", Type.Object({})));
+    pi.registerTool(tool("get_role", "One role's definition and prompt.", Type.Object({ name: S("Role name") })));
+    pi.registerTool(tool("create_role",
+      "Create a custom long-running agent role after agreeing its design with the human. The prompt is its full responsibilities in markdown. " +
+        "wake_on lists event types (optionally 'ticket_transition:DONE'); every is an interval like '6h'; at is a daily time 'HH:MM'. " +
+        "session is 'resident' (one long-lived session) or 'ephemeral' (fresh session each wake).",
+      Type.Object({ name: S("lowercase_with_underscores"), description: S("One line: what this agent is for"), prompt: S("Responsibilities in markdown"),
+        tools: Type.Optional(Type.Array(Type.String(), { description: "Tool groups: tickets, context, pipeline, capacity, escalate, events" })),
+        session: OS("resident | ephemeral"), wake_on: Type.Optional(Type.Array(Type.String())), every: OS("e.g. 30m, 6h, 1d"), at: OS("HH:MM") })));
+    pi.registerTool(tool("update_role", "Change a custom role's definition or prompt.",
+      Type.Object({ name: S("Role name"), description: OS(""), prompt: OS("New full prompt"), tools: Type.Optional(Type.Array(Type.String())),
+        session: OS(""), wake_on: Type.Optional(Type.Array(Type.String())), every: OS(""), at: OS("") })));
+    pi.registerTool(tool("delete_role", "Delete a custom role; its sessions are archived.", Type.Object({ name: S("Role name") })));
+    pi.registerTool(tool("pause_role", "Pause a role: wake-ups queue until resumed.", Type.Object({ name: S("Role name") })));
+    pi.registerTool(tool("resume_role", "Resume a paused role.", Type.Object({ name: S("Role name") })));
+    pi.registerTool(tool("restart_role", "Restart a role's session (fresh process; transcript kept).", Type.Object({ name: S("Role name") })));
+  }
   if (groups.has("escalate")) {
     pi.registerTool(tool("escalate_to_supervisor", "Wake the Supervisor with a note when a decision about intent, scope, or priorities is needed.",
       Type.Object({ note: S("What needs deciding and why") })));
@@ -155,6 +177,6 @@ export default function (pi: ExtensionAPI) {
 }
 
 function defaultGroups(role: string): string {
-  return { worker: "report_ticket", reviewer: "report_review", supervisor: "tickets,context,pipeline",
+  return { worker: "report_ticket", reviewer: "report_review", supervisor: "tickets,context,pipeline,roles,events",
            coordinator: "tickets,capacity,escalate", pipeline_manager: "tickets,pipeline,escalate" }[role] ?? "";
 }

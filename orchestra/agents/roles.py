@@ -41,7 +41,7 @@ def register(role: Role) -> Role:
 
 register(Role(
     name="supervisor", session_id="supervisor", prompt="supervisor",
-    tools=("tickets", "context", "pipeline"),
+    tools=("tickets", "context", "pipeline", "roles", "events"),
     wake_on=("human_message", "escalation"),
     description="Talks to the human; translates requests into objectives, verification, and tickets.",
 ))

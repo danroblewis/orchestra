@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 </head>
 <body>
-<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="tabs"><button class="on" onclick="showCol(0,this)">Agents</button><button onclick="showCol(1,this)">Merge gate</button><button onclick="showCol(2,this)">Host</button></div>
 <div class="layout">
   <div class="col on">
@@ -79,11 +79,13 @@ function renderAgents(s) {
   const live = s.sessions.filter((x) => x.status === "running").length;
   $("agents-sub").textContent = `${live} working · capacity ${s.capacity ? s.capacity.workers : "?"} workers` + (s.pickup_paused ? " · PAUSED" : "");
   const pb = $("pause-btn"); pb.textContent = s.pickup_paused ? "▶ resume" : "⏸ pause"; pb.classList.toggle("paused", !!s.pickup_paused);
-  let html = BASE_AGENTS.map(([id, kind, letter]) => {
+  const customs = (s.roles || []).filter((r) => !r.builtin).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
+  let html = [...BASE_AGENTS, ...customs].map(([id, kind, letter, r]) => {
     const x = byId[id];
-    return `<div class="agent" style="--rc:${ROLE_COLOR[kind]}" onclick="openTranscript('${id}')">
-      <div class="av">${letter}</div><div><div class="name">${id}</div><div class="role">${kind.replace("_", " ")}</div></div>${chip(x)}
-      <div class="say">${esc(x && x.alive ? (x.last_text || "waiting for work") : "not running: start `orchestra run`")}</div></div>`;
+    const paused = r && r.paused;
+    return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')">
+      <div class="av">${letter}</div><div><div class="name">${id}</div><div class="role">${r ? esc(r.description || "custom role") : kind.replace("_", " ")}</div></div>${paused ? '<span class="chip"><span class="dot"></span>paused</span>' : chip(x)}
+      <div class="say">${esc(x && x.alive ? (x.last_text || "waiting for work") : (r && r.session === "ephemeral" ? "ephemeral: runs when woken" : "not running: start `orchestra run`"))}</div></div>`;
   }).join("");
   const isLive = (x) => x && x.status === "running";
   const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (byId[`worker-${t.id}`] || byId[`reviewer-${t.id}`]))

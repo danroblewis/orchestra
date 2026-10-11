@@ -316,6 +316,16 @@ class LocalStore:
         self.events.emit("capacity_changed", by=by, workers=out.get("workers"), reviewers=out.get("reviewers"), note=note)
         return self.capacity()
 
+    def role_state(self, name: str) -> dict:
+        return dict((self._r().get("role_state") or {}).get(name) or {})
+
+    def set_role_state(self, name: str, **fields) -> dict:
+        def fn(d):
+            st = d.setdefault("role_state", {}).setdefault(name, {})
+            st.update(fields)
+            return dict(st)
+        return self._mutate_runtime(fn)
+
     def pickup_paused(self) -> bool:
         return bool(self._r().get("pickup_paused"))
 

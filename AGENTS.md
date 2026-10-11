@@ -35,9 +35,11 @@ that must not be broken without updating the spec and saying so in the commit.
 8. **Every ticket has a milestone, and closed milestones are final.** A
    milestone closes only when all its tickets are terminal, can never reopen,
    and can never receive tickets. The store enforces this, not the agents.
-9. **Roles are registry entries.** A new long-running agent kind is a `Role`
-   in `orchestra/agents/roles.py` plus a prompt file, with tool groups and
-   wake events or a schedule. Do not special-case roles in the loop.
+9. **Roles are data behind a store.** Built-in roles live in
+   `orchestra/agents/roles.py`; custom roles come from the `RoleStore`
+   (default: the repository's `.orchestra/roles/`). The loop treats both the
+   same way. Do not special-case roles in the loop, and do not read role
+   files outside `orchestra/roles.py`.
 10. **One package, no path hacks.** Everything importable is under
    `orchestra/`. No `sys.path` manipulation.
 

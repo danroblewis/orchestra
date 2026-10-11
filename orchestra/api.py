@@ -152,6 +152,82 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         store.events.emit("context_updated", by=author)
         return {"ok": True}
 
+    if command in ("list_roles", "get_role", "create_role", "update_role", "delete_role",
+                   "pause_role", "resume_role", "restart_role"):
+        from .roles import RoleDef, RoleError, all_roles, role_store
+        if command in ("create_role", "update_role", "delete_role") and role and role != "supervisor":
+            raise StoreError("only the supervisor may create, change, or delete roles")
+        rs = role_store(project)
+        if command == "list_roles":
+            out = []
+            for r in all_roles(project).values():
+                st = store.role_state(r.name)
+                out.append({**r.to_dict(), "builtin": r.builtin, "paused": bool(st.get("paused")),
+                            "last_woken": st.get("last_woken")})
+            return {"ok": True, "roles": out}
+        if command == "get_role":
+            r = all_roles(project).get(a["name"])
+            if r is None:
+                raise StoreError(f"no role {a['name']!r}")
+            return {"ok": True, "role": {**r.to_dict(), "builtin": r.builtin}, "prompt": rs.prompt(a["name"]) if not r.builtin else "(built in)",
+                    "state": store.role_state(a["name"])}
+        if command in ("create_role", "update_role"):
+            try:
+                if command == "update_role":
+                    r = rs.get(a["name"])
+                    for k in ("description", "tools", "session", "wake_on", "every", "at"):
+                        if k in a and a[k] is not None:
+                            setattr(r, k, a[k])
+                    prompt = a.get("prompt") if a.get("prompt") else rs.prompt(a["name"])
+                else:
+                    r = RoleDef(name=a["name"], description=a.get("description", ""), tools=list(a.get("tools") or ["tickets", "escalate"]),
+                                session=a.get("session") or "resident", wake_on=list(a.get("wake_on") or []),
+                                every=a.get("every") or None, at=a.get("at") or None, created_by=author)
+                    prompt = a.get("prompt") or ""
+                    if len(prompt.strip()) < 40:
+                        raise StoreError("prompt is required: the role's responsibilities, in a few paragraphs")
+                rs.save(r, prompt)
+            except RoleError as e:
+                raise StoreError(str(e))
+            store.events.emit("role_changed" if command == "update_role" else "role_created", role=r.name, by=author)
+            store.add_wakeup(r.name, "you were just created; introduce yourself in one line and check the project state" if command == "create_role"
+                             else "your definition was updated; re-read your responsibilities")
+            return {"ok": True, "role": r.to_dict(), "storage": rs.last_commit_note}
+        if command == "delete_role":
+            try:
+                rs.delete(a["name"])
+            except RoleError as e:
+                raise StoreError(str(e))
+            store.set_role_state(a["name"], deleted=True)
+            store.events.emit("role_deleted", role=a["name"], by=author)
+            return {"ok": True, "storage": rs.last_commit_note}
+        if command in ("pause_role", "resume_role"):
+            store.set_role_state(a["name"], paused=(command == "pause_role"))
+            store.events.emit("role_paused" if command == "pause_role" else "role_resumed", role=a["name"], by=author)
+            return {"ok": True, "paused": command == "pause_role"}
+        if command == "restart_role":
+            store.set_role_state(a["name"], restart_requested=True)
+            return {"ok": True, "message": "the role's session will be restarted at the next tick"}
+
+    if command == "read_events":
+        from datetime import datetime, timezone
+        minutes = int(a.get("minutes") or 60)
+        types = set(a.get("types") or [])
+        since = __import__("time").time() - minutes * 60
+        evs, _ = store.events.read(0, limit=5000)
+        out = []
+        for e in evs:
+            try:
+                ts = datetime.fromisoformat(e["ts"]).replace(tzinfo=timezone.utc).timestamp()
+            except Exception:
+                continue
+            if ts < since or (types and e.get("type") not in types):
+                continue
+            if e.get("type") in ("session_started", "session_settled"):
+                continue
+            out.append(e)
+        return {"ok": True, "events": out[-200:], "count": len(out)}
+
     if command == "get_capacity":
         return {"ok": True, "capacity": store.capacity()}
 

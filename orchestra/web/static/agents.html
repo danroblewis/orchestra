@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orchestra · Agents</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<link rel="stylesheet" href="/static/style.css?v={{v}}">
+<style>
+  .roles { max-width:1100px; margin:0 auto; padding:16px }
+  .rolecard { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:8px 16px }
+  .rolecard h3 { margin:0; font-size:14px; display:flex; gap:8px; align-items:center } .rolecard .desc { color:var(--text2); font-size:12.5px; margin-top:2px }
+  .rolecard .meta { color:var(--muted); font-size:11.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .rolecard .meta code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px }
+  .rolecard .ctls { display:flex; gap:6px; align-items:flex-start } .tag { font-size:10.5px; padding:1px 6px; border-radius:999px; border:1px solid var(--border2); color:var(--muted) }
+  .intro { color:var(--text2); font-size:12.5px; margin:0 0 14px }
+</style>
+</head>
+<body>
+<nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents" class="on">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="roles">
+  <p class="intro">Every agent role in this project. Built-in roles are defined by Orchestra; custom roles live in the repository under <code>.orchestra/roles/</code> and are created in conversation with the Supervisor. Pause queues a role's wake-ups until resumed; restart gives it a fresh process with its transcript kept.</p>
+  <div id="list"></div>
+</div>
+<div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
+<script src="/static/app.js?v={{v}}"></script>
+<script>
+let STATE = null;
+async function control(body) { const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!r.ok) alert(await r.text()); refresh(); }
+function roleAction(action, name) {
+  if (action === "delete_role" && !confirm(`Delete role ${name}? Its sessions are archived. The files are removed from .orchestra/roles/.`)) return;
+  control({ action, role: name });
+}
+async function refresh() {
+  try {
+    const [st, rl] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/roles").then((r) => r.json())]);
+    STATE = st; renderNav("agents", st.project); $("conn").textContent = "live";
+    const byId = Object.fromEntries(st.sessions.map((x) => [x.id, x]));
+    $("list").innerHTML = rl.roles.map((r) => {
+      const sid = r.name.replace(/_/g, "-"), s = byId[sid];
+      const running = s && s.status === "running", alive = s && s.alive;
+      const status = r.paused ? '<span class="chip"><span class="dot"></span>paused</span>' : running ? `<span class="chip working"><span class="dot"></span>working</span>` : alive ? '<span class="chip resident"><span class="dot"></span>resident</span>' : r.session === "ephemeral" ? '<span class="chip"><span class="dot"></span>ephemeral</span>' : '<span class="chip down"><span class="dot"></span>down</span>';
+      const wake = [...(r.wake_on || []).map((w) => `<code>${esc(w)}</code>`), r.every ? `every ${esc(r.every)}` : "", r.at ? `daily at ${esc(r.at)}` : ""].filter(Boolean).join(" · ") || "escalations only";
+      return `<div class="rolecard"><div>
+          <h3><a href="#" onclick="openTranscript('${sid}');return false">${esc(r.name)}</a> ${status} ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(r.session)}</span></h3>
+          <div class="desc">${esc(r.description || "")}</div>
+          <div class="meta"><span>wakes on: ${wake}</span><span>tools: ${(r.tools || []).map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>${r.last_woken ? `<span>last woken ${ago(st.now - r.last_woken)} ago</span>` : ""}</div>
+        </div><div class="ctls">
+          ${r.name === "supervisor" ? "" : r.paused ? `<button class="ctl" onclick="roleAction('resume_role','${r.name}')">▶ resume</button>` : `<button class="ctl" onclick="roleAction('pause_role','${r.name}')">⏸ pause</button>`}
+          ${r.name === "supervisor" ? "" : `<button class="ctl" onclick="roleAction('restart_role','${r.name}')">↻ restart</button>`}
+          ${r.builtin ? "" : `<button class="ctl kill" onclick="roleAction('delete_role','${r.name}')">delete</button>`}
+        </div></div>`;
+    }).join("");
+  } catch (e) { if ($("conn")) $("conn").textContent = "disconnected"; }
+}
+refresh(); setInterval(refresh, 4000);
+openFromHash();
+</script>
+</body>
+</html>

@@ -274,22 +274,35 @@ tests or other checks itself, but that is not its job. Its job is to read
 and comment on the code. Reports exactly one of `APPROVED` or `REJECTED`
 with specific, actionable feedback, as line-level comments where possible.
 
-### 4.3 Roles are declarative
+### 4.3 Roles are data
 
-Every agent kind is an entry in the role registry, `orchestra/agents/roles.py`:
-name, session id, prompt file, tool groups, whether it is resident, the events
-that wake it, and an optional schedule. The loop keeps resident roles alive,
-delivers queued wake-ups, and queues a scheduled wake-up when a role's `every`
-interval elapses. The Pi extension grants tools by group name from
-`ORCHESTRA_TOOLS`, so adding a role is one registry entry and one prompt file.
+Every agent kind is a role: a name, a description, a prompt, tool groups, a
+session policy (`resident`, one long-lived session; or `ephemeral`, a fresh
+session per wake-up), the events that wake it (`wake_on`, with optional
+transition filters such as `ticket_transition:DONE`), and a schedule (`every`
+interval or a daily `at` time). Built-in roles are defined in
+`orchestra/agents/roles.py`. **Custom roles are stored behind a `RoleStore`
+interface**, like tickets, whose default implementation keeps them in the
+target repository under `.orchestra/roles/<name>.json` and `<name>.md`,
+versioned with the code and committed to the base branch when the checkout
+allows it. Other stores, an external git repository or an object store, can
+implement the same interface because roles are worth keeping outside any one
+machine.
 
-This is how future roles join the process without touching the loop: a
-Product Owner reviewing objectives against landed work daily, an R&D role
-doing long-horizon research weekly, a UI/UX Design role woken when tickets
-touch the interface, a knowledge-base curator on an hourly cadence. Each gets
-the tool groups its job needs and the cadence or events that should wake it.
-The Supervisor stays simple and human-facing; other roles reach the human
-only through it, by `escalate_to_supervisor`.
+The loop reloads roles every tick: it keeps resident roles' processes alive,
+starts new ones, closes deleted or paused ones, tails the event log and queues
+a wake-up for any role whose `wake_on` matches, and queues scheduled wake-ups.
+The Pi extension grants tools by group from `ORCHESTRA_TOOLS`, so no code
+changes for a new role.
+
+**Roles are designed in conversation.** The human and the Supervisor work out
+the purpose, triggers, powers, session policy, and reporting of a new agent;
+when the human agrees, the Supervisor creates it with `create_role`, and can
+rework, restart, pause, or delete it later. The Agents page lists every role
+with pause, restart, and delete controls for the human. A Product Owner, a
+nightly auditor, or any other long-running monitor is created this way. Teams
+of roles with leads, non-code jobs, and knowledge catalogs are a later stage;
+see `docs/proposals/systems-and-roles.md`.
 
 ### 4.4 Reporting contract
 
