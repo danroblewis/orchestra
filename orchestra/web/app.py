@@ -130,6 +130,39 @@ def create_app(project: Project) -> FastAPI:
         total = sum(b["landed"] for b in buckets)
         return {"hours": hours, "buckets": buckets, "total": total, "per_hour": round(total / hours, 2)}
 
+    @app.get("/api/burndown")
+    async def burndown(hours: int = 24) -> dict:
+        """Remaining (not DONE/CANCELLED) and total tickets over time, from the event log."""
+        from datetime import datetime, timezone
+        hours = max(1, min(hours, 24 * 30))
+        since = time.time() - hours * 3600
+        evs, _ = events.read(0, limit=200000)
+        total = remaining = 0
+        series: list[dict] = []
+        for e in evs:
+            t = e.get("type")
+            if t not in ("ticket_created", "ticket_transition"):
+                continue
+            try:
+                ts = datetime.fromisoformat(e["ts"]).replace(tzinfo=timezone.utc).timestamp()
+            except Exception:
+                continue
+            if t == "ticket_created":
+                total += 1; remaining += 1
+            else:
+                to, frm = e.get("to"), e.get("from")
+                if to in ("DONE", "CANCELLED") and frm not in ("DONE", "CANCELLED"):
+                    remaining -= 1
+            if ts >= since:
+                if not series:  # anchor the left edge at the window start with the value then
+                    series.append({"t": since, "remaining": remaining, "total": total})
+                series.append({"t": ts, "remaining": remaining, "total": total})
+        # Carry the current value to now so the chart reaches the right edge.
+        if not series:
+            series.append({"t": since, "remaining": remaining, "total": total})
+        series.append({"t": time.time(), "remaining": remaining, "total": total})
+        return {"hours": hours, "series": series[-2000:], "remaining": remaining, "total": total}
+
     @app.get("/api/staging")
     async def staging() -> dict:
         from ..staging import Staging

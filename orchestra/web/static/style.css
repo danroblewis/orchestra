@@ -138,3 +138,6 @@ nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-
 /* Grid and flex children default to min-width:auto, so a nowrap line would widen
    the whole page on a phone; let them shrink and ellipsize instead. */
 .agent, .agent > *, .work, .work > *, .work .lane > *, .qitem, .qitem > *, .col-head > *, .step > * { min-width:0 }
+/* burndown */
+#burndown { height:100px } #burndown .total { fill:none; stroke:#6f7889; stroke-width:1.2; vector-effect:non-scaling-stroke; stroke-dasharray:3 3 }
+#burndown .remain { fill:none; stroke:#6ea8fe; stroke-width:1.8; vector-effect:non-scaling-stroke } #burndown .remain-area { fill:#6ea8fe; fill-opacity:.12 }

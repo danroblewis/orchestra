@@ -21,6 +21,8 @@
   <div class="col">
     <div class="col-head"><h1>Merge gate</h1><span class="sub" id="gate-sub"></span></div>
     <div id="queue"></div>
+    <h2><span>Burndown</span><span class="count" id="burn-sum"></span></h2>
+    <div class="panel"><svg id="burndown" class="landings" viewBox="0 0 300 100" preserveAspectRatio="none"></svg><div class="lbl-row"><span id="burn-from"></span><span><span style="color:#6ea8fe">■</span> remaining &nbsp;<span style="color:#6f7889">■</span> total &nbsp;now</span></div></div>
     <h2><span>Landings per hour</span><span class="count" id="land-sum"></span></h2>
     <div class="panel"><svg id="landings" class="landings" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="lbl-row"><span id="land-from"></span><span>now</span></div></div>
   </div>
@@ -149,6 +151,23 @@ function renderGpu(d) {
   $("gpu-lbl").textContent = `${d.gpu.utilization}% · ${fmtBytes(d.gpu.memory_used)} in use`;
 }
 
+async function refreshBurndown() {
+  try {
+    const d = await (await fetch("/api/burndown?hours=24")).json();
+    const W = 300, H = 100, s = d.series; if (!s.length) return;
+    const t0 = s[0].t, t1 = s[s.length - 1].t || t0 + 1, max = Math.max(1, ...s.map((p) => p.total));
+    const X = (t) => (W * (t - t0) / Math.max(1, t1 - t0)), Y = (v) => H - 12 - (H - 18) * v / max;
+    const step = (key) => s.map((p, i) => (i ? `L${X(p.t).toFixed(1)},${Y(s[i - 1][key]).toFixed(1)} ` : "M") + `${X(p.t).toFixed(1)},${Y(p[key]).toFixed(1)}`).join(" ");
+    let svg = "";
+    for (let y = 1; y <= 4; y++) { const yy = Y(max * y / 4); svg += `<line x1="0" x2="${W}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/><text class="tick" x="2" y="${(yy - 2).toFixed(1)}">${Math.round(max * y / 4)}</text>`; }
+    svg += `<path d="${step("total")}" class="total"/>`;
+    svg += `<path d="${step("remaining")} L${W},${(H - 12).toFixed(1)} L0,${(H - 12).toFixed(1)} Z" class="remain-area"/><path d="${step("remaining")}" class="remain"/>`;
+    $("burndown").innerHTML = svg;
+    $("burn-sum").textContent = `${d.remaining} remaining of ${d.total}`;
+    $("burn-from").textContent = new Date(t0 * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {}
+}
+
 async function refreshLandings() {
   try {
     const d = await (await fetch("/api/landings?hours=24")).json();
@@ -187,8 +206,8 @@ async function refreshStaging() {
   } catch (e) {}
 }
 
-refresh(); refreshSystem(); refreshStaging(); refreshLandings();
-setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshLandings, 30000);
+refresh(); refreshSystem(); refreshStaging(); refreshLandings(); refreshBurndown();
+setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshLandings, 30000); setInterval(refreshBurndown, 30000);
 openFromHash();
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>
