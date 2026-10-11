@@ -9,7 +9,8 @@ from pathlib import Path
 
 import psutil
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import Request
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Project
@@ -83,6 +84,33 @@ def create_app(project: Project) -> FastAPI:
         state = st.state()
         build = store.runtime().get("builds", {}).get(state.get("current_build_id") or "")
         return {**state, "build": build, "log": st.logs(), "health_path": project.config.staging_health}
+
+    @app.post("/api/supervisor")
+    async def supervisor_message(request: Request):
+        """The one write path in the UI: a human message to the resident Supervisor.
+        Proxied to the control endpoint that `orchestra run` serves; streams its NDJSON."""
+        import urllib.request
+
+        body = await request.json()
+        ctl = store.runtime().get("control") or {}
+        if not ctl.get("port"):
+            raise HTTPException(503, "orchestra run is not running; the Supervisor is only reachable while it is")
+        req = urllib.request.Request(f"http://127.0.0.1:{ctl['port']}/supervisor", method="POST",
+                                     data=__import__("json").dumps({"message": body.get("message", "")}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        try:
+            resp = await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=project.config.turn_timeout + 30))
+        except Exception as e:
+            raise HTTPException(503, f"cannot reach orchestra run: {e}")
+
+        async def gen():
+            while True:
+                line = await asyncio.to_thread(resp.readline)
+                if not line:
+                    break
+                yield line
+
+        return StreamingResponse(gen(), media_type="application/x-ndjson")
 
     @app.get("/api/tickets/{ticket_id}")
     async def ticket(ticket_id: str) -> dict:

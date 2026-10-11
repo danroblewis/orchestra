@@ -716,8 +716,11 @@ tick.
 
 A separate `frontend/` package, React with TypeScript and Vite, built into
 static files that the FastAPI app serves. Live updates over one WebSocket
-that forwards the event stream. The UI is read-only: it shows what the
-agents and the loop are doing and never writes.
+that forwards the event stream. The UI is read-only with one exception: the
+Supervisor's transcript drawer has a message box, because the Supervisor is the
+one agent a human talks to. That message goes to the resident Supervisor
+session through the control endpoint `orchestra run` serves, the same path
+`orchestra chat` uses. Nothing else in the UI writes.
 
 ### 11.1 Navigation
 

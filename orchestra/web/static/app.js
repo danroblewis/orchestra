@@ -58,7 +58,46 @@ async function openTranscript(id) {
     <div>turns</div><div>${d.turns}</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.pi_session_file || "not created yet")}</div></div><h2>Transcript</h2>`;
   if (!d.messages.length) html += `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events (ticket created, landed, blocked, gate failure) or, for the supervisor, by <code>orchestra chat</code>."}</div>`;
   else html += d.messages.map(renderMessage).join("");
+  if (id === "supervisor") html += `<div id="live"></div>
+    <form id="chat" class="chat" onsubmit="return sendToSupervisor(event)">
+      <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
+      <button type="submit" ${s.alive ? "" : "disabled"}>Send</button>
+      ${s.alive ? "" : '<div class="empty">The Supervisor is reachable while <code>orchestra run</code> is up.</div>'}
+    </form>`;
   openDrawer(html);
+  const ta = $("chat-input");
+  if (ta) { ta.focus(); ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat").requestSubmit(); } }); $("drawer").scrollTop = $("drawer").scrollHeight; }
+}
+
+async function sendToSupervisor(ev) {
+  ev.preventDefault();
+  const ta = $("chat-input"), btn = ev.target.querySelector("button"), live = $("live");
+  const message = ta.value.trim();
+  if (!message) return false;
+  ta.value = ""; ta.disabled = true; btn.disabled = true;
+  live.innerHTML += `<div class="msg user"><div class="r">you</div>${md(message)}</div><div class="msg assistant"><div class="r">supervisor · working…</div><div id="live-body"></div></div>`;
+  highlightCode(live); $("drawer").scrollTop = $("drawer").scrollHeight;
+  try {
+    const resp = await fetch("/api/supervisor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
+    if (!resp.ok) { $("live-body").innerHTML = `<div class="bad">${esc((await resp.text()).slice(0, 300))}</div>`; return false; }
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl; while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl); buf = buf.slice(nl + 1); if (!line.trim()) continue;
+        const e = JSON.parse(line); const body = $("live-body");
+        if (e.type === "tool_execution_start") body.innerHTML += `<div class="tc"><div class="r">⚙ ${esc(e.toolName || e.name || "tool")}</div></div>`;
+        else if (e.type === "message_end" && e.message && e.message.role === "assistant") {
+          const txt = (e.message.content || []).filter((p) => p.type === "text").map((p) => p.text).join("");
+          if (txt.trim()) { body.innerHTML += md(txt); highlightCode(body); }
+        } else if (e.type === "done") body.previousElementSibling.textContent = e.error ? `supervisor · ${e.error}` : e.timed_out ? "supervisor · timed out" : "supervisor";
+        $("drawer").scrollTop = $("drawer").scrollHeight;
+      }
+    }
+  } catch (err) { $("live-body").innerHTML += `<div class="bad">${esc(String(err))}</div>`; }
+  finally { ta.disabled = false; btn.disabled = false; ta.focus(); }
+  return false;
 }
 
 const SHELL_TOOLS = new Set(["bash", "shell", "sh", "powershell"]);
