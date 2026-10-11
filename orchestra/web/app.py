@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import Project
 from ..events import Events
+from ..model import State
 from ..pi.client import read_transcript
 from ..store import LocalStore, StoreError
 

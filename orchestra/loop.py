@@ -299,6 +299,12 @@ class Loop:
             self.store.transition(tid, t.version, State.OPEN, feedback="Your previous turn was stopped by the operator. Check `git status` and `git log`, then continue from where you left off and report.")
             log(f"{tid}: reset to OPEN after operator stop")
             return
+        if report is None and self.stop.is_set():
+            # The orchestrator is shutting down (restart or redeploy): that is not the
+            # worker's fault, so reset without counting a crash.
+            self.store.add_note(tid, Note(author="orchestra", kind="note", text="orchestrator shut down during this turn; ticket reset to OPEN"))
+            self.store.transition(tid, t.version, State.OPEN, feedback="Your previous turn was interrupted by an orchestrator restart. Check `git status` and `git log`, continue from where you left off, then report.")
+            return
         if report is None:
             crashes = sum(1 for n in self.store.notes(tid) if n.get("kind") == "crash") + (1 if failed else 0)
             if failed and crashes <= 2:
