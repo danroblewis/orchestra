@@ -18,6 +18,9 @@
   <div class="col">
     <h2>System</h2>
     <div class="panel">
+      <div class="lbl-row"><span>GPU</span><span id="gpu-lbl" class="muted">—</span></div>
+      <svg id="gpu" class="gpu" viewBox="0 0 300 60" preserveAspectRatio="none"><path id="gpu-area"/><path id="gpu-line"/><line id="gpu-cursor" x1="0" x2="0" y1="0" y2="60"/></svg>
+      <div class="lbl-row"><span>CPU</span><span id="cpu-lbl" class="muted"></span></div>
       <div class="cores" id="cores"></div>
       <div class="meters">
         <div class="meter"><div class="lbl"><span>memory</span><span id="mem-lbl"></span></div><div class="bar"><i id="mem-bar"></i></div></div>
@@ -122,8 +125,21 @@ async function refreshSystem() {
     $("mem-bar").style.width = `${d.memory.percent}%`;
     $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`;
     $("disk-bar").style.width = `${d.disk.percent}%`;
+    $("cpu-lbl").textContent = `${Math.round(d.cpu_percent.reduce((a, b) => a + b, 0) / d.cpu_percent.length)}% avg`;
     $("load").textContent = `${d.cpu_percent.length} cores · load ${d.load.join(" / ")}`;
+    renderGpu(d);
   } catch (e) {}
+}
+
+function renderGpu(d) {
+  if (!d.gpu) { $("gpu-lbl").textContent = "not available on this host"; return; }
+  const h = d.gpu_history, W = 300, H = 60, N = 120;
+  const pts = h.map((s, i) => [W * (N - h.length + i) / (N - 1), H - (H - 2) * s.u / 100]);
+  const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+  $("gpu-line").setAttribute("d", line);
+  $("gpu-area").setAttribute("d", pts.length ? line + ` L${W},${H} L${pts[0][0].toFixed(1)},${H} Z` : "");
+  const last = pts[pts.length - 1]; if (last) { $("gpu-cursor").setAttribute("x1", last[0]); $("gpu-cursor").setAttribute("x2", last[0]); }
+  $("gpu-lbl").textContent = `${d.gpu.utilization}% · ${fmtBytes(d.gpu.memory_used)} in use`;
 }
 
 async function refreshStaging() {

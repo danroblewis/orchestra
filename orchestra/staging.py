@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import psutil
 import shutil
 import signal
 import subprocess
@@ -106,10 +107,27 @@ class Staging:
 
     # -- process control -------------------------------------------------------
 
+    def _group_pids(self, pgid: int) -> list[int]:
+        out = []
+        for proc in psutil.process_iter(["pid"]):
+            try:
+                if os.getpgid(proc.info["pid"]) == pgid:
+                    out.append(proc.info["pid"])
+            except (ProcessLookupError, PermissionError, psutil.Error):
+                continue
+        return out
+
+    def _port_listeners(self, port: int) -> list[int]:
+        p = subprocess.run(["lsof", "-nP", "-t", f"-iTCP:{port}", "-sTCP:LISTEN"], capture_output=True, text=True)
+        return [int(x) for x in p.stdout.split() if x.isdigit()]
+
     def stop(self) -> None:
+        """Stop the staging process group completely, then anything still holding the
+        staging port. A loop started inside the group that survives SIGTERM, or an
+        instance whose record was lost, must not linger and mask the next deploy."""
         st = self.state()
         pid = st.get("pid")
-        if _pid_alive(pid):
+        if pid:
             self._log(f"stopping build {st.get('current_build_id')} (pid {pid})")
             if self.cfg.staging_stop:
                 subprocess.run(self.cfg.staging_stop.format(port=self.cfg.staging_port, pid=pid), shell=True,
@@ -119,14 +137,20 @@ class Staging:
             except OSError:
                 pass
             for _ in range(20):
-                if not _pid_alive(pid):
+                if not self._group_pids(pid):
                     break
                 time.sleep(0.5)
-            if _pid_alive(pid):
+            for p in self._group_pids(pid):
                 try:
-                    os.killpg(pid, signal.SIGKILL)
+                    os.kill(p, signal.SIGKILL)
                 except OSError:
                     pass
+        for p in self._port_listeners(self.cfg.staging_port):
+            self._log(f"killing stray listener on port {self.cfg.staging_port} (pid {p})")
+            try:
+                os.kill(p, signal.SIGKILL)
+            except OSError:
+                pass
         self._set(pid=None, status="stopped")
 
     def _start(self, build: dict) -> bool:
