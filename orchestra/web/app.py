@@ -81,10 +81,6 @@ def create_app(project: Project) -> FastAPI:
         except Exception:
             snap["roles"] = []
         snap["loop"] = store.runtime().get("control") or {}
-        from ..hostlock import host_slots, slots_in_use
-        n = host_slots(project.config.host_concurrency)
-        snap["host_slots"] = n
-        snap["host_slots_used"] = slots_in_use(n) if n else 0
         return snap
 
     gpu_history: list[dict] = []

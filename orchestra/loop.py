@@ -92,7 +92,7 @@ class Loop:
                 pass
         self.recover()
         self.events.emit("loop_started")
-        log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}; turn limit={self._host_slots() or 'none'}")
+        log(f"project {self.project.key} on {self.project.repo_root}; workers={self.cfg.workers} reviewers={self.cfg.reviewers}")
         self._start_project_agents()
         self._start_control()
         paused = self.store.pipeline()
@@ -225,7 +225,6 @@ class Loop:
             env={"ORCHESTRA_ROLE": role.name, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": "",
                  "ORCHESTRA_TOOLS": ",".join(role.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
-            host_slots=self._host_slots(),
         )
 
     def _wake_on_events(self) -> None:
@@ -294,12 +293,7 @@ class Loop:
             env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
                  "ORCHESTRA_TOOLS": ",".join(spec.tools)},
             log_path=self.project.logs_dir / "pi" / f"{session_id}.stderr.log",
-            host_slots=self._host_slots(),
         )
-
-    def _host_slots(self) -> int:
-        from .hostlock import host_slots
-        return host_slots(self.cfg.host_concurrency)
 
     def _session_running(self, sid: str, role: str, proc: PiProcess, ticket_id: str | None = None) -> None:
         self.live_procs[sid] = proc
@@ -309,7 +303,7 @@ class Loop:
             pass
         self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=proc.proc.pid,
                                pi_session_file=proc.session_file, started_at=time.time(), last_text="",
-                               slot_acquired_at=None, last_output_at=None, phase="queued", phase_since=time.time(),
+                               last_output_at=None, phase="prompting", phase_since=time.time(),
                                last_token_at=None, tool_name=None)
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
 
@@ -321,13 +315,11 @@ class Loop:
         self.events.emit("session_settled", session=sid)
 
     def _prompt_with_retry(self, proc: PiProcess, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
-        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id),
-                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time(), phase="prompting", phase_since=time.time()))
+        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id))
         report = self.store.pop_report(ticket_id)
         if report or res.timed_out or res.error:
             return report, res.text, res.timed_out or bool(res.error)
-        res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id),
-                          on_slot=lambda: self.store.set_session(proc.session_id, slot_acquired_at=time.time(), phase="prompting", phase_since=time.time()))
+        res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id))
         return self.store.pop_report(ticket_id), res.text, res.timed_out or bool(res.error)
 
     def _on_event(self, sid: str):
@@ -613,8 +605,7 @@ class Loop:
             task = ("[Orchestra: escalation from another agent; the human is not present for this turn. "
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
                     + agents.supervisor_context(self.store.snapshot(), [], self.project) + task)
-        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid),
-                          on_slot=lambda: self.store.set_session(sid, slot_acquired_at=time.time(), phase="prompting", phase_since=time.time()))
+        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
         self._session_idle(sid, res.text, resident=not ephemeral)
         if ephemeral:
             proc.close()

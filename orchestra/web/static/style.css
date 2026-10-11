@@ -154,5 +154,4 @@ button.ctl.kill { color:#fca5a5; border-color:#7f1d1d; padding:3px 10px; font-we
 .landings .lbar.hover { fill:#4ade80 } .landings .lbar.bad.hover { fill:#f87171 }
 .landings, #burndown { cursor:crosshair }
 .chip.waiting { color:#fde68a; border-color:#92400e } .chip.waiting .dot { background:#f59e0b; animation:pulse 2.4s infinite }
-.chip.queued { color:#c7d2fe; border-color:#3730a3 } .chip.queued .dot { background:#818cf8; animation:pulse 2s infinite }
 .chip.archived { color:var(--muted) }

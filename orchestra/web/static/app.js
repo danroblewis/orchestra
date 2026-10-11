@@ -240,7 +240,7 @@ function priorityText(t, live) {
 }
 
 // One description of what a session is doing right now, from its recorded phase.
-// Returns {cls, text, title}. cls: working | queued | waiting | resident | down | archived.
+// Returns {cls, text, title}. cls: working | waiting | resident | down | archived.
 function sessionPhase(s, now) {
   if (!s) return { cls: "down", text: "down", title: "" };
   if (s.status === "archived") return { cls: "archived", text: "finished", title: "" };
@@ -248,16 +248,15 @@ function sessionPhase(s, now) {
   if (s.status !== "running") return alive ? { cls: "resident", text: "resident", title: "waiting for work" } : { cls: "down", text: "down", title: "" };
   const age = (t) => ago(now - (t || now));
   const turn = `turn started ${age(s.started_at)} ago`;
-  // Only when an operator configured a turn limit: the prompt has not been sent yet.
-  if (!s.slot_acquired_at || s.phase === "queued") return { cls: "queued", text: `not yet sent (turn limit) · ${age(s.started_at)}`, title: turn };
   if (s.phase === "tool") return { cls: "working", text: `running ${s.tool_name || "tool"} · ${age(s.phase_since)}`, title: turn };
   if (s.phase === "generating") {
     const sinceTok = s.last_token_at ? now - s.last_token_at : 0;
     return { cls: sinceTok > 60 ? "waiting" : "working", text: `receiving tokens · last token ${ago(sinceTok)} ago`, title: turn };
   }
-  // A request is out and nothing has come back. We report the wait; we do not know why.
+  // The session is mid-turn and its stream has been silent since phase_since. We report
+  // how long; we do not know why.
   const wait = now - (s.phase_since || s.started_at || now);
-  return { cls: wait > 60 ? "waiting" : "working", text: `waiting for a response · ${ago(wait)}`, title: turn + " · request sent to the model, no token received yet" };
+  return { cls: wait > 60 ? "waiting" : "working", text: `no new message for ${ago(wait)}`, title: turn + " · session has not exited and nothing has streamed" };
 }
 function sessionChip(s, now) {
   const p = sessionPhase(s, now);
