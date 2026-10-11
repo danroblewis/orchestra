@@ -63,8 +63,9 @@ async function refresh() {
 }
 
 // ---- model --------------------------------------------------------------------------
-// Milestones are stadium nodes chained in order. Every drawn ticket has a dotted membership
-// edge to its milestone. With "collapse done", done tickets vanish and each dependency chain
+// Milestones are stadium nodes chained in order. A ticket with no drawn predecessor hangs off
+// its milestone by a dotted edge; others hang off their dependencies. With "collapse done",
+// done tickets vanish and each dependency chain
 // that ran through them becomes one dashed edge from the nearest live ancestor, "via N done".
 function buildModel(s) {
   const q = $("filter").value.trim().toLowerCase();
@@ -108,9 +109,11 @@ function buildModel(s) {
     if (collapsed.has(id)) continue;
     const t = byId[id];
     nodes.push({ id, kind: "ticket", t, w: TW, h: TH });
-    if (s.milestones.some((m) => m.id === t.milestone_id)) edges.push({ from: `ms:${t.milestone_id}`, to: id, cls: "member" });
     const preds = collapse ? effPreds(id) : Object.fromEntries(deps(t).filter((d) => scope.has(d)).map((d) => [d, 0]));
     for (const [dp, via] of Object.entries(preds)) edges.push({ from: dp, to: id, cls: via ? "via" : "dep", label: via ? `via ${via} done` : "" });
+    // The milestone acts as a dependency only for tickets that have no drawn predecessor;
+    // everything else hangs off its dependencies and needs no extra link.
+    if (!Object.keys(preds).length && s.milestones.some((m) => m.id === t.milestone_id)) edges.push({ from: `ms:${t.milestone_id}`, to: id, cls: "member" });
   }
   return { nodes, edges };
 }
