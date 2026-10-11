@@ -37,16 +37,22 @@ function closeDrawer() { $("overlay").classList.remove("open"); }
 async function openTicket(id) {
   const t = await (await fetch(`/api/tickets/${id}`)).json();
   const live = (window.STATE && STATE.tickets || []).find((x) => x.id === id);
-  const why = live && live.state === "OPEN" ? `<div class="kv"><div>waiting</div><div>${esc(live.why_waiting)}</div></div>` : "";
-  openDrawer(`<h3>${esc(t.id)} <span class="badge" style="background:${color(t.state)}">${t.state}</span> ${esc(t.title)}</h3>
+  // What needs attention comes first, before the title: a blocker, a rejection, or why it waits.
+  let alerts = "";
+  if (t.state === "BLOCKED") alerts += `<div class="alert blocked"><h4>Blocked · needs a decision</h4>${md(t.blocked_reason || "(no reason recorded)")}</div>`;
+  if (t.state === "REJECTED" && t.feedback) alerts += `<div class="alert rejected"><h4>Rejected by the ${esc(t.rejected_by || "reviewer")} · round ${t.review_rounds}</h4>${md(t.feedback)}</div>`;
+  if (live && live.state === "OPEN" && !live.ready) alerts += `<div class="alert waiting"><h4>Waiting</h4>${esc(live.why_waiting)}</div>`;
+  const stateColor = color(t.state);
+  openDrawer(`${alerts}<h3><span class="pill" style="--c:${stateColor};background:${stateColor}">${t.state.replace(/_/g, " ")}</span><span style="font-family:var(--mono)">${esc(t.id)}</span> ${esc(t.title)}</h3>
     <div class="kv"><div>milestone</div><div>${esc(t.milestone_id)}</div><div>priority</div><div>${t.priority}</div><div>depends on</div><div>${t.depends_on.join(", ") || "—"}</div>
-    <div>branch</div><div>${esc(t.branch || "—")}</div><div>reviewed commit</div><div>${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
-    <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div></div>${why}
-    ${t.blocked_reason ? `<h2>Blocked</h2>${md(t.blocked_reason)}` : ""}${t.feedback ? `<h2>Feedback (${esc(t.rejected_by || "")})</h2>${md(t.feedback)}` : ""}
+    <div>branch</div><div class="num">${esc(t.branch || "—")}</div><div>reviewed commit</div><div class="num">${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
+    <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div>
+    ${live && live.state === "OPEN" && live.ready ? `<div>waiting</div><div>${esc(live.why_waiting)}</div>` : ""}</div>
     ${t.objective ? `<h2>Objective</h2>${md(t.objective)}` : ""}
     <h2>Description</h2>${md(t.description) || '<div class="empty">none</div>'}<h2>Acceptance</h2>${md(t.acceptance) || '<div class="empty">none</div>'}
     ${t.verification ? `<h2>Verification</h2>${md(t.verification)}` : ""}
-    <h2>Notes</h2>${t.notes.map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b>${md(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
+    ${t.state !== "REJECTED" && t.feedback ? `<h2>Last feedback (${esc(t.rejected_by || "")})</h2>${md(t.feedback)}` : ""}
+    <h2>Notes</h2>${t.notes.slice().reverse().map((n) => `<div class="note"><b>${esc(n.author)} · ${esc(n.kind)} · ${esc(n.created_at)}</b>${md(n.text)}</div>`).join("") || '<div class="empty">none</div>'}`);
 }
 
 async function openTranscript(id) {

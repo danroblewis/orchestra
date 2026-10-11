@@ -263,7 +263,16 @@ class Loop:
         if t.state != State.IN_PROGRESS:
             return
         if report is None:
-            reason = "worker timed out or crashed" if failed else "worker stopped without calling report_ticket"
+            crashes = sum(1 for n in self.store.notes(tid) if n.get("kind") == "crash") + (1 if failed else 0)
+            if failed and crashes <= 2:
+                # The worker process died or timed out (often an orchestrator restart). That is
+                # not a decision for a human: keep the session and branch, retry from OPEN.
+                self.store.add_note(tid, Note(author="orchestra", kind="crash",
+                                              text=f"worker process ended without reporting (attempt {crashes}); retrying from its session"))
+                self.store.transition(tid, t.version, State.OPEN, feedback="Your previous turn ended unexpectedly. Check `git status` and `git log`, continue from where you left off, then report.")
+                log(f"{tid}: worker died; back to OPEN for retry ({crashes})")
+                return
+            reason = ("the worker process died or timed out repeatedly" if failed else "worker stopped without calling report_ticket")
             reason += f". Last message: {text[-600:]}" if text else "."
             self.store.add_note(tid, Note(author="orchestra", kind="blocker", text=reason))
             self.store.transition(tid, t.version, State.BLOCKED, blocked_reason=reason)

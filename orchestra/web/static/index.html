@@ -13,30 +13,37 @@
 <body>
 <nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="layout">
-  <div class="col"><h2>Agents</h2><div id="agents"></div></div>
-  <div class="col"><h2>Merge gate</h2><div id="queue"></div></div>
   <div class="col">
-    <h2>System</h2>
+    <div class="col-head"><h1>Agents</h1><span class="sub" id="agents-sub"></span></div>
+    <div id="agents"></div>
+  </div>
+  <div class="col">
+    <div class="col-head"><h1>Merge gate</h1><span class="sub" id="gate-sub"></span></div>
+    <div id="queue"></div>
+  </div>
+  <div class="col">
+    <div class="col-head"><h1>Host</h1><span class="sub" id="host-sub"></span></div>
     <div class="panel">
-      <div class="lbl-row"><span>GPU</span><span id="gpu-lbl" class="muted">—</span></div>
-      <svg id="gpu" class="gpu" viewBox="0 0 300 60" preserveAspectRatio="none"><path id="gpu-area"/><path id="gpu-line"/><line id="gpu-cursor" x1="0" x2="0" y1="0" y2="60"/></svg>
-      <div class="lbl-row"><span>CPU</span><span id="cpu-lbl" class="muted"></span></div>
+      <div class="lbl-row"><span>GPU</span><span id="gpu-lbl" class="num">—</span></div>
+      <svg id="gpu" class="gpu" viewBox="0 0 300 64" preserveAspectRatio="none"><path id="gpu-area"/><path id="gpu-line"/><line id="gpu-cursor" x1="0" x2="0" y1="0" y2="64"/></svg>
+      <div class="lbl-row" style="margin-top:8px"><span>CPU</span><span id="cpu-lbl" class="num"></span></div>
       <div class="cores" id="cores"></div>
       <div class="meters">
-        <div class="meter"><div class="lbl"><span>memory</span><span id="mem-lbl"></span></div><div class="bar"><i id="mem-bar"></i></div></div>
-        <div class="meter"><div class="lbl"><span>disk</span><span id="disk-lbl"></span></div><div class="bar"><i id="disk-bar"></i></div></div>
+        <div class="meter"><div class="lbl"><span>memory</span><span id="mem-lbl" class="num"></span></div><div class="bar"><i id="mem-bar"></i></div></div>
+        <div class="meter"><div class="lbl"><span>disk</span><span id="disk-lbl" class="num"></span></div><div class="bar"><i id="disk-bar"></i></div></div>
       </div>
-      <div class="muted" id="load" style="font-size:11px;margin-top:6px"></div>
+      <div class="muted num" id="load" style="font-size:11px;margin-top:8px"></div>
     </div>
     <h2>Staging environment</h2>
-    <div class="panel" id="staging-head"></div>
+    <div class="panel env" id="staging-head"></div>
     <div class="term" id="staging"></div>
   </div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script>
-const BASE_AGENTS = [["supervisor", "supervisor"], ["coordinator", "coordinator"], ["pipeline-manager", "pipeline_manager"]];
+const BASE_AGENTS = [["supervisor", "supervisor", "S"], ["coordinator", "coordinator", "C"], ["pipeline-manager", "pipeline_manager", "P"]];
+const ROLE_COLOR = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", pipeline_manager: "var(--r-pipeline)", worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
 const TERMINAL = ["DONE", "CANCELLED"];
 let STATE = null;
 
@@ -48,96 +55,87 @@ async function refresh() {
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
 
-function baseCard(id, kind, s) {
-  const running = s && s.status === "running";
-  const resident = s && s.alive && !running;
-  const cls = running ? "" : resident ? "resident" : "idle";
-  const right = running ? ago(STATE.now - (s.started_at || STATE.now)) : resident ? "resident" : "not running";
-  const last = s && s.alive ? (s.last_text || "waiting") : "start `orchestra run` to bring this session up";
-  return `<div class="card ${cls}" style="border-left-color:${kindColor(kind)}" onclick="openTranscript('${id}')">
-    <div class="t"><span><span class="dot ${running ? "" : resident ? "steady" : "off"}"></span>${id}</span><span class="muted">${right}</span></div>
-    <div class="m">${esc(last)}</div></div>`;
-}
-
-function agentLine(label, s) {
-  if (!s) return `<div class="line"><span><b>${label}</b> —</span></div>`;
-  const running = s.status === "running";
-  const right = running ? `<span class="dot"></span>${ago(STATE.now - (s.started_at || STATE.now))}` : "idle";
-  return `<div class="line" onclick="event.stopPropagation();openTranscript('${s.id}')" title="open transcript"><span><b>${label}</b> ${esc(s.last_text || "")}</span><span>${right}</span></div>`;
+function chip(s) {
+  const running = s && s.status === "running", resident = s && s.alive && !running;
+  const cls = running ? "working" : resident ? "resident" : "down";
+  const txt = running ? `working · ${ago(STATE.now - (s.started_at || STATE.now))}` : resident ? "resident" : "down";
+  return `<span class="chip ${cls}"><span class="dot"></span>${txt}</span>`;
 }
 
 function renderAgents(s) {
   const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
-  let html = BASE_AGENTS.map(([id, kind]) => baseCard(id, kind, byId[id])).join("");
-  // One card per ticket that has a worker or reviewer session and is not finished.
+  const live = s.sessions.filter((x) => x.status === "running").length;
+  $("agents-sub").textContent = `${live} working · capacity ${s.capacity ? s.capacity.workers : "?"} workers`;
+  let html = BASE_AGENTS.map(([id, kind, letter]) => {
+    const x = byId[id];
+    return `<div class="agent" style="--rc:${ROLE_COLOR[kind]}" onclick="openTranscript('${id}')">
+      <div class="av">${letter}</div><div><div class="name">${id}</div><div class="role">${kind.replace("_", " ")}</div></div>${chip(x)}
+      <div class="say">${esc(x && x.alive ? (x.last_text || "waiting for work") : "not running: start `orchestra run`")}</div></div>`;
+  }).join("");
+  const isLive = (x) => x && x.status === "running";
   const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (byId[`worker-${t.id}`] || byId[`reviewer-${t.id}`]))
     .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }))
-    .sort((a, b) => ((b.w?.status === "running" || b.r?.status === "running") ? 1 : 0) - ((a.w?.status === "running" || a.r?.status === "running") ? 1 : 0));
-  html += `<h2>Tickets in work (${cards.length})</h2>` + (cards.map(({ t, w, r }) => {
-    const live = (w && w.status === "running") || (r && r.status === "running");
-    return `<div class="card ${live ? "" : "idle"}" style="border-left-color:${color(t.state)}" onclick="openTicket('${t.id}')">
-      <div class="t"><span>${esc(t.id)} <span class="muted" style="font-weight:400">${esc(t.title)}</span></span><span class="badge" style="background:${color(t.state)}">${t.state}</span></div>
-      ${agentLine("worker", w)}${agentLine("reviewer", r)}</div>`;
-  }).join("") || '<div class="empty">no tickets being worked</div>');
+    .sort((a, b) => Number(isLive(b.w) || isLive(b.r)) - Number(isLive(a.w) || isLive(a.r)));
+  const lane = (who, x) => x ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${isLive(x) ? '<span class="chip working"><span class="dot"></span>' + ago(STATE.now - (x.started_at || STATE.now)) + "</span>" : '<span class="muted">idle</span>'}</div>` : "";
+  html += `<h2><span>Tickets in work</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
+    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="pill">${t.state.replace(/_/g, " ")}</span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
+    || '<div class="empty">No tickets being worked. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
 }
-
-const stageLine = (st) => `<div class="stage"><span>${esc(st.stage)}:${esc(st.name)}</span><span class="${st.status === "passed" ? "ok" : "bad"}">${st.status}${st.duration ? " " + st.duration + "s" : ""}</span></div>`;
-const ticketRow = (t, extra) => `<div class="queue-item" onclick="openTicket('${t.id}')"><div class="t">${esc(t.id)} ${esc(t.title)}</div><div class="m">${extra}</div></div>`;
 
 function renderQueue(s) {
   const byT = Object.fromEntries(s.tickets.map((t) => [t.id, t]));
   const cur = (s.gate_runs || []).find((r) => r.status === "running");
-  let html = s.pipeline.paused ? `<div class="panel bad">PIPELINE PAUSED: ${esc(s.pipeline.reason)}</div>` : "";
-  html += `<h2>In this gate run</h2>`;
-  if (cur) {
-    html += cur.batch.map((id) => byT[id] ? ticketRow(byT[id], `commit ${esc((byT[id].reviewed_commit || "").slice(0, 10))}`) : "").join("");
-    html += `<div class="panel" onclick="openGateRun('${cur.id}')" style="cursor:pointer"><div class="kv"><div>run</div><div>${cur.id}</div><div>started</div><div>${ago(s.now - Date.parse(cur.started_at) / 1000)} ago</div></div>${(cur.stages || []).map(stageLine).join("") || '<div class="muted">assembling…</div>'}</div>`;
-  } else html += `<div class="empty">gate idle</div>`;
   const queue = s.tickets.filter((t) => t.state === "APPROVED").sort((a, b) => a.state_since.localeCompare(b.state_since));
-  const n = s.batch_size || 1;
-  html += `<h2>Next gate run</h2>` + (queue.slice(0, n).map((t) => ticketRow(t, `approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · commit ${esc((t.reviewed_commit || "").slice(0, 10))}`)).join("") || '<div class="empty">nothing approved yet</div>');
-  if (queue.length > n) html += `<h2>Waiting for a later run (${queue.length - n})</h2>` + queue.slice(n).map((t) => ticketRow(t, `approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago`)).join("");
+  const last = [...(s.gate_runs || [])].reverse().find((r) => r.status !== "running");
+  const bs = s.batch_size || 1;
+  $("gate-sub").textContent = cur ? "running" : queue.length ? `${queue.length} waiting` : "idle";
+  let html = s.pipeline.paused ? `<div class="banner">Pipeline paused<div style="font-weight:400;margin-top:4px">${esc(s.pipeline.reason)}</div></div>` : "";
+  html += `<h2><span>In this run</span><span class="count">${cur ? cur.batch.length : 0}</span></h2>`;
+  if (cur) {
+    const plan = ["assemble", "build", "unit", "start", "acceptance"];
+    const got = new Map((cur.stages || []).map((st) => [st.stage, st]));
+    const failed = (cur.stages || []).some((st) => st.status === "failed");
+    let marked = false;
+    const steps = plan.map((p) => { const st = got.get(p); let cls = st ? (st.status === "passed" ? "pass" : "fail") : ""; if (!st && !failed && !marked) { cls = "run"; marked = true; } return { p, st, cls }; });
+    html += `<div class="run"><div class="hdr"><b>${cur.id}</b><span class="muted num">${ago(s.now - Date.parse(cur.started_at) / 1000)}</span></div>
+      ${cur.batch.map((id) => `<div class="qitem" onclick="openTicket('${id}')"><div class="n">▶</div><div><span class="id">${esc(id)}</span> ${esc((byT[id] || {}).title || "")}</div></div>`).join("")}
+      <div class="steps">${steps.map((x) => `<div class="step ${x.cls}"><span class="ic"></span><span>${x.p}${x.st ? " · " + esc(x.st.name) : ""}</span><span class="t">${x.st ? (x.st.duration ? x.st.duration + "s" : x.st.status) : ""}</span></div>`).join("")}</div>
+      <a href="#" class="muted" style="font-size:11px" onclick="openGateRun('${cur.id}');return false">open run</a></div>`;
+  } else html += `<div class="empty">${last ? `Gate idle. Last run ${esc(last.status)}: ${esc(last.summary || "")}` : "Gate idle. Nothing has been through it yet."}</div>`;
+  html += `<h2><span>Next run</span><span class="count">${Math.min(queue.length, bs)}</span></h2>`;
+  html += (queue.slice(0, bs).map((t, i) => `<div class="qitem" onclick="openTicket('${t.id}')"><div class="n">${i + 1}</div><div><span class="id">${esc(t.id)}</span> ${esc(t.title)}<div class="m">approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · ${esc((t.reviewed_commit || "").slice(0, 10))}</div></div></div>`).join("")
+    || '<div class="empty">Nothing approved yet. Tickets arrive here after review.</div>');
+  if (queue.length > bs) html += `<h2><span>Waiting for a later run</span><span class="count">${queue.length - bs}</span></h2>` +
+    queue.slice(bs).map((t, i) => `<div class="qitem" onclick="openTicket('${t.id}')"><div class="n">${i + 1 + bs}</div><div><span class="id">${esc(t.id)}</span> ${esc(t.title)}</div></div>`).join("");
   $("queue").innerHTML = html;
 }
 
-const SYSTEM_POLL_MS = 2000;
-let coreBars = [];
-
+const SYSTEM_POLL_MS = 2000; let coreBars = [];
 async function refreshSystem() {
   try {
     const d = await (await fetch("/api/system")).json();
-    // Hue runs blue (idle) -> green -> yellow -> red (saturated).
     const hue = (p) => Math.round(210 - 210 * Math.min(100, Math.max(0, p)) / 100);
     if (coreBars.length !== d.cpu_percent.length) {
-      // Build the bars once; afterwards only their styles change, so CSS transitions
-      // carry each bar from the previous sample to the new one over the poll interval.
       $("cores").innerHTML = d.cpu_percent.map((_, i) => `<div class="core" title="core ${i}"><i style="height:2%;transition-duration:${SYSTEM_POLL_MS}ms"></i></div>`).join("");
       coreBars = Array.from($("cores").querySelectorAll(".core"));
     }
-    d.cpu_percent.forEach((p, i) => {
-      const bar = coreBars[i]; const fill = bar.firstElementChild;
-      bar.title = `core ${i}: ${p}%`;
-      fill.style.height = `${Math.max(2, Math.round(p))}%`;
-      fill.style.background = `linear-gradient(to top, hsl(210,80%,50%), hsl(${hue(p)},90%,55%))`;
-    });
-    $("mem-lbl").textContent = `${d.memory.percent}% · ${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`;
-    $("mem-bar").style.width = `${d.memory.percent}%`;
-    $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`;
-    $("disk-bar").style.width = `${d.disk.percent}%`;
-    $("cpu-lbl").textContent = `${Math.round(d.cpu_percent.reduce((a, b) => a + b, 0) / d.cpu_percent.length)}% avg`;
+    d.cpu_percent.forEach((p, i) => { const f = coreBars[i].firstElementChild; coreBars[i].title = `core ${i}: ${p}%`; f.style.height = `${Math.max(2, Math.round(p))}%`; f.style.background = `linear-gradient(to top, hsl(210,80%,50%), hsl(${hue(p)},90%,55%))`; });
+    const avg = Math.round(d.cpu_percent.reduce((a, b) => a + b, 0) / d.cpu_percent.length);
+    $("cpu-lbl").textContent = `${avg}% avg`;
+    $("mem-lbl").textContent = `${d.memory.percent}% · ${fmtBytes(d.memory.used)} / ${fmtBytes(d.memory.total)}`; $("mem-bar").style.width = `${d.memory.percent}%`;
+    $("disk-lbl").textContent = `${d.disk.percent}% · ${fmtBytes(d.disk.used)} / ${fmtBytes(d.disk.total)}`; $("disk-bar").style.width = `${d.disk.percent}%`;
     $("load").textContent = `${d.cpu_percent.length} cores · load ${d.load.join(" / ")}`;
+    $("host-sub").textContent = d.gpu ? `gpu ${d.gpu.utilization}% · cpu ${avg}%` : `cpu ${avg}%`;
     renderGpu(d);
   } catch (e) {}
 }
-
 function renderGpu(d) {
   if (!d.gpu) { $("gpu-lbl").textContent = "not available on this host"; return; }
-  const h = d.gpu_history, W = 300, H = 60, N = 120;
+  const h = d.gpu_history, W = 300, H = 64, N = 120;
   const pts = h.map((s, i) => [W * (N - h.length + i) / (N - 1), H - (H - 2) * s.u / 100]);
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
-  $("gpu-line").setAttribute("d", line);
-  $("gpu-area").setAttribute("d", pts.length ? line + ` L${W},${H} L${pts[0][0].toFixed(1)},${H} Z` : "");
+  $("gpu-line").setAttribute("d", line); $("gpu-area").setAttribute("d", pts.length ? line + ` L${W},${H} L${pts[0][0].toFixed(1)},${H} Z` : "");
   const last = pts[pts.length - 1]; if (last) { $("gpu-cursor").setAttribute("x1", last[0]); $("gpu-cursor").setAttribute("x2", last[0]); }
   $("gpu-lbl").textContent = `${d.gpu.utilization}% · ${fmtBytes(d.gpu.memory_used)} in use`;
 }
@@ -146,17 +144,16 @@ async function refreshStaging() {
   try {
     const d = await (await fetch("/api/staging")).json();
     const head = $("staging-head");
-    if (!d.configured) head.innerHTML = '<span class="empty">not configured: add a [staging] section to orchestra.toml</span>';
-    else if (!d.current_build_id) head.innerHTML = '<span class="empty">no build deployed yet: the gate deploys the next landed build, or run <code>orchestra staging deploy</code></span>';
-    else {
-      const cls = d.status === "running" && d.alive ? "ok" : d.status === "starting" ? "" : "bad";
-      head.innerHTML = `<div class="kv"><div>status</div><div class="${cls}">${esc(d.status)}${d.alive ? "" : " (process not running)"}</div>
-        <div>build</div><div>${esc(d.current_build_id)} · ${esc((d.build && d.build.commit || "").slice(0, 10))}</div>
-        <div>deployed</div><div>${d.deployed_at ? esc(d.deployed_at) : "—"}</div>
+    const ok = d.status === "running" && d.alive;
+    head.style.setProperty("--ec", !d.configured ? "var(--muted)" : ok ? "#22c55e" : d.status === "starting" ? "#f59e0b" : "#ef4444");
+    if (!d.configured) head.innerHTML = '<span class="muted">Not configured. Add a [staging] section to orchestra.toml.</span>';
+    else if (!d.current_build_id) head.innerHTML = '<span class="muted">No build deployed yet. The gate deploys the next landed build, or run <code>orchestra staging deploy</code>.</span>';
+    else head.innerHTML = `<div class="kv"><div>status</div><div><span class="led"></span>${esc(d.status)}${d.alive ? "" : " (process not running)"}</div>
+        <div>build</div><div class="num">${esc(d.current_build_id)} · ${esc((d.build && d.build.commit || "").slice(0, 10))}</div>
+        <div>deployed</div><div class="num">${d.deployed_at ? esc(d.deployed_at) : "—"}</div>
         <div>local</div><div><a href="${esc(d.local_url || "")}" target="_blank">${esc(d.local_url || "")}</a></div>
         ${d.public_url ? `<div>public</div><div><a href="${esc(d.public_url)}" target="_blank">${esc(d.public_url)}</a></div>` : ""}
-        ${d.previous_build_id ? `<div>previous</div><div>${esc(d.previous_build_id)}</div>` : ""}</div>`;
-    }
+        ${d.previous_build_id ? `<div>previous</div><div class="num">${esc(d.previous_build_id)}</div>` : ""}</div>`;
     const el = $("staging"); const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
     el.innerHTML = highlightLog(d.log || "");
     if (atBottom) el.scrollTop = el.scrollHeight;
@@ -164,8 +161,8 @@ async function refreshStaging() {
 }
 
 refresh(); refreshSystem(); refreshStaging();
-openFromHash();
 setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000);
+openFromHash();
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>
 </body>
