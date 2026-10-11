@@ -118,3 +118,18 @@ svg { width:100%; height:100%; min-height:600px } .node { cursor:pointer }
 .landings { width:100%; height:90px; display:block; background:var(--panel); border:1px solid var(--border); border-radius:8px; min-height:0 }
 .landings .lbar { fill:var(--DONE) } .landings .lbar.bad { fill:var(--REJECTED); fill-opacity:.7 } .landings .grid { stroke:var(--border); stroke-width:.5; vector-effect:non-scaling-stroke }
 .landings .tick { fill:var(--muted); font-size:9px; font-family:var(--mono) }
+/* ---- mobile ---- */
+.tabs { display:none }
+@media (max-width: 900px) {
+  nav { height:auto; flex-wrap:wrap; gap:10px 14px; padding:8px 12px } nav a { padding:6px 0 } nav #conn { margin-left:auto }
+  .tabs { display:flex; position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--border) }
+  .tabs button { flex:1; background:none; border:0; border-bottom:2px solid transparent; color:var(--muted); font:inherit; font-weight:600; padding:10px 0 }
+  .tabs button.on { color:var(--text); border-color:var(--accent) }
+  .layout { display:block; height:auto }
+  .col { display:none; border-right:0; padding:12px; height:auto; overflow:visible } .col.on { display:block }
+  .page { padding:6px; height:auto }
+  .overlay { align-items:stretch } .drawer { width:100vw; max-height:100vh; height:100vh; border-radius:0; padding:14px }
+  .chat { bottom:-14px } .kv { grid-template-columns:auto 1fr }
+  .toolbar { gap:8px } .toolbar .filter { width:100% } .toolbar .hint { display:none }
+  #stage { height:calc(100vh - 120px); touch-action:none }
+}

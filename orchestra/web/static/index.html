@@ -12,8 +12,9 @@
 </head>
 <body>
 <nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<div class="tabs"><button class="on" onclick="showCol(0,this)">Agents</button><button onclick="showCol(1,this)">Merge gate</button><button onclick="showCol(2,this)">Host</button></div>
 <div class="layout">
-  <div class="col">
+  <div class="col on">
     <div class="col-head"><h1>Agents</h1><span class="sub" id="agents-sub"></span></div>
     <div id="agents"></div>
   </div>
@@ -44,6 +45,12 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script>
+function showCol(i, btn) {
+  document.querySelectorAll(".layout > .col").forEach((c, j) => c.classList.toggle("on", j === i));
+  document.querySelectorAll(".tabs button").forEach((b, j) => b.classList.toggle("on", j === i));
+  try { localStorage.setItem("orchestra.tab", String(i)); } catch (e) {}
+}
+try { const t = Number(localStorage.getItem("orchestra.tab") || 0); if (t) showCol(t); } catch (e) {}
 const BASE_AGENTS = [["supervisor", "supervisor", "S"], ["coordinator", "coordinator", "C"], ["pipeline-manager", "pipeline_manager", "P"]];
 const ROLE_COLOR = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", pipeline_manager: "var(--r-pipeline)", worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
 const TERMINAL = ["DONE", "CANCELLED"];
