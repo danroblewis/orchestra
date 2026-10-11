@@ -146,8 +146,8 @@ push = false
 provider = "{provider}"   # leave empty to use Pi's default provider
 model = "{model}"         # leave empty to use Pi's default model
 thinking = "medium"
-workers = 1
-reviewers = 1
+workers = 3
+reviewers = 3
 turn_timeout = "900s"
 review_rounds_before_escalation = 3
 

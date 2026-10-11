@@ -9,8 +9,8 @@ push = false
 provider = "ornith-1.5-35b-a3b-q6k"
 model = "ornith-1.5-35b-a3b-q6k"
 thinking = "medium"
-workers = 1
-reviewers = 1
+workers = 3
+reviewers = 3
 turn_timeout = "900s"
 review_rounds_before_escalation = 3
 
