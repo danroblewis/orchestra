@@ -83,12 +83,14 @@ def create_app(project: Project) -> FastAPI:
         return None
 
     @app.get("/api/system")
-    def system() -> dict:
-        """Host utilization. Sync so the CPU sampling interval runs in a worker thread."""
+    def system(gpu_window: int = 240) -> dict:
+        """Host utilization. Sync so the CPU sampling interval runs in a worker thread.
+        gpu_window is the seconds of GPU history to return (kept for up to one hour)."""
         gpu = gpu_sample()
         if gpu is not None:
             gpu_history.append({"t": time.time(), "u": gpu["utilization"]})
-            del gpu_history[:-120]
+            del gpu_history[:-1800]
+        cutoff = time.time() - max(30, min(gpu_window, 3600))
         vm = psutil.virtual_memory()
         try:
             disk = psutil.disk_usage(str(project.repo_root))
@@ -101,18 +103,22 @@ def create_app(project: Project) -> FastAPI:
             "memory": {"percent": vm.percent, "used": vm.used, "total": vm.total},
             "disk": {"percent": disk.percent, "used": disk.used, "total": disk.total, "path": str(project.repo_root)},
             "gpu": gpu,
-            "gpu_history": list(gpu_history),
+            "gpu_history": [p for p in gpu_history if p["t"] >= cutoff],
+            "gpu_window": max(30, min(gpu_window, 3600)),
             "now": time.time(),
         }
 
     @app.get("/api/landings")
-    async def landings(hours: int = 24) -> dict:
-        """Tickets landed on the base branch per hour, from gate run records."""
+    async def landings(hours: int = 24, bucket: int = 1) -> dict:
+        """Tickets landed on the base branch per bucket (bucket = hours per bar), from gate runs."""
         from datetime import datetime, timezone
-        hours = max(1, min(hours, 24 * 14))
+        hours = max(1, min(hours, 24 * 30))
+        bucket = max(1, min(bucket, 24))
+        bsec = bucket * 3600
         now_ts = time.time()
-        start = int(now_ts // 3600) * 3600 - (hours - 1) * 3600
-        buckets = [{"t": start + i * 3600, "landed": 0, "runs": 0, "failed": 0} for i in range(hours)]
+        n = max(1, hours // bucket)
+        start = int(now_ts // bsec) * bsec - (n - 1) * bsec
+        buckets = [{"t": start + i * bsec, "landed": 0, "runs": 0, "failed": 0} for i in range(n)]
         for r in store.gate_runs():
             if not r.get("finished_at"):
                 continue
@@ -120,15 +126,15 @@ def create_app(project: Project) -> FastAPI:
                 ts = datetime.fromisoformat(r["finished_at"]).replace(tzinfo=timezone.utc).timestamp()
             except Exception:
                 continue
-            i = int((ts - start) // 3600)
-            if 0 <= i < hours:
+            i = int((ts - start) // bsec)
+            if 0 <= i < n:
                 buckets[i]["runs"] += 1
                 if r.get("status") == "landed":
                     buckets[i]["landed"] += len(r.get("merged") or [])
                 elif r.get("status") in ("rejected", "base_broken", "error", "conflict"):
                     buckets[i]["failed"] += 1
         total = sum(b["landed"] for b in buckets)
-        return {"hours": hours, "buckets": buckets, "total": total, "per_hour": round(total / hours, 2)}
+        return {"hours": hours, "bucket": bucket, "buckets": buckets, "total": total, "per_hour": round(total / hours, 2)}
 
     @app.get("/api/burndown")
     async def burndown(hours: int = 24) -> dict:

@@ -66,7 +66,7 @@ h2 .count { color:var(--text2); font-family:var(--mono); font-weight:500 }
 #gpu-cursor { stroke:#2dd4bf; stroke-opacity:.5; stroke-dasharray:2 2; vector-effect:non-scaling-stroke }
 .cores { display:flex; align-items:stretch; gap:3px; height:52px; width:100%; padding:4px 0 }
 .core { flex:1 1 0; height:100%; background:var(--panel); border-radius:2px 2px 0 0; position:relative; min-width:3px }
-.core i { position:absolute; left:0; right:0; bottom:0; display:block; border-radius:2px 2px 0 0; transition-property:height,background; transition-timing-function:linear; transition-duration:2s }
+.core i { position:absolute; left:0; right:0; bottom:0; display:block; border-radius:2px 2px 0 0; transition-property:height,background-color; transition-timing-function:linear; transition-duration:2s }
 .meters { display:flex; gap:12px; margin-top:8px } .meter { flex:1 1 0; min-width:0 }
 .meter .bar { height:8px; background:var(--panel); border-radius:4px; overflow:hidden } .meter .bar i { display:block; height:100%; width:0; transition:width .4s }
 .meter .lbl { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -141,3 +141,5 @@ nav #proj { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-
 /* burndown */
 #burndown { height:100px } #burndown .total { fill:none; stroke:#6f7889; stroke-width:1.2; vector-effect:non-scaling-stroke; stroke-dasharray:3 3 }
 #burndown .remain { fill:none; stroke:#6ea8fe; stroke-width:1.8; vector-effect:non-scaling-stroke } #burndown .remain-area { fill:#6ea8fe; fill-opacity:.12 }
+/* range selectors in chart headers */
+select.range { background:var(--panel3); color:var(--text2); border:1px solid var(--border); border-radius:5px; font:inherit; font-size:10.5px; padding:1px 4px; margin-left:4px; text-transform:none; letter-spacing:0; cursor:pointer }
