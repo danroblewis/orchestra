@@ -49,6 +49,8 @@ class Loop:
         self._events_offset = 0
         self._started_at = time.time()
         self._last_scheduled: dict[str, float] = {}
+        self.live_procs: dict[str, PiProcess] = {}   # session id -> process, while a turn runs
+        self.killed: set[str] = set()                # ticket ids whose agent the operator stopped
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -133,12 +135,14 @@ class Loop:
         cap = self.store.capacity()
         ordered = sorted(tickets.values(), key=lambda t: (t.priority, t.state_since, t.id))
 
+        self._service_kills()
+        paused = self.store.pickup_paused()
         # Review before pick: finished work lands before new work starts.
         for t in ordered:
             if t.state == State.READY_FOR_REVIEW and len(self.reviewers) < cap["reviewers"] and t.id not in self.reviewers:
                 self._spawn(self.reviewers, t.id, self._review, t)
         for t in ordered:
-            if len(self.workers) >= cap["workers"]:
+            if paused or len(self.workers) >= cap["workers"]:
                 break
             if t.id in self.workers:
                 continue
@@ -172,6 +176,22 @@ class Loop:
                 self._last_scheduled[role.name] = now_t
                 self.store.add_wakeup(role.name, f"scheduled review (every {int(role.every)}s)")
 
+    def _service_kills(self) -> None:
+        """Stop the worker or reviewer process for each ticket the operator asked to kill.
+        The thread that owns it sees the process exit and resets the ticket (see
+        _apply_worker_report / _review), without counting it as a crash."""
+        for tid in self.store.take_kill_requests():
+            for sid in (f"worker-{tid}", f"reviewer-{tid}"):
+                proc = self.live_procs.get(sid)
+                if proc and proc.alive():
+                    self.killed.add(tid)
+                    log(f"{tid}: {sid} stopped by operator")
+                    try:
+                        proc.proc.kill()
+                    except OSError:
+                        pass
+                    self.events.emit("agent_killed", ticket=tid, session=sid)
+
     def _reap(self) -> None:
         for d in (self.workers, self.reviewers, self.agent_threads):
             for k in [k for k, th in d.items() if not th.is_alive()]:
@@ -198,6 +218,7 @@ class Loop:
         )
 
     def _session_running(self, sid: str, role: str, proc: PiProcess, ticket_id: str | None = None) -> None:
+        self.live_procs[sid] = proc
         try:
             proc.get_state()
         except Exception:
@@ -207,6 +228,8 @@ class Loop:
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
 
     def _session_idle(self, sid: str, text: str, resident: bool = False) -> None:
+        if not resident:
+            self.live_procs.pop(sid, None)
         self.store.set_session(sid, status="idle", last_text=(text or "")[-500:], settled_at=time.time(),
                                **({} if resident else {"pid": None}))
         self.events.emit("session_settled", session=sid)
@@ -269,6 +292,12 @@ class Loop:
                              path: Path, branch: str) -> None:
         t = self.store.get_ticket(tid)
         if t.state != State.IN_PROGRESS:
+            return
+        if tid in self.killed:
+            self.killed.discard(tid)
+            self.store.add_note(tid, Note(author="orchestra", kind="note", text="worker stopped by the operator; ticket reset to OPEN"))
+            self.store.transition(tid, t.version, State.OPEN, feedback="Your previous turn was stopped by the operator. Check `git status` and `git log`, then continue from where you left off and report.")
+            log(f"{tid}: reset to OPEN after operator stop")
             return
         if report is None:
             crashes = sum(1 for n in self.store.notes(tid) if n.get("kind") == "crash") + (1 if failed else 0)
@@ -344,6 +373,11 @@ class Loop:
             self._session_idle(sid, text)
         t = self.store.get_ticket(t.id)
         if t.state != State.IN_REVIEW:
+            return
+        if t.id in self.killed:
+            self.killed.discard(t.id)
+            self.store.add_note(t.id, Note(author="orchestra", kind="note", text="reviewer stopped by the operator; review will be redone"))
+            self.store.transition(t.id, t.version, State.READY_FOR_REVIEW)
             return
         if report is None:
             self._reject(t.id, "orchestra", "reviewer produced no verdict" + (" (timed out)" if failed else "") +

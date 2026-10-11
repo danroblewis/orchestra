@@ -210,6 +210,26 @@ def create_app(project: Project) -> FastAPI:
         from .. import agents
         return {"text": agents.read_context(project)}
 
+    @app.post("/api/control")
+    async def control(request: Request) -> dict:
+        """Operator controls (not ticket editing): pause/resume new worker pickup, stop an agent."""
+        body = await request.json()
+        action = body.get("action")
+        if action in ("pause", "resume"):
+            store.set_pickup_paused(action == "pause", by="operator")
+            return {"ok": True, "pickup_paused": action == "pause"}
+        if action == "kill":
+            tid = body.get("ticket") or ""
+            try:
+                t = store.get_ticket(tid)
+            except StoreError:
+                raise HTTPException(404)
+            if t.state not in (State.IN_PROGRESS, State.IN_REVIEW):
+                raise HTTPException(409, f"{tid} is {t.state}; nothing to stop")
+            store.request_kill(tid, by="operator")
+            return {"ok": True, "ticket": tid, "will_reset_to": "OPEN" if t.state == State.IN_PROGRESS else "READY_FOR_REVIEW"}
+        raise HTTPException(400, "unknown action")
+
     @app.get("/api/tickets/{ticket_id}")
     async def ticket(ticket_id: str) -> dict:
         try:

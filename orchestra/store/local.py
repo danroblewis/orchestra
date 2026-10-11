@@ -316,6 +316,24 @@ class LocalStore:
         self.events.emit("capacity_changed", by=by, workers=out.get("workers"), reviewers=out.get("reviewers"), note=note)
         return self.capacity()
 
+    def pickup_paused(self) -> bool:
+        return bool(self._r().get("pickup_paused"))
+
+    def set_pickup_paused(self, paused: bool, by: str = "") -> None:
+        self._mutate_runtime(lambda d: d.__setitem__("pickup_paused", bool(paused)))
+        self.events.emit("pickup_paused" if paused else "pickup_resumed", by=by)
+
+    def request_kill(self, ticket_id: str, by: str = "") -> None:
+        self._mutate_runtime(lambda d: d.setdefault("kill_requests", {}).__setitem__(ticket_id, {"by": by, "ts": now()}))
+        self.events.emit("kill_requested", ticket=ticket_id, by=by)
+
+    def take_kill_requests(self) -> list[str]:
+        def fn(d):
+            ids = list(d.get("kill_requests", {}).keys())
+            d["kill_requests"] = {}
+            return ids
+        return self._mutate_runtime(fn)
+
     def pipeline(self) -> dict:
         return self._r()["pipeline"]
 
@@ -371,6 +389,7 @@ class LocalStore:
             "worktrees": list(r["worktrees"].values()),
             "gate_runs": sorted(r["gate_runs"].values(), key=lambda g: g.get("started_at", ""))[-20:],
             "pipeline": r["pipeline"],
+            "pickup_paused": bool(r.get("pickup_paused")),
             "counts": counts,
             "active": sum(1 for x in tickets if x.state in ACTIVE),
         }

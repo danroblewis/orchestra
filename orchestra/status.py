@@ -124,6 +124,7 @@ def collect(project: Project, store: LocalStore) -> dict:
                   "reviewers": f"{sum(1 for w in workers if w['kind'] == 'reviewer')}/{store.capacity()['reviewers']}"},
         "web": {"up": web_ok, "url": web_url if web_alive else None, "pid": web.get("pid"), "tunnel_hosts": dash_hosts},
         "pipeline": rt.get("pipeline", {}),
+        "pickup_paused": bool(rt.get("pickup_paused")),
         "gate": gate,
         "last_gate": {"id": last["id"], "status": last["status"], "summary": last.get("summary", ""),
                       "finished_at": last.get("finished_at")} if last else None,
@@ -163,7 +164,7 @@ def render(d: dict) -> str:
     L.append(f"web:       {'UP' if w['up'] else 'DOWN'}" + (f"  {w['url']}" if w["url"] else "   (start with `orchestra web`)") +
              (f"  tunnel: " + ", ".join("https://" + h for h in w["tunnel_hosts"]) if w["tunnel_hosts"] else ""))
     pl = d["pipeline"]
-    L.append(f"pipeline:  {'PAUSED ' + str(pl.get('reason')) if pl.get('paused') else 'running'}   slots: workers {d['slots']['workers']}, reviewers {d['slots']['reviewers']}")
+    L.append(f"pipeline:  {'PAUSED ' + str(pl.get('reason')) if pl.get('paused') else 'running'}   slots: workers {d['slots']['workers']}, reviewers {d['slots']['reviewers']}" + ("   NEW WORKERS PAUSED" if d.get("pickup_paused") else ""))
     for x in d["workers"]:
         L.append(f"  ● {x['id']:24} {x['ticket']} {x['title'][:40]}  {_ago(x['elapsed'])}")
     L.append("")

@@ -15,7 +15,7 @@
 <div class="tabs"><button class="on" onclick="showCol(0,this)">Agents</button><button onclick="showCol(1,this)">Merge gate</button><button onclick="showCol(2,this)">Host</button></div>
 <div class="layout">
   <div class="col on">
-    <div class="col-head"><h1>Agents</h1><span class="sub" id="agents-sub"></span></div>
+    <div class="col-head"><h1>Agents</h1><span class="sub"><span id="agents-sub"></span> <button id="pause-btn" class="ctl" onclick="togglePause()" title="Pause or resume starting new workers">⏸ pause</button></span></div>
     <div id="agents"></div>
   </div>
   <div class="col">
@@ -76,7 +76,8 @@ function chip(s) {
 function renderAgents(s) {
   const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
   const live = s.sessions.filter((x) => x.status === "running").length;
-  $("agents-sub").textContent = `${live} working · capacity ${s.capacity ? s.capacity.workers : "?"} workers`;
+  $("agents-sub").textContent = `${live} working · capacity ${s.capacity ? s.capacity.workers : "?"} workers` + (s.pickup_paused ? " · PAUSED" : "");
+  const pb = $("pause-btn"); pb.textContent = s.pickup_paused ? "▶ resume" : "⏸ pause"; pb.classList.toggle("paused", !!s.pickup_paused);
   let html = BASE_AGENTS.map(([id, kind, letter]) => {
     const x = byId[id];
     return `<div class="agent" style="--rc:${ROLE_COLOR[kind]}" onclick="openTranscript('${id}')">
@@ -89,7 +90,7 @@ function renderAgents(s) {
     .sort((a, b) => Number(isLive(b.w) || isLive(b.r)) - Number(isLive(a.w) || isLive(a.r)));
   const lane = (who, x) => x ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${isLive(x) ? '<span class="chip working"><span class="dot"></span>' + ago(STATE.now - (x.started_at || STATE.now)) + "</span>" : '<span class="muted">idle</span>'}</div>` : "";
   html += `<h2><span>Tickets in work</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
-    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="pill">${t.state.replace(/_/g, " ")}</span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
+    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span style="display:flex;gap:6px;align-items:center"><span class="pill">${t.state.replace(/_/g, " ")}</span>${(isLive(w) || isLive(r)) ? `<button class="ctl kill" title="Stop this agent and reset the ticket" onclick="event.stopPropagation();killAgent('${t.id}')">■</button>` : ""}</span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
     || '<div class="empty">No tickets being worked. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
 }
@@ -121,6 +122,13 @@ function renderQueue(s) {
     queue.slice(bs).map((t, i) => `<div class="qitem" onclick="openTicket('${t.id}')"><div class="n">${i + 1 + bs}</div><div><span class="id">${esc(t.id)}</span> ${esc(t.title)}</div></div>`).join("");
   $("queue").innerHTML = html;
 }
+
+async function control(body) {
+  const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) alert(await r.text()); refresh();
+}
+function togglePause() { control({ action: STATE && STATE.pickup_paused ? "resume" : "pause" }); }
+function killAgent(id) { if (confirm(`Stop the agent working on ${id}? The ticket goes back to OPEN (or back to review) and its branch and session are kept.`)) control({ action: "kill", ticket: id }); }
 
 const SYSTEM_POLL_MS = 2000; let coreBars = [];
 const RANGE_KEYS = ["gpu-range", "burn-range", "land-range"];

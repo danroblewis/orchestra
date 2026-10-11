@@ -760,7 +760,11 @@ that forwards the event stream. The UI is read-only with one exception: the
 Supervisor's transcript drawer has a message box, because the Supervisor is the
 one agent a human talks to. That message goes to the resident Supervisor
 session through the control endpoint `orchestra run` serves, the same path
-`orchestra chat` uses. Nothing else in the UI writes.
+`orchestra chat` uses. Two operator controls also write: pause/resume
+starting new workers, and stopping a running worker or reviewer, which resets
+its ticket to `OPEN` (or `READY_FOR_REVIEW`) with its branch and session kept.
+These act on the orchestrator, not on ticket content. Nothing else in the UI
+writes.
 
 ### 11.1 Navigation
 
