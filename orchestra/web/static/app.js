@@ -66,7 +66,10 @@ async function openTranscript(id) {
   const d = await r.json(); const s = d.session;
   const state = s.status === "running" ? "working" : s.status === "archived" ? "finished (ticket closed)" : s.alive ? "resident, waiting for work" : "not running";
   const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
-  let html = `<h3>${esc(id)} <span class="muted">${state}</span></h3>
+  const perTicket = /^(worker|reviewer)-/.test(id);
+  const stopBtn = perTicket && s.status === "running" && s.alive && s.ticket_id
+    ? `<button class="ctl kill" style="margin-left:auto" onclick="stopAgent('${esc(s.ticket_id)}','${esc(id)}')">■ stop this agent</button>` : "";
+  let html = `<h3>${esc(id)} <span class="muted">${state}</span>${stopBtn}</h3>
     <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
     ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
     <div>last started</div><div>${when(s.started_at)}</div><div>last settled</div><div>${when(s.settled_at)}</div>
@@ -193,3 +196,9 @@ function openFromHash() {
   ({ session: openTranscript, ticket: openTicket, gate: openGateRun })[m[1]](decodeURIComponent(m[2]));
 }
 window.addEventListener("hashchange", openFromHash);
+
+async function stopAgent(ticket, sessionId) {
+  if (!confirm(`Stop ${sessionId}? Its ticket ${ticket} goes back to OPEN (or back to review); the branch and session are kept.`)) return;
+  const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "kill", ticket }) });
+  if (!r.ok) alert(await r.text()); else closeDrawer();
+}

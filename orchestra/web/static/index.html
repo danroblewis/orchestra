@@ -90,7 +90,7 @@ function renderAgents(s) {
     .sort((a, b) => Number(isLive(b.w) || isLive(b.r)) - Number(isLive(a.w) || isLive(a.r)));
   const lane = (who, x) => x ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${isLive(x) ? '<span class="chip working"><span class="dot"></span>' + ago(STATE.now - (x.started_at || STATE.now)) + "</span>" : '<span class="muted">idle</span>'}</div>` : "";
   html += `<h2><span>Tickets in work</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
-    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span style="display:flex;gap:6px;align-items:center"><span class="pill">${t.state.replace(/_/g, " ")}</span>${(isLive(w) || isLive(r)) ? `<button class="ctl kill" title="Stop this agent and reset the ticket" onclick="event.stopPropagation();killAgent('${t.id}')">■</button>` : ""}</span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
+    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="pill">${t.state.replace(/_/g, " ")}</span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
     || '<div class="empty">No tickets being worked. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
 }
