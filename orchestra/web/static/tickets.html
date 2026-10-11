@@ -16,7 +16,7 @@
   .toolbar button { background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px }
   .toolbar .filter { margin:0; width:240px }
   .chips { display:flex; gap:6px; flex-wrap:wrap } .chips .ms-chip { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--accent); color:var(--accent); cursor:pointer }
-  #stage { height:calc(100vh - 44px - 43px); overflow:hidden; cursor:grab; background:var(--bg) } #stage.dragging { cursor:grabbing }
+  #stage { height:calc(100vh - 44px - 43px); overflow:hidden; cursor:grab; background:var(--bg); user-select:none; -webkit-user-select:none; touch-action:none } #stage.dragging { cursor:grabbing }
   #stage svg { width:100%; height:100%; min-height:0; display:block }
   .ms { cursor:pointer } .ms rect { fill:#161b26; stroke:var(--accent); stroke-width:1.6; rx:23 }
   .ms.msdone rect { stroke:#2f5d4e; stroke-dasharray:5 3; fill:#111c18 } .ms.msnext rect { stroke:var(--muted); stroke-dasharray:3 3 }
@@ -195,7 +195,7 @@ function fit() {
 }
 (function wire() {
   const stage = $("stage"); let drag = null, moved = false;
-  stage.addEventListener("mousedown", (e) => { if (e.button !== 0) return; moved = false; drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; stage.classList.add("dragging"); });
+  stage.addEventListener("mousedown", (e) => { if (e.button !== 0) return; e.preventDefault(); moved = false; drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; stage.classList.add("dragging"); });
   window.addEventListener("mousemove", (e) => { if (!drag) return; if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) moved = true; view.x = drag.vx + (e.clientX - drag.x); view.y = drag.vy + (e.clientY - drag.y); applyView(); });
   window.addEventListener("mouseup", () => { drag = null; stage.classList.remove("dragging"); });
   stage.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); } }, true);
