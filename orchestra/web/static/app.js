@@ -240,7 +240,7 @@ function priorityText(t, live) {
 }
 
 // One description of what a session is doing right now, from its recorded phase.
-// Returns {cls, text, title}. cls: working | queued | stalled | resident | down | archived.
+// Returns {cls, text, title}. cls: working | queued | waiting | resident | down | archived.
 function sessionPhase(s, now) {
   if (!s) return { cls: "down", text: "down", title: "" };
   if (s.status === "archived") return { cls: "archived", text: "finished", title: "" };
