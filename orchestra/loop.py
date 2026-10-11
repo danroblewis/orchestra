@@ -313,11 +313,18 @@ class Loop:
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
 
     def _session_idle(self, sid: str, text: str, resident: bool = False) -> None:
-        if not resident:
-            self.live_procs.pop(sid, None)
+        proc = self.live_procs.pop(sid, None) if not resident else self._proc_for(sid)
+        fields = {} if resident else {"pid": None}
+        if proc is not None and proc.session_file:
+            fields["session_file"] = proc.session_file   # some harnesses only name the transcript after the first turn
         self.store.set_session(sid, status="idle", last_text=(text or "")[-500:], settled_at=time.time(), phase="idle", tool_name=None,
-                               **({} if resident else {"pid": None}))
+                               **fields)
         self.events.emit("session_settled", session=sid)
+
+    def _proc_for(self, sid: str) -> AgentSession | None:
+        if sid in self.live_procs:
+            return self.live_procs[sid]
+        return next((p for p in self.agent_procs.values() if p.session_id == sid), None)
 
     def _prompt_with_retry(self, proc: AgentSession, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id))

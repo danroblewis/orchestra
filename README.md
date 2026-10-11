@@ -1,7 +1,7 @@
 # Orchestra
 
 A ticket tracker, milestone planner, and CI/CD workflow operated by AI agents on
-[Pi](https://github.com/earendil-works/pi) or Claude Code. Point it at a git
+[Pi](https://github.com/earendil-works/pi), Claude Code, or Codex. Point it at a git
 repository; describe work to the Supervisor; workers build tickets on their
 own branches, reviewers check them, and a merge gate builds, tests, and lands
 what passes on `main`.
@@ -39,8 +39,8 @@ immediately. `--repo /path` or `ORCHESTRA_REPO` override the directory.
 
 `orchestra init` accepts `--provider`, `--model`, `--prefix`, and
 `--unit-command`; leave provider and model empty to use the harness's defaults.
-`[agents] harness` in `orchestra.toml` picks `pi` (default) or `claude_code`
-(for example `harness = "claude_code"` with `model = "haiku"`). Edit
+`[agents] harness` in `orchestra.toml` picks `pi` (default), `claude_code`, or
+`codex` (for example `harness = "claude_code"` with `model = "haiku"`). Edit
 `orchestra.toml` for the build, unit, acceptance, and staging stages the gate
 runs (see `SPEC.md` section 9, or this repository's own `orchestra.toml`).
 
@@ -66,9 +66,9 @@ This repository is configured to be developed by Orchestra. Its
 | Stage | What runs |
 |---|---|
 | build | `uv build --wheel` producing `dist/orchestra-*.whl` |
-| unit | `tests/unit` (model, store, config, harness layer) and `tests/e2e` (the real loop and gate driven by fake harnesses: `tests/e2e/fake_pi.py` and `fake_claude.py`, once each) |
+| unit | `tests/unit` (model, store, config, harness layer) and `tests/e2e` (the real loop and gate driven by fake harnesses: `tests/e2e/fake_pi.py`, `fake_claude.py`, and `fake_codex.py`, once each) |
 | start | `scripts/acceptance_target.py` installs the built wheel in an isolated environment, creates a throwaway project, seeds it through the CLI, runs the loop on the fake Pi, and serves the web UI |
-| acceptance | `tests/acceptance` against that running instance; `scripts/acceptance_real.sh [provider] [model] [harness]` runs the opt-in real-model flow (a Supervisor message becomes code on main) on either harness |
+| acceptance | `tests/acceptance` against that running instance; `scripts/acceptance_real.sh [provider] [model] [harness]` runs the opt-in real-model flow (a Supervisor message becomes code on main) on any harness |
 
 Each unit spec has a `select` template so the gate can rerun individual
 failing tests during bisection. Run the ordinary suite with
@@ -82,7 +82,7 @@ Phase 1 of `SPEC.md` plus the project agents:
 - Ten-state ticket model with the transition table enforced by the store.
 - Worker and reviewer sessions in per-ticket worktrees, reporting through the
   `report_ticket` and `report_review` tools, on whichever harness the project
-  configures (`orchestra/harness/`: Pi, Claude Code; others slot in behind the
+  configures (`orchestra/harness/`: Pi, Claude Code, Codex; others slot in behind the
   same interface).
 - Long-lived Supervisor, Coordinator, and Pipeline Manager sessions with role
   prompts in `orchestra/agents/prompts/`, resident while `orchestra run` is up.

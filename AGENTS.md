@@ -70,6 +70,17 @@ that must not be broken without updating the spec and saying so in the commit.
   `$CLAUDE_CONFIG_DIR` (default `~/.claude`) at `projects/<cwd with / as
   ->/<uuid>.jsonl`. Tools come from MCP servers in `--mcp-config`; MCP
   tools are deferred behind `ToolSearch`, which the model calls itself.
+- Codex: `codex exec --json` is one turn per process; the prompt is `-` on
+  stdin (a positional prompt with an open stdin hangs on "Reading additional
+  input from stdin"). Events: `thread.started` (carries the thread id),
+  `turn.started`, `item.started`/`item.completed` (whole items, no token
+  stream), `turn.completed`, `turn.failed`, `error`. Global flags go before
+  `resume <thread_id>`. Config comes from `-c key=<TOML value>`; MCP servers
+  are `mcp_servers.<name>={command, args, env, required}`; the role prompt
+  is `developer_instructions`. Rollouts live under `$CODEX_HOME/sessions/`
+  (`response_item` lines hold the messages and function calls, `event_msg`
+  `McpToolCall` items hold MCP calls). MCP tools reach the model as a
+  `namespace` tool, which only OpenAI's own API understands.
 - Timers live in the loop for every harness.
 
 ## Conventions

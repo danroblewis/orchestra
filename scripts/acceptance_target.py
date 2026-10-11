@@ -162,7 +162,7 @@ def main() -> None:
     ap.add_argument("--real", action="store_true", help="run real Pi agents instead of the fake; nothing is seeded")
     ap.add_argument("--provider", default=os.environ.get("ORCHESTRA_ACCEPTANCE_PROVIDER"))
     ap.add_argument("--model", default=os.environ.get("ORCHESTRA_ACCEPTANCE_MODEL"))
-    ap.add_argument("--harness", default=os.environ.get("ORCHESTRA_ACCEPTANCE_HARNESS") or "pi", help="pi | claude_code")
+    ap.add_argument("--harness", default=os.environ.get("ORCHESTRA_ACCEPTANCE_HARNESS") or "pi", help="pi | claude_code | codex")
     args = ap.parse_args()
     if args.project:
         staging(args.project, args.port)

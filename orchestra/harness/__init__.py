@@ -10,11 +10,13 @@ from pathlib import Path
 
 from .base import AgentSession, Harness, SessionSpec, TurnResult
 from .claude_code import ClaudeCodeHarness
+from .codex import CodexHarness
 from .pi import PiHarness
 
 HARNESSES: dict[str, type[Harness]] = {
     PiHarness.name: PiHarness,
     ClaudeCodeHarness.name: ClaudeCodeHarness,
+    CodexHarness.name: CodexHarness,
 }
 DEFAULT_HARNESS = PiHarness.name
 

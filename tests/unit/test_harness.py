@@ -11,17 +11,19 @@ import pytest
 from orchestra.config import init_project
 from orchestra.harness import HARNESSES, SessionSpec, get_harness, read_transcript
 from orchestra.harness.claude_code import ClaudeCodeHarness, ClaudeCodeSession, _Normalizer as ClaudeNormalizer, transcript_path
+from orchestra.harness.codex import CodexHarness, CodexSession, _Normalizer as CodexNormalizer, toml_string
 from orchestra.harness.pi import PiHarness, _Normalizer as PiNormalizer
 from orchestra.harness.tools import TOOLS, tools_for
 from orchestra.store import LocalStore
 
 
 def test_registry():
-    assert set(HARNESSES) == {"pi", "claude_code"}
+    assert set(HARNESSES) == {"pi", "claude_code", "codex"}
     assert get_harness(None).name == "pi"
     assert get_harness("claude-code").name == "claude_code"
+    assert get_harness("codex").name == "codex"
     with pytest.raises(ValueError):
-        get_harness("codex")
+        get_harness("opencode")
 
 
 def test_tools_are_grouped_and_schema_shaped():
@@ -77,6 +79,28 @@ def test_claude_events_normalize():
     assert seen[5] == {"type": "tool_end", "name": "project_status"}
 
 
+def test_codex_events_normalize():
+    seen = collect(CodexNormalizer, [
+        {"type": "thread.started", "thread_id": "t"},
+        {"type": "item.completed", "item": {"id": "item_0", "type": "error", "message": "Model metadata not found"}},
+        {"type": "turn.started"},
+        {"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "Looking.\n"}},
+        {"type": "item.started", "item": {"id": "item_2", "type": "mcp_tool_call", "server": "orchestra", "tool": "project_status", "arguments": {}, "status": "in_progress"}},
+        {"type": "item.completed", "item": {"id": "item_2", "type": "mcp_tool_call", "server": "orchestra", "tool": "project_status", "arguments": {}, "status": "completed"}},
+        {"type": "item.started", "item": {"id": "item_3", "type": "command_execution", "command": "/bin/zsh -lc ls", "status": "in_progress"}},
+        {"type": "item.completed", "item": {"id": "item_3", "type": "command_execution", "command": "/bin/zsh -lc ls", "exit_code": 0, "status": "completed"}},
+        {"type": "item.completed", "item": {"id": "item_4", "type": "reasoning", "text": "..."}},
+        {"type": "item.completed", "item": {"id": "item_5", "type": "agent_message", "text": "done"}},
+        {"type": "turn.completed", "usage": {"input_tokens": 1}},
+    ])
+    kinds = [e["type"] for e in seen]
+    assert kinds == ["token", "turn_start", "token", "assistant_end", "token", "tool_start", "token", "tool_end",
+                     "token", "tool_start", "token", "tool_end", "token", "token", "assistant_end"]
+    assert seen[5] == {"type": "tool_start", "name": "project_status", "args": {}}
+    assert seen[9] == {"type": "tool_start", "name": "exec", "args": {"command": "/bin/zsh -lc ls"}}
+    assert seen[-1] == {"type": "assistant_end", "text": "done", "tool_calls": []}
+
+
 def test_pi_transcript(tmp_path):
     f = tmp_path / "s.jsonl"
     f.write_text("\n".join(json.dumps(e) for e in [
@@ -109,6 +133,81 @@ def test_claude_transcript(tmp_path):
     assert msgs[2]["tool_name"] == "create_milestone" and msgs[2]["text"] == '{"ok": true}'
     assert msgs[0]["ts"].startswith("2026-10-11")
     assert read_transcript({"harness": "claude_code", "session_file": str(f)}) == msgs
+
+
+def test_codex_transcript(tmp_path):
+    """Shapes captured from Codex 0.162 rollouts: context messages are skipped, MCP calls
+    come from McpToolCall items once, Codex's own tools from function_call records."""
+    f = tmp_path / "rollout-2026-10-11T12-23-21-t.jsonl"
+    f.write_text("\n".join(json.dumps(e) for e in [
+        {"timestamp": "2026-10-11T19:23:21.871Z", "type": "session_meta", "payload": {"id": "t", "cwd": "/w"}},
+        {"timestamp": "2026-10-11T19:23:22.700Z", "type": "response_item", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "<skills_instructions>..."}]}},
+        {"timestamp": "2026-10-11T19:23:22.702Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "<environment_context>\n  <cwd>/w</cwd>\n</environment_context>"}]}},
+        {"timestamp": "2026-10-11T19:23:22.813Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "do it"}]}},
+        {"timestamp": "2026-10-11T19:23:27.795Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "I'll run ls.\n"}]}},
+        {"timestamp": "2026-10-11T19:23:27.810Z", "type": "response_item", "payload": {"type": "function_call", "name": "exec_command", "arguments": "{\"cmd\":\"ls\"}", "call_id": "call_1"}},
+        {"timestamp": "2026-10-11T19:23:27.894Z", "type": "event_msg", "payload": {"type": "item_completed", "item": {"type": "CommandExecution", "id": "call_1", "command": ["/bin/zsh", "-lc", "ls"]}}},
+        {"timestamp": "2026-10-11T19:23:27.929Z", "type": "response_item", "payload": {"type": "function_call_output", "call_id": "call_1", "output": "README.md\n"}},
+        {"timestamp": "2026-10-11T19:23:28.000Z", "type": "response_item", "payload": {"type": "function_call", "name": "mcp__orchestra__create_milestone", "arguments": "{\"name\": \"M\"}", "call_id": "call_2"}},
+        {"timestamp": "2026-10-11T19:23:28.100Z", "type": "event_msg", "payload": {"type": "item_completed", "item": {"type": "McpToolCall", "id": "call_2", "server": "orchestra", "tool": "create_milestone", "arguments": {"name": "M"}, "status": "completed", "result": {"content": [{"type": "text", "text": "{\"ok\": true}"}], "isError": False}}}},
+        {"timestamp": "2026-10-11T19:23:28.200Z", "type": "response_item", "payload": {"type": "function_call_output", "call_id": "call_2", "output": "{\"ok\": true}"}},
+        {"timestamp": "2026-10-11T19:23:28.305Z", "type": "response_item", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Created M1."}]}},
+        {"timestamp": "2026-10-11T19:23:28.486Z", "type": "event_msg", "payload": {"type": "task_complete", "last_agent_message": "Created M1."}},
+    ]))
+    msgs = CodexHarness.read_transcript(f)
+    assert [m["role"] for m in msgs] == ["user", "assistant", "toolResult", "assistant", "toolResult", "assistant"]
+    assert msgs[0]["text"] == "do it" and msgs[0]["ts"].startswith("2026-10-11")
+    assert msgs[1]["text"] == "I'll run ls.\n" and msgs[1]["tool_calls"] == [{"name": "exec_command", "args": {"cmd": "ls"}}]
+    assert msgs[2]["tool_name"] == "exec_command" and msgs[2]["text"] == "README.md\n"
+    assert msgs[3]["tool_calls"] == [{"name": "create_milestone", "args": {"name": "M"}}]   # once, prefix dropped
+    assert msgs[4]["tool_name"] == "create_milestone" and msgs[4]["text"] == '{"ok": true}' and not msgs[4]["is_error"]
+    assert msgs[5]["text"] == "Created M1."
+    assert read_transcript({"harness": "codex", "session_file": str(f)}) == msgs
+
+
+def test_codex_session_identity_resume_and_args(tmp_path, monkeypatch):
+    import tomllib
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    (tmp_path / "wt").mkdir()
+    s = CodexSession(spec(tmp_path))
+    s.open()
+    assert s.thread_id is None and s.session_file is None       # Codex assigns the thread id on the first turn
+    args = s._args()
+    assert args[:3] == [s.binary, "exec", "--json"] and args[-1] == "-" and "resume" not in args
+    assert args[args.index("-C") + 1] == str(tmp_path / "wt") and args[args.index("-m") + 1] == "haiku"
+    assert args[args.index("--sandbox") + 1] == "danger-full-access"
+    overrides = dict(a.partition("=")[::2] for a in args[args.index("-c") + 1::2] if "=" in a)
+    mcp = tomllib.loads("v = " + overrides["mcp_servers.orchestra"])["v"]
+    assert mcp["command"] == sys.executable and mcp["args"] == ["-m", "orchestra.harness.mcp"] and mcp["required"] is True
+    assert mcp["env"]["ORCHESTRA_TOOLS"] == "report_ticket" and mcp["env"]["ORCHESTRA_TICKET"] == "T-1"
+    assert tomllib.loads("v = " + overrides["developer_instructions"])["v"] == "be good"
+    # The first turn's thread.started is remembered; the rollout is found under CODEX_HOME.
+    rollout = tmp_path / "codex" / "sessions" / "2026" / "10" / "11" / "rollout-2026-10-11T12-00-00-abc.jsonl"
+    rollout.parent.mkdir(parents=True)
+    rollout.write_text("{}\n")
+    s._remember("abc")
+    assert s.thread_id == "abc" and s.session_file == str(rollout)
+    again = CodexSession(spec(tmp_path))
+    again.open()
+    assert again.thread_id == "abc" and again.session_file == str(rollout)
+    assert again._args()[-3:] == ["resume", "abc", "-"]
+    assert again.pid is None and again.alive()
+    again.close()
+    assert not again.alive()
+
+
+def test_codex_prompt_text_survives_toml():
+    import tomllib
+    text = 'Line one\n\t"quoted" and back\\slash, unicode: é 🙂 and a # hash [table]'
+    assert tomllib.loads("v = " + toml_string(text))["v"] == text
+
+
+def test_codex_turn_without_binary_reports_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    (tmp_path / "wt").mkdir()
+    s = CodexSession(spec(tmp_path), binary=str(tmp_path / "no-such-codex"))
+    res = s.prompt("hi", timeout=5)
+    assert res.error and "cannot start" in res.error and not res.settled
 
 
 def spec(tmp_path, **kw) -> SessionSpec:

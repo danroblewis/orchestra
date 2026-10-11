@@ -1,8 +1,9 @@
 """End-to-end: the real loop, store, git, and gate driven by a fake harness.
 
 Every test runs once per harness: the fake Pi (RPC protocol, tools via the extension's
-`orchestra api` path) and the fake Claude Code (stream-json, tools via the real MCP
-server). The loop must behave identically on both."""
+`orchestra api` path), the fake Claude Code (stream-json, tools via the real MCP server),
+and the fake Codex (`exec --json`, tools via the same MCP server). The loop must behave
+identically on all of them."""
 
 import os
 import shutil
@@ -18,23 +19,26 @@ from orchestra.loop import Loop
 from orchestra.model import State
 from orchestra.store import LocalStore
 
-FAKES = {"pi": Path(__file__).parent / "fake_pi.py", "claude_code": Path(__file__).parent / "fake_claude.py"}
+FAKES = {"pi": Path(__file__).parent / "fake_pi.py", "claude_code": Path(__file__).parent / "fake_claude.py",
+         "codex": Path(__file__).parent / "fake_codex.py"}
+BINARY_ENV = {"pi": "PI_BINARY", "claude_code": "CLAUDE_BINARY", "codex": "CODEX_BINARY"}
 
 
 def git(*args, cwd):
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
 
 
-@pytest.fixture(params=["pi", "claude_code"])
+@pytest.fixture(params=["pi", "claude_code", "codex"])
 def env(tmp_path, monkeypatch, request):
     harness = request.param
     home = tmp_path / "home"
     monkeypatch.setenv("ORCHESTRATOR_HOME", str(home))
-    fake = tmp_path / ("pi" if harness == "pi" else "claude")
+    fake = tmp_path / harness
     shutil.copy(FAKES[harness], fake)
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setenv("PI_BINARY" if harness == "pi" else "CLAUDE_BINARY", str(fake))
+    monkeypatch.setenv(BINARY_ENV[harness], str(fake))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     monkeypatch.delenv("FAKE_PI_WORKER_BLOCK", raising=False)
     monkeypatch.delenv("FAKE_PI_REJECT_FIRST", raising=False)
     monkeypatch.delenv("FAKE_PI_BREAK_FIRST", raising=False)

@@ -53,7 +53,7 @@ class Config:
     base_branch: str = "main"
     ticket_prefix: str = "ORC"
     push: bool = False
-    harness: str = "pi"          # pi | claude_code
+    harness: str = "pi"          # pi | claude_code | codex
     provider: str | None = None
     model: str | None = None
     thinking: str | None = None
@@ -147,9 +147,9 @@ ticket_prefix = "{prefix}"
 push = false
 
 [agents]
-harness = "pi"           # pi | claude_code: the product that runs the agents
+harness = "pi"           # pi | claude_code | codex: the product that runs the agents
 provider = "{provider}"   # Pi only; leave empty to use Pi's default provider
-model = "{model}"         # leave empty for the harness's default (Claude Code: e.g. haiku, sonnet)
+model = "{model}"         # leave empty for the harness's default (Claude Code: haiku, sonnet; Codex: gpt-5.5)
 thinking = "medium"
 workers = 3
 reviewers = 3

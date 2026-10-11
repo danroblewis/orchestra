@@ -409,12 +409,32 @@ turns `--resume <uuid>`. Orchestra keeps the session-id→uuid mapping under
 directory (`projects/<cwd>/<uuid>.jsonl`). A session is "alive" while the loop holds
 it; the loop's pid stands in where the harness keeps no process.
 
-### 5.4 Adding a harness
+### 5.4 Codex
+
+No resident process: each turn is `codex exec --json` with the prompt on stdin (`-`),
+`--sandbox danger-full-access -C <cwd> --skip-git-repo-check`, `-m <model>`, and
+`-c` config overrides: `mcp_servers.orchestra={...}` (the same MCP server, declared as a
+TOML inline table with the session's `ORCHESTRA_*` env and `required=true`, so a server
+that fails to start fails the turn loudly) and `developer_instructions="<role prompt>"`.
+Codex assigns the thread id on the first turn (`thread.started`); later turns are
+`codex exec ... resume <thread_id> -`. Orchestra keeps the session-id→thread-id mapping
+under `<state>/sessions/codex/`. Transcript: Codex's rollout under `$CODEX_HOME`
+(default `~/.codex`) at `sessions/YYYY/MM/DD/rollout-<ts>-<thread_id>.jsonl`. Codex streams
+whole items (`item.started` / `item.completed` for `agent_message`, `command_execution`,
+`mcp_tool_call`, `file_change`), not tokens, so every item counts as liveness.
+
+Codex presents MCP tools to the model as a Responses API `namespace` tool. OpenAI's API
+understands it; an OpenAI-compatible local server (llama-server) does not, so on a local
+model Codex agents run but cannot reach Orchestra's tools. Use Codex with OpenAI models
+(`codex login` or `CODEX_API_KEY`).
+
+### 5.5 Adding a harness
 
 Implement `Harness` and `AgentSession`, register the class in
 `orchestra/harness/__init__.py`, give the e2e suite a fake binary that speaks the
-harness's protocol (see `tests/e2e/fake_pi.py` and `fake_claude.py`), and the loop tests
-run against it unchanged. Harnesses that speak MCP get Orchestra's tools for free.
+harness's protocol (see `tests/e2e/fake_pi.py`, `fake_claude.py`, and `fake_codex.py`),
+and the loop tests run against it unchanged. Harnesses that speak MCP get Orchestra's
+tools for free.
 
 Session ids are harness-independent: `supervisor`, `coordinator`, `pipeline-manager`,
 `worker-<ticket-id>`, `reviewer-<ticket-id>`, and custom roles by name.

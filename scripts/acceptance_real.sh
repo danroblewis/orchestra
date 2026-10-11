@@ -4,12 +4,13 @@
 #
 #   scripts/acceptance_real.sh [provider] [model] [harness]
 #
-# harness is pi (default) or claude_code; provider is Pi-only (pass "" to skip). Defaults to
+# harness is pi (default), claude_code, or codex; provider is Pi-only (pass "" to skip). Defaults to
 # the harness's own default model. Prints a REPORT line at the end and writes it to
 # logs/acceptance-<harness>-<model>.json for comparing models and harnesses.
 #
 #   scripts/acceptance_real.sh ornith-1.5-35b-a3b-q6k ornith-1.5-35b-a3b-q6k
 #   scripts/acceptance_real.sh "" haiku claude_code
+#   scripts/acceptance_real.sh "" gpt-5.5 codex
 set -e
 cd "$(dirname "$0")/.."
 PROVIDER=${1:-${ORCHESTRA_ACCEPTANCE_PROVIDER:-}}
@@ -25,7 +26,9 @@ LOG=logs/acceptance-target.log
   ${PROVIDER:+--provider "$PROVIDER"} ${MODEL:+--model "$MODEL"} > "$LOG" 2>&1 &
 TARGET=$!
 trap 'pkill -P $TARGET 2>/dev/null; kill $TARGET 2>/dev/null; pkill -f "$VENV/bin/python -m orchestra" 2>/dev/null' EXIT
-for _ in $(seq 1 60); do curl -s -m 2 -o /dev/null "http://127.0.0.1:$PORT/api/state" && break; sleep 2; done
+# Ready when the web app answers and the loop has registered its control endpoint
+# (the Supervisor is only reachable through it).
+for _ in $(seq 1 60); do curl -s -m 2 "http://127.0.0.1:$PORT/api/state" | grep -q '"loop": *{[^}]*"port"' && break; sleep 2; done
 ORCHESTRA_ACCEPTANCE=1 ORCHESTRA_TARGET_URL="http://127.0.0.1:$PORT" \
 ORCHESTRA_ACCEPTANCE_MODEL="$MODEL" ORCHESTRA_ACCEPTANCE_REPORT="logs/acceptance-${HARNESS}-${MODEL:-default}.json" \
   uv run pytest tests/acceptance/test_real_flow.py -q -s -p no:cacheprovider

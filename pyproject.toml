@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "orchestra"
 version = "1.0.0a1"
-description = "Ticket tracker, milestone planner, and CI/CD workflow operated by AI agents on Pi or Claude Code."
+description = "Ticket tracker, milestone planner, and CI/CD workflow operated by AI agents on Pi, Claude Code, or Codex."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
