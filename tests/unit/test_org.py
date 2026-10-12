@@ -210,6 +210,12 @@ def test_api_builds_a_team_the_way_the_guide_says(project):
     a = api.handle(project, store, "get_agent", {"name": "po"})
     assert a["tool_groups"] == ["tickets", "escalate", "events", "team"] and a["leads"] == ["product"]
     assert "## Team `product` (your team)" in a["prompt"] and a["agent"]["every_seconds"] == 6 * 3600
+    # an ephemeral agent's runs are all kept and listed, newest first; its transcript button opens the latest
+    store.set_session("writer-20260101-000000", kind="writer", status="idle", started_at=100.0, last_text="first run")
+    store.set_session("writer-20260102-000000", kind="writer", status="idle", started_at=200.0, last_text="second run")
+    w = api.handle(project, store, "get_agent", {"name": "writer"})
+    assert [x["id"] for x in w["runs"]] == ["writer-20260102-000000", "writer-20260101-000000"]
+    assert w["agent"]["last_run_id"] == "writer-20260102-000000" and w["agent"]["run_count"] == 2
     # wake-ups: creation queues an introduction for scheduled/continuous agents, never for ad hoc ones
     assert [w["reason"] for w in store.drain_wakeups("po")][0].startswith("you were just created")
     assert store.drain_wakeups("writer") == []

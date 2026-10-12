@@ -153,7 +153,7 @@ function agentRow(a, lead, now) {
     <span class="name"><a href="#" onclick="openAgent('${a.name}');return false">${esc(a.name)}</a>${lead ? ' <span class="tag">lead</span>' : ""}</span>
     <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span>
     <span class="sched" title="${esc(a.description || "")}">${schedule(a)}${a.source === "role" ? ' <span class="tag" title="A Stage 1 role record that is its own agent">from role</span>' : ""}${a.team && a.team_exists === false ? ` <span class="tag" style="color:#fcd34d;border-color:#92400e" title="This agent names a team that has not been created yet. It runs without team responsibilities until the Supervisor creates it.">team ${esc(a.team)} not created yet</span>` : ""}</span>
-    ${statusOf(a, now)}<span class="ctls"><button class="ctl" onclick="openTranscript('${a.session_id}')">transcript</button>${ctls}</span></div>`;
+    ${statusOf(a, now)}<span class="ctls"><button class="ctl" onclick="openTranscript('${a.last_run_id || a.session_id}')" title="${a.resident ? "its one long-lived transcript" : `its latest run; ${a.run_count || 0} run${a.run_count === 1 ? "" : "s"} so far, all listed in the agent view`}">transcript${!a.resident && a.run_count ? ` (${a.run_count})` : ""}</button>${ctls}</span></div>`;
 }
 function teamCard(t, byName, now, sub) {
   const agents = t.agents.map((a) => agentRow(byName[a.name] || a, a.name === t.lead, now)).join("") || '<div class="empty">no agents yet</div>';
@@ -197,7 +197,7 @@ async function openAgent(name) {
   const tools = Object.entries(r.tool_names || {}).map(([g, names]) => `<div><b>${esc(g)}</b>: ${names.map((n) => `<code>${esc(n)}</code>`).join(" ")}</div>`).join("") || "none";
   const ctls = a.builtin ? "" : `${a.paused ? `<button class="ctl" onclick="act('resume_agent','${a.name}')">▶ resume</button>` : `<button class="ctl" onclick="act('pause_agent','${a.name}')">⏸ pause</button>`}<button class="ctl" onclick="act('restart_agent','${a.name}')">↻ restart</button><button class="ctl kill" onclick="act('delete_agent','${a.name}')">delete</button>`;
   openDrawer(`<h3>${esc(a.name)} <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span> <span class="tag">${esc(a.session)}</span> ${a.builtin ? '<span class="tag">built-in</span>' : ""} ${statusOf(a, now)}
-      <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTranscript('${a.session_id}')">transcript</button>${ctls}<button class="ctl" onclick="closeDrawer()">close</button></span></h3>
+      <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTranscript('${a.last_run_id || a.session_id}')">${a.resident ? "transcript" : "latest run"}</button>${ctls}<button class="ctl" onclick="closeDrawer()">close</button></span></h3>
     <div class="desc md">${md(a.description || "")}</div>
     <div class="def">
       <div>roles</div><div>${(r.roles || []).map((x) => `<a href="#" onclick="openRole('${x.name}');return false">${esc(x.name)}</a>${x.description ? ` <span class="muted">${esc(x.description)}</span>` : ""}`).join("<br>") || "none"}</div>
@@ -209,6 +209,8 @@ async function openAgent(name) {
       <div>tools it can call</div><div class="tools">${tools}</div>
       <div>defined by</div><div>${a.builtin ? "Orchestra" : `${esc(a.created_by || "supervisor")} on ${esc((a.created_at || "").slice(0, 16).replace("T", " "))}${a.source === "role" ? " (a Stage 1 role record acting as its own agent)" : ""}`}</div>
     </div>
+    ${!a.resident ? `<div class="prompt-head"><h4>Runs</h4><span class="muted">Each run is its own session and transcript; nothing is forgotten, it is just not carried into the next run.</span></div>
+    ${(r.runs || []).map((x) => `<div class="arow" style="grid-template-columns:auto 1fr auto auto"><span class="name"><code>${esc(x.id)}</code></span><span class="sched">${esc(x.last_text || "")}</span><span class="muted">${x.started_at ? ago(now - x.started_at) + " ago" : ""}${x.status === "running" ? " · running" : ""}</span><button class="ctl" onclick="openTranscript('${x.id}')">transcript</button></div>`).join("") || '<div class="empty">no runs yet</div>'}` : ""}
     <div class="prompt-head"><h4>The prompt it is started with</h4><span class="muted">Its roles, then its team's responsibilities and the teams above, then its access. Each wake-up or brief is appended to this.</span></div>
     <div class="prompt md">${md(r.prompt || "(empty)")}</div>`);
 }

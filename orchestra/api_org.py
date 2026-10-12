@@ -262,10 +262,21 @@ def role_definition(project: Project, role: RoleDef) -> dict:
             "tool_names": {g: [t.name for t in tools_for([g])] for g in role.tools}}
 
 
+def agent_runs(store: LocalStore, ag: AgentDef) -> list[dict]:
+    """Every session this agent has run under, newest first. A resident agent has one; an
+    ephemeral agent has one per run, under a timestamped id, and they are all kept."""
+    runs = [s for s in [*store.sessions(), *store.runtime().get("archived_sessions", {}).values()]
+            if s.get("kind") == ag.name or s.get("id") == ag.session_id]
+    runs.sort(key=lambda s: s.get("started_at") or 0, reverse=True)
+    return [{k: s.get(k) for k in ("id", "status", "started_at", "settled_at", "last_text", "session_file", "harness")} for s in runs]
+
+
 def agent_view(project: Project, store: LocalStore, ag: AgentDef, teams: dict | None = None) -> dict:
     st = store.agent_state(ag.name)
     teams = teams if teams is not None else all_teams(project)
+    runs = agent_runs(store, ag)
     return {**ag.to_dict(), "builtin": ag.builtin, "source": ag.source, "session_id": ag.session_id,
+            "last_run_id": runs[0]["id"] if runs else ag.session_id, "run_count": len(runs),
             "team_exists": ag.team is None or ag.team in teams,   # an agent may be created before its team (the guide's order)
             "wake_kind": "orchestra" if ag.builtin else "events",   # built-ins: the loop calls them; custom: they subscribe
             "resident": ag.resident, "paused": bool(st.get("paused")), "deleted": bool(st.get("deleted")),
@@ -276,7 +287,7 @@ def agent_view(project: Project, store: LocalStore, ag: AgentDef, teams: dict | 
 def agent_definition(project: Project, store: LocalStore, ag: AgentDef) -> dict:
     roles, teams = all_roles(project), all_teams(project)
     tools = effective_tools(ag, roles, teams)
-    return {"agent": agent_view(project, store, ag), "state": store.agent_state(ag.name),
+    return {"agent": agent_view(project, store, ag), "state": store.agent_state(ag.name), "runs": agent_runs(store, ag)[:30],
             "roles": [{**roles[r].to_dict(), "builtin": roles[r].builtin} for r in ag.roles if r in roles],
             "team_chain": [t.name for t in team_chain(teams, ag.team)],
             "leads": [t.name for t in teams.values() if t.lead == ag.name],
