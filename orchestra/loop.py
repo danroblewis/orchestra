@@ -377,6 +377,11 @@ class Loop:
             return
         s = self.store.find_session(sid) or {}
         now_t = time.time()
+        if res.error and self.stop.is_set():
+            # The harness "failed" because this loop is shutting down and closed it.
+            self.events.emit("turn_interrupted", session=sid, agent=kind or s.get("kind"), ticket=s.get("ticket_id") or None,
+                             reason="orchestra shut down (restart or stop) during this turn")
+            return
         if res.timed_out:
             phase = s.get("phase") or "working"
             doing = f"running `{s['tool_name']}`" if phase == "tool" and s.get("tool_name") else \

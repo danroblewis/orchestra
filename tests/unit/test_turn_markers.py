@@ -37,6 +37,10 @@ def test_timed_out_turn_is_recorded_with_what_the_agent_was_doing(project):
     assert t["doing"] == "running `bash`" and 125 <= t["phase_for"] <= 135 and 10 <= t["silent_for"] <= 15
     assert t["last_text"] == "Let me read the transcript."
     assert evs[1]["error"] == "pi exited 1"
+    loop.stop.set()                                                                      # a harness exit during shutdown is not an error
+    loop._note_turn("retro-3", SimpleNamespace(timed_out=False, error="pi exited", text=""), "retrospective")
+    last = events.read(0)[0][-1]
+    assert last["type"] == "turn_interrupted" and last["session"] == "retro-3"
 
 
 def test_shutdown_marks_every_running_turn(project):
