@@ -49,6 +49,27 @@ as many agents as the responsibilities need.
    it in one line, and continue in the next turn. A turn that tries to create a team and
    four agents at once will time out and create nothing.
 
+## Events and probes: how an agent learns that something is true
+
+Orchestra emits events for what it detects itself (tickets, gate runs, staging, agents).
+Two more sources exist, and a team design should say which it uses:
+
+- **Probes.** A command with an interval, declared on the team (`probes`), run in the
+  team's space with its tools on PATH. Exit 0 means the condition holds. Orchestra emits
+  `probe_failed:<name>` and `probe_recovered:<name>` only when the result changes, so an
+  agent subscribed to a probe wakes once per failure, not every interval. Use a probe for
+  any condition that lives in the repository or on staging: a flaky test, a slow endpoint,
+  a document over budget. A responsibility that can be checked by a script should be.
+- **Agent events.** A team declares the event types its agents may raise (`emits`, e.g.
+  `lesson_proposed`, `flaky_test_suspected`), and an agent raises one with `emit_event`
+  when it learns a fact with no particular addressee. Any agent may subscribe with
+  `wake_on`. Events are not messages: use `message_agent` to tell one agent something,
+  `escalate_to_supervisor` for a decision. Orchestra rate-limits emissions and refuses
+  one whose cause chain (event wakes agent, which emits, which wakes...) is deeper than
+  three.
+
+Prefer probes to agent events: a probe needs no judgment and starts paying immediately.
+
 ## The procedure
 
 1. **Understand.** Read `list_teams`, `list_agents`, and `list_roles`. Place the request:

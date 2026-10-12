@@ -177,6 +177,12 @@ command = "{unit_command}"
 # [[gate.acceptance]]
 # name = "acceptance"
 # command = "uv run pytest tests/acceptance -q --base-url {{url}}"
+#
+# [[probes]]                       # a condition Orchestra checks on an interval; exit 0 = holds.
+# name = "staging_fast"            # probe_failed / probe_recovered events fire on the transition,
+# command = "scripts/p95_under_1s.sh $STAGING_URL"   # so agents subscribed to them wake once.
+# every = "5m"
+# timeout = "60s"
 """
 
 

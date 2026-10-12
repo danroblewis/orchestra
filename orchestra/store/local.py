@@ -337,6 +337,19 @@ class LocalStore:
         self._mutate_runtime(lambda d: d.setdefault("kill_requests", {}).__setitem__(ticket_id, {"by": by, "ts": now()}))
         self.events.emit("kill_requested", ticket=ticket_id, by=by)
 
+    def probe_state(self, name: str) -> dict:
+        return dict((self._r().get("probes") or {}).get(name) or {})
+
+    def probes(self) -> list[str]:
+        return list((self._r().get("probes") or {}).keys())
+
+    def set_probe_state(self, name: str, **fields: Any) -> dict:
+        def fn(d):
+            st = d.setdefault("probes", {}).setdefault(name, {"name": name})
+            st.update(fields)
+            return dict(st)
+        return self._mutate_runtime(fn)
+
     def take_kill_requests(self) -> list[str]:
         def fn(d):
             ids = list(d.get("kill_requests", {}).keys())
@@ -404,6 +417,7 @@ class LocalStore:
             "gate_runs": sorted(r["gate_runs"].values(), key=lambda g: g.get("started_at", ""))[-20:],
             "pipeline": r["pipeline"],
             "pickup_paused": bool(r.get("pickup_paused")),
+            "probes": [p for p in (r.get("probes") or {}).values() if not p.get("removed")],
             "counts": counts,
             "active": sum(1 for x in tickets if x.state in ACTIVE),
         }

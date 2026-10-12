@@ -121,6 +121,12 @@ TOOLS: list[ToolDef] = [
             "Use 0 to pause pickup while re-planning; raise it again afterwards.",
             {"workers": I(), "reviewers": I(), "note": S("Why")}, ("note",)),
     # events
+    ToolDef("emit_event", "events",
+            "Raise an event that other agents may be subscribed to: a fact with no addressee, like flaky_test_suspected "
+            "or lesson_proposed. The type must be one your team declares in `emits`. Use message_agent for something "
+            "aimed at one agent, escalate_to_supervisor for a decision. Rate-limited; refused when the cause chain is deep.",
+            {"type": S("Declared event type, lowercase_name"), "subject": S("What it is about, e.g. a ticket id or test name"),
+             "note": S("One or two sentences")}, ("type",)),
     ToolDef("read_events", "events",
             "Recent Orchestra events (ticket changes, gate runs, staging, agents). Use to look back over what happened.",
             {"minutes": I("How far back, default 60"), "types": A("Event types to include; empty for all")}),
@@ -177,11 +183,17 @@ TOOLS: list[ToolDef] = [
              "access": {"type": "array", "items": {"type": "object"},
                         "description": "Entries like {\"tools\": [\"tickets\", \"events\"]} or {\"path\": \"src\", \"access\": \"read\"}"},
              "capacity": I("Member sessions that may run at once, default 1"),
-             "tracked": {"type": "boolean", "description": "Commit the team's space with the code (default false: ignored by git)"}},
+             "tracked": {"type": "boolean", "description": "Commit the team's space with the code (default false: ignored by git)"},
+             "emits": A("Event types this team's agents may raise with emit_event, e.g. lesson_proposed"),
+             "probes": {"type": "array", "items": {"type": "object"},
+                        "description": "Conditions Orchestra checks on an interval, run in the team's space: "
+                                       "[{\"name\": \"docs_budget\", \"command\": \"tools/doc-budget\", \"every\": \"30m\"}]. "
+                                       "Exit 0 = holds; probe_failed:<name> / probe_recovered:<name> fire on the transition."}},
             ("name", "lead", "responsibilities")),
     ToolDef("update_team", "roles", "Change a team: lead, members, responsibilities, access, capacity, tracking.",
             {"name": S("Team name"), "description": S(""), "lead": S(""), "members": A(), "responsibilities": S("Full new markdown"),
-             "access": {"type": "array", "items": {"type": "object"}}, "capacity": I(), "tracked": {"type": "boolean"}}, ("name",)),
+             "access": {"type": "array", "items": {"type": "object"}}, "capacity": I(), "tracked": {"type": "boolean"},
+             "emits": A(), "probes": {"type": "array", "items": {"type": "object"}}}, ("name",)),
     ToolDef("delete_team", "roles", "Delete a custom team that has no agents and no sub-teams.", {"name": S("Team name")}, ("name",)),
     # escalate
     ToolDef("escalate_to_supervisor", "escalate",

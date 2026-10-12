@@ -313,6 +313,20 @@ brief is queued for them. Messages follow the tree, enforced in the API: an agen
 message its own lead, a lead its team's agents and its sub-teams' leads, the Supervisor
 anyone. Everything else is an escalation.
 
+**Three sources of wake-ups.** Orchestra's own events (tickets, gate runs, staging,
+agents) wake any custom agent whose `wake_on` matches; the built-in agents' wake lists are
+descriptions of what the loop does for them in code, not subscriptions, and the UI says so.
+**Probes** are commands with an interval, from `[[probes]]` in `orchestra.toml` or a team's
+`probes` (run in the team's space with its tools on PATH, `STAGING_URL` in the
+environment); exit 0 means the condition holds, and `probe_failed:<name>` and
+`probe_recovered:<name>` are emitted only on the transition, with the output. **Agent
+events** are types a team declares in `emits` and its agents raise with `emit_event`
+(a subject and a note); any agent may subscribe. The API refuses undeclared types, more
+than twenty emissions per agent per hour, and an emission from a turn whose cause chain
+(event wakes agent, which emits, which wakes...) is already three deep. Events are facts
+without an addressee; `message_agent` is for one agent, `escalate_to_supervisor` for a
+decision.
+
 **The organisation is designed in conversation.** The Supervisor loads `org_guide` when
 the human asks for a team, a change to a team, a role, or a scheduled agent, plays the
 plan back, and builds it one creation per turn with `create_role`, `create_agent`, and

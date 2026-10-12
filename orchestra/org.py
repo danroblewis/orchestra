@@ -29,7 +29,14 @@ from pathlib import Path
 from .agents.roles import ROLES as BUILTIN_ROLES
 from .config import Project
 from .model import now
-from .roles import EVENT_TYPES, TOOL_GROUPS, RoleError, all_roles, commit_orchestra_files, parse_interval
+from .roles import (
+    EVENT_TYPES,
+    TOOL_GROUPS,
+    RoleError,
+    all_roles,
+    commit_orchestra_files,
+    parse_interval,
+)
 
 AGENT_KINDS = ("continuous", "scheduled", "ad_hoc")
 ACCESS_MODES = ("read", "write")
@@ -40,14 +47,26 @@ class OrgError(ValueError):
     pass
 
 
+_CUSTOM_TYPE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+
+
 def event_matches(wake_on: list[str], ev: dict) -> bool:
+    """`type` matches the event type; `type:x` also needs x to be the transition target,
+    the status, the probe name, or the subject of an agent-emitted event."""
     for w in wake_on:
         t, _, suffix = w.partition(":")
         if ev.get("type") != t:
             continue
-        if not suffix or ev.get("to") == suffix or ev.get("status") == suffix:
+        if not suffix or suffix in (ev.get("to"), ev.get("status"), ev.get("probe"), ev.get("subject")):
             return True
     return False
+
+
+def custom_event_types(teams: dict) -> set[str]:
+    out: set[str] = set()
+    for t in teams.values():
+        out.update(getattr(t, "emits", []) or [])
+    return out
 
 
 @dataclass
@@ -80,7 +99,7 @@ class AgentDef:
     def ephemeral(self) -> bool:
         return not self.resident
 
-    def validate(self) -> None:
+    def validate(self, custom_types: set[str] | frozenset[str] = frozenset()) -> None:
         if not _NAME.match(self.name):
             raise OrgError("agent name must be lowercase letters, digits, and underscores, 2 to 41 chars")
         if not self.roles:
@@ -90,8 +109,10 @@ class AgentDef:
         if self.session not in ("resident", "ephemeral"):
             raise OrgError("session must be 'resident' or 'ephemeral'")
         for w in self.wake_on:
-            if w.split(":", 1)[0] not in EVENT_TYPES:
-                raise OrgError(f"unknown event type {w!r}; known: {list(EVENT_TYPES)}")
+            t = w.split(":", 1)[0]
+            if t not in EVENT_TYPES and t not in custom_types:
+                raise OrgError(f"unknown event type {w!r}; known: {list(EVENT_TYPES)}"
+                               + (f"; declared by teams: {sorted(custom_types)}" if custom_types else ""))
         if self.every is not None:
             try:
                 parse_interval(self.every)
@@ -105,7 +126,9 @@ class AgentDef:
             raise OrgError("a scheduled agent needs `every` or `at`")
 
     def matches_event(self, ev: dict) -> bool:
-        return self.kind != "ad_hoc" and event_matches(self.wake_on, ev)
+        """Built-in agents' wake lists describe what the loop does for them (it calls their
+        wake-ups directly); only custom agents subscribe to the event log."""
+        return not self.builtin and self.kind != "ad_hoc" and event_matches(self.wake_on, ev)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -128,6 +151,8 @@ class TeamDef:
     tracked: bool = False                 # is the space committed with the code?
     access: list[dict] = field(default_factory=list)   # {"path", "access"} or {"tools": [...]}
     capacity: int = 1                     # member sessions that may run at once
+    emits: list[str] = field(default_factory=list)     # event types this team's agents may raise with emit_event
+    probes: list[dict] = field(default_factory=list)   # {"name", "command", "every", "timeout"?}, run in the space
     created_by: str = "supervisor"
     created_at: str = field(default_factory=now)
     updated_at: str = field(default_factory=now)
@@ -171,6 +196,16 @@ class TeamDef:
             raise OrgError("the lead is not also a member")
         if self.capacity < 0:
             raise OrgError("capacity must be 0 or more")
+        for e in self.emits:
+            if not _CUSTOM_TYPE.match(e) or e in EVENT_TYPES:
+                raise OrgError(f"emits entry {e!r} must be a new lowercase_name, not one of Orchestra's own event types")
+        for pr in self.probes:
+            if not isinstance(pr, dict) or not _NAME.match(str(pr.get("name", ""))) or not pr.get("command"):
+                raise OrgError("each probe is {name, command, every} with a lowercase_name")
+            try:
+                parse_interval(str(pr.get("every", "5m")))
+            except RoleError as e:
+                raise OrgError(f"probe {pr.get('name')}: {e}")
         for g in self.access:
             if "tools" in g:
                 bad = [t for t in g["tools"] if t not in TOOL_GROUPS]
@@ -227,8 +262,8 @@ class RepoOrgStore:
             raise OrgError(f"no agent {name!r}")
         return AgentDef.from_dict(json.loads(p.read_text(encoding="utf-8")))
 
-    def save_agent(self, agent: AgentDef) -> AgentDef:
-        agent.validate()
+    def save_agent(self, agent: AgentDef, custom_types: set[str] | frozenset[str] = frozenset()) -> AgentDef:
+        agent.validate(custom_types)
         if agent.name in BUILTIN_ROLES:
             raise OrgError(f"{agent.name!r} is a built-in agent; choose another name")
         self.agents_dir.mkdir(parents=True, exist_ok=True)

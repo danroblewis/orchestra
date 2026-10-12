@@ -17,6 +17,7 @@ from .git import Git, GitError
 from .harness import AgentSession, SessionSpec, get_harness
 from .model import ACTIVE, RECOVERY, Note, State, Ticket, effective_priorities, is_ready
 from .org import AgentDef, all_agents, all_teams, effective_tools, tools_path
+from .probes import Prober, config_probes, team_probes
 from .roles import all_roles, due_at, parse_interval
 from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
@@ -45,6 +46,8 @@ class Loop:
         self.harness = get_harness(self.cfg.harness)
         self.stop = threading.Event()
         self.staging = Staging(project, store, events)
+        self.prober = Prober(project, store, events)
+        self._pending_depth: dict[str, int] = {}     # agent -> deepest cause chain among its queued event wake-ups
         self.control: ControlServer | None = None
         self._events_offset = 0
         self._started_at = time.time()
@@ -166,6 +169,10 @@ class Loop:
                 self._drop_worktree(t)
         self.staging.ensure_running()
         self._refresh_org()
+        try:
+            self.prober.tick(config_probes(self.project) + team_probes(self.project, self.teams))
+        except Exception as e:
+            log(f"probes: {e!r}")
         self._schedule_wakeups()
         self._wake_on_events()
         for target in list(self.agents):
@@ -262,8 +269,9 @@ class Loop:
             for name, agent in self.agents.items():
                 if name == "supervisor" or not agent.wake_on or not agent.matches_event(ev):
                     continue
-                bits = [f"{k}={ev[k]}" for k in ("ticket", "milestone", "from", "to", "gate_run", "reason", "by") if ev.get(k)]
-                self.store.add_wakeup(name, f"event {ev['type']}" + (" " + " ".join(str(b) for b in bits) if bits else ""))
+                bits = [f"{k}={ev[k]}" for k in ("ticket", "milestone", "from", "to", "gate_run", "reason", "by", "probe", "subject", "note", "output") if ev.get(k)]
+                self.store.add_wakeup(name, f"event {ev['type']}" + (" " + " ".join(str(b)[:300] for b in bits) if bits else ""))
+                self._pending_depth[name] = max(self._pending_depth.get(name, 0), int(ev.get("depth", 0)))
 
     def _schedule_wakeups(self) -> None:
         """Queue a wake-up for agents whose interval has elapsed or whose daily time has come."""
@@ -629,7 +637,7 @@ class Loop:
             if proc is None or not proc.alive():
                 proc = self._session(sid, target, self.project.repo_root) if agent.builtin else self._session_for(agent, sid)
                 self.agent_procs[target] = proc
-        self.store.set_agent_state(target, last_woken=time.time())
+        self.store.set_agent_state(target, last_woken=time.time(), turn_depth=self._pending_depth.pop(target, 0))
         log(f"{sid}: waking ({len(reasons)} reason(s))")
         self._session_running(sid, target, proc)
         task = agents.wake_task(target, reasons, self.store.snapshot())

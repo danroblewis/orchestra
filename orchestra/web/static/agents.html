@@ -109,9 +109,22 @@ function schedule(a) {
   const parts = [];
   if (a.every) parts.push(`every ${esc(a.every)}`);
   if (a.at) parts.push(`daily at ${esc(a.at)}`);
-  if ((a.wake_on || []).length) parts.push(`on ${a.wake_on.map((w) => `<code>${esc(w)}</code>`).join(", ")}`);
+  if ((a.wake_on || []).length) {
+    // Built-in agents are woken by the loop's own code when these conditions occur (it
+    // detects them and calls the wake-up); custom agents subscribe to event types in the log.
+    const list = a.wake_on.map((w) => a.builtin ? esc(w.replace(/_/g, " ")) : `<code>${esc(w)}</code>`).join(", ");
+    parts.push(a.builtin ? `<span title="Detected by Orchestra's own code, which wakes this agent directly">when Orchestra sees ${list}</span>` : `subscribed to ${list}`);
+  }
   if (a.name === "supervisor") parts.push("on human messages and escalations");
   return parts.join(" · ") || "only on messages from its lead";
+}
+function probeRow(p, now) {
+  const st = p.status === "failed" ? '<span class="chip down"><span class="dot"></span>failing</span>' : p.status === "ok" ? '<span class="chip resident"><span class="dot"></span>holds</span>' : '<span class="chip"><span class="dot"></span>not run yet</span>';
+  const since = p.since ? `${p.status === "failed" ? "failing" : "holding"} for ${ago(now - p.since)}` : "";
+  const last = p.last_run ? `checked ${ago(now - p.last_run)} ago` : "";
+  return `<div class="arow" style="grid-template-columns:22px auto auto 1fr auto" title="${esc((p.output || "").slice(0, 600))}"><div class="av" style="background:#94a3b8">P</div>
+    <span class="name">${esc(p.name)}${p.team ? ` <span class="tag">${esc(p.team)}</span>` : ""}</span><span class="tag">every ${p.every >= 3600 ? Math.round(p.every / 3600) + "h" : Math.round(p.every / 60) + "m"}</span>
+    <span class="sched"><code>${esc(p.command || "")}</code> · ${[since, last].filter(Boolean).join(" · ")}${p.status === "failed" && p.output ? ` · <span class="muted">${esc(p.output.trim().split("\n").slice(-1)[0].slice(0, 120))}</span>` : ""}</span>${st}</div>`;
 }
 function nextWake(a, st, now) {
   if (a.paused) return "paused: wake-ups are queued until resumed";
@@ -145,12 +158,13 @@ function teamCard(t, byName, now, sub) {
   const agents = t.agents.map((a) => agentRow(byName[a.name] || a, a.name === t.lead, now)).join("") || '<div class="empty">no agents yet</div>';
   const subs = ORG.teams.filter((x) => x.parent === t.name).map((x) => teamCard(x, byName, now, true)).join("");
   const access = (t.access || []).map((g) => g.tools ? `tools: ${g.tools.map((x) => `<code>${esc(x)}</code>`).join(" ")}` : `${esc(g.access)} <code>${esc(g.path)}</code>`).join(" · ");
+  const extra = [(t.emits || []).length ? `emits ${t.emits.map((e) => `<code>${esc(e)}</code>`).join(" ")}` : "", (t.probes || []).length ? `probes ${t.probes.map((p) => `<code>${esc(p.name)}</code>`).join(" ")}` : ""].filter(Boolean).join(" · ");
   return `<div class="team ${sub ? "sub" : ""}"><div class="head"><h3><a href="#" onclick="openTeam('${t.name}');return false">${esc(t.name)}</a></h3>
       ${t.builtin ? '<span class="tag">built-in</span>' : `<span class="tag">${t.tracked ? "space tracked" : "space untracked"}</span>`}
       <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTeam('${t.name}')">team</button>${t.builtin ? "" : `<button class="ctl kill" onclick="act('delete_team','${t.name}')">delete</button>`}</span></div>
     <div class="desc">${esc(t.description || "")}</div>
     ${t.responsibilities_excerpt ? `<div class="resp md">${md(t.responsibilities_excerpt)}</div>` : ""}
-    <div class="meta">${access ? "access: " + access : "access: only what its agents' roles carry"} · space <code>${esc(t.space)}</code> · capacity ${t.capacity}</div>
+    <div class="meta">${access ? "access: " + access : "access: only what its agents' roles carry"} · space <code>${esc(t.space)}</code> · capacity ${t.capacity}${extra ? " · " + extra : ""}</div>
     ${agents}${subs}</div>`;
 }
 async function openTeam(name) {
@@ -187,7 +201,7 @@ async function openAgent(name) {
     <div class="def">
       <div>roles</div><div>${(r.roles || []).map((x) => `<a href="#" onclick="openRole('${x.name}');return false">${esc(x.name)}</a>${x.description ? ` <span class="muted">${esc(x.description)}</span>` : ""}`).join("<br>") || "none"}</div>
       <div>team</div><div>${a.team ? (r.team_chain || []).map((t) => `<a href="#" onclick="openTeam('${t}');return false">${esc(t)}</a>`).join(" ← ") : "none (reports to the Supervisor)"}${(r.leads || []).length ? ` · leads ${r.leads.map((t) => `<code>${esc(t)}</code>`).join(", ")}` : ""}</div>
-      <div>wakes</div><div>${schedule(a)}</div>
+      <div>wakes</div><div>${schedule(a)}${a.builtin && (a.wake_on || []).length ? '<div class="muted" style="margin-top:2px">These are conditions the loop detects in its own code and wakes this agent for; they are not event subscriptions.</div>' : ""}</div>
       <div>next wake-up</div><div>${nextWake(a, st, now)}</div>
       <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
       <div>session</div><div>${a.resident ? "resident: one long-lived conversation; earlier wake-ups stay in its memory" : "ephemeral: a fresh conversation every time it runs"}</div>
@@ -223,6 +237,8 @@ async function refresh() {
     let html = timeline(org.agents, org.now);
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');
+    const probes = st.probes || [];
+    html += `<h2>Probes <span class="count">${probes.length}</span></h2>` + (probes.map((p) => probeRow(p, org.now)).join("") || '<div class="empty">No probes. A probe is a command Orchestra runs on an interval, from <code>[[probes]]</code> in orchestra.toml or a team\'s <code>probes</code>; it emits <code>probe_failed</code> and <code>probe_recovered</code> when the result changes, and agents subscribe to those.</div>');
     html += `<h2>Roles <span class="count">${org.roles.length}</span></h2>` + org.roles.map((r) => `<div class="rolecard"><div>
         <h3><a href="#" onclick="openRole('${r.name}');return false">${esc(r.name)}</a> ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'}</h3>
         <div class="desc">${esc(r.description || "")}</div>

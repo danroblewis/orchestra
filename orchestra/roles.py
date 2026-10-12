@@ -29,8 +29,11 @@ EVENT_TYPES = (
     "agent_said", "agent_killed", "context_updated", "loop_started", "loop_stopped",
     "session_started", "session_settled",
     "role_created", "role_changed", "role_deleted", "agent_created", "agent_changed", "agent_deleted",
-    "agent_paused", "agent_resumed", "team_created", "team_changed", "team_deleted",
+    "agent_paused", "agent_resumed", "agent_messaged", "team_created", "team_changed", "team_deleted",
+    "probe_failed", "probe_recovered",
 )
+# Teams may declare further event types (`emits`) that their agents raise with `emit_event`;
+# those are validated against the teams, not this list.
 _NAME = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 

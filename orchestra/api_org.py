@@ -7,6 +7,7 @@ with the `team` or `roles` tool group. Messages and briefs follow the tree enfor
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from . import agents
@@ -18,20 +19,24 @@ from .org import (
     TeamDef,
     all_agents,
     all_teams,
+    custom_event_types,
     effective_tools,
     may_message,
     org_store,
     team_chain,
 )
-from .roles import RoleDef, RoleError, all_roles, parse_interval, role_store
+from .roles import EVENT_TYPES, RoleDef, RoleError, all_roles, parse_interval, role_store
 from .store import LocalStore, StoreError
 
 ORG_COMMANDS = frozenset({
     "org_guide", "list_roles", "get_role", "create_role", "update_role", "delete_role",
     "list_agents", "get_agent", "create_agent", "update_agent", "delete_agent",
     "pause_agent", "resume_agent", "restart_agent", "run_agent", "message_agent",
-    "list_teams", "get_team", "create_team", "update_team", "delete_team",
+    "list_teams", "get_team", "create_team", "update_team", "delete_team", "emit_event",
 })
+EVENT_TYPES_SET = frozenset(EVENT_TYPES)
+EMIT_DEPTH_LIMIT = 3          # an event may cause a wake-up that causes an event ... this many times
+EMIT_RATE_LIMIT = 20          # emissions per agent per hour
 MUTATIONS = frozenset({"create_role", "update_role", "delete_role", "create_agent", "update_agent", "delete_agent",
                        "create_team", "update_team", "delete_team"})
 
@@ -121,7 +126,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         missing = [r for r in ag.roles if r not in roles]
         if missing:
             raise StoreError(f"unknown roles {missing}; create them first with create_role")
-        os_.save_agent(ag)
+        os_.save_agent(ag, custom_event_types(all_teams(project)))
         store.set_agent_state(ag.name, deleted=False)
         store.events.emit("agent_changed" if command == "update_agent" else "agent_created", agent=ag.name, by=author)
         if ag.kind != "ad_hoc":
@@ -175,7 +180,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
     if command in ("create_team", "update_team"):
         if command == "update_team":
             t = os_.get_team(a["name"])
-            for k in ("description", "lead", "members", "tracked", "access", "capacity"):
+            for k in ("description", "lead", "members", "tracked", "access", "capacity", "emits", "probes"):
                 if k in a and a[k] is not None:
                     setattr(t, k, a[k])
             resp = a["responsibilities"] if a.get("responsibilities") else os_.responsibilities(t.name)
@@ -184,7 +189,8 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
                 raise StoreError(f"team {a['name']!r} exists; use update_team")
             t = TeamDef(name=a["name"], description=a.get("description", ""), lead=a.get("lead") or "",
                         members=list(a.get("members") or []), tracked=bool(a.get("tracked")),
-                        access=list(a.get("access") or []), capacity=int(a.get("capacity") or 1), created_by=author)
+                        access=list(a.get("access") or []), capacity=int(a.get("capacity") or 1), created_by=author,
+                        emits=list(a.get("emits") or []), probes=list(a.get("probes") or []))
             resp = a.get("responsibilities") or ""
             if len(resp.strip()) < 20:
                 raise StoreError("responsibilities are required: the standing conditions this team keeps true, as a numbered list")
@@ -193,6 +199,33 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         if t.lead:
             store.add_wakeup(t.lead, f"team {t.name} was {'updated' if command == 'update_team' else 'created'}; re-read its responsibilities")
         return {"ok": True, "team": t.to_dict(), "storage": os_.last_commit_note}
+    if command == "emit_event":
+        teams, ags = all_teams(project), all_agents(project)
+        etype = str(a.get("type") or "").strip()
+        if not etype or etype in EVENT_TYPES_SET:
+            raise StoreError("type must be a new lowercase_name declared by your team's `emits`; Orchestra's own types cannot be raised")
+        emitter = role or "supervisor"
+        if emitter != "supervisor":
+            ag = ags.get(emitter)
+            allowed = sorted({e for t in team_chain(teams, ag.team if ag else None) for e in t.emits})
+            if etype not in allowed:
+                raise StoreError(f"{emitter} may not emit {etype!r}; its team chain declares {allowed or 'nothing'}. "
+                                 "Ask the Supervisor to add it to the team's `emits`.")
+        st = store.agent_state(emitter)
+        depth = int(st.get("turn_depth", 0)) + 1
+        if depth > EMIT_DEPTH_LIMIT:
+            raise StoreError(f"not emitted: this turn is already {depth - 1} events deep in a cause chain "
+                             f"(limit {EMIT_DEPTH_LIMIT}). Escalate or write a note instead.")
+        now_t = time.time()
+        recent = [x for x in st.get("emits", []) if now_t - x < 3600]
+        if len(recent) >= EMIT_RATE_LIMIT:
+            raise StoreError(f"not emitted: {emitter} has raised {len(recent)} events in the last hour (limit {EMIT_RATE_LIMIT})")
+        store.set_agent_state(emitter, emits=[*recent, now_t])
+        subject, note = (a.get("subject") or "").strip()[:120], (a.get("note") or "").strip()[:500]
+        ev = store.events.emit(etype, by=emitter, subject=subject or None, note=note or None, depth=depth,
+                               team=(ags[emitter].team if emitter in ags else None))
+        listeners = [x.name for x in ags.values() if x.matches_event(ev) and x.name != emitter]
+        return {"ok": True, "event": ev, "wakes": listeners}
     if command == "delete_team":
         t = all_teams(project).get(a["name"])
         if t is None or t.builtin:
@@ -222,6 +255,7 @@ def role_definition(project: Project, role: RoleDef) -> dict:
 def agent_view(project: Project, store: LocalStore, ag: AgentDef) -> dict:
     st = store.agent_state(ag.name)
     return {**ag.to_dict(), "builtin": ag.builtin, "source": ag.source, "session_id": ag.session_id,
+            "wake_kind": "orchestra" if ag.builtin else "events",   # built-ins: the loop calls them; custom: they subscribe
             "resident": ag.resident, "paused": bool(st.get("paused")), "deleted": bool(st.get("deleted")),
             "last_woken": st.get("last_woken"), "next_scheduled_at": st.get("next_scheduled_at"),
             "every_seconds": parse_interval(ag.every) if ag.every else None}
