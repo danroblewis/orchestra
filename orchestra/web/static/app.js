@@ -98,7 +98,8 @@ function transcriptHead(id, s, d) {
   const perTicket = /^(worker|reviewer)-/.test(id);
   const stopBtn = perTicket && s.status === "running" && s.alive && s.ticket_id
     ? `<button class="ctl kill" style="margin-left:auto" onclick="stopAgent('${esc(s.ticket_id)}','${esc(id)}')">■ stop this agent</button>` : "";
-  return `<h3>${esc(id)} <span class="muted">${state}</span>${stopBtn}</h3>
+  const agentLink = s.kind && !perTicket ? `<a href="/agents#agent=${encodeURIComponent(s.kind)}" class="muted" style="margin-left:auto;font-size:11px" title="The agent's definition, schedule, and every run it has made">↩ ${esc(s.kind)}: definition and all runs</a>` : "";
+  return `<h3>${esc(id)} <span class="muted">${state}</span>${agentLink}${stopBtn}</h3>
     <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
     ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
     <div>last started</div><div>${when(s.started_at)}${s.status === "running" ? ` <span class="muted">(turn running ${ago((Date.now() / 1000) - s.started_at)})</span>` : ""}</div>
