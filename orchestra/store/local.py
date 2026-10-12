@@ -316,12 +316,12 @@ class LocalStore:
         self.events.emit("capacity_changed", by=by, workers=out.get("workers"), reviewers=out.get("reviewers"), note=note)
         return self.capacity()
 
-    def role_state(self, name: str) -> dict:
-        return dict((self._r().get("role_state") or {}).get(name) or {})
+    def agent_state(self, name: str) -> dict:
+        return dict((self._r().get("agent_state") or self._r().get("role_state") or {}).get(name) or {})
 
-    def set_role_state(self, name: str, **fields) -> dict:
+    def set_agent_state(self, name: str, **fields) -> dict:
         def fn(d):
-            st = d.setdefault("role_state", {}).setdefault(name, {})
+            st = d.setdefault("agent_state", {}).setdefault(name, {})
             st.update(fields)
             return dict(st)
         return self._mutate_runtime(fn)

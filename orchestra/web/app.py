@@ -65,6 +65,31 @@ def create_app(project: Project) -> FastAPI:
         except StoreError:
             raise HTTPException(404)
 
+    @app.get("/api/org")
+    async def org() -> dict:
+        """The organisation in one read: roles (job descriptions), agents (what runs), teams (who owns what)."""
+        from .. import api as api_mod
+        return {"ok": True, "now": time.time(),
+                "roles": api_mod.handle(project, store, "list_roles", {})["roles"],
+                "agents": api_mod.handle(project, store, "list_agents", {})["agents"],
+                "teams": api_mod.handle(project, store, "list_teams", {})["teams"]}
+
+    @app.get("/api/agents/{name}")
+    async def agent_detail(name: str) -> dict:
+        from .. import api as api_mod
+        try:
+            return api_mod.handle(project, store, "get_agent", {"name": name})
+        except StoreError:
+            raise HTTPException(404)
+
+    @app.get("/api/teams/{name:path}")
+    async def team_detail(name: str) -> dict:
+        from .. import api as api_mod
+        try:
+            return api_mod.handle(project, store, "get_team", {"name": name})
+        except StoreError:
+            raise HTTPException(404)
+
     @app.get("/api/state")
     async def state() -> dict:
         project.reload_config()
@@ -75,11 +100,12 @@ def create_app(project: Project) -> FastAPI:
         for s in snap["sessions"]:
             s["alive"] = bool(s.get("pid")) and psutil.pid_exists(int(s["pid"]))
         try:
-            from ..roles import all_roles
-            snap["roles"] = [{"name": r.name, "session_id": r.session_id, "description": r.description, "builtin": r.builtin,
-                              "session": r.session, "paused": bool(store.role_state(r.name).get("paused"))} for r in all_roles(project).values()]
+            from ..org import all_agents
+            snap["agents"] = [{"name": a.name, "session_id": a.session_id, "description": a.description, "builtin": a.builtin,
+                               "team": a.team, "kind": a.kind, "resident": a.resident,
+                               "paused": bool(store.agent_state(a.name).get("paused"))} for a in all_agents(project).values()]
         except Exception:
-            snap["roles"] = []
+            snap["agents"] = []
         snap["loop"] = store.runtime().get("control") or {}
         return snap
 
@@ -252,10 +278,10 @@ def create_app(project: Project) -> FastAPI:
                 raise HTTPException(409, f"{tid} is {t.state}; nothing to stop")
             store.request_kill(tid, by="operator")
             return {"ok": True, "ticket": tid, "will_reset_to": "OPEN" if t.state == State.IN_PROGRESS else "READY_FOR_REVIEW"}
-        if action in ("pause_role", "resume_role", "restart_role", "delete_role"):
+        if action in ("pause_agent", "resume_agent", "restart_agent", "delete_agent", "delete_role", "delete_team"):
             from .. import api as api_mod
             try:
-                return api_mod.handle(project, store, action, {"name": body.get("role") or ""}, role="supervisor")
+                return api_mod.handle(project, store, action, {"name": body.get("name") or ""}, role="supervisor")
             except StoreError as e:
                 raise HTTPException(409, str(e))
         raise HTTPException(400, "unknown action")

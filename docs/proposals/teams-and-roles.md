@@ -1,7 +1,11 @@
 # Proposal: Teams and Roles, in four stages
 
-Status: Stage 1 built and checkpointed, 2026-10-11. Stage 2 decided and next.
-Stages 3 and 4 remain proposals.
+Status: Stage 1 built and checkpointed, 2026-10-11. Stage 2 core built the same
+day: roles, agents, and teams as three stores, the loop running agents, prompts
+assembled from roles plus responsibilities plus access, the Supervisor's design
+guide and tools, the Agents page. Jobs, curated documents, votes, experiments,
+and team pages are the rest of Stage 2 and remain to build. Stages 3 and 4
+remain proposals.
 
 ## Decisions taken
 
@@ -204,7 +208,6 @@ documentation sweep cannot starve code work of the model.
   "description": "Keeps the implementation workers effective: accurate docs, good tools, lessons from rejections.",
   "lead": "environment_keeper",
   "members": ["retrospective", "toolsmith"],
-  "space": ".orchestra/teams/devex",
   "tracked": false,
   "grants": [
     {"path": ".orchestra/teams/devex", "role": "retrospective", "access": "write"},
@@ -455,18 +458,20 @@ before building it.
     e2e_writer.json           {"roles": ["e2e_author"], "team": "product/qa", "kind": "ad_hoc", "session": "ephemeral"}
   teams/
     product.json
-    product/
-      responsibilities.md
+    product.md                the Product responsibilities
+    product/qa.json           nested: definitions sit under the parent's name
+    product/qa.md
+  spaces/                     working spaces, apart from the definitions so an
+    product/                  untracked space never hides a tracked definition
       docs/                   curated, for: worker, reviewer, coordinator
         stories.md
         non-goals.md
       notes/
-    product/qa.json
-    product/qa/
-      responsibilities.md
-      findings/               curated, for: qa_lead, po
       tools/
-        flake-report          a script the flake_hunter wrote; on the QA agents' PATH
+      qa/                     a sub-team's space nests inside its parent's
+        findings/             curated, for: qa_lead, po
+        tools/
+          flake-report        a script the flake_hunter wrote; on the QA agents' PATH
 ```
 
 `teams/product.json`:
@@ -477,7 +482,6 @@ before building it.
   "lead": "po",
   "agents": ["po"],
   "teams": ["product/qa"],
-  "space": ".orchestra/teams/product",
   "tracked": false,
   "access": [
     {"path": "automata", "access": "read"},
@@ -511,7 +515,6 @@ before building it.
   "parent": "product",
   "lead": "qa_lead",
   "agents": ["qa_lead", "flake_hunter", "e2e_writer"],
-  "space": ".orchestra/teams/product/qa",
   "tracked": false,
   "access": [
     {"path": "tests/acceptance", "access": "read"},

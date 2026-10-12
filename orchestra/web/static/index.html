@@ -79,7 +79,7 @@ function renderAgents(s) {
   // between retries) has a session file but no agent; those live on the Agents and
   // Tickets pages. Resident agents between wake-ups are real processes, so they stay.
   const isLive = (x) => x && x.status === "running";
-  const customs = (s.roles || []).filter((r) => !r.builtin).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
+  const customs = (s.agents || []).filter((r) => !r.builtin && r.resident).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
   const residents = [...BASE_AGENTS, ...customs].filter(([id, kind, letter, r]) => byId[id] && byId[id].alive && !(r && r.paused));
   let html = residents.map(([id, kind, letter, r]) => {
     const x = byId[id];

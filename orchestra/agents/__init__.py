@@ -11,18 +11,70 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
 def role_prompt(project: Project, role: str) -> str:
+    """A role's own prompt, placeholders resolved: the job description. Built-in roles
+    ship with Orchestra (overridable per project); custom roles come from the role store."""
     override = project.config.prompt_overrides.get(role)
     path = (project.repo_root / override) if override else (PROMPTS_DIR / f"{role}.md")
     if path.exists():
         text = path.read_text(encoding="utf-8")
-    else:  # a custom role: its prompt comes from the role store
+    else:
         from ..roles import role_store
         text = role_store(project).prompt(role)
         if not text.strip():
-            text = f"You are the {role} agent of Orchestra. Act on the wake-up you receive using your tools, then summarize."
-        text = CUSTOM_PREAMBLE.replace("{role}", role) + text
-    return text.replace("{base_branch}", project.config.base_branch).replace(
-        "{ticket_prefix}", project.config.ticket_prefix)
+            text = f"You are good at being the {role}. Act on the wake-up you receive using your tools, then summarize."
+    return _fill(project, text)
+
+
+def _fill(project: Project, text: str) -> str:
+    return text.replace("{base_branch}", project.config.base_branch).replace("{ticket_prefix}", project.config.ticket_prefix)
+
+
+def agent_prompt(project: Project, agent, roles: dict | None = None, teams: dict | None = None) -> str:
+    """The system prompt an agent is started with: its roles' prompts, then its team's
+    responsibilities and those of the teams above it, then its access. Built-in agents
+    outside a custom team get exactly their role prompt, as before teams existed."""
+    from ..org import all_teams, org_store, team_chain, tools_path
+    from ..roles import all_roles
+    roles = roles if roles is not None else all_roles(project)
+    teams = teams if teams is not None else all_teams(project)
+    chain = team_chain(teams, agent.team)
+    if agent.builtin and all(t.builtin for t in chain):
+        return role_prompt(project, agent.roles[0])
+    team = chain[0] if chain else None
+    lead_of = [t.name for t in teams.values() if t.lead == agent.name]
+    if team is None:
+        team_line = "You belong to no team; the Supervisor is your lead."
+    elif team.name in lead_of:
+        team_line = f"You belong to the team `{team.name}`, which you lead."
+    else:
+        team_line = f"You belong to the team `{team.name}`, led by `{team.lead}`."
+    parts = [AGENT_PREAMBLE.format(agent=agent.name, roles=", ".join(f"`{r}`" for r in agent.roles), team_line=team_line)]
+    for r in agent.roles:
+        parts.append(f"## Your role: {r}\n\n{role_prompt(project, r).strip()}\n")
+    for i, t in enumerate(chain):
+        resp = "" if t.builtin else org_store(project).responsibilities(t.name).strip()
+        rel = "your team" if i == 0 else f"the team above `{chain[i - 1].name}`"
+        who = f"Lead: `{t.lead}`. Agents: {', '.join(f'`{a}`' for a in t.agents) or 'none'}."
+        subs = [x.name for x in teams.values() if x.parent == t.name]
+        if subs:
+            who += f" Sub-teams: {', '.join(f'`{x}`' for x in subs)}."
+        body = _fill(project, resp) if resp else "(none written yet)"
+        parts.append(f"## Team `{t.name}` ({rel})\n\n{t.description}\n{who}\n\n### Responsibilities of `{t.name}`\n\n{body}\n")
+    if team:
+        tools_dirs = ", ".join(f"`{p.relative_to(project.repo_root)}`" for p in tools_path(project, teams, agent))
+        lines = [f"- Working directory and space: `{team.space}` (yours to organise; keep it accurate and small)",
+                 f"- Tools on your PATH: {tools_dirs}"]
+        for t in chain:
+            for g in t.paths:
+                lines.append(f"- {g['access']}: `{g['path']}`" + (f" (granted to team `{t.name}`)" if t.name != team.name else ""))
+        lines.append("- Everything else in the repository is read-only to you. Code changes land only through tickets and the merge gate.")
+        parts.append("## Your access\n\n" + "\n".join(lines) + "\n")
+    return "\n".join(parts)
+
+
+def org_guide() -> str:
+    """The Supervisor's guide to designing roles, agents, and teams; loaded on demand."""
+    return (PROMPTS_DIR / "org_guide.md").read_text(encoding="utf-8")
 
 
 CONTEXT_TEMPLATE = """# Project context
@@ -62,16 +114,16 @@ def write_context(project: Project, text: str) -> None:
     context_path(project).write_text(text, encoding="utf-8")
 
 
-CUSTOM_PREAMBLE = """# You are the `{role}` agent of Orchestra
+AGENT_PREAMBLE = """# You are the `{agent}` agent of Orchestra
 
-You are a long-lived agent in a software project run by Orchestra. Orchestra wakes you with a
-message that says why (an event, a schedule, or a note from another agent) and gives you a
-snapshot of the project. Act using your tools, then reply with a short summary of what you
-did and why. You never write code on the base branch and never start other agents; work is
-done by creating or editing tickets, which the Coordinator orders and workers implement.
-To reach the human, call `escalate_to_supervisor`. Your specific responsibilities follow.
-
-"""
+You are an agent in a software project run by Orchestra, with the role{plural} {roles}. {team_line}
+Orchestra wakes you with a message that says why (an event, a schedule, or a brief from your
+lead) and gives you a snapshot of the project. Act using your tools, then reply with a short
+summary of what you did and why. You never write code on the base branch and never start
+agents yourself; code changes happen by creating or editing tickets, which the Coordinator
+orders and workers implement. Your lead is reached with `message_agent` if you have one, the
+human only through `escalate_to_supervisor`.
+""".replace("{plural}", "")
 
 
 def _ticket_block(t: Ticket) -> str:
@@ -112,11 +164,11 @@ def reviewer_task(project: Project, t: Ticket, commit: str, diff: str, files: li
             "added or extended. Then call `report_review` exactly once.\n")
 
 
-def role_design_reference() -> str:
-    """Reference the Supervisor gets when designing roles: what a role can watch and do."""
+def org_reference() -> str:
+    """What an agent can watch and do, appended to the design guide."""
     from ..roles import EVENT_TYPES, TOOL_GROUPS
-    return ("Tool groups: " + ", ".join(TOOL_GROUPS) + ". Event types that can wake a role: " + ", ".join(EVENT_TYPES)
-            + ". A wake_on entry may filter transitions, e.g. 'ticket_transition:DONE' or 'ticket_transition:BLOCKED'.")
+    return ("Tool groups: " + ", ".join(TOOL_GROUPS) + ".\nEvent types that can wake an agent: " + ", ".join(EVENT_TYPES)
+            + ".\nA wake_on entry may filter transitions, e.g. 'ticket_transition:DONE' or 'ticket_transition:BLOCKED'.")
 
 
 def wake_task(target: str, reasons: list[str], snapshot: dict) -> str:

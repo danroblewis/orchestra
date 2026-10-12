@@ -274,35 +274,53 @@ tests or other checks itself, but that is not its job. Its job is to read
 and comment on the code. Reports exactly one of `APPROVED` or `REJECTED`
 with specific, actionable feedback, as line-level comments where possible.
 
-### 4.3 Roles are data
+### 4.3 Roles, agents, and teams are data
 
-Every agent kind is a role: a name, a description, a prompt, tool groups, a
-session policy (`resident`, one long-lived session; or `ephemeral`, a fresh
-session per wake-up), the events that wake it (`wake_on`, with optional
-transition filters such as `ticket_transition:DONE`), and a schedule (`every`
-interval or a daily `at` time). Built-in roles are defined in
-`orchestra/agents/roles.py`. **Custom roles are stored behind a `RoleStore`
-interface**, like tickets, whose default implementation keeps them in the
-target repository under `.orchestra/roles/<name>.json` and `<name>.md`,
-versioned with the code and committed to the base branch when the checkout
-allows it. Other stores, an external git repository or an object store, can
-implement the same interface because roles are worth keeping outside any one
-machine.
+Three things, kept apart. A **role** is a job description: a name, a description, a
+prompt in the second person, and the tool groups it needs. It has no runtime. An
+**agent** is an instance of one or more roles placed in a team, and is what runs: it has
+a kind (`continuous`, woken by `wake_on` events on a resident session; `scheduled`, woken
+`every` interval or `at` a daily time, resident or ephemeral; `ad_hoc`, invoked once with
+a brief by its lead through `run_agent`), and it is what gets paused, restarted, messaged,
+and shown. A **team** has exactly one lead agent, members, responsibilities (standing
+conditions written as markdown, true or false at any moment), access (tool groups and
+repository paths, read or write), a capacity, and a space in the repository. Teams nest by
+name (`product/qa`); a nested team's lead reports to the parent's lead and its agents see
+the parent's responsibilities too.
 
-The loop reloads roles every tick: it keeps resident roles' processes alive,
-starts new ones, closes deleted or paused ones, tails the event log and queues
-a wake-up for any role whose `wake_on` matches, and queues scheduled wake-ups.
-The Pi extension grants tools by group from `ORCHESTRA_TOOLS`, so no code
-changes for a new role.
+Built-in roles live in `orchestra/agents/roles.py`; the built-in agents and teams derived
+from them (Engineering led by the Coordinator with the ad hoc worker and reviewer, Pipeline
+led by the Pipeline Manager, the Supervisor in no team) in `orchestra/org.py`. **Custom
+roles, agents, and teams are stored behind store interfaces**, like tickets, whose default
+implementations keep them in the target repository: `.orchestra/roles/<name>.json` and
+`.md`, `.orchestra/agents/<name>.json`, `.orchestra/teams/<team>.json` and `.md` for the
+responsibilities, committed to the base branch when the checkout allows it. A team's
+working space is `.orchestra/spaces/<team>/`, created with a `tools/` directory; it is
+listed in `.orchestra/.gitignore` unless the team is `tracked`. A Stage 1 role record that
+carries wake rules of its own is exposed as an implicit agent of the same name, so nothing
+created before teams existed stops running.
 
-**Roles are designed in conversation.** The human and the Supervisor work out
-the purpose, triggers, powers, session policy, and reporting of a new agent;
-when the human agrees, the Supervisor creates it with `create_role`, and can
-rework, restart, pause, or delete it later. The Agents page lists every role
-with pause, restart, and delete controls for the human. A Product Owner, a
-nightly auditor, or any other long-running monitor is created this way. Teams
-of roles with leads, non-code jobs, and knowledge catalogs are a later stage;
-see `docs/proposals/teams-and-roles.md`.
+An agent's turn is assembled in a fixed order: its roles' prompts, then its team's
+responsibilities and those of the teams above it, then its access, then the wake-up or
+brief. Its tool groups are the union of its roles' groups and its team chain's grants,
+plus `team` when it leads a team. An agent in a team runs with its working directory set
+to the team's space and the team chain's `tools/` directories on its `PATH`.
+
+The loop reloads all three every tick: it keeps resident agents' processes alive, starts
+new ones, closes deleted or paused ones, tails the event log and queues a wake-up for any
+agent whose `wake_on` matches, queues scheduled wake-ups, and wakes ad hoc agents when a
+brief is queued for them. Messages follow the tree, enforced in the API: an agent may
+message its own lead, a lead its team's agents and its sub-teams' leads, the Supervisor
+anyone. Everything else is an escalation.
+
+**The organisation is designed in conversation.** The Supervisor loads `org_guide` when
+the human asks for a team, a change to a team, a role, or a scheduled agent, plays the
+plan back, and builds it one creation per turn with `create_role`, `create_agent`, and
+`create_team`, preferring `update_team` on an existing team over a new one. The Agents
+page shows teams with their agents and schedules, agents outside a team, and roles, each
+openable to its full definition, with pause, restart, and delete for the human. Jobs,
+curated documents, votes, experiments, and team pages are the rest of Stage 2; see
+`docs/proposals/teams-and-roles.md`.
 
 ### 4.4 Reporting contract
 

@@ -19,7 +19,7 @@ from .agents.roles import ROLES as BUILTIN, Role as BuiltinRole
 from .config import Project
 from .model import now
 
-TOOL_GROUPS = ("tickets", "context", "pipeline", "capacity", "escalate", "events", "roles")
+TOOL_GROUPS = ("tickets", "context", "pipeline", "capacity", "escalate", "events", "roles", "team")
 EVENT_TYPES = (
     "ticket_created", "ticket_updated", "ticket_transition", "note_added",
     "milestone_created", "milestone_updated", "milestone_closed",
@@ -27,6 +27,9 @@ EVENT_TYPES = (
     "staging_deployed", "staging_failed", "staging_restarted",
     "pipeline_paused", "pipeline_resumed", "pickup_paused", "pickup_resumed", "capacity_changed",
     "agent_said", "agent_killed", "context_updated", "loop_started", "loop_stopped",
+    "session_started", "session_settled",
+    "role_created", "role_changed", "role_deleted", "agent_created", "agent_changed", "agent_deleted",
+    "agent_paused", "agent_resumed", "team_created", "team_changed", "team_deleted",
 )
 _NAME = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
@@ -174,20 +177,25 @@ class RepoRoleStore:
         self._commit(f"orchestra: remove role {name}")
 
     def _commit(self, message: str) -> None:
-        root = self.project.repo_root
-        base = self.project.config.base_branch
-        run = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True)
-        branch = run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-        dirty = [ln for ln in run("status", "--porcelain", "--untracked-files=all").stdout.splitlines() if ln.strip()
-                 and not ln[3:].strip().strip('"').startswith(".orchestra/roles/")]
-        if branch != base or dirty:
-            self.last_commit_note = (f"role files written to .orchestra/roles/ but not committed: "
-                                     f"checkout is on {branch!r}" + (" with other changes" if dirty else "") +
-                                     f"; commit them on {base} when convenient")
-            return
-        run("add", "-A", ".orchestra/roles")
-        p = run("commit", "-q", "-m", message)
-        self.last_commit_note = "committed to " + base if p.returncode == 0 else "nothing to commit"
+        self.last_commit_note = commit_orchestra_files(self.project, message)
+
+
+def commit_orchestra_files(project: Project, message: str) -> str:
+    """Commit everything under .orchestra/ to the base branch when the checkout is on it
+    and otherwise clean, so an Orchestra-owned file never leaves the tree dirty for the
+    merge gate. Returns a note saying what happened. Shared by the role and org stores."""
+    root = project.repo_root
+    base = project.config.base_branch
+    run = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True)
+    branch = run("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    dirty = [ln for ln in run("status", "--porcelain", "--untracked-files=all").stdout.splitlines() if ln.strip()
+             and not ln[3:].strip().strip('"').startswith(".orchestra/")]
+    if branch != base or dirty:
+        return (f"files written under .orchestra/ but not committed: checkout is on {branch!r}"
+                + (" with other changes" if dirty else "") + f"; commit them on {base} when convenient")
+    run("add", "-A", ".orchestra")
+    p = run("commit", "-q", "-m", message)
+    return "committed to " + base if p.returncode == 0 else "nothing to commit"
 
 
 def role_store(project: Project) -> RoleStore:

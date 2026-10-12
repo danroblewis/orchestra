@@ -10,93 +10,179 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 <style>
-  .roles { max-width:1100px; margin:0 auto; padding:16px }
-  .rolecard { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:8px 16px }
-  .rolecard h3 { margin:0; font-size:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap } .rolecard .desc { color:var(--text2); font-size:12.5px; margin-top:2px }
-  .rolecard .meta { color:var(--muted); font-size:11.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .rolecard .meta code, .role-def code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px }
-  .rolecard .ctls { display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap; justify-content:flex-end } .tag { font-size:10.5px; padding:1px 6px; border-radius:999px; border:1px solid var(--border2); color:var(--muted) }
+  .org { max-width:1100px; margin:0 auto; padding:16px }
   .intro { color:var(--text2); font-size:12.5px; margin:0 0 14px }
-  .role-def { display:grid; grid-template-columns:150px 1fr; gap:6px 14px; font-size:12.5px; margin:10px 0 14px } .role-def > div:nth-child(odd) { color:var(--muted) }
-  .role-def .tools code { margin:0 4px 4px 0; display:inline-block }
+  .org h2 { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:18px 0 8px; display:flex; gap:8px; align-items:center }
+  .org h2 .count { background:var(--panel3); border-radius:999px; padding:0 7px; font-size:11px }
+  .team { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px }
+  .team.sub { margin:8px 0 0 22px; border-left:3px solid var(--border2) }
+  .team .head { display:flex; gap:10px; align-items:center; flex-wrap:wrap } .team .head h3 { margin:0; font-size:14px }
+  .team .desc { color:var(--text2); font-size:12.5px; margin:4px 0 8px }
+  .team .resp { font-size:12px; color:var(--text2); border-left:2px solid var(--border2); padding-left:10px; margin:6px 0 8px; max-height:96px; overflow:hidden }
+  .team .resp p, .team .resp ol, .team .resp ul { margin:2px 0 } .team .meta { color:var(--muted); font-size:11.5px; margin-top:4px }
+  .arow { display:grid; grid-template-columns:22px auto auto 1fr auto auto; gap:8px; align-items:center; padding:5px 8px; border:1px solid var(--border); border-radius:8px; margin-top:5px; background:var(--panel) }
+  .arow .av { width:22px; height:22px; border-radius:6px; display:grid; place-items:center; font-weight:800; font-size:11px; color:#0b0d12; background:#94a3b8 }
+  .arow .av.lead { background:#fcd34d } .arow .name { font-weight:700; font-size:12.5px; white-space:nowrap } .arow .name a { color:inherit; text-decoration:none }
+  .arow .sched { color:var(--text2); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .arow .ctls { display:flex; gap:4px } .arow .ctl { padding:1px 6px; font-size:10.5px }
+  .tag { font-size:10.5px; padding:1px 6px; border-radius:999px; border:1px solid var(--border2); color:var(--muted); white-space:nowrap }
+  .tag.k-continuous { color:#93c5fd; border-color:#1d4ed8 } .tag.k-scheduled { color:#fcd34d; border-color:#92400e } .tag.k-ad_hoc { color:#c4b5fd; border-color:#5b21b6 }
+  .rolecard { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:8px; display:grid; grid-template-columns:1fr auto; gap:6px 16px; align-items:center }
+  .rolecard h3 { margin:0; font-size:13.5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap } .rolecard .desc { color:var(--text2); font-size:12px; margin-top:2px }
+  .rolecard .meta { color:var(--muted); font-size:11.5px; margin-top:4px } .rolecard code, .def code { background:#07090d; border:1px solid var(--border); border-radius:4px; padding:0 4px }
+  .def { display:grid; grid-template-columns:150px 1fr; gap:6px 14px; font-size:12.5px; margin:10px 0 14px } .def > div:nth-child(odd) { color:var(--muted) }
+  .def code { margin:0 4px 4px 0; display:inline-block }
   .prompt-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:14px 0 6px } .prompt-head h4 { margin:0; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) }
   .prompt { border:1px solid var(--border); border-radius:8px; padding:10px 14px; background:#0b0e14; max-height:52vh; overflow:auto }
+  .empty { color:var(--muted); font-size:12px; padding:8px 0 }
 </style>
 </head>
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents" class="on">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
-<div class="roles">
-  <p class="intro">What each agent is, not what it is doing right now (the Dashboard shows that). A role is a prompt plus a grant of tools plus the events or schedule that wake it. Built-in roles ship with Orchestra; custom roles live in the repository under <code>.orchestra/roles/</code> and are created in conversation with the Supervisor. Open a role to read the prompt it is started with, the exact tools it can call, and when it next wakes.</p>
+<div class="org">
+  <p class="intro">Who is in this project and what they are for; the Dashboard shows what they are doing right now. A <b>role</b> is a job description. An <b>agent</b> is an instance of roles in a team and is what runs: <span class="tag k-continuous">continuous</span> agents wake on events, <span class="tag k-scheduled">scheduled</span> agents on an interval or a daily time, <span class="tag k-ad_hoc">ad hoc</span> agents once with a brief from their lead. A <b>team</b> has one lead, responsibilities it keeps true, access, and a space in the repository. All of it is created in conversation with the Supervisor and stored under <code>.orchestra/</code>.</p>
   <div id="list"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script>
-let STATE = null, ROLES = [];
+let STATE = null, ORG = null;
 async function control(body) { const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!r.ok) alert(await r.text()); refresh(); }
-function roleAction(action, name) {
-  if (action === "delete_role" && !confirm(`Delete role ${name}? Its sessions are archived. The files are removed from .orchestra/roles/.`)) return;
-  control({ action, role: name });
+function act(action, name) {
+  const warn = { delete_agent: `Delete agent ${name}? Its sessions are archived and its record is removed from .orchestra/agents/.`,
+                 delete_role: `Delete role ${name}? Only possible when no agent uses it.`, delete_team: `Delete team ${name}? Only possible when it has no agents or sub-teams.` }[action];
+  if (warn && !confirm(warn)) return;
+  control({ action, name });
 }
-function sessionIdOf(name) { return name.replace(/_/g, "-"); }
-function triggers(r) {
-  return [...(r.wake_on || []).map((w) => `<code>${esc(w)}</code>`), r.every ? `every ${esc(r.every)}` : "", r.at ? `daily at ${esc(r.at)}` : ""].filter(Boolean).join(" · ") || "escalations only";
-}
-function nextWake(r, st, now) {
-  if (r.paused) return "paused: wake-ups are queued until resumed";
+const sessionOf = (a) => STATE && STATE.sessions.find((x) => x.id === a.session_id);
+function schedule(a) {
+  if (a.kind === "ad_hoc") return "runs when its lead briefs it";
   const parts = [];
-  if (r.every && st.last_woken && r.every_seconds) { const due = st.last_woken + r.every_seconds - now; parts.push(due > 0 ? `scheduled in ${ago(due)}` : "scheduled wake-up is due"); }
-  else if (r.every) parts.push(`every ${esc(r.every)}, first wake-up pending`);
-  if (r.at) parts.push(`daily at ${esc(r.at)}`);
-  if ((r.wake_on || []).length) parts.push(`or sooner on ${r.wake_on.map((w) => `<code>${esc(w)}</code>`).join(", ")}`);
-  if (r.name === "supervisor") parts.push("when the human sends a message, and on escalations from other agents");
-  return parts.join("; ") || "only when another agent escalates to it";
+  if (a.every) parts.push(`every ${esc(a.every)}`);
+  if (a.at) parts.push(`daily at ${esc(a.at)}`);
+  if ((a.wake_on || []).length) parts.push(`on ${a.wake_on.map((w) => `<code>${esc(w)}</code>`).join(", ")}`);
+  if (a.name === "supervisor") parts.push("on human messages and escalations");
+  return parts.join(" · ") || "only on messages from its lead";
+}
+function nextWake(a, st, now) {
+  if (a.paused) return "paused: wake-ups are queued until resumed";
+  if (a.kind === "ad_hoc") return "when its lead calls run_agent with a brief";
+  const parts = [];
+  if (a.every && st.last_woken && a.every_seconds) { const due = st.last_woken + a.every_seconds - now; parts.push(due > 0 ? `scheduled in ${ago(due)}` : "scheduled wake-up is due"); }
+  else if (a.every) parts.push(`every ${esc(a.every)}, first wake-up pending`);
+  if (a.at) parts.push(`daily at ${esc(a.at)}`);
+  if ((a.wake_on || []).length) parts.push(`or sooner on ${a.wake_on.map((w) => `<code>${esc(w)}</code>`).join(", ")}`);
+  if (a.name === "supervisor") parts.push("when the human sends a message, and on escalations");
+  return parts.join("; ") || "only when another agent messages it";
+}
+function statusOf(a, now) {
+  if (a.paused) return '<span class="chip"><span class="dot"></span>paused</span>';
+  const s = sessionOf(a);
+  if (s && (s.alive || s.status === "running")) return sessionChip(s, now);
+  return a.resident ? '<span class="chip down"><span class="dot"></span>not running</span>' : `<span class="chip"><span class="dot"></span>${a.kind === "ad_hoc" ? "idle" : "ephemeral"}</span>`;
+}
+function agentRow(a, lead, now) {
+  const letter = a.name[0].toUpperCase();
+  const ctls = a.builtin ? (a.name === "supervisor" ? "" : `<button class="ctl" onclick="act('restart_agent','${a.name}')">↻</button>`) :
+    `${a.paused ? `<button class="ctl" onclick="act('resume_agent','${a.name}')">▶</button>` : `<button class="ctl" onclick="act('pause_agent','${a.name}')">⏸</button>`}<button class="ctl" onclick="act('restart_agent','${a.name}')">↻</button><button class="ctl kill" onclick="act('delete_agent','${a.name}')">✕</button>`;
+  return `<div class="arow"><div class="av ${lead ? "lead" : ""}" title="${lead ? "lead" : "member"}">${letter}</div>
+    <span class="name"><a href="#" onclick="openAgent('${a.name}');return false">${esc(a.name)}</a>${lead ? ' <span class="tag">lead</span>' : ""}</span>
+    <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span>
+    <span class="sched" title="${esc(a.description || "")}">${schedule(a)}${a.source === "role" ? ' <span class="tag" title="A Stage 1 role record that is its own agent">from role</span>' : ""}</span>
+    ${statusOf(a, now)}<span class="ctls"><button class="ctl" onclick="openTranscript('${a.session_id}')">transcript</button>${ctls}</span></div>`;
+}
+function teamCard(t, byName, now, sub) {
+  const agents = t.agents.map((a) => agentRow(byName[a.name] || a, a.name === t.lead, now)).join("") || '<div class="empty">no agents yet</div>';
+  const subs = ORG.teams.filter((x) => x.parent === t.name).map((x) => teamCard(x, byName, now, true)).join("");
+  const access = (t.access || []).map((g) => g.tools ? `tools: ${g.tools.map((x) => `<code>${esc(x)}</code>`).join(" ")}` : `${esc(g.access)} <code>${esc(g.path)}</code>`).join(" · ");
+  return `<div class="team ${sub ? "sub" : ""}"><div class="head"><h3><a href="#" onclick="openTeam('${t.name}');return false">${esc(t.name)}</a></h3>
+      ${t.builtin ? '<span class="tag">built-in</span>' : `<span class="tag">${t.tracked ? "space tracked" : "space untracked"}</span>`}
+      <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTeam('${t.name}')">team</button>${t.builtin ? "" : `<button class="ctl kill" onclick="act('delete_team','${t.name}')">delete</button>`}</span></div>
+    <div class="desc">${esc(t.description || "")}</div>
+    ${t.responsibilities_excerpt ? `<div class="resp md">${md(t.responsibilities_excerpt)}</div>` : ""}
+    <div class="meta">${access ? "access: " + access : "access: only what its agents' roles carry"} · space <code>${esc(t.space)}</code> · capacity ${t.capacity}</div>
+    ${agents}${subs}</div>`;
+}
+async function openTeam(name) {
+  const r = await fetch(`/api/teams/${name}`).then((x) => x.json());
+  if (!r.ok) { alert(r.error || "cannot load team"); return; }
+  const t = r.team, now = ORG ? ORG.now : Date.now() / 1000, byName = Object.fromEntries(ORG.agents.map((a) => [a.name, a]));
+  const access = (t.access || []).map((g) => g.tools ? `<div>tool groups: ${g.tools.map((x) => `<code>${esc(x)}</code>`).join(" ")}</div>` : `<div>${esc(g.access)}: <code>${esc(g.path)}</code></div>`).join("") || "only what its agents' roles carry";
+  const inherited = (r.inherited || []).filter((x) => x.responsibilities).map((x) => `<h4 class="muted" style="margin:10px 0 4px">Inherited from <code>${esc(x.team)}</code></h4><div class="md">${md(x.responsibilities)}</div>`).join("");
+  openDrawer(`<h3>team ${esc(t.name)} ${t.builtin ? '<span class="tag">built-in</span>' : ""}<span style="margin-left:auto"><button class="ctl" onclick="closeDrawer()">close</button></span></h3>
+    <div class="desc md">${md(t.description || "")}</div>
+    <div class="def">
+      <div>lead</div><div><a href="#" onclick="openAgent('${t.lead}');return false">${esc(t.lead)}</a></div>
+      <div>agents</div><div>${t.agents.map((a) => `<a href="#" onclick="openAgent('${a.name}');return false">${esc(a.name)}</a> <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span>`).join(" · ") || "none"}</div>
+      <div>sub-teams</div><div>${(t.sub_teams || []).map((s) => `<a href="#" onclick="openTeam('${s}');return false">${esc(s)}</a>`).join(", ") || "none"}</div>
+      ${t.parent ? `<div>parent</div><div><a href="#" onclick="openTeam('${t.parent}');return false">${esc(t.parent)}</a></div>` : ""}
+      <div>access</div><div>${access}</div>
+      <div>space</div><div><code>${esc(r.space_dir || t.space)}</code> ${t.tracked ? "(committed with the code)" : "(ignored by git)"}; tools on members' PATH from <code>${esc(r.tools_dir || "")}</code></div>
+      <div>capacity</div><div>${t.capacity} member session${t.capacity === 1 ? "" : "s"} at once</div>
+      <div>defined by</div><div>${t.builtin ? "Orchestra" : `${esc(t.created_by || "supervisor")} on ${esc((t.created_at || "").slice(0, 16).replace("T", " "))}`}</div>
+    </div>
+    <div class="prompt-head"><h4>Responsibilities</h4><span class="muted">Standing conditions the lead checks on every wake-up. Every agent in the team sees these, and those inherited from the teams above.</span></div>
+    <div class="prompt md">${md(r.responsibilities || "(none written)")}${inherited}</div>
+    <div class="prompt-head"><h4>Agents</h4></div>${t.agents.map((a) => agentRow(byName[a.name] || a, a.name === t.lead, now)).join("") || '<div class="empty">none</div>'}`);
+}
+async function openAgent(name) {
+  const r = await fetch(`/api/agents/${name}`).then((x) => x.json());
+  if (!r.ok) { alert(r.error || "cannot load agent"); return; }
+  const a = r.agent, st = r.state || {}, now = ORG ? ORG.now : Date.now() / 1000;
+  const tools = Object.entries(r.tool_names || {}).map(([g, names]) => `<div><b>${esc(g)}</b>: ${names.map((n) => `<code>${esc(n)}</code>`).join(" ")}</div>`).join("") || "none";
+  const ctls = a.builtin ? "" : `${a.paused ? `<button class="ctl" onclick="act('resume_agent','${a.name}')">▶ resume</button>` : `<button class="ctl" onclick="act('pause_agent','${a.name}')">⏸ pause</button>`}<button class="ctl" onclick="act('restart_agent','${a.name}')">↻ restart</button><button class="ctl kill" onclick="act('delete_agent','${a.name}')">delete</button>`;
+  openDrawer(`<h3>${esc(a.name)} <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span> <span class="tag">${esc(a.session)}</span> ${a.builtin ? '<span class="tag">built-in</span>' : ""} ${statusOf(a, now)}
+      <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTranscript('${a.session_id}')">transcript</button>${ctls}<button class="ctl" onclick="closeDrawer()">close</button></span></h3>
+    <div class="desc md">${md(a.description || "")}</div>
+    <div class="def">
+      <div>roles</div><div>${(r.roles || []).map((x) => `<a href="#" onclick="openRole('${x.name}');return false">${esc(x.name)}</a>${x.description ? ` <span class="muted">${esc(x.description)}</span>` : ""}`).join("<br>") || "none"}</div>
+      <div>team</div><div>${a.team ? (r.team_chain || []).map((t) => `<a href="#" onclick="openTeam('${t}');return false">${esc(t)}</a>`).join(" ← ") : "none (reports to the Supervisor)"}${(r.leads || []).length ? ` · leads ${r.leads.map((t) => `<code>${esc(t)}</code>`).join(", ")}` : ""}</div>
+      <div>wakes</div><div>${schedule(a)}</div>
+      <div>next wake-up</div><div>${nextWake(a, st, now)}</div>
+      <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
+      <div>session</div><div>${a.resident ? "resident: one long-lived conversation; earlier wake-ups stay in its memory" : "ephemeral: a fresh conversation every time it runs"}</div>
+      <div>tools it can call</div><div class="tools">${tools}</div>
+      <div>defined by</div><div>${a.builtin ? "Orchestra" : `${esc(a.created_by || "supervisor")} on ${esc((a.created_at || "").slice(0, 16).replace("T", " "))}${a.source === "role" ? " (a Stage 1 role record acting as its own agent)" : ""}`}</div>
+    </div>
+    <div class="prompt-head"><h4>The prompt it is started with</h4><span class="muted">Its roles, then its team's responsibilities and the teams above, then its access. Each wake-up or brief is appended to this.</span></div>
+    <div class="prompt md">${md(r.prompt || "(empty)")}</div>`);
 }
 async function openRole(name) {
   const r = await fetch(`/api/roles/${name}`).then((x) => x.json());
   if (!r.ok) { alert(r.error || "cannot load role"); return; }
-  const role = r.role, st = r.state || {}, now = STATE ? STATE.now : Date.now() / 1000;
-  const sid = sessionIdOf(name), s = STATE && STATE.sessions.find((x) => x.id === sid);
+  const role = r.role;
   const tools = Object.entries(r.tool_names || {}).map(([g, names]) => `<div><b>${esc(g)}</b>: ${names.map((n) => `<code>${esc(n)}</code>`).join(" ")}</div>`).join("") || "none";
-  openDrawer(`<h3>${esc(name)} ${role.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(role.session)}</span> ${s ? sessionChip(s, now) : ""}
-      <span style="margin-left:auto;display:flex;gap:6px"><button class="ctl" onclick="openTranscript('${sid}')">transcript</button><button class="ctl" onclick="closeDrawer()">close</button></span></h3>
+  openDrawer(`<h3>role ${esc(name)} ${role.builtin ? '<span class="tag">built-in</span>' : ""}<span style="margin-left:auto;display:flex;gap:6px">${role.builtin ? "" : `<button class="ctl kill" onclick="act('delete_role','${name}')">delete</button>`}<button class="ctl" onclick="closeDrawer()">close</button></span></h3>
     <div class="desc md">${md(role.description || "")}</div>
-    <div class="role-def">
-      <div>what it is for</div><div>${esc(role.description || "(no description)")}</div>
-      <div>wakes on</div><div>${triggers(role)}</div>
-      <div>next wake-up</div><div>${nextWake(role, st, now)}</div>
-      <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
-      <div>session</div><div>${esc(role.session)}: ${role.session === "resident" ? "one long-lived conversation; earlier wake-ups stay in its memory" : "a fresh conversation every wake-up"}</div>
-      <div>tools it can call</div><div class="tools">${tools}</div>
+    <div class="def">
+      <div>used by agents</div><div>${(r.agents || []).map((a) => `<a href="#" onclick="openAgent('${a}');return false">${esc(a)}</a>`).join(", ") || "no agent yet"}</div>
+      <div>tools it needs</div><div class="tools">${tools}</div>
       <div>defined by</div><div>${role.builtin ? "Orchestra" : `${esc(role.created_by || "supervisor")} on ${esc((role.created_at || "").slice(0, 16).replace("T", " "))}`}</div>
       <div>prompt file</div><div><code>${esc(r.prompt_source || "")}</code></div>
     </div>
-    <div class="prompt-head"><h4>The prompt it is started with</h4><span class="muted">Every wake-up message is appended to this: why it was woken, the project snapshot, and the open tickets.</span></div>
+    <div class="prompt-head"><h4>Job description</h4><span class="muted">What this kind of agent is good at. Schedules, teams, and access are the agent's and the team's, not the role's.</span></div>
     <div class="prompt md">${md(r.prompt || "(empty)")}</div>`);
 }
 async function refresh() {
   try {
-    const [st, rl] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/roles").then((r) => r.json())]);
-    STATE = st; ROLES = rl.roles; renderNav("agents", st.project); $("conn").textContent = "live";
-    const byId = Object.fromEntries(st.sessions.map((x) => [x.id, x]));
-    $("list").innerHTML = rl.roles.map((r) => {
-      const sid = sessionIdOf(r.name), s = byId[sid];
-      const status = r.paused ? '<span class="chip"><span class="dot"></span>paused</span>' : (s || r.session !== "ephemeral") ? sessionChip(s, st.now) : '<span class="chip"><span class="dot"></span>ephemeral</span>';
-      return `<div class="rolecard"><div>
-          <h3><a href="#" onclick="openRole('${r.name}');return false">${esc(r.name)}</a> ${status} ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'} <span class="tag">${esc(r.session)}</span></h3>
-          <div class="desc">${esc(r.description || "")}</div>
-          <div class="meta"><span>wakes on: ${triggers(r)}</span><span>tools: ${(r.tools || []).map((t) => `<code>${esc(t)}</code>`).join(" ")}</span>${r.last_woken ? `<span>last woken ${ago(st.now - r.last_woken)} ago</span>` : ""}</div>
-        </div><div class="ctls">
-          <button class="ctl" onclick="openRole('${r.name}')">role</button>
-          <button class="ctl" onclick="openTranscript('${sid}')">transcript</button>
-          ${r.name === "supervisor" ? "" : r.paused ? `<button class="ctl" onclick="roleAction('resume_role','${r.name}')">▶ resume</button>` : `<button class="ctl" onclick="roleAction('pause_role','${r.name}')">⏸ pause</button>`}
-          ${r.name === "supervisor" ? "" : `<button class="ctl" onclick="roleAction('restart_role','${r.name}')">↻ restart</button>`}
-          ${r.builtin ? "" : `<button class="ctl kill" onclick="roleAction('delete_role','${r.name}')">delete</button>`}
-        </div></div>`;
-    }).join("");
+    const [st, org] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json())]);
+    STATE = st; ORG = org; renderNav("agents", st.project); $("conn").textContent = "live";
+    const byName = Object.fromEntries(org.agents.map((a) => [a.name, a]));
+    const top = org.teams.filter((t) => !t.parent);
+    const loose = org.agents.filter((a) => !a.team && !(a.builtin && !a.resident));
+    let html = `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
+    html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');
+    html += `<h2>Roles <span class="count">${org.roles.length}</span></h2>` + org.roles.map((r) => `<div class="rolecard"><div>
+        <h3><a href="#" onclick="openRole('${r.name}');return false">${esc(r.name)}</a> ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'}</h3>
+        <div class="desc">${esc(r.description || "")}</div>
+        <div class="meta">used by: ${(r.agents || []).map((a) => `<a href="#" onclick="openAgent('${a}');return false">${esc(a)}</a>`).join(", ") || "no agent"} · tools: ${(r.tools || []).map((t) => `<code>${esc(t)}</code>`).join(" ")}</div>
+      </div><div><button class="ctl" onclick="openRole('${r.name}')">role</button></div></div>`).join("");
+    $("list").innerHTML = html;
   } catch (e) { if ($("conn")) $("conn").textContent = "disconnected"; }
 }
 refresh(); setInterval(refresh, 4000);
-if (location.hash.startsWith("#role=")) openRole(decodeURIComponent(location.hash.slice(6))); else openFromHash();
+const h = location.hash;
+if (h.startsWith("#agent=")) openAgent(decodeURIComponent(h.slice(7))); else if (h.startsWith("#team=")) openTeam(decodeURIComponent(h.slice(6))); else if (h.startsWith("#role=")) openRole(decodeURIComponent(h.slice(6))); else openFromHash();
 </script>
 </body>
 </html>

@@ -71,12 +71,14 @@ def test_get_role_explains_what_the_role_is(project):
     r = api.handle(project, store, "get_role", {"name": "coordinator"})
     assert r["role"]["builtin"] and "Coordinator" in r["prompt"] and r["prompt_source"].endswith("prompts/coordinator.md")
     assert "create_ticket" in r["tool_names"]["tickets"] and "set_capacity" in r["tool_names"]["capacity"]
-    assert r["every_seconds"] == 600
+    assert r["agents"] == ["coordinator"]
     role_store(project).save(RoleDef(name="product_owner", description="Keeps the backlog full", tools=["tickets", "escalate"],
                                      wake_on=["ticket_transition:DONE"], every="45m"), "Be opinionated about {base_branch}.")
     r = api.handle(project, store, "get_role", {"name": "product_owner"})
-    assert not r["role"]["builtin"] and r["every_seconds"] == 45 * 60
-    assert r["prompt"].startswith("# You are the `product_owner` agent of Orchestra")   # Orchestra's preamble
-    assert "Be opinionated about main." in r["prompt"]                                   # placeholders resolved
+    assert not r["role"]["builtin"] and r["prompt"].strip() == "Be opinionated about main."   # the job description, placeholders resolved
+    a = api.handle(project, store, "get_agent", {"name": "product_owner"})                 # a Stage 1 role is its own agent
+    assert a["agent"]["source"] == "role" and a["agent"]["every_seconds"] == 45 * 60 and a["agent"]["kind"] == "scheduled"
+    assert a["prompt"].startswith("# You are the `product_owner` agent of Orchestra")     # Orchestra's preamble
+    assert "## Your role: product_owner" in a["prompt"] and "Be opinionated about main." in a["prompt"]
     assert r["prompt_source"].endswith(".orchestra/roles/product_owner.md")
     assert r["tool_names"] == {"tickets": r["tool_names"]["tickets"], "escalate": ["escalate_to_supervisor"]}

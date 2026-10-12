@@ -154,3 +154,27 @@ def test_gate_rejection_reengages_worker_then_lands(env, monkeypatch):
     msgs = read_transcript(archived[f"worker-{t.id}"])
     assert sum(1 for m in msgs if m["role"] == "user") == 2
     assert any(m["role"] == "assistant" and any(c["name"] == "report_ticket" for c in m["tool_calls"]) for m in msgs)
+
+
+def test_team_lead_is_woken_in_its_space(env):
+    """A custom team (Stage 2): the lead is a scheduled agent that also wakes on landings.
+    When a ticket lands, the loop wakes it in the team's space with a prompt made of its
+    role, the team's responsibilities, and its access."""
+    from orchestra import api
+    project, store, events, ms, repo = env
+    api.handle(project, store, "create_role", {"name": "owner", "description": "Owns the backlog",
+                                               "prompt": "# You own the backlog\n\n" + "Keep it full and honest. " * 4, "tools": ["tickets"]}, role="supervisor")
+    api.handle(project, store, "create_agent", {"name": "po", "roles": ["owner"], "team": "product", "kind": "scheduled", "every": "1d",
+                                                "wake_on": ["ticket_transition:DONE"]}, role="supervisor")
+    api.handle(project, store, "create_team", {"name": "product", "lead": "po", "responsibilities": "# Product\n\n1. The backlog is never empty.",
+                                               "access": [{"tools": ["events"]}]}, role="supervisor")
+    store.drain_wakeups("po")   # the creation introduction; this test is about the landing
+    t = store.create_ticket(title="Do the thing", milestone_id=ms.id)
+    run_loop(project, store, events)
+    assert store.get_ticket(t.id).state == State.DONE
+    from orchestra.harness import read_transcript
+    sess = next(s for s in store.sessions() if s["id"] == "po")
+    texts = [m["text"] for m in read_transcript(sess) if m["role"] == "user"]
+    assert any("event ticket_transition" in x and "to=DONE" in x for x in texts)
+    assert (project.repo_root / ".orchestra" / "spaces" / "product" / "tools").is_dir()
+    assert store.agent_state("po").get("last_woken")

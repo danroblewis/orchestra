@@ -15,7 +15,8 @@ that must not be broken without updating the spec and saying so in the commit.
    by every agent that touches the ticket, deleted when the ticket is `DONE`
    or `CANCELLED`. Workers and reviewers run with their working directory set
    to it. Nothing is ever written inside the user's checkout except
-   `orchestra.toml`.
+   `orchestra.toml` and `.orchestra/` (roles, agents, teams, and team spaces,
+   written only through Orchestra's stores; never by the merge gate).
 4. **Merging and deploying are programmatic.** No agent runs `git merge`,
    `git push`, touches the base branch, or starts staging. Only the gate
    lands code, and only the gate's success promotes a build to staging. The
@@ -36,11 +37,14 @@ that must not be broken without updating the spec and saying so in the commit.
 8. **Every ticket has a milestone, and closed milestones are final.** A
    milestone closes only when all its tickets are terminal, can never reopen,
    and can never receive tickets. The store enforces this, not the agents.
-9. **Roles are data behind a store.** Built-in roles live in
-   `orchestra/agents/roles.py`; custom roles come from the `RoleStore`
-   (default: the repository's `.orchestra/roles/`). The loop treats both the
-   same way. Do not special-case roles in the loop, and do not read role
-   files outside `orchestra/roles.py`.
+9. **Roles, agents, and teams are data behind stores.** A role is a job
+   description with no runtime; an agent is an instance of roles in a team
+   and is what runs; a team has one lead, responsibilities, access, and a
+   space. Built-ins live in `orchestra/agents/roles.py` and `orchestra/org.py`;
+   custom ones come from the stores (default: the repository's `.orchestra/`).
+   The loop treats built-in and custom the same way. Do not special-case any
+   of them in the loop, and do not read their files outside `orchestra/roles.py`
+   and `orchestra/org.py`.
 10. **One package, no path hacks.** Everything importable is under
    `orchestra/`. No `sys.path` manipulation.
 

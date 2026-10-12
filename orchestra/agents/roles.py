@@ -11,6 +11,9 @@ Tool groups (see harness/tools.py):
   context      read and update the project context document
   pipeline     gate runs, pipeline resume, staging status and restart
   escalate     escalate_to_supervisor
+  events       read the event log
+  team         read the organisation; brief ad hoc agents and message along the tree (leads, supervisor)
+  roles        design the organisation: roles, agents, teams (supervisor)
   report_ticket / report_review   the worker and reviewer exit tools
 """
 
@@ -41,7 +44,7 @@ def register(role: Role) -> Role:
 
 register(Role(
     name="supervisor", session_id="supervisor", prompt="supervisor",
-    tools=("tickets", "context", "pipeline", "roles", "events"),
+    tools=("tickets", "context", "pipeline", "roles", "team", "events"),
     wake_on=("human_message", "escalation"),
     description="Talks to the human; translates requests into objectives, verification, and tickets.",
 ))

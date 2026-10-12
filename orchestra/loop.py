@@ -3,24 +3,23 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import threading
 import time
 from pathlib import Path
 
 from . import agents
+from .agents.roles import ROLES, resident_roles
 from .config import Project
+from .control import ControlServer
 from .events import Events
 from .gate import run_gate, run_specs
 from .git import Git, GitError
-from .model import ACTIVE, RECOVERY, Note, State, Ticket, effective_priorities, is_ready
-from .control import ControlServer
 from .harness import AgentSession, SessionSpec, get_harness
+from .model import ACTIVE, RECOVERY, Note, State, Ticket, effective_priorities, is_ready
+from .org import AgentDef, all_agents, all_teams, effective_tools, tools_path
+from .roles import all_roles, due_at, parse_interval
 from .staging import Staging
 from .store import Conflict, LocalStore, StoreError
-
-from .agents.roles import ROLES, resident_roles
-from .roles import RoleDef, all_roles, due_at, parse_interval
 
 # Built-in resident roles; custom roles are loaded from the role store each tick.
 PROJECT_AGENTS = tuple(r.name for r in resident_roles() if r.name != "supervisor")
@@ -52,9 +51,11 @@ class Loop:
         self._last_scheduled: dict[str, float] = {}
         self.live_procs: dict[str, AgentSession] = {}   # session id -> session, while a turn runs
         self.killed: set[str] = set()                # ticket ids whose agent the operator stopped
-        self.roles: dict[str, RoleDef] = {}          # all roles (built-in + custom), refreshed each tick
+        self.agents: dict[str, AgentDef] = {}        # every agent (built-in, implicit, custom), refreshed each tick
+        self.teams: dict = {}
+        self.role_defs: dict = {}
         self._last_token_write: dict[str, float] = {}
-        self._events_tail = self.events.read(0, limit=1)[1]   # only events after startup can wake roles
+        self._events_tail = self.events.read(0, limit=1)[1]   # only events after startup can wake agents
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -117,7 +118,8 @@ class Loop:
                 self.control.stop()
             for name, p in self.agent_procs.items():
                 p.close()
-                self.store.set_session(ROLES[name].session_id, status="idle", pid=None)
+                self.store.set_session(self.agents[name].session_id if name in self.agents else name.replace("_", "-"),
+                                       status="idle", pid=None)
             # Only drop the control record if it is ours: a replacement loop may already
             # have registered while this one was shutting down.
             self.store._mutate_runtime(lambda d: d.pop("control", None)
@@ -163,73 +165,87 @@ class Loop:
             if t.state == State.CANCELLED and self.store.worktree(t.id):
                 self._drop_worktree(t)
         self.staging.ensure_running()
-        self._refresh_roles()
+        self._refresh_org()
         self._schedule_wakeups()
         self._wake_on_events()
-        for target in list(self.roles):
+        for target in list(self.agents):
             if target == "supervisor" and self.agent_procs.get("supervisor") is None:
                 continue
+            if self.agents[target].builtin and not self.agents[target].resident:
+                continue  # workers and reviewers are started per ticket, not by wake-up
             if target not in self.agent_threads:
-                st = self.store.role_state(target)
+                st = self.store.agent_state(target)
                 if st.get("paused") or st.get("deleted"):
                     continue  # wake-ups stay queued until resumed
                 reasons = list(dict.fromkeys(w["reason"] for w in self.store.drain_wakeups(target)))
                 if reasons:
                     self._spawn(self.agent_threads, target, self._wake, target, reasons)
 
-    def _refresh_roles(self) -> None:
-        """Reload roles from the store; start resident processes for new ones, close
-        processes for roles that were deleted, paused, or asked to restart."""
+    def _refresh_org(self) -> None:
+        """Reload roles, teams, and agents from their stores; start resident processes for
+        new agents, close processes for agents that were deleted, paused, or asked to restart."""
         try:
-            roles = all_roles(self.project)
+            roles, teams, agents_ = all_roles(self.project), all_teams(self.project), all_agents(self.project)
         except Exception as e:
-            log(f"roles: could not load custom roles: {e}")
+            log(f"org: could not load roles, teams, or agents: {e}")
             return
         for name in list(self.agent_procs):
-            st = self.store.role_state(name)
-            gone = name not in roles or st.get("deleted")
+            st = self.store.agent_state(name)
+            gone = name not in agents_ or st.get("deleted")
             if gone or st.get("restart_requested") or st.get("paused"):
                 if name in self.agent_threads:
                     continue  # let the current turn finish first
                 proc = self.agent_procs.pop(name)
                 proc.close()
-                self.store.set_session(roles[name].session_id if name in roles else name.replace("_", "-"), status="idle", pid=None)
+                self.store.set_session(agents_[name].session_id if name in agents_ else name.replace("_", "-"), status="idle", pid=None)
                 if st.get("restart_requested"):
-                    self.store.set_role_state(name, restart_requested=False)
+                    self.store.set_agent_state(name, restart_requested=False)
                     log(f"{name}: session restarted by request")
-        for name, role in roles.items():
-            if name == "supervisor" or name in self.agent_procs or not role.resident:
-                continue
-            st = self.store.role_state(name)
+        self.role_defs, self.teams, self.agents = roles, teams, agents_
+        for name, agent in agents_.items():
+            if name == "supervisor" or name in self.agent_procs or not agent.resident or agent.builtin:
+                continue  # built-in residents are started up front by _start_project_agents
+            st = self.store.agent_state(name)
             if st.get("paused") or st.get("deleted"):
                 continue
-            if name in ROLES and name not in ("coordinator", "pipeline_manager"):
-                continue
-            self._start_resident(name, role)
-        self.roles = roles
+            self._start_resident(agent)
 
-    def _start_resident(self, name: str, role: RoleDef) -> None:
+    def _start_resident(self, agent: AgentDef) -> None:
         try:
-            proc = self._session_for(role, role.session_id)
+            proc = self._session_for(agent, agent.session_id)
             proc.open()
-            self.agent_procs[name] = proc
-            self.store.set_session(role.session_id, kind=name, status="idle", pid=self._pid(proc),
+            self.agent_procs[agent.name] = proc
+            self.store.set_session(agent.session_id, kind=agent.name, status="idle", pid=self._pid(proc),
                                    session_file=proc.session_file, harness=proc.harness_name)
-            log(f"{role.session_id}: session resident ({self.harness.name})")
+            log(f"{agent.session_id}: session resident ({self.harness.name})")
         except Exception as e:
-            log(f"{role.session_id}: could not start: {e}")
+            log(f"{agent.session_id}: could not start: {e}")
 
-    def _session_for(self, role: RoleDef, session_id: str) -> AgentSession:
-        return self._open_session(session_id, role.name, role.name, tuple(role.tools), self.project.repo_root)
+    def _session_for(self, agent: AgentDef, session_id: str) -> AgentSession:
+        """A session for a custom or implicit agent: its roles' prompts plus its team's
+        responsibilities and access, its working directory in the team's space, and the
+        team chain's tools/ directories on PATH."""
+        team = self.teams.get(agent.team) if agent.team else None
+        cwd = self.project.repo_root
+        extra: dict[str, str] = {}
+        if team is not None:
+            cwd = team.space_dir(self.project)
+            (cwd / "tools").mkdir(parents=True, exist_ok=True)
+            dirs = [str(p) for p in tools_path(self.project, self.teams, agent)]
+            extra["PATH"] = os.pathsep.join(dirs + [os.environ.get("PATH", "")])
+            extra["ORCHESTRA_TEAM"] = team.name
+        return self._open_session(session_id, agent.name, agents.agent_prompt(self.project, agent, self.role_defs, self.teams),
+                                  effective_tools(agent, self.role_defs, self.teams), cwd, extra_env=extra)
 
-    def _open_session(self, session_id: str, role: str, prompt_stem: str, tools: tuple[str, ...], cwd: Path,
-                      ticket_id: str = "") -> AgentSession:
+    def _open_session(self, session_id: str, role: str, system_prompt: str, tools: tuple[str, ...], cwd: Path,
+                      ticket_id: str = "", extra_env: dict[str, str] | None = None) -> AgentSession:
         """Start a session on the configured harness. Which product runs the agent is
         invisible past this point: the loop only sees the AgentSession interface."""
         return self.harness.start(SessionSpec(
             session_id=session_id, session_dir=self.project.sessions_dir, cwd=cwd,
-            system_prompt=agents.role_prompt(self.project, prompt_stem), role=role, tool_groups=tools,
-            env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id},
+            system_prompt=system_prompt, role=role, tool_groups=tools,
+            env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
+                 **(extra_env or {})},
             log_path=self.project.logs_dir / "agents" / f"{session_id}.stderr.log",
             model=self.cfg.model, provider=self.cfg.provider, thinking=self.cfg.thinking, ticket_id=ticket_id))
 
@@ -240,31 +256,31 @@ class Loop:
         return proc.pid or os.getpid()
 
     def _wake_on_events(self) -> None:
-        """Match new events against every role's wake_on list and queue wake-ups."""
+        """Match new events against every agent's wake_on list and queue wake-ups."""
         evs, self._events_tail = self.events.read(self._events_tail, limit=5000)
         for ev in evs:
-            for name, role in self.roles.items():
-                if name == "supervisor" or not role.wake_on or not role.matches_event(ev):
+            for name, agent in self.agents.items():
+                if name == "supervisor" or not agent.wake_on or not agent.matches_event(ev):
                     continue
                 bits = [f"{k}={ev[k]}" for k in ("ticket", "milestone", "from", "to", "gate_run", "reason", "by") if ev.get(k)]
                 self.store.add_wakeup(name, f"event {ev['type']}" + (" " + " ".join(str(b) for b in bits) if bits else ""))
 
     def _schedule_wakeups(self) -> None:
-        """Queue a wake-up for roles whose interval has elapsed or whose daily time has come."""
+        """Queue a wake-up for agents whose interval has elapsed or whose daily time has come."""
         now_t = time.time()
-        for name, role in self.roles.items():
-            st = self.store.role_state(name)
-            if st.get("paused") or st.get("deleted"):
+        for name, agent in self.agents.items():
+            st = self.store.agent_state(name)
+            if st.get("paused") or st.get("deleted") or agent.kind == "ad_hoc":
                 continue
-            if role.every:
-                secs = parse_interval(role.every)
+            if agent.every:
+                secs = parse_interval(agent.every)
                 last = self._last_scheduled.get(name, self._started_at)
                 if now_t - last >= secs:
                     self._last_scheduled[name] = now_t
-                    self.store.add_wakeup(name, f"scheduled check-in (every {role.every})")
-            if role.at and due_at(role.at, st.get("last_at_fire"), now_t):
-                self.store.set_role_state(name, last_at_fire=now_t)
-                self.store.add_wakeup(name, f"scheduled daily session ({role.at})")
+                    self.store.add_wakeup(name, f"scheduled check-in (every {agent.every})")
+            if agent.at and due_at(agent.at, st.get("last_at_fire"), now_t):
+                self.store.set_agent_state(name, last_at_fire=now_t)
+                self.store.add_wakeup(name, f"scheduled daily session ({agent.at})")
 
     def _service_kills(self) -> None:
         """Stop the worker or reviewer process for each ticket the operator asked to kill.
@@ -297,8 +313,11 @@ class Loop:
     # -- pi helpers ------------------------------------------------------------
 
     def _session(self, session_id: str, role: str, cwd: Path, ticket_id: str = "") -> AgentSession:
+        """A session for a built-in agent: worker, reviewer, or one of the residents."""
         spec = ROLES[role]
-        return self._open_session(session_id, role, spec.prompt, tuple(spec.tools), cwd, ticket_id)
+        tools = tuple(spec.tools) if role in ("worker", "reviewer") else effective_tools(
+            self.agents.get(role) or all_agents(self.project)[role], self.role_defs or all_roles(self.project), self.teams or all_teams(self.project))
+        return self._open_session(session_id, role, agents.role_prompt(self.project, spec.prompt), tools, cwd, ticket_id)
 
     def _session_running(self, sid: str, role: str, proc: AgentSession, ticket_id: str | None = None) -> None:
         self.live_procs[sid] = proc
@@ -595,20 +614,20 @@ class Loop:
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
     def _wake(self, target: str, reasons: list[str]) -> None:
-        role = self.roles.get(target)
-        if role is None:
+        agent = self.agents.get(target)
+        if agent is None:
             return
-        sid = role.session_id
-        ephemeral = not role.resident
+        sid = agent.session_id
+        ephemeral = agent.ephemeral
         if ephemeral:
-            sid = f"{role.session_id}-{time.strftime('%Y%m%d-%H%M%S')}"
-            proc = self._session_for(role, sid)
+            sid = f"{agent.session_id}-{time.strftime('%Y%m%d-%H%M%S')}"
+            proc = self._session_for(agent, sid)
         else:
             proc = self.agent_procs.get(target)
             if proc is None or not proc.alive():
-                proc = self._session_for(role, sid) if target not in ROLES else self._session(sid, target, self.project.repo_root)
+                proc = self._session(sid, target, self.project.repo_root) if agent.builtin else self._session_for(agent, sid)
                 self.agent_procs[target] = proc
-        self.store.set_role_state(target, last_woken=time.time())
+        self.store.set_agent_state(target, last_woken=time.time())
         log(f"{sid}: waking ({len(reasons)} reason(s))")
         self._session_running(sid, target, proc)
         task = agents.wake_task(target, reasons, self.store.snapshot())

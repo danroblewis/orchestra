@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .api_org import ORG_COMMANDS, handle_org
 from .config import Project
 from .model import ACTIVE, TERMINAL, Note, State
 from .store import LocalStore, StoreError
@@ -152,62 +153,8 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         store.events.emit("context_updated", by=author)
         return {"ok": True}
 
-    if command in ("list_roles", "get_role", "create_role", "update_role", "delete_role",
-                   "pause_role", "resume_role", "restart_role"):
-        from .roles import RoleDef, RoleError, all_roles, role_store
-        if command in ("create_role", "update_role", "delete_role") and role and role != "supervisor":
-            raise StoreError("only the supervisor may create, change, or delete roles")
-        rs = role_store(project)
-        if command == "list_roles":
-            out = []
-            for r in all_roles(project).values():
-                st = store.role_state(r.name)
-                out.append({**r.to_dict(), "builtin": r.builtin, "paused": bool(st.get("paused")),
-                            "last_woken": st.get("last_woken")})
-            return {"ok": True, "roles": out}
-        if command == "get_role":
-            r = all_roles(project).get(a["name"])
-            if r is None:
-                raise StoreError(f"no role {a['name']!r}")
-            return {"ok": True, "role": {**r.to_dict(), "builtin": r.builtin}, "state": store.role_state(a["name"]),
-                    **role_definition(project, r)}
-        if command in ("create_role", "update_role"):
-            try:
-                if command == "update_role":
-                    r = rs.get(a["name"])
-                    for k in ("description", "tools", "session", "wake_on", "every", "at"):
-                        if k in a and a[k] is not None:
-                            setattr(r, k, a[k])
-                    prompt = a.get("prompt") if a.get("prompt") else rs.prompt(a["name"])
-                else:
-                    r = RoleDef(name=a["name"], description=a.get("description", ""), tools=list(a.get("tools") or ["tickets", "escalate"]),
-                                session=a.get("session") or "resident", wake_on=list(a.get("wake_on") or []),
-                                every=a.get("every") or None, at=a.get("at") or None, created_by=author)
-                    prompt = a.get("prompt") or ""
-                    if len(prompt.strip()) < 40:
-                        raise StoreError("prompt is required: the role's responsibilities, in a few paragraphs")
-                rs.save(r, prompt)
-            except RoleError as e:
-                raise StoreError(str(e))
-            store.events.emit("role_changed" if command == "update_role" else "role_created", role=r.name, by=author)
-            store.add_wakeup(r.name, "you were just created; introduce yourself in one line and check the project state" if command == "create_role"
-                             else "your definition was updated; re-read your responsibilities")
-            return {"ok": True, "role": r.to_dict(), "storage": rs.last_commit_note}
-        if command == "delete_role":
-            try:
-                rs.delete(a["name"])
-            except RoleError as e:
-                raise StoreError(str(e))
-            store.set_role_state(a["name"], deleted=True)
-            store.events.emit("role_deleted", role=a["name"], by=author)
-            return {"ok": True, "storage": rs.last_commit_note}
-        if command in ("pause_role", "resume_role"):
-            store.set_role_state(a["name"], paused=(command == "pause_role"))
-            store.events.emit("role_paused" if command == "pause_role" else "role_resumed", role=a["name"], by=author)
-            return {"ok": True, "paused": command == "pause_role"}
-        if command == "restart_role":
-            store.set_role_state(a["name"], restart_requested=True)
-            return {"ok": True, "message": "the role's session will be restarted at the next tick"}
+    if command in ORG_COMMANDS:
+        return handle_org(project, store, command, a, author, role)
 
     if command == "read_events":
         from datetime import datetime, timezone
@@ -266,21 +213,3 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         return {"ok": True}
 
     raise StoreError(f"unknown command {command}")
-
-
-def role_definition(project, role) -> dict:
-    """What makes a role that role: the system prompt it is started with (built-in prompts
-    resolved exactly as the loop resolves them, custom prompts with Orchestra's preamble),
-    where that prompt comes from, and the concrete tools its groups grant."""
-    from . import agents
-    from .harness.tools import tools_for
-    from .roles import parse_interval
-    override = project.config.prompt_overrides.get(role.name)
-    if role.builtin:
-        source = str(project.repo_root / override) if override else str(agents.PROMPTS_DIR / f"{role.name}.md")
-    else:
-        source = str(project.repo_root / ".orchestra" / "roles" / f"{role.name}.md")
-    tool_names = {g: [t.name for t in tools_for([g])] for g in role.tools}
-    return {"prompt": agents.role_prompt(project, role.name), "prompt_source": source, "tool_names": tool_names,
-            "every_seconds": parse_interval(role.every) if role.every else None}
-
