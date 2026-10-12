@@ -27,16 +27,25 @@ Stages 3 and 4 remain proposals.
   versioned with the code. Not `~/.orchestrator`. Later stores (an external git
   repository, GCS, Artifactory) implement the same interface, because roles are
   valuable and people will want them outside any one machine or repo.
-- **No catalog. A team owns a space in the repository instead.** The earlier
-  plan had curated catalogs with document statuses, a permission matrix, and a
-  separate data store. That is a content-management system, and the value we
-  want comes from somewhere simpler: a team needs a place that is its own,
-  where it keeps its notes, its documents, and the tools it builds for itself,
-  and that it is responsible for keeping accurate and small. In other settings
-  that place is a wiki, or a chat channel where resident agents meet. Ours is
-  a directory in the project repository, managed by the team, possibly kept
-  out of git. Access is by directory, read-only or read-write, granted by the
-  lead. Decision statuses, proposals, and the matrix are gone.
+- **No catalog system. A team owns a space in the repository instead.** The
+  earlier plan had catalogs as a storage system with a permission matrix and a
+  separate data store. The value we want comes from somewhere simpler: a team
+  needs a place that is its own, where it keeps its notes, its documents, and
+  the tools it builds for itself. In other settings that place is a wiki, or a
+  chat channel where resident agents meet. Ours is a directory in the project
+  repository, managed by the team, possibly kept out of git. Access is by
+  directory, read-only or read-write, granted by the lead. The matrix is gone.
+- **Documents must stay operative, and that is a mechanism, not a hope.** The
+  recurring failure of research and documentation directories, including
+  Orchestra's own `docs/`, is that files go stale, nobody reads them, and the
+  directory becomes a graveyard that is too big to load and too old to trust.
+  So the one part of the catalog idea that was right is kept and made
+  central: a curated document has a lifecycle with a decide step, readers
+  vote it up or down with a reason, the lead decides on that consensus, the
+  whole live set is compacted on a schedule until it fits in a context window,
+  and every live document must name what it affects. A document that affects
+  nothing is retired. Teams that do not produce documents opt out; the
+  lifecycle is per directory, not per team.
 
 ## Why stages
 
@@ -78,6 +87,13 @@ The vocabulary, fixed now so it stays stable across stages:
 - **Grant**: a directory, a role, and `read` or `write`. Grants are what a
   lead hands out, inside its own space to its members, and to other teams on
   request.
+- **Curated directory**: a directory in a space whose documents have the
+  lifecycle below: statuses, votes, a token budget, and a required effect.
+  Only curated directories are loaded into prompts; the rest of a space is
+  working material.
+- **Operative set**: the documents in a curated directory with status
+  `active`, which is what gets loaded into the turns of the roles the
+  directory is for. Its total size is capped in tokens so it always fits.
 - **Channel**: an explicit, visible permission for two teams' leads to exchange
   messages. The default is the tree: members to their lead, leads to the
   Supervisor, the Supervisor to the human.
@@ -203,6 +219,63 @@ for its Confluence space: accurate, current, and not too long.
   file over its budget is refused with the current count, so adding a line
   means cutting one. This is the one piece of curation policy that is code.
 
+**Curated documents.** A lead may mark a directory in its space as curated,
+typically `docs/` for what the team maintains for others and `findings/` for
+research results. Curation is the answer to directories that rot, and it has
+four parts, all enforced by Orchestra rather than by prompts alone.
+
+1. *Lifecycle with a decide step.* A curated document carries frontmatter:
+   `status`, `affects`, `author`, `decided_by`, `reviewed_at`, `expires`. The
+   statuses are `proposed`, `active`, `retired`, and `rejected`. A member
+   writes a document as `proposed`; only the lead moves it to `active` or
+   `rejected`, and a rejection carries a reason that the author sees on its
+   next wake-up. `retired` is for documents that were true and no longer
+   matter; `rejected` is for documents that were wrong or not worth the
+   budget. Both leave the operative set but stay on disk, so the history is
+   searchable and a rejected idea is not proposed again next week.
+2. *Votes.* Any role that is given a document in its turn may call
+   `vote(doc, up | down, reason)` once per turn: up when the document helped
+   it do its work, down when it was wrong, stale, or in the way. Orchestra
+   records the votes against the document, with the role, the ticket if any,
+   and the reason. Votes are advice, not control: the lead decides, but the
+   lead's wake-up shows every active document's score, its last upvote, and
+   the reasons for its downvotes, so a document that is being ignored or
+   contradicted is visible before it does damage. A document with no votes at
+   all for a configured period is flagged as unread, which is the strongest
+   signal that it is not operative.
+3. *A token budget and scheduled compaction.* Each curated directory has a
+   budget in tokens for its operative set, chosen so that the set fits in a
+   worker's turn alongside the ticket; a few thousand tokens for worker-facing
+   docs, more for a research team's findings. A write that would take the
+   operative set over budget is refused with the current count. On a schedule
+   the lead runs compaction: merge documents that overlap, cut the ones that
+   say what a test now enforces, rewrite long explanations into rules with a
+   pointer to the retired long form, and retire what has no upvotes and no
+   effect. Compaction is a job the lead can delegate to a member, and its
+   result is a diff the lead reviews.
+4. *A required effect.* Every active document must say what it affects in
+   `affects`: a role whose turns load it (`role:worker`), a gate check that
+   enforces it (`gate:unit/doc-budget`), a ticket field it shapes
+   (`ticket:verification`), or a tool that implements it (`tool:overlap-check`).
+   Orchestra can verify the first three: the role exists and loads the
+   directory, the check exists in `orchestra.toml`, the field is referenced
+   by the Coordinator's prompt. A document whose effect cannot be verified is
+   flagged on the lead's wake-up, and the honest outcome for most of them is
+   that the document becomes a test or a tool and retires. That is the whole
+   point: documentation that leads to nothing is retired, and documentation
+   that leads to something eventually becomes the something.
+
+How a document reaches a worker: a curated directory names the roles it is
+for, and Orchestra loads its operative set into those roles' turns, workers
+included, the way the project context is loaded for the Supervisor today.
+That is what makes an untracked space useful to workers without a code ticket
+per line: the docs travel in the prompt, not in the worktree. The budget is
+what keeps that safe.
+
+Teams opt in per directory. A lab that keeps raw captures and scratch
+notebooks does not curate them; it curates `findings/`. A team that never
+writes documents has no curated directory and none of this applies to it.
+
 **Grants and enforcement.** Every member runs with its working directory set
 to the team space and `ORCHESTRA_ROLE` set, as workers run in their worktree.
 Orchestra's own file tools (the `space` tool group: list, read, write, append)
@@ -240,27 +313,28 @@ were merge conflicts, and 4 were reviewer rejections, and all four rejections
 were decisions a worker made early with too little context. The team:
 
 - *environment_keeper*, lead, resident, daily. Reads the day's commits and
-  landed tickets, keeps the worker-facing docs accurate and under budget,
-  folds in lesson candidates, files at most two docs tickets a day, reports to
-  the Supervisor in a paragraph.
+  landed tickets, keeps the curated `docs/` directory accurate and under its
+  token budget, decides the retrospective's proposals, runs compaction, and
+  reports to the Supervisor in a paragraph with the directory's vote summary.
 - *retrospective*, member, ephemeral, woken by reviewer rejections and gate
   conflicts. Reads one transcript, classifies the cause (brief gap, knowledge
-  gap, discipline gap, one-off), writes a two-line lesson candidate into the
-  space or nothing.
+  gap, discipline gap, one-off), and writes a two-line `proposed` document
+  into `docs/` with an `affects` line, or nothing.
 - *toolsmith*, member, ephemeral, woken by jobs from the lead. Builds the
   team's tools: a doc-budget check, a file-overlap report across in-flight
   branches, a transcript digest.
 
 **Done when.** The DevEx team runs for a week on the automata project: the
-retrospective produces lesson candidates, the keeper turns them into docs
-tickets that land, the toolsmith ships at least one tool the keeper uses, and
-the re-engagement counts on the Dashboard go down.
+retrospective proposes lessons, the keeper decides them and workers' turns
+load the active set, workers vote, at least one document retires because a
+gate check replaced it, the toolsmith ships at least one tool the keeper
+uses, and the re-engagement counts on the Dashboard go down.
 
-**Checkpoint.** Do job results get read, and does the space stay healthy?
-Measure how often a report in the space is referenced by a later ticket or a
-lead's note, and whether the docs stay under budget without the human
-touching them. If jobs are produced and never consumed, or the space fills
-with stale notes, stop before Stage 3.
+**Checkpoint.** Does the operative set stay operative? Measure the share of
+active documents with an upvote in the last week, the share whose effect
+verifies, and whether the directory stays under budget without the human
+touching it. If documents accumulate without votes or effects, the lifecycle
+is not working and Stage 3 should wait.
 
 ---
 
@@ -278,10 +352,12 @@ Grants are stored on the owning team and listed on the Teams page, so who can
 touch what is visible without reading JSON. Enforcement is the same as Stage 2:
 Orchestra's file tools check; the dirty-tree check catches the rest.
 
-There are no document statuses. If a team wants a decision to be final, it
-writes it down in its space and says so; other teams read it because they were
-told to in their prompts. If that turns out to be too loose, the fix is a
-convention in the lead's prompt, not a workflow engine.
+Across teams, the contract is the operative set. Engineering's workers load
+DevEx's active `docs/`; the Lab's active `findings/` are what the Product
+Owner reads. A reader in another team votes like any other reader, and a
+lead that sees its documents downvoted by another team has a reason to talk
+to that team's lead, which is what channels are for. The decide step stays
+with the owning lead; disagreement between leads goes to the Supervisor.
 
 ### Channels
 
@@ -342,10 +418,11 @@ whether they help.
   test run member), Product (owner, designer, explorer, QA), DevEx (keeper,
   retrospective, toolsmith), and Lab (PI, researchers). Shipped as library
   teams with their spaces and tools.
-- **Impact metrics.** On the Teams page: jobs completed, reports read, tickets
-  that trace to a team's note, re-engagements per landed ticket over time,
-  and the human's overrides of agent decisions. These are the numbers that
-  answer the windmill question.
+- **Impact metrics.** On the Teams page: jobs completed, documents active,
+  retired, and rejected over time, votes per document, the share of active
+  documents whose effect verifies, re-engagements per landed ticket over
+  time, and the human's overrides of agent decisions. These are the numbers
+  that answer the windmill question.
 
 **Checkpoint.** If the metrics say agent decisions are overridden more often
 than they are kept, the right move is to scale back to Stages 1 to 3, which
@@ -416,7 +493,16 @@ natural place for it to appear.
 5. **Channels.** Lead-to-lead only, or may a channel name specific members?
 6. **Library format.** A directory of JSON and markdown, or a package so it
    can be published and versioned, now that a team ships with tools?
-7. **Team pages and team data.** See the open topic above.
+7. **Vote weight.** One role, one vote per turn is the proposal. Should a
+   worker's vote on a worker-facing doc count more than a reviewer's, and
+   should a vote from a turn whose ticket was later rejected count at all?
+8. **Budgets in tokens.** Tokens are the honest unit because the constraint is
+   the context window, but the count depends on the model. Count with one
+   fixed tokenizer and accept the error, or budget in characters and say so?
+9. **Orchestra's own docs.** The same rot affects `docs/` in this repository.
+   Should Orchestra's self-hosting project curate it with the same lifecycle,
+   which would make Orchestra the first user of the mechanism?
+10. **Team pages and team data.** See the open topic above.
 
 ## Spec changes Stage 2 requires
 
@@ -429,7 +515,12 @@ Recorded here so the commit that builds Stage 2 updates `AGENTS.md` and
   only through Orchestra's stores and tools, never by the merge gate, and
   never by an agent's own file tools outside its grants.
 - A new tool group, `space`, and a new store, `TeamStore`, with the same
-  shape as `RoleStore`.
+  shape as `RoleStore`. The store owns the curated-document index: statuses,
+  votes, budgets, and effect verification. Agents never edit frontmatter
+  directly; `propose`, `decide`, `vote`, and `retire` are tools.
+- Role turns gain a loaded-documents section: the operative sets of the
+  curated directories that name the role, under their budgets, with document
+  ids so a vote can refer to one.
 - Tickets gain `kind` and, for jobs, `team` and `executor`. The transition
   table gains the job path.
 - Member sessions get the team's `tools/` on `PATH` and their working
