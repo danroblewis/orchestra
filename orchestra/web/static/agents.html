@@ -119,6 +119,37 @@ function schedule(a) {
   if (a.name === "supervisor") parts.push("on human messages and escalations");
   return parts.join(" · ") || "only on messages from its lead";
 }
+// What each event type means, for the triggers section of the agent view.
+const EVENT_HELP = {
+  ticket_created: "a ticket is created", ticket_updated: "a ticket's fields change", ticket_transition: "a ticket changes state (filter with :STATE, e.g. :DONE or :REJECTED)",
+  note_added: "a note is added to a ticket", milestone_created: "a milestone is created", milestone_updated: "a milestone changes", milestone_closed: "a milestone closes",
+  gate_started: "a merge gate run starts", gate_landed: "the gate lands a ticket on the base branch", gate_rejected: "the gate's tests fail for a ticket", gate_conflict: "a branch conflicts with the base branch at the gate",
+  gate_error: "the gate itself fails to run", gate_base_broken: "the base branch fails the gate's tests", staging_deployed: "a build is deployed to staging", staging_failed: "staging failed to come up", staging_restarted: "staging was restarted",
+  pipeline_paused: "the pipeline is paused", pipeline_resumed: "the pipeline is resumed", pickup_paused: "new workers are paused", pickup_resumed: "new workers are resumed", capacity_changed: "the worker dial changes",
+  agent_said: "an agent finishes a turn", agent_killed: "the operator stops an agent", context_updated: "the project context changes", loop_started: "orchestra run starts", loop_stopped: "orchestra run stops",
+  session_started: "any agent turn starts", session_settled: "any agent turn ends", role_created: "a role is created", role_changed: "a role changes", role_deleted: "a role is deleted",
+  agent_created: "an agent is created", agent_changed: "an agent changes", agent_deleted: "an agent is deleted", agent_paused: "an agent is paused", agent_resumed: "an agent is resumed", agent_messaged: "an agent gets a message or brief",
+  team_created: "a team is created", team_changed: "a team changes", team_deleted: "a team is deleted",
+  probe_failed: "a probe's condition stops holding (filter with :probe_name)", probe_recovered: "a probe's condition holds again (filter with :probe_name)",
+  turn_timed_out: "Orchestra cuts a turn off at the time limit", turn_error: "a harness fails during a turn", turn_interrupted: "a turn is cut off by a restart or crash",
+  agent_crashed: "a resident agent's process exits between turns", agent_crash_loop: "an agent is paused after repeated crashes",
+};
+function triggerRows(a) {
+  const declared = Object.fromEntries((ORG ? ORG.teams : []).flatMap((t) => (t.emits || []).map((e) => [e, t.name])));
+  const rows = (a.wake_on || []).map((w) => {
+    const [type, filter] = w.split(/:(.*)/);
+    let what = EVENT_HELP[type];
+    if (!what && declared[type]) what = `an agent of team ${declared[type]} raises it with emit_event`;
+    if (!what) what = a.builtin ? "a condition the loop detects in its own code" : "not an event Orchestra emits";
+    return `<div><code>${esc(w)}</code> <span class="muted">${esc(what)}${filter ? ` · only when it is ${esc(filter)}` : ""}</span></div>`;
+  });
+  if (a.every) rows.push(`<div><code>every ${esc(a.every)}</code> <span class="muted">a scheduled check-in</span></div>`);
+  if (a.at) rows.push(`<div><code>daily at ${esc(a.at)}</code> <span class="muted">a scheduled daily session</span></div>`);
+  if (a.kind === "ad_hoc" && !a.builtin) rows.push(`<div><code>run_agent</code> <span class="muted">a brief from its lead</span></div>`);
+  if (a.kind !== "ad_hoc" && !a.builtin) rows.push(`<div><code>message_agent</code> <span class="muted">a note from its lead, or from a member if it leads</span></div>`);
+  if (a.name === "supervisor") rows.push(`<div><code>human</code> <span class="muted">a message from you, and escalations from any agent</span></div>`);
+  return rows.join("") || "<span class='muted'>nothing wakes it</span>";
+}
 function probeRow(p, now) {
   const st = p.status === "failed" ? '<span class="chip down"><span class="dot"></span>failing</span>' : p.status === "ok" ? '<span class="chip resident"><span class="dot"></span>holds</span>' : '<span class="chip"><span class="dot"></span>not run yet</span>';
   const since = p.since ? `${p.status === "failed" ? "failing" : "holding"} for ${ago(now - p.since)}` : "";
@@ -202,7 +233,7 @@ async function openAgent(name) {
     <div class="def">
       <div>roles</div><div>${(r.roles || []).map((x) => `<a href="#" onclick="openRole('${x.name}');return false">${esc(x.name)}</a>${x.description ? ` <span class="muted">${esc(x.description)}</span>` : ""}`).join("<br>") || "none"}</div>
       <div>team</div><div>${a.team ? ((r.team_chain || []).length ? r.team_chain.map((t) => `<a href="#" onclick="openTeam('${t}');return false">${esc(t)}</a>`).join(" ← ") : `<code>${esc(a.team)}</code> is not created yet; the agent runs without team responsibilities until it is`) : "none (reports to the Supervisor)"}${(r.leads || []).length ? ` · leads ${r.leads.map((t) => `<code>${esc(t)}</code>`).join(", ")}` : ""}</div>
-      <div>wakes</div><div>${schedule(a)}${a.builtin && (a.wake_on || []).length ? '<div class="muted" style="margin-top:2px">These are conditions the loop detects in its own code and wakes this agent for; they are not event subscriptions.</div>' : ""}</div>
+      <div>triggers</div><div class="tools">${triggerRows(a)}${a.builtin && (a.wake_on || []).length ? '<div class="muted" style="margin-top:4px">Built-in: these are conditions the loop detects in its own code and wakes this agent for directly; they are not subscriptions to the event log.</div>' : ""}</div>
       <div>next wake-up</div><div>${nextWake(a, st, now)}</div>
       <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
       <div>session</div><div>${a.resident ? "resident: one long-lived process; earlier wake-ups stay in its memory and it shows on the Dashboard while up" : "ephemeral: a fresh process and conversation every time it runs; it shows on the Dashboard only while a run is in progress"}</div>
