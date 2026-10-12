@@ -77,6 +77,7 @@ async function openTranscript(id) {
       : "This session has not been started. It comes up with <code>orchestra run</code>."}</div>`);
   }
   const d = await r.json(); const s = d.session;
+  const perTicket = /^(worker|reviewer)-/.test(id);
   let html = `<div id="transcript-head">${transcriptHead(id, s, d)}</div>`;
   if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
       <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
