@@ -56,7 +56,7 @@ function act(action, name) {
 }
 const sessionOf = (a) => STATE && STATE.sessions.find((x) => x.id === a.session_id);
 function schedule(a) {
-  if (a.kind === "ad_hoc") return "runs when its lead briefs it";
+  if (a.kind === "ad_hoc") return a.builtin ? "started by Orchestra per ticket, in that ticket's worktree" : "runs when its lead briefs it";
   const parts = [];
   if (a.every) parts.push(`every ${esc(a.every)}`);
   if (a.at) parts.push(`daily at ${esc(a.at)}`);
