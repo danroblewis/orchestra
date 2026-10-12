@@ -185,13 +185,14 @@ def test_api_builds_a_team_the_way_the_guide_says(project):
                                                "tools": ["tickets", "escalate"]}, role="supervisor")
     with pytest.raises(StoreError, match="unknown roles"):
         api.handle(project, store, "create_agent", {"name": "po", "roles": ["nope"], "kind": "scheduled", "every": "6h"}, role="supervisor")
-    api.handle(project, store, "create_agent", {"name": "po", "roles": ["owner"], "team": "product", "kind": "scheduled", "every": "6h"}, role="supervisor")
+    r = api.handle(project, store, "create_agent", {"name": "po", "roles": ["owner"], "team": "product", "kind": "scheduled", "every": "6h"}, role="supervisor")
+    assert r["warning"].startswith("WARN: team 'product' does not exist")      # allowed, and said out loud
     with pytest.raises(StoreError, match="responsibilities are required"):
         api.handle(project, store, "create_team", {"name": "product", "lead": "po"}, role="supervisor")
     r = api.handle(project, store, "create_team", {"name": "product", "lead": "po", "responsibilities": "# Product\n\n1. The backlog is never empty.",
                                                    "access": [{"tools": ["events"]}]}, role="supervisor")
     assert r["storage"].startswith("committed")
-    api.handle(project, store, "create_agent", {"name": "writer", "roles": ["owner"], "team": "product", "kind": "ad_hoc"}, role="supervisor")
+    assert "warning" not in api.handle(project, store, "create_agent", {"name": "writer", "roles": ["owner"], "team": "product", "kind": "ad_hoc"}, role="supervisor")
     api.handle(project, store, "update_team", {"name": "product", "members": ["writer"]}, role="supervisor")
     t = api.handle(project, store, "get_team", {"name": "product"})
     assert t["team"]["lead"] == "po" and [a["name"] for a in t["team"]["agents"]] == ["po", "writer"]

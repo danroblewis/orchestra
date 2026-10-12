@@ -134,7 +134,13 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         if ag.kind != "ad_hoc":
             store.add_wakeup(ag.name, "you were just created; introduce yourself in one line and check the project state"
                              if command == "create_agent" else "your definition was updated; re-read your responsibilities")
-        return {"ok": True, "agent": ag.to_dict(), "storage": os_.last_commit_note}
+        out = {"ok": True, "agent": ag.to_dict(), "storage": os_.last_commit_note}
+        teams = all_teams(project)
+        if ag.team and ag.team not in teams:
+            out["warning"] = (f"WARN: team {ag.team!r} does not exist. Create it next with create_team (lead or members "
+                              f"naming {ag.name!r}), or move the agent with update_agent to one that exists: "
+                              f"{sorted(teams)}. Until then it runs without team responsibilities or access.")
+        return out
     if command == "delete_agent":
         ag = all_agents(project).get(a["name"])
         if ag is None or ag.builtin:
