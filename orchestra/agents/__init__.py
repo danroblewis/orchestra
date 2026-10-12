@@ -43,7 +43,10 @@ def agent_prompt(project: Project, agent, roles: dict | None = None, teams: dict
         return role_prompt(project, agent.roles[0])
     team = chain[0] if chain else None
     lead_of = [t.name for t in teams.values() if t.lead == agent.name]
-    if team is None:
+    if team is None and agent.team:
+        team_line = (f"You are assigned to the team `{agent.team}`, which has not been created yet; until it is, the "
+                     "Supervisor is your lead and you have no team responsibilities.")
+    elif team is None:
         team_line = "You belong to no team; the Supervisor is your lead."
     elif team.name in lead_of:
         team_line = f"You belong to the team `{team.name}`, which you lead."

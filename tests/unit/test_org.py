@@ -121,6 +121,15 @@ def test_team_record_decides_membership(project):
     v = api.handle(project, store, "get_team", {"name": "product"})["team"]
     assert [a["name"] for a in v["agents"]] == ["product_owner", "writer"]
     assert [a["name"] for a in api.handle(project, store, "list_agents", {})["agents"] if not a["team"] and not a["builtin"]] == []
+    # the third case: an agent whose team does not exist yet is still an agent, visibly so
+    os_.save_agent(AgentDef(name="retro", roles=["owner"], team="devex", kind="continuous", wake_on=["gate_conflict"]))
+    listed = {a["name"]: a for a in api.handle(project, store, "list_agents", {})["agents"]}
+    assert listed["retro"]["team"] == "devex" and listed["retro"]["team_exists"] is False and listed["writer"]["team_exists"] is True
+    shown = {n for t in api.handle(project, store, "list_teams", {})["teams"] for n in [a["name"] for a in t["agents"]]}
+    shown |= {n for n, a in listed.items() if not a["team"] or not a["team_exists"]}
+    assert {n for n, a in listed.items() if not (a["builtin"] and not a["resident"])} <= shown   # everyone appears somewhere
+    from orchestra import agents as agents_mod
+    assert "`devex`, which has not been created yet" in agents_mod.agent_prompt(project, all_agents(project)["retro"])
 
 
 def test_effective_tools_and_the_message_tree(project):

@@ -151,7 +151,7 @@ function agentRow(a, lead, now) {
   return `<div class="arow"><div class="av ${lead ? "lead" : ""}" title="${lead ? "lead" : "member"}">${letter}</div>
     <span class="name"><a href="#" onclick="openAgent('${a.name}');return false">${esc(a.name)}</a>${lead ? ' <span class="tag">lead</span>' : ""}</span>
     <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span>
-    <span class="sched" title="${esc(a.description || "")}">${schedule(a)}${a.source === "role" ? ' <span class="tag" title="A Stage 1 role record that is its own agent">from role</span>' : ""}</span>
+    <span class="sched" title="${esc(a.description || "")}">${schedule(a)}${a.source === "role" ? ' <span class="tag" title="A Stage 1 role record that is its own agent">from role</span>' : ""}${a.team && a.team_exists === false ? ` <span class="tag" style="color:#fcd34d;border-color:#92400e" title="This agent names a team that has not been created yet. It runs without team responsibilities until the Supervisor creates it.">team ${esc(a.team)} not created yet</span>` : ""}</span>
     ${statusOf(a, now)}<span class="ctls"><button class="ctl" onclick="openTranscript('${a.session_id}')">transcript</button>${ctls}</span></div>`;
 }
 function teamCard(t, byName, now, sub) {
@@ -200,7 +200,7 @@ async function openAgent(name) {
     <div class="desc md">${md(a.description || "")}</div>
     <div class="def">
       <div>roles</div><div>${(r.roles || []).map((x) => `<a href="#" onclick="openRole('${x.name}');return false">${esc(x.name)}</a>${x.description ? ` <span class="muted">${esc(x.description)}</span>` : ""}`).join("<br>") || "none"}</div>
-      <div>team</div><div>${a.team ? (r.team_chain || []).map((t) => `<a href="#" onclick="openTeam('${t}');return false">${esc(t)}</a>`).join(" ← ") : "none (reports to the Supervisor)"}${(r.leads || []).length ? ` · leads ${r.leads.map((t) => `<code>${esc(t)}</code>`).join(", ")}` : ""}</div>
+      <div>team</div><div>${a.team ? ((r.team_chain || []).length ? r.team_chain.map((t) => `<a href="#" onclick="openTeam('${t}');return false">${esc(t)}</a>`).join(" ← ") : `<code>${esc(a.team)}</code> is not created yet; the agent runs without team responsibilities until it is`) : "none (reports to the Supervisor)"}${(r.leads || []).length ? ` · leads ${r.leads.map((t) => `<code>${esc(t)}</code>`).join(", ")}` : ""}</div>
       <div>wakes</div><div>${schedule(a)}${a.builtin && (a.wake_on || []).length ? '<div class="muted" style="margin-top:2px">These are conditions the loop detects in its own code and wakes this agent for; they are not event subscriptions.</div>' : ""}</div>
       <div>next wake-up</div><div>${nextWake(a, st, now)}</div>
       <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
@@ -233,7 +233,10 @@ async function refresh() {
     STATE = st; ORG = org; renderNav("agents", st.project); $("conn").textContent = "live";
     const byName = Object.fromEntries(org.agents.map((a) => [a.name, a]));
     const top = org.teams.filter((t) => !t.parent);
-    const loose = org.agents.filter((a) => !a.team && !(a.builtin && !a.resident));
+    // Every agent that is not a per-ticket worker appears exactly once: under its team, or here.
+    // "Here" includes agents whose team does not exist yet (created before the team, which the
+    // Supervisor's guide tells it to do), labelled as such.
+    const loose = org.agents.filter((a) => (!a.team || a.team_exists === false) && !(a.builtin && !a.resident));
     let html = timeline(org.agents, org.now);
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');

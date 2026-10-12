@@ -101,7 +101,8 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
 
     # -- agents: what runs ----------------------------------------------------------------
     if command == "list_agents":
-        return {"ok": True, "agents": [agent_view(project, store, ag) for ag in all_agents(project).values()]}
+        teams = all_teams(project)
+        return {"ok": True, "agents": [agent_view(project, store, ag, teams) for ag in all_agents(project).values()]}
     if command == "get_agent":
         ag = all_agents(project).get(a["name"])
         if ag is None:
@@ -253,9 +254,11 @@ def role_definition(project: Project, role: RoleDef) -> dict:
             "tool_names": {g: [t.name for t in tools_for([g])] for g in role.tools}}
 
 
-def agent_view(project: Project, store: LocalStore, ag: AgentDef) -> dict:
+def agent_view(project: Project, store: LocalStore, ag: AgentDef, teams: dict | None = None) -> dict:
     st = store.agent_state(ag.name)
+    teams = teams if teams is not None else all_teams(project)
     return {**ag.to_dict(), "builtin": ag.builtin, "source": ag.source, "session_id": ag.session_id,
+            "team_exists": ag.team is None or ag.team in teams,   # an agent may be created before its team (the guide's order)
             "wake_kind": "orchestra" if ag.builtin else "events",   # built-ins: the loop calls them; custom: they subscribe
             "resident": ag.resident, "paused": bool(st.get("paused")), "deleted": bool(st.get("deleted")),
             "last_woken": st.get("last_woken"), "next_scheduled_at": st.get("next_scheduled_at"),
