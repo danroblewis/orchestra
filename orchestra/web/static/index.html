@@ -78,9 +78,11 @@ function renderAgents(s) {
   let html = [...BASE_AGENTS, ...customs].map(([id, kind, letter, r]) => {
     const x = byId[id];
     const paused = r && r.paused;
-    return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')">
-      <div class="av">${letter}</div><div><div class="name">${id}</div><div class="role">${r ? esc(r.description || "custom role") : kind.replace("_", " ")}</div></div>${paused ? '<span class="chip"><span class="dot"></span>paused</span>' : chip(x)}
-      <div class="say">${esc(x && x.alive ? (x.last_text || "waiting for work") : (r && r.session === "ephemeral" ? "ephemeral: runs when woken" : "not running: start `orchestra run`"))}</div></div>`;
+    // One line per resident agent: what it is and what it is doing. What makes it that
+    // role (description, prompt, triggers) is on the Agents page, not here.
+    const say = x && x.alive ? (x.last_text || "waiting for work") : (r && r.session === "ephemeral" ? "ephemeral: runs when woken" : "not running: start `orchestra run`");
+    return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')" title="${esc(r ? r.description || "" : kind.replace("_", " "))}">
+      <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc(say)}</div>${paused ? '<span class="chip"><span class="dot"></span>paused</span>' : chip(x)}</div>`;
   }).join("");
   const isLive = (x) => x && x.status === "running";
   const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (byId[`worker-${t.id}`] || byId[`reviewer-${t.id}`]))
