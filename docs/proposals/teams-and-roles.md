@@ -63,50 +63,76 @@ next one, and the first stage covers the one thing we are certain people want:
 | 3. Access, channels, and a role library | Directory grants between teams; cross-team channels; roles and teams shared across projects. | Teams whose output other teams must trust. | Grants are never used beyond the defaults. |
 | 4. Self-organizing teams | Leads request members; templates; rotation; reference teams (Pipeline, Product, DevEx, Lab); impact metrics. | A project that runs for months. | The metrics say agents' decisions are not better than the human's. |
 
-The vocabulary, fixed now so it stays stable across stages:
+The vocabulary, fixed now so it stays stable across stages. Stage 1 fused the
+first two; Stage 2 separates them, because a description of what someone can
+do and a running instance of someone doing it are different things.
 
-- **Role**: one kind of agent. Every role has two independent dials:
-  - *session policy*: `resident` (one long-lived process that keeps memory and
-    can be talked to) or `ephemeral` (a fresh session per wake-up);
-  - *wake policy*: events, an interval, a daily time, or messages from its
-    lead, in any combination.
-  "Scheduled" and "long-lived" are not two kinds of agent; they are settings
-  every agent has. A Product Owner is resident and woken daily and on
-  landings; a researcher is ephemeral and woken only by a job; a monitor is
-  resident and woken by events.
-- **Team**: a group of roles with exactly one **lead**. The lead decides,
-  delegates, owns the team's space, grants its members access to it, and is
-  the only member that talks outside the team.
-- **Member**: a role in a team that is not the lead.
+- **Role**: a description of capability, written like a job description or
+  the proud part of a resume: what this kind of agent is good at, how it
+  works, what tools it needs, how it reports. A role has no runtime. It
+  cannot be scheduled, cannot hold a session, and cannot receive a message.
+  Roles are reusable across teams and projects.
+- **Agent**: an instance of one or more roles, placed in a team. The agent is
+  what runs. It has a name, a session policy, and a wake policy, and it is
+  the thing that is paused, restarted, messaged, and shown on the Dashboard.
+  There are three kinds, by how they are woken:
+  - *continuous*: a resident session woken by events as they happen. The
+    Coordinator and the Pipeline Manager are continuous agents.
+  - *scheduled*: woken on an interval or at a daily time. The session may be
+    resident, so it remembers, or ephemeral, so it starts clean. Team leads
+    are the agents most often scheduled, because a lead's job is to check
+    that its team's responsibilities are being met.
+  - *ad hoc*: invoked once, with a brief, by its lead or by Orchestra, and
+    closed when the brief is done. Workers and reviewers are ad hoc agents
+    invoked by Orchestra per ticket; a lead invokes an ad hoc agent when it
+    needs a one-off piece of work and no standing agent fits.
+  An agent gets its responsibilities and its access from its team, and its
+  skills from its roles. The Supervisor usually creates agents; a human may.
+- **Team**: a group of agents, and optionally sub-teams, with exactly one
+  **lead** agent. A team has three things of its own:
+  - *responsibilities*: short, clearly written prompts stating what the team
+    is responsible for keeping true. Not tasks; standing conditions. "Every
+    reviewer rejection has a classified cause within an hour" is a
+    responsibility. "Classify CA-30's rejection" is a job.
+  - *access*: grants to directories, read or write, and to tool groups. The
+    team's agents inherit them; the lead may narrow them per agent.
+  - *space*: the directory the team owns, with its curated directories and
+    its tools.
+  A nested team has a parent team; its lead reports to the parent's lead and
+  takes on a subset of the parent's responsibilities. The team's
+  responsibilities are met by its agents and its sub-teams together, and the
+  lead is accountable for that.
+- **Member**: any agent in a team that is not the lead.
 - **Job**: a unit of non-code work, executed by a member, reviewed by the lead.
-- **Team space**: the directory a team owns. It holds whatever the team needs
-  to do its work: documents, notes, handovers, generated reports, and the
-  tools the team builds for itself. The lead decides its layout and keeps it
-  accurate and bounded. Other roles see it read-only unless the lead grants
-  more.
-- **Grant**: a directory, a role, and `read` or `write`. Grants are what a
-  lead hands out, inside its own space to its members, and to other teams on
-  request.
+- **Grant**: a directory, an agent or team, and `read` or `write`.
 - **Curated directory**: a directory in a space whose documents have the
-  lifecycle below: statuses, votes, a token budget, and a required effect.
-  Only curated directories are loaded into prompts; the rest of a space is
-  working material.
-- **Operative set**: the documents in a curated directory with status
-  `active`, which is what gets loaded into the turns of the roles the
-  directory is for. Its total size is capped in tokens so it always fits.
+  lifecycle in Stage 2: statuses, votes, a token budget, and a required
+  effect. Only curated directories are loaded into prompts.
+- **Operative set**: the `active` documents of a curated directory, which is
+  what gets loaded into the turns of the agents the directory is for, under
+  a token cap so it always fits.
 - **Channel**: an explicit, visible permission for two teams' leads to exchange
-  messages. The default is the tree: members to their lead, leads to the
-  Supervisor, the Supervisor to the human.
+  messages. The default is the tree: members to their lead, leads to their
+  parent's lead, top-level leads to the Supervisor, the Supervisor to the
+  human.
 - **Supervisor**: the human's interface, above every lead.
 
-Stage 1, which exists, is the degenerate case: single roles with the two dials,
-no lead above them but the Supervisor, and no resources beyond tickets and the
-event log. Teams add the lead, the members, the jobs, and the space.
+How a turn is assembled for an agent, in this order: its roles' prompts, its
+team's responsibilities, a summary of its access, the operative sets it is
+entitled to, and finally the wake-up or brief that caused the turn. The role
+says how the agent works; the team says what it is for; the brief says what
+to do now.
+
+Stage 1, which exists, is the degenerate case: a custom role record is both a
+role and a single agent of it, with the two dials and no team but the
+Supervisor above it. Stage 2 splits the record into a role and an agent, and
+today's custom roles migrate as one role plus one agent each.
 
 What exists today in these terms: an Engineering team whose lead is the
-Coordinator and whose members are the per-ticket worker and reviewer, a
-Pipeline team whose lead is the Pipeline Manager with no members yet, and the
-Supervisor. All three are defined in Python.
+Coordinator, whose members are the ad hoc worker and reviewer agents, and
+whose responsibilities are the transition table; a Pipeline team whose lead is
+the Pipeline Manager with no members yet; and the Supervisor. All three are
+defined in Python.
 
 ---
 
@@ -324,6 +350,173 @@ were decisions a worker made early with too little context. The team:
   team's tools: a doc-budget check, a file-overlap report across in-flight
   branches, a transcript digest.
 
+### Worked example: a Product team with a nested QA team
+
+This is what the files look like for a team the Supervisor would plausibly
+design for the automata project, using the two custom roles that already
+exist there. The point of writing it out is to see where the model creaks
+before building it.
+
+```
+.orchestra/
+  roles/
+    product_owner.md          what a Product Owner is good at (exists today)
+    qa_engineer.md            what a QA engineer is good at (exists today)
+    e2e_author.md             writes a browser acceptance test from a ticket
+    analyst.md                reads a transcript or a log and classifies a cause
+  agents/
+    po.json                   {"roles": ["product_owner"], "team": "product", "kind": "scheduled", "every": "6h", "session": "resident"}
+    qa_lead.json              {"roles": ["qa_engineer"], "team": "product/qa", "kind": "scheduled", "every": "1d", "session": "resident"}
+    flake_hunter.json         {"roles": ["analyst"], "team": "product/qa", "kind": "continuous", "wake_on": ["gate_rejected"], "session": "ephemeral"}
+    e2e_writer.json           {"roles": ["e2e_author"], "team": "product/qa", "kind": "ad_hoc", "session": "ephemeral"}
+  teams/
+    product.json
+    product/
+      responsibilities.md
+      docs/                   curated, for: worker, reviewer, coordinator
+        stories.md
+        non-goals.md
+      notes/
+    product/qa.json
+    product/qa/
+      responsibilities.md
+      findings/               curated, for: qa_lead, po
+      tools/
+        flake-report          a script the flake_hunter wrote; on the QA agents' PATH
+```
+
+`teams/product.json`:
+
+```json
+{
+  "name": "product",
+  "lead": "po",
+  "agents": ["po"],
+  "teams": ["product/qa"],
+  "space": ".orchestra/teams/product",
+  "tracked": false,
+  "access": [
+    {"path": "automata", "access": "read"},
+    {"path": "tests", "access": "read"},
+    {"tools": ["tickets", "events", "escalate"]}
+  ],
+  "curated": [{"path": "docs", "for": ["worker", "reviewer", "coordinator"], "budget_tokens": 2500}],
+  "capacity": 1
+}
+```
+
+`teams/product/responsibilities.md`:
+
+```markdown
+# Product team: what we keep true
+
+1. Every open milestone states, in one paragraph in `docs/stories.md`, what a
+   player can do when it closes and why they would want to.
+2. The non-goals in `docs/non-goals.md` are current: nothing on the board
+   contradicts them, and nothing in them is older than the last two milestones.
+3. There are never fewer than ten OPEN tickets, and never more than thirty.
+4. No milestone starts its second ticket before the QA team has a browser
+   acceptance test planned for it.
+```
+
+`teams/product/qa.json` and its responsibilities:
+
+```json
+{
+  "name": "product/qa",
+  "parent": "product",
+  "lead": "qa_lead",
+  "agents": ["qa_lead", "flake_hunter", "e2e_writer"],
+  "space": ".orchestra/teams/product/qa",
+  "tracked": false,
+  "access": [
+    {"path": "tests/acceptance", "access": "read"},
+    {"path": "/Users/daniellewis/.orchestrator/orchestra-automata-db8ce182/gate", "access": "read"},
+    {"tools": ["tickets", "events", "pipeline", "escalate"]}
+  ],
+  "curated": [{"path": "findings", "for": ["qa_lead", "po"], "budget_tokens": 4000}],
+  "capacity": 2
+}
+```
+
+```markdown
+# QA team: what we keep true
+
+1. Every milestone has at least one browser acceptance test ticket filed
+   before its second feature ticket starts. (Responsibility 4 of Product.)
+2. Every gate rejection caused by an acceptance test has a finding in
+   `findings/` within a day saying whether the test or the code was wrong.
+3. A test that fails twice on unchanged code is quarantined by a ticket within
+   a day, and the finding names it.
+```
+
+Reading it back, this is how the pieces fit:
+
+- The QA lead is scheduled daily. On each wake-up its turn contains the
+  `qa_engineer` role prompt, the QA responsibilities, the Product
+  responsibilities above them (a nested lead sees its parent's), its access,
+  the active `findings/`, and the wake-up: events since yesterday and the
+  project snapshot. It checks each responsibility, and for each one not met
+  it either files a ticket (a code ticket for a new e2e test, assigned to
+  Engineering) or invokes an ad hoc agent (`e2e_writer` with a brief to draft
+  the test plan into `findings/`).
+- The flake hunter is continuous and ephemeral: every gate rejection wakes a
+  fresh session that reads that run's log from the gate directory, writes a
+  `proposed` finding, and exits. The QA lead decides it next morning.
+- The Product Owner sees the QA lead's findings because `findings/` names
+  `po` as a reader. It never talks to the flake hunter; the tree holds.
+- Workers see `docs/stories.md` and `docs/non-goals.md` in every turn, under
+  2,500 tokens, and vote on them. If the stories document is ignored for a
+  week, the Product Owner's wake-up says so.
+- The one tool, `flake-report`, was written by the flake hunter into the QA
+  space after it found itself grepping the same gate logs three times. It is
+  on the PATH of the three QA agents and of nobody else.
+
+### What will happen when a Supervisor designs this
+
+A prediction, written before building, so it can be checked afterwards.
+
+1. **It will try to do it in one turn and time out.** The first brief on the
+   automata project did exactly this. Team design is four creations in order
+   (roles, agents, team, responsibilities), each a tool call with a long text
+   argument, and a model that thinks before each one does not fit in a
+   15-minute turn. Orchestra needs two things: the silence-based timeout, and
+   a Supervisor prompt that says "one creation per turn, play back the plan
+   first, build on agreement". The human should expect the design to take a
+   short conversation, not a message.
+2. **It will write responsibilities as task lists.** "Review the backlog
+   weekly. File tickets for missing tests." Those are a lead's actions, not
+   standing conditions, and a lead that reads them will do them whether or
+   not they are needed. The fix is in the Supervisor's prompt with the
+   example above: a responsibility is a sentence that can be true or false
+   right now. Expect to send it back once.
+3. **It will over-grant.** Every agent gets `tickets`, `events`, `pipeline`,
+   and `escalate` because that is the list. The team-level grant makes this
+   less harmful: the lead can narrow per agent later, and the first time the
+   flake hunter files a ticket the lead should have filed, the lead will.
+4. **It will create a standing agent for a one-off need.** A "test writer"
+   that is scheduled weekly and has nothing to write most weeks. The ad hoc
+   kind exists for this, and the Supervisor's prompt should say: if the work
+   happens when the lead asks for it, it is ad hoc.
+5. **It will reuse the existing roles well** because `list_roles` shows them
+   and the prompts are decent. Expect `product_owner` and `qa_engineer` to be
+   kept as roles and the two existing custom roles to migrate as the `po` and
+   `qa_lead` agents without rewriting.
+6. **The nested team will be the part it gets right first**, because the
+   subset relation is natural: it will copy Product's responsibility 4 into
+   QA's responsibility 1 almost verbatim, which is exactly what should
+   happen.
+7. **In the first week** the QA lead will find responsibility 1 unmet for
+   every milestone and file one test ticket per milestone in a single
+   wake-up, which is the right outcome and will briefly flood Engineering.
+   The flake hunter will produce findings the QA lead rejects as "code was
+   wrong, not the test" about half the time, which is also the right outcome
+   and the first real use of the decide step. The Product Owner will keep
+   writing "board healthy" until the stories document gets its first
+   downvote from a worker, and that downvote is the first moment a document
+   changes what an agent does. If that moment never comes, the operative-set
+   idea has failed and we should know within a week.
+
 **Done when.** The DevEx team runs for a week on the automata project: the
 retrospective proposes lessons, the keeper decides them and workers' turns
 load the active set, workers vote, at least one document retires because a
@@ -521,6 +714,14 @@ Recorded here so the commit that builds Stage 2 updates `AGENTS.md` and
 - Role turns gain a loaded-documents section: the operative sets of the
   curated directories that name the role, under their budgets, with document
   ids so a vote can refer to one.
+- Roles split from agents: `.orchestra/roles/` keeps the role (prompt and
+  tool needs); `.orchestra/agents/<name>.json` holds the instance (roles,
+  team, kind, schedule, session policy). Stage 1 custom roles migrate as one
+  role plus one agent each, and the Agents page lists agents, not roles.
+- Teams: `.orchestra/teams/<team>.json` plus `<team>/responsibilities.md`;
+  nested teams by `parent`. A turn is assembled as roles, then
+  responsibilities (own and ancestors'), then access, then operative sets,
+  then the brief.
 - Tickets gain `kind` and, for jobs, `team` and `executor`. The transition
   table gains the job path.
 - Member sessions get the team's `tools/` on `PATH` and their working
