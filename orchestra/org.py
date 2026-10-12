@@ -438,7 +438,9 @@ def teams_led_by(teams: dict[str, TeamDef], agent: str) -> list[TeamDef]:
 
 def effective_tools(agent: AgentDef, roles: dict, teams: dict[str, TeamDef]) -> tuple[str, ...]:
     """Tool groups an agent runs with: its roles' groups, its team chain's granted groups,
-    and `team` when it leads a team."""
+    and `team` for every agent in a team, so a member can reach its lead with
+    message_agent and read the organisation. Who may message whom is enforced in the
+    API by the tree, not by the grant."""
     out: list[str] = []
     for r in agent.roles:
         for g in (roles[r].tools if r in roles else ()):
@@ -448,7 +450,7 @@ def effective_tools(agent: AgentDef, roles: dict, teams: dict[str, TeamDef]) -> 
         for g in t.tool_groups:
             if g not in out:
                 out.append(g)
-    if teams_led_by(teams, agent.name) and "team" not in out:
+    if (agent.team in teams or teams_led_by(teams, agent.name)) and "team" not in out:
         out.append("team")
     return tuple(out)
 

@@ -247,7 +247,12 @@ class Loop:
     def _open_session(self, session_id: str, role: str, system_prompt: str, tools: tuple[str, ...], cwd: Path,
                       ticket_id: str = "", extra_env: dict[str, str] | None = None) -> AgentSession:
         """Start a session on the configured harness. Which product runs the agent is
-        invisible past this point: the loop only sees the AgentSession interface."""
+        invisible past this point: the loop only sees the AgentSession interface. The
+        prompt the session starts with is kept beside its stderr log, so a transcript can
+        show what the agent was told, whatever the harness records."""
+        prompt_file = self.project.logs_dir / "agents" / f"{session_id}.prompt.md"
+        prompt_file.parent.mkdir(parents=True, exist_ok=True)
+        prompt_file.write_text(system_prompt, encoding="utf-8")
         return self.harness.start(SessionSpec(
             session_id=session_id, session_dir=self.project.sessions_dir, cwd=cwd,
             system_prompt=system_prompt, role=role, tool_groups=tools,

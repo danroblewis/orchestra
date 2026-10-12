@@ -152,8 +152,8 @@ def test_effective_tools_and_the_message_tree(project):
     os_.save_team(TeamDef(name="product", lead="po", access=[{"tools": ["escalate"]}]), "# P\n\n1. x")
     os_.save_team(TeamDef(name="product/qa", lead="qa_lead", members=["hunter"], access=[{"tools": ["pipeline"]}]), "# Q\n\n1. y")
     roles, teams, ags = __import__("orchestra.roles", fromlist=["all_roles"]).all_roles(project), all_teams(project), all_agents(project)
-    assert effective_tools(ags["hunter"], roles, teams) == ("events", "pipeline", "escalate")          # role + team + parent team
-    assert effective_tools(ags["qa_lead"], roles, teams) == ("tickets", "events", "pipeline", "escalate", "team")  # a lead gets `team`
+    assert effective_tools(ags["hunter"], roles, teams) == ("events", "pipeline", "escalate", "team")  # role + team + parent team; `team` so it can reach its lead
+    assert effective_tools(ags["qa_lead"], roles, teams) == ("tickets", "events", "pipeline", "escalate", "team")
     assert may_message(teams, ags, "qa_lead", "hunter") is None          # lead to member
     assert may_message(teams, ags, "hunter", "qa_lead") is None          # member to its lead
     assert may_message(teams, ags, "po", "qa_lead") is None              # lead to a sub-team's lead
@@ -209,6 +209,7 @@ def test_api_builds_a_team_the_way_the_guide_says(project):
     assert "never empty" in t["responsibilities"] and t["tools_dir"].endswith("spaces/product/tools")
     a = api.handle(project, store, "get_agent", {"name": "po"})
     assert a["tool_groups"] == ["tickets", "escalate", "events", "team"] and a["leads"] == ["product"]
+    assert "team" in api.handle(project, store, "get_agent", {"name": "writer"})["tool_groups"]   # members too
     assert "## Team `product` (your team)" in a["prompt"] and a["agent"]["every_seconds"] == 6 * 3600
     # an ephemeral agent's runs are all kept and listed, newest first; its transcript button opens the latest
     store.set_session("writer-20260101-000000", kind="writer", status="idle", started_at=100.0, last_text="first run")

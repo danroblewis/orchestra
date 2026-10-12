@@ -177,4 +177,5 @@ def test_team_lead_is_woken_in_its_space(env):
     texts = [m["text"] for m in read_transcript(sess) if m["role"] == "user"]
     assert any("event ticket_transition" in x and "to=DONE" in x for x in texts)
     assert (project.repo_root / ".orchestra" / "spaces" / "product" / "tools").is_dir()
+    assert "The backlog is never empty" in (project.logs_dir / "agents" / "po.prompt.md").read_text()   # what it was started with
     assert store.agent_state("po").get("last_woken")

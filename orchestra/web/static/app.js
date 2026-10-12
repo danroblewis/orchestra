@@ -83,6 +83,8 @@ async function openTranscript(id) {
       <button type="submit" ${s.alive ? "" : "disabled"}>Send</button>
       ${s.alive ? "" : '<div class="empty">The Supervisor is reachable while <code>orchestra run</code> is up.</div>'}
     </form><div id="live"></div>`;
+  if (d.started_with) html += `<details class="started"><summary>The prompt this session was started with <span class="muted">(${d.started_with.length.toLocaleString()} chars; roles, team responsibilities, access)</span></summary><div class="prompt md">${md(d.started_with)}</div></details>`;
+  else if (!perTicket) html += `<div class="empty">The prompt this session was started with was not recorded (started before Orchestra kept them). The agent's current prompt is on the Agents page.</div>`;
   html += `<h2>Transcript · newest first</h2><div id="transcript">`;
   html += d.messages.length ? d.messages.map(renderMessage).join("") : `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events or, for the supervisor, by a message."}</div>`;
   html += `</div><div id="transcript-more" class="empty" style="margin-top:8px">${d.has_more ? "scroll for older messages…" : "beginning of session"}</div>`;
