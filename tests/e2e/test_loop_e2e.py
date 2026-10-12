@@ -74,6 +74,7 @@ def test_ticket_goes_open_to_done(env):
     run_loop(project, store, events)
     t = store.get_ticket(t.id)
     assert t.state == State.DONE
+    assert t.worker_turns == 1 and t.reviewer_rejections == 0 and t.gate_rejections == 0
     assert "WORK.md" in git("ls-tree", "--name-only", "main", cwd=repo)
     assert "Merge E2E-1" in git("log", "-1", "--format=%s", "main", cwd=repo)
     assert not (project.worktrees_dir / t.id).exists()
@@ -94,6 +95,7 @@ def test_rejection_loops_back_to_worker(env, monkeypatch):
     run_loop(project, store, events)
     t = store.get_ticket(t.id)
     assert t.state == State.DONE and t.review_rounds == 1
+    assert t.worker_turns == 2 and t.reviewer_rejections == 1 and t.gate_rejections == 0   # re-engaged once, by the reviewer
     kinds = [n["kind"] for n in store.notes(t.id)]
     assert kinds.count("review") == 2
 
@@ -130,6 +132,7 @@ def test_gate_rejection_reengages_worker_then_lands(env, monkeypatch):
     t = store.get_ticket(t.id)
     assert t.state == State.DONE
     assert t.review_rounds == 1                       # the gate rejection counted as one round
+    assert t.worker_turns == 2 and t.gate_rejections == 1 and t.reviewer_rejections == 0   # re-engaged once, by the gate
     runs = store.gate_runs()
     assert [r["status"] for r in runs] == ["rejected", "landed"]
     assert runs[0]["rejected"] == [t.id] and runs[1]["merged"] == [t.id]

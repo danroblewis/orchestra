@@ -379,7 +379,8 @@ class Loop:
         sid = f"worker-{t.id}"
         try:
             path, branch = self._worktree(t)
-            t = self.store.transition(t.id, t.version, State.IN_PROGRESS, branch=branch, worker_session=sid)
+            t = self.store.transition(t.id, t.version, State.IN_PROGRESS, branch=branch, worker_session=sid,
+                                      worker_turns=t.worker_turns + 1)
         except (Conflict, StoreError, GitError) as e:
             log(f"{t.id}: cannot start worker: {e}")
             return
@@ -517,7 +518,7 @@ class Loop:
         t = self.store.get_ticket(tid)
         rounds = t.review_rounds + 1
         self.store.transition(tid, t.version, State.REJECTED, rejected_by="reviewer" if by != "merge_gate" else by,
-                              feedback=feedback, review_rounds=rounds)
+                              feedback=feedback, review_rounds=rounds, reviewer_rejections=t.reviewer_rejections + 1)
         log(f"{tid}: REJECTED (round {rounds})")
         if rounds >= self.cfg.review_rounds_before_escalation:
             self.store.add_wakeup("coordinator", f"{tid} has been rejected {rounds} times; decide whether to narrow, split, or cancel it")

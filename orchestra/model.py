@@ -123,7 +123,10 @@ class Ticket:
     blocked_reason: str | None = None
     feedback: str | None = None
     rejected_by: str | None = None
-    review_rounds: int = 0
+    review_rounds: int = 0        # drives the repeated-rejection escalation
+    worker_turns: int = 0         # times a worker was opened for this ticket (re-engagements = turns - 1)
+    reviewer_rejections: int = 0  # how many of those turns followed a reviewer rejection
+    gate_rejections: int = 0      # how many followed a merge-gate send-back (test failure or conflict)
     created_by: str = "supervisor"
     version: int = 1
     created_at: str = field(default_factory=now)

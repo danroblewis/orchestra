@@ -34,6 +34,17 @@ function highlightCode(root) {
 function openDrawer(html) { $("drawer").innerHTML = html; highlightCode($("drawer")); $("overlay").classList.add("open"); }
 function closeDrawer() { $("overlay").classList.remove("open"); }
 
+function turnsText(t) {
+  const n = t.worker_turns || 0;
+  if (n < 2) return n === 1 ? "1 (first attempt)" : "none yet";
+  const why = [];
+  if (t.reviewer_rejections) why.push(`${t.reviewer_rejections} after a reviewer rejection`);
+  if (t.gate_rejections) why.push(`${t.gate_rejections} after the merge gate sent it back`);
+  const other = n - 1 - (t.reviewer_rejections || 0) - (t.gate_rejections || 0);
+  if (other > 0) why.push(`${other} after a crash, timeout, or operator stop`);
+  return `${n} · re-engaged ${n - 1}×` + (why.length ? ` (${why.join(", ")})` : "");
+}
+
 async function openTicket(id) {
   const t = await (await fetch(`/api/tickets/${id}`)).json();
   const live = (window.STATE && STATE.tickets || []).find((x) => x.id === id);
@@ -45,7 +56,7 @@ async function openTicket(id) {
   const stateColor = color(t.state);
   openDrawer(`${alerts}<h3><span class="pill" style="--c:${stateColor};background:${stateColor}">${t.state.replace(/_/g, " ")}</span><span style="font-family:var(--mono)">${esc(t.id)}</span> ${esc(t.title)}</h3>
     <div class="kv"><div>milestone</div><div>${esc(t.milestone_id)}</div><div>priority</div><div>${priorityText(t, live)}</div><div>depends on</div><div>${t.depends_on.join(", ") || "—"}</div>
-    <div>branch</div><div class="num">${esc(t.branch || "—")}</div><div>reviewed commit</div><div class="num">${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>review rounds</div><div>${t.review_rounds}</div>
+    <div>branch</div><div class="num">${esc(t.branch || "—")}</div><div>reviewed commit</div><div class="num">${esc((t.reviewed_commit || "").slice(0, 10) || "—")}</div><div>worker turns</div><div>${turnsText(t)}</div>
     <div>sessions</div><div>${t.worker_session ? `<a href="#" onclick="openTranscript('${t.worker_session}');return false">${t.worker_session}</a>` : ""} ${t.reviewer_session ? `<a href="#" onclick="openTranscript('${t.reviewer_session}');return false">${t.reviewer_session}</a>` : ""}</div>
     ${live && live.state === "OPEN" && live.ready ? `<div>waiting</div><div>${esc(live.why_waiting)}</div>` : ""}</div>
     ${t.objective ? `<h2>Objective</h2>${md(t.objective)}` : ""}

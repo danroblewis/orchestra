@@ -40,6 +40,8 @@ h2 .count { color:var(--text2); font-family:var(--mono); font-weight:500 }
 .work:hover { background:var(--panel3) } .work .top { display:flex; justify-content:space-between; gap:8px; align-items:center; min-width:0 }
 .work .top > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .work .id { font-family:var(--mono); font-weight:700; color:var(--c) } .work .title { font-weight:600 }
+.work .right { display:flex; align-items:center; gap:8px; flex:none; white-space:nowrap }
+.work .turns { font-family:var(--mono); font-size:11px; color:#fcd34d; background:#3a2e0a; border:1px solid #6b5313; border-radius:999px; padding:1px 7px; cursor:help }
 .work .lane { display:grid; grid-template-columns:62px 1fr auto; gap:8px; align-items:center; margin-top:6px; font-size:12px; color:var(--text2) }
 .work .lane .who { color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em } .work .lane .msg { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.04em; color:#0b0d12; background:var(--c); white-space:nowrap }

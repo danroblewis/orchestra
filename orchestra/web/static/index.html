@@ -88,9 +88,23 @@ function renderAgents(s) {
     .sort((a, b) => Number(isLive(b.w) || isLive(b.r)) - Number(isLive(a.w) || isLive(a.r)));
   const lane = (who, x) => x ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${isLive(x) ? chip(x) : '<span class="muted">idle</span>'}</div>` : "";
   html += `<h2><span>Tickets in work</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
-    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="pill">${t.state.replace(/_/g, " ")}</span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
+    `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
     || '<div class="empty">No tickets being worked. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
+}
+
+// How many times the worker has been re-engaged on this ticket, and why. Shown only once
+// there is a second turn, so a clean first attempt stays uncluttered.
+function turns(t) {
+  if (!t.worker_turns || t.worker_turns < 2) return "";
+  const parts = [];
+  if (t.reviewer_rejections) parts.push(`${t.reviewer_rejections} review`);
+  if (t.gate_rejections) parts.push(`${t.gate_rejections} gate`);
+  const other = t.worker_turns - 1 - (t.reviewer_rejections || 0) - (t.gate_rejections || 0);
+  if (other > 0) parts.push(`${other} retry`);
+  const why = parts.length ? ` · ${parts.join(" · ")}` : "";
+  const title = `worker opened ${t.worker_turns} times: ${t.reviewer_rejections || 0} after a reviewer rejection, ${t.gate_rejections || 0} after the merge gate sent it back` + (other > 0 ? `, ${other} after a crash, timeout, or operator stop` : "");
+  return `<span class="turns" title="${esc(title)}">↺ turn ${t.worker_turns}${why}</span>`;
 }
 
 function renderQueue(s) {

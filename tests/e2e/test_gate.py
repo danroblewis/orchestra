@@ -98,6 +98,7 @@ def test_failing_tests_reject_the_ticket(env):
     assert run["status"] == "rejected" and run["rejected"] == [t.id] and run["merged"] == []
     t = store.get_ticket(t.id)
     assert t.state == State.REJECTED and t.rejected_by == "merge_gate" and t.review_rounds == 1
+    assert t.gate_rejections == 1 and t.reviewer_rejections == 0
     assert "unit" in t.feedback and run["id"] in t.feedback
     notes = store.notes(t.id)
     assert notes and notes[-1]["kind"] == "gate" and notes[-1]["author"] == "merge_gate"
@@ -139,6 +140,7 @@ def test_conflict_goes_back_to_worker_without_a_review_round(env):
     b = store.get_ticket(b.id)
     assert b.state == State.REJECTED and b.rejected_by == "merge_gate"
     assert b.review_rounds == 0                       # routine, not a review failure
+    assert b.gate_rejections == 1                     # but still a re-engagement the human can see
     assert "git merge main" in b.feedback and "routine" in b.feedback
     assert git("show", "main:README.md", cwd=repo) == "# gate\nline from A\n"
     assert "gate_conflict" in event_types(events)

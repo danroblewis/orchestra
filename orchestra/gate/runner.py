@@ -165,7 +165,7 @@ def run_gate(project: Project, store: LocalStore, events: Events, ticket_ids: li
         # round, so it never triggers the repeated-rejection escalation.
         rounds = t.review_rounds if conflict else t.review_rounds + 1
         store.transition(tid, t.version, State.REJECTED, rejected_by="merge_gate", feedback=reason[-8000:],
-                         review_rounds=rounds)
+                         review_rounds=rounds, gate_rejections=t.gate_rejections + 1)
         run["rejected"].append(tid)
         if conflict:
             run.setdefault("conflicts", []).append(tid)
