@@ -15,7 +15,7 @@
 <div class="tabs"><button class="on" onclick="showCol(0,this)">Agents</button><button onclick="showCol(1,this)">Merge gate</button><button onclick="showCol(2,this)">Host</button></div>
 <div class="layout">
   <div class="col on">
-    <div class="col-head"><h1>Agents</h1><span class="sub"><span id="agents-sub"></span> <button id="pause-btn" class="ctl" onclick="togglePause()" title="Pause or resume starting new workers">⏸ pause</button></span></div>
+    <div class="col-head"><h1>Agents</h1><span class="sub"><span id="agents-sub"></span></span></div>
     <div id="agents"></div>
   </div>
   <div class="col">
@@ -72,8 +72,7 @@ function chip(s) { return sessionChip(s, STATE.now); }
 function renderAgents(s) {
   const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
   const live = s.sessions.filter((x) => x.status === "running").length;
-  $("agents-sub").textContent = `${live} turn${live === 1 ? "" : "s"} running` + ` · capacity ${s.capacity ? s.capacity.workers : "?"} workers` + (s.pickup_paused ? " · PAUSED" : "");
-  const pb = $("pause-btn"); pb.textContent = s.pickup_paused ? "▶ resume" : "⏸ pause"; pb.classList.toggle("paused", !!s.pickup_paused);
+  $("agents-sub").textContent = `${live} turn${live === 1 ? "" : "s"} running`;
   // Only live processes belong here. A role that is paused or not started, and a ticket
   // whose worker finished its turn (waiting on a dependency, in review, rejected, or
   // between retries) has a session file but no agent; those live on the Agents and
@@ -89,7 +88,9 @@ function renderAgents(s) {
   const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`])))
     .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }));
   const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${chip(x)}</div>` : "";
-  html += `<h2><span>Agents on tickets</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
+  // The pause control sits here because this is all it governs: no new worker starts while
+  // it is on. Resident agents, reviews, the gate, and staging keep going.
+  html += `<h2><span>Agents on tickets</span><span class="hctl"><span class="count">${cards.length}</span><span>capacity ${s.capacity ? s.capacity.workers : "?"}${s.pickup_paused ? " · PAUSED" : ""}</span><button id="pause-btn" class="ctl ${s.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()" title="${s.pickup_paused ? "Resume starting new workers." : "Stop starting new workers. Running turns finish; reviews, the gate, staging, and resident agents are unaffected."}">${s.pickup_paused ? "▶ resume" : "⏸ pause new workers"}</button></span></h2>` + (cards.map(({ t, w, r }) =>
     `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
     || '<div class="empty">No agent is working a ticket right now. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;

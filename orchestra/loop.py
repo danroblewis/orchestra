@@ -276,8 +276,10 @@ class Loop:
                 secs = parse_interval(agent.every)
                 last = self._last_scheduled.get(name, self._started_at)
                 if now_t - last >= secs:
-                    self._last_scheduled[name] = now_t
+                    self._last_scheduled[name] = last = now_t
                     self.store.add_wakeup(name, f"scheduled check-in (every {agent.every})")
+                if st.get("next_scheduled_at") != last + secs:
+                    self.store.set_agent_state(name, next_scheduled_at=last + secs)
             if agent.at and due_at(agent.at, st.get("last_at_fire"), now_t):
                 self.store.set_agent_state(name, last_at_fire=now_t)
                 self.store.add_wakeup(name, f"scheduled daily session ({agent.at})")

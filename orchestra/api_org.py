@@ -223,7 +223,8 @@ def agent_view(project: Project, store: LocalStore, ag: AgentDef) -> dict:
     st = store.agent_state(ag.name)
     return {**ag.to_dict(), "builtin": ag.builtin, "source": ag.source, "session_id": ag.session_id,
             "resident": ag.resident, "paused": bool(st.get("paused")), "deleted": bool(st.get("deleted")),
-            "last_woken": st.get("last_woken"), "every_seconds": parse_interval(ag.every) if ag.every else None}
+            "last_woken": st.get("last_woken"), "next_scheduled_at": st.get("next_scheduled_at"),
+            "every_seconds": parse_interval(ag.every) if ag.every else None}
 
 
 def agent_definition(project: Project, store: LocalStore, ag: AgentDef) -> dict:

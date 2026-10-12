@@ -35,6 +35,17 @@
   .prompt-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin:14px 0 6px } .prompt-head h4 { margin:0; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted) }
   .prompt { border:1px solid var(--border); border-radius:8px; padding:10px 14px; background:#0b0e14; max-height:52vh; overflow:auto }
   .empty { color:var(--muted); font-size:12px; padding:8px 0 }
+  .tl { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px 6px; margin-bottom:6px }
+  .tl .row { display:grid; grid-template-columns:150px 1fr 150px; gap:10px; align-items:center; height:22px; font-size:12px }
+  .tl .row .lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .tl .row .lbl a { color:inherit; text-decoration:none; font-weight:600 }
+  .tl .track { position:relative; height:14px; border-radius:4px; background:repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px calc(100% / 24)); border-left:2px solid var(--accent) }
+  .tl .tick { position:absolute; top:2px; width:10px; height:10px; margin-left:-5px; border-radius:50%; background:#fcd34d; border:1px solid #92400e }
+  .tl .tick.ev { background:#93c5fd; border-color:#1d4ed8 } .tl .tick.at { background:#c4b5fd; border-color:#5b21b6 }
+  .tl .band { position:absolute; inset:1px 0; border-radius:3px; background:repeating-linear-gradient(90deg, #6b5313 0 3px, #3a2e0a 3px 6px); color:#fcd34d; font-size:10px; line-height:12px; padding-left:6px }
+  .tl select { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:4px; font:inherit; font-size:10.5px }
+  .tl .next { color:var(--text2); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right }
+  .tl .axis { display:grid; grid-template-columns:150px 1fr 150px; gap:10px; font-size:10.5px; color:var(--muted); margin-top:2px }
+  .tl .axis .marks { display:flex; justify-content:space-between }
 </style>
 </head>
 <body>
@@ -55,6 +66,44 @@ function act(action, name) {
   control({ action, name });
 }
 const sessionOf = (a) => STATE && STATE.sessions.find((x) => x.id === a.session_id);
+let HORIZON = 8 * 3600;
+try { HORIZON = Number(localStorage.getItem("orchestra.tl.horizon")) || HORIZON; } catch (e) {}
+function setHorizon(h) { HORIZON = Number(h); try { localStorage.setItem("orchestra.tl.horizon", String(HORIZON)); } catch (e) {} refresh(); }
+// Upcoming scheduled wake-ups within the horizon. The loop records next_scheduled_at, so the
+// interval ticks are the real ones; before the first tick is recorded the first is "due now".
+function upcoming(a, now) {
+  const out = [];
+  if (a.paused || a.deleted || a.kind === "ad_hoc") return out;
+  if (a.every_seconds) {
+    let t = a.next_scheduled_at || (a.last_woken ? a.last_woken + a.every_seconds : now);
+    while (t < now) t += a.every_seconds;
+    for (; t <= now + HORIZON; t += a.every_seconds) out.push({ t, kind: "every" });
+  }
+  if (a.at) {
+    const [hh, mm] = a.at.split(":").map(Number); const d = new Date(now * 1000); d.setHours(hh, mm, 0, 0);
+    let t = d.getTime() / 1000; if (t < now) t += 86400;
+    for (; t <= now + HORIZON; t += 86400) out.push({ t, kind: "at" });
+  }
+  return out.sort((x, y) => x.t - y.t);
+}
+const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function timeline(agents, now) {
+  const rows = agents.filter((a) => a.kind !== "ad_hoc" && (a.every || a.at)).map((a) => ({ a, ticks: upcoming(a, now) }));
+  if (!rows.length) return "";
+  const html = rows.map(({ a, ticks }) => {
+    // More than one wake-up per 2% of the track reads as a solid bar; draw it as one and say the interval.
+    const dense = ticks.length > 50;
+    const dots = dense ? `<span class="band" title="${esc(a.name)} wakes every ${esc(a.every)}: ${ticks.length} times in this window">every ${esc(a.every)}</span>`
+      : ticks.map((k) => `<span class="tick ${k.kind}" style="left:${(100 * (k.t - now) / HORIZON).toFixed(2)}%" title="${esc(a.name)} · ${clock(k.t)} (${ago(k.t - now)} from now)"></span>`).join("");
+    const next = a.paused ? "paused" : ticks.length ? `${ago(ticks[0].t - now)} · ${clock(ticks[0].t)}` : "nothing in this window";
+    const evs = (a.wake_on || []).length ? ` <span class="muted" title="also wakes on ${esc(a.wake_on.join(", "))}">+events</span>` : "";
+    return `<div class="row"><span class="lbl"><a href="#" onclick="openAgent('${a.name}');return false">${esc(a.name)}</a> <span class="muted">${a.every ? "every " + esc(a.every) : ""}${a.every && a.at ? ", " : ""}${a.at ? "daily " + esc(a.at) : ""}</span>${evs}</span><div class="track">${dots}</div><span class="next">${next}</span></div>`;
+  }).join("");
+  const H = HORIZON / 3600, step = H / 4;
+  const marks = [0, 1, 2, 3, 4].map((i) => `<span>${i === 0 ? "now " + clock(now) : "+" + (step * i) + "h"}</span>`).join("");
+  const pick = [2, 8, 24].map((h) => `<option value="${h * 3600}" ${h * 3600 === HORIZON ? "selected" : ""}>next ${h}h</option>`).join("");
+  return `<div class="tl">${html}<div class="axis"><span>scheduled wake-ups · <select onchange="setHorizon(this.value)">${pick}</select></span><div class="marks">${marks}</div><span></span></div></div>`;
+}
 function schedule(a) {
   if (a.kind === "ad_hoc") return a.builtin ? "started by Orchestra per ticket, in that ticket's worktree" : "runs when its lead briefs it";
   const parts = [];
@@ -68,7 +117,8 @@ function nextWake(a, st, now) {
   if (a.paused) return "paused: wake-ups are queued until resumed";
   if (a.kind === "ad_hoc") return "when its lead calls run_agent with a brief";
   const parts = [];
-  if (a.every && st.last_woken && a.every_seconds) { const due = st.last_woken + a.every_seconds - now; parts.push(due > 0 ? `scheduled in ${ago(due)}` : "scheduled wake-up is due"); }
+  const up = upcoming(a, now);
+  if (a.every && up.length) parts.push(`scheduled in ${ago(up[0].t - now)} (${clock(up[0].t)}), then every ${esc(a.every)}`);
   else if (a.every) parts.push(`every ${esc(a.every)}, first wake-up pending`);
   if (a.at) parts.push(`daily at ${esc(a.at)}`);
   if ((a.wake_on || []).length) parts.push(`or sooner on ${a.wake_on.map((w) => `<code>${esc(w)}</code>`).join(", ")}`);
@@ -170,7 +220,8 @@ async function refresh() {
     const byName = Object.fromEntries(org.agents.map((a) => [a.name, a]));
     const top = org.teams.filter((t) => !t.parent);
     const loose = org.agents.filter((a) => !a.team && !(a.builtin && !a.resident));
-    let html = `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
+    let html = timeline(org.agents, org.now);
+    html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');
     html += `<h2>Roles <span class="count">${org.roles.length}</span></h2>` + org.roles.map((r) => `<div class="rolecard"><div>
         <h3><a href="#" onclick="openRole('${r.name}');return false">${esc(r.name)}</a> ${r.builtin ? '<span class="tag">built-in</span>' : '<span class="tag">custom</span>'}</h3>
