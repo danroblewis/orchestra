@@ -145,6 +145,15 @@ def test_supervisor_message_roundtrip():
 
 # -- resume, then watch both tickets land in dependency order ------------------------
 
+def test_operator_sets_capacity_live():
+    status, body = post_json("/api/control", {"action": "capacity", "workers": 2, "reviewers": 1})
+    assert status == 200, body
+    cap = get_json("/api/state")["capacity"]
+    assert cap["max_workers"] == 2 and cap["max_reviewers"] == 1 and cap["operator_set"]
+    status, body = post_json("/api/control", {"action": "capacity"})
+    assert status == 200 and not get_json("/api/state")["capacity"]["operator_set"]
+
+
 def test_resume_lands_tickets_in_order():
     status, body = post_json("/api/control", {"action": "resume"})
     assert status == 200 and json.loads(body)["pickup_paused"] is False

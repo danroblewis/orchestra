@@ -31,8 +31,9 @@ that must not be broken without updating the spec and saying so in the commit.
 7. **Humans talk only to the Supervisor.** There is no human path to create or
    edit tickets or milestones; the CLI and UI are read-only for them except for
    sending a message to the Supervisor (`orchestra chat`, or the box in its
-   transcript drawer) and two operator controls: pausing new workers and
-   stopping a running agent. Humans never prompt the Coordinator, Pipeline
+   transcript drawer) and three operator controls: pausing new workers,
+   stopping a running agent, and the ceiling on concurrent workers and
+   reviewers (the Coordinator's dial sits under it). Humans never prompt the Coordinator, Pipeline
    Manager, workers, or reviewers.
 8. **Every ticket has a milestone, and closed milestones are final.** A
    milestone closes only when all its tickets are terminal, can never reopen,

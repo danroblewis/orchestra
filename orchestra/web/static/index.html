@@ -97,7 +97,7 @@ function renderAgents(s) {
   const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${chip(x)}</div>` : "";
   // The pause control sits here because this is all it governs: no new worker starts while
   // it is on. Resident agents, reviews, the gate, and staging keep going.
-  html += `<h2><span>Agents on tickets</span><span class="hctl"><span class="count">${cards.length}</span><span>capacity ${s.capacity ? s.capacity.workers : "?"}${s.pickup_paused ? " · PAUSED" : ""}</span><button id="pause-btn" class="ctl ${s.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()" title="${s.pickup_paused ? "Resume starting new workers." : "Stop starting new workers. Running turns finish; reviews, the gate, staging, and resident agents are unaffected."}">${s.pickup_paused ? "▶ resume" : "⏸ pause new workers"}</button></span></h2>` + (cards.map(({ t, w, r }) =>
+  html += `<h2><span>Agents on tickets</span><span class="hctl"><span class="count">${cards.length}</span>${capacityCtl(s)}${s.pickup_paused ? "<span>new workers PAUSED</span>" : ""}<button id="pause-btn" class="ctl ${s.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()" title="${s.pickup_paused ? "Resume starting new workers." : "Stop starting new workers. Running turns finish; reviews, the gate, staging, and resident agents are unaffected."}">${s.pickup_paused ? "▶ resume" : "⏸ pause new workers"}</button></span></h2>` + (cards.map(({ t, w, r }) =>
     `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
     || '<div class="empty">No agent is working a ticket right now. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
@@ -148,6 +148,22 @@ function renderQueue(s) {
 async function control(body) {
   const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) alert(await r.text()); refresh();
+}
+// The operator's ceiling on concurrent workers and reviewers, adjustable live. The
+// Coordinator's own dial can lower the effective number further but never raise it past this.
+function capacityCtl(s) {
+  const c = s.capacity || {};
+  const step = (kind, n) => `<button class="ctl" style="padding:0 6px" onclick="event.stopPropagation();setCapacity('${kind}',${n})" title="${n < 0 ? "one fewer" : "one more"} ${kind}">${n < 0 ? "−" : "+"}</button>`;
+  const reset = c.operator_set ? `<button class="ctl" style="padding:0 6px" onclick="event.stopPropagation();setCapacity(null,0)" title="Back to orchestra.toml: ${c.configured_workers} workers, ${c.configured_reviewers} reviewers">↺</button>` : "";
+  const eff = (kind) => c[kind] !== c["max_" + kind] ? ` <span class="muted" title="The Coordinator has dialled the effective number down to ${c[kind]}">(${c[kind]} in use)</span>` : "";
+  return `<span title="Concurrent workers and reviewers. Takes effect at the next tick; running turns finish.">${step("workers", -1)}<b>${c.max_workers ?? "?"}</b>${step("workers", 1)} workers${eff("workers")} · ${step("reviewers", -1)}<b>${c.max_reviewers ?? "?"}</b>${step("reviewers", 1)} reviewers${eff("reviewers")}${reset}</span>`;
+}
+function setCapacity(kind, delta) {
+  const c = (STATE && STATE.capacity) || {};
+  if (kind === null) return control({ action: "capacity" });
+  const body = { action: "capacity", workers: c.max_workers, reviewers: c.max_reviewers };
+  body[kind] = Math.max(0, (c["max_" + kind] || 0) + delta);
+  control(body);
 }
 function togglePause() { control({ action: STATE && STATE.pickup_paused ? "resume" : "pause" }); }
 function killAgent(id) { if (confirm(`Stop the agent working on ${id}? The ticket goes back to OPEN (or back to review) and its branch and session are kept.`)) control({ action: "kill", ticket: id }); }

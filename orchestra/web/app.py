@@ -279,6 +279,17 @@ def create_app(project: Project) -> FastAPI:
         if action in ("pause", "resume"):
             store.set_pickup_paused(action == "pause", by="operator")
             return {"ok": True, "pickup_paused": action == "pause"}
+        if action == "capacity":
+            # The operator's ceiling on workers and reviewers, live. Running turns finish;
+            # only new pickups see the new number. Omit both to return to orchestra.toml.
+            try:
+                w = int(body["workers"]) if body.get("workers") is not None else None
+                r = int(body["reviewers"]) if body.get("reviewers") is not None else None
+            except (TypeError, ValueError):
+                raise HTTPException(400, "workers and reviewers must be whole numbers")
+            if (w is not None and not 0 <= w <= 64) or (r is not None and not 0 <= r <= 64):
+                raise HTTPException(400, "capacity must be between 0 and 64")
+            return {"ok": True, "capacity": store.set_operator_capacity(w, r, by="operator")}
         if action == "kill":
             tid = body.get("ticket") or ""
             try:

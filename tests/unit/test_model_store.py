@@ -57,6 +57,23 @@ def test_version_conflict_and_blocked_reason(project):
     store.transition(t.id, t.version, State.BLOCKED, blocked_reason="need creds")
 
 
+def test_operator_capacity_is_the_ceiling_the_coordinator_dials_under(project):
+    store = LocalStore(project)
+    base = store.capacity()
+    assert base["max_workers"] == base["configured_workers"] and not base["operator_set"]
+    cap = store.set_operator_capacity(base["configured_workers"] + 3, None)
+    assert cap["max_workers"] == base["configured_workers"] + 3 and cap["workers"] == cap["max_workers"]   # live, above the file's number
+    store.set_capacity(1, None, note="model is slow", by="coordinator")
+    cap = store.capacity()
+    assert cap["workers"] == 1 and cap["max_workers"] == base["configured_workers"] + 3                     # the dial sits under the ceiling
+    store.set_capacity(99, None, by="coordinator")
+    assert store.capacity()["workers"] == base["configured_workers"] + 3                                    # and never above it
+    cap = store.set_operator_capacity(0, 0)
+    assert cap["workers"] == 0 and cap["reviewers"] == 0
+    cap = store.set_operator_capacity(None, None)
+    assert not cap["operator_set"] and cap["max_workers"] == base["configured_workers"]                      # back to orchestra.toml
+
+
 def test_config_durations():
     cfg = Config.from_toml('[agents]\nturn_timeout = "2m"\n[[gate.unit]]\nname="u"\ncommand="true"\n')
     assert cfg.turn_timeout == 120 and cfg.unit[0].command == "true"

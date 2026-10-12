@@ -292,14 +292,36 @@ class LocalStore:
         return self._mutate_runtime(lambda d: d["reports"].pop(ticket_id, None))
 
     def capacity(self) -> dict:
-        """Effective worker/reviewer capacity: the runtime dial (set by the Coordinator)
-        clamped to the configured ceiling in orchestra.toml."""
+        """Effective worker/reviewer capacity. The ceiling is the operator's number when one
+        is set from the Dashboard, otherwise orchestra.toml; the Coordinator's runtime dial
+        sits under that ceiling. The loop reads this every tick, so a change is live."""
         cfg = self.project.config
+        op = self._r().get("operator_capacity") or {}
+        max_w = int(op.get("workers", cfg.workers))
+        max_r = int(op.get("reviewers", cfg.reviewers))
         dial = self._r().get("capacity") or {}
-        return {"workers": max(0, min(int(dial.get("workers", cfg.workers)), cfg.workers)),
-                "reviewers": max(0, min(int(dial.get("reviewers", cfg.reviewers)), cfg.reviewers)),
-                "max_workers": cfg.workers, "max_reviewers": cfg.reviewers,
-                "dial_set": bool(dial), "note": dial.get("note")}
+        return {"workers": max(0, min(int(dial.get("workers", max_w)), max_w)),
+                "reviewers": max(0, min(int(dial.get("reviewers", max_r)), max_r)),
+                "max_workers": max_w, "max_reviewers": max_r, "configured_workers": cfg.workers, "configured_reviewers": cfg.reviewers,
+                "operator_set": bool(op), "dial_set": bool(dial), "note": dial.get("note")}
+
+    def set_operator_capacity(self, workers: int | None, reviewers: int | None, by: str = "operator") -> dict:
+        """The human's ceiling, from the Dashboard. None for both clears it back to orchestra.toml."""
+        def fn(d):
+            if workers is None and reviewers is None:
+                d.pop("operator_capacity", None)
+                return {}
+            op = d.setdefault("operator_capacity", {})
+            if workers is not None:
+                op["workers"] = max(0, int(workers))
+            if reviewers is not None:
+                op["reviewers"] = max(0, int(reviewers))
+            op["by"], op["updated_at"] = by, now()
+            return dict(op)
+        self._mutate_runtime(fn)
+        cap = self.capacity()
+        self.events.emit("capacity_changed", by=by, workers=cap["workers"], reviewers=cap["reviewers"], note="operator ceiling")
+        return cap
 
     def set_capacity(self, workers: int | None, reviewers: int | None, note: str = "", by: str = "") -> dict:
         def fn(d):
