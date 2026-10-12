@@ -47,4 +47,9 @@ def test_shutdown_marks_every_running_turn(project):
     loop.stop.set()
     loop.run(once=True)
     cut = [e for e in events.read(0)[0] if e["type"] == "turn_interrupted"]
-    assert [(e["session"], e["ticket"]) for e in cut] == [("worker-T-1", "T-1")]
+    assert [(e["session"], e["ticket"]) for e in cut] == [("worker-T-1", "T-1")]     # found running at startup: a crash
+    assert "crashed" in cut[0]["reason"]
+    store.set_session("po", status="running")
+    loop._shutdown_markers()
+    cut = [e for e in events.read(0)[0] if e["type"] == "turn_interrupted"]
+    assert cut[-1]["session"] == "po" and "shut down" in cut[-1]["reason"]           # cut off by a clean stop

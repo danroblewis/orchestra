@@ -68,6 +68,10 @@ class Loop:
                 self.store.transition(t.id, t.version, RECOVERY[t.state])
                 log(f"recovered {t.id}: {t.state} -> {RECOVERY[t.state]}")
         for s in self.store.sessions():
+            if s.get("status") == "running":
+                # The previous loop died without closing this turn (crash or kill -9).
+                self.events.emit("turn_interrupted", session=s["id"], agent=s.get("kind"), ticket=s.get("ticket_id") or None,
+                                 reason="orchestra was not running (it crashed or was killed) during this turn")
             self.store.set_session(s["id"], status="idle", pid=None)
         # A gate run that was in flight when the previous loop died never finished;
         # mark it so the dashboard does not show it as running forever.
@@ -119,12 +123,7 @@ class Loop:
         finally:
             if self.control:
                 self.control.stop()
-            # Every turn still running is about to be cut off by this shutdown. Say so in the
-            # event log, so the transcript does not look like the agent stopped on its own.
-            for s in self.store.sessions():
-                if s.get("status") == "running":
-                    self.events.emit("turn_interrupted", session=s["id"], agent=s.get("kind"), ticket=s.get("ticket_id") or None,
-                                     reason="orchestra shut down (restart or stop) during this turn")
+            self._shutdown_markers()
             for name, p in self.agent_procs.items():
                 p.close()
                 self.store.set_session(self.agents[name].session_id if name in self.agents else name.replace("_", "-"),
@@ -134,6 +133,14 @@ class Loop:
             self.store._mutate_runtime(lambda d: d.pop("control", None)
                                        if (d.get("control") or {}).get("pid") == os.getpid() else None)
             self.events.emit("loop_stopped")
+
+    def _shutdown_markers(self) -> None:
+        """Every turn still running is about to be cut off by this shutdown. Say so in the
+        event log, so the transcript does not look like the agent stopped on its own."""
+        for s in self.store.sessions():
+            if s.get("status") == "running":
+                self.events.emit("turn_interrupted", session=s["id"], agent=s.get("kind"), ticket=s.get("ticket_id") or None,
+                                 reason="orchestra shut down (restart or stop) during this turn")
 
     def _busy(self) -> bool:
         return any(t.is_alive() for t in [*self.workers.values(), *self.reviewers.values(),
