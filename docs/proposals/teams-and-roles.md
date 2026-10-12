@@ -350,6 +350,90 @@ were decisions a worker made early with too little context. The team:
   team's tools: a doc-budget check, a file-overlap report across in-flight
   branches, a transcript digest.
 
+### Experiments
+
+Teams will run process experiments constantly: "workers would pass review
+more often if their turn loaded this rule", "the gate would reject less if
+batches were smaller". A research experiment is already a job whose result is
+a finding. A process experiment needs a little more, because a change made "as
+an experiment" with nothing enforcing the experiment is just a change.
+
+The record is prose in the team's space, under a curated `experiments/`
+directory, with four fields of frontmatter that Orchestra acts on:
+
+```markdown
+---
+status: active                      # the usual lifecycle: proposed, active, retired, rejected
+variant: docs/worker-rules.md@b     # what is varied: a document variant, a role prompt variant, a config value, or a tool on PATH
+scope: {agents: [worker], fraction: 0.5}
+metric: reviewer_rejections         # a per-ticket counter Orchestra already keeps
+ends: 2026-10-25
+---
+# Plan-before-edit rule in the worker turn
+
+Hypothesis: workers that write the three lists before editing get rejected
+less. Expected effect: rejections per landed ticket from 0.4 to 0.2 over
+twenty tickets. Smaller than that is no evidence.
+
+## Log
+2026-10-18: 6 tickets in each arm, 2 rejections in control, 1 in variant.
+```
+
+What Orchestra does with those four fields, and nothing else:
+
+- *Assignment.* For the agents in scope, the given fraction of turns get the
+  variant; the rest get the current version. The arm is recorded on the
+  ticket, so the comparison is between tickets that actually ran under each.
+- *Measurement.* A `metrics` tool returns the per-ticket counters for a
+  window, grouped by arm: worker turns, reviewer rejections, gate send-backs,
+  timeouts, time from start to landing. The agent does the comparison itself
+  and writes it in the log. There is no statistics engine.
+- *Reversion.* On the end date, unless the lead has decided `keep`, the
+  variant is withdrawn and the experiment is marked `retired` with "expired
+  undecided". `keep` makes the variant the active version of the document or
+  prompt. This is the part prompts cannot be trusted with, and it is what
+  makes it safe for agents to run experiments without a human watching.
+
+The team's responsibilities carry the discipline: "every experiment has an
+end date and a verdict, no verdict is later than its end date by more than a
+day, and no two experiments vary the same thing at once". A team may also
+require that any change to a worker-facing document above a size go through
+an experiment first.
+
+The caveat to put in every lead's prompt: at five or six landed tickets a
+day, most experiments will not reach anything like significance in a week.
+The lead states the effect it expects before starting; a result smaller than
+that is "no evidence", not "it worked". Before-and-after comparisons are
+allowed, with `scope: {fraction: 1.0}`, and are labelled observational in the
+verdict. An agent that understands that distinction will make better
+decisions than one told to test everything.
+
+### Team pages
+
+Every team gets a page at `/teams/<team>` for free, built from what Orchestra
+already holds, so it needs no code from the team and is live:
+
+- the responsibilities, each with the lead's last assessment (met, unmet, or
+  not yet assessed) and when it was made;
+- the agents, with kind, session policy, status, and next wake-up, and the
+  sub-teams nested beneath with the same;
+- the curated directories: each document with status, votes, last upvote,
+  and whether its effect verifies; the operative set's size against budget;
+- the experiments: arm sizes, the metric so far, and days to the end date;
+- the tools, with their help text;
+- the grants the team holds and has given, and its channels.
+
+A top-level Teams page shows the tree, the channels between leads, and the
+cross-team grants, so the organisation is visible in one place.
+
+A custom page remains possible as the exception a team earns: a member writes
+a self-contained page into the space as a job, the lead reviews it, and
+Orchestra serves it under the team's path with read access to the space
+through the API, so it cannot bypass a grant. The lab's spectrum viewer is
+the kind of thing that needs this; a Product or DevEx team should never need
+it. The two things not to do stand: no fixed palette of widgets, and no
+custom HTML as the normal way to define a team.
+
 ### Worked example: a Product team with a nested QA team
 
 This is what the files look like for a team the Supervisor would plausibly
@@ -625,8 +709,9 @@ remain useful on their own.
 
 ## Open topic: how a team shows its work
 
-This is unresolved and is recorded here so it is not forgotten. It belongs to
-Stage 2 or later, but it shapes what a team is for.
+The default team page and the custom-page exception are now Stage 2 items
+(see "Team pages" above). What remains open is the data side, recorded here
+so it is not forgotten.
 
 **The need.** A team that produces something other than code needs a place to
 show it. The R&D lab in an earlier project built its own page: waterfall
@@ -644,19 +729,6 @@ a team's output needs the team's own view.
   makes a team definition a web project, and makes the Supervisor or lead a
   front-end developer. Sometimes a team genuinely needs a custom page, and
   that must stay possible, but it should be the exception a team earns.
-
-**Directions worth exploring.**
-
-1. *The space, rendered.* The cheapest default: Orchestra serves a team's
-   space read-only at `/teams/<team>/`, markdown rendered, reports listed by
-   date, tools listed with their help text. Most teams would never need more.
-2. *Pages as a job output.* A lead can request a page as a job: a member
-   writes a self-contained page into the space, served by Orchestra under the
-   team's path with read access to the space, reviewed by the lead like any
-   job. The page is team code, not Orchestra code and not product code.
-3. *Pages built against an API, not a database.* Whatever a team page is, it
-   reads through Orchestra's API, so grants are respected and a page cannot
-   bypass a lead.
 
 **Data that is not the space.** The lab recorded several gigabytes of radio
 captures. That does not belong in a repository directory, tracked or not. A
@@ -695,7 +767,12 @@ natural place for it to appear.
 9. **Orchestra's own docs.** The same rot affects `docs/` in this repository.
    Should Orchestra's self-hosting project curate it with the same lifecycle,
    which would make Orchestra the first user of the mechanism?
-10. **Team pages and team data.** See the open topic above.
+10. **Experiment variants of config.** A document or prompt variant is
+    per-turn. A config variant such as gate batch size is global while it is
+    on, so its arm is a time window, not a fraction of turns. Is that worth
+    supporting in the first version, or are document and prompt variants
+    enough to start?
+11. **Team data.** See the open topic above.
 
 ## Spec changes Stage 2 requires
 
@@ -726,6 +803,14 @@ Recorded here so the commit that builds Stage 2 updates `AGENTS.md` and
   table gains the job path.
 - Member sessions get the team's `tools/` on `PATH` and their working
   directory set to the space.
+- Experiments: the loop assigns variants per turn from the `scope` fraction,
+  records the arm on the ticket, withdraws the variant on `ends` unless
+  decided `keep`, and exposes a `metrics` tool grouping per-ticket counters
+  by arm. Variants exist for curated documents, role prompts, config values,
+  and tools on `PATH`.
+- Team pages: `/teams` and `/teams/<team>` served from the team store, the
+  agent registry, the curated index, and the experiment records; custom pages
+  served from the space under the team's path through the API.
 
 ## Build order
 
