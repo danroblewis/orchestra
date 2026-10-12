@@ -30,7 +30,7 @@ EVENT_TYPES = (
     "session_started", "session_settled",
     "role_created", "role_changed", "role_deleted", "agent_created", "agent_changed", "agent_deleted",
     "agent_paused", "agent_resumed", "agent_messaged", "team_created", "team_changed", "team_deleted",
-    "probe_failed", "probe_recovered",
+    "probe_failed", "probe_recovered", "turn_timed_out", "turn_error",
 )
 # Teams may declare further event types (`emits`) that their agents raise with `emit_event`;
 # those are validated against the teams, not this list.

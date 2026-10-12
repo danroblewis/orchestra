@@ -22,6 +22,9 @@ from ..store import LocalStore, StoreError
 STATIC = Path(__file__).parent / "static"
 
 
+MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "agent_killed")
+
+
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
     events = Events(project.events_file)
@@ -316,8 +319,13 @@ def create_app(project: Project) -> FastAPI:
         s = {**s, "alive": bool(s.get("pid")) and psutil.pid_exists(int(s["pid"])), "file_exists": exists}
         pf = project.logs_dir / "agents" / f"{session_id}.prompt.md"
         started_with = pf.read_text(encoding="utf-8") if pf.exists() else None
+        # What Orchestra did to this session: turn starts, cut-offs, errors, operator stops.
+        # The session file stays the only transcript; the view overlays the event log.
+        markers = [e for e in events.read(0, limit=100000)[0]
+                   if e.get("session") == session_id and e["type"] in MARKER_TYPES][-50:]
         return {"session": s, "messages": page, "total": total, "before": before, "next_before": total - (end - len(page)) if page else before,
-                "has_more": end - len(page) > 0, "turns": sum(1 for m in msgs if m["role"] == "user"), "started_with": started_with}
+                "has_more": end - len(page) > 0, "turns": sum(1 for m in msgs if m["role"] == "user"), "started_with": started_with,
+                "markers": markers}
 
     @app.get("/api/gate/runs/{run_id}")
     async def gate_run(run_id: str) -> dict:

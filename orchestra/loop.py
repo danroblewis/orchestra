@@ -355,6 +355,27 @@ class Loop:
                                **fields)
         self.events.emit("session_settled", session=sid)
 
+    def _note_turn(self, sid: str, res, kind: str = "") -> None:
+        """A turn that Orchestra cut off, or that the harness failed, is recorded as an event
+        with what the agent was doing at that moment, so the transcript can show the stop
+        instead of just ending. Pi's session file is still the only transcript; this is
+        the event log, which the transcript view overlays."""
+        if not (res.timed_out or res.error):
+            return
+        s = self.store.find_session(sid) or {}
+        now_t = time.time()
+        if res.timed_out:
+            phase = s.get("phase") or "working"
+            doing = f"running `{s['tool_name']}`" if phase == "tool" and s.get("tool_name") else \
+                "generating a reply" if phase == "generating" else "waiting for the model to start replying" if phase == "prompting" else phase
+            self.events.emit("turn_timed_out", session=sid, agent=kind or s.get("kind"), ticket=s.get("ticket_id") or None,
+                             limit=self.cfg.turn_timeout, doing=doing,
+                             phase_for=round(now_t - s["phase_since"]) if s.get("phase_since") else None,
+                             silent_for=round(now_t - s["last_output_at"]) if s.get("last_output_at") else None,
+                             last_text=(res.text or s.get("last_text") or "")[-300:])
+        else:
+            self.events.emit("turn_error", session=sid, agent=kind or s.get("kind"), ticket=s.get("ticket_id") or None, error=str(res.error)[:500])
+
     def _proc_for(self, sid: str) -> AgentSession | None:
         if sid in self.live_procs:
             return self.live_procs[sid]
@@ -362,10 +383,12 @@ class Loop:
 
     def _prompt_with_retry(self, proc: AgentSession, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id))
+        self._note_turn(proc.session_id, res)
         report = self.store.pop_report(ticket_id)
         if report or res.timed_out or res.error:
             return report, res.text, res.timed_out or bool(res.error)
         res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id))
+        self._note_turn(proc.session_id, res)
         return self.store.pop_report(ticket_id), res.text, res.timed_out or bool(res.error)
 
     def _on_event(self, sid: str):
@@ -625,6 +648,7 @@ class Loop:
                 emit(ev)
 
         res = proc.prompt(prefix + message, self.cfg.turn_timeout, on_event=on_event)
+        self._note_turn("supervisor", res, "supervisor")
         self._session_idle("supervisor", res.text, resident=True)
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
@@ -651,6 +675,7 @@ class Loop:
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
                     + agents.supervisor_context(self.store.snapshot(), [], self.project, self.store) + task)
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
+        self._note_turn(sid, res, target)
         self._session_idle(sid, res.text, resident=not ephemeral)
         if ephemeral:
             proc.close()

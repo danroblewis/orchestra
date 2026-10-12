@@ -196,7 +196,8 @@ def wake_task(target: str, reasons: list[str], snapshot: dict) -> str:
         extra += f" (review rounds: {t['review_rounds']})" if t["review_rounds"] else ""
         obj = f" | objective: {t['objective'][:80]}" if t.get("objective") else ""
         lines.append(f"- {t['id']} {t['state']} p{t['priority']} {t['milestone_id']} {t['title']}{extra}{obj}")
-    lines += ["", "Use your tools to act, then reply with a two-to-five line summary of what you did and why."]
+    lines += ["", "Use your tools to act, then report the way your role says to; if it does not say, reply with a few "
+              "lines on what you did and why."]
     return "\n".join(lines)
 
 

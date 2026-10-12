@@ -87,10 +87,14 @@ async function openTranscript(id) {
   if (d.started_with) html += `<details class="started"><summary>The prompt this session was started with <span class="muted">(${d.started_with.length.toLocaleString()} chars; roles, team responsibilities, access)</span></summary><div class="prompt md">${md(d.started_with)}</div></details>`;
   else if (!perTicket) html += `<div class="empty">The prompt this session was started with was not recorded (started before Orchestra kept them). The agent's current prompt is on the Agents page.</div>`;
   html += `<h2>Transcript · newest first</h2><div id="transcript">`;
-  html += d.messages.length ? d.messages.map(renderMessage).join("") : `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events or, for the supervisor, by a message."}</div>`;
+  // Only markers at least as new as the oldest message on this page are placed; older ones belong to older pages.
+  const oldest = d.messages.length ? Math.min(...d.messages.map(tsOf)) : 0;
+  const first = withMarkers(d.messages, d.markers, d.has_more ? oldest - 1 : 0);
+  html += first.length ? first.map(renderMessage).join("") : `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events or, for the supervisor, by a message."}</div>`;
   html += `</div><div id="transcript-more" class="empty" style="margin-top:8px">${d.has_more ? "scroll for older messages…" : "beginning of session"}</div>`;
   openDrawer(html);
-  transcriptPaging = { id, nextBefore: d.next_before, hasMore: d.has_more, loading: false, total: d.total };
+  transcriptPaging = { id, nextBefore: d.next_before, hasMore: d.has_more, loading: false, total: d.total,
+                       markerTs: Math.max(0, ...(d.markers || []).map(tsOf)) };
   const ta = $("chat-input");
   if (ta) { ta.focus(); ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat").requestSubmit(); } }); }
 }
@@ -126,11 +130,13 @@ async function refreshTranscript() {
     const d = await r.json();
     if (d.total < p.total) { transcriptPaging = null; return openTranscript(p.id); }  // file replaced: start over
     const head = $("transcript-head"); if (head) head.innerHTML = transcriptHead(p.id, d.session, d);
-    if (!d.messages.length) return;
+    const fresh = withMarkers(d.messages, d.markers, p.markerTs);
+    p.markerTs = Math.max(p.markerTs || 0, ...(d.markers || []).map(tsOf));
+    if (!fresh.length) return;
     const box = $("transcript"), drawer = $("drawer");
     const empty = box.querySelector(".empty"); if (empty) empty.remove();
     const before = drawer.scrollHeight;
-    box.insertAdjacentHTML("afterbegin", d.messages.map(renderMessage).join(""));
+    box.insertAdjacentHTML("afterbegin", fresh.map(renderMessage).join(""));
     highlightCode(box);
     if (drawer.scrollTop > 0) drawer.scrollTop += drawer.scrollHeight - before;  // reading older messages: do not yank
     p.nextBefore += d.messages.length; p.total = d.total;
@@ -204,7 +210,25 @@ function msgTime(m) {
   if (!isFinite(t)) return "";
   return `<span class="muted num" style="margin-left:8px">${new Date(t).toLocaleTimeString()} · ${ago((Date.now() - t) / 1000)} ago</span>`;
 }
+const tsOf = (m) => { const t = typeof m.ts === "number" ? (m.ts > 1e12 ? m.ts : m.ts * 1000) : Date.parse(m.ts || ""); return isFinite(t) ? t : 0; };
+function fmtDur(s) { return s == null ? "" : s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`; }
+function renderMarker(e) {
+  let text;
+  if (e.type === "turn_timed_out") text = `⏱ Orchestra stopped this turn: the ${fmtDur(e.limit)} turn limit ran out while the agent was ${esc(e.doing || "working")}` +
+    (e.phase_for != null ? ` (${fmtDur(e.phase_for)} into that)` : "") + (e.silent_for != null ? `, last output ${fmtDur(e.silent_for)} earlier` : "") + ". Nothing after this point was the agent's decision.";
+  else if (e.type === "turn_error") text = `✖ Orchestra ended this turn: ${esc(e.error || "harness error")}`;
+  else if (e.type === "agent_killed") text = "■ Stopped by the operator.";
+  else if (e.type === "session_started") text = `▶ Turn started${e.ticket ? " on " + esc(e.ticket) : ""}.`;
+  else text = esc(e.type);
+  return `<div class="msg marker ${e.type}"><div class="r">orchestra${msgTime({ ts: e.ts })}</div>${text}</div>`;
+}
+// Markers are Orchestra's events for the session; they are merged with the messages by time, newest first.
+function withMarkers(messages, markers, newerThan) {
+  const ms = (markers || []).filter((e) => tsOf(e) > (newerThan || 0)).map((e) => ({ ...e, _marker: true }));
+  return [...messages, ...ms].sort((a, b) => tsOf(b) - tsOf(a));
+}
 function renderMessage(m) {
+  if (m._marker) return renderMarker(m);
   if (m.role === "toolResult") {
     const shell = SHELL_TOOLS.has(m.tool_name);
     const body = shell ? `<pre class="term">${highlightLog(m.text)}</pre>` : `<pre><code>${esc(m.text)}</code></pre>`;
