@@ -31,7 +31,7 @@ function highlightCode(root) {
     }
   });
 }
-function openDrawer(html) { $("drawer").innerHTML = html; highlightCode($("drawer")); $("overlay").classList.add("open"); }
+function openDrawer(html) { transcriptPaging = null; $("drawer").innerHTML = html; highlightCode($("drawer")); $("overlay").classList.add("open"); }
 function closeDrawer() { $("overlay").classList.remove("open"); }
 
 function turnsText(t) {
@@ -77,19 +77,7 @@ async function openTranscript(id) {
       : "This session has not been started. It comes up with <code>orchestra run</code>."}</div>`);
   }
   const d = await r.json(); const s = d.session;
-  const state = s.status === "running" ? "working" : s.status === "archived" ? "finished (ticket closed)" : s.alive ? "resident, waiting for work" : "not running";
-  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
-  const perTicket = /^(worker|reviewer)-/.test(id);
-  const stopBtn = perTicket && s.status === "running" && s.alive && s.ticket_id
-    ? `<button class="ctl kill" style="margin-left:auto" onclick="stopAgent('${esc(s.ticket_id)}','${esc(id)}')">■ stop this agent</button>` : "";
-  let html = `<h3>${esc(id)} <span class="muted">${state}</span>${stopBtn}</h3>
-    <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
-    ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
-    <div>last started</div><div>${when(s.started_at)}${s.status === "running" ? ` <span class="muted">(turn running ${ago((Date.now() / 1000) - s.started_at)})</span>` : ""}</div>
-    <div>doing now</div><div>${sessionChip(s, Date.now() / 1000)}</div>
-    <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}</div>
-    <div>last settled</div><div>${when(s.settled_at)}</div>
-    <div>turns</div><div>${d.turns} · ${d.total} messages</div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.session_file || "not created yet")}</div></div>`;
+  let html = `<div id="transcript-head">${transcriptHead(id, s, d)}</div>`;
   if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
       <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
       <button type="submit" ${s.alive ? "" : "disabled"}>Send</button>
@@ -99,9 +87,51 @@ async function openTranscript(id) {
   html += d.messages.length ? d.messages.map(renderMessage).join("") : `<div class="empty">${s.file_exists ? "No messages yet." : "No turns yet: Pi creates the session file on the first prompt. This agent is woken by events or, for the supervisor, by a message."}</div>`;
   html += `</div><div id="transcript-more" class="empty" style="margin-top:8px">${d.has_more ? "scroll for older messages…" : "beginning of session"}</div>`;
   openDrawer(html);
-  transcriptPaging = { id, nextBefore: d.next_before, hasMore: d.has_more, loading: false };
+  transcriptPaging = { id, nextBefore: d.next_before, hasMore: d.has_more, loading: false, total: d.total };
   const ta = $("chat-input");
   if (ta) { ta.focus(); ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("chat").requestSubmit(); } }); }
+}
+
+function transcriptHead(id, s, d) {
+  const state = s.status === "running" ? "working" : s.status === "archived" ? "finished (ticket closed)" : s.alive ? "resident, waiting for work" : "not running";
+  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
+  const perTicket = /^(worker|reviewer)-/.test(id);
+  const stopBtn = perTicket && s.status === "running" && s.alive && s.ticket_id
+    ? `<button class="ctl kill" style="margin-left:auto" onclick="stopAgent('${esc(s.ticket_id)}','${esc(id)}')">■ stop this agent</button>` : "";
+  return `<h3>${esc(id)} <span class="muted">${state}</span>${stopBtn}</h3>
+    <div class="kv"><div>kind</div><div>${esc(s.kind || "")}</div><div>process</div><div>${s.alive ? "pid " + s.pid : "none"}</div>
+    ${s.ticket_id ? `<div>ticket</div><div><a href="#" onclick="openTicket('${esc(s.ticket_id)}');return false">${esc(s.ticket_id)}</a></div>` : ""}
+    <div>last started</div><div>${when(s.started_at)}${s.status === "running" ? ` <span class="muted">(turn running ${ago((Date.now() / 1000) - s.started_at)})</span>` : ""}</div>
+    <div>doing now</div><div>${sessionChip(s, Date.now() / 1000)}</div>
+    <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}</div>
+    <div>last settled</div><div>${when(s.settled_at)}</div>
+    <div>turns</div><div>${d.turns} · ${d.total} messages <span class="muted">· live, refreshes every ${TRANSCRIPT_POLL_MS / 1000}s</span></div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.session_file || "not created yet")}</div></div>`;
+}
+
+const TRANSCRIPT_POLL_MS = 5000;
+
+// The open transcript polls for what arrived since it was rendered and prepends it
+// (newest first), keeping the reader's place and the older pages already loaded.
+async function refreshTranscript() {
+  const p = transcriptPaging;
+  if (!p || p.loading || !$("overlay").classList.contains("open") || !$("transcript")) return;
+  p.loading = true;
+  try {
+    const r = await fetch(`/api/sessions/${p.id}/transcript?after=${p.total}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.total < p.total) { transcriptPaging = null; return openTranscript(p.id); }  // file replaced: start over
+    const head = $("transcript-head"); if (head) head.innerHTML = transcriptHead(p.id, d.session, d);
+    if (!d.messages.length) return;
+    const box = $("transcript"), drawer = $("drawer");
+    const empty = box.querySelector(".empty"); if (empty) empty.remove();
+    const before = drawer.scrollHeight;
+    box.insertAdjacentHTML("afterbegin", d.messages.map(renderMessage).join(""));
+    highlightCode(box);
+    if (drawer.scrollTop > 0) drawer.scrollTop += drawer.scrollHeight - before;  // reading older messages: do not yank
+    p.nextBefore += d.messages.length; p.total = d.total;
+  } catch (e) { /* next tick tries again */ }
+  finally { p.loading = false; }
 }
 
 async function loadOlderTranscript() {
@@ -118,6 +148,7 @@ async function loadOlderTranscript() {
 }
 document.addEventListener("DOMContentLoaded", () => {
   $("drawer").addEventListener("scroll", () => { const el = $("drawer"); if (transcriptPaging && el.scrollTop + el.clientHeight > el.scrollHeight - 300) loadOlderTranscript(); });
+  setInterval(refreshTranscript, TRANSCRIPT_POLL_MS);
 });
 
 async function sendToSupervisor(ev) {
@@ -145,8 +176,10 @@ async function sendToSupervisor(ev) {
         } else if (e.type === "done") body.previousElementSibling.textContent = e.error ? `supervisor · ${e.error}` : e.timed_out ? "supervisor · timed out" : "supervisor";
       }
     }
-  } catch (err) { $("live-body").innerHTML += `<div class="bad">${esc(String(err))}</div>`; }
+  } catch (err) { $("live-body").innerHTML += `<div class="bad">${esc(String(err))}</div>`; return false; }
   finally { ta.disabled = false; btn.disabled = false; ta.focus(); }
+  await refreshTranscript();   // the exchange is in the session file now; show it once, there
+  live.innerHTML = "";
   return false;
 }
 

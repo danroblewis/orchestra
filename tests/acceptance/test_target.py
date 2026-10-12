@@ -137,6 +137,10 @@ def test_supervisor_message_roundtrip():
     assert "acknowledges" in body  # the fake supervisor echoes the prompt
     tr = get_json("/api/sessions/supervisor/transcript")
     assert tr["total"] >= 2 and {m["role"] for m in tr["messages"]} >= {"user", "assistant"}
+    newer = get_json(f"/api/sessions/supervisor/transcript?after={tr['total'] - 1}")   # what an open drawer polls
+    assert newer["total"] == tr["total"] and len(newer["messages"]) == 1
+    assert newer["messages"][0]["text"] == tr["messages"][0]["text"]
+    assert get_json(f"/api/sessions/supervisor/transcript?after={tr['total']}")["messages"] == []
 
 
 # -- resume, then watch both tickets land in dependency order ------------------------

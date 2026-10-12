@@ -269,9 +269,11 @@ def create_app(project: Project) -> FastAPI:
         return {**t.to_dict(), "notes": store.notes(ticket_id), "worktree": store.worktree(ticket_id)}
 
     @app.get("/api/sessions/{session_id}/transcript")
-    async def transcript(session_id: str, before: int = 0, limit: int = 30) -> dict:
+    async def transcript(session_id: str, before: int = 0, limit: int = 30, after: int | None = None) -> dict:
         """A page of a session's transcript, newest first. `before` counts messages back from
-        the end that are already shown; the page returns the next `limit` older ones."""
+        the end that are already shown; the page returns the next `limit` older ones. `after`
+        instead returns every message past the first `after` ones, which is how an open
+        drawer polls for what arrived since it was rendered (transcripts only grow)."""
         s = store.find_session(session_id)
         if not s:
             raise HTTPException(404)
@@ -279,8 +281,11 @@ def create_app(project: Project) -> FastAPI:
         exists = bool(f) and Path(f).exists()
         msgs = read_transcript(s) if exists else []
         total = len(msgs)
-        end = max(0, total - max(0, before))
-        page = msgs[max(0, end - max(1, min(limit, 200))):end]
+        if after is not None:
+            page, end = msgs[max(0, after):], total
+        else:
+            end = max(0, total - max(0, before))
+            page = msgs[max(0, end - max(1, min(limit, 200))):end]
         page.reverse()
         s = {**s, "alive": bool(s.get("pid")) and psutil.pid_exists(int(s["pid"])), "file_exists": exists}
         return {"session": s, "messages": page, "total": total, "before": before, "next_before": total - (end - len(page)) if page else before,
