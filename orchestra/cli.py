@@ -227,7 +227,7 @@ def cmd_chat(args) -> int:
                 continue
             new, offset = events.read(offset)
             new = [e for e in new if e["type"] not in ("session_started", "session_settled")]
-            prefix = agents.supervisor_context(store.snapshot(), new, project)
+            prefix = agents.supervisor_context(store.snapshot(), new, project, store)
             store.set_session(sid, status="running", started_at=time.time())
             events.emit("session_started", session=sid, kind="supervisor")
             res = proc.prompt(prefix + line, cfg.turn_timeout, on_event=_print_event)

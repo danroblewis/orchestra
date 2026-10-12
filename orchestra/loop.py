@@ -603,7 +603,7 @@ class Loop:
             self.agent_procs["supervisor"] = proc
         new, self._events_offset = self.events.read(self._events_offset)
         new = [e for e in new if e["type"] not in ("session_started", "session_settled")]
-        prefix = agents.supervisor_context(self.store.snapshot(), new, self.project)
+        prefix = agents.supervisor_context(self.store.snapshot(), new, self.project, self.store)
         self._session_running("supervisor", "supervisor", proc)
 
         def on_event(ev: dict) -> None:
@@ -636,7 +636,7 @@ class Loop:
         if target == "supervisor":
             task = ("[Orchestra: escalation from another agent; the human is not present for this turn. "
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
-                    + agents.supervisor_context(self.store.snapshot(), [], self.project) + task)
+                    + agents.supervisor_context(self.store.snapshot(), [], self.project, self.store) + task)
         res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
         self._session_idle(sid, res.text, resident=not ephemeral)
         if ephemeral:

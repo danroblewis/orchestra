@@ -23,9 +23,10 @@ missing before creating anything.
 
 ## Project context
 
-Every turn begins with the **project context** document: objectives, value propositions,
-non-goals, and how work is verified here. It is yours to maintain with
-`update_project_context`. When the human tells you something that changes direction, scope,
+The **project context** document (objectives, value propositions, non-goals, and how work
+is verified here) is given to you on your first turn and again whenever it changes; it
+stays in your memory between, and `get_project_context` fetches it any time. It is yours to
+maintain with `update_project_context`. When the human tells you something that changes direction, scope,
 or priorities, update it before creating tickets. When it is empty or stale, ask the human
 the two or three questions needed to fill it in, then write it.
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from ..config import Project
@@ -229,10 +230,20 @@ def execution_health(snapshot: dict) -> list[str]:
     return out
 
 
-def supervisor_context(snapshot: dict, events: list[dict], project: Project | None = None) -> str:
+def supervisor_context(snapshot: dict, events: list[dict], project: Project | None = None, store=None) -> str:
+    """What Orchestra puts in front of a Supervisor turn: the project context document only
+    when it has changed since the Supervisor last saw it (the session remembers earlier
+    copies, and `get_project_context` fetches it any time), then the events since its
+    last turn, at most forty. A human's "yes, go ahead" should arrive as itself."""
     out = ""
     if project is not None:
-        out += "[Orchestra: project context]\n" + read_context(project).strip() + "\n\n"
+        text = read_context(project).strip()
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+        seen = store.agent_state("supervisor").get("context_hash") if store is not None else None
+        if digest != seen:
+            out += "[Orchestra: project context" + (", updated" if seen else "") + "]\n" + text + "\n\n"
+            if store is not None:
+                store.set_agent_state("supervisor", context_hash=digest)
     if not events:
         return out
     lines = ["[Orchestra: events since your last turn]"]
