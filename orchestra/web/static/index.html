@@ -74,24 +74,24 @@ function renderAgents(s) {
   const live = s.sessions.filter((x) => x.status === "running").length;
   $("agents-sub").textContent = `${live} turn${live === 1 ? "" : "s"} running` + ` · capacity ${s.capacity ? s.capacity.workers : "?"} workers` + (s.pickup_paused ? " · PAUSED" : "");
   const pb = $("pause-btn"); pb.textContent = s.pickup_paused ? "▶ resume" : "⏸ pause"; pb.classList.toggle("paused", !!s.pickup_paused);
-  const customs = (s.roles || []).filter((r) => !r.builtin).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
-  let html = [...BASE_AGENTS, ...customs].map(([id, kind, letter, r]) => {
-    const x = byId[id];
-    const paused = r && r.paused;
-    // One line per resident agent: what it is and what it is doing. What makes it that
-    // role (description, prompt, triggers) is on the Agents page, not here.
-    const say = x && x.alive ? (x.last_text || "waiting for work") : (r && r.session === "ephemeral" ? "ephemeral: runs when woken" : "not running: start `orchestra run`");
-    return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')" title="${esc(r ? r.description || "" : kind.replace("_", " "))}">
-      <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc(say)}</div>${paused ? '<span class="chip"><span class="dot"></span>paused</span>' : chip(x)}</div>`;
-  }).join("");
+  // Only live processes belong here. A role that is paused or not started, and a ticket
+  // whose worker finished its turn (waiting on a dependency, in review, rejected, or
+  // between retries) has a session file but no agent; those live on the Agents and
+  // Tickets pages. Resident agents between wake-ups are real processes, so they stay.
   const isLive = (x) => x && x.status === "running";
-  const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (byId[`worker-${t.id}`] || byId[`reviewer-${t.id}`]))
-    .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }))
-    .sort((a, b) => Number(isLive(b.w) || isLive(b.r)) - Number(isLive(a.w) || isLive(a.r)));
-  const lane = (who, x) => x ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${isLive(x) ? chip(x) : '<span class="muted">idle</span>'}</div>` : "";
-  html += `<h2><span>Tickets in work</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
+  const customs = (s.roles || []).filter((r) => !r.builtin).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
+  const residents = [...BASE_AGENTS, ...customs].filter(([id, kind, letter, r]) => byId[id] && byId[id].alive && !(r && r.paused));
+  let html = residents.map(([id, kind, letter, r]) => {
+    const x = byId[id];
+    return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')" title="${esc(r ? r.description || "" : kind.replace("_", " "))}">
+      <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc(x.last_text || "waiting for work")}</div>${chip(x)}</div>`;
+  }).join("") || '<div class="empty">No resident agents running. They come up with <code>orchestra run</code>.</div>';
+  const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`])))
+    .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }));
+  const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${chip(x)}</div>` : "";
+  html += `<h2><span>Agents on tickets</span><span class="count">${cards.length}</span></h2>` + (cards.map(({ t, w, r }) =>
     `<div class="work" style="--c:${color(t.state)}" onclick="openTicket('${t.id}')"><div class="top"><span><span class="id">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
-    || '<div class="empty">No tickets being worked. Ready tickets start as soon as a worker slot is free.</div>');
+    || '<div class="empty">No agent is working a ticket right now. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
 }
 
