@@ -159,9 +159,10 @@ TOOLS: list[ToolDef] = [
             {"name": S("Role name"), "description": S(""), "prompt": S("New full prompt"), "tools": A()}, ("name",)),
     ToolDef("delete_role", "roles", "Delete a custom role no agent uses.", {"name": S("Role name")}, ("name",)),
     ToolDef("create_agent", "roles",
-            "Create an agent: an instance of one or more roles in a team. kind is continuous (resident, woken by wake_on "
-            "events), scheduled (every '6h' or at 'HH:MM'; session resident or ephemeral), or ad_hoc (invoked by its lead "
-            "with run_agent). The team may be one you create next.",
+            "Create an agent: an instance of one or more roles in a team. kind is continuous (a process that is always "
+            "up, session resident, woken by wake_on events and messages), scheduled (every '6h' or at 'HH:MM'; session "
+            "resident or ephemeral), or ad_hoc (a fresh session each time it is invoked, by its lead with run_agent or by "
+            "a wake_on event). The team may be one you create next.",
             {"name": S("lowercase_with_underscores"), "roles": A("Role names, at least one"), "team": S("Team name, or empty for none"),
              "kind": S("continuous | scheduled | ad_hoc"), "session": S("resident | ephemeral"),
              "wake_on": A("Event types, optionally 'ticket_transition:DONE'"), "every": S("e.g. 30m, 6h, 1d"), "at": S("HH:MM"),

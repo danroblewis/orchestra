@@ -173,6 +173,8 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
             raise StoreError("say what you want done")
         if command == "run_agent" and target.kind != "ad_hoc":
             raise StoreError(f"{target.name} is {target.kind}; use message_agent to add to its next wake-up, run_agent is for ad_hoc agents")
+        if command == "message_agent" and target.kind == "ad_hoc":
+            raise StoreError(f"{target.name} is ad_hoc: it has no next wake-up to add a note to. Use run_agent with a brief.")
         store.add_wakeup(target.name, f"{'brief' if command == 'run_agent' else 'message'} from {author}: {text}")
         store.events.emit("agent_messaged", agent=target.name, by=author)
         return {"ok": True, "message": f"{target.name} will wake at the next tick with your {'brief' if command == 'run_agent' else 'message'}"}

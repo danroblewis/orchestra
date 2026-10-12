@@ -12,11 +12,13 @@ Follow it in order and do not improvise the structure.
 - An **agent** is an instance of one or more roles, placed in a team. It is what runs. It
   has a kind, a session policy, and a schedule or wake events, and it is what the human
   pauses, restarts, and watches. There are three kinds:
-  - `continuous`: a resident session woken by events as they happen (`wake_on`).
+  - `continuous`: a process that is always up, like the Coordinator. Session `resident`;
+    woken by `wake_on` events and by messages, and it remembers everything between.
   - `scheduled`: woken every interval (`every`) or at a daily time (`at`). The session may be
     `resident`, so it remembers, or `ephemeral`, so it starts clean each time.
-  - `ad_hoc`: invoked once with a brief by its lead (`run_agent`) and closed when done. If the
-    work happens when the lead asks for it, it is ad hoc, not scheduled.
+  - `ad_hoc`: a fresh session each time it is invoked, closed when done. An invocation is a
+    brief from its lead (`run_agent`) or a `wake_on` event. If the work happens when
+    something happens, and needs no memory of last time, it is ad hoc.
 - A **team** has exactly one lead agent, members, responsibilities, access, and a space in
   the repository. A team may nest under a parent (`parent/child`); the child's lead reports
   to the parent's lead and takes a subset of its responsibilities.
@@ -36,8 +38,9 @@ as many agents as the responsibilities need.
    hour" is a responsibility. "Classify rejections" is not. Three to six per team. Write
    them in markdown as a numbered list under a one-line heading.
 3. **The lead is the scheduled one.** A lead's job is to check its responsibilities on a
-   cadence and act on the ones that are unmet. Members are continuous (react to an event),
-   ad hoc (do a brief), or scheduled only when their work is itself periodic.
+   cadence and act on the ones that are unmet. Members are ad hoc (react to an event or a
+   brief, fresh each time), scheduled when their work is itself periodic, and continuous
+   only when they must hold state between events, which is rare and costs a process.
 4. **Minimum access.** Grant tool groups at the team level, only what the responsibilities
    need. `tickets` to file and edit tickets, `events` to look back, `escalate` to reach you,
    `pipeline` for gate and staging, `context` for the project context, `capacity` for the

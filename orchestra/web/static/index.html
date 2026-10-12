@@ -84,7 +84,14 @@ function renderAgents(s) {
     const x = byId[id];
     return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')" title="${esc(r ? r.description || "" : kind.replace("_", " "))}">
       <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc(x.last_text || "waiting for work")}</div>${chip(x)}</div>`;
-  }).join("") || '<div class="empty">No resident agents running. They come up with <code>orchestra run</code>.</div>';
+  }).join("");
+  // Ephemeral agents (ad hoc, or scheduled without memory) run under a timestamped session
+  // id. While one is mid-turn it is a live process and belongs here too.
+  const shownIds = new Set(residents.map(([id]) => id));
+  const ephemeral = s.sessions.filter((x) => x.status === "running" && !shownIds.has(x.id) && !/^(worker|reviewer)-/.test(x.id) && x.kind);
+  html += ephemeral.map((x) => `<div class="agent" style="--rc:#c4b5fd" onclick="openTranscript('${x.id}')" title="${esc(x.kind)}: a fresh session for this run">
+      <div class="av">${x.kind[0].toUpperCase()}</div><div class="name">${esc(x.kind)} <span class="muted" style="font-weight:400">one run</span></div><div class="say">${esc(x.last_text || "starting")}</div>${chip(x)}</div>`).join("");
+  html = html || '<div class="empty">No resident agents running. They come up with <code>orchestra run</code>.</div>';
   const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`])))
     .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }));
   const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${chip(x)}</div>` : "";

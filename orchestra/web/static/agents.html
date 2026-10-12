@@ -51,7 +51,7 @@
 <body>
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents" class="on">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="org">
-  <p class="intro">Who is in this project and what they are for; the Dashboard shows what they are doing right now. A <b>role</b> is a job description. An <b>agent</b> is an instance of roles in a team and is what runs: <span class="tag k-continuous">continuous</span> agents wake on events, <span class="tag k-scheduled">scheduled</span> agents on an interval or a daily time, <span class="tag k-ad_hoc">ad hoc</span> agents once with a brief from their lead. A <b>team</b> has one lead, responsibilities it keeps true, access, and a space in the repository. All of it is created in conversation with the Supervisor and stored under <code>.orchestra/</code>.</p>
+  <p class="intro">Who is in this project and what they are for; the Dashboard shows what they are doing right now. A <b>role</b> is a job description. An <b>agent</b> is an instance of roles in a team and is what runs: <span class="tag k-continuous">continuous</span> agents are processes that are always up and wake on events, <span class="tag k-scheduled">scheduled</span> agents run on an interval or a daily time, <span class="tag k-ad_hoc">ad hoc</span> agents get a fresh session each time their lead briefs them or a subscribed event fires. A <b>team</b> has one lead, responsibilities it keeps true, access, and a space in the repository. All of it is created in conversation with the Supervisor and stored under <code>.orchestra/</code>.</p>
   <div id="list"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
@@ -105,8 +105,9 @@ function timeline(agents, now) {
   return `<div class="tl">${html}<div class="axis"><span>scheduled wake-ups · <select onchange="setHorizon(this.value)">${pick}</select></span><div class="marks">${marks}</div><span></span></div></div>`;
 }
 function schedule(a) {
-  if (a.kind === "ad_hoc") return a.builtin ? "started by Orchestra per ticket, in that ticket's worktree" : "runs when its lead briefs it";
+  if (a.kind === "ad_hoc" && a.builtin) return "started by Orchestra per ticket, in that ticket's worktree";
   const parts = [];
+  if (a.kind === "ad_hoc") parts.push("fresh session when its lead briefs it");
   if (a.every) parts.push(`every ${esc(a.every)}`);
   if (a.at) parts.push(`daily at ${esc(a.at)}`);
   if ((a.wake_on || []).length) {
@@ -204,7 +205,7 @@ async function openAgent(name) {
       <div>wakes</div><div>${schedule(a)}${a.builtin && (a.wake_on || []).length ? '<div class="muted" style="margin-top:2px">These are conditions the loop detects in its own code and wakes this agent for; they are not event subscriptions.</div>' : ""}</div>
       <div>next wake-up</div><div>${nextWake(a, st, now)}</div>
       <div>last woken</div><div>${st.last_woken ? ago(now - st.last_woken) + " ago" : "never"}</div>
-      <div>session</div><div>${a.resident ? "resident: one long-lived conversation; earlier wake-ups stay in its memory" : "ephemeral: a fresh conversation every time it runs"}</div>
+      <div>session</div><div>${a.resident ? "resident: one long-lived process; earlier wake-ups stay in its memory and it shows on the Dashboard while up" : "ephemeral: a fresh process and conversation every time it runs; it shows on the Dashboard only while a run is in progress"}</div>
       <div>tools it can call</div><div class="tools">${tools}</div>
       <div>defined by</div><div>${a.builtin ? "Orchestra" : `${esc(a.created_by || "supervisor")} on ${esc((a.created_at || "").slice(0, 16).replace("T", " "))}${a.source === "role" ? " (a Stage 1 role record acting as its own agent)" : ""}`}</div>
     </div>

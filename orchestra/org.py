@@ -6,10 +6,11 @@ Three things, kept apart on purpose:
 - a **role** (``orchestra/roles.py``) describes a capability, like a job description. It
   has no runtime: it cannot be scheduled, hold a session, or receive a message;
 - an **agent** is an instance of one or more roles placed in a team. It is what runs: it
-  has a session policy and a wake policy, and it is what gets paused, restarted,
-  messaged, and shown on the Dashboard. Three kinds by how they wake: ``continuous``
-  (resident, woken by events), ``scheduled`` (an interval or a daily time), ``ad_hoc``
-  (invoked once with a brief by its lead or by Orchestra);
+  has a kind and a session policy, and it is what gets paused, restarted, messaged, and
+  shown on the Dashboard. Three kinds: ``continuous`` is a resident process that is always
+  up and is woken by events (like the Coordinator); ``scheduled`` runs on an interval or at
+  a daily time, with a resident or an ephemeral session; ``ad_hoc`` gets a fresh session
+  per invocation, and an invocation is a brief from its lead or a subscribed event;
 - a **team** has exactly one lead agent, members, standing responsibilities, access
   grants, a space in the repository, and optionally a parent team.
 
@@ -120,15 +121,20 @@ class AgentDef:
                 raise OrgError(str(e))
         if self.at is not None and not re.fullmatch(r"\d{2}:\d{2}", self.at):
             raise OrgError("at must be HH:MM")
-        if self.kind == "ad_hoc" and (self.wake_on or self.every or self.at):
-            raise OrgError("an ad_hoc agent is invoked with a brief; it has no wake_on, every, or at")
+        if self.kind == "ad_hoc" and (self.every or self.at):
+            raise OrgError("an ad_hoc agent runs when briefed or on a wake_on event; it has no `every` or `at`")
+        if self.kind == "ad_hoc" and self.session != "ephemeral":
+            raise OrgError("an ad_hoc agent gets a fresh session per invocation: session must be 'ephemeral'")
+        if self.kind == "continuous" and self.session != "resident":
+            raise OrgError("a continuous agent is a process that is always up: session must be 'resident'. "
+                           "For a fresh session on each event, use kind 'ad_hoc' with wake_on.")
         if self.kind == "scheduled" and not (self.every or self.at):
             raise OrgError("a scheduled agent needs `every` or `at`")
 
     def matches_event(self, ev: dict) -> bool:
         """Built-in agents' wake lists describe what the loop does for them (it calls their
         wake-ups directly); only custom agents subscribe to the event log."""
-        return not self.builtin and self.kind != "ad_hoc" and event_matches(self.wake_on, ev)
+        return not self.builtin and event_matches(self.wake_on, ev)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -386,6 +392,11 @@ def all_agents(project: Project) -> dict[str, AgentDef]:
     no explicit agent, and the project's own agents, by name."""
     out = built_in_agents()
     explicit = {a.name: a for a in org_store(project).list_agents()}
+    for a in explicit.values():
+        # A record from before the kinds were pinned down: "continuous" with an ephemeral
+        # session is an ad hoc agent on events. Read it as that; update_agent fixes the file.
+        if a.kind == "continuous" and a.session == "ephemeral":
+            a.kind = "ad_hoc"
     for r in all_roles(project).values():
         if r.builtin or r.name in explicit or not (r.wake_on or r.every or r.at):
             continue   # a role created under Stage 2 carries no wake rules: it runs only through an agent

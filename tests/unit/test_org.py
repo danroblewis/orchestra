@@ -57,6 +57,11 @@ def test_validation():
         AgentDef(name="x_a", roles=["r"], kind="ad_hoc", every="1h").validate()  # ad hoc has no schedule
     with pytest.raises(OrgError):
         AgentDef(name="x_a", roles=["r"], kind="scheduled").validate()           # scheduled needs one
+    with pytest.raises(OrgError, match="always up"):
+        AgentDef(name="x_a", roles=["r"], kind="continuous", session="ephemeral").validate()   # a contradiction
+    with pytest.raises(OrgError, match="fresh session"):
+        AgentDef(name="x_a", roles=["r"], kind="ad_hoc", session="resident").validate()
+    AgentDef(name="x_a", roles=["r"], kind="ad_hoc", session="ephemeral", wake_on=["gate_conflict"]).validate()  # on events, fresh each time
     AgentDef(name="x_a", roles=["r"], kind="scheduled", every="1d", session="ephemeral").validate()
     with pytest.raises(OrgError):
         TeamDef(name="Bad", lead="a").validate()
@@ -102,7 +107,12 @@ def test_stage1_roles_become_implicit_agents(project):
     assert a.resident and a.team is None
     RepoOrgStore(project).save_agent(AgentDef(name="product_owner", roles=["product_owner"], kind="continuous", wake_on=["milestone_closed"]))
     a = all_agents(project)["product_owner"]
-    assert a.source == "agent" and a.kind == "continuous"                          # an explicit record wins
+    assert a.source == "agent" and a.kind == "continuous" and a.resident          # an explicit record wins
+    # a record from before the kinds were pinned down reads as what it is
+    (project.repo_root / ".orchestra" / "agents" / "old.json").write_text(
+        json.dumps({"name": "old", "roles": ["product_owner"], "kind": "continuous", "session": "ephemeral", "wake_on": ["gate_conflict"]}))
+    old = all_agents(project)["old"]
+    assert old.kind == "ad_hoc" and not old.resident and old.matches_event({"type": "gate_conflict"})
 
 
 def test_team_record_decides_membership(project):
@@ -112,7 +122,7 @@ def test_team_record_decides_membership(project):
     rs, os_ = role_store(project), RepoOrgStore(project)
     rs.save(RoleDef(name="product_owner", tools=["tickets"], every="45m"), "# You own\n\nThe product, with opinions.")
     rs.save(RoleDef(name="owner", tools=["tickets"]), "# You own\n\nThings.")
-    os_.save_agent(AgentDef(name="writer", roles=["owner"], team="product", kind="ad_hoc"))
+    os_.save_agent(AgentDef(name="writer", roles=["owner"], team="product", kind="ad_hoc", session="ephemeral"))
     os_.save_team(TeamDef(name="product", lead="product_owner"), "# P\n\n1. x")
     ags = all_agents(project)
     assert ags["product_owner"].source == "role" and ags["product_owner"].team == "product"
@@ -122,7 +132,7 @@ def test_team_record_decides_membership(project):
     assert [a["name"] for a in v["agents"]] == ["product_owner", "writer"]
     assert [a["name"] for a in api.handle(project, store, "list_agents", {})["agents"] if not a["team"] and not a["builtin"]] == []
     # the third case: an agent whose team does not exist yet is still an agent, visibly so
-    os_.save_agent(AgentDef(name="retro", roles=["owner"], team="devex", kind="continuous", wake_on=["gate_conflict"]))
+    os_.save_agent(AgentDef(name="retro", roles=["owner"], team="devex", kind="ad_hoc", session="ephemeral", wake_on=["gate_conflict"]))
     listed = {a["name"]: a for a in api.handle(project, store, "list_agents", {})["agents"]}
     assert listed["retro"]["team"] == "devex" and listed["retro"]["team_exists"] is False and listed["writer"]["team_exists"] is True
     shown = {n for t in api.handle(project, store, "list_teams", {})["teams"] for n in [a["name"] for a in t["agents"]]}
@@ -138,7 +148,7 @@ def test_effective_tools_and_the_message_tree(project):
     rs.save(RoleDef(name="owner", tools=["tickets"]), "# You own\n\nThe backlog, opinionatedly.")
     os_.save_agent(AgentDef(name="po", roles=["owner"], team="product", kind="scheduled", every="6h"))
     os_.save_agent(AgentDef(name="qa_lead", roles=["owner", "analyst"], team="product/qa", kind="scheduled", every="1d"))
-    os_.save_agent(AgentDef(name="hunter", roles=["analyst"], team="product/qa", kind="ad_hoc"))
+    os_.save_agent(AgentDef(name="hunter", roles=["analyst"], team="product/qa", kind="ad_hoc", session="ephemeral"))
     os_.save_team(TeamDef(name="product", lead="po", access=[{"tools": ["escalate"]}]), "# P\n\n1. x")
     os_.save_team(TeamDef(name="product/qa", lead="qa_lead", members=["hunter"], access=[{"tools": ["pipeline"]}]), "# Q\n\n1. y")
     roles, teams, ags = __import__("orchestra.roles", fromlist=["all_roles"]).all_roles(project), all_teams(project), all_agents(project)
@@ -192,7 +202,7 @@ def test_api_builds_a_team_the_way_the_guide_says(project):
     r = api.handle(project, store, "create_team", {"name": "product", "lead": "po", "responsibilities": "# Product\n\n1. The backlog is never empty.",
                                                    "access": [{"tools": ["events"]}]}, role="supervisor")
     assert r["storage"].startswith("committed")
-    assert "warning" not in api.handle(project, store, "create_agent", {"name": "writer", "roles": ["owner"], "team": "product", "kind": "ad_hoc"}, role="supervisor")
+    assert "warning" not in api.handle(project, store, "create_agent", {"name": "writer", "roles": ["owner"], "team": "product", "kind": "ad_hoc", "session": "ephemeral"}, role="supervisor")
     api.handle(project, store, "update_team", {"name": "product", "members": ["writer"]}, role="supervisor")
     t = api.handle(project, store, "get_team", {"name": "product"})
     assert t["team"]["lead"] == "po" and [a["name"] for a in t["team"]["agents"]] == ["po", "writer"]

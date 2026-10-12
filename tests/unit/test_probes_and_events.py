@@ -119,9 +119,12 @@ def test_emit_event_is_declared_rate_limited_and_depth_limited(project):
     api.handle(project, store, "create_team", {"name": "devex", "lead": "keeper", "responsibilities": "# DevEx\n\n1. Docs are accurate.",
                                                "emits": ["lesson_proposed"]}, **sup)
     with pytest.raises(StoreError, match="declared by teams"):
+        api.handle(project, store, "create_agent", {"name": "retro", "roles": ["analyst"], "team": "devex", "kind": "ad_hoc",
+                                                    "session": "ephemeral", "wake_on": ["nope_event"]}, **sup)
+    with pytest.raises(StoreError, match="always up"):
         api.handle(project, store, "create_agent", {"name": "retro", "roles": ["analyst"], "team": "devex", "kind": "continuous",
-                                                    "wake_on": ["nope_event"]}, **sup)
-    api.handle(project, store, "create_agent", {"name": "retro", "roles": ["analyst"], "team": "devex", "kind": "continuous",
+                                                    "wake_on": ["lesson_proposed"], "session": "ephemeral"}, **sup)
+    api.handle(project, store, "create_agent", {"name": "retro", "roles": ["analyst"], "team": "devex", "kind": "ad_hoc",
                                                 "wake_on": ["lesson_proposed"], "session": "ephemeral"}, **sup)
     with pytest.raises(StoreError, match="may not emit"):
         api.handle(project, store, "emit_event", {"type": "flaky_test_suspected"}, role="keeper")
