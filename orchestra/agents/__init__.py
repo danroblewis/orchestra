@@ -46,13 +46,25 @@ def agent_prompt(project: Project, agent, roles: dict | None = None, teams: dict
     if team is None and agent.team:
         team_line = (f"You are assigned to the team `{agent.team}`, which has not been created yet; until it is, the "
                      "Supervisor is your lead and you have no team responsibilities.")
+        reach_line = "The human, and decisions above you, are reached only through `escalate_to_supervisor`."
     elif team is None:
-        team_line = "You belong to no team; the Supervisor is your lead."
+        team_line = "You belong to no team; you report to the Supervisor."
+        reach_line = "The human, and decisions above you, are reached only through `escalate_to_supervisor`."
     elif team.name in lead_of:
+        members = [a for a in team.agents if a != agent.name]
+        parent_lead = teams[team.parent].lead if team.parent and team.parent in teams else None
         team_line = f"You belong to the team `{team.name}`, which you lead."
+        reach_line = ("Your members" + (f" ({', '.join(f'`{m}`' for m in members)})" if members else "") +
+                      " are reached with `message_agent`, and ad hoc members are briefed with `run_agent`. " +
+                      (f"You report to `{parent_lead}`, the lead of the team above yours, with `message_agent`; "
+                       if parent_lead else "You have no lead above you except the Supervisor; ") +
+                      "the human, and decisions you cannot make, are reached only through `escalate_to_supervisor`.")
     else:
         team_line = f"You belong to the team `{team.name}`, led by `{team.lead}`."
-    parts = [AGENT_PREAMBLE.format(agent=agent.name, roles=", ".join(f"`{r}`" for r in agent.roles), team_line=team_line)]
+        reach_line = (f"Your lead `{team.lead}` is reached with `message_agent`; the human, and decisions above your lead, "
+                      "only through `escalate_to_supervisor`.")
+    parts = [AGENT_PREAMBLE.format(agent=agent.name, roles=", ".join(f"`{r}`" for r in agent.roles), team_line=team_line,
+                                   reach_line=reach_line)]
     for r in agent.roles:
         parts.append(f"## Your role: {r}\n\n{role_prompt(project, r).strip()}\n")
     for i, t in enumerate(chain):
@@ -121,12 +133,11 @@ def write_context(project: Project, text: str) -> None:
 AGENT_PREAMBLE = """# You are the `{agent}` agent of Orchestra
 
 You are an agent in a software project run by Orchestra, with the role{plural} {roles}. {team_line}
-Orchestra wakes you with a message that says why (an event, a schedule, or a brief from your
-lead) and gives you a snapshot of the project. Act using your tools, then reply with a short
-summary of what you did and why. You never write code on the base branch and never start
+Orchestra wakes you with a message that says why (an event, a schedule, or a note or brief from
+another agent) and gives you a snapshot of the project. Act using your tools, then reply with a
+short summary of what you did and why. You never write code on the base branch and never start
 agents yourself; code changes happen by creating or editing tickets, which the Coordinator
-orders and workers implement. Your lead is reached with `message_agent` if you have one, the
-human only through `escalate_to_supervisor`.
+orders and workers implement. {reach_line}
 """.replace("{plural}", "")
 
 

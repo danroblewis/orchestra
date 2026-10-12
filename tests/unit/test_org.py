@@ -175,6 +175,9 @@ def test_agent_prompt_is_roles_then_responsibilities_then_access(project):
     p = agents.agent_prompt(project, all_agents(project)["qa_lead"])
     assert p.startswith("# You are the `qa_lead` agent of Orchestra")
     assert "team `product/qa`, which you lead" in p
+    assert "You report to `po`, the lead of the team above yours" in p                 # a nested lead knows its own lead
+    po = agents.agent_prompt(project, all_agents(project)["po"])
+    assert "You have no lead above you except the Supervisor" in po and "message_agent` if you have one" not in po
     assert p.index("## Your role: owner") < p.index("## Your role: analyst") < p.index("## Team `product/qa` (your team)")
     assert "Be opinionated about main." in p                                           # placeholders resolved inside roles
     assert p.index("Every milestone has an e2e test") < p.index("## Team `product` (the team above `product/qa`)")
