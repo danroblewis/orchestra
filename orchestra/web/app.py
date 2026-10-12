@@ -22,7 +22,15 @@ from ..store import LocalStore, StoreError
 STATIC = Path(__file__).parent / "static"
 
 
-MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed")
+MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop")
+
+
+def _alive(pid) -> bool:
+    """A recorded pid proves liveness only if that process exists and is not a zombie."""
+    try:
+        return bool(pid) and psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+        return False
 
 
 def create_app(project: Project) -> FastAPI:
@@ -101,7 +109,7 @@ def create_app(project: Project) -> FastAPI:
         snap["gate_runs"] = store.gate_runs()[-30:]
         snap["batch_size"] = 1  # the gate takes one ticket per run until batching lands
         for s in snap["sessions"]:
-            s["alive"] = bool(s.get("pid")) and psutil.pid_exists(int(s["pid"]))
+            s["alive"] = _alive(s.get("pid"))
         try:
             from ..org import all_agents
             snap["agents"] = [{"name": a.name, "session_id": a.session_id, "description": a.description, "builtin": a.builtin,
@@ -316,7 +324,7 @@ def create_app(project: Project) -> FastAPI:
             end = max(0, total - max(0, before))
             page = msgs[max(0, end - max(1, min(limit, 200))):end]
         page.reverse()
-        s = {**s, "alive": bool(s.get("pid")) and psutil.pid_exists(int(s["pid"])), "file_exists": exists}
+        s = {**s, "alive": _alive(s.get("pid")), "file_exists": exists}
         pf = project.logs_dir / "agents" / f"{session_id}.prompt.md"
         started_with = pf.read_text(encoding="utf-8") if pf.exists() else None
         # What Orchestra did to this session: turn starts, cut-offs, errors, operator stops.

@@ -140,7 +140,7 @@ function nextWake(a, st, now) {
   return parts.join("; ") || "only when another agent messages it";
 }
 function statusOf(a, now) {
-  if (a.paused) return '<span class="chip"><span class="dot"></span>paused</span>';
+  if (a.paused) return `<span class="chip ${a.crash_loop ? "down" : ""}" title="${esc(a.crash_loop || "")}"><span class="dot"></span>${a.crash_loop ? "paused: crash loop" : "paused"}</span>`;
   const s = sessionOf(a);
   if (s && (s.alive || s.status === "running")) return sessionChip(s, now);
   return a.resident ? '<span class="chip down"><span class="dot"></span>not running</span>' : `<span class="chip"><span class="dot"></span>${a.kind === "ad_hoc" ? "idle" : "ephemeral"}</span>`;

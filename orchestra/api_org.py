@@ -156,7 +156,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         store.events.emit("agent_deleted", agent=a["name"], by=author)
         return {"ok": True, "storage": os_.last_commit_note}
     if command in ("pause_agent", "resume_agent"):
-        store.set_agent_state(a["name"], paused=(command == "pause_agent"))
+        store.set_agent_state(a["name"], paused=(command == "pause_agent"), crash_loop=None, crashes=[])
         store.events.emit("agent_paused" if command == "pause_agent" else "agent_resumed", agent=a["name"], by=author)
         return {"ok": True, "paused": command == "pause_agent"}
     if command == "restart_agent":
@@ -280,6 +280,7 @@ def agent_view(project: Project, store: LocalStore, ag: AgentDef, teams: dict | 
             "team_exists": ag.team is None or ag.team in teams,   # an agent may be created before its team (the guide's order)
             "wake_kind": "orchestra" if ag.builtin else "events",   # built-ins: the loop calls them; custom: they subscribe
             "resident": ag.resident, "paused": bool(st.get("paused")), "deleted": bool(st.get("deleted")),
+            "crash_loop": st.get("crash_loop") if st.get("paused") else None,
             "last_woken": st.get("last_woken"), "next_scheduled_at": st.get("next_scheduled_at"),
             "every_seconds": parse_interval(ag.every) if ag.every else None}
 

@@ -275,9 +275,12 @@ class Loop:
             model=self.cfg.model, provider=self.cfg.provider, thinking=self.cfg.thinking, ticket_id=ticket_id))
 
     @staticmethod
-    def _pid(proc: AgentSession) -> int:
+    def _pid(proc: AgentSession) -> int | None:
         """The process that proves the session is alive: the harness's own when it keeps one
-        (Pi), otherwise this loop, which is what holds the session open."""
+        (Pi), otherwise this loop, which is what holds the session open. A dead session has
+        no pid at all, so the UI can never mistake a dead agent for a running one."""
+        if not proc.alive():
+            return None
         return proc.pid or os.getpid()
 
     def _wake_on_events(self) -> None:
@@ -332,6 +335,45 @@ class Loop:
                 d.pop(k)
         if self.gate_thread and not self.gate_thread.is_alive():
             self.gate_thread = None
+        self._reap_residents()
+
+    CRASH_LOOP_COUNT, CRASH_LOOP_WINDOW = 3, 15 * 60
+
+    def _reap_residents(self) -> None:
+        """The process manager for resident agents. A resident process that has exited
+        between turns is recorded as a crash, its session marked dead, and it is dropped so
+        the next tick starts it again. Three crashes in fifteen minutes is a crash loop: the
+        agent is paused with the reason, and the Supervisor is woken to look at it."""
+        now_t = time.time()
+        for name in list(self.agent_procs):
+            if name in self.agent_threads:
+                continue  # mid-turn: the turn's own code reports how it ended
+            proc = self.agent_procs[name]
+            if proc.alive():
+                continue
+            self.agent_procs.pop(name)
+            try:
+                proc.close()
+            except Exception as e:
+                log(f"{proc.session_id}: close after exit: {e!r}")
+            sid = proc.session_id
+            tail = ""
+            try:
+                tail = (self.project.logs_dir / "agents" / f"{sid}.stderr.log").read_text(encoding="utf-8")[-400:]
+            except OSError:
+                pass
+            self.store.set_session(sid, status="idle", pid=None, phase="idle", tool_name=None)
+            st = self.store.agent_state(name)
+            crashes = [t for t in st.get("crashes", []) if now_t - t < self.CRASH_LOOP_WINDOW] + [now_t]
+            self.store.set_agent_state(name, crashes=crashes)
+            self.events.emit("agent_crashed", session=sid, agent=name, count=len(crashes), stderr=tail)
+            log(f"{sid}: process exited between turns ({len(crashes)} in {self.CRASH_LOOP_WINDOW // 60}m); will restart")
+            if len(crashes) >= self.CRASH_LOOP_COUNT:
+                self.store.set_agent_state(name, paused=True, crash_loop=f"{len(crashes)} crashes in {self.CRASH_LOOP_WINDOW // 60} minutes")
+                self.events.emit("agent_crash_loop", session=sid, agent=name, count=len(crashes), stderr=tail)
+                self.store.add_wakeup("supervisor", f"agent {name} crashed {len(crashes)} times in {self.CRASH_LOOP_WINDOW // 60} minutes and has been "
+                                      f"paused. Its last stderr: {tail.strip()[-200:] or '(empty)'}. Fix its definition or ask the human, then resume it.")
+                log(f"{sid}: crash loop; paused and the supervisor woken")
 
     def _spawn(self, table: dict, key: str, fn, *args) -> None:
         th = threading.Thread(target=fn, args=args, daemon=True, name=key)
