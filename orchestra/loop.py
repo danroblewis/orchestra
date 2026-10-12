@@ -119,6 +119,12 @@ class Loop:
         finally:
             if self.control:
                 self.control.stop()
+            # Every turn still running is about to be cut off by this shutdown. Say so in the
+            # event log, so the transcript does not look like the agent stopped on its own.
+            for s in self.store.sessions():
+                if s.get("status") == "running":
+                    self.events.emit("turn_interrupted", session=s["id"], agent=s.get("kind"), ticket=s.get("ticket_id") or None,
+                                     reason="orchestra shut down (restart or stop) during this turn")
             for name, p in self.agent_procs.items():
                 p.close()
                 self.store.set_session(self.agents[name].session_id if name in self.agents else name.replace("_", "-"),

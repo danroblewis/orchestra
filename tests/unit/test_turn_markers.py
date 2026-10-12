@@ -37,3 +37,14 @@ def test_timed_out_turn_is_recorded_with_what_the_agent_was_doing(project):
     assert t["doing"] == "running `bash`" and 125 <= t["phase_for"] <= 135 and 10 <= t["silent_for"] <= 15
     assert t["last_text"] == "Let me read the transcript."
     assert evs[1]["error"] == "pi exited 1"
+
+
+def test_shutdown_marks_every_running_turn(project):
+    store, events = LocalStore(project), Events(project.events_file)
+    store.set_session("worker-T-1", kind="worker", status="running", ticket_id="T-1")
+    store.set_session("po", kind="po", status="idle")
+    loop = Loop(project, store, events)
+    loop.stop.set()
+    loop.run(once=True)
+    cut = [e for e in events.read(0)[0] if e["type"] == "turn_interrupted"]
+    assert [(e["session"], e["ticket"]) for e in cut] == [("worker-T-1", "T-1")]

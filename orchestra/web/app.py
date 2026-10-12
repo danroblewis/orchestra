@@ -22,7 +22,7 @@ from ..store import LocalStore, StoreError
 STATIC = Path(__file__).parent / "static"
 
 
-MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "agent_killed")
+MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed")
 
 
 def create_app(project: Project) -> FastAPI:

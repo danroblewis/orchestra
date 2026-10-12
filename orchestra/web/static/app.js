@@ -217,6 +217,7 @@ function renderMarker(e) {
   if (e.type === "turn_timed_out") text = `⏱ Orchestra stopped this turn: the ${fmtDur(e.limit)} turn limit ran out while the agent was ${esc(e.doing || "working")}` +
     (e.phase_for != null ? ` (${fmtDur(e.phase_for)} into that)` : "") + (e.silent_for != null ? `, last output ${fmtDur(e.silent_for)} earlier` : "") + ". Nothing after this point was the agent's decision.";
   else if (e.type === "turn_error") text = `✖ Orchestra ended this turn: ${esc(e.error || "harness error")}`;
+  else if (e.type === "turn_interrupted") text = `■ Orchestra was restarted or stopped during this turn, which cut it off. ${esc(e.reason || "")}`;
   else if (e.type === "agent_killed") text = "■ Stopped by the operator.";
   else if (e.type === "session_started") text = `▶ Turn started${e.ticket ? " on " + esc(e.ticket) : ""}.`;
   else text = esc(e.type);
