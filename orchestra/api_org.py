@@ -22,6 +22,7 @@ from .org import (
     custom_event_types,
     effective_tools,
     may_message,
+    members_of,
     org_store,
     team_chain,
 )
@@ -230,7 +231,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         t = all_teams(project).get(a["name"])
         if t is None or t.builtin:
             raise StoreError(f"no custom team {a['name']!r}")
-        left = [ag.name for ag in all_agents(project).values() if ag.team == t.name]
+        left = members_of(t, all_agents(project))
         if left:
             raise StoreError(f"team {t.name!r} still has agents {left}; move or delete them first")
         os_.delete_team(t.name)
@@ -275,7 +276,7 @@ def agent_definition(project: Project, store: LocalStore, ag: AgentDef) -> dict:
 def team_view(project: Project, store: LocalStore, t: TeamDef) -> dict:
     ags = all_agents(project)
     return {**t.to_dict(), "builtin": t.builtin, "parent": t.parent, "space": t.space,
-            "agents": [agent_view(project, store, ags[n]) for n in t.agents if n in ags],
+            "agents": [agent_view(project, store, ags[n]) for n in members_of(t, ags)],
             "sub_teams": [x.name for x in all_teams(project).values() if x.parent == t.name]}
 
 

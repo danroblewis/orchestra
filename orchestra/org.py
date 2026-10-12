@@ -394,7 +394,22 @@ def all_agents(project: Project) -> dict[str, AgentDef]:
                                every=r.every, at=r.at, description=r.description, created_by=r.created_by,
                                created_at=r.created_at, updated_at=r.updated_at, source="role")
     out.update(explicit)
+    # A team's record is authoritative for who is in it: an agent it names as lead or member
+    # belongs to it even when the agent's own record (or a Stage 1 role record, which has no
+    # team field) says nothing, or says something older.
+    for t in all_teams(project).values():
+        for name in t.agents:
+            if name in out and not out[name].builtin and out[name].team != t.name:
+                out[name].team = t.name
     return out
+
+
+def members_of(team: TeamDef, agents: dict[str, AgentDef]) -> list[str]:
+    """The team's agents: those its record names, then any whose own record names the team
+    (an agent is allowed to be created before the team lists it)."""
+    names = [n for n in team.agents if n in agents]
+    names += [a.name for a in agents.values() if a.team == team.name and a.name not in names]
+    return names
 
 
 def team_chain(teams: dict[str, TeamDef], name: str | None) -> list[TeamDef]:

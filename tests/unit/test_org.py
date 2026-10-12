@@ -105,6 +105,24 @@ def test_stage1_roles_become_implicit_agents(project):
     assert a.source == "agent" and a.kind == "continuous"                          # an explicit record wins
 
 
+def test_team_record_decides_membership(project):
+    """A Stage 1 role record (no team field) named by a team belongs to it; an agent whose
+    own record names the team belongs to it even before the team lists it."""
+    from orchestra.org import members_of
+    rs, os_ = role_store(project), RepoOrgStore(project)
+    rs.save(RoleDef(name="product_owner", tools=["tickets"], every="45m"), "# You own\n\nThe product, with opinions.")
+    rs.save(RoleDef(name="owner", tools=["tickets"]), "# You own\n\nThings.")
+    os_.save_agent(AgentDef(name="writer", roles=["owner"], team="product", kind="ad_hoc"))
+    os_.save_team(TeamDef(name="product", lead="product_owner"), "# P\n\n1. x")
+    ags = all_agents(project)
+    assert ags["product_owner"].source == "role" and ags["product_owner"].team == "product"
+    assert members_of(all_teams(project)["product"], ags) == ["product_owner", "writer"]
+    store = LocalStore(project)
+    v = api.handle(project, store, "get_team", {"name": "product"})["team"]
+    assert [a["name"] for a in v["agents"]] == ["product_owner", "writer"]
+    assert [a["name"] for a in api.handle(project, store, "list_agents", {})["agents"] if not a["team"] and not a["builtin"]] == []
+
+
 def test_effective_tools_and_the_message_tree(project):
     rs, os_ = role_store(project), RepoOrgStore(project)
     rs.save(RoleDef(name="analyst", tools=["events"]), "# You analyse\n\nTranscripts and logs, carefully.")
