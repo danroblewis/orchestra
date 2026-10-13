@@ -212,13 +212,19 @@ class Loop:
         for name in list(self.agent_procs):
             st = self.store.agent_state(name)
             gone = name not in agents_ or st.get("deleted")
-            if gone or st.get("restart_requested") or st.get("paused"):
+            if gone or st.get("restart_requested") or st.get("reset_requested") or st.get("paused"):
                 if name in self.agent_threads:
                     continue  # let the current turn finish first
                 proc = self.agent_procs.pop(name)
                 proc.close()
-                self.store.set_session(agents_[name].session_id if name in agents_ else name.replace("_", "-"), status="idle", pid=None)
-                if st.get("restart_requested"):
+                sid = agents_[name].session_id if name in agents_ else name.replace("_", "-")
+                self.store.set_session(sid, status="idle", pid=None)
+                if st.get("reset_requested"):
+                    archived = self.store.retire_session(sid)
+                    self.store.set_agent_state(name, reset_requested=False, context_hash=None, turn_depth=0)
+                    self.events.emit("agent_reset", session=sid, agent=name, archived=archived, by=st.get("reset_by") or "operator")
+                    log(f"{name}: session reset by request; previous transcript archived as {archived}")
+                elif st.get("restart_requested"):
                     self.store.set_agent_state(name, restart_requested=False)
                     log(f"{name}: session restarted by request")
         self.role_defs, self.teams, self.agents = roles, teams, agents_

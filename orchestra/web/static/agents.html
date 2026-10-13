@@ -60,7 +60,8 @@
 let STATE = null, ORG = null;
 async function control(body) { const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!r.ok) alert(await r.text()); refresh(); }
 function act(action, name) {
-  const warn = { delete_agent: `Delete agent ${name}? Its sessions are archived and its record is removed from .orchestra/agents/.`,
+  const warn = { reset_agent: `Start ${name} over with an empty transcript? Its conversation so far is kept as an archived run, but the agent will not remember it. Do this when its session has grown so long that every turn is slow.`,
+                 delete_agent: `Delete agent ${name}? Its sessions are archived and its record is removed from .orchestra/agents/.`,
                  delete_role: `Delete role ${name}? Only possible when no agent uses it.`, delete_team: `Delete team ${name}? Only possible when it has no agents or sub-teams.` }[action];
   if (warn && !confirm(warn)) return;
   control({ action, name });
@@ -178,8 +179,9 @@ function statusOf(a, now) {
 }
 function agentRow(a, lead, now) {
   const letter = a.name[0].toUpperCase();
-  const ctls = a.builtin ? (a.name === "supervisor" ? "" : `<button class="ctl" onclick="act('restart_agent','${a.name}')">↻</button>`) :
-    `${a.paused ? `<button class="ctl" onclick="act('resume_agent','${a.name}')">▶</button>` : `<button class="ctl" onclick="act('pause_agent','${a.name}')">⏸</button>`}<button class="ctl" onclick="act('restart_agent','${a.name}')">↻</button><button class="ctl kill" onclick="act('delete_agent','${a.name}')">✕</button>`;
+  const fresh = a.resident ? `<button class="ctl" onclick="act('reset_agent','${a.name}')" title="Start over with an empty transcript (the old one is archived as a run)">⟲</button>` : "";
+  const ctls = a.builtin ? `${a.name === "supervisor" ? "" : `<button class="ctl" onclick="act('restart_agent','${a.name}')" title="Restart the process; transcript kept">↻</button>`}${fresh}` :
+    `${a.paused ? `<button class="ctl" onclick="act('resume_agent','${a.name}')">▶</button>` : `<button class="ctl" onclick="act('pause_agent','${a.name}')">⏸</button>`}<button class="ctl" onclick="act('restart_agent','${a.name}')" title="Restart the process; transcript kept">↻</button>${fresh}<button class="ctl kill" onclick="act('delete_agent','${a.name}')">✕</button>`;
   return `<div class="arow"><div class="av ${lead ? "lead" : ""}" title="${lead ? "lead" : "member"}">${letter}</div>
     <span class="name"><a href="#" onclick="openAgent('${a.name}');return false">${esc(a.name)}</a>${lead ? ' <span class="tag">lead</span>' : ""}</span>
     <span class="tag k-${a.kind}">${a.kind.replace("_", " ")}</span>

@@ -175,6 +175,9 @@ TOOLS: list[ToolDef] = [
     ToolDef("pause_agent", "roles", "Pause an agent: wake-ups queue until resumed.", {"name": S("Agent name")}, ("name",)),
     ToolDef("resume_agent", "roles", "Resume a paused agent.", {"name": S("Agent name")}, ("name",)),
     ToolDef("restart_agent", "roles", "Restart an agent's session (fresh process; transcript kept).", {"name": S("Agent name")}, ("name",)),
+    ToolDef("reset_agent", "roles", "Start a resident agent over with an empty transcript (the old one is archived as a run). Use when "
+            "a session has grown so long that every turn is slow; the agent loses its memory of the conversation but "
+            "not the project context or the team's space.", {"name": S("Agent name")}, ("name",)),
     ToolDef("create_team", "roles",
             "Create a team: one lead agent, members, responsibilities (standing conditions as a numbered markdown list), "
             "access (tool groups and repository paths), capacity. Nest with 'parent/child'. Prefer update_team on an "

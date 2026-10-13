@@ -32,7 +32,7 @@ from .store import LocalStore, StoreError
 ORG_COMMANDS = frozenset({
     "org_guide", "list_roles", "get_role", "create_role", "update_role", "delete_role",
     "list_agents", "get_agent", "create_agent", "update_agent", "delete_agent",
-    "pause_agent", "resume_agent", "restart_agent", "run_agent", "message_agent",
+    "pause_agent", "resume_agent", "restart_agent", "reset_agent", "run_agent", "message_agent",
     "list_teams", "get_team", "create_team", "update_team", "delete_team", "emit_event",
 })
 EVENT_TYPES_SET = frozenset(EVENT_TYPES)
@@ -162,6 +162,12 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
     if command == "restart_agent":
         store.set_agent_state(a["name"], restart_requested=True)
         return {"ok": True, "message": "the agent's session will be restarted at the next tick"}
+    if command == "reset_agent":
+        ag = all_agents(project).get(a["name"])
+        if ag is None or not ag.resident:
+            raise StoreError(f"{a['name']!r} is not a resident agent; only a long-lived session can be reset")
+        store.set_agent_state(a["name"], reset_requested=True, reset_by=author)
+        return {"ok": True, "message": "the agent's session will start over at the next tick; its transcript so far is kept as an archived run"}
     if command in ("run_agent", "message_agent"):
         teams, ags = all_teams(project), all_agents(project)
         why = may_message(teams, ags, role or "supervisor", a["name"])

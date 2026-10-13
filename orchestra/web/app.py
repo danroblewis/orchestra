@@ -24,7 +24,7 @@ STATIC = Path(__file__).parent / "static"
 
 
 CHAT_PING_SECONDS = 20   # keep the chat stream alive through proxies while the Supervisor thinks
-MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop")
+MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop", "agent_reset")
 
 
 def _alive(pid) -> bool:
@@ -323,7 +323,7 @@ def create_app(project: Project) -> FastAPI:
                 raise HTTPException(409, f"{tid} is {t.state}; nothing to stop")
             store.request_kill(tid, by="operator")
             return {"ok": True, "ticket": tid, "will_reset_to": "OPEN" if t.state == State.IN_PROGRESS else "READY_FOR_REVIEW"}
-        if action in ("pause_agent", "resume_agent", "restart_agent", "delete_agent", "delete_role", "delete_team"):
+        if action in ("pause_agent", "resume_agent", "restart_agent", "reset_agent", "delete_agent", "delete_role", "delete_team"):
             from .. import api as api_mod
             try:
                 return api_mod.handle(project, store, action, {"name": body.get("name") or ""}, role="supervisor")

@@ -12,8 +12,17 @@ from typing import Any, Iterator
 
 from ..config import Project
 from ..events import Events
-from ..model import (ACTIVE, Milestone, MilestoneStatus, Note, State, Ticket, check_transition,
-                     effective_priorities, now)
+from ..model import (
+    ACTIVE,
+    Milestone,
+    MilestoneStatus,
+    Note,
+    State,
+    Ticket,
+    check_transition,
+    effective_priorities,
+    now,
+)
 from .base import Conflict, StoreError
 
 EMPTY_TICKETS = {"tickets": {}, "milestones": {}, "notes": {}, "counters": {"ticket": 0, "milestone": 0}}
@@ -262,6 +271,30 @@ class LocalStore:
                     rec["pid"] = None
                     archive[sid] = rec
             return []
+        return self._mutate_runtime(fn)
+
+    def retire_session(self, session_id: str) -> str | None:
+        """Start a resident agent over: its transcript file moves to sessions/archive/ and
+        its record is kept under an archived id, so the old conversation stays readable
+        as a run, and the live record is emptied for the fresh session to fill."""
+        stamp = now().replace(":", "-")
+        archived_id = f"{session_id}-reset-{stamp[:19]}"
+        def fn(data):
+            rec = data["sessions"].get(session_id)
+            if not rec:
+                return None
+            old = dict(rec)
+            f = old.get("session_file")
+            if f and Path(f).exists():
+                dest = Path(f).parent / "archive"
+                dest.mkdir(parents=True, exist_ok=True)
+                target = dest / Path(f).name
+                Path(f).rename(target)
+                old["session_file"] = str(target)
+            old.update({"id": archived_id, "status": "archived", "pid": None, "reset_at": now()})
+            data.setdefault("archived_sessions", {})[archived_id] = old
+            rec.update({"session_file": None, "status": "idle", "pid": None, "last_text": "", "phase": "idle", "tool_name": None})
+            return archived_id
         return self._mutate_runtime(fn)
 
     def find_session(self, session_id: str) -> dict | None:
