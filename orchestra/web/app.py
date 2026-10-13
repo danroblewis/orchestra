@@ -4,6 +4,7 @@ SPEC.md section 11."""
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from ..store import LocalStore, StoreError
 STATIC = Path(__file__).parent / "static"
 
 
+CHAT_PING_SECONDS = 20   # keep the chat stream alive through proxies while the Supervisor thinks
 MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop")
 
 
@@ -253,14 +255,35 @@ def create_app(project: Project) -> FastAPI:
                                      data=__import__("json").dumps({"message": body.get("message", "")}).encode(),
                                      headers={"Content-Type": "application/json"})
         try:
-            resp = await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=project.config.turn_timeout + 30))
+            # The control endpoint ends the stream when the turn ends; reads must not time out before that.
+            resp = await asyncio.to_thread(lambda: urllib.request.urlopen(req, timeout=max(project.config.turn_timeout or 0, 86400)))
         except Exception as e:
             raise HTTPException(503, f"cannot reach orchestra run: {e}")
 
         async def gen():
+            # Proxies in front of this page (Cloudflare closes a response that is silent for
+            # 100s) must see bytes while the Supervisor thinks, so a ping goes out whenever
+            # nothing has arrived for CHAT_PING_SECONDS. The client ignores pings.
+            q: asyncio.Queue[bytes | None] = asyncio.Queue()
+            loop = asyncio.get_running_loop()
+
+            def pump():
+                try:
+                    while True:
+                        line = resp.readline()
+                        loop.call_soon_threadsafe(q.put_nowait, line or None)
+                        if not line:
+                            return
+                except Exception:
+                    loop.call_soon_threadsafe(q.put_nowait, None)
+            threading.Thread(target=pump, daemon=True).start()
             while True:
-                line = await asyncio.to_thread(resp.readline)
-                if not line:
+                try:
+                    line = await asyncio.wait_for(q.get(), timeout=CHAT_PING_SECONDS)
+                except TimeoutError:
+                    yield b'{"type": "ping"}\n'
+                    continue
+                if line is None:
                     break
                 yield line
 

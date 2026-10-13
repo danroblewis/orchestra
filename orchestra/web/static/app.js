@@ -171,7 +171,12 @@ async function sendToSupervisor(ev) {
   highlightCode(live); $("drawer").scrollTop = 0;
   try {
     const resp = await fetch("/api/supervisor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
-    if (!resp.ok) { $("live-body").innerHTML = `<div class="bad">${esc((await resp.text()).slice(0, 300))}</div>`; return false; }
+    if (!resp.ok) {
+      const body = await resp.text();
+      const proxy = /^\s*<!doctype html|<html/i.test(body);
+      $("live-body").innerHTML = `<div class="bad">${proxy ? `The connection was closed by the proxy in front of this page (HTTP ${resp.status}). The Supervisor is still working on your message; its reply will appear in the transcript below.` : esc(body.slice(0, 300))}</div>`;
+      return false;
+    }
     const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
     while (true) {
       const { value, done } = await reader.read(); if (done) break;
