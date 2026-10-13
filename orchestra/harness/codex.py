@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-from .base import AgentSession, Harness, OnEvent, SessionSpec, TurnResult
+from .base import AgentSession, Harness, OnEvent, SessionSpec, TurnResult, _Deadlines
 
 MCP_SERVER = "orchestra"
 TOOL_PREFIX = f"mcp__{MCP_SERVER}__"      # how Codex names an MCP server's functions
@@ -138,7 +138,8 @@ class CodexSession(AgentSession):
         args += ["resume", self.thread_id, "-"] if self.thread_id else ["-"]
         return args
 
-    def prompt(self, text: str, timeout: float, on_event: OnEvent | None = None) -> TurnResult:
+    def prompt(self, text: str, timeout: float | None, on_event: OnEvent | None = None,
+               idle_timeout: float | None = None) -> TurnResult:
         with self._lock:
             self.busy = True
             result = TurnResult()
@@ -159,21 +160,21 @@ class CodexSession(AgentSession):
                     self.proc.stdin.close()      # type: ignore[union-attr]
                 except (BrokenPipeError, OSError):
                     pass
-                deadline = time.time() + timeout
+                clock = _Deadlines(timeout, idle_timeout)
                 reader = _LineReader(self.proc.stdout)
                 last_text = ""
                 while True:
-                    remaining = deadline - time.time()
-                    if remaining <= 0:
-                        result.timed_out = True
-                        result.text = last_text
+                    why = clock.expired()
+                    if why:
+                        result.timed_out, result.stopped_by, result.text = True, why, last_text
                         self.kill()
                         return result
-                    line = reader.next(min(5.0, remaining))
+                    line = reader.next(clock.wait())
                     if line is None:          # EOF: the process exited
                         break
                     if not line:
                         continue
+                    clock.touch()
                     try:
                         ev = json.loads(line)
                     except json.JSONDecodeError:

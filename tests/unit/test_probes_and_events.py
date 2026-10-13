@@ -42,7 +42,7 @@ def project(tmp_path, monkeypatch):
 def run_probe(prober, spec):
     prober.tick([spec])
     for th in list(prober.running.values()):
-        th.join(10)
+        th.join(30)
 
 
 def test_probe_emits_only_on_transitions(project, tmp_path):
@@ -79,7 +79,9 @@ def test_team_probe_runs_in_the_space_with_tools_on_path(project):
     os_ = RepoOrgStore(project)
     role_store(project).save(RoleDef(name="owner", tools=["tickets"]), "# You own\n\nThings, carefully and well.")
     os_.save_agent(AgentDef(name="po", roles=["owner"], team="product", kind="scheduled", every="1d"))
-    os_.save_team(TeamDef(name="product", lead="po", probes=[{"name": "docs_budget", "command": "doc-budget", "every": "30m"}]),
+    # The probe finds its tool on PATH and runs it through sh: executing a freshly written
+    # binary makes macOS scan it first, which takes long enough to make this test flaky.
+    os_.save_team(TeamDef(name="product", lead="po", probes=[{"name": "docs_budget", "command": 'sh "$(command -v doc-budget)"', "every": "30m"}]),
                   "# P\n\n1. The docs are under budget.")
     tool = project.repo_root / ".orchestra" / "spaces" / "product" / "tools" / "doc-budget"
     tool.write_text("#!/bin/sh\ntest \"$(pwd)\" = \"$(cd \"$(dirname \"$0\")/..\" && pwd)\" && test -n \"$STAGING_URL\" && exit 0\necho wrong cwd; exit 1\n")

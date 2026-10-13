@@ -25,6 +25,7 @@ Normalized events (dicts with ``type``):
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,8 +39,43 @@ class TurnResult:
     text: str = ""
     settled: bool = False
     timed_out: bool = False
+    stopped_by: str | None = None    # "silence" (no event for idle_timeout) or "limit" (the hard cap), when timed_out
     error: str | None = None
     tool_calls: list[str] = field(default_factory=list)
+
+
+class _Deadlines:
+    """Shared turn-ending rule for every harness: a turn ends when the agent settles, when
+    nothing has arrived from the harness for `idle` seconds (the agent is presumed stuck),
+    or, only if a hard cap is set, when `cap` seconds have passed in total. A busy agent is
+    never cut off by the cap unless the project asked for one."""
+
+    def __init__(self, cap: float | None, idle: float | None):
+        now = time.time()
+        self.hard = now + cap if cap else None
+        self.idle = idle if idle else None
+        self.last = now
+
+    def touch(self) -> None:
+        self.last = time.time()
+
+    def expired(self) -> str | None:
+        now = time.time()
+        if self.hard is not None and now >= self.hard:
+            return "limit"
+        if self.idle is not None and now - self.last >= self.idle:
+            return "silence"
+        return None
+
+    def wait(self) -> float:
+        """How long to block for the next event: until the nearest deadline, at most 5s."""
+        now = time.time()
+        waits = [5.0]
+        if self.hard is not None:
+            waits.append(self.hard - now)
+        if self.idle is not None:
+            waits.append(self.last + self.idle - now)
+        return max(0.1, min(waits))
 
 
 @dataclass
@@ -80,7 +116,11 @@ class AgentSession(ABC):
         """Make the session exist and learn ``session_file``. Idempotent."""
 
     @abstractmethod
-    def prompt(self, text: str, timeout: float, on_event: OnEvent | None = None) -> TurnResult: ...
+    def prompt(self, text: str, timeout: float | None, on_event: OnEvent | None = None,
+               idle_timeout: float | None = None) -> TurnResult:
+        """Run one turn. `timeout` is a hard cap in seconds (None or 0: none); `idle_timeout`
+        ends the turn after that many seconds without any event from the harness."""
+        ...
 
     @property
     @abstractmethod

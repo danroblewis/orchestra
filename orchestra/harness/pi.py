@@ -16,7 +16,15 @@ import threading
 import time
 from pathlib import Path
 
-from .base import AgentSession, Harness, OnEvent, SessionSpec, TurnResult, assistant_text
+from .base import (
+    AgentSession,
+    Harness,
+    OnEvent,
+    SessionSpec,
+    TurnResult,
+    _Deadlines,
+    assistant_text,
+)
 
 EXTENSION_PATH = Path(__file__).parent / "pi_extension.ts"
 
@@ -116,22 +124,29 @@ class PiSession(AgentSession):
     def alive(self) -> bool:
         return self.proc.poll() is None
 
-    def prompt(self, text: str, timeout: float, on_event: OnEvent | None = None) -> TurnResult:
+    def prompt(self, text: str, timeout: float | None, on_event: OnEvent | None = None,
+               idle_timeout: float | None = None) -> TurnResult:
         with self._lock:
             self.busy = True
             result = TurnResult()
             emit = _Normalizer(on_event)
             try:
                 self._send({"type": "prompt", "message": text})
-                deadline = time.time() + timeout
+                clock = _Deadlines(timeout, idle_timeout)
                 last_text = ""
-                while time.time() < deadline:
-                    ev = self._next(min(5.0, max(0.1, deadline - time.time())))
+                while True:
+                    why = clock.expired()
+                    if why:
+                        result.timed_out, result.stopped_by, result.text = True, why, last_text
+                        self._abort()
+                        return result
+                    ev = self._next(clock.wait())
                     if ev is None:
                         result.error = "pi exited"
                         return result
                     if not ev:
                         continue
+                    clock.touch()
                     t = ev.get("type")
                     emit(ev)
                     if t == "response" and ev.get("command") == "prompt" and not ev.get("success", True):
@@ -153,10 +168,6 @@ class PiSession(AgentSession):
                         result.text = last_text
                         emit.settled(last_text)
                         return result
-                result.timed_out = True
-                result.text = last_text
-                self._abort()
-                return result
             finally:
                 self.busy = False
 

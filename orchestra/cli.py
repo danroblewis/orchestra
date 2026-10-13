@@ -170,7 +170,7 @@ def _chat_attached(project: Project, store: LocalStore, port: int) -> int:
                                      data=json.dumps({"message": line}).encode(),
                                      headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=project.config.turn_timeout + 30) as resp:
+            with urllib.request.urlopen(req, timeout=(project.config.turn_timeout or 86400) + 30) as resp:
                 for raw in resp:
                     ev = json.loads(raw)
                     if ev.get("type") == "done":
@@ -230,7 +230,7 @@ def cmd_chat(args) -> int:
             prefix = agents.supervisor_context(store.snapshot(), new, project, store)
             store.set_session(sid, status="running", started_at=time.time())
             events.emit("session_started", session=sid, kind="supervisor")
-            res = proc.prompt(prefix + line, cfg.turn_timeout, on_event=_print_event)
+            res = proc.prompt(prefix + line, cfg.turn_timeout or None, on_event=_print_event, idle_timeout=cfg.silence_timeout)
             store.set_session(sid, status="idle", last_text=(res.text or "")[-500:], settled_at=time.time())
             events.emit("session_settled", session=sid)
             if res.error or res.timed_out:

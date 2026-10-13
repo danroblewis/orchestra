@@ -770,7 +770,8 @@ model = "ornith-1.5-35b-a3b-q6k"
 thinking = "medium"
 workers = 2
 reviewers = 1
-turn_timeout = "900s"
+silence_timeout = "20m"   # a turn ends after this long with nothing from the agent
+# turn_timeout = "2h"    # optional hard cap per turn; unset means a busy agent is never cut off
 review_rounds_before_escalation = 3
 
 [agents.prompts]            # optional per-role overrides, paths relative to repo root

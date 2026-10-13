@@ -428,8 +428,9 @@ class Loop:
             phase = s.get("phase") or "working"
             doing = f"running `{s['tool_name']}`" if phase == "tool" and s.get("tool_name") else \
                 "generating a reply" if phase == "generating" else "waiting for the model to start replying" if phase == "prompting" else phase
+            by = getattr(res, "stopped_by", None) or "limit"
             self.events.emit("turn_timed_out", session=sid, agent=kind or s.get("kind"), ticket=s.get("ticket_id") or None,
-                             limit=self.cfg.turn_timeout, doing=doing,
+                             stopped_by=by, limit=self.cfg.silence_timeout if by == "silence" else self.cfg.turn_timeout, doing=doing,
                              phase_for=round(now_t - s["phase_since"]) if s.get("phase_since") else None,
                              silent_for=round(now_t - s["last_output_at"]) if s.get("last_output_at") else None,
                              last_text=(res.text or s.get("last_text") or "")[-300:])
@@ -442,12 +443,13 @@ class Loop:
         return next((p for p in self.agent_procs.values() if p.session_id == sid), None)
 
     def _prompt_with_retry(self, proc: AgentSession, ticket_id: str, task: str, nudge: str) -> tuple[dict | None, str, bool]:
-        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(proc.session_id))
+        res = proc.prompt(task, self.cfg.turn_timeout or None, on_event=self._on_event(proc.session_id),
+                          idle_timeout=self.cfg.silence_timeout)
         self._note_turn(proc.session_id, res)
         report = self.store.pop_report(ticket_id)
         if report or res.timed_out or res.error:
             return report, res.text, res.timed_out or bool(res.error)
-        res = proc.prompt(nudge, min(self.cfg.turn_timeout, 300), on_event=self._on_event(proc.session_id))
+        res = proc.prompt(nudge, 300, on_event=self._on_event(proc.session_id), idle_timeout=self.cfg.silence_timeout)
         self._note_turn(proc.session_id, res)
         return self.store.pop_report(ticket_id), res.text, res.timed_out or bool(res.error)
 
@@ -707,7 +709,7 @@ class Loop:
             if ev.get("type") in ("tool_start", "assistant_end"):
                 emit(ev)
 
-        res = proc.prompt(prefix + message, self.cfg.turn_timeout, on_event=on_event)
+        res = proc.prompt(prefix + message, self.cfg.turn_timeout or None, on_event=on_event, idle_timeout=self.cfg.silence_timeout)
         self._note_turn("supervisor", res, "supervisor")
         self._session_idle("supervisor", res.text, resident=True)
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
@@ -734,7 +736,7 @@ class Loop:
             task = ("[Orchestra: escalation from another agent; the human is not present for this turn. "
                     "Act with your tools if you can, otherwise leave a note the human will see.]\n\n"
                     + agents.supervisor_context(self.store.snapshot(), [], self.project, self.store) + task)
-        res = proc.prompt(task, self.cfg.turn_timeout, on_event=self._on_event(sid))
+        res = proc.prompt(task, self.cfg.turn_timeout or None, on_event=self._on_event(sid), idle_timeout=self.cfg.silence_timeout)
         self._note_turn(sid, res, target)
         self._session_idle(sid, res.text, resident=not ephemeral)
         if ephemeral:

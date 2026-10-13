@@ -59,7 +59,8 @@ class Config:
     thinking: str | None = None
     workers: int = 1
     reviewers: int = 1
-    turn_timeout: float = 900.0
+    turn_timeout: float = 0.0          # hard cap per turn; 0 = none
+    silence_timeout: float = 1200.0    # end a turn after this long with nothing from the harness
     review_rounds_before_escalation: int = 3
     aging_days_per_level: float = 2.0
     prompt_overrides: dict[str, str] = field(default_factory=dict)
@@ -114,7 +115,8 @@ class Config:
             thinking=a.get("thinking"),
             workers=int(a.get("workers", 1)),
             reviewers=int(a.get("reviewers", 1)),
-            turn_timeout=parse_duration(a.get("turn_timeout"), 900.0),
+            turn_timeout=parse_duration(a.get("turn_timeout"), 0.0),
+            silence_timeout=parse_duration(a.get("silence_timeout"), 1200.0),
             review_rounds_before_escalation=int(a.get("review_rounds_before_escalation", 3)),
             aging_days_per_level=float(a.get("aging_days_per_level", 2.0)),
             prompt_overrides=dict(a.get("prompts", {})),
@@ -153,7 +155,8 @@ model = "{model}"         # leave empty for the harness's default (Claude Code: 
 thinking = "medium"
 workers = 3
 reviewers = 3
-turn_timeout = "900s"
+silence_timeout = "20m"           # a turn ends when nothing has come from the agent for this long
+# turn_timeout = "2h"             # optional hard cap per turn; unset means none: a busy agent is never cut off
 review_rounds_before_escalation = 3
 aging_days_per_level = 2        # a ticket gains one priority level per N days of age; 0 disables
 

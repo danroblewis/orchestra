@@ -11,7 +11,7 @@ model = "ornith-1.5-35b-a3b-q6k"
 thinking = "medium"
 workers = 3
 reviewers = 3
-turn_timeout = "900s"
+silence_timeout = "20m"
 review_rounds_before_escalation = 3
 
 # Stage 1: build the artifact the acceptance tests will run against.
