@@ -224,7 +224,7 @@ function foundryMap(f, evm) {
   const AP = {};
   const placed = agents.map((a) => { const ks = [...wakers(a.name), ...fillers(a.name)]; const xs = ks.map((k) => P[k].x); return { a, x: xs.length ? xs.reduce((p, q) => p + q, 0) / xs.length : null }; });
   placed.sort((p, q) => (p.x ?? 9999) - (q.x ?? 9999)); const gap = Math.min(120, placed.length > 1 ? (W - 160) / (placed.length - 1) : 120); let nx = 80;
-  placed.forEach((s, i) => { if (s.x == null) s.x = nx; s.x = Math.min(Math.max(s.x, nx), W - 80 - gap * (placed.length - 1 - i)); nx = s.x + gap; const tight = i > 0 && s.x - placed[i - 1].x < 118; AP[s.a.name] = { x: s.x, y: agentY + (tight && !placed[i - 1].low ? 44 : 0), a: s.a }; s.low = tight && !placed[i - 1].low; });
+  placed.forEach((s, i) => { if (s.x == null) s.x = nx; s.x = Math.min(Math.max(s.x, nx), W - 80 - gap * (placed.length - 1 - i)); nx = s.x + gap; const tight = i > 0 && s.x - placed[i - 1].x < 132; AP[s.a.name] = { x: s.x, y: agentY + (tight && !placed[i - 1].low ? 44 : 0), a: s.a }; s.low = tight && !placed[i - 1].low; });
   const pos = (id) => id.startsWith("agent:") ? AP[id.slice(6)] : P[id];
   let svg = `<defs><marker id="fa" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-4L8,0L0,4" fill="#9ca3af"></path></marker><marker id="fo" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-4L8,0L0,4" fill="#f59e0b"></path></marker></defs>`;
   const labels = r.edge_labels || {};
