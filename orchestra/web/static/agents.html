@@ -62,6 +62,7 @@
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents" class="on">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="org">
   <p class="intro">Who is in this project and what they are for; the Dashboard shows what they are doing right now. A <b>role</b> is a job description. An <b>agent</b> is an instance of roles in a team and is what runs: <span class="tag k-continuous">continuous</span> agents are processes that are always up and wake on events, <span class="tag k-scheduled">scheduled</span> agents run on an interval or a daily time, <span class="tag k-ad_hoc">ad hoc</span> agents get a fresh session each time their lead briefs them or a subscribed event fires. A <b>team</b> has one lead, responsibilities it keeps true, access, and a space in the repository. All of it is created in conversation with the Supervisor and stored under <code>.orchestra/</code>.</p>
+  <div id="evmap-host"></div>
   <div id="list"></div>
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
@@ -382,10 +383,11 @@ async function refresh() {
     // "Here" includes agents whose team does not exist yet (created before the team, which the
     // Supervisor's guide tells it to do), labelled as such.
     const loose = org.agents.filter((a) => (!a.team || a.team_exists === false) && !(a.builtin && !a.resident));
-    let html = timeline(org.agents, org.now);
+    // The map lives in its own container and is redrawn only when the graph changes; the
+    // list below is re-rendered every refresh, which would otherwise wipe the drawn SVG.
     const sig = JSON.stringify(evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]));
-    if (window.EVSIG !== sig || !document.getElementById("evsvg")) { window.EVSIG = sig; window.EVHTML = `<h2>Event map</h2>` + eventMap(evm); }
-    html += window.EVHTML || "";
+    if (window.EVSIG !== sig || !document.getElementById("evsvg")) { window.EVSIG = sig; $("evmap-host").innerHTML = `<h2>Event map</h2>` + eventMap(evm); }
+    let html = timeline(org.agents, org.now);
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');
     const probes = st.probes || [];
