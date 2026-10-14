@@ -206,7 +206,7 @@ function foundryMap(f, evm) {
     ${tile(dora.deploys ? `${fPct(dora.change_failure)}<small> of ${dora.deploys} deploys</small>` : "—", `change failure: deploys whose build then crash-restarted (${dora.restarts || 0} restarts) or failed (${dora.staging_failed || 0}) · time to restore ${dora.restore != null ? fmtD(dora.restore) : "n/a"}`, `Deploys in ${hours}h followed by a staging failure or health restart before the next deploy, over deploys. Gate rejections are inspection results, not change failures.`, dora.change_failure != null && dora.change_failure > 0.5)}
   </div>`;
   // -- the map: stocks by row, agents over what wakes them, every derived link --------------
-  let W = 1320; const rowY = { capability: 60, chain: 330, rework: 480 }, agentY = 190, H = 580;
+  let W = 1320; const rowY = { capability: 60, chain: 330, rework: 470 }, agentY = 190, H = 600;
   const stocks = model.stocks.filter((s) => s.key !== "agent_time");
   const P = {};
   const slots = { capability: 110, chain: 70, rework: 300 };
@@ -258,7 +258,7 @@ function foundryMap(f, evm) {
     for (const d of outs) for (const f of ins) if (plainVia(d.via) === plainVia(f.via) && d.dst !== f.dst && !convs.some((c) => c.src === d.dst && c.dst === f.dst && c.agent === a.name)) convs.push({ src: d.dst, dst: f.dst, agent: a.name, via: plainVia(d.via) }); }
   const pipeSlots = {};
   for (const c of convs) { const a = P[c.src], b = P[c.dst]; if (a.y !== b.y) continue; const dir = b.x > a.x ? 1 : -1, x1 = a.x + dir * a.w / 2, x2 = b.x - dir * b.w / 2, slot = `${c.src}>${c.dst}`, n = (pipeSlots[slot] = (pipeSlots[slot] || 0) + 1), y = a.y + a.h / 2 + 16 + (n - 1) * 14;
-    svg += `<path class="fe pipe" data-id="p:${slot}:${c.agent}" data-links="${c.src} ${c.dst} agent:${c.agent}" d="M${x1},${y} L${x2},${y}" marker-end="url(#fa)"><title>${esc(c.src)} → ${esc(c.dst)} through ${esc(c.agent)} (${esc(c.via)})</title></path><text class="fl" data-id="p:${slot}:${c.agent}" data-links="${c.src} ${c.dst} agent:${c.agent}" x="${(x1 + x2) / 2}" y="${y - 4}" text-anchor="middle">⋈ ${esc(c.agent)}</text>`; }
+    svg += `<path class="fe pipe" data-id="p:${slot}:${c.agent}" data-links="${c.src} ${c.dst} agent:${c.agent}" d="M${x1},${y} L${x2},${y}" marker-end="url(#fa)"><title>${esc(c.src)} → ${esc(c.dst)} through ${esc(c.agent)} (${esc(c.via)})</title></path><text class="fl" data-id="p:${slot}:${c.agent}" data-links="${c.src} ${c.dst} agent:${c.agent}" x="${(x1 + x2) / 2}" y="${freeY((x1 + x2) / 2, y - 4, (c.agent.length + 2) * 6.5)}" text-anchor="middle">⋈ ${esc(c.agent)}</text>`; }
   // flows the model expects and no agent closes: drawn hollow between the two stocks, with the binding that would close them
   let hollowN = 0;
   for (const d of f.declared || []) { if (d.detected || !d.gaps) continue; for (const l of d.gaps.missing_links || []) { const a = P[l.from], b = P[l.to]; if (!a || !b) continue; hollowN += 1;
