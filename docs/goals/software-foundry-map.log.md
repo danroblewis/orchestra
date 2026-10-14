@@ -110,3 +110,35 @@ Declined for now: pinning the map while hovering a loop card (the card's own rin
 primary view); keyboard/touch tooltips; renaming-proof tiles (the tile row reads the
 template's stock keys; a project that renames them loses the tiles, noted as a limit in the
 guide's next revision).
+
+## Round 4 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct. 16 of 18 readings matched. Found: main's
+test state read from a base_broken run's failed candidate instead of its base check (main
+has 14 failing, not 1); BLOCKED→OPEN attributed to Orchestra when the coordinator made them
+(re-planning shown unseen though it ran 12 times); "observed" required every parallel
+mechanism; wake-on-departure as − double-counted the drain's sign; conserved material loops
+drawn with + signs and tagged B contradict Sterman (a material circuit has no causal
+polarity); dominant-mechanism voting made polarity a function of the window; map link
+numbers were event totals that break the design's own balance rule; WIP's declared flows
+contradicted its git estimator; rework share's denominator included re-run losses; the 4 s
+refresh destroyed hovers; the guide's worked example produced a negative stock (outflow
+counted every ticket_created); playable_features duplicated really done; unnamed list had
+duplicates; unattached agents looked attached; design section 5 still named flows and old
+tool names; the automata model directory is untracked.
+
+Fixed: main's state from base_check; attribution by evidence (the author of a note seconds
+before an unblock or cancel) over the table; observed = one mechanism per step, wakes and
+triggers included; departures wake +; material circuits carry no polarity and are drawn as
+pipes, with "source says B" beside; parallel links are indeterminate from structure, with
+the window's dominant sign named; link labels are the design's flows with losses named,
+drawn once per mechanism; WIP drained by landing; rework share over productive hours with
+re-runs shown as the loss; no rebuild while the pointer is over the section; events
+estimator counts an outflow only when a consumer caused it; propose_model no longer offers
+a duplicate acceptance stock or a ticket_created outflow; unnamed cycles deduplicated by
+members; unattached agents drawn hollow and labelled; the valve reading is the share of
+turns that time out; spec section 5 aligned.
+
+Declined: committing `.orchestra/model/` in the automata checkout (it sits on a ticket
+branch; Orchestra's store refuses to commit there and says so; Daniel's call); residence
+times per queue (next round if asked; the drill-down has the ticket ages).

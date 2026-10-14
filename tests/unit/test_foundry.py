@@ -167,7 +167,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert r["model_source"].startswith(".orchestra/model")                                       # init_project wrote the template
     c = S["agent_time"]
     assert c["turns"] == {"implement": 2, "fix": 1, "rerun": 1, "plan": 1}
-    assert c["rework_share"] == round((10 / 60) / ((30 + 18 + 10 + 6) / 60), 2)
+    assert c["rework_share"] == round((10 / 60) / ((30 + 18 + 10) / 60), 2)                    # over productive hours; the re-run is a loss
     assert c["losses"]["restarts"] == 1 and c["losses"]["turn_timeouts"] == 1 and c["losses"]["worker_hours_ending_in_timeout"] == 0.3
     assert c["losses"]["review_no_verdict"] == 1 and c["losses"]["rerun_hours"] == 0.1
     assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 0
@@ -228,7 +228,8 @@ def test_propose_model_and_advice_give_a_weak_supervisor_something_to_copy(proje
     whys = " | ".join(c["why"] for c in pr["candidates"])
     # lesson_decided already fills the template's resources stock, so it is not proposed; finding_filed is
     assert "declares the event finding_filed" in whys and "lesson_decided" not in whys
-    assert "files under .orchestra/spaces/devex/lessons" in whys and "acceptance suite has 1 modules" in whys
+    assert "files under .orchestra/spaces/devex/lessons" in whys
+    assert "acceptance suite" not in whys                                                      # the template's really_done already reads the acceptance stage
     assert all(c["call"]["kind"] == "stock" and "spec" in c["call"] for c in pr["candidates"])
     assert pr["missing_discovery"] and "staging_deployed" in pr["missing_discovery"][0]["call"]["note"]
     # the candidate is a ready call; the keeper is woken but emits nothing yet, so the capability loop stays open with a named fix

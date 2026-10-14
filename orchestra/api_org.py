@@ -474,7 +474,7 @@ def _propose(project: Project, model: dict) -> dict:
             if ev not in have_in:
                 key = f"{ev}s" if not ev.endswith("s") else ev
                 cands.append({"why": f"team {t.name} declares the event {ev} and no stock is filled by it", "call": {"kind": "stock", "key": key, "spec": {
-                    "name": ev.replace("_", " "), "unit": "items", "team": t.name, "inflows": [ev], "outflows": ["ticket_created"], "consumers": [{"agent": t.lead, "effect": "+"}],
+                    "name": ev.replace("_", " "), "unit": "items", "team": t.name, "inflows": [ev], "outflows": [], "consumers": [{"agent": t.lead, "effect": "+"}],
                     "estimators": [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], "row": "capability"}}})
         space = t.space_dir(project)
         if space.is_dir():
@@ -488,7 +488,8 @@ def _propose(project: Project, model: dict) -> dict:
     acc = project.repo_root / "tests" / "acceptance"
     if acc.is_dir():
         mods = sorted({f.stem.removeprefix("test_") for f in acc.rglob("test_*.py")})
-        if mods and "playable_features" not in have_keys:
+        has_acc = any(e.get("kind") == "gate_tests" and e.get("stage") == "acceptance" for st in model["stocks"] for e in st.estimators)
+        if mods and "playable_features" not in have_keys and not has_acc:
             cands.append({"why": f"the acceptance suite has {len(mods)} modules ({', '.join(mods[:8])}{'…' if len(mods) > 8 else ''}): each is a feature a user can exercise",
                           "call": {"kind": "stock", "key": "playable_features", "spec": {"name": "Playable features", "unit": "acceptance test modules passing", "inflows": ["gate_landed"], "outflows": [],
                                    "estimators": [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], "row": "chain", "description": "features a user can exercise on the deployed build, by acceptance module: " + ", ".join(mods)}}})

@@ -123,7 +123,7 @@ add_model_element kind=stock key=playable_features spec={...from propose_model..
 create_team name=playtest lead=playtester responsibilities="# Playtest\n\n1. Every deployed build is played within an hour and every problem a player would hit is filed." emits=["playtest_finding"]
 create_agent name=playtester roles=["qa_engineer"] team=playtest kind=ad_hoc session=ephemeral wake_on=["staging_deployed"]
 add_model_element kind=stock key=playtest_findings spec={"name": "Playtest findings", "unit": "findings", "team": "playtest",
-  "inflows": ["playtest_finding"], "outflows": ["ticket_created"], "consumers": [{"agent": "product_owner", "effect": "+"}],
+  "inflows": ["playtest_finding"], "outflows": ["ticket_created"], "consumers": [{"agent": "product_owner", "effect": "+"}],   # an outflow counts only when a consumer caused it
   "estimators": [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], "row": "capability"}
 update_agent name=product_owner wake_on=[..., "playtest_finding"]
 list_model   → "play_find_fix" should now be an unnamed detected cycle: name it.

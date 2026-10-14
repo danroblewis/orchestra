@@ -48,8 +48,9 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
 
     - fills: an agent emits an event that is a stock's inflow (+)
     - drains: an agent emits an event that is a stock's outflow (−)
-    - wakes: an agent wakes on an event that is a stock's inflow (the arrival, +) or, when
-      no stock has it as an inflow, a stock's outflow (the departure, −)
+    - wakes: an agent wakes on an event that is a stock's inflow (the arrival) or, when no
+      stock has it as an inflow, a stock's outflow (the departure); both + (more events, more
+      activity; the drain link already carries the −)
     - triggers: an agent emits an event another agent wakes on and no stock carries (+)
     - reads: a stock names the agent as a consumer, with the declared effect sign
     """
@@ -83,7 +84,7 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
             else:
                 for s in stocks:
                     if any(event_fits(o, w) or event_fits(w, o) for o in s.outflows):
-                        add(s.key, aid, "-", "wakes", w)
+                        add(s.key, aid, "+", "wakes", w)         # a departure is still an event the agent responds to
     # an agent whose action wakes another agent directly, by an event no stock carries
     for name, a in ags.items():
         for ev in a["emits"]:
@@ -137,22 +138,27 @@ def elementary_cycles(g: dict, max_cycles: int = MAX_CYCLES, max_len: int = MAX_
 
 
 def _signs(g: dict, weights: dict[str, int] | None = None) -> dict[tuple[str, str], str]:
-    """The sign between two nodes. Parallel links take the sign of the dominant mechanism:
-    the one whose event was seen most in the window (``weights`` by event type); without
-    evidence, a declared consumer effect wins, then a fill over a drain, then +."""
-    w = weights or {}
+    """The sign between two nodes: +, −, or ? when parallel mechanisms disagree. A sign is
+    structural; when a pair carries both a + and a − mechanism the link is indeterminate
+    from structure, and ``dominant`` says which the window's event counts favour."""
     by_pair: dict[tuple[str, str], list[dict]] = {}
     for e in g["edges"]:
         by_pair.setdefault((e["src"], e["dst"]), []).append(e)
     out: dict[tuple[str, str], str] = {}
     for k, es in by_pair.items():
-        weighted = [(w.get(e["via"], 0), e) for e in es if e["via"]]
-        if weighted and max(n for n, _ in weighted) > 0:
-            out[k] = max(weighted, key=lambda t: t[0])[1]["sign"]
-            continue
-        reads = [e for e in es if e["kind"] == "reads"]
-        out[k] = reads[0]["sign"] if reads else ("+" if any(e["sign"] == "+" for e in es) else "-")   # without evidence, arrivals and fills over departures and drains
+        signs = {e["sign"] for e in es}
+        out[k] = signs.pop() if len(signs) == 1 else "?"
     return out
+
+
+def dominant(g: dict, pair: tuple[str, str], weights: dict[str, int] | None = None) -> str | None:
+    """For an indeterminate link, the sign the window's events favour, if any."""
+    w = weights or {}
+    es = [e for e in g["edges"] if (e["src"], e["dst"]) == pair and e["via"]]
+    weighted = [(w.get(e["via"], 0), e["sign"]) for e in es]
+    if not weighted or max(n for n, _ in weighted) == 0:
+        return None
+    return max(weighted, key=lambda t: t[0])[1]
 
 
 def material(g: dict, cycle: list[str]) -> bool:
@@ -171,13 +177,19 @@ def material(g: dict, cycle: list[str]) -> bool:
     return True
 
 
-def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -> tuple[str, str]:
-    """(polarity, basis). B for a conserved material loop; otherwise B when the product of the
-    dominant link signs is negative, R when positive."""
+def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -> tuple[str | None, str]:
+    """(polarity, basis). A conserved material circuit has no causal polarity (Sterman: a
+    circuit of conserved material is not a causal loop) and is reported as such. Otherwise
+    the product of the link signs: B when negative, R when positive, ? when any link is
+    indeterminate from structure (the basis then names the sign the window favours)."""
     if material(g, cycle):
-        return "B", "conserved transfer"
+        return None, "material circuit"
     signs = _signs(g, weights)
-    neg = sum(1 for a, b in zip(cycle, cycle[1:] + cycle[:1]) if signs.get((a, b), "+") == "-")
+    pairs = list(zip(cycle, cycle[1:] + cycle[:1]))
+    if any(signs.get(p, "+") == "?" for p in pairs):
+        dom = [dominant(g, p, weights) for p in pairs if signs.get(p, "+") == "?"]
+        return "?", "indeterminate: parallel mechanisms disagree" + (f" (dominant today: {', '.join(d for d in dom if d)})" if any(dom) else "")
+    neg = sum(1 for p in pairs if signs.get(p, "+") == "-")
     return ("B" if neg % 2 else "R"), "link signs"
 
 
@@ -203,12 +215,27 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         pol, basis = polarity(g, c, weights)
         # observed: every agent→stock link on the cycle has been seen in the log (the agent
         # caused that event in the window); a cycle closable by declaration alone is not
-        agent_links = [e for a, b in zip(c, c[1:] + c[:1]) for e in g["edges"] if e["src"] == a and e["dst"] == b and e["kind"] in ("fills", "drains")]
-        seen = [ev.get(f"{e['src'].split(':', 1)[1]}|{e['via']}", 0) for e in agent_links]
+        # observed: on every step of the cycle, at least one of its mechanisms was seen in the
+        # window: an agent's event attributed to it, or a wake/trigger whose event occurred
+        evidence: dict[str, int] = {}
+        step_seen = []
+        for a, b in zip(c, c[1:] + c[:1]):
+            es = [e for e in g["edges"] if e["src"] == a and e["dst"] == b]
+            hits = []
+            for e in es:
+                if e["kind"] in ("fills", "drains") and e["via"]:
+                    n = ev.get(f"{a.split(':', 1)[1]}|{e['via']}", 0)
+                elif e["kind"] in ("wakes", "triggers") and e["via"]:
+                    n = (weights or {}).get(e["via"], 0)
+                else:
+                    n = 1 if e["kind"] == "reads" else 0
+                evidence[f"{a}>{b}|{e['via'] or e['kind']}"] = n
+                hits.append(n)
+            step_seen.append(any(n > 0 for n in hits))
         infos.append({"nodes": c, "members": sorted(members(c)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
                       "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
-                      "observed": bool(agent_links) and all(n > 0 for n in seen), "evidence": {f"{e['src'].split(':', 1)[1]}|{e['via']}": n for e, n in zip(agent_links, seen)},
-                      "edges": [{"src": a, "dst": b, "sign": sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
+                      "observed": bool(step_seen) and all(step_seen), "evidence": evidence,
+                      "edges": [{"src": a, "dst": b, "sign": None if basis == "material circuit" else sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
     declared, used = [], set()
     for lp in expected or []:
         want = set(getattr(lp, "nodes", None) or lp.get("nodes", []))
@@ -221,11 +248,18 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             best = min(cands, key=lambda ci: ci["length"]) if cands else None
         if best:
             used.add(best["signature"])
-        declared.append({"key": key, "detected": best is not None, "cycle": best, "claimed_polarity": pol, "polarity_agrees": (best["polarity"] == pol) if best and pol else None})
+        declared.append({"key": key, "detected": best is not None, "cycle": best, "claimed_polarity": pol,
+                         "polarity_agrees": (best["polarity"] == pol) if best and pol and best["polarity"] in ("B", "R") else None})
     for d, lp in zip(declared, expected or []):
         if not d["detected"]:
             d["gaps"] = gaps(g, getattr(lp, "nodes", None) or lp.get("nodes", []), stocks)
-    unnamed = [ci for ci in infos if ci["signature"] not in used and not ci["pair"]]
+    unnamed, seen_members = [], set()
+    for ci in infos:
+        key = tuple(ci["members"])
+        if ci["signature"] in used or ci["pair"] or key in seen_members:
+            continue
+        seen_members.add(key)
+        unnamed.append(ci)
     pairs = [ci for ci in infos if ci["pair"]]
     return {"graph": g, "cycles": infos, "declared": declared, "unnamed": unnamed, "pairs": pairs}
 

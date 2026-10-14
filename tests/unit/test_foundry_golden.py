@@ -26,7 +26,7 @@ def custom(name: str, team: str, wake_on: list[str], emits: list[str]) -> AgentD
 def foundry_stocks() -> list[Stock]:
     return [
         Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS"]),
-        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
+        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:APPROVED", "ticket_transition:REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", inflows=["ticket_transition:READY_FOR_REVIEW"],
               outflows=["ticket_transition:REJECTED", "gate_rejected", "staging_failed"], hidden=True),
@@ -51,15 +51,15 @@ def foundry_agents(*, keeper: bool = True, qa: bool = True) -> dict[str, AgentDe
 EXPECTED = [
     # the rework cycle: a defect found in review goes back through the worker and is inspected again;
     # a conserved material loop, balancing (Cooper; Lyneis & Ford)
-    {"key": "review_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer"], "polarity": "B"},
+    {"key": "review_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer"]},
     # the same cycle closed through the gate
-    {"key": "gate_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"], "polarity": "B"},
+    {"key": "gate_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"]},
     # Repenning's capability loop: rework teaches the resources the worker reads, which cuts injection
     {"key": "capability", "nodes": ["known_rework", "environment_keeper", "resources", "worker", "undiscovered", "reviewer"], "polarity": "B"},
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
     {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate", "known_rework"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
-    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"], "polarity": "B"},
+    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"]},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
     {"key": "replanning", "nodes": ["wip", "worker", "coordinator", "demand", "orchestra"]},
 ]
@@ -86,7 +86,7 @@ def test_a_stock_and_its_draining_agent_make_the_balancing_drain_loop():
     assert any(e["src"] == "demand" and e["dst"] == "agent:orchestra" and e["kind"] == "wakes" for e in g["edges"])   # woken by the arrival
     det = fg.detect(stocks, {}, [], system=SYSTEM_BINDINGS)
     drain = next(c for c in det["cycles"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
-    assert drain["polarity"] == "B"
+    assert drain["polarity"] == "B" and drain["basis"] == "link signs"                        # arrival wakes (+), pickup drains (−)
 
 
 def test_worker_and_reviewer_alone_make_the_rework_cycle():
@@ -124,17 +124,18 @@ def test_the_qa_engineer_closes_earlier_detection():
 def test_the_pipeline_manager_closes_broken_base():
     det = loops_for(foundry_stocks(), foundry_agents())
     bb = next(d for d in det["declared"] if d["key"] == "broken_base")
-    assert bb["detected"] and bb["cycle"]["polarity"] == "B", bb
+    assert bb["detected"] and bb["cycle"]["basis"] == "material circuit", bb                   # the build is deployed and failed by the gate: what circulates is the build
 
 
-def test_parallel_links_take_the_sign_of_the_dominant_mechanism():
-    """Demand wakes Orchestra on creation and reopening (+) and on cancellation (−); with the
-    log showing pickups far outnumbering cancellations the link is +, and no tie-break decides."""
+def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominates():
+    """A sign is structural. When two mechanisms with opposite signs join the same nodes the
+    link is indeterminate, and the window's event counts only say which dominates today."""
     stocks = [Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"])]
     g = fg.build(stocks, {}, SYSTEM_BINDINGS)
-    assert fg._signs(g, {"ticket_created": 4, "ticket_transition:OPEN": 10, "ticket_transition:CANCELLED": 1})[("demand", "agent:orchestra")] == "+"
-    assert fg._signs(g, {"ticket_transition:CANCELLED": 5})[("demand", "agent:orchestra")] == "-"
-    assert fg._signs(g, {})[("demand", "agent:orchestra")] == "+"                         # no evidence: a drain never wins by default
+    assert fg._signs(g)[("demand", "agent:orchestra")] == "+"                             # arrivals and departures both wake: no disagreement
+    assert fg._signs(g)[("agent:orchestra", "demand")] == "?"                             # Orchestra both reopens (+) and starts (−) tickets: indeterminate from structure
+    assert fg.dominant(g, ("agent:orchestra", "demand"), {"ticket_transition:OPEN": 12, "ticket_transition:IN_PROGRESS": 80}) == "-"
+    assert fg.dominant(g, ("agent:orchestra", "demand"), {}) is None
 
 
 def test_golden_software_foundry():
@@ -150,10 +151,10 @@ def test_golden_software_foundry():
     strangers = [c["members"] for c in det["unnamed"] if not any(len(set(c["members"]) & n) >= 2 for n in named)]
     assert not strangers, strangers
     assert all(c["pair"] for c in det["pairs"]) and det["pairs"]                               # the stock-and-its-agent pairs are kept apart
-    # the rework cycles close through the hidden stock, as Cooper draws them, and are conserved material loops
+    # the rework cycles close through the hidden stock, as Cooper draws them, and are material circuits with no causal polarity
     for key in ("review_rework", "gate_rework"):
         cyc = next(d for d in det["declared"] if d["key"] == key)["cycle"]
-        assert "undiscovered" in cyc["members"] and cyc["basis"] == "conserved transfer"
+        assert "undiscovered" in cyc["members"] and cyc["basis"] == "material circuit" and cyc["polarity"] is None and all(e["sign"] is None for e in cyc["edges"])
 
 
 def test_the_reference_configuration_has_no_wip_limit_controller_yet():

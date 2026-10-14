@@ -100,7 +100,7 @@ DOC_GLOBS = ["AGENTS.md", "README.md", "CLAUDE.md", ".orchestra/teams/*.md", ".o
 TEMPLATE_STOCKS: list[Stock] = [
     Stock("demand", "Demand", "tickets", "Work ordered and not started.", ["ticket_created", "ticket_transition:OPEN"], ["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"], [],
           [{"kind": "tracker", "states": ["OPEN", "BLOCKED"]}], row="chain", pos=[62, 222], width=112),
-    Stock("wip", "Work in progress", "commits ahead of main", "Changes being built on ticket branches.", ["ticket_transition:IN_PROGRESS"], ["ticket_transition:READY_FOR_REVIEW"], [],
+    Stock("wip", "Work in progress", "commits ahead of main", "Commits on ticket branches that have not landed, whatever state the ticket is in; the landing drains it.", ["ticket_transition:IN_PROGRESS"], ["gate_landed", "ticket_transition:CANCELLED"], [],
           [{"kind": "git_ahead"}], row="chain", pos=[290, 222], width=150),
     Stock("awaiting_review", "Awaiting review", "changes", "Submitted changes the reviewer has not judged yet (Reinertsen's queue; Ford & Sterman's work needing QA).",
           ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:APPROVED", "ticket_transition:REJECTED"], [],

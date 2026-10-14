@@ -251,10 +251,12 @@ only the instruments (how a number is measured) and the renderer.
 
 ```
 .orchestra/model/
-  stocks/<key>.json      # one stock: name, unit, description, estimators, consumers, hidden, addition, pos
-  flows/<key>.json       # one flow: name, src, dst, machine, event, binds, measure, route
-  loops/<key>.json       # one loop: name, polarity, structure, signal, source, observed_when, ids
+  stocks/<key>.json      # one stock: name, unit, description, inflows, outflows, consumers, estimators, hidden, addition, row, pos
+  loops/<key>.json       # one expected loop: name, polarity (as claimed), structure, nodes, signal, readings, hint, source
 ```
+
+There is no flows directory: flows are derived by the detector from the agents' wake rules
+and emits and the stocks' events.
 
 `orchestra init` writes the software-foundry template there. A project that predates the
 model gets the template at the first `orchestra` start that finds no `.orchestra/model/`,
@@ -278,15 +280,13 @@ part in code, and adding one is a code change:
 | `judge` | `agent`, `rubric`, `classes`, `turns`, `min_agreement` | an agent's classification (section 4) |
 | `none` | `reason` | a hidden stock, never a number |
 
-A flow's `measure` names a flow instrument the same way (`transition` with `from`/`to` and
-`genuine`; `review_defects`; `gate_outcome` with `outcome`; `event` with `type`; `none`).
-A loop's `signal` names one of the computed signals and its adverse direction, and its
-`observed_when` names the evidence that makes it observed rather than hypothesised.
+A loop's `signal` names one of the computed signals and its adverse direction and
+threshold; the detector marks it observed when every step of its cycle was seen in the log.
 
 Rules, enforced by the store like the rest of the org model:
 
 - Only the Supervisor creates, changes, or deletes model elements (`list_model`,
-  `create_stock`, `update_stock`, `delete_stock`, and the same for flows and loops, in
+  `propose_model`, `add_model_element`, `update_model_element`, `remove_model_element` in
   `api_org`), in conversation, exactly as teams and agents are made. The org guide gets a
   section on when to add one: when a team produces something another agent consumes, when a
   loop's purpose names a quantity the map cannot otherwise show, or when a constraint the
