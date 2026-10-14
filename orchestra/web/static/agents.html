@@ -153,7 +153,7 @@ function eventMap(m) {
   // nearest the destination stock, so the machine's own figures stay readable.
   const pipe = (a, b, label, id, cls, withMachine) => { const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d, horiz = Math.abs(ux) > .5;
     const sx = a.x + (horiz ? ux * 66 : 0), sy = a.y + (horiz ? 0 : uy * 26), ex = b.x - (horiz ? ux * 66 : 0), ey = b.y - (horiz ? 0 : uy * 26);
-    const t = withMachine ? 0.82 : 0.5, lx = sx + (ex - sx) * t + (horiz ? 0 : 8), ly = sy + (ey - sy) * t - (horiz ? 6 : -4);
+    const t = withMachine ? 0.88 : 0.5, lx = sx + (ex - sx) * t + (horiz ? 0 : 8), ly = sy + (ey - sy) * t + (horiz ? (withMachine ? 16 : -6) : 4);
     return `<path class="fl ${cls || ""}" data-id="${id}" d="M${sx},${sy} L${ex},${ey}" marker-end="url(#${cls === "rework" ? "rr" : "ra"})"><title>${esc(label)}</title></path><text class="lbl" x="${lx}" y="${ly}" text-anchor="${horiz ? (withMachine ? "end" : "middle") : "start"}">${esc(label)}</text>`; };
   const machine = (name) => { const mm = M[name], d = mach[name] || {}, L = { worker: "worker", reviewer: "reviewer", merge_gate: "merge gate" }[name], color = PALETTE[name] || "#94a3b8";
     const lines = [`${inUse[name] != null ? inUse[name] : "·"} of ${capOf[name] != null ? capOf[name] : "·"} in use`, `cycle ${fmtD(d.cycle)}`, `scrap ${d.scrap != null ? d.scrap : "—"} → ${(d.scrap_to || "").replace(/_/g, " ")}`];
