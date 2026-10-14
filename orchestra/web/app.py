@@ -125,7 +125,7 @@ def create_app(project: Project) -> FastAPI:
                     unconsumed.append({"stock": st.key, "event": o, "count": n})
         return {"ok": True, "model": foundry.as_dict(model), "graph": det["graph"], "cycles": det["cycles"], "declared": det["declared"], "unnamed": det["unnamed"],
                 "missing_discovery": proposal.get("missing_discovery", []), "unconsumed": unconsumed, "unlisted": det.get("unlisted", 0),
-                "conversions": foundrygraph.conversions(det["graph"], r["attributed_counts"]),
+                "conversions": foundrygraph.conversions(det["graph"], r["attributed_counts"], model["stocks"]),
                 "pairs": len(det["pairs"]), "pair_list": [{"nodes": c["nodes"], "members": c["members"], "polarity": c["polarity"]} for c in det["pairs"]], "readings": r}
 
     @app.get("/api/agents/{name}")

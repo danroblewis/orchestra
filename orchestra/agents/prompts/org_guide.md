@@ -115,15 +115,18 @@ tell you:
    adverse; the computed signals are: acceptance_defects_at_gate, bad_fix_fraction, base_broken, conflicts_per_landing, defects_after_landing, defects_before_gate_share, defects_found_after_landing, fix_rounds, gate_defects, gate_distinct_defects, gate_pass, hours_lost, landed_per_worker_hour, restarts, review_defects, review_miss_rate, review_pass, reviewer_timeout_share, rework_share, starts, worker_hours_lost, worker_timeout_share.
 
 Closing a loop is four edits, and a small model gets the order wrong; do them in this order
-and run `list_model` after each, reading the loop's status (hypothesis → closable → observed):
+and run `list_model` after each, reading the loop's status (hypothesis → closable → observed).
+`wake_on`, `emits` and a stock's `inflows` are **replaced, not appended**: pass the full list,
+the existing entries first, every time.
 
 1. `update_team name=<team> emits=[<event>]` (the event must exist before anything may emit it).
 2. `update_agent name=<agent> emits=[<event>]` (and `wake_on` if the agent is not yet woken by
    the stock it should read). `list_model` now says "closable, not yet seen".
 3. `update_role` (or the agent's prompt): tell the agent to call `emit_event` with that type
    when it has done the work. Nothing is observed until it does.
-4. `update_model_element kind=stock key=<stock> spec={"inflows": [..., "<event>"]}` so the
-   stock the loop fills carries the event. `list_model` says "observed" after the next run.
+4. `update_model_element kind=stock key=<stock> spec={"inflows": ["<existing inflow>", "<event>"]}`
+   so the stock the loop fills carries the event (the full list again). `list_model` says
+   "observed" after the next run.
 
 Worked example, a web-based cellular-automata game. After `propose_model`:
 
@@ -138,7 +141,7 @@ create_agent name=playtester roles=["qa_engineer"] team=playtest kind=ad_hoc ses
 add_model_element kind=stock key=playtest_findings spec={"name": "Playtest findings", "unit": "findings", "team": "playtest",
   "inflows": ["playtest_finding"], "outflows": ["ticket_created"], "consumers": [{"agent": "product_owner", "effect": "+"}],   # an outflow counts only when a consumer caused it
   "estimators": [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], "row": "capability"}
-update_agent name=product_owner wake_on=[..., "playtest_finding"]
+update_agent name=product_owner wake_on=["ticket_transition:DONE", "playtest_finding"]   # the full list: existing rules first
 list_model   → "play_find_fix" should now be an unnamed detected cycle: name it.
 ```
 

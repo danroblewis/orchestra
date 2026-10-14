@@ -394,21 +394,22 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
 
 
 
-def conversions(g: dict, attributed: dict[str, int] | None = None) -> list[dict]:
+def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list | None = None) -> list[dict]:
     """The flows: an agent that drains one stock and fills another by the same event moves
     the thing from one to the next; with the day's count attributed to that agent and the
     event a new agent on the same flow would wake on."""
     out, seen = [], set()
     att = attributed or {}
+    additions = {s.key for s in (stocks or []) if getattr(s, "addition", False)}   # capability stocks are filled, not converted into
     for e in g["edges"]:
         if e["kind"] != "drains" or not e["src"].startswith("agent:"):
             continue
         for f in g["edges"]:
-            if f["kind"] == "fills" and f["src"] == e["src"] and f["dst"] != e["dst"] and plain(f["via"]) == plain(e["via"]):
+            if f["kind"] == "fills" and f["src"] == e["src"] and f["dst"] != e["dst"] and f["dst"] not in additions and e["dst"] not in additions and plain(f["via"]) == plain(e["via"]):
                 key = (e["dst"], f["dst"], e["src"])
                 if key in seen:
                     continue
                 seen.add(key)
                 agent = e["src"].split(":", 1)[1]
-                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "count": att.get(f"{agent}|{plain(e['via'])}"), "wake": plain(e["via"])})
+                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "count": att.get(f"{agent}|{plain(e['via'])}"), "wake": f["via"]})
     return sorted(out, key=lambda c: (c["src"], c["dst"], c["agent"]))

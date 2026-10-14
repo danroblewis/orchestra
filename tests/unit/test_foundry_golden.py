@@ -25,11 +25,11 @@ def custom(name: str, team: str, wake_on: list[str], emits: list[str]) -> AgentD
 
 def foundry_stocks() -> list[Stock]:
     return [
-        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN", "ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:IN_PROGRESS"]),
-        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
+        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN", "ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:OPEN>IN_PROGRESS"]),
+        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", inflows=["ticket_transition:READY_FOR_REVIEW"],
-              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "defect_escaped"], hidden=True),
+              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
         Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),

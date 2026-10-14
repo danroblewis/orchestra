@@ -162,9 +162,10 @@ Readings, each defined by its estimator and shown with its window:
   an upper bound on FCC because discovery is incomplete: young cohorts look better than they
   are.
 - **Escape rate.** Defects found after landing: each ticket created in the window that cites
-  a DONE ticket or a landed commit (a bug report against shipped work), plus each deployed
-  build the health loop had to restart (one defect per build, however many restarts), plus
-  staging failures. It is the only estimator for U's outflow; U itself stays "not
+  a DONE ticket or a landed commit (a bug report against shipped work), plus the deployed
+  builds the health loop had to restart, where consecutive crashing builds with no healthy
+  build between them are one surviving defect (Rahmandad and Hu's task cycling), and a ticket
+  that names one of those builds is that defect's ticket, plus staging failures. It is the only estimator for U's outflow; U itself stays "not
   estimable" until a second, independent estimate exists (section 4), but the discovery
   share ("in review", "at the gate", "after landing") uses it.
 - **Really done ratio.** A (acceptance tests passing, not skipped) against DONE tickets, and
@@ -176,7 +177,12 @@ Readings, each defined by its estimator and shown with its window:
 - **Rounds per ticket.** The distribution, not only the median: Rahmandad and Hu show a few
   tasks cycling many times dominate rework (measured: 29 tickets at 0 rounds, two at 25 and
   27).
-- **Bad-fix fraction.** Fix rounds that were themselves sent back for a defect.
+- **Bad-fix fraction.** Fix rounds (a re-submission while a defect send-back is pending)
+  followed to the defect's next verdict: a review or gate rejection for a defect makes the
+  fix bad, a landing makes it good; approvals, no-verdict reviews, blocks and further
+  re-submissions on the way do not decide it. Known rework is not cleared by a block (on an
+  agent org a block is usually a turn-limit escape); beside its level the page shows the
+  tickets whose defect send-back has not yet been followed by a landing.
 - **Losses.** Restarts, turn timeouts, compactions, resets per day, as hours lost where the
   session time is known.
 - **DORA keys, post-deploy only.** Landing frequency (gate_landed per day); lead time

@@ -131,7 +131,20 @@ class History:
                 break
             if to == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate"):
                 pending = True
-            elif (to == "READY_FOR_REVIEW" and frm == "IN_PROGRESS") or to in ("DONE", "CANCELLED", "BLOCKED"):   # blocked back to the planner leaves rework for demand
+            elif (to == "READY_FOR_REVIEW" and frm == "IN_PROGRESS") or to in ("DONE", "CANCELLED"):
+                pending = False                                   # a block does not clear it: on this kind of org a block is a turn-limit escape
+        return pending
+
+    def unresolved_defect(self, tid: str, at: float) -> bool:
+        """Was the ticket sent back for a defect and not yet landed or cancelled, at that time?
+        Re-submissions and approvals do not resolve it; only a landing does."""
+        pending = False
+        for t, frm, to in self.seq.get(tid, []):
+            if t > at:
+                break
+            if to == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate"):
+                pending = True
+            elif to in ("DONE", "CANCELLED"):
                 pending = False
         return pending
 
@@ -296,12 +309,13 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.pending_defect(tid, ts - 1):
             continue
         fix_rounds += 1
-        # followed through review and the gate: the next defect send-back before DONE (or before the next
-        # re-submission) makes it a bad fix; a reviewer's approval on the way does not clear it
+        # followed to the defect's next verdict: a review or gate rejection for a defect makes it a bad fix,
+        # a landing makes it good; approvals, no-verdict reviews, blocks and further re-submissions on the
+        # way do not decide it (the defect is the same until a verdict says otherwise)
         for t2, f2, to2 in hist.seq.get(tid, []):
             if t2 <= ts:
                 continue
-            if to2 == "DONE" or (f2, to2) == ("IN_PROGRESS", "READY_FOR_REVIEW"):
+            if to2 in ("DONE", "CANCELLED"):
                 break
             if to2 == "REJECTED" and hist.cause.get((tid, t2)) in ("defect", "gate"):
                 bad += 1
@@ -478,7 +492,8 @@ def _stock_reading(st, pool: dict) -> dict:
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
         pend = pool["pending"]
-        out.update(value=len(pend), tickets=pend, estimator="tickets sent back for a defect (reviewer verdict or gate result) and not yet re-submitted, whatever their state now")
+        out.update(value=len(pend), tickets=pend, unresolved=pool["unresolved"],
+                   estimator="tickets sent back for a defect (reviewer verdict or gate result) and not yet re-submitted; beside it, tickets whose defect send-back has not yet been followed by a landing")
     elif kind == "git_ahead":
         wip = pool["wip"]
         out.update(value=sum(w["commits"] for w in wip), tickets=len(wip), detail=wip, commits_per_day=git.get("commits_in_window"),
@@ -501,10 +516,11 @@ def _stock_reading(st, pool: dict) -> dict:
         macc = (mt.get("stages", {}).get(stage) if stage else None) or {}
         errors = macc.get("error", 0)
         lt = pool["landed_tests"] or {}
-        at_landing = sum(v.get("passed", 0) for v in lt.get("stages", {}).values()) if lt else None
         # a stock that is drained when the build fails or main breaks: served only while neither has happened since
-        served = bool(pool.get("build_healthy")) and mt.get("status") != "base_broken"
-        out.update(served=served, not_served_because=None if served else ("the deployed build is down" if not pool.get("build_healthy") else "main's latest gate check failed"), at_last_landing=at_landing)
+        main_broken = mt.get("status") == "base_broken"
+        served = (bool(pool.get("build_healthy")) if src == "deployed" else True) and not main_broken
+        why = None if served else ("main's latest gate check failed" if main_broken else "the deployed build is down")
+        out.update(served=served, not_served_because=why, at_last_landing=(sum(v.get("passed", 0) for k, v in lt.get("stages", {}).items() if not stage or k == stage) if lt else None))
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
                              "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean")), "landed_clean_before": pool.get("main_commit_landed_clean")} if stage else None,
@@ -603,7 +619,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     clean_before = bool(main_commit) and any(r.get("status") == "landed" and (r.get("gate_commit") or "").startswith(main_commit[:10]) for r in runs)
     healthy_at = _epoch(staging.get("last_health_at"))
     build_healthy = staging.get("status") == "running" and healthy_at is not None and now - healthy_at <= HEALTH_STALE
-    pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
+    pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "unresolved": [tid for tid in tk if hist.unresolved_defect(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "landed_tests": _run_tests(landed_run), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
     rounds = sorted(((t.review_rounds or 0), t.id) for t in tk.values() if t.state != "CANCELLED")
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}

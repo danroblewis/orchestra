@@ -259,3 +259,35 @@ def test_foundry_endpoint_and_definitions(project):
     assert not next(d for d in m["declared"] if d["key"] == "capability")["detected"]            # no keeper in a fresh project
     assert m["readings"]["stocks"]["undiscovered"]["estimable"] is False and m["readings"]["git"] is True
     assert "agent:orchestra" in m["graph"]["nodes"] and any(e["kind"] == "fills" for e in m["graph"]["edges"])
+
+
+def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
+    """Round 11's defect: a ticket sent back seven times read as no known rework and one bad fix,
+    because a block cleared the pending defect and a no-verdict review broke the bad-fix chain."""
+    store, events = LocalStore(project), Events(project.events_file)
+    m = store.create_milestone(name="m")
+    t = store.create_ticket(title="a", milestone_id=m.id, branch="orchestra/T-1-a")
+    store.transition(t.id, None, State.IN_PROGRESS)
+    store.transition(t.id, None, State.BLOCKED, blocked_reason="turn limit")
+    project.events_file.write_text("")
+    base = dt.datetime.now(dt.UTC) - dt.timedelta(hours=3)
+    ts = lambda mins: (base + dt.timedelta(minutes=mins)).isoformat(timespec="seconds")
+    def emit(type_, mins, **d):
+        with open(project.events_file, "a") as fh:
+            fh.write(json.dumps({"ts": ts(mins), "type": type_, **d}) + "\n")
+    def tr(mins, frm, to):
+        emit("ticket_transition", mins, ticket=t.id, **{"from": frm, "to": to})
+    from orchestra.model import Note
+    emit("ticket_created", 0, ticket=t.id, by="coordinator")
+    tr(1, "OPEN", "IN_PROGRESS"); tr(10, "IN_PROGRESS", "READY_FOR_REVIEW"); tr(11, "READY_FOR_REVIEW", "IN_REVIEW")
+    tr(20, "IN_REVIEW", "REJECTED"); store.add_note(t.id, Note(author="reviewer", kind="review", text="REJECTED: wrong", created_at=ts(20)))
+    tr(21, "REJECTED", "IN_PROGRESS"); tr(30, "IN_PROGRESS", "READY_FOR_REVIEW"); tr(31, "READY_FOR_REVIEW", "IN_REVIEW")   # fix 1
+    tr(40, "IN_REVIEW", "REJECTED")                                                                                      # no verdict: does not decide fix 1
+    tr(41, "REJECTED", "IN_PROGRESS"); tr(50, "IN_PROGRESS", "READY_FOR_REVIEW"); tr(51, "READY_FOR_REVIEW", "IN_REVIEW")   # re-submitted again, no defect pending: not a fix round
+    tr(60, "IN_REVIEW", "REJECTED"); store.add_note(t.id, Note(author="reviewer", kind="review", text="REJECTED: still wrong", created_at=ts(60)))   # fix 1 was bad
+    tr(61, "REJECTED", "IN_PROGRESS"); tr(70, "IN_PROGRESS", "BLOCKED")                                                    # fix 2 started, then blocked
+    r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    S = r["stocks"]["known_rework"]
+    assert S["value"] == 1 and S["tickets"] == [t.id] and S["unresolved"] == [t.id]      # blocked, and the defect is still pending
+    assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 1              # fix 1 followed to its verdict at minute 60
+    assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 1}

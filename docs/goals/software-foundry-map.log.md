@@ -331,3 +331,43 @@ on the page; the guide has a four-step closing-a-loop recipe with a list_model c
 each.
 
 Declined: excluding reads from cycle closure (the capability loop closes through a read).
+
+## Round 11 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every recomputed number matched the raw
+data. Found: a ticket sent back seven times read as "0 known rework, bad fixes 1 of 5"
+because a block cleared the pending defect and a no-verdict review broke the bad-fix chain;
+labels rendered at 7–8 px at 1280 (the canvas was 1965 units wide); demand and WIP used the
+plain `IN_PROGRESS` transition, so a fix's pickup counted as a start; edge tooltips and
+weights looked up attributed counts by the from-state key and found nothing; the flow table
+listed landing → resources and landing → tests as conversions; two recommendations per gap
+that named different agents; the loss card last and in the warning colour at any size; a
+phantom `defect_escaped` outflow; the escape rule for consecutive crashes not in the spec;
+WIP's description and reading disagreed about blocked tickets; broken base cited
+Abdel-Hamid for Orchestra's own controller; T's not-served reason said the build was down
+when main's check had failed; the guide's worked example appended to wake_on instead of
+replacing it.
+
+Fixed: known rework survives a block and is cleared only by a re-submission, landing or
+cancellation, with the tickets whose send-back has not yet been followed by a landing shown
+beside it; a fix round is followed to the defect's next verdict (a defect rejection makes it
+bad, a landing good; approvals, no-verdict reviews, blocks and further re-submissions decide
+nothing), with a unit test for the seven-send-back shape; demand and WIP use
+`OPEN>IN_PROGRESS` and `REJECTED>IN_PROGRESS`; the WIP description now says blocked
+tickets' commits wait with the ticket in demand, matching the reading and keeping the
+re-planning circuit; stock readings wrap inside capped boxes so the canvas is 1350 units and
+every label renders at 10.8–11.7 px at 1280 (measured in the browser); agents sit over the
+stock they drain; flow labels sit in a band above the chain row and move up, never into the
+boxes; tooltips and weights use the plain event key; conversions never run into a capability
+stock; the flow table's wake-on column carries the from-state; the template hint shows only
+for a loop that exists, so a gap has one recommendation (the detector's); the loss card is
+first and warns only past the same third as its tile; `defect_escaped` removed from the
+template and the escape rule (consecutive crashing builds are one surviving defect) written
+into the spec; broken base cites Orchestra's own controller; T's reason names main's check
+when that is what failed; the guide says wake_on, emits and inflows are replaced, not
+appended, and the worked example passes full lists.
+
+Declined: clearing known rework when a blocked ticket returns within the hour (a block is a
+turn-limit escape on this org; the defect is the same until a verdict says otherwise, so no
+timer); `staging_failed` emission is live only after the runner restarts, which is the
+operator's call.
