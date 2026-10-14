@@ -161,7 +161,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert L["value"] == 1 and L["window"] == 1 and L["lines"] == 1 and L["fcc_upper"] is None   # no cohort old enough
     assert S["wip"]["commits_per_day"] == 3                                                     # the fixture's two setup commits and the branch commit, all in the window
     A = S["really_done"]
-    assert A["value"] == 3 and A["skipped"] == 2 and A["done_tickets"] == 1 and A["build"] is None and A["source"].startswith("main")   # nothing deployed yet
+    assert A["value"] == 3 and A["skipped"] == 2 and A["done_tickets"] == 1 and A["build"] is None and "nothing deployed" in A["source"]   # nothing deployed yet
     assert S["tests"]["value"] == 15 and S["tests"]["stages"]["acceptance"]["skipped"] == 2
     assert (S["demand"]["value"], S["resources"]["value"], S["resources"]["files"]) == (2, 2, ["AGENTS.md", "README.md"])
     assert S["demand"]["ages"] == 2 and S["demand"]["oldest_age"] is not None and S["demand"]["oldest_age"] >= 0      # residence time from state_since
@@ -172,7 +172,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert c["losses"]["restarts"] == 1 and c["losses"]["turn_timeouts"] == 1 and c["losses"]["worker_hours_ending_in_timeout"] == 0.3
     assert c["losses"]["review_no_verdict"] == 1 and c["losses"]["rerun_hours"] == 0.1
     assert S["build"]["value"] == 0 and S["build"]["status"] is None                          # nothing deployed: never "up" without a fresh health check
-    assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 0
+    assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 0 and r["inspections"]["review"]["approvals_gate_rejected"] == 0
     assert r["dora"]["deploys"] == 1 and r["dora"]["change_failure"] == 1.0 and r["dora"]["restore"] is None
     assert r["dora"]["lead_time"] == 70 * 60 and r["dora"]["land_to_deploy"] == 60
     assert r["rounds"]["histogram"]["0"] == 3                                                     # the tracker's review_rounds, not the log

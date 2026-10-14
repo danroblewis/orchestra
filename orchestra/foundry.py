@@ -60,7 +60,10 @@ class Stock:
 
     @classmethod
     def from_dict(cls, d: dict) -> Stock:
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        unknown = sorted(set(d) - set(cls.__dataclass_fields__))
+        if unknown:
+            raise OrgError(f"stock {d.get('key', '?')}: unknown field(s) {unknown}; known: {sorted(cls.__dataclass_fields__)}")
+        return cls(**d)
 
 
 @dataclass
@@ -90,7 +93,10 @@ class Loop:
 
     @classmethod
     def from_dict(cls, d: dict) -> Loop:
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        unknown = sorted(set(d) - set(cls.__dataclass_fields__))
+        if unknown:
+            raise OrgError(f"loop {d.get('key', '?')}: unknown field(s) {unknown}; known: {sorted(cls.__dataclass_fields__)}")
+        return cls(**d)
 
 
 # -- the template: a software foundry (the golden configuration in tests/unit/test_foundry_golden.py)
@@ -98,9 +104,9 @@ class Loop:
 DOC_GLOBS = ["AGENTS.md", "README.md", "CLAUDE.md", ".orchestra/teams/*.md", ".orchestra/roles/*.md", ".orchestra/spaces/*/lessons/decided/*.md"]
 
 TEMPLATE_STOCKS: list[Stock] = [
-    Stock("demand", "Demand", "tickets", "Work ordered and not started.", ["ticket_created", "ticket_transition:OPEN"], ["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"], [],
+    Stock("demand", "Demand", "tickets", "Work ordered and not started, including tickets blocked back to the planner.", ["ticket_created", "ticket_transition:OPEN", "ticket_transition:IN_PROGRESS>BLOCKED"], ["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"], [],
           [{"kind": "tracker", "states": ["OPEN", "BLOCKED"]}], row="chain", pos=[62, 222], width=112),
-    Stock("wip", "Work in progress", "commits ahead of main", "Commits on ticket branches that have not landed, whatever state the ticket is in; the landing drains it. The level is counted in commits (git); the filling event is a ticket pickup, so the link is symbolic.", ["ticket_transition:IN_PROGRESS"], ["gate_landed", "ticket_transition:CANCELLED"], [],
+    Stock("wip", "Work in progress", "commits ahead of main", "Commits on ticket branches that have not landed, whatever state the ticket is in; the landing drains it, and a ticket blocked back to the planner leaves it. The level is counted in commits (git); the filling event is a ticket pickup, so the link is symbolic.", ["ticket_transition:IN_PROGRESS"], ["gate_landed", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"], [],
           [{"kind": "git_ahead"}], row="chain", pos=[290, 222], width=150),
     Stock("awaiting_review", "Awaiting review", "changes", "Submitted changes the reviewer has not judged yet (Reinertsen's queue; Ford & Sterman's work needing QA).",
           ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"], [],
@@ -115,10 +121,12 @@ TEMPLATE_STOCKS: list[Stock] = [
           [{"kind": "pending_defects"}], row="rework", pos=[600, 480], width=164),
     Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product; nothing drains it. A ticket's DONE is the same arrival seen from the tracker.", ["gate_landed", "ticket_transition:DONE"], [], [],
           [{"kind": "landed"}], row="chain", pos=[810, 222], width=160),
-    Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up. A broken main is the gate's problem, not the build's, so gate_base_broken is not its outflow.", ["staging_deployed"], ["staging_failed"], [],
+    Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up. Drained when it fails in service or the health loop has to restart it; a broken main is the gate's problem, not the build's.", ["staging_deployed"], ["staging_failed", "staging_restarted"], [],
           [{"kind": "staging"}], row="chain", pos=[1000, 222], width=134),
     Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it.",
           ["staging_deployed"], [], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1190, 222], width=150),
+    Stock("pipeline_blocked", "Pipeline blocked", "pauses", "The gate is paused: main itself failed the gate, or an operator paused the pipeline; the pipeline manager's resume drains it.", ["gate_base_broken", "pipeline_paused"], ["pipeline_resumed"], [],
+          [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], row="rework", pos=[900, 480], width=150),
     Stock("tests", "Verified behaviour", "tests", "Tests on main by stage from the last gate run that reflects main. Skipped tests are never counted. Filled by test authoring, which reaches main through a landing; a team may declare tests_added to name the authoring itself.", ["gate_landed", "tests_added"], [],
           [{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}], [{"kind": "gate_tests", "source": "main"}], addition=True, row="capability", pos=[760, 52], width=200),
     Stock("resources", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons. Filled when agent-facing documents land, or when a team declares lesson_decided and its keeper emits it.", ["gate_landed", "lesson_decided"], [],
@@ -126,17 +134,17 @@ TEMPLATE_STOCKS: list[Stock] = [
 ]
 
 TEMPLATE_LOOPS: list[Loop] = [
-    Loop("review_rework", "rework cycle (review)", "", "known rework → worker → undiscovered → reviewer → known rework", ["known_rework", "worker", "undiscovered", "reviewer"],
+    Loop("review_rework", "rework cycle (review)", "", "known rework → worker re-submits → awaiting review → reviewer → known rework (the defect co-flows through undiscovered rework)", ["known_rework", "worker", "awaiting_review", "reviewer"],
          {"key": "bad_fix_fraction", "adverse": "up", "threshold": 0.5}, ["bad_fix_fraction", "fix_rounds"], "most fixes are rejected again: the reviewer's feedback is not reaching the worker", "Cooper 1980; Lyneis & Ford 2007"),
-    Loop("gate_rework", "rework cycle (gate)", "", "known rework → worker → undiscovered → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"],
+    Loop("gate_rework", "rework cycle (gate)", "", "known rework → worker re-submits → awaiting review → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"],
          {"key": "acceptance_defects_at_gate", "adverse": "up", "threshold": 0}, ["gate_distinct_defects", "acceptance_defects_at_gate"], "a defect reached the gate's acceptance stage, which the pre-review check does not run: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
     Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
          {"key": "review_pass", "adverse": "down"}, ["review_pass"], "", "Repenning & Sterman 2001 (work smarter)"),
     Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate runs them → landed", ["landed", "tests", "merge_gate"],
          {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "", "Orchestra's addition", addition=True),
-    Loop("broken_base", "broken base", "B", "build fails → pipeline manager → gate resumes → landed → build", ["build", "pipeline_manager", "merge_gate"],
+    Loop("broken_base", "broken base", "B", "main fails the gate → the pipeline is blocked → the pipeline manager resumes it → the gate runs again", ["pipeline_blocked", "pipeline_manager", "merge_gate"],
          {"key": "base_broken", "adverse": "up"}, ["base_broken"], "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this", "Abdel-Hamid & Madnick 1991 (errors build errors)"),
-    Loop("replanning", "re-planning", "", "worker blocks → coordinator re-plans into demand → Orchestra starts it again", ["wip", "worker", "coordinator", "demand", "orchestra"],
+    Loop("replanning", "re-planning", "", "worker blocks a ticket back to demand → the coordinator re-plans it → Orchestra starts it again", ["wip", "worker", "demand", "orchestra"],
          {"key": "starts", "adverse": "down"}, ["starts"], "", "Orchestra's own"),
     Loop("wip_limit", "WIP limit", "B", "work in progress → a controller lowers capacity → fewer pickups → work in progress", ["wip", "flow_controller", "demand"],
          {"key": "conflicts_per_landing", "adverse": "up", "threshold": 1}, ["conflicts_per_landing"], "conflicts outnumber landings: reduce what is in progress before adding producers. The controller is an agent with the capacity tool group, woken by ticket_transition:IN_PROGRESS, that emits capacity_changed; declare capacity_changed as an outflow of demand (fewer pickups) so the loop closes.", "Reinertsen 2009 (hypothesis: no controller yet; the operator has acted by hand)"),
@@ -162,7 +170,7 @@ class ModelStore:
         for p in sorted((self.root / sub).glob("*.json")):
             try:
                 out.append(cls.from_dict(json.loads(p.read_text(encoding="utf-8"))))
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError, OrgError):
                 continue
         return out
 

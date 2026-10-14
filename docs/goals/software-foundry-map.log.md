@@ -243,3 +243,34 @@ advice names the capacity_changed mechanism; mini-loop boxes widened; type large
 
 Declined: a per-rate node model (the agent node stays; polarity is restricted instead);
 pinning the map on card hover; the demand open-milestone filter (all milestones open).
+
+## Round 8 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every recomputed headline matched.
+Found: the bad-fix estimator stopped at the reviewer's verdict, so fixes the gate then
+rejected counted as good (10% shown, ≥50% true); review misses (approvals the gate then
+rejected) not shown; the fix flow landed in undiscovered rework instead of the review queue,
+making K→U a "conserved" step; blocked tickets had no flow between WIP and demand; the
+build stock had no outflow for restarts and restarts were attributed to the pipeline
+manager; broken base had no stock to balance through; gate_rejected counted machine
+failures as discovery in the graph's evidence; verified behaviour read a base-check with
+host errors as lost tests; cancelled tickets padded the rounds histogram; pipes shared one
+line per row and opposite directions shared a line; agents not over the stocks that wake
+them; polarity tags truncated; the paused pipeline only in the legend; unknown stock
+fields silently dropped.
+
+Fixed: a fix round is followed through review and the gate; review misses on the review
+tile with Ford & Sterman's 1 − p_detect; the template follows the design's flow table
+(blocked tickets leave WIP into demand; restarts drain the build and belong to Orchestra;
+a pipeline_blocked stock filled by a broken base or a pause and drained by the manager's
+resume, so broken base is balancing by its link signs; rework loops route through the
+review queue with the defect as a declared co-flow); a material circuit needs two stocks;
+gate rejections from timeouts and start failures attributed apart from inspections;
+verified behaviour from the last landing's run; rounds histogram without cancelled
+tickets; one slot per pipe per row with opposite directions apart; indeterminate basis
+shown in full; the gate circle says "paused: main fails the gate"; the loss tile first
+after really done; unknown stock and loop fields rejected.
+
+Declined: placing agents over their waking stocks (even spacing keeps names legible; the
+legend says so); residence-time-per-machine readings beyond "oldest" (next round if
+asked).

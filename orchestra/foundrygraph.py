@@ -205,8 +205,8 @@ def material(g: dict, cycle: list[str]) -> str | None:
     "co-flow" when the stocks are carried by different events (a defect inside a change);
     None otherwise. Either way the circuit is a stock-flow chain, not a causal loop."""
     stocks_on = [n for n in cycle if not n.startswith("agent:")]
-    if not stocks_on:
-        return None
+    if len(stocks_on) < 2:
+        return None                                           # one stock and its agents is a controller, not a circuit of material
     n = len(cycle)
     same_event = True
     for i, node in enumerate(cycle):

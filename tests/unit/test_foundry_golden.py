@@ -25,15 +25,16 @@ def custom(name: str, team: str, wake_on: list[str], emits: list[str]) -> AgentD
 
 def foundry_stocks() -> list[Stock]:
     return [
-        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS"]),
-        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED"]),
+        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN", "ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:IN_PROGRESS"]),
+        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", inflows=["ticket_transition:READY_FOR_REVIEW"],
               outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "defect_escaped"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
         Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
-        Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed"]),
+        Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "staging_restarted"]),
+        Stock("pipeline_blocked", "Pipeline blocked", "pauses", inflows=["gate_base_broken", "pipeline_paused"], outflows=["pipeline_resumed"]),
         Stock("tests", "Verified behaviour", "tests", inflows=["tests_added"], outflows=[], consumers=[{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}]),
         Stock("resources", "Environment resources", "documents", inflows=["lesson_decided"], outflows=[], consumers=[{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}]),
     ]
@@ -51,17 +52,17 @@ def foundry_agents(*, keeper: bool = True, qa: bool = True) -> dict[str, AgentDe
 EXPECTED = [
     # the rework cycle: a defect found in review goes back through the worker and is inspected again;
     # a conserved material loop, balancing (Cooper; Lyneis & Ford)
-    {"key": "review_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer"]},
+    {"key": "review_rework", "nodes": ["known_rework", "worker", "awaiting_review", "reviewer"]},
     # the same cycle closed through the gate
-    {"key": "gate_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"]},
+    {"key": "gate_rework", "nodes": ["known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"]},
     # Repenning's capability loop: rework teaches the resources the worker reads, which cuts injection
     {"key": "capability", "nodes": ["known_rework", "environment_keeper", "resources", "worker", "undiscovered", "reviewer"], "polarity": "B"},
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
     {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
-    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"]},
+    {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager", "merge_gate"], "polarity": "B"},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
-    {"key": "replanning", "nodes": ["wip", "worker", "coordinator", "demand", "orchestra"]},
+    {"key": "replanning", "nodes": ["wip", "worker", "demand", "orchestra"]},
 ]
 
 
@@ -95,7 +96,7 @@ def test_worker_and_reviewer_alone_make_the_rework_cycle():
     det = loops_for(stocks, agents, EXPECTED[:1])
     assert det["declared"][0]["detected"], [c["members"] for c in det["cycles"]]
     cyc = det["declared"][0]["cycle"]
-    assert set(cyc["members"]) >= {"known_rework", "worker", "undiscovered", "reviewer"}
+    assert set(cyc["members"]) >= {"known_rework", "worker", "awaiting_review", "reviewer"}
 
 
 def test_the_keeper_closes_the_capability_loop_and_removing_it_opens_it():
@@ -133,12 +134,10 @@ def test_the_qa_engineer_closes_earlier_detection():
 def test_the_pipeline_manager_closes_broken_base():
     det = loops_for(foundry_stocks(), foundry_agents())
     bb = next(d for d in det["declared"] if d["key"] == "broken_base")
-    # the gate reaches the manager by three events: a staging failure lowers the build (−), a gate error or
-    # a broken base touch no stock (+); the structure alone cannot sign the loop, and the card says which
-    # mechanism the window saw
-    assert bb["detected"] and bb["cycle"]["polarity"] == "?" and "staging_failed (-" in bb["cycle"]["basis"], bb
-    assert "build" in bb["cycle"]["members"]                                                  # the stock the loop acts on, through the failure event
-    assert fg.dominant(fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS), ("agent:merge_gate", "agent:pipeline_manager"), {"staging_failed": 3, "gate_base_broken": 1}) == "-"
+    # a broken main fills the blocked-pipeline stock (+), its arrival wakes the manager (+), whose resume drains it (−)
+    # and reaches the gate as a departure (−): balancing by the link signs, on a stock the model declares
+    assert bb["detected"] and bb["cycle"]["polarity"] == "B" and bb["cycle"]["basis"] == "link signs", bb
+    assert "pipeline_blocked" in bb["cycle"]["nodes"]
 
 
 def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominates():
@@ -181,12 +180,12 @@ def test_golden_software_foundry():
     # through review the same event moves the thing on (a material circuit); through the gate the defect
     # rides inside an approved change (a co-flow)
     rv = next(d for d in det["declared"] if d["key"] == "review_rework")["cycle"]
-    assert "undiscovered" in rv["members"] and rv["basis"] == "material circuit" and rv["polarity"] is None and all(e["sign"] is None for e in rv["edges"])
+    assert "awaiting_review" in rv["nodes"] and rv["basis"] == "material circuit" and rv["polarity"] is None and all(e["sign"] is None for e in rv["edges"])
     gt = next(d for d in det["declared"] if d["key"] == "gate_rework")["cycle"]
-    assert gt["basis"] == "co-flow" and gt["polarity"] is None
-    # a declared loop is matched to the cycle that carries its stocks as nodes, not one that merely touches them
+    assert gt["basis"] == "material circuit" and gt["polarity"] is None                     # the change circulates: re-submitted, approved, rejected at the gate, re-submitted
+    # the blocked ticket is a conserved circuit too: wip → demand (blocked) → wip (started again)
     rp = next(d for d in det["declared"] if d["key"] == "replanning")["cycle"]
-    assert "demand" in rp["nodes"] and "wip" in rp["nodes"]
+    assert rp["basis"] == "material circuit" and {"wip", "demand"} <= set(rp["nodes"])
     # one agent that both fills and drains a stock is a controller, never a circuit
     pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
     assert pair["basis"] != "material circuit" and pair["polarity"] in ("B", "?")
