@@ -61,3 +61,21 @@ now drives the detector (`foundrygraph.detect`) and the reference configuration 
 The page work (worker valve on implement, verify inside the gate, encodings, per-loop
 graphs) follows once the detector passes its golden case, so that the map draws what was
 detected.
+
+## Round 3 build (2026-10-14, commit 47d410d)
+
+The model is data (`.orchestra/model/` in the repo, written by `orchestra init` / `orchestra
+model init`; the automata repo has it), flows are never declared, and loops are detected by
+`foundrygraph` from the stocks and the org. `tests/unit/test_foundry_golden.py` is the
+reference configuration and passes: rework cycles through the hidden stock, capability
+(with a keeper), earlier detection (with a test author), broken base, re-planning; the WIP
+limit is a documented gap. Supervisor tools: list_model, add_model_element,
+update_model_element, remove_model_element; org guide section added. Round-2 metric fixes
+in. The page draws the detected graph (stocks by row, agents over what wakes them, every
+derived link with its sign and the day's count) and each loop as its own ring, detected or
+hypothesis, with its signal's direction and a hint only when adverse. On the automata org 4
+of 7 expected loops are detected; capability and earlier detection are hypotheses because
+the keeper and the QA engineer emit no declared event that fills a stock.
+
+Declined from round 2 for now: keyboard/touch tooltips; a queue-age stock (the spec's W
+absorbs the states; ages are on the drill-down).
