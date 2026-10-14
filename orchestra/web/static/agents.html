@@ -46,6 +46,13 @@
   .tl .next { color:var(--text2); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right }
   .tl .axis { display:grid; grid-template-columns:150px 1fr 150px; gap:10px; font-size:10.5px; color:var(--muted); margin-top:2px }
   .tl .axis .marks { display:flex; justify-content:space-between }
+  .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px; overflow-x:auto }
+  .evmap svg { display:block; font-size:11px } .evmap .n rect { fill:var(--panel3); stroke:var(--border2); rx:6 } .evmap .n text { fill:var(--text) }
+  .evmap .n.agent rect { stroke:#3b82f6 } .evmap .n.system rect { stroke:#94a3b8; stroke-dasharray:4 2 } .evmap .n.probe rect { stroke:#c4b5fd } .evmap .n.event rect { fill:#0b0e14; stroke:#6b5313 } .evmap .n.event text { fill:#fcd34d; font-family:var(--mono); font-size:10.5px }
+  .evmap .n.event.custom rect { stroke:#5b21b6 } .evmap .n.event.custom text { fill:#c4b5fd }
+  .evmap .e { fill:none; stroke:#3a4152; stroke-width:1.2; opacity:.8 } .evmap .e.wakes { stroke:#1d4ed8 } .evmap .e.emits { stroke:#6b5313 } .evmap .e.may_emit { stroke:#5b21b6; stroke-dasharray:4 3 } .evmap .e.observed { stroke:#22c55e }
+  .evmap .e.loop { stroke-dasharray:5 3 } .evmap .e.seen { stroke:#22c55e; opacity:1 } .evmap .dim { opacity:.12 } .evmap .n { cursor:pointer } .evmap .cnt { fill:var(--muted); font-size:9.5px; font-family:var(--mono) }
+  .evmap .legend { color:var(--muted); font-size:10.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .evmap .legend i { display:inline-block; width:18px; border-top:2px solid; margin-right:5px; vertical-align:middle }
 </style>
 </head>
 <body>
@@ -88,6 +95,43 @@ function upcoming(a, now) {
   return out.sort((x, y) => x.t - y.t);
 }
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+// Who wakes whom. Left: what causes events (the loop, the gate, probes, agents). Middle: event
+// types. Right: who is woken by them. Solid blue = a real subscription; dashed blue = a built-in
+// the loop wakes in its own code; amber = emits; dashed violet = may emit (declared by the team);
+// green = seen in the log in the last day. Hover a node to isolate its edges; click an agent to open it.
+function eventMap(m) {
+  const nodes = Object.fromEntries(m.nodes.map((n) => [n.id, n]));
+  const evIds = [...new Set(m.edges.flatMap((e) => [e.from, e.to]).filter((id) => id.startsWith("ev:")))].sort((a, b) => (m.counts[nodes[b].label] || 0) - (m.counts[nodes[a].label] || 0) || a.localeCompare(b));
+  const srcIds = [...new Set(m.edges.filter((e) => e.to.startsWith("ev:")).map((e) => e.from))].sort();
+  const dstIds = [...new Set(m.edges.filter((e) => e.from.startsWith("ev:")).map((e) => e.to))].sort();
+  if (!evIds.length) return "";
+  const rowH = 22, colW = [190, 230, 190], gap = 90, pad = 10;
+  const H = Math.max(evIds.length, srcIds.length, dstIds.length) * rowH + pad * 2;
+  const W = colW[0] + gap + colW[1] + gap + colW[2] + pad * 2;
+  const pos = {};
+  const place = (ids, col, x) => ids.forEach((id, i) => { const y = pad + (H - pad * 2) * (ids.length === 1 ? 0.5 : i / (ids.length - 1)); pos[id + "@" + col] = { x, y: Math.max(pad + 8, Math.min(H - pad - 8, y)) }; });
+  place(srcIds, "L", pad); place(evIds, "M", pad + colW[0] + gap); place(dstIds, "R", pad + colW[0] + gap + colW[1] + gap);
+  const box = (id, col, w) => { const n = nodes[id], p = pos[id + "@" + col]; const cnt = n.kind === "event" ? (m.counts[n.label] || 0) : 0;
+    const open = n.kind === "agent" ? `onclick="openAgent('${esc(n.label)}')"` : "";
+    return `<g class="n ${n.kind} ${n.custom ? "custom" : ""}" data-id="${id}" ${open} onmouseenter="evHover('${id}')" onmouseleave="evHover(null)"><rect x="${p.x}" y="${p.y - 9}" width="${w}" height="18"></rect><text x="${p.x + 7}" y="${p.y + 4}">${esc(n.label)}${n.kind === "agent" && n.team ? ` <tspan class="cnt">${esc(n.team)}</tspan>` : ""}</text>${cnt ? `<text class="cnt" x="${p.x + w - 6}" y="${p.y + 4}" text-anchor="end">${cnt}/24h</text>` : ""}</g>`; };
+  const curve = (a, b, cls, fr, to, filt) => `<path class="e ${cls}" data-from="${fr}" data-to="${to}" d="M${a.x},${a.y} C${(a.x + b.x) / 2},${a.y} ${(a.x + b.x) / 2},${b.y} ${b.x},${b.y}"><title>${esc(fr.split(":")[1])} → ${esc(to.split(":")[1])}${filt ? " (only " + esc(filt) + ")" : ""}</title></path>`;
+  let svg = "";
+  for (const e of m.edges) {
+    if (e.to.startsWith("ev:")) { const a = pos[e.from + "@L"], b = pos[e.to + "@M"]; if (a && b) svg += curve({ x: a.x + colW[0], y: a.y }, { x: b.x, y: b.y }, e.kind + (e.seen ? " seen" : ""), e.from, e.to, e.filter ? e.filter + (e.seen ? `, ${e.seen} in 24h` : "") : (e.seen ? `${e.seen} in 24h` : null)); }
+    else { const a = pos[e.from + "@M"], b = pos[e.to + "@R"]; if (a && b) svg += curve({ x: a.x + colW[1], y: a.y }, { x: b.x, y: b.y }, e.kind + (e.loop ? " loop" : ""), e.from, e.to, e.filter); }
+  }
+  svg += srcIds.map((id) => box(id, "L", colW[0])).join("") + evIds.map((id) => box(id, "M", colW[1])).join("") + dstIds.map((id) => box(id, "R", colW[2])).join("");
+  return `<div class="evmap"><svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${svg}</svg>
+    <div class="legend"><span><i style="border-color:#1d4ed8"></i>wakes (subscription)</span><span><i style="border-color:#1d4ed8;border-top-style:dashed"></i>wakes (the loop, in code)</span><span><i style="border-color:#6b5313"></i>emits</span><span><i style="border-color:#5b21b6;border-top-style:dashed"></i>may emit (declared)</span><span><i style="border-color:#22c55e"></i>seen in the log, last 24h</span><span>· hover to isolate, click an agent to open it</span></div></div>`;
+}
+function evHover(id) {
+  const svg = document.querySelector(".evmap svg"); if (!svg) return;
+  const es = [...svg.querySelectorAll(".e")], ns = [...svg.querySelectorAll(".n")];
+  if (!id) { es.forEach((e) => e.classList.remove("dim")); ns.forEach((n) => n.classList.remove("dim")); return; }
+  const keep = new Set([id]);
+  es.forEach((e) => { const on = e.dataset.from === id || e.dataset.to === id; e.classList.toggle("dim", !on); if (on) { keep.add(e.dataset.from); keep.add(e.dataset.to); } });
+  ns.forEach((n) => n.classList.toggle("dim", !keep.has(n.dataset.id)));
+}
 function timeline(agents, now) {
   const rows = agents.filter((a) => a.kind !== "ad_hoc" && (a.every || a.at)).map((a) => ({ a, ticks: upcoming(a, now) }));
   if (!rows.length) return "";
@@ -148,7 +192,9 @@ function triggerRows(a) {
   if (a.at) rows.push(`<div><code>daily at ${esc(a.at)}</code> <span class="muted">a scheduled daily session</span></div>`);
   if (a.kind === "ad_hoc" && !a.builtin) rows.push(`<div><code>run_agent</code> <span class="muted">a brief from its lead</span></div>`);
   if (a.kind !== "ad_hoc" && !a.builtin) rows.push(`<div><code>message_agent</code> <span class="muted">a note from its lead, or from a member if it leads</span></div>`);
-  if (a.name === "supervisor") rows.push(`<div><code>human</code> <span class="muted">a message from you, and escalations from any agent</span></div>`);
+  for (const t of a.triggers || []) rows.push(`<div><code>loop</code> <span class="muted">${esc(t)}</span></div>`);
+  if (a.name === "supervisor" && !(a.triggers || []).length) rows.push(`<div><code>human</code> <span class="muted">a message from you, and escalations from any agent</span></div>`);
+  if ((a.emits || []).length) rows.push(`<div class="muted" style="margin-top:4px">causes: ${a.emits.map((e) => `<code>${esc(e)}</code>`).join(" ")}</div>`);
   return rows.join("") || "<span class='muted'>nothing wakes it</span>";
 }
 function probeRow(p, now) {
@@ -265,7 +311,7 @@ async function openRole(name) {
 }
 async function refresh() {
   try {
-    const [st, org] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json())]);
+    const [st, org, evm] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json()), fetch("/api/eventmap").then((r) => r.json())]);
     STATE = st; ORG = org; renderNav("agents", st.project); $("conn").textContent = "live";
     const byName = Object.fromEntries(org.agents.map((a) => [a.name, a]));
     const top = org.teams.filter((t) => !t.parent);
@@ -274,6 +320,8 @@ async function refresh() {
     // Supervisor's guide tells it to do), labelled as such.
     const loose = org.agents.filter((a) => (!a.team || a.team_exists === false) && !(a.builtin && !a.resident));
     let html = timeline(org.agents, org.now);
+    if (!document.querySelector(".evmap:hover")) html += `<h2>Event map <span class="count">${(evm.edges || []).length}</span></h2>` + eventMap(evm);
+    else return;   // do not redraw under the pointer
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');
     const probes = st.probes || [];
