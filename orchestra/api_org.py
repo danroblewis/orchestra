@@ -14,6 +14,7 @@ from . import agents
 from .config import Project
 from .harness.tools import tools_for
 from .org import (
+    TOOL_EMITS,
     AgentDef,
     OrgError,
     TeamDef,
@@ -119,13 +120,13 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
             ag = existing.get(a["name"])
             if ag is None or ag.builtin:
                 raise StoreError(f"no custom agent {a['name']!r}")
-            for k in ("roles", "team", "kind", "session", "wake_on", "every", "at", "description"):
+            for k in ("roles", "team", "kind", "session", "wake_on", "every", "at", "description", "emits"):
                 if k in a and a[k] is not None:
                     setattr(ag, k, a[k] or None if k in ("every", "at", "team") else a[k])
         else:
             if a["name"] in existing and existing[a["name"]].source == "agent":
                 raise StoreError(f"agent {a['name']!r} exists; use update_agent")
-            ag = AgentDef(name=a["name"], roles=list(a.get("roles") or []), team=a.get("team") or None,
+            ag = AgentDef(name=a["name"], roles=list(a.get("roles") or []), team=a.get("team") or None, emits=list(a.get("emits") or []),
                           kind=a.get("kind") or "continuous", session=a.get("session") or "resident",
                           wake_on=list(a.get("wake_on") or []), every=a.get("every") or None, at=a.get("at") or None,
                           description=a.get("description", ""), created_by=author)
@@ -141,6 +142,10 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
                              if command == "create_agent" else "your definition was updated; re-read your responsibilities")
         out = {"ok": True, "agent": ag.to_dict(), "storage": os_.last_commit_note}
         teams = all_teams(project)
+        allowed = set(custom_event_types(teams)) | {ev for g in effective_tools(ag, {r.name: r for r in rs.list()}, teams) for ev in TOOL_EMITS.get(g, ())}
+        bad = [e for e in (ag.emits or []) if e.split(":")[0] not in allowed]
+        if bad:
+            raise StoreError(f"{ag.name} may not emit {bad}: an agent emits its team's declared types (update_team emits=[...]) or the events its tools cause; Orchestra's own events are never an agent's")
         if ag.team and ag.team not in teams:
             out["warning"] = (f"WARN: team {ag.team!r} does not exist. Create it next with create_team (lead or members "
                               f"naming {ag.name!r}), or move the agent with update_agent to one that exists: "
@@ -411,8 +416,11 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str, store
     ms = foundry.ModelStore(project)
     if command == "list_model":
         model = ms.load()
-        det = foundrygraph.detect(model["stocks"], all_agents(project), model["loops"], system=SYSTEM_BINDINGS)
+        det = foundrygraph.detect(model["stocks"], foundry.agents_for_detection(project, all_agents(project)), model["loops"], system=SYSTEM_BINDINGS)
         advice = []
+        for name, ag in all_agents(project).items():
+            if not ag.builtin and not ag.wake_on and not ag.every and not ag.at:
+                advice.append(f"{name} has no wake rules and no schedule: it sits on no flow; give it wake_on or every")
         if store is not None and store.runtime().get("operator_capacity"):
             advice.append("wip_limit: the operator has set a capacity ceiling by hand; that is the WIP controller acting outside the org")
         for d in det["declared"]:
@@ -500,7 +508,7 @@ def _propose(project: Project, model: dict) -> dict:
                           "estimators": [{"kind": "probe", "command": pr.command, "every": "1h"}], "row": "capability"}}})
     loops_hint = []
     ags = all_agents(project)
-    if not any("staging_deployed" in (ag.wake_on or []) for ag in ags.values()):
+    if not any("staging_deployed" in (ag.wake_on or []) for ag in ags.values()):   # nothing exercises the deployed product
         loops_hint.append({"why": "nothing inspects the deployed build, so defects found after landing are zero by construction",
                            "call": {"kind": "agent", "note": "create a playtester (or smoke tester) team whose lead is an ad hoc agent woken by staging_deployed that drives the product and emits a finding event the team declares; then add a stock filled by that event and give the product owner a wake rule on it"}})
     return {"candidates": cands, "missing_discovery": loops_hint,

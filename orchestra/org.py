@@ -495,6 +495,28 @@ def teams_led_by(teams: dict[str, TeamDef], agent: str) -> list[TeamDef]:
     return [t for t in teams.values() if t.lead == agent]
 
 
+TOOL_EMITS = {"tickets": ("ticket_created", "ticket_updated"), "capacity": ("capacity_changed",), "pipeline": ("pipeline_resumed", "staging_restarted"),
+              "context": ("context_updated",), "roles": ("role_created", "agent_created", "team_created")}
+
+
+def effective_emits(agent: AgentDef, roles: dict, teams: dict[str, TeamDef]) -> tuple[str, ...]:
+    """Events an agent's actions can cause: what it declares, what its tool groups imply
+    (the tickets group files tickets), and, with the events group, its team chain's declared
+    types. This is what the loop detector draws its fills from."""
+    out = list(agent.emits or [])
+    tools = effective_tools(agent, roles, teams)
+    for g in tools:
+        for ev in TOOL_EMITS.get(g, ()):
+            if ev not in out:
+                out.append(ev)
+    if "events" in tools:
+        for t in team_chain(teams, agent.team):
+            for ev in t.emits:
+                if ev not in out:
+                    out.append(ev)
+    return tuple(out)
+
+
 def effective_tools(agent: AgentDef, roles: dict, teams: dict[str, TeamDef]) -> tuple[str, ...]:
     """Tool groups an agent runs with: its roles' groups, its team chain's granted groups,
     and `team` for every agent in a team, so a member can reach its lead with

@@ -142,3 +142,37 @@ turns that time out; spec section 5 aligned.
 Declined: committing `.orchestra/model/` in the automata checkout (it sits on a ticket
 branch; Orchestra's store refuses to commit there and says so; Daniel's call); residence
 times per queue (next round if asked; the drill-down has the ticket ages).
+
+## Round 5 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; no arithmetic errors in 17 readings.
+Found: the material-circuit rule matched by membership, not path, so broken base and
+re-planning lost their polarity; first-order pairs (the balancing drains the rework cycle
+rests on) suppressed; departure wakes drawn as + from the stock; parallel-link "?" an
+artefact of walking nodes; the agent node conflates rate and quality; wakes counted bare
+event totals as evidence; a base check with 17 pytest errors on a commit that had landed
+clean reported as "main broken"; change failure 100% from health restarts of a passing
+build; agent time declared as a stock; map label collisions and the merge-gate hub; "up"
+for a dead staging process (health check 1.5 h stale); custom agents could not declare
+emits through the tools, so no loop through a custom agent could ever close by curation;
+gap advice proposing Orchestra's own events to custom agents; environment_keeper never
+mentioned though unattached.
+
+Fixed: material circuits judged on the path (filled by the agent before, drained by the
+agent after each stock); departures reach the woken agent as a − trigger from the agent
+that caused them, never as a + from the level; agent-only loops that act on a stock are
+kept and the stock is a member; a stock-lowering trigger outranks a plain one on the same
+pair; first-order pairs listed with their polarity; main's state read from the base check
+with errors shown and "errors on a commit that landed clean: the gate host, not the code"
+instead of red paint; staging "up" only with a health check in the last 10 minutes, else
+"last healthy N ago"; change-failure tile names health restarts vs failures; agent time is
+a rate reading, no longer a stock; custom agents take `emits` (validated against their
+team's types and the events their tools cause) and the detector uses effective emits
+(tools and team chain), so a product owner with the tickets tool fills demand and the
+devex keeper with the events tool closes capability; gap advice never names Orchestra's
+own events to a custom agent; unattached custom agents named in advice; mini loops use the
+map's text; information links hidden until hover; agents evenly spaced on two rows; label
+collision avoidance; window and pause note in the legend.
+
+Declined: one node per rate instead of per agent (a larger modelling change; the consumer
+sign is documented as a declared effect, not a derivation); histogram tiles as bars.

@@ -57,9 +57,9 @@ EXPECTED = [
     # Repenning's capability loop: rework teaches the resources the worker reads, which cuts injection
     {"key": "capability", "nodes": ["known_rework", "environment_keeper", "resources", "worker", "undiscovered", "reviewer"], "polarity": "B"},
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
-    {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate", "known_rework"]},
+    {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
-    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"]},
+    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"], "polarity": "B"},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
     {"key": "replanning", "nodes": ["wip", "worker", "coordinator", "demand", "orchestra"]},
 ]
@@ -112,6 +112,11 @@ def test_the_keeper_closes_the_capability_loop_and_removing_it_opens_it():
     g = loops_for(stocks, mute)
     gap = next(d for d in g["declared"] if d["key"] == "capability")["gaps"]
     assert gap["missing_members"] == [] and gap["missing_links"][0]["from"] == "environment_keeper" and "lesson_decided" in gap["missing_links"][0]["fix"]
+    # a custom agent is never told to emit one of Orchestra's own events
+    mute["environment_keeper"] = custom("environment_keeper", "devex", ["gate_landed"], [])
+    g2 = loops_for(stocks, mute, [{"key": "x", "nodes": ["landed", "environment_keeper", "build"]}])
+    fix = g2["declared"][0]["gaps"]["missing_links"][0]["fix"]
+    assert "staging_deployed" not in fix and "custom inflow" in fix
 
 
 def test_the_qa_engineer_closes_earlier_detection():
@@ -124,7 +129,8 @@ def test_the_qa_engineer_closes_earlier_detection():
 def test_the_pipeline_manager_closes_broken_base():
     det = loops_for(foundry_stocks(), foundry_agents())
     bb = next(d for d in det["declared"] if d["key"] == "broken_base")
-    assert bb["detected"] and bb["cycle"]["basis"] == "material circuit", bb                   # the build is deployed and failed by the gate: what circulates is the build
+    assert bb["detected"] and bb["cycle"]["polarity"] == "B" and bb["cycle"]["basis"] == "link signs", bb   # the gate's failure (−) triggers the manager, which resumes the gate (+)
+    assert "build" in bb["cycle"]["members"]                                                  # the stock the loop acts on, through the failure event
 
 
 def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominates():
@@ -132,7 +138,7 @@ def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominat
     link is indeterminate, and the window's event counts only say which dominates today."""
     stocks = [Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"])]
     g = fg.build(stocks, {}, SYSTEM_BINDINGS)
-    assert fg._signs(g)[("demand", "agent:orchestra")] == "+"                             # arrivals and departures both wake: no disagreement
+    assert fg._signs(g)[("demand", "agent:orchestra")] == "+"                             # arrivals wake; departures reach the agent through whoever caused them
     assert fg._signs(g)[("agent:orchestra", "demand")] == "?"                             # Orchestra both reopens (+) and starts (−) tickets: indeterminate from structure
     assert fg.dominant(g, ("agent:orchestra", "demand"), {"ticket_transition:OPEN": 12, "ticket_transition:IN_PROGRESS": 80}) == "-"
     assert fg.dominant(g, ("agent:orchestra", "demand"), {}) is None

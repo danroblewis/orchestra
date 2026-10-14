@@ -52,6 +52,8 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
       stock has it as an inflow, a stock's outflow (the departure); both + (more events, more
       activity; the drain link already carries the −)
     - triggers: an agent emits an event another agent wakes on and no stock carries (+)
+    - departs: an agent emits an event that drains a stock and another agent wakes on it (−):
+      the departure reaches the agent through whoever caused it, not through the level
     - reads: a stock names the agent as a consumer, with the declared effect sign
     """
     ags = _agents_from(agents, system)
@@ -60,6 +62,7 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
         nodes[f"agent:{name}"] = {"id": f"agent:{name}", "kind": "agent", "name": name, "builtin": a["builtin"], "team": a["team"]}
     edges: list[dict] = []
     seen: set[tuple] = set()
+    touched: dict[str, set[str]] = {}          # agent -> stocks whose departures wake it
 
     def add(src: str, dst: str, sign: str, kind: str, via: str) -> None:
         k = (src, dst, sign, kind, via)
@@ -82,9 +85,15 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
                 for s in fills:
                     add(s.key, aid, "+", "wakes", w)
             else:
+                # a departure wakes the agent through the agent that caused it, not through the
+                # stock's level: a trigger from the draining agent, signed − because the event
+                # lowered a stock (build fails → the manager acts)
                 for s in stocks:
                     if any(event_fits(o, w) or event_fits(w, o) for o in s.outflows):
-                        add(s.key, aid, "+", "wakes", w)         # a departure is still an event the agent responds to
+                        for other, b in ags.items():
+                            if other != name and any(event_fits(o, w) for o in b["emits"]):
+                                add(f"agent:{other}", aid, "-", "departs", w)
+                        touched.setdefault(aid, set()).add(s.key)
     # an agent whose action wakes another agent directly, by an event no stock carries
     for name, a in ags.items():
         for ev in a["emits"]:
@@ -98,6 +107,8 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
             name, effect = (c, "+") if isinstance(c, str) else (c.get("agent"), c.get("effect", "+"))
             if f"agent:{name}" in nodes:
                 add(s.key, f"agent:{name}", effect, "reads", "")
+    for aid, sts in touched.items():
+        nodes[aid]["touches"] = sorted(sts)
     return {"nodes": nodes, "edges": edges}
 
 
@@ -119,7 +130,8 @@ def elementary_cycles(g: dict, max_cycles: int = MAX_CYCLES, max_len: int = MAX_
         for nxt in adj.get(node, []):
             if nxt == start:
                 kinds = {g["nodes"][n]["kind"] for n in path}
-                if "stock" in kinds and "agent" in kinds:
+                acts_on_stock = "stock" in kinds or any(g["nodes"][n].get("touches") for n in path)
+                if acts_on_stock and "agent" in kinds:
                     key = tuple(path)
                     if key not in seen:
                         seen.add(key)
@@ -146,6 +158,10 @@ def _signs(g: dict, weights: dict[str, int] | None = None) -> dict[tuple[str, st
         by_pair.setdefault((e["src"], e["dst"]), []).append(e)
     out: dict[tuple[str, str], str] = {}
     for k, es in by_pair.items():
+        departs = [e for e in es if e["kind"] == "departs"]
+        if departs and all(e["kind"] in ("departs", "triggers") for e in es):
+            out[k] = "-"                 # an event that lowered a stock outranks one that touched none
+            continue
         signs = {e["sign"] for e in es}
         out[k] = signs.pop() if len(signs) == 1 else "?"
     return out
@@ -162,16 +178,19 @@ def dominant(g: dict, pair: tuple[str, str], weights: dict[str, int] | None = No
 
 
 def material(g: dict, cycle: list[str]) -> bool:
-    """A conserved material loop: every stock in the cycle is filled by an agent in the cycle
-    and drained by an agent in the cycle. What circulates is the same thing (a change, a
-    defect), so the loop converges: balancing by construction, as the rework cycle is."""
-    agents = {n for n in cycle if n.startswith("agent:")}
-    stocks_in = [n for n in cycle if not n.startswith("agent:")]
-    if not stocks_in or not agents:
+    """A conserved material circuit, judged on the path itself: every stock on the cycle is
+    filled by the agent before it and drained by the agent after it (the agent it wakes
+    carries the material on), and no step is a bare wake, read, or trigger. What circulates
+    is the same thing, so the circuit is a stock-flow chain, not a causal loop."""
+    if not any(not n.startswith("agent:") for n in cycle):
         return False
-    for st in stocks_in:
-        filled = any(e["kind"] == "fills" and e["dst"] == st and e["src"] in agents for e in g["edges"])
-        drained = any(e["kind"] == "drains" and e["dst"] == st and e["src"] in agents for e in g["edges"])
+    n = len(cycle)
+    for i, node in enumerate(cycle):
+        prev, nxt = cycle[i - 1], cycle[(i + 1) % n]
+        if node.startswith("agent:"):
+            continue
+        filled = any(e["kind"] == "fills" and e["src"] == prev and e["dst"] == node for e in g["edges"])
+        drained = any(e["kind"] == "drains" and e["src"] == nxt and e["dst"] == node for e in g["edges"])
         if not (filled and drained):
             return False
     return True
@@ -197,8 +216,12 @@ def signature(cycle: list[str]) -> str:
     return hashlib.sha1("|".join(sorted(cycle)).encode()).hexdigest()[:10]
 
 
-def members(cycle: list[str]) -> set[str]:
-    return {n.split(":", 1)[1] if n.startswith("agent:") else n for n in cycle}
+def members(cycle: list[str], g: dict | None = None) -> set[str]:
+    out = {n.split(":", 1)[1] if n.startswith("agent:") else n for n in cycle}
+    if g:
+        for n in cycle:
+            out.update(g["nodes"].get(n, {}).get("touches", []))
+    return out
 
 
 def detect(stocks: list, agents: dict, expected: list | None = None, system: dict | None = None, weights: dict[str, int] | None = None, evidence: dict[str, int] | None = None) -> dict[str, Any]:
@@ -225,14 +248,14 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             for e in es:
                 if e["kind"] in ("fills", "drains") and e["via"]:
                     n = ev.get(f"{a.split(':', 1)[1]}|{e['via']}", 0)
-                elif e["kind"] in ("wakes", "triggers") and e["via"]:
+                elif e["kind"] in ("wakes", "triggers", "departs") and e["via"]:
                     n = (weights or {}).get(e["via"], 0)
                 else:
                     n = 1 if e["kind"] == "reads" else 0
                 evidence[f"{a}>{b}|{e['via'] or e['kind']}"] = n
                 hits.append(n)
             step_seen.append(any(n > 0 for n in hits))
-        infos.append({"nodes": c, "members": sorted(members(c)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
+        infos.append({"nodes": c, "members": sorted(members(c, g)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
                       "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
                       "observed": bool(step_seen) and all(step_seen), "evidence": evidence,
                       "edges": [{"src": a, "dst": b, "sign": None if basis == "material circuit" else sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
@@ -264,6 +287,14 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
     return {"graph": g, "cycles": infos, "declared": declared, "unnamed": unnamed, "pairs": pairs}
 
 
+BUILTIN_EVENT_PREFIXES = ("ticket_", "gate_", "staging_", "pipeline_", "session_", "turn_", "agent_", "milestone_", "capacity_", "pickup_", "loop_", "probe_", "context_", "role_", "team_", "note_")
+
+
+def _declarable(evs: list[str], for_custom: bool) -> list[str]:
+    """Events a custom agent may be told to emit: never Orchestra's own (invariant 4)."""
+    return [e for e in evs if not (for_custom and e.split(":")[0].startswith(BUILTIN_EVENT_PREFIXES))]
+
+
 def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
     """Why an expected loop is not closed: members missing from the graph, and consecutive
     members with no link between them, each with the binding that would close it."""
@@ -277,7 +308,9 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
             continue
         if ia.startswith("agent:") and not ib.startswith("agent:"):
             st = stock_by.get(b)
-            fix = f"{a} must emit an event that fills {b}" + (f" (one of: {', '.join(st.inflows)})" if st and st.inflows else f"; declare an inflow event on {b} and have {a} emit it")
+            custom = not g["nodes"][ia].get("builtin")
+            ok = _declarable(st.inflows, custom) if st else []
+            fix = (f"{a} must emit an event that fills {b}" + (f" (one of: {', '.join(ok)})" if ok else f"; {b} is filled only by Orchestra's own events, so declare a custom inflow on {b} (a team's emits) and have {a} emit it"))
         elif not ia.startswith("agent:") and ib.startswith("agent:"):
             st = stock_by.get(a)
             fix = f"{b} must wake on an event that fills {a}" + (f" (one of: {', '.join(st.inflows)})" if st and st.inflows else "") + f", or {a} must list {b} as a consumer"
@@ -289,8 +322,10 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
             custom = [n for n in woken if not g["nodes"].get(f"agent:{n}", {}).get("builtin")]
             woken = custom or woken              # the project's own agent is the one to change
             wants = f" (one of: {', '.join(st_b.inflows)})" if st_b and st_b.inflows else ""
+            ok = _declarable(st_b.inflows, bool(custom)) if st_b else []
+            wants = f" (one of: {', '.join(ok)})" if ok else (f"; {b} is filled only by Orchestra's own events, so declare a custom inflow on {b} first" if st_b and st_b.inflows else "")
             if woken:
-                fix = f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: add that event to the agent's emits (and to its team's emits if it is custom)"
+                fix = f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: add that event to the agent's emits (update_agent) and to its team's emits if it is custom"
             else:
                 fix = f"no agent converts {a} into {b}: create an agent woken by {a}'s inflow that emits {b}'s inflow{wants}"
         broken.append({"from": a, "to": b, "fix": fix})

@@ -111,9 +111,9 @@ def create_app(project: Project) -> FastAPI:
         model = foundry.load_model(project)
         ags = all_agents(project)
         r = foundrymetrics.readings(project, store, events.read(0, limit=200000)[0], ags, all_teams(project), model=model)
-        det = foundrygraph.detect(model["stocks"], ags, model["loops"], system=SYSTEM_BINDINGS, weights=r["event_counts"], evidence=r["attributed_counts"])
+        det = foundrygraph.detect(model["stocks"], foundry.agents_for_detection(project, ags), model["loops"], system=SYSTEM_BINDINGS, weights=r["event_counts"], evidence=r["attributed_counts"])
         return {"ok": True, "model": foundry.as_dict(model), "graph": det["graph"], "cycles": det["cycles"], "declared": det["declared"], "unnamed": det["unnamed"],
-                "pairs": len(det["pairs"]), "readings": r}
+                "pairs": len(det["pairs"]), "pair_list": [{"nodes": c["nodes"], "members": c["members"], "polarity": c["polarity"]} for c in det["pairs"]], "readings": r}
 
     @app.get("/api/agents/{name}")
     async def agent_detail(name: str) -> dict:

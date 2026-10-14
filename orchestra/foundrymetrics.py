@@ -22,10 +22,15 @@ from . import foundrygit
 from .loopmetrics import _ts
 
 CHURN_DAYS = 14
+HEALTH_STALE = 600        # seconds without a health check after which "up" is not believed
 PLAN_ROLES = {"coordinator", "supervisor", "pipeline_manager"}
 GATE_TIMEOUT_RC = 124
 NOTE_SLACK = 180          # seconds between a reviewer's verdict note and the transition it caused
 MAX_LOG_BYTES = 2_000_000
+
+
+def _n(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
 
 
 def _median(xs):
@@ -405,8 +410,11 @@ def _stock_reading(st, pool: dict) -> dict:
     tk, git, cur = pool["tickets"], pool["git"], pool["cur"]
     if kind == "tracker":
         states = est.get("states") or []
+        now = dt.datetime.now(dt.UTC).timestamp()
+        ages = sorted(now - (_epoch(getattr(x, "state_since", None)) or now) for x in tk.values() if x.state in states)
         out.update(value=sum(1 for x in tk.values() if x.state in states), by_state={s_: sum(1 for x in tk.values() if x.state == s_) for s_ in states},
-                   estimator=f"tickets in {', '.join(states)} in the tracker now")
+                   oldest_age=ages[-1] if ages else None, median_age=_median(ages), ages=len(ages),
+                   estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
         pend = pool["pending"]
         out.update(value=len(pend), tickets=pend, estimator="tickets sent back for a defect (reviewer verdict or gate result) and not yet re-submitted, whatever their state now")
@@ -424,19 +432,25 @@ def _stock_reading(st, pool: dict) -> dict:
         stages = (run or {}).get("stages", {})
         if stage:
             sg = stages.get(stage) or {}
-            out.update(value=sg.get("passed"), skipped=sg.get("skipped", 0), failed=sg.get("failed", 0), stage=stage)
+            out.update(value=sg.get("passed"), skipped=sg.get("skipped", 0), failed=sg.get("failed", 0), errors=sg.get("error", 0), stage=stage)
         else:
-            out.update(value=sum(v.get("passed", 0) for v in stages.values()) if run else None, stages=stages)
+            out.update(value=sum(v.get("passed", 0) for v in stages.values()) if run else None, stages=stages,
+                       failed=sum(v.get("failed", 0) for v in stages.values()), errors=sum(v.get("error", 0) for v in stages.values()), skipped=sum(v.get("skipped", 0) for v in stages.values()))
         mt = pool["main_tests"] or {}
         macc = (mt.get("stages", {}).get(stage) if stage else None) or {}
+        errors = macc.get("error", 0)
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
-                   main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "run": mt.get("run"), "status": mt.get("status")} if stage else None,
+                   main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
+                             "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean"))} if stage else None,
                    estimator=f"pytest summary of the {stage or 'all'} stage{'s' if not stage else ''} in the gate run that produced the {source}; skipped shown, never counted")
     elif kind == "staging":
         stg = pool["staging"]
-        out.update(value=1 if stg.get("status") == "running" else 0, build=pool["build_id"], deployed_at=pool["deployed_at"],
+        now_ = dt.datetime.now(dt.UTC).timestamp()
+        healthy_at = _epoch(stg.get("last_health_at"))
+        healthy = stg.get("status") == "running" and healthy_at is not None and now_ - healthy_at <= HEALTH_STALE
+        out.update(value=1 if healthy else 0, status=stg.get("status"), last_healthy_ago=(now_ - healthy_at) if healthy_at is not None else None, build=pool["build_id"], deployed_at=pool["deployed_at"],
                    last_restart_at=stg.get("deployed_at") if stg.get("deployed_at") != pool["deployed_at"] else None, last_health_at=stg.get("last_health_at"),
-                   estimator="the staging process state in the runtime store; deployed at = the staging_deployed event for this build")
+                   estimator=f"up only when the runtime store says running and the health check answered within {HEALTH_STALE // 60} minutes; deployed at = the staging_deployed event for this build")
     elif kind == "repo_docs":
         docs = (git.get("documents") or {}).get(tuple(est.get("globs") or foundrygit.DOC_GLOBS)) or {}
         out.update(value=docs.get("count"), lines=docs.get("lines"), lessons_decided=docs.get("lessons_decided"), files=docs.get("files", []),
@@ -515,7 +529,9 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     ahead = git.get("ahead", {})
     wip = sorted(({"ticket": t.id, "state": t.state, "commits": ahead[t.branch], "rounds": t.review_rounds or 0} for t in tk.values()
                   if t.state not in ("DONE", "CANCELLED") and getattr(t, "branch", None) and t.branch in ahead), key=lambda w: -w["commits"])
-    pool = {"cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "landed": landed,
+    main_commit = (main_run or {}).get("base_commit") if (main_run or {}).get("status") == "base_broken" else None
+    clean_before = bool(main_commit) and any(r.get("status") == "landed" and (r.get("gate_commit") or "").startswith(main_commit[:10]) for r in runs)
+    pool = {"cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
     rounds = sorted(((t.review_rounds or 0), t.id) for t in tk.values())
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}
@@ -540,10 +556,10 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['repick']} re-picks (loss)",
         "orchestra|ticket_transition:OPEN": f"{pf['restart']} restarts (loss)",
         "worker|ticket_transition:READY_FOR_REVIEW": f"{pf['implement']} submitted · {pf['fix']} of them fixes",
-        "reviewer|ticket_transition:REJECTED": f"{ins_['review']['distinct_defects']} defects in {pf['review']} rejections",
+        "reviewer|ticket_transition:REJECTED": f"{_n(ins_['review']['distinct_defects'], 'defect')} in {_n(pf['review'], 'rejection')}",
         "reviewer|ticket_transition:APPROVED": f"{ins_['review']['approvals']} approved",
         "orchestra|ticket_transition:REJECTED": f"{pf['review_no_verdict']} no-verdict send-backs (loss)",
-        "merge_gate|gate_rejected": f"{ins_['gate']['distinct_defects']} defects in {pf['gate']} runs",
+        "merge_gate|gate_rejected": f"{_n(ins_['gate']['distinct_defects'], 'defect')} in {_n(pf['gate'], 'run')}",
         "merge_gate|ticket_transition:REJECTED": f"{pf['gate']} gate send-backs",
         "merge_gate|gate_landed": f"{pf['land']} landed",
         "merge_gate|staging_deployed": f"{pf['deploy']} deployed",

@@ -100,7 +100,7 @@ DOC_GLOBS = ["AGENTS.md", "README.md", "CLAUDE.md", ".orchestra/teams/*.md", ".o
 TEMPLATE_STOCKS: list[Stock] = [
     Stock("demand", "Demand", "tickets", "Work ordered and not started.", ["ticket_created", "ticket_transition:OPEN"], ["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"], [],
           [{"kind": "tracker", "states": ["OPEN", "BLOCKED"]}], row="chain", pos=[62, 222], width=112),
-    Stock("wip", "Work in progress", "commits ahead of main", "Commits on ticket branches that have not landed, whatever state the ticket is in; the landing drains it.", ["ticket_transition:IN_PROGRESS"], ["gate_landed", "ticket_transition:CANCELLED"], [],
+    Stock("wip", "Work in progress", "commits ahead of main", "Commits on ticket branches that have not landed, whatever state the ticket is in; the landing drains it. The level is counted in commits (git); the filling event is a ticket pickup, so the link is symbolic.", ["ticket_transition:IN_PROGRESS"], ["gate_landed", "ticket_transition:CANCELLED"], [],
           [{"kind": "git_ahead"}], row="chain", pos=[290, 222], width=150),
     Stock("awaiting_review", "Awaiting review", "changes", "Submitted changes the reviewer has not judged yet (Reinertsen's queue; Ford & Sterman's work needing QA).",
           ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:APPROVED", "ticket_transition:REJECTED"], [],
@@ -123,8 +123,6 @@ TEMPLATE_STOCKS: list[Stock] = [
           [{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}], [{"kind": "gate_tests", "source": "main"}], addition=True, row="capability", pos=[760, 52], width=200),
     Stock("resources", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons.", ["lesson_decided"], [],
           [{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}], [{"kind": "repo_docs", "globs": DOC_GLOBS}], addition=True, row="capability", pos=[292, 52], width=200),
-    Stock("agent_time", "Agent time", "agent-hours per day", "Turn time of agent sessions by activity, with losses beside it.", ["session_started"], ["session_settled"], [],
-          [{"kind": "turn_hours"}], row="chain"),
 ]
 
 TEMPLATE_LOOPS: list[Loop] = [
@@ -134,7 +132,7 @@ TEMPLATE_LOOPS: list[Loop] = [
          {"key": "acceptance_defects_at_gate", "adverse": "up", "threshold": 0}, ["gate_distinct_defects", "acceptance_defects_at_gate"], "a defect reached the gate's acceptance stage, which the pre-review check does not run: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
     Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
          {"key": "review_pass", "adverse": "down"}, ["review_pass"], "", "Repenning & Sterman 2001 (work smarter)"),
-    Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate finds more → known rework → fixed → landed", ["landed", "tests", "merge_gate", "known_rework"],
+    Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate runs them → landed", ["landed", "tests", "merge_gate"],
          {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "", "Orchestra's addition", addition=True),
     Loop("broken_base", "broken base", "B", "build fails → pipeline manager → gate resumes → landed → build", ["build", "pipeline_manager", "merge_gate"],
          {"key": "base_broken", "adverse": "up"}, ["base_broken"], "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this", "Abdel-Hamid & Madnick 1991 (errors build errors)"),
@@ -268,4 +266,21 @@ def model_probes(project, teams: dict) -> list:
             team = teams.get(st.team) if st.team else None
             out.append(ProbeSpec(name=f"model_{st.key}", command=e["command"], every=parse_interval(e.get("every", "1h")), timeout=float(e.get("timeout", 120)),
                                  cwd=team.space_dir(project) if team else project.repo_root, team=st.team))
+    return out
+
+
+def agents_for_detection(project, agents: dict) -> dict:
+    """The org's agents with the events their tools and teams let them cause folded into
+    ``emits`` (``org.effective_emits``), so a product owner that files tickets fills demand."""
+    import copy
+
+    from .org import all_teams, effective_emits
+    from .roles import role_store
+    roles = {r.name: r for r in role_store(project).list()}
+    teams = all_teams(project)
+    out = {}
+    for name, ag in agents.items():
+        c = copy.copy(ag)
+        c.emits = list(effective_emits(ag, roles, teams)) if not ag.builtin else list(ag.emits or [])
+        out[name] = c
     return out
