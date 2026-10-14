@@ -398,7 +398,14 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         pairs[f"{f}>{to}"] = pairs.get(f"{f}>{to}", 0) + 1
     # starts: a pickup after a restart or an unblock is a re-pickup, not new work
     starts = repicks = replanned = 0
+    limit_ts = sorted(_ts(e) for e in evs if e["type"] == "turn_timed_out")
+    restart_limit = restart_interrupt = 0
     for tid, ts, f, to in tr:
+        if (f, to) == ("IN_PROGRESS", "OPEN"):                                      # a restart: by the turn limit, or an interrupt (loop stop, reset, error)
+            if any(abs(ts - t0) <= 10 for t0 in limit_ts):
+                restart_limit += 1
+            else:
+                restart_interrupt += 1
         if (f, to) != ("OPEN", "IN_PROGRESS"):
             continue
         before = hist.previous(tid, ts, f, to)
@@ -581,7 +588,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     return {
         "since": dt.datetime.fromtimestamp(since, dt.UTC).isoformat(timespec="seconds"), "until": dt.datetime.fromtimestamp(until, dt.UTC).isoformat(timespec="seconds"), "days": days,
         "counts": counts, "pairs": pairs,
-        "flows": {"start": starts, "repick": repicks, "replanned": replanned, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
+        "flows": {"start": starts, "repick": repicks, "replanned": replanned, "restart_limit": restart_limit, "restart_interrupt": restart_interrupt, "replans": replanned, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
                   "gate": gate["by"].get("defect", 0), "conflict": gate["by"].get("conflict", 0),
                   "failure": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0) + gate["by"].get("error", 0),
                   "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "escape_crash_runs": len(in_window), "escape_crash_groups": in_window, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
@@ -611,7 +618,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     }
 
 
-SIGNAL_KEYS = frozenset({"review_bad_fix_fraction", "gate_bad_fix_fraction", "review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
+SIGNAL_KEYS = frozenset({"replans", "review_bad_fix_fraction", "gate_bad_fix_fraction", "review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
                          "fix_rounds", "review_defects", "defects_after_landing", "review_miss_rate", "acceptance_defects_at_gate", "bad_fix_fraction", "conflicts_per_landing",
                          "landed_per_worker_hour", "restarts", "defects_found_after_landing", "base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
 
@@ -627,7 +634,7 @@ def _signals(w: dict) -> dict[str, float | None]:
             "defects_before_gate_share": _ratio(w["inspections"]["review"]["distinct_defects"], w["inspections"]["review"]["distinct_defects"] + w["inspections"]["gate"]["distinct_defects"] + f["escape"]),
             "bad_fix_fraction": w["rounds"]["bad_fix_fraction"], "review_bad_fix_fraction": w["rounds"]["review_bad_fix_fraction"], "gate_bad_fix_fraction": w["rounds"]["gate_bad_fix_fraction"], "conflicts_per_landing": _ratio(f["conflict"], f["land"]) if f["land"] else (f["conflict"] or None),
             "landed_per_worker_hour": _ratio(f["land"] / w["days"], wh) if wh else None, "restarts": f["restart"], "defects_found_after_landing": f["escape"],
-            "base_broken": f["base"], "worker_hours_lost": t["losses"]["worker_hours_ending_in_timeout"], "starts": f["start"]}
+            "base_broken": f["base"], "worker_hours_lost": t["losses"]["worker_hours_ending_in_timeout"], "starts": f["start"], "replans": f["replanned"]}
 
 
 def _stock_reading(st, pool: dict) -> dict:
@@ -823,7 +830,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     edge_labels = {
         "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} re-planned · {pf['repick']} re-picked after a restart (loss)",
         "orchestra|ticket_transition:OPEN": f"{pf['restart']} restarts (loss)",
-        "orchestra|ticket_transition:IN_PROGRESS>OPEN": f"{pf['restart']} restarts after a turn limit (loss)",
+        "orchestra|ticket_transition:IN_PROGRESS>OPEN": f"{pf['restart_limit']} restarts after a turn limit · {pf['restart_interrupt']} interrupted (loss)",
         "worker|ticket_transition:READY_FOR_REVIEW": f"{pf['implement']} submitted · {pf['fix']} of them fixes",
         "reviewer|ticket_transition:REJECTED": f"{_n(ins_['review']['distinct_defects'], 'defect')} in {_n(pf['review'], 'rejection')}",
         "reviewer|ticket_transition:APPROVED": f"{ins_['review']['approvals']} approved",
@@ -847,7 +854,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "reviewer|ticket_transition:REJECTED|returned": f"{pf['review_no_verdict']} reviews with no verdict (loss)",
         "merge_gate|gate_rejected|returned": f"{pf['failure']} lost gate runs (loss)",
         "merge_gate|gate_conflict|returned": f"{pf['conflict']} conflicts",
-        "merge_gate|gate_landed|known_rework": f"{attributed.get('merge_gate|gate_landed|cause:gate', 0) + attributed.get('merge_gate|gate_landed|cause:defect', 0)} fixes landed",
+        "merge_gate|gate_landed|known_rework": f"{attributed.get('merge_gate|ticket_transition:MERGING>DONE|cause:gate', 0) + attributed.get('merge_gate|ticket_transition:MERGING>DONE|cause:defect', 0)} fixes landed",
         "coordinator|ticket_transition:BLOCKED>OPEN": f"{attributed.get('coordinator|ticket_transition:BLOCKED>OPEN', 0)} re-planned",
     }
     t = cur["time"]

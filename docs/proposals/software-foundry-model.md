@@ -225,6 +225,12 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   open loop never tells Orchestra's processes to change and never lists Orchestra's own
   events as something a custom agent should emit; where a loop's template carries a recipe,
   the card shows that recipe and the detector's facts beside it.
+- **Restarts are two losses.** A restart within ten seconds of a turn limit is the limit's;
+  any other (a loop stop, a reset, an error) is an interrupt, and the label says both.
+- **A first-order pair is balancing through its drain, never signed by a vote.** The window's
+  dominant mechanism signs a disputed link only on a longer loop; a pair is its drain's.
+- **Agents on the inlet** (they create tickets and move nothing between stocks) read "N
+  tickets" or "fills only", never "unattached"; agents on no flow sit on their own row.
 - **A disputed link is signed by the window.** Where one agent both fills and drains a stock
   (the gate rejects a fix into Known rework and lands a good one out of it), the link's sign
   is the mechanism the window saw most, and the card says which and how many; with no window

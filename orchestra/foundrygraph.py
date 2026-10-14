@@ -256,7 +256,7 @@ def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None, h
             seen = [f"{e['via']} ({e['sign']}, {w.get(plain(e['via']), 0)} seen)" for e in es]
             notes.append(f"{p[0].replace('agent:', '')}→{p[1].replace('agent:', '')}: " + ", ".join(seen))
         dom = {p: dominant(g, p, weights) for p in pairs if signs.get(p, "+") == "?"}
-        if all(dom.values()):                                     # the window decides: the mechanism seen most carries the link's sign
+        if all(dom.values()) and len(cycle) > 2:                  # the window decides on a longer loop: the mechanism seen most carries the link's sign; a pair is its drain's
             resolved = {**{p: signs.get(p, "+") for p in pairs}, **dom}
             neg = sum(1 for p in pairs if resolved[p] == "-")
             return ("B" if neg % 2 else "R"), "link signs, with " + "; ".join(notes) + " resolved by the window's dominant mechanism"

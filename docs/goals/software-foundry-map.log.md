@@ -859,3 +859,36 @@ model on main follows the template.
 Declined: a tests-over-tickets ratio (no unit; the perceived count is in the tooltip); the
 duplicated hollow labels at both ends (each end names its gap); a page affordance to try a
 binding (invariant 7).
+
+## Round 24 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; the headline numbers reconciled with the
+log to the unit and no functional defect was found. Found: "0 fixes landed" (the label read a
+cause the attribution never writes on gate_landed; CA-37 landed with its defect, so 1);
+"56 restarts after a turn limit" where 13 were interrupts (loop stops, resets, errors, the
+operator's capacity changes); the cancel stub drawn on Blocked for a cancel that left Demand
+(the plain count stood in for the from-state count); the rework cards claiming "balancing in
+its first-order pairs" where the detector found no pair on Known rework; a pair signed R by
+the window's vote; re-planning's signal (starts, adverse down) flagging a card over one fewer
+first start; the review tile's headline swapping metrics; a zero-count pipe labelled across
+the map; agents on the inlet captioned so close they read as one phrase; the failing test
+only in a tooltip; the pre-limit-change loss shown as current on the agents.
+
+Fixed: "fixes landed" reads the DONE transition's cause (1); restarts are split into those
+within ten seconds of a turn limit and interrupts ("43 restarts after a turn limit · 13
+interrupted"); a stub counts its own transition form, so the cancel sits on Demand; the
+material tag names the balancing pairs the detector actually finds on the loop's stocks
+(reviewer ↔ awaiting review, worker ↔ work in progress, merge gate ↔ approved) or says it
+finds none; a pair is its drain's and is never signed by the window's vote; re-planning's
+signal is re-plans (adverse past five); one metric per headline (pass rate), with the miss
+rate in the caption; a pipe nothing moved through keeps its tooltip and loses its label;
+agents on no pipe take a row of their own spread over the width; the failing test is on the
+gate tile's face; a timeout share from before the limit change says so; escapes ride with
+the landing as an uncounted co-flow from undiscovered rework; the design records the
+restart split, the pair rule and the inlet agents. The automata model on main follows the
+template.
+
+Declined: declaring the design's R1 and R2 loops in the template (a hypothesis loop draws
+hollow stubs that would say "no agent" for a causal effect no agent closes; the rework-share
+tile carries Repenning's threshold as its signal); a recovery estimate per recipe (as
+before); Demand in changes (tickets become changes at the pickup, which the pipe says).
