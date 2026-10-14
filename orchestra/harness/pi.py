@@ -171,6 +171,32 @@ class PiSession(AgentSession):
             finally:
                 self.busy = False
 
+    def compact(self) -> dict | None:
+        """Pi's own compaction: older messages become a summary entry in the session file and
+        the context is rebuilt from it, so the agent keeps what it learned. Waits for the
+        response; summarising is a model call and can take a while on a loaded server."""
+        with self._lock:
+            try:
+                self._send({"type": "compact"})
+            except PiError:
+                return None
+            clock = _Deadlines(1800, 900)
+            while not clock.expired():
+                ev = self._next(clock.wait())
+                if ev is None:
+                    return None
+                if not ev:
+                    continue
+                clock.touch()
+                if ev.get("type") == "extension_ui_request":
+                    self._reply_ui(ev)
+                elif ev.get("type") == "response" and ev.get("command") == "compact":
+                    if not ev.get("success", True):
+                        return None
+                    d = ev.get("data") or {}
+                    return {"tokens_before": d.get("tokensBefore"), "tokens_after": d.get("estimatedTokensAfter")}
+            return None
+
     def _abort(self) -> None:
         try:
             self._send({"type": "abort"})

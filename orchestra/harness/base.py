@@ -122,6 +122,12 @@ class AgentSession(ABC):
         ends the turn after that many seconds without any event from the harness."""
         ...
 
+    def compact(self) -> dict | None:
+        """Ask the harness to summarise the older part of this session's context in place,
+        keeping the transcript. Returns the harness's result (tokens before and after) or
+        None when this harness cannot compact; the loop then falls back to rotation."""
+        return None
+
     @property
     @abstractmethod
     def pid(self) -> int | None:

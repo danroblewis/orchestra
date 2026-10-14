@@ -15,6 +15,8 @@ from orchestra.store import LocalStore, StoreError
 class FakeProc:
     def __init__(self, sid):
         self.session_id, self._alive, self.session_file, self.harness_name = sid, True, None, "fake"
+    def compact(self):
+        return None
     def alive(self):
         return self._alive
     @property
@@ -33,20 +35,44 @@ def project(tmp_path, monkeypatch):
     return init_project(repo, provider="p", model="m", prefix="T")
 
 
-def test_large_sessions_rotate_before_the_next_turn(project):
+class CompactingProc(FakeProc):
+    def compact(self):
+        return {"tokens_before": 150000, "tokens_after": 32000}
+
+
+def test_large_sessions_are_compacted_in_place_when_the_harness_can(project):
     store, events = LocalStore(project), Events(project.events_file)
     loop = Loop(project, store, events)
     f = project.sessions_dir / "2026_worker-T-1.jsonl"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("x" * 10)
     store.set_session("worker-T-1", kind="worker", status="idle", session_file=str(f))
-    assert not loop._rotate_if_large("worker-T-1", "worker")                                # small: left alone
+    proc = CompactingProc("worker-T-1")
+    assert loop._trim_if_large(proc, "worker-T-1", "worker") is None                        # small: left alone
     f.write_text("x" * (project.config.session_max_bytes + 1))
-    assert loop._rotate_if_large("worker-T-1", "worker")
+    assert loop._trim_if_large(proc, "worker-T-1", "worker") == "compacted"
+    assert f.exists() and proc.alive()                                                       # transcript and process kept
+    s = store.find_session("worker-T-1")
+    assert s["compactions"] == 1 and s["compacted_at_bytes"] == f.stat().st_size
+    assert loop._trim_if_large(proc, "worker-T-1", "worker") is None                        # growth is measured since the compaction
+    f.write_text("x" * (2 * project.config.session_max_bytes + 10))
+    assert loop._trim_if_large(proc, "worker-T-1", "worker") == "compacted"
+    ev = [e for e in events.read(0)[0] if e["type"] == "agent_compacted"]
+    assert len(ev) == 2 and ev[0]["tokens_before"] == 150000 and ev[0]["tokens_after"] == 32000
+
+
+def test_large_sessions_rotate_only_when_the_harness_cannot_compact(project):
+    store, events = LocalStore(project), Events(project.events_file)
+    loop = Loop(project, store, events)
+    f = project.sessions_dir / "2026_worker-T-2.jsonl"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("x" * (project.config.session_max_bytes + 1))
+    store.set_session("worker-T-2", kind="worker", status="idle", session_file=str(f))
+    assert loop._trim_if_large(FakeProc("worker-T-2"), "worker-T-2", "worker") == "rotated"   # base compact() returns None
     assert not f.exists() and (project.sessions_dir / "archive" / f.name).exists()
-    assert store.find_session("worker-T-1")["session_file"] is None
+    assert store.find_session("worker-T-2")["session_file"] is None
     ev = [e for e in events.read(0)[0] if e["type"] == "agent_reset"][-1]
-    assert ev["by"] == "orchestra" and "KB" in ev["reason"]
+    assert ev["by"] == "orchestra" and "could not compact" in ev["reason"]
 
 
 def test_reset_archives_the_transcript_and_starts_over(project):

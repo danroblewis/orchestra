@@ -24,7 +24,7 @@ STATIC = Path(__file__).parent / "static"
 
 
 CHAT_PING_SECONDS = 20   # keep the chat stream alive through proxies while the Supervisor thinks
-MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop", "agent_reset")
+MARKER_TYPES = ("session_started", "turn_timed_out", "turn_error", "turn_interrupted", "agent_killed", "agent_crashed", "agent_crash_loop", "agent_reset", "agent_compacted")
 
 
 def _alive(pid) -> bool:

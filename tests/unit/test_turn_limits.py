@@ -32,6 +32,9 @@ FAKE = textwrap.dedent('''\
                     while True:
                         emit({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "."}}); time.sleep(0.2)
                 threading.Thread(target=chat, daemon=True).start()
+        elif cmd["type"] == "compact":
+            emit({"type": "compaction_start", "reason": "manual"})
+            emit({"type": "response", "command": "compact", "success": True, "data": {"tokensBefore": 150000, "estimatedTokensAfter": 32000}})
         elif cmd["type"] == "abort":
             emit({"type": "response", "command": "abort", "success": True}); emit({"type": "agent_settled"})
 ''')
@@ -71,6 +74,14 @@ def test_silent_agent_is_stopped_after_the_silence_limit(fake_pi, tmp_path, monk
     t0 = time.time()
     res = s.prompt("go", None, idle_timeout=1.0)
     assert res.timed_out and res.stopped_by == "silence" and time.time() - t0 < 5
+    s.close()
+
+
+def test_pi_compacts_on_request(fake_pi, tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_MODE", "silent")
+    s = PiSession(spec(tmp_path, "big"), pi_binary=str(fake_pi))
+    s.open()
+    assert s.compact() == {"tokens_before": 150000, "tokens_after": 32000}
     s.close()
 
 

@@ -520,11 +520,13 @@ class Loop:
             log(f"{t.id}: cannot start worker: {e}")
             return
         log(f"{t.id}: worker starting on {branch}")
-        self._rotate_if_large(sid, "worker")
         proc = self._session(sid, "worker", path, t.id)
         text = ""
         try:
             self._session_running(sid, "worker", proc, t.id)
+            if self._trim_if_large(proc, sid, "worker") == "rotated":
+                proc = self._session(sid, "worker", path, t.id)
+                self._session_running(sid, "worker", proc, t.id)
             unit_cmd = self.cfg.unit[0].command if self.cfg.unit else None
             report, text, failed = self._prompt_with_retry(
                 proc, t.id, agents.worker_task(self.project, t, unit_cmd),
@@ -620,11 +622,13 @@ class Loop:
         diff = self.git.diff(base, commit, cwd=path)
         files = self.git.changed_files(base, commit, cwd=path)
         glog = self.git.log(base, commit, cwd=path)
-        self._rotate_if_large(sid, "reviewer")
         proc = self._session(sid, "reviewer", path, t.id)
         text = ""
         try:
             self._session_running(sid, "reviewer", proc, t.id)
+            if self._trim_if_large(proc, sid, "reviewer") == "rotated":
+                proc = self._session(sid, "reviewer", path, t.id)
+                self._session_running(sid, "reviewer", proc, t.id)
             report, text, failed = self._prompt_with_retry(
                 proc, t.id, agents.reviewer_task(self.project, t, commit, diff, files, glog, test_output),
                 "You stopped without a verdict. Call `report_review` now with APPROVED or REJECTED.")
@@ -730,7 +734,7 @@ class Loop:
 
     def prompt_supervisor(self, message: str, emit) -> dict:
         """One supervisor turn on the resident session, with the event digest prefix."""
-        self._rotate_if_large("supervisor", "supervisor")
+        self._trim_if_large(self.agent_procs.get("supervisor"), "supervisor", "supervisor")
         proc = self.agent_procs.get("supervisor")
         if proc is None or not proc.alive():
             proc = self._session("supervisor", "supervisor", self.project.repo_root)
@@ -751,27 +755,43 @@ class Loop:
         self._session_idle("supervisor", res.text, resident=True)
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
-    def _rotate_if_large(self, sid: str, agent: str) -> bool:
-        """Session rotation. A transcript past `session_max_bytes` makes every turn re-send
-        that much context to the model, which is what makes a loaded server crawl. Before a
-        turn starts on such a session, the file is archived as a run and the turn begins
-        fresh; the wake-up or task carries the current state, and a worker's branch holds
-        its work. Returns True when a rotation happened."""
+    def _trim_if_large(self, proc, sid: str, agent: str) -> str | None:
+        """Keep every session's context bounded. When the transcript has grown past
+        `session_max_bytes` since it was last compacted, ask the harness to compact: older
+        messages become a summary and the agent keeps what it learned, which is what
+        matters 200k tokens into a task. Only when the harness cannot compact (or the
+        attempt fails) is the session rotated: archived as a run and started fresh, with
+        the wake-up or task carrying the current state. Returns "compacted", "rotated",
+        or None when nothing was needed."""
         limit = self.cfg.session_max_bytes
         s = self.store.find_session(sid) or {}
         f = s.get("session_file")
-        if not limit or not f or not Path(f).exists() or Path(f).stat().st_size <= limit:
-            return False
+        if not limit or not f or not Path(f).exists():
+            return None
         size = Path(f).stat().st_size
-        proc = self.agent_procs.pop(agent, None) if self.agent_procs.get(agent) is not None and self.agent_procs[agent].session_id == sid else None
-        if proc is not None:
+        grown = size - int(s.get("compacted_at_bytes") or 0)
+        if grown <= limit:
+            return None
+        if proc is not None and proc.alive():
+            res = proc.compact()
+            if res:
+                self.store.set_session(sid, compacted_at_bytes=Path(f).stat().st_size, compactions=int(s.get("compactions") or 0) + 1)
+                self.events.emit("agent_compacted", session=sid, agent=agent, tokens_before=res.get("tokens_before"),
+                                 tokens_after=res.get("tokens_after"), reason=f"{grown // 1000} KB of transcript since the last compaction")
+                log(f"{sid}: compacted ({res.get('tokens_before')} -> {res.get('tokens_after')} tokens)")
+                return "compacted"
+        # no compaction on this harness, or it failed: rotate
+        owned = self.agent_procs.get(agent)
+        if owned is not None and owned.session_id == sid:
+            self.agent_procs.pop(agent).close()
+        elif proc is not None:
             proc.close()
         archived = self.store.retire_session(sid)
         self.store.set_agent_state(agent, context_hash=None)
         self.events.emit("agent_reset", session=sid, agent=agent, archived=archived, by="orchestra",
-                         reason=f"transcript reached {size // 1000} KB (session_max_bytes {limit // 1000} KB)")
-        log(f"{sid}: transcript {size // 1000} KB; archived as {archived}, starting fresh")
-        return True
+                         reason=f"transcript reached {size // 1000} KB and the harness could not compact it")
+        log(f"{sid}: transcript {size // 1000} KB, no compaction; archived as {archived}, starting fresh")
+        return "rotated"
 
     def _wake(self, target: str, reasons: list[str]) -> None:
         agent = self.agents.get(target)
@@ -783,7 +803,7 @@ class Loop:
             sid = f"{agent.session_id}-{time.strftime('%Y%m%d-%H%M%S')}"
             proc = self._session_for(agent, sid)
         else:
-            self._rotate_if_large(sid, target)
+            self._trim_if_large(self.agent_procs.get(target), sid, target)
             proc = self.agent_procs.get(target)
             if proc is None or not proc.alive():
                 proc = self._session(sid, target, self.project.repo_root) if agent.builtin else self._session_for(agent, sid)
