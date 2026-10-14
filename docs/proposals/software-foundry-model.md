@@ -1,7 +1,8 @@
 # The software foundry model: stocks, flows, and what Orchestra shows
 
-Status: proposal, 2026-10-14. Replaces the ticket-state "stocks and flows" map on the Agents
-page. Sources: `docs/research/sd-software-models.md` (the published structures),
+Status: proposal, 2026-10-14, revised after an independent review (the review's measurements
+are quoted below as "measured"). Replaces the ticket-state "stocks and flows" map on the
+Agents page. Sources: `docs/research/sd-software-models.md` (the published structures),
 `docs/research/foundry-sd-claude.md` and `docs/research/foundry-sd-gemini.md` (two
 independent answers to the same question).
 
@@ -13,9 +14,9 @@ ticket can reach DONE and the software still be worse. The map therefore shows w
 foundry holds and produces, with tickets appearing only as demand and as the owners of
 work in progress.
 
-Every published system-dynamics model of software development (Cooper's rework cycle,
-Abdel-Hamid and Madnick, Madachy's defect flows, Ford and Sterman's phase model, the DORA
-keys, Reinertsen's queues) reduces to one structure:
+The system-dynamics models of software projects (Cooper's rework cycle, 1980, surveyed by
+Cooper and Mullen in 1993 and by Lyneis and Ford in 2007; Abdel-Hamid and Madnick, 1991;
+Madachy's defect flows, 2008; Ford and Sterman's phase model, 1998) share one structure:
 
 ```
 Work to do ──progress──▶ Work done
@@ -23,109 +24,185 @@ Work to do ──progress──▶ Work done
                            └── undiscovered rework ──discovery──▶ Known rework ──rework──▶ Work to do
 ```
 
-Three parameters govern everything: productivity (work per unit effort), FCC (the share of
-work that is right the first time), and the discovery delay (how long a defect stays hidden).
-Every named loop in the literature changes one of those three. Orchestra's job on this page
-is to measure those three and the stocks around them, and to show which agent sits on which
-flow, so the operator can see where to add an agent or a binding.
+Three parameters govern it: productivity (work per unit effort), FCC (the share of work
+that is right the first time), and discovery (at an inspection, a probability of detection;
+after release, a delay). Every named loop in the literature changes one of those three.
+
+Two other bodies of work are used here without claiming they reduce to that structure:
+Reinertsen's queues (every waiting stage is a stock whose outflow is capacity-limited, and
+variability at high utilisation blows up its residence time) and the DORA keys, which read
+the release stage of the same chain. Two stocks on this page, verified behaviour (T) and
+environment resources (R), are Orchestra's additions: the literature treats test effort as
+a detection-efficiency parameter and improvement as Repenning and Sterman's capability
+stock, not as things counted in a repository. They are labelled as additions on the page.
+
+Orchestra's job on this page is to measure what it can of those parameters and stocks, to
+say plainly what it cannot, and to show which agent sits on which flow and which flows have
+no agent, so the operator can see where to add an agent or an event binding.
 
 ## 2. The stocks
 
-A stock is a quantity the foundry holds that accumulates and drains. Each has a unit, an
+A stock is a quantity the foundry holds that accumulates and drains. Each has one unit, an
 inflow, an outflow, and one or more estimators (section 4). The built-in stocks are the
 software foundry's defaults; a project in another domain declares its own (section 5).
 
-| # | Stock | Unit | What it is | Inflow | Outflow |
-|---|-------|------|------------|--------|---------|
-| D | **Demand** | tickets | Work ordered and not started: OPEN tickets in open milestones, plus BLOCKED. | ticket_created, send-backs that reopen | start (OPEN → IN_PROGRESS), cancel |
-| W | **Work in progress** | changes | Ticket branches with commits ahead of main. Sub-readings: being worked, awaiting review, awaiting the gate. | start | land, send back, restart |
-| K | **Known rework** | changes | Changes a reviewer or the gate sent back, with the classified cause. | review rejection, gate rejection, gate conflict, regression on main | fixed (next READY_FOR_REVIEW) |
-| U | **Undiscovered rework** | changes | Defects in W and L not yet found. Hidden; inferred (section 4). | injection = progress × (1 − FCC) | discovery |
-| L | **Landed software** | commits | Commits the gate put on main, with diff size. The product. | gate_landed | fix commits that touch recent lines (churn) count as rework, not new product |
-| B | **Working build** | builds | The staging build the acceptance suite ran against, and whether it is up. | staging_deployed | staging_failed, superseded |
-| T | **Verified behaviour** | tests | Tests on main: unit and acceptance, passing, failing, skipped, from the last gate run. Test capital. | tests added per landed change | tests removed or skipped |
-| R | **Environment resources** | documents | What the worker and reviewer read before working: AGENTS.md, README, team docs, roles, decided lessons, team tools. Measured by count, line budget, and freshness. | lessons decided, docs changed | pruned, over budget |
-| C | **Agent capacity** | agent-hours/day | Time agents spend, by activity: implement, review, fix (rework), improve (devex), plan. From sessions. Restarts are lost capacity. | the capacity ceiling | turns |
+| # | Stock | Unit | What it is | Inflows | Outflows |
+|---|-------|------|------------|---------|----------|
+| D | **Demand** | tickets | Work ordered and not started: OPEN and BLOCKED tickets in open milestones. | ticket_created; unblock is internal | start (OPEN → IN_PROGRESS); cancel |
+| W | **Work in progress** | commits ahead of main | Commits on ticket branches that have not landed, whatever ticket state the branch is in (being worked, awaiting review, rejected, awaiting the gate). | commits made by workers | land (gate_landed); branch deleted at CANCELLED |
+| K | **Known rework** | send-backs | Changes a reviewer or the gate sent back **because of a defect**, with the cause class. Conflicts and machine failures are counted separately (section 3). | defect found in review; defect found at the gate; defect found after landing | fixed (the ticket's next READY_FOR_REVIEW) |
+| U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery |
+| L | **Landed software** | commits | Commits the gate put on main, with first-parent diff size. The product. | gate_landed | none (rewrites are measured as churn, below) |
+| A | **Really done** | acceptance tests passing | Acceptance tests that pass, not skipped, against the current staging build. Abdel-Hamid's *actual* progress, against DONE tickets as *perceived* progress. | tests pass on a new build | tests fail or are skipped on a new build |
+| B | **Working build** | builds | The staging build the acceptance suite last ran against, and whether it is up. | staging_deployed | staging_failed; staging_restarted (the health loop restarting it) |
+| T | **Verified behaviour** (Orchestra's addition) | tests | Tests on main by stage: collected, passed, failed, skipped, from the last gate run. Skipped tests are shown and never counted as verified. | tests added per landed change | removed or skipped |
+| R | **Environment resources** (Orchestra's addition; Repenning's capability stock) | documents | What the worker and reviewer read before working: AGENTS.md, README, team docs, roles, decided lessons, team tools. Count and line budget; accuracy by judgement. | lessons decided; agent-facing doc commits landed | pruned; over budget |
+| C | **Agent time** | agent-hours per day | Wall time of agent sessions by activity: implement, fix (a session on a REJECTED ticket), review, improve (devex), plan (coordinator, product owner, supervisor). Losses are listed beside it: restarts, timeouts, compactions, resets. No serving-capacity term. | sessions | sessions |
 
-U is the stock the whole literature says matters most and the one no log records. The
-foundry shows it as an estimate with its uncertainty, never as a count.
+Measured on the demo log over 2.58 days: D = 4, W = 3 tickets with 16 commits ahead (CA-18
++12, CA-24 +4), K = 1, L = 21 landings (+7,067/−435 lines), T = 116 tests with 13
+acceptance tests skipped, R = 16 documents, 306 lines, 8 decided lessons, C = worker 86.5 h,
+coordinator 28.5 h, reviewer 20.7 h, devex 18.8 h.
+
+Integration must balance. W integrated from ticket transitions does not (start − land −
+send back − restart gave −49 against a true level of 3, because the fix return and BLOCKED
+flows were missing), which is why W is measured in commits from git and the ticket-state
+pipeline is only a drill-down (section 6). An events-level estimator always has an anchored
+initial value (section 5).
 
 ## 3. The flows, the machines on them, and the loops
 
 Flows are rates per day over the window. A machine (an agent or Orchestra itself) is a valve
-on a flow: its in-use/capacity and cycle time set the flow's rate.
+on a flow: its in-use and cycle time set the flow's rate. Flows with no machine are drawn as
+unattended; that is where a new agent goes.
 
-| Flow | From → To | Machine | Measured by |
-|------|-----------|---------|-------------|
-| start | D → W | orchestra (pickup) | OPEN → IN_PROGRESS |
-| implement | effort → W | worker | commits on the ticket branch; READY_FOR_REVIEW arrivals |
-| discover in review | U → K | reviewer | IN_REVIEW → REJECTED, with cause |
-| discover at the gate | U → K | merge gate | gate_rejected, gate_conflict, gate_base_broken, with stage |
-| discover after landing | U → K | acceptance run, smoke test, humans | a failing test on main that passed before; a bug ticket citing a landed commit |
-| fix | K → W | worker | REJECTED → IN_PROGRESS … READY_FOR_REVIEW |
-| land | W → L | merge gate | gate_landed |
-| deploy | L → B | orchestra | staging_deployed |
-| add tests | effort → T | worker, qa agents | tests on main after vs before each landing |
-| improve | K → R | environment keeper, devex | lessons decided; doc commits in `.orchestra/` and agent-facing files |
-| restart | W → D | orchestra (turn limits) | IN_PROGRESS → OPEN; lost capacity in C |
+| Flow | From → To | Machine | Measured by | Bindable event |
+|------|-----------|---------|-------------|----------------|
+| start | D → W | orchestra (pickup) | OPEN → IN_PROGRESS | ticket_transition:IN_PROGRESS |
+| implement | effort → W | worker | commits on the ticket branch; READY_FOR_REVIEW arrivals | ticket_transition:READY_FOR_REVIEW |
+| pre-review check | W → (pass / fail) | orchestra (runs the unit stage in the worktree before review) | **no event today**; the result goes only to the reviewer | to add: worktree_checked |
+| inspect in review | W → K (defect) | reviewer | IN_REVIEW → REJECTED with cause = defect | ticket_transition:REJECTED |
+| inspect at the gate | W → K (defect) | merge gate | gate_rejected where a stage failed on its own result | gate_rejected |
+| conflict | W → W (re-queued) | merge gate | gate_conflict; Ford and Sterman's concurrence rework, driven by WIP, not by FCC | gate_conflict |
+| machine failure | no change to W; a loss in C | — | gate stage timeout (rc 124), gate start failure, reviewer with no verdict, worker crash, turn timeout | turn_timed_out, turn_error, agent_crashed, gate_error |
+| discover after landing | L → K | **unattended** (acceptance run on staging, the smoke test, humans) | a test that passed on a prior build and fails now; a bug ticket citing a landed commit; staging restarted | staging_failed, staging_restarted, ticket_created (bug) |
+| fix | K → W | worker | REJECTED → IN_PROGRESS … READY_FOR_REVIEW; bad fixes are rounds rejected again | ticket_transition:IN_PROGRESS |
+| land | W → L | merge gate | gate_landed | gate_landed |
+| deploy | L → B | orchestra | staging_deployed | staging_deployed |
+| add tests | effort → T | **unattended by default** (workers add tests as part of tickets; qa agents if declared) | test counts on main after vs before each landing | gate_landed |
+| improve | K → R | environment keeper, devex | lessons decided; agent-facing doc commits landed | to add: lesson_decided |
+| broken base | L → everyone's FCC | — | gate_base_broken | gate_base_broken |
 
-The parameters, each a reading on the page:
+Measured on the demo log: of 44 gate send-backs, 18 were conflicts and, of 28 failed runs,
+11 were the acceptance stage hitting the gate's own 900-second timeout, 3 were start
+failures, 14 were acceptance failures, and none failed at build or unit. 247 of 328 starts
+were restarts after a turn ended without a result. The pre-review check runs only the unit
+stage. So on this log, machine failures and conflicts outnumber defects found at the gate,
+and the one place a defect is found is the stage the pre-review check does not run. The
+page must make that readable.
 
-- **FCC, first pass.** Changes that reach READY_FOR_REVIEW and land without a send-back, over
-  changes that reach READY_FOR_REVIEW. (Cooper and Mullen's survey: 0.68 commercial average.)
-- **FCC, landed.** Landed commits not later touched by a fix within the discovery window, over
-  landed commits. A lower bound on the true FCC until the cohort is older than several τ.
-- **Discovery delay τ.** Median time from the commit that introduced a defect to the event that
-  found it. First estimate: READY_FOR_REVIEW to the rejection; better: `git blame` of fix
-  commits on main back to the introducing commit.
-- **Discovery split.** Where defects are found: worktree tests, review, gate, staging, after.
-  The histogram shifting left is the signal that verification is working earlier.
-- **Rework share.** Fix capacity over total capacity in C. Repenning's firefighting threshold
-  is roughly a third.
-- **DORA keys** as readings of the same model: landing frequency (land flow), lead time
-  (commit to deploy), change failure (gate rejections + staging failures over gate runs), time
-  to restore (staging_failed to the next staging_deployed).
+Restarts are not a flow of W: the branch keeps its commits. They are a productivity loss
+(Abdel-Hamid: actual productivity = potential − losses) and are shown beside C.
 
-The loops, with polarity from the literature and the signal that shows each one working:
+Readings, each defined by its estimator and shown with its window:
 
-| Loop | Structure | Signal |
-|------|-----------|--------|
-| B1 defect removal | K → fix → K falls | fix round trip short and stable |
-| B2 discovery pull-forward | T ↑ → defects found at the worktree or review, not the gate | discovery split moving left; τ falling |
-| B3 capacity limit | W ↑ → pickup paused / capacity lowered | W bounded; queue ages not rising |
-| B4 capability | K (by cause) → improve → R → FCC ↑ → K ↓ | FCC first pass rising after lessons land; same cause not recurring |
-| R1 firefighting | rework share ↑ → less improve and add-tests → U ↑ → K ↑ | rework share rising week on week |
-| R2 debt drag | churn ↑ → productivity ↓ → pressure → FCC ↓ | landed per agent-hour falling while diff size is constant |
+- **Inspection pass rate, review.** Arrivals at READY_FOR_REVIEW that were not sent back with
+  cause = defect, over arrivals. This is Ford and Sterman's (1 − FCC) × p_detect seen from the
+  outside, not FCC: a send-back for no verdict or a timeout is excluded, and a false
+  positive counts as a defect because the log cannot tell. Reported per arrival and per
+  ticket, since the two differ (measured 0.15 per arrival, 0.26 per ticket, before excluding
+  non-defect send-backs).
+- **Inspection pass rate, gate.** Gate runs that landed, over runs that ended on their own
+  result (timeouts, start failures and conflicts excluded, and shown separately).
+- **Gate failures by stage.** Build, unit, acceptance, start, timeout, conflict.
+- **FCC landed, upper bound.** Landed commits whose added lines survive unchanged after N days,
+  over landed commits older than N days, by `git blame --first-parent` (GitClear's churn
+  window; measured 8 % aggregate churn, 10 of 21 landings fully surviving at 2.58 days). It is
+  an upper bound on FCC because discovery is incomplete: young cohorts look better than they
+  are.
+- **Escape rate.** Defects found after landing per landed commit: regressions on staging,
+  staging restarts, bug tickets citing a commit. This is the only estimator for U's outflow
+  and today has almost no data (0 staging_failed, 80 staging_restarted from the health loop,
+  no bug-ticket link), so U stays "not estimable".
+- **Really done ratio.** A (acceptance tests passing, not skipped) against DONE tickets, and
+  skipped tests shown next to it. The one number that says whether the software is good.
+- **Rework share.** Fix hours over total worker hours in C (measured 0.27 over 2.58 days,
+  0.38 over the last day). Repenning's firefighting threshold is roughly a third.
+- **Rounds per ticket.** The distribution, not only the median: Rahmandad and Hu show a few
+  tasks cycling many times dominate rework (measured: 29 tickets at 0 rounds, two at 25 and
+  27).
+- **Bad-fix fraction.** Fix rounds that were themselves sent back for a defect.
+- **Losses.** Restarts, turn timeouts, compactions, resets per day, as hours lost where the
+  session time is known.
+- **DORA keys, post-deploy only.** Landing frequency (gate_landed per day); lead time
+  (creation → DONE, and reviewed commit → staging_deployed); change failure (deploys followed
+  by staging_failed or a health restart); time to restore (staging_failed or restart →
+  next healthy deploy). Gate rejections are *not* change failures; they are inspection results.
+
+Schedule pressure, Abdel-Hamid's multiplier on error generation, has no analogue in
+Orchestra: there is no deadline, no schedule variable, and no agent that works faster under
+one. It is not modelled. A model or prompt change is the cohort variable that replaces
+Abdel-Hamid's experience mix; every reading series breaks when the project's model or a
+role's prompt changes.
+
+The loops, with polarity from the literature and the signal that shows each one working.
+A loop is drawn when its edges are observed in the log (the existing latent/observed rule
+in `eventgraph`); hypothesised loops are listed, not drawn.
+
+| Loop | Structure | Status | Signal |
+|------|-----------|--------|--------|
+| B1 defect removal | K → fix → K falls | observed | fix round trip short and stable; bad-fix fraction low |
+| B2 earlier detection (Orchestra's addition) | T ↑ and pre-review checks ↑ → defects found before the gate | hypothesised until worktree_checked exists | share of defects found before the gate rising |
+| B3 WIP limit | W ↑ → pickup paused, capacity lowered → conflicts and queue ages fall | observed when capacity_changed or pickup_paused follows | conflicts per landing and queue ages not rising |
+| B4 capability (Repenning's "work smarter") | K by cause → improve → R → fewer send-backs for that cause | observed when devex edges are seen | the cause-specific send-back rate falling after its lesson lands; a cause not recurring |
+| B5 broken base | gate_base_broken → pipeline paused → repaired | observed | time from base broken to next landing |
+| R1 firefighting (Repenning) | rework share ↑ → worker slots and coordinator priority go to fixes → less add-tests and improve → more send-backs | hypothesised; the shared resource is the worker slots and coordinator priority, since devex has its own agents | rework share rising week on week with add-tests falling |
+| R2 debt drag (Franco; no pressure term) | churn ↑ → maintainability ↓ → landed per agent-hour ↓ | hypothesised | landed per worker-hour falling while diff size is constant |
 
 B4 is the devex loop. It closes through the world: a lesson becomes a doc, a doc becomes a
 worker's context, and the effect appears as a lower send-back rate for that cause, delayed
-by however long it takes a lesson to land. Orchestra draws it as a loop only when the
-devex agents' edges are observed (`eventgraph` latent/observed rule), and measures it by the
-cause-specific send-back rate before and after each lesson.
+by however long it takes a lesson to land. Measuring it needs the cause class as data,
+which today exists only as prose in the lesson files (section 7).
 
 ## 4. Estimators: how a stock gets a number
 
 Finding measurable stocks is the hard part of every system-dynamics model. Orchestra uses
-three kinds of estimator and shows them side by side when more than one exists.
+three kinds of estimator and shows them side by side when more than one exists; where they
+disagree (measured: CA-24 is REJECTED and carries 4 unlanded commits, so W by ticket state
+and W by git differ) the page shows both and says which one the map uses.
 
-1. **Inside the model.** Integrate the flows the log already records: level = Σ inflow −
-   Σ outflow, which is how U is estimated (U ≈ τ × discovery rate, Lyneis and Ford's
-   first-order discovery; the discovered rate is a lower bound on injection). This needs
-   nothing but events and is exact for D, W, K.
+1. **Inside the model.** Integrate the flows the log records: level = initial + Σ inflow −
+   Σ outflow, with an anchored initial value and every flow enumerated. Exact for D and K.
+   For U, the first-order estimate U ≈ τ × discovery rate applies only to the post-landing
+   stage, where discovery is a delay; at an inspection, discovery is a probability per
+   inspection, not a delay, and the review's cycle time (measured median 0.25 h) says nothing
+   about how long a defect stays hidden. If a first-order delay is ever fitted, the median
+   lag is 0.69 τ, not τ. A second, independent estimate of what remains hidden is
+   capture-recapture between the reviewer and the gate on the same change (Eick et al. 1992;
+   noisy, per Briand et al. 2000). U is displayed only when both an escape-rate series and a
+   second estimate exist, and then with the two values as its range.
 2. **Outside the model, deterministic.** A probe: a command that prints a number, run on an
-   interval, in the team's space or the repo (the existing `Prober`). Also event counts and
-   git queries. Used for L, B, T, R, C.
-3. **Outside the model, by judgement.** An AI judge with a pinned model and rubric. To contain
-   volatility: the rubric asks for a class from a fixed list, never a magnitude; the judge
-   runs N samples at low temperature and the reading is the mode (or median for ordinal
-   classes) with the agreement recorded; comparisons ("is this better than last week's")
-   are preferred over absolute ratings; a change of model, prompt or rubric starts a new
-   series and the chart shows the break. Used for cause classification of send-backs
-   (already done by devex), lesson applicability, and doc accuracy.
+   interval, in the team's space or in the repo with read-only access (the existing
+   `Prober`). Also event counts and git queries. Used for W, L, A, B, T, R, C.
+3. **Outside the model, by judgement.** An AI judge. It is an agent (an `AgentDef` with the
+   `stocks` tool group and a `measure_stock` tool), never a command under the Prober, so its
+   transcript is the harness session file like every other agent's. To contain volatility:
+   the rubric asks for a class from a fixed list, never a magnitude; the judged input is
+   snapshotted and its hash recorded with the reading; the judge makes N independent turns
+   and the reading is the mode (median for ordinal classes) with the agreement recorded, and
+   a reading below an agreement floor is withheld; comparisons ("better than the previous
+   version?") are preferred over absolute ratings and the previous artefact is put in the
+   judge's context by the tool; a change of model, prompt or rubric starts a new series and
+   the chart shows the break. This needs a per-agent model override, which `AgentDef` does
+   not have today and which all three harnesses must honour; until it exists, the judge runs
+   on the project's model and the series breaks when that changes. Used for cause
+   classification of send-backs (already done by devex in prose), lesson applicability, and
+   doc accuracy.
 
-Every reading is an event, `stock_measured` {stock, estimator, value, samples, agreement,
-window}, so the series is in the log like everything else, and a stock's "perceived" value
-is the smoothed series (Sterman's perceived-vs-actual pair), not the last sample.
+Every reading is an event, `stock_measured` {stock, estimator, value, input_hash, samples,
+agreement, window}, so the series is in the log like everything else, and a stock's
+"perceived" value is the smoothed series (Sterman's perceived-vs-actual pair), not the last
+sample.
 
 ## 5. Declared stocks
 
@@ -136,33 +213,38 @@ produces something else entirely. So stocks are data, like roles, agents, and te
 ```jsonc
 // .orchestra/stocks/<name>.json
 {
-  "name": "lessons",                     // snake_case, unique
+  "name": "lessons",                     // snake_case, unique, not a built-in name
   "unit": "documents",
   "team": "devex",                       // owner; null for built-ins
   "description": "Decided lessons the worker and reviewer read before a ticket.",
-  "inflows":  ["lesson_decided"],        // event types (declared by the team) or built-in types
+  "inflows":  ["lesson_decided"],        // event types already in the owning team's emits, or built in
   "outflows": ["lesson_retired"],
   "estimators": [
     {"kind": "probe", "command": "ls .orchestra/spaces/devex/lessons/decided | wc -l", "every": "1h"},
-    {"kind": "events", "level": true},   // Σ inflows − Σ outflows since the stock was declared
-    {"kind": "judge", "rubric": "...", "classes": ["accurate", "stale", "wrong"], "samples": 5, "model": "..."}
+    {"kind": "events", "initial": 8, "since": "2026-10-14T00:00:00Z"},   // initial + Σ inflows − Σ outflows
+    {"kind": "judge", "agent": "doc_auditor", "rubric": "...", "classes": ["accurate", "stale", "wrong"], "turns": 5, "min_agreement": 0.6}
   ],
-  "consumers": ["worker", "reviewer"],   // agents that read it; drawn as an input to their valve
-  "producers": ["environment_keeper"]    // agents that fill it; drawn as a flow into it
+  "consumers": ["worker", "reviewer"]    // agents that read it; drawn as an input to their valve
 }
 ```
+
+Producers are not declared: they are the agents whose own or team `emits` include an inflow
+type, which `eventgraph.build` already derives.
 
 Rules, enforced by the store like the rest of the org model:
 
 - Built-in stocks live in `orchestra/foundry.py` (data, like `roles.py`) and cannot be
-  deleted or renamed; a project may add estimators to them.
+  deleted or renamed; a project may add estimators to them; a declared stock may not take a
+  built-in name (the rule `save_agent` uses for roles).
 - Only the Supervisor creates, changes, or deletes a declared stock (`create_stock`,
   `update_stock`, `delete_stock`, `list_stocks` in `api_org`), in conversation, exactly as
-  teams and agents are made. The org guide gets a section on when to declare one: when a
-  team produces something another agent consumes, or when a loop's purpose names a quantity
-  the map cannot otherwise show.
-- A declared stock's inflow and outflow event types must be declared (by a team's `emits`)
-  or built in. Its probes run under the owning team's space like team probes.
+  teams and agents are made. A custom inflow or outflow type must already be in the owning
+  team's `emits`; `create_stock` refuses otherwise and says to `update_team` first. The org
+  guide gets a section on when to declare one: when a team produces something another agent
+  consumes, or when a loop's purpose names a quantity the map cannot otherwise show.
+- A stock's probes run under the owning team's space like team probes; a probe that reads
+  the repository is read-only (invariant 3).
+- An `events` estimator always has `initial` and `since`.
 - Deleting a stock does not delete its measurements; the series stays in the log.
 
 Discovery of candidate stocks is a Supervisor task, not code: the loop detector already
@@ -171,55 +253,80 @@ team spaces that no stock names, so the Supervisor can propose one.
 
 ## 6. What the page shows
 
-The "Stocks and flows" section of the Agents page becomes the foundry map:
+The "Stocks and flows" section of the Agents page becomes the foundry map. Every term that
+is not plain English (FCC, inspection pass rate, churn, rework share) has a one-line
+definition in its tooltip, and nothing appears twice.
 
-1. **Headline readings.** FCC first pass, discovery split (a five-bar strip: worktree,
-   review, gate, staging, after), τ, rework share, landed per day, lead time, change failure,
-   time to restore. Each with its window and a tooltip stating the exact estimator.
+1. **Headline readings.** Really done (acceptance passing vs DONE, skipped shown); inspection
+   pass rates, review and gate; gate failures by stage with timeouts and conflicts separated;
+   rework share; rounds per ticket distribution; FCC landed upper bound at N days; losses per
+   day; landing frequency; lead time. U is a labelled "not estimable" box with the reason
+   until section 4's condition holds.
 2. **The map.** One aging chain left to right: Demand → Work in progress → Landed → Working
-   build, with Known rework beneath feeding back into Work in progress, and Undiscovered
-   rework drawn dashed between Work in progress and Landed with its estimate and range.
-   Verified behaviour and Environment resources sit above as capability stocks with arrows
-   into the valves they strengthen (T into the reviewer and gate valves, R into the worker and
-   reviewer valves). Agent capacity is a strip showing the split by activity. Machines are
-   valves on flows with in-use/capacity and cycle time. Declared stocks appear where their
-   producers and consumers put them. Hovering a stock, valve, or loop isolates it; clicking an
-   agent opens it.
-3. **The loop table.** B1 to R2 plus every loop the Supervisor named, each with its signal's
-   current reading and direction over the window, and the literature's "what to add" hint
-   when the signal is adverse (most defects caught at the gate → add verification before it;
-   rework share above a third → reduce intake before adding producers; a cause recurring
-   after its lesson → the lesson is not reaching the worker).
-4. **Drill-down.** The ticket-state pipeline with its transition rates, behind a disclosure,
-   for reconciling the numbers against the tracker.
+   build → Really done, with Known rework beneath feeding back into Work in progress, and
+   Undiscovered rework drawn dashed between Work in progress and Landed, with its estimate
+   and range when estimable and "not estimable" otherwise. Verified behaviour and
+   Environment resources sit above as capability stocks, labelled as Orchestra's additions,
+   with arrows into the valves they strengthen (T into the pre-review check, reviewer and
+   gate valves; R into the worker and reviewer valves). Agent time is a strip by activity
+   with losses beside it. Machines are valves on flows with in-use and cycle time.
+   **Unattended flows are drawn hollow with their bindable event type**, so "add an agent
+   here, waking on this" is readable from the map. Declared stocks occupy fixed slots: a
+   producer's team row above the chain, consumers linked by arrows. Hovering a stock, valve,
+   or loop isolates it; clicking an agent opens it.
+3. **The loop table.** B1 to R2 plus every loop the Supervisor named, each marked observed
+   or hypothesised, with its signal's current reading and direction over the window, and
+   the literature's "what to add" hint when the signal is adverse and the data supports it
+   (on the demo log today: all gate defects are found at the acceptance stage and the
+   pre-review check runs only unit, so "add acceptance verification before review, waking on
+   ticket_transition:READY_FOR_REVIEW"; rework share above a third → reduce intake before
+   adding producers; a cause recurring after its lesson → the lesson is not reaching the
+   worker).
+4. **The binding catalogue.** The existing agents × events matrix stays: it is the direct
+   answer to "which event would a new agent wake on".
+5. **Drill-down.** The ticket-state pipeline with its transition rates, behind a disclosure,
+   for reconciling against the tracker.
 
-The ticket counts per state no longer appear on the map; they are the drill-down.
+The ticket counts per state no longer appear on the map.
 
 ## 7. Data Orchestra already has, and what it must add
 
-Already in the log or store: every ticket transition with from/to; gate runs with outcome
-and tickets; staging deploys and failures; sessions with kind, duration, and turn outcomes;
-the classified causes the devex team files as notes; team probes.
+Already in the log or store: every ticket transition with from/to; gate runs with outcome,
+stage results and return codes (in `runtime.json`), and tickets; staging deploys and
+restarts; sessions with kind and duration; the classified causes the devex team files as
+prose in lesson files; team probes.
 
-To add, in order:
+Step 1, buildable now from what is measurable: inspection pass rates (the existing
+`RETURNS` in `loopmetrics`, with non-defect send-backs excluded once the cause exists, and
+until then labelled "all send-backs"); gate failures by stage with timeouts and conflicts
+separated; rework share; rounds per ticket; windowed churn by `git blame --first-parent`;
+really-done from the last gate run's acceptance summary and the staging state; losses;
+the DORA keys restricted to post-deploy signals; W and L from git. Built-in stock
+definitions in `foundry.py`; the page as in section 6 with U "not estimable".
 
-1. `loopmetrics` computes the stocks D, W, K, C, the flows, FCC first pass, τ (first
-   estimate), discovery split, rework share, and the DORA keys from the log. `foundry.py`
-   holds the built-in stock definitions.
-2. The gate records, per run, the test counts (collected, passed, failed, skipped) per stage,
-   and the landed diff size, so T and L have readings without re-running anything.
-3. A `git` estimator (commits ahead of main per worktree for W; fix-commit blame for FCC
-   landed and τ) run by the Prober with the repo as cwd.
-4. Declared stocks in `RepoOrgStore`, the four Supervisor tools, `stock_measured` events,
-   and the judge estimator (model pinned, N samples, mode and agreement).
-5. The page, as in section 6, with the ticket pipeline as the drill-down.
+Step 2, the events the remaining estimators need:
+
+1. `worktree_checked` from the pre-review run in the loop (stage, passed, failed, skipped,
+   rc), so the discovery split has a "before review" bin.
+2. Per-stage test counts (collected, passed, failed, skipped) and the timeout flag on every
+   gate run, parsed by the gate runner rather than from the tail, and the first-parent diff
+   size on `gate_landed`.
+3. `cause` on every send-back: `defect`, `no_verdict`, `timeout`, `conflict`, `crash`, set by
+   the loop where it already knows (reviewer with no verdict, worker crash) and by the gate
+   (stage rc 124, start failure, conflict). Review rejections default to `defect`.
+4. `kind` on `session_settled`, so C by activity needs no join.
+5. `lesson_decided` (and a doc-landing event when an agent-facing file lands), with the cause
+   class as a structured field, declared in the devex team's `emits`.
+
+Step 3: declared stocks in `RepoOrgStore`, the four Supervisor tools, `stock_measured`
+events, and the judge agent with `measure_stock`, after a per-agent model override exists.
+U appears only when section 4's condition holds.
 
 ## 8. Open questions
 
-- Whether U should be shown at all before τ has a git-based estimate; a wrong number in the
-  most important box is worse than a dashed box saying "not yet estimable".
-- The window: 24 hours is right for flows in the demo project, but FCC landed and τ need the
-  age of the cohort, so they are reported for the cohort older than 2τ with the cutoff shown.
-- Whether the judge estimator runs under the Prober (a command that calls a harness) or as an
-  ad hoc agent with the `stocks` tool; the latter keeps "Pi's session file is the only
-  transcript" true.
+- The churn window N for FCC landed: GitClear uses 14 days; the demo project has run for
+  under three, so the reading starts as "no cohort old enough".
+- Whether "really done" should also count acceptance criteria on DONE tickets that have a
+  named test, so a ticket closed without a test shows as unverified.
+- Whether the escape-rate series can ever be dense enough in a project with no users to make
+  U estimable, or whether U stays a dashed box by design and the page says so.

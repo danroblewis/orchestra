@@ -28,10 +28,15 @@ declared estimator. The ticket-state pipeline is a drill-down, not the map.
 7. Repeat. The goal is met only when two consecutive rounds, from two different reviewers, end
    with "understandable and correct" and no defects.
 
-Build order, from the spec's section 7: metrics and built-in stock definitions first, then the
-gate's test counts and diff sizes, then the git estimator, then declared stocks with the
-Supervisor tools and `stock_measured` events, then the page. Do not start the page before the
-numbers behind it exist and are tested. If a reviewer finding needs a declared stock, build the
+Build order, from the spec's section 7: step 1 (what is measurable now: inspection pass rates,
+gate failures by stage with timeouts and conflicts separated, rework share, rounds per ticket,
+windowed churn, really-done, losses, post-deploy DORA keys, W and L from git, built-in stock
+definitions in `foundry.py`, then the page with U marked "not estimable"); step 2 (the events
+the remaining estimators need: `worktree_checked`, per-stage gate test counts and timeout
+flag, `cause` on send-backs, `kind` on `session_settled`, `lesson_decided`); step 3 (declared
+stocks, the Supervisor tools, `stock_measured`, the judge agent). Do not start the page before
+the numbers behind it exist and are tested. Never display a number the spec says is not
+estimable. If a reviewer finding needs a declared stock, build the
 smallest version the spec describes, never a special case. Keep the spec in step with what is
 built; when the build teaches something the spec got wrong, change the spec in the same commit
 and say so in the log.
@@ -41,16 +46,22 @@ and say so in the log.
 - A reader who knows what a merge gate and a test suite are, but has never seen Orchestra, can
   say within a minute what the foundry is producing, where work is piling up, where defects are
   being found and how late, and which agent sits on which flow.
-- The headline readings (FCC first pass, discovery split, discovery delay, rework share, landed
-  per day, lead time, change failure, time to restore) are present, each with a tooltip stating
+- The headline readings (really done, inspection pass rates for review and gate, gate failures
+  by stage with timeouts and conflicts separated, rework share, rounds per ticket, FCC landed
+  upper bound, losses, landing frequency, lead time) are present, each with a tooltip stating
   its exact estimator and window, and the reviewer can reproduce at least four of them from
-  `~/.orchestrator/orchestra-automata-db8ce182/events.jsonl`, `tickets.json`, or the repo.
-- Hidden stocks (undiscovered rework) are shown as estimates with a range, or as "not yet
-  estimable" with the reason, never as a count.
-- Mass balance holds for the directly measured stocks over the window.
-- The loop table lists the six literature loops and every Supervisor-named loop with its
-  signal's current reading and direction, and shows the "what to add" hint only when the
-  signal is adverse.
+  `~/.orchestrator/orchestra-automata-db8ce182/events.jsonl`, `tickets.json`, `runtime.json`,
+  or the repo.
+- Undiscovered rework is shown as "not estimable" with the reason until the spec's condition
+  for estimating it holds; never as a count derived from inspection latency.
+- Mass balance holds for the directly measured stocks over the window, and where two
+  estimators disagree the page shows both and says which the map uses.
+- Send-backs caused by defects are separated from conflicts and machine failures everywhere.
+- Unattended flows are drawn as such with their bindable event type, and the agents × events
+  matrix remains, so an operator can say where a new agent goes and what it wakes on.
+- The loop table lists the seven loops and every Supervisor-named loop, each marked observed or
+  hypothesised, with its signal's current reading and direction, and shows the "what to add"
+  hint only when the signal is adverse and the data supports it.
 - Declared stocks, if any exist in the automata project, appear where their producers and
   consumers put them; if none exist, the page says how one is declared.
 - Nothing is duplicated, clipped, overlapping, or illegible at 1280 and 1600 px wide. Hover
