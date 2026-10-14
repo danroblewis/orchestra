@@ -628,8 +628,22 @@ class Loop:
             self.store.transition(t.id, t.version, State.READY_FOR_REVIEW)
             return
         if report is None:
-            self._reject(t.id, "orchestra", "reviewer produced no verdict" + (" (timed out)" if failed else "") +
-                         ". Re-check your work, make sure the diff is small and focused, and report again.", text)
+            # A reviewer that produced no verdict is not a rejection: the worker has nothing to
+            # fix. The review is redone, up to three times in a row, before the ticket is sent
+            # back; and that send-back is Orchestra's, never counted as a reviewer's verdict.
+            tries = 1
+            for n in reversed(self.store.notes(t.id)):
+                if n.get("kind") != "crash" or not n.get("text", "").startswith("reviewer"):
+                    break
+                tries += 1
+            if tries <= 3:
+                self.store.add_note(t.id, Note(author="orchestra", kind="crash",
+                                              text=f"reviewer produced no verdict{' (timed out)' if failed else ''} (attempt {tries}); review will be redone"))
+                self.store.transition(t.id, t.version, State.READY_FOR_REVIEW)
+                log(f"{t.id}: reviewer produced no verdict; review will be redone ({tries})")
+                return
+            self._reject(t.id, "orchestra", "three reviewers in a row produced no verdict" + (" (timed out)" if failed else "") +
+                         ". Make the diff small and focused so a review can finish, and report again.", text)
             return
         self.store.add_note(t.id, Note(author="reviewer", kind="review",
                                        text=f"{report['verdict']}: {report.get('summary', '')}\n{report.get('feedback') or ''}"))
@@ -643,9 +657,13 @@ class Loop:
         t = self.store.get_ticket(tid)
         rounds = t.review_rounds + 1
         self.store.transition(tid, t.version, State.REJECTED, rejected_by="reviewer" if by != "merge_gate" else by,
-                              feedback=feedback, review_rounds=rounds, reviewer_rejections=t.reviewer_rejections + 1)
+                              feedback=feedback, review_rounds=rounds,
+                              reviewer_rejections=t.reviewer_rejections + (1 if by == "reviewer" else 0))
         log(f"{tid}: REJECTED (round {rounds})")
-        if rounds >= self.cfg.review_rounds_before_escalation:
+        # Escalate when the threshold is crossed, and again at every further multiple of it,
+        # not on every rejection: the Coordinator should decide once, not be told 38 times.
+        th = self.cfg.review_rounds_before_escalation
+        if th and rounds % th == 0:
             self.store.add_wakeup("coordinator", f"{tid} has been rejected {rounds} times; decide whether to narrow, split, or cancel it")
 
     # -- gate ------------------------------------------------------------------
