@@ -43,7 +43,7 @@ h2 .hctl { display:flex; gap:8px; align-items:center; text-transform:none; lette
 .work { background:var(--panel2); border:1px solid var(--border); border-left:4px solid var(--c); border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer }
 .work:hover { background:var(--panel3) } .work .top { display:flex; justify-content:space-between; gap:8px; align-items:center; min-width:0 }
 .work .top > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.work .id { font-family:var(--mono); font-weight:700; color:var(--c) } .work .title { font-weight:600 }
+.work .id { font-family:var(--mono); font-weight:700; color:var(--c); text-decoration:underline dotted; text-underline-offset:3px } .work .title { font-weight:600 }
 .work .right { display:flex; align-items:center; gap:8px; flex:none; white-space:nowrap }
 .work .turns { font-family:var(--mono); font-size:11px; color:#fcd34d; background:#3a2e0a; border:1px solid #6b5313; border-radius:999px; padding:1px 7px; cursor:help; white-space:nowrap; flex:none }
 .work .top > span:first-child { flex:1 1 auto }
