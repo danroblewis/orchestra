@@ -78,10 +78,6 @@ register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer"
               wake_on=("ticket_transition:READY_FOR_REVIEW",), triggers=("a free reviewer slot",),
               emits=("ticket_transition:APPROVED", "ticket_transition:REJECTED"),
               description="Reviews one ticket's diff like a pull request and reports APPROVED or REJECTED."))
-register(Role(name="pair", session_id="pair-{ticket}", prompt="pair", tools=("pair",), resident=False,
-              wake_on=("ticket_transition:IN_PROGRESS",), triggers=("the ticket is paired (agents.pair)", "the worker's branch moved"),
-              emits=("ticket_transition:REJECTED", "note_added"),
-              description="Watches one ticket's worker from the outside, runs the tests, and gives a verdict before review."))
 
 # Not agents, but parts of the same event graph (see orchestra.web.app eventmap):
 SYSTEM_BINDINGS = {

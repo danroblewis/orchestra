@@ -46,7 +46,7 @@ def test_builtins_are_agents_in_teams(project):
     assert ags["coordinator"].team == "engineering" and ags["coordinator"].kind == "scheduled" and ags["coordinator"].builtin
     assert ags["worker"].kind == "ad_hoc" and not ags["worker"].resident
     assert ags["supervisor"].team is None
-    assert teams["engineering"].lead == "coordinator" and teams["engineering"].agents == ["coordinator", "worker", "reviewer", "pair"]
+    assert teams["engineering"].lead == "coordinator" and teams["engineering"].agents == ["coordinator", "worker", "reviewer"]
     assert teams["pipeline"].lead == "pipeline_manager"
 
 

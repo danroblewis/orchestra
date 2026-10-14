@@ -19,7 +19,7 @@ from .agents.roles import ROLES as BUILTIN, Role as BuiltinRole
 from .config import Project
 from .model import now
 
-TOOL_GROUPS = ("tickets", "context", "pipeline", "capacity", "escalate", "events", "roles", "team", "pair")
+TOOL_GROUPS = ("tickets", "context", "pipeline", "capacity", "escalate", "events", "roles", "team")
 EVENT_TYPES = (
     "ticket_created", "ticket_updated", "ticket_transition", "note_added",
     "milestone_created", "milestone_updated", "milestone_closed",
@@ -31,7 +31,6 @@ EVENT_TYPES = (
     "role_created", "role_changed", "role_deleted", "agent_created", "agent_changed", "agent_deleted",
     "agent_paused", "agent_resumed", "agent_messaged", "team_created", "team_changed", "team_deleted",
     "probe_failed", "probe_recovered", "turn_timed_out", "turn_error", "turn_interrupted", "agent_crashed", "agent_crash_loop", "agent_reset", "agent_compacted",
-    "pair_blocked",
 )
 # Teams may declare further event types (`emits`) that their agents raise with `emit_event`;
 # those are validated against the teams, not this list.

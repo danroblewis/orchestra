@@ -88,18 +88,17 @@ function renderAgents(s) {
   // Ephemeral agents (ad hoc, or scheduled without memory) run under a timestamped session
   // id. While one is mid-turn it is a live process and belongs here too.
   const shownIds = new Set(residents.map(([id]) => id));
-  const ephemeral = s.sessions.filter((x) => x.status === "running" && !shownIds.has(x.id) && !/^(worker|reviewer|pair)-/.test(x.id) && x.kind);
+  const ephemeral = s.sessions.filter((x) => x.status === "running" && !shownIds.has(x.id) && !/^(worker|reviewer)-/.test(x.id) && x.kind);
   html += ephemeral.map((x) => `<div class="agent" style="--rc:#c4b5fd" onclick="openTranscript('${x.id}')" title="${esc(x.kind)}: a fresh session for this run">
       <div class="av">${x.kind[0].toUpperCase()}</div><div class="name">${esc(x.kind)} <span class="muted" style="font-weight:400">one run</span></div><div class="say">${esc(x.last_text || "starting")}</div>${chip(x)}</div>`).join("");
   html = html || '<div class="empty">No resident agents running. They come up with <code>orchestra run</code>.</div>';
-  const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`]) || isLive(byId[`pair-${t.id}`])))
-    .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`], p: byId[`pair-${t.id}`] }));
+  const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`])))
+    .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }));
   const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc((x.partial_text || "").slice(-160) || x.last_text || "")}</span>${chip(x)}</div>` : "";
   // The pause control sits here because this is all it governs: no new worker starts while
   // it is on. Resident agents, reviews, the gate, and staging keep going.
-  const pairLane = (t, p) => p && (isLive(p) || (t.paired && isLive(byId[`worker-${t.id}`]))) ? `<div class="lane"><span class="who">pair</span><span class="msg">${esc((p.partial_text || "").slice(-160) || p.last_text || "watching")}</span>${isLive(p) ? chip(p) : '<span class="muted">watching</span>'}</div>` : "";
   html += `<h2><span>Agents on tickets</span><span class="hctl"><span class="count">${cards.length}</span>${capacityCtl(s)}${s.pickup_paused ? "<span>new workers PAUSED</span>" : ""}<button id="pause-btn" class="ctl ${s.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()" title="${s.pickup_paused ? "Resume starting new workers." : "Stop starting new workers. Running turns finish; reviews, the gate, staging, and resident agents are unaffected."}">${s.pickup_paused ? "▶ resume" : "⏸ pause new workers"}</button></span></h2>` + (cards.map(({ t, w, r }) =>
-    `<div class="work" style="--c:${color(t.state)}" onclick="openTranscript('${isLive(w) ? w.id : isLive(r) ? r.id : p.id}')" title="Open the running agent's transcript; the ticket is one click away from there"><div class="top"><span><span class="id" onclick="event.stopPropagation();openTicket('${t.id}')" title="Open the ticket">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${pairLane(t, p)}${lane("reviewer", r)}</div>`).join("")
+    `<div class="work" style="--c:${color(t.state)}" onclick="openTranscript('${isLive(w) ? w.id : r.id}')" title="Open the running agent's transcript; the ticket is one click away from there"><div class="top"><span><span class="id" onclick="event.stopPropagation();openTicket('${t.id}')" title="Open the ticket">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
     || '<div class="empty">No agent is working a ticket right now. Ready tickets start as soon as a worker slot is free.</div>');
   $("agents").innerHTML = html;
 }

@@ -17,7 +17,6 @@ from .git import Git, GitError
 from .harness import AgentSession, SessionSpec, get_harness
 from .model import ACTIVE, RECOVERY, Note, State, Ticket, effective_priorities, is_ready
 from .org import AgentDef, all_agents, all_teams, effective_tools, tools_path
-from .pair import PairWatcher, pair_notes, paired
 from .probes import Prober, config_probes, team_probes
 from .roles import all_roles, due_at, parse_interval
 from .staging import Staging
@@ -60,7 +59,6 @@ class Loop:
         self.role_defs: dict = {}
         self._last_token_write: dict[str, float] = {}
         self._partial: dict[str, dict] = {}         # session id -> the assistant text streamed so far this message
-        self.pairs: dict[str, PairWatcher] = {}      # ticket id -> the pair watching its worker, while one runs
         self._events_tail = self.events.read(0, limit=1)[1]   # only events after startup can wake agents
 
     # -- lifecycle -------------------------------------------------------------
@@ -395,7 +393,7 @@ class Loop:
     def _session(self, session_id: str, role: str, cwd: Path, ticket_id: str = "") -> AgentSession:
         """A session for a built-in agent: worker, reviewer, or one of the residents."""
         spec = ROLES[role]
-        tools = tuple(spec.tools) if role in ("worker", "reviewer", "pair") else effective_tools(
+        tools = tuple(spec.tools) if role in ("worker", "reviewer") else effective_tools(
             self.agents.get(role) or all_agents(self.project)[role], self.role_defs or all_roles(self.project), self.teams or all_teams(self.project))
         return self._open_session(session_id, role, agents.role_prompt(self.project, spec.prompt), tools, cwd, ticket_id)
 
@@ -517,22 +515,14 @@ class Loop:
         sid = f"worker-{t.id}"
         try:
             path, branch = self._worktree(t)
-            use_pair = paired(self.cfg.pair, t.id)
             t = self.store.transition(t.id, t.version, State.IN_PROGRESS, branch=branch, worker_session=sid,
-                                      worker_turns=t.worker_turns + 1, paired=t.paired or use_pair)
+                                      worker_turns=t.worker_turns + 1)
         except (Conflict, StoreError, GitError) as e:
             log(f"{t.id}: cannot start worker: {e}")
             return
-        log(f"{t.id}: worker starting on {branch}" + (" with a pair" if use_pair else ""))
+        log(f"{t.id}: worker starting on {branch}")
         proc = self._session(sid, "worker", path, t.id)
         text = ""
-        if use_pair:
-            try:
-                self.pairs[t.id] = PairWatcher(self, t, branch)
-                self.pairs[t.id].start()
-            except Exception as e:
-                log(f"{t.id}: pair could not start: {e!r}")
-                self.pairs.pop(t.id, None)
         try:
             self._session_running(sid, "worker", proc, t.id)
             if self._trim_if_large(proc, sid, "worker") == "rotated":
@@ -540,21 +530,13 @@ class Loop:
                 self._session_running(sid, "worker", proc, t.id)
             unit_cmd = self.cfg.unit[0].command if self.cfg.unit else None
             report, text, failed = self._prompt_with_retry(
-                proc, t.id, agents.worker_task(self.project, t, unit_cmd, pair_notes(self.store, t.id)),
+                proc, t.id, agents.worker_task(self.project, t, unit_cmd),
                 "You stopped without reporting. Call `report_ticket` now: READY_FOR_REVIEW if your work is "
                 "committed and tested, otherwise BLOCKED with the reason.")
         finally:
             proc.close()
             self._session_idle(sid, text)
-            pw = self.pairs.get(t.id)
-            if pw is not None:
-                pw.stop()
-        try:
-            self._apply_worker_report(t.id, report, text, failed, path, branch)
-        finally:
-            pw = self.pairs.pop(t.id, None)
-            if pw is not None:
-                pw.close()
+        self._apply_worker_report(t.id, report, text, failed, path, branch)
 
     def _apply_worker_report(self, tid: str, report: dict | None, text: str, failed: bool,
                              path: Path, branch: str) -> None:
@@ -613,19 +595,6 @@ class Loop:
             self.store.transition(tid, t.version, State.BLOCKED, blocked_reason=reason)
             self.store.add_wakeup("coordinator", f"{tid} BLOCKED: {reason}")
             return
-        pw = self.pairs.get(tid)
-        if pw is not None:
-            verdict = pw.final(head)
-            if verdict and verdict.get("verdict") == "block":
-                findings = verdict.get("findings") or ""
-                self.store.add_note(tid, Note(author="pair", kind="pair", text=f"BLOCKED before review: {findings}"))
-                self.store.transition(tid, t.version, State.REJECTED, rejected_by="pair", feedback=findings,
-                                      pair_rejections=t.pair_rejections + 1)
-                log(f"{tid}: blocked by the pair before review")
-                self.events.emit("pair_blocked", ticket=tid, findings=findings[:500])
-                return
-            if verdict:
-                self.store.add_note(tid, Note(author="pair", kind="pair", text=f"PASS: {verdict.get('findings') or ''}"))
         self.store.transition(tid, t.version, State.READY_FOR_REVIEW, reviewed_commit=head, feedback=None)
         log(f"{tid}: READY_FOR_REVIEW at {head[:10]}")
 
@@ -662,7 +631,7 @@ class Loop:
                 proc = self._session(sid, "reviewer", path, t.id)
                 self._session_running(sid, "reviewer", proc, t.id)
             report, text, failed = self._prompt_with_retry(
-                proc, t.id, agents.reviewer_task(self.project, t, commit, diff, files, glog, test_output, pair_notes(self.store, t.id)),
+                proc, t.id, agents.reviewer_task(self.project, t, commit, diff, files, glog, test_output),
                 "You stopped without a verdict. Call `report_review` now with APPROVED or REJECTED.")
         finally:
             proc.close()
@@ -733,7 +702,6 @@ class Loop:
         wt = self.store.worktree(t.id)
         if wt:
             self.git.worktree_remove(Path(wt["path"]))
-            self.git.worktree_remove(Path(wt["path"]).parent / f"{t.id}-pair")
             self.store.remove_worktree(t.id)
         for f in self.store.purge_ticket_sessions(t.id):
             Path(f).unlink(missing_ok=True)

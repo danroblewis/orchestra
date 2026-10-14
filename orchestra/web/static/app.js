@@ -71,13 +71,13 @@ let transcriptPaging = null;   // {id, nextBefore, hasMore, loading}
 async function openTranscript(id) {
   const r = await fetch(`/api/sessions/${id}/transcript?limit=30`);
   if (!r.ok) {
-    const perTicket = /^(worker|reviewer|pair)-/.test(id);
+    const perTicket = /^(worker|reviewer)-/.test(id);
     return openDrawer(`<h3>${esc(id)}</h3><div class="empty">${perTicket
       ? "No record of this session: it has not run yet, or it finished before transcripts were kept (" + esc(id) + ")."
       : "This session has not been started. It comes up with <code>orchestra run</code>."}</div>`);
   }
   const d = await r.json(); const s = d.session;
-  const perTicket = /^(worker|reviewer|pair)-/.test(id);
+  const perTicket = /^(worker|reviewer)-/.test(id);
   let html = `<div id="transcript-head">${transcriptHead(id, s, d)}</div>`;
   if (id === "supervisor") html += `<form id="chat" class="chat top" onsubmit="return sendToSupervisor(event)">
       <textarea id="chat-input" rows="3" placeholder="Message the Supervisor… (Enter to send, Shift+Enter for a new line)" ${s.alive ? "" : "disabled"}></textarea>
@@ -102,7 +102,7 @@ async function openTranscript(id) {
 function transcriptHead(id, s, d) {
   const state = s.status === "running" ? "working" : s.status === "archived" ? "finished (ticket closed)" : s.alive ? "resident, waiting for work" : "not running";
   const when = (t) => (t ? new Date(t * 1000).toLocaleString() : "—");
-  const perTicket = /^(worker|reviewer|pair)-/.test(id);
+  const perTicket = /^(worker|reviewer)-/.test(id);
   const stopBtn = perTicket && s.status === "running" && s.alive && s.ticket_id
     ? `<button class="ctl kill" style="margin-left:auto" onclick="stopAgent('${esc(s.ticket_id)}','${esc(id)}')">■ stop this agent</button>` : "";
   const agentLink = s.kind && !perTicket ? `<a href="/agents#agent=${encodeURIComponent(s.kind)}" class="muted" style="margin-left:auto;font-size:11px" title="The agent's definition, schedule, and every run it has made">↩ ${esc(s.kind)}: definition and all runs</a>` : "";

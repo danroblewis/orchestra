@@ -107,7 +107,7 @@ def main() -> None:
             text = "I am blocked."
         else:
             f = cwd / "WORK.md"
-            f.write_text((f.read_text() if f.exists() else "") + f"work on {ticket}\n" + ("title noted\n" if "pair blocked" in prompt else ""))
+            f.write_text((f.read_text() if f.exists() else "") + f"work on {ticket}\n")
             broke = cwd / ".fake_broke"
             if os.environ.get("FAKE_PI_BREAK_FIRST") and not broke.exists():
                 broke.write_text("1")
@@ -127,20 +127,6 @@ def main() -> None:
         else:
             use_tool("report_review", {"verdict": "APPROVED", "summary": "looks good"})
             text = "Approved."
-    elif role == "pair":
-        seen = use_tool("read_transcript", {"session_id": f"worker-{ticket}", "after": 0})
-        if "pair_verdict" in prompt:
-            marker = cwd.parent / f".fake_pair_blocked_{ticket}"
-            if os.environ.get("FAKE_PAIR_BLOCK_FIRST") and not marker.exists():
-                marker.write_text("1")
-                use_tool("pair_verdict", {"verdict": "block", "findings": "1. WORK.md must also mention the ticket title"})
-                text = "Blocked before review."
-            else:
-                use_tool("pair_verdict", {"verdict": "pass", "findings": "check WORK.md"})
-                text = "Passed to review."
-        else:
-            use_tool("pair_note", {"text": f"saw the worker commit; transcript has {json.loads(seen).get('total', '?')} messages"})
-            text = "Noted."
     else:
         text = f"{role} acknowledges: {prompt[:60]}"
     mcp.close()

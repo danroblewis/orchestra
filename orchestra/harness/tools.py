@@ -65,18 +65,6 @@ TOOLS: list[ToolDef] = [
              "feedback": S("Required when REJECTED: concrete problems, with file and line where possible")},
             ("verdict", "summary")),
     # tickets
-    # pair: the second agent on a ticket, watching from the outside
-    ToolDef("read_transcript", "pair",
-            "The worker's transcript from an index onward: its messages, tool calls, and results, never its reasoning. "
-            "Pass the next_after you got last time so you only read what is new.",
-            {"session_id": S("The worker's session id, worker-<ticket>"), "after": I("Index to resume from; 0 at first"),
-             "limit": I("Messages per call, default 40, max 80")}, ("session_id",)),
-    ToolDef("pair_note", "pair", "A concrete finding on the ticket for the worker and the reviewer to see: file, line, what is "
-            "wrong, what the ticket asked. Not for praise or restating the ticket.", {"text": S("The finding")}, ("text",)),
-    ToolDef("pair_verdict", "pair", "Your last word when the worker reports ready: block sends the ticket back to the worker with "
-            "your findings before any review; pass sends it to review with them attached.",
-            {"verdict": {"type": "string", "enum": ["pass", "block"]}, "findings": S("Concrete findings, or what the reviewer should check first")},
-            ("verdict", "findings")),
     ToolDef("project_status", "tickets", "Counts of tickets by state, milestones, active sessions, pipeline state."),
     ToolDef("list_milestones", "tickets", "List all milestones with id, name, status, and ticket counts."),
     ToolDef("create_milestone", "tickets", "Create a milestone to group tickets. Returns its id (M1, M2, ...).",

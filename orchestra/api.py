@@ -123,37 +123,6 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
                                 "blocked_reason": a.get("blocked_reason")})
         return {"ok": True, "message": "Report recorded. You may stop now."}
 
-    if command in ("read_transcript", "pair_note", "pair_verdict"):
-        if role != "pair":
-            raise StoreError("only a ticket's pair may use the pair tools")
-        if not ticket_env:
-            raise StoreError("the pair tools need the ticket this pair watches")
-        if command == "read_transcript":
-            from .harness import read_transcript
-            from .pair import external_view
-            sid = a.get("session_id") or f"worker-{ticket_env}"
-            if sid != f"worker-{ticket_env}":
-                raise StoreError(f"a pair may read only its own worker's transcript, worker-{ticket_env}")
-            s = store.find_session(sid)
-            if not s:
-                raise StoreError(f"no session {sid}")
-            view = external_view(read_transcript(s), max(0, int(a.get("after") or 0)), max(1, min(int(a.get("limit") or 40), 80)))
-            store.set_pair_cursor(ticket_env, view["next_after"])
-            return {"ok": True, **view}
-        if command == "pair_note":
-            text = (a.get("text") or "").strip()
-            if not text:
-                raise StoreError("a note needs text")
-            store.add_note(ticket_env, Note(author="pair", kind="pair", text=text[:4000]))
-            return {"ok": True, "message": "Noted; the worker sees it on its next turn and the reviewer in the review request."}
-        verdict = a.get("verdict")
-        if verdict not in ("pass", "block"):
-            raise StoreError("verdict must be pass or block")
-        if verdict == "block" and not (a.get("findings") or "").strip():
-            raise StoreError("block requires findings")
-        store.set_report(f"{ticket_env}:pair", {"kind": "pair", "verdict": verdict, "findings": a.get("findings") or ""})
-        return {"ok": True, "message": "Verdict recorded. You may stop now."}
-
     if command == "report_review":
         if role != "reviewer":
             raise StoreError("only reviewers may call report_review")

@@ -170,7 +170,6 @@ milestone is open.
 | `OPEN` | `IN_PROGRESS` | Loop: ready, slot free, worktree created or reclaimed, worker started or resumed. |
 | `IN_PROGRESS` | `READY_FOR_REVIEW` | Worker reports it. Orchestra records the branch head as the commit to review. |
 | `IN_PROGRESS` | `BLOCKED` | Worker reports it with a reason; or worker stopped without reporting (Orchestra sets the reason). |
-| `IN_PROGRESS` | `REJECTED` | The ticket's pair (when `[agents] pair` is on) gives a `block` verdict at READY_FOR_REVIEW time: feedback is its findings, `pair_rejections` incremented, no review round spent. |
 | `READY_FOR_REVIEW` | `IN_REVIEW` | Loop: reviewer slot free, tests run in the worktree, reviewer started. |
 | `IN_REVIEW` | `APPROVED` | Reviewer reports it. `reviewed_commit` set. |
 | `IN_REVIEW` | `REJECTED` | Reviewer reports it with feedback; or reviewer stopped without a verdict. |

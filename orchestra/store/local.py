@@ -264,7 +264,7 @@ class LocalStore:
         so the ticket's history stays viewable. Returns nothing to delete."""
         def fn(data):
             archive = data.setdefault("archived_sessions", {})
-            for sid in (f"worker-{ticket_id}", f"reviewer-{ticket_id}", f"pair-{ticket_id}"):
+            for sid in (f"worker-{ticket_id}", f"reviewer-{ticket_id}"):
                 rec = data["sessions"].pop(sid, None)
                 if rec:
                     rec["status"] = "archived"
@@ -391,12 +391,6 @@ class LocalStore:
     def request_kill(self, ticket_id: str, by: str = "") -> None:
         self._mutate_runtime(lambda d: d.setdefault("kill_requests", {}).__setitem__(ticket_id, {"by": by, "ts": now()}))
         self.events.emit("kill_requested", ticket=ticket_id, by=by)
-
-    def pair_cursor(self, ticket_id: str) -> int | None:
-        return (self._r().get("pair_cursors") or {}).get(ticket_id)
-
-    def set_pair_cursor(self, ticket_id: str, after: int) -> None:
-        self._mutate_runtime(lambda d: d.setdefault("pair_cursors", {}).__setitem__(ticket_id, int(after)))
 
     def probe_state(self, name: str) -> dict:
         return dict((self._r().get("probes") or {}).get(name) or {})

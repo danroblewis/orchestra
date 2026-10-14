@@ -63,7 +63,6 @@ class Config:
     silence_timeout: float = 1200.0    # end a turn after this long with nothing from the harness
     session_max_bytes: int = 300_000   # transcript growth since the last compaction that triggers one (or rotation)
     compact_tokens: int = 100_000      # harnesses that compact themselves (Claude Code) are told to do so past this
-    pair: str = "off"                  # off | all | alternate: a pair agent watches the worker (alternate: even tickets)
     review_rounds_before_escalation: int = 3
     aging_days_per_level: float = 2.0
     prompt_overrides: dict[str, str] = field(default_factory=dict)
@@ -122,7 +121,6 @@ class Config:
             silence_timeout=parse_duration(a.get("silence_timeout"), 1200.0),
             session_max_bytes=int(a.get("session_max_bytes", 300_000)),
             compact_tokens=int(a.get("compact_tokens", 100_000)),
-            pair=str(a.get("pair", "off")),
             review_rounds_before_escalation=int(a.get("review_rounds_before_escalation", 3)),
             aging_days_per_level=float(a.get("aging_days_per_level", 2.0)),
             prompt_overrides=dict(a.get("prompts", {})),
@@ -163,7 +161,6 @@ workers = 3
 reviewers = 3
 silence_timeout = "20m"           # a turn ends when nothing has come from the agent for this long
 session_max_bytes = 300000        # after this much new transcript the session is compacted (Pi) or, failing that, started fresh
-# pair = "alternate"              # a second agent watches each (even-numbered) ticket's worker and gives a verdict before review
 # turn_timeout = "2h"             # optional hard cap per turn; unset means none: a busy agent is never cut off
 review_rounds_before_escalation = 3
 aging_days_per_level = 2        # a ticket gains one priority level per N days of age; 0 disables
