@@ -72,6 +72,17 @@ initial value (section 5).
 
 ## 3. The flows, the machines on them, and the loops
 
+**How this section is used.** The flows and loops below describe the software foundry's
+reference arrangement. In Orchestra they are *detected*, never declared: `foundrygraph`
+builds a signed causal graph from the stocks' filling and draining events, every agent's
+wake rules and emits (Orchestra's own bindings included), the stocks' consumers with their
+declared effect sign, and agent-to-agent triggers; it enumerates the graph's elementary
+cycles through at least one stock and one agent, computes each cycle's polarity from its
+link signs, and matches the model's expected loops by membership. The reference
+configuration lives in `tests/unit/test_foundry_golden.py` and must stay detected; a
+second model from outside software (`test_foundry_golden_repenning.py`) keeps the detector
+honest. The tables below are the expectation, not the implementation.
+
 Flows are rates per day over the window. A machine (an agent or Orchestra itself) is a valve
 on a flow: its in-use and cycle time set the flow's rate. Flows with no machine are drawn as
 unattended; that is where a new agent goes.
@@ -272,41 +283,30 @@ team spaces that no stock names, so the Supervisor can propose one.
 
 ## 6. What the page shows
 
-The "Stocks and flows" section of the Agents page becomes the foundry map. Every term that
-is not plain English (FCC, inspection pass rate, churn, rework share) has a one-line
-definition in its tooltip, and nothing appears twice.
+The "The foundry" section of the Agents page is drawn from the model and the detector only.
+Every term that is not plain English has a one-line definition in its tooltip, and every
+number states its estimator.
 
-1. **Headline readings.** Really done (acceptance passing vs DONE, skipped shown); inspection
-   pass rates, review and gate; gate failures by stage with timeouts and conflicts separated;
-   rework share; rounds per ticket distribution; FCC landed upper bound at N days; losses per
-   day; landing frequency; lead time. U is a labelled "not estimable" box with the reason
-   until section 4's condition holds.
-2. **The map.** One aging chain left to right: Demand → Work in progress → Landed → Working
-   build → Really done, with Known rework beneath feeding back into Work in progress, and
-   Undiscovered rework drawn dashed between Work in progress and Landed, with its estimate
-   and range when estimable and "not estimable" otherwise. Verified behaviour and
-   Environment resources sit above as capability stocks, labelled as Orchestra's additions,
-   with arrows into the valves they strengthen (T into the pre-review check, reviewer and
-   gate valves; R into the worker and reviewer valves). Agent time is a strip by activity
-   with losses beside it. Machines are valves on flows with in-use and cycle time.
-   **Unattended flows are drawn hollow with their bindable event type**, so "add an agent
-   here, waking on this" is readable from the map. Declared stocks occupy fixed slots: a
-   producer's team row above the chain, consumers linked by arrows. Hovering a stock, valve,
-   or loop isolates it; clicking an agent opens it.
-3. **The loop table.** B1 to R2 plus every loop the Supervisor named, each marked observed
-   or hypothesised, with its signal's current reading and direction over the window, and
-   the literature's "what to add" hint when the signal is adverse and the data supports it
-   (on the demo log today: all gate defects are found at the acceptance stage and the
-   pre-review check runs only unit, so "add acceptance verification before review, waking on
-   ticket_transition:READY_FOR_REVIEW"; rework share above a third → reduce intake before
-   adding producers; a cause recurring after its lesson → the lesson is not reaching the
-   worker).
-4. **The binding catalogue.** The existing agents × events matrix stays: it is the direct
-   answer to "which event would a new agent wake on".
-5. **Drill-down.** The ticket-state pipeline with its transition rates, behind a disclosure,
-   for reconciling against the tracker.
-
-The ticket counts per state no longer appear on the map.
+1. **Headline readings.** Really done (acceptance passing in the deployed build's run, main's
+   latest run beside it); inspection pass rates on verdicts and on the gate's own results,
+   with distinct defects beside detections; rework share; agent hours in turns that timed
+   out and each machine's timeout share; rounds per ticket and bad fixes; FCC landed upper
+   bound; landing frequency with each lead time; change failure after deploy.
+2. **The map.** Stocks are boxes placed by their row (capability, chain, rework) with their
+   level and one line of detail; the hidden stock is dashed and never a number. Agents are
+   circles placed over the stocks that wake them, with in-use/capacity and median turn
+   (flagged when the median is the turn limit). Every derived link is drawn with its sign:
+   fills and wakes and reads positive, drains and declared negative effects in the warning
+   colour, with the day's count of the link's event. Hovering a stock, an agent, or a loop
+   card isolates it; clicking an agent opens it.
+3. **Loop cards.** One card per expected loop: detected (its ring drawn from the detected
+   cycle, polarity from the signs, and "source says X" when the claim differs) or a
+   hypothesis the current org does not close (its expected members, so the gap is
+   explicit). Each card shows its signal's reading and direction from the day before and a
+   hint only when the signal is adverse. Cycles the detector finds that no loop names are
+   drawn as unnamed cards with a signature the Supervisor can name.
+4. **The binding catalogue** (agents × events) stays, and the ticket-state pipeline is the
+   drill-down for reconciling against the tracker.
 
 ## 7. Data Orchestra already has, and what it must add
 
