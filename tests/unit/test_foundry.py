@@ -74,7 +74,8 @@ def test_git_readings_are_read_only_and_first_parent(project):
     assert r["landings"][c1] == {"added": 3, "removed": 0, "files": 1}
     assert r["landings"][c2] == {"added": 1, "removed": 1, "files": 1}
     assert r["survival"][c1] == 2 and r["survival"][c2] == 1
-    assert r["documents"]["count"] == 2 and r["documents"]["lines"] == 3
+    docs = r["documents"][tuple(foundrygit.DOC_GLOBS)]
+    assert docs["count"] == 2 and docs["lines"] == 3
     assert git(repo, "status", "--porcelain") == status_before
     assert foundrygit.readings(repo, "main", [c1, c2]) is r          # cached while the heads are unchanged
 

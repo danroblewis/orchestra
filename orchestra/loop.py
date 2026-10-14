@@ -185,7 +185,8 @@ class Loop:
         self._refresh_org()
         self._detect_loops()
         try:
-            self.prober.tick(config_probes(self.project) + team_probes(self.project, self.teams))
+            from .foundry import model_probes
+            self.prober.tick(config_probes(self.project) + team_probes(self.project, self.teams) + model_probes(self.project, self.teams))
         except Exception as e:
             log(f"probes: {e!r}")
         self._schedule_wakeups()

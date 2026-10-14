@@ -79,3 +79,34 @@ the keeper and the QA engineer emit no declared event that fills a stock.
 
 Declined from round 2 for now: keyboard/touch tooltips; a queue-age stock (the spec's W
 absorbs the states; ages are on the drill-down).
+
+## Round 3 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct. Readings matched the raw data in every
+check but one (resources counted undecided lesson drafts: the declared globs were ignored).
+Rejected: the detector's sign assignment (parallel links collapsed by a tie-break; the rework
+cycle labelled R because polarity depended on which agent emits the draining transition;
+wake-by-outflow as −); map arrow numbers were event-type totals, not attributable flows;
+stock declarations off the literature (U drained by APPROVED; L drained by deploy; tests
+and really-done filled by gate_landed; no visible review queue); "detected" meant closable
+by declaration, not observed; distinct defects counted failing tests; the gate-stage hint
+fired on direction, not level; label collisions, nine-pixel type, dash styles with three
+meanings, unnamed cards diluting the loops; loop-card hover highlighted an off-screen map;
+hypothesis hover missed agents; probe estimators never ran; several hard-coded names.
+
+Fixed: parallel links signed by the dominant mechanism (window event counts), + by default;
+conserved material loops (every stock in the cycle filled and drained by agents in it) are
+balancing by construction and say so ("B · conserved transfer"); stocks corrected (awaiting
+review added; U drained by discovery only; L has no outflow; tests filled by test authoring;
+really done by deploy); link numbers only when the log attributes the event to that agent
+(by, author, or the transition's source state, REJECTED split by cause); cycles carry
+observed/closable from log evidence; distinct defects = tickets with a failing stage; a
+"defects found by stage" tile; hints on level conditions; resources honour declared globs;
+model probes registered with the Prober; operator capacity changes named as the WIP
+controller acting by hand; unnamed cycles collapsed; hypothesis hover fixed; one meaning per
+dash style; 10.5 px labels; rows laid out sequentially by hint order so nothing overlaps.
+
+Declined for now: pinning the map while hovering a loop card (the card's own ring is the
+primary view); keyboard/touch tooltips; renaming-proof tiles (the tile row reads the
+template's stock keys; a project that renames them loses the tiles, noted as a limit in the
+guide's next revision).

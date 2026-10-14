@@ -155,6 +155,44 @@ def _run_class(r: dict) -> str:
 
 # -- windowed readings -------------------------------------------------------------------------
 
+# which agent a ticket transition belongs to, by the state it left; REJECTED is split by cause
+TRANSITION_OWNER = {("OPEN", "IN_PROGRESS"): "orchestra", ("REJECTED", "IN_PROGRESS"): "orchestra", ("BLOCKED", "OPEN"): "orchestra", ("IN_PROGRESS", "OPEN"): "orchestra",
+                    ("READY_FOR_REVIEW", "IN_REVIEW"): "orchestra", ("IN_REVIEW", "READY_FOR_REVIEW"): "orchestra", ("IN_PROGRESS", "READY_FOR_REVIEW"): "worker", ("IN_PROGRESS", "BLOCKED"): "worker",
+                    ("IN_REVIEW", "APPROVED"): "reviewer", ("APPROVED", "MERGING"): "merge_gate", ("MERGING", "DONE"): "merge_gate", ("MERGING", "REJECTED"): "merge_gate", ("MERGING", "APPROVED"): "merge_gate",
+                    ("OPEN", "CANCELLED"): "coordinator", ("BLOCKED", "CANCELLED"): "coordinator"}
+
+
+def attributed_counts(events: list[dict], hist: History, since: str) -> dict[str, int]:
+    """Events in the window by the agent that caused them: ``agent|type`` and ``agent|type:filter``.
+    An event with ``by`` or ``author`` is theirs; a ticket transition belongs to the agent
+    that moves tickets out of its source state, with REJECTED split by its cause."""
+    out: dict[str, int] = {}
+    for e in events:
+        if e.get("ts", "") < since:
+            continue
+        t = e["type"]
+        if t == "ticket_transition":
+            frm, to = e.get("from") or "", e["to"]
+            who = TRANSITION_OWNER.get((frm, to))
+            if (frm, to) == ("IN_REVIEW", "REJECTED"):
+                who = "reviewer" if hist.cause.get((e.get("ticket"), _ts(e))) == "defect" else "orchestra"
+            if not who:
+                continue
+            for k in (f"{who}|{t}", f"{who}|{t}:{to}"):
+                out[k] = out.get(k, 0) + 1
+            continue
+        who = e.get("by") or e.get("author") or {"gate_started": "merge_gate", "gate_landed": "merge_gate", "gate_rejected": "merge_gate", "gate_conflict": "merge_gate", "gate_error": "merge_gate",
+                                                "gate_base_broken": "merge_gate", "staging_deployed": "merge_gate", "staging_failed": "merge_gate", "staging_restarted": "pipeline_manager",
+                                                "pipeline_resumed": "pipeline_manager", "pipeline_paused": "merge_gate", "session_started": "orchestra", "session_settled": "orchestra",
+                                                "turn_timed_out": "orchestra", "agent_crashed": "orchestra", "pickup_paused": "orchestra", "pickup_resumed": "orchestra"}.get(t)
+        if not who:
+            continue
+        v = e.get("status") or e.get("probe") or e.get("subject")
+        for k in ([f"{who}|{t}"] + ([f"{who}|{t}:{v}"] if v else [])):
+            out[k] = out.get(k, 0) + 1
+    return out
+
+
 def _activity(kind: str, agents: dict) -> str:
     if kind in ("worker", "reviewer"):
         return kind
@@ -185,7 +223,9 @@ def gate_outcomes(runs: list[dict]) -> dict:
         for tname in _failed_tests(failed):
             tests[tname] = tests.get(tname, 0) + 1
     own = by.get("landed", 0) + by.get("defect", 0)
-    return {"by": by, "defect_stage": stages, "defect_tickets": tickets, "defect_tests": tests, "distinct_defects": len(tests) or len(tickets), "runs": len(runs), "own_result": own,
+    # a defect is a (ticket, stage) that failed, however many runs or tests it failed in: an
+    # environment fault that fails twenty tests is one defect
+    return {"by": by, "defect_stage": stages, "defect_tickets": tickets, "defect_tests": tests, "distinct_defects": len(tickets), "runs": len(runs), "own_result": own,
             "pass": _ratio(by.get("landed", 0), own)}
 
 
@@ -339,6 +379,8 @@ def _signals(w: dict) -> dict[str, float | None]:
     wh = t["worker_hours"] or 0.0
     return {"review_pass": w["inspections"]["review"]["pass"], "gate_defects": f["gate"], "gate_distinct_defects": w["inspections"]["gate"]["distinct_defects"], "gate_pass": g["pass"], "rework_share": t["rework_share"],
             "worker_timeout_share": t["timeout_share"].get("worker"), "reviewer_timeout_share": t["timeout_share"].get("reviewer"), "hours_lost": t["losses"]["hours_ending_in_timeout"],
+            "fix_rounds": f["fix"], "review_defects": w["inspections"]["review"]["distinct_defects"], "defects_after_landing": f["escape"],
+            "acceptance_defects_at_gate": w["inspections"]["gate"]["defect_stage"].get("acceptance", 0),
             "defects_before_gate_share": _ratio(w["inspections"]["review"]["distinct_defects"], w["inspections"]["review"]["distinct_defects"] + w["inspections"]["gate"]["distinct_defects"]),
             "bad_fix_fraction": w["rounds"]["bad_fix_fraction"], "conflicts_per_landing": _ratio(f["conflict"], f["land"]) if f["land"] else (f["conflict"] or None),
             "landed_per_worker_hour": _ratio(f["land"] / w["days"], wh) if wh else None, "restarts": f["restart"], "defects_found_after_landing": f["escape"],
@@ -386,7 +428,7 @@ def _stock_reading(st, pool: dict) -> dict:
                    last_restart_at=stg.get("deployed_at") if stg.get("deployed_at") != pool["deployed_at"] else None, last_health_at=stg.get("last_health_at"),
                    estimator="the staging process state in the runtime store; deployed at = the staging_deployed event for this build")
     elif kind == "repo_docs":
-        docs = git.get("documents") or {}
+        docs = (git.get("documents") or {}).get(tuple(est.get("globs") or foundrygit.DOC_GLOBS)) or {}
         out.update(value=docs.get("count"), lines=docs.get("lines"), lessons_decided=docs.get("lessons_decided"), files=docs.get("files", []),
                    estimator=f"files matching {', '.join(est.get('globs') or [])} in the checkout, their lines, and decided lessons")
     elif kind == "turn_hours":
@@ -435,7 +477,8 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     git: dict = {}
     if use_git:
         try:
-            git = foundrygit.readings(project.repo_root, project.config.base_branch, [e["commit"] for e in landed_events])
+            doc_globs = [list(e.get("globs") or foundrygit.DOC_GLOBS) for st in model["stocks"] for e in st.estimators if e.get("kind") == "repo_docs"] or None
+            git = foundrygit.readings(project.repo_root, project.config.base_branch, [e["commit"] for e in landed_events], doc_globs)
             git["commits_in_window"] = foundrygit.commits_since(project.repo_root, cur["since"])
         except (OSError, subprocess.SubprocessError, ValueError):   # the map must render without git
             git = {}
@@ -477,9 +520,13 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         if v:
             counter[f"{e['type']}:{v}"] = counter.get(f"{e['type']}:{v}", 0) + 1
     since_iso = cur["since"]
-    system_changes = sum(1 for e in events if e["type"] in ("capacity_changed", "pickup_paused") and e.get("ts", "") >= since_iso and e.get("by") not in ("operator", "supervisor"))
+    cap_changes = [e for e in events if e["type"] in ("capacity_changed", "pickup_paused") and e.get("ts", "") >= since_iso]
+    system_changes = sum(1 for e in cap_changes if e.get("by") not in ("operator", "supervisor"))
+    operator_changes = len(cap_changes) - system_changes
+    attributed = attributed_counts(events, hist, since_iso)
     t = cur["time"]
-    return {"hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "pipeline": cur["flows"], "inspections": cur["inspections"], "system_capacity_changes": system_changes,
+    return {"hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "pipeline": cur["flows"], "inspections": cur["inspections"],
+            "system_capacity_changes": system_changes, "operator_capacity_changes": operator_changes,
             "rounds": {"histogram": hist_r, "worst": [{"ticket": tid, "rounds": n} for n, tid in rounds[-3:] if n > 0][::-1], **cur["rounds"]},
             "time": t, "dora": cur["dora"], "losses": t["losses"], "counts": cur["counts"], "pairs": cur["pairs"], "signals": signals,
             "window": {"since": cur["since"], "until": cur["until"], "before": {"since": prev["since"], "until": prev["until"]}}, "git": bool(git)}

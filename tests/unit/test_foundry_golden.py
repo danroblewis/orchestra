@@ -27,11 +27,12 @@ def foundry_stocks() -> list[Stock]:
     return [
         Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS"]),
         Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
+        Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:APPROVED", "ticket_transition:REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", inflows=["ticket_transition:READY_FOR_REVIEW"],
-              outflows=["ticket_transition:REJECTED", "ticket_transition:APPROVED"], hidden=True),
+              outflows=["ticket_transition:REJECTED", "gate_rejected", "staging_failed"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
-        Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:REJECTED", "gate_rejected"], outflows=["ticket_transition:IN_PROGRESS"]),
-        Stock("landed", "Landed software", "commits", inflows=["gate_landed"], outflows=["staging_deployed"]),
+        Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
+        Stock("landed", "Landed software", "commits", inflows=["gate_landed"], outflows=[]),
         Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "gate_base_broken"]),
         Stock("tests", "Verified behaviour", "tests", inflows=["tests_added"], outflows=[], consumers=[{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}]),
         Stock("resources", "Environment resources", "documents", inflows=["lesson_decided"], outflows=[], consumers=[{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}]),
@@ -48,14 +49,15 @@ def foundry_agents(*, keeper: bool = True, qa: bool = True) -> dict[str, AgentDe
 
 
 EXPECTED = [
-    # the rework cycle: a defect found in review goes back through the worker and is inspected again
-    {"key": "review_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer"]},
+    # the rework cycle: a defect found in review goes back through the worker and is inspected again;
+    # a conserved material loop, balancing (Cooper; Lyneis & Ford)
+    {"key": "review_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer"], "polarity": "B"},
     # the same cycle closed through the gate
-    {"key": "gate_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"]},
+    {"key": "gate_rework", "nodes": ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"], "polarity": "B"},
     # Repenning's capability loop: rework teaches the resources the worker reads, which cuts injection
     {"key": "capability", "nodes": ["known_rework", "environment_keeper", "resources", "worker", "undiscovered", "reviewer"], "polarity": "B"},
-    # earlier detection: landings grow the tests that review and the gate run
-    {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate"]},
+    # earlier detection: landings grow the tests the gate runs, which finds more before landing
+    {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate", "known_rework"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
     {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"], "polarity": "B"},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
@@ -88,7 +90,7 @@ def test_a_stock_and_its_draining_agent_make_the_balancing_drain_loop():
 
 
 def test_worker_and_reviewer_alone_make_the_rework_cycle():
-    stocks = [s for s in foundry_stocks() if s.key in ("wip", "undiscovered", "known_rework")]
+    stocks = [s for s in foundry_stocks() if s.key in ("wip", "awaiting_review", "undiscovered", "known_rework")]
     agents = {"worker": builtin("worker"), "reviewer": builtin("reviewer")}
     det = loops_for(stocks, agents, EXPECTED[:1])
     assert det["declared"][0]["detected"], [c["members"] for c in det["cycles"]]
@@ -125,6 +127,16 @@ def test_the_pipeline_manager_closes_broken_base():
     assert bb["detected"] and bb["cycle"]["polarity"] == "B", bb
 
 
+def test_parallel_links_take_the_sign_of_the_dominant_mechanism():
+    """Demand wakes Orchestra on creation and reopening (+) and on cancellation (−); with the
+    log showing pickups far outnumbering cancellations the link is +, and no tie-break decides."""
+    stocks = [Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"])]
+    g = fg.build(stocks, {}, SYSTEM_BINDINGS)
+    assert fg._signs(g, {"ticket_created": 4, "ticket_transition:OPEN": 10, "ticket_transition:CANCELLED": 1})[("demand", "agent:orchestra")] == "+"
+    assert fg._signs(g, {"ticket_transition:CANCELLED": 5})[("demand", "agent:orchestra")] == "-"
+    assert fg._signs(g, {})[("demand", "agent:orchestra")] == "+"                         # no evidence: a drain never wins by default
+
+
 def test_golden_software_foundry():
     """The top test: every expected loop is detected with the polarity the literature gives
     where it gives one, and every other cycle the detector reports is a variant of a named
@@ -138,9 +150,10 @@ def test_golden_software_foundry():
     strangers = [c["members"] for c in det["unnamed"] if not any(len(set(c["members"]) & n) >= 2 for n in named)]
     assert not strangers, strangers
     assert all(c["pair"] for c in det["pairs"]) and det["pairs"]                               # the stock-and-its-agent pairs are kept apart
-    # the rework cycles close through the hidden stock, as Cooper draws them
+    # the rework cycles close through the hidden stock, as Cooper draws them, and are conserved material loops
     for key in ("review_rework", "gate_rework"):
-        assert "undiscovered" in next(d for d in det["declared"] if d["key"] == key)["cycle"]["members"]
+        cyc = next(d for d in det["declared"] if d["key"] == key)["cycle"]
+        assert "undiscovered" in cyc["members"] and cyc["basis"] == "conserved transfer"
 
 
 def test_the_reference_configuration_has_no_wip_limit_controller_yet():

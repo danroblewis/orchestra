@@ -81,10 +81,10 @@ def commits_since(repo: Path, since_iso: str) -> int | None:
     return int(out) if out.isdigit() else None
 
 
-def documents(repo: Path) -> dict:
+def documents(repo: Path, globs: tuple[str, ...] | list[str] | None = None) -> dict:
     """Agent-facing documents in the checkout: count, lines, and decided lessons."""
     seen: set[Path] = set()
-    for pat in DOC_GLOBS:
+    for pat in (globs or DOC_GLOBS):
         for p in repo.glob(pat):
             if p.is_file():
                 seen.add(p)
@@ -98,14 +98,16 @@ def documents(repo: Path) -> dict:
     return {"count": len(seen), "lines": lines, "lessons_decided": len(lessons), "files": sorted(str(p.relative_to(repo)) for p in seen)}
 
 
-def readings(repo: Path, base: str, landings: list[str]) -> dict:
-    """All git readings at once, cached by the branch heads and the landings asked for."""
+def readings(repo: Path, base: str, landings: list[str], doc_globs: list[list[str]] | None = None) -> dict:
+    """All git readings at once, cached by the branch heads and the landings asked for.
+    ``doc_globs`` is every distinct glob list the model's repo_docs estimators declare."""
     br = heads(repo, base)
-    key = (str(repo), base, tuple(sorted(br.items())), tuple(landings))
+    sets = [tuple(gl) for gl in (doc_globs or [list(DOC_GLOBS)])]
+    key = (str(repo), base, tuple(sorted(br.items())), tuple(landings), tuple(sets))
     if key in _CACHE:
         return _CACHE[key]
     r = {"heads": br, "ahead": ahead(repo, base, br), "landings": {c: landing_size(repo, c) for c in landings},
-         "survival": survival(repo, base, landings) if landings else {}, "documents": documents(repo)}
+         "survival": survival(repo, base, landings) if landings else {}, "documents": {gl: documents(repo, gl) for gl in sets}}
     _CACHE.clear()
     _CACHE[key] = r
     return r

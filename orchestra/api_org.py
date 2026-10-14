@@ -60,7 +60,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
     if command == "org_guide":
         return {"ok": True, "guide": agents.org_guide() + "\n\n## Reference\n\n" + agents.org_reference()}
     if command in ("list_model", "add_model_element", "update_model_element", "remove_model_element", "propose_model"):
-        return _model(project, command, a, author)
+        return _model(project, command, a, author, store)
 
     # -- roles: job descriptions --------------------------------------------------------
     if command == "list_roles":
@@ -402,7 +402,7 @@ def team_definition(project: Project, store: LocalStore, t: TeamDef) -> dict:
 
 # -- the system-dynamics model ------------------------------------------------------------------
 
-def _model(project: Project, command: str, a: dict[str, Any], author: str) -> dict:
+def _model(project: Project, command: str, a: dict[str, Any], author: str, store: LocalStore | None = None) -> dict:
     """Stocks and expected loops are data in the repository; flows and the loops actually
     present are detected from the org. The Supervisor adds a stock when the project produces
     or is limited by something the map cannot otherwise show."""
@@ -413,6 +413,8 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str) -> di
         model = ms.load()
         det = foundrygraph.detect(model["stocks"], all_agents(project), model["loops"], system=SYSTEM_BINDINGS)
         advice = []
+        if store is not None and store.runtime().get("operator_capacity"):
+            advice.append("wip_limit: the operator has set a capacity ceiling by hand; that is the WIP controller acting outside the org")
         for d in det["declared"]:
             if d["detected"]:
                 continue
@@ -422,7 +424,7 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str) -> di
             for lk in gp.get("missing_links", []):
                 advice.append(f"{d['key']}: {lk['fix']}")
         return {"ok": True, **foundry.as_dict(model),
-                "detected": [{"key": d["key"], "detected": d["detected"], "polarity": d["cycle"]["polarity"] if d["cycle"] else None, "members": d["cycle"]["members"] if d["cycle"] else None, "gaps": d.get("gaps")} for d in det["declared"]],
+                "detected": [{"key": d["key"], "detected": d["detected"], "polarity": d["cycle"]["polarity"] if d["cycle"] else None, "basis": d["cycle"]["basis"] if d["cycle"] else None, "members": d["cycle"]["members"] if d["cycle"] else None, "gaps": d.get("gaps")} for d in det["declared"]],
                 "unnamed": [{"signature": c["signature"], "members": c["members"], "polarity": c["polarity"]} for c in det["unnamed"]],
                 "advice": advice or ["every expected loop is closed; look at the unnamed cycles and name the ones that matter"],
                 "note": "flows are not declared: an agent woken by an arrival at one stock whose actions fill another is a conversion between them"}

@@ -101,22 +101,25 @@ TEMPLATE_STOCKS: list[Stock] = [
     Stock("demand", "Demand", "tickets", "Work ordered and not started.", ["ticket_created", "ticket_transition:OPEN"], ["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"], [],
           [{"kind": "tracker", "states": ["OPEN", "BLOCKED"]}], row="chain", pos=[62, 222], width=112),
     Stock("wip", "Work in progress", "commits ahead of main", "Changes being built on ticket branches.", ["ticket_transition:IN_PROGRESS"], ["ticket_transition:READY_FOR_REVIEW"], [],
-          [{"kind": "git_ahead"}], row="chain", pos=[306, 222], width=150),
-    Stock("undiscovered", "Undiscovered rework", "defects", "Defects in submitted and landed work that nobody has found. Hidden; the inspections drain it.",
-          ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:REJECTED", "ticket_transition:APPROVED"], [],
+          [{"kind": "git_ahead"}], row="chain", pos=[290, 222], width=150),
+    Stock("awaiting_review", "Awaiting review", "changes", "Submitted changes the reviewer has not judged yet (Reinertsen's queue; Ford & Sterman's work needing QA).",
+          ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:APPROVED", "ticket_transition:REJECTED"], [],
+          [{"kind": "tracker", "states": ["READY_FOR_REVIEW", "IN_REVIEW"]}], row="chain", pos=[470, 222], width=130),
+    Stock("undiscovered", "Undiscovered rework", "defects", "Defects in submitted and landed work that nobody has found. Hidden; only discovery drains it (a review rejection with a verdict, a gate rejection, a defect found after landing); an approval carries them on.",
+          ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:REJECTED", "gate_rejected", "staging_failed"], [],
           [{"kind": "none", "reason": "estimable only from defects found after landing (a test that passed before and fails on a new build, a bug ticket citing a landed commit); no such series yet"}],
           hidden=True, row="rework", pos=[330, 480], width=196),
     Stock("approved", "Awaiting the gate", "changes", "Approved changes queued for the merge gate.", ["ticket_transition:APPROVED"], ["gate_landed", "gate_rejected", "gate_conflict"], [],
-          [{"kind": "tracker", "states": ["APPROVED", "MERGING"]}], row="chain", pos=[560, 222], width=120),
-    Stock("known_rework", "Known rework", "send-backs", "Changes a reviewer or the gate sent back for a defect and not yet re-submitted.", ["ticket_transition:REJECTED", "gate_rejected"], ["ticket_transition:IN_PROGRESS"], ["worker"],
+          [{"kind": "tracker", "states": ["APPROVED", "MERGING"]}], row="chain", pos=[640, 222], width=120),
+    Stock("known_rework", "Known rework", "send-backs", "Changes a reviewer or the gate sent back for a defect and not yet re-submitted; the re-submission drains it.", ["ticket_transition:REJECTED", "gate_rejected"], ["ticket_transition:READY_FOR_REVIEW"], ["worker"],
           [{"kind": "pending_defects"}], row="rework", pos=[600, 480], width=164),
-    Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product.", ["gate_landed"], ["staging_deployed"], [],
-          [{"kind": "landed"}], row="chain", pos=[760, 222], width=160),
+    Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product; nothing drains it.", ["gate_landed"], [], [],
+          [{"kind": "landed"}], row="chain", pos=[810, 222], width=160),
     Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up.", ["staging_deployed"], ["staging_failed", "gate_base_broken"], [],
-          [{"kind": "staging"}], row="chain", pos=[980, 222], width=134),
-    Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress.",
-          ["gate_landed"], [], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1180, 222], width=150),
-    Stock("tests", "Verified behaviour", "tests", "Tests on main by stage from the last gate run that reflects main. Skipped tests are never counted.", ["tests_added", "gate_landed"], [],
+          [{"kind": "staging"}], row="chain", pos=[1000, 222], width=134),
+    Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it.",
+          ["staging_deployed"], [], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1190, 222], width=150),
+    Stock("tests", "Verified behaviour", "tests", "Tests on main by stage from the last gate run that reflects main. Skipped tests are never counted. Filled only by test authoring.", ["tests_added"], [],
           [{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}], [{"kind": "gate_tests", "source": "main"}], addition=True, row="capability", pos=[760, 52], width=200),
     Stock("resources", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons.", ["lesson_decided"], [],
           [{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}], [{"kind": "repo_docs", "globs": DOC_GLOBS}], addition=True, row="capability", pos=[292, 52], width=200),
@@ -128,10 +131,10 @@ TEMPLATE_LOOPS: list[Loop] = [
     Loop("review_rework", "rework cycle (review)", "", "known rework → worker → undiscovered → reviewer → known rework", ["known_rework", "worker", "undiscovered", "reviewer"],
          {"key": "bad_fix_fraction", "adverse": "up", "threshold": 0.5}, ["bad_fix_fraction", "fix_rounds"], "most fixes are rejected again: the reviewer's feedback is not reaching the worker", "Cooper 1980; Lyneis & Ford 2007"),
     Loop("gate_rework", "rework cycle (gate)", "", "known rework → worker → undiscovered → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"],
-         {"key": "gate_distinct_defects", "adverse": "up"}, ["gate_distinct_defects", "gate_defects"], "every defect the gate finds is at a stage the pre-review check does not run: add that verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
+         {"key": "acceptance_defects_at_gate", "adverse": "up", "threshold": 0}, ["gate_distinct_defects", "acceptance_defects_at_gate"], "a defect reached the gate's acceptance stage, which the pre-review check does not run: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
     Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
          {"key": "review_pass", "adverse": "down"}, ["review_pass"], "", "Repenning & Sterman 2001 (work smarter)"),
-    Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate finds more → landed", ["landed", "tests", "merge_gate"],
+    Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate finds more → known rework → fixed → landed", ["landed", "tests", "merge_gate", "known_rework"],
          {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "", "Orchestra's addition", addition=True),
     Loop("broken_base", "broken base", "B", "build fails → pipeline manager → gate resumes → landed → build", ["build", "pipeline_manager", "merge_gate"],
          {"key": "base_broken", "adverse": "up"}, ["base_broken"], "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this", "Abdel-Hamid & Madnick 1991 (errors build errors)"),
@@ -251,3 +254,18 @@ def load_model(project) -> dict[str, Any]:
 
 def as_dict(model: dict) -> dict:
     return {"stocks": [s.to_dict() for s in model["stocks"]], "loops": [lp.to_dict() for lp in model["loops"]], "source": model["source"]}
+
+
+def model_probes(project, teams: dict) -> list:
+    """The probes behind the model's probe estimators, named ``model_<stock>`` so the stock
+    reading finds their state; run in the owning team's space when there is one."""
+    from .probes import ProbeSpec, parse_interval
+    out = []
+    for st in load_model(project)["stocks"]:
+        for e in st.estimators:
+            if e.get("kind") != "probe" or not e.get("command"):
+                continue
+            team = teams.get(st.team) if st.team else None
+            out.append(ProbeSpec(name=f"model_{st.key}", command=e["command"], every=parse_interval(e.get("every", "1h")), timeout=float(e.get("timeout", 120)),
+                                 cwd=team.space_dir(project) if team else project.repo_root, team=st.team))
+    return out

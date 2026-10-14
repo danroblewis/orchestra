@@ -136,26 +136,49 @@ def elementary_cycles(g: dict, max_cycles: int = MAX_CYCLES, max_len: int = MAX_
     return found
 
 
-def _signs(g: dict) -> dict[tuple[str, str], str]:
-    """The sign between two nodes. An agent that both fills a stock and emits an event that
-    drains it is counted as filling it: the drain is its own failure mode (a deploy that
-    fails), not a control link. Otherwise a − link wins over a +."""
-    fills = {(e["src"], e["dst"]) for e in g["edges"] if e["kind"] == "fills"}
-    out: dict[tuple[str, str], str] = {}
+def _signs(g: dict, weights: dict[str, int] | None = None) -> dict[tuple[str, str], str]:
+    """The sign between two nodes. Parallel links take the sign of the dominant mechanism:
+    the one whose event was seen most in the window (``weights`` by event type); without
+    evidence, a declared consumer effect wins, then a fill over a drain, then +."""
+    w = weights or {}
+    by_pair: dict[tuple[str, str], list[dict]] = {}
     for e in g["edges"]:
-        k = (e["src"], e["dst"])
-        if k in fills:
-            out[k] = "+"
-        else:
-            out[k] = "-" if e["sign"] == "-" or out.get(k) == "-" else "+"
+        by_pair.setdefault((e["src"], e["dst"]), []).append(e)
+    out: dict[tuple[str, str], str] = {}
+    for k, es in by_pair.items():
+        weighted = [(w.get(e["via"], 0), e) for e in es if e["via"]]
+        if weighted and max(n for n, _ in weighted) > 0:
+            out[k] = max(weighted, key=lambda t: t[0])[1]["sign"]
+            continue
+        reads = [e for e in es if e["kind"] == "reads"]
+        out[k] = reads[0]["sign"] if reads else ("+" if any(e["sign"] == "+" for e in es) else "-")   # without evidence, arrivals and fills over departures and drains
     return out
 
 
-def polarity(g: dict, cycle: list[str]) -> str:
-    """B when the product of the link signs is negative, R when positive."""
-    signs = _signs(g)
+def material(g: dict, cycle: list[str]) -> bool:
+    """A conserved material loop: every stock in the cycle is filled by an agent in the cycle
+    and drained by an agent in the cycle. What circulates is the same thing (a change, a
+    defect), so the loop converges: balancing by construction, as the rework cycle is."""
+    agents = {n for n in cycle if n.startswith("agent:")}
+    stocks_in = [n for n in cycle if not n.startswith("agent:")]
+    if not stocks_in or not agents:
+        return False
+    for st in stocks_in:
+        filled = any(e["kind"] == "fills" and e["dst"] == st and e["src"] in agents for e in g["edges"])
+        drained = any(e["kind"] == "drains" and e["dst"] == st and e["src"] in agents for e in g["edges"])
+        if not (filled and drained):
+            return False
+    return True
+
+
+def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -> tuple[str, str]:
+    """(polarity, basis). B for a conserved material loop; otherwise B when the product of the
+    dominant link signs is negative, R when positive."""
+    if material(g, cycle):
+        return "B", "conserved transfer"
+    signs = _signs(g, weights)
     neg = sum(1 for a, b in zip(cycle, cycle[1:] + cycle[:1]) if signs.get((a, b), "+") == "-")
-    return "B" if neg % 2 else "R"
+    return ("B" if neg % 2 else "R"), "link signs"
 
 
 def signature(cycle: list[str]) -> str:
@@ -166,16 +189,26 @@ def members(cycle: list[str]) -> set[str]:
     return {n.split(":", 1)[1] if n.startswith("agent:") else n for n in cycle}
 
 
-def detect(stocks: list, agents: dict, expected: list | None = None, system: dict | None = None) -> dict[str, Any]:
+def detect(stocks: list, agents: dict, expected: list | None = None, system: dict | None = None, weights: dict[str, int] | None = None, evidence: dict[str, int] | None = None) -> dict[str, Any]:
     """The loops in the project. ``expected`` are the model's loop declarations (anything with
     ``key``, ``nodes`` and ``polarity``); each is matched to the shortest cycle whose members
-    cover its nodes."""
+    cover its nodes. ``weights`` are event counts by type (and type:filter) over the window,
+    used to sign parallel links by their dominant mechanism."""
     g = build(stocks, agents, system)
     cycles = elementary_cycles(g)
-    sg = _signs(g)
-    infos = [{"nodes": c, "members": sorted(members(c)), "polarity": polarity(g, c), "signature": signature(c), "length": len(c),
-              "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
-              "edges": [{"src": a, "dst": b, "sign": sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]} for c in cycles]
+    sg = _signs(g, weights)
+    ev = evidence or {}
+    infos = []
+    for c in cycles:
+        pol, basis = polarity(g, c, weights)
+        # observed: every agent→stock link on the cycle has been seen in the log (the agent
+        # caused that event in the window); a cycle closable by declaration alone is not
+        agent_links = [e for a, b in zip(c, c[1:] + c[:1]) for e in g["edges"] if e["src"] == a and e["dst"] == b and e["kind"] in ("fills", "drains")]
+        seen = [ev.get(f"{e['src'].split(':', 1)[1]}|{e['via']}", 0) for e in agent_links]
+        infos.append({"nodes": c, "members": sorted(members(c)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
+                      "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
+                      "observed": bool(agent_links) and all(n > 0 for n in seen), "evidence": {f"{e['src'].split(':', 1)[1]}|{e['via']}": n for e, n in zip(agent_links, seen)},
+                      "edges": [{"src": a, "dst": b, "sign": sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
     declared, used = [], set()
     for lp in expected or []:
         want = set(getattr(lp, "nodes", None) or lp.get("nodes", []))
