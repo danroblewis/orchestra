@@ -189,6 +189,41 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         if best:
             used.add(best["signature"])
         declared.append({"key": key, "detected": best is not None, "cycle": best, "claimed_polarity": pol, "polarity_agrees": (best["polarity"] == pol) if best and pol else None})
+    for d, lp in zip(declared, expected or []):
+        if not d["detected"]:
+            d["gaps"] = gaps(g, getattr(lp, "nodes", None) or lp.get("nodes", []), stocks)
     unnamed = [ci for ci in infos if ci["signature"] not in used and not ci["pair"]]
     pairs = [ci for ci in infos if ci["pair"]]
     return {"graph": g, "cycles": infos, "declared": declared, "unnamed": unnamed, "pairs": pairs}
+
+
+def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
+    """Why an expected loop is not closed: members missing from the graph, and consecutive
+    members with no link between them, each with the binding that would close it."""
+    ids = [n if n in g["nodes"] else f"agent:{n}" for n in nodes]
+    stock_by = {s.key: s for s in stocks}
+    missing = [n for n, i in zip(nodes, ids) if i not in g["nodes"]]
+    links = {(e["src"], e["dst"]) for e in g["edges"]}
+    broken = []
+    for (a, ia), (b, ib) in zip(list(zip(nodes, ids)), list(zip(nodes[1:] + nodes[:1], ids[1:] + ids[:1]))):
+        if ia not in g["nodes"] or ib not in g["nodes"] or (ia, ib) in links:
+            continue
+        if ia.startswith("agent:") and not ib.startswith("agent:"):
+            st = stock_by.get(b)
+            fix = f"{a} must emit an event that fills {b}" + (f" (one of: {', '.join(st.inflows)})" if st and st.inflows else f"; declare an inflow event on {b} and have {a} emit it")
+        elif not ia.startswith("agent:") and ib.startswith("agent:"):
+            st = stock_by.get(a)
+            fix = f"{b} must wake on an event that fills {a}" + (f" (one of: {', '.join(st.inflows)})" if st and st.inflows else "") + f", or {a} must list {b} as a consumer"
+        elif ia.startswith("agent:"):
+            fix = f"{a} must emit an event {b} wakes on"
+        else:
+            st_b = stock_by.get(b)
+            woken = sorted(e["src"].split(":", 1)[1] if e["src"].startswith("agent:") else e["dst"].split(":", 1)[1] for e in g["edges"] if e["kind"] == "wakes" and e["src"] == ia)
+            wants = f" (one of: {', '.join(st_b.inflows)})" if st_b and st_b.inflows else ""
+            if woken:
+                fix = f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: add that event to the agent's emits (and to its team's emits if it is custom)"
+            else:
+                fix = f"no agent converts {a} into {b}: create an agent woken by {a}'s inflow that emits {b}'s inflow{wants}"
+        broken.append({"from": a, "to": b, "fix": fix})
+    return {"missing_members": missing, "missing_links": broken}
+

@@ -102,7 +102,14 @@ def test_the_keeper_closes_the_capability_loop_and_removing_it_opens_it():
     without = loops_for(stocks, foundry_agents(keeper=False, qa=False))
     cap = next(d for d in with_keeper["declared"] if d["key"] == "capability")
     assert cap["detected"] and cap["cycle"]["polarity"] == "B", cap
-    assert not next(d for d in without["declared"] if d["key"] == "capability")["detected"]
+    missing = next(d for d in without["declared"] if d["key"] == "capability")
+    assert not missing["detected"] and missing["gaps"]["missing_members"] == ["environment_keeper"]
+    # a keeper that is woken but emits nothing declared: the gap names the event to emit
+    mute = foundry_agents(keeper=False, qa=False)
+    mute["environment_keeper"] = custom("environment_keeper", "devex", ["ticket_transition:REJECTED"], [])
+    g = loops_for(stocks, mute)
+    gap = next(d for d in g["declared"] if d["key"] == "capability")["gaps"]
+    assert gap["missing_members"] == [] and gap["missing_links"][0]["from"] == "environment_keeper" and "lesson_decided" in gap["missing_links"][0]["fix"]
 
 
 def test_the_qa_engineer_closes_earlier_detection():

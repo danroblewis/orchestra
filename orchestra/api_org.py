@@ -35,7 +35,7 @@ ORG_COMMANDS = frozenset({
     "pause_agent", "resume_agent", "restart_agent", "reset_agent", "run_agent", "message_agent",
     "list_teams", "get_team", "create_team", "update_team", "delete_team", "emit_event",
     "list_loops", "name_loop", "delete_loop",
-    "list_model", "add_model_element", "update_model_element", "remove_model_element",
+    "list_model", "add_model_element", "update_model_element", "remove_model_element", "propose_model",
 })
 EVENT_TYPES_SET = frozenset(EVENT_TYPES)
 EMIT_DEPTH_LIMIT = 3          # an event may cause a wake-up that causes an event ... this many times
@@ -59,7 +59,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
 
     if command == "org_guide":
         return {"ok": True, "guide": agents.org_guide() + "\n\n## Reference\n\n" + agents.org_reference()}
-    if command in ("list_model", "add_model_element", "update_model_element", "remove_model_element"):
+    if command in ("list_model", "add_model_element", "update_model_element", "remove_model_element", "propose_model"):
         return _model(project, command, a, author)
 
     # -- roles: job descriptions --------------------------------------------------------
@@ -412,10 +412,22 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str) -> di
     if command == "list_model":
         model = ms.load()
         det = foundrygraph.detect(model["stocks"], all_agents(project), model["loops"], system=SYSTEM_BINDINGS)
+        advice = []
+        for d in det["declared"]:
+            if d["detected"]:
+                continue
+            gp = d.get("gaps") or {}
+            for m in gp.get("missing_members", []):
+                advice.append(f"{d['key']}: {m} does not exist; create it (an agent with wake_on and emits, or a stock)")
+            for lk in gp.get("missing_links", []):
+                advice.append(f"{d['key']}: {lk['fix']}")
         return {"ok": True, **foundry.as_dict(model),
-                "detected": [{"key": d["key"], "detected": d["detected"], "polarity": d["cycle"]["polarity"] if d["cycle"] else None, "members": d["cycle"]["members"] if d["cycle"] else None} for d in det["declared"]],
+                "detected": [{"key": d["key"], "detected": d["detected"], "polarity": d["cycle"]["polarity"] if d["cycle"] else None, "members": d["cycle"]["members"] if d["cycle"] else None, "gaps": d.get("gaps")} for d in det["declared"]],
                 "unnamed": [{"signature": c["signature"], "members": c["members"], "polarity": c["polarity"]} for c in det["unnamed"]],
+                "advice": advice or ["every expected loop is closed; look at the unnamed cycles and name the ones that matter"],
                 "note": "flows are not declared: an agent woken by an arrival at one stock whose actions fill another is a conversion between them"}
+    if command == "propose_model":
+        return {"ok": True, **_propose(project, ms.load())}
     kind = a.get("kind")
     if kind not in ("stock", "loop"):
         raise StoreError("kind is 'stock' or 'loop'")
@@ -444,3 +456,49 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str) -> di
         raise StoreError(f"bad {kind} spec: {e}")
     ms.save(kind, item)
     return {"ok": True, kind: item.to_dict(), "storage": ms.last_commit_note}
+
+
+def _propose(project: Project, model: dict) -> dict:
+    """Candidate stocks from evidence the project already has, each as a ready call to
+    add_model_element, so a Supervisor only has to choose. Evidence: event types teams
+    declare that no stock carries; team spaces with files in them; acceptance test modules
+    (a feature a player can use is a group of acceptance tests); probes."""
+    have_in = {ev for st in model["stocks"] for ev in st.inflows}
+    have_keys = {st.key for st in model["stocks"]}
+    teams = all_teams(project)
+    cands = []
+    for t in teams.values():
+        for ev in t.emits:
+            if ev not in have_in:
+                key = f"{ev}s" if not ev.endswith("s") else ev
+                cands.append({"why": f"team {t.name} declares the event {ev} and no stock is filled by it", "call": {"kind": "stock", "key": key, "spec": {
+                    "name": ev.replace("_", " "), "unit": "items", "team": t.name, "inflows": [ev], "outflows": ["ticket_created"], "consumers": [{"agent": t.lead, "effect": "+"}],
+                    "estimators": [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], "row": "capability"}}})
+        space = t.space_dir(project)
+        if space.is_dir():
+            for sub in sorted(x for x in space.iterdir() if x.is_dir() and x.name != "tools"):
+                files = [f for f in sub.rglob("*") if f.is_file()]
+                if files and f"{t.name}_{sub.name}" not in have_keys:
+                    rel = str(sub.relative_to(project.repo_root))
+                    cands.append({"why": f"team {t.name} keeps {len(files)} files under {rel}", "call": {"kind": "stock", "key": f"{t.name}_{sub.name}".replace("-", "_"), "spec": {
+                        "name": f"{t.name} {sub.name}", "unit": "documents", "team": t.name, "inflows": list(t.emits)[:1], "outflows": [], "consumers": [{"agent": t.lead, "effect": "+"}],
+                        "estimators": [{"kind": "repo_docs", "globs": [f"{rel}/**/*"]}], "row": "capability"}}})
+    acc = project.repo_root / "tests" / "acceptance"
+    if acc.is_dir():
+        mods = sorted({f.stem.removeprefix("test_") for f in acc.rglob("test_*.py")})
+        if mods and "playable_features" not in have_keys:
+            cands.append({"why": f"the acceptance suite has {len(mods)} modules ({', '.join(mods[:8])}{'…' if len(mods) > 8 else ''}): each is a feature a user can exercise",
+                          "call": {"kind": "stock", "key": "playable_features", "spec": {"name": "Playable features", "unit": "acceptance test modules passing", "inflows": ["gate_landed"], "outflows": [],
+                                   "estimators": [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], "row": "chain", "description": "features a user can exercise on the deployed build, by acceptance module: " + ", ".join(mods)}}})
+    from .probes import config_probes, team_probes
+    for pr in [*config_probes(project), *team_probes(project, teams)]:
+        if pr.name not in have_keys:
+            cands.append({"why": f"probe {pr.name} already runs and prints a result", "call": {"kind": "stock", "key": pr.name, "spec": {"name": pr.name.replace("_", " "), "unit": "probe result", "inflows": [], "outflows": [],
+                          "estimators": [{"kind": "probe", "command": pr.command, "every": "1h"}], "row": "capability"}}})
+    loops_hint = []
+    ags = all_agents(project)
+    if not any("staging_deployed" in (ag.wake_on or []) for ag in ags.values()):
+        loops_hint.append({"why": "nothing inspects the deployed build, so defects found after landing are zero by construction",
+                           "call": {"kind": "agent", "note": "create a playtester (or smoke tester) team whose lead is an ad hoc agent woken by staging_deployed that drives the product and emits a finding event the team declares; then add a stock filled by that event and give the product owner a wake rule on it"}})
+    return {"candidates": cands, "missing_discovery": loops_hint,
+            "how": "for each candidate you want: call add_model_element with its call; adjust name, unit and description to the product; then list_model to see which loops close"}

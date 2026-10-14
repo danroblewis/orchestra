@@ -217,12 +217,17 @@ TOOLS: list[ToolDef] = [
             "tracker{states}, pending_defects, git_ahead, landed, gate_tests{stage, source}, staging, repo_docs{globs}, turn_hours, "
             "events{initial, since}, probe{command, every}, none{reason}), hidden, row (capability|chain|rework). A loop: key, name, "
             "polarity (B|R|''), structure, nodes (stock keys and agent names), signal {key, adverse}, hint, source. Add a stock when the "
-            "project produces or is limited by something the map cannot otherwise show.",
-            {"kind": S("stock or loop"), "key": S("snake_case key"), "spec": {"type": "object", "description": "The element's fields"}}, ("kind", "key", "spec")),
+            "project produces or is limited by something the map cannot otherwise show. Example: kind=stock key=playtest_findings "
+            "spec={\"name\": \"Playtest findings\", \"unit\": \"findings\", \"inflows\": [\"playtest_finding\"], \"outflows\": [\"ticket_created\"], "
+            "\"consumers\": [{\"agent\": \"product_owner\", \"effect\": \"+\"}], \"estimators\": [{\"kind\": \"events\", \"initial\": 0, \"since\": \"2026-01-01T00:00:00Z\"}], \"row\": \"capability\"}.",
+            {"kind": S("stock or loop"), "key": S("snake_case key"), "spec": {"type": "object", "description": "The element's fields (see the example in this tool's description)"}}, ("kind", "key", "spec")),
     ToolDef("update_model_element", "roles", "Change fields of an existing stock or loop; unmentioned fields are kept.",
             {"kind": S("stock or loop"), "key": S("Existing key"), "spec": {"type": "object", "description": "The fields to change"}}, ("kind", "key", "spec")),
     ToolDef("remove_model_element", "roles", "Remove a stock or loop from the model; its measurements stay in the log.",
             {"kind": S("stock or loop"), "key": S("Existing key")}, ("kind", "key")),
+    ToolDef("propose_model", "team", "Candidate stocks for this project from evidence it already has (events teams declare that no stock "
+            "carries, team spaces with files, acceptance test modules, probes), each as a ready add_model_element call, plus what is "
+            "missing for discovery after landing. Call this before designing the model by hand."),
     # escalate
     ToolDef("escalate_to_supervisor", "escalate",
             "Wake the Supervisor with a note when a decision about intent, scope, or priorities is needed.",

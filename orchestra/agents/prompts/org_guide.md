@@ -89,26 +89,55 @@ Every agent you create is either in a loop with a purpose or is a leaf that only
 
 The Agents page draws a system-dynamics map of the project from `.orchestra/model/` and the
 org, and only from those. `orchestra init` wrote the software-foundry template there: the
-stocks a software project holds (demand, work in progress, undiscovered and known rework,
-landed software, the working build, really done, verified behaviour, environment resources)
-and the loops the literature expects (the rework cycle, capability, earlier detection,
-broken base). It is a starting point, not the truth about this project. Keep it true:
+stocks a software project holds and the loops the literature expects. It is a starting
+point, not the truth about this project. The product is never "software in general": it is
+this project's thing (a game, a service, a library), and the model must say what that thing
+is made of and what limits it. Do this in order, and do not design by hand what a tool can
+tell you:
 
-- A **stock** is something the project holds that accumulates and drains: name the events
-  that fill it and drain it, the agents that read it (with the sign of the effect: resources
-  the worker reads lower its defect rate, so `-`), and how to measure it (an estimator kind;
-  `none` with a reason for a stock you declare because the model says it exists). Add one
-  when a team produces something another agent consumes (a Lab's findings, a devex team's
-  lessons) or when a limit the project is subject to should be visible beside the flows it
-  throttles (a budget, a single staging host).
-- **Flows are never declared.** An agent woken by an arrival at one stock whose actions fill
-  another is a conversion between them. If a flow you expect is missing from the map, the
-  fix is an agent or a binding, not a drawing.
-- An **expected loop** lists its members. `list_model` says which expected loops the detector
-  actually finds in the current org and which stay hypotheses, and lists cycles it found
-  that nothing names: name those or change the bindings that cause them. The reference
-  software foundry has a loop the current org may lack (for example a WIP limit needs a
-  controller that reads work in progress and throttles pickup); the gap is your to-do list.
+1. `propose_model`. It lists candidate stocks from evidence the project already has (events
+   a team declares that no stock carries, team spaces with files, the acceptance test
+   modules, probes), each as a ready `add_model_element` call. Add the ones that name
+   something the product has or is limited by; fix the name, unit and description so a
+   newcomer would recognise them.
+2. `list_model`. Read `advice`: it says, for every expected loop the org does not close,
+   which member is missing or which binding is missing, in the form "X must emit an event
+   that fills Y (one of: ...)". Each line is one `update_agent`, `update_team`, or
+   `create_agent` away. Do those, then `list_model` again.
+3. Nothing inspects the deployed product unless you make it so. If `propose_model` reports
+   `missing_discovery`, create a team whose lead is an ad hoc agent woken by
+   `staging_deployed` that exercises the product and emits a finding event the team
+   declares; add a stock filled by that event; give the product owner (or coordinator role
+   holder you own) a wake rule on it. That closes the loop "deploy → find → plan → build".
+4. Name the cycles `list_model` lists as unnamed if they matter (`add_model_element`
+   kind=loop with their members); if one is accidental, an agent subscribes to more than it
+   should.
+
+Worked example, a web-based cellular-automata game. After `propose_model`:
+
+```
+add_model_element kind=stock key=playable_rule_sets spec={"name": "Playable rule sets", "unit": "rule sets",
+  "inflows": ["gate_landed"], "estimators": [{"kind": "repo_docs", "globs": ["automata/rules/*.json"]}], "row": "chain",
+  "description": "rule sets a player can pick in the game"}
+add_model_element kind=stock key=playable_features spec={...from propose_model...}
+create_team name=playtest lead=playtester responsibilities="# Playtest\n\n1. Every deployed build is played within an hour and every problem a player would hit is filed." emits=["playtest_finding"]
+create_agent name=playtester roles=["qa_engineer"] team=playtest kind=ad_hoc session=ephemeral wake_on=["staging_deployed"]
+add_model_element kind=stock key=playtest_findings spec={"name": "Playtest findings", "unit": "findings", "team": "playtest",
+  "inflows": ["playtest_finding"], "outflows": ["ticket_created"], "consumers": [{"agent": "product_owner", "effect": "+"}],
+  "estimators": [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], "row": "capability"}
+update_agent name=product_owner wake_on=[..., "playtest_finding"]
+list_model   → "play_find_fix" should now be an unnamed detected cycle: name it.
+```
+
+A **stock** is something the project holds that accumulates and drains: name the events
+that fill it and drain it, the agents that read it (with the sign of the effect: resources
+the worker reads lower its defect rate, so `-`), and how to measure it (an estimator kind;
+`none` with a reason for a stock you declare because the model says it exists).
+**Flows are never declared.** An agent woken by an arrival at one stock whose actions fill
+another is a conversion between them; a missing flow is fixed with an agent or a binding.
+A **limiting constraint** (a performance budget, one staging host, a token budget) is a stock
+too: declare it with a probe that measures it and name the agents it constrains as its
+consumers with effect `-`.
 
 ## The procedure
 

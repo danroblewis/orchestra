@@ -212,6 +212,33 @@ def test_supervisor_curates_the_model_through_the_tools(project):
     assert "budget" not in {s["key"] for s in api.handle(project, store, "list_model", {})["stocks"]}
 
 
+def test_propose_model_and_advice_give_a_weak_supervisor_something_to_copy(project):
+    from orchestra import api
+    store = LocalStore(project)
+    sup = {"role": "supervisor"}
+    api.handle(project, store, "create_role", {"name": "analyst", "description": "d", "prompt": "# You analyse\n\n" + "Carefully. " * 6, "tools": ["events"]}, **sup)
+    api.handle(project, store, "create_agent", {"name": "keeper", "roles": ["analyst"], "team": "devex", "kind": "ad_hoc", "session": "ephemeral", "wake_on": ["ticket_transition:REJECTED"]}, **sup)
+    api.handle(project, store, "create_team", {"name": "devex", "lead": "keeper", "responsibilities": "# Devex\n\n1. Docs are accurate.", "emits": ["lesson_decided", "finding_filed"]}, **sup)
+    (project.repo_root / ".orchestra" / "spaces" / "devex" / "lessons").mkdir(parents=True, exist_ok=True)
+    (project.repo_root / ".orchestra" / "spaces" / "devex" / "lessons" / "one.md").write_text("plan first")
+    (project.repo_root / "tests" / "acceptance").mkdir(parents=True)
+    (project.repo_root / "tests" / "acceptance" / "test_share.py").write_text("def test_x(): pass\n")
+    pr = api.handle(project, store, "propose_model", {})
+    whys = " | ".join(c["why"] for c in pr["candidates"])
+    # lesson_decided already fills the template's resources stock, so it is not proposed; finding_filed is
+    assert "declares the event finding_filed" in whys and "lesson_decided" not in whys
+    assert "files under .orchestra/spaces/devex/lessons" in whys and "acceptance suite has 1 modules" in whys
+    assert all(c["call"]["kind"] == "stock" and "spec" in c["call"] for c in pr["candidates"])
+    assert pr["missing_discovery"] and "staging_deployed" in pr["missing_discovery"][0]["call"]["note"]
+    # the candidate is a ready call; the keeper is woken but emits nothing yet, so the capability loop stays open with a named fix
+    cand = next(c for c in pr["candidates"] if "finding_filed" in c["why"])["call"]
+    api.handle(project, store, "add_model_element", cand, **sup)
+    lm = api.handle(project, store, "list_model", {})
+    assert "finding_fileds" in {s["key"] for s in lm["stocks"]}
+    cap = next(d for d in lm["detected"] if d["key"] == "capability")
+    assert not cap["detected"] and any("resources" in line and "capability" in line for line in lm["advice"]), lm["advice"]
+
+
 def test_foundry_endpoint_and_definitions(project):
     m = TestClient(web.create_app(project)).get("/api/foundry").json()
     assert m["ok"] and {s["key"] for s in m["model"]["stocks"]} >= set(foundry.TEMPLATE_STOCKS and [s.key for s in foundry.TEMPLATE_STOCKS])
