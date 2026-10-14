@@ -27,11 +27,11 @@ def foundry_stocks() -> list[Stock]:
     return [
         Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:IN_PROGRESS"]),
         Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED"]),
-        Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:APPROVED", "ticket_transition:REJECTED"]),
+        Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", inflows=["ticket_transition:READY_FOR_REVIEW"],
-              outflows=["ticket_transition:REJECTED", "gate_rejected", "staging_failed"], hidden=True),
+              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "defect_escaped"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
-        Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
+        Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
         Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed"]),
         Stock("tests", "Verified behaviour", "tests", inflows=["tests_added"], outflows=[], consumers=[{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}]),
@@ -59,7 +59,7 @@ EXPECTED = [
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
     {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
-    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"], "polarity": "B"},
+    {"key": "broken_base", "nodes": ["build", "pipeline_manager", "merge_gate"]},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
     {"key": "replanning", "nodes": ["wip", "worker", "coordinator", "demand", "orchestra"]},
 ]
@@ -106,6 +106,10 @@ def test_the_keeper_closes_the_capability_loop_and_removing_it_opens_it():
     assert cap["detected"] and cap["cycle"]["polarity"] == "B", cap
     missing = next(d for d in without["declared"] if d["key"] == "capability")
     assert not missing["detected"] and missing["gaps"]["missing_members"] == ["environment_keeper"]
+    # consecutive stocks are joined by an agent between them; only a step no agent closes is a gap
+    g0 = loops_for(stocks, foundry_agents(keeper=False, qa=False), [{"key": "x", "nodes": ["demand", "wip", "nowhere_stock"]}])
+    gp = g0["declared"][0]["gaps"]
+    assert gp["missing_members"] == ["nowhere_stock"] and not any(l["from"] == "demand" and l["to"] == "wip" for l in gp["missing_links"])
     # a keeper that is woken but emits nothing declared: the gap names the event to emit
     mute = foundry_agents(keeper=False, qa=False)
     mute["environment_keeper"] = custom("environment_keeper", "devex", ["ticket_transition:REJECTED"], [])
@@ -129,8 +133,12 @@ def test_the_qa_engineer_closes_earlier_detection():
 def test_the_pipeline_manager_closes_broken_base():
     det = loops_for(foundry_stocks(), foundry_agents())
     bb = next(d for d in det["declared"] if d["key"] == "broken_base")
-    assert bb["detected"] and bb["cycle"]["polarity"] == "B" and bb["cycle"]["basis"] == "link signs", bb   # the gate's failure (−) triggers the manager, which resumes the gate (+)
+    # the gate reaches the manager by three events: a staging failure lowers the build (−), a gate error or
+    # a broken base touch no stock (+); the structure alone cannot sign the loop, and the card says which
+    # mechanism the window saw
+    assert bb["detected"] and bb["cycle"]["polarity"] == "?" and "staging_failed (-" in bb["cycle"]["basis"], bb
     assert "build" in bb["cycle"]["members"]                                                  # the stock the loop acts on, through the failure event
+    assert fg.dominant(fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS), ("agent:merge_gate", "agent:pipeline_manager"), {"staging_failed": 3, "gate_base_broken": 1}) == "-"
 
 
 def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominates():
@@ -142,6 +150,18 @@ def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominat
     assert fg._signs(g)[("agent:orchestra", "demand")] == "?"                             # Orchestra both reopens (+) and starts (−) tickets: indeterminate from structure
     assert fg.dominant(g, ("agent:orchestra", "demand"), {"ticket_transition:OPEN": 12, "ticket_transition:IN_PROGRESS": 80}) == "-"
     assert fg.dominant(g, ("agent:orchestra", "demand"), {}) is None
+
+
+def test_a_transition_with_a_source_state_fits_only_its_owner():
+    assert fg.event_fits("ticket_transition:IN_REVIEW>REJECTED", "ticket_transition:REJECTED", "reviewer")
+    assert not fg.event_fits("ticket_transition:IN_REVIEW>REJECTED", "ticket_transition:REJECTED", "merge_gate")   # the gate's REJECTED leaves MERGING
+    assert fg.event_fits("ticket_transition:IN_REVIEW>REJECTED", "ticket_transition:REJECTED")                      # no agent given: matches by type and target
+    g = fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS)
+    assert not any(e["src"] == "agent:merge_gate" and e["dst"] == "awaiting_review" for e in g["edges"])         # the gate never drains the review queue
+    assert sum(1 for e in g["edges"] if e["src"] == "agent:merge_gate" and e["dst"] == "known_rework") == 1       # one fill per gate send-back, via gate_rejected
+    # one event, one link: a departure is never also a plain trigger
+    pairs = [(e["src"], e["dst"], e["via"]) for e in g["edges"] if e["kind"] in ("departs", "triggers")]
+    assert len(pairs) == len(set(pairs))
 
 
 def test_golden_software_foundry():

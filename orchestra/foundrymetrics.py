@@ -160,11 +160,7 @@ def _run_class(r: dict) -> str:
 
 # -- windowed readings -------------------------------------------------------------------------
 
-# which agent a ticket transition belongs to, by the state it left; REJECTED is split by cause
-TRANSITION_OWNER = {("OPEN", "IN_PROGRESS"): "orchestra", ("REJECTED", "IN_PROGRESS"): "orchestra", ("BLOCKED", "OPEN"): "coordinator", ("IN_PROGRESS", "OPEN"): "orchestra",
-                    ("READY_FOR_REVIEW", "IN_REVIEW"): "orchestra", ("IN_REVIEW", "READY_FOR_REVIEW"): "orchestra", ("IN_PROGRESS", "READY_FOR_REVIEW"): "worker", ("IN_PROGRESS", "BLOCKED"): "worker",
-                    ("IN_REVIEW", "APPROVED"): "reviewer", ("APPROVED", "MERGING"): "merge_gate", ("MERGING", "DONE"): "merge_gate", ("MERGING", "REJECTED"): "merge_gate", ("MERGING", "APPROVED"): "merge_gate",
-                    ("OPEN", "CANCELLED"): "coordinator", ("BLOCKED", "CANCELLED"): "coordinator"}
+from .foundrygraph import TRANSITION_OWNER
 
 
 def attributed_counts(events: list[dict], hist: History, since: str) -> dict[str, int]:
@@ -374,7 +370,12 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         if (cites or cites_sha) and e.get("ticket") not in cites:
             bug_tickets.append(e.get("ticket"))
     crashing_builds = sorted({t.get("build") for t in troubles if t["type"] == "staging_restarted" and t.get("build")})
-    escape = len(bug_tickets) + len(crashing_builds)
+    # one defect for the crash-restarting service, however many builds it hit; a bug ticket about
+    # that crash is the same defect, so tickets mentioning staging or restarts are folded into it
+    crash_words = ("staging", "restart", "crash", "uptime")
+    crash_tickets = [tid for tid in bug_tickets if any(w in f"{getattr(tickets_by_id.get(tid), 'title', '')} {getattr(tickets_by_id.get(tid), 'description', '')}".lower() for w in crash_words)]
+    other_tickets = [tid for tid in bug_tickets if tid not in crash_tickets]
+    escape = len(other_tickets) + (1 if crashing_builds or crash_tickets else 0)
     landed_at = {e.get("commit"): _ts(e) for e in landed}
     land_to_deploy = [_ts(d) - landed_at[d["commit"]] for d in deploys if d.get("commit") in landed_at]
     return {
@@ -383,7 +384,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         "flows": {"start": starts, "repick": repicks, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
                   "gate": gate["by"].get("defect", 0), "conflict": gate["by"].get("conflict", 0),
                   "failure": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0) + gate["by"].get("error", 0),
-                  "escape": escape, "escape_bug_tickets": bug_tickets, "escape_crashing_builds": crashing_builds, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
+                  "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
                   "base": gate["by"].get("base_broken", 0), "restart": pairs.get("IN_PROGRESS>OPEN", 0), "blocked": pairs.get("IN_PROGRESS>BLOCKED", 0)},
         "inspections": {
             "review": {"arrivals": arrivals, "redo": redo, "approvals": approvals, "verdicts": verdicts, "by_cause": rev_cause, "defects": rev_defects, "distinct_defects": len(tickets_defect),
@@ -459,7 +460,7 @@ def _stock_reading(st, pool: dict) -> dict:
         errors = macc.get("error", 0)
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
-                             "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean"))} if stage else None,
+                             "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean")), "landed_clean_before": pool.get("main_commit_landed_clean")} if stage else None,
                    estimator=f"pytest summary of the {stage or 'all'} stage{'s' if not stage else ''} in the gate run that produced the {source}; skipped shown, never counted")
     elif kind == "staging":
         stg = pool["staging"]
@@ -493,7 +494,9 @@ def _stock_reading(st, pool: dict) -> dict:
     elif kind == "judge":
         out.update(value=None, estimable=False, reason="judge estimators need the judge agent (spec step 3)", estimator="not yet available")
     else:
-        out.update(value=None, estimable=False, reason=est.get("reason", "hidden"), estimator="not estimable")
+        esc = cur["flows"]
+        out.update(value=None, estimable=False, reason=est.get("reason", "hidden"), estimator="not estimable",
+                   outflows_seen={"review": cur["inspections"]["review"]["distinct_defects"], "gate": cur["inspections"]["gate"]["distinct_defects"], "after_landing": esc.get("escape", 0)})
     if st.hidden:
         out.update(value=None, estimable=False)
     return out

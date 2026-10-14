@@ -208,3 +208,38 @@ window minute and the ages; the pause reason shown.
 
 Declined: committing the automata model directory (ticket-branch checkout); replacing the
 agent node with one node per rate.
+
+## Round 7 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every reading matched the raw data.
+Found: transitions matched by target state only, so the gate "drained" the review queue and
+each gate send-back was two arrows; one event drawn as a departure (−) and a trigger (+);
+broken base signed by a mechanism never seen while "observed" on the opposite one, and the
+design's parallel-links rule contradicted by the departs tie-break; polarity through agent
+nodes produced sixty meaningless B/R variants; the escape estimate double-counted the
+crash (ticket and builds) and counted a gate-host flake; "the gate host, not the code"
+asserted from a heuristic; three contradictory statements about post-landing discovery;
+the producer flow missing (the worker makes every WIP commit and has no link to WIP); the
+keeper's and QA's real products attributed to the gate; capability and earlier detection
+"hypothesis" while closing through the repository; labels on the wrong edge; lines through
+boxes; legend text stale; loop-card hover off-screen; mini-loop overflow; card order; the
+WIP-limit advice naming a mechanism that cannot close the loop; the timeout loss and
+missing discovery not placed on the page.
+
+Fixed: declared transitions carry their source state ("ticket_transition:IN_REVIEW>REJECTED")
+and fit only the agent that owns that transition; one link per event; the departs
+tie-break removed, so opposite mechanisms are indeterminate and the card names each
+mechanism with how often the window saw it (broken base is now "?" with staging_failed as
+the − mechanism, not yet seen); polarity is computed only for declared loops and
+stock-draining pairs, unnamed cycles are paths; the escape estimate folds the crashing
+service and tickets about it into one defect; the environment caption says what is known
+("the same commit passed the gate earlier; pytest errors, not failures: a flaky start or the
+host is likely, not proven"); the undiscovered stock's reason names its measured outflows;
+defect_escaped is an event type and an outflow of undiscovered; a stock-to-stock gap exists
+only when no agent joins the two; same-event conversions drawn as pipes with the agent as
+valve, hollow pipes for expected flows no agent closes; one label per event on its chain
+stock; rework cards first; a machine-loss card and a missing-discovery card; WIP-limit
+advice names the capacity_changed mechanism; mini-loop boxes widened; type larger.
+
+Declined: a per-rate node model (the agent node stays; polarity is restricted instead);
+pinning the map on card hover; the demand open-milestone filter (all milestones open).

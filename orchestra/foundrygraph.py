@@ -19,17 +19,40 @@ MAX_LEN = 14
 SEARCH_BUDGET = 40000
 
 
+# who moves tickets out of each state; a declared "ticket_transition:FROM>TO" fits an agent's
+# plain "ticket_transition:TO" only when that agent owns the (FROM, TO) transition
+TRANSITION_OWNER = {("OPEN", "IN_PROGRESS"): "orchestra", ("REJECTED", "IN_PROGRESS"): "orchestra", ("BLOCKED", "OPEN"): "coordinator", ("IN_PROGRESS", "OPEN"): "orchestra",
+                    ("READY_FOR_REVIEW", "IN_REVIEW"): "orchestra", ("IN_REVIEW", "READY_FOR_REVIEW"): "orchestra", ("IN_PROGRESS", "READY_FOR_REVIEW"): "worker", ("IN_PROGRESS", "BLOCKED"): "worker",
+                    ("IN_REVIEW", "APPROVED"): "reviewer", ("IN_REVIEW", "REJECTED"): "reviewer", ("APPROVED", "MERGING"): "merge_gate", ("MERGING", "DONE"): "merge_gate", ("MERGING", "REJECTED"): "merge_gate",
+                    ("MERGING", "APPROVED"): "merge_gate", ("OPEN", "CANCELLED"): "coordinator", ("BLOCKED", "CANCELLED"): "coordinator"}
+
+
 def _split(ev: str) -> tuple[str, str]:
     t, _, suffix = ev.partition(":")
     return t, suffix
 
 
-def event_fits(declared: str, emitted: str) -> bool:
+def plain(ev: str) -> str:
+    """'ticket_transition:IN_REVIEW>REJECTED' → 'ticket_transition:REJECTED', the form the log counts."""
+    t, suffix = _split(ev)
+    return f"{t}:{suffix.split('>')[-1]}" if ">" in suffix else ev
+
+
+def event_fits(declared: str, emitted: str, agent: str | None = None) -> bool:
     """A stock's inflow/outflow or an agent's wake rule against an emitted event type: the
-    types match and either side's suffix is empty or they are equal."""
+    types match and either side's suffix is empty or they are equal. A declared transition
+    with a source state ('ticket_transition:IN_REVIEW>REJECTED') fits an emitter's plain
+    'ticket_transition:REJECTED' only when that emitter owns the transition."""
     dt, ds = _split(declared)
     et, es = _split(emitted)
-    return dt == et and (not ds or not es or ds == es)
+    if dt != et:
+        return False
+    if ">" in ds:
+        frm, to = ds.split(">", 1)
+        if es and es != to:
+            return False
+        return agent is None or TRANSITION_OWNER.get((frm, to)) == agent or agent not in set(TRANSITION_OWNER.values())
+    return not ds or not es or ds == es
 
 
 def _agents_from(agents: dict, system: dict | None) -> dict[str, dict]:
@@ -75,10 +98,12 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
         aid = f"agent:{name}"
         for ev in a["emits"]:
             for s in stocks:
-                if any(event_fits(i, ev) for i in s.inflows):
-                    add(aid, s.key, "+", "fills", ev)
-                if any(event_fits(o, ev) for o in s.outflows):
-                    add(aid, s.key, "-", "drains", ev)
+                hit_in = next((i for i in s.inflows if event_fits(i, ev, name)), None)
+                if hit_in:
+                    add(aid, s.key, "+", "fills", hit_in if ">" in hit_in else ev)
+                hit_out = next((o for o in s.outflows if event_fits(o, ev, name)), None)
+                if hit_out:
+                    add(aid, s.key, "-", "drains", hit_out if ">" in hit_out else ev)
         for w in a["wake_on"]:
             fills = [s for s in stocks if any(event_fits(i, w) or event_fits(w, i) for i in s.inflows)]
             if fills:
@@ -91,14 +116,14 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
                 for s in stocks:
                     if any(event_fits(o, w) or event_fits(w, o) for o in s.outflows):
                         for other, b in ags.items():
-                            if other != name and any(event_fits(o, w) for o in b["emits"]):
+                            if other != name and any(event_fits(o, w, other) for o in s.outflows if any(event_fits(o, e, other) for e in b["emits"])):
                                 add(f"agent:{other}", aid, "-", "departs", w)
                         touched.setdefault(aid, set()).add(s.key)
     # an agent whose action wakes another agent directly, by an event no stock carries
     for name, a in ags.items():
         for ev in a["emits"]:
-            if any(event_fits(i, ev) for s in stocks for i in s.inflows):
-                continue
+            if any(event_fits(i, ev, name) for s in stocks for i in s.inflows) or any(event_fits(o, ev, name) for s in stocks for o in s.outflows):
+                continue                      # carried by a stock: a fill, or a departure handled above
             for other, b in ags.items():
                 if other != name and any(event_fits(w, ev) for w in b["wake_on"]):
                     add(f"agent:{name}", f"agent:{other}", "+", "triggers", ev)
@@ -158,10 +183,6 @@ def _signs(g: dict, weights: dict[str, int] | None = None) -> dict[tuple[str, st
         by_pair.setdefault((e["src"], e["dst"]), []).append(e)
     out: dict[tuple[str, str], str] = {}
     for k, es in by_pair.items():
-        departs = [e for e in es if e["kind"] == "departs"]
-        if departs and all(e["kind"] in ("departs", "triggers") for e in es):
-            out[k] = "-"                 # an event that lowered a stock outranks one that touched none
-            continue
         signs = {e["sign"] for e in es}
         out[k] = signs.pop() if len(signs) == 1 else "?"
     return out
@@ -171,7 +192,7 @@ def dominant(g: dict, pair: tuple[str, str], weights: dict[str, int] | None = No
     """For an indeterminate link, the sign the window's events favour, if any."""
     w = weights or {}
     es = [e for e in g["edges"] if (e["src"], e["dst"]) == pair and e["via"]]
-    weighted = [(w.get(e["via"], 0), e["sign"]) for e in es]
+    weighted = [(w.get(plain(e["via"]), 0), e["sign"]) for e in es]
     if not weighted or max(n for n, _ in weighted) == 0:
         return None
     return max(weighted, key=lambda t: t[0])[1]
@@ -200,7 +221,7 @@ def material(g: dict, cycle: list[str]) -> str | None:
             return None
         # the draining event must fill the stock after the next agent for the same thing to move on
         after = cycle[(i + 2) % n]
-        carried = any(e["kind"] == "fills" and e["src"] == nxt and e["dst"] == after and any(event_fits(d["via"], e["via"]) for d in drains) for e in g["edges"])
+        carried = any(e["kind"] == "fills" and e["src"] == nxt and e["dst"] == after and any(plain(d["via"]) == plain(e["via"]) for d in drains) for e in g["edges"])
         if not carried:
             same_event = False
     return "material circuit" if same_event else "co-flow"
@@ -217,8 +238,16 @@ def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -
     signs = _signs(g, weights)
     pairs = list(zip(cycle, cycle[1:] + cycle[:1]))
     if any(signs.get(p, "+") == "?" for p in pairs):
+        notes = []
+        for p in pairs:
+            if signs.get(p, "+") != "?":
+                continue
+            es = [e for e in g["edges"] if (e["src"], e["dst"]) == p and e["via"]]
+            w = weights or {}
+            seen = [f"{e['via']} ({e['sign']}, {w.get(plain(e['via']), 0)} seen)" for e in es]
+            notes.append(f"{p[0].replace('agent:', '')}→{p[1].replace('agent:', '')}: " + ", ".join(seen))
         dom = [dominant(g, p, weights) for p in pairs if signs.get(p, "+") == "?"]
-        return "?", "indeterminate: parallel mechanisms disagree" + (f" (dominant today: {', '.join(d for d in dom if d)})" if any(dom) else "")
+        return "?", "indeterminate: mechanisms disagree on " + "; ".join(notes) + (f" · dominant today: {', '.join(d for d in dom if d)}" if any(dom) else "")
     neg = sum(1 for p in pairs if signs.get(p, "+") == "-")
     return ("B" if neg % 2 else "R"), "link signs"
 
@@ -258,9 +287,9 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             hits = []
             for e in es:
                 if e["kind"] in ("fills", "drains") and e["via"]:
-                    n = ev.get(f"{a.split(':', 1)[1]}|{e['via']}", 0)
+                    n = ev.get(f"{a.split(':', 1)[1]}|{plain(e['via'])}", 0)
                 elif e["kind"] in ("wakes", "triggers", "departs") and e["via"]:
-                    n = (weights or {}).get(e["via"], 0)
+                    n = (weights or {}).get(plain(e["via"]), 0)
                 else:
                     n = sum(v for k, v in ev.items() if k.startswith(b.split(":", 1)[1] + "|")) if e["kind"] == "reads" and b.startswith("agent:") else 0
                 evidence[f"{a}>{b}|{e['via'] or e['kind']}"] = n
@@ -294,8 +323,11 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         if ci["signature"] in used or ci["pair"] or key in seen_members:
             continue
         seen_members.add(key)
-        unnamed.append(ci)
-    pairs = [ci for ci in infos if ci["pair"]]
+        # a cycle nobody declared is a path through agent nodes, not a causal loop: no polarity is claimed for it
+        unnamed.append({**ci, "polarity": None, "basis": "path (polarity is only computed for declared loops and first-order pairs)"})
+    # first-order pairs: a stock and an agent that drains it (the balancing structure); agent-only pairs are triggers, not loops
+    pairs = [ci for ci in infos if ci["pair"] and any(not n.startswith("agent:") for n in ci["nodes"])
+             and any(e["kind"] == "drains" and {e["src"], e["dst"]} == set(ci["nodes"]) for e in g["edges"])]
     return {"graph": g, "cycles": infos, "declared": declared, "unnamed": unnamed, "pairs": pairs}
 
 
@@ -318,6 +350,11 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
     for (a, ia), (b, ib) in zip(list(zip(nodes, ids)), list(zip(nodes[1:] + nodes[:1], ids[1:] + ids[:1]))):
         if ia not in g["nodes"] or ib not in g["nodes"] or (ia, ib) in links:
             continue
+        if not ia.startswith("agent:") and not ib.startswith("agent:"):
+            # two stocks in a row: some agent woken by (or reading) the first and filling the second closes the step
+            via_agent = any((ia, m) in links and (m, ib) in links for m in g["nodes"] if m.startswith("agent:"))
+            if via_agent:
+                continue
         if ia.startswith("agent:") and not ib.startswith("agent:"):
             st = stock_by.get(b)
             custom = not g["nodes"][ia].get("builtin")

@@ -24,7 +24,7 @@ EVENT_TYPES = (
     "ticket_created", "ticket_updated", "ticket_transition", "note_added",
     "milestone_created", "milestone_updated", "milestone_closed",
     "gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
-    "staging_deployed", "staging_failed", "staging_restarted",
+    "staging_deployed", "staging_failed", "staging_restarted", "defect_escaped",
     "pipeline_paused", "pipeline_resumed", "pickup_paused", "pickup_resumed", "capacity_changed",
     "agent_said", "agent_killed", "context_updated", "loop_started", "loop_stopped",
     "session_started", "session_settled",
