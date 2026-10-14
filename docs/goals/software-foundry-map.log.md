@@ -516,3 +516,54 @@ recipe would address; attributing them to one binding would be a claim the data 
 support); calling out the pipeline manager's dead wake rule on `staging_failed` (that event
 is live after the runner restart; the model inspection tools now say what an event's
 emitters are).
+
+## Round 15 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every reading but one recomputed from
+the log, the store and git matched (the inlet left out the pipeline manager's ticket).
+Found: Known rework did not integrate (ten defect send-backs in, thirty pickups out, twenty
+of them after no-verdict reviews or lost runs, which the design calls machine loss); lost
+gate runs and conflicts drained the gate queue into nothing; re-planning was detected
+through a cancel and tagged co-flow; the rings' counts were the loop's own only at the
+pickup; U never receives landed defects; the additions' inflows carried the wrong unit;
+pairs' "R" needed the word formal; a hollow-stub label 280 px from its stub and a pipe label
+130 px from its pipe; three arrowheads on one anchor; two co-flows on one segment;
+duplicated stub labels; agents not over what they drain; a stub arrow through text; two
+notations for one window; card hover over-lighting; a hit twin covering a neighbouring pipe;
+the pause banner without its age (not passed through); the at-limit flag against the old
+limit; two gap recipes naming Orchestra's own events and processes; the product tile's
+bright 0.
+
+Fixed: a stock *Returned without a verdict* (no-verdict reviews, lost gate runs, conflicts;
+a machine loss) filled by the same events as Known rework and drained by the re-pick, so the
+pipes split by cause ("3 defects in 4 rejections" / "17 reviews with no verdict (loss)";
+"1 defect in 6 runs" / "3 lost gate runs (loss)"; "11 fix pickups" / "19 re-picks (loss)")
+and Known rework integrates; every transition after a send-back carries its cause in the
+attribution, a pending defect's cause surviving later no-verdict send-backs, and a
+transition out of a working spell is attributed to the state the spell began from, past the
+restarts (test added); a *Blocked* stock, so re-planning is the conserved circuit W →
+Blocked → Demand → W with the coordinator and Orchestra as valves, detected as a material
+circuit; co-flow is a tag only for a circuit through the hidden stock; the rings count the
+loop's own flow with its cause (review ring 5 pickups after review defects, 1 fix
+submission, 4 rejections; gate ring 6, 6, 4, 11; re-planning 10 re-planned, 9 starts, 5
+blocks); cycles are enumerated in passes of growing length so the pairs and the short loops
+are never pushed out by the budget, and a declared loop's match is bounded by its path, not
+by the stocks its events touch; gap advice never names Orchestra's processes or events, and
+a hypothesis card shows the template's recipe with the detector's facts beside it, the
+separate missing-discovery card gone where the loop is declared; labels stay within a few
+steps of their geometry (both directions, then where they belong), cross-row pipes fan
+across a box edge, co-flows on one pair are offset, stubs are drawn once per agent and event
+and not into the additions, one notation (counts in the window), the unconsumed note folded
+into its drain stub; agents sit over what they drain and are relaxed apart only as far as
+names need, with the legend saying so; the pause age is passed through and shown; the
+at-limit flag uses the limit in force; the inlet counts every creator the log credits; pipe
+labels are keyed by destination first; card hover lights only the loop's own edges; pairs
+read "formally, by link signs"; the product tile leads with the last deploy's count and says
+"build down, 0 served now"; U's recipe names the finding event as its outflow too; the
+design's B1 row now matches the rules. The automata model on main follows the template.
+
+Declined: a recovery estimate per recipe (the "where the day goes" line gives the hours and
+defects; attributing them to one binding would be a claim the data cannot support);
+surfacing read-based pairs for B2 (a loop needs its author; the hypothesis card says so);
+"how late" as a time interval (the discovery delay needs the commit-to-finding join of step
+2).

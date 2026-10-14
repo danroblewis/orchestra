@@ -25,7 +25,9 @@ def custom(name: str, team: str, wake_on: list[str], emits: list[str]) -> AgentD
 
 def foundry_stocks() -> list[Stock]:
     return [
-        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN", "ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:OPEN>IN_PROGRESS"]),
+        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:OPEN>CANCELLED"]),
+        Stock("blocked", "Blocked", "tickets", row="rework", inflows=["ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:BLOCKED>OPEN", "ticket_transition:BLOCKED>CANCELLED"]),
+        Stock("returned", "Returned without a verdict", "changes", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_conflict"], outflows=["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"]),
         Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", row="rework", inflows=["ticket_transition:READY_FOR_REVIEW"],
@@ -63,7 +65,7 @@ EXPECTED = [
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
     {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager"], "polarity": "B"},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
-    {"key": "replanning", "nodes": ["demand", "coordinator", "orchestra", "wip", "worker"]},
+    {"key": "replanning", "nodes": ["wip", "worker", "blocked", "coordinator", "demand", "orchestra"]},
     # discovery after landing: the deployed build is exercised, findings enter known rework, the fix goes round
     {"key": "field_discovery", "nodes": ["build", "playtester", "known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"]},
 ]
@@ -191,9 +193,8 @@ def test_golden_software_foundry():
     assert gt["basis"] == "material circuit" and gt["polarity"] is None                     # the change circulates: re-submitted, approved, rejected at the gate, re-submitted
     # the blocked ticket is a conserved circuit too: wip → demand (blocked) → wip (started again)
     rp = next(d for d in det["declared"] if d["key"] == "replanning")["cycle"]
-    # with the coordinator on it (the unblock reaches Orchestra as a trigger) the circuit is closed through an
-    # information link, so its balancing sits in the pair demand ↔ orchestra rather than on the path
-    assert {"wip", "demand", "agent:coordinator", "agent:orchestra"} <= set(rp["nodes"]) and rp["basis"].startswith("closed;")
+    # the blocked ticket is conserved: W → blocked (the worker) → demand (the coordinator re-plans) → W (Orchestra starts it)
+    assert {"wip", "blocked", "demand", "agent:coordinator", "agent:orchestra"} <= set(rp["nodes"]) and rp["basis"] == "material circuit"
     # one agent that both fills and drains a stock is a controller, never a circuit
     pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
     assert pair["basis"] != "material circuit" and pair["polarity"] in ("B", "?")

@@ -109,6 +109,20 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   and are listed as such; the template declares the rework cycles with no polarity and the
   broken-base controller as its pair (pipeline blocked ↔ pipeline manager), so the template
   and the detector say the same thing.
+- **Send-backs without a verdict are not rework.** A review turn that ended at the limit, a
+  lost gate run (timed out, failed to start) and a merge conflict return the change with no
+  defect found: they fill *Returned without a verdict*, a stock of machine loss, not K; the
+  re-pick drains it back into W. The same events fill K and Returned, so the pipes out of Q
+  and out of the gate split by cause, each with its own count, and the pickups out of K and
+  out of Returned are two flows ("11 fix pickups", "19 re-picks (loss)"). Every transition
+  that follows a send-back carries the send-back's cause (defect, gate, no_verdict, lost,
+  conflict) in the log's attribution, a pending defect's cause surviving the no-verdict
+  send-backs after it, and a transition out of a working spell is attributed to the state the
+  spell began from, looking past the restarts a turn limit causes.
+- **Blocked is its own stock.** A worker's block moves the ticket to *Blocked*, with the
+  planner; the coordinator's re-plan moves it back to Demand. Re-planning is then the
+  conserved circuit W → Blocked → Demand → W, with the coordinator and Orchestra as its
+  valves.
 - **The rework flow.** K is drained by the fix pickup (REJECTED → IN_PROGRESS), the flow the
   cycle is named for, into W; its level is the send-backs not yet picked up, with the
   send-backs not yet re-submitted and not yet landed beside it. The rework cycles therefore
@@ -127,6 +141,13 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   main is broken, with the count at the last deploy beside it; Verified behaviour reads the
   latest check, with the host-suspect flag and the last clean count as context, never a
   substituted reading.
+- **Agents sit over what they drain.** An agent's circle is placed over the mean of the stocks
+  it drains (over what wakes it, or what it fills, if it drains nothing), on three rows, and
+  pushed apart only as far as names need; an agent on no flow sits at the right.
+- **Gap advice names only the project's own agents and events.** The detector's fix for an
+  open loop never tells Orchestra's processes to change and never lists Orchestra's own
+  events as something a custom agent should emit; where a loop's template carries a recipe,
+  the card shows that recipe and the detector's facts beside it.
 - **Flows drawn.** One event moves one thing. When an agent's event drains one stock and
   fills another it is a conversion, drawn as a pipe with the agent as the valve. Where the
   same event converts along the product's own path (chain row to chain row), its other
@@ -237,7 +258,7 @@ in `eventgraph`); hypothesised loops are listed, not drawn.
 
 | Loop | Structure | Status | Signal |
 |------|-----------|--------|--------|
-| B1 defect removal | K → fix → K falls | observed | fix round trip short and stable; bad-fix fraction low |
+| B1 defect removal | K → fix → K falls: a material circuit, drawn as pipes; its balancing is the first-order pair of K and the pickup | observed | fix round trip short and stable; bad-fix fraction low |
 | B2 earlier detection (Orchestra's addition) | T ↑ and pre-review checks ↑ → defects found before the gate | hypothesised until worktree_checked exists | share of defects found before the gate rising |
 | B3 WIP limit | W ↑ → pickup paused, capacity lowered → conflicts and queue ages fall | observed when capacity_changed or pickup_paused follows | conflicts per landing and queue ages not rising |
 | B4 capability (Repenning's "work smarter") | K by cause → improve → R → fewer send-backs for that cause | observed when devex edges are seen | the cause-specific send-back rate falling after its lesson lands; a cause not recurring |

@@ -201,7 +201,7 @@ def dominant(g: dict, pair: tuple[str, str], weights: dict[str, int] | None = No
     return max(weighted, key=lambda t: t[0])[1]
 
 
-def material(g: dict, cycle: list[str]) -> str | None:
+def material(g: dict, cycle: list[str], hidden: set[str] | None = None) -> str | None:
     """Judged on the path: every stock on the cycle is filled by the agent before it and
     drained by the agent after it, by different agents. "material circuit" when the event
     that drains each stock is the event that fills the next (the same thing moves on);
@@ -227,15 +227,17 @@ def material(g: dict, cycle: list[str]) -> str | None:
         carried = any(e["kind"] == "fills" and e["src"] == nxt and e["dst"] == after and any(plain(d["via"]) == plain(e["via"]) for d in drains) for e in g["edges"])
         if not carried:
             same_event = False
-    return "material circuit" if same_event else "co-flow"
+    if same_event:
+        return "material circuit"
+    return "co-flow" if any(s in (hidden or set()) for s in stocks_on) else None   # a defect rides inside a change only through the hidden stock; otherwise the links are signed
 
 
-def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -> tuple[str | None, str]:
+def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None, hidden: set[str] | None = None) -> tuple[str | None, str]:
     """(polarity, basis). A conserved material circuit has no causal polarity (Sterman: a
     circuit of conserved material is not a causal loop) and is reported as such. Otherwise
     the product of the link signs: B when negative, R when positive, ? when any link is
     indeterminate from structure (the basis then names the sign the window favours)."""
-    kind = material(g, cycle)
+    kind = material(g, cycle, hidden)
     if kind:
         return None, kind
     signs = _signs(g, weights)
@@ -280,12 +282,21 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
     cover its nodes. ``weights`` are event counts by type (and type:filter) over the window,
     used to sign parallel links by their dominant mechanism."""
     g = build(stocks, agents, system)
-    cycles = elementary_cycles(g)
+    # short cycles first, in passes of growing length, so the pairs and the small loops are never pushed out by the
+    # budget that bounds the long ones
+    cycles, seen_sigs = [], set()
+    for max_len in (4, 6, 8, 10, MAX_LEN):
+        for c in elementary_cycles(g, max_len=max_len):
+            if signature(c) not in seen_sigs:
+                cycles.append(c)
+                seen_sigs.add(signature(c))
+        if len(cycles) >= MAX_CYCLES:
+            break
     sg = _signs(g, weights)
     ev = evidence or {}
     infos = []
     for c in cycles:
-        pol, basis = polarity(g, c, weights)
+        pol, basis = polarity(g, c, weights, {s.key for s in stocks if getattr(s, "hidden", False)})
         # observed: every agent→stock link on the cycle has been seen in the log (the agent
         # caused that event in the window); a cycle closable by declaration alone is not
         # observed: on every step of the cycle, at least one of its mechanisms was seen in the
@@ -317,7 +328,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         key = getattr(lp, "key", None) if not isinstance(lp, dict) else lp.get("key")
         best = next((ci for ci in infos if ci["signature"] == sig), None) if sig else None
         if best is None and want:
-            cands = [ci for ci in infos if want <= set(ci["members"]) and len(ci["members"]) <= len(want) + LOOP_SLACK]   # the loop's own structure, not a long cycle that happens to pass through it
+            cands = [ci for ci in infos if want <= set(ci["members"]) and len(ci["nodes"]) <= len(want) + LOOP_SLACK]   # the loop's own structure (its path), not a long cycle that happens to pass through it
             as_nodes = lambda ci: sum(1 for w in want if w in ci["nodes"] or f"agent:{w}" in ci["nodes"])   # declared members present on the path, not merely touched
             best = max(cands, key=lambda ci: (as_nodes(ci), -ci["length"])) if cands else None
         if best:
@@ -383,9 +394,9 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
             st_b = stock_by.get(b)
             woken = sorted(e["dst"].split(":", 1)[1] for e in g["edges"] if e["kind"] == "wakes" and e["src"] == ia)
             custom = [n for n in woken if not g["nodes"].get(f"agent:{n}", {}).get("builtin")]
-            woken = custom or woken              # the project's own agent is the one to change
+            woken = custom                       # only the project's own agents are ever told to change; Orchestra's processes are never advice
             wants = f" (one of: {', '.join(st_b.inflows)})" if st_b and st_b.inflows else ""
-            ok = _declarable(st_b.inflows, bool(custom)) if st_b else []
+            ok = _declarable(st_b.inflows, True) if st_b else []
             wants = f" (one of: {', '.join(ok)})" if ok else (f"; {b} is filled only by Orchestra's own events, so declare a custom inflow on {b} first" if st_b and st_b.inflows else "")
             if woken:
                 fix = (f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: "

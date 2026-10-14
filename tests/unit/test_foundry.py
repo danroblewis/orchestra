@@ -286,11 +286,20 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     tr(41, "REJECTED", "IN_PROGRESS"); tr(50, "IN_PROGRESS", "READY_FOR_REVIEW"); tr(51, "READY_FOR_REVIEW", "IN_REVIEW")   # re-submitted again, no defect pending: not a fix round
     tr(60, "IN_REVIEW", "REJECTED"); store.add_note(t.id, Note(author="reviewer", kind="review", text="REJECTED: still wrong", created_at=ts(60)))   # fix 1 was bad
     tr(61, "REJECTED", "IN_PROGRESS"); tr(70, "IN_PROGRESS", "BLOCKED")                                                    # fix 2 started, then blocked
+    # t2 is sent back with no verdict, re-picked, re-submitted: returned, not rework; its pickup carries the cause
+    t2 = store.create_ticket(title="b", milestone_id=m.id, branch="orchestra/T-2-b")
+    for mins, frm, to in ((2, "OPEN", "IN_PROGRESS"), (5, "IN_PROGRESS", "READY_FOR_REVIEW"), (6, "READY_FOR_REVIEW", "IN_REVIEW"), (16, "IN_REVIEW", "REJECTED"), (17, "REJECTED", "IN_PROGRESS"), (25, "IN_PROGRESS", "READY_FOR_REVIEW"), (26, "READY_FOR_REVIEW", "IN_REVIEW"), (36, "IN_REVIEW", "REJECTED")):
+        emit("ticket_transition", mins, ticket=t2.id, **{"from": frm, "to": to})
     r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    A = r["attributed_counts"]
+    assert A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:defect"] == 2 and A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:no_verdict"] == 2    # t: two defect pickups; t2 one, t's second send-back at 40 one
+    assert A["worker|ticket_transition:IN_PROGRESS>READY_FOR_REVIEW|from:REJECTED|cause:defect"] == 1 and A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|from:IN_REVIEW|cause:defect"] == 2
+    assert r["stocks"]["returned"]["value"] == 1 and r["stocks"]["returned"]["tickets"] == [t2.id]                      # t2 waits with no verdict; t's no-verdict send-back was re-picked
+    assert "fix pickups" in r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"] and r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"].startswith("2 ")
     S = r["stocks"]["known_rework"]
     assert S["value"] == 0 and S["not_resubmitted"] == [t.id] and S["unresolved"] == [t.id] and S["blocked"] == [t.id]   # picked up for a fix (so out of the stock), then blocked; the defect is still pending
     assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 1              # fix 1 followed to its verdict at minute 60
-    assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 1}
+    assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 3}
 
 
 def test_template_updates_untouched_elements_and_keeps_curated_ones(project):
