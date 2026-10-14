@@ -49,7 +49,9 @@
   .tl .axis .marks { display:flex; justify-content:space-between }
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
   .evmap svg { display:block; width:100%; height:560px; font-size:11px }
-  .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 } .evmap .n.agent text.name { fill:#0b0d12 }
+  .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 }
+  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:15px } .evmap .n.system text.initial, .evmap .n.probe text.initial { fill:var(--text2) }
+  .evmap .n text.name { fill:var(--text); font-weight:600; font-size:11.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
   .evmap .n.resident circle.body { stroke:#22c55e; stroke-width:2.5 }
   .evmap .n.system circle.body { fill:var(--panel3); stroke:#94a3b8; stroke-dasharray:4 2 } .evmap .n.probe circle.body { fill:var(--panel3); stroke:#c4b5fd }
   .evmap .n .halo { fill:none; stroke:url(#halo); stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
@@ -165,7 +167,7 @@ function drawGraph(g, inCyc) {
   const R = 22;
   if (EVSIM) EVSIM.stop();
   const sim = EVSIM = d3.forceSimulation(nodes).force("link", d3.forceLink(links).id((d) => d.id).distance(110)).force("charge", d3.forceManyBody().strength(-520))
-    .force("center", d3.forceCenter(W / 2, H / 2)).force("collide", d3.forceCollide((n) => n.kind === "event" ? 46 : R + 22));
+    .force("center", d3.forceCenter(W / 2, H / 2)).force("collide", d3.forceCollide((n) => n.kind === "event" ? 46 : R + 30));
   const cyc = (l) => inCyc.has(l.source.id || l.source) && inCyc.has(l.target.id || l.target);
   const path = svg.append("g").selectAll("path").data(links).join("path").attr("class", (l) => `e ${l.loop ? "loop" : ""} ${l.seen ? "seen" : ""} ${cyc(l) ? "cyc" : ""}`).attr("marker-end", (l) => cyc(l) ? "url(#arrc)" : "url(#arr)")
     .attr("data-from", (l) => l.source.id || l.source).attr("data-to", (l) => l.target.id || l.target);
@@ -179,11 +181,14 @@ function drawGraph(g, inCyc) {
   node.filter((n) => active.has(n.id)).append("circle").attr("class", "halo").attr("r", R + 7).append("title").text("active right now");
   node.filter((n) => n.kind !== "event").append("circle").attr("class", "body").attr("r", R);
   node.filter((n) => n.kind === "event").append("rect").attr("x", (n) => -Math.max(40, n.label.length * 3.4 + 12)).attr("y", -10).attr("width", (n) => 2 * Math.max(40, n.label.length * 3.4 + 12)).attr("height", 20).attr("rx", 5);
-  node.append("text").attr("text-anchor", "middle").attr("dy", 3).attr("class", (n) => n.kind === "event" ? `ev ${n.custom ? "custom" : ""}` : "name").text((n) => n.kind === "event" ? n.label : n.label.length > 11 ? n.label.slice(0, 10) + "…" : n.label);
-  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? 22 : R + 11).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.team || (n.kind === "system" ? "system" : ""));
+  // Like the Dashboard avatars: the initial inside the colour, the name beneath it in text colour.
+  node.filter((n) => n.kind === "event").append("text").attr("text-anchor", "middle").attr("dy", 3).attr("class", (n) => `ev ${n.custom ? "custom" : ""}`).text((n) => n.label);
+  node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", 5).attr("class", "initial").text((n) => n.label[0].toUpperCase());
+  node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", R + 13).attr("class", "name").text((n) => n.label);
+  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? 22 : R + 24).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.team || (n.kind === "system" ? "system" : ""));
   node.append("title").text((n) => `${n.label}${n.description ? ": " + n.description : ""}`);
   sim.on("tick", () => {
-    nodes.forEach((n) => { const hw = n.kind === "event" ? Math.max(40, n.label.length * 3.4 + 12) + 4 : R + 4; n.x = Math.max(hw, Math.min(W - hw, n.x)); n.y = Math.max(R + 4, Math.min(H - R - 16, n.y)); });
+    nodes.forEach((n) => { const hw = n.kind === "event" ? Math.max(40, n.label.length * 3.4 + 12) + 4 : Math.max(R + 4, n.label.length * 3.3); n.x = Math.max(hw, Math.min(W - hw, n.x)); n.y = Math.max(R + 10, Math.min(H - R - 30, n.y)); });
     path.attr("d", (l) => { const s = l.source, t = l.target;
       if (s === t) return `M${s.x},${s.y - R} C${s.x + 50},${s.y - 70} ${s.x + 70},${s.y - 20} ${s.x + R},${s.y}`;
       const dx = t.x - s.x, dy = t.y - s.y, dist = Math.hypot(dx, dy) || 1, nx = -dy / dist, ny = dx / dist;       // curve so a reverse edge takes the other side
@@ -200,8 +205,13 @@ function evHover(id) {
   const svg = document.querySelector(".evmap svg"); if (!svg) return;
   const es = [...svg.querySelectorAll(".e")], ns = [...svg.querySelectorAll(".n")], ls = [...svg.querySelectorAll(".lbl")];
   if (!id) { [...es, ...ns, ...ls].forEach((x) => x.classList.remove("dim")); return; }
-  const keep = new Set([id]);
-  es.forEach((e, i) => { const on = e.dataset.from === id || e.dataset.to === id; e.classList.toggle("dim", !on); if (ls[i]) ls[i].classList.toggle("dim", !on); if (on) { keep.add(e.dataset.from); keep.add(e.dataset.to); } });
+  // The node, its edges, the events on them, and then every edge of those events and the
+  // agents at their far ends: what this agent causes and who it reaches, and what reaches it.
+  const keep = new Set([id]), lit = new Set();
+  const touch = (nid) => es.forEach((e, i) => { if (e.dataset.from === nid || e.dataset.to === nid) { lit.add(i); keep.add(e.dataset.from); keep.add(e.dataset.to); } });
+  touch(id);
+  if (!id.startsWith("ev:")) [...keep].filter((n) => n.startsWith("ev:")).forEach(touch);
+  es.forEach((e, i) => { e.classList.toggle("dim", !lit.has(i)); if (ls[i]) ls[i].classList.toggle("dim", !lit.has(i)); });
   ns.forEach((n) => n.classList.toggle("dim", !keep.has(n.dataset.id)));
 }
 function timeline(agents, now) {
