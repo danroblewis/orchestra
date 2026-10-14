@@ -150,6 +150,18 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   (the machine), unless the same change timed out at the same stage more than once while
   other runs finished that stage: then the change under test hangs, and the runs are
   defects, named on the gate's label.
+- **Ties keep their log order.** A send-back and its pickup logged in one second are read in
+  the order the log wrote them; every rule that asks "what came before this transition" names
+  the transition and takes everything logged before it, never everything with an earlier
+  second.
+- **A fix is judged by whoever judged it.** Bad fixes are split by the verdict that found
+  them bad (the reviewer or the gate); the review loop's signal is the reviewer's share and
+  the gate loop's the gate's, so a card never blames the reviewer for what the gate found.
+- **Demand splits ready from waiting.** An OPEN ticket waiting on a dependency that is not
+  DONE is not ready for pickup; the box says how many are ready, what the rest wait on, and
+  the residence time is the ready part's.
+- **The Fix queue shows its two numbers**: the level (changes waiting pickup, drained by the
+  pickup) and, in amber, the defects not yet landed, with their tickets.
 - **Each turn limit ends one turn**: a timeout within seconds of a settle belongs to the
   latest turn it falls in, never to two.
 - **Verification is a state, never a substituted level.** Really done keeps what the last

@@ -411,3 +411,27 @@ def test_a_recurring_gate_timeout_is_a_hang_not_a_loss(project):
     g = r["inspections"]["gate"]
     assert g["by"] == {"defect": 3, "timeout": 1, "landed": 1} and g["hangs"] == 3 and g["hang_tickets"] == [t1.id] and g["distinct_defects"] == 1
     assert "hung" in r["edge_labels"]["merge_gate|gate_rejected"] and r["attributed_counts"]["merge_gate|gate_rejected|cause:lost"] == 1 and r["attributed_counts"]["merge_gate|gate_rejected|cause:gate"] == 3
+
+
+def test_a_send_back_and_its_pickup_in_one_second_keep_their_order(project):
+    """Round 20: Orchestra logs a no-verdict send-back and its re-pick in the same second; the
+    pickup must carry that send-back's cause (a re-pick), not the earlier defect's."""
+    store, events = LocalStore(project), Events(project.events_file)
+    m = store.create_milestone(name="m")
+    t = store.create_ticket(title="a", milestone_id=m.id, branch="orchestra/T-1-a")
+    project.events_file.write_text("")
+    base = dt.datetime.now(dt.UTC) - dt.timedelta(hours=3)
+    ts = lambda secs: (base + dt.timedelta(seconds=secs)).isoformat(timespec="seconds")
+    def tr(secs, frm, to):
+        with open(project.events_file, "a") as fh:
+            fh.write(json.dumps({"ts": ts(secs), "type": "ticket_transition", "ticket": t.id, "from": frm, "to": to}) + "\n")
+    from orchestra.model import Note
+    tr(60, "OPEN", "IN_PROGRESS"); tr(600, "IN_PROGRESS", "READY_FOR_REVIEW"); tr(660, "READY_FOR_REVIEW", "IN_REVIEW")
+    tr(1200, "IN_REVIEW", "REJECTED"); store.add_note(t.id, Note(author="reviewer", kind="review", text="REJECTED: wrong", created_at=ts(1200)))   # a defect
+    tr(1260, "REJECTED", "IN_PROGRESS"); tr(1800, "IN_PROGRESS", "READY_FOR_REVIEW"); tr(1860, "READY_FOR_REVIEW", "IN_REVIEW")
+    tr(2400, "IN_REVIEW", "REJECTED")                                                  # no verdict ...
+    tr(2400, "REJECTED", "IN_PROGRESS")                                                # ... and the re-pick, the same second
+    r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    A = r["attributed_counts"]
+    assert A.get("orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:defect", 0) == 1 and A.get("orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:no_verdict", 0) == 1
+    assert r["stocks"]["known_rework"]["value"] == 0 and r["stocks"]["returned"]["value"] == 0           # re-picked, so neither queue holds it

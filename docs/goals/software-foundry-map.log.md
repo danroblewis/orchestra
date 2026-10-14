@@ -722,3 +722,37 @@ Declined: a recovery per recipe (as before); re-levelling the Fix queue to the u
 count (round 18 asked for conservation; the name now says what the level is and the
 unlanded defects are listed beside it); reconciling the re-planning ring's 10 → 9 → 5 (each
 step counts the loop's own flow for the window, and the card's tooltip says so).
+
+## Round 20 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every headline number recomputed
+matched but one, with a clear cause (a no-verdict send-back and its re-pick logged in the
+same second, which a strict time comparison put out of order: 14 fix pickups where the log
+says 13), and the round-19 fixes were all verified. Found: a rework map that read 0 / 0 / 0
+on an 88%-rework day because the Fix queue's level is the pickup queue; Demand mixing
+tickets ready for pickup with tickets waiting on a dependency (all four waited on CA-18), so
+its amber residence bar pointed at the wrong constraint; the review card's signal and hint
+blaming the reviewer's feedback when the gate was the one rejecting; two numbers for one
+quantity ("CA-18 ×28" from the log, "round 27" from the tracker); the inlet's arrow and
+words on the restart pipe; hollow-stub labels trailing under neighbouring boxes; agents on
+no pipe spread between the valves against the design and none drawn hollow; labels wrapped
+inside a count and its noun; labels not hover targets; no evaluation of the limit change.
+
+Fixed: every "what came before" rule takes the transitions logged before the named one, ties
+in log order (test added: the same-second re-pick is a re-pick); bad fixes are split by the
+verdict that judged them, the review loop's signal is the reviewer's share and the gate
+loop's readings carry the gate's; the Fix queue shows its level and, in amber, the defects
+not yet landed with their tickets; Demand says how many tickets are ready and what the rest
+wait on, with the residence time of the ready part ("0 ready · 4 waiting on CA-18"); the
+worst ticket's round comes from the log; the inlet enters the box's side with its words
+above; hollow-stub words sit centred under their own box, two lines when long, and a stub
+leaving a chain-row box keeps only its tick and tooltip; agents on no pipe sit at the right,
+hollow when they drain nothing, and the key says so; labels wrap at the dots only; every
+pipe label is a hover target for its pipe with the pipe's tooltip; the loss tile says how
+many turns have run since the last timeout. The automata model on main follows the template.
+
+Declined: a second box for the defects not landed (the Fix queue's amber second number is
+that box); a recovery figure per recipe (the readings line on each card is the magnitude the
+recipe addresses); the three 21s (each carries its unit, and the DONE count is the design's
+perceived progress beside actual); naming the Supervisor's tools as not live (a runner
+matter, not the page's).

@@ -125,23 +125,42 @@ class History:
                 return (seq[i - 1][1], seq[i - 1][2]) if i else None
         return None
 
+    def _before(self, tid: str, at: float, frm: str | None = None, to: str | None = None) -> list[tuple[float, str, str]]:
+        """The ticket's transitions strictly before the given one, in log order: when the
+        transition itself is named, everything logged before it, ties included (Orchestra logs
+        a send-back and its pickup in one second); otherwise everything before that time."""
+        seq = self.seq.get(tid, [])
+        if frm is not None and to is not None:
+            for i, (t, f, x) in enumerate(seq):
+                if t == at and f == frm and x == to:
+                    return seq[:i]
+        return [x for x in seq if x[0] < at]
+
+    def _state_in(self, tid: str, entries: list, kind: str) -> bool:
+        """pending: sent back for a defect and not re-submitted; unresolved: not landed;
+        awaiting: not picked up; returned: sent back with no verdict and not re-picked."""
+        flag = False
+        for t, frm, to in entries:
+            if to == "REJECTED":
+                c = self.cause.get((tid, t))
+                flag = c in ("no_verdict", "gate_lost", "conflict") if kind == "returned" else (c in ("defect", "gate") or (flag and kind == "unresolved"))
+            elif to in ("DONE", "CANCELLED"):
+                flag = False
+            elif kind == "pending" and (frm, to) == ("IN_PROGRESS", "READY_FOR_REVIEW"):
+                flag = False                                      # a block does not clear it: on this kind of org a block is a turn-limit escape
+            elif kind in ("awaiting", "returned") and (frm, to) == ("REJECTED", "IN_PROGRESS"):
+                flag = False
+        return flag
+
     def pending_defect(self, tid: str, at: float) -> bool:
         """Was the ticket sent back for a defect and not yet re-submitted, at that time?"""
-        pending = False
-        for t, frm, to in self.seq.get(tid, []):
-            if t > at:
-                break
-            if to == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate"):
-                pending = True
-            elif (to == "READY_FOR_REVIEW" and frm == "IN_PROGRESS") or to in ("DONE", "CANCELLED"):
-                pending = False                                   # a block does not clear it: on this kind of org a block is a turn-limit escape
-        return pending
+        return self._state_in(tid, [x for x in self.seq.get(tid, []) if x[0] <= at], "pending")
 
-    def spell_origin(self, tid: str, at: float, frm: str) -> str | None:
+    def spell_origin(self, tid: str, at: float, frm: str, to: str | None = None) -> str | None:
         """The state a ticket came from into its current spell: for a transition out of
         IN_PROGRESS, the state before the working spell began, looking past the restarts
         (IN_PROGRESS → OPEN → IN_PROGRESS) a turn limit causes; otherwise the state before."""
-        seq = [x for x in self.seq.get(tid, []) if x[0] < at]
+        seq = self._before(tid, at, frm, to)
         if not seq:
             return None
         if frm != "IN_PROGRESS":
@@ -156,7 +175,7 @@ class History:
         unresolved (sent back and not landed since), that defect's cause, through pickups,
         re-submissions, approvals, blocks and re-plans; otherwise, for a pickup or a re-submission
         after a send-back with no verdict, that send-back's cause."""
-        seq = [x for x in self.seq.get(tid, []) if x[0] < at]
+        seq = self._before(tid, at, frm, to)
         norm = lambda c: {"gate_lost": "lost"}.get(c, c)
         last_defect = lambda: next((self.cause.get((tid, t)) for t, f, x in reversed(seq) if x == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate")), None)
         if to == "REJECTED":                                      # a send-back carries its own cause
@@ -166,50 +185,28 @@ class History:
             return None
         if frm == "REJECTED":                                     # a pickup carries the send-back it follows: a fix pickup or a re-pick
             return norm(self.cause.get((tid, rej[0])))
-        before = seq[-1][0] if seq else at                        # strictly before this transition, so a submission does not clear the defect it is fixing
-        if frm == "IN_PROGRESS":                                  # a submission is a fix while a defect is pending (through blocks and re-plans), else a re-run after a send-back with no verdict
-            if self.unresolved_defect(tid, before):
+        if frm == "IN_PROGRESS":                                  # a submission is a fix while a defect is unlanded (through blocks and re-plans), else a re-run after a send-back with no verdict
+            if self._state_in(tid, seq, "unresolved"):
                 return last_defect()
-            return norm(self.cause.get((tid, rej[0]))) if self.spell_origin(tid, at, frm) == "REJECTED" else None
-        return last_defect() if self.unresolved_defect(tid, before) else None   # a verdict on a fix, while the defect is not yet landed
+            return norm(self.cause.get((tid, rej[0]))) if self.spell_origin(tid, at, frm, to) == "REJECTED" else None
+        return last_defect() if self._state_in(tid, seq, "unresolved") else None   # a verdict on a fix, while the defect is not yet landed
 
     def returned(self, tid: str, at: float) -> bool:
         """Sent back without a verdict and not yet re-picked: a machine loss waiting its turn."""
-        waiting = False
-        for t, frm, to in self.seq.get(tid, []):
-            if t > at:
-                break
-            if to == "REJECTED":
-                waiting = self.cause.get((tid, t)) in ("no_verdict", "gate_lost", "conflict")
-            elif (frm, to) == ("REJECTED", "IN_PROGRESS") or to in ("DONE", "CANCELLED"):
-                waiting = False
-        return waiting
+        return self._state_in(tid, [x for x in self.seq.get(tid, []) if x[0] <= at], "returned")
 
     def awaiting_fix(self, tid: str, at: float) -> bool:
-        """Was the ticket sent back for a defect and not yet picked up for a fix, at that time?
-        The stock's level: the pickup is the rework flow into work in progress."""
-        waiting = False
-        for t, frm, to in self.seq.get(tid, []):
-            if t > at:
-                break
-            if to == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate"):
-                waiting = True
-            elif (frm, to) == ("REJECTED", "IN_PROGRESS") or to in ("DONE", "CANCELLED"):
-                waiting = False
-        return waiting
+        """Sent back for a defect and not yet picked up for a fix: the Fix queue's level."""
+        return self._state_in(tid, [x for x in self.seq.get(tid, []) if x[0] <= at], "awaiting")
 
     def unresolved_defect(self, tid: str, at: float) -> bool:
-        """Was the ticket sent back for a defect and not yet landed or cancelled, at that time?
-        Re-submissions and approvals do not resolve it; only a landing does."""
-        pending = False
-        for t, frm, to in self.seq.get(tid, []):
-            if t > at:
-                break
-            if to == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate"):
-                pending = True
-            elif to in ("DONE", "CANCELLED"):
-                pending = False
-        return pending
+        """Sent back for a defect and not yet landed or cancelled: re-submissions and approvals
+        do not resolve it; only a landing does."""
+        return self._state_in(tid, [x for x in self.seq.get(tid, []) if x[0] <= at], "unresolved")
+
+    def unresolved_before(self, tid: str, at: float, frm: str, to: str) -> bool:
+        """The same, strictly before a named transition (ties kept in log order)."""
+        return self._state_in(tid, self._before(tid, at, frm, to), "unresolved")
 
     def last_rejection(self, tid: str, at: float) -> tuple[float, str] | None:
         last = None
@@ -285,7 +282,7 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
                 continue
             for k in (f"{who}|{t}", f"{who}|{t}:{to}", f"{who}|{t}:{frm}>{to}"):
                 out[k] = out.get(k, 0) + 1
-            origin = hist.spell_origin(e.get("ticket") or "", _ts(e), frm)
+            origin = hist.spell_origin(e.get("ticket") or "", _ts(e), frm, to)
             prev = (origin, frm) if origin else None
             # a transition that follows a send-back carries the send-back's cause (defect, gate, no_verdict, lost, conflict),
             # so a pickup or a re-submission can be counted as a fix or as a re-run
@@ -428,8 +425,9 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     gate = gate_outcomes(runs, hist.hangs)
     # fix rounds and bad fixes: a re-submission while a defect send-back is pending
     fix_rounds = bad = 0
+    bad_by: dict[str, int] = {}
     for tid, ts, f, to in tr:
-        if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.unresolved_defect(tid, ts - 1):
+        if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.unresolved_before(tid, ts, f, to):
             continue
         fix_rounds += 1                                           # every re-submission while a defect is unlanded is rework progress (Cooper; Lyneis & Ford)
         # followed to the defect's next verdict: a review or gate rejection for a defect makes it a bad fix,
@@ -442,6 +440,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 break
             if to2 == "REJECTED" and hist.cause.get((tid, t2)) in ("defect", "gate"):
                 bad += 1
+                bad_by[hist.cause.get((tid, t2))] = bad_by.get(hist.cause.get((tid, t2)), 0) + 1   # who found the fix bad: the reviewer or the gate
                 break
     # how late a defect is found: from the submission the verdict judged to the verdict, by stage; after landing, from the deploy to its first trouble
     def _since_submission(tid: str, ts: float) -> float | None:
@@ -588,7 +587,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                        "cause": "pass = APPROVED verdicts over all verdicts (APPROVED + REJECTED with a reviewer note); reviews with no verdict are not inspections and are counted as losses"},
             "gate": {**gate, "cause": "defect = a stage failed on its own result; timeouts, start failures and conflicts counted apart"},
         },
-        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "lead_values": sorted(leads)},
+        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_rounds), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_rounds), "lead_values": sorted(leads)},
         "time": {"hours": {k: round(v / days, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])}, "turns": nturns,
                  "rework_share": _ratio(hours.get("fix", 0.0), worker_hours), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
                  "turn_limit": max(set(limits), key=limits.count) if limits else None,
@@ -605,7 +604,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     }
 
 
-SIGNAL_KEYS = frozenset({"review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
+SIGNAL_KEYS = frozenset({"review_bad_fix_fraction", "gate_bad_fix_fraction", "review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
                          "fix_rounds", "review_defects", "defects_after_landing", "review_miss_rate", "acceptance_defects_at_gate", "bad_fix_fraction", "conflicts_per_landing",
                          "landed_per_worker_hour", "restarts", "defects_found_after_landing", "base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
 
@@ -619,7 +618,7 @@ def _signals(w: dict) -> dict[str, float | None]:
             "fix_rounds": f["fix"], "review_defects": w["inspections"]["review"]["distinct_defects"], "defects_after_landing": f["escape"], "review_miss_rate": w["inspections"]["review"]["miss_rate"],
             "acceptance_defects_at_gate": w["inspections"]["gate"]["defect_stage"].get("acceptance", 0),
             "defects_before_gate_share": _ratio(w["inspections"]["review"]["distinct_defects"], w["inspections"]["review"]["distinct_defects"] + w["inspections"]["gate"]["distinct_defects"] + f["escape"]),
-            "bad_fix_fraction": w["rounds"]["bad_fix_fraction"], "conflicts_per_landing": _ratio(f["conflict"], f["land"]) if f["land"] else (f["conflict"] or None),
+            "bad_fix_fraction": w["rounds"]["bad_fix_fraction"], "review_bad_fix_fraction": w["rounds"]["review_bad_fix_fraction"], "gate_bad_fix_fraction": w["rounds"]["gate_bad_fix_fraction"], "conflicts_per_landing": _ratio(f["conflict"], f["land"]) if f["land"] else (f["conflict"] or None),
             "landed_per_worker_hour": _ratio(f["land"] / w["days"], wh) if wh else None, "restarts": f["restart"], "defects_found_after_landing": f["escape"],
             "base_broken": f["base"], "worker_hours_lost": t["losses"]["worker_hours_ending_in_timeout"], "starts": f["start"]}
 
@@ -633,8 +632,16 @@ def _stock_reading(st, pool: dict) -> dict:
     if kind == "tracker":
         states = est.get("states") or []
         now = dt.datetime.now(dt.UTC).timestamp()
-        ages = sorted(now - (_epoch(getattr(x, "state_since", None)) or now) for x in tk.values() if x.state in states)
-        worst = max(((x.review_rounds or 0), x.id) for x in tk.values() if x.state in states) if ages else (0, None)
+        here = [x for x in tk.values() if x.state in states]
+        hist_ = pool.get("hist")
+        # an OPEN ticket waiting on a dependency is not ready for pickup: the queue's age is the ready part's
+        waiting = {x.id: [d for d in (getattr(x, "depends_on", None) or []) if d in tk and tk[d].state != "DONE"] for x in here if x.state == "OPEN"}
+        waiting = {k: v for k, v in waiting.items() if v}
+        ready = [x for x in here if x.id not in waiting]
+        ages = sorted(now - (_epoch(getattr(x, "state_since", None)) or now) for x in ready)
+        rounds_of = lambda x: sum(1 for _t, _f, st_ in (hist_.seq.get(x.id, []) if hist_ else []) if st_ == "REJECTED") if hist_ else (x.review_rounds or 0)
+        worst = max((rounds_of(x), x.id) for x in here) if here else (0, None)
+        out.update(waiting_on={k: v for k, v in waiting.items()}, ready=len(ready), oldest_waiting=max((now - (_epoch(getattr(x, "state_since", None)) or now) for x in here if x.id in waiting), default=None))
         ahead_ = (pool.get("git") or {}).get("ahead") or {}
         branches = [(x.id, ahead_[x.branch]) for x in tk.values() if x.state in states and getattr(x, "branch", None) and x.branch in ahead_]
         out.update(commits_ahead=sum(n for _, n in branches) if ahead_ else None, branches=branches, commits_per_day=(pool.get("git") or {}).get("commits_in_window"))
@@ -780,7 +787,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     clean_before = bool(main_commit) and any(r.get("status") == "landed" and (r.get("gate_commit") or "").startswith(main_commit[:10]) for r in runs)
     healthy_at = _epoch(staging.get("last_health_at"))
     build_healthy = staging.get("status") == "running" and healthy_at is not None and now - healthy_at <= HEALTH_STALE
-    pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "unresolved": [tid for tid in tk if hist.unresolved_defect(tid, now)], "awaiting_fix": [tid for tid in tk if hist.awaiting_fix(tid, now)], "returned": [tid for tid in tk if hist.returned(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
+    pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "hist": hist, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "unresolved": [tid for tid in tk if hist.unresolved_defect(tid, now)], "awaiting_fix": [tid for tid in tk if hist.awaiting_fix(tid, now)], "returned": [tid for tid in tk if hist.returned(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "landed_tests": _run_tests(landed_run), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
     rounds = sorted((sum(1 for _t, _f, x in hist.seq.get(t.id, []) if x == "REJECTED"), t.id) for t in tk.values() if t.state != "CANCELLED")   # send-backs per ticket, from the log
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}
@@ -788,6 +795,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         hist_r["0" if n == 0 else "1-2" if n <= 2 else "3-5" if n <= 5 else "6+"] += 1
     cur["time"]["turn_limit_now"] = getattr(project.config, "silence_timeout", None)
     cur["time"]["last_timeout_at"] = max((e.get("ts", "") for e in events if e["type"] == "turn_timed_out"), default=None)
+    cur["time"]["turns_since_last_timeout"] = sum(1 for e in events if e["type"] == "session_settled" and e.get("ts", "") > (cur["time"]["last_timeout_at"] or "")) if cur["time"]["last_timeout_at"] else None
     stocks = {st.key: _stock_reading(st, pool) for st in model["stocks"]}
     counter: dict[str, int] = {}
     for e in events:
