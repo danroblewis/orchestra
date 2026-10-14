@@ -63,6 +63,8 @@ register(Role(
 # Per-ticket roles are not resident; the loop starts them on demand.
 register(Role(name="worker", session_id="worker-{ticket}", prompt="worker", tools=("report_ticket",), resident=False))
 register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer", tools=("report_review",), resident=False))
+register(Role(name="pair", session_id="pair-{ticket}", prompt="pair", tools=("pair",), resident=False,
+              description="Watches one ticket's worker from the outside, runs the tests, and gives a verdict before review."))
 
 # Future roles slot in here, for example:
 #   register(Role(name="product_owner", session_id="product-owner", prompt="product_owner",

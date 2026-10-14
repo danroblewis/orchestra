@@ -37,7 +37,7 @@ STATE_ORDER = [
 
 TRANSITIONS: dict[State, set[State]] = {
     State.OPEN: {State.IN_PROGRESS, State.CANCELLED},
-    State.IN_PROGRESS: {State.READY_FOR_REVIEW, State.BLOCKED, State.OPEN, State.CANCELLED},
+    State.IN_PROGRESS: {State.READY_FOR_REVIEW, State.BLOCKED, State.OPEN, State.CANCELLED, State.REJECTED},  # REJECTED: the pair's block
     State.READY_FOR_REVIEW: {State.IN_REVIEW, State.CANCELLED},
     State.IN_REVIEW: {State.APPROVED, State.REJECTED, State.READY_FOR_REVIEW, State.CANCELLED},
     State.REJECTED: {State.IN_PROGRESS, State.CANCELLED},
@@ -127,6 +127,8 @@ class Ticket:
     worker_turns: int = 0         # times a worker was opened for this ticket (re-engagements = turns - 1)
     reviewer_rejections: int = 0  # how many of those turns followed a reviewer rejection
     gate_rejections: int = 0      # how many followed a merge-gate send-back (test failure or conflict)
+    pair_rejections: int = 0      # how many followed the pair's block verdict (before any review)
+    paired: bool = False          # a pair agent watched this ticket's worker
     created_by: str = "supervisor"
     version: int = 1
     created_at: str = field(default_factory=now)

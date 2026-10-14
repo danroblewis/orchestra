@@ -150,12 +150,16 @@ def _ticket_block(t: Ticket) -> str:
             f"## Verification (how the merge gate proves it)\n{t.verification.strip() or '(none stated; existing tests must keep passing)'}\n")
 
 
-def worker_task(project: Project, t: Ticket, unit_command: str | None) -> str:
+def worker_task(project: Project, t: Ticket, unit_command: str | None, pair_notes: list[str] | None = None) -> str:
     test_line = f"Run the unit tests with: `{unit_command}`" if unit_command else "There is no configured unit test command."
-    head = f"# Your assignment\n\n{_ticket_block(t)}\n"
+    head = f"# Your assignment\n\n{_ticket_block(t)}\n" + _pair_block(pair_notes or [])
     env = (f"## Environment\nYou are in a git worktree checked out on branch `{t.branch}`. "
            f"The base branch is `{project.config.base_branch}`. Only this branch is yours. "
            f"{test_line}\n\n")
+    if t.feedback and t.rejected_by == "pair":
+        return (head + env + "## Your pair blocked this before review\n"
+                "The agent watching your work found the points below. Address each one, or say in a commit message why it is "
+                "wrong, re-run the tests, then call `report_ticket` again.\n\n" + f"{t.feedback.strip()}\n")
     if t.feedback and t.rejected_by:
         return (head + env + f"## This ticket was REJECTED by the {t.rejected_by} (round {t.review_rounds})\n"
                 f"Address every point below, commit, re-run the tests, then call `report_ticket`.\n\n"
@@ -166,15 +170,36 @@ def worker_task(project: Project, t: Ticket, unit_command: str | None) -> str:
             "that test is part of the work. Verify, commit on your branch, then call `report_ticket`.\n")
 
 
+def _pair_block(notes: list[str]) -> str:
+    if not notes:
+        return ""
+    return "## Notes from the pair watching this ticket\n" + "\n".join(f"- {n.strip()}" for n in notes) + "\n\n"
+
+
+def pair_delta_task(project: Project, ticket_id: str, sid: str, head: str, after: int) -> str:
+    return (f"# The worker on {ticket_id} committed ({head[:10]})\n\n"
+            f"Your checkout is now at that commit. Call `read_transcript` with session_id `worker-{ticket_id}` and after={after} "
+            f"to see what the worker did since you last looked. Run the tests here if anything changed that they cover. "
+            f"Write at most one `pair_note` with concrete findings, or nothing. Then stop.\n")
+
+
+def pair_verdict_task(project: Project, ticket_id: str, sid: str, head: str, after: int) -> str:
+    return (f"# The worker on {ticket_id} reported READY_FOR_REVIEW at {head[:10]}\n\n"
+            f"This is your last turn. Call `read_transcript` with after={after} for anything you have not seen, run the unit "
+            f"tests here, check every acceptance item against the code, then call `pair_verdict` exactly once: `block` with "
+            f"findings if an acceptance item is unmet, a behaviour was lost, or tests fail; `pass` with what the reviewer should "
+            f"check first otherwise.\n")
+
+
 def reviewer_task(project: Project, t: Ticket, commit: str, diff: str, files: list[str],
-                  log: str, test_output: str | None) -> str:
+                  log: str, test_output: str | None, pair_notes: list[str] | None = None) -> str:
     diff = diff if len(diff) < 60000 else diff[:60000] + "\n... (diff truncated; open files in the worktree for the rest)\n"
     tests = f"## Unit test output (already run by Orchestra)\n```\n{test_output.strip()[-4000:]}\n```\n" if test_output else \
         "## Unit tests\nNo unit test command is configured.\n"
     return (f"# Review request\n\n{_ticket_block(t)}\n"
             f"## Commit under review\n{commit}\n\n## Commits on the branch\n```\n{log.strip()}\n```\n\n"
             f"## Changed files\n```\n" + "\n".join(files) + "\n```\n\n"
-            f"{tests}\n## Diff against `{project.config.base_branch}`\n```diff\n{diff}\n```\n\n"
+            f"{tests}\n{_pair_block(pair_notes or [])}## Diff against `{project.config.base_branch}`\n```diff\n{diff}\n```\n\n"
             "Review it like a pull request. Check that the verification named in the ticket was actually "
             "added or extended. Then call `report_review` exactly once.\n")
 

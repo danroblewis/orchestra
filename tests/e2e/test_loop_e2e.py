@@ -179,3 +179,32 @@ def test_team_lead_is_woken_in_its_space(env):
     assert (project.repo_root / ".orchestra" / "spaces" / "product" / "tools").is_dir()
     assert "The backlog is never empty" in (project.logs_dir / "agents" / "po.prompt.md").read_text()   # what it was started with
     assert store.agent_state("po").get("last_woken")
+
+
+def test_pair_blocks_before_review_then_passes(env, monkeypatch):
+    """Pair programming with two agents: a pair watches the worker from the outside and gives
+    a verdict before review. Its first verdict blocks; the worker is re-engaged with the
+    findings (no review round spent); the second verdict passes and the ticket lands."""
+    from orchestra import api
+    project, store, events, ms, repo = env
+    if project.config.harness != "claude_code":
+        pytest.skip("the pair role is played by the fake Claude binary")
+    toml = repo / "orchestra.toml"
+    toml.write_text(toml.read_text().replace("[agents]", '[agents]\npair = "all"', 1))
+    git("add", "-A", cwd=repo); git("commit", "-qm", "pair on", cwd=repo)
+    project.reload_config()
+    assert project.config.pair == "all"
+    monkeypatch.setenv("FAKE_PAIR_BLOCK_FIRST", "1")
+    t = store.create_ticket(title="Paired work", milestone_id=ms.id)
+    run_loop(project, store, events)
+    t = store.get_ticket(t.id)
+    assert t.state == State.DONE and t.paired
+    assert t.pair_rejections == 1 and t.review_rounds == 0 and t.reviewer_rejections == 0   # the block was not a review
+    assert t.worker_turns == 2
+    kinds = [(n["author"], n["kind"], n["text"][:22]) for n in store.notes(t.id) if n["kind"] == "pair"]
+    assert ("pair", "pair", "BLOCKED before review:") in kinds and any(k[2].startswith("PASS:") for k in kinds)
+    assert "title noted" in git("show", "main:WORK.md", cwd=repo)                          # the findings changed the diff
+    assert not (project.worktrees_dir / f"{t.id}-pair").exists()
+    assert f"pair-{t.id}" in store.runtime()["archived_sessions"]
+    with pytest.raises(Exception):
+        api.handle(project, store, "pair_verdict", {"verdict": "pass", "findings": "x"}, role="worker", ticket_env=t.id)
