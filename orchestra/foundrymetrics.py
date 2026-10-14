@@ -131,7 +131,7 @@ class History:
                 break
             if to == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate"):
                 pending = True
-            elif to == "READY_FOR_REVIEW" and frm == "IN_PROGRESS" or to in ("DONE", "CANCELLED"):
+            elif (to == "READY_FOR_REVIEW" and frm == "IN_PROGRESS") or to in ("DONE", "CANCELLED", "BLOCKED"):   # blocked back to the planner leaves rework for demand
                 pending = False
         return pending
 
@@ -394,11 +394,24 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         if (cites or cites_sha) and e.get("ticket") not in cites:
             bug_tickets.append(e.get("ticket"))
     crashing_builds = sorted({t.get("build") for t in troubles if t["type"] == "staging_restarted" and t.get("build")})
-    # as the design says: one defect per deployed build the health loop had to restart, plus each bug
-    # ticket citing shipped work; a ticket that names a crashing build's id is that build's defect
+    # a defect that survives successive landings is one defect: consecutive deployed builds that all
+    # crash-restarted, with no healthy build between them, are one escape; a ticket that names one of
+    # those builds is that escape's ticket; other bug tickets citing shipped work count each
+    all_deploys = sorted((e for e in events if e["type"] == "staging_deployed" and e.get("build")), key=_ts)
+    crashed = {t.get("build") for t in events if t["type"] == "staging_restarted" and t.get("build")}
+    groups, run = [], []
+    for d in all_deploys:
+        if d["build"] in crashed:
+            run.append(d["build"])
+        elif run:
+            groups.append(run)
+            run = []
+    if run:
+        groups.append(run)
+    in_window = [g for g in groups if any(b in crashing_builds for b in g)]
     crash_tickets = [tid for tid in bug_tickets if any(b and b[:7] in f"{getattr(tickets_by_id.get(tid), 'title', '')} {getattr(tickets_by_id.get(tid), 'description', '')}" for b in crashing_builds)]
     other_tickets = [tid for tid in bug_tickets if tid not in crash_tickets]
-    escape = len(other_tickets) + len(crashing_builds)
+    escape = len(other_tickets) + len(in_window)
     landed_at = {e.get("commit"): _ts(e) for e in landed}
     land_to_deploy = [_ts(d) - landed_at[d["commit"]] for d in deploys if d.get("commit") in landed_at]
     return {
@@ -407,7 +420,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         "flows": {"start": starts, "repick": repicks, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
                   "gate": gate["by"].get("defect", 0), "conflict": gate["by"].get("conflict", 0),
                   "failure": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0) + gate["by"].get("error", 0),
-                  "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
+                  "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "escape_crash_runs": len(in_window), "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
                   "base": gate["by"].get("base_broken", 0), "restart": pairs.get("IN_PROGRESS>OPEN", 0), "blocked": pairs.get("IN_PROGRESS>BLOCKED", 0)},
         "inspections": {
             "review": {"arrivals": arrivals, "redo": redo, "approvals": approvals, "verdicts": verdicts, "by_cause": rev_cause, "defects": rev_defects, "distinct_defects": len(tickets_defect),
@@ -474,8 +487,8 @@ def _stock_reading(st, pool: dict) -> dict:
         out.update(**pool["landed"], estimator="every gate_landed commit on main; lines by first-parent diff; survival by first-parent blame")
     elif kind == "gate_tests":
         src = est.get("source", "main")
-        run = pool["deployed_tests"] if src == "deployed" and pool["deployed_tests"] else (pool["landed_tests"] or pool["main_tests"])
-        source = "deployed build" if src == "deployed" and pool["deployed_tests"] else ("the last landing (nothing deployed)" if src == "deployed" else "the last landing's gate run")
+        run = pool["deployed_tests"] if src == "deployed" and pool["deployed_tests"] else (pool["main_tests"] if src == "main" else (pool["landed_tests"] or pool["main_tests"]))
+        source = "deployed build" if src == "deployed" and pool["deployed_tests"] else ("the last landing (nothing deployed)" if src == "deployed" else "main's latest gate check")
         stage = est.get("stage")
         stages = (run or {}).get("stages", {})
         if stage:
@@ -487,6 +500,11 @@ def _stock_reading(st, pool: dict) -> dict:
         mt = pool["main_tests"] or {}
         macc = (mt.get("stages", {}).get(stage) if stage else None) or {}
         errors = macc.get("error", 0)
+        lt = pool["landed_tests"] or {}
+        at_landing = sum(v.get("passed", 0) for v in lt.get("stages", {}).values()) if lt else None
+        # a stock that is drained when the build fails or main breaks: served only while neither has happened since
+        served = bool(pool.get("build_healthy")) and mt.get("status") != "base_broken"
+        out.update(served=served, not_served_because=None if served else ("the deployed build is down" if not pool.get("build_healthy") else "main's latest gate check failed"), at_last_landing=at_landing)
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
                              "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean")), "landed_clean_before": pool.get("main_commit_landed_clean")} if stage else None,
@@ -580,10 +598,12 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     tk = store.tickets_by_id()
     ahead = git.get("ahead", {})
     wip = sorted(({"ticket": t.id, "state": t.state, "commits": ahead[t.branch], "rounds": t.review_rounds or 0} for t in tk.values()
-                  if t.state not in ("DONE", "CANCELLED") and getattr(t, "branch", None) and t.branch in ahead), key=lambda w: -w["commits"])
+                  if t.state not in ("DONE", "CANCELLED", "BLOCKED") and getattr(t, "branch", None) and t.branch in ahead), key=lambda w: -w["commits"])
     main_commit = (main_run or {}).get("base_commit") if (main_run or {}).get("status") == "base_broken" else None
     clean_before = bool(main_commit) and any(r.get("status") == "landed" and (r.get("gate_commit") or "").startswith(main_commit[:10]) for r in runs)
-    pool = {"cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
+    healthy_at = _epoch(staging.get("last_health_at"))
+    build_healthy = staging.get("status") == "running" and healthy_at is not None and now - healthy_at <= HEALTH_STALE
+    pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "landed_tests": _run_tests(landed_run), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
     rounds = sorted(((t.review_rounds or 0), t.id) for t in tk.values() if t.state != "CANCELLED")
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}

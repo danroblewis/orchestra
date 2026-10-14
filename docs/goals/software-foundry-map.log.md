@@ -305,3 +305,29 @@ missing-discovery text no longer contradicts the tile.
 
 Declined: a per-build escape that also folds tickets by keyword (the design's rule stands);
 pipes of real length between adjacent rework boxes; touch-reachable tooltips.
+
+## Round 10 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every recomputed number matched, "mostly
+yes" on the one-minute test. Found: really done and verified behaviour did not respond to
+their declared outflows (21 passing beside a dead build and a failing main; tests read the
+last landing, not main's latest check); three consecutive crashing builds counted as three
+escapes; a blocked ticket stayed in known rework and in WIP; the pipeline tool group implied
+drains by the product team that never happened; "? · indeterminate" shown for the
+departs-only case and a − drawn on that ring edge; agents not over their waking stocks; a
+duplicate clipped stub; pipes without direction; 87 unnamed cycles; the silent scheduled
+lead not named; no flow table on the page; the guide lacking a closing-a-loop sequence.
+
+Fixed: gate-test stocks carry served / not served (build down, main's check failed) and the
+tile and box say "at the last landing · not served now"; verified behaviour reads main's
+latest check with the last landing's count beside it; consecutive crashing builds with no
+healthy build between are one escape; a ticket blocked back to the planner leaves known
+rework and WIP; only the tickets tool group implies an emit; the departs-only case reads
+"closed · balancing in its first-order pair" with no sign on that edge; agents sit over the
+mean of the stocks that wake them, pushed apart on two rows; one stub per event; pipes show
+their direction; unnamed cycles limited to short observed ones with the rest counted; a
+scheduled agent whose emits fill no stock is named in the advice; a flows-and-machines table
+on the page; the guide has a four-step closing-a-loop recipe with a list_model check after
+each.
+
+Declined: excluding reads from cycle closure (the capability loop closes through a read).

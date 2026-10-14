@@ -114,6 +114,17 @@ tell you:
    should. A loop's `signal` names one of the computed signals and the direction that is
    adverse; the computed signals are: acceptance_defects_at_gate, bad_fix_fraction, base_broken, conflicts_per_landing, defects_after_landing, defects_before_gate_share, defects_found_after_landing, fix_rounds, gate_defects, gate_distinct_defects, gate_pass, hours_lost, landed_per_worker_hour, restarts, review_defects, review_miss_rate, review_pass, reviewer_timeout_share, rework_share, starts, worker_hours_lost, worker_timeout_share.
 
+Closing a loop is four edits, and a small model gets the order wrong; do them in this order
+and run `list_model` after each, reading the loop's status (hypothesis → closable → observed):
+
+1. `update_team name=<team> emits=[<event>]` (the event must exist before anything may emit it).
+2. `update_agent name=<agent> emits=[<event>]` (and `wake_on` if the agent is not yet woken by
+   the stock it should read). `list_model` now says "closable, not yet seen".
+3. `update_role` (or the agent's prompt): tell the agent to call `emit_event` with that type
+   when it has done the work. Nothing is observed until it does.
+4. `update_model_element kind=stock key=<stock> spec={"inflows": [..., "<event>"]}` so the
+   stock the loop fills carries the event. `list_model` says "observed" after the next run.
+
 Worked example, a web-based cellular-automata game. After `propose_model`:
 
 ```

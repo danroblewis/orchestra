@@ -324,18 +324,22 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
     for d, lp in zip(declared, expected or []):
         if not d["detected"]:
             d["gaps"] = gaps(g, getattr(lp, "nodes", None) or lp.get("nodes", []), stocks)
-    unnamed, seen_members = [], set()
+    unnamed, seen_members, uncounted = [], set(), []
     for ci in infos:
         key = tuple(ci["members"])
         if ci["signature"] in used or ci["pair"] or key in seen_members:
             continue
         seen_members.add(key)
-        # a cycle nobody declared is a path through agent nodes, not a causal loop: no polarity is claimed for it
-        unnamed.append({**ci, "polarity": None, "basis": "path (polarity is only computed for declared loops and first-order pairs)"})
+        # a cycle nobody declared is a path through agent nodes, not a causal loop: no polarity is claimed for it;
+        # only short cycles the log has seen are worth a Supervisor's naming, the rest are counted
+        if ci["length"] <= 6 and ci["observed"]:
+            unnamed.append({**ci, "polarity": None, "basis": "path (polarity is only computed for declared loops and first-order pairs)"})
+        else:
+            uncounted.append(ci["signature"])
     # first-order pairs: a stock and an agent that drains it (the balancing structure); agent-only pairs are triggers, not loops
     pairs = [ci for ci in infos if ci["pair"] and any(not n.startswith("agent:") for n in ci["nodes"])
              and any(e["kind"] == "drains" and {e["src"], e["dst"]} == set(ci["nodes"]) for e in g["edges"])]
-    return {"graph": g, "cycles": infos, "declared": declared, "unnamed": unnamed, "pairs": pairs}
+    return {"graph": g, "cycles": infos, "declared": declared, "unnamed": unnamed, "pairs": pairs, "unlisted": len(uncounted)}
 
 
 BUILTIN_EVENT_PREFIXES = ("ticket_", "gate_", "staging_", "pipeline_", "session_", "turn_", "agent_", "milestone_", "capacity_", "pickup_", "loop_", "probe_", "context_", "role_", "team_", "note_")
@@ -388,3 +392,23 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
         broken.append({"from": a, "to": b, "fix": fix})
     return {"missing_members": missing, "missing_links": broken}
 
+
+
+def conversions(g: dict, attributed: dict[str, int] | None = None) -> list[dict]:
+    """The flows: an agent that drains one stock and fills another by the same event moves
+    the thing from one to the next; with the day's count attributed to that agent and the
+    event a new agent on the same flow would wake on."""
+    out, seen = [], set()
+    att = attributed or {}
+    for e in g["edges"]:
+        if e["kind"] != "drains" or not e["src"].startswith("agent:"):
+            continue
+        for f in g["edges"]:
+            if f["kind"] == "fills" and f["src"] == e["src"] and f["dst"] != e["dst"] and plain(f["via"]) == plain(e["via"]):
+                key = (e["dst"], f["dst"], e["src"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                agent = e["src"].split(":", 1)[1]
+                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "count": att.get(f"{agent}|{plain(e['via'])}"), "wake": plain(e["via"])})
+    return sorted(out, key=lambda c: (c["src"], c["dst"], c["agent"]))

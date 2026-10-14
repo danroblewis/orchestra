@@ -495,8 +495,9 @@ def teams_led_by(teams: dict[str, TeamDef], agent: str) -> list[TeamDef]:
     return [t for t in teams.values() if t.lead == agent]
 
 
-TOOL_EMITS = {"tickets": ("ticket_created", "ticket_updated"), "capacity": ("capacity_changed",), "pipeline": ("pipeline_resumed", "staging_restarted"),
-              "context": ("context_updated",), "roles": ("role_created", "agent_created", "team_created")}
+# a tool group implies an emit only when the group exists to cause that event; the pipeline and
+# capacity groups are granted for reading as often as for acting, so an agent declares those
+TOOL_EMITS = {"tickets": ("ticket_created", "ticket_updated")}
 
 
 def effective_emits(agent: AgentDef, roles: dict, teams: dict[str, TeamDef]) -> tuple[str, ...]:

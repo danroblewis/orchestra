@@ -418,9 +418,14 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str, store
         model = ms.load()
         det = foundrygraph.detect(model["stocks"], foundry.agents_for_detection(project, all_agents(project)), model["loops"], system=SYSTEM_BINDINGS)
         advice = []
-        for name, ag in all_agents(project).items():
-            if not ag.builtin and not ag.wake_on and not ag.every and not ag.at:
+        inflows = {ev for st in model["stocks"] for ev in st.inflows}
+        for name, ag in foundry.agents_for_detection(project, all_agents(project)).items():
+            if ag.builtin:
+                continue
+            if not ag.wake_on and not ag.every and not ag.at:
                 advice.append(f"{name} has no wake rules and no schedule: it sits on no flow; give it wake_on or every")
+            elif not any(foundrygraph.event_fits(i, e, name) for e in (ag.emits or []) for i in inflows):
+                advice.append(f"{name} runs ({'every ' + ag.every if ag.every else 'daily at ' + ag.at if ag.at else 'on events'}) but emits nothing any stock carries: its work is invisible to the model; declare its team's event and have it emit it")
         if store is not None and store.runtime().get("operator_capacity"):
             advice.append("wip_limit: the operator has set a capacity ceiling by hand; that is the WIP controller acting outside the org")
         for d in det["declared"]:
