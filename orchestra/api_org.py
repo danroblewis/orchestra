@@ -295,16 +295,16 @@ def detected_loops(project: Project, events=None) -> dict:
     core_nodes: set[str] = set()
     for L in found:
         L["named"] = named.get(L["signature"]) or ({"name": "ticket_delivery", "purpose": "Every ticket is implemented, reviewed, and landed or sent back.",
-                                                    "polarity": "B", "builtin": True} if L["core"] else None)
+                                                    "polarity": None, "builtin": True} if L["core"] else None)
         if L["core"]:
             core_nodes = set(L["nodes"])
         # measures: how often the trigger fired, how often the agents acted, when the loop last ran
         outer_agents = [a for a in L["agents"] if a != "delivery loop (core)"]
         L["trigger_rate"] = {t: mx["counts"].get(_count_key(g, t), 0) for t in L["triggers"]}
         L["action_rate"] = {a: sum(mx["by"].get(a, {}).values()) for a in outer_agents}
+        # a loop "fired" only when one of its agents acted; a latent loop never has
         fired = [mx["last_by"].get(a, {}).get(k, "") for a in outer_agents for k in mx["last_by"].get(a, {})]
-        fired += [mx["last"].get(_count_key(g, t), "") for t in L["triggers"]]
-        L["last_fired"] = max(fired) if fired else None
+        L["last_fired"] = max(fired) if fired and not L["latent"] else None
         L["cadence"] = {}
     # for tracing on the map, a loop through the core lights the core's nodes too
     for L in found:
@@ -318,7 +318,8 @@ def detected_loops(project: Project, events=None) -> dict:
     stale = [lp for sig, lp in named.items() if sig not in {L["signature"] for L in found}]
     loop_edges = sorted({e for L in found for e in L["edges"] if eventgraph.CORE not in e})
     return {"detected": found, "cycles": sum(L["cycles"] for L in found), "named": list(named.values()), "stale": stale,
-            "loop_edges": loop_edges, "rework": mx["rework"], "flows": mx["flows"], "machines": mx["machines"],
+            "loop_edges": loop_edges, "rework": mx["rework"], "flows": mx["flows"], "pairs": mx["pairs"], "returns": mx["returns"],
+            "machines": mx["machines"], "delivery": mx["delivery"], "headline": mx["headline"],
             "turnaround": mx["turnaround"], "hours": mx["hours"]}
 
 

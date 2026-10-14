@@ -47,23 +47,23 @@
   .tl .axis { display:grid; grid-template-columns:150px 1fr 150px; gap:10px; font-size:10.5px; color:var(--muted); margin-top:2px }
   .tl .axis .marks { display:flex; justify-content:space-between }
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
-  .evmap svg { display:block; width:100%; height:auto; font-size:11px }
-  .evmap .stock rect { fill:#0b0e14; stroke:#6b5313; stroke-width:1.5 } .evmap .stock.side rect { stroke:#3a4152 } .evmap .stock .lvl { fill:#fcd34d; font-family:var(--mono); font-size:15px; font-weight:700 } .evmap .stock .stname { fill:var(--text2); font-size:9.5px; letter-spacing:.04em } .evmap .stock .sub { fill:var(--muted); font-size:9.5px; font-family:var(--mono) }
-  .evmap .machine path { fill:var(--rc, #94a3b8); stroke:var(--border2) } .evmap .machine .mname { fill:var(--text); font-weight:700; font-size:11px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .evmap .machine .sub { fill:var(--text2); font-size:9.5px; font-family:var(--mono); paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .evmap .machine .halo { fill:none; stroke:#60a5fa; stroke-width:3; stroke-dasharray:10 8; stroke-linecap:round; filter:drop-shadow(0 0 4px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
-  .evmap .ctl { fill:none; stroke-width:1.2 } .evmap .ctl.read { stroke:#4b5563; stroke-dasharray:2 3 } .evmap .ctl.change { stroke:#9ca3af } .evmap .ctl.change.seen { stroke:#22c55e } .evmap .ctl.esc { stroke:#7dd3fc; stroke-dasharray:2 4; opacity:.6 }
-  .evmap .st rect { fill:#0b0e14; stroke:#6b5313 } .evmap .st text { fill:#fcd34d; font-family:var(--mono); font-size:10.5px; font-weight:600 } .evmap .st.side rect { stroke:#3a4152 } .evmap .st.side text { fill:#9ca3af }
-  .evmap .fl { fill:none; stroke:#9ca3af; stroke-width:1.6 } .evmap .fl.rework { stroke:#fcd34d; stroke-width:1.8 } .evmap .fl.side { stroke:#3a4152 }
-  .evmap .lbl { fill:var(--text2); font-family:var(--mono); font-size:9.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .evmap .lbl.gain { fill:#fcd34d; font-size:10.5px } .evmap .lbl.custom { fill:#c4b5fd }
-  .evmap .ag { fill:none; stroke:#4b5563; stroke-width:1.2 } .evmap .ag.wake { stroke-dasharray:2 3 } .evmap .ag.seen { stroke:#22c55e } .evmap .ag.latent { stroke:#2a2f3d; stroke-dasharray:5 4 } .evmap .ag.messages, .evmap .ag.escalates { stroke:#7dd3fc; stroke-dasharray:2 4 }
-  .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 } .evmap .n.resident circle.body { stroke:#22c55e; stroke-width:2.5 } .evmap .n { cursor:pointer }
-  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:14px } .evmap .n text.name { fill:var(--text); font-weight:600; font-size:11px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .evmap .n .sub, .evmap .st .sub { fill:var(--muted); font-size:9.5px; font-family:var(--mono); font-weight:400 }
-  .evmap .n .letter { fill:#fcd34d; font-weight:800; font-size:11px; font-family:var(--mono) }
-  .evmap .n .halo { fill:none; stroke:url(#halo); stroke:#60a5fa; stroke-width:4; stroke-dasharray:14 10; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
+  .evmap svg { display:block; width:100%; height:auto; font-size:11px; overflow:visible }
+  .evmap .tiles { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px } .evmap .tile { background:var(--panel3); border:1px solid var(--border); border-radius:6px; padding:6px 12px; min-width:110px } .evmap .tile b { display:block; font-family:var(--mono); font-size:20px; color:#fcd34d; font-weight:700; line-height:1.1 } .evmap .tile span { font-size:10.5px; color:var(--muted) }
+  .evmap .stock rect { fill:#0b0e14; stroke:#6b5313; stroke-width:1.5 } .evmap .stock.side rect { stroke:#3a4152 } .evmap .stock .lvl { fill:#fcd34d; font-family:var(--mono); font-size:22px; font-weight:700 } .evmap .stock.side .lvl { font-size:13px; fill:#9ca3af } .evmap .stock .stname { fill:var(--text2); font-size:10.5px; font-weight:600; letter-spacing:.2px } .evmap .stock.side .stname { font-size:9.5px; fill:var(--muted) }
+  .evmap .machine path { fill:var(--rc, #94a3b8); stroke:var(--border2) } .evmap .machine .sub { fill:var(--muted); font-size:9.5px; font-family:var(--mono); paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
+  .evmap .machine .halo { fill:none; stroke:#60a5fa; stroke-width:3; stroke-dasharray:10 8; stroke-linecap:round; filter:drop-shadow(0 0 4px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
+  .evmap .ctl { fill:none; stroke-width:1.2; opacity:0; transition:opacity .15s } .evmap .ctl.on { opacity:1 } .evmap .ctl.read { stroke:#9ca3af; stroke-dasharray:2 3 } .evmap .ctl.change { stroke:#9ca3af } .evmap .ctl.change.seen { stroke:#22c55e } .evmap .ctl.esc { stroke:#7dd3fc; stroke-dasharray:2 3 }
+  .evmap .fl { fill:none; stroke:#9ca3af; stroke-width:1.6 } .evmap .fl.rework { stroke:#fcd34d; stroke-width:1.6 } .evmap .fl.side { stroke:#3a4152 }
+  .evmap .lbl { fill:var(--text2); font-family:var(--mono); font-size:9.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .evmap .lbl.gain { fill:#fcd34d; font-size:10px }
+  .evmap .n circle.body { fill:var(--rc, #94a3b8); stroke:var(--border2); stroke-width:1.5 } .evmap .n.resident circle.body { stroke:#22c55e; stroke-width:2 } .evmap .n { cursor:pointer }
+  .evmap .n text.initial { fill:#0b0d12; font-weight:800; font-size:11px } .evmap .n text.name { fill:var(--text); font-weight:600; font-size:10.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .evmap .n .sub { fill:var(--muted); font-size:9px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
+  .evmap .n .halo { fill:none; stroke:#60a5fa; stroke-width:3; stroke-dasharray:12 9; stroke-linecap:round; filter:drop-shadow(0 0 5px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
   @keyframes halo { to { transform:rotate(360deg) } }
-  .evmap .dim { opacity:.12 }
+  .evmap .dim { opacity:.12 } .evmap .ctl.dim { opacity:0 }
   .evmap .legend { color:var(--muted); font-size:10.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .evmap .legend i { display:inline-block; width:18px; border-top:2px solid; margin-right:5px; vertical-align:middle }
   .evmap table.loops { width:100%; border-collapse:collapse; margin-top:10px; font-size:11.5px } .evmap table.loops th { text-align:left; color:var(--muted); font-weight:500; font-size:10.5px; padding:4px 6px; border-bottom:1px solid var(--border) } .evmap table.loops td { padding:5px 6px; border-bottom:1px solid var(--border); vertical-align:top } .evmap table.loops tr:hover td { background:var(--panel3) }
   .evmap .mx { margin-top:10px } .evmap .mx summary { cursor:pointer; font-size:11.5px } .evmap .mx table { border-collapse:collapse; font-size:10px; margin-top:6px } .evmap .mx th { color:var(--muted); font-weight:500; padding:2px 5px; text-align:left; white-space:nowrap } .evmap .mx thead th span:first-child { display:inline-block; writing-mode:vertical-rl; transform:rotate(180deg); font-family:var(--mono) } .evmap .mx td { padding:1px 5px; text-align:center; border:1px solid var(--border); color:#fcd34d; font-family:var(--mono) } .evmap .mx td.latent { color:var(--muted) } .evmap .mx td.observed, .evmap .mx td.seen { color:#22c55e }
+  .evmap .mx table.loops { font-size:11.5px } .evmap .mx table.loops td { border:none; text-align:left; color:inherit; font-family:inherit }
   .evmap table.loops tr.latent td { opacity:.6 }
 </style>
 </head>
@@ -126,106 +126,101 @@ const PALETTE = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coord
 const fmtD = (s) => s == null ? "—" : s >= 3600 ? `${(s / 3600).toFixed(1)}h` : s >= 60 ? `${Math.round(s / 60)}m` : `${Math.round(s)}s`;
 const agoIso = (iso, now) => iso ? ago(now - Date.parse(iso) / 1000) + " ago" : "never";
 const evKey = (n) => n.filter ? `${n.type}:${n.filter}` : n.type;
-// Stock and flow. Stocks are the tickets in each state, with the count now and the day's
-// arrivals. Flows are the transitions between them. The machines (worker, reviewer, gate)
-// are the processing resources on three of the flows: in use / capacity, cycle time, and
-// scrap, the fraction they send back. Controllers are the agents that do not move tickets:
-// they read a stock (dotted) and change an inflow, an outflow, or a machine (solid).
+// Stock and flow. Stocks are the tickets in each state, drawn as one straight pipeline in
+// pipeline order with the count now. Flows are the transitions between them, one rate per
+// pipe. The three machines (worker, reviewer, gate) are valves on the outflows they work:
+// in use / capacity and cycle time. Beneath the pipeline are the return loops: what was
+// sent back, as a fraction of what reached that point, and the round trip to get back.
+// Controllers (the agents that do not move tickets) sit in a strip above, over the stock
+// they read; their lines show on hover. Past DONE the strip above gives what the work
+// produced: commits landed, gate runs by result, staging deploys.
 const STOCK_OF = { ticket_created: "OPEN", "ticket_transition:OPEN": "OPEN", "ticket_transition:CANCELLED": "OPEN", "ticket_transition:BLOCKED": "BLOCKED",
-  "ticket_transition:DONE": "DONE", "ticket_transition:REJECTED": "IN_PROGRESS", "ticket_transition:IN_PROGRESS": "IN_PROGRESS", "ticket_transition:READY_FOR_REVIEW": "READY_FOR_REVIEW",
-  "ticket_transition:APPROVED": "APPROVED", "ticket_transition:MERGING": "APPROVED", "ticket_transition:IN_REVIEW": "IN_REVIEW", milestone_created: "OPEN", milestone_closed: "DONE",
-  gate_landed: "DONE", gate_rejected: "APPROVED", gate_conflict: "APPROVED", gate_error: "APPROVED", gate_base_broken: "APPROVED", staging_failed: "DONE", pipeline_resumed: "APPROVED", staging_restarted: "DONE", capacity_changed: "IN_PROGRESS" };
-const CHANGES = { ticket_created: { kind: "inflow", stock: "OPEN" }, "ticket_transition:OPEN": { kind: "inflow", stock: "OPEN" }, "ticket_transition:CANCELLED": { kind: "outflow", stock: "OPEN" },
-  milestone_created: { kind: "inflow", stock: "OPEN" }, capacity_changed: { kind: "machine", machine: "worker" }, pipeline_resumed: { kind: "machine", machine: "merge_gate" }, staging_restarted: { kind: "machine", machine: "merge_gate" } };
+  "ticket_transition:DONE": "DONE", "ticket_transition:REJECTED": "REJECTED", "ticket_transition:IN_PROGRESS": "IN_PROGRESS", "ticket_transition:READY_FOR_REVIEW": "READY_FOR_REVIEW",
+  "ticket_transition:APPROVED": "APPROVED", "ticket_transition:MERGING": "MERGING", "ticket_transition:IN_REVIEW": "IN_REVIEW", milestone_created: "OPEN", milestone_closed: "DONE",
+  gate_landed: "DONE", gate_rejected: "MERGING", gate_conflict: "MERGING", gate_error: "MERGING", gate_base_broken: "MERGING", staging_failed: "DONE", pipeline_resumed: "MERGING", staging_restarted: "DONE", capacity_changed: "IN_PROGRESS" };
+const CHANGES = { ticket_created: { stock: "OPEN", verb: "creates tickets" }, "ticket_transition:OPEN": { stock: "OPEN", verb: "reopens tickets" }, "ticket_transition:CANCELLED": { stock: "OPEN", verb: "cancels tickets" },
+  milestone_created: { stock: "OPEN", verb: "plans milestones" }, capacity_changed: { machine: "worker", verb: "sets capacity" }, pipeline_resumed: { machine: "merge_gate", verb: "resumes the gate" }, staging_restarted: { stock: "DONE", verb: "restarts staging" } };
+const PIPE = ["OPEN", "IN_PROGRESS", "READY_FOR_REVIEW", "IN_REVIEW", "APPROVED", "MERGING", "DONE"];
+const VALVE = { worker: "IN_PROGRESS", reviewer: "IN_REVIEW", merge_gate: "MERGING" };
+const pct = (f) => f == null ? "—" : `${Math.round(f * 100)}%`;
+const perDay = (n, hours) => { const d = (hours || 24) / 24; return d === 1 ? `${n}/d` : `${(n / d).toFixed(1)}/d`; };
 function eventMap(m) {
-  const now = (ORG && ORG.now) || Date.now() / 1000;
-  const W = 1100, H = 640, top = 250, bot = 470;
-  const S = { OPEN: { x: 110, y: top }, IN_PROGRESS: { x: 390, y: top }, READY_FOR_REVIEW: { x: 640, y: top }, IN_REVIEW: { x: 860, y: top },
-              APPROVED: { x: 860, y: bot }, DONE: { x: 390, y: bot }, BLOCKED: { x: 390, y: top + 100 } };
-  const M = { worker: { x: 515, y: top, between: ["IN_PROGRESS", "READY_FOR_REVIEW"] }, reviewer: { x: 860, y: (top + bot) / 2, between: ["IN_REVIEW", "APPROVED"] }, merge_gate: { x: 625, y: bot, between: ["APPROVED", "DONE"] } };
-  const flows = m.flows || {}, levels = (STATE && STATE.counts) || {}, mach = m.machines || {}, cap = (STATE && STATE.capacity) || {};
+  const now = (ORG && ORG.now) || Date.now() / 1000, hours = m.hours || 24;
+  const W = 1180, H = 330, py = 150, sw = 108, sh = 46, cy = 52;
+  const S = {}; PIPE.forEach((st, i) => (S[st] = { x: 75 + i * 165, y: py }));
+  S.BLOCKED = { x: 157, y: py + 118, small: true }; S.REJECTED = { x: 570, y: py + 118, small: true };
+  const levels = (STATE && STATE.counts) || {}, flows = m.flows || {}, pairs = m.pairs || {}, mach = m.machines || {}, cap = (STATE && STATE.capacity) || {}, ret = m.returns || {};
   const running = (STATE ? STATE.sessions : []).filter((s) => s.status === "running");
   const inUse = { worker: running.filter((s) => s.kind === "worker").length, reviewer: running.filter((s) => s.kind === "reviewer").length, merge_gate: (STATE && (STATE.gate_runs || []).some((r) => r.status === "running")) ? 1 : 0 };
   const capOf = { worker: cap.workers, reviewer: cap.reviewers, merge_gate: 1 };
   let svg = `<defs><marker id="ra" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#9ca3af"></path></marker><marker id="rr" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#fcd34d"></path></marker><marker id="rc" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-4L8,0L0,4" fill="#7dd3fc"></path></marker></defs>`;
-  const stock = (st) => { const p = S[st]; return `<g class="stock ${st === "BLOCKED" ? "side" : ""}" data-id="st:${st}" onmouseenter="cldHover('st:${st}')" onmouseleave="cldHover(null)"><rect x="${p.x - 62}" y="${p.y - 22}" width="124" height="44" rx="4"></rect><text class="lvl" x="${p.x}" y="${p.y - 2}" text-anchor="middle">${levels[st] != null ? levels[st] : "·"}</text><text class="stname" x="${p.x}" y="${p.y + 14}" text-anchor="middle">${st.replace(/_/g, " ")}</text><text class="sub" x="${p.x}" y="${p.y + 35}" text-anchor="middle">${flows[st] ? `${flows[st]} in/24h` : ""}</text><title>${esc(st)}: ${levels[st] || 0} tickets now; ${flows[st] || 0} arrived in the last 24h</title></g>`; };
-  // A pipe's flow label sits mid-way, unless a machine sits there: then it moves to the end
-  // nearest the destination stock, so the machine's own figures stay readable.
-  const pipe = (a, b, label, id, cls, withMachine) => { const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d, horiz = Math.abs(ux) > .5;
-    const sx = a.x + (horiz ? ux * 66 : 0), sy = a.y + (horiz ? 0 : uy * 26), ex = b.x - (horiz ? ux * 66 : 0), ey = b.y - (horiz ? 0 : uy * 26);
-    const t = withMachine ? 0.88 : 0.5, lx = sx + (ex - sx) * t + (horiz ? 0 : 8), ly = sy + (ey - sy) * t + (horiz ? (withMachine ? 16 : -6) : 4);
-    return `<path class="fl ${cls || ""}" data-id="${id}" d="M${sx},${sy} L${ex},${ey}" marker-end="url(#${cls === "rework" ? "rr" : "ra"})"><title>${esc(label)}</title></path><text class="lbl" x="${lx}" y="${ly}" text-anchor="${horiz ? (withMachine ? "end" : "middle") : "start"}">${esc(label)}</text>`; };
-  const machine = (name) => { const mm = M[name], d = mach[name] || {}, L = { worker: "worker", reviewer: "reviewer", merge_gate: "merge gate" }[name], color = PALETTE[name] || "#94a3b8";
-    const lines = [`${inUse[name] != null ? inUse[name] : "·"} of ${capOf[name] != null ? capOf[name] : "·"} in use`, `cycle ${fmtD(d.cycle)}`, `scrap ${d.scrap != null ? d.scrap : "—"} → ${(d.scrap_to || "").replace(/_/g, " ")}`];
-    const halo = inUse[name] ? `<circle class="halo" r="22" cx="${mm.x}" cy="${mm.y}"></circle>` : "";
-    return `<g class="machine" data-id="m:${name}" onmouseenter="cldHover('m:${name}')" onmouseleave="cldHover(null)" style="--rc:${color}">${halo}<path d="M${mm.x - 14},${mm.y - 11} L${mm.x + 14},${mm.y + 11} L${mm.x + 14},${mm.y - 11} L${mm.x - 14},${mm.y + 11} Z"></path><text class="mname" x="${mm.x}" y="${mm.y - 18}" text-anchor="middle">${L}</text>${lines.map((t, i) => `<text class="sub" x="${mm.x}" y="${mm.y + 24 + i * 11}" text-anchor="middle">${esc(t)}</text>`).join("")}<title>${L}: processed ${d.processed || 0} in 24h</title></g>`; };
-  // pipes between stocks, with the machines on them
-  svg += pipe(S.OPEN, S.IN_PROGRESS, `${flows.IN_PROGRESS || 0}/24h picked up`, "fl:OPEN>IN_PROGRESS");
-  svg += pipe(S.IN_PROGRESS, S.READY_FOR_REVIEW, `${flows.READY_FOR_REVIEW || 0}/24h`, "fl:IN_PROGRESS>READY_FOR_REVIEW", "", true);
-  svg += pipe(S.READY_FOR_REVIEW, S.IN_REVIEW, `${flows.IN_REVIEW || 0}/24h`, "fl:READY_FOR_REVIEW>IN_REVIEW");
-  svg += pipe(S.IN_REVIEW, S.APPROVED, `${flows.APPROVED || 0}/24h`, "fl:IN_REVIEW>APPROVED", "", true);
-  svg += pipe(S.APPROVED, S.DONE, `${flows.DONE || 0}/24h landed`, "fl:APPROVED>DONE", "", true);
-  svg += pipe(S.IN_PROGRESS, S.BLOCKED, `${flows.BLOCKED || 0}/24h`, "fl:IN_PROGRESS>BLOCKED", "side");
-  // rework: the scrap pipes back to IN_PROGRESS
-  const rw = m.rework || {}, rev = rw.review || {}, gate = rw.gate || {};
-  svg += `<path class="fl rework" data-id="rework:review" d="M${M.reviewer.x - 20},${M.reviewer.y} C${M.reviewer.x - 160},${M.reviewer.y} ${S.IN_PROGRESS.x + 160},${top + 60} ${S.IN_PROGRESS.x + 40},${top + 24}" marker-end="url(#rr)"><title>review rework: ${rev.rejections || 0} of ${rev.arrivals || 0} sent back</title></path><text class="lbl gain" x="${M.reviewer.x - 170}" y="${M.reviewer.y - 16}" text-anchor="middle">A · ${rev.rejections || 0}/24h back from review · gain ${rev.gain != null ? rev.gain : "—"} · ${fmtD(rev.delay)}</text>`;
-  svg += `<path class="fl rework" data-id="rework:gate" d="M${M.merge_gate.x},${M.merge_gate.y - 16} C${M.merge_gate.x - 40},${bot - 120} ${S.IN_PROGRESS.x + 120},${top + 110} ${S.IN_PROGRESS.x + 30},${top + 24}" marker-end="url(#rr)"><title>gate rework: ${gate.rejections || 0} of ${gate.arrivals || 0} sent back</title></path><text class="lbl gain" x="${M.merge_gate.x - 60}" y="${bot - 70}" text-anchor="middle">B · ${gate.rejections || 0}/24h back from the gate · gain ${gate.gain != null ? gate.gain : "—"} · ${fmtD(gate.delay)}</text>`;
-  Object.keys(S).forEach((st) => svg += stock(st));
-  Object.keys(M).forEach((n) => svg += machine(n));
-  // controllers: agents that do not move tickets, placed above or below what they read
+  const stock = (st) => { const p = S[st], w = p.small ? 84 : sw, h = p.small ? 34 : sh;
+    return `<g class="stock ${p.small ? "side" : ""}" data-id="st:${st}" onmouseenter="cldHover('st:${st}')" onmouseleave="cldHover(null)"><rect x="${p.x - w / 2}" y="${p.y - h / 2}" width="${w}" height="${h}" rx="4"></rect><text class="lvl" x="${p.x}" y="${p.y + (p.small ? 1 : -1)}" text-anchor="middle">${levels[st] != null ? levels[st] : "·"}</text><text class="stname" x="${p.x}" y="${p.y + (p.small ? 13 : 16)}" text-anchor="middle">${st.replace(/_/g, " ")}</text><title>${esc(st)}: ${levels[st] || 0} tickets now · ${flows[st] || 0} arrived in ${hours}h</title></g>`; };
+  // the pipeline: one pipe per step, its rate above; a valve where a machine works the outflow
+  PIPE.slice(0, -1).forEach((st, i) => { const a = S[st], b = S[PIPE[i + 1]], sx = a.x + sw / 2, ex = b.x - sw / 2, n = pairs[`${st}>${PIPE[i + 1]}`] || 0;
+    const mname = Object.keys(VALVE).find((k) => VALVE[k] === st);
+    svg += `<path class="fl" data-id="fl:${st}>${PIPE[i + 1]}" d="M${sx},${py} L${ex},${py}" marker-end="url(#ra)"><title>${st} → ${PIPE[i + 1]}: ${n} in ${hours}h</title></path><text class="lbl" x="${(sx + ex) / 2}" y="${py - 9}" text-anchor="middle">${perDay(n, hours)}</text>`;
+    if (mname) { const d = mach[mname] || {}, mx = (sx + ex) / 2, color = PALETTE[mname] || "#94a3b8", L = mname.replace("_", " ");
+      svg += `<g class="machine" data-id="m:${mname}" onmouseenter="cldHover('m:${mname}')" onmouseleave="cldHover(null)" style="--rc:${color}">${inUse[mname] ? `<circle class="halo" r="14" cx="${mx}" cy="${py}"></circle>` : ""}<path d="M${mx - 9},${py - 7} L${mx + 9},${py + 7} L${mx + 9},${py - 7} L${mx - 9},${py + 7} Z"></path><text class="sub" x="${mx}" y="${py + 21}" text-anchor="middle">${esc(L)}</text><text class="sub" x="${mx}" y="${py + 32}" text-anchor="middle">${inUse[mname] != null ? inUse[mname] : "·"}/${capOf[mname] != null ? capOf[mname] : "·"} · ${fmtD(d.cycle)}</text><title>${L}: ${inUse[mname] || 0} of ${capOf[mname] != null ? capOf[mname] : "?"} in use · median ${fmtD(d.cycle)} per ticket · ${d.processed || 0} started in ${hours}h</title></g>`; } });
+  // the return loops beneath: A review rejections, B gate rejections, C restarts; BLOCKED aside
+  const arc = (id, d, title, label, lx, ly, anchor) => `<path class="fl rework" data-id="${id}" d="${d}" marker-end="url(#rr)"><title>${esc(title)}</title></path><text class="lbl gain" data-id="${id}" x="${lx}" y="${ly}" text-anchor="${anchor || "middle"}">${esc(label)}</text>`;
+  const rv = ret.review || {}, gt = ret.gate || {}, rs = ret.restart || {}, bl = ret.blocked || {};
+  const line = (r, ltr) => `${ltr} ${r.label || ""} ${perDay(r.sent_back || 0, hours)} (${pct(r.fraction)}) · back in ${fmtD(r.round_trip)}`;
+  const b = py + sh / 2;
+  svg += arc("ret:restart", `M${S.IN_PROGRESS.x - 10},${b} C${S.IN_PROGRESS.x - 10},${b + 50} ${S.OPEN.x + 10},${b + 50} ${S.OPEN.x + 10},${b + 2}`, `restarted: ${rs.sent_back || 0} of ${rs.reached || 0} tickets that started went back to OPEN (a turn ended without a result)`, line(rs, "C"), S.OPEN.x + 50, b + 52, "start");
+  svg += `<path class="fl side" data-id="ret:blocked" d="M${S.IN_PROGRESS.x + 20},${b} C${S.IN_PROGRESS.x + 20},${b + 60} ${S.BLOCKED.x + 42},${S.BLOCKED.y - 40} ${S.BLOCKED.x + 30},${S.BLOCKED.y - 18}" marker-end="url(#ra)"><title>blocked: ${bl.sent_back || 0} of ${bl.reached || 0} (${pct(bl.fraction)})</title></path>`;
+  svg += `<path class="fl side" data-id="ret:blocked" d="M${S.BLOCKED.x - 42},${S.BLOCKED.y} C${S.BLOCKED.x - 90},${S.BLOCKED.y} ${S.OPEN.x - 10},${b + 70} ${S.OPEN.x - 10},${b + 2}" marker-end="url(#ra)"><title>unblocked: back to OPEN</title></path><text class="lbl" data-id="ret:blocked" x="${S.BLOCKED.x}" y="${S.BLOCKED.y + 30}" text-anchor="middle">${perDay(bl.sent_back || 0, hours)} (${pct(bl.fraction)})</text>`;
+  svg += arc("ret:review", `M${S.IN_REVIEW.x},${b} L${S.REJECTED.x},${S.REJECTED.y - 18}`, `rejected in review: ${rv.sent_back || 0} of ${rv.reached || 0} tickets that reached review were sent back; median ${fmtD(rv.round_trip)} to come back`, line(rv, "A"), S.IN_REVIEW.x + 8, b + 52, "start");
+  svg += arc("ret:gate", `M${S.MERGING.x},${b} C${S.MERGING.x},${b + 70} ${S.REJECTED.x + 120},${S.REJECTED.y} ${S.REJECTED.x + 44},${S.REJECTED.y}`, `rejected by the gate: ${gt.sent_back || 0} of ${gt.reached || 0} approved tickets failed the gate; median ${fmtD(gt.round_trip)} to be approved again`, line(gt, "B"), S.MERGING.x - 10, S.REJECTED.y + 2, "end");
+  const back = pairs["REJECTED>IN_PROGRESS"] || 0;
+  svg += arc("ret:back", `M${S.REJECTED.x - 42},${S.REJECTED.y} C${S.REJECTED.x - 150},${S.REJECTED.y} ${S.IN_PROGRESS.x + 30},${b + 90} ${S.IN_PROGRESS.x + 30},${b + 2}`, `REJECTED → IN_PROGRESS: ${back} in ${hours}h`, `${perDay(back, hours)} picked up again`, S.READY_FOR_REVIEW.x - 20, S.REJECTED.y + 2, "middle");
+  PIPE.concat(["BLOCKED", "REJECTED"]).forEach((st) => svg += stock(st));
+  // controllers: a strip above the pipeline, each over what it reads; lines on hover only
   const nodes = Object.fromEntries(m.nodes.map((n) => [n.id, n]));
   const ctrl = Object.entries(m.agents || {}).filter(([n, a]) => !(a.builtin && !a.resident));
-  const loops = m.detected || []; const letterOf = {}; let li = 0;
-  loops.forEach((L) => { if (L.core) return; const ltr = String.fromCharCode(67 + li++); L.agents.filter((x) => x !== "delivery loop (core)").forEach((x) => (letterOf[x] = letterOf[x] || []).push(ltr)); });
   const edgesOf = (name) => m.edges.filter((e) => e.from === "agent:" + name || e.to === "agent:" + name);
   const loopEdges = new Set(m.loop_edges || []);
-  const slots = ctrl.map(([name, a]) => { const reads = edgesOf(name).filter((e) => e.to === "agent:" + name && e.from.startsWith("ev:")).map((e) => STOCK_OF[evKey(nodes[e.from])]).filter((st) => st && S[st]);
-    const xs = reads.map((st) => S[st].x); const below = reads.length > 0 && reads.every((st) => S[st].y >= bot); return { name, a, x: xs.length ? xs.reduce((p, q) => p + q, 0) / xs.length : null, below }; });
-  const band = (list, y) => { list.sort((p, q) => (p.x ?? 9999) - (q.x ?? 9999)); const gap = Math.min(160, list.length > 1 ? (W - 180) / (list.length - 1) : 160); let nx = 90;
-    list.forEach((s, i) => { if (s.x == null) s.x = nx; s.x = Math.min(Math.max(s.x, nx), W - 90 - gap * (list.length - 1 - i)); nx = s.x + gap; s.y = y; }); };
-  band(slots.filter((s) => !s.below), 80); band(slots.filter((s) => s.below), 590);
-  const P = Object.fromEntries(slots.map((s) => [s.name, { x: s.x, y: s.y }]));
-  for (const [name, a] of ctrl) {
-    const p = P[name], color = PALETTE[name] || "#94a3b8", letters = (letterOf[name] || []).join(""), notes = [];
-    const seenReads = new Set(), seenChanges = new Set();
-    for (const e of edgesOf(name)) {
-      const wake = e.to === "agent:" + name, other = wake ? e.from : e.to;
-      if (!other.startsWith("ev:")) { if (!wake && other === "agent:supervisor" && P.supervisor) svg += `<path class="ctl esc" data-id="agent:${name}" d="M${p.x},${p.y} L${P.supervisor.x},${P.supervisor.y}" marker-end="url(#rc)"><title>${esc(name)} can escalate to the supervisor</title></path>`; continue; }
-      const key = evKey(nodes[other]), label = nodes[other].label;
-      if (wake) { const st = STOCK_OF[key]; if (st && S[st] && !seenReads.has(st)) { seenReads.add(st); const q = S[st]; svg += `<path class="ctl read" data-id="agent:${name}" d="M${q.x},${q.y + (p.y < q.y ? -22 : 22)} L${p.x},${p.y + (p.y < q.y ? 24 : -24)}" marker-end="url(#ra)"><title>${esc(label)} wakes ${esc(name)}</title></path>`; } else notes.push(`← ${label}${(m.counts || {})[key] ? ` ${(m.counts || {})[key]}/24h` : ""}`); continue; }
+  const info = ctrl.map(([name, a]) => { const reads = [], changes = [], other = [];
+    for (const e of edgesOf(name)) { const wake = e.to === "agent:" + name, ev = wake ? e.from : e.to; if (!ev.startsWith("ev:")) { if (!wake && ev === "agent:supervisor") other.push("esc"); continue; }
+      const key = evKey(nodes[ev]), label = nodes[ev].label;
+      if (wake) { const st = STOCK_OF[key]; if (st && S[st]) reads.push(st); else other.push(`← ${label}`); continue; }
       if (e.kind === "latent" || (!e.seen && !loopEdges.has(e.from + ">" + e.to))) continue;
-      const ch = CHANGES[key]; if (!ch) { notes.push(`→ ${label}${e.seen ? ` ${e.seen}/24h` : ""}`); continue; }
-      const q = ch.kind === "machine" ? M[ch.machine] : S[ch.stock]; const k = ch.kind + (ch.stock || ch.machine); if (seenChanges.has(k)) continue; seenChanges.add(k);
-      svg += `<path class="ctl change ${e.seen ? "seen" : ""}" data-id="agent:${name}" d="M${p.x},${p.y + (p.y < q.y ? 24 : -24)} L${q.x + (ch.kind === "outflow" ? -40 : ch.kind === "inflow" ? -40 : 0)},${q.y + (p.y < q.y ? -24 : 24)}" marker-end="url(#ra)"><title>${esc(name)} ${ch.kind === "inflow" ? "adds to" : ch.kind === "outflow" ? "removes from" : "changes the machine at"} ${esc(ch.stock || ch.machine)}${e.seen ? ` · ${e.seen} in 24h` : ""}</title></path>`;
-    }
-    const up = p.y < 300;
-    notes.slice(0, 3).forEach((t, k) => svg += `<text class="lbl chip" data-id="agent:${name}" x="${p.x}" y="${up ? p.y - 32 - k * 11 : p.y + 58 + k * 11}" text-anchor="middle">${esc(t)}</text>`);
-    const active = running.some((s) => s.kind === name);
-    svg += `<g class="n ${a.resident ? "resident" : ""}" data-id="agent:${name}" style="--rc:${color}" onclick="openAgent('${name}')" onmouseenter="cldHover('agent:${name}')" onmouseleave="cldHover(null)">${active ? `<circle class="halo" r="26" cx="${p.x}" cy="${p.y}"></circle>` : ""}<circle class="body" r="19" cx="${p.x}" cy="${p.y}"></circle><text class="initial" x="${p.x}" y="${p.y + 5}" text-anchor="middle">${esc(name[0].toUpperCase())}</text>${letters ? `<text class="letter" x="${p.x + 17}" y="${p.y - 13}">${letters}</text>` : ""}<text class="name" x="${p.x}" y="${p.y + 33}" text-anchor="middle">${esc(name)}</text><text class="sub" x="${p.x}" y="${p.y + 44}" text-anchor="middle">${esc(a.every ? "every " + a.every : a.at ? "daily " + a.at : a.kind === "ad_hoc" ? "when briefed" : "on events")}</text></g>`;
-  }
-  return `<div class="evmap"><svg id="cld" viewBox="0 0 ${W} ${H}">${svg}</svg>
-    <div class="legend"><span><b>stocks</b> tickets in a state: count now, arrivals in ${m.hours || 24}h</span><span><b>flows</b> transitions per day</span><span><b>machines</b> ⋈ the worker, reviewer, and gate: in use / capacity, cycle time, scrap</span><span><i style="border-color:#fcd34d"></i>scrap back to IN_PROGRESS (gain = fraction sent back)</span><span><i style="border-color:#4b5563;border-top-style:dotted"></i>a controller reads a stock</span><span><i style="border-color:#9ca3af"></i>a controller changes an inflow, outflow, or machine</span><span><i style="border-color:#7dd3fc;border-top-style:dotted"></i>can escalate</span><span>letters: loops below · hover to isolate · click an agent to open it</span></div>
+      const ch = CHANGES[key]; if (ch) changes.push({ ...ch, seen: e.seen || 0 }); else other.push(`→ ${label}${e.seen ? ` ${e.seen}` : ""}`); }
+    const uniq = (xs) => [...new Set(xs)];
+    const xs = uniq(reads).map((st) => S[st].x).concat(uniq(changes.map((c) => c.stock || VALVE[c.machine])).map((st) => S[st].x));
+    const phrase = changes.length ? uniq(changes.map((c) => c.verb)).slice(0, 2).join(" · ") : reads.length ? `reads ${uniq(reads).slice(0, 2).map((s) => s.replace(/_/g, " ")).join(", ")}` : other.filter((t) => t !== "esc")[0] || (a.kind === "ad_hoc" ? "when briefed" : "");
+    return { name, a, reads: uniq(reads), changes, esc: other.includes("esc"), x: xs.length ? xs.reduce((p, q) => p + q, 0) / xs.length : null, phrase }; });
+  info.sort((p, q) => (p.x ?? 9999) - (q.x ?? 9999)); const gap = Math.min(150, info.length > 1 ? (W - 160) / (info.length - 1) : 150); let nx = 80;
+  info.forEach((s, i) => { if (s.x == null) s.x = nx; s.x = Math.min(Math.max(s.x, nx), W - 80 - gap * (info.length - 1 - i)); nx = s.x + gap; s.y = cy; });
+  const P = Object.fromEntries(info.map((s) => [s.name, s]));
+  for (const s of info) { const color = PALETTE[s.name] || "#94a3b8", active = running.some((r) => r.kind === s.name);
+    s.reads.forEach((st) => svg += `<path class="ctl read" data-id="agent:${s.name}" data-to="st:${st}" d="M${S[st].x},${py - sh / 2} L${s.x},${cy + 14}" marker-end="url(#ra)"><title>${esc(st)} wakes ${esc(s.name)}</title></path>`);
+    const seenK = new Set(); s.changes.forEach((c) => { const k = c.stock || c.machine; if (seenK.has(k)) return; seenK.add(k); const q = c.stock ? S[c.stock] : { x: (S[VALVE[c.machine]].x + 165 + S[VALVE[c.machine]].x) / 2, y: py };
+      svg += `<path class="ctl change ${c.seen ? "seen" : ""}" data-id="agent:${s.name}" data-to="${c.stock ? "st:" + c.stock : "m:" + c.machine}" d="M${s.x},${cy + 14} L${q.x},${q.y - (c.stock ? sh / 2 : 8)}" marker-end="url(#ra)"><title>${esc(s.name)} ${esc(c.verb)}${c.seen ? ` · ${c.seen} in ${hours}h` : ""}</title></path>`; });
+    if (s.esc && P.supervisor && s.name !== "supervisor") svg += `<path class="ctl esc" data-id="agent:${s.name}" data-to="agent:supervisor" d="M${s.x},${cy - 14} C${s.x},${cy - 40} ${P.supervisor.x},${cy - 40} ${P.supervisor.x},${cy - 14}" marker-end="url(#rc)"><title>${esc(s.name)} can escalate to the supervisor</title></path>`;
+    svg += `<g class="n ${s.a.resident ? "resident" : ""}" data-id="agent:${s.name}" style="--rc:${color}" onclick="openAgent('${s.name}')" onmouseenter="cldHover('agent:${s.name}')" onmouseleave="cldHover(null)">${active ? `<circle class="halo" r="17" cx="${s.x}" cy="${cy}"></circle>` : ""}<circle class="body" r="12" cx="${s.x}" cy="${cy}"></circle><text class="initial" x="${s.x}" y="${cy + 4}" text-anchor="middle">${esc(s.name[0].toUpperCase())}</text><text class="name" x="${s.x}" y="${cy + 28}" text-anchor="middle">${esc(s.name)}</text><text class="sub" x="${s.x}" y="${cy + 39}" text-anchor="middle">${esc(s.phrase)}</text><title>${esc(s.name)} · ${esc(s.a.every ? "every " + s.a.every : s.a.at ? "daily " + s.a.at : s.a.kind === "ad_hoc" ? "when briefed" : "on events")}${s.reads.length ? " · reads " + esc(s.reads.join(", ")) : ""}</title></g>`; }
+  const hl = m.headline || {}, dl = m.delivery || {}, tile = (v, k, t) => `<div class="tile" title="${esc(t || "")}"><b>${v}</b><span>${esc(k)}</span></div>`;
+  const head = `<div class="tiles">${tile(hl.landed_per_day != null ? hl.landed_per_day : "—", "tickets landed / day", `${flows.DONE || 0} reached DONE in ${hours}h; ${hl.created_per_day} created / day`)}${tile(fmtD(hl.lead_time), "lead time", "median from creation to DONE, for tickets that finished in the window")}${tile(hl.restarts_per_day != null ? hl.restarts_per_day : "—", "worker restarts / day", `${hl.turn_timeouts || 0} turns timed out, ${hl.turn_errors || 0} errored in ${hours}h`)}${tile(dl.gate_runs ? `${dl.landed}/${dl.gate_runs}` : "—", "gate runs landed", `gate outcomes in ${hours}h: ${Object.entries(dl.gate_outcomes || {}).map(([k, v]) => `${k} ${v}`).join(", ")}`)}${tile(dl.deployed != null ? dl.deployed : "—", "staging deploys", `${dl.staging_restarted || 0} restarts · last deploy ${agoIso(dl.last_deployed, now)}`)}</div>`;
+  return `<div class="evmap">${head}<svg id="cld" viewBox="0 0 ${W} ${H}">${svg}</svg>
+    <div class="legend"><span><b>stocks</b> tickets in a state now</span><span><b>pipes</b> transitions per day</span><span>⋈ a machine on its pipe: in use / capacity · cycle time</span><span><i style="border-color:#fcd34d"></i>sent back: per day (fraction of what reached that point) · round trip</span><span>agents above read the stock they stand over · hover for their lines · click to open</span></div>
     ${loopTable(m, now)}${matrix(m)}</div>`;
 }
 function loopTable(m, now) {
-  const loops = m.detected || [], rw = m.rework || {};
+  const loops = m.detected || [], ret = m.returns || {}, hours = m.hours || 24;
   const rows = [];
-  if (loops.length && loops[0].core) {
-    const c = loops[0];
-    for (const [ltr, key, label] of [["A", "review", "reviewer"], ["B", "gate", "merge gate"]]) { const r = rw[key] || {};
-      rows.push(`<tr onmouseenter="cldHighlight(['rework:${key}','rework:back','st:REJECTED','st:IN_PROGRESS'])" onmouseleave="cldHover(null)"><td><b>${ltr}</b></td><td><b>${esc(c.named.name)}</b> <span class="tag">built-in</span></td><td>B</td><td>${key === "review" ? "READY_FOR_REVIEW" : "APPROVED"} <span class="muted">${r.arrivals || 0}/24h</span></td><td>${label}</td><td>REJECTED <span class="muted">${r.rejections || 0}/24h</span></td><td>IN_PROGRESS</td><td>${r.gain != null ? r.gain : "—"}</td><td>${fmtD(r.delay)}</td><td>${agoIso(m.last ? m.last["ticket_transition:REJECTED"] : null, now)}</td><td class="muted">${esc(c.named.purpose)}</td></tr>`); }
-  }
-  loops.forEach((L, i) => { if (L.core) return; const ltr = String.fromCharCode(67 + i - 1);
-    const agents = L.agents.filter((a) => a !== "delivery loop (core)");
-    const trig = L.triggers.map((t) => `${esc(t)} <span class="muted">${L.trigger_rate[t] || 0}/24h</span>`).join(", ") || "—";
-    const act = L.actions.map((a) => esc(a)).join(", ") || "—";
-    const rate = agents.map((a) => `${esc(a)} <span class="muted">${esc(L.cadence[a] || "")}${L.action_rate[a] ? ` · ${L.action_rate[a]} acts/24h` : ""}</span>`).join(", ");
-    const nm = (L.named ? `<b>${esc(L.named.name)}</b>` : `<span class="muted">unnamed</span> <span class="tag" title="Ask the Supervisor: name_loop with this signature" onclick="navigator.clipboard&&navigator.clipboard.writeText('${L.signature}')">name this · ${L.signature}</span>`)
-      + (L.latent ? ' <span class="tag" style="color:#fcd34d;border-color:#92400e" title="This loop exists by the agents\' tool grants, but the log has not seen it close in the window">possible · never seen</span>' : "") + (L.kind === "supervision" ? ' <span class="tag">human in the loop</span>' : "");
-    rows.push(`<tr class="${L.latent ? "latent" : ""}" onmouseenter="cldHighlight(${JSON.stringify(agents.map((a) => "agent:" + a).concat(L.triggers.map((t) => "st:" + (STATE_OF_EVENT["ticket_transition:" + t] || t))))})" onmouseleave="cldHover(null)"><td><b>${ltr}</b></td><td>${nm}</td><td>${L.named && L.named.polarity ? esc(L.named.polarity) : "?"}</td><td>${trig}</td><td>${rate}</td><td>${act}</td><td>${L.kind === "outer" ? "the delivery loop" : "—"}</td><td>—</td><td>—</td><td>${agoIso(L.last_fired, now)}</td><td class="muted">${L.named ? esc(L.named.purpose || "") + (L.named.through_the_world ? " · closes through: " + esc(L.named.through_the_world) : "") : ""}</td></tr>`); });
-  const stale = (m.stale || []).map((lp) => `<tr><td></td><td><b>${esc(lp.name)}</b></td><td colspan="9" class="muted">named, but its loop no longer exists in the bindings</td></tr>`).join("");
-  return `<table class="loops"><thead><tr><th></th><th>loop</th><th title="B balancing (corrects), R reinforcing (amplifies); the Supervisor's judgement when naming">pol.</th><th>trigger</th><th>agent · cadence</th><th>action</th><th>re-enters</th><th>gain</th><th>delay</th><th>last fired</th><th>purpose</th></tr></thead><tbody>${rows.join("")}${stale}</tbody></table>
-    ${m.turnaround != null ? `<div class="muted" style="font-size:11px;margin-top:4px">Median IN_PROGRESS → DONE in the window: ${fmtD(m.turnaround)}.</div>` : ""}`;
+  for (const [ltr, key, from, by, back] of [["A", "review", "IN_REVIEW", "reviewer", "IN_PROGRESS"], ["B", "gate", "MERGING", "merge gate", "IN_PROGRESS"], ["C", "restart", "IN_PROGRESS", "orchestra", "OPEN"]]) { const r = ret[key] || {};
+    rows.push(`<tr onmouseenter="cldHighlight(['ret:${key}','ret:back','st:REJECTED','st:${from}','st:${back}','st:${r.reaches || from}'])" onmouseleave="cldHover(null)"><td><b>${ltr}</b></td><td><b>${esc(r.label || key)}</b></td><td>${esc(by)} sends ${from.replace(/_/g, " ")} → ${back.replace(/_/g, " ")}</td><td>${perDay(r.sent_back || 0, hours)} <span class="muted">of ${r.reached || 0} that reached ${(r.reaches || "").replace(/_/g, " ")}</span></td><td>${pct(r.fraction)}</td><td>${fmtD(r.round_trip)} <span class="muted">(${r.closed || 0} closed)</span></td><td>${agoIso(r.last_closed, now)}</td><td class="muted">${key === "review" ? "What review found wrong goes back to the worker; the fraction is the quality of the first pass." : key === "gate" ? "What the gate found wrong goes back to the worker; the fraction is how often an approved change still did not land." : "A turn ended without a result and the ticket was re-queued; the fraction is how much worker time is lost."}</td></tr>`); }
+  let li = 0;
+  const outer = loops.filter((L) => !L.core && !L.latent), latent = loops.filter((L) => L.latent);
+  const lrow = (L) => { const ltr = String.fromCharCode(68 + li++), agents = L.agents.filter((a) => a !== "delivery loop (core)");
+    const trig = L.triggers.map((t) => `${esc(t)} <span class="muted">${perDay(L.trigger_rate[t] || 0, hours)}</span>`).join(", ") || "—";
+    const who = agents.map((a) => `${esc(a)} <span class="muted">${esc(L.cadence[a] || "")}${L.action_rate[a] ? ` · ${L.action_rate[a]} acts` : ""}</span>`).join(", ");
+    const nm = L.named ? `<b>${esc(L.named.name)}</b>${L.named.polarity ? ` <span class="tag">${esc(L.named.polarity)}</span>` : ""}` : `<span class="muted" title="Unnamed. Ask the Supervisor to name it; its signature is ${L.signature}">unnamed</span>`;
+    return `<tr class="${L.latent ? "latent" : ""}" onmouseenter="cldHighlight(${JSON.stringify(agents.map((a) => "agent:" + a).concat(L.triggers.map((t) => "st:" + (STATE_OF_EVENT["ticket_transition:" + t] || t))))})" onmouseleave="cldHover(null)"><td><b>${ltr}</b></td><td>${nm}${L.kind === "supervision" ? ' <span class="tag">human in the loop</span>' : ""}</td><td>${who} on ${trig} → ${L.actions.map(esc).join(", ") || "—"}${L.kind === "outer" ? " → the pipeline" : ""}</td><td colspan="3"></td><td>${L.latent ? "never" : agoIso(L.last_fired, now)}</td><td class="muted">${L.named ? esc(L.named.purpose || "") + (L.named.through_the_world ? " · closes through: " + esc(L.named.through_the_world) : "") : ""}</td></tr>`; };
+  outer.forEach((L) => rows.push(lrow(L)));
+  const stale = (m.stale || []).map((lp) => `<tr><td></td><td><b>${esc(lp.name)}</b></td><td colspan="6" class="muted">named, but its loop no longer exists in the bindings</td></tr>`).join("");
+  const poss = latent.length ? `<details class="mx"><summary class="muted">${latent.length} possible loop${latent.length === 1 ? "" : "s"}: agents whose tools could close a loop, never seen to in the window</summary><table class="loops"><tbody>${latent.map(lrow).join("")}</tbody></table></details>` : "";
+  return `<table class="loops"><thead><tr><th></th><th>loop</th><th>who sends what back</th><th>sent back</th><th>fraction</th><th>round trip</th><th>last closed</th><th>what it means</th></tr></thead><tbody>${rows.join("")}${stale}</tbody></table>${poss}`;
 }
 function matrix(m) {
   const nodes = Object.fromEntries(m.nodes.map((n) => [n.id, n]));
@@ -238,8 +233,11 @@ function matrix(m) {
 function cldHover(id) {
   const svg = document.getElementById("cld"); if (!svg) return;
   const all = [...svg.querySelectorAll("[data-id]")];
+  all.forEach((x) => x.classList.remove("on"));
   if (!id) { all.forEach((x) => x.classList.remove("dim")); return; }
-  all.forEach((x) => x.classList.toggle("dim", x.dataset.id !== id && !(id.startsWith("st:") && x.dataset.id && x.dataset.id.includes(id.slice(3)))));
+  const keep = new Set([id]);
+  all.forEach((x) => { if (x.classList.contains("ctl") && x.dataset.id === id) { x.classList.add("on"); keep.add(x.dataset.to); } });
+  all.forEach((x) => x.classList.toggle("dim", !keep.has(x.dataset.id) && !(id.startsWith("st:") && x.dataset.id && x.dataset.id.includes(id.slice(3)))));
 }
 function cldHighlight(ids) {
   const svg = document.getElementById("cld"); if (!svg) return;
@@ -435,8 +433,8 @@ async function refresh() {
     const loose = org.agents.filter((a) => (!a.team || a.team_exists === false) && !(a.builtin && !a.resident));
     // The map lives in its own container and is redrawn only when the graph changes; the
     // list below is re-rendered every refresh, which would otherwise wipe the drawn SVG.
-    const sig = JSON.stringify([evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]), st.sessions.filter((s) => s.status === "running").map((s) => s.kind).sort(), evm.flows, evm.rework]);
-    if (window.EVSIG !== sig || !document.getElementById("evsvg")) { window.EVSIG = sig; $("evmap-host").innerHTML = `<h2>Event map</h2>` + eventMap(evm); }
+    const sig = JSON.stringify([evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]), st.sessions.filter((s) => s.status === "running").map((s) => s.kind).sort(), evm.pairs, evm.returns, evm.headline, st.counts]);
+    if (window.EVSIG !== sig || !document.getElementById("evsvg")) { window.EVSIG = sig; $("evmap-host").innerHTML = `<h2>Stocks and flows</h2>` + eventMap(evm); }
     let html = timeline(org.agents, org.now);
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');
