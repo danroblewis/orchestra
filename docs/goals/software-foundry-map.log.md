@@ -371,3 +371,52 @@ Declined: clearing known rework when a blocked ticket returns within the hour (a
 turn-limit escape on this org; the defect is the same until a verdict says otherwise, so no
 timer); `staging_failed` emission is live only after the runner restarts, which is the
 operator's call.
+
+## Round 12 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every recomputed number matched,
+including fix rounds, bad fixes, causes and hours, and the refresh was honest. Found: the
+page drew a model older than the template, because the project's `.orchestra/model/` files
+were never updated once written (five round-11 claims were true of the template and false of
+the page); the flow table counted events, not flows (demand → wip 102/d where the map said
+4 starts; known rework → awaiting review 33/d where 10 were fix rounds); the map was a
+hairball of 92 paths with every agent drawn to every stock it touches, labels crossed by
+lines, hollow pipes running behind the agents; pipes did not isolate on hover; the mini loop
+diagrams rendered at 7–8 px; `staging_restarted` declared on the pipeline manager when the
+health loop emits it; the not-served reason preferred main's check over a dead build; review
+misses counted one defect six times; time to restore ignored restarts; no flag for a median
+turn at the limit; "3 builds" for a four-build surviving defect; the machine-loss warning
+suppressed because the limit had changed; the rework cards never showed the source's B; the
+broken-base tag read as a disagreement; the "orchestra" fallback under built-in agents read
+as a team; unnamed cycles printed sorted member sets with arrows; level and age not encoded.
+
+Fixed: every template element carries a `template_hash`; `orchestra run`, `orchestra web`
+and `model init` replace an element that still reads as the template wrote it, keep a
+curated one, and report an unmarked one on the page and in `model init` (test added); the
+automata project's model was brought to the current template on its main; attributed counts
+carry the from-state form, the flow table and the pipes show the design's label for the
+flow (4 starts · 67 re-picks; 10 fix rounds · 8 later found bad) and the conversions count
+by the from-state event; the map draws each conversion as one pipe with the agent as its
+valve and suppresses that agent's own lines to the two stocks (36 visible paths, down from
+92), ticket creators share one inlet into demand, hollow pipes are two labelled stubs at the
+source and the target that light together, pipes have a wide hover target and isolate like
+stocks and agents, opposite pipes are offset, a pipe passing over a box names its source,
+cross-row pipe labels sit in a wider band; the loop grid is three columns at 1280 and the
+minis' text is 11.5 px in their viewBox; the health loop emits `staging_restarted` and
+`staging_failed`, the pipeline manager does not; the not-served reason names the dead build
+first; misses are shown as distinct defects missed in N approvals (test added); time to
+restore runs from an outage's first trouble to the deploy that stayed healthy (test added);
+an agent whose median turn is at the limit says so; the escape text says "one defect, 4
+consecutive crashing builds"; the loss tile and card warn past a third whatever the limit
+did; the rework cards say "source: B, in its first-order pair" and the broken-base tag
+"(B, as the source says)"; built-in agents read "built in"; unnamed cycles print their path;
+a tracker stock carries a residence bar (a day wide, amber past eight hours) and names the
+ticket on its highest review round. A declared loop now matches a cycle with at most two
+members beyond its own nodes, since the health loop's new emits closed an eight-node cycle
+through the capability loop's stocks.
+
+Declined: dropping the known rework → undiscovered pipe (the design draws re-submission as
+the flow that carries the defect on; it now reads "10 fix rounds · 8 later found bad");
+choosing one agent in the gap advice (the detector lists every agent the structure permits,
+and which one should emit is the operator's call); a residence-time distribution per queue
+(the readings carry median and oldest; a profile needs the event store's history, step 2).

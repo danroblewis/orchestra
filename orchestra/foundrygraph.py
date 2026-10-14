@@ -27,6 +27,9 @@ TRANSITION_OWNER = {("OPEN", "IN_PROGRESS"): "orchestra", ("REJECTED", "IN_PROGR
                     ("MERGING", "APPROVED"): "merge_gate", ("OPEN", "CANCELLED"): "coordinator", ("BLOCKED", "CANCELLED"): "coordinator"}
 
 
+LOOP_SLACK = 2          # a declared loop may be detected with up to this many members beyond the ones it names
+
+
 def _split(ev: str) -> tuple[str, str]:
     t, _, suffix = ev.partition(":")
     return t, suffix
@@ -314,7 +317,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         key = getattr(lp, "key", None) if not isinstance(lp, dict) else lp.get("key")
         best = next((ci for ci in infos if ci["signature"] == sig), None) if sig else None
         if best is None and want:
-            cands = [ci for ci in infos if want <= set(ci["members"])]
+            cands = [ci for ci in infos if want <= set(ci["members"]) and len(ci["members"]) <= len(want) + LOOP_SLACK]   # the loop's own structure, not a long cycle that happens to pass through it
             as_nodes = lambda ci: sum(1 for w in want if w in ci["nodes"] or f"agent:{w}" in ci["nodes"])   # declared members present on the path, not merely touched
             best = max(cands, key=lambda ci: (as_nodes(ci), -ci["length"])) if cands else None
         if best:
@@ -394,6 +397,10 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
 
 
 
+def att_keys(att: dict, agent: str) -> set[str]:
+    return {k.split("|", 1)[1] for k in att if k.startswith(agent + "|")}
+
+
 def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list | None = None) -> list[dict]:
     """The flows: an agent that drains one stock and fills another by the same event moves
     the thing from one to the next; with the day's count attributed to that agent and the
@@ -411,5 +418,6 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
                     continue
                 seen.add(key)
                 agent = e["src"].split(":", 1)[1]
-                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "count": att.get(f"{agent}|{plain(e['via'])}"), "wake": f["via"]})
+                count = att.get(f"{agent}|{e['via']}") if e["via"] in att_keys(att, agent) else att.get(f"{agent}|{plain(e['via'])}")
+                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": f["via"]})
     return sorted(out, key=lambda c: (c["src"], c["dst"], c["agent"]))

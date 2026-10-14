@@ -65,7 +65,7 @@ register(Role(
     tools=("tickets", "pipeline", "escalate"),
     wake_on=("gate_base_broken", "gate_error", "staging_failed", "pipeline_paused"),
     triggers=("repeated gate rejections of one ticket",),
-    emits=("pipeline_resumed", "staging_restarted", "note_added", "ticket_updated"),
+    emits=("pipeline_resumed", "note_added", "ticket_updated"),
     description="On-call for build, merge, and staging health.",
 ))
 # Per-ticket roles are not resident; the loop starts them on demand.
@@ -84,7 +84,7 @@ SYSTEM_BINDINGS = {
     "orchestra": {"description": "The loop itself: it picks ready tickets for workers and reviewers, and runs sessions, turns, crashes, compaction.",
                   "emits": ("ticket_transition:OPEN", "ticket_transition:IN_PROGRESS", "ticket_transition:IN_REVIEW", "session_started", "session_settled",
                             "turn_timed_out", "turn_interrupted", "agent_crashed", "agent_compacted", "agent_reset",
-                            "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped"),
+                            "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped", "staging_restarted", "staging_failed"),   # the health loop
                   "wake_on": ("ticket_created", "ticket_transition:OPEN", "ticket_transition:REJECTED", "ticket_transition:READY_FOR_REVIEW",
                               "ticket_transition:DONE", "ticket_transition:CANCELLED", "gate_landed", "gate_rejected", "gate_conflict")},   # gate results become ticket transitions
     "merge_gate": {"description": "Lands approved branches: build, unit, start, acceptance; then staging.",

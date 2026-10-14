@@ -420,7 +420,9 @@ def cmd_model(args) -> int:
     ms = ModelStore(project)
     if args.action == "init":
         written = ms.write_template(force=args.force)
-        print(f"wrote {len(written)} model files under .orchestra/model/" if written else "model already present; nothing written")
+        print(f"wrote {len(written)} model files under .orchestra/model/" if written else "model already present and current; nothing written")
+        for u in ms.unmarked():
+            print(f"{u}: differs from the template and carries no template mark; keep it, or `orchestra model init --force` to take the template")
         if ms.last_commit_note:
             print(ms.last_commit_note)
         return 0

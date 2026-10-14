@@ -291,3 +291,62 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     assert S["value"] == 1 and S["tickets"] == [t.id] and S["unresolved"] == [t.id]      # blocked, and the defect is still pending
     assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 1              # fix 1 followed to its verdict at minute 60
     assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 1}
+
+
+def test_template_updates_untouched_elements_and_keeps_curated_ones(project):
+    """Round 12: the page drew a model older than the template because existing files were
+    never touched. An element still reading as a template wrote it follows the template; one
+    the Supervisor changed is kept; one written without the mark is reported, not overwritten."""
+    from orchestra import foundry
+    ms = foundry.ModelStore(project)
+    assert ms.write_template() == []                                              # init wrote it; nothing to do
+    d = json.loads((ms.root / "stocks" / "demand.json").read_text())
+    assert d["template_hash"] and d == foundry.template_marked(next(s for s in foundry.TEMPLATE_STOCKS if s.key == "demand"))
+    # an older template version: same mark discipline, different content
+    old = dict(d, description="an older description"); old["template_hash"] = foundry._content_hash(old)
+    (ms.root / "stocks" / "demand.json").write_text(json.dumps(old))
+    # a curated element: the Supervisor changed it after the template wrote it (content no longer matches its mark)
+    w = json.loads((ms.root / "stocks" / "wip.json").read_text()); w["inflows"] = [*w["inflows"], "my_event"]
+    (ms.root / "stocks" / "wip.json").write_text(json.dumps(w))
+    # an unmarked element: written by hand
+    k = json.loads((ms.root / "stocks" / "known_rework.json").read_text()); k.pop("template_hash"); k["unit"] = "defects"
+    (ms.root / "stocks" / "known_rework.json").write_text(json.dumps(k))
+    written = ms.write_template()
+    assert written == [".orchestra/model/stocks/demand.json"]                      # only the untouched, outdated one
+    assert json.loads((ms.root / "stocks" / "demand.json").read_text()) == d
+    assert "my_event" in json.loads((ms.root / "stocks" / "wip.json").read_text())["inflows"]
+    assert ms.unmarked() == ["stock known_rework"] and ms.load()["unmarked"] == ["stock known_rework"]
+    assert ".orchestra/model/stocks/known_rework.json" in ms.write_template(force=True)
+
+
+def test_misses_are_distinct_per_defect_and_restore_counts_restarts(project):
+    """Six approvals of the same failing acceptance test are six misses of one defect; time to
+    restore runs from the first trouble to the next deploy that stayed healthy."""
+    store, events = LocalStore(project), Events(project.events_file)
+    m = store.create_milestone(name="m")
+    t = store.create_ticket(title="a", milestone_id=m.id, branch="orchestra/T-1-a")
+    project.events_file.write_text("")
+    base = dt.datetime.now(dt.UTC) - dt.timedelta(hours=3)
+    ts = lambda mins: (base + dt.timedelta(minutes=mins)).isoformat(timespec="seconds")
+    def emit(type_, mins, **d):
+        with open(project.events_file, "a") as fh:
+            fh.write(json.dumps({"ts": ts(mins), "type": type_, **d}) + "\n")
+    def tr(mins, frm, to):
+        emit("ticket_transition", mins, ticket=t.id, **{"from": frm, "to": to})
+    stage = lambda name, status, rc, tail="": {"stage": name, "name": name, "command": "x", "status": status, "returncode": rc, "tail": tail}
+    emit("ticket_created", 0, ticket=t.id, by="coordinator")
+    tr(1, "OPEN", "IN_PROGRESS"); tr(5, "IN_PROGRESS", "READY_FOR_REVIEW")
+    for i, m0 in enumerate((10, 30, 50)):                                        # approved three times, rejected by the gate each time for the same test
+        tr(m0, "READY_FOR_REVIEW", "IN_REVIEW"); tr(m0 + 2, "IN_REVIEW", "APPROVED"); tr(m0 + 3, "APPROVED", "MERGING"); tr(m0 + 10, "MERGING", "REJECTED")
+        store.save_gate_run({"id": f"g{i}", "batch": [t.id], "status": "rejected", "started_at": ts(m0 + 3), "finished_at": ts(m0 + 10),
+                             "stages": [stage("build", "passed", 0), stage("acceptance", "failed", 1, "FAILED tests/acceptance/test_a.py::test_share - assert")]})
+        emit("gate_rejected", m0 + 10, gate_run=f"g{i}", tickets=[t.id])
+        tr(m0 + 11, "REJECTED", "READY_FOR_REVIEW")
+    emit("staging_deployed", 70, build="b1", commit="c1"); emit("staging_restarted", 80, build="b1"); emit("staging_restarted", 90, build="b1")
+    emit("staging_deployed", 100, build="b2", commit="c2"); emit("staging_restarted", 110, build="b2")
+    emit("staging_deployed", 120, build="b3", commit="c3")                        # stayed healthy
+    r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    rv = r["inspections"]["review"]
+    assert rv["approvals_gate_rejected"] == 3 and rv["distinct_missed"] == 1 and rv["miss_rate"] == 1.0
+    assert r["dora"]["restore"] == 40 * 60                                        # first trouble at 80 to the healthy deploy at 120; the later troubles are the same outage
+    assert r["pipeline"]["escape_crash_groups"] == [["b1", "b2"]]

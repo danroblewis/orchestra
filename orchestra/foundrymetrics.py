@@ -200,7 +200,7 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
                     who = note[1]
             if not who:
                 continue
-            for k in (f"{who}|{t}", f"{who}|{t}:{to}"):
+            for k in (f"{who}|{t}", f"{who}|{t}:{to}", f"{who}|{t}:{frm}>{to}"):
                 out[k] = out.get(k, 0) + 1
             continue
         if t == "gate_rejected" and run_class.get(e.get("gate_run")) not in (None, "defect"):
@@ -321,7 +321,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 bad += 1
                 break
     # F2: review misses: approvals the gate then rejected for a defect, before the next re-submission
-    approvals_missed = 0
+    approvals_missed, missed_defects = 0, set()
     for tid, ts, f, to in tr:
         if (f, to) != ("IN_REVIEW", "APPROVED"):
             continue
@@ -332,6 +332,9 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 break
             if (f2, to2) == ("MERGING", "REJECTED") and hist.cause.get((tid, t2)) == "gate":
                 approvals_missed += 1
+                run = min((r for r in runs if tid in (r.get("batch") or []) and abs((_epoch(r.get("finished_at")) or 0) - t2) <= NOTE_SLACK), key=lambda r: abs((_epoch(r.get("finished_at")) or 0) - t2), default=None)
+                failed = next((st for st in (run or {}).get("stages") or [] if st.get("status") not in ("passed", None)), None) or {}
+                missed_defects.add((tid, failed.get("name") or failed.get("stage") or "?"))
                 break
     # turns: active time per activity; a worker turn while a defect send-back is pending is a fix,
     # a turn after a no-verdict send-back is a re-run (a loss), otherwise implementation
@@ -385,12 +388,19 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         nxt = _ts(deploys[i + 1]) if i + 1 < len(deploys) else until
         if any(_ts(d) < _ts(t) < nxt for t in troubles):
             troubled += 1
-    restores = []
+    restores, open_until = [], -1.0
     for t in troubles:
-        if t["type"] == "staging_failed":
-            nxt = next((d for d in deploys if _ts(d) > _ts(t)), None)
-            if nxt:
-                restores.append(_ts(nxt) - _ts(t))
+        if _ts(t) <= open_until:
+            continue                                           # inside an outage already counted from its first trouble
+        open_until = float("inf")                              # not restored until a deploy stays healthy
+        for j, d in enumerate(deploys):
+            if _ts(d) <= _ts(t):
+                continue
+            after = _ts(deploys[j + 1]) if j + 1 < len(deploys) else until
+            if not any(_ts(d) < _ts(x) < after for x in troubles):   # a deploy that stayed healthy
+                restores.append(_ts(d) - _ts(t))
+                open_until = _ts(d)
+                break
     leads = [ts - hist.created[tid] for tid, ts, _, to in tr if to == "DONE" and tid in hist.created]
     # defects found after landing: a ticket created in the window that cites a landed ticket
     # or commit (a bug report against something that shipped), and each build that
@@ -434,12 +444,12 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         "flows": {"start": starts, "repick": repicks, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
                   "gate": gate["by"].get("defect", 0), "conflict": gate["by"].get("conflict", 0),
                   "failure": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0) + gate["by"].get("error", 0),
-                  "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "escape_crash_runs": len(in_window), "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
+                  "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "escape_crash_runs": len(in_window), "escape_crash_groups": in_window, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
                   "base": gate["by"].get("base_broken", 0), "restart": pairs.get("IN_PROGRESS>OPEN", 0), "blocked": pairs.get("IN_PROGRESS>BLOCKED", 0)},
         "inspections": {
             "review": {"arrivals": arrivals, "redo": redo, "approvals": approvals, "verdicts": verdicts, "by_cause": rev_cause, "defects": rev_defects, "distinct_defects": len(tickets_defect),
                        "pass": _ratio(approvals, verdicts), "tickets": len(tickets_reviewed), "tickets_sent_back": len(tickets_defect), "pass_per_ticket": _ratio(len(tickets_reviewed - tickets_defect), len(tickets_reviewed)),
-                       "approvals_gate_rejected": approvals_missed, "miss_rate": _ratio(approvals_missed, approvals),
+                       "approvals_gate_rejected": approvals_missed, "distinct_missed": len(missed_defects), "miss_rate": _ratio(approvals_missed, approvals),
                        "cause": "pass = APPROVED verdicts over all verdicts (APPROVED + REJECTED with a reviewer note); reviews with no verdict are not inspections and are counted as losses"},
             "gate": {**gate, "cause": "defect = a stage failed on its own result; timeouts, start failures and conflicts counted apart"},
         },
@@ -487,8 +497,9 @@ def _stock_reading(st, pool: dict) -> dict:
         states = est.get("states") or []
         now = dt.datetime.now(dt.UTC).timestamp()
         ages = sorted(now - (_epoch(getattr(x, "state_since", None)) or now) for x in tk.values() if x.state in states)
+        worst = max(((x.review_rounds or 0), x.id) for x in tk.values() if x.state in states) if ages else (0, None)
         out.update(value=sum(1 for x in tk.values() if x.state in states), by_state={s_: sum(1 for x in tk.values() if x.state == s_) for s_ in states},
-                   oldest_age=ages[-1] if ages else None, median_age=_median(ages), ages=len(ages),
+                   oldest_age=ages[-1] if ages else None, median_age=_median(ages), ages=len(ages), worst_rounds={"ticket": worst[1], "rounds": worst[0]} if worst[0] >= 6 else None,
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
         pend = pool["pending"]
@@ -518,8 +529,9 @@ def _stock_reading(st, pool: dict) -> dict:
         lt = pool["landed_tests"] or {}
         # a stock that is drained when the build fails or main breaks: served only while neither has happened since
         main_broken = mt.get("status") == "base_broken"
-        served = (bool(pool.get("build_healthy")) if src == "deployed" else True) and not main_broken
-        why = None if served else ("main's latest gate check failed" if main_broken else "the deployed build is down")
+        down = src == "deployed" and not pool.get("build_healthy")
+        served = not down and not main_broken
+        why = None if served else ("the deployed build is down" if down else "main's latest gate check failed")
         out.update(served=served, not_served_because=why, at_last_landing=(sum(v.get("passed", 0) for k, v in lt.get("stages", {}).items() if not stage or k == stage) if lt else None))
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
@@ -655,6 +667,10 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "merge_gate|staging_deployed": f"{pf['deploy']} deployed",
         "merge_gate|gate_base_broken": f"{pf['base']} base broken",
         "worker|ticket_transition:BLOCKED": f"{pf['blocked']} blocked",
+        "orchestra|ticket_transition:OPEN>IN_PROGRESS": f"{pf['start']} starts · {pf['repick']} re-picks (loss)",
+        "orchestra|ticket_transition:REJECTED>IN_PROGRESS": f"{attributed.get('orchestra|ticket_transition:REJECTED>IN_PROGRESS', 0)} fix pickups",
+        "worker|ticket_transition:READY_FOR_REVIEW|known_rework": f"{pf['fix']} fix rounds · {cur['rounds']['bad_fixes']} later found bad",
+        "worker|ticket_transition:READY_FOR_REVIEW|undiscovered": f"{pf['implement']} submitted (an unknown share carries a defect)",
     }
     t = cur["time"]
     return {"hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"],

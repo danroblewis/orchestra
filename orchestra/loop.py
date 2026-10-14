@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 import time
@@ -89,6 +90,9 @@ class Loop:
             self.git.branch_delete(b.strip("* "))
 
     def run(self, once: bool = False) -> None:
+        from .foundry import ModelStore
+        with contextlib.suppress(OSError, ValueError):
+            ModelStore(self.project).write_template()   # untouched template elements follow the template
         # SIGTERM/SIGINT stop the loop cleanly so resident Pi processes are closed,
         # not orphaned, and the control port is released.
         import signal

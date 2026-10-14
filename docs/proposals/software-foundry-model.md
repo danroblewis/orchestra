@@ -161,6 +161,10 @@ Readings, each defined by its estimator and shown with its window:
   window; measured 8 % aggregate churn, 10 of 21 landings fully surviving at 2.58 days). It is
   an upper bound on FCC because discovery is incomplete: young cohorts look better than they
   are.
+- **Time to restore.** From the first trouble of an outage (a staging failure or a health
+  restart) to the next deploy that stayed healthy until the deploy after it; troubles inside
+  an outage already counted do not start another. The health loop, not the pipeline manager,
+  emits restarts and failures.
 - **Escape rate.** Defects found after landing: each ticket created in the window that cites
   a DONE ticket or a landed commit (a bug report against shipped work), plus the deployed
   builds the health loop had to restart, where consecutive crashing builds with no healthy
@@ -177,6 +181,10 @@ Readings, each defined by its estimator and shown with its window:
 - **Rounds per ticket.** The distribution, not only the median: Rahmandad and Hu show a few
   tasks cycling many times dominate rework (measured: 29 tickets at 0 rounds, two at 25 and
   27).
+- **Review misses.** Approvals the gate then rejected for a defect before the next
+  re-submission (each approval is a miss), shown with the distinct defects missed, one per
+  ticket and gate stage: six approvals of one failing acceptance test are six misses of one
+  defect.
 - **Bad-fix fraction.** Fix rounds (a re-submission while a defect send-back is pending)
   followed to the defect's next verdict: a review or gate rejection for a defect makes the
   fix bad, a landing makes it good; approvals, no-verdict reviews, blocks and further
@@ -391,3 +399,18 @@ the definition of done: the map is not finished while any stock, flow, or loop i
   named test, so a ticket closed without a test shows as unverified.
 - Whether the escape-rate series can ever be dense enough in a project with no users to make
   U estimable, or whether U stays a dashed box by design and the page says so.
+
+### The template and the project's model
+
+`orchestra init` writes the template into `.orchestra/model/`, each element carrying a
+`template_hash` of its own content. At every start of `orchestra run`, `orchestra web` and
+`orchestra model init`, an element whose content still matches its mark (never curated) is
+replaced by the current template; a curated element is kept; an element with no mark that
+differs from the template is reported on the page and by `model init`, and only `--force`
+replaces it. So a project follows the template until it curates an element, and never loses
+what it curated.
+
+A declared loop is detected by a cycle that covers its nodes with at most two members beyond
+them: a long cycle that happens to pass through a loop's stocks is a different structure, and
+is listed among the unnamed cycles instead.
+

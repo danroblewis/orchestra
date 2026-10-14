@@ -10,6 +10,7 @@ model files."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, field
@@ -55,6 +56,8 @@ class Stock:
             if isinstance(c, dict) and c.get("effect", "+") not in ("+", "-"):
                 raise OrgError(f"stock {self.key}: a consumer's effect is + or -")
 
+    template_hash: str | None = None    # the content the template wrote; unchanged since means the template may update it
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -81,6 +84,7 @@ class Loop:
     source: str = ""
     addition: bool = False
     signature: str | None = None        # a detected cycle the Supervisor named, exactly
+    template_hash: str | None = None    # the content the template wrote; unchanged since means the template may update it
 
     def validate(self) -> None:
         if not KEY_RE.match(self.key):
@@ -141,9 +145,9 @@ TEMPLATE_STOCKS: list[Stock] = [
 ]
 
 TEMPLATE_LOOPS: list[Loop] = [
-    Loop("review_rework", "rework cycle (review)", "", "known rework → worker re-submits → awaiting review → reviewer → known rework (the defect co-flows through undiscovered rework)", ["known_rework", "worker", "awaiting_review", "reviewer"],
+    Loop("review_rework", "rework cycle (review)", "B", "known rework → worker re-submits → awaiting review → reviewer → known rework (the defect co-flows through undiscovered rework)", ["known_rework", "worker", "awaiting_review", "reviewer"],
          {"key": "bad_fix_fraction", "adverse": "up", "threshold": 0.5}, ["bad_fix_fraction", "fix_rounds"], "most fixes are rejected again: the reviewer's feedback is not reaching the worker", "Cooper 1980; Lyneis & Ford 2007"),
-    Loop("gate_rework", "rework cycle (gate)", "", "known rework → worker re-submits → awaiting review → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"],
+    Loop("gate_rework", "rework cycle (gate)", "B", "known rework → worker re-submits → awaiting review → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"],
          {"key": "acceptance_defects_at_gate", "adverse": "up", "threshold": 0}, ["gate_distinct_defects", "acceptance_defects_at_gate"], "a defect reached the gate's acceptance stage, which the pre-review check does not run: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
     Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
          {"key": "review_pass", "adverse": "down"}, ["review_pass", "review_miss_rate"], "the devex team declares lesson_decided (update_team emits), its keeper emits it when a lesson is decided, and resources lists it as an inflow", "Repenning & Sterman 2001 (work smarter)"),
@@ -184,24 +188,50 @@ class ModelStore:
     def load(self) -> dict[str, Any]:
         if not self.exists():
             return {"stocks": list(TEMPLATE_STOCKS), "loops": list(TEMPLATE_LOOPS), "source": "template (not in the repository yet: run `orchestra model init`)"}
-        return {"stocks": self._load("stocks", Stock), "loops": self._load("loops", Loop), "source": str(self.root.relative_to(self.project.repo_root))}
+        return {"stocks": self._load("stocks", Stock), "loops": self._load("loops", Loop), "source": str(self.root.relative_to(self.project.repo_root)), "unmarked": self.unmarked()}
 
     def write_template(self, *, force: bool = False) -> list[str]:
-        """Write the software-foundry template; existing files are kept unless forced."""
+        """Write the software-foundry template. An existing element is kept unless forced, or
+        unless it still reads exactly as a template wrote it (its ``template_hash`` matches its
+        content): then the current template replaces it, so a project that never curated an
+        element follows the template, and one that did keeps its own version."""
         written = []
         for sub, items in (("stocks", TEMPLATE_STOCKS), ("loops", TEMPLATE_LOOPS)):
             d = self.root / sub
             d.mkdir(parents=True, exist_ok=True)
             for it in items:
                 p = d / f"{it.key}.json"
+                body = template_marked(it)
                 if p.exists() and not force:
-                    continue
-                p.write_text(json.dumps(it.to_dict(), indent=2) + "\n", encoding="utf-8")
+                    try:
+                        cur = json.loads(p.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        continue
+                    if cur == body or not _unchanged_since_template(cur):
+                        continue
+                p.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
                 written.append(str(p.relative_to(self.project.repo_root)))
         (self.root / "README.md").write_text(README, encoding="utf-8")
         if written:
             self.last_commit_note = commit_orchestra_files(self.project, "orchestra: system-dynamics model template")
         return written
+
+    def unmarked(self) -> list[str]:
+        """Elements that differ from the template and carry no template mark: written before
+        the mark existed or by hand, so the template cannot tell curated from stale."""
+        out = []
+        for sub, items in (("stocks", TEMPLATE_STOCKS), ("loops", TEMPLATE_LOOPS)):
+            for it in items:
+                p = self.root / sub / f"{it.key}.json"
+                if not p.exists():
+                    continue
+                try:
+                    cur = json.loads(p.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    continue
+                if not cur.get("template_hash") and cur != template_marked(it):
+                    out.append(f"{sub[:-1]} {it.key}")
+        return out
 
     def _save(self, sub: str, item) -> None:
         item.validate()
@@ -235,6 +265,22 @@ class ModelStore:
             raise OrgError(f"no model {kind} {key!r}")
         p.unlink()
         self.last_commit_note = commit_orchestra_files(self.project, f"orchestra: remove model {kind} {key}")
+
+
+def _content_hash(d: dict) -> str:
+    body = {k: v for k, v in d.items() if k != "template_hash"}
+    return hashlib.sha1(json.dumps(body, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def template_marked(item) -> dict:
+    """The template element as written: its content plus the hash of that content."""
+    d = item.to_dict()
+    d["template_hash"] = _content_hash(d)
+    return d
+
+
+def _unchanged_since_template(d: dict) -> bool:
+    return bool(d.get("template_hash")) and d["template_hash"] == _content_hash(d)
 
 
 README = """# The system-dynamics model of this project

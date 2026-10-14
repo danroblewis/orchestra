@@ -4,6 +4,7 @@ SPEC.md section 11."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 import time
 from datetime import UTC
@@ -36,6 +37,9 @@ def _alive(pid) -> bool:
 
 
 def create_app(project: Project) -> FastAPI:
+    from ..foundry import ModelStore
+    with contextlib.suppress(OSError, ValueError):
+        ModelStore(project).write_template()         # untouched template elements follow the template
     app = FastAPI(title="Orchestra")
     events = Events(project.events_file)
     store = LocalStore(project, events)
