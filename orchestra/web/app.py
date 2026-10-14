@@ -140,6 +140,9 @@ def create_app(project: Project) -> FastAPI:
             if e.get("ts", "") < since:
                 continue
             counts[e["type"]] = counts.get(e["type"], 0) + 1
+            variant = e.get("to") or e.get("probe") or e.get("subject")
+            if variant:
+                counts[f"{e['type']}:{variant}"] = counts.get(f"{e['type']}:{variant}", 0) + 1
             who = e.get("by") or e.get("author")
             if who and who != "orchestra":
                 by.setdefault(who, {})
