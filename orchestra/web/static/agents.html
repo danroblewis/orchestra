@@ -47,7 +47,7 @@
   .tl .axis { display:grid; grid-template-columns:150px 1fr 150px; gap:10px; font-size:10.5px; color:var(--muted); margin-top:2px }
   .tl .axis .marks { display:flex; justify-content:space-between }
   .evmap { background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:6px }
-  .evmap svg { display:block; width:100%; height:auto; font-size:11px; overflow:visible }
+  .evmap svg { display:block; width:100%; height:auto; min-height:0; font-size:11px; overflow:visible }
   .evmap .tiles { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px } .evmap .tile { background:var(--panel3); border:1px solid var(--border); border-radius:6px; padding:6px 12px; min-width:110px } .evmap .tile b { display:block; font-family:var(--mono); font-size:20px; color:#fcd34d; font-weight:700; line-height:1.1 } .evmap .tile span { font-size:10.5px; color:var(--muted) }
   .evmap .stock rect { fill:#0b0e14; stroke:#6b5313; stroke-width:1.5 } .evmap .stock.side rect { stroke:#3a4152 } .evmap .stock .lvl { fill:#fcd34d; font-family:var(--mono); font-size:22px; font-weight:700 } .evmap .stock.side .lvl { font-size:13px; fill:#9ca3af } .evmap .stock .stname { fill:var(--text2); font-size:10.5px; font-weight:600; letter-spacing:.2px } .evmap .stock.side .stname { font-size:9.5px; fill:var(--muted) }
   .evmap .machine path { fill:var(--rc, #94a3b8); stroke:var(--border2) } .evmap .machine .sub { fill:var(--muted); font-size:9.5px; font-family:var(--mono); paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
@@ -65,6 +65,16 @@
   .evmap .mx { margin-top:10px } .evmap .mx summary { cursor:pointer; font-size:11.5px } .evmap .mx table { border-collapse:collapse; font-size:10px; margin-top:6px } .evmap .mx th { color:var(--muted); font-weight:500; padding:2px 5px; text-align:left; white-space:nowrap } .evmap .mx thead th span:first-child { display:inline-block; writing-mode:vertical-rl; transform:rotate(180deg); font-family:var(--mono) } .evmap .mx td { padding:1px 5px; text-align:center; border:1px solid var(--border); color:#fcd34d; font-family:var(--mono) } .evmap .mx td.latent { color:var(--muted) } .evmap .mx td.observed, .evmap .mx td.seen { color:#22c55e }
   .evmap .mx table.loops { font-size:11.5px } .evmap .mx table.loops td { border:none; text-align:left; color:inherit; font-family:inherit }
   .evmap table.loops tr.latent td { opacity:.6 }
+  .fnd .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:8px; margin-bottom:10px } .fnd .tile { background:var(--panel3); border:1px solid var(--border); border-radius:6px; padding:6px 10px; min-width:0 } .fnd .tile b { display:block; font-family:var(--mono); font-size:19px; color:#fcd34d; font-weight:700; line-height:1.15 } .fnd .tile b small { font-size:11px; color:var(--text2); font-weight:500 } .fnd .tile span { font-size:10.5px; color:var(--muted); display:block; line-height:1.3 } .fnd .tile.warn { border-color:#92400e }
+  .fnd .fs rect { fill:#0b0e14; stroke:#6b5313; stroke-width:1.5 } .fnd .fs.dashed rect { stroke:#4b5563; stroke-dasharray:5 4 } .fnd .fs.loss rect { stroke:#3a4152 } .fnd .fs.add rect { stroke:#3b82f6 }
+  .fnd .fs .nm { fill:var(--text2); font-size:10.5px; font-weight:600 } .fnd .fs .val { fill:#fcd34d; font-family:var(--mono); font-size:22px; font-weight:700 } .fnd .fs .val.small { font-size:11.5px; fill:#9ca3af } .fnd .fs.loss .val { font-size:12px; fill:#9ca3af } .fnd .fs .sub { fill:var(--muted); font-size:9.5px; font-family:var(--mono); paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
+  .fnd .fe { fill:none; stroke:#9ca3af; stroke-width:1.6 } .fnd .fe.rework { stroke:#fcd34d } .fnd .fe.side { stroke:#4b5563 } .fnd .fe.hollow { stroke:#9ca3af; stroke-dasharray:6 4; stroke-width:1.3 } .fnd .fe.cap { stroke:#4b5563; stroke-dasharray:2 3; stroke-width:1.1 } .fnd .fe.dashedline { stroke:#4b5563 }
+  .fnd .fl { fill:var(--text2); font-family:var(--mono); font-size:9.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .fnd .fl.gain { fill:#fcd34d; font-size:10px } .fnd .fl.hollow { fill:#9ca3af; font-style:italic }
+  .fnd .fv path { fill:var(--rc, #94a3b8); stroke:var(--border2) } .fnd .fv { cursor:pointer } .fnd .fv .vn { fill:var(--text); font-weight:700; font-size:10.5px; paint-order:stroke; stroke:var(--panel2); stroke-width:3px } .fnd .fv .sub { fill:var(--muted); font-size:9.5px; font-family:var(--mono); paint-order:stroke; stroke:var(--panel2); stroke-width:3px }
+  .fnd .fv .halo { fill:none; stroke:#60a5fa; stroke-width:3; stroke-dasharray:10 8; stroke-linecap:round; filter:drop-shadow(0 0 4px #60a5fa); animation:halo 2.4s linear infinite; transform-box:fill-box; transform-origin:center }
+  .fnd .act { stroke:var(--panel2); stroke-width:1 } .fnd text.nm { fill:var(--text2); font-size:10.5px; font-weight:600 } .fnd text.sub { fill:var(--muted); font-size:9.5px }
+  .fnd table.loops td.hint { color:#fcd34d } .fnd .tag.ok { color:#22c55e; border-color:#14532d }
+  .fnd .dim { opacity:.12 }
 </style>
 </head>
 <body>
@@ -126,6 +136,135 @@ const PALETTE = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coord
 const fmtD = (s) => s == null ? "—" : s >= 3600 ? `${(s / 3600).toFixed(1)}h` : s >= 60 ? `${Math.round(s / 60)}m` : `${Math.round(s)}s`;
 const agoIso = (iso, now) => iso ? ago(now - Date.parse(iso) / 1000) + " ago" : "never";
 const evKey = (n) => n.filter ? `${n.type}:${n.filter}` : n.type;
+// The foundry map (docs/proposals/software-foundry-model.md). Stocks are what the foundry
+// holds: demand, work in progress, landed software, the working build, really done; known
+// rework beneath, undiscovered rework dashed because it is not estimable; verified behaviour
+// and environment resources above as capability stocks (Orchestra's additions). Machines
+// are valves on flows. A flow with no machine is drawn hollow with the event an agent
+// would wake on. Every number states its estimator in its tooltip.
+const FTERMS = {
+  pass_review: "Inspection pass rate, review: arrivals at READY FOR REVIEW that were not sent back, over arrivals. All send-backs count until the cause field exists, so a reviewer that produced no verdict counts as a send-back.",
+  pass_gate: "Inspection pass rate, gate: runs that landed over runs that ended on their own result. Timeouts, start failures and conflicts are not inspection results and are counted apart.",
+  rework: "Rework share: hours of worker turns on a ticket just returned from REJECTED, over all worker turn hours. Repenning's firefighting threshold is about a third.",
+  fcc: "FCC landed (upper bound): lines added by landings older than the churn window that are still on main unchanged, over lines added. Young landings look better than they are, so only the old cohort counts.",
+  really: "Really done: acceptance tests that passed in the last gate run that reflects main. Skipped tests are shown and never counted. DONE tickets beside it are the tracker's view.",
+  losses: "Losses: turns that ended without a result. Restarts re-queue the ticket; the branch keeps its commits.",
+  u: "Undiscovered rework is the stock the literature says matters most and no log records. It is estimable only from defects found after landing, and there is no such series yet.",
+};
+const fNum = (v, d) => v == null ? "—" : typeof v === "number" && !Number.isInteger(v) ? v.toFixed(d == null ? 1 : d) : v;
+const fPct = (v) => v == null ? "—" : `${Math.round(v * 100)}%`;
+const fPerDay = (n, hours) => n == null ? "—" : `${((n * 24) / (hours || 24)).toFixed(hours === 24 ? 0 : 1)}/d`;
+function foundryMap(f, evm) {
+  const now = (ORG && ORG.now) || Date.now() / 1000, r = f.readings || {}, S = r.stocks || {}, F = r.flows || {}, hours = r.hours || 24, ins = r.inspections || {}, dora = r.dora || {}, C = S.C || {};
+  const defs = Object.fromEntries((f.stocks || []).map((s) => [s.key, s])), flowDefs = Object.fromEntries((f.flows || []).map((x) => [x.key, x]));
+  const cap = (STATE && STATE.capacity) || {}, running = (STATE ? STATE.sessions : []).filter((s) => s.status === "running");
+  const inUse = { worker: running.filter((s) => s.kind === "worker").length, reviewer: running.filter((s) => s.kind === "reviewer").length, merge_gate: (STATE && (STATE.gate_runs || []).some((g) => g.status === "running")) ? 1 : 0 };
+  const capOf = { worker: cap.workers, reviewer: cap.reviewers, merge_gate: 1 };
+  const mach = (evm && evm.machines) || {};
+  // -- headline tiles ---------------------------------------------------------------------
+  const A = S.A || {}, L = S.L || {}, rv = ins.review || {}, gt = ins.gate || {}, gb = gt.by || {}, rounds = r.rounds || {}, lo = (C.losses) || {}, hist = rounds.histogram || {};
+  const tile = (v, k, t, warn) => `<div class="tile ${warn ? "warn" : ""}" title="${esc(t || "")}"><b>${v}</b><span>${esc(k)}</span></div>`;
+  const stageList = Object.entries(gt.defect_stage || {}).map(([k, v]) => `${k} ${v}`).join(", ");
+  const head = `<div class="tiles">
+    ${tile(A.passing != null ? `${A.passing}<small> passing · ${A.skipped || 0} skipped${A.failed ? ` · ${A.failed} failing` : ""}</small>` : "—", `really done: acceptance tests on main · ${A.done_tickets != null ? A.done_tickets : "—"} tickets DONE`, FTERMS.really + (A.from_run ? ` From gate run ${A.from_run} at ${A.at}.` : ""), A.failed > 0)}
+    ${tile(fPct(rv.pass), `review pass rate · ${rv.sent_back || 0} of ${rv.arrivals || 0} sent back in ${hours}h · all causes`, FTERMS.pass_review + ` Per ticket: ${fPct(rv.pass_per_ticket)} (${rv.tickets_sent_back || 0} of ${rv.tickets || 0} tickets).`, rv.pass != null && rv.pass < 0.5)}
+    ${tile(fPct(gt.pass), `gate pass rate · ${gb.landed || 0} landed of ${gt.own_result || 0} runs on their own result${stageList ? ` · defects at ${stageList}` : ""}`, FTERMS.pass_gate + ` In ${hours}h: ${Object.entries(gb).map(([k, v]) => `${k.replace("_", " ")} ${v}`).join(", ") || "no runs"}.`, gt.pass != null && gt.pass < 0.5)}
+    ${tile(`${gb.timeout || 0}<small> timeouts · ${gb.start_failure || 0} start failures · ${gb.conflict || 0} conflicts</small>`, `gate runs the gate could not judge in ${hours}h`, "Runs with no inspection result: the gate's own stage timeout (return code 124), the target failing to start, or a merge conflict. None of these is a defect in the change.", (gb.timeout || 0) + (gb.start_failure || 0) > (gb.defect || 0))}
+    ${tile(fPct(C.rework_share), `rework share of worker time · implement ${fNum(C.by_activity && C.by_activity.implement)} h/d, fix ${fNum(C.by_activity && C.by_activity.fix)} h/d`, FTERMS.rework, C.rework_share != null && C.rework_share > 0.33)}
+    ${tile(`${lo.restarts || 0}<small> restarts · ${lo.turn_timeouts || 0} turn timeouts</small>`, `losses in ${hours}h · ${fNum(lo.worker_hours_ending_in_timeout)} worker-hours/day ended in a timeout`, FTERMS.losses + ` Also ${lo.turn_errors || 0} turn errors, ${lo.compactions || 0} compactions, ${lo.resets || 0} resets.`, (lo.restarts || 0) > 0)}
+    ${tile(`${fNum(hist["0"])}<small> · ${fNum(hist["1-2"])} · ${fNum(hist["3-5"])} · ${fNum(hist["6+"])}</small>`, `tickets with 0 · 1-2 · 3-5 · 6+ review rounds (all time)${rounds.worst && rounds.worst.length ? ` · worst ${rounds.worst.map((w) => `${w.ticket} ×${w.rounds}`).join(", ")}` : ""}`, `Rounds per ticket from the tracker. A few tickets cycling many times dominate rework (Rahmandad & Hu 2010). Bad fixes in ${hours}h: ${rounds.bad_fixes || 0} of ${(rounds.bad_fixes || 0) + (rounds.fixes || 0)} fix rounds were sent back again.`, rounds.worst && rounds.worst.some((w) => w.rounds >= 6))}
+    ${tile(L.fcc_upper != null ? fPct(L.fcc_upper) : `—<small> no landing older than ${L.churn_days || 14} days yet</small>`, `FCC landed, upper bound · lines surviving so far ${fPct(L.survival_all)} over ${L.landings_all || 0} landings`, FTERMS.fcc + ` Cohort: ${L.cohort || 0} of ${L.landings_all || 0} landings.`)}
+    ${tile(`${fNum(dora.landing_per_day)}<small>/day · lead time ${fmtD(dora.lead_time)}</small>`, `landing frequency · lead time from ticket created to DONE`, `Landings per day from gate_landed in ${hours}h. Lead time: median from ticket_created to DONE for tickets that finished in the window. Landed commit to staging deploy: ${fmtD(dora.land_to_deploy)}.`)}
+    ${tile(dora.deploys ? `${fPct(dora.change_failure)}<small> · ${dora.restarts || 0} staging restarts</small>` : "—", `change failure after deploy · time to restore ${dora.restore != null ? fmtD(dora.restore) : "(no staging_failed yet)"}`, `Deploys in ${hours}h followed by a staging failure or health restart before the next deploy, over deploys. Gate rejections are inspection results, not change failures.`, dora.change_failure != null && dora.change_failure > 0.5)}
+  </div>`;
+  // -- the map -----------------------------------------------------------------------------
+  const W = 1280, H = 470, cy = 52, py = 222, ky = 360;
+  const P = { D: { x: 70, y: py, w: 112 }, W: { x: 305, y: py, w: 142 }, L: { x: 690, y: py, w: 142 }, B: { x: 925, y: py, w: 122 }, A: { x: 1170, y: py, w: 150 },
+              K: { x: 505, y: ky, w: 160 }, U: { x: 505, y: 132, w: 190, dashed: true }, T: { x: 715, y: cy, w: 200 }, R: { x: 305, y: cy, w: 200 }, LOSS: { x: 925, y: ky, w: 200, loss: true } };
+  const V = { worker: { x: 190, y: py, name: "worker", m: "worker" }, reviewer: { x: 450, y: py, name: "reviewer", m: "reviewer" }, merge_gate: { x: 560, y: py, name: "merge gate", m: "merge_gate" },
+              deploy: { x: 830, y: py, name: "deploy", sys: true }, verify: { x: 1050, y: py, name: "acceptance run", sys: true } };
+  const txt = {
+    D: [fNum(S.D && S.D.value), "tickets OPEN or BLOCKED"],
+    W: [fNum(S.W && S.W.value), `commits ahead · ${S.W ? S.W.tickets : "—"} branches`],
+    L: [fNum(L.count), `landed in ${hours}h · +${fNum(L.added)}/−${fNum(L.removed)}`],
+    B: [S.B && S.B.value ? "up" : "down", S.B && S.B.build ? `${S.B.build.slice(0, 7)} · ${agoIso(S.B.deployed_at, now)}` : "no build"],
+    A: [fNum(A.passing), `passing · ${A.skipped || 0} skipped${A.failed ? ` · ${A.failed} failing` : ""}`],
+    K: [fNum(S.K && S.K.value), `REJECTED now · ${fPerDay(F.fix, hours)} fixes`],
+    U: ["not estimable", "no post-landing discovery series yet"],
+    T: [fNum(S.T && S.T.value), `tests passing on main${S.T && S.T.stages && S.T.stages.acceptance ? ` · ${S.T.stages.acceptance.skipped || 0} skipped` : ""}`],
+    R: [fNum(S.R && S.R.value), `documents · ${fNum(S.R && S.R.lines)} lines · ${fNum(S.R && S.R.lessons_decided)} lessons`],
+    LOSS: [`${lo.restarts || 0} restarts · ${(gb.timeout || 0) + (gb.start_failure || 0)} gate runs`, `${fNum(lo.worker_hours_ending_in_timeout)} worker-h/d ended in a timeout`],
+  };
+  const title = (k) => { const d = defs[k] || {}, s = S[k] || {}; return `${d.name || k} (${d.unit || ""}): ${d.description || ""}\nEstimator: ${s.estimator || ""}${s.reason ? `\n${s.reason}` : ""}${d.addition ? "\nOrchestra's addition: not a stock in the published models." : ""}`; };
+  let svg = `<defs><marker id="fa" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#9ca3af"></path></marker><marker id="fy" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#fcd34d"></path></marker><marker id="fh" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="none" stroke="#9ca3af"></path></marker><marker id="fs" viewBox="0 -4 8 8" refX="7" refY="0" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,-4L8,0L0,4" fill="#4b5563"></path></marker></defs>`;
+  const hOf = (p) => p.dashed ? 54 : p.loss ? 60 : 64;
+  const box = (k) => { const p = P[k], h = hOf(p), name = p.loss ? "losses" : (defs[k] || {}).name || k, [v, sub] = txt[k];
+    return `<g class="fs ${p.dashed ? "dashed" : ""} ${p.loss ? "loss" : ""} ${(defs[k] || {}).addition ? "add" : ""}" data-id="s:${k}" onmouseenter="fHover('s:${k}')" onmouseleave="fHover(null)"><rect x="${p.x - p.w / 2}" y="${p.y - h / 2}" width="${p.w}" height="${h}" rx="5"></rect><text class="nm" x="${p.x}" y="${p.y - h / 2 + 13}" text-anchor="middle">${esc(name)}${(defs[k] || {}).addition ? " *" : ""}</text><text class="val ${p.dashed || p.loss ? "small" : ""}" x="${p.x}" y="${p.y + (p.dashed || p.loss ? 9 : 10)}" text-anchor="middle">${v}</text><text class="sub" x="${p.x}" y="${p.y + h / 2 - 7}" text-anchor="middle">${esc(sub)}</text><title>${esc(p.loss ? FTERMS.losses : title(k))}</title></g>`; };
+  const edge = (id, d, cls, label, lx, ly, anchor, links, tip) => `<path class="fe ${cls}" data-id="${id}" data-links="${links}" d="${d}" marker-end="url(#${cls.includes("hollow") ? "fh" : cls.includes("rework") ? "fy" : cls.includes("side") ? "fs" : "fa"})"><title>${esc(tip || label)}</title></path>${label ? `<text class="fl ${cls.includes("rework") ? "gain" : ""} ${cls.includes("hollow") ? "hollow" : ""}" data-id="${id}" data-links="${links}" x="${lx}" y="${ly}" text-anchor="${anchor || "middle"}">${esc(label)}</text>` : ""}`;
+  const right = (k) => P[k].x + P[k].w / 2, left = (k) => P[k].x - P[k].w / 2, bottom = (k) => P[k].y + hOf(P[k]) / 2, top = (k) => P[k].y - hOf(P[k]) / 2;
+  // the chain, rates below each pipe
+  svg += edge("f:start", `M${right("D")},${py} L${left("W")},${py}`, "", `${fPerDay(F.start, hours)} started`, (right("D") + left("W")) / 2 + 24, py + 21, "middle", "s:D s:W v:worker", `${flowDefs.start ? flowDefs.start.measured_by : ""}: ${F.start} in ${hours}h; the worker builds the change on its branch`);
+  svg += edge("f:implement", `M${right("W")},${py} L${left("L")},${py}`, "", `${fPerDay(F.implement, hours)} ready for review`, right("W") + 4, py + 21, "start", "s:W s:L v:reviewer v:merge_gate", `${flowDefs.implement ? flowDefs.implement.measured_by : ""}: ${F.implement} in ${hours}h`);
+  svg += `<text class="fl" data-id="f:land" data-links="s:L v:merge_gate" x="${left("L") - 4}" y="${py + 21}" text-anchor="end">${fPerDay(F.land, hours)} landed</text>`;
+  svg += edge("f:deploy", `M${right("L")},${py} L${left("B")},${py}`, "", `${fPerDay(F.deploy, hours)} deployed`, (right("L") + left("B")) / 2, py + 21, "middle", "s:L s:B v:deploy", `staging_deployed: ${F.deploy} in ${hours}h`);
+  svg += edge("f:verify", `M${right("B")},${py} L${left("A")},${py}`, "", `${fPerDay(F.verify, hours)} runs`, (right("B") + left("A")) / 2, py + 21, "middle", "s:B s:A v:verify", `acceptance stage of landed gate runs: ${F.verify} in ${hours}h`);
+  // rework beneath
+  svg += edge("f:review", `M${V.reviewer.x - 4},${py + 9} C${V.reviewer.x - 8},${py + 70} ${P.K.x - 40},${ky - 80} ${P.K.x - 40},${top("K")}`, "rework", `A ${fPerDay(F.review, hours)} from review`, V.reviewer.x - 10, py + 78, "end", "v:reviewer s:K", FTERMS.pass_review);
+  svg += edge("f:gate", `M${V.merge_gate.x},${py + 9} C${V.merge_gate.x},${py + 70} ${P.K.x + 30},${ky - 80} ${P.K.x + 30},${top("K")}`, "rework", `B ${fPerDay(F.gate, hours)} defects at the gate${stageList ? ` (${stageList})` : ""}`, V.merge_gate.x + 14, py + 92, "start", "v:merge_gate s:K", FTERMS.pass_gate);
+  svg += edge("f:fix", `M${left("K")},${ky} C${P.W.x + 40},${ky} ${P.W.x + 10},${py + 100} ${P.W.x + 10},${bottom("W")}`, "rework", `${fPerDay(F.fix, hours)} fixes picked up`, P.W.x - 4, ky - 46, "end", "s:K s:W v:worker", `REJECTED → IN_PROGRESS: ${F.fix} in ${hours}h; the fix is reviewed again`);
+  svg += edge("f:conflict", `M${V.merge_gate.x - 6},${py + 9} C${V.merge_gate.x - 30},${py + 40} ${P.W.x + 90},${py + 50} ${P.W.x + 50},${bottom("W")}`, "side", `${fPerDay(F.conflict, hours)} conflicts`, V.merge_gate.x - 12, py + 36, "end", "v:merge_gate s:W", "gate_conflict: the change no longer merges because other work landed first. Concurrence rework, driven by how much is in progress, not by the change's quality. Re-queued, not sent back.");
+  svg += edge("f:failure", `M${V.merge_gate.x + 8},${py + 8} L${P.LOSS.x - 40},${top("LOSS")}`, "side", `${fPerDay(F.failure, hours)} gate runs lost (timeout, start)`, P.LOSS.x - 20, top("LOSS") - 10, "middle", "v:merge_gate s:LOSS", "Gate runs that could not judge the change: stage timeout (rc 124), target failed to start, error. A machine failure, not a defect.");
+  svg += edge("f:escape", `M${right("L") - 12},${bottom("L")} C${right("L") - 12},${ky - 30} ${right("K") + 60},${ky} ${right("K")},${ky}`, "hollow", `discover after landing · unattended · wake on staging_failed · ${fPerDay(F.escape, hours)} staging restarts`, right("K"), bottom("K") + 13, "start", "s:L s:K", `${flowDefs.escape ? flowDefs.escape.measured_by : ""}. No agent is bound to this flow. In ${hours}h: ${F.escape} staging restarts, 0 bug tickets citing a landed commit.`);
+  svg += edge("f:improve", `M${left("K")},${ky + 12} C${150},${ky + 12} ${150},${cy} ${left("R")},${cy}`, "hollow", `improve · unattended · lesson_decided has no event yet`, 28, 172, "start", "s:K s:R", `${flowDefs.improve ? flowDefs.improve.measured_by : ""}. The devex team writes lessons today, but no event carries them, so the loop cannot be measured.`);
+  svg += edge("f:tests", `M${right("T") + 70},${cy} L${right("T")},${cy}`, "hollow", `add tests · unattended`, right("T") + 76, cy + 4, "start", "s:T", `${flowDefs.tests ? flowDefs.tests.measured_by : ""}. Workers add tests inside tickets; no agent owns the test suite.`);
+  svg += edge("f:base", `M${P.L.x - 40},${bottom("L")} C${P.L.x - 40},${py + 70} ${V.merge_gate.x + 40},${py + 60} ${V.merge_gate.x + 10},${py + 12}`, "side", `${fPerDay(F.base, hours)} base broken`, P.L.x - 32, py + 46, "start", "s:L v:merge_gate", "gate_base_broken: main itself fails the gate, so every change after it fails too (errors build errors). The pipeline pauses until it is repaired.");
+  // capability arrows: what strengthens which valve
+  svg += edge("c:R", `M${P.R.x - 70},${bottom("R")} L${V.worker.x + 4},${py - 42}`, "cap", "", 0, 0, "", "s:R v:worker", "The worker reads these documents before working: better resources, fewer defects injected.");
+  svg += edge("c:R2", `M${P.R.x + 70},${bottom("R")} L${V.reviewer.x - 4},${py - 42}`, "cap", "", 0, 0, "", "s:R v:reviewer", "The reviewer reads these documents: better resources, better inspection.");
+  svg += edge("c:T", `M${P.T.x - 70},${bottom("T")} L${V.merge_gate.x + 6},${py - 42}`, "cap", "", 0, 0, "", "s:T v:merge_gate", "The gate runs these tests: more tests, more defects caught before landing.");
+  svg += edge("c:T2", `M${P.T.x + 70},${bottom("T")} L${V.verify.x - 6},${py - 42}`, "cap", "", 0, 0, "", "s:T v:verify", "The acceptance run proves the build with these tests.");
+  svg += edge("c:U", `M${P.U.x},${bottom("U")} L${P.U.x},${py - 44}`, "cap", "", 0, 0, "", "s:U v:reviewer v:merge_gate", FTERMS.u);
+  Object.keys(P).forEach((k) => svg += box(k));
+  // valves, labelled above the pipe
+  for (const [k, v] of Object.entries(V)) { const d = mach[v.m] || {}, color = v.sys ? "#94a3b8" : (PALETTE[v.m] || "#94a3b8"), active = v.m ? inUse[v.m] : 0;
+    const l2 = v.m ? `${inUse[v.m] != null ? inUse[v.m] : "·"}/${capOf[v.m] != null ? capOf[v.m] : "·"} · ${fmtD(d.cycle)}` : "orchestra";
+    svg += `<g class="fv" data-id="v:${k}" onmouseenter="fHover('v:${k}')" onmouseleave="fHover(null)" style="--rc:${color}" ${v.m && v.m !== "merge_gate" ? `onclick="openAgent('${v.m}')"` : ""}>${active ? `<circle class="halo" r="12" cx="${v.x}" cy="${v.y}"></circle>` : ""}<path d="M${v.x - 8},${v.y - 7} L${v.x + 8},${v.y + 7} L${v.x + 8},${v.y - 7} L${v.x - 8},${v.y + 7} Z"></path><text class="vn" x="${v.x}" y="${v.y - 27}" text-anchor="middle">${esc(v.name)}</text><text class="sub" x="${v.x}" y="${v.y - 16}" text-anchor="middle">${esc(l2)}</text><title>${esc(v.name)}${v.m ? `: ${inUse[v.m] || 0} of ${capOf[v.m] != null ? capOf[v.m] : "?"} in use; median cycle ${fmtD(d.cycle)}; ${d.processed || 0} processed in ${hours}h` : ": an Orchestra step, automatic"}</title></g>`; }
+  // agent time strip
+  const acts = Object.entries(C.by_activity || {}), total = acts.reduce((p, [, v]) => p + v, 0) || 1; let ax = 14;
+  const colors = { implement: "#60a5fa", fix: "#fcd34d", reviewer: "#e879f9", plan: "#38bdf8" };
+  svg += `<text class="nm" x="14" y="${H - 36}">agent time · ${fNum(C.value)} hours of turns per day</text>`;
+  for (const [k, v] of acts) { const w = Math.max(2, (v / total) * (W - 28)); svg += `<rect class="act" x="${ax}" y="${H - 28}" width="${w}" height="12" fill="${colors[k] || "#4b5563"}"><title>${esc(k)}: ${fNum(v)} h/d, ${(C.turns || {})[k] || 0} turns</title></rect>${w > 60 ? `<text class="sub" x="${ax + 4}" y="${H - 18.5}">${esc(k)} ${fNum(v)}h</text>` : ""}`; ax += w; }
+  svg += `<text class="sub" x="14" y="${H - 4}">${esc(C.estimator || "")}${lo.hours_ending_in_timeout != null ? ` · ${fNum(lo.hours_ending_in_timeout)} h/d of all turns ended in a timeout` : ""}</text>`;
+  const legend = `<div class="legend"><span><b>boxes</b> stocks: what the foundry holds, count now</span><span><b>⋈</b> a machine on a flow: in use / capacity · cycle time</span><span><i style="border-color:#9ca3af"></i>flow per day</span><span><i style="border-color:#fcd34d"></i>sent back</span><span><i style="border-color:#9ca3af;border-top-style:dashed"></i>unattended: no agent on this flow; the label says the event to wake on</span><span><i style="border-color:#4b5563;border-top-style:dotted"></i>a stock that strengthens a machine</span><span>* Orchestra's addition, not in the published models</span><span>hover to isolate · click a machine to open it</span></div>`;
+  return `<div class="evmap fnd">${head}<svg id="fnd" viewBox="0 0 ${W} ${H}" style="aspect-ratio:${W}/${H}">${svg}</svg>${legend}${loopTableF(f, evm, now)}</div>`;
+}
+function loopTableF(f, evm, now) {
+  const r = f.readings || {}, S = r.stocks || {}, F = r.flows || {}, ins = r.inspections || {}, hours = r.hours || 24, counts = r.counts || {}, ecounts = (evm && evm.counts) || {}, ret = (evm && evm.returns) || {};
+  const seen = (t) => (t.includes(":") ? ecounts[t] : counts[t]) > 0;
+  const gb = (ins.gate || {}).by || {}, stages = (ins.gate || {}).defect_stage || {}, C = S.C || {}, L = S.L || {}, rounds = r.rounds || {};
+  const gateDefects = gb.defect || 0, accDefects = stages.acceptance || 0;
+  const reading = {
+    B1: [`fix round trip ${fmtD((ret.review || {}).round_trip)} · bad fixes ${rounds.bad_fixes || 0} of ${(rounds.bad_fixes || 0) + (rounds.fixes || 0)}`, (rounds.bad_fixes || 0) > (rounds.fixes || 0) ? "most fixes are sent back again: the reviewer's feedback is not reaching the worker, or reviewer no-verdicts are being counted; add the cause field (spec step 2) before acting" : ""],
+    B2: [`not measurable: no worktree_checked event; ${gateDefects} gate defects, ${accDefects} at acceptance`, accDefects > 0 && accDefects >= gateDefects ? `every defect the gate finds is at the acceptance stage and the pre-review check runs only unit: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW` : ""],
+    B3: [`${F.conflict || 0} conflicts per ${F.land || 0} landings · ${S.W ? S.W.value : "—"} commits in progress on ${S.W ? S.W.tickets : "—"} branches`, (F.conflict || 0) > (F.land || 0) ? "conflicts outnumber landings: reduce what is in progress before adding producers" : ""],
+    B4: [`not measurable: lesson_decided has no event; ${S.R ? S.R.lessons_decided : "—"} lessons decided, review pass ${fPct((ins.review || {}).pass)}`, ""],
+    B5: [`${F.base || 0} base broken in ${hours}h`, (F.base || 0) > 0 ? "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this" : ""],
+    R1: [`rework share ${fPct(C.rework_share)} · worker time ${fNum((C.by_activity || {}).implement)} h/d implement, ${fNum((C.by_activity || {}).fix)} h/d fix`, C.rework_share != null && C.rework_share > 0.33 ? "rework share is above a third: past Repenning's tipping point, reduce intake before adding producers" : ""],
+    R2: [`lines surviving ${fPct(L.survival_all)} over ${L.landings_all || 0} landings · ${fNum(F.land && C.by_activity ? F.land / Math.max(0.1, (C.by_activity.implement || 0) + (C.by_activity.fix || 0)) : null, 2)} landed per worker-hour`, ""],
+  };
+  const rows = (f.loops || []).map((lp) => { const obs = lp.observed_when && lp.observed_when.some(seen), [rd, hint] = reading[lp.key] || ["", ""];
+    return `<tr><td><b>${lp.key}</b></td><td><b>${esc(lp.name)}</b>${lp.addition ? " *" : ""}</td><td>${lp.polarity}</td><td class="muted">${esc(lp.structure)}</td><td>${obs ? '<span class="tag ok">observed</span>' : '<span class="tag">hypothesised</span>'}</td><td>${esc(rd)}</td><td class="${hint ? "hint" : "muted"}">${hint ? esc(hint) : esc(lp.signal)}</td><td class="muted">${esc(lp.source)}</td></tr>`; });
+  const named = ((evm && evm.detected) || []).filter((L) => L.named && !L.core).map((L) => `<tr><td></td><td><b>${esc(L.named.name)}</b>${L.named.polarity ? ` <span class="tag">${esc(L.named.polarity)}</span>` : ""}</td><td></td><td class="muted">${esc(L.agents.filter((a) => a !== "delivery loop (core)").join(" → "))}${L.kind === "outer" ? " → the pipeline" : ""}</td><td>${L.latent ? '<span class="tag">possible</span>' : '<span class="tag ok">observed</span>'}</td><td>${L.latent ? "never fired" : "last fired " + agoIso(L.last_fired, now)}</td><td class="muted">${esc(L.named.purpose || "")}</td><td class="muted">named by the Supervisor</td></tr>`);
+  return `<table class="loops"><thead><tr><th></th><th>loop</th><th title="B balancing (corrects), R reinforcing (amplifies)">pol.</th><th>structure</th><th>status</th><th>reading now</th><th>signal · what to add when adverse</th><th>source</th></tr></thead><tbody>${rows.join("")}${named.join("")}</tbody></table>`;
+}
+function fHover(id) {
+  const svg = document.getElementById("fnd"); if (!svg) return;
+  const all = [...svg.querySelectorAll("[data-id]")];
+  if (!id) { all.forEach((x) => x.classList.remove("dim")); return; }
+  const keep = new Set([id]);
+  all.forEach((x) => { const links = (x.dataset.links || "").split(" "); if (x.dataset.id === id || links.includes(id)) { keep.add(x.dataset.id); links.forEach((l) => keep.add(l)); } });
+  all.forEach((x) => x.classList.toggle("dim", !keep.has(x.dataset.id)));
+}
 // Stock and flow. Stocks are the tickets in each state, drawn as one straight pipeline in
 // pipeline order with the count now. Flows are the transitions between them, one rate per
 // pipe. The three machines (worker, reviewer, gate) are valves on the outflows they work:
@@ -203,7 +342,7 @@ function eventMap(m) {
   const head = `<div class="tiles">${tile(hl.landed_per_day != null ? hl.landed_per_day : "—", "tickets landed / day", `${flows.DONE || 0} reached DONE in ${hours}h; ${hl.created_per_day} created / day`)}${tile(fmtD(hl.lead_time), "lead time", "median from creation to DONE, for tickets that finished in the window")}${tile(hl.restarts_per_day != null ? hl.restarts_per_day : "—", "worker restarts / day", `${hl.turn_timeouts || 0} turns timed out, ${hl.turn_errors || 0} errored in ${hours}h`)}${tile(dl.gate_runs ? `${dl.landed}/${dl.gate_runs}` : "—", "gate runs landed", `gate outcomes in ${hours}h: ${Object.entries(dl.gate_outcomes || {}).map(([k, v]) => `${k} ${v}`).join(", ")}`)}${tile(dl.deployed != null ? dl.deployed : "—", "staging deploys", `${dl.staging_restarted || 0} restarts · last deploy ${agoIso(dl.last_deployed, now)}`)}</div>`;
   return `<div class="evmap">${head}<svg id="cld" viewBox="0 0 ${W} ${H}">${svg}</svg>
     <div class="legend"><span><b>stocks</b> tickets in a state now</span><span><b>pipes</b> transitions per day</span><span>⋈ a machine on its pipe: in use / capacity · cycle time</span><span><i style="border-color:#fcd34d"></i>sent back: per day (fraction of what reached that point) · round trip</span><span>agents above read the stock they stand over · hover for their lines · click to open</span></div>
-    ${loopTable(m, now)}${matrix(m)}</div>`;
+    ${loopTable(m, now)}</div>`;
 }
 function loopTable(m, now) {
   const loops = m.detected || [], ret = m.returns || {}, hours = m.hours || 24;
@@ -423,7 +562,7 @@ async function openRole(name) {
 }
 async function refresh() {
   try {
-    const [st, org, evm] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json()), fetch("/api/eventmap").then((r) => r.json())]);
+    const [st, org, evm, fnd] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json()), fetch("/api/eventmap").then((r) => r.json()), fetch("/api/foundry").then((r) => r.json())]);
     STATE = st; ORG = org; renderNav("agents", st.project); $("conn").textContent = "live";
     const byName = Object.fromEntries(org.agents.map((a) => [a.name, a]));
     const top = org.teams.filter((t) => !t.parent);
@@ -433,8 +572,10 @@ async function refresh() {
     const loose = org.agents.filter((a) => (!a.team || a.team_exists === false) && !(a.builtin && !a.resident));
     // The map lives in its own container and is redrawn only when the graph changes; the
     // list below is re-rendered every refresh, which would otherwise wipe the drawn SVG.
-    const sig = JSON.stringify([evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]), st.sessions.filter((s) => s.status === "running").map((s) => s.kind).sort(), evm.pairs, evm.returns, evm.headline, st.counts]);
-    if (window.EVSIG !== sig || !document.getElementById("evsvg")) { window.EVSIG = sig; $("evmap-host").innerHTML = `<h2>Stocks and flows</h2>` + eventMap(evm); }
+    const sig = JSON.stringify([evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]), st.sessions.filter((s) => s.status === "running").map((s) => s.kind).sort(), evm.pairs, evm.returns, st.counts, fnd.readings && [fnd.readings.stocks, fnd.readings.flows, fnd.readings.inspections]]);
+    if (window.EVSIG !== sig || !document.getElementById("fnd")) { window.EVSIG = sig; $("evmap-host").innerHTML = `<h2>The foundry</h2><p class="intro">What the foundry holds and produces over the last ${fnd.readings ? fnd.readings.hours : 24} hours. The product is landed software that passes its acceptance tests, not tickets. Hover any number for how it is measured. <a href="#" onclick="document.getElementById('fnd-spec').open = true; return false">The model</a> is the published rework cycle applied to this pipeline.</p>` + foundryMap(fnd, evm)
+      + `<details class="mx" id="fnd-spec"><summary class="muted">The model, in one paragraph</summary><div class="muted" style="font-size:11.5px;max-width:900px;margin-top:6px">Work ordered (demand) becomes work in progress on a branch; the worker builds it; the reviewer and the merge gate inspect it and send part of it back as known rework, which the worker fixes; what passes lands on main, is deployed to staging, and is proved by the acceptance run. The share that is right first time (FCC) and where defects are caught (review, gate, or after landing) govern everything else. Undiscovered rework, the defects in landed code nobody has found, is the stock the literature says matters most, and it can only be estimated from what is found after landing; there is no such series yet, so it is shown as not estimable rather than as a number. Verified behaviour (the tests on main) and environment resources (what the agents read) are Orchestra's additions: they strengthen the machines that catch and avoid defects. Flows drawn hollow have no agent on them; that is where a new agent or binding goes. Sources: docs/research/ in the repository.</div></details>`
+      + matrix(evm) + `<details class="mx"><summary class="muted">Drill-down: the ticket-state pipeline, for reconciling against the tracker</summary>` + eventMap(evm) + `</details>`; }
     let html = timeline(org.agents, org.now);
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');
     html += `<h2>Agents outside a team <span class="count">${loose.length}</span></h2>` + (loose.map((a) => agentRow(a, false, org.now)).join("") || '<div class="empty">none</div>');

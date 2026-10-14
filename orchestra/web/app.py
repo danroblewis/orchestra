@@ -101,6 +101,14 @@ def create_app(project: Project) -> FastAPI:
         return {"ok": True, "nodes": list(g.nodes.values()), "edges": g.edges, "counts": mx["counts"], "by": mx["by"], "last": mx["last"],
                 "agents": ags, **detected_loops(project, events)}
 
+    @app.get("/api/foundry")
+    async def foundry_readings() -> dict:
+        """The software foundry's stocks, flows, and loops with their readings over the last day."""
+        from .. import foundry, foundrymetrics
+        from ..org import all_agents, all_teams
+        r = foundrymetrics.readings(project, store, events.read(0, limit=200000)[0], all_agents(project), all_teams(project))
+        return {"ok": True, **foundry.as_dict(), "readings": r}
+
     @app.get("/api/agents/{name}")
     async def agent_detail(name: str) -> dict:
         from .. import api as api_mod
