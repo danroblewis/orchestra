@@ -81,12 +81,13 @@ register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer"
 
 # Not agents, but parts of the same event graph (see orchestra.web.app eventmap):
 SYSTEM_BINDINGS = {
-    "orchestra": {"description": "The loop and the stores: every ticket, milestone, session, and organisation event.",
-                  "emits": ("ticket_transition", "ticket_updated", "note_added", "session_started", "session_settled",
+    "orchestra": {"description": "The loop itself: sessions, turns, crashes, compaction, and the ticket state machine.",
+                  "emits": ("ticket_transition:IN_PROGRESS", "ticket_transition:IN_REVIEW", "session_started", "session_settled",
                             "turn_timed_out", "turn_interrupted", "agent_crashed", "agent_compacted", "agent_reset",
                             "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped"), "wake_on": ()},
     "merge_gate": {"description": "Lands approved branches: build, unit, start, acceptance; then staging.",
                    "emits": ("gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
+                             "ticket_transition:MERGING", "ticket_transition:DONE", "ticket_transition:REJECTED",
                              "staging_deployed", "staging_failed", "pipeline_paused"),
                    "wake_on": ("ticket_transition:APPROVED",)},
     "probes": {"description": "Commands run on an interval; an event on each change of result.",
