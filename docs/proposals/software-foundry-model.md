@@ -86,117 +86,34 @@ honest. The tables below are the expectation, not the implementation.
 The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 
 - **Links.** An agent that emits an event filling a stock is a + link to it; emitting one that
-  drains it is a − link. A stock wakes an agent on an arrival (+) or, when no stock has the
-  event as an inflow, on a departure (−: the level fell and the agent responds). A stock's
-  declared consumers get the declared sign. An agent whose event wakes another agent and
-  fills no stock is a + trigger between them.
-- **Parallel links** between the same two nodes take the sign of the dominant mechanism: the
-  one whose event the log counted most in the window; without evidence, arrivals and fills
-  win over departures and drains. No tie-break by name or order.
-- **Polarity.** A cycle whose stocks are every one filled and drained by agents in the cycle
-  is a conserved material loop: what circulates is the same thing (a change, a defect), so it
-  converges, and it is balancing by construction (Cooper's rework cycle). Any other cycle is
-  signed by the product of its dominant link signs: negative is balancing, positive is
-  reinforcing. The card says which rule applied.
-- **Observed vs closable.** A cycle is observed when every agent-to-stock link on it was seen
-  in the window, attributed to that agent (by `by`/`author`, or for ticket transitions by the
-  state they leave, with REJECTED split by cause). A cycle closable by declaration alone is
-  shown as such.
+  drains it is a − link. A stock wakes an agent on an arrival (+). A departure never links
+  from the level: it reaches the woken agent as a − trigger from the agent that caused it
+  (the gate's failure wakes the pipeline manager). A stock's declared consumers get the
+  declared sign. An agent whose event wakes another agent and fills no stock is a + trigger
+  between them; on the same pair, a trigger that lowered a stock outranks one that did not.
+  What an agent emits is its declaration plus what its tools cause (the tickets group files
+  tickets) plus, with the events group, its team chain's declared types (`effective_emits`).
+- **Parallel links** with opposite mechanisms between the same two nodes are indeterminate
+  from structure; the window's event counts only say which dominates today, and the card
+  says so. No tie-break by name or order.
+- **Cycles** pass through at least one stock, or are agent-only when a trigger on them lowered
+  a stock; the stock is then a member.
+- **Polarity.** A conserved material circuit, judged on the path (each stock on it filled by
+  the agent before it and drained by the agent after it), is a stock-flow chain, not a
+  causal loop: it carries no polarity and is drawn as pipes, with the source's claim beside
+  it (Sterman ch. 6). Any other cycle is signed by the product of its link signs: negative is
+  balancing, reinforcing otherwise, "?" when a link is indeterminate. First-order pairs (a
+  stock and the agent that drains it) are the balancing loops the material circuits rest on
+  and are listed as such.
+- **Observed vs closable.** A cycle is observed when every step of it was seen in the window:
+  an agent's event attributed to it (by `by`/`author`, by the state a transition leaves with
+  REJECTED split by cause, or by the author of a note seconds before an unblock or cancel),
+  or a wake or trigger whose event occurred. A cycle closable by declaration alone is shown
+  as such.
 - **Gaps.** An expected loop no cycle covers reports its missing members and, for each
   consecutive pair with no link, the binding that would close it, naming the project's own
-  agent already woken by the first stock when there is one.
-
-Flows are rates per day over the window. A machine (an agent or Orchestra itself) is a valve
-on a flow: its in-use and cycle time set the flow's rate. Flows with no machine are drawn as
-unattended; that is where a new agent goes.
-
-| Flow | From → To | Machine | Measured by | Bindable event |
-|------|-----------|---------|-------------|----------------|
-| start | D → W | orchestra (pickup) | OPEN → IN_PROGRESS | ticket_transition:IN_PROGRESS |
-| implement | effort → W | worker | commits on the ticket branch; READY_FOR_REVIEW arrivals | ticket_transition:READY_FOR_REVIEW |
-| pre-review check | W → (pass / fail) | orchestra (runs the unit stage in the worktree before review) | **no event today**; the result goes only to the reviewer | to add: worktree_checked |
-| inspect in review | W → K (defect) | reviewer | IN_REVIEW → REJECTED with cause = defect | ticket_transition:REJECTED |
-| inspect at the gate | W → K (defect) | merge gate | gate_rejected where a stage failed on its own result | gate_rejected |
-| conflict | W → W (re-queued) | merge gate | gate_conflict; Ford and Sterman's concurrence rework, driven by WIP, not by FCC | gate_conflict |
-| machine failure | no change to W; a loss in C | — | gate stage timeout (rc 124), gate start failure, reviewer with no verdict, worker crash, turn timeout | turn_timed_out, turn_error, agent_crashed, gate_error |
-| discover after landing | L → K | **unattended** (acceptance run on staging, the smoke test, humans) | a test that passed on a prior build and fails now; a bug ticket citing a landed commit; staging restarted | staging_failed, staging_restarted, ticket_created (bug) |
-| fix | K → W | worker | REJECTED → IN_PROGRESS … READY_FOR_REVIEW; bad fixes are rounds rejected again | ticket_transition:IN_PROGRESS |
-| land | W → L | merge gate | gate_landed | gate_landed |
-| deploy | L → B | orchestra | staging_deployed | staging_deployed |
-| add tests | effort → T | **unattended by default** (workers add tests as part of tickets; qa agents if declared) | test counts on main after vs before each landing | gate_landed |
-| improve | K → R | environment keeper, devex | lessons decided; agent-facing doc commits landed | to add: lesson_decided |
-| broken base | L → everyone's FCC | — | gate_base_broken | gate_base_broken |
-
-Measured on the demo log: of 44 gate send-backs, 18 were conflicts and, of 28 failed runs,
-11 were the acceptance stage hitting the gate's own 900-second timeout, 3 were start
-failures, 14 were acceptance failures, and none failed at build or unit. 247 of 328 starts
-were restarts after a turn ended without a result. The pre-review check runs only the unit
-stage. So on this log, machine failures and conflicts outnumber defects found at the gate,
-and the one place a defect is found is the stage the pre-review check does not run. The
-page must make that readable.
-
-Restarts are not a flow of W: the branch keeps its commits. They are a productivity loss
-(Abdel-Hamid: actual productivity = potential − losses) and are shown beside C.
-
-Readings, each defined by its estimator and shown with its window:
-
-- **Inspection pass rate, review.** Arrivals at READY_FOR_REVIEW that were not sent back with
-  cause = defect, over arrivals. This is Ford and Sterman's (1 − FCC) × p_detect seen from the
-  outside, not FCC: a send-back for no verdict or a timeout is excluded, and a false
-  positive counts as a defect because the log cannot tell. Reported per arrival and per
-  ticket, since the two differ (measured 0.15 per arrival, 0.26 per ticket, before excluding
-  non-defect send-backs).
-- **Inspection pass rate, gate.** Gate runs that landed, over runs that ended on their own
-  result (timeouts, start failures and conflicts excluded, and shown separately).
-- **Gate failures by stage.** Build, unit, acceptance, start, timeout, conflict.
-- **FCC landed, upper bound.** Landed commits whose added lines survive unchanged after N days,
-  over landed commits older than N days, by `git blame --first-parent` (GitClear's churn
-  window; measured 8 % aggregate churn, 10 of 21 landings fully surviving at 2.58 days). It is
-  an upper bound on FCC because discovery is incomplete: young cohorts look better than they
-  are.
-- **Escape rate.** Defects found after landing per landed commit: regressions on staging,
-  staging restarts, bug tickets citing a commit. This is the only estimator for U's outflow
-  and today has almost no data (0 staging_failed, 80 staging_restarted from the health loop,
-  no bug-ticket link), so U stays "not estimable".
-- **Really done ratio.** A (acceptance tests passing, not skipped) against DONE tickets, and
-  skipped tests shown next to it. The one number that says whether the software is good.
-- **Rework share.** Fix hours over total worker hours in C (measured 0.27 over 2.58 days,
-  0.38 over the last day). Repenning's firefighting threshold is roughly a third.
-- **Rounds per ticket.** The distribution, not only the median: Rahmandad and Hu show a few
-  tasks cycling many times dominate rework (measured: 29 tickets at 0 rounds, two at 25 and
-  27).
-- **Bad-fix fraction.** Fix rounds that were themselves sent back for a defect.
-- **Losses.** Restarts, turn timeouts, compactions, resets per day, as hours lost where the
-  session time is known.
-- **DORA keys, post-deploy only.** Landing frequency (gate_landed per day); lead time
-  (creation → DONE, and reviewed commit → staging_deployed); change failure (deploys followed
-  by staging_failed or a health restart); time to restore (staging_failed or restart →
-  next healthy deploy). Gate rejections are *not* change failures; they are inspection results.
-
-Schedule pressure, Abdel-Hamid's multiplier on error generation, has no analogue in
-Orchestra: there is no deadline, no schedule variable, and no agent that works faster under
-one. It is not modelled. A model or prompt change is the cohort variable that replaces
-Abdel-Hamid's experience mix; every reading series breaks when the project's model or a
-role's prompt changes.
-
-The loops, with polarity from the literature and the signal that shows each one working.
-A loop is drawn when its edges are observed in the log (the existing latent/observed rule
-in `eventgraph`); hypothesised loops are listed, not drawn.
-
-| Loop | Structure | Status | Signal |
-|------|-----------|--------|--------|
-| B1 defect removal | K → fix → K falls | observed | fix round trip short and stable; bad-fix fraction low |
-| B2 earlier detection (Orchestra's addition) | T ↑ and pre-review checks ↑ → defects found before the gate | hypothesised until worktree_checked exists | share of defects found before the gate rising |
-| B3 WIP limit | W ↑ → pickup paused, capacity lowered → conflicts and queue ages fall | observed when capacity_changed or pickup_paused follows | conflicts per landing and queue ages not rising |
-| B4 capability (Repenning's "work smarter") | K by cause → improve → R → fewer send-backs for that cause | observed when devex edges are seen | the cause-specific send-back rate falling after its lesson lands; a cause not recurring |
-| B5 broken base | gate_base_broken → pipeline paused → repaired | observed | time from base broken to next landing |
-| R1 firefighting (Repenning) | rework share ↑ → worker slots and coordinator priority go to fixes → less add-tests and improve → more send-backs | hypothesised; the shared resource is the worker slots and coordinator priority, since devex has its own agents | rework share rising week on week with add-tests falling |
-| R2 debt drag (Franco; no pressure term) | churn ↑ → maintainability ↓ → landed per agent-hour ↓ | hypothesised | landed per worker-hour falling while diff size is constant |
-
-B4 is the devex loop. It closes through the world: a lesson becomes a doc, a doc becomes a
-worker's context, and the effect appears as a lower send-back rate for that cause, delayed
-by however long it takes a lesson to land. Measuring it needs the cause class as data,
-which today exists only as prose in the lesson files (section 7).
+  agent already woken by the first stock when there is one, and never telling a custom agent
+  to emit one of Orchestra's own events.
 
 ## 4. Estimators: how a stock gets a number
 
