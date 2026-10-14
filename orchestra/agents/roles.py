@@ -57,7 +57,7 @@ register(Role(
     tools=("tickets", "capacity", "escalate"), every=10 * 60,
     wake_on=("ticket_created", "ticket_transition:DONE", "ticket_transition:BLOCKED", "milestone_created", "milestone_closed"),
     triggers=("a ticket rejected at the review threshold",),
-    emits=("ticket_updated", "ticket_transition:CANCELLED", "note_added", "capacity_changed"),
+    emits=("ticket_created", "ticket_updated", "ticket_transition:CANCELLED", "ticket_transition:OPEN", "note_added", "capacity_changed"),
     description="Keeps the plan executable: clarity, size, order, dependencies. Never changes intent.",
 ))
 register(Role(
@@ -65,7 +65,7 @@ register(Role(
     tools=("tickets", "pipeline", "escalate"),
     wake_on=("gate_base_broken", "gate_error", "staging_failed"),
     triggers=("repeated gate rejections of one ticket",),
-    emits=("pipeline_resumed", "staging_restarted"),
+    emits=("pipeline_resumed", "staging_restarted", "note_added", "ticket_updated"),
     description="On-call for build, merge, and staging health.",
 ))
 # Per-ticket roles are not resident; the loop starts them on demand.
@@ -91,7 +91,7 @@ SYSTEM_BINDINGS = {
                    "emits": ("gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
                              "ticket_transition:MERGING", "ticket_transition:DONE", "ticket_transition:REJECTED",
                              "staging_deployed", "staging_failed", "pipeline_paused"),
-                   "wake_on": ("ticket_transition:APPROVED",)},
+                   "wake_on": ("ticket_transition:APPROVED", "pipeline_resumed")},
     "probes": {"description": "Commands run on an interval; an event on each change of result.",
                "emits": ("probe_failed", "probe_recovered"), "wake_on": ()},
 }

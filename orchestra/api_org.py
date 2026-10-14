@@ -217,10 +217,10 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
             store.add_wakeup(t.lead, f"team {t.name} was {'updated' if command == 'update_team' else 'created'}; re-read its responsibilities")
         return {"ok": True, "team": t.to_dict(), "storage": os_.last_commit_note}
     if command == "list_loops":
-        return {"ok": True, **detected_loops(project)}
+        return {"ok": True, **detected_loops(project, store.events)}
     if command == "name_loop":
         from .org import LoopDef
-        det = detected_loops(project)
+        det = detected_loops(project, store.events)
         cyc = next((c for c in det["detected"] if c["signature"] == a.get("signature")), None)
         if cyc is None:
             raise StoreError(f"no detected loop with signature {a.get('signature')!r}; call list_loops for the current ones")
@@ -228,7 +228,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
             raise StoreError("purpose is required: the standing condition this loop keeps true")
         loop = LoopDef(name=a["name"], signature=cyc["signature"], agents=cyc["agents"], purpose=a["purpose"],
                        signal=a.get("signal", ""), owner=a.get("owner") or None, through_the_world=a.get("through_the_world", ""),
-                       created_by=author)
+                       polarity=(a.get("polarity") or "").upper()[:1] or None, created_by=author)
         os_.save_loop(loop)
         store.events.emit("loop_named", loop=loop.name, signature=loop.signature, by=author)
         return {"ok": True, "loop": loop.to_dict(), "storage": os_.last_commit_note}
@@ -275,29 +275,58 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
     raise StoreError(f"unknown command {command}")
 
 
-def detected_loops(project: Project) -> dict:
-    """Every elementary cycle in the declared binding graph, each with its signature, and
-    the named loops matched to them. Unnamed cycles are what the Supervisor is asked about."""
-    from . import eventgraph
-    g = eventgraph.build(project)
+def detected_loops(project: Project, events=None) -> dict:
+    """The feedback loops in the binding graph, found on declared and observed edges (what an
+    agent could do through a tool is latent until the log shows it), measured from the log,
+    and matched to the loops the Supervisor has named."""
+    from . import eventgraph, loopmetrics
+    evs = loopmetrics.window(events.read(0, limit=200000)[0]) if events is not None else []
+    mx = loopmetrics.metrics(evs)
+    g = eventgraph.build(project, observed={"by": mx["by"], "messages": mx["messages"]})
     found = eventgraph.loops(g)
+    real = {L["signature"] for L in found}
+    for L in eventgraph.possible_loops(g):
+        if L["signature"] not in real and not L["core"]:
+            L["latent"] = True
+            found.append(L)
+    for L in found:
+        L.setdefault("latent", False)
     named = {lp.signature: lp.to_dict() for lp in org_store(project).list_loops()}
     core_nodes: set[str] = set()
     for L in found:
         L["named"] = named.get(L["signature"]) or ({"name": "ticket_delivery", "purpose": "Every ticket is implemented, reviewed, and landed or sent back.",
-                                                    "builtin": True} if L["core"] else None)
-        L["variants"] = L["cycles"]
+                                                    "polarity": "B", "builtin": True} if L["core"] else None)
         if L["core"]:
             core_nodes = set(L["nodes"])
+        # measures: how often the trigger fired, how often the agents acted, when the loop last ran
+        outer_agents = [a for a in L["agents"] if a != "delivery loop (core)"]
+        L["trigger_rate"] = {t: mx["counts"].get(_count_key(g, t), 0) for t in L["triggers"]}
+        L["action_rate"] = {a: sum(mx["by"].get(a, {}).values()) for a in outer_agents}
+        fired = [mx["last_by"].get(a, {}).get(k, "") for a in outer_agents for k in mx["last_by"].get(a, {})]
+        fired += [mx["last"].get(_count_key(g, t), "") for t in L["triggers"]]
+        L["last_fired"] = max(fired) if fired else None
+        L["cadence"] = {}
     # for tracing on the map, a loop through the core lights the core's nodes too
     for L in found:
         if not L["core"] and eventgraph.CORE in L["nodes"]:
             L["trace"] = sorted((set(L["nodes"]) - {eventgraph.CORE}) | core_nodes)
         else:
             L["trace"] = L["nodes"]
+    ags = all_agents(project)
+    for L in found:
+        L["cadence"] = {a: (ags[a].every or ags[a].at or ("on events" if ags[a].wake_on else "")) for a in L["agents"] if a in ags}
     stale = [lp for sig, lp in named.items() if sig not in {L["signature"] for L in found}]
     loop_edges = sorted({e for L in found for e in L["edges"] if eventgraph.CORE not in e})
-    return {"detected": found, "cycles": sum(L["cycles"] for L in found), "named": list(named.values()), "stale": stale, "loop_edges": loop_edges}
+    return {"detected": found, "cycles": sum(L["cycles"] for L in found), "named": list(named.values()), "stale": stale,
+            "loop_edges": loop_edges, "rework": mx["rework"], "flows": mx["flows"], "turnaround": mx["turnaround"], "hours": mx["hours"]}
+
+
+def _count_key(g, label: str) -> str:
+    """The counts key for an event node label: ticket states count as ticket_transition:STATE."""
+    for n in g.nodes.values():
+        if n["kind"] == "event" and n["label"] == label:
+            return f"{n['type']}:{n['filter']}" if n.get("filter") else n["type"]
+    return label
 
 
 # -- views ---------------------------------------------------------------------------------

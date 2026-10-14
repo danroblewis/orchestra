@@ -249,12 +249,15 @@ class LoopDef:
     signal: str = ""                      # how to tell it is working: an event rate, a probe, a number
     owner: str | None = None              # team name
     through_the_world: str = ""           # the leg Orchestra cannot see, in a sentence
+    polarity: str | None = None           # B (balancing: it corrects) or R (reinforcing: it amplifies), the Supervisor's judgement
     created_by: str = "supervisor"
     created_at: str = field(default_factory=now)
 
     def validate(self) -> None:
         if not _NAME.match(self.name):
             raise OrgError("loop name must be lowercase letters, digits, and underscores")
+        if self.polarity not in (None, "B", "R"):
+            raise OrgError("polarity is B (balancing) or R (reinforcing)")
         if not self.signature:
             raise OrgError("a loop names a detected cycle by its signature")
 

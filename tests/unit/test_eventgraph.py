@@ -37,7 +37,7 @@ def test_builtin_delivery_loop_is_found(project):
     paths = [" → ".join(c["labels"] * 2) for c in cycles]                                    # doubled: rotation does not matter
     assert any("worker → READY_FOR_REVIEW → reviewer → REJECTED → worker" in p for p in paths)
     assert any("reviewer → APPROVED → merge gate → REJECTED → worker" in p for p in paths)   # the loop through the gate
-    assert not any(c["self"] for c in cycles)                                                 # nothing wakes itself in a fresh project
+    assert not any(L["self"] for L in eventgraph.loops(g))                                    # one agent waking itself is not a loop
     assert cycles == sorted(cycles, key=lambda c: c["length"])                                 # shortest first
     assert all(any(n.startswith("ev:") for n in c["nodes"]) for c in cycles)                  # every loop passes through an event
 
@@ -52,15 +52,20 @@ def test_custom_team_loop_closes_through_messages_and_tools(project):
                                                "members": ["retro"]}, **sup)
     api.handle(project, store, "create_agent", {"name": "retro", "roles": ["analyst"], "team": "devex", "kind": "ad_hoc", "session": "ephemeral",
                                                 "wake_on": ["ticket_transition:REJECTED"]}, **sup)
-    g = eventgraph.build(project)
-    cycles = [eventgraph.describe(g, c) for c in eventgraph.elementary_cycles(g)]
-    paths = [" → ".join(c["labels"] * 2) for c in cycles]
-    assert any("REJECTED → retro → keeper" in p for p in paths)                 # a message, delivered as a wake-up, closes the loop
-    assert any("keeper → ticket_created → orchestra → IN_PROGRESS → worker" in p for p in paths)   # the tickets tool, then the loop's pickup
-    found = eventgraph.loops(g)
+    # declared only: the keeper's power to file tickets is latent, so there is no loop yet
+    assert not any({"keeper", "retro"} <= set(L["agents"]) for L in eventgraph.loops(eventgraph.build(project)))
+    assert any(e["kind"] == "latent" and e["from"] == "agent:keeper" and e["to"] == "ev:ticket_created" for e in eventgraph.build(project).edges)
+    # the log shows the keeper filing a ticket: the edge is observed and the loop is real
+    m = store.create_milestone(name="m")
+    api.handle(project, store, "create_ticket", {"title": "docs", "milestone_id": m.id}, role="keeper")
+    det = api.handle(project, store, "list_loops", {})
+    found = det["detected"]
     loop = next(L for L in found if {"keeper", "retro"} <= set(L["agents"]))
     assert loop["kind"] == "outer" and "delivery loop (core)" in loop["agents"]
-    assert len(found) < 12, [L["labels"] for L in found]
+    assert "REJECTED" in loop["triggers"] and "ticket_created" in loop["actions"]           # the trip out and back
+    assert loop["action_rate"]["keeper"] >= 1 and loop["last_fired"]
+    assert len(found) < 8, [L["labels"] for L in found]
+    assert det["rework"]["review"]["gain"] is None                                             # no reviews in this project's log
     # naming: the Supervisor gives the cycle a purpose; the API refuses unknown signatures
     with pytest.raises(StoreError, match="no detected loop"):
         api.handle(project, store, "name_loop", {"name": "x", "signature": "nope", "purpose": "p"}, **sup)
@@ -84,6 +89,7 @@ def test_custom_team_loop_closes_through_messages_and_tools(project):
     api.handle(project, store, "delete_loop", {"name": "lessons"}, **sup)
     api.handle(project, store, "create_agent", {"name": "watcher", "roles": ["keeper_role"], "team": "devex", "kind": "ad_hoc", "session": "ephemeral",
                                                 "wake_on": ["gate_conflict"]}, **sup)         # files tickets on conflicts: new loops
+    api.handle(project, store, "create_ticket", {"title": "from a conflict", "milestone_id": m.id}, role="watcher")   # seen, so real
     lp._refresh_org(); lp._detect_loops()
     wakes = store.drain_wakeups("supervisor")
     assert len(wakes) == 1 and "new feedback loop" in wakes[0]["reason"] and "watcher" in wakes[0]["reason"]

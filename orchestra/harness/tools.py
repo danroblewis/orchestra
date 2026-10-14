@@ -205,7 +205,8 @@ TOOLS: list[ToolDef] = [
             "that shows it is working, and an owning team. Loops are found by Orchestra, never configured by hand; a loop that "
             "closes through the product rather than through events gets that leg in through_the_world.",
             {"name": S("lowercase_name"), "signature": S("From list_loops"), "purpose": S("The condition this loop keeps true"),
-             "signal": S("How to tell it is working"), "owner": S("Team name"), "through_the_world": S("The leg Orchestra cannot see, if any")},
+             "signal": S("How to tell it is working"), "owner": S("Team name"), "through_the_world": S("The leg Orchestra cannot see, if any"),
+             "polarity": S("B if the loop corrects a deviation (balancing), R if it amplifies one (reinforcing)")},
             ("name", "signature", "purpose")),
     ToolDef("delete_loop", "roles", "Remove a loop's name; the cycle itself stays as long as the bindings do.", {"name": S("Loop name")}, ("name",)),
     # escalate

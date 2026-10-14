@@ -89,31 +89,17 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/eventmap")
     async def eventmap() -> dict:
-        """The binding graph (orchestra.eventgraph) with the last day's observations folded
-        in, every elementary cycle in it, and the loops the Supervisor has named."""
-        import datetime as _dt
-        from .. import eventgraph
+        """The binding graph with the last day's observations folded in, the feedback loops
+        found and measured in it, and the loops the Supervisor has named."""
+        from .. import eventgraph, loopmetrics
         from ..api_org import detected_loops
-        since = (_dt.datetime.now(_dt.UTC) - _dt.timedelta(days=1)).isoformat(timespec="seconds")
-        counts: dict[str, int] = {}
-        by: dict[str, dict[str, int]] = {}
-        msgs: dict[tuple, int] = {}
-        for e in events.read(0, limit=200000)[0]:
-            if e.get("ts", "") < since:
-                continue
-            counts[e["type"]] = counts.get(e["type"], 0) + 1
-            variant = e.get("to") or e.get("probe") or e.get("subject")
-            if variant:
-                counts[f"{e['type']}:{variant}"] = counts.get(f"{e['type']}:{variant}", 0) + 1
-            who = e.get("by") or e.get("author")
-            if e["type"] == "agent_messaged" and who and e.get("agent"):
-                msgs[(who, e["agent"])] = msgs.get((who, e["agent"]), 0) + 1
-            elif who and who != "orchestra":
-                key = f"{e['type']}:{variant}" if variant else e["type"]
-                by.setdefault(who, {})
-                by[who][key] = by[who].get(key, 0) + 1
-        g = eventgraph.build(project, observed={"by": by, "messages": msgs})
-        return {"ok": True, "nodes": list(g.nodes.values()), "edges": g.edges, "counts": counts, "by": by, **detected_loops(project)}
+        from ..org import all_agents
+        mx = loopmetrics.metrics(loopmetrics.window(events.read(0, limit=200000)[0]))
+        g = eventgraph.build(project, observed={"by": mx["by"], "messages": mx["messages"]})
+        ags = {a.name: {"every": a.every, "at": a.at, "kind": a.kind, "resident": a.resident, "team": a.team, "wake_on": list(a.wake_on),
+                        "emits": list(a.emits), "builtin": a.builtin} for a in all_agents(project).values()}
+        return {"ok": True, "nodes": list(g.nodes.values()), "edges": g.edges, "counts": mx["counts"], "by": mx["by"], "last": mx["last"],
+                "agents": ags, **detected_loops(project, events)}
 
     @app.get("/api/agents/{name}")
     async def agent_detail(name: str) -> dict:

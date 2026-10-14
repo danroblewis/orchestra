@@ -214,7 +214,7 @@ class Loop:
         self._org_sig = sig
         try:
             from .api_org import detected_loops
-            fams = [f for f in detected_loops(self.project)["detected"] if not f["self"]]
+            fams = [f for f in detected_loops(self.project, self.events)["detected"] if not f["self"]]
         except Exception as e:
             log(f"loops: {e!r}")
             return
