@@ -119,7 +119,8 @@ Worked example, a web-based cellular-automata game. After `propose_model`:
 add_model_element kind=stock key=playable_rule_sets spec={"name": "Playable rule sets", "unit": "rule sets",
   "inflows": ["gate_landed"], "estimators": [{"kind": "repo_docs", "globs": ["automata/rules/*.json"]}], "row": "chain",
   "description": "rule sets a player can pick in the game"}
-add_model_element kind=stock key=playable_features spec={...from propose_model...}
+add_model_element kind=stock key=playable_rule_sets_tests spec={"name": "Rule-set coverage", "unit": "acceptance tests passing",
+  "inflows": ["staging_deployed"], "estimators": [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], "row": "chain"}   # gate_tests counts tests, not modules
 create_team name=playtest lead=playtester responsibilities="# Playtest\n\n1. Every deployed build is played within an hour and every problem a player would hit is filed." emits=["playtest_finding"]
 create_agent name=playtester roles=["qa_engineer"] team=playtest kind=ad_hoc session=ephemeral wake_on=["staging_deployed"]
 add_model_element kind=stock key=playtest_findings spec={"name": "Playtest findings", "unit": "findings", "team": "playtest",
@@ -140,8 +141,8 @@ too: declare it with a probe that measures it and name the agents it constrains 
 consumers with effect `-`. A constraint closes a loop only when something feeds it back: give
 it an inflow event some agent emits when it changes (a budget top-up, a benchmark result),
 or it stays a dead end on the map, which is honest but not a loop. Keep the template's stock
-keys unless you must rename them: the page's headline tiles read `really_done`, `landed`,
-`known_rework` and `agent_time` by key.
+keys unless you must rename them: the page's headline tiles read `really_done`, `landed`
+and `known_rework` by key.
 
 ## The procedure
 
