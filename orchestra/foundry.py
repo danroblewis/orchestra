@@ -1,138 +1,253 @@
-"""The software foundry's built-in stocks, flows, and loops, as data.
+"""The project's system-dynamics model as data, and the software foundry as its template.
 
-Orchestra is a foundry whose product is good software; these are the stocks it holds by
-construction (see docs/proposals/software-foundry-model.md). A project in another domain
-declares its own stocks beside these. Nothing here computes anything: the readings come
-from `foundrymetrics`, the drawing from the Agents page."""
+A model is stocks and expected loops under ``.orchestra/model/`` in the target repository
+(docs/proposals/software-foundry-model.md, section 5). Flows are never declared: the
+detector (``foundrygraph``) derives them from the agents' wake rules and emits and the
+stocks' filling and draining events. ``orchestra init`` writes the template; the
+Supervisor curates it from then on through the model tools. Code holds only the instrument
+kinds (``foundrymetrics``), the detector, and the renderer. No other module reads the
+model files."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import re
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+from .org import OrgError, commit_orchestra_files
+
+KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+STOCK_KINDS = ("tracker", "pending_defects", "git_ahead", "landed", "gate_tests", "staging", "repo_docs", "turn_hours", "events", "probe", "judge", "none")
+ROWS = ("capability", "chain", "rework")
 
 
-@dataclass(frozen=True)
+@dataclass
 class Stock:
     key: str
     name: str
     unit: str
-    description: str
-    inflows: tuple[str, ...] = ()
-    outflows: tuple[str, ...] = ()
-    estimators: tuple[str, ...] = ()     # kinds used: events, git, gate, sessions, repo
-    consumers: tuple[str, ...] = ()      # agents that read it
-    addition: bool = False               # Orchestra's addition, not in the published models
-    hidden: bool = False                 # inferred, never counted
+    description: str = ""
+    inflows: list[str] = field(default_factory=list)        # event types (type or type:filter) that fill it
+    outflows: list[str] = field(default_factory=list)       # event types that drain it
+    consumers: list[Any] = field(default_factory=list)      # agents that read it: "name" or {"agent", "effect": "+"|"-"}
+    estimators: list[dict] = field(default_factory=list)    # [{kind, ...}], the first gives the level
+    hidden: bool = False                                    # declared because the literature says it exists; never counted
+    addition: bool = False                                  # not in the published models
+    row: str = "chain"
+    pos: list[float] | None = None                          # renderer hint [x, y]
+    width: int | None = None
+    team: str | None = None
+
+    def validate(self) -> None:
+        if not KEY_RE.match(self.key):
+            raise OrgError(f"stock key {self.key!r}: snake_case, up to 40 characters")
+        if self.row not in ROWS:
+            raise OrgError(f"stock {self.key}: row must be one of {', '.join(ROWS)}")
+        for e in self.estimators:
+            if e.get("kind") not in STOCK_KINDS:
+                raise OrgError(f"stock {self.key}: estimator kind {e.get('kind')!r} is not one of {', '.join(STOCK_KINDS)}")
+            if e["kind"] == "events" and ("initial" not in e or "since" not in e):
+                raise OrgError(f"stock {self.key}: an events estimator needs initial and since")
+            if e["kind"] == "probe" and not e.get("command"):
+                raise OrgError(f"stock {self.key}: a probe estimator needs a command")
+        for c in self.consumers:
+            if isinstance(c, dict) and c.get("effect", "+") not in ("+", "-"):
+                raise OrgError(f"stock {self.key}: a consumer's effect is + or -")
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Stock:
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
-STOCKS: dict[str, Stock] = {s.key: s for s in [
-    Stock("D", "Demand", "tickets", "Work ordered and not started: OPEN and BLOCKED tickets in open milestones.",
-          ("ticket_created",), ("ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"), ("events",), ("worker",)),
-    Stock("W", "Work in progress", "commits ahead of main", "Commits on ticket branches that have not landed, whatever state the ticket is in.",
-          ("commits",), ("gate_landed",), ("git",), ("reviewer", "merge_gate")),
-    Stock("K", "Known rework", "send-backs", "Changes a reviewer or the gate sent back because of a defect. Conflicts and machine failures are counted apart.",
-          ("ticket_transition:REJECTED", "gate_rejected"), ("ticket_transition:READY_FOR_REVIEW",), ("events",), ("worker",)),
-    Stock("U", "Undiscovered rework", "commits", "Defects in work in progress and landed software not yet found. Hidden; not estimable until a post-landing discovery series exists.",
-          (), (), (), (), hidden=True),
-    Stock("L", "Landed software", "commits", "Commits the gate put on main, with first-parent diff size. The product.",
-          ("gate_landed",), (), ("events", "git"), ()),
-    Stock("A", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, against the current build on main. Actual progress, against DONE tickets as perceived progress.",
-          ("gate_landed",), (), ("gate",), ()),
-    Stock("B", "Working build", "builds", "The staging build the acceptance suite last ran against, and whether it is up.",
-          ("staging_deployed",), ("staging_failed", "staging_restarted"), ("events",), ()),
-    Stock("T", "Verified behaviour", "tests", "Tests on main by stage from the last gate run: passed, failed, skipped. Skipped tests are never counted as verified.",
-          ("gate_landed",), (), ("gate",), ("reviewer", "merge_gate"), addition=True),
-    Stock("R", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons.",
-          ("gate_landed",), (), ("repo",), ("worker", "reviewer"), addition=True),
-    Stock("C", "Agent time", "agent-hours per day", "Wall time of agent sessions by activity: implement, fix, review, plan, and each team's own. Losses are shown beside it.",
-          ("session_started",), ("session_settled",), ("sessions",), ()),
-]}
-
-
-@dataclass(frozen=True)
-class Flow:
-    key: str
-    name: str
-    src: str                       # stock key, or "effort"
-    dst: str                       # stock key, or "loss"
-    machine: str | None            # built-in agent or system on the valve; None = whoever is bound, else unattended
-    event: str                     # the event a new agent would wake on, or what to add
-    measured_by: str
-    exists: bool = True            # False when the event does not exist yet
-    binds: tuple[str, ...] = ()    # events whose subscribers are on this flow (custom agents, or named built-ins)
-    builtin_ok: tuple[str, ...] = ()   # built-in agents that count as bound when subscribed
-
-
-FLOWS: tuple[Flow, ...] = (
-    Flow("start", "start", "D", "W", "orchestra", "ticket_transition:IN_PROGRESS", "OPEN → IN_PROGRESS"),
-    Flow("implement", "implement", "effort", "W", "worker", "ticket_transition:READY_FOR_REVIEW", "commits on the ticket branch; READY_FOR_REVIEW arrivals"),
-    Flow("precheck", "pre-review check", "W", "W", "orchestra", "worktree_checked", "the unit stage run in the worktree before review; no event today", exists=False),
-    Flow("review", "inspect in review", "W", "K", "reviewer", "ticket_transition:REJECTED", "IN_REVIEW → REJECTED"),
-    Flow("gate", "inspect at the gate", "W", "K", "merge_gate", "gate_rejected", "gate runs that failed on their own result"),
-    Flow("conflict", "conflict", "W", "W", "merge_gate", "gate_conflict", "gate_conflict: concurrence rework, driven by work in progress"),
-    Flow("failure", "machine failure", "W", "loss", None, "turn_timed_out", "gate timeouts, start failures, reviewer without a verdict, worker crashes, turn timeouts", binds=("turn_timed_out", "agent_crashed", "gate_error")),
-    Flow("escape", "discover after landing", "L", "K", None, "staging_failed", "a test that passed before and fails now; a bug ticket citing a landed commit; staging restarted", binds=("staging_failed", "gate_base_broken", "staging_restarted"), builtin_ok=("pipeline_manager",)),
-    Flow("fix", "fix", "K", "W", "worker", "ticket_transition:IN_PROGRESS", "REJECTED → IN_PROGRESS … READY_FOR_REVIEW"),
-    Flow("land", "land", "W", "L", "merge_gate", "gate_landed", "gate_landed"),
-    Flow("deploy", "deploy", "L", "B", "orchestra", "staging_deployed", "staging_deployed"),
-    Flow("verify", "verify", "B", "A", "orchestra", "gate_landed", "the acceptance stage of the gate run that landed the build"),
-    Flow("tests", "add tests", "effort", "T", None, "gate_landed", "tests on main after each landing, against before", binds=("ticket_transition:DONE", "gate_landed")),
-    Flow("improve", "improve", "K", "R", None, "lesson_decided", "lessons decided; agent-facing docs landed; no event today", exists=False, binds=("ticket_transition:REJECTED", "gate_rejected", "gate_conflict", "lesson_decided")),
-    Flow("base", "broken base", "L", "K", None, "gate_base_broken", "gate_base_broken", binds=("gate_base_broken",), builtin_ok=("pipeline_manager",)),
-)
-
-
-@dataclass(frozen=True)
+@dataclass
 class Loop:
+    """A loop the model expects. The detector marks it detected when a cycle of the causal
+    graph covers its nodes (stock keys and agent names); otherwise it is a hypothesis."""
     key: str
     name: str
-    polarity: str                  # B or R
-    structure: str
-    signal: str
-    source: str
+    polarity: str = ""                  # B or R as claimed by the source; the detector computes its own
+    structure: str = ""
+    nodes: list[str] = field(default_factory=list)
+    signal: dict = field(default_factory=dict)      # {key, adverse: up|down, threshold}
+    readings: list[str] = field(default_factory=list)
+    hint: str = ""
+    source: str = ""
     addition: bool = False
-    observed_when: tuple[str, ...] = field(default_factory=tuple)   # event types that, seen in the window, make it observed
+    signature: str | None = None        # a detected cycle the Supervisor named, exactly
+
+    def validate(self) -> None:
+        if not KEY_RE.match(self.key):
+            raise OrgError(f"loop key {self.key!r}: snake_case, up to 40 characters")
+        if self.polarity not in ("B", "R", ""):
+            raise OrgError(f"loop {self.key}: polarity is B, R, or empty")
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Loop:
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
-LOOPS: tuple[Loop, ...] = (
-    Loop("B1", "defect removal", "B", "known rework → fix → known rework falls", "fix round trip short and stable; bad-fix fraction low",
-         "Cooper 1980; Lyneis & Ford 2007", observed_when=("ticket_transition:REJECTED",)),
-    Loop("B2", "earlier detection", "B", "tests and pre-review checks → defects found before the gate", "share of defects found before the gate rising",
-         "Orchestra's addition", addition=True, observed_when=("worktree_checked",)),
-    Loop("B3", "WIP limit", "B", "work in progress → pickup paused, capacity lowered → conflicts and queue ages fall", "conflicts per landing and queue ages not rising",
-         "Reinertsen 2009; Ford & Sterman 1998 (concurrence)", observed_when=("capacity_changed", "pickup_paused")),
-    Loop("B4", "capability", "B", "known rework by cause → improve → resources → fewer send-backs for that cause", "the cause-specific send-back rate falling after its lesson lands",
-         "Repenning & Sterman 2001 (work smarter)", observed_when=("lesson_decided",)),
-    Loop("B5", "broken base", "B", "base broken → pipeline paused → repaired", "time from base broken to next landing",
-         "Abdel-Hamid & Madnick 1991 (errors build errors)", observed_when=("gate_base_broken",)),
-    Loop("R1", "firefighting", "R", "rework share → worker slots and coordinator priority go to fixes → less add-tests and improve → more send-backs", "rework share rising week on week with add-tests falling",
-         "Repenning 2001 (hypothesised here: the shared resource is worker slots)"),
-    Loop("R2", "debt drag", "R", "churn → maintainability → landed per worker-hour falls", "landed per worker-hour falling while diff size is constant",
-         "Franco et al. 2016 (hypothesised here)"),
-)
+# -- the template: a software foundry (the golden configuration in tests/unit/test_foundry_golden.py)
+
+DOC_GLOBS = ["AGENTS.md", "README.md", "CLAUDE.md", ".orchestra/teams/*.md", ".orchestra/roles/*.md", ".orchestra/spaces/*/lessons/decided/*.md"]
+
+TEMPLATE_STOCKS: list[Stock] = [
+    Stock("demand", "Demand", "tickets", "Work ordered and not started.", ["ticket_created", "ticket_transition:OPEN"], ["ticket_transition:IN_PROGRESS", "ticket_transition:CANCELLED"], [],
+          [{"kind": "tracker", "states": ["OPEN", "BLOCKED"]}], row="chain", pos=[62, 222], width=112),
+    Stock("wip", "Work in progress", "commits ahead of main", "Changes being built on ticket branches.", ["ticket_transition:IN_PROGRESS"], ["ticket_transition:READY_FOR_REVIEW"], [],
+          [{"kind": "git_ahead"}], row="chain", pos=[306, 222], width=150),
+    Stock("undiscovered", "Undiscovered rework", "defects", "Defects in submitted and landed work that nobody has found. Hidden; the inspections drain it.",
+          ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:REJECTED", "ticket_transition:APPROVED"], [],
+          [{"kind": "none", "reason": "estimable only from defects found after landing (a test that passed before and fails on a new build, a bug ticket citing a landed commit); no such series yet"}],
+          hidden=True, row="rework", pos=[330, 480], width=196),
+    Stock("approved", "Awaiting the gate", "changes", "Approved changes queued for the merge gate.", ["ticket_transition:APPROVED"], ["gate_landed", "gate_rejected", "gate_conflict"], [],
+          [{"kind": "tracker", "states": ["APPROVED", "MERGING"]}], row="chain", pos=[560, 222], width=120),
+    Stock("known_rework", "Known rework", "send-backs", "Changes a reviewer or the gate sent back for a defect and not yet re-submitted.", ["ticket_transition:REJECTED", "gate_rejected"], ["ticket_transition:IN_PROGRESS"], ["worker"],
+          [{"kind": "pending_defects"}], row="rework", pos=[600, 480], width=164),
+    Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product.", ["gate_landed"], ["staging_deployed"], [],
+          [{"kind": "landed"}], row="chain", pos=[760, 222], width=160),
+    Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up.", ["staging_deployed"], ["staging_failed", "gate_base_broken"], [],
+          [{"kind": "staging"}], row="chain", pos=[980, 222], width=134),
+    Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress.",
+          ["gate_landed"], [], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1180, 222], width=150),
+    Stock("tests", "Verified behaviour", "tests", "Tests on main by stage from the last gate run that reflects main. Skipped tests are never counted.", ["tests_added", "gate_landed"], [],
+          [{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}], [{"kind": "gate_tests", "source": "main"}], addition=True, row="capability", pos=[760, 52], width=200),
+    Stock("resources", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons.", ["lesson_decided"], [],
+          [{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}], [{"kind": "repo_docs", "globs": DOC_GLOBS}], addition=True, row="capability", pos=[292, 52], width=200),
+    Stock("agent_time", "Agent time", "agent-hours per day", "Turn time of agent sessions by activity, with losses beside it.", ["session_started"], ["session_settled"], [],
+          [{"kind": "turn_hours"}], row="chain"),
+]
+
+TEMPLATE_LOOPS: list[Loop] = [
+    Loop("review_rework", "rework cycle (review)", "", "known rework → worker → undiscovered → reviewer → known rework", ["known_rework", "worker", "undiscovered", "reviewer"],
+         {"key": "bad_fix_fraction", "adverse": "up", "threshold": 0.5}, ["bad_fix_fraction", "fix_rounds"], "most fixes are rejected again: the reviewer's feedback is not reaching the worker", "Cooper 1980; Lyneis & Ford 2007"),
+    Loop("gate_rework", "rework cycle (gate)", "", "known rework → worker → undiscovered → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "undiscovered", "reviewer", "approved", "merge_gate"],
+         {"key": "gate_distinct_defects", "adverse": "up"}, ["gate_distinct_defects", "gate_defects"], "every defect the gate finds is at a stage the pre-review check does not run: add that verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
+    Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
+         {"key": "review_pass", "adverse": "down"}, ["review_pass"], "", "Repenning & Sterman 2001 (work smarter)"),
+    Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate finds more → landed", ["landed", "tests", "merge_gate"],
+         {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "", "Orchestra's addition", addition=True),
+    Loop("broken_base", "broken base", "B", "build fails → pipeline manager → gate resumes → landed → build", ["build", "pipeline_manager", "merge_gate"],
+         {"key": "base_broken", "adverse": "up"}, ["base_broken"], "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this", "Abdel-Hamid & Madnick 1991 (errors build errors)"),
+    Loop("replanning", "re-planning", "", "worker blocks → coordinator re-plans into demand → Orchestra starts it again", ["wip", "worker", "coordinator", "demand", "orchestra"],
+         {"key": "starts", "adverse": "down"}, ["starts"], "", "Orchestra's own"),
+    Loop("wip_limit", "WIP limit", "B", "work in progress → a controller throttles pickup → work in progress", ["wip", "flow_controller"],
+         {"key": "conflicts_per_landing", "adverse": "up", "threshold": 1}, ["conflicts_per_landing"], "conflicts outnumber landings: reduce what is in progress before adding producers", "Reinertsen 2009 (hypothesis: no controller yet)"),
+]
 
 
-def bound_agents(agents: dict) -> dict[str, list[str]]:
-    """For each flow without a built-in machine, the agents whose wake rules bind them to it:
-    custom agents on any of the flow's events, and the named built-ins. The worker and the
-    reviewer are valves of their own flows and never count here."""
-    from .org import event_matches
-    out: dict[str, list[str]] = {}
-    for f in FLOWS:
-        if f.machine is not None:
-            continue
-        names = []
-        for name, ag in agents.items():
-            if name in ("worker", "reviewer") or (ag.builtin and name not in f.builtin_ok):
+# -- the store -------------------------------------------------------------------------------
+
+class ModelStore:
+    """``.orchestra/model/{stocks,loops}/<key>.json`` in the target repository. Reads fall
+    back to the template when the directory is absent, and say so."""
+
+    def __init__(self, project) -> None:
+        self.project = project
+        self.root = project.repo_root / ".orchestra" / "model"
+        self.last_commit_note = ""
+
+    def exists(self) -> bool:
+        return self.root.is_dir()
+
+    def _load(self, sub: str, cls) -> list:
+        out = []
+        for p in sorted((self.root / sub).glob("*.json")):
+            try:
+                out.append(cls.from_dict(json.loads(p.read_text(encoding="utf-8"))))
+            except (json.JSONDecodeError, TypeError):
                 continue
-            for b in f.binds:
-                t, _, suffix = b.partition(":")
-                ev = {"type": t, "to": suffix, "status": suffix, "probe": suffix, "subject": suffix} if suffix else {"type": t}
-                if event_matches(list(ag.wake_on), ev):
-                    names.append(name)
-                    break
-        out[f.key] = sorted(names)
-    return out
+        return out
+
+    def load(self) -> dict[str, Any]:
+        if not self.exists():
+            return {"stocks": list(TEMPLATE_STOCKS), "loops": list(TEMPLATE_LOOPS), "source": "template (not in the repository yet: run `orchestra model init`)"}
+        return {"stocks": self._load("stocks", Stock), "loops": self._load("loops", Loop), "source": str(self.root.relative_to(self.project.repo_root))}
+
+    def write_template(self, *, force: bool = False) -> list[str]:
+        """Write the software-foundry template; existing files are kept unless forced."""
+        written = []
+        for sub, items in (("stocks", TEMPLATE_STOCKS), ("loops", TEMPLATE_LOOPS)):
+            d = self.root / sub
+            d.mkdir(parents=True, exist_ok=True)
+            for it in items:
+                p = d / f"{it.key}.json"
+                if p.exists() and not force:
+                    continue
+                p.write_text(json.dumps(it.to_dict(), indent=2) + "\n", encoding="utf-8")
+                written.append(str(p.relative_to(self.project.repo_root)))
+        (self.root / "README.md").write_text(README, encoding="utf-8")
+        if written:
+            self.last_commit_note = commit_orchestra_files(self.project, "orchestra: system-dynamics model template")
+        return written
+
+    def _save(self, sub: str, item) -> None:
+        item.validate()
+        if not self.exists():
+            self.write_template()
+        d = self.root / sub
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{item.key}.json").write_text(json.dumps(item.to_dict(), indent=2) + "\n", encoding="utf-8")
+        self.last_commit_note = commit_orchestra_files(self.project, f"orchestra: model {sub[:-1]} {item.key}")
+
+    def get(self, kind: str, key: str):
+        cls = {"stock": Stock, "loop": Loop}[kind]
+        p = self.root / (kind + "s") / f"{key}.json"
+        if self.exists() and p.exists():
+            return cls.from_dict(json.loads(p.read_text(encoding="utf-8")))
+        for it in (TEMPLATE_STOCKS if kind == "stock" else TEMPLATE_LOOPS):
+            if it.key == key and not self.exists():
+                return it
+        raise OrgError(f"no model {kind} {key!r}")
+
+    def save(self, kind: str, item) -> None:
+        if kind not in ("stock", "loop"):
+            raise OrgError("kind is stock or loop")
+        self._save(kind + "s", item)
+
+    def delete(self, kind: str, key: str) -> None:
+        if kind not in ("stock", "loop"):
+            raise OrgError("kind is stock or loop")
+        p = self.root / (kind + "s") / f"{key}.json"
+        if not p.exists():
+            raise OrgError(f"no model {kind} {key!r}")
+        p.unlink()
+        self.last_commit_note = commit_orchestra_files(self.project, f"orchestra: remove model {kind} {key}")
 
 
-def as_dict() -> dict:
-    return {"stocks": [vars(s) for s in STOCKS.values()], "flows": [vars(f) for f in FLOWS], "loops": [vars(lp) for lp in LOOPS]}
+README = """# The system-dynamics model of this project
+
+Orchestra draws the Agents page's foundry map and detects the project's feedback loops from
+these files and the org (agents' wake rules and emits), and only from them. `orchestra init`
+wrote the software-foundry template here as a starting point; the Supervisor curates it with
+the model tools (`list_model`, `add_model_element`, `update_model_element`,
+`remove_model_element`) when the project has outputs or limiting constraints of its own.
+
+- `stocks/<key>.json`: what the project holds. `inflows` and `outflows` are the event types
+  that fill and drain it; `consumers` are the agents that read it, each with the sign of the
+  effect on that agent's output; `estimators` name an instrument kind (tracker,
+  pending_defects, git_ahead, landed, gate_tests, staging, repo_docs, turn_hours, events,
+  probe, judge, none) and its parameters; `hidden` stocks are declared because the model
+  says they exist and are never shown as a count; `row` and `pos` are drawing hints.
+- `loops/<key>.json`: a feedback loop the model expects, by its member stocks and agents.
+  The detector marks it detected only when a cycle of the causal graph built from the
+  stocks and the org covers those members; otherwise it stays a hypothesis. Cycles the
+  detector finds that no loop names are listed for the Supervisor to name.
+
+Flows are not declared. An agent woken by an arrival at one stock whose actions fill
+another is a conversion between them, and the map draws it from the org.
+"""
+
+
+def load_model(project) -> dict[str, Any]:
+    return ModelStore(project).load()
+
+
+def as_dict(model: dict) -> dict:
+    return {"stocks": [s.to_dict() for s in model["stocks"]], "loops": [lp.to_dict() for lp in model["loops"]], "source": model["source"]}

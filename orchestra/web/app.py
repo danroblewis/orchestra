@@ -6,18 +6,18 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+from datetime import UTC
 from pathlib import Path
 
 import psutil
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi import Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import Project
 from ..events import Events
-from ..model import State
 from ..harness import read_transcript
+from ..model import State
 from ..store import LocalStore, StoreError
 
 STATIC = Path(__file__).parent / "static"
@@ -103,12 +103,17 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/foundry")
     async def foundry_readings() -> dict:
-        """The software foundry's stocks, flows, and loops with their readings over the last day."""
-        from .. import foundry, foundrymetrics
+        """The project's system-dynamics model (stocks and expected loops, from the repo or the
+        template), the causal graph and loops detected from it and the org, and the readings."""
+        from .. import foundry, foundrygraph, foundrymetrics
+        from ..agents.roles import SYSTEM_BINDINGS
         from ..org import all_agents, all_teams
+        model = foundry.load_model(project)
         ags = all_agents(project)
-        r = foundrymetrics.readings(project, store, events.read(0, limit=200000)[0], ags, all_teams(project))
-        return {"ok": True, **foundry.as_dict(), "bound": foundry.bound_agents(ags), "readings": r}
+        det = foundrygraph.detect(model["stocks"], ags, model["loops"], system=SYSTEM_BINDINGS)
+        r = foundrymetrics.readings(project, store, events.read(0, limit=200000)[0], ags, all_teams(project), model=model)
+        return {"ok": True, "model": foundry.as_dict(model), "graph": det["graph"], "cycles": det["cycles"], "declared": det["declared"], "unnamed": det["unnamed"],
+                "pairs": len(det["pairs"]), "readings": r}
 
     @app.get("/api/agents/{name}")
     async def agent_detail(name: str) -> dict:
@@ -197,7 +202,7 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/api/landings")
     async def landings(hours: int = 24, bucket: int = 1) -> dict:
         """Tickets landed on the base branch per bucket (bucket = hours per bar), from gate runs."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         hours = max(1, min(hours, 24 * 30))
         bucket = max(1, min(bucket, 24))
         bsec = bucket * 3600
@@ -209,7 +214,7 @@ def create_app(project: Project) -> FastAPI:
             if not r.get("finished_at"):
                 continue
             try:
-                ts = datetime.fromisoformat(r["finished_at"]).replace(tzinfo=timezone.utc).timestamp()
+                ts = datetime.fromisoformat(r["finished_at"]).replace(tzinfo=UTC).timestamp()
             except Exception:
                 continue
             i = int((ts - start) // bsec)
@@ -225,7 +230,7 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/api/burndown")
     async def burndown(hours: int = 24) -> dict:
         """Remaining (not DONE/CANCELLED) and total tickets over time, from the event log."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         hours = max(1, min(hours, 24 * 30))
         since = time.time() - hours * 3600
         evs, _ = events.read(0, limit=200000)
@@ -236,7 +241,7 @@ def create_app(project: Project) -> FastAPI:
             if t not in ("ticket_created", "ticket_transition"):
                 continue
             try:
-                ts = datetime.fromisoformat(e["ts"]).replace(tzinfo=timezone.utc).timestamp()
+                ts = datetime.fromisoformat(e["ts"]).replace(tzinfo=UTC).timestamp()
             except Exception:
                 continue
             if t == "ticket_created":

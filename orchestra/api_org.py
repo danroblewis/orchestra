@@ -35,12 +35,14 @@ ORG_COMMANDS = frozenset({
     "pause_agent", "resume_agent", "restart_agent", "reset_agent", "run_agent", "message_agent",
     "list_teams", "get_team", "create_team", "update_team", "delete_team", "emit_event",
     "list_loops", "name_loop", "delete_loop",
+    "list_model", "add_model_element", "update_model_element", "remove_model_element",
 })
 EVENT_TYPES_SET = frozenset(EVENT_TYPES)
 EMIT_DEPTH_LIMIT = 3          # an event may cause a wake-up that causes an event ... this many times
 EMIT_RATE_LIMIT = 20          # emissions per agent per hour
 MUTATIONS = frozenset({"create_role", "update_role", "delete_role", "create_agent", "update_agent", "delete_agent",
-                       "create_team", "update_team", "delete_team", "name_loop", "delete_loop"})
+                       "create_team", "update_team", "delete_team", "name_loop", "delete_loop",
+                       "add_model_element", "update_model_element", "remove_model_element"})
 
 
 def handle_org(project: Project, store: LocalStore, command: str, a: dict[str, Any], author: str, role: str) -> dict:
@@ -57,6 +59,8 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
 
     if command == "org_guide":
         return {"ok": True, "guide": agents.org_guide() + "\n\n## Reference\n\n" + agents.org_reference()}
+    if command in ("list_model", "add_model_element", "update_model_element", "remove_model_element"):
+        return _model(project, command, a, author)
 
     # -- roles: job descriptions --------------------------------------------------------
     if command == "list_roles":
@@ -394,3 +398,49 @@ def team_definition(project: Project, store: LocalStore, t: TeamDef) -> dict:
             "inherited": [{"team": x.name, "responsibilities": org_store(project).responsibilities(x.name) if not x.builtin else ""}
                           for x in chain],
             "space_dir": str(t.space_dir(project)), "tools_dir": str(t.space_dir(project) / "tools")}
+
+
+# -- the system-dynamics model ------------------------------------------------------------------
+
+def _model(project: Project, command: str, a: dict[str, Any], author: str) -> dict:
+    """Stocks and expected loops are data in the repository; flows and the loops actually
+    present are detected from the org. The Supervisor adds a stock when the project produces
+    or is limited by something the map cannot otherwise show."""
+    from . import foundry, foundrygraph
+    from .agents.roles import SYSTEM_BINDINGS
+    ms = foundry.ModelStore(project)
+    if command == "list_model":
+        model = ms.load()
+        det = foundrygraph.detect(model["stocks"], all_agents(project), model["loops"], system=SYSTEM_BINDINGS)
+        return {"ok": True, **foundry.as_dict(model),
+                "detected": [{"key": d["key"], "detected": d["detected"], "polarity": d["cycle"]["polarity"] if d["cycle"] else None, "members": d["cycle"]["members"] if d["cycle"] else None} for d in det["declared"]],
+                "unnamed": [{"signature": c["signature"], "members": c["members"], "polarity": c["polarity"]} for c in det["unnamed"]],
+                "note": "flows are not declared: an agent woken by an arrival at one stock whose actions fill another is a conversion between them"}
+    kind = a.get("kind")
+    if kind not in ("stock", "loop"):
+        raise StoreError("kind is 'stock' or 'loop'")
+    cls = foundry.Stock if kind == "stock" else foundry.Loop
+    if command == "remove_model_element":
+        ms.delete(kind, a["key"])
+        return {"ok": True, "removed": a["key"], "storage": ms.last_commit_note}
+    spec = dict(a.get("spec") or {})
+    if command == "update_model_element":
+        current = ms.get(kind, a["key"]).to_dict()
+        current.update({k: v for k, v in spec.items() if k != "key"})
+        spec = current
+    spec["key"] = a.get("key") or spec.get("key")
+    if kind == "stock":
+        teams = all_teams(project)
+        custom = custom_event_types(teams)
+        for ev in [*spec.get("inflows", []), *spec.get("outflows", [])]:
+            t = ev.split(":")[0]
+            if t not in EVENT_TYPES_SET and t not in custom:
+                raise StoreError(f"event type {t!r} is neither built in nor declared by a team's emits; update_team first")
+        if spec.get("team"):
+            spec["team"] = spec["team"]
+    try:
+        item = cls.from_dict(spec)
+    except TypeError as e:
+        raise StoreError(f"bad {kind} spec: {e}")
+    ms.save(kind, item)
+    return {"ok": True, kind: item.to_dict(), "storage": ms.last_commit_note}

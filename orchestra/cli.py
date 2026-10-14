@@ -13,7 +13,6 @@ from . import __version__, agents, api
 from .agents.roles import ROLES
 from .config import ConfigError, Project, init_project, load_project
 from .events import Events
-from .model import STATE_ORDER, State
 from .store import LocalStore, StoreError
 
 
@@ -400,6 +399,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", choices=["status", "logs", "deploy", "restart", "stop"])
     s.set_defaults(fn=cmd_staging)
 
+    s = sub.add_parser("model", help="the project's system-dynamics model: init writes the software-foundry template into .orchestra/model/")
+    s.add_argument("action", choices=["init", "show"])
+    s.add_argument("--force", action="store_true", help="overwrite existing model files with the template")
+    s.set_defaults(fn=cmd_model)
     s = sub.add_parser("roles", help="agent roles: built-in and custom")
     s.add_argument("action", choices=["list", "show"])
     s.add_argument("name", nargs="?")
@@ -409,6 +412,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--fix", action="store_true")
     s.set_defaults(fn=cmd_doctor)
     return p
+
+
+def cmd_model(args) -> int:
+    from .foundry import ModelStore, as_dict
+    project = load_project()
+    ms = ModelStore(project)
+    if args.action == "init":
+        written = ms.write_template(force=args.force)
+        print(f"wrote {len(written)} model files under .orchestra/model/" if written else "model already present; nothing written")
+        if ms.last_commit_note:
+            print(ms.last_commit_note)
+        return 0
+    print(json.dumps(as_dict(ms.load()), indent=2))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

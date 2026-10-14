@@ -85,6 +85,31 @@ events, "docs land, workers read them, rejections fall", gets that leg in
 accidental; an accidental loop usually means an agent subscribes to more than it should.
 Every agent you create is either in a loop with a purpose or is a leaf that only reports.
 
+## The model: stocks, and the loops that should exist
+
+The Agents page draws a system-dynamics map of the project from `.orchestra/model/` and the
+org, and only from those. `orchestra init` wrote the software-foundry template there: the
+stocks a software project holds (demand, work in progress, undiscovered and known rework,
+landed software, the working build, really done, verified behaviour, environment resources)
+and the loops the literature expects (the rework cycle, capability, earlier detection,
+broken base). It is a starting point, not the truth about this project. Keep it true:
+
+- A **stock** is something the project holds that accumulates and drains: name the events
+  that fill it and drain it, the agents that read it (with the sign of the effect: resources
+  the worker reads lower its defect rate, so `-`), and how to measure it (an estimator kind;
+  `none` with a reason for a stock you declare because the model says it exists). Add one
+  when a team produces something another agent consumes (a Lab's findings, a devex team's
+  lessons) or when a limit the project is subject to should be visible beside the flows it
+  throttles (a budget, a single staging host).
+- **Flows are never declared.** An agent woken by an arrival at one stock whose actions fill
+  another is a conversion between them. If a flow you expect is missing from the map, the
+  fix is an agent or a binding, not a drawing.
+- An **expected loop** lists its members. `list_model` says which expected loops the detector
+  actually finds in the current org and which stay hypotheses, and lists cycles it found
+  that nothing names: name those or change the bindings that cause them. The reference
+  software foundry has a loop the current org may lack (for example a WIP limit needs a
+  controller that reads work in progress and throttles pickup); the gap is your to-do list.
+
 ## The procedure
 
 1. **Understand.** Read `list_teams`, `list_agents`, and `list_roles`. Place the request:

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from orchestra import foundry, foundrygit, foundrymetrics
 from orchestra.config import init_project
 from orchestra.events import Events
+from orchestra.foundry import ModelStore
 from orchestra.model import State
 from orchestra.org import all_agents, all_teams
 from orchestra.store import LocalStore
@@ -146,22 +147,24 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     emit("session_settled", 147, session=f"worker-{t2.id}")
     r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project))
     ins = r["inspections"]
-    assert ins["review"]["arrivals"] == 3 and ins["review"]["by_cause"] == {"defect": 1, "no_verdict": 1} and ins["review"]["pass"] == 0.67
+    assert ins["review"]["arrivals"] == 3 and ins["review"]["by_cause"] == {"defect": 1, "no_verdict": 1} and ins["review"]["pass"] == 0.5   # one APPROVED verdict, one REJECTED verdict; the no-verdict send-back is not an inspection
     assert ins["gate"]["by"] == {"landed": 1, "timeout": 1, "defect": 1, "conflict": 1} and ins["gate"]["defect_stage"] == {"unit": 1}
     assert ins["gate"]["defect_tickets"] == {t2.id: 1} and ins["gate"]["pass"] == 0.5          # one landed of two runs on their own result
-    f = r["flows"]
+    f = r["pipeline"]
     assert f["start"] == 2 and f["repick"] == 1 and f["restart"] == 1                            # t2's second pickup follows a restart
     assert f["failure"] == 1 and f["conflict"] == 1 and f["fix"] == 1 and f["review"] == 1 and f["review_no_verdict"] == 1
-    assert r["stocks"]["U"]["value"] is None and r["stocks"]["U"]["estimable"] is False
-    assert r["stocks"]["K"]["value"] == 0                                                        # t1's defect was re-submitted; t2's send-back was no verdict
-    L = r["stocks"]["L"]
+    S = r["stocks"]
+    assert S["undiscovered"]["value"] is None and S["undiscovered"]["estimable"] is False
+    assert S["known_rework"]["value"] == 0                                                      # t1's defect was re-submitted; t2's send-back was no verdict
+    L = S["landed"]
     assert L["value"] == 1 and L["window"] == 1 and L["lines"] == 1 and L["fcc_upper"] is None   # no cohort old enough
-    assert r["stocks"]["W"]["commits_per_day"] == 3                                               # the fixture's two setup commits and the branch commit, all in the window
-    A = r["stocks"]["A"]
+    assert S["wip"]["commits_per_day"] == 3                                                     # the fixture's two setup commits and the branch commit, all in the window
+    A = S["really_done"]
     assert A["value"] == 3 and A["skipped"] == 2 and A["done_tickets"] == 1 and A["build"] is None and A["source"].startswith("main")   # nothing deployed yet
-    assert r["stocks"]["T"]["value"] == 15 and r["stocks"]["T"]["stages"]["acceptance"]["skipped"] == 2
-    assert (r["stocks"]["D"]["value"], r["stocks"]["R"]["value"], r["stocks"]["R"]["files"]) == (2, 2, ["AGENTS.md", "README.md"])
-    c = r["stocks"]["C"]
+    assert S["tests"]["value"] == 15 and S["tests"]["stages"]["acceptance"]["skipped"] == 2
+    assert (S["demand"]["value"], S["resources"]["value"], S["resources"]["files"]) == (2, 2, ["AGENTS.md", "README.md"])
+    assert r["model_source"].startswith(".orchestra/model")                                       # init_project wrote the template
+    c = S["agent_time"]
     assert c["turns"] == {"implement": 2, "fix": 1, "rerun": 1, "plan": 1}
     assert c["rework_share"] == round((10 / 60) / ((30 + 18 + 10 + 6) / 60), 2)
     assert c["losses"]["restarts"] == 1 and c["losses"]["turn_timeouts"] == 1 and c["losses"]["worker_hours_ending_in_timeout"] == 0.3
@@ -174,11 +177,46 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert r["window"]["before"]["until"] == r["window"]["since"]
 
 
+def test_model_is_data_written_at_init_and_curated_by_the_store(project):
+    ms = ModelStore(project)
+    assert ms.exists() and (project.repo_root / ".orchestra" / "model" / "stocks" / "wip.json").exists()
+    m = ms.load()
+    assert {s.key for s in m["stocks"]} >= {"demand", "wip", "undiscovered", "known_rework", "landed", "build", "really_done", "tests", "resources"}
+    assert m["source"] == ".orchestra/model"
+    ms.save("stock", foundry.Stock("findings", "Lab findings", "documents", inflows=["finding_published"], consumers=[{"agent": "product_owner", "effect": "+"}],
+                                   estimators=[{"kind": "repo_docs", "globs": [".orchestra/spaces/lab/findings/*.md"]}], row="capability"))
+    assert ms.get("stock", "findings").unit == "documents" and "findings" in {s.key for s in ms.load()["stocks"]}
+    ms.delete("stock", "findings")
+    assert "findings" not in {s.key for s in ms.load()["stocks"]}
+    with pytest.raises(Exception, match="snake_case"):
+        ms.save("stock", foundry.Stock("Bad Key", "x", "y"))
+    assert ms.write_template() == []                                                            # nothing overwritten
+
+
+def test_supervisor_curates_the_model_through_the_tools(project):
+    from orchestra import api
+    store = LocalStore(project)
+    sup = {"role": "supervisor"}
+    m = api.handle(project, store, "list_model", {})
+    assert {d["key"] for d in m["detected"]} >= {"review_rework", "capability", "broken_base"} and m["source"] == ".orchestra/model"
+    with pytest.raises(Exception, match="neither built in nor declared"):
+        api.handle(project, store, "add_model_element", {"kind": "stock", "key": "findings", "spec": {"name": "Findings", "unit": "docs", "inflows": ["finding_published"]}}, **sup)
+    r = api.handle(project, store, "add_model_element", {"kind": "stock", "key": "budget", "spec": {"name": "Token budget", "unit": "tokens", "inflows": [], "outflows": ["session_settled"],
+                                                                                                "consumers": [{"agent": "coordinator", "effect": "-"}], "estimators": [{"kind": "none", "reason": "set by the operator"}]}}, **sup)
+    assert r["stock"]["key"] == "budget"
+    r = api.handle(project, store, "update_model_element", {"kind": "stock", "key": "budget", "spec": {"unit": "USD"}}, **sup)
+    assert r["stock"]["unit"] == "USD" and r["stock"]["name"] == "Token budget"
+    with pytest.raises(Exception, match="only the supervisor"):
+        api.handle(project, store, "remove_model_element", {"kind": "stock", "key": "budget"}, role="coordinator")
+    api.handle(project, store, "remove_model_element", {"kind": "stock", "key": "budget"}, **sup)
+    assert "budget" not in {s["key"] for s in api.handle(project, store, "list_model", {})["stocks"]}
+
+
 def test_foundry_endpoint_and_definitions(project):
     m = TestClient(web.create_app(project)).get("/api/foundry").json()
-    assert m["ok"] and {s["key"] for s in m["stocks"]} == set(foundry.STOCKS)
-    assert next(s for s in m["stocks"] if s["key"] == "U")["hidden"] is True
-    assert {f["key"] for f in m["flows"] if f["machine"] is None} == {"failure", "escape", "tests", "improve", "base"}
-    assert [lp["polarity"] for lp in m["loops"]] == ["B", "B", "B", "B", "B", "R", "R"]
-    assert m["readings"]["stocks"]["U"]["estimable"] is False and m["readings"]["git"] is True
-    assert m["bound"]["escape"] == ["pipeline_manager"] and m["bound"]["improve"] == []        # no custom agent yet; the built-in manager watches staging
+    assert m["ok"] and {s["key"] for s in m["model"]["stocks"]} >= set(foundry.TEMPLATE_STOCKS and [s.key for s in foundry.TEMPLATE_STOCKS])
+    assert next(s for s in m["model"]["stocks"] if s["key"] == "undiscovered")["hidden"] is True
+    assert {d["key"] for d in m["declared"] if d["detected"]} >= {"review_rework", "gate_rework", "broken_base", "replanning"}
+    assert not next(d for d in m["declared"] if d["key"] == "capability")["detected"]            # no keeper in a fresh project
+    assert m["readings"]["stocks"]["undiscovered"]["estimable"] is False and m["readings"]["git"] is True
+    assert "agent:orchestra" in m["graph"]["nodes"] and any(e["kind"] == "fills" for e in m["graph"]["edges"])

@@ -204,48 +204,67 @@ agreement, window}, so the series is in the log like everything else, and a stoc
 "perceived" value is the smoothed series (Sterman's perceived-vs-actual pair), not the last
 sample.
 
-## 5. Declared stocks
+## 5. The model is data; the software foundry is the template
 
-The stocks above are the software foundry's defaults. A Lab produces research a Product
-Owner consumes; a devex team produces resources the workers consume; a non-software project
-produces something else entirely. So stocks are data, like roles, agents, and teams.
+The stocks, flows, and loops above are Orchestra's **template** for a software foundry: an
+initial diagram of what a project's workflow might need. They are not the model. Every
+project has its own outputs (a Lab produces research a Product Owner consumes; a devex team
+produces resources the workers consume; a non-software project produces something else) and
+its own limiting constraints (a token budget, a review quota, a single staging host). So the
+model lives in the project's repository as data, like roles, agents, and teams, and an agent
+within the system curates it. Nothing about the model is hard-coded in Orchestra; code holds
+only the instruments (how a number is measured) and the renderer.
 
-```jsonc
-// .orchestra/stocks/<name>.json
-{
-  "name": "lessons",                     // snake_case, unique, not a built-in name
-  "unit": "documents",
-  "team": "devex",                       // owner; null for built-ins
-  "description": "Decided lessons the worker and reviewer read before a ticket.",
-  "inflows":  ["lesson_decided"],        // event types already in the owning team's emits, or built in
-  "outflows": ["lesson_retired"],
-  "estimators": [
-    {"kind": "probe", "command": "ls .orchestra/spaces/devex/lessons/decided | wc -l", "every": "1h"},
-    {"kind": "events", "initial": 8, "since": "2026-10-14T00:00:00Z"},   // initial + Σ inflows − Σ outflows
-    {"kind": "judge", "agent": "doc_auditor", "rubric": "...", "classes": ["accurate", "stale", "wrong"], "turns": 5, "min_agreement": 0.6}
-  ],
-  "consumers": ["worker", "reviewer"]    // agents that read it; drawn as an input to their valve
-}
+```
+.orchestra/model/
+  stocks/<key>.json      # one stock: name, unit, description, estimators, consumers, hidden, addition, pos
+  flows/<key>.json       # one flow: name, src, dst, machine, event, binds, measure, route
+  loops/<key>.json       # one loop: name, polarity, structure, signal, source, observed_when, ids
 ```
 
-Producers are not declared: they are the agents whose own or team `emits` include an inflow
-type, which `eventgraph.build` already derives.
+`orchestra init` writes the software-foundry template there. A project that predates the
+model gets the template at the first `orchestra` start that finds no `.orchestra/model/`,
+written and reported in the log so the Supervisor knows it is a starting point.
+
+A stock's estimators name an **instrument kind** and its parameters; the kinds are the only
+part in code, and adding one is a code change:
+
+| kind | parameters | measures |
+|------|------------|----------|
+| `tracker` | `states` | tickets in those states now |
+| `pending_defects` | | tickets sent back for a defect and not yet re-submitted |
+| `git_ahead` | | commits ahead of the base branch on open ticket branches, and commits made in the window |
+| `landed` | | commits the gate put on main, lines, survival |
+| `gate_tests` | `stage`, `source: deployed|main` | pytest counts for that stage of the chosen gate run |
+| `staging` | | the staging process state and its deploy event |
+| `repo_docs` | `globs` | files matching the globs, their lines, decided lessons |
+| `turn_hours` | | agent turn time by activity, losses |
+| `events` | `inflows`, `outflows`, `initial`, `since` | initial + Σ inflows − Σ outflows |
+| `probe` | `command`, `every` | a command that prints a number, run under the Prober in the owning team's space, read-only in the repo |
+| `judge` | `agent`, `rubric`, `classes`, `turns`, `min_agreement` | an agent's classification (section 4) |
+| `none` | `reason` | a hidden stock, never a number |
+
+A flow's `measure` names a flow instrument the same way (`transition` with `from`/`to` and
+`genuine`; `review_defects`; `gate_outcome` with `outcome`; `event` with `type`; `none`).
+A loop's `signal` names one of the computed signals and its adverse direction, and its
+`observed_when` names the evidence that makes it observed rather than hypothesised.
 
 Rules, enforced by the store like the rest of the org model:
 
-- Built-in stocks live in `orchestra/foundry.py` (data, like `roles.py`) and cannot be
-  deleted or renamed; a project may add estimators to them; a declared stock may not take a
-  built-in name (the rule `save_agent` uses for roles).
-- Only the Supervisor creates, changes, or deletes a declared stock (`create_stock`,
-  `update_stock`, `delete_stock`, `list_stocks` in `api_org`), in conversation, exactly as
-  teams and agents are made. A custom inflow or outflow type must already be in the owning
-  team's `emits`; `create_stock` refuses otherwise and says to `update_team` first. The org
-  guide gets a section on when to declare one: when a team produces something another agent
-  consumes, or when a loop's purpose names a quantity the map cannot otherwise show.
-- A stock's probes run under the owning team's space like team probes; a probe that reads
-  the repository is read-only (invariant 3).
-- An `events` estimator always has `initial` and `since`.
-- Deleting a stock does not delete its measurements; the series stays in the log.
+- Only the Supervisor creates, changes, or deletes model elements (`list_model`,
+  `create_stock`, `update_stock`, `delete_stock`, and the same for flows and loops, in
+  `api_org`), in conversation, exactly as teams and agents are made. The org guide gets a
+  section on when to add one: when a team produces something another agent consumes, when a
+  loop's purpose names a quantity the map cannot otherwise show, or when a constraint the
+  project is subject to should be visible beside the flows it limits.
+- A custom inflow or outflow event type must already be in the owning team's `emits`;
+  `create_stock` refuses otherwise and says to `update_team` first.
+- Keys are snake_case and unique across stocks, flows, and loops. Deleting an element does
+  not delete its measurements; the series stays in the log.
+- Producers are not declared: they are the agents whose own or team `emits` include an
+  inflow type, and `bound` agents on a flow are those whose wake rules match its `binds`.
+- Positions and routes are hints for the renderer; an element without them is placed in a
+  free slot of its row (`capability`, `chain`, `rework`), never dropped.
 
 Discovery of candidate stocks is a Supervisor task, not code: the loop detector already
 reports loops the Supervisor has not named, and the same wake-up can list event types and
@@ -318,9 +337,11 @@ Step 2, the events the remaining estimators need:
 5. `lesson_decided` (and a doc-landing event when an agent-facing file lands), with the cause
    class as a structured field, declared in the devex team's `emits`.
 
-Step 3: declared stocks in `RepoOrgStore`, the four Supervisor tools, `stock_measured`
-events, and the judge agent with `measure_stock`, after a per-agent model override exists.
-U appears only when section 4's condition holds.
+Step 3: the model as data: `.orchestra/model/` written by `orchestra init` (and on first
+start for older projects), loaded by the store, the Supervisor's model tools, the org guide
+section, `stock_measured` events, and the judge agent with `measure_stock` after a per-agent
+model override exists. U appears only when section 4's condition holds. This step is part of
+the definition of done: the map is not finished while any stock, flow, or loop is hard-coded.
 
 ## 8. Open questions
 

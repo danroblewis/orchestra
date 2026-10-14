@@ -10,6 +10,30 @@ the working build, verified behaviour, environment resources, agent capacity) an
 that govern it, with every number traceable to the event log, the gate, the repo, or a
 declared estimator. The ticket-state pipeline is a drill-down, not the map.
 
+The software-foundry model is only Orchestra's template. `orchestra init` writes it into the
+user's repository under `.orchestra/model/`, and from then on every stock, flow, loop, and
+estimator is data that the Supervisor (or another agent) curates through its tools: users
+have their own outputs and their own limiting constraints. Nothing about the model may stay
+hard-coded in Orchestra; code holds only the instrument kinds and the renderer. This is part
+of the definition of done.
+
+## The detector and the reference configuration are built together, test first
+
+Orchestra must *detect* the foundry's feedback loops from the project's agents, events, and
+declared stocks; it must not assert them from the literature. Flows are never declared: an
+agent woken by an arrival at one stock whose actions fill another is a conversion between
+them. Neither the current detector nor any current arrangement of agents is trusted, so both
+are driven by `tests/unit/test_foundry_golden.py`: an ideal software-foundry configuration
+(stocks with their filling and draining events and consumers; built-in and custom agents
+with wake rules and emits) fed to `foundrygraph.detect` must yield the rework cycle, the
+capability loop, earlier detection, and broken base, with the polarity the literature gives
+where it gives one, and no noise. Work bottom up: the smaller tests in that file pass first,
+then the top one. The reference configuration is what a Supervisor should steer a project
+towards; the gap between it and a project's real org is what the map should make visible.
+When the golden case holds, add a second golden model from outside software (Repenning's
+capability trap or an inventory chain) under the same interface, so the detector is not
+fitted to one case. Each detected loop is rendered as its own small network graph.
+
 ## The cycle
 
 1. Spawn a fresh `general-purpose` review subagent each round (never reuse one, never a fork).
@@ -62,8 +86,11 @@ and say so in the log.
 - The loop table lists the seven loops and every Supervisor-named loop, each marked observed or
   hypothesised, with its signal's current reading and direction, and shows the "what to add"
   hint only when the signal is adverse and the data supports it.
-- Declared stocks, if any exist in the automata project, appear where their producers and
-  consumers put them; if none exist, the page says how one is declared.
+- The model is read from the repository (`.orchestra/model/`), not from code; the automata
+  project has it; the Supervisor's model tools exist and are documented in the org guide; a
+  stock, flow, or loop added through them appears on the map in a free slot of its row. The
+  reviewer checks this by reading `/api/org` (the tool list) and `/api/foundry` (which says
+  where the model was loaded from) and by inspecting the model files.
 - Nothing is duplicated, clipped, overlapping, or illegible at 1280 and 1600 px wide. Hover
   isolates the right things; clicking an agent opens its drawer; the page updates live.
 

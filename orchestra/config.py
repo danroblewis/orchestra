@@ -314,4 +314,6 @@ def init_project(repo: Path, *, provider: str | None = None, model: str | None =
                                                  unit_command=unit_command))
     project = Project(key=project_key(root), repo_root=root, config=Config.from_toml(toml_path.read_text()))
     _register(project)
+    from .foundry import ModelStore          # the software-foundry template is the project's starting model
+    ModelStore(project).write_template()
     return project

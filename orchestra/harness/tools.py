@@ -209,6 +209,20 @@ TOOLS: list[ToolDef] = [
              "polarity": S("B if the loop corrects a deviation (balancing), R if it amplifies one (reinforcing)")},
             ("name", "signature", "purpose")),
     ToolDef("delete_loop", "roles", "Remove a loop's name; the cycle itself stays as long as the bindings do.", {"name": S("Loop name")}, ("name",)),
+    ToolDef("list_model", "team", "The project's system-dynamics model: its stocks (what the project holds, with the events that fill and "
+            "drain each and the agents that consume it), the loops it expects, which of those the detector finds in the current org, "
+            "and cycles found that no loop names. Flows are never declared; they follow from the agents' wake rules and emits."),
+    ToolDef("add_model_element", "roles", "Add a stock or an expected loop to the model. A stock: key, name, unit, description, inflows and "
+            "outflows (event types, built in or declared by a team), consumers ([{agent, effect: '+'|'-'}]), estimators ([{kind, ...}]: "
+            "tracker{states}, pending_defects, git_ahead, landed, gate_tests{stage, source}, staging, repo_docs{globs}, turn_hours, "
+            "events{initial, since}, probe{command, every}, none{reason}), hidden, row (capability|chain|rework). A loop: key, name, "
+            "polarity (B|R|''), structure, nodes (stock keys and agent names), signal {key, adverse}, hint, source. Add a stock when the "
+            "project produces or is limited by something the map cannot otherwise show.",
+            {"kind": S("stock or loop"), "key": S("snake_case key"), "spec": {"type": "object", "description": "The element's fields"}}, ("kind", "key", "spec")),
+    ToolDef("update_model_element", "roles", "Change fields of an existing stock or loop; unmentioned fields are kept.",
+            {"kind": S("stock or loop"), "key": S("Existing key"), "spec": {"type": "object", "description": "The fields to change"}}, ("kind", "key", "spec")),
+    ToolDef("remove_model_element", "roles", "Remove a stock or loop from the model; its measurements stay in the log.",
+            {"kind": S("stock or loop"), "key": S("Existing key")}, ("kind", "key")),
     # escalate
     ToolDef("escalate_to_supervisor", "escalate",
             "Wake the Supervisor with a note when a decision about intent, scope, or priorities is needed.",
