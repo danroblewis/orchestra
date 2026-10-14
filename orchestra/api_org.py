@@ -282,6 +282,7 @@ def agent_view(project: Project, store: LocalStore, ag: AgentDef, teams: dict | 
     teams = teams if teams is not None else all_teams(project)
     runs = agent_runs(store, ag)
     return {**ag.to_dict(), "builtin": ag.builtin, "source": ag.source, "session_id": ag.session_id,
+            "triggers": list(ag.triggers), "emits": list(ag.emits),
             "last_run_id": runs[0]["id"] if runs else ag.session_id, "run_count": len(runs),
             "team_exists": ag.team is None or ag.team in teams,   # an agent may be created before its team (the guide's order)
             "wake_kind": "orchestra" if ag.builtin else "events",   # built-ins: the loop calls them; custom: they subscribe

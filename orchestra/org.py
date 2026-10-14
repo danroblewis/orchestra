@@ -86,6 +86,8 @@ class AgentDef:
     updated_at: str = field(default_factory=now)
     builtin: bool = False
     source: str = "agent"                 # agent | role (implicit, from a Stage 1 role record)
+    triggers: list[str] = field(default_factory=list)   # built-ins: conditions the loop detects that are not events
+    emits: list[str] = field(default_factory=list)      # built-ins: event types their actions cause
 
     @property
     def session_id(self) -> str:
@@ -138,8 +140,8 @@ class AgentDef:
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        d.pop("builtin", None)
-        d.pop("source", None)
+        for k in ("builtin", "source", "triggers", "emits"):
+            d.pop(k, None)
         return d
 
     @classmethod
@@ -366,7 +368,7 @@ def built_in_agents() -> dict[str, AgentDef]:
         out[b.name] = AgentDef(name=b.name, roles=[b.name], team=team, kind=kind,
                                session="ephemeral" if not b.resident else "resident", wake_on=list(b.wake_on),
                                every=(f"{int(b.every // 60)}m" if b.every else None), description=b.description,
-                               created_by="orchestra", builtin=True)
+                               created_by="orchestra", builtin=True, triggers=list(b.triggers), emits=list(b.emits))
     return out
 
 

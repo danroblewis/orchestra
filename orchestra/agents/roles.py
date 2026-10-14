@@ -29,7 +29,9 @@ class Role:
     prompt: str                     # prompt file stem under agents/prompts/
     tools: tuple[str, ...]          # tool groups
     resident: bool = True           # kept alive for the life of `orchestra run`
-    wake_on: tuple[str, ...] = ()   # event types that queue a wake-up (documentation; emitters call add_wakeup)
+    wake_on: tuple[str, ...] = ()   # event types this role is woken for (the loop detects them in code and wakes it)
+    triggers: tuple[str, ...] = ()  # conditions that are not events: a free slot, a human message, a threshold
+    emits: tuple[str, ...] = ()     # event types this role's actions cause, through its tools or the loop
     every: float | None = None      # seconds between scheduled wake-ups, or None
     description: str = ""
 
@@ -45,26 +47,56 @@ def register(role: Role) -> Role:
 register(Role(
     name="supervisor", session_id="supervisor", prompt="supervisor",
     tools=("tickets", "context", "pipeline", "roles", "team", "events"),
-    wake_on=("human_message", "escalation"),
+    triggers=("a message from the human", "escalate_to_supervisor from any agent"),
+    emits=("ticket_created", "ticket_updated", "milestone_created", "milestone_closed", "context_updated",
+           "role_created", "agent_created", "team_created", "agent_messaged"),
     description="Talks to the human; translates requests into objectives, verification, and tickets.",
 ))
 register(Role(
     name="coordinator", session_id="coordinator", prompt="coordinator",
     tools=("tickets", "capacity", "escalate"), every=10 * 60,
-    wake_on=("ticket_created", "ticket_done", "ticket_blocked", "review_threshold", "milestone_changed", "scheduled"),
+    wake_on=("ticket_created", "ticket_transition:DONE", "ticket_transition:BLOCKED", "milestone_created", "milestone_closed"),
+    triggers=("a ticket rejected at the review threshold",),
+    emits=("ticket_updated", "ticket_transition:CANCELLED", "note_added", "capacity_changed"),
     description="Keeps the plan executable: clarity, size, order, dependencies. Never changes intent.",
 ))
 register(Role(
     name="pipeline_manager", session_id="pipeline-manager", prompt="pipeline_manager",
     tools=("tickets", "pipeline", "escalate"),
-    wake_on=("base_broken", "gate_error", "staging_failed", "repeated_gate_rejection"),
+    wake_on=("gate_base_broken", "gate_error", "staging_failed"),
+    triggers=("repeated gate rejections of one ticket",),
+    emits=("pipeline_resumed", "staging_restarted"),
     description="On-call for build, merge, and staging health.",
 ))
 # Per-ticket roles are not resident; the loop starts them on demand.
-register(Role(name="worker", session_id="worker-{ticket}", prompt="worker", tools=("report_ticket",), resident=False))
-register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer", tools=("report_review",), resident=False))
+register(Role(name="worker", session_id="worker-{ticket}", prompt="worker", tools=("report_ticket",), resident=False,
+              wake_on=("ticket_transition:OPEN", "ticket_transition:REJECTED"),
+              triggers=("a free worker slot", "the ticket's dependencies DONE and its milestone open"),
+              emits=("ticket_transition:READY_FOR_REVIEW", "ticket_transition:BLOCKED"),
+              description="Implements one ticket on its own branch and reports READY_FOR_REVIEW or BLOCKED."))
+register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer", tools=("report_review",), resident=False,
+              wake_on=("ticket_transition:READY_FOR_REVIEW",), triggers=("a free reviewer slot",),
+              emits=("ticket_transition:APPROVED", "ticket_transition:REJECTED"),
+              description="Reviews one ticket's diff like a pull request and reports APPROVED or REJECTED."))
 register(Role(name="pair", session_id="pair-{ticket}", prompt="pair", tools=("pair",), resident=False,
+              wake_on=("ticket_transition:IN_PROGRESS",), triggers=("the ticket is paired (agents.pair)", "the worker's branch moved"),
+              emits=("ticket_transition:REJECTED", "note_added"),
               description="Watches one ticket's worker from the outside, runs the tests, and gives a verdict before review."))
+
+# Not agents, but parts of the same event graph (see orchestra.web.app eventmap):
+SYSTEM_BINDINGS = {
+    "orchestra": {"description": "The loop itself: sessions, turns, crashes, compaction, and the ticket state machine.",
+                  "emits": ("ticket_transition:IN_PROGRESS", "ticket_transition:IN_REVIEW", "session_started", "session_settled",
+                            "turn_timed_out", "turn_interrupted", "agent_crashed", "agent_compacted", "agent_reset",
+                            "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped"), "wake_on": ()},
+    "merge_gate": {"description": "Lands approved branches: build, unit, start, acceptance; then staging.",
+                   "emits": ("gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
+                             "ticket_transition:MERGING", "ticket_transition:DONE", "ticket_transition:REJECTED",
+                             "staging_deployed", "staging_failed", "pipeline_paused"),
+                   "wake_on": ("ticket_transition:APPROVED",)},
+    "probes": {"description": "Commands run on an interval; an event on each change of result.",
+               "emits": ("probe_failed", "probe_recovered"), "wake_on": ()},
+}
 
 # Future roles slot in here, for example:
 #   register(Role(name="product_owner", session_id="product-owner", prompt="product_owner",

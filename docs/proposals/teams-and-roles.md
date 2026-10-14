@@ -742,6 +742,27 @@ natural place for it to appear.
 
 ---
 
+## Open topic: the loop as an event bus
+
+The event map on the Agents page draws the organisation as a graph: what emits each
+event type and who is woken by it. For custom agents the picture is literal, because
+they subscribe to the log. For the built-in agents and the merge gate it is a
+description: the loop detects the condition in code and wakes them directly, so the
+worker's `ticket_transition:OPEN`, the reviewer's `ticket_transition:READY_FOR_REVIEW`,
+and the gate's `ticket_transition:APPROVED` are drawn dashed.
+
+The next step is to make those literal: the reviewer becomes a subscriber to
+`ticket_transition:READY_FOR_REVIEW`, the worker to `OPEN` and `REJECTED`, the gate to
+`APPROVED`, each with the extra conditions the loop checks today (a free slot, a ready
+dependency set, an open milestone) expressed as a guard the subscription carries. The
+tick then has one job: deliver events to subscribers whose guards pass, under capacity.
+That makes the loop's behaviour data the map can draw exactly, lets a project swap or
+add a stage (a pair agent before review, a second reviewer) without touching the loop,
+and makes "what happens when a ticket is approved" a question the map answers.
+
+It rewrites the tick and the per-ticket paths, so it waits until the pair experiment
+on the same code has landed. The guard vocabulary is the open design question.
+
 ## Open questions
 
 1. **Space default.** Untracked by default is the proposal; is there a kind of
