@@ -176,11 +176,11 @@ function stockText(k, s, st, now) {
   if (kind === "landed") return [fNum(v), `commits on main · ${s.lines >= 1000 ? (s.lines / 1000).toFixed(1) + "k" : fNum(s.lines)} lines`];
   if (kind === "gate_tests") return [fNum(v), (s.unverified ? `${s.verification} · proved at the last ${s.build ? "deploy" : "landing"}` : s.stale ? `${s.verification}: ${(s.latest_check || {}).failed || 0} failing, ${(s.latest_check || {}).errors || 0} errors; the last clean check stands` : s.served === false ? `not served: ${s.not_served_because}` : s.stage ? "passing" : "passing on main's latest check") + (s.stage ? ` · ${s.skipped || 0} skipped` : s.stale ? "" : ` · ${s.failed || 0} failing${s.errors ? ` · ${s.errors} errors` : ""}${s.at_last_landing != null && s.at_last_landing !== v ? ` · ${s.at_last_landing} passed at the last landing` : ""}`)];
   if (kind === "staging") return [v ? "up" : "down", s.build ? `${s.build.slice(0, 7)}${v ? ` · deployed ${agoIso(s.deployed_at, now)}` : s.last_healthy_ago != null ? ` · last healthy ${fmtD(s.last_healthy_ago)} ago` : " · no health check yet"}` : "no build"];
-  if (kind === "repo_docs") return [fNum(v), `documents · ${fNum(s.lines)} lines · ${fNum(s.lessons_decided)} lessons`];
+  if (kind === "repo_docs") return [fNum(v), `${fNum(s.lines)} lines · ${fNum(s.lessons_decided)} lessons`];
   if (kind === "pending_defects") return [fNum(v), `known to need rework, not yet landed${s.tickets && s.tickets.length ? ` · ${s.tickets.map((tid) => (s.blocked || []).includes(tid) ? `${tid} (blocked, with the planner)` : tid).join(", ")}` : ""} · ${(s.awaiting_pickup || []).length} awaiting pickup`];
   if (kind === "tracker") return [fNum(v), Object.entries(s.by_state || {}).map(([a, b]) => `${b} ${a.replace(/_/g, " ").toLowerCase()}`).join(" · ") + (s.commits_ahead != null && (s.commits_ahead > 0 || (st.key === "wip")) ? ` · ${s.commits_ahead} commits ahead` : "") + (s.oldest_age != null ? ` · oldest ${fmtD(s.oldest_age)}` : "") + (s.worst_rounds ? ` · ${s.worst_rounds.ticket} on round ${s.worst_rounds.rounds}` : "")];
   if (s.estimable === false) return ["not estimable", st.hidden ? "hidden by declaration" : st.unit];
-  return [fNum(v), st.unit];
+  return [fNum(v), s.since ? `since ${String(s.since).slice(0, 10)}` : "in the log"];
 }
 function foundryMap(f, evm) {
   const now = (ORG && ORG.now) || Date.now() / 1000, r = f.readings || {}, S = r.stocks || {}, hours = r.hours || 24, ins = r.inspections || {}, dora = r.dora || {}, sig = r.signals || {};

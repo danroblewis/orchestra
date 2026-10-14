@@ -123,6 +123,26 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   planner; the coordinator's re-plan moves it back to Demand. Re-planning is then the
   conserved circuit W → Blocked → Demand → W, with the coordinator and Orchestra as its
   valves.
+- **The cause a transition carries** is decided by its kind: a send-back carries its own
+  verdict; a pickup carries the send-back it follows (a fix pickup or a re-pick); a
+  submission is a fix while a defect is pending before it (through blocks, re-plans and the
+  restarts a turn limit causes), otherwise a re-run after a send-back with no verdict; a
+  verdict on a fix (an approval, a gate result) carries the defect not yet landed. A ring
+  step with a cause counts every transition of its event that carried that cause, so the
+  two rework rings' fix submissions sum to the fix rounds. A no-verdict return finds nothing,
+  so a loss stock never takes a co-flow from the hidden stock.
+- **Known rework's level** is the work known to need rework and not yet done: tickets sent
+  back for a defect with no landing since, with the ones not yet picked up beside it. The
+  pickup is still the flow that moves the change into W; the level is Cooper's, not the
+  queue's.
+- **Verification is a state, never a substituted level.** Really done keeps what the last
+  deploy proved and reads "unverified" while the build is down or main is broken; Verified
+  behaviour reads the last clean check marked "stale" when the latest check failed on a
+  suspect host, and the latest check otherwise.
+- **How late** is the median delay from the submission a verdict judged to the verdict, by
+  stage, and from a deploy to its first trouble after landing, shown with the discovery tile.
+- **Starts split three ways**: first starts, starts after a re-plan (the re-planning loop's
+  flow) and re-picks after a restart (a loss).
 - **The rework flow.** K is drained by the fix pickup (REJECTED → IN_PROGRESS), the flow the
   cycle is named for, into W; its level is the send-backs not yet picked up, with the
   send-backs not yet re-submitted and not yet landed beside it. The rework cycles therefore
@@ -141,7 +161,9 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   main is broken, with the count at the last deploy beside it; Verified behaviour reads the
   latest check, with the host-suspect flag and the last clean count as context, never a
   substituted reading.
-- **Agents sit over what they drain.** An agent's circle is placed over the mean of the stocks
+- **Pipes across rows run orthogonally**, each on its own band between the rows with its
+  label on the horizontal run, so no label is crossed by a line and no two share a band.
+- **Agents sit over the pipes they are the valve on.** An agent's circle is placed over the mean of the stocks
   it drains (over what wakes it, or what it fills, if it drains nothing), on three rows, and
   pushed apart only as far as names need; an agent on no flow sits at the right.
 - **Gap advice names only the project's own agents and events.** The detector's fix for an
