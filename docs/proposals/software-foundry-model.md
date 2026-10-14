@@ -83,6 +83,29 @@ configuration lives in `tests/unit/test_foundry_golden.py` and must stay detecte
 second model from outside software (`test_foundry_golden_repenning.py`) keeps the detector
 honest. The tables below are the expectation, not the implementation.
 
+The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
+
+- **Links.** An agent that emits an event filling a stock is a + link to it; emitting one that
+  drains it is a − link. A stock wakes an agent on an arrival (+) or, when no stock has the
+  event as an inflow, on a departure (−: the level fell and the agent responds). A stock's
+  declared consumers get the declared sign. An agent whose event wakes another agent and
+  fills no stock is a + trigger between them.
+- **Parallel links** between the same two nodes take the sign of the dominant mechanism: the
+  one whose event the log counted most in the window; without evidence, arrivals and fills
+  win over departures and drains. No tie-break by name or order.
+- **Polarity.** A cycle whose stocks are every one filled and drained by agents in the cycle
+  is a conserved material loop: what circulates is the same thing (a change, a defect), so it
+  converges, and it is balancing by construction (Cooper's rework cycle). Any other cycle is
+  signed by the product of its dominant link signs: negative is balancing, positive is
+  reinforcing. The card says which rule applied.
+- **Observed vs closable.** A cycle is observed when every agent-to-stock link on it was seen
+  in the window, attributed to that agent (by `by`/`author`, or for ticket transitions by the
+  state they leave, with REJECTED split by cause). A cycle closable by declaration alone is
+  shown as such.
+- **Gaps.** An expected loop no cycle covers reports its missing members and, for each
+  consecutive pair with no link, the binding that would close it, naming the project's own
+  agent already woken by the first stock when there is one.
+
 Flows are rates per day over the window. A machine (an agent or Orchestra itself) is a valve
 on a flow: its in-use and cycle time set the flow's rate. Flows with no machine are drawn as
 unattended; that is where a new agent goes.

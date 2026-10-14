@@ -137,7 +137,11 @@ the worker reads lower its defect rate, so `-`), and how to measure it (an estim
 another is a conversion between them; a missing flow is fixed with an agent or a binding.
 A **limiting constraint** (a performance budget, one staging host, a token budget) is a stock
 too: declare it with a probe that measures it and name the agents it constrains as its
-consumers with effect `-`.
+consumers with effect `-`. A constraint closes a loop only when something feeds it back: give
+it an inflow event some agent emits when it changes (a budget top-up, a benchmark result),
+or it stays a dead end on the map, which is honest but not a loop. Keep the template's stock
+keys unless you must rename them: the page's headline tiles read `really_done`, `landed`,
+`known_rework` and `agent_time` by key.
 
 ## The procedure
 
