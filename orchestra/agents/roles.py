@@ -63,7 +63,7 @@ register(Role(
 register(Role(
     name="pipeline_manager", session_id="pipeline-manager", prompt="pipeline_manager",
     tools=("tickets", "pipeline", "escalate"),
-    wake_on=("gate_base_broken", "gate_error", "staging_failed"),
+    wake_on=("gate_base_broken", "gate_error", "staging_failed", "pipeline_paused"),
     triggers=("repeated gate rejections of one ticket",),
     emits=("pipeline_resumed", "staging_restarted", "note_added", "ticket_updated"),
     description="On-call for build, merge, and staging health.",
@@ -86,7 +86,7 @@ SYSTEM_BINDINGS = {
                             "turn_timed_out", "turn_interrupted", "agent_crashed", "agent_compacted", "agent_reset",
                             "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped"),
                   "wake_on": ("ticket_created", "ticket_transition:OPEN", "ticket_transition:REJECTED", "ticket_transition:READY_FOR_REVIEW",
-                              "ticket_transition:DONE", "ticket_transition:CANCELLED")},
+                              "ticket_transition:DONE", "ticket_transition:CANCELLED", "gate_landed", "gate_rejected", "gate_conflict")},   # gate results become ticket transitions
     "merge_gate": {"description": "Lands approved branches: build, unit, start, acceptance; then staging.",
                    "emits": ("gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
                              "ticket_transition:MERGING", "ticket_transition:DONE", "ticket_transition:REJECTED",

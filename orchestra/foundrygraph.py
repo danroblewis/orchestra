@@ -249,6 +249,13 @@ def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -
         dom = [dominant(g, p, weights) for p in pairs if signs.get(p, "+") == "?"]
         return "?", "indeterminate: mechanisms disagree on " + "; ".join(notes) + (f" · dominant today: {', '.join(d for d in dom if d)}" if any(dom) else "")
     neg = sum(1 for p in pairs if signs.get(p, "+") == "-")
+    # a negative that comes only from a departure (an event that drained a stock elsewhere and woke
+    # the next agent) is not a causal link on this path: the balancing lives in the stock's pair
+    # with the agent that drained it, so the cycle is closed but its polarity is not structural
+    only_departs = neg > 0 and all(any(e["kind"] == "departs" for e in g["edges"] if (e["src"], e["dst"]) == p) for p in pairs if signs.get(p, "+") == "-")
+    if only_departs:
+        drained = sorted({f"{e['dst']} ↔ {e['src'].replace('agent:', '')}" for p in pairs for e in g["edges"] if (e["src"], e["dst"]) == p and e["kind"] == "departs" for e2 in [e]})
+        return "?", "closed; the balancing is in the first-order pair of the drained stock and its agent, not on this path"
     return ("B" if neg % 2 else "R"), "link signs"
 
 

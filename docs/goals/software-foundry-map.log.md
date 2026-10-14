@@ -274,3 +274,34 @@ after really done; unknown stock and loop fields rejected.
 Declined: placing agents over their waking stocks (even spacing keeps names legible; the
 legend says so); residence-time-per-machine readings beyond "oldest" (next round if
 asked).
+
+## Round 9 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; 24 of 26 checks matched. Found: the
+blocked-pipeline level double-counted (a broken base raised two inflow events per incident);
+template stocks carried inflow types the store refuses, so the Supervisor could not edit
+them; broken base signed B by the departs convention alone; "source says" shown when it
+agreed; really done had no outflow and sat at 21 beside a dead build; verified behaviour and
+the really-done tile told two stories about main; escapes departed from the design (one per
+service, keyword folding); the loss tile's hint about the 15 m limit was stale (the limit
+had been 30 m for eight hours with no timeout since); loop signal keys unvalidated and
+undocumented; sixteen restarts woke nobody and nothing showed it; a clipped label; the
+rework row's stub pipes; links carry no weight; the missing-discovery card said "zero by
+construction".
+
+Fixed: one pause event per incident and the pipeline manager wakes on it; template inflows
+are events that exist (a team's own events are added when it declares them, and the
+capability and earlier-detection hints say exactly how); really done drains when the build
+fails, restarts, or main breaks; verified behaviour and really done read the same landing
+run; a cycle whose only negative is a departure is "closed; the balancing is in the
+first-order pair", with the pair listed as B; "source says" only when it differs; escapes
+per build as the design says, a ticket naming a crashing build counted as that build's;
+the loss tile and card say when the limit has since changed and when the last timeout was,
+and stop flagging adverse; signal keys validated against the catalogue, which the guide and
+the model README now list; stock outflows that happened and woke nobody are drawn as hollow
+stubs (sixteen staging restarts); Orchestra's own bindings consume gate results; links are
+weighted by their attributed count and declared-but-unseen links drawn faint; the
+missing-discovery text no longer contradicts the tile.
+
+Declined: a per-build escape that also folds tickets by keyword (the design's rule stands);
+pipes of real length between adjacent rework boxes; touch-reachable tooltips.

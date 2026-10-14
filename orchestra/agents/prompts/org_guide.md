@@ -111,7 +111,8 @@ tell you:
    holder you own) a wake rule on it. That closes the loop "deploy → find → plan → build".
 4. Name the cycles `list_model` lists as unnamed if they matter (`add_model_element`
    kind=loop with their members); if one is accidental, an agent subscribes to more than it
-   should.
+   should. A loop's `signal` names one of the computed signals and the direction that is
+   adverse; the computed signals are: acceptance_defects_at_gate, bad_fix_fraction, base_broken, conflicts_per_landing, defects_after_landing, defects_before_gate_share, defects_found_after_landing, fix_rounds, gate_defects, gate_distinct_defects, gate_pass, hours_lost, landed_per_worker_hour, restarts, review_defects, review_miss_rate, review_pass, reviewer_timeout_share, rework_share, starts, worker_hours_lost, worker_timeout_share.
 
 Worked example, a web-based cellular-automata game. After `propose_model`:
 

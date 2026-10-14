@@ -87,6 +87,13 @@ class Loop:
             raise OrgError(f"loop key {self.key!r}: snake_case, up to 40 characters")
         if self.polarity not in ("B", "R", ""):
             raise OrgError(f"loop {self.key}: polarity is B, R, or empty")
+        from .foundrymetrics import SIGNAL_KEYS
+        key = (self.signal or {}).get("key")
+        if key and key not in SIGNAL_KEYS:
+            raise OrgError(f"loop {self.key}: signal {key!r} is not a computed signal; one of {', '.join(sorted(SIGNAL_KEYS))}")
+        for k in self.readings:
+            if k not in SIGNAL_KEYS:
+                raise OrgError(f"loop {self.key}: reading {k!r} is not a computed signal; one of {', '.join(sorted(SIGNAL_KEYS))}")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -123,13 +130,13 @@ TEMPLATE_STOCKS: list[Stock] = [
           [{"kind": "landed"}], row="chain", pos=[810, 222], width=160),
     Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up. Drained when it fails in service or the health loop has to restart it; a broken main is the gate's problem, not the build's.", ["staging_deployed"], ["staging_failed", "staging_restarted"], [],
           [{"kind": "staging"}], row="chain", pos=[1000, 222], width=134),
-    Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it.",
-          ["staging_deployed"], [], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1190, 222], width=150),
-    Stock("pipeline_blocked", "Pipeline blocked", "pauses", "The gate is paused: main itself failed the gate, or an operator paused the pipeline; the pipeline manager's resume drains it.", ["gate_base_broken", "pipeline_paused"], ["pipeline_resumed"], [],
+    Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it; drained when the build fails in service or main's latest check fails.",
+          ["staging_deployed"], ["staging_failed", "staging_restarted", "gate_base_broken"], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1190, 222], width=150),
+    Stock("pipeline_blocked", "Pipeline blocked", "pauses", "The gate is paused: main itself failed the gate, or an operator paused the pipeline; the pipeline manager's resume drains it. One pause event per incident (a broken base also raises gate_base_broken, which is the wake-up, not the fill).", ["pipeline_paused"], ["pipeline_resumed"], [],
           [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], row="rework", pos=[900, 480], width=150),
-    Stock("tests", "Verified behaviour", "tests", "Tests on main by stage from the last gate run that reflects main. Skipped tests are never counted. Filled by test authoring, which reaches main through a landing; a team may declare tests_added to name the authoring itself.", ["gate_landed", "tests_added"], [],
+    Stock("tests", "Verified behaviour", "tests", "Tests on main by stage from the last gate run that reflects main. Skipped tests are never counted. Filled by test authoring, which reaches main through a landing; a team that names the authoring declares its own event and adds it here.", ["gate_landed"], [],
           [{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}], [{"kind": "gate_tests", "source": "main"}], addition=True, row="capability", pos=[760, 52], width=200),
-    Stock("resources", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons. Filled when agent-facing documents land, or when a team declares lesson_decided and its keeper emits it.", ["gate_landed", "lesson_decided"], [],
+    Stock("resources", "Environment resources", "documents", "What the worker and reviewer read before working: AGENTS.md, README, team and role docs, decided lessons. Filled when agent-facing documents land; a devex team that decides lessons declares its own event (lesson_decided) and adds it here.", ["gate_landed"], [],
           [{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}], [{"kind": "repo_docs", "globs": DOC_GLOBS}], addition=True, row="capability", pos=[292, 52], width=200),
 ]
 
@@ -139,9 +146,9 @@ TEMPLATE_LOOPS: list[Loop] = [
     Loop("gate_rework", "rework cycle (gate)", "", "known rework → worker re-submits → awaiting review → reviewer → awaiting the gate → gate → known rework", ["known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"],
          {"key": "acceptance_defects_at_gate", "adverse": "up", "threshold": 0}, ["gate_distinct_defects", "acceptance_defects_at_gate"], "a defect reached the gate's acceptance stage, which the pre-review check does not run: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
     Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
-         {"key": "review_pass", "adverse": "down"}, ["review_pass"], "", "Repenning & Sterman 2001 (work smarter)"),
+         {"key": "review_pass", "adverse": "down"}, ["review_pass", "review_miss_rate"], "the devex team declares lesson_decided (update_team emits), its keeper emits it when a lesson is decided, and resources lists it as an inflow", "Repenning & Sterman 2001 (work smarter)"),
     Loop("earlier_detection", "earlier detection", "", "landed → test author → tests → gate runs them → landed", ["landed", "tests", "merge_gate"],
-         {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "", "Orchestra's addition", addition=True),
+         {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "a team that writes tests declares an event for it (update_team emits), the test author emits it, and tests lists it as an inflow", "Orchestra's addition", addition=True),
     Loop("broken_base", "broken base", "B", "main fails the gate → the pipeline is blocked → the pipeline manager resumes it → the gate runs again", ["pipeline_blocked", "pipeline_manager", "merge_gate"],
          {"key": "base_broken", "adverse": "up"}, ["base_broken"], "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this", "Abdel-Hamid & Madnick 1991 (errors build errors)"),
     Loop("replanning", "re-planning", "", "worker blocks a ticket back to demand → the coordinator re-plans it → Orchestra starts it again", ["wip", "worker", "demand", "orchestra"],
@@ -245,6 +252,7 @@ the model tools (`list_model`, `add_model_element`, `update_model_element`,
   probe, judge, none) and its parameters; `hidden` stocks are declared because the model
   says they exist and are never shown as a count; `row` and `pos` are drawing hints.
 - `loops/<key>.json`: a feedback loop the model expects, by its member stocks and agents.
+  Its `signal` names a computed signal (acceptance_defects_at_gate, bad_fix_fraction, base_broken, conflicts_per_landing, defects_after_landing, defects_before_gate_share, defects_found_after_landing, fix_rounds, gate_defects, gate_distinct_defects, gate_pass, hours_lost, landed_per_worker_hour, restarts, review_defects, review_miss_rate, review_pass, reviewer_timeout_share, rework_share, starts, worker_hours_lost, worker_timeout_share) and the direction that is adverse.
   The detector marks it detected only when a cycle of the causal graph built from the
   stocks and the org covers those members; otherwise it stays a hypothesis. Cycles the
   detector finds that no loop names are listed for the Supervisor to name.

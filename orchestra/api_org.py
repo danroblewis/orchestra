@@ -509,7 +509,7 @@ def _propose(project: Project, model: dict) -> dict:
     loops_hint = []
     ags = all_agents(project)
     if not any("staging_deployed" in (ag.wake_on or []) for ag in ags.values()):   # nothing exercises the deployed product
-        loops_hint.append({"why": "nothing inspects the deployed build, so defects found after landing are zero by construction",
+        loops_hint.append({"why": "no agent inspects the deployed build: defects after landing are found only by the health loop's restarts and by bug tickets citing shipped work, never by anyone exercising the product",
                            "call": {"kind": "agent", "note": "create a playtester (or smoke tester) team whose lead is an ad hoc agent woken by staging_deployed that drives the product and emits a finding event the team declares; then add a stock filled by that event and give the product owner a wake rule on it"}})
     return {"candidates": cands, "missing_discovery": loops_hint,
             "how": "for each candidate you want: call add_model_element with its call; adjust name, unit and description to the product; then list_model to see which loops close"}

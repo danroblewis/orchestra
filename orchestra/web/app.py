@@ -114,8 +114,17 @@ def create_app(project: Project) -> FastAPI:
         det = foundrygraph.detect(model["stocks"], foundry.agents_for_detection(project, ags), model["loops"], system=SYSTEM_BINDINGS, weights=r["event_counts"], evidence=r["attributed_counts"])
         from ..api_org import _propose
         proposal = _propose(project, model)
+        # outflows that happened and woke nobody: a flow with events and no consumer
+        from ..agents.roles import SYSTEM_BINDINGS as _sb
+        wake_rules = [w for a in foundry.agents_for_detection(project, ags).values() for w in (a.wake_on or [])] + [w for b in _sb.values() for w in b.get("wake_on", ())]
+        unconsumed = []
+        for st in model["stocks"]:
+            for o in st.outflows:
+                n = r["event_counts"].get(foundrygraph.plain(o), 0)
+                if n and not any(foundrygraph.event_fits(wr, foundrygraph.plain(o)) for wr in wake_rules):
+                    unconsumed.append({"stock": st.key, "event": o, "count": n})
         return {"ok": True, "model": foundry.as_dict(model), "graph": det["graph"], "cycles": det["cycles"], "declared": det["declared"], "unnamed": det["unnamed"],
-                "missing_discovery": proposal.get("missing_discovery", []),
+                "missing_discovery": proposal.get("missing_discovery", []), "unconsumed": unconsumed,
                 "pairs": len(det["pairs"]), "pair_list": [{"nodes": c["nodes"], "members": c["members"], "polarity": c["polarity"]} for c in det["pairs"]], "readings": r}
 
     @app.get("/api/agents/{name}")

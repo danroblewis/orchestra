@@ -34,7 +34,7 @@ def foundry_stocks() -> list[Stock]:
         Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
         Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "staging_restarted"]),
-        Stock("pipeline_blocked", "Pipeline blocked", "pauses", inflows=["gate_base_broken", "pipeline_paused"], outflows=["pipeline_resumed"]),
+        Stock("pipeline_blocked", "Pipeline blocked", "pauses", inflows=["pipeline_paused"], outflows=["pipeline_resumed"]),
         Stock("tests", "Verified behaviour", "tests", inflows=["tests_added"], outflows=[], consumers=[{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}]),
         Stock("resources", "Environment resources", "documents", inflows=["lesson_decided"], outflows=[], consumers=[{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}]),
     ]
@@ -60,7 +60,7 @@ EXPECTED = [
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
     {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
-    {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager", "merge_gate"], "polarity": "B"},
+    {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager", "merge_gate"]},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
     {"key": "replanning", "nodes": ["wip", "worker", "demand", "orchestra"]},
 ]
@@ -134,10 +134,13 @@ def test_the_qa_engineer_closes_earlier_detection():
 def test_the_pipeline_manager_closes_broken_base():
     det = loops_for(foundry_stocks(), foundry_agents())
     bb = next(d for d in det["declared"] if d["key"] == "broken_base")
-    # a broken main fills the blocked-pipeline stock (+), its arrival wakes the manager (+), whose resume drains it (−)
-    # and reaches the gate as a departure (−): balancing by the link signs, on a stock the model declares
-    assert bb["detected"] and bb["cycle"]["polarity"] == "B" and bb["cycle"]["basis"] == "link signs", bb
+    # a broken main fills the blocked-pipeline stock, its arrival wakes the manager, and the manager's resume
+    # reaches the gate as a departure: the path is closed, but its only negative is that departure, so the
+    # balancing is credited to the pair pipeline_blocked ↔ pipeline_manager, not to the path
+    assert bb["detected"] and bb["cycle"]["polarity"] == "?" and bb["cycle"]["basis"].startswith("closed; the balancing is in the first-order pair"), bb
     assert "pipeline_blocked" in bb["cycle"]["nodes"]
+    pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"pipeline_blocked", "agent:pipeline_manager"})
+    assert pair["polarity"] == "B"
 
 
 def test_parallel_links_are_indeterminate_and_the_window_only_says_which_dominates():

@@ -228,8 +228,8 @@ def test_propose_model_and_advice_give_a_weak_supervisor_something_to_copy(proje
     (project.repo_root / "tests" / "acceptance" / "test_share.py").write_text("def test_x(): pass\n")
     pr = api.handle(project, store, "propose_model", {})
     whys = " | ".join(c["why"] for c in pr["candidates"])
-    # lesson_decided already fills the template's resources stock, so it is not proposed; finding_filed is
-    assert "declares the event finding_filed" in whys and "lesson_decided" not in whys
+    # both of the team's events are proposed: the template's resources stock is filled by landings until a team names its own event
+    assert "declares the event finding_filed" in whys and "declares the event lesson_decided" in whys
     assert "files under .orchestra/spaces/devex/lessons" in whys
     assert "acceptance suite" not in whys                                                      # the template's really_done already reads the acceptance stage
     assert all(c["call"]["kind"] == "stock" and "spec" in c["call"] for c in pr["candidates"])
@@ -239,10 +239,13 @@ def test_propose_model_and_advice_give_a_weak_supervisor_something_to_copy(proje
     api.handle(project, store, "add_model_element", cand, **sup)
     lm = api.handle(project, store, "list_model", {})
     assert "finding_fileds" in {s["key"] for s in lm["stocks"]}
-    # the keeper has the events tool and its team declares lesson_decided, so its effective emits fill resources: capability closes
+    # capability stays open until resources lists the team's event as an inflow; the advice says exactly that
     cap = next(d for d in lm["detected"] if d["key"] == "capability")
-    assert cap["detected"] and cap["polarity"] == "B", (cap, lm["advice"])
-    # a team-less agent with the same wake rule but no events tool could not: the tools decide
+    assert not cap["detected"], cap
+    assert any("capability" in line and "resources" in line for line in lm["advice"]), lm["advice"]
+    api.handle(project, store, "update_model_element", {"kind": "stock", "key": "resources", "spec": {"inflows": ["gate_landed", "lesson_decided"]}}, **sup)
+    cap = next(d for d in api.handle(project, store, "list_model", {})["detected"] if d["key"] == "capability")
+    assert cap["detected"] and cap["polarity"] == "B", cap                                       # the keeper's events tool and team event now fill resources
     assert any("earlier_detection" in line for line in lm["advice"])
     with pytest.raises(Exception, match="may not emit"):
         api.handle(project, store, "update_agent", {"name": "keeper", "emits": ["gate_landed"]}, **sup)

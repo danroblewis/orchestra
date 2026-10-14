@@ -394,12 +394,11 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         if (cites or cites_sha) and e.get("ticket") not in cites:
             bug_tickets.append(e.get("ticket"))
     crashing_builds = sorted({t.get("build") for t in troubles if t["type"] == "staging_restarted" and t.get("build")})
-    # one defect for the crash-restarting service, however many builds it hit; a bug ticket about
-    # that crash is the same defect, so tickets mentioning staging or restarts are folded into it
-    crash_words = ("staging", "restart", "crash", "uptime")
-    crash_tickets = [tid for tid in bug_tickets if any(w in f"{getattr(tickets_by_id.get(tid), 'title', '')} {getattr(tickets_by_id.get(tid), 'description', '')}".lower() for w in crash_words)]
+    # as the design says: one defect per deployed build the health loop had to restart, plus each bug
+    # ticket citing shipped work; a ticket that names a crashing build's id is that build's defect
+    crash_tickets = [tid for tid in bug_tickets if any(b and b[:7] in f"{getattr(tickets_by_id.get(tid), 'title', '')} {getattr(tickets_by_id.get(tid), 'description', '')}" for b in crashing_builds)]
     other_tickets = [tid for tid in bug_tickets if tid not in crash_tickets]
-    escape = len(other_tickets) + (1 if crashing_builds or crash_tickets else 0)
+    escape = len(other_tickets) + len(crashing_builds)
     landed_at = {e.get("commit"): _ts(e) for e in landed}
     land_to_deploy = [_ts(d) - landed_at[d["commit"]] for d in deploys if d.get("commit") in landed_at]
     return {
@@ -430,6 +429,11 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                  "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)), "crashing_builds": crashing_builds,
                  "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores)},
     }
+
+
+SIGNAL_KEYS = frozenset({"review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
+                         "fix_rounds", "review_defects", "defects_after_landing", "review_miss_rate", "acceptance_defects_at_gate", "bad_fix_fraction", "conflicts_per_landing",
+                         "landed_per_worker_hour", "restarts", "defects_found_after_landing", "base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
 
 
 def _signals(w: dict) -> dict[str, float | None]:
@@ -486,7 +490,7 @@ def _stock_reading(st, pool: dict) -> dict:
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
                              "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean")), "landed_clean_before": pool.get("main_commit_landed_clean")} if stage else None,
-                   estimator=f"pytest summary of the {stage or 'all'} stage{'s' if not stage else ''} in the gate run that produced the {source}; skipped shown, never counted")
+                   estimator=f"pytest summary of {('the ' + stage + ' stage') if stage else 'every stage'} in the gate run of {source}; skipped shown, never counted")
     elif kind == "staging":
         stg = pool["staging"]
         now_ = dt.datetime.now(dt.UTC).timestamp()
@@ -585,6 +589,8 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}
     for n, _ in rounds:
         hist_r["0" if n == 0 else "1-2" if n <= 2 else "3-5" if n <= 5 else "6+"] += 1
+    cur["time"]["turn_limit_now"] = getattr(project.config, "silence_timeout", None)
+    cur["time"]["last_timeout_at"] = max((e.get("ts", "") for e in events if e["type"] == "turn_timed_out"), default=None)
     stocks = {st.key: _stock_reading(st, pool) for st in model["stocks"]}
     counter: dict[str, int] = {}
     for e in events:
