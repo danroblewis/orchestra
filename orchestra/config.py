@@ -61,6 +61,7 @@ class Config:
     reviewers: int = 1
     turn_timeout: float = 0.0          # hard cap per turn; 0 = none
     silence_timeout: float = 1200.0    # end a turn after this long with nothing from the harness
+    session_max_bytes: int = 300_000   # a session file past this size is archived and the next turn starts fresh
     review_rounds_before_escalation: int = 3
     aging_days_per_level: float = 2.0
     prompt_overrides: dict[str, str] = field(default_factory=dict)
@@ -117,6 +118,7 @@ class Config:
             reviewers=int(a.get("reviewers", 1)),
             turn_timeout=parse_duration(a.get("turn_timeout"), 0.0),
             silence_timeout=parse_duration(a.get("silence_timeout"), 1200.0),
+            session_max_bytes=int(a.get("session_max_bytes", 300_000)),
             review_rounds_before_escalation=int(a.get("review_rounds_before_escalation", 3)),
             aging_days_per_level=float(a.get("aging_days_per_level", 2.0)),
             prompt_overrides=dict(a.get("prompts", {})),
@@ -156,6 +158,7 @@ thinking = "medium"
 workers = 3
 reviewers = 3
 silence_timeout = "20m"           # a turn ends when nothing has come from the agent for this long
+session_max_bytes = 300000        # a session file past this size is archived; the next turn starts fresh (keeps prefill short)
 # turn_timeout = "2h"             # optional hard cap per turn; unset means none: a busy agent is never cut off
 review_rounds_before_escalation = 3
 aging_days_per_level = 2        # a ticket gains one priority level per N days of age; 0 disables

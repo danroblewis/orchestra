@@ -33,6 +33,22 @@ def project(tmp_path, monkeypatch):
     return init_project(repo, provider="p", model="m", prefix="T")
 
 
+def test_large_sessions_rotate_before_the_next_turn(project):
+    store, events = LocalStore(project), Events(project.events_file)
+    loop = Loop(project, store, events)
+    f = project.sessions_dir / "2026_worker-T-1.jsonl"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("x" * 10)
+    store.set_session("worker-T-1", kind="worker", status="idle", session_file=str(f))
+    assert not loop._rotate_if_large("worker-T-1", "worker")                                # small: left alone
+    f.write_text("x" * (project.config.session_max_bytes + 1))
+    assert loop._rotate_if_large("worker-T-1", "worker")
+    assert not f.exists() and (project.sessions_dir / "archive" / f.name).exists()
+    assert store.find_session("worker-T-1")["session_file"] is None
+    ev = [e for e in events.read(0)[0] if e["type"] == "agent_reset"][-1]
+    assert ev["by"] == "orchestra" and "KB" in ev["reason"]
+
+
 def test_reset_archives_the_transcript_and_starts_over(project):
     store, events = LocalStore(project), Events(project.events_file)
     f = project.sessions_dir / "2026_supervisor.jsonl"

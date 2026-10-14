@@ -520,6 +520,7 @@ class Loop:
             log(f"{t.id}: cannot start worker: {e}")
             return
         log(f"{t.id}: worker starting on {branch}")
+        self._rotate_if_large(sid, "worker")
         proc = self._session(sid, "worker", path, t.id)
         text = ""
         try:
@@ -619,6 +620,7 @@ class Loop:
         diff = self.git.diff(base, commit, cwd=path)
         files = self.git.changed_files(base, commit, cwd=path)
         glog = self.git.log(base, commit, cwd=path)
+        self._rotate_if_large(sid, "reviewer")
         proc = self._session(sid, "reviewer", path, t.id)
         text = ""
         try:
@@ -728,6 +730,7 @@ class Loop:
 
     def prompt_supervisor(self, message: str, emit) -> dict:
         """One supervisor turn on the resident session, with the event digest prefix."""
+        self._rotate_if_large("supervisor", "supervisor")
         proc = self.agent_procs.get("supervisor")
         if proc is None or not proc.alive():
             proc = self._session("supervisor", "supervisor", self.project.repo_root)
@@ -748,6 +751,28 @@ class Loop:
         self._session_idle("supervisor", res.text, resident=True)
         return {"text": res.text, "error": res.error, "timed_out": res.timed_out}
 
+    def _rotate_if_large(self, sid: str, agent: str) -> bool:
+        """Session rotation. A transcript past `session_max_bytes` makes every turn re-send
+        that much context to the model, which is what makes a loaded server crawl. Before a
+        turn starts on such a session, the file is archived as a run and the turn begins
+        fresh; the wake-up or task carries the current state, and a worker's branch holds
+        its work. Returns True when a rotation happened."""
+        limit = self.cfg.session_max_bytes
+        s = self.store.find_session(sid) or {}
+        f = s.get("session_file")
+        if not limit or not f or not Path(f).exists() or Path(f).stat().st_size <= limit:
+            return False
+        size = Path(f).stat().st_size
+        proc = self.agent_procs.pop(agent, None) if self.agent_procs.get(agent) is not None and self.agent_procs[agent].session_id == sid else None
+        if proc is not None:
+            proc.close()
+        archived = self.store.retire_session(sid)
+        self.store.set_agent_state(agent, context_hash=None)
+        self.events.emit("agent_reset", session=sid, agent=agent, archived=archived, by="orchestra",
+                         reason=f"transcript reached {size // 1000} KB (session_max_bytes {limit // 1000} KB)")
+        log(f"{sid}: transcript {size // 1000} KB; archived as {archived}, starting fresh")
+        return True
+
     def _wake(self, target: str, reasons: list[str]) -> None:
         agent = self.agents.get(target)
         if agent is None:
@@ -758,6 +783,7 @@ class Loop:
             sid = f"{agent.session_id}-{time.strftime('%Y%m%d-%H%M%S')}"
             proc = self._session_for(agent, sid)
         else:
+            self._rotate_if_large(sid, target)
             proc = self.agent_procs.get(target)
             if proc is None or not proc.alive():
                 proc = self._session(sid, target, self.project.repo_root) if agent.builtin else self._session_for(agent, sid)
