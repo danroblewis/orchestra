@@ -106,15 +106,16 @@ function renderAgents(s) {
 // How many times the worker has been re-engaged on this ticket, and why. Shown only once
 // there is a second turn, so a clean first attempt stays uncluttered.
 function turns(t) {
+  // Compact: ↺N is the worker turn count; ✗ reviewer rejections, ⛔ gate send-backs, ⟳ other
+  // retries follow only when non-zero. The full wording is in the hover title and the drawer.
   if (!t.worker_turns || t.worker_turns < 2) return "";
-  const parts = [];
-  if (t.reviewer_rejections) parts.push(`${t.reviewer_rejections} review`);
-  if (t.gate_rejections) parts.push(`${t.gate_rejections} gate`);
   const other = t.worker_turns - 1 - (t.reviewer_rejections || 0) - (t.gate_rejections || 0);
-  if (other > 0) parts.push(`${other} retry`);
-  const why = parts.length ? ` · ${parts.join(" · ")}` : "";
+  const bits = [`↺${t.worker_turns}`];
+  if (t.reviewer_rejections) bits.push(`✗${t.reviewer_rejections}`);
+  if (t.gate_rejections) bits.push(`⛔${t.gate_rejections}`);
+  if (other > 0) bits.push(`⟳${other}`);
   const title = `worker opened ${t.worker_turns} times: ${t.reviewer_rejections || 0} after a reviewer rejection, ${t.gate_rejections || 0} after the merge gate sent it back` + (other > 0 ? `, ${other} after a crash, timeout, or operator stop` : "");
-  return `<span class="turns" title="${esc(title)}">↺ turn ${t.worker_turns}${why}</span>`;
+  return `<span class="turns" title="${esc(title)}">${bits.join(" ")}</span>`;
 }
 
 function renderQueue(s) {
