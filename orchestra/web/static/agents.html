@@ -162,12 +162,13 @@ function eventMap(m) {
   const g = agentGraph(m);
   if (!g.nodes.length) return "";
   const al = (id) => (window.EV_ALIAS || {})[id] || id;
-  const cycles = (m.detected || []).map((c) => ({ ...c, ids: [...new Set(c.nodes.map(al))] }));
+  const cycles = (m.detected || []).map((c) => ({ ...c, ids: [...new Set((c.trace || c.nodes).map(al))] }));
   const inCyc = new Set(cycles.filter((c) => !c.self).flatMap((c) => c.ids));
   window.EV_CYCLES = cycles;
   const row = (c, i) => `<div class="cyc ${c.named ? "named" : ""} ${c.self ? "self" : ""}" onmouseenter="evHighlight(window.EV_CYCLES[${i}].ids)" onmouseleave="evHover(null)">`
-    + (c.named ? `<b>${esc(c.named.name)}</b> <span class="muted">${esc(c.named.purpose || "")}${c.named.signal ? " · signal: " + esc(c.named.signal) : ""}${c.named.owner ? " · owned by " + esc(c.named.owner) : ""}</span><br>` : `<b class="muted">${c.self ? "self-loop" : "unnamed"}</b> `)
-    + `<code>${esc(c.labels.join(" → "))}${c.self ? "" : " → " + esc(c.labels[0])}</code>${c.variants > 1 ? ` <span class="muted">· ${c.variants} variants through other events</span>` : ""}</div>`;
+    + (c.named ? `<b>${esc(c.named.name)}</b>${c.named.builtin ? ' <span class="tag">built-in</span>' : ""} <span class="muted">${esc(c.named.purpose || "")}${c.named.signal ? " · signal: " + esc(c.named.signal) : ""}${c.named.owner ? " · owned by " + esc(c.named.owner) : ""}</span><br>` : `<b class="muted">${c.self ? "self-loop" : c.kind === "independent" ? "unnamed, on its own" : "unnamed, through the core"}</b> `)
+    + (c.core ? `<code>${esc(c.agents.join(", "))}</code> <span class="muted">· ${c.cycles} cycles with branches: ${esc(c.paths.map((p) => p.join(" → ")).join(" | ").slice(0, 220))}</span>`
+             : `<code>${esc(c.labels.join(" → "))}${c.self ? "" : " → " + esc(c.labels[0])}</code>${c.cycles > 1 ? ` <span class="muted">· ${c.cycles} variants through other events</span>` : ""}`) + `</div>`;
   const named = cycles.filter((c) => c.named), unnamed = cycles.filter((c) => !c.named && !c.self), selfs = cycles.filter((c) => !c.named && c.self);
   const stale = (m.stale || []).map((lp) => `<div class="cyc stale"><b>${esc(lp.name)}</b> <span class="muted">named, but its cycle no longer exists in the bindings</span></div>`).join("");
   const loops = cycles.length || stale ? `<div class='muted' style='margin-bottom:3px'>Feedback loops · ${named.length} named, ${unnamed.length} unnamed${selfs.length ? `, ${selfs.length} self` : ""} · hover a loop to trace it</div>`

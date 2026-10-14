@@ -57,7 +57,10 @@ def test_custom_team_loop_closes_through_messages_and_tools(project):
     paths = [" → ".join(c["labels"] * 2) for c in cycles]
     assert any("REJECTED → retro → keeper" in p for p in paths)                 # a message, delivered as a wake-up, closes the loop
     assert any("keeper → ticket_created → orchestra → IN_PROGRESS → worker" in p for p in paths)   # the tickets tool, then the loop's pickup
-    loop = next(c for c, p in zip(cycles, paths) if "REJECTED → retro → keeper" in p and "keeper → ticket_created" in p)
+    found = eventgraph.loops(g)
+    loop = next(L for L in found if {"keeper", "retro"} <= set(L["agents"]))
+    assert loop["kind"] == "outer" and "delivery loop (core)" in loop["agents"]
+    assert len(found) < 12, [L["labels"] for L in found]
     # naming: the Supervisor gives the cycle a purpose; the API refuses unknown signatures
     with pytest.raises(StoreError, match="no detected loop"):
         api.handle(project, store, "name_loop", {"name": "x", "signature": "nope", "purpose": "p"}, **sup)
@@ -66,7 +69,9 @@ def test_custom_team_loop_closes_through_messages_and_tools(project):
     assert r["loop"]["agents"] == loop["agents"] and r["storage"].startswith("committed")
     det = api.handle(project, store, "list_loops", {})
     fam = next(c for c in det["detected"] if c["signature"] == loop["signature"])
-    assert fam["named"]["name"] == "lessons" and fam["variants"] >= 1 and det["cycles"] >= len(det["detected"])
+    assert fam["named"]["name"] == "lessons" and fam["kind"] == "outer" and "delivery loop (core)" in fam["labels"]
+    core = det["detected"][0]
+    assert core["core"] and core["named"]["builtin"] and {"worker", "reviewer", "merge gate", "orchestra"} <= set(core["agents"]) and core["cycles"] >= 3
     with pytest.raises(StoreError):
         api.handle(project, store, "name_loop", {"name": "y", "signature": loop["signature"], "purpose": "p"}, role="keeper")   # supervisor only
     # the loop notices a new unnamed cycle once and asks the Supervisor

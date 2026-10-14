@@ -280,22 +280,24 @@ def detected_loops(project: Project) -> dict:
     the named loops matched to them. Unnamed cycles are what the Supervisor is asked about."""
     from . import eventgraph
     g = eventgraph.build(project)
-    cycles = [eventgraph.describe(g, c) for c in eventgraph.elementary_cycles(g)]
+    found = eventgraph.loops(g)
     named = {lp.signature: lp.to_dict() for lp in org_store(project).list_loops()}
-    # One loop per member set: the cycles that differ only in which event carries them round
-    # are variants of the same loop, and the signature (and so the name) is per member set.
-    families: dict[str, dict] = {}
-    for c in cycles:
-        f = families.setdefault(c["signature"], {"signature": c["signature"], "agents": c["agents"], "self": c["self"],
-                                                 "nodes": c["nodes"], "labels": c["labels"], "length": c["length"], "variants": 0,
-                                                 "named": named.get(c["signature"])})
-        f["variants"] += 1
-        if c["length"] < f["length"]:
-            f.update(nodes=c["nodes"], labels=c["labels"], length=c["length"])
-    stale = [lp for sig, lp in named.items() if sig not in families]
-    loop_edges = sorted({f"{c['nodes'][i]}>{c['nodes'][(i + 1) % len(c['nodes'])]}" for c in cycles for i in range(len(c["nodes"]))})
-    return {"detected": sorted(families.values(), key=lambda f: (f["self"], f["length"])), "cycles": len(cycles),
-            "named": list(named.values()), "stale": stale, "loop_edges": loop_edges}
+    core_nodes: set[str] = set()
+    for L in found:
+        L["named"] = named.get(L["signature"]) or ({"name": "ticket_delivery", "purpose": "Every ticket is implemented, reviewed, and landed or sent back.",
+                                                    "builtin": True} if L["core"] else None)
+        L["variants"] = L["cycles"]
+        if L["core"]:
+            core_nodes = set(L["nodes"])
+    # for tracing on the map, a loop through the core lights the core's nodes too
+    for L in found:
+        if not L["core"] and eventgraph.CORE in L["nodes"]:
+            L["trace"] = sorted((set(L["nodes"]) - {eventgraph.CORE}) | core_nodes)
+        else:
+            L["trace"] = L["nodes"]
+    stale = [lp for sig, lp in named.items() if sig not in {L["signature"] for L in found}]
+    loop_edges = sorted({e for L in found for e in L["edges"] if eventgraph.CORE not in e})
+    return {"detected": found, "cycles": sum(L["cycles"] for L in found), "named": list(named.values()), "stale": stale, "loop_edges": loop_edges}
 
 
 # -- views ---------------------------------------------------------------------------------

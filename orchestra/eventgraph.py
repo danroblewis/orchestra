@@ -180,3 +180,75 @@ def describe(g: Graph, cycle: list[str]) -> dict:
     agents = [g.nodes[n]["label"] for n in cycle if not n.startswith("ev:")]
     return {"signature": signature(cycle), "nodes": cycle, "labels": labels, "agents": agents,
             "self": len(agents) == 1, "length": len(cycle)}
+
+
+# -- loops: the hierarchy ---------------------------------------------------------------------
+
+CORE = "core"
+
+
+def loops(g: Graph) -> list[dict]:
+    """Feedback loops as subgraphs, in two levels.
+
+    The **core** is the loop baked into Orchestra: every cycle whose members are all built-in
+    agents or system parts (worker, reviewer, merge gate, the loop itself). Its cycles are
+    merged into one subgraph with branches: APPROVED or REJECTED out of the reviewer, DONE or
+    REJECTED out of the gate.
+
+    Every other loop is found with the core contracted to one node, so a custom loop reads
+    "keeper → ticket_created → core → REJECTED → retrospective → keeper": one trip out and
+    back. Cycles that differ only in which event carries them are variants of one loop,
+    keyed by the agents in it. Loops that never touch the core stand on their own."""
+    cycles = elementary_cycles(g)
+    is_core_node = lambda n: n.startswith("sys:") or (n.startswith("agent:") and g.nodes[n].get("builtin"))
+    core_cycles = [c for c in cycles if all(is_core_node(n) for n in c if not n.startswith("ev:"))]
+    core_nodes: set[str] = set().union(*[set(c) for c in core_cycles]) if core_cycles else set()
+    out: list[dict] = []
+    if core_cycles:
+        out.append(_loop(g, "core", sorted(core_nodes), core_cycles, core=True))
+    # contract the core and look again
+    alias = {n: CORE for n in core_nodes}
+    adj: dict[str, set[str]] = {}
+    for e in g.edges:
+        if e["kind"] not in ("emits", "may_emit", "observed", "wakes", "messages"):
+            continue
+        a, b = alias.get(e["from"], e["from"]), alias.get(e["to"], e["to"])
+        if a != b:
+            adj.setdefault(a, set()).add(b)
+            adj.setdefault(b, set())
+    found: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for start in sorted(adj):
+        stack: list[tuple[str, list[str]]] = [(start, [start])]
+        while stack and len(found) < SEARCH_CAP:
+            node, path = stack.pop()
+            for nxt in sorted(adj.get(node, ())):
+                if nxt == start:
+                    key = tuple(path)
+                    if key not in seen and any(n.startswith("ev:") or n == CORE for n in path) and any(n.startswith("agent:") for n in path):
+                        seen.add(key)
+                        found.append(list(path))
+                elif nxt > start and nxt not in path and len(path) < MAX_CYCLE_LEN:
+                    stack.append((nxt, path + [nxt]))
+    groups: dict[str, list[list[str]]] = {}
+    for c in found:
+        key = "|".join(sorted(n for n in c if not n.startswith("ev:")))
+        groups.setdefault(key, []).append(c)
+    for key, cs in groups.items():
+        cs.sort(key=len)
+        agents = [n for n in key.split("|")]
+        nodes = sorted(set().union(*[set(c) for c in cs]))
+        out.append(_loop(g, "outer" if CORE in agents else "independent", nodes, cs, core=False))
+    out.sort(key=lambda L: (not L["core"], L["kind"] == "independent", L["length"]))
+    return out
+
+
+def _loop(g: Graph, kind: str, nodes: list[str], cycles: list[list[str]], core: bool) -> dict:
+    label = lambda n: "delivery loop (core)" if n == CORE else g.nodes[n]["label"]
+    agents = sorted({label(n) for n in nodes if not n.startswith("ev:")})
+    shortest = min(cycles, key=len)
+    edges = sorted({f"{c[i]}>{c[(i + 1) % len(c)]}" for c in cycles for i in range(len(c))})
+    return {"kind": kind, "core": core, "signature": hashlib.sha256("|".join(agents).encode()).hexdigest()[:12],
+            "agents": agents, "nodes": nodes, "edges": edges, "cycles": len(cycles),
+            "labels": [label(n) for n in shortest], "length": len(shortest), "self": len(agents) == 1,
+            "paths": [[label(n) for n in c] for c in cycles[:12]]}
