@@ -46,7 +46,7 @@ def register(role: Role) -> Role:
 
 register(Role(
     name="supervisor", session_id="supervisor", prompt="supervisor",
-    tools=("tickets", "context", "pipeline", "roles", "team", "events"),
+    tools=("tickets", "context", "pipeline", "roles", "team", "events", "model"),
     triggers=("a message from the human", "escalate_to_supervisor from any agent"),
     emits=("ticket_created", "ticket_updated", "milestone_created", "milestone_closed", "context_updated",
            "role_created", "agent_created", "team_created", "agent_messaged"),

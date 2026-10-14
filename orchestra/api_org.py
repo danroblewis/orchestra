@@ -37,7 +37,9 @@ ORG_COMMANDS = frozenset({
     "list_teams", "get_team", "create_team", "update_team", "delete_team", "emit_event",
     "list_loops", "name_loop", "delete_loop",
     "list_model", "add_model_element", "update_model_element", "remove_model_element", "propose_model",
+    "inspect_model", "what_if_agent",
 })
+MODEL_MUTATIONS = frozenset({"add_model_element", "update_model_element", "remove_model_element"})
 EVENT_TYPES_SET = frozenset(EVENT_TYPES)
 EMIT_DEPTH_LIMIT = 3          # an event may cause a wake-up that causes an event ... this many times
 EMIT_RATE_LIMIT = 20          # emissions per agent per hour
@@ -46,8 +48,17 @@ MUTATIONS = frozenset({"create_role", "update_role", "delete_role", "create_agen
                        "add_model_element", "update_model_element", "remove_model_element"})
 
 
+def _may_curate(project: Project, role: str) -> bool:
+    """The supervisor, or a role granted the `model` tool group (a model curator), may change the model."""
+    if not role or role == "supervisor":
+        return True
+    return any(r.name == role and "model" in (r.tools or ()) for r in role_store(project).list())
+
+
 def handle_org(project: Project, store: LocalStore, command: str, a: dict[str, Any], author: str, role: str) -> dict:
-    if command in MUTATIONS and role and role != "supervisor":
+    if command in MODEL_MUTATIONS and not _may_curate(project, role):
+        raise StoreError("only the supervisor, or a role with the model tool group, may change the model")
+    if command in MUTATIONS - MODEL_MUTATIONS and role and role != "supervisor":
         raise StoreError("only the supervisor may create, change, or delete roles, agents, or teams")
     try:
         return _handle(project, store, command, a, author, role)
@@ -60,7 +71,7 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
 
     if command == "org_guide":
         return {"ok": True, "guide": agents.org_guide() + "\n\n## Reference\n\n" + agents.org_reference()}
-    if command in ("list_model", "add_model_element", "update_model_element", "remove_model_element", "propose_model"):
+    if command in ("list_model", "add_model_element", "update_model_element", "remove_model_element", "propose_model", "inspect_model", "what_if_agent"):
         return _model(project, command, a, author, store)
 
     # -- roles: job descriptions --------------------------------------------------------
@@ -443,6 +454,22 @@ def _model(project: Project, command: str, a: dict[str, Any], author: str, store
                 "note": "flows are not declared: an agent woken by an arrival at one stock whose actions fill another is a conversion between them"}
     if command == "propose_model":
         return {"ok": True, **_propose(project, ms.load())}
+    if command in ("inspect_model", "what_if_agent"):
+        from . import foundryquery
+        model = ms.load()
+        ags = foundry.agents_for_detection(project, all_agents(project))
+        if command == "what_if_agent":
+            name = str(a.get("name") or "").strip()
+            if not name:
+                raise StoreError("name is required")
+            if name in ags:
+                raise StoreError(f"{name} exists; inspect_model agent={name} tells what it is connected to, update_agent changes it")
+            return {"ok": True, **foundryquery.what_if(model, ags, SYSTEM_BINDINGS, name, list(a.get("wake_on") or []), list(a.get("emits") or []), a.get("team"))}
+        det = foundrygraph.detect(model["stocks"], ags, model["loops"], system=SYSTEM_BINDINGS)
+        out = foundryquery.inspect(model, ags, det, agent=a.get("agent") or None, stock=a.get("stock") or None, loop=a.get("loop") or None, event=a.get("event") or None, system=SYSTEM_BINDINGS)
+        if "error" in out:
+            raise StoreError(out["error"])
+        return {"ok": True, **out}
     kind = a.get("kind")
     if kind not in ("stock", "loop"):
         raise StoreError("kind is 'stock' or 'loop'")

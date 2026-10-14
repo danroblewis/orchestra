@@ -19,7 +19,7 @@ from .agents.roles import ROLES as BUILTIN, Role as BuiltinRole
 from .config import Project
 from .model import now
 
-TOOL_GROUPS = ("tickets", "context", "pipeline", "capacity", "escalate", "events", "roles", "team")
+TOOL_GROUPS = ("tickets", "context", "pipeline", "capacity", "escalate", "events", "roles", "team", "model")
 EVENT_TYPES = (
     "ticket_created", "ticket_updated", "ticket_transition", "note_added",
     "milestone_created", "milestone_updated", "milestone_closed",

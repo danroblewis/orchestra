@@ -114,6 +114,48 @@ tell you:
    should. A loop's `signal` names one of the computed signals and the direction that is
    adverse; the computed signals are: acceptance_defects_at_gate, bad_fix_fraction, base_broken, conflicts_per_landing, defects_after_landing, defects_before_gate_share, defects_found_after_landing, fix_rounds, gate_defects, gate_distinct_defects, gate_pass, hours_lost, landed_per_worker_hour, restarts, review_defects, review_miss_rate, review_pass, reviewer_timeout_share, rework_share, starts, worker_hours_lost, worker_timeout_share.
 
+### Placing an agent: ask the model first
+
+Two read-only tools answer the questions that come before `create_agent`, and a small
+model should call them rather than guess:
+
+- `inspect_model` with no argument: every flow with the agent that is its valve, every
+  open loop with the binding that would close it, the departures nobody wakes on, and the
+  agents on no flow. Then narrow: `inspect_model stock=<key>` says who fills and drains
+  that stock and who an arrival wakes; `inspect_model agent=<name>` says what wakes it,
+  what it emits and which stocks that touches, the flows it is the valve on, the loops it
+  is on and the open loops it could close; `inspect_model event=<type>` says who emits it,
+  who wakes on it and which stocks carry it; `inspect_model loop=<key>` gives its status
+  and what would close it. Every answer has plain `lines`.
+- `what_if_agent name=<new> wake_on=[...] emits=[...]`: the loops that agent would close,
+  the flows it would be the valve on, the departures it would start consuming, and the
+  bindings that touch no stock (a wake nothing emits, an emit no stock carries). Nothing is
+  saved; the answer carries the `create_agent` call. Try two or three bindings, keep the one
+  that closes the loop you want, create it, then `inspect_model loop=<key>` to confirm the
+  loop reads "closable", and after its first run "observed".
+
+Worked example: you want a second inspection on the worker's output. `inspect_model
+stock=awaiting_review` shows the reviewer is the only valve out of it. `what_if_agent
+name=acceptance_checker wake_on=["ticket_transition:READY_FOR_REVIEW"]
+emits=["ticket_transition:REJECTED"]` reports it would sit on the rework cycle as a second
+drain of awaiting review (and warns if the gate's acceptance stage is where defects are
+found now). Create it from the call in the answer, give its role prompt the check to run,
+and confirm with `inspect_model loop=gate_rework`.
+
+### A model curator
+
+Curating the model need not be the Supervisor's job. Create a role with the `model` tool
+group and a scheduled agent that holds it, and tell every other agent to send model
+questions to that agent (`message_agent`) rather than learn the tools themselves:
+
+```
+create_role name=model_curator tools=["team", "model", "events"] description="Keeps the system-dynamics model true to the project" prompt="Every run: list_model and read advice; inspect_model with no argument; for each open loop, what_if_agent the binding the advice names and, when it closes the loop, message the supervisor with the create_agent or update_agent call; propose_model for new stocks and add the ones that name something the product has; name unnamed cycles that matter; never change agents or teams yourself."
+create_agent name=model_curator roles=["model_curator"] kind=scheduled every="6h" session=ephemeral
+```
+
+The `model` group lets that role add, update and remove stocks and loops; agents and teams
+stay the Supervisor's. The reviewer rules below apply to it as they do to you.
+
 Closing a loop is four edits, and a small model gets the order wrong; do them in this order
 and run `list_model` after each, reading the loop's status (hypothesis → closable → observed).
 `wake_on`, `emits` and a stock's `inflows` are **replaced, not appended**: pass the full list,

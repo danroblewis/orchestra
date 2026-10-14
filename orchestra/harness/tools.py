@@ -212,7 +212,7 @@ TOOLS: list[ToolDef] = [
     ToolDef("list_model", "team", "The project's system-dynamics model: its stocks (what the project holds, with the events that fill and "
             "drain each and the agents that consume it), the loops it expects, which of those the detector finds in the current org, "
             "and cycles found that no loop names. Flows are never declared; they follow from the agents' wake rules and emits."),
-    ToolDef("add_model_element", "roles", "Add a stock or an expected loop to the model. A stock: key, name, unit, description, inflows and "
+    ToolDef("add_model_element", "model", "Add a stock or an expected loop to the model. A stock: key, name, unit, description, inflows and "
             "outflows (event types, built in or declared by a team), consumers ([{agent, effect: '+'|'-'}]), estimators ([{kind, ...}]: "
             "tracker{states}, pending_defects, git_ahead, landed, gate_tests{stage, source}, staging, repo_docs{globs}, turn_hours, "
             "events{initial, since}, probe{command, every}, none{reason}), hidden, row (capability|chain|rework). A loop: key, name, "
@@ -221,10 +221,22 @@ TOOLS: list[ToolDef] = [
             "spec={\"name\": \"Playtest findings\", \"unit\": \"findings\", \"inflows\": [\"playtest_finding\"], \"outflows\": [\"ticket_created\"], "
             "\"consumers\": [{\"agent\": \"product_owner\", \"effect\": \"+\"}], \"estimators\": [{\"kind\": \"events\", \"initial\": 0, \"since\": \"2026-01-01T00:00:00Z\"}], \"row\": \"capability\"}.",
             {"kind": S("stock or loop"), "key": S("snake_case key"), "spec": {"type": "object", "description": "The element's fields (see the example in this tool's description)"}}, ("kind", "key", "spec")),
-    ToolDef("update_model_element", "roles", "Change fields of an existing stock or loop; unmentioned fields are kept.",
+    ToolDef("update_model_element", "model", "Change fields of an existing stock or loop; unmentioned fields are kept.",
             {"kind": S("stock or loop"), "key": S("Existing key"), "spec": {"type": "object", "description": "The fields to change"}}, ("kind", "key", "spec")),
-    ToolDef("remove_model_element", "roles", "Remove a stock or loop from the model; its measurements stay in the log.",
+    ToolDef("remove_model_element", "model", "Remove a stock or loop from the model; its measurements stay in the log.",
             {"kind": S("stock or loop"), "key": S("Existing key")}, ("kind", "key")),
+    ToolDef("inspect_model", "team", "One part of the model and everything connected to it. agent=<name>: what wakes it, what it "
+            "emits and which stocks that fills or drains, the flows it is the valve on, the loops it is on, and the open loops "
+            "it could close. stock=<key>: its inflows and outflows with the agents that cause each, who an arrival wakes, "
+            "departures nobody wakes on, the flows in and out, the loops through it. event=<type>: who emits it, who wakes on "
+            "it, which stocks it fills or drains. loop=<key>: its status, path and what would close it. With no argument: every "
+            "flow, every open loop with its fix, departures nobody wakes on, agents on no flow. Each answer carries plain `lines`.",
+            {"agent": S("An agent name"), "stock": S("A stock key"), "event": S("An event type, e.g. ticket_transition:REJECTED"), "loop": S("A loop key")}),
+    ToolDef("what_if_agent", "team", "Try an agent before creating it: given a name, wake_on and emits, which expected loops it "
+            "would close, which flows it would be the valve on, which departures it would start consuming, and which of its "
+            "bindings touch no stock. Nothing is saved; the answer carries the create_agent call to make it real. Use it to "
+            "choose bindings: e.g. what_if_agent name=reviewer2 wake_on=[\"ticket_transition:READY_FOR_REVIEW\"] emits=[\"ticket_transition:REJECTED\"].",
+            {"name": S("The agent's name"), "wake_on": A("Event types it would wake on"), "emits": A("Event types it would emit"), "team": S("Its team, if any")}, ("name",)),
     ToolDef("propose_model", "team", "Candidate stocks for this project from evidence it already has (events teams declare that no stock "
             "carries, team spaces with files, acceptance test modules, probes), each as a ready add_model_element call, plus what is "
             "missing for discovery after landing. Call this before designing the model by hand."),

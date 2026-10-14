@@ -217,3 +217,30 @@ def test_conversions_follow_the_products_path_and_mark_coflows():
     assert ("known_rework", "undiscovered", "worker") in coflows and ("undiscovered", "known_rework", "reviewer") in coflows
     assert ("approved", "landed", "merge_gate") in flows and not any(c["src"] == "wip" and c["dst"] == "landed" for c in cs)
     assert ("awaiting_review", "known_rework", "reviewer") in flows and ("approved", "known_rework", "merge_gate") in flows
+
+
+def test_inspect_and_what_if_answer_where_an_agent_belongs():
+    """The questions a curator asks before placing an agent: what a stock or agent is connected
+    to, and what a hypothetical agent would close. Without the keeper, capability is open and
+    the stock view says so; trying the keeper's bindings reports capability closing."""
+    from orchestra import foundryquery as fq
+    stocks, agents = foundry_stocks(), foundry_agents(keeper=False)
+    model = {"stocks": stocks, "loops": EXPECTED}
+    det = fg.detect(stocks, agents, EXPECTED, system=SYSTEM_BINDINGS)
+    k = fq.inspect(model, agents, det, stock="known_rework")
+    assert "reviewer" in k["inflows"]["ticket_transition:IN_REVIEW>REJECTED"] and "worker" in k["outflows"]["ticket_transition:READY_FOR_REVIEW"]
+    assert any(o["loop"] == "capability" for o in k["open_loops"]) and any(line.startswith("drained by") for line in k["lines"])
+    rv = fq.inspect(model, agents, det, agent="reviewer")
+    assert {(c["src"], c["dst"]) for c in rv["valve_on"]} >= {("awaiting_review", "approved"), ("awaiting_review", "known_rework")}
+    assert {l["key"] for l in rv["loops"]} >= {"review_rework", "gate_rework"} and rv["woken_by"][0]["stock"] == "awaiting_review"
+    ev = fq.inspect(model, agents, det, event="staging_restarted")
+    assert "build" in ev["drains"] and "orchestra" in ev["emitted_by"] and ev["wakes"] == []
+    over = fq.inspect(model, agents, det, system=SYSTEM_BINDINGS)
+    assert any(o["loop"] == "capability" for o in over["open_loops"]) and any(u["event"] == "staging_restarted" for u in over["unconsumed_outflows"])
+    assert not any(u["event"] == "gate_landed" for u in over["unconsumed_outflows"])      # Orchestra's own loop wakes on it
+    w = fq.what_if(model, agents, SYSTEM_BINDINGS, "environment_keeper", ["ticket_transition:REJECTED", "gate_rejected"], ["lesson_decided"], "devex")
+    assert w["would_close"] == ["capability"] and w["create_agent"]["wake_on"] == ["ticket_transition:REJECTED", "gate_rejected"]
+    assert any(x["stock"] == "resources" for x in w["fills"]) and w["lines"][0].startswith("environment_keeper would close capability")
+    blind = fq.what_if(model, agents, SYSTEM_BINDINGS, "watcher", ["staging_restarted"], ["playtest_finding"])
+    assert blind["would_close"] == [] and {"stock": "build", "event": "staging_restarted"} in blind["would_consume"]
+    assert blind["emits_no_stock_carries"] == ["playtest_finding"] and any("no stock lists" in line for line in blind["lines"])

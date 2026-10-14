@@ -350,3 +350,24 @@ def test_misses_are_distinct_per_defect_and_restore_counts_restarts(project):
     assert rv["approvals_gate_rejected"] == 3 and rv["distinct_missed"] == 1 and rv["miss_rate"] == 1.0
     assert r["dora"]["restore"] == 40 * 60                                        # first trouble at 80 to the healthy deploy at 120; the later troubles are the same outage
     assert r["pipeline"]["escape_crash_groups"] == [["b1", "b2"]]
+
+
+def test_model_queries_through_the_tools_and_who_may_curate(project):
+    from orchestra import api_org as api
+    from orchestra.store import StoreError
+    store = LocalStore(project)
+    sup = {"author": "supervisor", "role": "supervisor"}
+    d = api.handle_org(project, store, "inspect_model", {"stock": "demand"}, **sup)
+    assert d["ok"] and "ticket_created" in d["inflows"] and d["lines"][0].startswith("demand (tickets)")
+    w = api.handle_org(project, store, "what_if_agent", {"name": "watcher", "wake_on": ["staging_restarted"], "emits": ["ticket_created"]}, **sup)
+    assert w["ok"] and w["would_consume"] and w["create_agent"]["name"] == "watcher" and any(x["stock"] == "demand" for x in w["fills"])
+    with pytest.raises(StoreError):
+        api.handle_org(project, store, "what_if_agent", {"name": "worker", "wake_on": []}, **sup)      # exists already
+    with pytest.raises(StoreError):
+        api.handle_org(project, store, "inspect_model", {"agent": "nobody"}, **sup)
+    # a team role may read the model but not change it, unless it carries the model tool group
+    with pytest.raises(StoreError):
+        api.handle_org(project, store, "add_model_element", {"kind": "loop", "key": "x", "spec": {"name": "x", "nodes": ["demand", "worker"]}}, author="qa", role="qa_engineer")
+    api.handle_org(project, store, "create_role", {"name": "model_curator", "description": "keeps the model true", "prompt": "Curate the system-dynamics model: inspect it, try bindings, add and update stocks and loops.", "tools": ["team", "model"]}, **sup)
+    out = api.handle_org(project, store, "add_model_element", {"kind": "loop", "key": "x", "spec": {"name": "x", "nodes": ["demand", "worker"]}}, author="curator", role="model_curator")
+    assert out["ok"]

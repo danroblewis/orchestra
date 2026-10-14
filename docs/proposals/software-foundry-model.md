@@ -319,7 +319,17 @@ threshold; the detector marks it observed when every step of its cycle was seen 
 
 Rules, enforced by the store like the rest of the org model:
 
-- Only the Supervisor creates, changes, or deletes model elements (`list_model`,
+- Before placing an agent, an agent asks the model: `inspect_model` (no argument: every
+  flow with its valve, every open loop with its fix, departures nobody wakes on, agents on
+  no flow; `agent=`, `stock=`, `event=`, `loop=` for one part and everything connected to
+  it) and `what_if_agent name= wake_on= emits=` (the loops a hypothetical agent would close,
+  the flows it would be the valve on, the departures it would start consuming, the bindings
+  that touch no stock; nothing saved, the `create_agent` call returned). Both are read-only
+  and in the `team` tool group, so any lead may ask.
+- The `model` tool group carries the three mutations. The Supervisor has it; a role the
+  Supervisor creates with it (a scheduled model curator) may curate stocks and loops, and
+  other agents can send it their model questions instead of learning the tools.
+- Otherwise only the Supervisor creates, changes, or deletes model elements (`list_model`,
   `propose_model`, `add_model_element`, `update_model_element`, `remove_model_element` in
   `api_org`), in conversation, exactly as teams and agents are made. The org guide gets a
   section on when to add one: when a team produces something another agent consumes, when a
