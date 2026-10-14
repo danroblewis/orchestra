@@ -25,15 +25,15 @@ def custom(name: str, team: str, wake_on: list[str], emits: list[str]) -> AgentD
 
 def foundry_stocks() -> list[Stock]:
     return [
-        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:OPEN>CANCELLED"]),
+        Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN", "playtest_finding"], outflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:OPEN>CANCELLED"]),
         Stock("blocked", "Blocked", "tickets", row="rework", inflows=["ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:BLOCKED>OPEN", "ticket_transition:BLOCKED>CANCELLED"]),
         Stock("returned", "Returned without a verdict", "changes", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_conflict"], outflows=["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"]),
         Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED", "ticket_transition:IN_PROGRESS>OPEN"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", row="rework", inflows=["ticket_transition:READY_FOR_REVIEW"],
-              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], hidden=True),
+              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_base_broken", "staging_failed", "playtest_finding"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
-        Stock("known_rework", "Known rework", "open defects", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "playtest_finding"], outflows=["gate_landed", "ticket_transition:REJECTED>CANCELLED"], consumers=[{"agent": "worker", "effect": "+"}], carried_by=["ticket_transition:REJECTED>IN_PROGRESS"], carried_to={"ticket_transition:REJECTED>IN_PROGRESS": "wip"}),
+        Stock("known_rework", "Known rework", "changes", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"], consumers=[{"agent": "worker", "effect": "+"}], estimators=[{"kind": "known_rework"}]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
         Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "staging_restarted"]),
         Stock("pipeline_blocked", "Pipeline blocked", "pauses", inflows=["pipeline_paused"], outflows=["pipeline_resumed"]),
@@ -48,7 +48,7 @@ def foundry_agents(*, keeper: bool = True, qa: bool = True) -> dict[str, AgentDe
         ags["environment_keeper"] = custom("environment_keeper", "devex", ["ticket_transition:REJECTED", "gate_rejected"], ["lesson_decided"])
     if qa:
         ags["qa_engineer"] = custom("qa_engineer", "qa", ["gate_landed"], ["tests_added"])
-    ags["playtester"] = custom("playtester", "playtest", ["staging_deployed"], ["playtest_finding"])
+    ags["playtester"] = custom("playtester", "playtest", ["staging_deployed"], ["playtest_finding"])   # a finding is a discovery (drains U) and a ticket (fills demand)
     return ags
 
 
@@ -66,8 +66,8 @@ EXPECTED = [
     {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager"], "polarity": "B"},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
     {"key": "replanning", "nodes": ["wip", "worker", "blocked", "coordinator", "demand", "orchestra"]},
-    # discovery after landing: the deployed build is exercised, findings enter known rework, the fix goes round
-    {"key": "field_discovery", "nodes": ["build", "playtester", "known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"]},
+    # discovery after landing: the deployed build is exercised, findings are filed into demand, the fix goes round
+    {"key": "field_discovery", "nodes": ["build", "playtester", "demand", "orchestra", "wip", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"]},   # closed by a discovery event: the defect's circuit, no polarity
 ]
 
 
@@ -165,7 +165,7 @@ def test_a_transition_with_a_source_state_fits_only_its_owner():
     assert fg.event_fits("ticket_transition:IN_REVIEW>REJECTED", "ticket_transition:REJECTED")                      # no agent given: matches by type and target
     g = fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS)
     assert not any(e["src"] == "agent:merge_gate" and e["dst"] == "awaiting_review" for e in g["edges"])         # the gate never drains the review queue
-    assert sum(1 for e in g["edges"] if e["src"] == "agent:merge_gate" and e["dst"] == "known_rework" and e["kind"] == "fills") == 1   # one fill per gate send-back, via gate_rejected; the landing drains it
+    assert sum(1 for e in g["edges"] if e["src"] == "agent:merge_gate" and e["dst"] == "known_rework" and e["kind"] == "fills") == 1   # one fill per gate send-back, via gate_rejected; the pickup drains it
     # one event, one link: a departure is never also a plain trigger
     pairs = [(e["src"], e["dst"], e["via"]) for e in g["edges"] if e["kind"] in ("departs", "triggers")]
     assert len(pairs) == len(set(pairs))
@@ -197,6 +197,8 @@ def test_golden_software_foundry():
     rp = next(d for d in det["declared"] if d["key"] == "replanning")["cycle"]
     # the blocked ticket is conserved: W → blocked (the worker) → demand (the coordinator re-plans) → W (Orchestra starts it)
     assert {"wip", "blocked", "demand", "agent:coordinator", "agent:orchestra"} <= set(rp["nodes"]) and rp["basis"] == "material circuit"
+    fd = next(d for d in det["declared"] if d["key"] == "field_discovery")["cycle"]
+    assert fd["basis"] == "co-flow" and fd["polarity"] is None and "agent:playtester" in fd["nodes"]   # closed by the finding that drains undiscovered rework
     # one agent that both fills and drains a stock is a controller, never a circuit
     pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
     assert pair["basis"] != "material circuit" and pair["polarity"] in ("B", "?")
@@ -222,7 +224,7 @@ def test_conversions_follow_the_products_path_and_mark_coflows():
     flows = {(c["src"], c["dst"], c["agent"]) for c in cs if not c["coflow"]}
     coflows = {(c["src"], c["dst"], c["agent"]) for c in cs if c["coflow"]}
     assert ("wip", "awaiting_review", "worker") in flows and ("known_rework", "awaiting_review", "worker") not in flows
-    assert ("known_rework", "wip", "orchestra") in flows                                             # the rework flow: the pickup carries the change out of known rework into W
+    assert ("known_rework", "wip", "orchestra") in flows                                             # the rework flow: the pickup drains known rework into W
     assert ("wip", "undiscovered", "worker") in coflows and ("undiscovered", "known_rework", "reviewer") in coflows
     assert ("approved", "landed", "merge_gate") in flows and not any(c["src"] == "wip" and c["dst"] == "landed" for c in cs)
     assert ("awaiting_review", "known_rework", "reviewer") in flows and ("approved", "known_rework", "merge_gate") in flows
@@ -237,7 +239,7 @@ def test_inspect_and_what_if_answer_where_an_agent_belongs():
     model = {"stocks": stocks, "loops": EXPECTED}
     det = fg.detect(stocks, agents, EXPECTED, system=SYSTEM_BINDINGS)
     k = fq.inspect(model, agents, det, stock="known_rework")
-    assert "reviewer" in k["inflows"]["ticket_transition:IN_REVIEW>REJECTED"] and "merge_gate" in k["outflows"]["gate_landed"]
+    assert "reviewer" in k["inflows"]["ticket_transition:IN_REVIEW>REJECTED"] and "orchestra" in k["outflows"]["ticket_transition:REJECTED>IN_PROGRESS"]
     assert any(o["loop"] == "capability" for o in k["open_loops"]) and any(line.startswith("drained by") for line in k["lines"])
     rv = fq.inspect(model, agents, det, agent="reviewer")
     assert {(c["src"], c["dst"]) for c in rv["valve_on"]} >= {("awaiting_review", "approved"), ("awaiting_review", "known_rework")}

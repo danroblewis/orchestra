@@ -65,7 +65,7 @@ register(Role(
     tools=("tickets", "pipeline", "escalate"),
     wake_on=("gate_base_broken", "gate_error", "staging_failed", "pipeline_paused"),
     triggers=("repeated gate rejections of one ticket",),
-    emits=("pipeline_resumed", "note_added", "ticket_updated"),
+    emits=("pipeline_resumed", "note_added", "ticket_updated", "ticket_created"),   # it files a ticket for what breaks after landing
     description="On-call for build, merge, and staging health.",
 ))
 # Per-ticket roles are not resident; the loop starts them on demand.

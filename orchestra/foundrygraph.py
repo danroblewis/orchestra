@@ -215,7 +215,7 @@ def material(g: dict, cycle: list[str], hidden: set[str] | None = None) -> str |
     if len(stocks_on) < 2:
         return None                                           # one stock and its agents is a controller, not a circuit of material
     n = len(cycle)
-    same_event = True
+    same_event, chain = True, True
     for i, node in enumerate(cycle):
         if node.startswith("agent:"):
             continue
@@ -225,15 +225,32 @@ def material(g: dict, cycle: list[str], hidden: set[str] | None = None) -> str |
         fills = [e for e in g["edges"] if e["kind"] == "fills" and e["src"] == prev and e["dst"] == node]
         drains = [e for e in g["edges"] if e["kind"] == "drains" and e["src"] == nxt and e["dst"] == node] + [c for c in g.get("carries", []) if c["src"] == nxt and c["dst"] == node]   # a carrying link moves the thing on too
         if not (fills and drains):
-            return None
+            chain = False                                 # a stock read or merely woken from: not a stock-flow chain here
+            continue
         # the draining event must fill the stock after the next agent for the same thing to move on
         after = cycle[(i + 2) % n]
         carried = any(e["kind"] == "fills" and e["src"] == nxt and e["dst"] == after and any(plain(d["via"]) == plain(e["via"]) for d in drains) for e in g["edges"])
         if not carried:
             same_event = False
-    if same_event:
+    on_hidden = any(s in (hidden or set()) for s in stocks_on)
+    if chain and same_event:
         return "material circuit"
-    return "co-flow" if any(s in (hidden or set()) for s in stocks_on) else None   # a defect rides inside a change only through the hidden stock; otherwise the links are signed
+    if chain and on_hidden:
+        return "co-flow"                                      # a defect rides inside a change through the hidden stock
+    if hidden and not on_hidden and discovery_closed(g, cycle, hidden):
+        return "co-flow"                                      # the defect leaves the hidden stock at a discovery and rides the fix round: its own circuit
+    return None                                               # otherwise the links are signed
+
+
+def discovery_closed(g: dict, cycle: list[str], hidden: set[str]) -> bool:
+    """Is a link of the cycle an event that drains the hidden stock (a discovery), carried by
+    an agent into the next node? Such a cycle is the found defect's circuit (a ticket filed
+    for what the base check or the build turned up), a co-flow of the change, not a causal
+    loop; the hidden stock itself is off the path because nothing is woken by its inflow."""
+    discovery = {plain(e["via"]) for e in g["edges"] if e["kind"] == "drains" and e["dst"] in hidden and e.get("via")}
+    links = set(zip(cycle, cycle[1:] + cycle[:1]))
+    return any((e["src"], e["dst"]) in links and e["src"].startswith("agent:") and e.get("via") and plain(e["via"]) in discovery and e["kind"] in ("wakes", "triggers", "departs", "fills")
+               for e in g["edges"])
 
 
 def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None, hidden: set[str] | None = None) -> tuple[str | None, str]:
@@ -432,7 +449,7 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
     hidden = {s.key for s in (stocks or []) if getattr(s, "hidden", False)}
     loss = {s.key for s in (stocks or []) if getattr(s, "loss", False)}
     row = {s.key: getattr(s, "row", None) for s in (stocks or [])}
-    causes_of = {s.key: (["no_verdict", "lost", "conflict"] if getattr(s, "loss", False) else ["defect", "gate"] if any(e.get("kind") == "pending_defects" for e in (getattr(s, "estimators", None) or [])) else None) for s in (stocks or [])}
+    causes_of = {s.key: (["no_verdict", "lost", "conflict"] if getattr(s, "loss", False) else ["defect", "gate"] if any(e.get("kind") in ("known_rework", "pending_defects") for e in (getattr(s, "estimators", None) or [])) else None) for s in (stocks or [])}
     for e in [*g["edges"], *[{**c, "kind": "drains"} for c in g.get("carries", [])]]:
         if e["kind"] != "drains" or not e["src"].startswith("agent:"):
             continue

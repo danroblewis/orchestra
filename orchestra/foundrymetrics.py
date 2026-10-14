@@ -620,7 +620,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
 
 SIGNAL_KEYS = frozenset({"replans", "review_bad_fix_fraction", "gate_bad_fix_fraction", "review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
                          "fix_rounds", "review_defects", "defects_after_landing", "review_miss_rate", "acceptance_defects_at_gate", "bad_fix_fraction", "conflicts_per_landing",
-                         "landed_per_worker_hour", "restarts", "defects_found_after_landing", "base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
+                         "landed_per_worker_hour", "restarts", "landings", "defects_found_after_landing", "base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
 
 
 def _signals(w: dict) -> dict[str, float | None]:
@@ -633,7 +633,7 @@ def _signals(w: dict) -> dict[str, float | None]:
             "acceptance_defects_at_gate": w["inspections"]["gate"]["defect_stage"].get("acceptance", 0),
             "defects_before_gate_share": _ratio(w["inspections"]["review"]["distinct_defects"], w["inspections"]["review"]["distinct_defects"] + w["inspections"]["gate"]["distinct_defects"] + f["escape"]),
             "bad_fix_fraction": w["rounds"]["bad_fix_fraction"], "review_bad_fix_fraction": w["rounds"]["review_bad_fix_fraction"], "gate_bad_fix_fraction": w["rounds"]["gate_bad_fix_fraction"], "conflicts_per_landing": _ratio(f["conflict"], f["land"]) if f["land"] else (f["conflict"] or None),
-            "landed_per_worker_hour": _ratio(f["land"] / w["days"], wh) if wh else None, "restarts": f["restart"], "defects_found_after_landing": f["escape"],
+            "landed_per_worker_hour": _ratio(f["land"] / w["days"], wh) if wh else None, "restarts": f["restart"], "landings": f["land"], "defects_found_after_landing": f["escape"],
             "base_broken": f["base"], "worker_hours_lost": t["losses"]["worker_hours_ending_in_timeout"], "starts": f["start"], "replans": f["replanned"]}
 
 
@@ -663,7 +663,11 @@ def _stock_reading(st, pool: dict) -> dict:
         out.update(value=sum(1 for x in tk.values() if x.state in states), by_state={s_: sum(1 for x in tk.values() if x.state == s_) for s_ in states},
                    oldest_age=ages[-1] if ages else None, median_age=_median(ages), ages=len(ages), worst_rounds={"ticket": worst[1], "rounds": worst[0]} if worst[0] >= 6 else None,
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
-    elif kind == "pending_defects":
+    elif kind == "known_rework":
+        unresolved, wait = pool["unresolved"], pool["awaiting_fix"]
+        out.update(value=len(wait), tickets=wait, awaiting_pickup=wait, open_defects=unresolved, unresolved=unresolved, not_resubmitted=pool["pending"], blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"], where={tid: tk[tid].state for tid in unresolved},
+                   estimator="changes sent back for a defect (reviewer verdict or gate result) and not yet picked up for the fix: tickets REJECTED with a verdict, Ford & Sterman's work known to need rework. The fix pickup drains it. Beside the level: the changes whose defect has not landed yet, wherever they sit now (Cooper's rework to do). The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
+    elif kind == "pending_defects":                                                              # a curated model that kept the older open-defects stock
         unresolved, wait = pool["unresolved"], pool["awaiting_fix"]
         out.update(value=len(unresolved), tickets=unresolved, awaiting_pickup=wait, not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"], where={tid: tk[tid].state for tid in unresolved},
                    estimator="changes known to need rework and not yet made right: sent back for a defect (reviewer verdict or gate result) with no landing since, wherever the change sits now (Cooper's rework to do; Lyneis's known rework). A send-back for a defect fills it and the landing of the fix drains it; the pickup carries the change back into work without draining it. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
@@ -854,7 +858,6 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "reviewer|ticket_transition:REJECTED|returned": f"{pf['review_no_verdict']} reviews with no verdict (loss)",
         "merge_gate|gate_rejected|returned": f"{pf['failure']} lost gate runs (loss)",
         "merge_gate|gate_conflict|returned": f"{pf['conflict']} conflicts",
-        "merge_gate|gate_landed|known_rework": f"{attributed.get('merge_gate|ticket_transition:MERGING>DONE|cause:gate', 0) + attributed.get('merge_gate|ticket_transition:MERGING>DONE|cause:defect', 0)} fixes landed",
         "coordinator|ticket_transition:BLOCKED>OPEN": f"{attributed.get('coordinator|ticket_transition:BLOCKED>OPEN', 0)} re-planned",
     }
     t = cur["time"]

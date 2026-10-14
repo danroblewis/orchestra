@@ -297,7 +297,15 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     assert r["stocks"]["returned"]["value"] == 1 and r["stocks"]["returned"]["tickets"] == [t2.id]                      # t2 waits with no verdict; t's no-verdict send-back was re-picked
     assert "fix pickups" in r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"] and r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"].startswith("2 ")
     S = r["stocks"]["known_rework"]
-    assert S["value"] == 1 and S["awaiting_pickup"] == [] and S["unresolved"] == [t.id] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # known rework: the defect is not landed; picked up (so not waiting pickup), then blocked
+    assert S["value"] == 0 and S["awaiting_pickup"] == [] and S["unresolved"] == [t.id] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # known rework: nothing waits for a pickup; the open defect is unlanded, its change blocked
+    # a third ticket sent back for a defect and not yet picked up is the stock's level: a change known to need rework, waiting
+    t3 = store.create_ticket(title="c", milestone_id=m.id, branch="orchestra/T-3-c")
+    for mins, frm, to in ((3, "OPEN", "IN_PROGRESS"), (7, "IN_PROGRESS", "READY_FOR_REVIEW"), (8, "READY_FOR_REVIEW", "IN_REVIEW"), (18, "IN_REVIEW", "REJECTED")):
+        emit("ticket_transition", mins, ticket=t3.id, **{"from": frm, "to": to})
+    store.add_note(t3.id, Note(author="reviewer", kind="review", text="REJECTED: missing test", created_at=ts(18)))
+    r3 = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    K = r3["stocks"]["known_rework"]
+    assert K["value"] == 1 and K["tickets"] == [t3.id] and set(K["unresolved"]) == {t.id, t3.id}   # level: waiting for the fix pickup; beside it: both open defects
     assert r["rounds"]["fix_rounds"] == 2 and r["rounds"]["bad_fixes"] == 2              # both re-submissions while the defect is unlanded are rework, both judged by the rejection at minute 60
     assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 3}
 

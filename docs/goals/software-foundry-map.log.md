@@ -892,3 +892,45 @@ Declined: declaring the design's R1 and R2 loops in the template (a hypothesis l
 hollow stubs that would say "no agent" for a causal effect no agent closes; the rework-share
 tile carries Repenning's threshold as its signal); a recovery estimate per recipe (as
 before); Demand in changes (tickets become changes at the pickup, which the pipe says).
+
+## Round 25 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; all 28 numbers checked reconciled to the
+unit, hover, click and refresh sound. Found: Known rework drawn on the material circuit but
+counted in open defects, so the "conserved" circuit changed unit at one stock; the rework
+cards' tag naming one set of balancing pairs while the loop's prose asserted another (K ↔ gate,
+a pair the detector never found); K's level of 3 counting two changes whose fixes were
+approved and waiting for the gate; the pipeline manager's one post-landing defect ticket
+(CA-37) ignored by the detector because built-in agents contribute only their declared
+emits, so the page said nobody closes discovery after landing; the new material tag
+overflowing its card at both widths and over the WIP-limit card; "1 CANCELLED → coordinator"
+struck through by the start pipe; the two orchestra labels at the Demand corner reading as one
+block with a hump through "3 starts"; two stub labels with no tooltip; "1 fixes landed"; the
+discovery tile wrapping mid-phrase at 1280; the gate ring's agent label on the arc; the
+WIP-limit card claiming the operator's hand without landings to judge by; the page not saying
+the Supervisor can inspect the model or try a what-if; the ring's "8" resting on an unstated
+attribution rule.
+
+Fixed: Known rework is a stock of changes, the changes sent back for a defect and waiting for
+the fix pickup (Ford and Sterman's work known to need rework); the pickup drains it into W
+(Cooper's rework progress) so the circuits conserve the change, and the detector finds the
+orchestra ↔ known rework pair; the open defects and where each change sits are listed beside
+the level, not as the level; the loop prose claims no pair and the tag names the pairs found,
+on a line of its own that wraps; the pipeline manager declares ticket_created (it has the
+tickets tools); main failing the base check and the build failing in service are declared
+discoveries (outflows of U), and a cycle closed by a discovery event is a co-flow with no
+polarity, so discovery after landing is now a detected loop through the pipeline manager
+("closable, not yet seen": CA-37's creation has left the window) and the card says only a
+failure discovers anything; stubs leave every box downward, wrap at the arrow when wider than
+the box, and carry tooltips, so the cancel sits under Demand with nothing through it; hump
+slots are 82 px apart and the chain and rework rows sit 30 px lower, so each orchestra label
+stands above its own hump; "found: review · gate · after landing"; the WIP-limit card reads
+landings beside conflicts per landing; the intro says the Supervisor can inspect any stock,
+agent or event and try a what-if agent; the ring tooltip states that a verdict on a fix
+belongs to its latest pending defect; the design records K's unit, the discovery rule and the
+co-flow rule. Unit tests: the golden org's field-discovery loop is a co-flow, the K level is
+the changes awaiting a pickup.
+
+Declined: the gate ring's agent label touching the arc (the mini ring places names under
+circles; moving one label special-cases a loop); a magnitude per gap on the hypothesis cards
+(as in rounds 19 to 24: the readings beside each card already carry the counts).

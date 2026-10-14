@@ -51,8 +51,8 @@ software foundry's defaults; a project in another domain declares its own (secti
 | D | **Demand** | tickets | Work ordered and not started: OPEN and BLOCKED tickets. | ticket_created, reopen, a ticket blocked back to the planner | start (OPEN → IN_PROGRESS), cancel |
 | W | **Work in progress** | changes | Changes being worked now: tickets IN_PROGRESS, a first implementation or a fix. The chain counts changes in every stock, so one unit is conserved from D to the gate; the commits ahead of main on each change's branch are the detail beside every chain stock's level (a change waiting at the gate still shows its +12). | start, fix pickup | submission, cancel, blocked back to demand |
 | Q | **Awaiting review** | changes | Submitted changes the reviewer has not judged yet (Reinertsen's queue). The rework cycles circulate the change through here; the defect co-flows into U. | submission (READY_FOR_REVIEW) | the reviewer's verdict (IN_REVIEW → APPROVED / REJECTED) |
-| K | **Known rework** | open defects | Defects a reviewer or the gate found whose fix has not landed (Cooper\'s rework to do, Madachy\'s detected defects). The fix pickup carries the change back into W without draining it. Send-backs with no verdict are not defects and go to Returned (section 3). | defect found in review; defect found at the gate; defect found after landing | the fix lands (gate_landed) |
-| U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery |
+| K | **Known rework** | changes | Changes sent back for a defect and waiting for the fix to be picked up (Ford and Sterman\'s work known to need rework; Lyneis and Ford\'s known rework). Send-backs with no verdict are not defects and go to Returned (section 3). A defect found after landing is a new ticket, into D. | defect found in review; defect found at the gate | the fix pickup (REJECTED → IN_PROGRESS), cancel |
+| U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery: a review or gate rejection for a defect; after landing, main failing the base check or the build failing in service |
 | L | **Landed software** | commits | Commits the gate put on main, with first-parent diff size. The product. | gate_landed | none (rewrites are measured as churn, below) |
 | A | **Really done** | acceptance tests passing | Acceptance tests that pass, not skipped, against the current staging build. Abdel-Hamid's *actual* progress, against DONE tickets as *perceived* progress. | tests pass on a new build | tests fail or are skipped on a new build |
 | B | **Working build** | builds | The staging build the acceptance suite last ran against, and whether it is up (a health check in the last ten minutes). | staging_deployed | staging_failed; staging_restarted (the health loop restarting it) |
@@ -131,15 +131,17 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   step with a cause counts every transition of its event that carried that cause, so the
   two rework rings' fix submissions sum to the fix rounds. A no-verdict return finds nothing,
   so a loss stock never takes a co-flow from the hidden stock.
-- **Known rework is a stock of open defects** (Cooper's rework to do, Madachy's detected
-  defects): a send-back for a defect fills it and the landing of the fix drains it, so the
-  level is the integral of its own flows and is drawn in its own unit. The change itself sits
-  in whatever box its state says (at the gate, blocked, being fixed), and every chain box
-  names how many of its changes carry an open defect. The fix pickup carries the change
-  back into W (a carrying link: the defect stays open), so the rework cycles are conserved
-  circuits of the change through the pickup, the re-submission and the inspection, with no
-  causal polarity; a bad fix re-enters them (Rahmandad and Hu's task cycling), and their
-  balancing is the first-order pair of K and the gate that lands the fix.
+- **Known rework is a stock of changes**, in the chain's unit, so the rework cycles are
+  conserved circuits: a send-back for a defect fills it and the fix pickup drains it into W
+  (Cooper's rework progress), the worker re-submits, the inspection sends the change back or
+  on. The level is the changes waiting for a fix pickup (Ford and Sterman's work known to
+  need rework). The defect is a separate thing and stays open until its fix lands: beside
+  the level the box lists the changes whose defect has not landed and where each sits (at
+  the gate, blocked, being fixed), and every chain box names how many of its changes carry
+  one; that list, not the level, is Cooper's rework to do. The circuits carry no causal
+  polarity; a bad fix re-enters them (Rahmandad and Hu's task cycling); their balancing is in
+  the first-order pairs on their stocks, which the detector finds and the card names (the
+  pickup draining K is the rework-progress pair), never a pair the text asserts.
 - **A carrying event.** A stock may declare `carried_by` events that carry its content on
   without draining it, and `carried_to` the stock each delivers to: a deploy carries the
   landed commits into the build, so L → B is drawn as a pipe while main keeps its commits.
@@ -194,9 +196,17 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   (for the review loop, submissions that followed a review rejection, not every submission;
   for re-planning, starts that followed an unblock, not every start). The log attributes
   each transition by its previous state for this.
-- **Discovery after landing** is an expected loop (build → known rework → … → gate → build)
-  with no agent on its first link until one is created, so the map carries a hollow stub at
-  the build and at known rework, and the loop card the recipe.
+- **Discovery after landing** is the found defect's circuit: a landed change carries
+  undiscovered rework, a failure discovers it (main failing the gate's base check, the build
+  failing in service), the agent woken by the failure files a ticket into demand, and the
+  fix goes round to the gate. Both failures are outflows of U, so the cycle is closed by a
+  discovery event and is a co-flow with no polarity (next rule). The pipeline manager closes
+  it in this org by hand; nothing exercises a build that stays up, and the card says so.
+- **A cycle closed by a discovery is a co-flow.** When a link of a cycle is an event that
+  drains the hidden stock, carried by an agent into the next node (a wake on the base
+  check, a finding filed as a ticket), the cycle is the defect leaving U and riding the fix
+  round: a stock-flow chain of the defect, not a causal loop, and no polarity is claimed.
+  The hidden stock itself is off the path because nothing is woken by its inflow.
 - **A drained stock's level is a state.** Really done keeps what the last deploy proved and
   reads "unverified" while the build is down or main is broken (its declared outflows are
   the events that make it unverified, not a quantity to subtract); Verified behaviour reads
@@ -232,7 +242,7 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **Agents on the inlet** (they create tickets and move nothing between stocks) read "N
   tickets" or "fills only", never "unattached"; agents on no flow sit on their own row.
 - **A disputed link is signed by the window.** Where one agent both fills and drains a stock
-  (the gate rejects a fix into Known rework and lands a good one out of it), the link's sign
+  (Orchestra starts a change into W and a restart sends it back out), the link's sign
   is the mechanism the window saw most, and the card says which and how many; with no window
   the loop is indeterminate.
 - **Flows drawn.** One event moves one thing. When an agent's event drains one stock and
@@ -261,7 +271,7 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 | inspect at the gate | W → K (defect) | merge gate | gate_rejected where a stage failed on its own result | gate_rejected |
 | conflict | W → W (re-queued) | merge gate | gate_conflict; Ford and Sterman's concurrence rework, driven by WIP, not by FCC | gate_conflict |
 | machine failure | no change to W; a loss in C | — | gate stage timeout (rc 124), gate start failure, reviewer with no verdict, worker crash, turn timeout | turn_timed_out, turn_error, agent_crashed, gate_error |
-| discover after landing | L → K | **unattended** (acceptance run on staging, the smoke test, humans) | a test that passed on a prior build and fails now; a bug ticket citing a landed commit; staging restarted | staging_failed, staging_restarted, ticket_created (bug) |
+| discover after landing | L → D (a ticket for the found defect; U drains) | the pipeline manager, woken by the base check or a service failure; **unattended** for a build that stays up | main fails the gate's base check; the build fails in service; a bug ticket citing a landed commit | gate_base_broken, staging_failed, ticket_created |
 | fix | K → W | worker | REJECTED → IN_PROGRESS … READY_FOR_REVIEW; bad fixes are rounds rejected again | ticket_transition:IN_PROGRESS |
 | land | W → L | merge gate | gate_landed | gate_landed |
 | deploy | L → B | merge_gate (only the gate's success promotes a build) | staging_deployed | staging_deployed |
@@ -323,7 +333,7 @@ Readings, each defined by its estimator and shown with its window:
 - **Bad-fix fraction.** Fix rounds (a re-submission while a defect send-back is pending)
   followed to the defect's next verdict: a review or gate rejection for a defect makes the
   fix bad, a landing makes it good; approvals, no-verdict reviews, blocks and further
-  re-submissions on the way do not decide it. Known rework is not cleared by a block (on an
+  re-submissions on the way do not decide it. An open defect is not cleared by a block (on an
   agent org a block is usually a turn-limit escape); beside its level the page shows the
   tickets whose defect send-back has not yet been followed by a landing.
 - **Losses.** Restarts, turn timeouts, compactions, resets per day, as hours lost where the
