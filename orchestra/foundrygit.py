@@ -16,7 +16,7 @@ MAX_BLAME_BYTES = 200_000
 
 def _git(repo: Path, *args: str, timeout: float = 30) -> str:
     try:
-        r = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["git", *args], check=False, cwd=repo, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired):
         return ""
     return r.stdout if r.returncode == 0 else ""

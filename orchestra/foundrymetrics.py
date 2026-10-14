@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import statistics
+import subprocess
 from typing import Any
 
 from . import foundrygit
@@ -204,7 +205,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     if use_git:
         try:
             git = foundrygit.readings(project.repo_root, project.config.base_branch, [e["commit"] for e in landed_events])
-        except Exception:                       # the map must render without git
+        except (OSError, subprocess.SubprocessError, ValueError):   # the map must render without git
             git = {}
     sizes = [git.get("landings", {}).get(e["commit"]) for e in landed_window]
     sizes = [s for s in sizes if s]
