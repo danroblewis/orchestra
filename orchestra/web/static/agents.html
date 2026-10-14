@@ -169,11 +169,14 @@ function eventMap(m) {
     + (c.named ? `<b>${esc(c.named.name)}</b>${c.named.builtin ? ' <span class="tag">built-in</span>' : ""} <span class="muted">${esc(c.named.purpose || "")}${c.named.signal ? " · signal: " + esc(c.named.signal) : ""}${c.named.owner ? " · owned by " + esc(c.named.owner) : ""}</span><br>` : `<b class="muted">${c.self ? "self-loop" : c.kind === "independent" ? "unnamed, on its own" : "unnamed, through the core"}</b> `)
     + (c.core ? `<code>${esc(c.agents.join(", "))}</code> <span class="muted">· ${c.cycles} cycles with branches: ${esc(c.paths.map((p) => p.join(" → ")).join(" | ").slice(0, 220))}</span>`
              : `<code>${esc(c.labels.join(" → "))}${c.self ? "" : " → " + esc(c.labels[0])}</code>${c.cycles > 1 ? ` <span class="muted">· ${c.cycles} variants through other events</span>` : ""}`) + `</div>`;
-  const named = cycles.filter((c) => c.named), unnamed = cycles.filter((c) => !c.named && !c.self), selfs = cycles.filter((c) => !c.named && c.self);
+  const composites = cycles.filter((c) => c.composite && !c.named);
+  const shown = window.EV_SHOW_COMPOSITE ? cycles : cycles.filter((c) => !c.composite || c.named);
+  const named = shown.filter((c) => c.named), unnamed = shown.filter((c) => !c.named && !c.self), selfs = shown.filter((c) => !c.named && c.self);
   const stale = (m.stale || []).map((lp) => `<div class="cyc stale"><b>${esc(lp.name)}</b> <span class="muted">named, but its cycle no longer exists in the bindings</span></div>`).join("");
   const loops = cycles.length || stale ? `<div class='muted' style='margin-bottom:3px'>Feedback loops · ${named.length} named, ${unnamed.length} unnamed${selfs.length ? `, ${selfs.length} self` : ""} · hover a loop to trace it</div>`
-    + cycles.map((c, i) => ({ c, i })).filter((x) => x.c.named).map((x) => row(x.c, x.i)).join("") + cycles.map((c, i) => ({ c, i })).filter((x) => !x.c.named && !x.c.self).map((x) => row(x.c, x.i)).join("")
-    + cycles.map((c, i) => ({ c, i })).filter((x) => !x.c.named && x.c.self).map((x) => row(x.c, x.i)).join("") + stale
+    + cycles.map((c, i) => ({ c, i })).filter((x) => shown.includes(x.c) && x.c.named).map((x) => row(x.c, x.i)).join("") + cycles.map((c, i) => ({ c, i })).filter((x) => shown.includes(x.c) && !x.c.named && !x.c.self).map((x) => row(x.c, x.i)).join("")
+    + cycles.map((c, i) => ({ c, i })).filter((x) => shown.includes(x.c) && !x.c.named && x.c.self).map((x) => row(x.c, x.i)).join("") + stale
+    + (composites.length ? `<div class="muted" style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_COMPOSITE ? "checked" : ""} onchange="window.EV_SHOW_COMPOSITE=this.checked;window.EVSIG=null;refresh()"> show ${composites.length} composite loop${composites.length === 1 ? "" : "s"} (made of the loops above)</label></div>` : "")
     : "<span class='muted'>No feedback loops: nothing any agent causes wakes an agent that can cause it back.</span>";
   setTimeout(() => drawGraph(g, inCyc), 0);
   return `<div class="evmap"><svg id="evsvg"></svg>
@@ -437,7 +440,7 @@ async function refresh() {
     const loose = org.agents.filter((a) => (!a.team || a.team_exists === false) && !(a.builtin && !a.resident));
     // The map lives in its own container and is redrawn only when the graph changes; the
     // list below is re-rendered every refresh, which would otherwise wipe the drawn SVG.
-    const sig = JSON.stringify([evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]), st.sessions.filter((s) => s.status === "running").map((s) => s.kind).sort(), !!window.EV_SHOW_ALL]);
+    const sig = JSON.stringify([evm.edges.map((e) => [e.from, e.to, e.kind, !!e.seen]), st.sessions.filter((s) => s.status === "running").map((s) => s.kind).sort(), !!window.EV_SHOW_ALL, !!window.EV_SHOW_COMPOSITE]);
     if (window.EVSIG !== sig || !document.getElementById("evsvg")) { window.EVSIG = sig; $("evmap-host").innerHTML = `<h2>Event map</h2>` + eventMap(evm); }
     let html = timeline(org.agents, org.now);
     html += `<h2>Teams <span class="count">${org.teams.length}</span></h2>` + (top.map((t) => teamCard(t, byName, org.now, false)).join("") || '<div class="empty">none</div>');

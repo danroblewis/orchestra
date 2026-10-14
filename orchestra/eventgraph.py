@@ -200,7 +200,10 @@ def loops(g: Graph) -> list[dict]:
     back. Cycles that differ only in which event carries them are variants of one loop,
     keyed by the agents in it. Loops that never touch the core stand on their own."""
     cycles = elementary_cycles(g)
-    is_core_node = lambda n: n.startswith("sys:") or (n.startswith("agent:") and g.nodes[n].get("builtin"))
+    # The core is the per-ticket pipeline: the agents the loop starts per ticket and the
+    # system parts. Resident built-ins (the Coordinator, the Pipeline Manager) plan around it
+    # and get their own loops through it, like any custom agent.
+    is_core_node = lambda n: n.startswith("sys:") or (n.startswith("agent:") and g.nodes[n].get("builtin") and not g.nodes[n].get("resident"))
     core_cycles = [c for c in cycles if all(is_core_node(n) for n in c if not n.startswith("ev:"))]
     core_nodes: set[str] = set().union(*[set(c) for c in core_cycles]) if core_cycles else set()
     out: list[dict] = []
@@ -239,7 +242,16 @@ def loops(g: Graph) -> list[dict]:
         agents = [n for n in key.split("|")]
         nodes = sorted(set().union(*[set(c) for c in cs]))
         out.append(_loop(g, "outer" if CORE in agents else "independent", nodes, cs, core=False))
-    out.sort(key=lambda L: (not L["core"], L["kind"] == "independent", L["length"]))
+    # A loop whose outer agents are covered by two smaller loops is a composition of them:
+    # real, but not news. It is kept, marked, and the UI folds it away by default.
+    outer = [L for L in out if not L["core"]]
+    for L in outer:
+        mine = set(L["agents"]) - {"delivery loop (core)"}
+        parts = [set(M["agents"]) - {"delivery loop (core)"} for M in outer if M is not L and (set(M["agents"]) - {"delivery loop (core)"}) < mine]
+        L["composite"] = any(a | b >= mine for i, a in enumerate(parts) for b in parts[i + 1:]) or any(len(mine - a) == 0 for a in parts)
+    for L in out:
+        L.setdefault("composite", False)
+    out.sort(key=lambda L: (not L["core"], L["composite"], L["kind"] == "independent", L["length"]))
     return out
 
 

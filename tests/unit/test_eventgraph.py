@@ -72,6 +72,7 @@ def test_custom_team_loop_closes_through_messages_and_tools(project):
     assert fam["named"]["name"] == "lessons" and fam["kind"] == "outer" and "delivery loop (core)" in fam["labels"]
     core = det["detected"][0]
     assert core["core"] and core["named"]["builtin"] and {"worker", "reviewer", "merge gate", "orchestra"} <= set(core["agents"]) and core["cycles"] >= 3
+    assert "coordinator" not in core["agents"]                                                   # resident built-ins loop through the core, not in it
     with pytest.raises(StoreError):
         api.handle(project, store, "name_loop", {"name": "y", "signature": loop["signature"], "purpose": "p"}, role="keeper")   # supervisor only
     # the loop notices a new unnamed cycle once and asks the Supervisor
