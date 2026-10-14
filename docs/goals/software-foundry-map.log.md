@@ -612,3 +612,41 @@ agent's rate follows a stock on this machine; the pairs now say the wake carries
 and the loops' polarity rests on drains); a recovery estimate per recipe (as before); a
 split of every headline at the limit change (the loss tile and card date the change; a
 two-window page is a different page).
+
+## Round 17 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every number traced matched its
+definition and every interaction worked; the defects were definitions, labels and layout.
+Found: "pending" meant two things (the level used not-landed, fix rounds and fix hours
+used not-re-submitted, and the tooltip described the first); Known rework in send-backs;
+no-verdict send-backs given the reviewer as their machine; the restart drawn as a drain of
+a one-unit stock; the outage that can never close and "down" inferred from silence without
+saying so; the rounds histogram called review rounds; "how late" named discovery delay when
+it is verdict latency; two units side by side on the product tile; headline numbers wrapped
+into paragraphs; labels crossed by lines (44 pairs); six hollow stubs with four wordings and
+no loop name; three 56s; six agents piled at the left; the legend a paragraph; co-flows
+unlabelled.
+
+Fixed: one meaning of rework, on the model's terms: a fix round is every re-submission of a
+change whose defect has not landed, a fix turn likewise, a fix is judged by the defect's
+next verdict, and the tooltip says so (29 fix rounds, 13 bad, rework share 84%); the
+submission's cause follows the unlanded defect so the rings sum to the fix rounds; Known
+rework in changes; the histogram labelled send-backs per ticket; "verdict latency" with n,
+and the defect's age named as what it is not; the product tile holds one number with its
+unit and the perceived count in the caption, the discovery tile "3 · 1 · 1"; the no-verdict
+pipe's valve reads "turn limit"; the restart stub reads "crash proxy"; the build box reads
+"inferred: no health answer for 7.1h" and the banner says what the outage is; pipes along a
+row run above it with their labels above them, cross-row pipes keep their own bands below,
+labels sit beside the vertical runs that pass their height when that keeps them within
+reach of their pipe (crossings down from 44 to 9, every remaining one under a halo); hollow
+stubs carry their loop's name; agents on no pipe spread over the width instead of piling at
+their fill target, and their sub-lines are readings or the team only; the co-flow is
+labelled once; the legend is a two-column key; pairs on the hidden stock are not listed;
+earlier detection declared B as the design's table says; no label overlaps any other at 1280
+or 1600 and every pipe's midpoint resolves to its own hover target (DOM checks). The
+automata model on main follows the template.
+
+Declined: a recovery estimate per recipe, the drill-down's denominators (another section),
+the 0.2 h of pipeline-manager time (the activity map already counts it as plan; the
+difference is the reviewer's pairing slack), and reviewer utilisation beside the queue (the
+queue's residence time and the reviewer's in-use count are both on the map).

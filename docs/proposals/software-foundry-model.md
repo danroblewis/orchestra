@@ -162,7 +162,22 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   latest check, with the host-suspect flag and the last clean count as context, never a
   substituted reading.
 - **Pipes across rows run orthogonally**, each on its own band between the rows with its
-  label on the horizontal run, so no label is crossed by a line and no two share a band.
+  label on the horizontal run; pipes along a row run above it with their labels above them.
+  A label sits beside the vertical runs that pass its height where it can stay within reach
+  of its own pipe; where it cannot, it keeps its halo and the crossing, since a label far
+  from its pipe is worse than a line through its halo.
+- **Rework is counted while the defect is unlanded.** A fix round is every re-submission of
+  a change whose defect has not landed (Cooper: all effort between discovery and completion
+  is rework), through blocks, re-plans and no-verdict reviews; a fix turn likewise; a fix is
+  bad when the defect's next verdict is another rejection for a defect, good when it is a
+  landing, and re-submissions between two verdicts share the verdict. The rounds histogram
+  is the tracker's send-backs per ticket, said so.
+- **A no-verdict send-back's valve is the turn limit**, not the agent whose turn was cut; a
+  restart stands for a crash until `staging_failed` is emitted and says so; "down" is
+  inferred from the silence of the health check and says since when.
+- **Verdict latency, not discovery delay.** The time from the submission a verdict judged to
+  the verdict, by stage, with n, and from a deploy to its first trouble; the defect's age
+  needs the commit that introduced it (step 2).
 - **Agents sit over the pipes they are the valve on.** An agent's circle is placed over the mean of the stocks
   it drains (over what wakes it, or what it fills, if it drains nothing), on three rows, and
   pushed apart only as far as names need; an agent on no flow sits at the right.

@@ -166,7 +166,7 @@ class History:
             return norm(self.cause.get((tid, rej[0])))
         before = seq[-1][0] if seq else at                        # strictly before this transition, so a submission does not clear the defect it is fixing
         if frm == "IN_PROGRESS":                                  # a submission is a fix while a defect is pending (through blocks and re-plans), else a re-run after a send-back with no verdict
-            if self.pending_defect(tid, before):
+            if self.unresolved_defect(tid, before):
                 return last_defect()
             return norm(self.cause.get((tid, rej[0]))) if self.spell_origin(tid, at, frm) == "REJECTED" else None
         return last_defect() if self.unresolved_defect(tid, before) else None   # a verdict on a fix, while the defect is not yet landed
@@ -400,9 +400,9 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     # fix rounds and bad fixes: a re-submission while a defect send-back is pending
     fix_rounds = bad = 0
     for tid, ts, f, to in tr:
-        if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.pending_defect(tid, ts - 1):
+        if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.unresolved_defect(tid, ts - 1):
             continue
-        fix_rounds += 1
+        fix_rounds += 1                                           # every re-submission while a defect is unlanded is rework progress (Cooper; Lyneis & Ford)
         # followed to the defect's next verdict: a review or gate rejection for a defect makes it a bad fix,
         # a landing makes it good; approvals, no-verdict reviews, blocks and further re-submissions on the
         # way do not decide it (the defect is the same until a verdict says otherwise)
@@ -465,8 +465,8 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
             timed_out[k0] = timed_out.get(k0, 0) + 1
         if act == "worker":
             tid = sid.split("-", 1)[1] if sid.startswith("worker-") else ""
-            if hist.pending_defect(tid, st + 5):
-                act = "fix"
+            if hist.unresolved_defect(tid, st + 5):
+                act = "fix"                                       # any turn on a change with an unlanded defect is rework
             else:
                 last = hist.last_rejection(tid, st + 5)
                 nxt_ready = next((t for t, f, to in hist.seq.get(tid, []) if t > (last[0] if last else 0) and (f, to) == ("IN_PROGRESS", "READY_FOR_REVIEW")), None)
@@ -771,8 +771,9 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     pf, ins_ = cur["flows"], cur["inspections"]
     pk = lambda c: attributed.get(f"orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:{c}", 0)
     edge_labels = {
-        "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} after a re-plan · {pf['repick']} re-picks after a restart (loss)",
+        "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} re-planned · {pf['repick']} re-picked after a restart (loss)",
         "orchestra|ticket_transition:OPEN": f"{pf['restart']} restarts (loss)",
+        "orchestra|ticket_transition:IN_PROGRESS>OPEN": f"{pf['restart']} restarts (loss)",
         "worker|ticket_transition:READY_FOR_REVIEW": f"{pf['implement']} submitted · {pf['fix']} of them fixes",
         "reviewer|ticket_transition:REJECTED": f"{_n(ins_['review']['distinct_defects'], 'defect')} in {_n(pf['review'], 'rejection')}",
         "reviewer|ticket_transition:APPROVED": f"{ins_['review']['approvals']} approved",
@@ -783,7 +784,8 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "merge_gate|staging_deployed": f"{pf['deploy']} deployed",
         "merge_gate|gate_base_broken": f"{pf['base']} base broken",
         "worker|ticket_transition:BLOCKED": f"{pf['blocked']} blocked",
-        "orchestra|ticket_transition:OPEN>IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} after a re-plan · {pf['repick']} re-picks after a restart (loss)",
+        "orchestra|staging_restarted": f"{attributed.get('orchestra|staging_restarted', 0)} restarts (crash proxy)",
+        "orchestra|ticket_transition:OPEN>IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} re-planned · {pf['repick']} re-picked after a restart (loss)",
         "orchestra|ticket_transition:REJECTED>IN_PROGRESS": f"{attributed.get('orchestra|ticket_transition:REJECTED>IN_PROGRESS', 0)} fix pickups",
         "worker|ticket_transition:READY_FOR_REVIEW|known_rework": f"{pf['fix']} fix rounds · {cur['rounds']['bad_fixes']} later found bad",
         "worker|ticket_transition:READY_FOR_REVIEW|undiscovered": f"{pf['implement']} submitted (an unknown share carries a defect)",

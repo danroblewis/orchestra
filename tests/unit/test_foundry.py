@@ -293,12 +293,12 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
     A = r["attributed_counts"]
     assert A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:defect"] == 2 and A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:no_verdict"] == 2    # t: two defect pickups; t2 one, t's second send-back at 40 one
-    assert A["worker|ticket_transition:IN_PROGRESS>READY_FOR_REVIEW|from:REJECTED|cause:defect"] == 1 and A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|from:IN_REVIEW|cause:defect"] == 2
+    assert A["worker|ticket_transition:IN_PROGRESS>READY_FOR_REVIEW|from:REJECTED|cause:defect"] == 2 and A["orchestra|ticket_transition:REJECTED>IN_PROGRESS|from:IN_REVIEW|cause:defect"] == 2   # both of t's re-submissions carry its unlanded defect
     assert r["stocks"]["returned"]["value"] == 1 and r["stocks"]["returned"]["tickets"] == [t2.id]                      # t2 waits with no verdict; t's no-verdict send-back was re-picked
     assert "fix pickups" in r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"] and r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"].startswith("2 ")
     S = r["stocks"]["known_rework"]
     assert S["value"] == 1 and S["tickets"] == [t.id] and S["awaiting_pickup"] == [] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # known to need rework and not yet done; picked up (so not awaiting pickup), then blocked
-    assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 1              # fix 1 followed to its verdict at minute 60
+    assert r["rounds"]["fix_rounds"] == 2 and r["rounds"]["bad_fixes"] == 2              # both re-submissions while the defect is unlanded are rework, both judged by the rejection at minute 60
     assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 3}
 
 
