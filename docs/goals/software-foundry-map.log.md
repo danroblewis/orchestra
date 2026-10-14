@@ -567,3 +567,48 @@ defects; attributing them to one binding would be a claim the data cannot suppor
 surfacing read-based pairs for B2 (a loop needs its author; the hypothesis card says so);
 "how late" as a time interval (the discovery delay needs the commit-to-finding join of step
 2).
+
+## Round 16 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every reading recomputed matched its
+source, and the round-15 fixes were verified present. Found: a co-flow from undiscovered
+rework into Returned (a no-verdict return finds nothing); Known rework's level was the
+pickup queue (0) while three defects were open; "66 re-picks (loss)" counted nine starts
+after a re-plan as losses; the rings undercounted the loop's own flow (9 fix rounds on the
+map, 1 + 4 on the rings) because a cause was dropped when a spell began from OPEN after a
+block; Really done read 0 when the staging process was down and Verified behaviour printed a
+level it disowned; the WIP-limit hint asserted a false fact; a label column detached from
+eight crossing diagonals; the orchestra circle over a stock it does not touch; a hollow-stub
+label under the wrong box; three unlabelled 21s; the flow table keyed by source and listing
+co-flows; hit twins over boxes and over shorter pipes; the broken-base card hover lighting
+one edge; the at-limit flag against today's limit; the histogram's scope unstated; no
+discovery delay anywhere.
+
+Fixed: a `loss` flag on a stock, and no co-flow between the hidden stock and a loss stock;
+the cause a transition carries is decided by its kind (a send-back its own verdict, a
+pickup the send-back it follows, a submission the pending defect through blocks, re-plans
+and restarts, a verdict on a fix the defect not yet landed), the pending check made strictly
+before the transition, and a ring step with a cause counts every transition that carried it,
+so the rings read 5 → 3 → 4 and 6 → 6 → 6 → 8 and the fix submissions sum to the 9 fix
+rounds; starts split into first starts, starts after a re-plan and re-picks after a restart,
+only the last a loss; Known rework's level is the defects not yet landed with the pickup
+queue beside it; Really done keeps what the last deploy proved and reads "unverified: the
+deployed build is down"; Verified behaviour reads the last clean check marked stale when the
+latest check failed on a suspect host; the discovery tile is second and carries the median
+delay from submission to verdict by stage and from deploy to first trouble; cross-row pipes
+run orthogonally, each on its own band with its label on the horizontal run (no label is
+crossed by a line, checked at 1280 and 1600); agents sit over the pipes they are the valve
+on; the flow table is keyed by destination and lists no co-flows; hit twins are under the
+boxes, long pipes first, none for co-flows (every pipe's midpoint resolves to its own twin);
+hollow source-stub labels lie under their own box; every big number carries its unit; the
+WIP-limit hint is unconditional ("when conflicts outnumber landings…"); pairs read "B
+through what it drains; its wake on arrival carries no sign"; the at-limit flag is judged
+against the limit the median was measured under or the one in force; card hover lights a
+loop's stubs too; the histogram says "cancelled excluded". The automata model on main
+follows the template.
+
+Declined: computing polarity over level-dependent links only (a wake on arrival is how an
+agent's rate follows a stock on this machine; the pairs now say the wake carries no sign,
+and the loops' polarity rests on drains); a recovery estimate per recipe (as before); a
+split of every headline at the limit change (the loss tile and card date the change; a
+two-window page is a different page).

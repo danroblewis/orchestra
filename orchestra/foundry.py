@@ -33,6 +33,7 @@ class Stock:
     outflows: list[str] = field(default_factory=list)       # event types that drain it
     consumers: list[Any] = field(default_factory=list)      # agents that read it: "name" or {"agent", "effect": "+"|"-"}
     estimators: list[dict] = field(default_factory=list)    # [{kind, ...}], the first gives the level
+    loss: bool = False                                      # a stock of machine loss (nothing of the product is found or made there): never a co-flow with the hidden stock
     hidden: bool = False                                    # declared because the literature says it exists; never counted
     addition: bool = False                                  # not in the published models
     row: str = "chain"
@@ -133,12 +134,12 @@ TEMPLATE_STOCKS: list[Stock] = [
     Stock("known_rework", "Known rework", "send-backs", "Changes a reviewer or the gate sent back for a defect and not yet picked up for a fix; the fix pickup moves the change back into work in progress (the rework flow). A send-back without a verdict (a review turn that ended, a lost gate run, a conflict) is not a defect and goes to Returned without a verdict instead. Beside the level: defects sent back and not yet landed, whatever has happened since.", ["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], ["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"], ["worker"],
           [{"kind": "pending_defects"}], row="rework", pos=[600, 480], width=164),
     Stock("returned", "Returned without a verdict", "changes", "Changes sent back with no verdict: a review turn that ended at the limit, a gate run that timed out or failed to start, a merge conflict. Not rework (no defect was found); a machine loss. The re-pick moves the change back into work in progress and the turn is run again.", ["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_conflict"], ["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"], [],
-          [{"kind": "returned"}], row="rework", pos=[780, 480], width=164),
+          [{"kind": "returned"}], row="rework", pos=[780, 480], width=164, loss=True),
     Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product; nothing drains it. A ticket's DONE is the same arrival seen from the tracker, so it is not a second inflow.", ["gate_landed"], [], [],
           [{"kind": "landed"}], row="chain", pos=[810, 222], width=160),
     Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up. Drained when it fails in service or the health loop has to restart it; a broken main is the gate's problem, not the build's.", ["staging_deployed"], ["staging_failed", "staging_restarted"], [],
           [{"kind": "staging"}], row="chain", pos=[1000, 222], width=134),
-    Stock("really_done", "Really done", "acceptance tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it; drained when the build fails in service or main's latest check fails.",
+    Stock("really_done", "Really done", "tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it; drained when the build fails in service or main's latest check fails.",
           ["staging_deployed"], ["staging_failed", "staging_restarted", "gate_base_broken"], [], [{"kind": "gate_tests", "stage": "acceptance", "source": "deployed"}], row="chain", pos=[1190, 222], width=150),
     Stock("pipeline_blocked", "Pipeline blocked", "pauses", "The gate is paused: main itself failed the gate, or an operator paused the pipeline; the pipeline manager's resume drains it. One pause event per incident (a broken base also raises gate_base_broken, which is the wake-up, not the fill).", ["pipeline_paused"], ["pipeline_resumed"], [],
           [{"kind": "events", "initial": 0, "since": "2026-01-01T00:00:00Z"}], row="rework", pos=[900, 480], width=150),

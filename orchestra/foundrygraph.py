@@ -420,12 +420,15 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
     att = attributed or {}
     additions = {s.key for s in (stocks or []) if getattr(s, "addition", False)}   # capability stocks are filled, not converted into
     hidden = {s.key for s in (stocks or []) if getattr(s, "hidden", False)}
+    loss = {s.key for s in (stocks or []) if getattr(s, "loss", False)}
     row = {s.key: getattr(s, "row", None) for s in (stocks or [])}
     for e in g["edges"]:
         if e["kind"] != "drains" or not e["src"].startswith("agent:"):
             continue
         for f in g["edges"]:
             if f["kind"] == "fills" and f["src"] == e["src"] and f["dst"] != e["dst"] and f["dst"] not in additions and e["dst"] not in additions and plain(f["via"]) == plain(e["via"]):
+                if (e["dst"] in hidden and f["dst"] in loss) or (f["dst"] in hidden and e["dst"] in loss):
+                    continue                                          # a send-back with no verdict finds nothing: no defect leaves the hidden stock for a loss stock
                 key = (e["dst"], f["dst"], e["src"])
                 if key in seen:
                     continue

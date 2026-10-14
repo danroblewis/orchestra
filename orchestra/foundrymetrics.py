@@ -149,21 +149,27 @@ class History:
             i -= 2
         return seq[i][1] if seq[i][2] == "IN_PROGRESS" else None
 
-    def cause_before(self, tid: str, at: float, frm: str) -> str | None:
-        """The cause of the send-back a transition follows: for a pickup out of REJECTED, that
-        rejection's cause; for a submission out of IN_PROGRESS that began with a pickup, the same."""
+    def cause_before(self, tid: str, at: float, frm: str, to: str | None = None) -> str | None:
+        """The cause a transition carries: a send-back's own cause; otherwise, while a defect is
+        unresolved (sent back and not landed since), that defect's cause, through pickups,
+        re-submissions, approvals, blocks and re-plans; otherwise, for a pickup or a re-submission
+        after a send-back with no verdict, that send-back's cause."""
         seq = [x for x in self.seq.get(tid, []) if x[0] < at]
-        if frm not in ("REJECTED", "IN_PROGRESS") or (frm == "IN_PROGRESS" and self.spell_origin(tid, at, frm) != "REJECTED"):
-            return None
+        norm = lambda c: {"gate_lost": "lost"}.get(c, c)
+        last_defect = lambda: next((self.cause.get((tid, t)) for t, f, x in reversed(seq) if x == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate")), None)
+        if to == "REJECTED":                                      # a send-back carries its own cause
+            return norm(self.cause.get((tid, at)))
         rej = next(((t, f, x) for t, f, x in reversed(seq) if x == "REJECTED"), None)
         if rej is None or any(x in ("DONE", "CANCELLED") for t, f, x in seq if t > rej[0]):
             return None
-        if self.pending_defect(tid, at):                          # a defect still pending is the cause, whatever no-verdict send-backs came after it
-            dft = next(((t, f, x) for t, f, x in reversed(seq) if x == "REJECTED" and self.cause.get((tid, t)) in ("defect", "gate")), None)
-            if dft:
-                return self.cause.get((tid, dft[0]))
-        c = self.cause.get((tid, rej[0]))
-        return {"gate_lost": "lost"}.get(c, c)
+        if frm == "REJECTED":                                     # a pickup carries the send-back it follows: a fix pickup or a re-pick
+            return norm(self.cause.get((tid, rej[0])))
+        before = seq[-1][0] if seq else at                        # strictly before this transition, so a submission does not clear the defect it is fixing
+        if frm == "IN_PROGRESS":                                  # a submission is a fix while a defect is pending (through blocks and re-plans), else a re-run after a send-back with no verdict
+            if self.pending_defect(tid, before):
+                return last_defect()
+            return norm(self.cause.get((tid, rej[0]))) if self.spell_origin(tid, at, frm) == "REJECTED" else None
+        return last_defect() if self.unresolved_defect(tid, before) else None   # a verdict on a fix, while the defect is not yet landed
 
     def returned(self, tid: str, at: float) -> bool:
         """Sent back without a verdict and not yet re-picked: a machine loss waiting its turn."""
@@ -261,7 +267,7 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
             prev = (origin, frm) if origin else None
             # a transition that follows a send-back carries the send-back's cause (defect, gate, no_verdict, lost, conflict),
             # so a pickup or a re-submission can be counted as a fix or as a re-run
-            cause = hist.cause_before(e.get("ticket") or "", _ts(e), frm)
+            cause = hist.cause_before(e.get("ticket") or "", _ts(e), frm, to)
             keys = [f"{who}|{t}:{to}", f"{who}|{t}:{frm}>{to}"]
             if prev:
                 keys += [f"{who}|{t}:{to}|from:{prev[0]}", f"{who}|{t}:{frm}>{to}|from:{prev[0]}"]
@@ -365,12 +371,15 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     for _, _, f, to in tr:
         pairs[f"{f}>{to}"] = pairs.get(f"{f}>{to}", 0) + 1
     # starts: a pickup after a restart or an unblock is a re-pickup, not new work
-    starts = repicks = 0
+    starts = repicks = replanned = 0
     for tid, ts, f, to in tr:
         if (f, to) != ("OPEN", "IN_PROGRESS"):
             continue
-        if hist.previous(tid, ts, f, to) in (("IN_PROGRESS", "OPEN"), ("BLOCKED", "OPEN")):
-            repicks += 1
+        before = hist.previous(tid, ts, f, to)
+        if before == ("IN_PROGRESS", "OPEN"):
+            repicks += 1                                          # after a restart: the turn was lost
+        elif before == ("BLOCKED", "OPEN"):
+            replanned += 1                                        # after a re-plan: the re-planning loop's own flow
         else:
             starts += 1
     # review inspections: verdicts given; send-backs by cause; defects distinct by ticket
@@ -405,6 +414,12 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
             if to2 == "REJECTED" and hist.cause.get((tid, t2)) in ("defect", "gate"):
                 bad += 1
                 break
+    # how late a defect is found: from the submission the verdict judged to the verdict, by stage; after landing, from the deploy to its first trouble
+    def _since_submission(tid: str, ts: float) -> float | None:
+        sub = next((t for t, f, x in reversed(hist.seq.get(tid, [])) if t < ts and (f, x) == ("IN_PROGRESS", "READY_FOR_REVIEW")), None)
+        return ts - sub if sub is not None else None
+    delay_review = [d for tid, ts, f, to in tr if (f, to) == ("IN_REVIEW", "REJECTED") and hist.cause.get((tid, ts)) == "defect" for d in [_since_submission(tid, ts)] if d is not None]
+    delay_gate = [d for tid, ts, f, to in tr if (f, to) == ("MERGING", "REJECTED") and hist.cause.get((tid, ts)) == "gate" for d in [_since_submission(tid, ts)] if d is not None]
     # F2: review misses: approvals the gate then rejected for a defect, before the next re-submission
     approvals_missed, missed_defects = 0, set()
     for tid, ts, f, to in tr:
@@ -526,12 +541,13 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     return {
         "since": dt.datetime.fromtimestamp(since, dt.UTC).isoformat(timespec="seconds"), "until": dt.datetime.fromtimestamp(until, dt.UTC).isoformat(timespec="seconds"), "days": days,
         "counts": counts, "pairs": pairs,
-        "flows": {"start": starts, "repick": repicks, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
+        "flows": {"start": starts, "repick": repicks, "replanned": replanned, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
                   "gate": gate["by"].get("defect", 0), "conflict": gate["by"].get("conflict", 0),
                   "failure": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0) + gate["by"].get("error", 0),
                   "escape": escape, "escape_bug_tickets": other_tickets, "escape_crash_tickets": crash_tickets, "escape_crashing_builds": crashing_builds, "escape_crash_runs": len(in_window), "escape_crash_groups": in_window, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
                   "base": gate["by"].get("base_broken", 0), "restart": pairs.get("IN_PROGRESS>OPEN", 0), "blocked": pairs.get("IN_PROGRESS>BLOCKED", 0)},
         "inspections": {
+            "delay": {"review": _median(delay_review), "gate": _median(delay_gate), "after_landing": _median([_ts(t) - _ts(d) for i, d in enumerate(deploys) for t in [next((x for x in troubles if _ts(d) < _ts(x) < (_ts(deploys[i + 1]) if i + 1 < len(deploys) else until)), None)] if t])},
             "review": {"arrivals": arrivals, "redo": redo, "approvals": approvals, "verdicts": verdicts, "by_cause": rev_cause, "defects": rev_defects, "distinct_defects": len(tickets_defect),
                        "pass": _ratio(approvals, verdicts), "tickets": len(tickets_reviewed), "tickets_sent_back": len(tickets_defect), "pass_per_ticket": _ratio(len(tickets_reviewed - tickets_defect), len(tickets_reviewed)),
                        "approvals_gate_rejected": approvals_missed, "distinct_missed": len(missed_defects), "miss_rate": _ratio(approvals_missed, approvals),
@@ -592,9 +608,9 @@ def _stock_reading(st, pool: dict) -> dict:
                    oldest_age=ages[-1] if ages else None, median_age=_median(ages), ages=len(ages), worst_rounds={"ticket": worst[1], "rounds": worst[0]} if worst[0] >= 6 else None,
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
-        wait = pool["awaiting_fix"]
-        out.update(value=len(wait), tickets=wait, not_resubmitted=pool["pending"], unresolved=pool["unresolved"], blocked=[tid for tid in pool["unresolved"] if tk[tid].state == "BLOCKED"],
-                   estimator="tickets sent back for a defect (reviewer verdict or gate result) and not yet picked up for a fix; beside it, tickets whose defect send-back has not yet been followed by a landing. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
+        unresolved = pool["unresolved"]
+        out.update(value=len(unresolved), tickets=unresolved, awaiting_pickup=pool["awaiting_fix"], not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"],
+                   estimator="tickets sent back for a defect (reviewer verdict or gate result) whose send-back has not yet been followed by a landing: work known to need rework and not yet done; beside it, those not yet picked up for a fix. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
     elif kind == "returned":
         ret = pool["returned"]
         out.update(value=len(ret), tickets=ret, estimator="tickets sent back with no verdict (a review turn that ended at the limit, a lost gate run, a conflict) and not yet re-picked; a machine loss, not rework")
@@ -627,10 +643,10 @@ def _stock_reading(st, pool: dict) -> dict:
         why = None if served else ("the deployed build is down" if down else "main's latest gate check failed")
         at_landing = sum(v.get("passed", 0) for k, v in lt.get("stages", {}).items() if not stage or k == stage) if lt else None
         suspect = bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean"))
-        if src == "main" and suspect and at_landing is not None:                 # the check that failed looks like the host, not the code: say so beside the latest reading
-            out.update(suspect_check=True, last_clean=at_landing)
-        if src == "deployed" and not served and out.get("value") is not None:   # a drained stock: nothing is served while the build is down or main is broken
-            out.update(at_last_deploy=out["value"], value=0)
+        if src == "main" and suspect and at_landing is not None:                 # the check that failed looks like the host, not the code: the last clean check is the level, marked stale
+            out.update(stale=True, latest_check={"passed": out.get("value"), "failed": out.get("failed"), "errors": out.get("errors")}, value=at_landing, failed=0, errors=0, verification="stale: the latest check failed on a suspect host")
+        if src == "deployed" and not served:                                     # what was proved at the last deploy stands; it is unverified while the build is down or main is broken
+            out.update(unverified=True, verification=f"unverified: {why}")
         out.update(served=served, not_served_because=why, at_last_landing=at_landing)
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
@@ -755,7 +771,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     pf, ins_ = cur["flows"], cur["inspections"]
     pk = lambda c: attributed.get(f"orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:{c}", 0)
     edge_labels = {
-        "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['repick']} re-picks (loss)",
+        "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} after a re-plan · {pf['repick']} re-picks after a restart (loss)",
         "orchestra|ticket_transition:OPEN": f"{pf['restart']} restarts (loss)",
         "worker|ticket_transition:READY_FOR_REVIEW": f"{pf['implement']} submitted · {pf['fix']} of them fixes",
         "reviewer|ticket_transition:REJECTED": f"{_n(ins_['review']['distinct_defects'], 'defect')} in {_n(pf['review'], 'rejection')}",
@@ -767,7 +783,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "merge_gate|staging_deployed": f"{pf['deploy']} deployed",
         "merge_gate|gate_base_broken": f"{pf['base']} base broken",
         "worker|ticket_transition:BLOCKED": f"{pf['blocked']} blocked",
-        "orchestra|ticket_transition:OPEN>IN_PROGRESS": f"{pf['start']} starts · {pf['repick']} re-picks (loss)",
+        "orchestra|ticket_transition:OPEN>IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} after a re-plan · {pf['repick']} re-picks after a restart (loss)",
         "orchestra|ticket_transition:REJECTED>IN_PROGRESS": f"{attributed.get('orchestra|ticket_transition:REJECTED>IN_PROGRESS', 0)} fix pickups",
         "worker|ticket_transition:READY_FOR_REVIEW|known_rework": f"{pf['fix']} fix rounds · {cur['rounds']['bad_fixes']} later found bad",
         "worker|ticket_transition:READY_FOR_REVIEW|undiscovered": f"{pf['implement']} submitted (an unknown share carries a defect)",
