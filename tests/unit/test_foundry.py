@@ -175,7 +175,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 0 and r["inspections"]["review"]["approvals_gate_rejected"] == 0
     assert r["dora"]["deploys"] == 1 and r["dora"]["change_failure"] == 1.0 and r["dora"]["restore"] is None
     assert r["dora"]["lead_time"] == 70 * 60 and r["dora"]["land_to_deploy"] == 60
-    assert r["rounds"]["histogram"]["0"] == 3                                                     # the tracker's review_rounds, not the log
+    assert r["rounds"]["histogram"] == {"0": 1, "1-2": 2, "3-5": 0, "6+": 0}                      # send-backs per ticket from the log: t1 one defect, t2 one no-verdict, the third none
     assert r["signals"]["restarts"] == {"now": 1, "before": 0, "direction": "up"}
     assert r["window"]["before"]["until"] == r["window"]["since"]
 
@@ -297,7 +297,7 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     assert r["stocks"]["returned"]["value"] == 1 and r["stocks"]["returned"]["tickets"] == [t2.id]                      # t2 waits with no verdict; t's no-verdict send-back was re-picked
     assert "fix pickups" in r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"] and r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"].startswith("2 ")
     S = r["stocks"]["known_rework"]
-    assert S["value"] == 1 and S["tickets"] == [t.id] and S["awaiting_pickup"] == [] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # known to need rework and not yet done; picked up (so not awaiting pickup), then blocked
+    assert S["value"] == 0 and S["awaiting_pickup"] == [] and S["unresolved"] == [t.id] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # picked up (so out of the fix queue), then blocked; the defect is not landed
     assert r["rounds"]["fix_rounds"] == 2 and r["rounds"]["bad_fixes"] == 2              # both re-submissions while the defect is unlanded are rework, both judged by the rejection at minute 60
     assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 3}
 

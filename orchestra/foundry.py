@@ -57,6 +57,8 @@ class Stock:
             if isinstance(c, dict) and c.get("effect", "+") not in ("+", "-"):
                 raise OrgError(f"stock {self.key}: a consumer's effect is + or -")
 
+    carried_by: list[str] = field(default_factory=list)     # event types that carry its content onward without draining it (a deploy carries landed commits into a build)
+    carried_to: dict = field(default_factory=dict)          # event type -> the stock it carries to, where the event fills more than one
     template_hash: str | None = None    # the content the template wrote; unchanged since means the template may update it
 
     def to_dict(self) -> dict:
@@ -120,7 +122,7 @@ TEMPLATE_STOCKS: list[Stock] = [
           [{"kind": "tracker", "states": ["OPEN"]}], row="chain", pos=[62, 222], width=112),
     Stock("blocked", "Blocked", "tickets", "Tickets a worker could not finish, back with the planner (BLOCKED): the coordinator re-plans them into demand or cancels them.", ["ticket_transition:IN_PROGRESS>BLOCKED"], ["ticket_transition:BLOCKED>OPEN", "ticket_transition:BLOCKED>CANCELLED"], [],
           [{"kind": "tracker", "states": ["BLOCKED"]}], row="rework", pos=[62, 480], width=112),
-    Stock("wip", "Work in progress", "changes", "Changes being worked now: tickets IN_PROGRESS, a first implementation or a fix. A pickup fills it, a submission moves the change on to review, a block sends it back to demand. The chain counts changes everywhere; the commits ahead of main on each change's branch are the detail beside the level.", ["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], ["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"], [],
+    Stock("wip", "Work in progress", "changes", "Changes being worked now: tickets IN_PROGRESS, a first implementation or a fix. A pickup fills it, a submission moves the change on to review, a block sends it back to demand, and so does a restart after a turn limit (a loss: the ticket is picked up again). The chain counts changes everywhere; the commits ahead of main on each change's branch are the detail beside the level.", ["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], ["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED", "ticket_transition:IN_PROGRESS>OPEN"], [],
           [{"kind": "tracker", "states": ["IN_PROGRESS"]}], row="chain", pos=[290, 222], width=150),
     Stock("awaiting_review", "Awaiting review", "changes", "Submitted changes the reviewer has not judged yet (Reinertsen's queue; Ford & Sterman's work needing QA).",
           ["ticket_transition:READY_FOR_REVIEW"], ["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"], [],
@@ -135,8 +137,8 @@ TEMPLATE_STOCKS: list[Stock] = [
           [{"kind": "pending_defects"}], row="rework", pos=[600, 480], width=164),
     Stock("returned", "Returned without a verdict", "changes", "Changes sent back with no verdict: a review turn that ended at the limit, a gate run that timed out or failed to start, a merge conflict. Not rework (no defect was found); a machine loss. The re-pick moves the change back into work in progress and the turn is run again.", ["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_conflict"], ["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"], [],
           [{"kind": "returned"}], row="rework", pos=[780, 480], width=164, loss=True),
-    Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product; nothing drains it. A ticket's DONE is the same arrival seen from the tracker, so it is not a second inflow.", ["gate_landed"], [], [],
-          [{"kind": "landed"}], row="chain", pos=[810, 222], width=160),
+    Stock("landed", "Landed software", "commits", "Commits the gate put on main. The product; nothing drains it. A ticket's DONE is the same arrival seen from the tracker, so it is not a second inflow. A deploy carries the landed commits into a build without taking them off main.", ["gate_landed"], [], [],
+          [{"kind": "landed"}], row="chain", pos=[810, 222], width=160, carried_by=["staging_deployed"], carried_to={"staging_deployed": "build"}),
     Stock("build", "Working build", "builds", "The staging build the acceptance suite ran against, and whether it is up. Drained when it fails in service or the health loop has to restart it; a broken main is the gate's problem, not the build's.", ["staging_deployed"], ["staging_failed", "staging_restarted"], [],
           [{"kind": "staging"}], row="chain", pos=[1000, 222], width=134),
     Stock("really_done", "Really done", "tests passing", "Acceptance tests that pass, not skipped, in the gate run that produced the deployed build. Actual progress, against DONE tickets as perceived progress. Filled when a build is deployed, since that run proved it; drained when the build fails in service or main's latest check fails.",
@@ -156,8 +158,8 @@ TEMPLATE_LOOPS: list[Loop] = [
          {"key": "acceptance_defects_at_gate", "adverse": "up", "threshold": 0}, ["gate_distinct_defects", "acceptance_defects_at_gate"], "a defect reached the gate's acceptance stage, which the pre-review check does not run: add acceptance verification before review, waking on ticket_transition:READY_FOR_REVIEW", "Cooper 1980; Madachy 2008 (defect flow)"),
     Loop("capability", "capability", "B", "known rework → keeper → resources → worker injects less → undiscovered → reviewer → known rework", ["known_rework", "resources", "worker", "undiscovered", "reviewer"],
          {"key": "review_pass", "adverse": "down"}, ["review_pass", "review_miss_rate"], "the devex team declares lesson_decided (update_team emits), its keeper emits it when a lesson is decided, and resources lists it as an inflow", "Repenning & Sterman 2001 (work smarter)"),
-    Loop("earlier_detection", "earlier detection", "B", "landed → test author → tests → gate runs them → landed", ["landed", "tests", "merge_gate"],
-         {"key": "defects_before_gate_share", "adverse": "down"}, ["defects_before_gate_share"], "a team that writes tests declares an event for it (update_team emits), the test author emits it, and tests lists it as an inflow", "Orchestra's addition", addition=True),
+    Loop("earlier_detection", "earlier detection", "B", "landed → test author → tests → the gate finds more before landing → fewer defects after landing", ["landed", "tests", "merge_gate"],
+         {"key": "defects_after_landing", "adverse": "up"}, ["defects_after_landing", "gate_distinct_defects"], "a team that writes tests declares an event for it (update_team emits), the test author emits it, and tests lists it as an inflow", "Orchestra's addition", addition=True),
     Loop("broken_base", "broken base", "B", "main fails the gate → the pipeline is blocked → the pipeline manager resumes it (the pause and its resume are a first-order pair; the gate then runs again)", ["pipeline_blocked", "pipeline_manager"],
          {"key": "base_broken", "adverse": "up"}, ["base_broken"], "main failed the gate: nothing lands until it is repaired; the pipeline manager owns this", "Orchestra's own first-order controller (the pause and its resume)"),
     Loop("field_discovery", "discovery after landing", "", "a deployed build → someone exercises it and files what is wrong → known rework → the worker fixes it → review → the gate → a new build", ["build", "known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"],

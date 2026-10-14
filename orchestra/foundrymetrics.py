@@ -608,9 +608,9 @@ def _stock_reading(st, pool: dict) -> dict:
                    oldest_age=ages[-1] if ages else None, median_age=_median(ages), ages=len(ages), worst_rounds={"ticket": worst[1], "rounds": worst[0]} if worst[0] >= 6 else None,
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
-        unresolved = pool["unresolved"]
-        out.update(value=len(unresolved), tickets=unresolved, awaiting_pickup=pool["awaiting_fix"], not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"],
-                   estimator="tickets sent back for a defect (reviewer verdict or gate result) whose send-back has not yet been followed by a landing: work known to need rework and not yet done; beside it, those not yet picked up for a fix. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
+        unresolved, wait = pool["unresolved"], pool["awaiting_fix"]
+        out.update(value=len(wait), tickets=wait, awaiting_pickup=wait, not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"],
+                   estimator="changes sent back for a defect (reviewer verdict or gate result) and not yet picked up for a fix: Cooper's rework to do, drained by the pickup, so the chain conserves its changes; beside it, the defects not yet landed, whatever has happened since (those changes are in the box they sit in now). The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
     elif kind == "returned":
         ret = pool["returned"]
         out.update(value=len(ret), tickets=ret, estimator="tickets sent back with no verdict (a review turn that ended at the limit, a lost gate run, a conflict) and not yet re-picked; a machine loss, not rework")
@@ -748,7 +748,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     build_healthy = staging.get("status") == "running" and healthy_at is not None and now - healthy_at <= HEALTH_STALE
     pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "unresolved": [tid for tid in tk if hist.unresolved_defect(tid, now)], "awaiting_fix": [tid for tid in tk if hist.awaiting_fix(tid, now)], "returned": [tid for tid in tk if hist.returned(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "landed_tests": _run_tests(landed_run), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
-    rounds = sorted(((t.review_rounds or 0), t.id) for t in tk.values() if t.state != "CANCELLED")
+    rounds = sorted((sum(1 for _t, _f, x in hist.seq.get(t.id, []) if x == "REJECTED"), t.id) for t in tk.values() if t.state != "CANCELLED")   # send-backs per ticket, from the log
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}
     for n, _ in rounds:
         hist_r["0" if n == 0 else "1-2" if n <= 2 else "3-5" if n <= 5 else "6+"] += 1
@@ -773,7 +773,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     edge_labels = {
         "orchestra|ticket_transition:IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} re-planned · {pf['repick']} re-picked after a restart (loss)",
         "orchestra|ticket_transition:OPEN": f"{pf['restart']} restarts (loss)",
-        "orchestra|ticket_transition:IN_PROGRESS>OPEN": f"{pf['restart']} restarts (loss)",
+        "orchestra|ticket_transition:IN_PROGRESS>OPEN": f"{pf['restart']} restarts after a turn limit (loss)",
         "worker|ticket_transition:READY_FOR_REVIEW": f"{pf['implement']} submitted · {pf['fix']} of them fixes",
         "reviewer|ticket_transition:REJECTED": f"{_n(ins_['review']['distinct_defects'], 'defect')} in {_n(pf['review'], 'rejection')}",
         "reviewer|ticket_transition:APPROVED": f"{ins_['review']['approvals']} approved",

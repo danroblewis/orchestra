@@ -87,6 +87,7 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
     for name, a in ags.items():
         nodes[f"agent:{name}"] = {"id": f"agent:{name}", "kind": "agent", "name": name, "builtin": a["builtin"], "team": a["team"]}
     edges: list[dict] = []
+    carries: list[dict] = []
     seen: set[tuple] = set()
     touched: dict[str, set[str]] = {}          # agent -> stocks whose departures wake it
 
@@ -107,6 +108,9 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
                 hit_out = next((o for o in s.outflows if event_fits(o, ev, name)), None)
                 if hit_out:
                     add(aid, s.key, "-", "drains", hit_out if ">" in hit_out else ev)
+                hit_carry = next((o for o in getattr(s, "carried_by", []) or [] if event_fits(o, ev, name)), None)
+                if hit_carry:
+                    carries.append({"src": aid, "dst": s.key, "via": hit_carry if ">" in hit_carry else ev, "to": (getattr(s, "carried_to", None) or {}).get(hit_carry)})   # not a link of the causal graph: the stock keeps its level
         for w in a["wake_on"]:
             fills = [s for s in stocks if any(event_fits(i, w) or event_fits(w, i) for i in s.inflows)]
             if fills:
@@ -137,7 +141,7 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
                 add(s.key, f"agent:{name}", effect, "reads", "")
     for aid, sts in touched.items():
         nodes[aid]["touches"] = sorted(sts)
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": nodes, "edges": edges, "carries": carries}
 
 
 def elementary_cycles(g: dict, max_cycles: int = MAX_CYCLES, max_len: int = MAX_LEN) -> list[list[str]]:
@@ -422,11 +426,14 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
     hidden = {s.key for s in (stocks or []) if getattr(s, "hidden", False)}
     loss = {s.key for s in (stocks or []) if getattr(s, "loss", False)}
     row = {s.key: getattr(s, "row", None) for s in (stocks or [])}
-    for e in g["edges"]:
+    causes_of = {s.key: (["no_verdict", "lost", "conflict"] if getattr(s, "loss", False) else ["defect", "gate"] if any(e.get("kind") == "pending_defects" for e in (getattr(s, "estimators", None) or [])) else None) for s in (stocks or [])}
+    for e in [*g["edges"], *[{**c, "kind": "drains"} for c in g.get("carries", [])]]:
         if e["kind"] != "drains" or not e["src"].startswith("agent:"):
             continue
         for f in g["edges"]:
             if f["kind"] == "fills" and f["src"] == e["src"] and f["dst"] != e["dst"] and f["dst"] not in additions and e["dst"] not in additions and plain(f["via"]) == plain(e["via"]):
+                if e.get("to") and f["dst"] != e["to"]:
+                    continue                                          # a carrying event delivers to the stock the model names
                 if (e["dst"] in hidden and f["dst"] in loss) or (f["dst"] in hidden and e["dst"] in loss):
                     continue                                          # a send-back with no verdict finds nothing: no defect leaves the hidden stock for a loss stock
                 key = (e["dst"], f["dst"], e["src"])
@@ -435,7 +442,18 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
                 seen.add(key)
                 agent = e["src"].split(":", 1)[1]
                 count = att.get(f"{agent}|{e['via']}") if e["via"] in att_keys(att, agent) else att.get(f"{agent}|{plain(e['via'])}")
-                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": f["via"],
+                # a flow into a stock that splits send-backs by cause is counted by those causes; when the agent on the pipe moved none of
+                # them and Orchestra did, the valve is the turn limit (a review turn that ended, a gate run that timed out)
+                valve = agent
+                cs = causes_of.get(f["dst"]) or causes_of.get(e["dst"])
+                if cs:
+                    by = lambda who: sum(att.get(f"{who}|{e['via']}|cause:{c}", att.get(f"{who}|{plain(e['via'])}|cause:{c}", 0)) for c in cs)
+                    mine, orch = by(agent), by("orchestra")
+                    if mine or orch or any(f"{agent}|{e['via']}|cause:" in k or f"{agent}|{plain(e['via'])}|cause:" in k for k in att):
+                        count = mine
+                        if not mine and orch and agent != "orchestra":
+                            valve, count = "turn limit", orch
+                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "valve": valve, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": f["via"],
                             "coflow": e["dst"] in hidden or f["dst"] in hidden})       # a defect riding inside a change: drawn beside the change's pipe, never counted twice
     # one event moves one thing: where an agent's event converts along the product's own path (chain row to
     # chain row), the other conversions of that event are the same movement seen from a rework stock, not a second flow

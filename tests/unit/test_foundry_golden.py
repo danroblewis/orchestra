@@ -28,7 +28,7 @@ def foundry_stocks() -> list[Stock]:
         Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN"], outflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:OPEN>CANCELLED"]),
         Stock("blocked", "Blocked", "tickets", row="rework", inflows=["ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:BLOCKED>OPEN", "ticket_transition:BLOCKED>CANCELLED"]),
         Stock("returned", "Returned without a verdict", "changes", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_conflict"], outflows=["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"]),
-        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
+        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED", "ticket_transition:IN_PROGRESS>OPEN"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", row="rework", inflows=["ticket_transition:READY_FOR_REVIEW"],
               outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], hidden=True),

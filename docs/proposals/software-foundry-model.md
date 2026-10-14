@@ -131,10 +131,21 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   step with a cause counts every transition of its event that carried that cause, so the
   two rework rings' fix submissions sum to the fix rounds. A no-verdict return finds nothing,
   so a loss stock never takes a co-flow from the hidden stock.
-- **Known rework's level** is the work known to need rework and not yet done: tickets sent
-  back for a defect with no landing since, with the ones not yet picked up beside it. The
-  pickup is still the flow that moves the change into W; the level is Cooper's, not the
-  queue's.
+- **Known rework's level is the fix queue**: changes sent back for a defect and not yet
+  picked up, drained by the pickup, so the chain conserves its changes and no change is in
+  two boxes. The defects not yet landed are a count beside it (those changes are in the box
+  they sit in now: at the gate, blocked). Rework effort is still counted while the defect is
+  unlanded (the previous bullet); the level and the effort measure different things and say
+  so.
+- **A carrying event.** A stock may declare `carried_by` events that carry its content on
+  without draining it, and `carried_to` the stock each delivers to: a deploy carries the
+  landed commits into the build, so L → B is drawn as a pipe while main keeps its commits.
+  Carries are not links of the causal graph.
+- **A restart is a return.** W is counted in changes, so a turn-limit restart moves the change
+  back to Demand: a pipe W → D labelled as a loss, not a creation into Demand.
+- **Send-backs per ticket come from the log**, not the tracker's counter.
+- **A pipe into a stock that splits send-backs by cause is counted by those causes**, and when
+  the agent on the pipe moved none of them and Orchestra did, its valve is the turn limit.
 - **Verification is a state, never a substituted level.** Really done keeps what the last
   deploy proved and reads "unverified" while the build is down or main is broken; Verified
   behaviour reads the last clean check marked "stale" when the latest check failed on a

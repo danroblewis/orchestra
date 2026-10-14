@@ -650,3 +650,39 @@ Declined: a recovery estimate per recipe, the drill-down's denominators (another
 the 0.2 h of pipeline-manager time (the activity map already counts it as plan; the
 difference is the reviewer's pairing slack), and reviewer utilisation beside the queue (the
 queue's residence time and the reviewer's in-use count are both on the map).
+
+## Round 18 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every windowed number reproduced from
+the log, and the one mismatch was provenance (the rounds histogram from the tracker's
+counter, 15·6·3·5, against the log's 11·9·3·6). Found: Known rework's level (defects not
+landed) put the same change in two boxes and did not integrate with its pipes; restarts drawn
+as a creation into Demand with no return out of W; the no-verdict valve still the reviewer
+(the round-17 rule never fired because the reviewer also gave verdicts); split pipes'
+tooltips and weights carrying the undivided count; the deploy L → B missing from the map;
+earlier detection's signal moving against its mechanism; along-row labels 60–106 px above
+their pipes; the build stub's label 98 px from its stub under seven pipes; the co-flow label
+struck through; arrowheads through text; a "—" for zero re-run hours; duplicated box
+sub-lines; the gate card's hover lighting a pipe not on the ring.
+
+Fixed: Known rework's level is the fix queue again, drained by the pickup, with the defects
+not yet landed as a count beside it (the design says why both numbers exist); the rounds
+histogram counts send-backs per ticket from the log; conversions are counted by the causes
+the destination stock splits on, and when the agent on the pipe moved none of them and
+Orchestra did the valve reads "turn limit" (the map, the tooltip and the flow table agree);
+a stock may declare events that carry its content on without draining it and the stock each
+delivers to, so landed → build is a pipe ("2 deployed") and main keeps its commits; a
+restart is a pipe W → D labelled as a loss, so Demand is filled from W and the two "?" pairs
+are B; earlier detection's signal is defects after landing (adverse up) and its structure
+says what it does; along-row labels wrap at the dots to fit their gap and stack from their
+pipe; a stub into a bottom-row stock enters from below with its label below; the co-flow is
+explained in the key only; the re-run tile prints 0 for zero; a box with one state shows the
+state once; the loop-card hover lights a pipe only where the ring runs source → agent →
+destination. Labels crossed by lines: 8, each under a halo; no label overlaps another at
+1280 or 1600; every pipe's midpoint resolves to its own hover target. The automata model on
+main follows the template.
+
+Declined: W from git (the chain is in changes by round 14's decision; the commits ahead are
+beside every chain stock); a recovery and a cost per recipe (as before); the mini rings'
+label collisions (the rings are read with their cards' text); the worker drawer's "last
+woken: never" (outside this section, and true: workers are started, not woken).
