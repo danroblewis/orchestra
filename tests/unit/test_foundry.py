@@ -297,7 +297,7 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     assert r["stocks"]["returned"]["value"] == 1 and r["stocks"]["returned"]["tickets"] == [t2.id]                      # t2 waits with no verdict; t's no-verdict send-back was re-picked
     assert "fix pickups" in r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"] and r["edge_labels"]["orchestra|ticket_transition:REJECTED>IN_PROGRESS|known_rework"].startswith("2 ")
     S = r["stocks"]["known_rework"]
-    assert S["value"] == 0 and S["awaiting_pickup"] == [] and S["unresolved"] == [t.id] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # picked up (so out of the fix queue), then blocked; the defect is not landed
+    assert S["value"] == 1 and S["awaiting_pickup"] == [] and S["unresolved"] == [t.id] and S["not_resubmitted"] == [t.id] and S["blocked"] == [t.id]   # known rework: the defect is not landed; picked up (so not waiting pickup), then blocked
     assert r["rounds"]["fix_rounds"] == 2 and r["rounds"]["bad_fixes"] == 2              # both re-submissions while the defect is unlanded are rework, both judged by the rejection at minute 60
     assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 3}
 
@@ -434,4 +434,4 @@ def test_a_send_back_and_its_pickup_in_one_second_keep_their_order(project):
     r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
     A = r["attributed_counts"]
     assert A.get("orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:defect", 0) == 1 and A.get("orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:no_verdict", 0) == 1
-    assert r["stocks"]["known_rework"]["value"] == 0 and r["stocks"]["returned"]["value"] == 0           # re-picked, so neither queue holds it
+    assert r["stocks"]["known_rework"]["awaiting_pickup"] == [] and r["stocks"]["returned"]["value"] == 0   # re-picked, so neither queue holds it; the defect itself is still known rework

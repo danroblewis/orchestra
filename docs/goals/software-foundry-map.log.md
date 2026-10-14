@@ -756,3 +756,36 @@ that box); a recovery figure per recipe (the readings line on each card is the m
 recipe addresses); the three 21s (each carries its unit, and the DONE count is the design's
 perceived progress beside actual); naming the Supervisor's tools as not live (a runner
 matter, not the page's).
+
+## Round 21 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every one of twenty-plus numbers
+derived independently matched, every round-20 fix was verified, and the page's honesty was
+praised. Found: the central stock read 0 on an 88%-rework day because its level was the
+pickup queue (a wire, not a stock on a machine that re-picks in seconds), while the two
+defective changes hid in "Awaiting the gate" unmarked; the rework rings and their cards on
+different bases (4 on the ring, 6 of 29 on the card); the product's own path drawn as 24-px
+stubs with labels floating 70 px away; cross-row bands without a destination in their
+labels; a stale red "median turn at the limit" 166 turns after the last timeout; the review
+tile amber for a number in its small print; "down" in the success colour; 21 tests beside
+21 tickets DONE; a duplicated "2 deployed"; states drawn in the stock grammar; stub, inlet
+and hollow labels not hover targets; the flow table's rows not lighting their pipe.
+
+Fixed: Known rework's level is the changes with an unlanded defect, named with where each
+sits, and the pickup queue is its small line; every chain box says how many of its changes
+carry an unlanded defect; fix rounds and bad fixes belong to the loop they were on, so the
+rings' counts and the cards' fractions share a denominator; a pipe along a row is a hump
+over its gap with the label on the run, so the chain reads as one line; cross-row pipes take
+neighbouring bands by destination and every band label says where it goes; the at-limit
+alarm retires once the limit in force has gone twenty turns unhit; the review tile leads
+with the adverse number when the miss rate is the adverse one, and the loss tile's severity
+counts the hours; the perceived count left the product tile's caption; "down" is red; a
+state is marked ◇ with a dashed box and the key says its flows are never summed; an event a
+pipe carries is not a stub's label too; stub, inlet and hollow labels light their line, and
+the flow table's rows light their pipe. The automata model on main follows the template.
+
+Declined: a separate FCC variable in the graph (the consumer link's sign is the design's
+convention for the effect on injection, and the capability loop's B rests on it as the
+design says); per-stage arrivals, residence and utilisation over the window and a series
+longer than two days (step 2's history store); thinning the merge gate's hover (it lights
+what the gate touches, which is the fact about this org).

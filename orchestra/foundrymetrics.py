@@ -426,10 +426,13 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     # fix rounds and bad fixes: a re-submission while a defect send-back is pending
     fix_rounds = bad = 0
     bad_by: dict[str, int] = {}
+    fix_by: dict[str, int] = {}
     for tid, ts, f, to in tr:
         if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.unresolved_before(tid, ts, f, to):
             continue
         fix_rounds += 1                                           # every re-submission while a defect is unlanded is rework progress (Cooper; Lyneis & Ford)
+        fcause = hist.cause_before(tid, ts, f, to) or "defect"
+        fix_by[fcause] = fix_by.get(fcause, 0) + 1
         # followed to the defect's next verdict: a review or gate rejection for a defect makes it a bad fix,
         # a landing makes it good; approvals, no-verdict reviews, blocks and further re-submissions on the
         # way do not decide it (the defect is the same until a verdict says otherwise)
@@ -440,7 +443,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 break
             if to2 == "REJECTED" and hist.cause.get((tid, t2)) in ("defect", "gate"):
                 bad += 1
-                bad_by[hist.cause.get((tid, t2))] = bad_by.get(hist.cause.get((tid, t2)), 0) + 1   # who found the fix bad: the reviewer or the gate
+                bad_by[fcause] = bad_by.get(fcause, 0) + 1          # a bad fix, by the loop it was on (the send-back it was fixing)
                 break
     # how late a defect is found: from the submission the verdict judged to the verdict, by stage; after landing, from the deploy to its first trouble
     def _since_submission(tid: str, ts: float) -> float | None:
@@ -587,7 +590,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                        "cause": "pass = APPROVED verdicts over all verdicts (APPROVED + REJECTED with a reviewer note); reviews with no verdict are not inspections and are counted as losses"},
             "gate": {**gate, "cause": "defect = a stage failed on its own result; timeouts, start failures and conflicts counted apart"},
         },
-        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_rounds), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_rounds), "lead_values": sorted(leads)},
+        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "fix_by": fix_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_by.get("defect", 0)), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_by.get("gate", 0)), "lead_values": sorted(leads)},
         "time": {"hours": {k: round(v / days, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])}, "turns": nturns,
                  "rework_share": _ratio(hours.get("fix", 0.0), worker_hours), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
                  "turn_limit": max(set(limits), key=limits.count) if limits else None,
@@ -641,7 +644,8 @@ def _stock_reading(st, pool: dict) -> dict:
         ages = sorted(now - (_epoch(getattr(x, "state_since", None)) or now) for x in ready)
         rounds_of = lambda x: sum(1 for _t, _f, st_ in (hist_.seq.get(x.id, []) if hist_ else []) if st_ == "REJECTED") if hist_ else (x.review_rounds or 0)
         worst = max((rounds_of(x), x.id) for x in here) if here else (0, None)
-        out.update(waiting_on={k: v for k, v in waiting.items()}, ready=len(ready), oldest_waiting=max((now - (_epoch(getattr(x, "state_since", None)) or now) for x in here if x.id in waiting), default=None))
+        out.update(waiting_on={k: v for k, v in waiting.items()}, ready=len(ready), oldest_waiting=max((now - (_epoch(getattr(x, "state_since", None)) or now) for x in here if x.id in waiting), default=None),
+                   defective=[x.id for x in here if x.id in set(pool.get("unresolved") or [])])
         ahead_ = (pool.get("git") or {}).get("ahead") or {}
         branches = [(x.id, ahead_[x.branch]) for x in tk.values() if x.state in states and getattr(x, "branch", None) and x.branch in ahead_]
         out.update(commits_ahead=sum(n for _, n in branches) if ahead_ else None, branches=branches, commits_per_day=(pool.get("git") or {}).get("commits_in_window"))
@@ -650,8 +654,8 @@ def _stock_reading(st, pool: dict) -> dict:
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
         unresolved, wait = pool["unresolved"], pool["awaiting_fix"]
-        out.update(value=len(wait), tickets=wait, awaiting_pickup=wait, not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"],
-                   estimator="changes sent back for a defect (reviewer verdict or gate result) and not yet picked up for a fix: Cooper's rework to do, drained by the pickup, so the chain conserves its changes; beside it, the defects not yet landed, whatever has happened since (those changes are in the box they sit in now). The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
+        out.update(value=len(unresolved), tickets=unresolved, awaiting_pickup=wait, not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"], where={tid: tk[tid].state for tid in unresolved},
+                   estimator="changes known to need rework and not yet made right: sent back for a defect (reviewer verdict or gate result) with no landing since, wherever the change sits now (Cooper's rework to do; Lyneis's known rework). The pipes in and out move the change (send-backs in, the fix pickup out); the level counts the defect until the fix lands, so it is not the integral of those pipes and says so. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
     elif kind == "returned":
         ret = pool["returned"]
         out.update(value=len(ret), tickets=ret, estimator="tickets sent back with no verdict (a review turn that ended at the limit, a lost gate run, a conflict) and not yet re-picked; a machine loss, not rework")

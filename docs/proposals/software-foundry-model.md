@@ -160,8 +160,20 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **Demand splits ready from waiting.** An OPEN ticket waiting on a dependency that is not
   DONE is not ready for pickup; the box says how many are ready, what the rest wait on, and
   the residence time is the ready part's.
-- **The Fix queue shows its two numbers**: the level (changes waiting pickup, drained by the
-  pickup) and, in amber, the defects not yet landed, with their tickets.
+- **Known rework's level is the changes with an unlanded defect**, wherever they sit, with the
+  pickup queue (usually 0 on this machine, which re-picks in seconds) as its small line; the
+  pipes in and out move the change, the level counts the defect until the fix lands, and the
+  box says so. Every chain box names how many of its changes carry an unlanded defect.
+- **A fix round belongs to the loop it was on**: the review loop's bad-fix fraction is the
+  share of fixes of review-found defects that were judged bad, the gate loop's the share of
+  fixes of gate-found defects, so the rings' counts and the cards' fractions have the same
+  denominator.
+- **An alarm retires**: "median turn at the limit" is not shown once the limit in force has
+  gone twenty turns unhit.
+- **A state is marked ◇** (a build, a check, a pause): its declared flows set it; they are
+  never summed.
+- **The chain is one line**: a pipe along a row is a hump over the gap between its boxes with
+  the label on the run; pipes across rows take neighbouring bands by destination.
 - **Each turn limit ends one turn**: a timeout within seconds of a settle belongs to the
   latest turn it falls in, never to two.
 - **Verification is a state, never a substituted level.** Really done keeps what the last
