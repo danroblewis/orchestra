@@ -113,7 +113,8 @@ function transcriptHead(id, s, d) {
     <div>doing now</div><div>${sessionChip(s, Date.now() / 1000)}</div>
     <div>last output</div><div>${s.last_output_at ? ago((Date.now() / 1000) - s.last_output_at) + " ago" : "—"}</div>
     <div>last settled</div><div>${when(s.settled_at)}</div>
-    <div>turns</div><div>${d.turns} · ${d.total} messages <span class="muted">· live, refreshes every ${TRANSCRIPT_POLL_MS / 1000}s</span></div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.session_file || "not created yet")}</div></div>`;
+    <div>turns</div><div>${d.turns} · ${d.total} messages <span class="muted">· live, refreshes every ${TRANSCRIPT_POLL_MS / 1000}s</span></div><div>session file</div><div class="muted" style="word-break:break-all">${esc(s.session_file || "not created yet")}</div></div>
+    ${s.status === "running" && (s.partial_text || s.thinking_chars) ? `<div class="msg assistant inprogress"><div class="r">reply in progress <span class="muted">· not in the transcript until the message completes${s.thinking_chars ? ` · ${Number(s.thinking_chars).toLocaleString()} chars of thinking so far` : ""}</span></div>${s.partial_text ? md(s.partial_text) : '<span class="muted">(thinking; no reply text yet)</span>'}</div>` : ""}`;
 }
 
 const TRANSCRIPT_POLL_MS = 5000;

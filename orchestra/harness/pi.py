@@ -230,7 +230,9 @@ class _Normalizer:
         elif t == "message_start" and msg.get("role") == "assistant":
             self._emit({"type": "assistant_start"})
         elif t == "message_update":
-            self._emit({"type": "token"})
+            u = ev.get("assistantMessageEvent") or {}
+            kind = {"text_delta": "text", "thinking_delta": "thinking"}.get(u.get("type"))
+            self._emit({"type": "token", "kind": kind, "delta": u.get("delta") if kind else None})
         elif t == "tool_execution_start":
             self._emit({"type": "tool_start", "name": ev.get("toolName") or ev.get("name", "?"),
                         "args": ev.get("args") or ev.get("arguments") or {}})

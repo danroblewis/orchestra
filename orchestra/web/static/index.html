@@ -83,7 +83,7 @@ function renderAgents(s) {
   let html = residents.map(([id, kind, letter, r]) => {
     const x = byId[id];
     return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')" title="${esc(r ? r.description || "" : kind.replace("_", " "))}">
-      <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc(x.last_text || "waiting for work")}</div>${chip(x)}</div>`;
+      <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc((x.status === "running" && x.partial_text ? x.partial_text.slice(-160) : x.last_text) || "waiting for work")}</div>${chip(x)}</div>`;
   }).join("");
   // Ephemeral agents (ad hoc, or scheduled without memory) run under a timestamped session
   // id. While one is mid-turn it is a live process and belongs here too.
@@ -94,7 +94,7 @@ function renderAgents(s) {
   html = html || '<div class="empty">No resident agents running. They come up with <code>orchestra run</code>.</div>';
   const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`])))
     .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }));
-  const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc(x.last_text || "")}</span>${chip(x)}</div>` : "";
+  const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc((x.partial_text || "").slice(-160) || x.last_text || "")}</span>${chip(x)}</div>` : "";
   // The pause control sits here because this is all it governs: no new worker starts while
   // it is on. Resident agents, reviews, the gate, and staging keep going.
   html += `<h2><span>Agents on tickets</span><span class="hctl"><span class="count">${cards.length}</span>${capacityCtl(s)}${s.pickup_paused ? "<span>new workers PAUSED</span>" : ""}<button id="pause-btn" class="ctl ${s.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()" title="${s.pickup_paused ? "Resume starting new workers." : "Stop starting new workers. Running turns finish; reviews, the gate, staging, and resident agents are unaffected."}">${s.pickup_paused ? "▶ resume" : "⏸ pause new workers"}</button></span></h2>` + (cards.map(({ t, w, r }) =>

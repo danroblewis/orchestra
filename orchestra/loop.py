@@ -58,6 +58,7 @@ class Loop:
         self.teams: dict = {}
         self.role_defs: dict = {}
         self._last_token_write: dict[str, float] = {}
+        self._partial: dict[str, dict] = {}         # session id -> the assistant text streamed so far this message
         self._events_tail = self.events.read(0, limit=1)[1]   # only events after startup can wake agents
 
     # -- lifecycle -------------------------------------------------------------
@@ -403,6 +404,7 @@ class Loop:
             pass
         self.store.set_session(sid, kind=role, status="running", ticket_id=ticket_id, pid=self._pid(proc),
                                session_file=proc.session_file, harness=proc.harness_name, started_at=time.time(), last_text="",
+                               partial_text="", thinking_chars=0,
                                last_output_at=None, phase="prompting", phase_since=time.time(),
                                last_token_at=None, tool_name=None)
         self.events.emit("session_started", session=sid, kind=role, ticket=ticket_id)
@@ -470,11 +472,18 @@ class Loop:
             elif t == "assistant_start":
                 self.store.set_session(sid, phase="generating", phase_since=now_t, last_token_at=now_t)
             elif t == "token":
-                # Many small events while tokens stream; a timestamp write every few seconds is enough.
+                # Many small events while tokens stream: accumulate the reply in progress here
+                # and write it, with the timestamp, every few seconds. Thinking is counted, not kept.
+                part = self._partial.setdefault(sid, {"text": "", "thinking": 0})
+                if ev.get("kind") == "text" and ev.get("delta"):
+                    part["text"] = (part["text"] + ev["delta"])[-4000:]
+                elif ev.get("kind") == "thinking" and ev.get("delta"):
+                    part["thinking"] += len(ev["delta"])
                 st = self._last_token_write.get(sid, 0)
                 if now_t - st > 3:
                     self._last_token_write[sid] = now_t
-                    self.store.set_session(sid, phase="generating", last_token_at=now_t, last_output_at=now_t)
+                    self.store.set_session(sid, phase="generating", last_token_at=now_t, last_output_at=now_t,
+                                           partial_text=part["text"], thinking_chars=part["thinking"])
             elif t == "tool_start":
                 name = ev.get("name", "?")
                 self.store.set_session(sid, phase="tool", phase_since=now_t, tool_name=name, last_output_at=now_t,
@@ -482,7 +491,8 @@ class Loop:
             elif t == "tool_end":
                 self.store.set_session(sid, phase="prompting", phase_since=now_t, tool_name=None, last_output_at=now_t)
             elif t == "assistant_end":
-                fields = {"last_output_at": now_t, "last_token_at": now_t}
+                fields = {"last_output_at": now_t, "last_token_at": now_t, "partial_text": "", "thinking_chars": 0}
+                self._partial.pop(sid, None)   # the message is in the transcript now
                 txt = (ev.get("text") or "").strip()
                 if txt:
                     fields["last_text"] = txt[-500:]

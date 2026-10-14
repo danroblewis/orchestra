@@ -101,6 +101,17 @@ def test_codex_events_normalize():
     assert seen[-1] == {"type": "assistant_end", "text": "done", "tool_calls": []}
 
 
+def test_pi_streams_reply_text_through_token_events():
+    from orchestra.harness.pi import _Normalizer
+    got = []
+    n = _Normalizer(got.append)
+    n({"type": "message_update", "assistantMessageEvent": {"type": "thinking_delta", "delta": "hmm"}})
+    n({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "Creating "}})
+    n({"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "the ticket."}})
+    assert [(e["type"], e.get("kind"), e.get("delta")) for e in got] == [
+        ("token", "thinking", "hmm"), ("token", "text", "Creating "), ("token", "text", "the ticket.")]
+
+
 def test_pi_transcript(tmp_path):
     f = tmp_path / "s.jsonl"
     f.write_text("\n".join(json.dumps(e) for e in [
