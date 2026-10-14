@@ -70,8 +70,8 @@ register(Role(
 ))
 # Per-ticket roles are not resident; the loop starts them on demand.
 register(Role(name="worker", session_id="worker-{ticket}", prompt="worker", tools=("report_ticket",), resident=False,
-              wake_on=("ticket_transition:OPEN", "ticket_transition:REJECTED"),
-              triggers=("a free worker slot", "the ticket's dependencies DONE and its milestone open"),
+              wake_on=("ticket_transition:IN_PROGRESS", "ticket_transition:REJECTED"),
+              triggers=("an OPEN ticket whose dependencies are DONE and whose milestone is open", "a free worker slot"),
               emits=("ticket_transition:READY_FOR_REVIEW", "ticket_transition:BLOCKED"),
               description="Implements one ticket on its own branch and reports READY_FOR_REVIEW or BLOCKED."))
 register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer", tools=("report_review",), resident=False,
@@ -82,7 +82,7 @@ register(Role(name="reviewer", session_id="reviewer-{ticket}", prompt="reviewer"
 # Not agents, but parts of the same event graph (see orchestra.web.app eventmap):
 SYSTEM_BINDINGS = {
     "orchestra": {"description": "The loop itself: sessions, turns, crashes, compaction, and the ticket state machine.",
-                  "emits": ("ticket_transition:IN_PROGRESS", "ticket_transition:IN_REVIEW", "session_started", "session_settled",
+                  "emits": ("ticket_transition:OPEN", "ticket_transition:IN_PROGRESS", "ticket_transition:IN_REVIEW", "session_started", "session_settled",
                             "turn_timed_out", "turn_interrupted", "agent_crashed", "agent_compacted", "agent_reset",
                             "pickup_paused", "pickup_resumed", "loop_started", "loop_stopped"), "wake_on": ()},
     "merge_gate": {"description": "Lands approved branches: build, unit, start, acceptance; then staging.",
