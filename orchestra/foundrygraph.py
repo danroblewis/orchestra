@@ -320,6 +320,8 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
                 evidence[f"{a}>{b}|{e['via'] or e['kind']}"] = n
                 hits.append(n)
             step_seen.append(any(n > 0 for n in hits))
+        if len(c) == 2 and pol == "?":
+            pol, basis = "B", "first-order: the drain controls the stock; a wake on arrival carries no sign"
         infos.append({"nodes": c, "members": sorted(members(c, g)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
                       "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
                       "observed": bool(step_seen) and all(step_seen), "evidence": evidence,

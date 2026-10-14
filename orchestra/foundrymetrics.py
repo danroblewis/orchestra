@@ -92,10 +92,12 @@ class History:
             elif e["type"] == "ticket_created" and e.get("ticket"):
                 self.created[e["ticket"]] = _ts(e)
         runs = []
-        for r in store.gate_runs():
+        all_runs = store.gate_runs()
+        self.hangs = hang_ids(all_runs)
+        for r in all_runs:
             end = _epoch(r.get("finished_at"))
             if end is not None:
-                runs.append((end, set(r.get("batch") or []), _run_class(r)))
+                runs.append((end, set(r.get("batch") or []), _run_class(r, self.hangs)))
         self.cause: dict[tuple[str, float], str] = {}       # (ticket, ts of the REJECTED transition) -> defect | gate | gate_lost | conflict | no_verdict
         for tid in self.seq:
             try:
@@ -219,8 +221,28 @@ class History:
         return last
 
 
-def _run_class(r: dict) -> str:
-    """What ended a gate run: landed, defect, timeout, start_failure, conflict, base_broken, error."""
+def hang_ids(runs: list[dict]) -> frozenset:
+    """Timeouts that are a defect, not a loss: the same change timed out at the same stage more
+    than once while other runs finished that stage, so the change under test hangs."""
+    by_stage: dict[tuple[str, str], list[str]] = {}
+    finished: set[str] = set()
+    for r in runs:
+        failed = next((s for s in r.get("stages") or [] if s.get("status") not in ("passed", None)), None)
+        for s in r.get("stages") or []:
+            if s.get("status") == "passed" or (s is failed and str(s.get("returncode")) != str(GATE_TIMEOUT_RC)):
+                finished.add(s.get("name") or s.get("stage") or "?")
+        if failed is not None and str(failed.get("returncode")) == str(GATE_TIMEOUT_RC):
+            stage = failed.get("name") or failed.get("stage") or "?"
+            for tid in r.get("batch") or []:
+                by_stage.setdefault((tid, stage), []).append(r.get("id"))
+    return frozenset(rid for (tid, stage), ids in by_stage.items() if len(ids) >= 2 and stage in finished for rid in ids)
+
+
+def _run_class(r: dict, hangs: frozenset = frozenset()) -> str:
+    """What ended a gate run: landed, defect, timeout, start_failure, conflict, base_broken, error.
+    A timeout that recurs for one change at one stage others finish is a defect (a hang)."""
+    if r.get("id") in hangs:
+        return "defect"
     st = r.get("status")
     if st in ("landed", "conflict", "base_broken", "error"):
         return st
@@ -242,7 +264,7 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
     An event with ``by`` or ``author`` is theirs; a ticket transition belongs to the agent
     that moves tickets out of its source state, with REJECTED split by its cause."""
     out: dict[str, int] = {}
-    run_class = {r.get("id"): _run_class(r) for r in (runs or [])}
+    run_class = {r.get("id"): _run_class(r, hist.hangs) for r in (runs or [])}
     recent_note: dict[str, tuple[float, str]] = {}          # ticket -> (ts, author) of the last note seen
     for e in events:
         if e["type"] == "note_added" and e.get("ticket") and e.get("author"):
@@ -277,8 +299,13 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
                 out[k] = out.get(k, 0) + 1
             continue
         if t == "gate_rejected" and run_class.get(e.get("gate_run")) not in (None, "defect"):
-            out["merge_gate|gate_rejected:lost"] = out.get("merge_gate|gate_rejected:lost", 0) + 1     # a timeout or start failure, not an inspection result
+            for k in ("merge_gate|gate_rejected:lost", "merge_gate|gate_rejected|cause:lost"):
+                out[k] = out.get(k, 0) + 1                                                  # a timeout or start failure, not an inspection result
             continue
+        if t == "gate_rejected":
+            out["merge_gate|gate_rejected|cause:gate"] = out.get("merge_gate|gate_rejected|cause:gate", 0) + 1
+        if t == "gate_conflict":
+            out["merge_gate|gate_conflict|cause:conflict"] = out.get("merge_gate|gate_conflict|cause:conflict", 0) + 1
         who = e.get("by") or e.get("author") or {"gate_started": "merge_gate", "gate_landed": "merge_gate", "gate_rejected": "merge_gate", "gate_conflict": "merge_gate", "gate_error": "merge_gate",
                                                 "gate_base_broken": "merge_gate", "staging_deployed": "merge_gate", "staging_failed": "merge_gate", "staging_restarted": "orchestra",
                                                 "pipeline_resumed": "pipeline_manager", "pipeline_paused": "merge_gate", "session_started": "orchestra", "session_settled": "orchestra",
@@ -302,14 +329,15 @@ def _activity(kind: str, agents: dict) -> str:
     return "other"
 
 
-def gate_outcomes(runs: list[dict]) -> dict:
+def gate_outcomes(runs: list[dict], hangs: frozenset = frozenset()) -> dict:
     """Every gate run by what ended it, and the concentration of defects by ticket and test."""
     by: dict[str, int] = {}
     stages: dict[str, int] = {}
     tickets: dict[str, int] = {}
     tests: dict[str, int] = {}
+    hung = sorted({tid for r in runs if r.get("id") in hangs for tid in (r.get("batch") or [])})
     for r in runs:
-        key = _run_class(r)
+        key = _run_class(r, hangs)
         by[key] = by.get(key, 0) + 1
         if key != "defect":
             continue
@@ -324,6 +352,7 @@ def gate_outcomes(runs: list[dict]) -> dict:
     # a defect is a (ticket, stage) that failed, however many runs or tests it failed in: an
     # environment fault that fails twenty tests is one defect
     return {"by": by, "defect_stage": stages, "defect_tickets": tickets, "defect_tests": tests, "distinct_defects": len(tickets), "runs": len(runs), "own_result": own,
+            "hangs": sum(1 for r in runs if r.get("id") in hangs), "hang_tickets": hung,
             "pass": _ratio(by.get("landed", 0), own)}
 
 
@@ -396,7 +425,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     tickets_reviewed = {tid for tid, _, f, to in tr if (f, to) in (("IN_REVIEW", "APPROVED"), ("IN_REVIEW", "REJECTED"))}
     tickets_defect = {tid for tid, ts, f, to in tr if (f, to) == ("IN_REVIEW", "REJECTED") and hist.cause.get((tid, ts)) == "defect"}
     runs = [r for r in store.gate_runs() if since <= (_epoch(r.get("started_at")) or 0) < until]
-    gate = gate_outcomes(runs)
+    gate = gate_outcomes(runs, hist.hangs)
     # fix rounds and bad fixes: a re-submission while a defect send-back is pending
     fix_rounds = bad = 0
     for tid, ts, f, to in tr:
@@ -456,12 +485,17 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     lost_worker = lost_all = 0.0
     timed_out: dict[str, int] = {}
     turns_by_kind: dict[str, int] = {}
-    for sid, kind, st, en in turns:
+    timed_idx: set[int] = set()                                   # each timeout belongs to the turn it ended, once
+    for ts_sid, ts in timeouts:
+        cands = [i for i, (sid, _k, st, en) in enumerate(turns) if sid == ts_sid and st <= ts <= en + 5]
+        if cands:
+            timed_idx.add(max(cands, key=lambda i: turns[i][2]))
+    for turn_i, (sid, kind, st, en) in enumerate(turns):
         dur = max(0.0, en - st) / 3600
         act = _activity(kind, agents)
         k0 = "worker" if act in ("worker", "fix", "rerun", "implement") else act
         turns_by_kind[k0] = turns_by_kind.get(k0, 0) + 1
-        if any(ts_sid == sid and st <= ts <= en + 5 for ts_sid, ts in timeouts):
+        if turn_i in timed_idx:
             timed_out[k0] = timed_out.get(k0, 0) + 1
         if act == "worker":
             tid = sid.split("-", 1)[1] if sid.startswith("worker-") else ""
@@ -473,7 +507,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 act = "rerun" if last and last[1] == "no_verdict" and (nxt_ready is None or nxt_ready > st) else "implement"
         hours[act] = hours.get(act, 0.0) + dur
         nturns[act] = nturns.get(act, 0) + 1
-        if any(ts_sid == sid and st <= ts <= en + 5 for ts_sid, ts in timeouts):
+        if turn_i in timed_idx:
             lost_all += dur
             if act in ("implement", "fix", "rerun"):
                 lost_worker += dur
@@ -778,7 +812,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "reviewer|ticket_transition:REJECTED": f"{_n(ins_['review']['distinct_defects'], 'defect')} in {_n(pf['review'], 'rejection')}",
         "reviewer|ticket_transition:APPROVED": f"{ins_['review']['approvals']} approved",
         "orchestra|ticket_transition:REJECTED": f"{pf['review_no_verdict']} no-verdict send-backs (loss)",
-        "merge_gate|gate_rejected": f"{_n(ins_['gate']['distinct_defects'], 'defect')} in {_n(pf['gate'], 'run')}",
+        "merge_gate|gate_rejected": f"{_n(ins_['gate']['distinct_defects'], 'defect')} in {_n(pf['gate'], 'run')}" + (f" · {ins_['gate']['hangs']} hung ({', '.join(ins_['gate']['hang_tickets'])})" if ins_['gate'].get('hangs') else ""),
         "merge_gate|ticket_transition:REJECTED": f"{pf['gate']} gate send-backs",
         "merge_gate|gate_landed": f"{pf['land']} landed",
         "merge_gate|staging_deployed": f"{pf['deploy']} deployed",

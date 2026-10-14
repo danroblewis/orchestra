@@ -686,3 +686,39 @@ Declined: W from git (the chain is in changes by round 14's decision; the commit
 beside every chain stock); a recovery and a cost per recipe (as before); the mini rings'
 label collisions (the rings are read with their cards' text); the worker drawer's "last
 woken: never" (outside this section, and true: workers are started, not woken).
+
+## Round 19 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; 26 of 27 checks matched (the plan
+roles' timeouts over by two: a timeout within seconds of a settle was matched to two turns)
+and the hover, click and refresh mechanics all worked. Found: the gate → Returned pipe
+counted 6 with the gate as valve because the attribution wrote the lost runs under a
+different key; three 900-second gate timeouts on one change were filed as machine loss
+when they are a hang in the change (a defect); the drill-down loop table's rows D–J threw on
+hover (double quotes in an attribute); the Fix queue read 0 with three unfixed defects and
+was still named Known rework; earlier detection declared B while its links multiply to R;
+every band label struck through with no halo showing; the found tile's 15-line caption;
+agent sub-labels touching; mini-ring counts on names; a four-item list where "blocked"
+qualified one ticket; the design contradicting itself on restarts and on Really done's
+level, and the page on the deploy's valve; a wake rule on an event never emitted drawn as
+live.
+
+Fixed: the gate's send-backs carry their cause in the attribution (gate, lost, conflict),
+so the pipe reads 0 lost gate runs with the turn limit as valve when that is what moved the
+change; a timeout that recurs for one change at one stage others finish is a hang, a defect
+named on the gate's label ("2 defects in 9 runs · 3 hung (CA-24)") and counted in the
+misses (2 defects missed in 7 approvals) with a unit test; each turn limit ends one turn;
+the drill-down rows quote their handler safely; the stock is named Fix queue, "known rework
+waiting pickup", with the defects not yet landed listed beside it ("CA-39 (blocked)");
+earlier detection claims no polarity and its structure says why; every label is drawn above
+every line so the halo shows; the found tile's prose is its tooltip; the at-limit line sits
+lower and the rows further apart; the ring counts sit further from the names; a wake rule on
+an event the window never saw is drawn faint and its tooltip says latent; first-order pairs
+are B through their drain in the detector, not only in the text; the design says a restart
+returns the change to Demand, that Really done's level is a state, and that the deploy's
+valve is the gate. The automata model on main follows the template.
+
+Declined: a recovery per recipe (as before); re-levelling the Fix queue to the unlanded
+count (round 18 asked for conservation; the name now says what the level is and the
+unlanded defects are listed beside it); reconciling the re-planning ring's 10 → 9 → 5 (each
+step counts the loop's own flow for the window, and the card's tooltip says so).

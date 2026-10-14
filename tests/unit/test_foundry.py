@@ -380,3 +380,34 @@ def test_model_queries_through_the_tools_and_who_may_curate(project):
     api.handle_org(project, store, "create_role", {"name": "model_curator", "description": "keeps the model true", "prompt": "Curate the system-dynamics model: inspect it, try bindings, add and update stocks and loops.", "tools": ["team", "model"]}, **sup)
     out = api.handle_org(project, store, "add_model_element", {"kind": "loop", "key": "x", "spec": {"name": "x", "nodes": ["demand", "worker"]}}, author="curator", role="model_curator")
     assert out["ok"]
+
+
+def test_a_recurring_gate_timeout_is_a_hang_not_a_loss(project):
+    """Round 19: three 900-second acceptance timeouts on one change while other runs finish
+    the stage are a defect in the change (a hang), named on the gate's label; a lone timeout
+    stays a machine loss."""
+    store, events = LocalStore(project), Events(project.events_file)
+    m = store.create_milestone(name="m")
+    t1 = store.create_ticket(title="a", milestone_id=m.id, branch="orchestra/T-1-a")
+    t2 = store.create_ticket(title="b", milestone_id=m.id, branch="orchestra/T-2-b")
+    project.events_file.write_text("")
+    base = dt.datetime.now(dt.UTC) - dt.timedelta(hours=3)
+    ts = lambda mins: (base + dt.timedelta(minutes=mins)).isoformat(timespec="seconds")
+    def emit(type_, mins, **d):
+        with open(project.events_file, "a") as fh:
+            fh.write(json.dumps({"ts": ts(mins), "type": type_, **d}) + "\n")
+    stage = lambda name, status, rc, tail="": {"stage": name, "name": name, "command": "x", "status": status, "returncode": rc, "tail": tail}
+    for i, m0 in enumerate((10, 30, 50)):                                        # t1 hangs three times
+        store.save_gate_run({"id": f"h{i}", "batch": [t1.id], "status": "rejected", "started_at": ts(m0), "finished_at": ts(m0 + 15),
+                             "stages": [stage("build", "passed", 0), stage("acceptance", "failed", 124, "timed out after 900s")]})
+        emit("gate_rejected", m0 + 15, gate_run=f"h{i}", tickets=[t1.id])
+    store.save_gate_run({"id": "l0", "batch": [t2.id], "status": "rejected", "started_at": ts(60), "finished_at": ts(75),   # t2 timed out once
+                         "stages": [stage("build", "passed", 0), stage("acceptance", "failed", 124, "timed out")]})
+    emit("gate_rejected", 75, gate_run="l0", tickets=[t2.id])
+    store.save_gate_run({"id": "ok", "batch": [t2.id], "status": "landed", "started_at": ts(80), "finished_at": ts(85),      # the stage finishes for others
+                         "stages": [stage("build", "passed", 0), stage("acceptance", "passed", 0, "5 passed")]})
+    emit("gate_landed", 85, gate_run="ok", tickets=[t2.id], commit="abc")
+    r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    g = r["inspections"]["gate"]
+    assert g["by"] == {"defect": 3, "timeout": 1, "landed": 1} and g["hangs"] == 3 and g["hang_tickets"] == [t1.id] and g["distinct_defects"] == 1
+    assert "hung" in r["edge_labels"]["merge_gate|gate_rejected"] and r["attributed_counts"]["merge_gate|gate_rejected|cause:lost"] == 1 and r["attributed_counts"]["merge_gate|gate_rejected|cause:gate"] == 3

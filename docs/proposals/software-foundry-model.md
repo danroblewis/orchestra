@@ -146,6 +146,12 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **Send-backs per ticket come from the log**, not the tracker's counter.
 - **A pipe into a stock that splits send-backs by cause is counted by those causes**, and when
   the agent on the pipe moved none of them and Orchestra did, its valve is the turn limit.
+- **A gate timeout that recurs is a defect.** A run that hits the gate's time limit is a loss
+  (the machine), unless the same change timed out at the same stage more than once while
+  other runs finished that stage: then the change under test hangs, and the runs are
+  defects, named on the gate's label.
+- **Each turn limit ends one turn**: a timeout within seconds of a settle belongs to the
+  latest turn it falls in, never to two.
 - **Verification is a state, never a substituted level.** Really done keeps what the last
   deploy proved and reads "unverified" while the build is down or main is broken; Verified
   behaviour reads the last clean check marked "stale" when the latest check failed on a
@@ -168,10 +174,10 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **Discovery after landing** is an expected loop (build → known rework → … → gate → build)
   with no agent on its first link until one is created, so the map carries a hollow stub at
   the build and at known rework, and the loop card the recipe.
-- **A drained stock's level moves.** Really done reads 0 served while the build is down or
-  main is broken, with the count at the last deploy beside it; Verified behaviour reads the
-  latest check, with the host-suspect flag and the last clean count as context, never a
-  substituted reading.
+- **A drained stock's level is a state.** Really done keeps what the last deploy proved and
+  reads "unverified" while the build is down or main is broken (its declared outflows are
+  the events that make it unverified, not a quantity to subtract); Verified behaviour reads
+  the last clean check marked stale when the latest check failed on a suspect host.
 - **Pipes across rows run orthogonally**, each on its own band between the rows with its
   label on the horizontal run; pipes along a row run above it with their labels above them.
   A label sits beside the vertical runs that pass its height where it can stay within reach
@@ -225,7 +231,7 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 | discover after landing | L → K | **unattended** (acceptance run on staging, the smoke test, humans) | a test that passed on a prior build and fails now; a bug ticket citing a landed commit; staging restarted | staging_failed, staging_restarted, ticket_created (bug) |
 | fix | K → W | worker | REJECTED → IN_PROGRESS … READY_FOR_REVIEW; bad fixes are rounds rejected again | ticket_transition:IN_PROGRESS |
 | land | W → L | merge gate | gate_landed | gate_landed |
-| deploy | L → B | orchestra | staging_deployed | staging_deployed |
+| deploy | L → B | merge_gate (only the gate's success promotes a build) | staging_deployed | staging_deployed |
 | add tests | effort → T | **unattended by default** (workers add tests as part of tickets; qa agents if declared) | test counts on main after vs before each landing | gate_landed |
 | improve | K → R | environment keeper, devex | lessons decided; agent-facing doc commits landed | to add: lesson_decided |
 | broken base | L → everyone's FCC | — | gate_base_broken | gate_base_broken |
@@ -238,7 +244,7 @@ stage. So on this log, machine failures and conflicts outnumber defects found at
 and the one place a defect is found is the stage the pre-review check does not run. The
 page must make that readable.
 
-Restarts are not a flow of W: the branch keeps its commits. They are a productivity loss
+Restarts return the change to Demand (W is counted in changes; the branch keeps its commits). They are a productivity loss
 (Abdel-Hamid: actual productivity = potential − losses) and are shown beside C.
 
 Readings, each defined by its estimator and shown with its window:
