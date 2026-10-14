@@ -62,6 +62,8 @@
   .evmap .dim { opacity:.1 } .evmap .n { cursor:grab }
   .evmap .legend { color:var(--muted); font-size:10.5px; margin-top:6px; display:flex; gap:14px; flex-wrap:wrap } .evmap .legend i { display:inline-block; width:18px; border-top:2px solid; margin-right:5px; vertical-align:middle }
   .evmap .loops { font-size:12px; color:var(--text2); margin-top:8px } .evmap .loops b { color:#fcd34d } .evmap .loops code { font-size:10.5px }
+  .evmap .panels { display:grid; grid-template-columns:repeat(auto-fill, minmax(430px, 1fr)); gap:10px; margin-top:12px }
+  .evmap .lp { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px 10px } .evmap .lp h4 { margin:0 0 4px; font-size:12px } .evmap .lp svg { width:100%; height:260px }
 </style>
 </head>
 <body>
@@ -181,7 +183,23 @@ function eventMap(m) {
   setTimeout(() => drawGraph(g, inCyc), 0);
   return `<div class="evmap"><svg id="evsvg"></svg>
     <div class="legend"><span><i style="border-color:#4b5563"></i>causes / is woken by</span><span><i style="border-color:#7dd3fc;border-top-style:dotted"></i>message</span><span><span style="color:#fcd34d">▭</span> event</span><span><span style="color:#22c55e">○</span> resident agent</span><span>halo: active now</span><span><i style="border-color:#4b5563;border-top-style:dashed"></i>the loop wakes it in code</span><span><i style="border-color:#22c55e"></i>seen in the log, last 24h</span><span><i style="border-color:#fcd34d"></i>part of a feedback loop</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.EVSIG=null;refresh()"> show events nobody is woken by</label><span>· drag nodes, hover to isolate, click an agent to open it</span></div>
-    <div class="loops">${loops}</div></div>`;
+    <div class="loops">${loops}</div>${loopPanels(m, shown.filter((c) => !c.self))}</div>`;
+}
+// One small graph per loop: the loop's own nodes and edges, with the delivery core as a
+// single node when the loop goes through it. The same renderer as the big map, smaller.
+function loopGraph(m, L) {
+  const byId = Object.fromEntries(m.nodes.map((n) => [n.id, n]));
+  const mk = (id) => id === "core" ? { id: "core", kind: "system", label: "delivery loop (core)" } : byId[id] ? { ...byId[id] } : { id, kind: id.startsWith("ev:") ? "event" : "agent", label: id.split(":").slice(1).join(":") };
+  const nodes = L.nodes.map(mk);
+  const links = L.edges.map((e) => { const [a, b] = e.split(">"); return { source: a, target: b, seen: 0, loop: false, msg: false }; })
+    .filter((l) => nodes.some((n) => n.id === l.source) && nodes.some((n) => n.id === l.target));
+  return { nodes, links };
+}
+function loopPanels(m, loops) {
+  if (!loops.length) return "";
+  window.EV_PANELS = loops.map((L) => loopGraph(m, L));
+  setTimeout(() => window.EV_PANELS.forEach((g, i) => drawGraph(g, new Set(g.nodes.map((n) => n.id)), { svg: "lp-" + i, W: 420, H: 260, R: 16, dist: 70, charge: -260 })), 0);
+  return `<div class="panels">${loops.map((L, i) => `<div class="lp"><h4>${L.named ? esc(L.named.name) : '<span class="muted">unnamed</span>'} <span class="muted">· ${esc(L.agents.filter((a) => a !== "delivery loop (core)").join(", "))}${L.cycles > 1 ? ` · ${L.cycles} cycles` : ""}</span></h4><svg id="lp-${i}"></svg>${L.named && L.named.purpose ? `<div class="muted" style="font-size:11px">${esc(L.named.purpose)}</div>` : ""}</div>`).join("")}</div>`;
 }
 function evHighlight(ids) {
   const svg = document.querySelector(".evmap svg"); if (!svg) return;
@@ -189,31 +207,34 @@ function evHighlight(ids) {
   svg.querySelectorAll(".n").forEach((n) => n.classList.toggle("dim", !keep.has(n.dataset.id)));
   svg.querySelectorAll(".e").forEach((e) => e.classList.toggle("dim", !(keep.has(e.dataset.from) && keep.has(e.dataset.to))));
 }
-function drawGraph(g, inCyc) {
-  const svgEl = document.getElementById("evsvg"); if (!svgEl || typeof d3 === "undefined") return;
-  const W = svgEl.clientWidth || 1000, H = 560;
+function drawGraph(g, inCyc, opts) {
+  opts = opts || {};
+  const svgEl = document.getElementById(opts.svg || "evsvg"); if (!svgEl || typeof d3 === "undefined") return;
+  const W = opts.W || svgEl.clientWidth || 1000, H = opts.H || 560;
   const svg = d3.select(svgEl).attr("viewBox", `0 0 ${W} ${H}`); svg.selectAll("*").remove();
   const palette = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", pipeline_manager: "var(--r-pipeline)", worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
   const byName = Object.fromEntries((ORG ? ORG.agents : []).map((a) => [a.name, a]));
   // An agent is active when a session of its kind is running: one resident process, or any of an ad hoc agent's per-ticket sessions.
   const active = new Set((STATE ? STATE.sessions : []).filter((s) => s.status === "running" && s.kind).map((s) => "agent:" + s.kind));
-  svg.append("defs").html(`<linearGradient id="halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient><marker id="arr" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#6b7280"></path></marker><marker id="arrc" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#fcd34d"></path></marker>`);
+  const pid = opts.svg ? opts.svg + "-" : "";
+  svg.append("defs").html(`<linearGradient id="${pid}halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient><marker id="${pid}arr" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#6b7280"></path></marker><marker id="${pid}arrc" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#fcd34d"></path></marker>`);
   const links = g.links.map((l) => ({ ...l })), nodes = g.nodes.map((n) => ({ ...n }));
-  const R = 22;
-  if (EVSIM) EVSIM.stop();
-  const sim = EVSIM = d3.forceSimulation(nodes).force("link", d3.forceLink(links).id((d) => d.id).distance(110)).force("charge", d3.forceManyBody().strength(-520))
+  const R = opts.R || 22;
+  if (!opts.svg && EVSIM) EVSIM.stop();
+  const sim = d3.forceSimulation(nodes).force("link", d3.forceLink(links).id((d) => d.id).distance(opts.dist || 110)).force("charge", d3.forceManyBody().strength(opts.charge || -520))
     .force("center", d3.forceCenter(W / 2, H / 2)).force("collide", d3.forceCollide((n) => n.kind === "event" ? Math.max(46, 10 + ((n.labels || [1]).length - 1) * 6.5 + 26, Math.max(...(n.labels || [n.label]).map((l) => l.length)) * 3.4 + 20) : R + 30));
+  if (!opts.svg) EVSIM = sim;
   const cyc = (l) => inCyc.has(l.source.id || l.source) && inCyc.has(l.target.id || l.target);
-  const path = svg.append("g").selectAll("path").data(links).join("path").attr("class", (l) => `e ${l.loop ? "loop" : ""} ${l.msg ? "msg" : ""} ${l.seen ? "seen" : ""} ${cyc(l) ? "cyc" : ""}`).attr("marker-end", (l) => cyc(l) ? "url(#arrc)" : "url(#arr)")
+  const path = svg.append("g").selectAll("path").data(links).join("path").attr("class", (l) => `e ${l.loop ? "loop" : ""} ${l.msg ? "msg" : ""} ${l.seen ? "seen" : ""} ${cyc(l) ? "cyc" : ""}`).attr("marker-end", (l) => cyc(l) ? `url(#${pid}arrc)` : `url(#${pid}arr)`)
     .attr("data-from", (l) => l.source.id || l.source).attr("data-to", (l) => l.target.id || l.target);
   path.append("title").text((l) => `${(l.source.label || l.source)} → ${(l.target.label || l.target)}${l.seen ? ` · ${l.seen} in 24h` : ""}`);
   const lbl = svg.append("g").selectAll("text").data([]).join("text");
   const node = svg.append("g").selectAll("g").data(nodes).join("g")
     .attr("class", (n) => `n ${n.kind} ${inCyc.has(n.id) ? "cyc" : ""} ${n.kind === "agent" && byName[n.label] && byName[n.label].resident ? "resident" : ""}`)
     .attr("style", (n) => n.kind === "agent" ? `--rc:${palette[n.label] || "#94a3b8"}` : "").attr("data-id", (n) => n.id)
-    .on("mouseenter", (ev, n) => evHover(n.id)).on("mouseleave", () => evHover(null)).on("click", (ev, n) => { if (n.kind === "agent") openAgent(n.label); })
+    .on("mouseenter", (ev, n) => { if (!opts.svg) evHover(n.id); }).on("mouseleave", () => { if (!opts.svg) evHover(null); }).on("click", (ev, n) => { if (n.kind === "agent") openAgent(n.label); })
     .call(d3.drag().on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; }).on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = d.fy = null; }));
-  node.filter((n) => active.has(n.id)).append("circle").attr("class", "halo").attr("r", R + 7).append("title").text("active right now");
+  node.filter((n) => active.has(n.id)).append("circle").attr("class", "halo").attr("r", R + 7).style("stroke", `url(#${pid}halo)`).append("title").text("active right now");
   node.filter((n) => n.kind !== "event").append("circle").attr("class", "body").attr("r", R);
   const evLines = (n) => n.labels || [n.label], evHW = (n) => Math.max(40, Math.max(...evLines(n).map((l) => l.length)) * 3.4 + 12), evHH = (n) => 10 + (evLines(n).length - 1) * 6.5;
   node.filter((n) => n.kind === "event").append("rect").attr("x", (n) => -evHW(n)).attr("y", (n) => -evHH(n)).attr("width", (n) => 2 * evHW(n)).attr("height", (n) => 2 * evHH(n)).attr("rx", 5);
