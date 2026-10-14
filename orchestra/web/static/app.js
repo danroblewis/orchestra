@@ -228,6 +228,7 @@ function renderMarker(e) {
   else if (e.type === "turn_interrupted") text = `■ Orchestra was restarted or stopped during this turn, which cut it off. ${esc(e.reason || "")}`;
   else if (e.type === "agent_crashed") text = `✖ The agent's process exited on its own between turns (crash ${e.count || 1}); Orchestra is restarting it.${e.stderr ? ` Last stderr: <code>${esc(e.stderr.trim().split("\n").slice(-1)[0].slice(0, 160))}</code>` : ""}`;
   else if (e.type === "agent_crash_loop") text = `✖ Crash loop: ${e.count} exits in fifteen minutes. The agent is paused and the Supervisor has been asked to look. Resume it from the Agents page once fixed.`;
+  else if (e.type === "agent_compacted" && e.mode === "auto") text = `⇣ Context is bounded by the harness itself (${esc(e.reason || "")}); Orchestra leaves this session alone.`;
   else if (e.type === "agent_compacted") text = `⇣ Context compacted by the harness${e.tokens_before ? `: ${Number(e.tokens_before).toLocaleString()} → ${Number(e.tokens_after || 0).toLocaleString()} tokens` : ""} (${esc(e.reason || "")}). Older messages became a summary the agent keeps; the transcript is unchanged.`;
   else if (e.type === "agent_reset") text = `⟲ Session started over by ${esc(e.by || "the operator")}${e.reason ? ` (${esc(e.reason)})` : ""}. The conversation before this point is archived as run <code>${esc(e.archived || "")}</code>; the agent keeps the project context and its team's space, not its memory of the chat.`;
   else if (e.type === "agent_killed") text = "■ Stopped by the operator.";

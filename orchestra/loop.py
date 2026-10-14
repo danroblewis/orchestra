@@ -279,7 +279,8 @@ class Loop:
             env={"ORCHESTRA_ROLE": role, "ORCHESTRA_REPO": str(self.project.repo_root), "ORCHESTRA_TICKET": ticket_id,
                  **(extra_env or {})},
             log_path=self.project.logs_dir / "agents" / f"{session_id}.stderr.log",
-            model=self.cfg.model, provider=self.cfg.provider, thinking=self.cfg.thinking, ticket_id=ticket_id))
+            model=self.cfg.model, provider=self.cfg.provider, thinking=self.cfg.thinking, ticket_id=ticket_id,
+            compact_tokens=self.cfg.compact_tokens))
 
     @staticmethod
     def _pid(proc: AgentSession) -> int | None:
@@ -774,6 +775,12 @@ class Loop:
             return None
         if proc is not None and proc.alive():
             res = proc.compact()
+            if res and res.get("mode") == "auto":
+                # The harness bounds its own context (Claude Code's --autocompact); nothing to do but note it.
+                self.store.set_session(sid, compacted_at_bytes=Path(f).stat().st_size)
+                self.events.emit("agent_compacted", session=sid, agent=agent, mode="auto", limit=res.get("limit"),
+                                 reason=f"the harness compacts itself past {int(res.get('limit') or 0):,} tokens")
+                return "compacted"
             if res:
                 self.store.set_session(sid, compacted_at_bytes=Path(f).stat().st_size, compactions=int(s.get("compactions") or 0) + 1)
                 self.events.emit("agent_compacted", session=sid, agent=agent, tokens_before=res.get("tokens_before"),

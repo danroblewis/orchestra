@@ -84,6 +84,14 @@ class ClaudeCodeSession(AgentSession):
         p.write_text(json.dumps(cfg, indent=1) + "\n", encoding="utf-8")
         return p
 
+    def compact(self) -> dict | None:
+        """Claude Code compacts its own context past the --autocompact window it was started
+        with; there is no command to ask for it between turns. Reporting that keeps the
+        loop from rotating a session the harness is already keeping bounded."""
+        if not self.spec.compact_tokens:
+            return None
+        return {"mode": "auto", "limit": max(100_000, int(self.spec.compact_tokens))}
+
     def _args(self) -> list[str]:
         if self.uuid is None:
             self.open()
@@ -92,6 +100,8 @@ class ClaudeCodeSession(AgentSession):
                 "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", str(self._mcp_config())]
         if self.spec.model:
             args += ["--model", self.spec.model]
+        if self.spec.compact_tokens:
+            args += ["--autocompact", str(max(100_000, int(self.spec.compact_tokens)))]
         if self.spec.system_prompt:
             sp = self._dir / f"{self.spec.session_id}.system.md"
             sp.write_text(self.spec.system_prompt, encoding="utf-8")

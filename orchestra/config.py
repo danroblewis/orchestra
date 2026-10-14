@@ -62,6 +62,7 @@ class Config:
     turn_timeout: float = 0.0          # hard cap per turn; 0 = none
     silence_timeout: float = 1200.0    # end a turn after this long with nothing from the harness
     session_max_bytes: int = 300_000   # transcript growth since the last compaction that triggers one (or rotation)
+    compact_tokens: int = 100_000      # harnesses that compact themselves (Claude Code) are told to do so past this
     review_rounds_before_escalation: int = 3
     aging_days_per_level: float = 2.0
     prompt_overrides: dict[str, str] = field(default_factory=dict)
@@ -119,6 +120,7 @@ class Config:
             turn_timeout=parse_duration(a.get("turn_timeout"), 0.0),
             silence_timeout=parse_duration(a.get("silence_timeout"), 1200.0),
             session_max_bytes=int(a.get("session_max_bytes", 300_000)),
+            compact_tokens=int(a.get("compact_tokens", 100_000)),
             review_rounds_before_escalation=int(a.get("review_rounds_before_escalation", 3)),
             aging_days_per_level=float(a.get("aging_days_per_level", 2.0)),
             prompt_overrides=dict(a.get("prompts", {})),

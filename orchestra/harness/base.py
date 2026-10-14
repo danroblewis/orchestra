@@ -95,6 +95,7 @@ class SessionSpec:
     provider: str | None = None
     thinking: str | None = None
     ticket_id: str = ""
+    compact_tokens: int | None = None   # ask the harness to compact its own context past this many tokens, if it can
 
 
 class AgentSession(ABC):

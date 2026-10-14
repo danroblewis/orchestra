@@ -460,6 +460,20 @@ understands it; an OpenAI-compatible local server (llama-server) does not, so on
 model Codex agents run but cannot reach Orchestra's tools. Use Codex with OpenAI models
 (`codex login` or `CODEX_API_KEY`).
 
+### 5.4a Keeping context bounded
+
+Every harness session is kept from growing without limit, because a long transcript
+re-sent on every turn is what makes a shared model server crawl. Before a turn starts
+on a session whose transcript has grown past `session_max_bytes` (default 300 KB) since
+it was last compacted, the loop asks the harness to compact: Pi summarises older
+messages in place through its `compact` RPC command and the agent keeps what it learned;
+Claude Code is started with `--autocompact` at `compact_tokens` (default 100,000, the
+CLI's floor) and bounds itself; Codex has no compaction control the loop can reach, so a
+Codex session that outgrows the limit is rotated: archived as a run and started fresh,
+with the wake-up or task carrying the current state. Each case is an `agent_compacted`
+or `agent_reset` event shown in the transcript. The human can also reset any resident
+agent from the Agents page.
+
 ### 5.5 Adding a harness
 
 Implement `Harness` and `AgentSession`, register the class in

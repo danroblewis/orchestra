@@ -225,7 +225,7 @@ def spec(tmp_path, **kw) -> SessionSpec:
     return SessionSpec(session_id=kw.get("session_id", "worker-T-1"), session_dir=tmp_path / "sessions", cwd=tmp_path / "wt",
                        system_prompt="be good", role="worker", tool_groups=("report_ticket",),
                        env={"ORCHESTRA_ROLE": "worker", "ORCHESTRA_REPO": str(tmp_path), "ORCHESTRA_TICKET": "T-1"},
-                       log_path=tmp_path / "logs" / "x.log", model="haiku")
+                       log_path=tmp_path / "logs" / "x.log", model="haiku", compact_tokens=kw.get("compact_tokens", 50_000))
 
 
 def test_claude_session_identity_and_resume(tmp_path, monkeypatch):
@@ -238,6 +238,7 @@ def test_claude_session_identity_and_resume(tmp_path, monkeypatch):
     assert args[:2] == [s.binary, "-p"] and "--session-id" in args and "--resume" not in args
     assert "--model" in args and args[args.index("--model") + 1] == "haiku"
     assert "--strict-mcp-config" in args and "--dangerously-skip-permissions" in args
+    assert args[args.index("--autocompact") + 1] == "100000" and s.compact() == {"mode": "auto", "limit": 100000}   # the CLI's floor
     cfg = json.loads(Path(args[args.index("--mcp-config") + 1]).read_text())["mcpServers"]["orchestra"]
     assert cfg["command"] == sys.executable and cfg["env"]["ORCHESTRA_TOOLS"] == "report_ticket"
     # Same session id later: same uuid; once Claude has written the transcript, we resume it.

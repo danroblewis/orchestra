@@ -61,6 +61,22 @@ def test_large_sessions_are_compacted_in_place_when_the_harness_can(project):
     assert len(ev) == 2 and ev[0]["tokens_before"] == 150000 and ev[0]["tokens_after"] == 32000
 
 
+def test_a_self_compacting_harness_is_left_alone(project):
+    class AutoProc(FakeProc):
+        def compact(self):
+            return {"mode": "auto", "limit": 100000}
+    store, events = LocalStore(project), Events(project.events_file)
+    loop = Loop(project, store, events)
+    f = project.sessions_dir / "2026_worker-T-3.jsonl"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("x" * (project.config.session_max_bytes + 1))
+    store.set_session("worker-T-3", kind="worker", status="idle", session_file=str(f))
+    proc = AutoProc("worker-T-3")
+    assert loop._trim_if_large(proc, "worker-T-3", "worker") == "compacted" and f.exists() and proc.alive()
+    ev = [e for e in events.read(0)[0] if e["type"] == "agent_compacted"][-1]
+    assert ev["mode"] == "auto" and "100,000 tokens" in ev["reason"]
+
+
 def test_large_sessions_rotate_only_when_the_harness_cannot_compact(project):
     store, events = LocalStore(project), Events(project.events_file)
     loop = Loop(project, store, events)
