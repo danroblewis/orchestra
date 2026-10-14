@@ -824,3 +824,38 @@ on main follows the template.
 Declined: a value per gap and a way to try a binding from the page (the card's readings are
 the magnitude; what-if belongs to the Supervisor's tools by invariant 7); thinner hover on
 the gate; colour by band.
+
+## Round 23 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; 24 of 24 numbers matched, and hover,
+click and refresh were sound. Found: the rework flow K → W (13 fix pickups) was not drawn,
+so W's drawn inflows fell 13 short of its outflows and Known rework read as a sink with an
+unlabelled drain; the design still told three stories about K; the rework cycles were signed
+R by the detector's default (every queue chain through agents multiplies to R) while the
+re-planning loop of the same shape was a material circuit, and the gate's link was signed by
+an event vote; the worker step on both rings counted every submission (32); rework share
+counted the wall time of turns the limit killed; "0 h/d re-runs" sat beside 17 re-picks;
+five agents on the inlet were told they sit on no flow; the restart drained three stocks;
+the drill-down's review row described all send-backs as the reviewer's; labels collided at
+the right and at demand ↔ work in progress; the gate card's badge clipped; the capability
+gap named two agents.
+
+Fixed: the fix pickup is a carrying link out of Known rework into W (the defect stays open),
+drawn as the pipe "13 fix pickups", and K's drain is labelled ("fixes landed"); the rework
+cycles are declared through the pickup and detected as conserved circuits of the change,
+no polarity, their balancing the pair of K and the gate that lands the fix (carrying links
+count as the thing moving on for the material rule; test updated), so the two rework loops
+and re-planning are judged alike and no link is signed by a vote; the rings count the loop's
+own flow again (5 → 4 → 4 and 9 → 25 → 8); rework share is effort, net of the turns the
+limit killed, with the wall-time share beside it (test updated); the re-run tile text says
+that a re-run on a change with an open defect counts as a fix; agents on the inlet read
+"fills only" or "4 tickets" with a tooltip that says so, and agents on no pipe share the
+right-hand width; the restart is not an outflow of undiscovered rework; the drill-down's
+review row says it counts every send-back, verdict or none; labels wrap at words too but
+never between a count and its noun; the hollow stub's tooltip is the loop's own recipe; the
+design has one definition of K in its table, its rules and its loop table. The automata
+model on main follows the template.
+
+Declined: a tests-over-tickets ratio (no unit; the perceived count is in the tooltip); the
+duplicated hollow labels at both ends (each end names its gap); a page affordance to try a
+binding (invariant 7).

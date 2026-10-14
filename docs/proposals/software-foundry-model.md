@@ -51,7 +51,7 @@ software foundry's defaults; a project in another domain declares its own (secti
 | D | **Demand** | tickets | Work ordered and not started: OPEN and BLOCKED tickets. | ticket_created, reopen, a ticket blocked back to the planner | start (OPEN → IN_PROGRESS), cancel |
 | W | **Work in progress** | changes | Changes being worked now: tickets IN_PROGRESS, a first implementation or a fix. The chain counts changes in every stock, so one unit is conserved from D to the gate; the commits ahead of main on each change's branch are the detail beside every chain stock's level (a change waiting at the gate still shows its +12). | start, fix pickup | submission, cancel, blocked back to demand |
 | Q | **Awaiting review** | changes | Submitted changes the reviewer has not judged yet (Reinertsen's queue). The rework cycles circulate the change through here; the defect co-flows into U. | submission (READY_FOR_REVIEW) | the reviewer's verdict (IN_REVIEW → APPROVED / REJECTED) |
-| K | **Known rework** | send-backs | Changes a reviewer or the gate sent back **because of a defect**, with the cause class. Conflicts and machine failures are counted separately (section 3). | defect found in review; defect found at the gate; defect found after landing | fixed (the ticket's next READY_FOR_REVIEW) |
+| K | **Known rework** | open defects | Defects a reviewer or the gate found whose fix has not landed (Cooper\'s rework to do, Madachy\'s detected defects). The fix pickup carries the change back into W without draining it. Send-backs with no verdict are not defects and go to Returned (section 3). | defect found in review; defect found at the gate; defect found after landing | the fix lands (gate_landed) |
 | U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery |
 | L | **Landed software** | commits | Commits the gate put on main, with first-parent diff size. The product. | gate_landed | none (rewrites are measured as churn, below) |
 | A | **Really done** | acceptance tests passing | Acceptance tests that pass, not skipped, against the current staging build. Abdel-Hamid's *actual* progress, against DONE tickets as *perceived* progress. | tests pass on a new build | tests fail or are skipped on a new build |
@@ -135,11 +135,11 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   defects): a send-back for a defect fills it and the landing of the fix drains it, so the
   level is the integral of its own flows and is drawn in its own unit. The change itself sits
   in whatever box its state says (at the gate, blocked, being fixed), and every chain box
-  names how many of its changes carry an open defect. The fix pickup moves the change into W
-  and is drawn there; it is not a flow of this stock. The rework cycles close through the
-  worker, who reads the open defects and re-submits: rework generates rework when the fix is
-  wrong (Rahmandad and Hu's task cycling), so the cycles are declared reinforcing, with the
-  gate's landing of a good fix as the opposing mechanism on the gate's link.
+  names how many of its changes carry an open defect. The fix pickup carries the change
+  back into W (a carrying link: the defect stays open), so the rework cycles are conserved
+  circuits of the change through the pickup, the re-submission and the inspection, with no
+  causal polarity; a bad fix re-enters them (Rahmandad and Hu's task cycling), and their
+  balancing is the first-order pair of K and the gate that lands the fix.
 - **A carrying event.** A stock may declare `carried_by` events that carry its content on
   without draining it, and `carried_to` the stock each delivers to: a deploy carries the
   landed commits into the build, so L → B is drawn as a pipe while main keeps its commits.
@@ -183,9 +183,11 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   stage, and from a deploy to its first trouble after landing, shown with the discovery tile.
 - **Starts split three ways**: first starts, starts after a re-plan (the re-planning loop's
   flow) and re-picks after a restart (a loss).
-- **The rework flow.** The fix pickup (REJECTED → IN_PROGRESS) is W's inflow from a sent-back
-  change, drawn on W; W → U is the submission's co-flow. The rework cycles run K → worker
-  (reads the open defects, re-submits) → Q → reviewer → K, and through the gate.
+- **The rework flow.** The fix pickup (REJECTED → IN_PROGRESS) carries the change from K into
+  W and is drawn as that pipe; W → U is the submission's co-flow. The rework cycles run K →
+  Orchestra (the pickup) → W → worker → Q → reviewer → K, and through the gate.
+- **Rework share is effort**: fix hours over fix plus implement hours, each net of the turns
+  the limit killed; the wall-time share is beside it.
 - **A loop ring's counts are the loop's own.** A transition on a ring is counted by the state
   the ticket came from: the step's event is the one that drained the stock before the agent
   on the ring, and the count is of transitions whose previous state belongs to that stock
@@ -337,7 +339,7 @@ in `eventgraph`); hypothesised loops are listed, not drawn.
 
 | Loop | Structure | Status | Signal |
 |------|-----------|--------|--------|
-| B1 defect removal | K → fix → K falls: a material circuit, drawn as pipes; its balancing is the first-order pair of K and the pickup | observed | fix round trip short and stable; bad-fix fraction low |
+| B1 defect removal | K → fix picked up → W → re-submitted → inspected → K: a conserved circuit of the change, drawn as pipes; its balancing is the first-order pair of K and the gate that lands the fix | observed | fix round trip short and stable; bad-fix fraction low |
 | B2 earlier detection (Orchestra's addition) | T ↑ and pre-review checks ↑ → defects found before the gate | hypothesised until worktree_checked exists | share of defects found before the gate rising |
 | B3 WIP limit | W ↑ → pickup paused, capacity lowered → conflicts and queue ages fall | observed when capacity_changed or pickup_paused follows | conflicts per landing and queue ages not rising |
 | B4 capability (Repenning's "work smarter") | K by cause → improve → R → fewer send-backs for that cause | observed when devex edges are seen | the cause-specific send-back rate falling after its lesson lands; a cause not recurring |

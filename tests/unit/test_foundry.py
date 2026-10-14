@@ -168,7 +168,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert r["model_source"].startswith(".orchestra/model")                                       # init_project wrote the template
     c = r["time"]                                                                                  # a rate, not a stock
     assert c["turns"] == {"implement": 2, "fix": 1, "rerun": 1, "plan": 1}
-    assert c["rework_share"] == round((10 / 60) / ((30 + 18 + 10) / 60), 2)                    # over productive hours; the re-run is a loss
+    assert c["rework_share"] == 0.25 and c["rework_share_wall"] == round((10 / 60) / ((30 + 18 + 10) / 60), 2)   # effort: the 18-minute implement turn the limit killed is out; wall time beside it
     assert c["losses"]["restarts"] == 1 and c["losses"]["turn_timeouts"] == 1 and c["losses"]["worker_hours_ending_in_timeout"] == 0.3
     assert c["losses"]["review_no_verdict"] == 1 and c["losses"]["rerun_hours"] == 0.1
     assert S["build"]["value"] == 0 and S["build"]["status"] is None                          # nothing deployed: never "up" without a fresh health check

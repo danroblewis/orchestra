@@ -33,7 +33,7 @@ def foundry_stocks() -> list[Stock]:
         Stock("undiscovered", "Undiscovered rework", "defects", row="rework", inflows=["ticket_transition:READY_FOR_REVIEW"],
               outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
-        Stock("known_rework", "Known rework", "open defects", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "playtest_finding"], outflows=["gate_landed", "ticket_transition:REJECTED>CANCELLED"], consumers=[{"agent": "worker", "effect": "+"}]),
+        Stock("known_rework", "Known rework", "open defects", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "playtest_finding"], outflows=["gate_landed", "ticket_transition:REJECTED>CANCELLED"], consumers=[{"agent": "worker", "effect": "+"}], carried_by=["ticket_transition:REJECTED>IN_PROGRESS"], carried_to={"ticket_transition:REJECTED>IN_PROGRESS": "wip"}),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
         Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "staging_restarted"]),
         Stock("pipeline_blocked", "Pipeline blocked", "pauses", inflows=["pipeline_paused"], outflows=["pipeline_resumed"]),
@@ -55,9 +55,9 @@ def foundry_agents(*, keeper: bool = True, qa: bool = True) -> dict[str, AgentDe
 EXPECTED = [
     # the rework cycle: a defect found in review goes back through the worker and is inspected again;
     # a conserved material loop, balancing (Cooper; Lyneis & Ford)
-    {"key": "review_rework", "nodes": ["known_rework", "worker", "awaiting_review", "reviewer"], "polarity": "R"},
+    {"key": "review_rework", "nodes": ["known_rework", "orchestra", "wip", "worker", "awaiting_review", "reviewer"]},
     # the same cycle closed through the gate
-    {"key": "gate_rework", "nodes": ["known_rework", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"]},
+    {"key": "gate_rework", "nodes": ["known_rework", "orchestra", "wip", "worker", "awaiting_review", "reviewer", "approved", "merge_gate"]},
     # Repenning's capability loop: rework teaches the resources the worker reads, which cuts injection
     {"key": "capability", "nodes": ["known_rework", "environment_keeper", "resources", "worker", "undiscovered", "reviewer"], "polarity": "B"},
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
@@ -187,13 +187,12 @@ def test_golden_software_foundry():
     # the rework cycles close through the hidden stock, as Cooper draws them, and carry no causal polarity:
     # through review the same event moves the thing on (a material circuit); through the gate the defect
     # rides inside an approved change (a co-flow)
-    # the rework cycles close through the worker, who reads the open defects and re-submits: reinforcing by their
-    # link signs (a bad fix re-enters); through the gate the landing of a good fix is the opposing mechanism on the
-    # gate's link, so the window's counts decide and, unseen, the cycle is indeterminate
-    rv = next(d for d in det["declared"] if d["key"] == "review_rework")
-    assert "awaiting_review" in rv["cycle"]["nodes"] and rv["cycle"]["polarity"] == "R" and rv["polarity_agrees"] is True
+    # the rework cycles are conserved circuits of the change: the pickup carries it out of known rework (a carrying
+    # link, the defect stays open), the worker re-submits it, the inspection sends it back; no causal polarity
+    rv = next(d for d in det["declared"] if d["key"] == "review_rework")["cycle"]
+    assert "awaiting_review" in rv["nodes"] and rv["basis"] == "material circuit" and rv["polarity"] is None
     gt = next(d for d in det["declared"] if d["key"] == "gate_rework")["cycle"]
-    assert gt["polarity"] == "?" and "merge_gate→known_rework" in gt["basis"]
+    assert gt["basis"] == "material circuit" and gt["polarity"] is None
     # the blocked ticket is a conserved circuit too: wip → demand (blocked) → wip (started again)
     rp = next(d for d in det["declared"] if d["key"] == "replanning")["cycle"]
     # the blocked ticket is conserved: W → blocked (the worker) → demand (the coordinator re-plans) → W (Orchestra starts it)
@@ -223,7 +222,7 @@ def test_conversions_follow_the_products_path_and_mark_coflows():
     flows = {(c["src"], c["dst"], c["agent"]) for c in cs if not c["coflow"]}
     coflows = {(c["src"], c["dst"], c["agent"]) for c in cs if c["coflow"]}
     assert ("wip", "awaiting_review", "worker") in flows and ("known_rework", "awaiting_review", "worker") not in flows
-    assert not any(c["src"] == "known_rework" and c["dst"] == "wip" for c in cs)                      # the pickup moves the change, not the defect: no pipe out of known rework into W
+    assert ("known_rework", "wip", "orchestra") in flows                                             # the rework flow: the pickup carries the change out of known rework into W
     assert ("wip", "undiscovered", "worker") in coflows and ("undiscovered", "known_rework", "reviewer") in coflows
     assert ("approved", "landed", "merge_gate") in flows and not any(c["src"] == "wip" and c["dst"] == "landed" for c in cs)
     assert ("awaiting_review", "known_rework", "reviewer") in flows and ("approved", "known_rework", "merge_gate") in flows

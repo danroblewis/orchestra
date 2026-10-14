@@ -223,7 +223,7 @@ def material(g: dict, cycle: list[str], hidden: set[str] | None = None) -> str |
         if prev == nxt:
             return None                                   # one agent filling and draining one stock is a controller, not a circuit
         fills = [e for e in g["edges"] if e["kind"] == "fills" and e["src"] == prev and e["dst"] == node]
-        drains = [e for e in g["edges"] if e["kind"] == "drains" and e["src"] == nxt and e["dst"] == node]
+        drains = [e for e in g["edges"] if e["kind"] == "drains" and e["src"] == nxt and e["dst"] == node] + [c for c in g.get("carries", []) if c["src"] == nxt and c["dst"] == node]   # a carrying link moves the thing on too
         if not (fills and drains):
             return None
         # the draining event must fill the stock after the next agent for the same thing to move on

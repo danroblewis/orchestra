@@ -516,6 +516,8 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
             if act in ("implement", "fix", "rerun"):
                 lost_worker += dur
     worker_hours = hours.get("implement", 0.0) + hours.get("fix", 0.0)        # productive hours; re-runs after no-verdict reviews are a loss
+    fix_prod = hours.get("fix", 0.0) - lost_by.get("fix", 0.0)                # effort, not the wall time of turns the limit killed (Abdel-Hamid subtracts losses first)
+    impl_prod = hours.get("implement", 0.0) - lost_by.get("implement", 0.0)
     limits = [e.get("limit") for e in evs if e["type"] == "turn_timed_out" and e.get("limit")]
     # landed, deployed
     landed = [e for e in evs if e["type"] == "gate_landed"]
@@ -594,7 +596,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         },
         "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "fix_by": fix_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_by.get("defect", 0)), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_by.get("gate", 0)), "lead_values": sorted(leads)},
         "time": {"hours": {k: round(v / days, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])}, "turns": nturns,
-                 "rework_share": _ratio(hours.get("fix", 0.0), worker_hours), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
+                 "rework_share": _ratio(fix_prod, fix_prod + impl_prod), "rework_share_wall": _ratio(hours.get("fix", 0.0), worker_hours), "fix_hours_productive": round(fix_prod / days, 1), "implement_hours_productive": round(impl_prod / days, 1), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
                  "turn_limit": max(set(limits), key=limits.count) if limits else None,
                  "timeout_share": {k: _ratio(timed_out.get(k, 0), n) for k, n in turns_by_kind.items()}, "timed_out": timed_out, "turns_by_kind": turns_by_kind,
                  "losses": {"restarts": pairs.get("IN_PROGRESS>OPEN", 0), "repicks": repicks, "turn_timeouts": counts.get("turn_timed_out", 0), "turn_errors": counts.get("turn_error", 0),
@@ -657,7 +659,7 @@ def _stock_reading(st, pool: dict) -> dict:
     elif kind == "pending_defects":
         unresolved, wait = pool["unresolved"], pool["awaiting_fix"]
         out.update(value=len(unresolved), tickets=unresolved, awaiting_pickup=wait, not_resubmitted=pool["pending"], unresolved=unresolved, blocked=[tid for tid in unresolved if tk[tid].state == "BLOCKED"], where={tid: tk[tid].state for tid in unresolved},
-                   estimator="changes known to need rework and not yet made right: sent back for a defect (reviewer verdict or gate result) with no landing since, wherever the change sits now (Cooper's rework to do; Lyneis's known rework). The pipes in and out move the change (send-backs in, the fix pickup out); the level counts the defect until the fix lands, so it is not the integral of those pipes and says so. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
+                   estimator="changes known to need rework and not yet made right: sent back for a defect (reviewer verdict or gate result) with no landing since, wherever the change sits now (Cooper's rework to do; Lyneis's known rework). A send-back for a defect fills it and the landing of the fix drains it; the pickup carries the change back into work without draining it. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
     elif kind == "returned":
         ret = pool["returned"]
         out.update(value=len(ret), tickets=ret, estimator="tickets sent back with no verdict (a review turn that ended at the limit, a lost gate run, a conflict) and not yet re-picked; a machine loss, not rework")
@@ -845,6 +847,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "reviewer|ticket_transition:REJECTED|returned": f"{pf['review_no_verdict']} reviews with no verdict (loss)",
         "merge_gate|gate_rejected|returned": f"{pf['failure']} lost gate runs (loss)",
         "merge_gate|gate_conflict|returned": f"{pf['conflict']} conflicts",
+        "merge_gate|gate_landed|known_rework": f"{attributed.get('merge_gate|gate_landed|cause:gate', 0) + attributed.get('merge_gate|gate_landed|cause:defect', 0)} fixes landed",
         "coordinator|ticket_transition:BLOCKED>OPEN": f"{attributed.get('coordinator|ticket_transition:BLOCKED>OPEN', 0)} re-planned",
     }
     t = cur["time"]
