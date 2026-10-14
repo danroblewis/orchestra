@@ -295,7 +295,8 @@ function foundryMap(f, evm) {
     const flow = (e.kind === "fills" || e.kind === "drains") && e.src.startsWith("agent:");
     if (flow && piped.has(`${e.src}|${plainVia(e.via)}|${e.dst}`)) continue;                       // drawn as a pipe below
     const inlet = flow && plainVia(e.via) === "ticket_created";                                   // drawn as the shared inlet
-    const n = flow ? (e.via && e.via.includes(">") ? (cnt(e.src.slice(6), e.via) ?? 0) : cnt(e.src.slice(6), plainVia(e.via))) : null;   // a transition form counts its own state, never its plain cousin's const bend = seen.has(`${e.dst}>${e.src}`) || seen.has(key) ? 1 : 0; seen.add(key);
+    const n = flow ? (e.via && e.via.includes(">") ? (cnt(e.src.slice(6), e.via) ?? 0) : cnt(e.src.slice(6), plainVia(e.via))) : null;   // a transition form counts its own state, never its plain cousin's
+    const bend = seen.has(`${e.dst}>${e.src}`) || seen.has(key) ? 1 : 0; seen.add(key);
     const toStock = e.src.startsWith("agent:") && !e.dst.startsWith("agent:");
     const t = toStock ? 0.8 : e.kind === "drains" ? 0.72 : 0.58, mx = p.x1 + (p.x2 - p.x1) * t + (bend ? 14 : 0), my = p.y1 + (p.y2 - p.y1) * t + (bend ? 10 : 0);
     const d = bend ? `M${p.x1},${p.y1} Q${mx + 16},${my + 16} ${p.x2},${p.y2}` : `M${p.x1},${p.y1} L${p.x2},${p.y2}`;
