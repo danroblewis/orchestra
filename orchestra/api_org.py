@@ -318,7 +318,8 @@ def detected_loops(project: Project, events=None) -> dict:
     stale = [lp for sig, lp in named.items() if sig not in {L["signature"] for L in found}]
     loop_edges = sorted({e for L in found for e in L["edges"] if eventgraph.CORE not in e})
     return {"detected": found, "cycles": sum(L["cycles"] for L in found), "named": list(named.values()), "stale": stale,
-            "loop_edges": loop_edges, "rework": mx["rework"], "flows": mx["flows"], "turnaround": mx["turnaround"], "hours": mx["hours"]}
+            "loop_edges": loop_edges, "rework": mx["rework"], "flows": mx["flows"], "machines": mx["machines"],
+            "turnaround": mx["turnaround"], "hours": mx["hours"]}
 
 
 def _count_key(g, label: str) -> str:

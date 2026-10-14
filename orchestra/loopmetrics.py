@@ -80,6 +80,15 @@ def metrics(events: list[dict]) -> dict[str, Any]:
                  "gain": round(gate_rejects / approved, 2) if approved else None,
                  "delay": median_delay("APPROVED", {"DONE", "REJECTED"})},
     }
+    started = flows.get("IN_PROGRESS", 0)
+    machines = {
+        "worker": {"stock_in": "IN_PROGRESS", "stock_out": "READY_FOR_REVIEW", "cycle": median_delay("IN_PROGRESS", {"READY_FOR_REVIEW", "BLOCKED"}),
+                   "processed": started, "scrap": round(flows.get("BLOCKED", 0) / started, 2) if started else None, "scrap_to": "BLOCKED"},
+        "reviewer": {"stock_in": "IN_REVIEW", "stock_out": "APPROVED", "cycle": median_delay("IN_REVIEW", {"APPROVED", "REJECTED"}),
+                     "processed": flows.get("IN_REVIEW", 0), "scrap": rework["review"]["gain"], "scrap_to": "IN_PROGRESS"},
+        "merge_gate": {"stock_in": "APPROVED", "stock_out": "DONE", "cycle": median_delay("MERGING", {"DONE", "REJECTED"}),
+                       "processed": flows.get("MERGING", 0), "scrap": rework["gate"]["gain"], "scrap_to": "IN_PROGRESS"},
+    }
     return {"counts": counts, "by": by, "messages": messages, "last": last, "last_by": last_by,
-            "flows": flows, "rework": rework, "turnaround": median_delay("IN_PROGRESS", {"DONE"}),
+            "flows": flows, "rework": rework, "machines": machines, "turnaround": median_delay("IN_PROGRESS", {"DONE"}),
             "hours": 24}
