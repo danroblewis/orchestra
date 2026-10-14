@@ -254,8 +254,9 @@ def _run_tests(run: dict | None, *, main: bool = False) -> dict | None:
     return {"run": run.get("id"), "at": run.get("finished_at"), "status": run.get("status"), "stages": out} if out else None
 
 
-def _window(hist: History, store, events: list[dict], agents: dict, since: float, until: float) -> dict[str, Any]:
+def _window(hist: History, store, events: list[dict], agents: dict, since: float, until: float, tickets_by_id: dict | None = None) -> dict[str, Any]:
     """The flow readings for one window [since, until)."""
+    tickets_by_id = tickets_by_id if tickets_by_id is not None else store.tickets_by_id()
     evs = [e for e in events if since <= _ts(e) < until]
     days = max((until - since) / 86400, 1e-9)
     counts: dict[str, int] = {}
@@ -357,6 +358,23 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
             if nxt:
                 restores.append(_ts(nxt) - _ts(t))
     leads = [ts - hist.created[tid] for tid, ts, _, to in tr if to == "DONE" and tid in hist.created]
+    # defects found after landing: a ticket created in the window that cites a landed ticket
+    # or commit (a bug report against something that shipped), and each build that
+    # crash-restarted in service (one defect per build, however many restarts)
+    done_ids = {tid for tid, seq in hist.seq.items() if any(to == "DONE" for _, _, to in seq)}
+    landed_shas = {e.get("commit", "")[:7] for e in events if e["type"] == "gate_landed" and e.get("commit")}
+    bug_tickets = []
+    for e in evs:
+        if e["type"] != "ticket_created":
+            continue
+        t = tickets_by_id.get(e.get("ticket"))
+        text = f"{getattr(t, 'title', '')} {getattr(t, 'description', '')}" if t else ""
+        cites = set(re.findall(r"\b[A-Z]{2,5}-\d+\b", text)) & done_ids
+        cites_sha = any(sha and sha in text for sha in landed_shas)
+        if (cites or cites_sha) and e.get("ticket") not in cites:
+            bug_tickets.append(e.get("ticket"))
+    crashing_builds = sorted({t.get("build") for t in troubles if t["type"] == "staging_restarted" and t.get("build")})
+    escape = len(bug_tickets) + len(crashing_builds)
     landed_at = {e.get("commit"): _ts(e) for e in landed}
     land_to_deploy = [_ts(d) - landed_at[d["commit"]] for d in deploys if d.get("commit") in landed_at]
     return {
@@ -365,7 +383,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         "flows": {"start": starts, "repick": repicks, "implement": arrivals, "redo": redo, "review": rev_defects, "review_no_verdict": rev_cause.get("no_verdict", 0),
                   "gate": gate["by"].get("defect", 0), "conflict": gate["by"].get("conflict", 0),
                   "failure": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0) + gate["by"].get("error", 0),
-                  "escape": 0, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
+                  "escape": escape, "escape_bug_tickets": bug_tickets, "escape_crashing_builds": crashing_builds, "fix": fix_rounds, "land": len(landed), "deploy": len(deploys), "verify": sum(1 for r in runs if r.get("status") == "landed"),
                   "base": gate["by"].get("base_broken", 0), "restart": pairs.get("IN_PROGRESS>OPEN", 0), "blocked": pairs.get("IN_PROGRESS>BLOCKED", 0)},
         "inspections": {
             "review": {"arrivals": arrivals, "redo": redo, "approvals": approvals, "verdicts": verdicts, "by_cause": rev_cause, "defects": rev_defects, "distinct_defects": len(tickets_defect),
@@ -383,7 +401,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                             "review_no_verdict": rev_cause.get("no_verdict", 0), "review_redo": redo, "gate_lost": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0),
                             "rerun_hours": round(hours.get("rerun", 0.0) / days, 1), "worker_hours_ending_in_timeout": round(lost_worker / days, 1), "hours_ending_in_timeout": round(lost_all / days, 1)}},
         "dora": {"landing_per_day": round(len(landed) / days, 1), "lead_time": _median(leads), "lead_n": len(leads), "land_to_deploy": _median(land_to_deploy),
-                 "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)),
+                 "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)), "crashing_builds": crashing_builds,
                  "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores)},
     }
 
@@ -396,7 +414,7 @@ def _signals(w: dict) -> dict[str, float | None]:
             "worker_timeout_share": t["timeout_share"].get("worker"), "reviewer_timeout_share": t["timeout_share"].get("reviewer"), "hours_lost": t["losses"]["hours_ending_in_timeout"],
             "fix_rounds": f["fix"], "review_defects": w["inspections"]["review"]["distinct_defects"], "defects_after_landing": f["escape"],
             "acceptance_defects_at_gate": w["inspections"]["gate"]["defect_stage"].get("acceptance", 0),
-            "defects_before_gate_share": _ratio(w["inspections"]["review"]["distinct_defects"], w["inspections"]["review"]["distinct_defects"] + w["inspections"]["gate"]["distinct_defects"]),
+            "defects_before_gate_share": _ratio(w["inspections"]["review"]["distinct_defects"], w["inspections"]["review"]["distinct_defects"] + w["inspections"]["gate"]["distinct_defects"] + f["escape"]),
             "bad_fix_fraction": w["rounds"]["bad_fix_fraction"], "conflicts_per_landing": _ratio(f["conflict"], f["land"]) if f["land"] else (f["conflict"] or None),
             "landed_per_worker_hour": _ratio(f["land"] / w["days"], wh) if wh else None, "restarts": f["restart"], "defects_found_after_landing": f["escape"],
             "base_broken": f["base"], "worker_hours_lost": t["losses"]["worker_hours_ending_in_timeout"], "starts": f["start"]}
@@ -493,8 +511,9 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     model = model or foundry.load_model(project)
     now = dt.datetime.now(dt.UTC).timestamp()
     hist = History(events, store)
-    cur = _window(hist, store, events, agents, now - hours * 3600, now)
-    prev = _window(hist, store, events, agents, now - 2 * hours * 3600, now - hours * 3600)
+    tk0 = store.tickets_by_id()
+    cur = _window(hist, store, events, agents, now - hours * 3600, now, tk0)
+    prev = _window(hist, store, events, agents, now - 2 * hours * 3600, now - hours * 3600, tk0)
     sig_now, sig_prev = _signals(cur), _signals(prev)
     signals = {k: {"now": sig_now[k], "before": sig_prev[k], "direction": (None if sig_now[k] is None or sig_prev[k] is None else "up" if sig_now[k] > sig_prev[k] else "down" if sig_now[k] < sig_prev[k] else "flat")} for k in sig_now}
     # -- the instrument pool: git, gate runs, staging, tracker ----------------------------------

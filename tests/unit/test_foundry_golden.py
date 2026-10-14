@@ -32,8 +32,8 @@ def foundry_stocks() -> list[Stock]:
               outflows=["ticket_transition:REJECTED", "gate_rejected", "staging_failed"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
         Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
-        Stock("landed", "Landed software", "commits", inflows=["gate_landed"], outflows=[]),
-        Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "gate_base_broken"]),
+        Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
+        Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed"]),
         Stock("tests", "Verified behaviour", "tests", inflows=["tests_added"], outflows=[], consumers=[{"agent": "reviewer", "effect": "+"}, {"agent": "merge_gate", "effect": "+"}]),
         Stock("resources", "Environment resources", "documents", inflows=["lesson_decided"], outflows=[], consumers=[{"agent": "worker", "effect": "-"}, {"agent": "reviewer", "effect": "+"}]),
     ]
@@ -157,10 +157,19 @@ def test_golden_software_foundry():
     strangers = [c["members"] for c in det["unnamed"] if not any(len(set(c["members"]) & n) >= 2 for n in named)]
     assert not strangers, strangers
     assert all(c["pair"] for c in det["pairs"]) and det["pairs"]                               # the stock-and-its-agent pairs are kept apart
-    # the rework cycles close through the hidden stock, as Cooper draws them, and are material circuits with no causal polarity
-    for key in ("review_rework", "gate_rework"):
-        cyc = next(d for d in det["declared"] if d["key"] == key)["cycle"]
-        assert "undiscovered" in cyc["members"] and cyc["basis"] == "material circuit" and cyc["polarity"] is None and all(e["sign"] is None for e in cyc["edges"])
+    # the rework cycles close through the hidden stock, as Cooper draws them, and carry no causal polarity:
+    # through review the same event moves the thing on (a material circuit); through the gate the defect
+    # rides inside an approved change (a co-flow)
+    rv = next(d for d in det["declared"] if d["key"] == "review_rework")["cycle"]
+    assert "undiscovered" in rv["members"] and rv["basis"] == "material circuit" and rv["polarity"] is None and all(e["sign"] is None for e in rv["edges"])
+    gt = next(d for d in det["declared"] if d["key"] == "gate_rework")["cycle"]
+    assert gt["basis"] == "co-flow" and gt["polarity"] is None
+    # a declared loop is matched to the cycle that carries its stocks as nodes, not one that merely touches them
+    rp = next(d for d in det["declared"] if d["key"] == "replanning")["cycle"]
+    assert "demand" in rp["nodes"] and "wip" in rp["nodes"]
+    # one agent that both fills and drains a stock is a controller, never a circuit
+    pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
+    assert pair["basis"] != "material circuit" and pair["polarity"] in ("B", "?")
 
 
 def test_the_reference_configuration_has_no_wip_limit_controller_yet():

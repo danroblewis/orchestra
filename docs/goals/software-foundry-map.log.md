@@ -176,3 +176,35 @@ collision avoidance; window and pause note in the legend.
 
 Declined: one node per rate instead of per agent (a larger modelling change; the consumer
 sign is documented as a declared effect, not a derivation); histogram tiles as bars.
+
+## Round 6 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; 16 readings matched. Found: "after
+landing" was a constant zero while the staging build crash-restarted 16 times and bug
+tickets cited shipped work; the change-failure tile contradicted its caption; the staging
+death had no event, so the pipeline manager's loop was "observed" while unserved;
+gate_base_broken as the build's outflow pulled undiscovered into broken base; the
+template's tests and resources were filled only by events nobody emits, so loops closing
+through the world showed as hypotheses; the material rule passed on coincidence (different
+events draining and filling); a single agent filling and draining a stock counted as a
+circuit; re-planning matched a cycle that bypassed demand; reads counted as observed by
+declaration; label collisions and 7.6 px type; orange meant three things; 66 unnamed
+cycles listed raw; the refresh signature froze ages; the pause reason missing; advice told
+the Supervisor the wrong call order and never named qa_engineer.
+
+Fixed: an escape estimator (tickets created in the window citing a DONE ticket or landed
+commit; builds the health loop restarted, one defect per build) and the discovery share
+with it; change failure defined as deploys whose build crash-restarted or failed, tile and
+caption agreeing; staging emits staging_failed when its health check goes unanswered for
+ten minutes, then restarts; build's outflow is staging_failed only; tests and resources
+also filled by landings, landed also by DONE; material circuits require the same event to
+carry the material on, otherwise "co-flow", both without polarity; a controller pair is
+never a circuit; declared loops match cycles carrying their stocks as nodes; reads count
+as evidence only when the consumer acted; gap advice gives the store's call order and the
+role-prompt change and names the woken existing agents (qa_engineer, product_owner); the
+discovery tile says where and why; negative links are blue, orange is adverse only; type
+raised; unnamed cycles grouped by the loop they extend; the refresh signature includes the
+window minute and the ages; the pause reason shown.
+
+Declined: committing the automata model directory (ticket-branch checkout); replacing the
+agent node with one node per rate.

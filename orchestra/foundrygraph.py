@@ -177,23 +177,33 @@ def dominant(g: dict, pair: tuple[str, str], weights: dict[str, int] | None = No
     return max(weighted, key=lambda t: t[0])[1]
 
 
-def material(g: dict, cycle: list[str]) -> bool:
-    """A conserved material circuit, judged on the path itself: every stock on the cycle is
-    filled by the agent before it and drained by the agent after it (the agent it wakes
-    carries the material on), and no step is a bare wake, read, or trigger. What circulates
-    is the same thing, so the circuit is a stock-flow chain, not a causal loop."""
-    if not any(not n.startswith("agent:") for n in cycle):
-        return False
+def material(g: dict, cycle: list[str]) -> str | None:
+    """Judged on the path: every stock on the cycle is filled by the agent before it and
+    drained by the agent after it, by different agents. "material circuit" when the event
+    that drains each stock is the event that fills the next (the same thing moves on);
+    "co-flow" when the stocks are carried by different events (a defect inside a change);
+    None otherwise. Either way the circuit is a stock-flow chain, not a causal loop."""
+    stocks_on = [n for n in cycle if not n.startswith("agent:")]
+    if not stocks_on:
+        return None
     n = len(cycle)
+    same_event = True
     for i, node in enumerate(cycle):
-        prev, nxt = cycle[i - 1], cycle[(i + 1) % n]
         if node.startswith("agent:"):
             continue
-        filled = any(e["kind"] == "fills" and e["src"] == prev and e["dst"] == node for e in g["edges"])
-        drained = any(e["kind"] == "drains" and e["src"] == nxt and e["dst"] == node for e in g["edges"])
-        if not (filled and drained):
-            return False
-    return True
+        prev, nxt = cycle[i - 1], cycle[(i + 1) % n]
+        if prev == nxt:
+            return None                                   # one agent filling and draining one stock is a controller, not a circuit
+        fills = [e for e in g["edges"] if e["kind"] == "fills" and e["src"] == prev and e["dst"] == node]
+        drains = [e for e in g["edges"] if e["kind"] == "drains" and e["src"] == nxt and e["dst"] == node]
+        if not (fills and drains):
+            return None
+        # the draining event must fill the stock after the next agent for the same thing to move on
+        after = cycle[(i + 2) % n]
+        carried = any(e["kind"] == "fills" and e["src"] == nxt and e["dst"] == after and any(event_fits(d["via"], e["via"]) for d in drains) for e in g["edges"])
+        if not carried:
+            same_event = False
+    return "material circuit" if same_event else "co-flow"
 
 
 def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -> tuple[str | None, str]:
@@ -201,8 +211,9 @@ def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None) -
     circuit of conserved material is not a causal loop) and is reported as such. Otherwise
     the product of the link signs: B when negative, R when positive, ? when any link is
     indeterminate from structure (the basis then names the sign the window favours)."""
-    if material(g, cycle):
-        return None, "material circuit"
+    kind = material(g, cycle)
+    if kind:
+        return None, kind
     signs = _signs(g, weights)
     pairs = list(zip(cycle, cycle[1:] + cycle[:1]))
     if any(signs.get(p, "+") == "?" for p in pairs):
@@ -251,14 +262,14 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
                 elif e["kind"] in ("wakes", "triggers", "departs") and e["via"]:
                     n = (weights or {}).get(e["via"], 0)
                 else:
-                    n = 1 if e["kind"] == "reads" else 0
+                    n = sum(v for k, v in ev.items() if k.startswith(b.split(":", 1)[1] + "|")) if e["kind"] == "reads" and b.startswith("agent:") else 0
                 evidence[f"{a}>{b}|{e['via'] or e['kind']}"] = n
                 hits.append(n)
             step_seen.append(any(n > 0 for n in hits))
         infos.append({"nodes": c, "members": sorted(members(c, g)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
                       "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
                       "observed": bool(step_seen) and all(step_seen), "evidence": evidence,
-                      "edges": [{"src": a, "dst": b, "sign": None if basis == "material circuit" else sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
+                      "edges": [{"src": a, "dst": b, "sign": None if basis in ("material circuit", "co-flow") else sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
     declared, used = [], set()
     for lp in expected or []:
         want = set(getattr(lp, "nodes", None) or lp.get("nodes", []))
@@ -268,7 +279,8 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         best = next((ci for ci in infos if ci["signature"] == sig), None) if sig else None
         if best is None and want:
             cands = [ci for ci in infos if want <= set(ci["members"])]
-            best = min(cands, key=lambda ci: ci["length"]) if cands else None
+            as_nodes = lambda ci: sum(1 for w in want if w in ci["nodes"] or f"agent:{w}" in ci["nodes"])   # declared members present on the path, not merely touched
+            best = max(cands, key=lambda ci: (as_nodes(ci), -ci["length"])) if cands else None
         if best:
             used.add(best["signature"])
         declared.append({"key": key, "detected": best is not None, "cycle": best, "claimed_polarity": pol,
@@ -325,7 +337,8 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
             ok = _declarable(st_b.inflows, bool(custom)) if st_b else []
             wants = f" (one of: {', '.join(ok)})" if ok else (f"; {b} is filled only by Orchestra's own events, so declare a custom inflow on {b} first" if st_b and st_b.inflows else "")
             if woken:
-                fix = f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: add that event to the agent's emits (update_agent) and to its team's emits if it is custom"
+                fix = (f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: "
+                       f"declare the event on the team first (update_team emits=[...]), then update_agent emits=[...], and tell the agent in its role prompt to call emit_event when it has done the work")
             else:
                 fix = f"no agent converts {a} into {b}: create an agent woken by {a}'s inflow that emits {b}'s inflow{wants}"
         broken.append({"from": a, "to": b, "fix": fix})
