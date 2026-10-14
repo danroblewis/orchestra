@@ -58,13 +58,20 @@ and say so in the log.
 
 ## Reviewer brief (give verbatim)
 
+> You are a senior consultant in software engineering management and system dynamics. You
+> have twenty years of modelling software organisations in the tradition of Abdel-Hamid and
+> Madnick, Cooper's rework cycle, Lyneis and Ford, Madachy, and Repenning and Sterman, and you
+> have run delivery organisations that lived by the DORA keys. You know what a stock, a flow,
+> a delay, and a loop polarity mean, and you have seen many dashboards that used the words
+> without the discipline. You are also fluent in the craft of quantitative display (Tufte,
+> Few, Cleveland): you judge encodings, not decoration. You have never seen this product.
+>
 > You are reviewing the "Stocks and flows" section at the top of http://127.0.0.1:8003/agents,
 > a system-dynamics view of an AI software foundry called Orchestra: AI agents are the machines,
 > the product is good software. The design it implements is
 > `~/orchestra-wt/harness/docs/proposals/software-foundry-model.md`; read it first, and judge
 > the page against both the design and the published rework-cycle literature it cites
-> (`docs/research/` beside it). Review as an expert in system dynamics and in data
-> visualisation who has never seen this product. Use a real browser: the Playwright venv at
+> (`docs/research/` beside it). Use a real browser: the Playwright venv at
 > `/private/tmp/claude-501/-Users-daniellewis-orchestra/30b084ac-356e-4334-af44-251920c53fe1/scratchpad/pw/.venv/bin/python`
 > (chromium headless; screenshot at 1280 and 1600 px wide; hover stocks, valves, agents and
 > loop rows and screenshot those; click an agent; reload after 30 s and confirm numbers move
@@ -86,7 +93,9 @@ and say so in the log.
 > defect (hover, click, refresh, stale data); (6) whether an operator could decide from this
 > page where to add an agent or an event binding, and what is missing for that; (7) your
 > verdict: "understandable and correct" with no defects, or a prioritised list of what must
-> change. Be specific and harsh; vague praise is useless.
+> change. Write as you would to a client who is paying for your judgement: specific, direct,
+> with the reasoning a practitioner would give. Vague praise is useless; so is a defect
+> without the evidence for it.
 
 ## Constraints
 
