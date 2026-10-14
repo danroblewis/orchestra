@@ -218,7 +218,9 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
             fix = f"{a} must emit an event {b} wakes on"
         else:
             st_b = stock_by.get(b)
-            woken = sorted(e["src"].split(":", 1)[1] if e["src"].startswith("agent:") else e["dst"].split(":", 1)[1] for e in g["edges"] if e["kind"] == "wakes" and e["src"] == ia)
+            woken = sorted(e["dst"].split(":", 1)[1] for e in g["edges"] if e["kind"] == "wakes" and e["src"] == ia)
+            custom = [n for n in woken if not g["nodes"].get(f"agent:{n}", {}).get("builtin")]
+            woken = custom or woken              # the project's own agent is the one to change
             wants = f" (one of: {', '.join(st_b.inflows)})" if st_b and st_b.inflows else ""
             if woken:
                 fix = f"{', '.join(woken)} {'is' if len(woken) == 1 else 'are'} woken by {a}'s inflow but emit{'s' if len(woken) == 1 else ''} nothing that fills {b}{wants}: add that event to the agent's emits (and to its team's emits if it is custom)"
