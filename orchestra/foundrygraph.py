@@ -408,6 +408,8 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
     out, seen = [], set()
     att = attributed or {}
     additions = {s.key for s in (stocks or []) if getattr(s, "addition", False)}   # capability stocks are filled, not converted into
+    hidden = {s.key for s in (stocks or []) if getattr(s, "hidden", False)}
+    row = {s.key: getattr(s, "row", None) for s in (stocks or [])}
     for e in g["edges"]:
         if e["kind"] != "drains" or not e["src"].startswith("agent:"):
             continue
@@ -419,5 +421,15 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
                 seen.add(key)
                 agent = e["src"].split(":", 1)[1]
                 count = att.get(f"{agent}|{e['via']}") if e["via"] in att_keys(att, agent) else att.get(f"{agent}|{plain(e['via'])}")
-                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": f["via"]})
+                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": f["via"],
+                            "coflow": e["dst"] in hidden or f["dst"] in hidden})       # a defect riding inside a change: drawn beside the change's pipe, never counted twice
+    # one event moves one thing: where an agent's event converts along the product's own path (chain row to
+    # chain row), the other conversions of that event are the same movement seen from a rework stock, not a second flow
+    keep = []
+    for c in out:
+        same = [o for o in out if o["agent"] == c["agent"] and o["via"] == c["via"] and not o["coflow"]]
+        on_path = [o for o in same if row.get(o["src"]) == "chain" and row.get(o["dst"]) == "chain"]
+        if c["coflow"] or not on_path or c in on_path:
+            keep.append(c)
+    out = keep
     return sorted(out, key=lambda c: (c["src"], c["dst"], c["agent"]))

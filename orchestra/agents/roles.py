@@ -90,7 +90,7 @@ SYSTEM_BINDINGS = {
     "merge_gate": {"description": "Lands approved branches: build, unit, start, acceptance; then staging.",
                    "emits": ("gate_started", "gate_landed", "gate_rejected", "gate_conflict", "gate_error", "gate_base_broken",
                              "ticket_transition:MERGING", "ticket_transition:DONE", "ticket_transition:REJECTED",
-                             "staging_deployed", "staging_failed", "pipeline_paused"),
+                             "staging_deployed", "pipeline_paused"),
                    "wake_on": ("ticket_transition:APPROVED", "pipeline_resumed")},
     "probes": {"description": "Commands run on an interval; an event on each change of result.",
                "emits": ("probe_failed", "probe_recovered"), "wake_on": ()},

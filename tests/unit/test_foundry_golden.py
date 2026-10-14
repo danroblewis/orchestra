@@ -26,12 +26,12 @@ def custom(name: str, team: str, wake_on: list[str], emits: list[str]) -> AgentD
 def foundry_stocks() -> list[Stock]:
     return [
         Stock("demand", "Demand", "tickets", inflows=["ticket_created", "ticket_transition:OPEN", "ticket_transition:IN_PROGRESS>BLOCKED"], outflows=["ticket_transition:OPEN>IN_PROGRESS"]),
-        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["gate_landed", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
+        Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
-        Stock("undiscovered", "Undiscovered rework", "defects", inflows=["ticket_transition:READY_FOR_REVIEW"],
+        Stock("undiscovered", "Undiscovered rework", "defects", row="rework", inflows=["ticket_transition:READY_FOR_REVIEW"],
               outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
-        Stock("known_rework", "Known rework", "send-backs", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
+        Stock("known_rework", "Known rework", "send-backs", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:READY_FOR_REVIEW"]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
         Stock("build", "Working build", "builds", inflows=["staging_deployed"], outflows=["staging_failed", "staging_restarted"]),
         Stock("pipeline_blocked", "Pipeline blocked", "pauses", inflows=["pipeline_paused"], outflows=["pipeline_resumed"]),
@@ -60,7 +60,7 @@ EXPECTED = [
     # earlier detection: landings grow the tests the gate runs, which finds more before landing
     {"key": "earlier_detection", "nodes": ["landed", "qa_engineer", "tests", "merge_gate"]},
     # broken base: a failed build wakes the pipeline manager, which resumes the gate
-    {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager", "merge_gate"]},
+    {"key": "broken_base", "nodes": ["pipeline_blocked", "pipeline_manager"], "polarity": "B"},
     # re-planning: a worker blocks a ticket, the coordinator re-plans it into demand, Orchestra starts it again
     {"key": "replanning", "nodes": ["wip", "worker", "demand", "orchestra"]},
 ]
@@ -135,9 +135,9 @@ def test_the_pipeline_manager_closes_broken_base():
     det = loops_for(foundry_stocks(), foundry_agents())
     bb = next(d for d in det["declared"] if d["key"] == "broken_base")
     # a broken main fills the blocked-pipeline stock, its arrival wakes the manager, and the manager's resume
-    # reaches the gate as a departure: the path is closed, but its only negative is that departure, so the
-    # balancing is credited to the pair pipeline_blocked ↔ pipeline_manager, not to the path
-    assert bb["detected"] and bb["cycle"]["polarity"] == "?" and bb["cycle"]["basis"].startswith("closed; the balancing is in the first-order pair"), bb
+    # drains it: the controller is this first-order pair, balancing by its link signs; the gate's re-run is
+    # the pair's effect, not part of the loop
+    assert bb["detected"] and bb["cycle"]["pair"] and bb["cycle"]["polarity"] == "B" and bb["polarity_agrees"] is True, bb
     assert "pipeline_blocked" in bb["cycle"]["nodes"]
     pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"pipeline_blocked", "agent:pipeline_manager"})
     assert pair["polarity"] == "B"
@@ -202,3 +202,18 @@ def test_the_reference_configuration_has_no_wip_limit_controller_yet():
     assert not det["declared"][0]["detected"]
     replanning = [c for c in det["cycles"] if {"coordinator", "demand", "wip", "worker"} <= set(c["members"])]
     assert replanning and all("flow_controller" not in c["members"] for c in replanning)
+
+
+def test_conversions_follow_the_products_path_and_mark_coflows():
+    """Round 13: a submission is one flow, work in progress → awaiting review; the known defect it
+    carries on into undiscovered rework is a co-flow, and the same event seen from known rework
+    is not a second flow. A gate landing moves the approved change only."""
+    stocks = foundry_stocks()
+    g = fg.build(stocks, foundry_agents(), SYSTEM_BINDINGS)
+    cs = fg.conversions(g, {}, stocks)
+    flows = {(c["src"], c["dst"], c["agent"]) for c in cs if not c["coflow"]}
+    coflows = {(c["src"], c["dst"], c["agent"]) for c in cs if c["coflow"]}
+    assert ("wip", "awaiting_review", "worker") in flows and ("known_rework", "awaiting_review", "worker") not in flows
+    assert ("known_rework", "undiscovered", "worker") in coflows and ("undiscovered", "known_rework", "reviewer") in coflows
+    assert ("approved", "landed", "merge_gate") in flows and not any(c["src"] == "wip" and c["dst"] == "landed" for c in cs)
+    assert ("awaiting_review", "known_rework", "reviewer") in flows and ("approved", "known_rework", "merge_gate") in flows

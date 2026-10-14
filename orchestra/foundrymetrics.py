@@ -267,6 +267,24 @@ def _run_tests(run: dict | None, *, main: bool = False) -> dict | None:
     return {"run": run.get("id"), "at": run.get("finished_at"), "status": run.get("status"), "stages": out} if out else None
 
 
+def _open_outage(events: list[dict], until: float) -> float | None:
+    """How long the current outage has been open: from the first trouble after the last deploy
+    that stayed healthy, if no deploy since has stayed healthy. None when the build is fine."""
+    deploys = sorted((e for e in events if e["type"] == "staging_deployed"), key=_ts)
+    troubles = sorted((e for e in events if e["type"] in ("staging_failed", "staging_restarted")), key=_ts)
+    if not deploys or not troubles:
+        return None
+    start = None
+    for j, d in enumerate(deploys):
+        after = _ts(deploys[j + 1]) if j + 1 < len(deploys) else until
+        first = next((_ts(x) for x in troubles if _ts(d) < _ts(x) < after), None)
+        if first is None:
+            start = None                                          # a deploy that stayed healthy closes any outage
+        elif start is None:
+            start = first
+    return until - start if start is not None else None
+
+
 def _window(hist: History, store, events: list[dict], agents: dict, since: float, until: float, tickets_by_id: dict | None = None) -> dict[str, Any]:
     """The flow readings for one window [since, until)."""
     tickets_by_id = tickets_by_id if tickets_by_id is not None else store.tickets_by_id()
@@ -464,7 +482,8 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                             "rerun_hours": round(hours.get("rerun", 0.0) / days, 1), "worker_hours_ending_in_timeout": round(lost_worker / days, 1), "hours_ending_in_timeout": round(lost_all / days, 1)}},
         "dora": {"landing_per_day": round(len(landed) / days, 1), "lead_time": _median(leads), "lead_n": len(leads), "land_to_deploy": _median(land_to_deploy),
                  "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)), "crashing_builds": crashing_builds,
-                 "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores)},
+                 "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores),
+                 "outage_open_for": _open_outage(events, until)},
     }
 
 
@@ -503,12 +522,12 @@ def _stock_reading(st, pool: dict) -> dict:
                    estimator=f"tickets in {', '.join(states)} in the tracker now; ages from each ticket's state_since (residence time in the queue)")
     elif kind == "pending_defects":
         pend = pool["pending"]
-        out.update(value=len(pend), tickets=pend, unresolved=pool["unresolved"],
-                   estimator="tickets sent back for a defect (reviewer verdict or gate result) and not yet re-submitted; beside it, tickets whose defect send-back has not yet been followed by a landing")
+        out.update(value=len(pend), tickets=pend, unresolved=pool["unresolved"], blocked=[tid for tid in pend if tk[tid].state == "BLOCKED"],
+                   estimator="tickets sent back for a defect (reviewer verdict or gate result) and not yet re-submitted; beside it, tickets whose defect send-back has not yet been followed by a landing. The reviewer's verdict is inferred from the first word of its review note within three minutes of the send-back (step 2 records the cause on the event)")
     elif kind == "git_ahead":
         wip = pool["wip"]
         out.update(value=sum(w["commits"] for w in wip), tickets=len(wip), detail=wip, commits_per_day=git.get("commits_in_window"),
-                   estimator="commits ahead of main on each open ticket's branch (git rev-list), and commits made on any branch in the window")
+                   estimator="commits ahead of main on the branch of each ticket IN_PROGRESS now (git rev-list), and commits made on any branch in the window")
     elif kind == "landed":
         out.update(**pool["landed"], estimator="every gate_landed commit on main; lines by first-parent diff; survival by first-parent blame")
     elif kind == "gate_tests":
@@ -532,7 +551,11 @@ def _stock_reading(st, pool: dict) -> dict:
         down = src == "deployed" and not pool.get("build_healthy")
         served = not down and not main_broken
         why = None if served else ("the deployed build is down" if down else "main's latest gate check failed")
-        out.update(served=served, not_served_because=why, at_last_landing=(sum(v.get("passed", 0) for k, v in lt.get("stages", {}).items() if not stage or k == stage) if lt else None))
+        at_landing = sum(v.get("passed", 0) for k, v in lt.get("stages", {}).items() if not stage or k == stage) if lt else None
+        suspect = bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean"))
+        if src == "main" and suspect and at_landing is not None:                 # the check that failed looks like the host, not the code: lead with the last clean check
+            out.update(value=at_landing, suspect_check={"passed": macc.get("passed") if stage else out.get("value"), "failed": out.get("failed"), "errors": out.get("errors")}, failed=0, errors=0)
+        out.update(served=served, not_served_because=why, at_last_landing=at_landing)
         out.update(source=source, build=pool["build_id"] if src == "deployed" else None, from_run=(run or {}).get("run"), at=(run or {}).get("at"), done_tickets=sum(1 for x in tk.values() if x.state == "DONE"),
                    main_now={"passed": macc.get("passed"), "skipped": macc.get("skipped", 0), "failed": macc.get("failed", 0), "errors": errors, "run": mt.get("run"), "status": mt.get("status"),
                              "environment_suspect": bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean")), "landed_clean_before": pool.get("main_commit_landed_clean")} if stage else None,
@@ -626,7 +649,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     tk = store.tickets_by_id()
     ahead = git.get("ahead", {})
     wip = sorted(({"ticket": t.id, "state": t.state, "commits": ahead[t.branch], "rounds": t.review_rounds or 0} for t in tk.values()
-                  if t.state not in ("DONE", "CANCELLED", "BLOCKED") and getattr(t, "branch", None) and t.branch in ahead), key=lambda w: -w["commits"])
+                  if t.state == "IN_PROGRESS" and getattr(t, "branch", None) and t.branch in ahead), key=lambda w: -w["commits"])
     main_commit = (main_run or {}).get("base_commit") if (main_run or {}).get("status") == "base_broken" else None
     clean_before = bool(main_commit) and any(r.get("status") == "landed" and (r.get("gate_commit") or "").startswith(main_commit[:10]) for r in runs)
     healthy_at = _epoch(staging.get("last_health_at"))
@@ -671,6 +694,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "orchestra|ticket_transition:REJECTED>IN_PROGRESS": f"{attributed.get('orchestra|ticket_transition:REJECTED>IN_PROGRESS', 0)} fix pickups",
         "worker|ticket_transition:READY_FOR_REVIEW|known_rework": f"{pf['fix']} fix rounds · {cur['rounds']['bad_fixes']} later found bad",
         "worker|ticket_transition:READY_FOR_REVIEW|undiscovered": f"{pf['implement']} submitted (an unknown share carries a defect)",
+        "worker|ticket_transition:IN_PROGRESS>READY_FOR_REVIEW|wip": f"{pf['implement']} submitted · {pf['fix']} of them fixes",
     }
     t = cur["time"]
     return {"hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"],

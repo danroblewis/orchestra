@@ -420,3 +420,52 @@ the flow that carries the defect on; it now reads "10 fix rounds · 8 later foun
 choosing one agent in the gap advice (the detector lists every agent the structure permits,
 and which one should emit is the operator's call); a residence-time distribution per queue
 (the readings carry median and oldest; a profile needs the event store's history, step 2).
+
+## Round 13 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; all twenty-five readings recomputed from
+the log, the store and the repository matched, and the one-minute test passed for what the
+foundry produces, where work piles up and where defects are found. Found: the progress flow
+was missing and a false one drawn in its place (WIP was drained only by the landing, so every
+submission left Known rework and a Known rework → Undiscovered pipe carried "10 fix rounds");
+one landing and each rejection drawn twice (the change and its co-flow as equal pipes);
+pipe hover lit the wrong pipe for seven of eleven (labels drawn above the hit twins; opposite
+pipes offset less than the hit width); card hover dimmed the loop's own pipes; the loop files
+claimed B where the detector found a material circuit; the broken-base ring showed two plus
+signs and a blank edge because the detected path was the wake path, not the controller;
+three different 21s on the chain row; Verified behaviour led with the suspect check; CA-39 in
+two stocks without saying so; the merge gate still declared `staging_failed`; "n/a" for a
+39-hour open outage; the block not re-rendering on the poll; unnamed tooltip directions; the
+worker's reading running into the merge gate's; hollow-stub labels floating over the wrong
+box; the loop grid two-thirds empty; mini rings carrying no counts; seven amber tiles; one
+style for team names and readings; a flush-left label; the activity bar's last label at the
+border; no statement of the machine's state or of where the hours go.
+
+Fixed: WIP drains on the submission (and the reading counts the branches of tickets
+IN_PROGRESS), so Work in progress → Awaiting review is a pipe labelled "32 submitted · 9 of
+them fixes"; the detector's conversions mark co-flows (through the hidden stock) and keep
+one flow per event per agent along the product's path, the page draws pipes from that list
+(test added), co-flows as thin dashed twins with no count; the landing is approved → landed
+once; hit twins are drawn above the labels, labels take no pointer events, opposite pipes
+are offset 16 (verified: eleven of eleven pipes light under a real mouse); card hover keeps a
+pipe whose valve is a member and that reaches a member stock; the template declares the
+rework cycles with no polarity and broken base as the pair pipeline blocked ↔ pipeline
+manager, so the ring carries its minus and "B · link signs" (golden test updated); the
+really-done tile reads "21 tests pass · 21 DONE" and names perceived against actual;
+Verified behaviour leads with the last clean check when the latest check looks like the
+host; Known rework says "CA-39 (blocked, in demand)"; the merge gate no longer emits
+`staging_failed`; an open outage's age is shown on the tile and in a banner; the pipeline
+pause is a banner above the map that says it comes before any new agent; the block
+re-renders when the window moves a minute, and the legend calls the window a sliding one;
+tooltip directions name their signal; agents sit on three rows with readings and team names
+styled apart and unattached agents showing what they produced; hollow-stub labels are short
+and anchored to their stub; loop cards size to their content; mini rings carry the counts on
+their flows; at most three tiles are amber; the left-most label is inset and the activity
+bar's last label anchored; the section is titled "Stocks and flows"; a "where the day goes"
+line orders the hours and the defects above the cards; the inferred review cause is named
+in the Known rework estimator.
+
+Declined: choosing one agent in the earlier-detection advice (the detector names every
+agent the structure permits; which one should author tests is the operator's call); a
+residence-time distribution per queue (median and oldest are read; a profile needs the
+history store of step 2).

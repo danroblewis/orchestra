@@ -49,7 +49,7 @@ software foundry's defaults; a project in another domain declares its own (secti
 | # | Stock | Unit | What it is | Inflows | Outflows |
 |---|-------|------|------------|---------|----------|
 | D | **Demand** | tickets | Work ordered and not started: OPEN and BLOCKED tickets. | ticket_created, reopen, a ticket blocked back to the planner | start (OPEN → IN_PROGRESS), cancel |
-| W | **Work in progress** | commits ahead of main | Commits on ticket branches that have not landed, whatever state the ticket is in. The level is git's; the filling event is a pickup, so the link is symbolic. | start | land, cancel, blocked back to demand |
+| W | **Work in progress** | commits ahead of main | Commits on the branches of tickets being worked now (IN_PROGRESS). The level is git's; the filling event is a pickup, so the link is symbolic. A submission moves the change on to Q; the landing later takes it off main's view. | start, fix pickup | submission, cancel, blocked back to demand |
 | Q | **Awaiting review** | changes | Submitted changes the reviewer has not judged yet (Reinertsen's queue). The rework cycles circulate the change through here; the defect co-flows into U. | submission (READY_FOR_REVIEW) | the reviewer's verdict (IN_REVIEW → APPROVED / REJECTED) |
 | K | **Known rework** | send-backs | Changes a reviewer or the gate sent back **because of a defect**, with the cause class. Conflicts and machine failures are counted separately (section 3). | defect found in review; defect found at the gate; defect found after landing | fixed (the ticket's next READY_FOR_REVIEW) |
 | U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery |
@@ -106,7 +106,16 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   it (Sterman ch. 6). Any other cycle is signed by the product of its link signs: negative is
   balancing, reinforcing otherwise, "?" when a link is indeterminate. First-order pairs (a
   stock and the agent that drains it) are the balancing loops the material circuits rest on
-  and are listed as such.
+  and are listed as such; the template declares the rework cycles with no polarity and the
+  broken-base controller as its pair (pipeline blocked ↔ pipeline manager), so the template
+  and the detector say the same thing.
+- **Flows drawn.** One event moves one thing. When an agent's event drains one stock and
+  fills another it is a conversion, drawn as a pipe with the agent as the valve. Where the
+  same event converts along the product's own path (chain row to chain row), its other
+  conversions are the same movement seen from a rework stock and are not drawn again; a
+  conversion into or out of the hidden stock is a co-flow (the defect inside the change),
+  drawn as a thin dashed twin and never counted. So a submission is W → Q once, with K → U as
+  its co-flow; a landing is approved → landed once.
 - **Observed vs closable.** A cycle is observed when every step of it was seen in the window:
   an agent's event attributed to it (by `by`/`author`, by the state a transition leaves with
   REJECTED split by cause, or by the author of a note seconds before an unblock or cancel),
