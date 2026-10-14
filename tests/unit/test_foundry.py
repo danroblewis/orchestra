@@ -161,7 +161,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert L["value"] == 1 and L["window"] == 1 and L["lines"] == 1 and L["fcc_upper"] is None   # no cohort old enough
     assert S["wip"]["commits_per_day"] == 3                                                     # the fixture's two setup commits and the branch commit, all in the window
     A = S["really_done"]
-    assert A["value"] == 3 and A["skipped"] == 2 and A["done_tickets"] == 1 and A["build"] is None and "nothing deployed" in A["source"]   # nothing deployed yet
+    assert A["value"] == 0 and A["at_last_deploy"] == 3 and A["skipped"] == 2 and A["done_tickets"] == 1 and A["build"] is None and "nothing deployed" in A["source"]   # nothing deployed yet: nothing served, 3 at the last landing
     assert S["tests"]["value"] == 15 and S["tests"]["stages"]["acceptance"]["skipped"] == 2
     assert (S["demand"]["value"], S["resources"]["value"], S["resources"]["files"]) == (2, 2, ["AGENTS.md", "README.md"])
     assert S["demand"]["ages"] == 2 and S["demand"]["oldest_age"] is not None and S["demand"]["oldest_age"] >= 0      # residence time from state_since
@@ -288,7 +288,7 @@ def test_a_defect_stays_known_through_blocks_and_no_verdict_reviews(project):
     tr(61, "REJECTED", "IN_PROGRESS"); tr(70, "IN_PROGRESS", "BLOCKED")                                                    # fix 2 started, then blocked
     r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
     S = r["stocks"]["known_rework"]
-    assert S["value"] == 1 and S["tickets"] == [t.id] and S["unresolved"] == [t.id]      # blocked, and the defect is still pending
+    assert S["value"] == 0 and S["not_resubmitted"] == [t.id] and S["unresolved"] == [t.id] and S["blocked"] == [t.id]   # picked up for a fix (so out of the stock), then blocked; the defect is still pending
     assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 1              # fix 1 followed to its verdict at minute 60
     assert r["inspections"]["review"]["by_cause"] == {"defect": 2, "no_verdict": 1}
 

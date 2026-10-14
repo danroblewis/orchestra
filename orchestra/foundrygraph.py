@@ -427,7 +427,7 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
     # chain row), the other conversions of that event are the same movement seen from a rework stock, not a second flow
     keep = []
     for c in out:
-        same = [o for o in out if o["agent"] == c["agent"] and o["via"] == c["via"] and not o["coflow"]]
+        same = [o for o in out if o["agent"] == c["agent"] and o["via_full"] == c["via_full"] and not o["coflow"]]   # the same event in the same declared form (OPEN>IN_PROGRESS and REJECTED>IN_PROGRESS are two flows)
         on_path = [o for o in same if row.get(o["src"]) == "chain" and row.get(o["dst"]) == "chain"]
         if c["coflow"] or not on_path or c in on_path:
             keep.append(c)

@@ -469,3 +469,50 @@ Declined: choosing one agent in the earlier-detection advice (the detector names
 agent the structure permits; which one should author tests is the operator's call); a
 residence-time distribution per queue (median and oldest are read; a profile needs the
 history store of step 2).
+
+## Round 14 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every number recomputed from the log,
+the store and git matched, and the page's honesty (not estimable, not served, host suspect,
+losses named) was praised. Found: the rework flow itself (Known rework → work) was not drawn,
+K's only drain folded into the W → Q pipe, so Known rework read as a sink; the chain changed
+unit at every pipe and 16 commits on approved branches were in no stock (WIP read 0); the
+escape entered no stock and L → K had no hollow stub; Really done kept 21 while its drains
+fired; Verified behaviour substituted the clean check for the latest; the discovery share by
+distinct defect hid the weight of one defect cycling; first-order pairs labelled "B or R";
+re-planning detected without the coordinator; loop rings carried the product's counts (32
+submissions, not the loop's 7 fix rounds); agent readings touched neighbours' names; eight
+long diagonals from the gate and the loop crossed the right half; one landing drawn twice
+(DONE and gate_landed); amber on the first three tiles, not the worst; uneven tile heights;
+co-flows on one segment; the pause banner without an age; the unconsumed stub without hover.
+
+Fixed: Known rework drains on the fix pickup (REJECTED → IN_PROGRESS), a pipe K → W with
+"30 fix pickups" by Orchestra; its level is the send-backs awaiting a fix, with the ones not
+yet re-submitted and not yet landed beside it (blocked ones marked); the rework cycles are
+declared through the pickup (K → Orchestra → W → worker → Q → reviewer → K) and detected as
+material circuits; conversions are grouped by the declared event form so the pickup and the
+start are two flows (test updated); WIP is counted in changes (tickets IN_PROGRESS) and
+every chain stock shows the commits ahead on its tickets' branches, so the 16 commits at the
+gate are seen; a "discovery after landing" loop (build → known rework → … → gate) is in the
+template, so the map carries hollow stubs at the build and at known rework; Really done
+reads 0 served with the count at the last deploy beside it while the build is down; Verified
+behaviour reads the latest check with the host-suspect flag and the last clean count as
+context; the discovery tile shows the share by distinct defect and by finding; pairs read
+"two loops: B through what it drains, R through what it fills"; re-planning is declared with
+the coordinator (demand → coordinator → Orchestra → W → worker → demand) and detected so;
+loop rings count the loop's own flow by the state the ticket came from (the log attributes
+each transition by its previous state): the review ring reads 21 pickups after review
+rejections, 7 fix submissions, 4 rejections, the gate ring 9 pickups after gate rejections;
+agents sit on three rows 70 apart with the at-limit flag on its own line and no reading
+touching a name (checked in the DOM); flows no pipe carries are short labelled stubs at the
+stock with the agent's line on hover, so the diagonals are gone; DONE is no longer a second
+inflow of landed; amber marks the three tiles furthest past their threshold; co-flows run at
+mid-height; the pause banner carries its age from the log; the unconsumed stub hovers;
+labels never land on a box or an agent (checked in the DOM). The automata model on main
+follows the template.
+
+Declined: a cost per recipe (the "where the day goes" line gives the hours and defects each
+recipe would address; attributing them to one binding would be a claim the data cannot
+support); calling out the pipeline manager's dead wake rule on `staging_failed` (that event
+is live after the runner restart; the model inspection tools now say what an event's
+emitters are).

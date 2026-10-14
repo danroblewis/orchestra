@@ -49,7 +49,7 @@ software foundry's defaults; a project in another domain declares its own (secti
 | # | Stock | Unit | What it is | Inflows | Outflows |
 |---|-------|------|------------|---------|----------|
 | D | **Demand** | tickets | Work ordered and not started: OPEN and BLOCKED tickets. | ticket_created, reopen, a ticket blocked back to the planner | start (OPEN → IN_PROGRESS), cancel |
-| W | **Work in progress** | commits ahead of main | Commits on the branches of tickets being worked now (IN_PROGRESS). The level is git's; the filling event is a pickup, so the link is symbolic. A submission moves the change on to Q; the landing later takes it off main's view. | start, fix pickup | submission, cancel, blocked back to demand |
+| W | **Work in progress** | changes | Changes being worked now: tickets IN_PROGRESS, a first implementation or a fix. The chain counts changes in every stock, so one unit is conserved from D to the gate; the commits ahead of main on each change's branch are the detail beside every chain stock's level (a change waiting at the gate still shows its +12). | start, fix pickup | submission, cancel, blocked back to demand |
 | Q | **Awaiting review** | changes | Submitted changes the reviewer has not judged yet (Reinertsen's queue). The rework cycles circulate the change through here; the defect co-flows into U. | submission (READY_FOR_REVIEW) | the reviewer's verdict (IN_REVIEW → APPROVED / REJECTED) |
 | K | **Known rework** | send-backs | Changes a reviewer or the gate sent back **because of a defect**, with the cause class. Conflicts and machine failures are counted separately (section 3). | defect found in review; defect found at the gate; defect found after landing | fixed (the ticket's next READY_FOR_REVIEW) |
 | U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery |
@@ -109,6 +109,24 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   and are listed as such; the template declares the rework cycles with no polarity and the
   broken-base controller as its pair (pipeline blocked ↔ pipeline manager), so the template
   and the detector say the same thing.
+- **The rework flow.** K is drained by the fix pickup (REJECTED → IN_PROGRESS), the flow the
+  cycle is named for, into W; its level is the send-backs not yet picked up, with the
+  send-backs not yet re-submitted and not yet landed beside it. The rework cycles therefore
+  run K → Orchestra (the pickup) → W → worker (the re-submission) → Q → reviewer → K, and
+  through the gate; W → U is the submission's co-flow.
+- **A loop ring's counts are the loop's own.** A transition on a ring is counted by the state
+  the ticket came from: the step's event is the one that drained the stock before the agent
+  on the ring, and the count is of transitions whose previous state belongs to that stock
+  (for the review loop, submissions that followed a review rejection, not every submission;
+  for re-planning, starts that followed an unblock, not every start). The log attributes
+  each transition by its previous state for this.
+- **Discovery after landing** is an expected loop (build → known rework → … → gate → build)
+  with no agent on its first link until one is created, so the map carries a hollow stub at
+  the build and at known rework, and the loop card the recipe.
+- **A drained stock's level moves.** Really done reads 0 served while the build is down or
+  main is broken, with the count at the last deploy beside it; Verified behaviour reads the
+  latest check, with the host-suspect flag and the last clean count as context, never a
+  substituted reading.
 - **Flows drawn.** One event moves one thing. When an agent's event drains one stock and
   fills another it is a conversion, drawn as a pipe with the agent as the valve. Where the
   same event converts along the product's own path (chain row to chain row), its other
