@@ -789,3 +789,38 @@ convention for the effect on injection, and the capability loop's B rests on it 
 design says); per-stage arrivals, residence and utilisation over the window and a series
 longer than two days (step 2's history store); thinning the merge gate's hover (it lights
 what the gate touches, which is the fact about this org).
+
+## Round 22 (2026-10-14)
+
+Reviewer's verdict: not understandable and correct; every number checked reproduced from the
+raw log, and the round-21 fixes were verified in place. Found: Known rework's level (changes
+with an unlanded defect) was not the integral of its drawn flows (send-backs in, pickups out)
+and the design said two things about it; the capability stocks were declared filled by
+landings while the gap advice said no agent fills them; undiscovered rework had no
+post-landing outflow in the data; "where the day goes" summed overlapping categories past
+the total; the gate tile hid the hang reclassification; the drill-down's review rate was a
+second rate with no label; the miss rate printed as a fraction; the discovery label clipped
+by the agent-time bar; the restart hump's label pushed up to the agent band and the start
+label caught inside the restart hump; a shadowed hit twin; the map rebuilt on every refresh
+because the outage counter was in its signature; pipe widths too flat to show 70 against 2.
+
+Fixed: Known rework is a stock of open defects, filled by a send-back for a defect and
+drained by the landing of the fix, so its level is the integral of its own flows in its own
+unit; the fix pickup is drawn on W as W's inflow; the rework cycles are declared through the
+worker (who reads the open defects and re-submits) and reinforcing, as task cycling is, and
+a link one agent both fills and drains is signed by the mechanism the window saw most (the
+gate's: 9 rejections against 2 landings), with the card saying so; the design tells one
+story; the capability stocks have no landing inflow, so the model and the gap advice agree;
+undiscovered rework's post-landing outflows are the crash proxies; the day's hours say how
+many fix hours ended in a timeout instead of summing twice; the gate tile names the hangs;
+the drill-down's rate is "sent back from review (all causes)"; rates print as percentages;
+the review tile's tooltip says how a verdict is read; the humps rise from the box centres
+with labels narrower than the gap, the inlet's words sit under its box, and the canvas has
+room under the bottom row; pipe widths span 1 to 6 px on the log of the count; the refresh
+signature rounds the outage to ten minutes. No label overlaps another at 1280 or 1600, none
+is clipped, and every pipe's midpoint resolves to its own hover target. The automata model
+on main follows the template.
+
+Declined: a value per gap and a way to try a binding from the page (the card's readings are
+the magnitude; what-if belongs to the Supervisor's tools by invariant 7); thinner hover on
+the gate; colour by band.

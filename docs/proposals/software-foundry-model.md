@@ -131,12 +131,15 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   step with a cause counts every transition of its event that carried that cause, so the
   two rework rings' fix submissions sum to the fix rounds. A no-verdict return finds nothing,
   so a loss stock never takes a co-flow from the hidden stock.
-- **Known rework's level is the fix queue**: changes sent back for a defect and not yet
-  picked up, drained by the pickup, so the chain conserves its changes and no change is in
-  two boxes. The defects not yet landed are a count beside it (those changes are in the box
-  they sit in now: at the gate, blocked). Rework effort is still counted while the defect is
-  unlanded (the previous bullet); the level and the effort measure different things and say
-  so.
+- **Known rework is a stock of open defects** (Cooper's rework to do, Madachy's detected
+  defects): a send-back for a defect fills it and the landing of the fix drains it, so the
+  level is the integral of its own flows and is drawn in its own unit. The change itself sits
+  in whatever box its state says (at the gate, blocked, being fixed), and every chain box
+  names how many of its changes carry an open defect. The fix pickup moves the change into W
+  and is drawn there; it is not a flow of this stock. The rework cycles close through the
+  worker, who reads the open defects and re-submits: rework generates rework when the fix is
+  wrong (Rahmandad and Hu's task cycling), so the cycles are declared reinforcing, with the
+  gate's landing of a good fix as the opposing mechanism on the gate's link.
 - **A carrying event.** A stock may declare `carried_by` events that carry its content on
   without draining it, and `carried_to` the stock each delivers to: a deploy carries the
   landed commits into the build, so L → B is drawn as a pipe while main keeps its commits.
@@ -160,10 +163,6 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **Demand splits ready from waiting.** An OPEN ticket waiting on a dependency that is not
   DONE is not ready for pickup; the box says how many are ready, what the rest wait on, and
   the residence time is the ready part's.
-- **Known rework's level is the changes with an unlanded defect**, wherever they sit, with the
-  pickup queue (usually 0 on this machine, which re-picks in seconds) as its small line; the
-  pipes in and out move the change, the level counts the defect until the fix lands, and the
-  box says so. Every chain box names how many of its changes carry an unlanded defect.
 - **A fix round belongs to the loop it was on**: the review loop's bad-fix fraction is the
   share of fixes of review-found defects that were judged bad, the gate loop's the share of
   fixes of gate-found defects, so the rings' counts and the cards' fractions have the same
@@ -184,11 +183,9 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   stage, and from a deploy to its first trouble after landing, shown with the discovery tile.
 - **Starts split three ways**: first starts, starts after a re-plan (the re-planning loop's
   flow) and re-picks after a restart (a loss).
-- **The rework flow.** K is drained by the fix pickup (REJECTED → IN_PROGRESS), the flow the
-  cycle is named for, into W; its level is the send-backs not yet picked up, with the
-  send-backs not yet re-submitted and not yet landed beside it. The rework cycles therefore
-  run K → Orchestra (the pickup) → W → worker (the re-submission) → Q → reviewer → K, and
-  through the gate; W → U is the submission's co-flow.
+- **The rework flow.** The fix pickup (REJECTED → IN_PROGRESS) is W's inflow from a sent-back
+  change, drawn on W; W → U is the submission's co-flow. The rework cycles run K → worker
+  (reads the open defects, re-submits) → Q → reviewer → K, and through the gate.
 - **A loop ring's counts are the loop's own.** A transition on a ring is counted by the state
   the ticket came from: the step's event is the one that drained the stock before the agent
   on the ring, and the count is of transitions whose previous state belongs to that stock
@@ -226,6 +223,10 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   open loop never tells Orchestra's processes to change and never lists Orchestra's own
   events as something a custom agent should emit; where a loop's template carries a recipe,
   the card shows that recipe and the detector's facts beside it.
+- **A disputed link is signed by the window.** Where one agent both fills and drains a stock
+  (the gate rejects a fix into Known rework and lands a good one out of it), the link's sign
+  is the mechanism the window saw most, and the card says which and how many; with no window
+  the loop is indeterminate.
 - **Flows drawn.** One event moves one thing. When an agent's event drains one stock and
   fills another it is a conversion, drawn as a pipe with the agent as the valve. Where the
   same event converts along the product's own path (chain row to chain row), its other

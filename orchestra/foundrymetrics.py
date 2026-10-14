@@ -485,6 +485,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     hours: dict[str, float] = {}
     nturns: dict[str, int] = {}
     lost_worker = lost_all = 0.0
+    lost_by: dict[str, float] = {}
     timed_out: dict[str, int] = {}
     turns_by_kind: dict[str, int] = {}
     timed_idx: set[int] = set()                                   # each timeout belongs to the turn it ended, once
@@ -511,6 +512,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         nturns[act] = nturns.get(act, 0) + 1
         if turn_i in timed_idx:
             lost_all += dur
+            lost_by[act] = lost_by.get(act, 0.0) + dur
             if act in ("implement", "fix", "rerun"):
                 lost_worker += dur
     worker_hours = hours.get("implement", 0.0) + hours.get("fix", 0.0)        # productive hours; re-runs after no-verdict reviews are a loss
@@ -598,7 +600,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                  "losses": {"restarts": pairs.get("IN_PROGRESS>OPEN", 0), "repicks": repicks, "turn_timeouts": counts.get("turn_timed_out", 0), "turn_errors": counts.get("turn_error", 0),
                             "compactions": counts.get("agent_compacted", 0), "resets": counts.get("agent_reset", 0), "crashes": counts.get("agent_crashed", 0),
                             "review_no_verdict": rev_cause.get("no_verdict", 0), "review_redo": redo, "gate_lost": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0),
-                            "rerun_hours": round(hours.get("rerun", 0.0) / days, 1), "worker_hours_ending_in_timeout": round(lost_worker / days, 1), "hours_ending_in_timeout": round(lost_all / days, 1)}},
+                            "rerun_hours": round(hours.get("rerun", 0.0) / days, 1), "by_activity": {k: round(v / days, 1) for k, v in lost_by.items()}, "worker_hours_ending_in_timeout": round(lost_worker / days, 1), "hours_ending_in_timeout": round(lost_all / days, 1)}},
         "dora": {"landing_per_day": round(len(landed) / days, 1), "lead_time": _median(leads), "lead_n": len(leads), "land_to_deploy": _median(land_to_deploy),
                  "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)), "crashing_builds": crashing_builds,
                  "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores),
