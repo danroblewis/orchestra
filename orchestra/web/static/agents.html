@@ -127,6 +127,29 @@ function agentGraph(m) {
   // picture is the communication pattern rather than the catalogue of everything logged.
   let ls = Object.values(links);
   if (!window.EV_SHOW_ALL) { const watched = new Set(ls.filter((l) => l.source.startsWith("ev:")).map((l) => l.source)); ls = ls.filter((l) => !l.target.startsWith("ev:") || watched.has(l.target)); }
+  // Collapse event nodes that connect to exactly the same emitters and the same subscribers
+  // into one multi-line node: the map is about who talks to whom, not the catalogue of names.
+  const sig = {};
+  for (const n of Object.values(evNodes)) {
+    const ins = ls.filter((l) => l.target === n.id).map((l) => l.source).sort().join(","), outs = ls.filter((l) => l.source === n.id).map((l) => l.target).sort().join(",");
+    if (!ins && !outs) continue;
+    (sig[ins + "|" + outs] = sig[ins + "|" + outs] || []).push(n);
+  }
+  const alias = {};
+  for (const group of Object.values(sig)) {
+    if (group.length < 2) continue;
+    group.sort((a, b) => b.cnt - a.cnt || a.label.localeCompare(b.label));
+    const id = "ev:group:" + group.map((n) => n.id).join("+");
+    evNodes[id] = { id, kind: "event", label: group[0].label, labels: group.map((n) => n.label), type: "group", filter: null,
+                    custom: group.some((n) => n.custom), cnt: group.reduce((a, n) => a + n.cnt, 0) };
+    for (const n of group) { alias[n.id] = id; delete evNodes[n.id]; }
+  }
+  if (Object.keys(alias).length) {
+    const merged = {};
+    for (const l of ls) { const a = alias[l.source] || l.source, b = alias[l.target] || l.target, k = a + ">" + b;
+      merged[k] = merged[k] || { ...l, source: a, target: b, seen: 0 }; merged[k].seen += l.seen; merged[k].loop = merged[k].loop || l.loop; }
+    ls = Object.values(merged);
+  }
   const used = new Set(ls.flatMap((l) => [l.source, l.target]));
   const ns = [...m.nodes.filter((n) => n.kind !== "event" && used.has(n.id)).map((n) => ({ ...n })), ...Object.values(evNodes).filter((n) => used.has(n.id))];
   return { nodes: ns, links: ls };
@@ -145,7 +168,7 @@ function eventMap(m) {
   if (!g.nodes.length) return "";
   const cycles = sccs(g.nodes, g.links);
   const inCyc = new Set(cycles.flat());
-  const name = (id) => { const n = g.nodes.find((x) => x.id === id); return n ? n.label : id; };
+  const name = (id) => { const n = g.nodes.find((x) => x.id === id); return n ? (n.labels ? n.labels.join("/") : n.label) : id; };
   const loops = cycles.map((c) => { const es = g.links.filter((l) => c.includes(l.source) && c.includes(l.target));
     const agents = c.filter((id) => !id.startsWith("ev:")).map(name);
     return `<div><b>${esc(agents.join(" ⇄ "))}</b>: ${es.map((l) => `${esc(name(l.source))} → ${esc(name(l.target))}`).join(", ")}</div>`; }).join("");
@@ -167,7 +190,7 @@ function drawGraph(g, inCyc) {
   const R = 22;
   if (EVSIM) EVSIM.stop();
   const sim = EVSIM = d3.forceSimulation(nodes).force("link", d3.forceLink(links).id((d) => d.id).distance(110)).force("charge", d3.forceManyBody().strength(-520))
-    .force("center", d3.forceCenter(W / 2, H / 2)).force("collide", d3.forceCollide((n) => n.kind === "event" ? 46 : R + 30));
+    .force("center", d3.forceCenter(W / 2, H / 2)).force("collide", d3.forceCollide((n) => n.kind === "event" ? Math.max(46, 10 + ((n.labels || [1]).length - 1) * 6.5 + 26, Math.max(...(n.labels || [n.label]).map((l) => l.length)) * 3.4 + 20) : R + 30));
   const cyc = (l) => inCyc.has(l.source.id || l.source) && inCyc.has(l.target.id || l.target);
   const path = svg.append("g").selectAll("path").data(links).join("path").attr("class", (l) => `e ${l.loop ? "loop" : ""} ${l.seen ? "seen" : ""} ${cyc(l) ? "cyc" : ""}`).attr("marker-end", (l) => cyc(l) ? "url(#arrc)" : "url(#arr)")
     .attr("data-from", (l) => l.source.id || l.source).attr("data-to", (l) => l.target.id || l.target);
@@ -180,20 +203,22 @@ function drawGraph(g, inCyc) {
     .call(d3.drag().on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; }).on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = d.fy = null; }));
   node.filter((n) => active.has(n.id)).append("circle").attr("class", "halo").attr("r", R + 7).append("title").text("active right now");
   node.filter((n) => n.kind !== "event").append("circle").attr("class", "body").attr("r", R);
-  node.filter((n) => n.kind === "event").append("rect").attr("x", (n) => -Math.max(40, n.label.length * 3.4 + 12)).attr("y", -10).attr("width", (n) => 2 * Math.max(40, n.label.length * 3.4 + 12)).attr("height", 20).attr("rx", 5);
+  const evLines = (n) => n.labels || [n.label], evHW = (n) => Math.max(40, Math.max(...evLines(n).map((l) => l.length)) * 3.4 + 12), evHH = (n) => 10 + (evLines(n).length - 1) * 6.5;
+  node.filter((n) => n.kind === "event").append("rect").attr("x", (n) => -evHW(n)).attr("y", (n) => -evHH(n)).attr("width", (n) => 2 * evHW(n)).attr("height", (n) => 2 * evHH(n)).attr("rx", 5);
   // Like the Dashboard avatars: the initial inside the colour, the name beneath it in text colour.
-  node.filter((n) => n.kind === "event").append("text").attr("text-anchor", "middle").attr("dy", 3).attr("class", (n) => `ev ${n.custom ? "custom" : ""}`).text((n) => n.label);
+  const evText = node.filter((n) => n.kind === "event").append("text").attr("text-anchor", "middle").attr("class", (n) => `ev ${n.custom ? "custom" : ""}`);
+  evText.selectAll("tspan").data((n) => evLines(n).map((l, i, arr) => ({ l, i, n: arr.length }))).join("tspan").attr("x", 0).attr("dy", (d) => d.i === 0 ? 3 - (d.n - 1) * 6.5 : 13).text((d) => d.l);
   node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", 5).attr("class", "initial").text((n) => n.label[0].toUpperCase());
   node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", R + 13).attr("class", "name").text((n) => n.label);
-  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? 22 : R + 24).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.team || (n.kind === "system" ? "system" : ""));
+  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? evHH(n) + 12 : R + 24).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.team || (n.kind === "system" ? "system" : ""));
   node.append("title").text((n) => `${n.label}${n.description ? ": " + n.description : ""}`);
   sim.on("tick", () => {
-    nodes.forEach((n) => { const hw = n.kind === "event" ? Math.max(40, n.label.length * 3.4 + 12) + 4 : Math.max(R + 4, n.label.length * 3.3); n.x = Math.max(hw, Math.min(W - hw, n.x)); n.y = Math.max(R + 10, Math.min(H - R - 30, n.y)); });
+    nodes.forEach((n) => { const hw = n.kind === "event" ? Math.max(40, Math.max(...(n.labels || [n.label]).map((l) => l.length)) * 3.4 + 12) + 4 : Math.max(R + 4, n.label.length * 3.3); const hh = n.kind === "event" ? 10 + ((n.labels || [1]).length - 1) * 6.5 + 14 : R + 10; n.x = Math.max(hw, Math.min(W - hw, n.x)); n.y = Math.max(hh, Math.min(H - hh - 20, n.y)); });
     path.attr("d", (l) => { const s = l.source, t = l.target;
       if (s === t) return `M${s.x},${s.y - R} C${s.x + 50},${s.y - 70} ${s.x + 70},${s.y - 20} ${s.x + R},${s.y}`;
       const dx = t.x - s.x, dy = t.y - s.y, dist = Math.hypot(dx, dy) || 1, nx = -dy / dist, ny = dx / dist;       // curve so a reverse edge takes the other side
       const mx = (s.x + t.x) / 2 + nx * 28, my = (s.y + t.y) / 2 + ny * 28;
-      const tr = t.kind === "event" ? 14 : R + 2;
+      const tr = t.kind === "event" ? 10 + ((t.labels || [1]).length - 1) * 6.5 + 4 : R + 2;
       const ex = t.x - (dx / dist) * tr, ey = t.y - (dy / dist) * tr;
       return `M${s.x},${s.y} Q${mx},${my} ${ex},${ey}`; });
     lbl.attr("x", (l) => { const s = l.source, t = l.target; if (s === t) return s.x + 55; const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy) || 1; return (s.x + t.x) / 2 - dy / d * 16; })
