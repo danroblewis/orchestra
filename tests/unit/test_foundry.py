@@ -11,9 +11,9 @@ from fastapi.testclient import TestClient
 from orchestra import foundry, foundrygit, foundrymetrics
 from orchestra.config import init_project
 from orchestra.events import Events
+from orchestra.model import State
 from orchestra.org import all_agents, all_teams
 from orchestra.store import LocalStore
-from orchestra.model import State
 from orchestra.web import app as web
 
 
@@ -134,24 +134,44 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     store.save_gate_run({"id": "g3", "batch": [t2.id], "status": "rejected", "started_at": ts(111), "finished_at": ts(120),
                          "stages": [stage("build", "passed", 0), stage("unit", "failed", 1, "1 failed, 11 passed")]})
     store.save_gate_run({"id": "g4", "batch": [t2.id], "status": "conflict", "started_at": ts(121), "finished_at": ts(122), "stages": []})
+    # the reviewer's verdict note makes t1's rejection a defect; t2 is sent back by a no-verdict review later
+    from orchestra.model import Note
+    store.add_note(t1.id, Note(author="reviewer", kind="review", text="REJECTED: colours wrong", created_at=ts(40)))
+    emit("ticket_transition", 125, ticket=t2.id, **{"from": "OPEN", "to": "IN_PROGRESS"})
+    emit("ticket_transition", 130, ticket=t2.id, **{"from": "IN_PROGRESS", "to": "READY_FOR_REVIEW"})
+    emit("ticket_transition", 131, ticket=t2.id, **{"from": "READY_FOR_REVIEW", "to": "IN_REVIEW"})
+    emit("ticket_transition", 140, ticket=t2.id, **{"from": "IN_REVIEW", "to": "REJECTED"})      # no reviewer note: no verdict
+    emit("ticket_transition", 141, ticket=t2.id, **{"from": "REJECTED", "to": "IN_PROGRESS"})
+    emit("session_started", 141, session=f"worker-{t2.id}", kind="worker", ticket=t2.id)
+    emit("session_settled", 147, session=f"worker-{t2.id}")
     r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project))
     ins = r["inspections"]
-    assert ins["review"]["arrivals"] == 2 and ins["review"]["sent_back"] == 1 and ins["review"]["pass"] == 0.5
+    assert ins["review"]["arrivals"] == 3 and ins["review"]["by_cause"] == {"defect": 1, "no_verdict": 1} and ins["review"]["pass"] == 0.67
     assert ins["gate"]["by"] == {"landed": 1, "timeout": 1, "defect": 1, "conflict": 1} and ins["gate"]["defect_stage"] == {"unit": 1}
-    assert ins["gate"]["pass"] == 0.5                                                 # one landed of two runs that ended on their own result
-    assert r["flows"]["failure"] == 1 and r["flows"]["conflict"] == 1 and r["flows"]["fix"] == 1
+    assert ins["gate"]["defect_tickets"] == {t2.id: 1} and ins["gate"]["pass"] == 0.5          # one landed of two runs on their own result
+    f = r["flows"]
+    assert f["start"] == 2 and f["repick"] == 1 and f["restart"] == 1                            # t2's second pickup follows a restart
+    assert f["failure"] == 1 and f["conflict"] == 1 and f["fix"] == 1 and f["review"] == 1 and f["review_no_verdict"] == 1
     assert r["stocks"]["U"]["value"] is None and r["stocks"]["U"]["estimable"] is False
-    assert r["stocks"]["L"]["count"] == 1 and r["stocks"]["L"]["added"] == 1 and r["stocks"]["L"]["fcc_upper"] is None   # no cohort old enough
-    assert r["stocks"]["A"]["passing"] == 3 and r["stocks"]["A"]["skipped"] == 2 and r["stocks"]["A"]["done_tickets"] == 1
+    assert r["stocks"]["K"]["value"] == 0                                                        # t1's defect was re-submitted; t2's send-back was no verdict
+    L = r["stocks"]["L"]
+    assert L["value"] == 1 and L["window"] == 1 and L["lines"] == 1 and L["fcc_upper"] is None   # no cohort old enough
+    assert r["stocks"]["W"]["commits_per_day"] == 3                                               # the fixture's two setup commits and the branch commit, all in the window
+    A = r["stocks"]["A"]
+    assert A["value"] == 3 and A["skipped"] == 2 and A["done_tickets"] == 1 and A["build"] is None and A["source"].startswith("main")   # nothing deployed yet
     assert r["stocks"]["T"]["value"] == 15 and r["stocks"]["T"]["stages"]["acceptance"]["skipped"] == 2
     assert (r["stocks"]["D"]["value"], r["stocks"]["R"]["value"], r["stocks"]["R"]["files"]) == (2, 2, ["AGENTS.md", "README.md"])
     c = r["stocks"]["C"]
-    assert c["turns"] == {"implement": 2, "fix": 1, "plan": 1}
-    assert c["rework_share"] == round((10 / 60) / ((30 + 18) / 60 + 10 / 60), 2)
+    assert c["turns"] == {"implement": 2, "fix": 1, "rerun": 1, "plan": 1}
+    assert c["rework_share"] == round((10 / 60) / ((30 + 18 + 10 + 6) / 60), 2)
     assert c["losses"]["restarts"] == 1 and c["losses"]["turn_timeouts"] == 1 and c["losses"]["worker_hours_ending_in_timeout"] == 0.3
+    assert c["losses"]["review_no_verdict"] == 1 and c["losses"]["rerun_hours"] == 0.1
+    assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 0
     assert r["dora"]["deploys"] == 1 and r["dora"]["change_failure"] == 1.0 and r["dora"]["restore"] is None
     assert r["dora"]["lead_time"] == 70 * 60 and r["dora"]["land_to_deploy"] == 60
-    assert r["rounds"]["histogram"]["0"] == 3                                        # the tracker's review_rounds, not the log
+    assert r["rounds"]["histogram"]["0"] == 3                                                     # the tracker's review_rounds, not the log
+    assert r["signals"]["restarts"] == {"now": 1, "before": 0, "direction": "up"}
+    assert r["window"]["before"]["until"] == r["window"]["since"]
 
 
 def test_foundry_endpoint_and_definitions(project):
@@ -161,3 +181,4 @@ def test_foundry_endpoint_and_definitions(project):
     assert {f["key"] for f in m["flows"] if f["machine"] is None} == {"failure", "escape", "tests", "improve", "base"}
     assert [lp["polarity"] for lp in m["loops"]] == ["B", "B", "B", "B", "B", "R", "R"]
     assert m["readings"]["stocks"]["U"]["estimable"] is False and m["readings"]["git"] is True
+    assert m["bound"]["escape"] == ["pipeline_manager"] and m["bound"]["improve"] == []        # no custom agent yet; the built-in manager watches staging

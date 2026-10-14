@@ -54,10 +54,12 @@ class Flow:
     name: str
     src: str                       # stock key, or "effort"
     dst: str                       # stock key, or "loss"
-    machine: str | None            # agent or system name on the valve; None = unattended
+    machine: str | None            # built-in agent or system on the valve; None = whoever is bound, else unattended
     event: str                     # the event a new agent would wake on, or what to add
     measured_by: str
     exists: bool = True            # False when the event does not exist yet
+    binds: tuple[str, ...] = ()    # events whose subscribers are on this flow (custom agents, or named built-ins)
+    builtin_ok: tuple[str, ...] = ()   # built-in agents that count as bound when subscribed
 
 
 FLOWS: tuple[Flow, ...] = (
@@ -67,15 +69,15 @@ FLOWS: tuple[Flow, ...] = (
     Flow("review", "inspect in review", "W", "K", "reviewer", "ticket_transition:REJECTED", "IN_REVIEW → REJECTED"),
     Flow("gate", "inspect at the gate", "W", "K", "merge_gate", "gate_rejected", "gate runs that failed on their own result"),
     Flow("conflict", "conflict", "W", "W", "merge_gate", "gate_conflict", "gate_conflict: concurrence rework, driven by work in progress"),
-    Flow("failure", "machine failure", "W", "loss", None, "turn_timed_out", "gate timeouts, start failures, reviewer without a verdict, worker crashes, turn timeouts"),
-    Flow("escape", "discover after landing", "L", "K", None, "staging_failed", "a test that passed before and fails now; a bug ticket citing a landed commit; staging restarted"),
+    Flow("failure", "machine failure", "W", "loss", None, "turn_timed_out", "gate timeouts, start failures, reviewer without a verdict, worker crashes, turn timeouts", binds=("turn_timed_out", "agent_crashed", "gate_error")),
+    Flow("escape", "discover after landing", "L", "K", None, "staging_failed", "a test that passed before and fails now; a bug ticket citing a landed commit; staging restarted", binds=("staging_failed", "gate_base_broken", "staging_restarted"), builtin_ok=("pipeline_manager",)),
     Flow("fix", "fix", "K", "W", "worker", "ticket_transition:IN_PROGRESS", "REJECTED → IN_PROGRESS … READY_FOR_REVIEW"),
     Flow("land", "land", "W", "L", "merge_gate", "gate_landed", "gate_landed"),
     Flow("deploy", "deploy", "L", "B", "orchestra", "staging_deployed", "staging_deployed"),
     Flow("verify", "verify", "B", "A", "orchestra", "gate_landed", "the acceptance stage of the gate run that landed the build"),
-    Flow("tests", "add tests", "effort", "T", None, "gate_landed", "tests on main after each landing, against before"),
-    Flow("improve", "improve", "K", "R", None, "lesson_decided", "lessons decided; agent-facing docs landed; no event today", exists=False),
-    Flow("base", "broken base", "L", "K", None, "gate_base_broken", "gate_base_broken"),
+    Flow("tests", "add tests", "effort", "T", None, "gate_landed", "tests on main after each landing, against before", binds=("ticket_transition:DONE", "gate_landed")),
+    Flow("improve", "improve", "K", "R", None, "lesson_decided", "lessons decided; agent-facing docs landed; no event today", exists=False, binds=("ticket_transition:REJECTED", "gate_rejected", "gate_conflict", "lesson_decided")),
+    Flow("base", "broken base", "L", "K", None, "gate_base_broken", "gate_base_broken", binds=("gate_base_broken",), builtin_ok=("pipeline_manager",)),
 )
 
 
@@ -107,6 +109,29 @@ LOOPS: tuple[Loop, ...] = (
     Loop("R2", "debt drag", "R", "churn → maintainability → landed per worker-hour falls", "landed per worker-hour falling while diff size is constant",
          "Franco et al. 2016 (hypothesised here)"),
 )
+
+
+def bound_agents(agents: dict) -> dict[str, list[str]]:
+    """For each flow without a built-in machine, the agents whose wake rules bind them to it:
+    custom agents on any of the flow's events, and the named built-ins. The worker and the
+    reviewer are valves of their own flows and never count here."""
+    from .org import event_matches
+    out: dict[str, list[str]] = {}
+    for f in FLOWS:
+        if f.machine is not None:
+            continue
+        names = []
+        for name, ag in agents.items():
+            if name in ("worker", "reviewer") or (ag.builtin and name not in f.builtin_ok):
+                continue
+            for b in f.binds:
+                t, _, suffix = b.partition(":")
+                ev = {"type": t, "to": suffix, "status": suffix, "probe": suffix, "subject": suffix} if suffix else {"type": t}
+                if event_matches(list(ag.wake_on), ev):
+                    names.append(name)
+                    break
+        out[f.key] = sorted(names)
+    return out
 
 
 def as_dict() -> dict:

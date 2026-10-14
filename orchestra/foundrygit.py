@@ -75,6 +75,12 @@ def survival(repo: Path, base: str, commits: list[str]) -> dict[str, int]:
     return counts
 
 
+def commits_since(repo: Path, since_iso: str) -> int | None:
+    """Commits made on any branch since the time, merges excluded: the work the workers did."""
+    out = _git(repo, "rev-list", "--all", "--no-merges", "--count", f"--since={since_iso}").strip()
+    return int(out) if out.isdigit() else None
+
+
 def documents(repo: Path) -> dict:
     """Agent-facing documents in the checkout: count, lines, and decided lessons."""
     seen: set[Path] = set()

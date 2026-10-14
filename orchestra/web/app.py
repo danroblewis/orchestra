@@ -106,8 +106,9 @@ def create_app(project: Project) -> FastAPI:
         """The software foundry's stocks, flows, and loops with their readings over the last day."""
         from .. import foundry, foundrymetrics
         from ..org import all_agents, all_teams
-        r = foundrymetrics.readings(project, store, events.read(0, limit=200000)[0], all_agents(project), all_teams(project))
-        return {"ok": True, **foundry.as_dict(), "readings": r}
+        ags = all_agents(project)
+        r = foundrymetrics.readings(project, store, events.read(0, limit=200000)[0], ags, all_teams(project))
+        return {"ok": True, **foundry.as_dict(), "bound": foundry.bound_agents(ags), "readings": r}
 
     @app.get("/api/agents/{name}")
     async def agent_detail(name: str) -> dict:
