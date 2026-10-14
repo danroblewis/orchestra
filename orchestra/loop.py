@@ -183,6 +183,7 @@ class Loop:
                 self._drop_worktree(t)
         self.staging.ensure_running()
         self._refresh_org()
+        self._detect_loops()
         try:
             self.prober.tick(config_probes(self.project) + team_probes(self.project, self.teams))
         except Exception as e:
@@ -201,6 +202,39 @@ class Loop:
                 reasons = list(dict.fromkeys(w["reason"] for w in self.store.drain_wakeups(target)))
                 if reasons:
                     self._spawn(self.agent_threads, target, self._wake, target, reasons)
+
+    def _detect_loops(self) -> None:
+        """When the organisation changes, find the feedback loops in its bindings. A cycle
+        not seen before and not named wakes the Supervisor once, with its path, to name it
+        or call it accidental. Loops are found, never configured."""
+        sig = (tuple(sorted((a.name, tuple(a.wake_on), tuple(a.emits), a.team) for a in self.agents.values())),
+               tuple(sorted((t.name, tuple(t.emits), tuple(a for a in t.agents)) for t in self.teams.values())))
+        if sig == getattr(self, "_org_sig", None):
+            return
+        self._org_sig = sig
+        try:
+            from .api_org import detected_loops
+            fams = [f for f in detected_loops(self.project)["detected"] if not f["self"]]
+        except Exception as e:
+            log(f"loops: {e!r}")
+            return
+        seen = self.store.runtime().get("loops_seen")
+        sigs = {f["signature"] for f in fams}
+        if seen is None:
+            # First run: record what exists without asking about it; the Supervisor is told
+            # about loops that appear from here on, which are the ones a change created.
+            self.store._mutate_runtime(lambda d: d.__setitem__("loops_seen", sorted(sigs)))
+            return
+        new = [f for f in fams if f["signature"] not in set(seen) and not f["named"]]
+        if not new:
+            return
+        for f in new:
+            self.events.emit("loop_detected", signature=f["signature"], agents=f["agents"], path=" → ".join(f["labels"]))
+        shown = "; ".join(" → ".join(f["labels"]) for f in new[:4])
+        self.store.add_wakeup("supervisor", f"{len(new)} new feedback loop{'s' if len(new) > 1 else ''} appeared in the agents' bindings, e.g. {shown}. "
+                              "Call list_loops, then name the ones that matter with name_loop (purpose, signal, owner) or reply that they are accidental.")
+        log(f"loops: {len(new)} new")
+        self.store._mutate_runtime(lambda d: d.__setitem__("loops_seen", sorted(set(seen) | sigs)))
 
     def _refresh_org(self) -> None:
         """Reload roles, teams, and agents from their stores; start resident processes for

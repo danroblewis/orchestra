@@ -238,6 +238,35 @@ class TeamDef:
         return cls(**{k: v for k, v in d.items() if k in known})
 
 
+@dataclass
+class LoopDef:
+    """A named feedback loop: a detected cycle given a purpose, a signal, and an owner."""
+
+    name: str
+    signature: str                        # eventgraph.signature of the cycle's members
+    agents: list[str] = field(default_factory=list)
+    purpose: str = ""                     # the standing condition this loop keeps true
+    signal: str = ""                      # how to tell it is working: an event rate, a probe, a number
+    owner: str | None = None              # team name
+    through_the_world: str = ""           # the leg Orchestra cannot see, in a sentence
+    created_by: str = "supervisor"
+    created_at: str = field(default_factory=now)
+
+    def validate(self) -> None:
+        if not _NAME.match(self.name):
+            raise OrgError("loop name must be lowercase letters, digits, and underscores")
+        if not self.signature:
+            raise OrgError("a loop names a detected cycle by its signature")
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> LoopDef:
+        known = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in d.items() if k in known})
+
+
 # -- store ------------------------------------------------------------------------------
 
 class RepoOrgStore:
@@ -335,6 +364,31 @@ class RepoOrgStore:
             if p.exists():
                 p.unlink()
         self.last_commit_note = commit_orchestra_files(self.project, f"orchestra: remove team {name}")
+
+    # loops
+    def list_loops(self) -> list[LoopDef]:
+        out = []
+        for p in sorted((self.root / "loops").glob("*.json")):
+            try:
+                out.append(LoopDef.from_dict(json.loads(p.read_text(encoding="utf-8"))))
+            except (json.JSONDecodeError, TypeError):
+                continue
+        return out
+
+    def save_loop(self, loop: LoopDef) -> LoopDef:
+        loop.validate()
+        d = self.root / "loops"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{loop.name}.json").write_text(json.dumps(loop.to_dict(), indent=2) + "\n", encoding="utf-8")
+        self.last_commit_note = commit_orchestra_files(self.project, f"orchestra: loop {loop.name}")
+        return loop
+
+    def delete_loop(self, name: str) -> None:
+        p = self.root / "loops" / f"{name}.json"
+        if not p.exists():
+            raise OrgError(f"no loop {name!r}")
+        p.unlink()
+        self.last_commit_note = commit_orchestra_files(self.project, f"orchestra: remove loop {name}")
 
     def ensure_space(self, team: TeamDef) -> Path:
         """The team's working space: created with a tools/ directory, and listed in

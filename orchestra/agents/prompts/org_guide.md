@@ -73,6 +73,18 @@ Two more sources exist, and a team design should say which it uses:
 
 Prefer probes to agent events: a probe needs no judgment and starts paying immediately.
 
+## Feedback loops
+
+Orchestra finds the feedback loops in the bindings (`list_loops`): every cycle of agent →
+event → agent, including direct messages. Nobody configures them. Your part is to say what
+each one is for: `name_loop` with a purpose (the standing condition it keeps true, which
+should be a team's responsibility), a signal that shows it is working (an event rate, a
+probe), and the owning team. A loop that closes through the product rather than through
+events, "docs land, workers read them, rejections fall", gets that leg in
+`through_the_world`. When Orchestra wakes you about a new loop, name it or say it is
+accidental; an accidental loop usually means an agent subscribes to more than it should.
+Every agent you create is either in a loop with a purpose or is a leaf that only reports.
+
 ## The procedure
 
 1. **Understand.** Read `list_teams`, `list_agents`, and `list_roles`. Place the request:

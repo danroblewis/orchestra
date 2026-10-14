@@ -34,12 +34,13 @@ ORG_COMMANDS = frozenset({
     "list_agents", "get_agent", "create_agent", "update_agent", "delete_agent",
     "pause_agent", "resume_agent", "restart_agent", "reset_agent", "run_agent", "message_agent",
     "list_teams", "get_team", "create_team", "update_team", "delete_team", "emit_event",
+    "list_loops", "name_loop", "delete_loop",
 })
 EVENT_TYPES_SET = frozenset(EVENT_TYPES)
 EMIT_DEPTH_LIMIT = 3          # an event may cause a wake-up that causes an event ... this many times
 EMIT_RATE_LIMIT = 20          # emissions per agent per hour
 MUTATIONS = frozenset({"create_role", "update_role", "delete_role", "create_agent", "update_agent", "delete_agent",
-                       "create_team", "update_team", "delete_team"})
+                       "create_team", "update_team", "delete_team", "name_loop", "delete_loop"})
 
 
 def handle_org(project: Project, store: LocalStore, command: str, a: dict[str, Any], author: str, role: str) -> dict:
@@ -215,6 +216,25 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         if t.lead:
             store.add_wakeup(t.lead, f"team {t.name} was {'updated' if command == 'update_team' else 'created'}; re-read its responsibilities")
         return {"ok": True, "team": t.to_dict(), "storage": os_.last_commit_note}
+    if command == "list_loops":
+        return {"ok": True, **detected_loops(project)}
+    if command == "name_loop":
+        from .org import LoopDef
+        det = detected_loops(project)
+        cyc = next((c for c in det["detected"] if c["signature"] == a.get("signature")), None)
+        if cyc is None:
+            raise StoreError(f"no detected loop with signature {a.get('signature')!r}; call list_loops for the current ones")
+        if not (a.get("purpose") or "").strip():
+            raise StoreError("purpose is required: the standing condition this loop keeps true")
+        loop = LoopDef(name=a["name"], signature=cyc["signature"], agents=cyc["agents"], purpose=a["purpose"],
+                       signal=a.get("signal", ""), owner=a.get("owner") or None, through_the_world=a.get("through_the_world", ""),
+                       created_by=author)
+        os_.save_loop(loop)
+        store.events.emit("loop_named", loop=loop.name, signature=loop.signature, by=author)
+        return {"ok": True, "loop": loop.to_dict(), "storage": os_.last_commit_note}
+    if command == "delete_loop":
+        os_.delete_loop(a["name"])
+        return {"ok": True, "storage": os_.last_commit_note}
     if command == "emit_event":
         teams, ags = all_teams(project), all_agents(project)
         etype = str(a.get("type") or "").strip()
@@ -253,6 +273,29 @@ def _handle(project: Project, store: LocalStore, command: str, a: dict[str, Any]
         store.events.emit("team_deleted", team=t.name, by=author)
         return {"ok": True, "storage": os_.last_commit_note}
     raise StoreError(f"unknown command {command}")
+
+
+def detected_loops(project: Project) -> dict:
+    """Every elementary cycle in the declared binding graph, each with its signature, and
+    the named loops matched to them. Unnamed cycles are what the Supervisor is asked about."""
+    from . import eventgraph
+    g = eventgraph.build(project)
+    cycles = [eventgraph.describe(g, c) for c in eventgraph.elementary_cycles(g)]
+    named = {lp.signature: lp.to_dict() for lp in org_store(project).list_loops()}
+    # One loop per member set: the cycles that differ only in which event carries them round
+    # are variants of the same loop, and the signature (and so the name) is per member set.
+    families: dict[str, dict] = {}
+    for c in cycles:
+        f = families.setdefault(c["signature"], {"signature": c["signature"], "agents": c["agents"], "self": c["self"],
+                                                 "nodes": c["nodes"], "labels": c["labels"], "length": c["length"], "variants": 0,
+                                                 "named": named.get(c["signature"])})
+        f["variants"] += 1
+        if c["length"] < f["length"]:
+            f.update(nodes=c["nodes"], labels=c["labels"], length=c["length"])
+    stale = [lp for sig, lp in named.items() if sig not in families]
+    loop_edges = sorted({f"{c['nodes'][i]}>{c['nodes'][(i + 1) % len(c['nodes'])]}" for c in cycles for i in range(len(c["nodes"]))})
+    return {"detected": sorted(families.values(), key=lambda f: (f["self"], f["length"])), "cycles": len(cycles),
+            "named": list(named.values()), "stale": stale, "loop_edges": loop_edges}
 
 
 # -- views ---------------------------------------------------------------------------------

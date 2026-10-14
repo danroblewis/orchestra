@@ -199,6 +199,15 @@ TOOLS: list[ToolDef] = [
              "access": {"type": "array", "items": {"type": "object"}}, "capacity": I(), "tracked": {"type": "boolean"},
              "emits": A(), "probes": {"type": "array", "items": {"type": "object"}}}, ("name",)),
     ToolDef("delete_team", "roles", "Delete a custom team that has no agents and no sub-teams.", {"name": S("Team name")}, ("name",)),
+    ToolDef("list_loops", "team", "The feedback loops Orchestra detects in the agents' event bindings (each a cycle with a signature), "
+            "which of them are named, and named loops whose cycle no longer exists."),
+    ToolDef("name_loop", "roles", "Name a detected feedback loop: give it a purpose (the standing condition it keeps true), a signal "
+            "that shows it is working, and an owning team. Loops are found by Orchestra, never configured by hand; a loop that "
+            "closes through the product rather than through events gets that leg in through_the_world.",
+            {"name": S("lowercase_name"), "signature": S("From list_loops"), "purpose": S("The condition this loop keeps true"),
+             "signal": S("How to tell it is working"), "owner": S("Team name"), "through_the_world": S("The leg Orchestra cannot see, if any")},
+            ("name", "signature", "purpose")),
+    ToolDef("delete_loop", "roles", "Remove a loop's name; the cycle itself stays as long as the bindings do.", {"name": S("Loop name")}, ("name",)),
     # escalate
     ToolDef("escalate_to_supervisor", "escalate",
             "Wake the Supervisor with a note when a decision about intent, scope, or priorities is needed.",

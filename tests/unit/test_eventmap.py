@@ -49,13 +49,14 @@ def test_eventmap_has_declared_and_observed_edges(project):
     api.handle(project, store, "emit_event", {"type": "lesson_proposed", "subject": "T-1"}, role="keeper")
     m = TestClient(web.create_app(project)).get("/api/eventmap").json()
     edge = lambda f, t, k=None: any(e["from"] == f and e["to"] == t and (k is None or e["kind"] == k) for e in m["edges"])
-    assert edge("ev:ticket_transition", "agent:reviewer", "wakes")                      # a built-in, woken by the loop
-    assert next(e for e in m["edges"] if e["from"] == "ev:ticket_transition" and e["to"] == "agent:reviewer")["loop"] is True
-    assert edge("agent:reviewer", "ev:ticket_transition", "emits")
-    assert edge("ev:ticket_transition", "sys:merge_gate", "wakes") and edge("sys:merge_gate", "ev:gate_landed", "emits")
-    assert edge("probe:docs_budget", "ev:probe_failed", "emits") and edge("ev:probe_failed", "agent:retro", "wakes")
+    assert edge("ev:ticket_transition:READY_FOR_REVIEW", "agent:reviewer", "wakes")       # a built-in, woken by the loop
+    assert next(e for e in m["edges"] if e["from"] == "ev:ticket_transition:READY_FOR_REVIEW" and e["to"] == "agent:reviewer")["loop"] is True
+    assert edge("agent:reviewer", "ev:ticket_transition:APPROVED", "emits")
+    assert edge("ev:ticket_transition:APPROVED", "sys:merge_gate", "wakes") and edge("sys:merge_gate", "ev:gate_landed", "emits")
+    assert edge("probe:docs_budget", "ev:probe_failed:docs_budget", "emits") and edge("ev:probe_failed:docs_budget", "agent:retro", "wakes")
+    assert m["detected"] and all("signature" in c for c in m["detected"])
     assert edge("agent:keeper", "ev:lesson_proposed", "may_emit") and edge("ev:lesson_proposed", "agent:retro", "wakes")
     assert next(e for e in m["edges"] if e["from"] == "agent:keeper" and e["to"] == "ev:lesson_proposed")["seen"] == 1   # declared, and it fired
-    assert m["by"]["keeper"]["lesson_proposed"] == 1
+    assert m["by"]["keeper"]["lesson_proposed:T-1"] == 1
     assert m["counts"]["lesson_proposed"] == 1
     assert next(n for n in m["nodes"] if n["id"] == "ev:lesson_proposed")["custom"] is True
