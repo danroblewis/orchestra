@@ -52,7 +52,7 @@ software foundry's defaults; a project in another domain declares its own (secti
 | W | **Work in progress** | changes | Changes being worked now: tickets IN_PROGRESS, a first implementation or a fix. The chain counts changes in every stock, so one unit is conserved from D to the gate; the commits ahead of main on each change's branch are the detail beside every chain stock's level (a change waiting at the gate still shows its +12). | start, fix pickup | submission, cancel, blocked back to demand |
 | Q | **Awaiting review** | changes | Submitted changes the reviewer has not judged yet (Reinertsen's queue). The rework cycles circulate the change through here; the defect co-flows into U. | submission (READY_FOR_REVIEW) | the reviewer's verdict (IN_REVIEW → APPROVED / REJECTED) |
 | K | **Known rework** | changes | Changes sent back for a defect and waiting for the fix to be picked up (Ford and Sterman\'s work known to need rework; Lyneis and Ford\'s known rework). Send-backs with no verdict are not defects and go to Returned (section 3). A defect found after landing is a new ticket, into D. | defect found in review; defect found at the gate | the fix pickup (REJECTED → IN_PROGRESS), cancel |
-| U | **Undiscovered rework** | commits | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery: a review or gate rejection for a defect; after landing, main failing the base check or the build failing in service |
+| U | **Undiscovered rework** | defects | Defects in W and L not yet found. Hidden. **Not displayed as a number until a post-landing estimator exists** (section 4); shown as "not estimable" with the reason. | injection = progress × (1 − FCC) | discovery: a review or gate rejection for a defect; after landing, a finding event that names a defect (none declared yet). A landing does not drain it. |
 | L | **Landed software** | commits | Commits the gate put on main, with first-parent diff size. The product. | gate_landed | none (rewrites are measured as churn, below) |
 | A | **Really done** | acceptance tests passing | Acceptance tests that pass, not skipped, against the current staging build. Abdel-Hamid's *actual* progress, against DONE tickets as *perceived* progress. | tests pass on a new build | tests fail or are skipped on a new build |
 | B | **Working build** | builds | The staging build the acceptance suite last ran against, and whether it is up (a health check in the last ten minutes). | staging_deployed | staging_failed; staging_restarted (the health loop restarting it) |
@@ -196,17 +196,26 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   (for the review loop, submissions that followed a review rejection, not every submission;
   for re-planning, starts that followed an unblock, not every start). The log attributes
   each transition by its previous state for this.
-- **Discovery after landing** is the found defect's circuit: a landed change carries
-  undiscovered rework, a failure discovers it (main failing the gate's base check, the build
-  failing in service), the agent woken by the failure files a ticket into demand, and the
-  fix goes round to the gate. Both failures are outflows of U, so the cycle is closed by a
-  discovery event and is a co-flow with no polarity (next rule). The pipeline manager closes
-  it in this org by hand; nothing exercises a build that stays up, and the card says so.
-- **A cycle closed by a discovery is a co-flow.** When a link of a cycle is an event that
-  drains the hidden stock, carried by an agent into the next node (a wake on the base
-  check, a finding filed as a ticket), the cycle is the defect leaving U and riding the fix
-  round: a stock-flow chain of the defect, not a causal loop, and no polarity is claimed.
-  The hidden stock itself is off the path because nothing is woken by its inflow.
+- **Discovery after landing** is an expected loop (build → someone exercises it and files a
+  finding → demand → … → gate → build), balancing through U, with no agent on its first link
+  until one is created. A failing build or a broken base check is not a discovery by itself
+  (the host can cause either; round 26 found a base check that failed on the host counted as
+  a defect), so neither drains U. The pipeline manager files a ticket by hand when staging
+  fails; the loop card says so, and the map carries hollow stubs at the build and at demand.
+- **The hidden stock wakes nobody.** An agent cannot be woken by a stock it cannot see; the
+  agents whose verdicts drain U inspect it (their discovery rate rises with its level, Ford
+  and Sterman's p_detect × defects), drawn as an inspection link, and no other agent is
+  linked from it. A cycle closed by an event that drains U (a declared finding) balances
+  through U, which the graph cannot sign, so no polarity is claimed for it.
+- **A declared loop matches a cycle only with every declared stock on the cycle's path**,
+  not merely touched by its agents.
+- **A wake rule may name the state a transition leaves** (`ticket_transition:REJECTED>IN_PROGRESS`
+  for a fix pickup), and the flows table advises that form, so a new agent bound as advised
+  wakes on its own flow and not on every start.
+- **A controller that is not running is shown where it acts.** A resident agent with no live
+  session reads "not running" on the map and on every loop card it sits on, naming the stocks
+  nothing now drains. The Supervisor, which the loop restarts on the next human message,
+  reads "starts on a message".
 - **A drained stock's level is a state.** Really done keeps what the last deploy proved and
   reads "unverified" while the build is down or main is broken (its declared outflows are
   the events that make it unverified, not a quantity to subtract); Verified behaviour reads
@@ -271,7 +280,7 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 | inspect at the gate | W → K (defect) | merge gate | gate_rejected where a stage failed on its own result | gate_rejected |
 | conflict | W → W (re-queued) | merge gate | gate_conflict; Ford and Sterman's concurrence rework, driven by WIP, not by FCC | gate_conflict |
 | machine failure | no change to W; a loss in C | — | gate stage timeout (rc 124), gate start failure, reviewer with no verdict, worker crash, turn timeout | turn_timed_out, turn_error, agent_crashed, gate_error |
-| discover after landing | L → D (a ticket for the found defect; U drains) | the pipeline manager, woken by the base check or a service failure; **unattended** for a build that stays up | main fails the gate's base check; the build fails in service; a bug ticket citing a landed commit | gate_base_broken, staging_failed, ticket_created |
+| discover after landing | L → D (a ticket for the found defect; U drains) | **unattended**; the pipeline manager files a ticket by hand when staging fails | a declared finding event; a bug ticket citing a landed commit | a team's finding event, ticket_created |
 | fix | K → W | worker | REJECTED → IN_PROGRESS … READY_FOR_REVIEW; bad fixes are rounds rejected again | ticket_transition:IN_PROGRESS |
 | land | W → L | merge gate | gate_landed | gate_landed |
 | deploy | L → B | merge_gate (only the gate's success promotes a build) | staging_deployed | staging_deployed |

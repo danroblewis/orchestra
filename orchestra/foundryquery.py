@@ -116,7 +116,7 @@ def inspect(model: dict, agents: dict, det: dict, *, agent: str | None = None, s
         # the graph carries Orchestra's own processes too (the loop, the gate), so emitters and wakers come from its edges first
         emitters = sorted({_name(e["src"]) for e in edges if e["kind"] in ("fills", "drains") and e["src"].startswith("agent:") and e["via"] and fits(event, e["via"])}
                           | {n for n, a in agents.items() if any(fits(event, e, n) for e in (a.emits or []))})
-        wakers = sorted({_name(e["dst"]) for e in edges if e["kind"] in ("wakes", "triggers", "departs") and e["via"] and fits(event, e["via"])}
+        wakers = sorted({_name(e["dst"]) for e in edges if e["kind"] in ("wakes", "inspects", "triggers", "departs") and e["via"] and fits(event, e["via"])}
                         | {n for n, a in agents.items() if any(fits(w, event) for w in (a.wake_on or []))})
         fills = sorted(s.key for s in stocks.values() if any(fg.event_fits(i, event) or fg.event_fits(event, i) for i in s.inflows))
         drains = sorted(s.key for s in stocks.values() if any(fg.event_fits(o, event) or fg.event_fits(event, o) for o in s.outflows))

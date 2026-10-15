@@ -366,6 +366,22 @@ def _run_tests(run: dict | None, *, main: bool = False) -> dict | None:
     return {"run": run.get("id"), "at": run.get("finished_at"), "status": run.get("status"), "stages": out} if out else None
 
 
+def _base_broken_open(events: list[dict], at: float) -> float | None:
+    """Hours since main last failed the gate's base check with nothing landed since, at a
+    time (the design's broken-base signal: time from base broken to the next landing); None
+    when main is not broken then."""
+    last = None
+    for e in events:
+        t = _ts(e)
+        if t > at:
+            break
+        if e["type"] == "gate_base_broken":
+            last = t
+        elif e["type"] == "gate_landed":
+            last = None
+    return None if last is None else round((at - last) / 3600, 2)
+
+
 def _open_outage(events: list[dict], until: float) -> float | None:
     """How long the current outage has been open: from the first trouble after the last deploy
     that stayed healthy, if no deploy since has stayed healthy. None when the build is fine."""
@@ -620,7 +636,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
 
 SIGNAL_KEYS = frozenset({"replans", "review_bad_fix_fraction", "gate_bad_fix_fraction", "review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
                          "fix_rounds", "review_defects", "defects_after_landing", "review_miss_rate", "acceptance_defects_at_gate", "bad_fix_fraction", "conflicts_per_landing",
-                         "landed_per_worker_hour", "restarts", "landings", "defects_found_after_landing", "base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
+                         "landed_per_worker_hour", "restarts", "landings", "defects_found_after_landing", "base_broken", "hours_since_base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
 
 
 def _signals(w: dict) -> dict[str, float | None]:
@@ -768,6 +784,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     cur = _window(hist, store, events, agents, now - hours * 3600, now, tk0)
     prev = _window(hist, store, events, agents, now - 2 * hours * 3600, now - hours * 3600, tk0)
     sig_now, sig_prev = _signals(cur), _signals(prev)
+    sig_now["hours_since_base_broken"], sig_prev["hours_since_base_broken"] = _base_broken_open(events, now), _base_broken_open(events, now - hours * 3600)
     signals = {k: {"now": sig_now[k], "before": sig_prev[k], "direction": (None if sig_now[k] is None or sig_prev[k] is None else "up" if sig_now[k] > sig_prev[k] else "down" if sig_now[k] < sig_prev[k] else "flat")} for k in sig_now}
     # -- the instrument pool: git, gate runs, staging, tracker ----------------------------------
     landed_events = [e for e in events if e["type"] == "gate_landed" and e.get("commit")]

@@ -6,6 +6,8 @@ Supervisor should move towards; the detector is what Orchestra trusts to tell a 
 which loops it actually has. Both are under test here, bottom up."""
 
 
+import datetime as dt
+
 from orchestra import foundrygraph as fg
 from orchestra.agents.roles import ROLES, SYSTEM_BINDINGS
 from orchestra.foundry import Stock
@@ -31,7 +33,7 @@ def foundry_stocks() -> list[Stock]:
         Stock("wip", "Work in progress", "changes", inflows=["ticket_transition:OPEN>IN_PROGRESS", "ticket_transition:REJECTED>IN_PROGRESS"], outflows=["ticket_transition:IN_PROGRESS>READY_FOR_REVIEW", "ticket_transition:CANCELLED", "ticket_transition:IN_PROGRESS>BLOCKED", "ticket_transition:IN_PROGRESS>OPEN"]),
         Stock("awaiting_review", "Awaiting review", "changes", inflows=["ticket_transition:READY_FOR_REVIEW"], outflows=["ticket_transition:IN_REVIEW>APPROVED", "ticket_transition:IN_REVIEW>REJECTED"]),
         Stock("undiscovered", "Undiscovered rework", "defects", row="rework", inflows=["ticket_transition:READY_FOR_REVIEW"],
-              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "gate_base_broken", "staging_failed", "playtest_finding"], hidden=True),
+              outflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected", "playtest_finding"], hidden=True),
         Stock("approved", "Awaiting the gate", "changes", inflows=["ticket_transition:APPROVED"], outflows=["gate_landed", "gate_rejected", "gate_conflict"]),
         Stock("known_rework", "Known rework", "changes", row="rework", inflows=["ticket_transition:IN_REVIEW>REJECTED", "gate_rejected"], outflows=["ticket_transition:REJECTED>IN_PROGRESS", "ticket_transition:REJECTED>CANCELLED"], consumers=[{"agent": "worker", "effect": "+"}], estimators=[{"kind": "known_rework"}]),
         Stock("landed", "Landed software", "commits", inflows=["gate_landed", "ticket_transition:DONE"], outflows=[]),
@@ -198,7 +200,11 @@ def test_golden_software_foundry():
     # the blocked ticket is conserved: W → blocked (the worker) → demand (the coordinator re-plans) → W (Orchestra starts it)
     assert {"wip", "blocked", "demand", "agent:coordinator", "agent:orchestra"} <= set(rp["nodes"]) and rp["basis"] == "material circuit"
     fd = next(d for d in det["declared"] if d["key"] == "field_discovery")["cycle"]
-    assert fd["basis"] == "co-flow" and fd["polarity"] is None and "agent:playtester" in fd["nodes"]   # closed by the finding that drains undiscovered rework
+    assert fd["basis"].startswith("closes through a discovery") and fd["polarity"] is None and "agent:playtester" in fd["nodes"]   # closed by the finding that drains undiscovered rework: balancing through U, unsigned
+    # the hidden stock wakes nobody: only the agents whose verdicts drain it inspect it
+    g = fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS)
+    from_u = {(e["dst"], e["kind"]) for e in g["edges"] if e["src"] == "undiscovered"}
+    assert from_u == {("agent:reviewer", "inspects")}, from_u
     # one agent that both fills and drains a stock is a controller, never a circuit
     pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
     assert pair["basis"] != "material circuit" and pair["polarity"] in ("B", "?")
@@ -255,3 +261,22 @@ def test_inspect_and_what_if_answer_where_an_agent_belongs():
     blind = fq.what_if(model, agents, SYSTEM_BINDINGS, "watcher", ["staging_restarted"], ["smoke_result"])
     assert blind["would_close"] == [] and {"stock": "build", "event": "staging_restarted"} in blind["would_consume"]
     assert blind["emits_no_stock_carries"] == ["smoke_result"] and any("no stock lists" in line for line in blind["lines"])
+
+
+def test_a_wake_rule_can_name_the_state_a_transition_leaves():
+    from orchestra.org import event_matches
+    pickup = {"type": "ticket_transition", "from": "REJECTED", "to": "IN_PROGRESS"}
+    start = {"type": "ticket_transition", "from": "OPEN", "to": "IN_PROGRESS"}
+    assert event_matches(["ticket_transition:REJECTED>IN_PROGRESS"], pickup) and not event_matches(["ticket_transition:REJECTED>IN_PROGRESS"], start)
+    assert event_matches(["ticket_transition:IN_PROGRESS"], start) and event_matches(["ticket_transition:IN_PROGRESS"], pickup)
+    cs = fg.conversions(fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS), {}, foundry_stocks())
+    pick = next(c for c in cs if (c["src"], c["dst"]) == ("known_rework", "wip"))
+    assert pick["wake"] == "ticket_transition:REJECTED>IN_PROGRESS"           # the flows table advises the pickup, not every start
+
+
+def test_the_broken_base_signal_is_time_since_main_broke_with_nothing_landed():
+    from orchestra.foundrymetrics import _base_broken_open
+    ev = [{"type": "gate_base_broken", "ts": "2026-10-14T10:00:00+00:00"}]
+    t = lambda h: dt.datetime(2026, 10, 14, 10, tzinfo=dt.UTC).timestamp() + h * 3600
+    assert _base_broken_open(ev, t(3)) == 3.0 and _base_broken_open(ev, t(-1)) is None
+    assert _base_broken_open(ev + [{"type": "gate_landed", "ts": "2026-10-14T11:00:00+00:00"}], t(3)) is None

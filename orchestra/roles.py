@@ -96,6 +96,10 @@ class RoleDef:
             t, _, suffix = w.partition(":")
             if ev.get("type") != t:
                 continue
+            if ">" in suffix:
+                if suffix.split(">", 1) == [ev.get("from"), ev.get("to")]:
+                    return True
+                continue
             if not suffix or ev.get("to") == suffix or ev.get("status") == suffix:
                 return True
         return False

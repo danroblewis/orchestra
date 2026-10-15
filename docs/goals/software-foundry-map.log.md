@@ -934,3 +934,51 @@ the changes awaiting a pickup.
 Declined: the gate ring's agent label touching the arc (the mini ring places names under
 circles; moving one label special-cases a loop); a magnitude per gap on the hypothesis cards
 (as in rounds 19 to 24: the readings beside each card already carry the counts).
+
+## Round 26 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. All 18 numbers checked matched the raw data or
+came within the reviewer's own method's slack; hover, click and refresh sound. Found: the
+broken-base loop shown healthy ("closable, not yet seen", signal "base broken 1") while the
+pipeline manager had crashed fifteen minutes after waking on the break and the pause stood 14 h;
+round 25's discovery-after-landing loop closed through a base check that failed on the host,
+counted as a found defect, with a ring counting every approval and a "co-flow" label for a cycle
+closed by information links; the hidden stock waking the reviewer and Orchestra (a decision on a
+stock nobody can see), which produced 18 "variants" of that loop including the main chain; U
+co-flowing into landed software through the landing, against its own definition; U in commits in
+the design and defects in the template; the flows table advising a wake on every start for the fix
+pickup and the re-pick; the timeout tile calling 18-hour-old history "the largest loss on this
+page"; the gate tile's failing test overflowing; the discovery tile still wrapping; the Supervisor's
+caption clipped; the inlet arrow off the canvas and its label struck; two band labels crossed by
+verticals; Demand ↔ work in progress drawn on shared verticals; a shared stub label under the wrong
+box; orange arrowheads on blue links; "1 pauses", "pipeline_paused", "CANCELLED"; known rework's
+defect list breaking into fragments.
+
+Fixed: a resident agent with no live session reads "not running" on the map and on every loop card
+it sits on, naming what nothing now drains ("pipeline_manager is not running: … nothing drains
+pipeline blocked"); the Supervisor, which the loop restarts on a human message, reads "starts on a
+message"; the broken-base loop's signal is the design's B5, hours since main broke with nothing
+landed (14.6 h, adverse past one hour); a failing build or base check no longer drains U (either can
+be the host); U wakes nobody, and the agent whose verdict drains it inspects it (one link, reviewer);
+U no longer co-flows into landed; U is in defects in the design; a declared loop matches only a
+cycle with every declared stock on its path, so discovery after landing is a hypothesis again with
+hollow stubs at the build and at demand, and its card says the pipeline manager files tickets by
+hand; a cycle closed by a declared finding is "no causal polarity: balancing through undiscovered
+rework, which the graph cannot see"; wake rules accept a from>to form at runtime and the flows table
+advises it (REJECTED>IN_PROGRESS for the fix pickup); the timeout tile says "history: none since the
+change" and carries no severity once the new limit has gone twenty turns unhit; the failing test
+wraps; the discovery headline is the three counts; rows sit lower and the map has a left margin with
+the inlet's label in it; along-row humps leave right of a box's centre and arrive left of it, each
+slot on its own vertical; band and hollow labels fold onto narrower lines until they clear the
+verticals (one label remains over a thin dashed co-flow, under its halo); a stub label sits under its
+own box and a shared event is labelled at its leftmost box; negative arrowheads are blue; units are
+singular at one; stub labels use words; known rework groups its open defects by where each change
+sits ("CA-18, CA-24 at the gate · CA-39 blocked"). Unit tests: the hidden stock's only link, the
+from>to wake rule and the flows table's advice, the broken-base signal.
+
+Declined: a separate open-defects stock (the defect is an attribute of the change, a co-flow by
+definition in a different unit; the known-rework box lists the open defects beside its level);
+re-planning's tickets ↔ changes (a ticket becomes a change at the pickup one-for-one, so the circuit
+conserves the count; the units name what each stock holds); bad-fix fraction per verdict rather than
+per submission (each submission is an attempt an inspection judges, Rahmandad and Hu's rework
+attempt; restarts do not create submissions).

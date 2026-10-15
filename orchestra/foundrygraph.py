@@ -115,6 +115,12 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
             fills = [s for s in stocks if any(event_fits(i, w) or event_fits(w, i) for i in s.inflows)]
             if fills:
                 for s in fills:
+                    if getattr(s, "hidden", False):
+                        # nothing can be woken by a stock nobody can see: the agent whose verdict drains it inspects it, and its
+                        # discovery rate rises with the level (Ford & Sterman's p_detect × defects); every other agent is woken by the visible stock
+                        if any(event_fits(o, e, name) for o in s.outflows for e in a["emits"]):
+                            add(s.key, aid, "+", "inspects", w)
+                        continue
                     add(s.key, aid, "+", "wakes", w)
             else:
                 # a departure wakes the agent through the agent that caused it, not through the
@@ -238,7 +244,7 @@ def material(g: dict, cycle: list[str], hidden: set[str] | None = None) -> str |
     if chain and on_hidden:
         return "co-flow"                                      # a defect rides inside a change through the hidden stock
     if hidden and not on_hidden and discovery_closed(g, cycle, hidden):
-        return "co-flow"                                      # the defect leaves the hidden stock at a discovery and rides the fix round: its own circuit
+        return "discovery"                                    # closed by an event that drains the hidden stock: balancing through it, which the graph cannot sign
     return None                                               # otherwise the links are signed
 
 
@@ -249,7 +255,7 @@ def discovery_closed(g: dict, cycle: list[str], hidden: set[str]) -> bool:
     loop; the hidden stock itself is off the path because nothing is woken by its inflow."""
     discovery = {plain(e["via"]) for e in g["edges"] if e["kind"] == "drains" and e["dst"] in hidden and e.get("via")}
     links = set(zip(cycle, cycle[1:] + cycle[:1]))
-    return any((e["src"], e["dst"]) in links and e["src"].startswith("agent:") and e.get("via") and plain(e["via"]) in discovery and e["kind"] in ("wakes", "triggers", "departs", "fills")
+    return any((e["src"], e["dst"]) in links and e["src"].startswith("agent:") and e.get("via") and plain(e["via"]) in discovery and e["kind"] in ("wakes", "inspects", "triggers", "departs", "fills")
                for e in g["edges"])
 
 
@@ -259,6 +265,8 @@ def polarity(g: dict, cycle: list[str], weights: dict[str, int] | None = None, h
     the product of the link signs: B when negative, R when positive, ? when any link is
     indeterminate from structure (the basis then names the sign the window favours)."""
     kind = material(g, cycle, hidden)
+    if kind == "discovery":
+        return None, "closes through a discovery, so its balancing runs through undiscovered rework, which the graph cannot see: no polarity is claimed"
     if kind:
         return None, kind
     signs = _signs(g, weights)
@@ -307,6 +315,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
     cover its nodes. ``weights`` are event counts by type (and type:filter) over the window,
     used to sign parallel links by their dominant mechanism."""
     g = build(stocks, agents, system)
+    stock_keys = {s.key for s in stocks}
     # short cycles first, in passes of growing length, so the pairs and the small loops are never pushed out by the
     # budget that bounds the long ones
     cycles, seen_sigs = [], set()
@@ -334,7 +343,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             for e in es:
                 if e["kind"] in ("fills", "drains") and e["via"]:
                     n = ev.get(f"{a.split(':', 1)[1]}|{plain(e['via'])}", 0)
-                elif e["kind"] in ("wakes", "triggers", "departs") and e["via"]:
+                elif e["kind"] in ("wakes", "inspects", "triggers", "departs") and e["via"]:
                     n = (weights or {}).get(plain(e["via"]), 0)
                 else:
                     n = sum(v for k, v in ev.items() if k.startswith(b.split(":", 1)[1] + "|")) if e["kind"] == "reads" and b.startswith("agent:") else 0
@@ -355,7 +364,8 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
         key = getattr(lp, "key", None) if not isinstance(lp, dict) else lp.get("key")
         best = next((ci for ci in infos if ci["signature"] == sig), None) if sig else None
         if best is None and want:
-            cands = [ci for ci in infos if want <= set(ci["members"]) and len(ci["nodes"]) <= len(want) + LOOP_SLACK]   # the loop's own structure (its path), not a long cycle that happens to pass through it
+            want_stocks = {w for w in want if w in stock_keys}
+            cands = [ci for ci in infos if want <= set(ci["members"]) and want_stocks <= set(ci["nodes"]) and len(ci["nodes"]) <= len(want) + LOOP_SLACK]   # the loop's own structure: every declared stock on its path, not merely touched
             as_nodes = lambda ci: sum(1 for w in want if w in ci["nodes"] or f"agent:{w}" in ci["nodes"])   # declared members present on the path, not merely touched
             best = max(cands, key=lambda ci: (as_nodes(ci), -ci["length"])) if cands else None
         if best:
@@ -476,7 +486,7 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
                         count = mine
                         if not mine and orch and agent != "orchestra":
                             valve, count = "turn limit", orch
-                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "valve": valve, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": f["via"],
+                out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "valve": valve, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": e["via"] if ">" in (e["via"] or "") else f["via"],   # a new agent wakes on the form that leaves this stock (a fix pickup, not every start)
                             "coflow": e["dst"] in hidden or f["dst"] in hidden})       # a defect riding inside a change: drawn beside the change's pipe, never counted twice
     # one event moves one thing: where an agent's event converts along the product's own path (chain row to
     # chain row), the other conversions of that event are the same movement seen from a rework stock, not a second flow

@@ -53,10 +53,15 @@ _CUSTOM_TYPE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
 
 def event_matches(wake_on: list[str], ev: dict) -> bool:
     """`type` matches the event type; `type:x` also needs x to be the transition target,
-    the status, the probe name, or the subject of an agent-emitted event."""
+    the status, the probe name, or the subject of an agent-emitted event; `type:a>b` needs
+    a transition from a to b (a fix pickup is REJECTED>IN_PROGRESS, a start OPEN>IN_PROGRESS)."""
     for w in wake_on:
         t, _, suffix = w.partition(":")
         if ev.get("type") != t:
+            continue
+        if ">" in suffix:
+            if suffix.split(">", 1) == [ev.get("from"), ev.get("to")]:
+                return True
             continue
         if not suffix or suffix in (ev.get("to"), ev.get("status"), ev.get("probe"), ev.get("subject")):
             return True
