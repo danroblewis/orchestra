@@ -165,12 +165,12 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **Demand splits ready from waiting.** An OPEN ticket waiting on a dependency that is not
   DONE is not ready for pickup; the box says how many are ready, what the rest wait on, and
   the residence time is the ready part's.
-- **A fix round belongs to the loop it was on**: the review loop's bad-fix fraction is the
-  share of fixes of review-found defects that were judged bad, the gate loop's the share of
-  fixes of gate-found defects, so the rings' counts and the cards' fractions have the same
-  denominator.
-- **An alarm retires**: "median turn at the limit" is not shown once the limit in force has
-  gone twenty turns unhit.
+- **A bad fix is the finding inspection's** (round 31 settled the contradiction with the rule
+  above): the review loop's bad-fix fraction is the fixes the reviewer found bad over all fix
+  rounds, the gate loop's the fixes the gate found bad over all fix rounds; the rings count the
+  fixes on each loop, which a fraction does not divide by.
+- **An alarm retires**: "median turn at the limit" needs a cap, and the timeout alarm retires
+  after ten worker and reviewer turns without a timeout.
 - **A state is marked ◇** (a build, a check, a pause): its declared flows set it; they are
   never summed.
 - **The chain is one line**: a pipe along a row is a hump over the gap between its boxes with
@@ -235,6 +235,15 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   is ever "observed".
 - **The timeout alarm is about worker and reviewer turns** under a cap. A silence timeout is
   not a cap, and the alarm retires after ten worker and reviewer turns without a timeout.
+- **Productivity leads the tiles.** The share of agent hours that fix or implement a change, net
+  of turns cut off, with the rest by activity: a low share says the machines come before new agents.
+- **A pause is said in one line**: nothing has landed for N hours, the gate is paused, and who
+  resumes it; the evidence sits behind a disclosure and is stated as facts each way, never the
+  symptom (a refused connection) as its own cause.
+- **A first-order pair is balancing only while its agent drains the stock more than it fills
+  it** in the window; otherwise it is left unsigned.
+- **Recipes are blue, adverse is amber**, and a closable loop whose controller is not running
+  says so in red.
 - **A controller that is not running is shown where it acts.** A resident agent with no live
   session reads "not running" on the map and on every loop card it sits on, naming the stocks
   nothing now drains. The Supervisor, which the loop restarts on the next human message,
@@ -374,6 +383,9 @@ Readings, each defined by its estimator and shown with its window:
 - **A block is its note's author's.** Orchestra blocks a ticket when the worker stops without a
   report and writes a blocker note; the map's valve, the flows table and the re-planning card
   name Orchestra for those blocks, and re-planning reads as the recovery from a machine loss.
+- **A gap leaving a chain box is marked only where it ends**, with a label naming its source
+  ("← landed software · no agent"); a chain box has no room below for a second caption, and an
+  unlabelled stub there reads as part of its neighbour's (round 31).
 - **Stub captions.** A box's stubs share one caption centred under it, a line per arrow with the
   arrow's own direction (↑ in, ↓ out) and the agent; a line wider than its box folds the agent
   onto the next line.

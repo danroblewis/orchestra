@@ -405,9 +405,15 @@ def pause_diagnosis(runs: list[dict], events: list[dict] | None = None) -> dict 
         log = Path((base or {}).get("log") or "")
         refused = log.read_text(errors="replace").count("ConnectionRefused") if log.is_file() and log.stat().st_size <= MAX_LOG_BYTES else 0
     except OSError:
-        refused = 0                                                # the server under test refusing connections is the product failing, by the design's rule
+        refused = 0                                                # the symptom itself: connections refused by the server under test
+    target_empty = None
+    try:
+        tl = Path((base or {}).get("log") or "").parent / "target.log"
+        target_empty = tl.is_file() and tl.stat().st_size == 0     # the server under test wrote nothing: no evidence either way from the product's own log
+    except OSError:
+        target_empty = None
     staging_during = sum(1 for e in events or [] if e["type"] in ("staging_restarted", "staging_failed") and t0 <= _ts(e) <= t1)   # main's own server failing in service during the check points at main, not the host
-    return {"run": last.get("id"), "base_commit": last.get("base_commit"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during, "base_refused": refused,
+    return {"run": last.get("id"), "base_commit": last.get("base_commit"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during, "base_refused": refused, "base_target_log_empty": target_empty,
             "candidate_prior_same": prior, "base_stage": name(base), "base_summary": _last_line(base)}
 
 
@@ -524,7 +530,8 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 break
             if to2 == "REJECTED" and hist.cause.get((tid, t2)) in ("defect", "gate"):
                 bad += 1
-                bad_by[fcause] = bad_by.get(fcause, 0) + 1          # a bad fix, by the loop it was on (the send-back it was fixing)
+                found = hist.cause.get((tid, t2))
+                bad_by[found] = bad_by.get(found, 0) + 1            # a bad fix, by the inspection that found it bad (round 31): the reviewer catching a gate fix is the review's
                 break
     # how late a defect is found: from the submission the verdict judged to the verdict, by stage; after landing, from the deploy to its first trouble
     def _since_submission(tid: str, ts: float) -> float | None:
@@ -688,7 +695,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                        "cause": "pass = APPROVED verdicts over all verdicts (APPROVED + REJECTED with a reviewer note); reviews with no verdict are not inspections and are counted as losses"},
             "gate": {**gate, "cause": "defect = a stage failed on its own result; timeouts, start failures and conflicts counted apart"},
         },
-        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "fix_by": fix_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_by.get("defect", 0)), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_by.get("gate", 0)), "lead_values": sorted(leads)},
+        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "fix_by": fix_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_rounds), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_rounds), "lead_values": sorted(leads)},
         "time": {"hours": {k: round(v / days, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])}, "turns": nturns,
                  "rework_share": _ratio(fix_prod, fix_prod + impl_prod), "rework_share_wall": _ratio(hours.get("fix", 0.0), worker_hours), "fix_hours_productive": round(fix_prod / days, 1), "implement_hours_productive": round(impl_prod / days, 1), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
                  "turn_limit": max(set(limits), key=limits.count) if limits else None,

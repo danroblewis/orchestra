@@ -352,7 +352,11 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
                 hits.append(n)
             step_seen.append(any(n > 0 for n in hits))
         if len(c) == 2 and pol == "?":
-            pol, basis = "B", "first-order: the drain controls the stock; a wake on arrival carries no sign"
+            ag_, st_ = (c[0], c[1]) if c[0].startswith("agent:") else (c[1], c[0])
+            if weights and dominant(g, (ag_, st_), weights) == "+":
+                pol, basis = "?", f"{ag_.replace('agent:', '')} filled {st_} more than it drained it in the window: not acting as its controller (round 31)"
+            else:
+                pol, basis = "B", "first-order: the drain controls the stock; a wake on arrival carries no sign"
         infos.append({"nodes": c, "members": sorted(members(c, g)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
                       "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
                       "observed": bool(step_seen) and all(step_seen) and not any(n in hidden_keys for n in c),   # a stock nobody can see cannot make a cycle observed "evidence": evidence,

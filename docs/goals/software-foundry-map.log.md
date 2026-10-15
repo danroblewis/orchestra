@@ -1159,3 +1159,43 @@ agent and the stock it drains; the caption is above it at rest); legibility at t
 round 29). Noted for the user: the automata checkout is on CA-38's branch with .orchestra/model/
 untracked there; the model is committed on main as the user asked, and the harness writes template
 upgrades into the checkout at web start, which strains AGENTS.md invariant 3.
+
+## Round 31 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. Every number checked matched the raw log, and the
+window slid exactly as the log predicts. Found: the sixteen-hour stoppage stated only inside a nine-line
+banner; productivity, the design's first parameter, with no reading (productive worker time is about 13%
+of agent time); bad fixes credited to the loop being fixed rather than the inspection that found them
+bad, with the design saying both; the pause evidence treating its own symptom (refused connections) and
+co-timed restarts as evidence for main, and citing CA-37 whose title names the gate host; Landed
+software counted in commits though each unit is a landing; first-order pairs signed B though the agent
+mostly filled the stock in the window; stale tooltips (Work in progress "a block sends it back to
+demand", Really done's "pytest errors ... the host is likely", crashing builds "plus each run", "net of
+turns the limit killed"); the discovery loop leaving out Landed software; detached gate and reviewer
+labels; unlabelled hollow stubs at Landed and Working build reading as part of the restarts caption;
+the timeout tile's sizes inverted; amber used for both adverse tiles and every recipe, and a closable
+loop shown green with its controller dead; the day's breakdown leaving out plan; a test name broken
+mid-word.
+
+Fixed: the banner is one line, "Nothing has landed for 16.6h: the gate is paused, and the pipeline
+manager that resumes it is not running; tell the Supervisor", with the evidence behind a "why it
+paused" disclosure; a productivity tile leads the row (13% productive: fix and implement net of turns
+cut off, over all agent hours, the rest by activity, landings per worker-hour); a bad fix belongs to
+the inspection that found it, each fraction over all fix rounds, and the design states one rule; the
+pause evidence is facts each way, the refused connections named as the symptom, the empty server log,
+the restarts "also at other times", CA-37 as landed earlier for the same symptom, "undetermined";
+Landed software counts landings; a pair whose agent filled more than it drained in the window is left
+unsigned; the stale tooltips are corrected; the discovery loop includes Landed software; recipes are
+blue, adverse stays amber, and a loop whose controller is down reads "closable, controller not running"
+in red; the day's breakdown lists every activity; test names break at their separators; the timeout
+tile's number is large and grey with a small qualifier; a gap leaving a chain box is marked only where
+it ends, with a label naming its source; hollow and stub captions are placed before the pipe labels so
+the band labels give way to them.
+
+Declined: drawing agents on their pipes (rounds 19 to 24 settled on rows above with valve labels; the
+pipes' "⋈ agent" names the valve, hover links them); an R2 debt-drag loop (as round 28: no reading
+measures debt); a recovery estimate per recipe (as before; the productivity tile now shows the machines
+come first); the drill-down below the section (the Event map has its own definitions and says so); the
+pipeline manager's hover line across the map; the agent-time bar mixing team and activity names (they
+are the activity classes the turns are counted in); the reviewer's band label beside rather than over
+its short band (the band is narrower than any fold of it).
