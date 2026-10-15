@@ -108,6 +108,10 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
                 hit_out = next((o for o in s.outflows if event_fits(o, ev, name)), None)
                 if hit_out:
                     add(aid, s.key, "-", "drains", hit_out if ">" in hit_out else ev)
+                    if getattr(s, "hidden", False):
+                        # every agent whose verdict drains the hidden stock inspects it: its discovery rate rises with the level
+                        # (Ford & Sterman's p_detect × defects); nothing is woken by a stock nobody can see
+                        add(s.key, aid, "+", "inspects", hit_out if ">" in hit_out else ev)
                 hit_carry = next((o for o in getattr(s, "carried_by", []) or [] if event_fits(o, ev, name)), None)
                 if hit_carry:
                     carries.append({"src": aid, "dst": s.key, "via": hit_carry if ">" in hit_carry else ev, "to": (getattr(s, "carried_to", None) or {}).get(hit_carry)})   # not a link of the causal graph: the stock keeps its level
@@ -116,11 +120,7 @@ def build(stocks: list, agents: dict, system: dict | None = None) -> dict[str, A
             if fills:
                 for s in fills:
                     if getattr(s, "hidden", False):
-                        # nothing can be woken by a stock nobody can see: the agent whose verdict drains it inspects it, and its
-                        # discovery rate rises with the level (Ford & Sterman's p_detect × defects); every other agent is woken by the visible stock
-                        if any(event_fits(o, e, name) for o in s.outflows for e in a["emits"]):
-                            add(s.key, aid, "+", "inspects", w)
-                        continue
+                        continue                          # a stock nobody can see wakes nobody; its inspectors are linked by their drains
                     add(s.key, aid, "+", "wakes", w)
             else:
                 # a departure wakes the agent through the agent that caused it, not through the
@@ -316,6 +316,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
     used to sign parallel links by their dominant mechanism."""
     g = build(stocks, agents, system)
     stock_keys = {s.key for s in stocks}
+    hidden_keys = {s.key for s in stocks if getattr(s, "hidden", False)}
     # short cycles first, in passes of growing length, so the pairs and the small loops are never pushed out by the
     # budget that bounds the long ones
     cycles, seen_sigs = [], set()
@@ -324,8 +325,8 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             if signature(c) not in seen_sigs:
                 cycles.append(c)
                 seen_sigs.add(signature(c))
-        if len(cycles) >= MAX_CYCLES:
-            break
+        # each pass has its own budget: a crowded short pass never hides the long loops (the discovery
+        # loop runs eleven nodes once every stock that drains the hidden stock inspects it)
     sg = _signs(g, weights)
     ev = evidence or {}
     infos = []
@@ -354,7 +355,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             pol, basis = "B", "first-order: the drain controls the stock; a wake on arrival carries no sign"
         infos.append({"nodes": c, "members": sorted(members(c, g)), "polarity": pol, "basis": basis, "signature": signature(c), "length": len(c),
                       "pair": len(c) == 2,          # one stock and the agent that fills or drains it: every stock has these
-                      "observed": bool(step_seen) and all(step_seen), "evidence": evidence,
+                      "observed": bool(step_seen) and all(step_seen) and not any(n in hidden_keys for n in c),   # a stock nobody can see cannot make a cycle observed "evidence": evidence,
                       "edges": [{"src": a, "dst": b, "sign": None if basis in ("material circuit", "co-flow") else sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
     declared, used = [], set()
     for lp in expected or []:
@@ -424,7 +425,8 @@ def gaps(g: dict, nodes: list[str], stocks: list) -> dict[str, Any]:
             fix = (f"{a} must emit an event that fills {b}" + (f" (one of: {', '.join(ok)})" if ok else f"; {b} is filled only by Orchestra's own events, so declare a custom inflow on {b} (a team's emits) and have {a} emit it"))
         elif not ia.startswith("agent:") and ib.startswith("agent:"):
             st = stock_by.get(a)
-            fix = f"{b} must wake on an event that fills {a}" + (f" (one of: {', '.join(st.inflows)})" if st and st.inflows else "") + f", or {a} must list {b} as a consumer"
+            fix = (f"{a} → {b} is Orchestra's own pickup or wiring; no binding of a project agent closes it" if g["nodes"][ib].get("builtin")
+                   else f"{b} must wake on an event that fills {a}" + (f" (one of: {', '.join(st.inflows)})" if st and st.inflows else "") + f", or {a} must list {b} as a consumer")   # Orchestra's processes are never advice
         elif ia.startswith("agent:"):
             fix = f"{a} must emit an event {b} wakes on"
         else:

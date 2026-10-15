@@ -366,6 +366,32 @@ def _run_tests(run: dict | None, *, main: bool = False) -> dict | None:
     return {"run": run.get("id"), "at": run.get("finished_at"), "status": run.get("status"), "stages": out} if out else None
 
 
+def _last_line(stage: dict | None) -> str:
+    lines = [x.strip() for x in str((stage or {}).get("tail") or "").splitlines() if x.strip()]
+    return lines[-1] if lines else ""
+
+
+def pause_diagnosis(runs: list[dict]) -> dict | None:
+    """What the last finished gate run found when it paused the pipeline for a broken base: the
+    candidate's own result (a failure there was never sent back, because the gate paused instead),
+    whether the same ticket failed the same stage and tests in earlier rejections, and main's check."""
+    done = [r for r in runs if r.get("finished_at")]
+    last = done[-1] if done else None
+    if not last or last.get("status") != "base_broken":
+        return None
+    failed = lambda r, key: next((s for s in r.get(key) or [] if s.get("status") not in ("passed", None)), None)
+    cand, base = failed(last, "stages"), failed(last, "base_check")
+    name = lambda s: (s or {}).get("name") or (s or {}).get("stage")
+    tests = _failed_tests(cand) if cand else []
+    prior = 0
+    for r in done[:-1]:
+        f = failed(r, "stages")
+        if r.get("status") == "rejected" and set(r.get("batch") or []) & set(last.get("batch") or []) and f and name(f) == name(cand) and (not tests or set(_failed_tests(f)) & set(tests)):
+            prior += 1
+    return {"run": last.get("id"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand),
+            "candidate_prior_same": prior, "base_stage": name(base), "base_summary": _last_line(base)}
+
+
 def _base_broken_open(events: list[dict], at: float) -> float | None:
     """Hours since main last failed the gate's base check with nothing landed since, at a
     time (the design's broken-base signal: time from base broken to the next landing); None
@@ -444,7 +470,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     verdicts = approvals + rev_defects
     tickets_reviewed = {tid for tid, _, f, to in tr if (f, to) in (("IN_REVIEW", "APPROVED"), ("IN_REVIEW", "REJECTED"))}
     tickets_defect = {tid for tid, ts, f, to in tr if (f, to) == ("IN_REVIEW", "REJECTED") and hist.cause.get((tid, ts)) == "defect"}
-    runs = [r for r in store.gate_runs() if since <= (_epoch(r.get("started_at")) or 0) < until]
+    runs = [r for r in store.gate_runs() if since <= (_epoch(r.get("finished_at") or r.get("started_at")) or 0) < until]   # by when the result was known, as the send-backs it caused are counted
     gate = gate_outcomes(runs, hist.hangs)
     # fix rounds and bad fixes: a re-submission while a defect send-back is pending
     fix_rounds = bad = 0
@@ -598,7 +624,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     in_window = [g for g in groups if any(b in crashing_builds for b in g)]
     crash_tickets = [tid for tid in bug_tickets if any(b and b[:7] in f"{getattr(tickets_by_id.get(tid), 'title', '')} {getattr(tickets_by_id.get(tid), 'description', '')}" for b in crashing_builds)]
     other_tickets = [tid for tid in bug_tickets if tid not in crash_tickets]
-    escape = len(other_tickets) + len(in_window)
+    escape = len(other_tickets)                     # a crash-restarting build is a symptom, not a finding: the host can cause it (round 27); the crash groups stay a proxy beside it
     landed_at = {e.get("commit"): _ts(e) for e in landed}
     land_to_deploy = [_ts(d) - landed_at[d["commit"]] for d in deploys if d.get("commit") in landed_at]
     return {
@@ -669,7 +695,7 @@ def _stock_reading(st, pool: dict) -> dict:
         waiting = {k: v for k, v in waiting.items() if v}
         ready = [x for x in here if x.id not in waiting]
         ages = sorted(now - (_epoch(getattr(x, "state_since", None)) or now) for x in ready)
-        rounds_of = lambda x: sum(1 for _t, _f, st_ in (hist_.seq.get(x.id, []) if hist_ else []) if st_ == "REJECTED") if hist_ else (x.review_rounds or 0)
+        rounds_of = lambda x: sum(1 for _t, _f, st_ in (hist_.seq.get(x.id, []) if hist_ else []) if st_ == "REJECTED" and hist_.cause.get((x.id, _t)) in ("defect", "gate")) if hist_ else (x.review_rounds or 0)   # defect send-backs only: a no-verdict return is a loss, not a rework round
         worst = max((rounds_of(x), x.id) for x in here) if here else (0, None)
         out.update(waiting_on={k: v for k, v in waiting.items()}, ready=len(ready), oldest_waiting=max((now - (_epoch(getattr(x, "state_since", None)) or now) for x in here if x.id in waiting), default=None),
                    defective=[x.id for x in here if x.id in set(pool.get("unresolved") or [])])
@@ -825,13 +851,14 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     build_healthy = staging.get("status") == "running" and healthy_at is not None and now - healthy_at <= HEALTH_STALE
     pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "hist": hist, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "unresolved": [tid for tid in tk if hist.unresolved_defect(tid, now)], "awaiting_fix": [tid for tid in tk if hist.awaiting_fix(tid, now)], "returned": [tid for tid in tk if hist.returned(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "landed_tests": _run_tests(landed_run), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
-    rounds = sorted((sum(1 for _t, _f, x in hist.seq.get(t.id, []) if x == "REJECTED"), t.id) for t in tk.values() if t.state != "CANCELLED")   # send-backs per ticket, from the log
+    rounds = sorted((sum(1 for _t, _f, x in hist.seq.get(t.id, []) if x == "REJECTED" and hist.cause.get((t.id, _t)) in ("defect", "gate")), t.id) for t in tk.values() if t.state != "CANCELLED")   # defect send-backs per ticket, from the log; no-verdict returns are losses
     hist_r = {"0": 0, "1-2": 0, "3-5": 0, "6+": 0}
     for n, _ in rounds:
         hist_r["0" if n == 0 else "1-2" if n <= 2 else "3-5" if n <= 5 else "6+"] += 1
     cur["time"]["turn_limit_now"] = getattr(project.config, "silence_timeout", None)
     cur["time"]["last_timeout_at"] = max((e.get("ts", "") for e in events if e["type"] == "turn_timed_out"), default=None)
-    cur["time"]["turns_since_last_timeout"] = sum(1 for e in events if e["type"] == "session_settled" and e.get("ts", "") > (cur["time"]["last_timeout_at"] or "")) if cur["time"]["last_timeout_at"] else None
+    cur["time"]["turn_cap_now"] = getattr(project.config, "turn_timeout", None) or None
+    cur["time"]["turns_since_last_timeout"] = sum(1 for e in events if e["type"] == "session_settled" and str(e.get("session", "")).startswith(("worker-", "reviewer-")) and e.get("ts", "") > (cur["time"]["last_timeout_at"] or "")) if cur["time"]["last_timeout_at"] else None   # the worker's and reviewer's turns, whose timeouts the alarm was about
     stocks = {st.key: _stock_reading(st, pool) for st in model["stocks"]}
     counter: dict[str, int] = {}
     for e in events:
@@ -878,7 +905,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "coordinator|ticket_transition:BLOCKED>OPEN": f"{attributed.get('coordinator|ticket_transition:BLOCKED>OPEN', 0)} re-planned",
     }
     t = cur["time"]
-    return {"hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
+    return {"pause": pause_diagnosis(store.gate_runs()), "hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
             "system_capacity_changes": system_changes, "operator_capacity_changes": operator_changes,
             "rounds": {"histogram": hist_r, "worst": [{"ticket": tid, "rounds": n} for n, tid in rounds[-3:] if n > 0][::-1], **cur["rounds"]},
             "time": t, "dora": cur["dora"], "losses": t["losses"], "counts": cur["counts"], "pairs": cur["pairs"], "signals": signals,

@@ -175,7 +175,7 @@ def test_readings_split_send_backs_and_never_count_the_hidden_stock(project):
     assert r["rounds"]["fix_rounds"] == 1 and r["rounds"]["bad_fixes"] == 0 and r["inspections"]["review"]["approvals_gate_rejected"] == 0
     assert r["dora"]["deploys"] == 1 and r["dora"]["change_failure"] == 1.0 and r["dora"]["restore"] is None
     assert r["dora"]["lead_time"] == 70 * 60 and r["dora"]["land_to_deploy"] == 60
-    assert r["rounds"]["histogram"] == {"0": 1, "1-2": 2, "3-5": 0, "6+": 0}                      # send-backs per ticket from the log: t1 one defect, t2 one no-verdict, the third none
+    assert r["rounds"]["histogram"] == {"0": 2, "1-2": 1, "3-5": 0, "6+": 0}                      # defect send-backs per ticket: t1 one defect; t2's no-verdict return is a loss, not a round; the third none
     assert r["signals"]["restarts"] == {"now": 1, "before": 0, "direction": "up"}
     assert r["window"]["before"]["until"] == r["window"]["since"]
 

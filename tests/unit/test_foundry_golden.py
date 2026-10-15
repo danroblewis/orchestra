@@ -204,7 +204,8 @@ def test_golden_software_foundry():
     # the hidden stock wakes nobody: only the agents whose verdicts drain it inspect it
     g = fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS)
     from_u = {(e["dst"], e["kind"]) for e in g["edges"] if e["src"] == "undiscovered"}
-    assert from_u == {("agent:reviewer", "inspects")}, from_u
+    assert from_u == {("agent:reviewer", "inspects"), ("agent:merge_gate", "inspects"), ("agent:playtester", "inspects")}, from_u   # every agent whose verdict drains it
+    assert not any(c["observed"] for c in fg.detect(foundry_stocks(), foundry_agents(), system=SYSTEM_BINDINGS)["cycles"] if "undiscovered" in c["nodes"])
     # one agent that both fills and drains a stock is a controller, never a circuit
     pair = next(c for c in det["pairs"] if set(c["nodes"]) == {"demand", "agent:orchestra"})
     assert pair["basis"] != "material circuit" and pair["polarity"] in ("B", "?")
@@ -272,6 +273,18 @@ def test_a_wake_rule_can_name_the_state_a_transition_leaves():
     cs = fg.conversions(fg.build(foundry_stocks(), foundry_agents(), SYSTEM_BINDINGS), {}, foundry_stocks())
     pick = next(c for c in cs if (c["src"], c["dst"]) == ("known_rework", "wip"))
     assert pick["wake"] == "ticket_transition:REJECTED>IN_PROGRESS"           # the flows table advises the pickup, not every start
+
+
+def test_a_pause_names_the_candidate_result_it_swallowed():
+    from orchestra.foundrymetrics import pause_diagnosis
+    st = lambda name, status, tail="": {"name": name, "status": status, "tail": tail}
+    runs = [{"id": "r1", "status": "rejected", "batch": ["T-1"], "finished_at": "x", "stages": [st("unit", "passed"), st("acceptance", "failed", "1 failed")]},
+            {"id": "r2", "status": "landed", "batch": ["T-2"], "finished_at": "x", "stages": [st("acceptance", "passed")]},
+            {"id": "r3", "status": "base_broken", "batch": ["T-1"], "finished_at": "x", "stages": [st("acceptance", "failed", "1 failed, 21 passed")],
+             "base_check": [st("acceptance", "failed", "14 failed, 17 errors")]}]
+    d = pause_diagnosis(runs)
+    assert d["batch"] == ["T-1"] and d["candidate_stage"] == "acceptance" and d["candidate_prior_same"] == 1 and d["base_summary"] == "14 failed, 17 errors"
+    assert pause_diagnosis(runs[:2]) is None
 
 
 def test_the_broken_base_signal_is_time_since_main_broke_with_nothing_landed():

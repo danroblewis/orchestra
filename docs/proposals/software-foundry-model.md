@@ -212,6 +212,20 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **A wake rule may name the state a transition leaves** (`ticket_transition:REJECTED>IN_PROGRESS`
   for a fix pickup), and the flows table advises that form, so a new agent bound as advised
   wakes on its own flow and not on every start.
+- **One diagnosis of a pause.** When the gate pauses for a broken base, the banner, the gate's
+  caption and the broken-base card say the same thing: main's base check result, whether the
+  host is suspect (the same commit passed before; errors, not assertions), and what the
+  candidate in that run did, which the pause kept from being sent back.
+- **Escapes are findings, not symptoms.** A crash-restarting build is shown as a proxy beside
+  the escape count, never in it; only a ticket citing shipped work counts.
+- **Gate runs are counted by when their result was known**, the time of the send-backs they
+  caused, so the gate tile, its pipe and its ring agree.
+- **A pipe nothing moved through in the window is not drawn**; the flows table keeps it with
+  zero, and no stub stands in for it. Labels keep off horizontal runs as well as vertical ones.
+- **Every agent whose verdict drains the hidden stock inspects it**, and no cycle through it
+  is ever "observed".
+- **The timeout alarm is about worker and reviewer turns** under a cap. A silence timeout is
+  not a cap, and the alarm retires after ten worker and reviewer turns without a timeout.
 - **A controller that is not running is shown where it acts.** A resident agent with no live
   session reads "not running" on the map and on every loop card it sits on, naming the stocks
   nothing now drains. The Supervisor, which the loop restarts on the next human message,
@@ -332,8 +346,9 @@ Readings, each defined by its estimator and shown with its window:
   a review that gave no verdict are a machine loss shown beside it, not productive time.
   Repenning's threshold of roughly a third was calibrated on total hours; the tooltip says
   which denominator is used.
-- **Rounds per ticket.** The distribution, not only the median: Rahmandad and Hu show a few
-  tasks cycling many times dominate rework (measured: 29 tickets at 0 rounds, two at 25 and
+- **Rounds per ticket** count defect send-backs only (a review verdict or a gate result); a
+  return with no verdict is a machine loss, not a rework round. The distribution, not only the median: Rahmandad and Hu show a few
+  tasks cycling many times dominate rework (measured before round 27 on all send-backs: 29 tickets at 0 rounds, two at 25 and
   27).
 - **Review misses.** Approvals the gate then rejected for a defect before the next
   re-submission (each approval is a miss), shown with the distinct defects missed, one per

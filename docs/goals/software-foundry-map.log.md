@@ -982,3 +982,56 @@ re-planning's tickets ↔ changes (a ticket becomes a change at the pickup one-f
 conserves the count; the units name what each stock holds); bad-fix fraction per verdict rather than
 per submission (each submission is an attempt an inspection judges, Rahmandad and Hu's rework
 attempt; restarts do not create submissions).
+
+## Round 27 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. The headline numbers matched the raw log.
+Found: the stoppage diagnosed two ways (the banner and the gate's caption "main fails the gate,
+repair main"; the tests box "a suspect host"), while the run that paused had a candidate, CA-18,
+failing the same acceptance stage again and never sent back; crash-restarting builds still counted
+as escapes (round 26 had moved the rule into the model but not into the count); the
+discovery-after-landing loop's members skipping Orchestra and work in progress, which produced the
+gap advice "worker must wake on ticket_created" for a built-in process; gate send-backs counted
+three ways (runs by start time in the tile, transitions in the ring, a lower dashboard by runs
+started); the from>to wake advice unable to separate a fix pickup from a re-pick, or a defect from a
+no-verdict return; a cancel stub on work in progress counted from Demand's cancel; only the reviewer
+inspecting undiscovered rework; observed cycles through the hidden stock; rounds per ticket counting
+machine losses; "commits on main" for gate landings; the turn-limit wording describing a silence
+timeout as a cap, and its alarm retired on coordinator turns; labels travelling far from their pipes
+or onto an unseen pipe; a hollow label detached from its stub; raw keys in hollow labels, the pairs
+line and the flows table; the stub arrow grammar unexplained; the blue box border unexplained;
+the broken-base mini ring's orange head and names on the arcs; "CA-18 ×2 runs" for two tickets;
+drawers saying "last woken: never" beside runs, and promising a wake to a stopped agent.
+
+Fixed: the readings carry one diagnosis of the pausing run (main's check, the candidate's own
+failure and how many earlier rejections failed the same stage), and the banner, the gate caption
+("paused: base check failed (host suspect)") and the broken-base hint all say it; escapes count
+tickets citing shipped work only, the crash groups stay a proxy; the discovery loop names Orchestra
+and work in progress; gap advice never asks Orchestra's own processes to change; gate runs are
+windowed by when their result was known, so tile, pipe and ring agree, and the lower dashboard's
+tile says it counts every run started; the flows table names stocks, shows wake events as code,
+and where one wake event serves two flows says so and how an agent tells them apart until the event
+carries its cause; a from>to wake form is noted as needing a loop started with this release; a
+plain transition on a tracker stock counts only transitions out of that stock's states; every agent
+whose verdict drains the hidden stock inspects it (reviewer and gate), and no cycle through it is
+observed; rounds count defect send-backs only ("CA-18 sent back 12× for defects"); Landed reads gate
+landings; turns were capped at 15 m then and are uncapped now, ended after 30 m of silence, the
+"at the limit" flag needs a cap, and the alarm retires after ten worker and reviewer turns; labels
+stay within 140 px of their pipe and fold rather than travel; a pipe nothing moved through is not
+drawn (the flows table keeps it) and no stub stands in for it; labels keep off horizontal runs; the
+hollow label sits by its own stub and uses stock names; the legend explains the stub arrows and the
+blue border; mini-ring names face away from the ring and negative heads are blue; every gate
+defect ticket is listed; the agent rows start below the capability row's labels; drawers say a
+pickup woke the worker and that a stopped resident receives no wake-up. Unit tests: the pause
+diagnosis, defect-only rounds, the inspection links and unobservable hidden cycles.
+
+Declined: the "+" on the broken-base wake (a wake from a stock is a positive link: more paused,
+more resume action; the drain is the negative one, so the pair is B); undiscovered rework's
+declared outflow naming every review rejection (the event carries no cause yet, so the declaration
+cannot filter it; the estimator and every label apply the cause, and the description says only
+defect verdicts drain it); Orchestra writing its model template to the repository's main (the user
+asked for the model to be tracked there; it is Orchestra's own file, not an agent's change);
+five parallel verticals between Demand, work in progress and Blocked (each is a distinct flow,
+now each on its own line; hover isolates one); a separate note on the page when the loop process is
+older than the code (Orchestra has no version stamp on its process; the flows table says what the
+from>to form needs). One label still crosses a vertical under its halo.
