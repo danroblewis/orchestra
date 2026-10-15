@@ -15,6 +15,7 @@ import datetime as dt
 import re
 import statistics
 import subprocess
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -185,6 +186,8 @@ class History:
             return None
         if frm == "REJECTED":                                     # a pickup carries the send-back it follows: a fix pickup or a re-pick
             return norm(self.cause.get((tid, rej[0])))
+        if frm == "IN_PROGRESS" and norm(self.cause.get((tid, rej[0]))) in ("no_verdict", "lost", "conflict"):
+            return norm(self.cause.get((tid, rej[0])))            # a re-run of work no verdict judged is a loss, even on a change with an open defect (round 29)
         if frm == "IN_PROGRESS":                                  # a submission is a fix while a defect is unlanded (through blocks and re-plans), else a re-run after a send-back with no verdict
             if self._state_in(tid, seq, "unresolved"):
                 return last_defect()
@@ -263,6 +266,10 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
     out: dict[str, int] = {}
     run_class = {r.get("id"): _run_class(r, hist.hangs) for r in (runs or [])}
     recent_note: dict[str, tuple[float, str]] = {}          # ticket -> (ts, author) of the last note seen
+    blockers: dict[str, list[tuple[float, str]]] = {}       # ticket -> blocker notes (ts, author): a block is its note's author's, Orchestra's when the worker stopped without a report
+    for e in events:
+        if e["type"] == "note_added" and e.get("ticket") and e.get("kind") == "blocker":
+            blockers.setdefault(e["ticket"], []).append((_ts(e), e.get("author") or ""))
     for e in events:
         if e["type"] == "note_added" and e.get("ticket") and e.get("author"):
             recent_note[e["ticket"]] = (_ts(e), e["author"])
@@ -274,6 +281,10 @@ def attributed_counts(events: list[dict], hist: History, since: str, runs: list[
             who = TRANSITION_OWNER.get((frm, to))
             if (frm, to) == ("IN_REVIEW", "REJECTED"):
                 who = "reviewer" if hist.cause.get((e.get("ticket"), _ts(e))) == "defect" else "orchestra"
+            elif (frm, to) == ("IN_PROGRESS", "BLOCKED"):
+                near = [a for t_, a in blockers.get(e.get("ticket") or "", []) if abs(t_ - _ts(e)) <= 10]
+                if near:
+                    who = near[0]
             elif (frm, to) in (("BLOCKED", "OPEN"), ("OPEN", "CANCELLED"), ("BLOCKED", "CANCELLED"), ("OPEN", "OPEN")):
                 note = recent_note.get(e.get("ticket") or "")
                 if note and 0 <= _ts(e) - note[0] <= 60:         # evidence: whoever wrote on the ticket seconds before moved it
@@ -390,7 +401,7 @@ def pause_diagnosis(runs: list[dict], events: list[dict] | None = None) -> dict 
             prior += 1
     t0, t1 = _epoch(last.get("started_at")) or 0, _epoch(last.get("finished_at")) or 0
     staging_during = sum(1 for e in events or [] if e["type"] in ("staging_restarted", "staging_failed") and t0 <= _ts(e) <= t1)   # main's own server failing in service during the check points at main, not the host
-    return {"run": last.get("id"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during,
+    return {"run": last.get("id"), "base_commit": last.get("base_commit"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during,
             "candidate_prior_same": prior, "base_stage": name(base), "base_summary": _last_line(base)}
 
 
@@ -428,7 +439,7 @@ def _open_outage(events: list[dict], until: float) -> float | None:
     if start is None:
         return None
     since = [_ts(x) for x in troubles if start <= _ts(x) <= until]
-    for prev, nxt in zip(since, since[1:]):
+    for prev, nxt in pairwise(since):
         if nxt - prev > OUTAGE_QUIET:
             start = nxt                                           # service held an hour in between: that outage closed, a new one began
     if until - since[-1] > OUTAGE_QUIET:
@@ -492,8 +503,10 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     for tid, ts, f, to in tr:
         if (f, to) != ("IN_PROGRESS", "READY_FOR_REVIEW") or not hist.unresolved_before(tid, ts, f, to):
             continue
-        fix_rounds += 1                                           # every re-submission while a defect is unlanded is rework progress (Cooper; Lyneis & Ford)
         fcause = hist.cause_before(tid, ts, f, to) or "defect"
+        if fcause not in ("defect", "gate"):
+            continue                                              # a re-run after a return with no verdict is a machine loss, not a rework attempt (round 29)
+        fix_rounds += 1                                           # a new attempt at a defect a verdict found, which an inspection will judge (Rahmandad & Hu)
         fix_by[fcause] = fix_by.get(fcause, 0) + 1
         # followed to the defect's next verdict: a review or gate rejection for a defect makes it a bad fix,
         # a landing makes it good; approvals, no-verdict reviews, blocks and further re-submissions on the
@@ -564,12 +577,14 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
             timed_out[k0] = timed_out.get(k0, 0) + 1
         if act == "worker":
             tid = sid.split("-", 1)[1] if sid.startswith("worker-") else ""
-            if hist.unresolved_defect(tid, st + 5):
-                act = "fix"                                       # any turn on a change with an unlanded defect is rework
+            last = hist.last_rejection(tid, st + 5)
+            nxt_ready = next((t for t, f, to in hist.seq.get(tid, []) if t > (last[0] if last else 0) and (f, to) == ("IN_PROGRESS", "READY_FOR_REVIEW")), None)
+            if last and last[1] == "no_verdict" and (nxt_ready is None or nxt_ready > st):
+                act = "rerun"                                     # re-running work a review never judged is a loss, defect or not (round 29)
+            elif hist.unresolved_defect(tid, st + 5):
+                act = "fix"                                       # a turn on a change with an unlanded defect a verdict found is rework
             else:
-                last = hist.last_rejection(tid, st + 5)
-                nxt_ready = next((t for t, f, to in hist.seq.get(tid, []) if t > (last[0] if last else 0) and (f, to) == ("IN_PROGRESS", "READY_FOR_REVIEW")), None)
-                act = "rerun" if last and last[1] == "no_verdict" and (nxt_ready is None or nxt_ready > st) else "implement"
+                act = "implement"
         hours[act] = hours.get(act, 0.0) + dur
         nturns[act] = nturns.get(act, 0) + 1
         if turn_i in timed_idx:
@@ -901,7 +916,8 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "merge_gate|gate_landed": f"{pf['land']} landed",
         "merge_gate|staging_deployed": f"{pf['deploy']} deployed",
         "merge_gate|gate_base_broken": f"{pf['base']} base broken",
-        "worker|ticket_transition:BLOCKED": f"{pf['blocked']} blocked",
+        "worker|ticket_transition:BLOCKED": " · ".join(x for x in (f"{attributed.get('orchestra|ticket_transition:IN_PROGRESS>BLOCKED', 0)} blocked by Orchestra when the worker stopped without a report" if attributed.get('orchestra|ticket_transition:IN_PROGRESS>BLOCKED') else "",
+                                                                 f"{attributed.get('worker|ticket_transition:IN_PROGRESS>BLOCKED', 0)} by the worker" if attributed.get('worker|ticket_transition:IN_PROGRESS>BLOCKED') else "") if x) or "0 blocked",
         "orchestra|staging_restarted": f"{attributed.get('orchestra|staging_restarted', 0)} restarts (crash proxy)",
         "orchestra|ticket_transition:OPEN>IN_PROGRESS": f"{pf['start']} starts · {pf['replanned']} re-planned · {pf['repick']} re-picked after a restart (loss)",
         "orchestra|ticket_transition:REJECTED>IN_PROGRESS": f"{attributed.get('orchestra|ticket_transition:REJECTED>IN_PROGRESS', 0)} fix pickups",
@@ -918,7 +934,13 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "coordinator|ticket_transition:BLOCKED>OPEN": f"{attributed.get('coordinator|ticket_transition:BLOCKED>OPEN', 0)} re-planned",
     }
     t = cur["time"]
-    return {"pause": pause_diagnosis(store.gate_runs(), events), "hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
+    pause = pause_diagnosis(store.gate_runs(), events)
+    if pause and use_git:
+        try:
+            pause["main_head"] = foundrygit._git(project.repo_root, "rev-parse", project.config.base_branch).strip()   # main may have moved since the check judged it
+        except (OSError, RuntimeError, ValueError):
+            pause["main_head"] = None
+    return {"pause": pause, "hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
             "system_capacity_changes": system_changes, "operator_capacity_changes": operator_changes,
             "rounds": {"histogram": hist_r, "worst": [{"ticket": tid, "rounds": n} for n, tid in rounds[-3:] if n > 0][::-1], **cur["rounds"]},
             "time": t, "dora": cur["dora"], "losses": t["losses"], "counts": cur["counts"], "pairs": cur["pairs"], "signals": signals,

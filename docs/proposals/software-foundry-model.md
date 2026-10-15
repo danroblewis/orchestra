@@ -355,6 +355,16 @@ Readings, each defined by its estimator and shown with its window:
   a review that gave no verdict are a machine loss shown beside it, not productive time.
   Repenning's threshold of roughly a third was calibrated on total hours; the tooltip says
   which denominator is used.
+- **A fix is an attempt a verdict will judge.** A submission after a defect send-back is a fix
+  round; a submission after a return with no verdict is a re-run, a machine loss, even on a
+  change with an open defect, and a worker turn re-running unjudged work is counted as re-run
+  hours, not rework (round 29). The rework share and the firefighting signal rest on fixes only.
+- **A block is its note's author's.** Orchestra blocks a ticket when the worker stops without a
+  report and writes a blocker note; the map's valve, the flows table and the re-planning card
+  name Orchestra for those blocks, and re-planning reads as the recovery from a machine loss.
+- **Stub captions.** A box's stubs share one caption centred under it, a line per arrow with the
+  arrow's own direction (↑ in, ↓ out) and the agent; a line wider than its box folds the agent
+  onto the next line.
 - **Rounds per ticket** count defect send-backs only (a review verdict or a gate result); a
   return with no verdict is a machine loss, not a rework round. The distribution, not only the median: Rahmandad and Hu show a few
   tasks cycling many times dominate rework (measured before round 27 on all send-backs: 29 tickets at 0 rounds, two at 25 and

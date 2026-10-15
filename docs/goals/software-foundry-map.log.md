@@ -1081,3 +1081,43 @@ card grid; the re-planning ring's 3 of 7 (its tooltip says it counts blocks on t
 crosses a vertical under its halo.
 Follow-up: the outage rule resets at any hour-long quiet gap, not only at the tail, so the outage
 open now began at the restart after fourteen quiet hours (30 minutes), not two days ago.
+
+## Round 29 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. All twenty numbers checked matched the raw data,
+the sliding window included. Found: every block in the window was Orchestra's (a blocker note by
+orchestra when the worker stopped without a report) yet credited to the worker on the map, the flows
+table, the drawer and the re-planning card; fix rounds, bad fixes and the rework share counting
+re-runs after a no-verdict return as rework, against the design's own Readings, which inflated the
+firefighting signal; Really done's stub labels sitting under the wrong arrows; hypothesis cards still
+showing raw keys in the gap lines, and the idle-agent line never appearing because "fills only" agents
+that filled nothing were not counted as on no flow; the detector's "retrospective is already woken
+here" only in a tooltip; the outage line contradicting a build that is up; the base-check diagnosis
+not naming the commit it judged, though main has moved since; the firefighting card's hover dimming
+the whole map; the stale timeout tile prominent; Verified behaviour without the addition's blue
+border; agent-time labels colliding; the worker's drawer offering a lead's brief as its wake-up.
+
+Fixed: a block is attributed to the author of its blocker note, and a pipe whose transitions Orchestra
+made names Orchestra as its valve ("6 blocked by Orchestra when the worker stopped without a report");
+re-planning says it is the recovery from a machine loss when Orchestra makes the blocks, and is
+"closable, not yet seen" since the worker made none; a submission after a no-verdict return is a
+re-run, not a fix, even with an open defect, and worker turns re-running unjudged work count as re-run
+hours, so fix rounds, bad fixes, the rework share (43%) and the firefighting signal rest on fixes only;
+a box's stubs share one caption centred under it, a line per arrow with the arrow's own ↑ or ↓, the
+agent folded onto its own line when the box is narrow; gap lines use stock names and quote the
+detector when an agent is already woken there; an agent that moved nothing in the window is on no
+flow, so the candidates line names environment_keeper, product_owner, qa_engineer and retrospective;
+the banner's staging line says it was restarted N times and when this spell of trouble began, and
+ends after an hour quiet; the pause names the commit its base check judged and says when main has
+moved since; the broken-base hint no longer says main needs no repair; a signal-only card leaves the
+map alone on hover; the stale timeout tile is grey with "before the change"; additions keep their blue
+border in the state style; an activity label shows only when it fits; the worker's and reviewer's
+drawers say Orchestra's pickup starts them. Unit tests: block attribution by note author, a re-run
+after a no-verdict return is not a fix.
+
+Declined: making open defects Known rework's level (round 25 made the stock conserve the change, as
+three reviewers asked; the open defects are listed beside it); scoring CA-18's paused-run failure
+against the review fix (no send-back was recorded, so no verdict exists; the banner reports the
+failure); loop-card hover reaching a map scrolled out of view (each card carries its own ring of the
+loop); legibility of the 1280-px scale (the map keeps its geometry and scales to fit; every number
+has a tooltip); injection riding re-runs (the co-flow is drawn dashed and never counted).

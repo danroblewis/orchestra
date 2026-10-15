@@ -488,6 +488,10 @@ def conversions(g: dict, attributed: dict[str, int] | None = None, stocks: list 
                         count = mine
                         if not mine and orch and agent != "orchestra":
                             valve, count = "turn limit", orch
+                elif agent != "orchestra" and not count:
+                    orch = att.get(f"orchestra|{e['via']}") if ">" in (e["via"] or "") else None
+                    if orch:
+                        valve, count = "orchestra", orch                  # the transition happened and Orchestra made it (a block when the worker stopped without a report)
                 out.append({"src": e["dst"], "dst": f["dst"], "agent": agent, "valve": valve, "via": plain(e["via"]), "via_full": e["via"], "count": count, "wake": e["via"] if ">" in (e["via"] or "") else f["via"],   # a new agent wakes on the form that leaves this stock (a fix pickup, not every start)
                             "coflow": e["dst"] in hidden or f["dst"] in hidden})       # a defect riding inside a change: drawn beside the change's pipe, never counted twice
     # one event moves one thing: where an agent's event converts along the product's own path (chain row to
