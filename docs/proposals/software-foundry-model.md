@@ -235,8 +235,17 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   is ever "observed".
 - **The timeout alarm is about worker and reviewer turns** under a cap. A silence timeout is
   not a cap, and the alarm retires after ten worker and reviewer turns without a timeout.
-- **Productivity leads the tiles.** The share of agent hours that fix or implement a change, net
-  of turns cut off, with the rest by activity: a low share says the machines come before new agents.
+- **Productivity leads the tiles** as the literature defines it, output per effort (landings
+  per worker-hour), with the share of agent hours that moved a change forward and every hour
+  by activity beneath it, the cut-off hours included, adding up to the total (round 32).
+- **The stoppage line measures from the last landing**, and states the pause separately; a
+  pipeline manager that is up but has not resumed the gate is told to the operator as such.
+- **A bad-fix fraction is over judged fixes** (a later defect verdict or a landing), with the
+  fixes not yet judged shown beside it.
+- **Known rework shows its open defects beside its level** in amber; the pickup is the dispatch
+  of the fix, and the fix submission is Lyneis and Ford's rework progress.
+- **A step Orchestra made counts as seen**: a circuit whose transitions Orchestra made in the
+  window (a block when the worker stopped) is observed.
 - **A pause is said in one line**: nothing has landed for N hours, the gate is paused, and who
   resumes it; the evidence sits behind a disclosure and is stated as facts each way, never the
   symptom (a refused connection) as its own cause.

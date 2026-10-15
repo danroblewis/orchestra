@@ -42,8 +42,9 @@ def _median(xs: list[float]) -> float | None:
     return statistics.median(xs) if xs else None
 
 
-def metrics(events: list[dict], hours: float = 24.0) -> dict[str, Any]:
-    """Flows and loop measures over the given events (already windowed)."""
+def metrics(events: list[dict], hours: float = 24.0, created_at: dict[str, float] | None = None) -> dict[str, Any]:
+    """Flows and loop measures over the given events (already windowed). ``created_at`` gives every
+    ticket's creation time, so a ticket created before the window still has a lead time."""
     counts: dict[str, int] = {}
     by: dict[str, dict[str, int]] = {}
     messages: dict[tuple[str, str], int] = {}
@@ -133,8 +134,9 @@ def metrics(events: list[dict], hours: float = 24.0) -> dict[str, Any]:
     leads = []
     for tid, seq in per_ticket.items():
         done = next((ts for ts, _, st in seq if st == "DONE"), None)
-        if done is not None and tid in created:
-            leads.append(done - created[tid])
+        made = (created_at or {}).get(tid, created.get(tid))
+        if done is not None and made is not None:
+            leads.append(done - made)                  # every ticket that finished in the window, wherever it was created (round 32)
     days = max(hours / 24.0, 1e-9)
     headline = {
         "landed_per_day": round(flows.get("DONE", 0) / days, 1), "created_per_day": round(counts.get("ticket_created", 0) / days, 1),

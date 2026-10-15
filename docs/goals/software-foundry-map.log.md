@@ -1199,3 +1199,41 @@ come first); the drill-down below the section (the Event map has its own definit
 pipeline manager's hover line across the map; the agent-time bar mixing team and activity names (they
 are the activity classes the turns are counted in); the reviewer's band label beside rather than over
 its short band (the band is narrower than any fold of it).
+
+## Round 32 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. Every count traced to the raw log matched, and
+the window slid across its edge exactly as the log predicts. Found: "Nothing has landed for 16.8h"
+measured from the pause, while the last landing was 19.3 hours earlier; the pairs line rendering the
+detector's unsigned pair as balancing; re-planning "not yet seen" though its whole circuit ran, because
+the step credited to the worker was made by Orchestra; Known rework's level a structural zero beside
+three open defects, and the pickup called Cooper's rework progress; the bad-fix fraction dividing by
+fixes not yet judged; productivity defined as a share of hours rather than output per effort, its
+breakdown not adding up; "deploy to first trouble" offered as how late defects are found though it
+times a proxy; the drill-down's lead time dropping tickets created before the window; the discovery
+card's hover missing the deploy pipe; tile text below AA contrast; agent hours by activity stated four
+times; tooltip trends naming the wrong metric; a ring arc through "reviewer"; flows no pipe carries
+(the resume, the pause, restarts, the inlet, cancels) missing from the flows table; the banner
+softening after the loop restarted and the pipeline manager came up without resuming.
+
+Fixed: the banner says "Nothing has landed for 19.7h: the gate has been paused for 17.1h, and the
+pipeline manager that resumes it is up but has not resumed it; tell the Supervisor"; the pairs line
+says "unsigned" for an unsigned pair; a step Orchestra made counts as seen, so a circuit that ran is
+observed; Known rework shows its open defects as an amber figure beside its level, and the wording
+says the pickup dispatches the fix and the fix submission is the rework progress; bad fixes are over
+judged fixes (1 of 2) with the undecided beside them (2 of 4); productivity leads as landings per
+worker-hour, with the share of agent hours that moved a change forward and every hour by activity,
+the cut-off hours included, adding up to the total; the after-landing latency says it is the time to
+a deploy's first crash-restart, a proxy; the drill-down's lead time counts every ticket that finished
+in the window; a hypothesis card lights its members as a set; tile text at 7:1 contrast; the hours are
+said on the productivity tile and the bar, not in the defects line; trends name their metric;
+mini-ring names beside a side circle face outward; the flows table lists the flows no pipe carries.
+
+Declined: making Known rework's level the open defects (round 25 made it conserve the change, as three
+reviewers asked; the open defects now stand beside it in amber); the bad-fix route drawn as a
+reinforcing loop (the rework rings carry it as task cycling, with its fraction); Really done against
+DONE as a perceived-versus-actual gap (different units by design; FCC landed is the comparable
+measure, not yet measurable); injection riding re-runs (dashed, never counted); a recovery estimate
+per recipe and fitted candidates per gap (as before); a series beyond the day before (one window and
+its predecessor is the instrument; a series is step 3's stock_measured); the drill-down's pipeline
+manager ring (the Event map section's own encoding).

@@ -98,7 +98,8 @@ def create_app(project: Project) -> FastAPI:
         from .. import eventgraph, loopmetrics
         from ..api_org import detected_loops
         from ..org import all_agents
-        mx = loopmetrics.metrics(loopmetrics.window(events.read(0, limit=200000)[0]))
+        all_ev = events.read(0, limit=200000)[0]
+        mx = loopmetrics.metrics(loopmetrics.window(all_ev), created_at={e["ticket"]: loopmetrics._ts(e) for e in all_ev if e["type"] == "ticket_created" and e.get("ticket")})
         g = eventgraph.build(project, observed={"by": mx["by"], "messages": mx["messages"]})
         ags = {a.name: {"every": a.every, "at": a.at, "kind": a.kind, "resident": a.resident, "team": a.team, "wake_on": list(a.wake_on),
                         "emits": list(a.emits), "builtin": a.builtin} for a in all_agents(project).values()}

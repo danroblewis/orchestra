@@ -343,7 +343,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
             hits = []
             for e in es:
                 if e["kind"] in ("fills", "drains") and e["via"]:
-                    n = ev.get(f"{a.split(':', 1)[1]}|{plain(e['via'])}", 0)
+                    n = ev.get(f"{a.split(':', 1)[1]}|{plain(e['via'])}", 0) or ev.get(f"orchestra|{e['via']}", 0)   # the step happened when Orchestra made the transition (a block when the worker stopped): the circuit ran (round 32)
                 elif e["kind"] in ("wakes", "inspects", "triggers", "departs") and e["via"]:
                     n = (weights or {}).get(plain(e["via"]), 0)
                 else:

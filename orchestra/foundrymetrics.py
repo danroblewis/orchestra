@@ -509,7 +509,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     runs = [r for r in store.gate_runs() if since <= (_epoch(r.get("finished_at") or r.get("started_at")) or 0) < until]   # by when the result was known, as the send-backs it caused are counted
     gate = gate_outcomes(runs, hist.hangs)
     # fix rounds and bad fixes: a re-submission while a defect send-back is pending
-    fix_rounds = bad = 0
+    fix_rounds = bad = good = 0
     bad_by: dict[str, int] = {}
     fix_by: dict[str, int] = {}
     for tid, ts, f, to in tr:
@@ -526,7 +526,10 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         for t2, f2, to2 in hist.seq.get(tid, []):
             if t2 <= ts:
                 continue
-            if to2 in ("DONE", "CANCELLED"):
+            if to2 == "DONE":
+                good += 1                                         # judged good: the defect landed
+                break
+            if to2 == "CANCELLED":
                 break
             if to2 == "REJECTED" and hist.cause.get((tid, t2)) in ("defect", "gate"):
                 bad += 1
@@ -695,7 +698,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                        "cause": "pass = APPROVED verdicts over all verdicts (APPROVED + REJECTED with a reviewer note); reviews with no verdict are not inspections and are counted as losses"},
             "gate": {**gate, "cause": "defect = a stage failed on its own result; timeouts, start failures and conflicts counted apart"},
         },
-        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, fix_rounds), "bad_by": bad_by, "fix_by": fix_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), fix_rounds), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), fix_rounds), "lead_values": sorted(leads)},
+        "rounds": {"fix_rounds": fix_rounds, "bad_fixes": bad, "bad_fix_fraction": _ratio(bad, bad + good), "judged_fixes": bad + good, "undecided_fixes": fix_rounds - bad - good, "bad_by": bad_by, "fix_by": fix_by, "review_bad_fix_fraction": _ratio(bad_by.get("defect", 0), bad + good), "gate_bad_fix_fraction": _ratio(bad_by.get("gate", 0), bad + good), "lead_values": sorted(leads)},
         "time": {"hours": {k: round(v / days, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])}, "turns": nturns,
                  "rework_share": _ratio(fix_prod, fix_prod + impl_prod), "rework_share_wall": _ratio(hours.get("fix", 0.0), worker_hours), "fix_hours_productive": round(fix_prod / days, 1), "implement_hours_productive": round(impl_prod / days, 1), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
                  "turn_limit": max(set(limits), key=limits.count) if limits else None,
@@ -707,7 +710,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         "dora": {"landing_per_day": round(len(landed) / days, 1), "lead_time": _median(leads), "lead_n": len(leads), "land_to_deploy": _median(land_to_deploy),
                  "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)), "crashing_builds": crashing_builds,
                  "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores),
-                 "outage_open_for": _open_outage(events, until)},
+                 "outage_open_for": _open_outage(events, until), "last_landed_at": next((e.get("ts") for e in reversed([x for x in events if _ts(x) <= until]) if e["type"] == "gate_landed"), None)},
         "pipeline_paused_since": next((e.get("ts") for e in reversed(events) if e["type"] == "pipeline_paused"), None) if not any(e["type"] == "pipeline_resumed" and e.get("ts", "") > next((x.get("ts", "") for x in reversed(events) if x["type"] == "pipeline_paused"), "") for e in events) else None,
     }
 
