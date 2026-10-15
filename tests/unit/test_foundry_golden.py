@@ -283,7 +283,7 @@ def test_a_pause_names_the_candidate_result_it_swallowed():
             {"id": "r3", "status": "base_broken", "batch": ["T-1"], "finished_at": "x", "stages": [st("acceptance", "failed", "1 failed, 21 passed")],
              "base_check": [st("acceptance", "failed", "14 failed, 17 errors")]}]
     d = pause_diagnosis(runs)
-    assert d["batch"] == ["T-1"] and d["candidate_stage"] == "acceptance" and d["candidate_prior_same"] == 1 and d["base_summary"] == "14 failed, 17 errors"
+    assert d["batch"] == ["T-1"] and d["candidate_stage"] == "acceptance" and d["candidate_prior_same"] == 1 and d["base_summary"] == "14 failed, 17 errors" and d["staging_trouble_during"] == 0
     assert pause_diagnosis(runs[:2]) is None
 
 
@@ -293,3 +293,11 @@ def test_the_broken_base_signal_is_time_since_main_broke_with_nothing_landed():
     t = lambda h: dt.datetime(2026, 10, 14, 10, tzinfo=dt.UTC).timestamp() + h * 3600
     assert _base_broken_open(ev, t(3)) == 3.0 and _base_broken_open(ev, t(-1)) is None
     assert _base_broken_open(ev + [{"type": "gate_landed", "ts": "2026-10-14T11:00:00+00:00"}], t(3)) is None
+
+
+def test_an_outage_closes_after_an_hour_without_trouble_even_with_no_new_deploy():
+    """A paused gate deploys nothing; DORA's restore is service back, so an hour quiet closes it."""
+    from orchestra.foundrymetrics import _open_outage
+    ev = [{"type": "staging_deployed", "ts": "2026-10-14T00:00:00+00:00"}, {"type": "staging_restarted", "ts": "2026-10-14T01:00:00+00:00"}]
+    t = lambda h: dt.datetime(2026, 10, 14, tzinfo=dt.UTC).timestamp() + h * 3600
+    assert _open_outage(ev, t(1.5)) == 1800 and _open_outage(ev, t(2.5)) is None

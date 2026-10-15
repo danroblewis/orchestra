@@ -1035,3 +1035,47 @@ five parallel verticals between Demand, work in progress and Blocked (each is a 
 now each on its own line; hover isolates one); a separate note on the page when the loop process is
 older than the code (Orchestra has no version stamp on its process; the flows table says what the
 from>to form needs). One label still crosses a vertical under its halo.
+
+## Round 28 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. Sixteen of seventeen numbers matched the raw log
+and one came within method slack. Found: defects after landing 0 where CA-39, a ticket filed against
+a crashing build, is a finding (round 27 dropped findings with the symptom); the pause diagnosed
+one-sidedly as the host when the base log shows the server under test refusing connections, and
+staging on main's build restarted three times during the check; "main needs no repair" and "the
+server did not start" unsupported; Working build "up" in the level colour beside 14 restarts, and an
+outage that can only close on a new deploy, so it grows without limit while the gate is paused; no
+loop owning the 61% rework share (firefighting); capability closing through a ticket (CA-40)
+undetected; earlier detection's wording; raw keys on hypothesis cards; gate wake advice pointing at a
+review note; a label on a horizontal run, another crossed, stub labels missing or detached, humps
+running through their labels; FCC's "n/a" set as a headline; "7 of them" without a noun; hovering a
+zero-count flows-table row blanking the map; hovering an agent lighting every ticket creator through
+the shared inlet; the worker drawer's built-in wording contradicting the map.
+
+Fixed: escapes count every ticket citing shipped work, a crashing build's included (CA-39: 1), with
+the crash groups a proxy beside it; the pause diagnosis is two-sided (for the host: the same commit
+passed the gate before; for main: staging on main's build failed N times while the check ran;
+"undetermined" when both), the unsupported claims are gone, the gate's caption reads "paused: main's
+base check failed", and the tests box says "host or main undetermined"; an outage closes after an
+hour without a restart or failure; a build that is up but restarted in the window reads "up" in amber
+with its restarts; a signal-only firefighting loop (R) carries the rework share against Repenning's
+tipping point and fix rounds and bad fixes, with a recipe, and is never drawn; earlier detection says
+earlier than the field, not than review; hypothesis cards use stock names and name the custom agents
+on no flow that could take a gap (qa_engineer, among others); the flows table's gate events point at
+the gate run's stage result; humps are 96 px apart and the rows lower, so each hump label stands
+above its own hump; tall labels search further for free space; every stub is labelled (the agent at
+the first box, the count and event at the others) and stays within 60 px of its arrow; FCC reads "—"
+with the reason in the caption; hours of turns that ended in a timeout say "h/d"; a zero-count row
+lights its stocks and valve; an inlet no longer pulls in every other creator on hover; the drawer says
+the loop wakes built-ins itself and the map draws the same rules. Unit tests: the outage rule, the
+pause's staging evidence.
+
+Declined: capability detected through ticket text (the detector reads bindings, never ticket prose; a
+keeper that declares lesson_decided closes it, and the card says so); a debt-drag loop (no reading
+measures debt yet; FCC landed is not measurable until a landing is fourteen days old); Orchestra's
+model-template commits on main (as round 27: the user asked for the model to be tracked there; Landed
+counts gate landings and says so); what each recipe would recover and cost per agent (as in rounds
+19 to 24; the readings beside each card carry the counts); the pipeline manager's "repeated gate
+rejections" trigger (a condition in the role's text, not an event; the drawer states it); the uneven
+card grid; the re-planning ring's 3 of 7 (its tooltip says it counts blocks on this loop). One label
+crosses a vertical under its halo.

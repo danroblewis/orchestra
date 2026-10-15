@@ -212,12 +212,21 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
 - **A wake rule may name the state a transition leaves** (`ticket_transition:REJECTED>IN_PROGRESS`
   for a fix pickup), and the flows table advises that form, so a new agent bound as advised
   wakes on its own flow and not on every start.
-- **One diagnosis of a pause.** When the gate pauses for a broken base, the banner, the gate's
-  caption and the broken-base card say the same thing: main's base check result, whether the
-  host is suspect (the same commit passed before; errors, not assertions), and what the
-  candidate in that run did, which the pause kept from being sent back.
-- **Escapes are findings, not symptoms.** A crash-restarting build is shown as a proxy beside
-  the escape count, never in it; only a ticket citing shipped work counts.
+- **One diagnosis of a pause, two-sided.** When the gate pauses for a broken base, the banner,
+  the gate's caption and the broken-base card say the same thing: main's base check result,
+  the evidence for the host (the same commit passed the gate before) and for main (staging on
+  main's build failing while the check ran), "undetermined" when both are present, and what the
+  candidate in that run did, which the pause kept from being sent back. Pytest errors are not
+  evidence of the host: a connection refused by the server under test is the product failing.
+- **Escapes are findings, not symptoms.** A ticket citing shipped work counts, including one
+  filed against a crashing build (round 28: CA-39); the crash-restarting builds themselves are
+  a proxy beside the count, never in it.
+- **An outage closes when service holds.** An hour with no restart or failure closes it even
+  with no new deploy (a paused gate deploys nothing; DORA's restore is service back). A build
+  that is up but restarted in the window reads "up" in amber with its restarts.
+- **Firefighting is a signal-only loop.** Repenning and Sterman's capability trap runs through
+  the worker's attention, which no event carries; its card carries the rework share against
+  the tipping point of a third and is never drawn on the map.
 - **Gate runs are counted by when their result was known**, the time of the send-backs they
   caused, so the gate tile, its pipe and its ring agree.
 - **A pipe nothing moved through in the window is not drawn**; the flows table keeps it with

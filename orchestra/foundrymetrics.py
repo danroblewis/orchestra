@@ -371,7 +371,7 @@ def _last_line(stage: dict | None) -> str:
     return lines[-1] if lines else ""
 
 
-def pause_diagnosis(runs: list[dict]) -> dict | None:
+def pause_diagnosis(runs: list[dict], events: list[dict] | None = None) -> dict | None:
     """What the last finished gate run found when it paused the pipeline for a broken base: the
     candidate's own result (a failure there was never sent back, because the gate paused instead),
     whether the same ticket failed the same stage and tests in earlier rejections, and main's check."""
@@ -388,7 +388,9 @@ def pause_diagnosis(runs: list[dict]) -> dict | None:
         f = failed(r, "stages")
         if r.get("status") == "rejected" and set(r.get("batch") or []) & set(last.get("batch") or []) and f and name(f) == name(cand) and (not tests or set(_failed_tests(f)) & set(tests)):
             prior += 1
-    return {"run": last.get("id"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand),
+    t0, t1 = _epoch(last.get("started_at")) or 0, _epoch(last.get("finished_at")) or 0
+    staging_during = sum(1 for e in events or [] if e["type"] in ("staging_restarted", "staging_failed") and t0 <= _ts(e) <= t1)   # main's own server failing in service during the check points at main, not the host
+    return {"run": last.get("id"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during,
             "candidate_prior_same": prior, "base_stage": name(base), "base_summary": _last_line(base)}
 
 
@@ -423,7 +425,12 @@ def _open_outage(events: list[dict], until: float) -> float | None:
             start = None                                          # a deploy that stayed healthy closes any outage
         elif start is None:
             start = first
+    if start is not None and until - max(_ts(x) for x in troubles if _ts(x) <= until) > OUTAGE_QUIET:
+        return None                                               # service has held an hour since the last restart: restored, even with no new deploy (a paused gate deploys nothing)
     return until - start if start is not None else None
+
+
+OUTAGE_QUIET = 3600.0
 
 
 def _window(hist: History, store, events: list[dict], agents: dict, since: float, until: float, tickets_by_id: dict | None = None) -> dict[str, Any]:
@@ -624,7 +631,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     in_window = [g for g in groups if any(b in crashing_builds for b in g)]
     crash_tickets = [tid for tid in bug_tickets if any(b and b[:7] in f"{getattr(tickets_by_id.get(tid), 'title', '')} {getattr(tickets_by_id.get(tid), 'description', '')}" for b in crashing_builds)]
     other_tickets = [tid for tid in bug_tickets if tid not in crash_tickets]
-    escape = len(other_tickets)                     # a crash-restarting build is a symptom, not a finding: the host can cause it (round 27); the crash groups stay a proxy beside it
+    escape = len(bug_tickets)                       # a finding is a ticket citing shipped work, a crashing build's included (round 28); the crash groups themselves are a symptom, shown beside it as a proxy, never counted
     landed_at = {e.get("commit"): _ts(e) for e in landed}
     land_to_deploy = [_ts(d) - landed_at[d["commit"]] for d in deploys if d.get("commit") in landed_at]
     return {
@@ -746,7 +753,7 @@ def _stock_reading(st, pool: dict) -> dict:
         at_landing = sum(v.get("passed", 0) for k, v in lt.get("stages", {}).items() if not stage or k == stage) if lt else None
         suspect = bool(errors) or (mt.get("status") == "base_broken" and pool.get("main_commit_landed_clean"))
         if src == "main" and suspect and at_landing is not None:                 # the check that failed looks like the host, not the code: the last clean check is the level, marked stale
-            out.update(stale=True, latest_check={"passed": out.get("value"), "failed": out.get("failed"), "errors": out.get("errors")}, value=at_landing, failed=0, errors=0, verification="stale: the latest check failed on a suspect host")
+            out.update(stale=True, latest_check={"passed": out.get("value"), "failed": out.get("failed"), "errors": out.get("errors")}, value=at_landing, failed=0, errors=0, verification="stale: the latest check failed, host or main undetermined")
         if src == "deployed" and not served:                                     # what was proved at the last deploy stands; it is unverified while the build is down or main is broken
             out.update(unverified=True, verification=f"unverified: {why}")
         out.update(served=served, not_served_because=why, at_last_landing=at_landing)
@@ -905,7 +912,7 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
         "coordinator|ticket_transition:BLOCKED>OPEN": f"{attributed.get('coordinator|ticket_transition:BLOCKED>OPEN', 0)} re-planned",
     }
     t = cur["time"]
-    return {"pause": pause_diagnosis(store.gate_runs()), "hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
+    return {"pause": pause_diagnosis(store.gate_runs(), events), "hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
             "system_capacity_changes": system_changes, "operator_capacity_changes": operator_changes,
             "rounds": {"histogram": hist_r, "worst": [{"ticket": tid, "rounds": n} for n, tid in rounds[-3:] if n > 0][::-1], **cur["rounds"]},
             "time": t, "dora": cur["dora"], "losses": t["losses"], "counts": cur["counts"], "pairs": cur["pairs"], "signals": signals,

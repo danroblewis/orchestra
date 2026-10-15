@@ -359,7 +359,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
                       "edges": [{"src": a, "dst": b, "sign": None if basis in ("material circuit", "co-flow") else sg.get((a, b), "+")} for a, b in zip(c, c[1:] + c[:1])]})
     declared, used = [], set()
     for lp in expected or []:
-        want = set(getattr(lp, "nodes", None) or lp.get("nodes", []))
+        want = set(lp.get("nodes", []) if isinstance(lp, dict) else (lp.nodes or []))
         sig = getattr(lp, "signature", None) if not isinstance(lp, dict) else lp.get("signature")
         pol = getattr(lp, "polarity", None) if not isinstance(lp, dict) else lp.get("polarity")
         key = getattr(lp, "key", None) if not isinstance(lp, dict) else lp.get("key")
@@ -375,7 +375,7 @@ def detect(stocks: list, agents: dict, expected: list | None = None, system: dic
                          "polarity_agrees": (best["polarity"] == pol) if best and pol and best["polarity"] in ("B", "R") else None})
     for d, lp in zip(declared, expected or []):
         if not d["detected"]:
-            d["gaps"] = gaps(g, getattr(lp, "nodes", None) or lp.get("nodes", []), stocks)
+            d["gaps"] = gaps(g, (lp.get("nodes", []) if isinstance(lp, dict) else (lp.nodes or [])), stocks)
     unnamed, seen_members, uncounted = [], set(), []
     for ci in infos:
         key = tuple(ci["members"])
