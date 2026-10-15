@@ -301,3 +301,5 @@ def test_an_outage_closes_after_an_hour_without_trouble_even_with_no_new_deploy(
     ev = [{"type": "staging_deployed", "ts": "2026-10-14T00:00:00+00:00"}, {"type": "staging_restarted", "ts": "2026-10-14T01:00:00+00:00"}]
     t = lambda h: dt.datetime(2026, 10, 14, tzinfo=dt.UTC).timestamp() + h * 3600
     assert _open_outage(ev, t(1.5)) == 1800 and _open_outage(ev, t(2.5)) is None
+    ev2 = ev + [{"type": "staging_restarted", "ts": "2026-10-14T05:00:00+00:00"}]
+    assert _open_outage(ev2, t(5.5)) == 1800                         # the quiet hours between closed the first outage; this one began at 05:00

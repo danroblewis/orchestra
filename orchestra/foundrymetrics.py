@@ -425,9 +425,15 @@ def _open_outage(events: list[dict], until: float) -> float | None:
             start = None                                          # a deploy that stayed healthy closes any outage
         elif start is None:
             start = first
-    if start is not None and until - max(_ts(x) for x in troubles if _ts(x) <= until) > OUTAGE_QUIET:
-        return None                                               # service has held an hour since the last restart: restored, even with no new deploy (a paused gate deploys nothing)
-    return until - start if start is not None else None
+    if start is None:
+        return None
+    since = [_ts(x) for x in troubles if start <= _ts(x) <= until]
+    for prev, nxt in zip(since, since[1:]):
+        if nxt - prev > OUTAGE_QUIET:
+            start = nxt                                           # service held an hour in between: that outage closed, a new one began
+    if until - since[-1] > OUTAGE_QUIET:
+        return None                                               # service has held an hour since the last trouble: restored, even with no new deploy (a paused gate deploys nothing)
+    return until - start
 
 
 OUTAGE_QUIET = 3600.0

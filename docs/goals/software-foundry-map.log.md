@@ -1079,3 +1079,5 @@ counts gate landings and says so); what each recipe would recover and cost per a
 rejections" trigger (a condition in the role's text, not an event; the drawer states it); the uneven
 card grid; the re-planning ring's 3 of 7 (its tooltip says it counts blocks on this loop). One label
 crosses a vertical under its halo.
+Follow-up: the outage rule resets at any hour-long quiet gap, not only at the tail, so the outage
+open now began at the restart after fourteen quiet hours (30 minutes), not two days ago.
