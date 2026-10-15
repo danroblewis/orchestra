@@ -400,8 +400,14 @@ def pause_diagnosis(runs: list[dict], events: list[dict] | None = None) -> dict 
         if r.get("status") == "rejected" and set(r.get("batch") or []) & set(last.get("batch") or []) and f and name(f) == name(cand) and (not tests or set(_failed_tests(f)) & set(tests)):
             prior += 1
     t0, t1 = _epoch(last.get("started_at")) or 0, _epoch(last.get("finished_at")) or 0
+    refused = 0
+    try:
+        log = Path((base or {}).get("log") or "")
+        refused = log.read_text(errors="replace").count("ConnectionRefused") if log.is_file() and log.stat().st_size <= MAX_LOG_BYTES else 0
+    except OSError:
+        refused = 0                                                # the server under test refusing connections is the product failing, by the design's rule
     staging_during = sum(1 for e in events or [] if e["type"] in ("staging_restarted", "staging_failed") and t0 <= _ts(e) <= t1)   # main's own server failing in service during the check points at main, not the host
-    return {"run": last.get("id"), "base_commit": last.get("base_commit"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during,
+    return {"run": last.get("id"), "base_commit": last.get("base_commit"), "batch": last.get("batch") or [], "candidate_stage": name(cand), "candidate_tests": tests, "candidate_summary": _last_line(cand), "staging_trouble_during": staging_during, "base_refused": refused,
             "candidate_prior_same": prior, "base_stage": name(base), "base_summary": _last_line(base)}
 
 
@@ -547,6 +553,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
     kinds = {s.get("id"): s.get("kind") for s in [*store.sessions(), *store.runtime().get("archived_sessions", {}).values()]}
     open_turns: dict[str, tuple[float, str]] = {}
     turns: list[tuple[str, str, float, float]] = []
+    interrupted_idx: set[int] = set()
     for e in evs:
         sid = e.get("session")
         if e["type"] == "session_started" and sid:
@@ -554,12 +561,18 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         elif e["type"] == "session_settled" and sid in open_turns:
             st, kind = open_turns.pop(sid)
             turns.append((sid, kind, st, _ts(e)))
+        elif e["type"] == "turn_interrupted" and sid in open_turns:
+            st, kind = open_turns.pop(sid)                        # the turn ended when Orchestra stopped under it: its hours are a loss, never dropped (round 30)
+            interrupted_idx.add(len(turns))
+            turns.append((sid, kind, st, _ts(e)))
     for sid, (st, kind) in open_turns.items():
         turns.append((sid, kind, st, until))
     timeouts = [(e.get("session"), _ts(e)) for e in evs if e["type"] == "turn_timed_out"]
     hours: dict[str, float] = {}
     nturns: dict[str, int] = {}
-    lost_worker = lost_all = 0.0
+    lost_worker = lost_all = lost_int = 0.0
+    lost_int_by: dict[str, float] = {}
+    by_agent: dict[str, float] = {}
     lost_by: dict[str, float] = {}
     timed_out: dict[str, int] = {}
     turns_by_kind: dict[str, int] = {}
@@ -587,14 +600,18 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
                 act = "implement"
         hours[act] = hours.get(act, 0.0) + dur
         nturns[act] = nturns.get(act, 0) + 1
+        by_agent[kind or "?"] = by_agent.get(kind or "?", 0.0) + dur
+        if turn_i in interrupted_idx:
+            lost_int += dur
+            lost_int_by[act] = lost_int_by.get(act, 0.0) + dur
         if turn_i in timed_idx:
             lost_all += dur
             lost_by[act] = lost_by.get(act, 0.0) + dur
             if act in ("implement", "fix", "rerun"):
                 lost_worker += dur
     worker_hours = hours.get("implement", 0.0) + hours.get("fix", 0.0)        # productive hours; re-runs after no-verdict reviews are a loss
-    fix_prod = hours.get("fix", 0.0) - lost_by.get("fix", 0.0)                # effort, not the wall time of turns the limit killed (Abdel-Hamid subtracts losses first)
-    impl_prod = hours.get("implement", 0.0) - lost_by.get("implement", 0.0)
+    fix_prod = hours.get("fix", 0.0) - lost_by.get("fix", 0.0) - lost_int_by.get("fix", 0.0)   # effort, not the wall time of turns the limit or a stop killed (Abdel-Hamid subtracts losses first)
+    impl_prod = hours.get("implement", 0.0) - lost_by.get("implement", 0.0) - lost_int_by.get("implement", 0.0)
     limits = [e.get("limit") for e in evs if e["type"] == "turn_timed_out" and e.get("limit")]
     # landed, deployed
     landed = [e for e in evs if e["type"] == "gate_landed"]
@@ -675,11 +692,11 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
         "time": {"hours": {k: round(v / days, 1) for k, v in sorted(hours.items(), key=lambda kv: -kv[1])}, "turns": nturns,
                  "rework_share": _ratio(fix_prod, fix_prod + impl_prod), "rework_share_wall": _ratio(hours.get("fix", 0.0), worker_hours), "fix_hours_productive": round(fix_prod / days, 1), "implement_hours_productive": round(impl_prod / days, 1), "worker_hours": round(worker_hours / days, 1), "rerun_share": _ratio(hours.get("rerun", 0.0), worker_hours + hours.get("rerun", 0.0)),
                  "turn_limit": max(set(limits), key=limits.count) if limits else None,
-                 "timeout_share": {k: _ratio(timed_out.get(k, 0), n) for k, n in turns_by_kind.items()}, "timed_out": timed_out, "turns_by_kind": turns_by_kind,
+                 "timeout_share": {k: _ratio(timed_out.get(k, 0), n) for k, n in turns_by_kind.items()}, "timed_out": timed_out, "turns_by_kind": turns_by_kind, "by_agent": {k: round(v / days, 1) for k, v in by_agent.items()},
                  "losses": {"restarts": pairs.get("IN_PROGRESS>OPEN", 0), "repicks": repicks, "turn_timeouts": counts.get("turn_timed_out", 0), "turn_errors": counts.get("turn_error", 0),
                             "compactions": counts.get("agent_compacted", 0), "resets": counts.get("agent_reset", 0), "crashes": counts.get("agent_crashed", 0),
                             "review_no_verdict": rev_cause.get("no_verdict", 0), "review_redo": redo, "gate_lost": gate["by"].get("timeout", 0) + gate["by"].get("start_failure", 0),
-                            "rerun_hours": round(hours.get("rerun", 0.0) / days, 1), "by_activity": {k: round(v / days, 1) for k, v in lost_by.items()}, "worker_hours_ending_in_timeout": round(lost_worker / days, 1), "hours_ending_in_timeout": round(lost_all / days, 1)}},
+                            "rerun_hours": round(hours.get("rerun", 0.0) / days, 1), "hours_interrupted": round(lost_int / days, 1), "interrupted_by_activity": {k: round(v / days, 1) for k, v in lost_int_by.items()}, "by_activity": {k: round(v / days, 1) for k, v in lost_by.items()}, "worker_hours_ending_in_timeout": round(lost_worker / days, 1), "hours_ending_in_timeout": round(lost_all / days, 1)}},
         "dora": {"landing_per_day": round(len(landed) / days, 1), "lead_time": _median(leads), "lead_n": len(leads), "land_to_deploy": _median(land_to_deploy),
                  "deploys": len(deploys), "deploys_troubled": troubled, "change_failure": _ratio(troubled, len(deploys)), "crashing_builds": crashing_builds,
                  "restarts": sum(1 for t in troubles if t["type"] == "staging_restarted"), "staging_failed": sum(1 for t in troubles if t["type"] == "staging_failed"), "restore": _median(restores),
@@ -690,7 +707,7 @@ def _window(hist: History, store, events: list[dict], agents: dict, since: float
 
 SIGNAL_KEYS = frozenset({"replans", "review_bad_fix_fraction", "gate_bad_fix_fraction", "review_pass", "gate_defects", "gate_distinct_defects", "gate_pass", "rework_share", "worker_timeout_share", "reviewer_timeout_share", "hours_lost",
                          "fix_rounds", "review_defects", "defects_after_landing", "review_miss_rate", "acceptance_defects_at_gate", "bad_fix_fraction", "conflicts_per_landing",
-                         "landed_per_worker_hour", "restarts", "landings", "defects_found_after_landing", "base_broken", "hours_since_base_broken", "worker_hours_lost", "starts", "defects_before_gate_share"})
+                         "landed_per_worker_hour", "restarts", "landings", "defects_found_after_landing", "base_broken", "hours_since_base_broken", "blocks_by_orchestra_share", "worker_hours_lost", "starts", "defects_before_gate_share"})
 
 
 def _signals(w: dict) -> dict[str, float | None]:
@@ -839,6 +856,10 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     prev = _window(hist, store, events, agents, now - 2 * hours * 3600, now - hours * 3600, tk0)
     sig_now, sig_prev = _signals(cur), _signals(prev)
     sig_now["hours_since_base_broken"], sig_prev["hours_since_base_broken"] = _base_broken_open(events, now), _base_broken_open(events, now - hours * 3600)
+    for sig_, since_, until_ in ((sig_now, now - hours * 3600, now), (sig_prev, now - 2 * hours * 3600, now - hours * 3600)):
+        att_ = attributed_counts([e for e in events if _ts(e) < until_], hist, dt.datetime.fromtimestamp(since_, dt.UTC).isoformat(timespec="seconds"))
+        ob, wb = att_.get("orchestra|ticket_transition:IN_PROGRESS>BLOCKED", 0), sum(v for k, v in att_.items() if k.endswith("|ticket_transition:IN_PROGRESS>BLOCKED") and not k.startswith("orchestra|"))
+        sig_["blocks_by_orchestra_share"] = _ratio(ob, ob + wb) if ob + wb else None   # blocks Orchestra made when a worker stopped: re-planning as recovery from machine loss
     signals = {k: {"now": sig_now[k], "before": sig_prev[k], "direction": (None if sig_now[k] is None or sig_prev[k] is None else "up" if sig_now[k] > sig_prev[k] else "down" if sig_now[k] < sig_prev[k] else "flat")} for k in sig_now}
     # -- the instrument pool: git, gate runs, staging, tracker ----------------------------------
     landed_events = [e for e in events if e["type"] == "gate_landed" and e.get("commit")]
@@ -877,6 +898,9 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     clean_before = bool(main_commit) and any(r.get("status") == "landed" and (r.get("gate_commit") or "").startswith(main_commit[:10]) for r in runs)
     healthy_at = _epoch(staging.get("last_health_at"))
     build_healthy = staging.get("status") == "running" and healthy_at is not None and now - healthy_at <= HEALTH_STALE
+    if build_healthy:
+        cur["dora"]["outage_open_for"] = None                     # service is answering: restored, whatever restarts came before (DORA's restore is service back)
+    cur["dora"]["last_trouble_at"] = next((e.get("ts") for e in reversed(events) if e["type"] in ("staging_failed", "staging_restarted")), None)
     pool = {"build_healthy": build_healthy, "cur": cur, "git": git, "tickets": tk, "wip": wip, "hist": hist, "pending": [tid for tid in tk if hist.pending_defect(tid, now)], "unresolved": [tid for tid in tk if hist.unresolved_defect(tid, now)], "awaiting_fix": [tid for tid in tk if hist.awaiting_fix(tid, now)], "returned": [tid for tid in tk if hist.returned(tid, now)], "landed": landed, "main_commit_landed_clean": clean_before,
             "deployed_tests": _run_tests(deployed_run), "main_tests": _run_tests(main_run, main=True), "landed_tests": _run_tests(landed_run), "build_id": build_id, "deployed_at": deployed_at, "staging": staging, "events": events, "store": store}
     rounds = sorted((sum(1 for _t, _f, x in hist.seq.get(t.id, []) if x == "REJECTED" and hist.cause.get((t.id, _t)) in ("defect", "gate")), t.id) for t in tk.values() if t.state != "CANCELLED")   # defect send-backs per ticket, from the log; no-verdict returns are losses
@@ -935,11 +959,17 @@ def readings(project, store, events: list[dict], agents: dict, teams: dict, hour
     }
     t = cur["time"]
     pause = pause_diagnosis(store.gate_runs(), events)
-    if pause and use_git:
-        try:
-            pause["main_head"] = foundrygit._git(project.repo_root, "rev-parse", project.config.base_branch).strip()   # main may have moved since the check judged it
-        except (OSError, RuntimeError, ValueError):
-            pause["main_head"] = None
+    if pause:
+        if pause.get("base_refused"):
+            # the symptom has a history: tickets already landed for it make the failure a possible bad fix found after landing
+            pause["symptom_tickets"] = [t.id for t in store.tickets_by_id().values() if t.state == "DONE" and "connectionrefused" in f"{t.title} {getattr(t, 'description', '') or ''}".lower().replace(" ", "")]
+        if use_git:
+            head = foundrygit._git(project.repo_root, "rev-parse", project.config.base_branch).strip() or None
+            pause["main_head"] = head
+            if head and pause.get("base_commit") and not head.startswith(pause["base_commit"][:7]):
+                changed = [x for x in foundrygit._git(project.repo_root, "diff", "--name-only", f"{pause['base_commit']}..{head}").splitlines() if x.strip()]
+                pause["main_changed_files"] = len(changed)
+                pause["main_changed_only_model"] = bool(changed) and all(x.startswith(".orchestra/") for x in changed)   # Orchestra's own model files, not product code
     return {"pause": pause, "hours": hours, "model_source": model.get("source"), "stocks": stocks, "event_counts": counter, "attributed_counts": attributed, "edge_labels": edge_labels, "pipeline": cur["flows"], "inspections": cur["inspections"], "pipeline_paused_since": cur.get("pipeline_paused_since"),
             "system_capacity_changes": system_changes, "operator_capacity_changes": operator_changes,
             "rounds": {"histogram": hist_r, "worst": [{"ticket": tid, "rounds": n} for n, tid in rounds[-3:] if n > 0][::-1], **cur["rounds"]},

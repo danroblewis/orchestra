@@ -1121,3 +1121,41 @@ against the review fix (no send-back was recorded, so no verdict exists; the ban
 failure); loop-card hover reaching a map scrolled out of view (each card carries its own ring of the
 loop); legibility of the 1280-px scale (the map keeps its geometry and scales to fit; every number
 has a tooltip); injection riding re-runs (the co-flow is drawn dashed and never counted).
+
+## Round 30 (2026-10-15)
+
+Reviewer's verdict: not understandable and correct. Every count checked matched the raw data, the
+sliding window included. Found: round 29's attribution finished only in the labels (hovering the worker
+still lit Orchestra's blocks, and hovering the reviewer lit the turn-limit pipe); stale fix-rule
+wording in the rework tile, its tooltip, the rounds tooltip and the design; interrupted turns
+overwritten by the next start, so their hours (5.6 h/d of worker turns) appeared nowhere; the pause
+diagnosis leaving out what the design's rule requires (the connection refusals, the candidate's server
+starting in the same run, CA-37 landed for this very symptom) and saying a resume checks a different
+commit when main moved only by Orchestra's model files; staging restarts draining Really done; an
+outage "open" beside a build whose health answers; idle agents worded differently on map and cards and
+without their turn hours; the reviewer's label beyond its own pipe; Really done's caption lines in a
+different order from its arrows and without agents; "since … ago"; the timeout tile's tooltip trend;
+the retrospective drawer's "or sooner" with nothing before it; the re-planning card not saying this
+window's blocks were all Orchestra's; a design table row naming gate_base_broken as an inflow.
+
+Fixed: a pipe is linked to its valve, so hover follows the label (Orchestra's blocks, the turn limit's
+returns); the wording says a re-run after a review with no verdict is a loss, and the rounds tooltip
+counts defect send-backs from the log; a turn closes at turn_interrupted and its hours are a loss
+(7.7 h/d in this window, shown on the machine-loss card), with agent time by agent; the pause names
+main's commit, the evidence for main (the server under test refused connections; staging restarted
+twice during the run; CA-37 landed for this symptom, a possible bad fix found after landing) and for the
+host (the same commit passed before; the candidate's server started and passed 21 acceptance tests in
+the same run), and says main moved since only by Orchestra's model files, so a resume checks the same
+product code; staging restarts drain only the working build; no outage is open while health answers,
+and when one is, the banner says the build is down and when it last restarted; "paused for 16.1h";
+idle agents read "moved nothing" with their h/d of turns on map and cards alike; a band label fits over
+its own band when it can, folding to its span; stub captions follow the arrows left to right with the
+agent on every line; the stale timeout tile's tooltip says why no trend is shown; the drawer says "on"
+when nothing precedes it; re-planning carries the share of blocks Orchestra made; the design table and
+its fix-round passage agree with the rules. Unit test: an interrupted turn keeps its hours.
+
+Declined: the Pipeline-blocked hover line passing through "not running" (a hover-only line between the
+agent and the stock it drains; the caption is above it at rest); legibility at the 1280-px scale (as
+round 29). Noted for the user: the automata checkout is on CA-38's branch with .orchestra/model/
+untracked there; the model is committed on main as the user asked, and the harness writes template
+upgrades into the checkout at web start, which strains AGENTS.md invariant 3.

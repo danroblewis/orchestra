@@ -56,7 +56,7 @@ software foundry's defaults; a project in another domain declares its own (secti
 | L | **Landed software** | commits | Commits the gate put on main, with first-parent diff size. The product. | gate_landed | none (rewrites are measured as churn, below) |
 | A | **Really done** | acceptance tests passing | Acceptance tests that pass, not skipped, against the current staging build. Abdel-Hamid's *actual* progress, against DONE tickets as *perceived* progress. | tests pass on a new build | tests fail or are skipped on a new build |
 | B | **Working build** | builds | The staging build the acceptance suite last ran against, and whether it is up (a health check in the last ten minutes). | staging_deployed | staging_failed; staging_restarted (the health loop restarting it) |
-| P | **Pipeline blocked** | pauses | The gate is paused: main itself failed the gate, or an operator paused the pipeline. The pipeline manager's resume drains it; broken base balances through it. | gate_base_broken, pipeline_paused | pipeline_resumed |
+| P | **Pipeline blocked** | pauses | The gate is paused: main itself failed the gate, or an operator paused the pipeline. The pipeline manager's resume drains it; broken base balances through it. | pipeline_paused (one per incident; gate_base_broken is the wake-up that comes with it, not a second fill) | pipeline_resumed |
 | T | **Verified behaviour** (Orchestra's addition) | tests | Tests on main by stage: collected, passed, failed, skipped, from the last gate run. Skipped tests are shown and never counted as verified. | tests added per landed change | removed or skipped |
 | R | **Environment resources** (Orchestra's addition; Repenning's capability stock) | documents | What the worker and reviewer read before working: AGENTS.md, README, team docs, roles, decided lessons, team tools. Count and line budget; accuracy by judgement. | lessons decided; agent-facing doc commits landed | pruned; over budget |
 | C | **Agent time** | agent-hours per day | Wall time of agent sessions by activity: implement, fix (a session on a REJECTED ticket), review, improve (devex), plan (coordinator, product owner, supervisor). Losses are listed beside it: restarts, timeouts, compactions, resets. No serving-capacity term. | sessions | sessions |
@@ -248,12 +248,24 @@ The detector's rules, each tested in `tests/unit/test_foundry_golden.py`:
   A label sits beside the vertical runs that pass its height where it can stay within reach
   of its own pipe; where it cannot, it keeps its halo and the crossing, since a label far
   from its pipe is worse than a line through its halo.
-- **Rework is counted while the defect is unlanded.** A fix round is every re-submission of
-  a change whose defect has not landed (Cooper: all effort between discovery and completion
-  is rework), through blocks, re-plans and no-verdict reviews; a fix turn likewise; a fix is
-  bad when the defect's next verdict is another rejection for a defect, good when it is a
-  landing, and re-submissions between two verdicts share the verdict. The rounds histogram
-  is the tracker's send-backs per ticket, said so.
+- **Rework is counted while the defect is unlanded, attempt by attempt.** A fix round is a
+  submission after a send-back for a defect, through blocks and re-plans (Cooper: effort
+  between discovery and completion is rework); a submission after a return with no verdict
+  is a re-run, a machine loss, and a worker turn re-running unjudged work is re-run hours (see
+  "A fix is an attempt a verdict will judge"). A fix is bad when the defect's next verdict is
+  another rejection for a defect, good when it is a landing. The rounds histogram is defect
+  send-backs per ticket from the log, said so.
+- **Turns cut off when Orchestra stopped keep their hours.** A turn closes at
+  `turn_interrupted` as well as at `session_settled`, and its hours are a loss beside the
+  turns the limit ended; agent time carries every turn, by agent as well as by activity.
+- **Staging restarts drain only the working build.** A process restart does not fail an
+  acceptance test, so Really done is not drained by it; it is unverified while the build is
+  down. While the build's health answers, no outage is open.
+- **The pause diagnosis follows the rule above.** For main: the server under test refusing
+  connections, staging restarting during the run, and tickets already landed for the same
+  symptom (a possible bad fix found after landing); for the host: the same commit passing
+  before, and the candidate's server starting in the same run. When main has moved since
+  only by Orchestra's model files, the banner says a resume checks the same product code.
 - **A no-verdict send-back's valve is the turn limit**, not the agent whose turn was cut; a
   restart stands for a crash until `staging_failed` is emitted and says so; "down" is
   inferred from the silence of the health check and says since when.

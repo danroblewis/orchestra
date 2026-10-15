@@ -446,3 +446,17 @@ def test_a_send_back_and_its_pickup_in_one_second_keep_their_order(project):
     A = r["attributed_counts"]
     assert A.get("orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:defect", 0) == 1 and A.get("orchestra|ticket_transition:REJECTED>IN_PROGRESS|cause:no_verdict", 0) == 1
     assert r["stocks"]["known_rework"]["awaiting_pickup"] == [] and r["stocks"]["returned"]["value"] == 0   # re-picked, so neither queue holds it; the defect itself is still known rework
+
+
+def test_an_interrupted_turn_keeps_its_hours_as_a_loss(project):
+    """Round 30: a turn cut off when Orchestra stopped was overwritten by the next start and its hours
+    vanished; it closes at turn_interrupted and counts as a loss."""
+    store, events = LocalStore(project), Events(project.events_file)
+    project.events_file.write_text("")
+    base = dt.datetime.now(dt.UTC) - dt.timedelta(hours=3)
+    ts = lambda mins: (base + dt.timedelta(minutes=mins)).isoformat(timespec="seconds")
+    with open(project.events_file, "a") as fh:
+        fh.writelines(json.dumps({"ts": ts(mins), "type": type_, "session": "worker-T-9", "kind": "worker"}) + "\n"
+                      for mins, type_ in ((0, "session_started"), (60, "turn_interrupted"), (70, "session_started"), (100, "session_settled")))
+    r = foundrymetrics.readings(project, store, events.read(0)[0], all_agents(project), all_teams(project), use_git=False)
+    assert r["losses"]["hours_interrupted"] == 1.0 and r["time"]["by_agent"]["worker"] == 1.5
