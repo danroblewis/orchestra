@@ -116,7 +116,11 @@ class Loop:
                 self.control.stop()
             for name, p in self.agent_procs.items():
                 p.close()
-                self.store.set_session(ROLES[name].session_id, status="idle", pid=None)
+                # Custom resident roles are keyed by name in ``agent_procs`` but have no
+                # entry in the built-in ``ROLES`` registry; fall back to the same
+                # ``name.replace("_", "-")`` id used elsewhere (see ``_refresh_roles``).
+                sid = ROLES[name].session_id if name in ROLES else name.replace("_", "-")
+                self.store.set_session(sid, status="idle", pid=None)
             # Only drop the control record if it is ours: a replacement loop may already
             # have registered while this one was shutting down.
             self.store._mutate_runtime(lambda d: d.pop("control", None)

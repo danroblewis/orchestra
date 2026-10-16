@@ -6,6 +6,7 @@ the base branch itself fails. Batching and bisection plug in here later."""
 from __future__ import annotations
 
 import glob
+import logging
 import os
 import shutil
 import signal
@@ -103,6 +104,23 @@ class _Target:
         self.log.close()
 
 
+def _install_dev_deps(cwd: Path, artifact: str) -> None:
+    """Make the dev extras (pytest, etc.) importable from the worktree venv before the unit stage.
+
+    The build stage installs only the wheel; `uv run pytest` then needs pytest, which is not there,
+    so `uv` spins up an ephemeral environment that cannot import the package under test. Installing
+    the project's own dev extras into the worktree venv keeps the unit stage on the same tree.
+    """
+    if not shutil.which("uv"):
+        return
+    try:
+        subprocess.run(["uv", "pip", "install", "-q", "--python", str(cwd / ".venv" / "bin" / "python"),
+                        f"{artifact}[dev]"], cwd=str(cwd), shell=False, capture_output=True, text=True, timeout=300,
+                       check=False)
+    except Exception as e:  # never let a deps install failure abort the gate silently; log and continue
+        logging.warning(f"gate: could not install dev deps into worktree venv: {e!r}")
+
+
 def _stages(project: Project, cwd: Path, log_dir: Path, run: dict) -> bool:
     """Run build, unit, start+acceptance in cwd. Appends stage results to run['stages']."""
     cfg = project.config
@@ -122,6 +140,12 @@ def _stages(project: Project, cwd: Path, log_dir: Path, run: dict) -> bool:
             dest.mkdir(parents=True, exist_ok=True)
             artifact = str(shutil.copy(matches[-1], dest))
             run["artifact"] = artifact
+    if artifact:
+        # The unit stage runs `uv run pytest`, but the build stage only installed the wheel
+        # (no dev extras), so pytest is absent from the worktree venv and `uv run pytest` falls
+        # back to an ephemeral environment that cannot import the freshly-built package. Install
+        # the dev extras into the worktree venv first so the tests run against the same tree.
+        _install_dev_deps(cwd, artifact)
     ok, res = run_specs(cfg.unit, cwd, log_dir, stage="unit")
     run["stages"] += res
     if not ok:
