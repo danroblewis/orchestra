@@ -63,7 +63,7 @@ register(Role(
 register(Role(
     name="pipeline_manager", session_id="pipeline-manager", prompt="pipeline_manager",
     tools=("tickets", "pipeline", "escalate"),
-    wake_on=("gate_base_broken", "gate_error", "staging_failed"),
+    wake_on=("gate_base_broken", "gate_error", "staging_failed", "pipeline_paused"),
     triggers=("repeated gate rejections of one ticket",),
     emits=("pipeline_resumed", "staging_restarted"),
     description="On-call for build, merge, and staging health.",

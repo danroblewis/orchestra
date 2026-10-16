@@ -3,24 +3,34 @@ SPEC.md section 7.5. Supervised by the loop; redeployed by the gate on every lan
 
 from __future__ import annotations
 
+import datetime as _dt
+import fcntl
 import json
 import os
-import psutil
 import shutil
 import signal
 import subprocess
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 
-import fcntl
-from contextlib import contextmanager
+import psutil
 
 from .config import Project
 from .events import Events
 from .model import now
 from .store import LocalStore
+
+HEALTH_STALE = 600        # seconds a running staging process may go without a healthy answer
+
+
+def _epoch(iso: str) -> float:
+    try:
+        return _dt.datetime.fromisoformat(iso).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _probe(url: str, timeout: float = 6, max_status: int = 400) -> bool:
@@ -323,6 +333,17 @@ class Staging:
                 self._last_probe = time.time()
                 if _probe(self.local_url() + self.cfg.staging_health):
                     self._set(last_health_at=now())
+                else:
+                    # alive by pid but not answering: after HEALTH_STALE without a healthy
+                    # answer the build has failed in service; say so once and let the
+                    # restart path take it from here
+                    last = st.get("last_health_at")
+                    stale = last is None or time.time() - _epoch(last) > HEALTH_STALE
+                    if stale and st.get("current_build_id") and st.get("failed_build") != st.get("current_build_id"):
+                        self._log(f"staging stopped answering its health check for {HEALTH_STALE // 60} minutes; recording the failure and restarting")
+                        self._set(failed_build=st.get("current_build_id"))
+                        self.events.emit("staging_failed", build=st["current_build_id"], reason=f"health check unanswered for {HEALTH_STALE // 60} minutes")
+                        self.stop()
             if self.cfg.tunnel_name and not _pid_alive(st.get("tunnel_pid")):
                 self.ensure_tunnel()
 

@@ -245,3 +245,16 @@ def test_api_builds_a_team_the_way_the_guide_says(project):
     assert next(r for r in org["roles"] if r["name"] == "owner")["agents"] == ["po", "writer"]
     rec = json.loads((project.repo_root / ".orchestra" / "agents" / "po.json").read_text())
     assert rec["team"] == "product" and "builtin" not in rec
+
+
+def test_custom_agent_with_tickets_tools_may_create_tickets(project):
+    store = LocalStore(project)
+    sup = {"role": "supervisor"}
+    m = store.create_milestone(name="M")
+    for name, tools in (("planner", ["tickets"]), ("observer", ["escalate"])):
+        api.handle(project, store, "create_role", {"name": name, "description": "d", "prompt": "# You plan\n\n" + "Carefully. " * 6, "tools": tools}, **sup)
+        api.handle(project, store, "create_agent", {"name": f"{name}_agent", "roles": [name], "kind": "ad_hoc", "session": "ephemeral"}, **sup)
+    r = api.handle(project, store, "create_ticket", {"title": "t", "milestone_id": m.id}, role="planner_agent")
+    assert r["ok"]
+    with pytest.raises(StoreError, match="may not create tickets"):
+        api.handle(project, store, "create_ticket", {"title": "t", "milestone_id": m.id}, role="observer_agent")

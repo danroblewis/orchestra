@@ -15,6 +15,15 @@ from .store import LocalStore, StoreError
 AGENT_ROLES = {"supervisor", "coordinator", "pipeline_manager"}
 
 
+def _has_tools(project: Project, role: str, group: str) -> bool:
+    """A custom agent may do what its roles and team grant it (the built-ins are listed in
+    AGENT_ROLES); the grant is the same one the harness started it with."""
+    from .org import all_agents, all_teams, effective_tools
+    from .roles import all_roles
+    ag = all_agents(project).get(role)
+    return bool(ag) and group in effective_tools(ag, all_roles(project), all_teams(project))
+
+
 def _ticket_view(store: LocalStore, ticket_id: str) -> dict:
     t = store.get_ticket(ticket_id).to_dict()
     t["notes"] = store.notes(ticket_id)
@@ -66,7 +75,7 @@ def handle(project: Project, store: LocalStore, command: str, args: dict[str, An
         return {"ok": True, "ticket": _ticket_view(store, a["id"])}
 
     if command == "create_ticket":
-        if role and role not in AGENT_ROLES:
+        if role and role not in AGENT_ROLES and not _has_tools(project, role, "tickets"):
             raise StoreError(f"role {role} may not create tickets")
         t = store.create_ticket(
             title=a["title"], description=a.get("description", ""), acceptance=a.get("acceptance", ""),
