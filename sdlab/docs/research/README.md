@@ -64,7 +64,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
 | [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | idea (not started, wave 4) | - |
 | [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | idea (not started, wave 4) | - |
-| [Drains measured where nothing flows in (recession analysis)](recession-drains.md) | idea (not started, wave 4) | - |
+| [Drains measured where nothing flows in (recession analysis)](recession-drains.md) | done (wave 4, benchmark v2) | needs a combination (+10.5 / +15.2 points, fresh runs too; 7 runs down through the judge) |
 | [An LLM structural critic in the loop](llm-critic.md) | idea (not started, wave 4) | - |
 | [Judge noise: tied candidates told apart by simplicity](judge-ties.md) | idea (not started, wave 4) | - |
 | [Closed subsystems: totals that never change](conserved-totals.md) | idea (not started, wave 4) | - |

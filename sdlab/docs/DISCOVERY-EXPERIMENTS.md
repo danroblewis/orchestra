@@ -26,6 +26,31 @@ successes.
 
 ## Log
 
+### 2026-10-17: recession drains (wave 4, rank 8) - NEEDS A COMBINATION
+Branch `exp/recession-drains`, strategy `recession`, building block `discovery/recession.py`, topic
+[research/recession-drains.md](research/recession-drains.md). Hypothesis: where a stock's outside inflow
+stops, its drain can be fitted with no inflow model, and the inflow then measured with the drain fixed,
+which avoids the drain/pieces confounding. Per row with an inflow: quiet steps = fine pieces of the
+unexplained change at its lowest level; the levels (plus one constant for that level, dropped when 0) are
+fitted on them; the fit is kept only with enough steps, a precise own drain and a > 2 SE difference; the
+pieces are measured again with the numbers fixed; the result is entered as an extra candidate for the judge.
+Mechanism test: the brief's 20-step on/off inbox does not fail the main line (drain 0.29-0.32, skill
+99.9%). 3-step bursts followed by 12 quiet steps do: `matrix` gets a drain of 0.36/0.33 (truth 0.1) plus a
+spurious working term, skill@20 -46%/-41%; `recession` gets 0.105/0.104, skill@20 99%/99.8%; the control
+is unchanged. Bench vs v2.1 (adopted defaults: pieces of 2, trim 1): **skill@20 29.6% -> 40.1%, @100
+29.3% -> 44.5%, goal 12 -> 16; fresh runs 28.9% -> 39.6%, 29.7% -> 44.9%, goal 12 -> 14**. Up: housing
+long +197, learning-curve default +154, print-shop long +140, clinic-doses default +95, fishery default +94,
+services default +46, brewery (both), manufacturing default +26. Down: cloud-credits long -84, webshop
+default -48, eras default -39, ev-fleet default -31, sawmill long @100 -47, recycling default -9. The gain
+comes from the generalisation (the inflow's lowest level, with a constant), not from truly quiet stretches:
+the strict brief version (zero level only, split-era candidates only) is +1.0 / +1.4 with no run down. The
+losses: choosing steps by a low residual selects on the noise and on effects (webshop, cloud-credits; a
+precision test of 0.1 fixes those but loses clinic-doses and fishery: 38.5% / 43.1%, goal 13);
+shared-number candidates with announced eras take their quiet steps from one era (eras default). Run time
+about 1.7x the main line (one more judge per candidate). Verdict: needs a combination with the piece-proof
+judge or the behaviour gate. Its 2-step pieces are finer than the main line's, flexibility the current
+judge can be fooled by, although fresh runs gain as much as the runs it was fitted on.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
