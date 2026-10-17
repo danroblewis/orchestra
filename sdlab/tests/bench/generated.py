@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 import sys
 import time
 import traceback
@@ -117,7 +118,8 @@ def summary(rs: list[dict], meets) -> dict:
             "s20": sum(clip(x["skill"]["20"]) for x in rs) / n, "s100": sum(clip(x["skill"]["100"]) for x in rs) / n,
             "f20": sum(clip(x["fresh"]["20"]) for x in rs) / n, "f100": sum(clip(x["fresh"]["100"]) for x in rs) / n,
             "parts": sum(x["parts"] for x in rs) / max(1, sum(x["of"] for x in rs)), "goal": sum(1 for x in rs if meets(x)),
-            "ceiling": sum(clip(x.get("ceiling", 1.0)) for x in rs) / n}
+            "ceiling": sum(clip(x.get("ceiling", 1.0)) for x in rs) / n,
+            "median20": statistics.median(x["skill"]["20"] for x in rs) if rs else 0.0, "above0": sum(1 for x in rs if x["skill"]["20"] > 0)}
 
 
 def groups(results: list[dict]) -> dict[str, list[dict]]:
@@ -139,11 +141,12 @@ def sizes(results: list[dict]) -> dict[str, list[dict]]:
 
 
 def table(title: str, rows: dict[str, list[dict]], base: dict[str, list[dict]] | None, meets) -> list[str]:
-    lines = [f"| {title} | models | runs | skill@20 | skill@100 | fresh @20 / @100 | parts | meeting the goal |", "|---|---|---|---|---|---|---|---|"]
+    lines = [f"| {title} | models | runs | skill@20 | skill@100 | median skill@20 | better than no change @20 | fresh @20 / @100 | parts | meeting the goal |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     for name, rs in sorted(rows.items(), key=lambda kv: -summary(kv[1], meets)["s20"]):
         s, b = summary(rs, meets), (summary(base[name], meets) if base and base.get(name) else None)
         lines.append(f"| {name} | {s['models']} | {s['runs']} | {pct(s['s20'])}{delta(s['s20'], b and b['s20'])} | "
-                     f"{pct(s['s100'])}{delta(s['s100'], b and b['s100'])} | {pct(s['f20'])} / {pct(s['f100'])} | {pct(s['parts'])} | "
+                     f"{pct(s['s100'])}{delta(s['s100'], b and b['s100'])} | {pct(s['median20'])} | {pct(s['above0'] / max(1, s['runs']))} | {pct(s['f20'])} / {pct(s['f100'])} | {pct(s['parts'])} | "
                      f"{s['goal']} of {s['runs']} ({pct(s['goal'] / max(1, s['runs']))}) |")
     return lines
 
