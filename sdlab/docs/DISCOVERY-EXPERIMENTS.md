@@ -26,6 +26,93 @@ successes.
 
 ## Log
 
+### 2026-10-17: floors and caps (`floors` strategy, branch exp/floors) - NEEDS A COMBINATION (not adopted)
+**Hypothesis.** The engine floors every rate at 0 and caps a stock's outflows at what it holds
+(sdtruth: "outflows share what it holds"). Where either binds, a row's change is a kinked function
+of the levels, and the single-step straight line bends: wrong slope, the flow's constant lost into
+the outside inflow, and a found model that runs the flow where the true one is shut. Measured on the
+truth (diagnosis only, `max(0, ...)` argument < 0, or wanted outflow > level), at the default length:
+floors bind on sd-moderation (escalate 59%, hire 49%), sd-ev-fleet (dispatch 36%, plug 8%),
+sd-fishery (launch 24%); **caps bind more widely**: sd-supply warehouse 43% / shop 34%,
+sd-manufacturing finished 53%, sd-restaurant waiting 43%, sd-ev-fleet queue 41% / parcels 19%,
+sd-orders stock 16%, sd-university applicants 14%. The sd-recycling floor (sell = max(0, -40 +
+0.2 bales)) never binds (bales > 200 throughout), so it is just a line there.
+
+**Mechanisms** (`sdlab/discovery/caps.py`, `sdlab/discovery/hinges.py`, `strategies/floors.py`;
+opt-in hooks in `matrix.identify_one`: `dy_adjust` and `extra_columns`, both off for `matrix`, zero
+deltas on sd-saas, sd-eras, sd-pipeline):
+- *Caps, EM for censored data*: from a found model, the steps where a stock's wanted outflow exceeded
+  its level (and the data agrees: it ended the step holding no more than arrived), the shortfall is
+  added back to the source's change and to the receivers', and the rows are fitted again; each round
+  is a candidate for the judge. Stocks emptied on more than half the steps are left alone (their
+  outflow is not identifiable, and their estimated outside outflow takes whatever is added back).
+- *Floors, hinge columns*: per stock at most one column `max(0, +-(x - theta))`, the threshold a
+  quantile of its level chosen from the data (gain in the rows beside all levels and each row's
+  pieces, greedy, rows of the same unit), offered to every row's stepwise search; read as a flow
+  `linear {c: -k theta, terms: [{x, k}]}` (via a pseudo-stock in `read_flows`), which the model floors
+  exactly as the truth does. The side is the one whose hinge best replaces the stock's own level.
+
+**Mechanism test** (`tests/test_strategy_floors.py`, synthetic, 2000 steps):
+- Floor: a -> b = max(0, -30 + 0.2 a), shut 50% of the time. `matrix`: a -> b = 0.140 a, b's row
+  73 outside inflow pieces (b has no outside inflow), skill@20 -5.4%, @100 80.5%. `floors` with hinges
+  chosen by BIC: threshold 149 (truth 150), a -> b = max(0, 0.190 a - 28.4) (truth 0.2, -30), no
+  pieces in b, skill@20 93.9%, @100 98.6%. **With the judge alone the plain fit wins** (data error
+  0.074 vs 0.094): its pieces replay the kink's history, which an in-sample judge cannot penalise.
+- Cap: s sells 15 a step and is emptied on 36% of steps. `matrix`: sale = 0.0165 s + 9.5 (pieces),
+  skill@20 70.1%. Cap EM (the default): 0.0098 s + 11.6, skill@20 88.8%. A hinge on s writes the cap
+  itself, min(0.71 s, ~15), skill@20 98.0%. On seeds 2 and 3 the EM alone is not reliably better
+  (90.9% vs 89.5%, 83.8% vs 91.1%); the hinge is (98%, 98.4%).
+
+**Bench** (against "python": 18 of 42, mean skill@20 70.8%, skill@100 68.9%):
+
+| attempt | skill@20 | skill@100 | goal |
+|---|---|---|---|
+| cap EM, 3 rounds, last round kept | 45.9% | 41.5% | 15 |
+| cap EM, confirmed by the data, <= half the steps, every round judged (**the default**) | **72.2% (+1.4)** | **69.3% (+0.3)** | 18 |
+| + judge stepping models with the cap | 62.9% | 57.5% | 16 |
+| + hinges (best per stock, side by tie, all rows), judged | 73.3% (+2.4) | 68.2% (-0.7) | 20 |
+| hinges greedy, same unit; hinged-or-plain by rows' BIC | 66.1% | 61.2% | 21 |
+| + thresholds only above 2x a step's outflow; BIC and judge <= 1.5x | 68.0% | 64.6% | 19 |
+| same, judged | 69.8% | 67.5% | 18 |
+| hinges per stock, no unit rule, side fixed at "above" | 61.9% | 59.3% | 20 |
+| greedy, same unit, side by replacing the level, judged | 69.6% | 67.7% | 20 |
+| same, by BIC | 64.5% | 62.0% | 17 |
+
+The default (caps only), every example that moved more than 2 points: **sd-orders long 7.0% ->
+83.9% @20, 53.3% -> 95.2% @100** (sale read as 15.7 a day instead of 21.8 plus "stock grows with
+itself"); sd-ev-fleet long 78.7% -> 67.9% @20, 59.6% -> 41.2% @100; sd-kanban default 76.8% -> 69.3%
+@20, 66.5% -> 56.7% @100 (the judge prefers an EM round the grader likes less). Runs meeting the goal
+unchanged (18). Time: about 1.5x matrix (every round of every variant is fitted and judged).
+With hinges the movers are large both ways and change with small choices: sd-moderation long
+49% -> 83% @20 and -32% -> 75% @100 (flagged > 307, truth 300; escalation read as max(0, 0.104
+flagged - 31.9), truth max(0, 0.1 flagged - 30)), sd-university default 86% -> 95-98%, sd-restaurant
++4 to +9, sd-support-tiers long +17 to +33, sd-recycling long +8; but sd-manufacturing long 84% ->
+-38% .. -184%, sd-fishery long 30% -> -12% .. -50% (hinges imitate its unannounced seasons),
+sd-ev-fleet -9 to -23 @100, sd-supply default -6.5, and on long runs BIC takes hinges everywhere
+(sd-services long 99% -> 31%, sd-hidden-chain long 98% -> 78%). Flipping only a hinge's side (the
+two sides fit the rows identically but read as different flows, each floored on its own) moves
+sd-manufacturing default from 72.8% to -354%.
+
+**A grader finding (not changed).** `grade.same_behaviour` runs the truth with `simulate.Model`,
+which does not share a stock's level among its outflows as the engine does (it floors levels after
+the step, so a move out of an empty stock still fills its receiver). The truth stepped with the
+engine's cap, graded against the grader's truth: sd-supply 54.8% @20 / 79.1% @100 (long 54.4% /
+77.5%), sd-manufacturing 88.9% / 90.8% (long 90.7% / 93.4%), sd-ev-fleet 89.3% / 89.5% (long 89.1%
+/ 89.5%), sd-orders long 91.8% / 96.7%, sd-restaurant 93.7% / 97.1%, sd-university 98.7% / 99.6%;
+the examples without caps 100%. So **sd-supply cannot meet the goal with a model of its data**, and
+sd-manufacturing and sd-ev-fleet are at the line; a model that reproduces the data's caps (a hinge
+does) is penalised for it. The judge has the same blind spot in the other direction (stepping the
+judge with the cap, attempt 3, hid runaway models that the uncapped grader then punished).
+
+**Verdict: not adopted; needs a combination.** The cap EM is a small net gain (+1.4 / +0.3, no change
+in runs meeting the goal) carried by one example, with two regressions, and is unreliable on the
+synthetic seeds. Hinges recover a floor exactly in isolation, but on the bench whether they help is
+decided by model selection, and neither selector is fit for it: the judge rewards outside inflow
+pieces that replay history (a kink's history included), while BIC on long runs pays for any kink
+(seasons, caps) and picks models that run away under grading. Worth revisiting after (1) the grader
+(and judge) step the truth as the engine does, and (2) a selector that charges for pieces (judging
+on steps the pieces were not fitted on, or the inflow forecast rather than replayed).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

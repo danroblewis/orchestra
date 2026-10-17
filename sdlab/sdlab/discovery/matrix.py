@@ -58,6 +58,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         return {"flows": [], "note": "Too few steps."}
     lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
     prev, dy = lv[:, :-1], np.diff(lv, axis=1)
+    if opts.get("dy_adjust") is not None:
+        # what each stock's change would have been without what the measurement hides (a strategy's
+        # estimate: outflows cut short by an emptied stock); stocks x steps, added to the changes
+        dy = dy + opts["dy_adjust"]
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
@@ -70,15 +74,24 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     add_gain = opts.get("add_gain", log_t)                                # a level joins a row only if clearly nonzero
     min_piece = opts.get("min_piece", 5)
 
+    # columns a strategy offers beside the levels (each a function of one stock's level, named, with
+    # that stock as its base, and the rows that may take it); without them the columns are the levels
+    extras = opts.get("extra_columns") or []
+    names = ids + [e["id"] for e in extras]
+    base = list(range(S)) + [ids.index(e["base"]) for e in extras]
+    columns = np.vstack([prev] + [np.asarray(e["x"], dtype=float)[None, :] for e in extras]) if extras else prev
+    N = len(names)
+
     def may_affect(j, s):
         a, b = group[ids[j]], group[ids[s]]
         return j == s or not a or not b or a == b
 
     def fit_row(s: int) -> dict:
         sid, y = ids[s], dy[s]
-        X = [prev[j] for j in range(S)]
-        col = [(j, -1) for j in range(S)]
-        allowed = [j for j in range(S) if may_affect(j, s) and not (sid in final and j == s)]
+        X = [columns[j] for j in range(N)]
+        col = [(j, -1) for j in range(N)]
+        allowed = [j for j in range(N) if may_affect(base[j], s) and not (sid in final and base[j] == s)
+                   and (j < S or extras[j - S].get("rows") is None or sid in extras[j - S]["rows"])]
         own = s in allowed
         Xa = np.array(X)
 
@@ -99,7 +112,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 js = list(dict.fromkeys([col[q][0] for q in chosen] + ([s] if own else [])))
                 for j in js:
                     for c in range(L):
-                        X.append(np.where(cfg == c, prev[j], 0.0))
+                        X.append(np.where(cfg == c, columns[j], 0.0))
                         col.append((j, c))
                         allowed.append(len(X) - 1)
                 Xa = np.array(X)
@@ -182,7 +195,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
             j, lab = col[q]
             for c in range(L):
                 if lab < 0 or lab == c:
-                    coef_l[c][ids[j]] = coef_l[c].get(ids[j], 0.0) + float(b)
+                    coef_l[c][names[j]] = coef_l[c].get(names[j], 0.0) + float(b)
         inflow = []
         if pick["cuts"]:
             inflow = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(y, Xa, chosen, beta, pick["cuts"])]
@@ -201,10 +214,15 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         for c in range(L):
             m = cfg == c
             for j, k in row["coefL"][c].items():
-                res[m] -= k * prev[ids.index(j)][m]
+                res[m] -= k * columns[names.index(j)][m]
         row["inflow"] = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(res, prev, [], np.zeros(0), row["cuts"])]
 
-    per_label = [read_flows(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
+    read = read_flows
+    if extras:
+        from .hinges import read_flows_hinged
+
+        read = lambda st, rs, pv, tol: read_flows_hinged(st, rs, pv, tol, extras)  # noqa: E731
+    per_label = [read(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
     matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta")} for r in rows]
     for r in matrix:

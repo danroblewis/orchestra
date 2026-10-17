@@ -70,7 +70,7 @@ def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: floa
 
 
 def _key(f: dict) -> str:
-    return f"{f['from']}>{f['to']}>{f.get('driver') or ''}>{f['rate']['form']}"
+    return f"{f['from']}>{f['to']}>{f.get('driver') or ''}>{f['rate']['form']}" + (f">{f['floor']}" if f.get("floor") else "")
 
 
 def _zero(f: dict) -> dict:
