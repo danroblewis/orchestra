@@ -52,6 +52,6 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Hidden stocks by constrained deconvolution and order counting](delay-deconvolution.md) | idea (not started) | - |
 | [Partial-model simulation per row](partial-model-simulation.md) | idea (not started) | - |
 | [Floors and caps as censoring, offered only where the data reach them](censored-floors.md) | idea (not started) | - |
-| [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | idea (not started) | - |
+| [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | done (wave 3, benchmark v2.1; piece-proof judges) | reject as main-line judge (common: 29.6% -> 12.5%); `judges.py` kept as a block |
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |

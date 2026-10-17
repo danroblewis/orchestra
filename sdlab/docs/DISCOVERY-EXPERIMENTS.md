@@ -26,6 +26,34 @@ successes.
 
 ## Log
 
+### 2026-10-17: piece-proof judges (strategy `piece_proof`, `discovery/judges.py`) - REJECTED
+Branch `exp/piece-proof-judge`. **Hypothesis:** the judge should ask the grader's question (the
+candidate's dynamics given the outside inflows) without letting a candidate's own inflow pieces carry
+what its dynamics miss: the blocker named by hidden-stocks, symbolic-regression, pysindy and floors.
+`judges.score/choose` (any strategy's candidate loop) runs each candidate with an inflow it did not
+tailor: the per-step median of all candidates' inflows ("common"), its pieces at their mean ("mean"),
+the own-best candidate's pieces ("anchor"), a coarse inflow refitted with the dynamics frozen over the
+run ("refit") or per judged window ("window"), its pieces re-measured on every other step ("split"),
+or a piece-variance penalty; and combinations. Strategy `piece_proof` = main-line candidates, judge
+"common".
+**Mechanism test** (`tests/test_strategy_piece_proof.py`, candidates = three main-line variants + the
+true structure with data-measured pieces): births misread as a move paid back by pieces: own picks
+the trap (graded 66% vs 100%), common picks the truth; signups that really change: common keeps the
+changing inflow (no held-out-judge failure); an effect imitated by 30-40 pieces: common fails (the
+median carries the imitation), window picks the truth. No single judge passes all three; with only
+the main line's candidates, common picks a -758% candidate on the signups model where own keeps 68%.
+**Bench vs v2.1** (29.6% / 29.3%, fresh 28.9% / 29.7%, 12 of 62): common 12.5% / 17.1%, fresh 11.0% /
+17.4%, 11 runs, pick changed in 46 of 62, 8 runs up and 21 down by more than 2 points (bench run; the
+other judges measured offline on the same candidates and grader): anchor 29.9% / 29.5% (12 picks
+changed, one run up), split 19.5% / 30.8%, own+window 18.9% / 16.9%, own+mean 17.7% / 13.2%,
+window -0.4% / -2.6%, mean -15.4% / -24.9%, refit 8.3% / 3.3%; oracle (best-graded candidate) 45.5% / 47.1%.
+**Why:** the main line's candidates differ mostly in inflow form and conservation; only "own" runs
+dynamics with the inflow they were estimated beside, and any other inflow ranks candidates by
+robustness to a wrong inflow. A candidate-independent inflow is right only when the wrong candidate
+is the outlier. **Verdict:** reject as the main line's judge; keep `judges.py` for strategies that add
+structure (judge an addition against the base, both fed the base's inflow). Details:
+[research/inflow-conditioned-judge.md](research/inflow-conditioned-judge.md).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
