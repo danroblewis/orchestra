@@ -18,7 +18,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Pricing outside-inflow changes honestly](change-price.md) | done (wave 1, benchmark v1) | reject (a narrower gate is neutral) |
 | [Refining rates by multi-step (output) error](output-error.md) | done (wave 1, benchmark v1) | needs a combination: keep as a final step after structural fixes |
 | [Shared noise: telling moves, links and co-flows apart](shared-noise.md) | done (wave 1, benchmark v1 + co-flow engine) | needs a combination (with a fix for drain bias) |
-| [Gradient descent through a differentiable SD simulator](gradient-descent.md) | running (wave 2, benchmark v2) | - |
+| [Gradient descent through a differentiable SD simulator](gradient-descent.md) | done (wave 2, benchmark v2) | needs a combination (refined +2.9/+1.2, 18 of 62; generous structure ~70x slower, no better) |
 | [Hidden stocks from delayed copies of levels](hidden-stocks.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Numerical gradients and derivative-free optimisers](numerical-optimisation.md) | done (wave 2, benchmark v2) | needs a combination (+1.0/+2.1, 20 of 62 with finite differences, 8x time; the optimiser is not the bottleneck) |
 | [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | done (wave 2, benchmark v2) | reject as a strategy; carry two pieces forward |
