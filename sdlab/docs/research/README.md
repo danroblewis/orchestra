@@ -57,7 +57,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | done (wave 3, benchmark v2.1) | reject as the main judge; keep judges.py; judge additions with/without, fed the base model's inflow |
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |
-| [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |
+| [Co-flows found where the used stock runs dry](starved-coflows.md) | done (wave 4, benchmark v2.1) | adopt as extra candidates (+10.9/+15.0, 14 of 62; fresh +10.5/+14.5); losses where the judge picks a wrong co-flow |
 | [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | done (wave 4, benchmark v2.1) | needs a combination: best so far (+11.5/+11.6, 12 -> 17 of 62); one regime stands in for an inflow |
 | [Outside inflows as a repeating profile](periodic-inflows.md) | done (wave 4, benchmark v2.1) | needs a combination; strong adopt candidate (+11.7/+17.4, 15 of 62, holds on fresh runs) |
 | [Assembling the model row by row from the candidates](row-crossover.md) | done (wave 4, benchmark v2.1) | needs a combination (+6.1/+13.4, 14 of 62 meet the goal; judge fooled on webshop, moderation) |
