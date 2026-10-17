@@ -32,6 +32,10 @@ headline counts each class and the judge's best-candidate pick rate.
                                                                GOAL_SKILL20 at skill@20 and GOAL_SKILL100 at
                                                                skill@100 (exit 2 otherwise)
     uv run python tests/bench/compare.py A B                   paired tests between two saved runs
+    uv run python tests/bench/evaluate.py --generated 300      generated models instead of the examples, reported
+                                                               by motif (generated.py; --pool dev|sealed,
+                                                               --features coflow,eras; the sealed pool only
+                                                               with --i-am-adopting)
 
 Discovery is handed only what the page gives it (page_inputs): the measured stocks' id, name, unit,
 final and group, their levels over time, and the announced eras.
@@ -59,6 +63,7 @@ from pathlib import Path
 
 import candidates
 import datasets
+import generated
 import seeds as seeding
 from grade import grade, same_behaviour, truth_of, truth_runs
 
@@ -165,7 +170,16 @@ def main() -> None:
     ap.add_argument("--goal", action="store_true")
     ap.add_argument("--candidates", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--seeds", type=int, default=0)
+    ap.add_argument("--generated", type=int, metavar="N", help="N generated models instead of the examples (generated.py)")
+    ap.add_argument("--pool", default="dev", choices=["dev", "sealed"])
+    ap.add_argument("--features", default="", help="generated models built with these motif families (comma-separated)")
+    ap.add_argument("--i-am-adopting", action="store_true", help="allow scoring the sealed pool (adoption only)")
     a = ap.parse_args()
+    if a.generated is not None or a.pool != "dev" or a.i_am_adopting or a.features:
+        if a.generated is None:
+            sys.exit("--pool, --features and --i-am-adopting go with --generated N")
+        generated.main(a, RUNS, git, meets)
+        return
     RUNS.mkdir(parents=True, exist_ok=True)
 
     examples = a.examples.split(",") if a.examples else all_examples()
