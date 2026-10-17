@@ -26,6 +26,37 @@ successes.
 
 ## Log
 
+### 2026-10-17: periodic-inflows (wave 4, rank 3): outside inflows as a repeating profile - NEEDS A COMBINATION (adopt candidate)
+Branch `exp/periodic-inflows` (worktree `.claude/worktrees/agent-a53e4dfe314e10fbe`), strategy
+`periodic_inflows`, module `discovery/periodic.py`; topic [research/periodic-inflows.md](research/periodic-inflows.md).
+**Hypothesis**: inflow pieces pay one free value each and can follow dynamics; a profile repeated every
+period (a few phase segments plus a slow level) cannot, so rows fitted beside it get unbiased drains.
+**Mechanism** (`tests/test_strategy_periodic_inflows.py`, chain a -> b -> c, a fed on a 24-step day
+4/12/9 scaled 0.8-1.2 per day, 2000 steps): matrix finds 56 pieces for ~250 changes, reads the rest as
+"a drains faster when b is high" (0.107) plus a link, skill@20 -462%; the strategy finds period 24,
+a -> b 0.197 (truth 0.2), no inflow into b or c, skill@20 99.8%. Control (random-time intake): no
+period, the main line's flows exactly. How: candidate periods from per-row fold scores (autocovariance
+at multiples of P vs chi-squared), profile by optimal partitioning of the phase fold (value + position
+per segment), slow pieces at least one period long at twice the price, levels refitted jointly;
+kept if BIC beats pieces and constant by log T. Profiles go to the main line as known changes; a
+profiled row counts as changing for conservation (new `matrix` option `varying_inflow`, default
+off); each candidate's profile is re-measured beside its final numbers before judging; the main
+line's own result competes in the same judge.
+**Bench vs v2.1** (29.6% / 29.3%, 12 of 62; fresh 28.9% / 29.7%):
+- v1 (all profiles that pay): 38.0% / 44.4%, 15 of 62; fresh 37.4% / 44.7%. sd-manufacturing long
+  87% -> -66%: a yearly demand makes every downstream stock's residual repeat, and they were profiled.
+- **v2 (a profile kept only if its gain over a constant is at least 0.25 of the strongest at its
+  period)**: **41.3% / 46.8%, 15 of 62 (+orders long, pipeline default, support-tiers long); fresh
+  40.7% / 47.0%, 15**. Up: bakery default -1170 -> 50, clinic-doses -602 -> -8 / -347 -> 59,
+  pipeline default 40 -> 99.7, support-tiers long 43 -> 95, housing long -120 -> -2, kanban +18/+19,
+  emergency +20/+65, ev-fleet long +19, hospital long +7, orders long +14, fishery default +19, print-shop
+  default -529 -> -107. Down: webshop-stock long 64 -> 37 (@100 49 -> -49: shelf, fed by a hidden
+  stock, is profiled), bakery long 19 -> -21, sawmill long -12, hospital default 97 -> 94. Run time
+  3.7x (2172 s vs 586 s summed, machine loaded). matrix unchanged (zero deltas on saas/eras/pipeline).
+- Also tried: ACF of the residual's changes for candidates (missed 24 on hospital and moderation);
+  a profile without competing against the main line (moderation default -67% -> -908%: the profile
+  takes `post` = k(day/night) x creators, an internal flow).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

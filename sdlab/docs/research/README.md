@@ -59,7 +59,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |
 | [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |
 | [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | idea (not started, wave 4) | - |
-| [Outside inflows as a repeating profile](periodic-inflows.md) | idea (not started, wave 4) | - |
+| [Outside inflows as a repeating profile](periodic-inflows.md) | done (wave 4, benchmark v2) | needs a combination (adopt candidate: +11.7 / +17.4, 15 of 62; echoes of a driver and the judge are the weak parts) |
 | [Assembling the model row by row from the candidates](row-crossover.md) | idea (not started, wave 4) | - |
 | [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
 | [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | idea (not started, wave 4) | - |
