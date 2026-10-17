@@ -40,3 +40,4 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Scaling to hundreds of stocks](scaling.md) | idea (not started) | - |
 | [Weak-form fitting](weak-form.md) | idea (not started) | - |
 | [XMILE export and interoperability](xmile-export.md) | idea (not started) | - |
+| [A complexity budget the analyst states](complexity-budget.md) | idea (not started) | - |
