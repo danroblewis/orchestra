@@ -13,7 +13,7 @@ Stocks can also shape flows they are not part of: an **effect** speeds a flow up
 The page has two modes: **Edit** (stocks, flows, machines) and **Run**. Run shows what really happened in a live run beside what the model projects, by era (every change to the system's configuration starts one). From a run you can:
 
 - fit each flow's equation to what happened, or fit them all;
-- discover flows from the stock levels alone, which subtracts what the measured flows already explain, so it finds what the model is missing; flows leaving the model and flows arriving that match up hint at a stock nobody measures;
+- discover flows from the stock levels alone, which subtracts what the measured flows (and the model's own equations) already explain, so it finds what the model is missing. Discovery runs on the server, in the Python engine in `sdlab/discovery` (the same one the bench measures), as a background job: the page stays responsive and shows the last findings while a new search runs, and "keep discovering" repeats it as data arrives;
 - see where more speed would help a goal most (each flow made 10% faster in turn);
 - import a measured history, for models whose stocks are read by sensor programs.
 
@@ -21,10 +21,13 @@ An **AI agent** is a machine with kind `agent`, program `agents/llm` and a promp
 
 The model format is described in [MODEL.md](MODEL.md).
 
+The research view (`/research`, the 🔬 button) shows discovery's research: the topics in `docs/research/` with their status and verdict, and the bench's saved runs over time (`~/.cache/sdlab/bench/runs`, or `$SDLAB_BENCH_CACHE/runs`), one run example by example, and two runs compared.
+
 ```
 uv run sdlab --port 8020          # http://127.0.0.1:8020
-uv run pytest -q                  # server tests
-node --test tests/sim.test.mjs    # simulator tests
+uv run pytest -q                  # server, engine and discovery tests
+node --test tests/*.mjs           # the page's simulator, simplify and teaching examples
+uv run python tests/bench/evaluate.py   # the discovery bench (docs/DISCOVERY-LOOP.md)
 ```
 
-Models are stored as JSON in `~/.sdlab/models/` (override with `SDLAB_HOME`). The examples in `sdlab/examples/` are copied there on first start. The public URL is https://sdlab.dansproject.space, served through the `sdlab` cloudflared tunnel (`~/.cloudflared/sdlab.yaml`).
+Models are stored as JSON in `~/.sdlab/models/` (override with `SDLAB_HOME`). The examples in `sdlab/examples/` are read-only: they open as shipped, and the first change saves a copy among your models. The public URL is https://sdlab.dansproject.space, served through the `sdlab` cloudflared tunnel (`~/.cloudflared/sdlab.yaml`).
