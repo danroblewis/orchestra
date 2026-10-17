@@ -38,3 +38,11 @@ intake that changes at a steady rate violates it.
 - Estimate the levels beside the cheap pieces and never refit them on the reported pieces (the spiral
   needs the refit).
 - Choose the inflow form per stock by behaviour, not globally per candidate.
+
+## Literature
+From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
+- Why a fixed price fails: a misspecified drain leaves autocorrelated residuals, and a fixed number of changes is assumed. Continuations: [inflow-innovations](inflow-innovations.md) (playbook M6) and [complexity-budget](complexity-budget.md) (M15).
+- Romano, Rigaill, Runge, Fearnhead (2022). Detecting abrupt changes in the presence of local fluctuations and autocorrelated noise. JASA 117(540):2147-2162.
+- Haynes, Eckley, Fearnhead (2017). Computationally efficient changepoint detection for a range of penalties (CROPS). JCGS 26(1):134-143.
+- Bai, Perron (1998). Estimating and testing linear models with multiple structural changes. Econometrica 66(1):47-78 (breaks and slopes estimated jointly).
+- Lyneis (2000). System dynamics for market forecasting and structural analysis. SDR 16(1):3-25 (a model that fits by exogenous drivers explains nothing).

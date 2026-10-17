@@ -38,3 +38,10 @@ DISCOVERY-EXPERIMENTS.md).
   before accepting them.
 - Multi-term hinges (floors on several stocks at once).
 - Unannounced seasons look like kinks to any nonlinear term (sd-fishery).
+
+## Literature
+From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
+- Continuation: [censored-floors](censored-floors.md) (playbook M9): censor capped steps, offer thresholds only where the data reach them.
+- Tobin (1958). Econometrica 26(1):24-36 (censored regression).
+- Paoletti, Juloski, Ferrari-Trecate, Vidal (2007). Identification of hybrid systems: a tutorial. Eur. J. Control 13(2-3):242-260.
+- Lariviere, Porteus (1999). Manage. Sci. 45(3):346-363 (sales capped by stock are censored demand).

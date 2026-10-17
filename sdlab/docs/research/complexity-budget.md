@@ -21,3 +21,12 @@ prior, and modellers bound their models this way in practice (suggested by the u
   optimal partitioning with a fixed number of segments, which PELT's segment-neighbourhood form does).
 - Compare with the fresh-run grade (bench column): a budget should close any gap between in-sample
   and fresh-run skill.
+
+## Literature
+From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
+- Playbook M15 (rank 8): step 2 of the procedure ("count and budget"); combine with [inflow-innovations](inflow-innovations.md).
+- Killick, Fearnhead, Eckley (2012). JASA 107(500):1590-1598 (PELT and the segment-neighbourhood search with a fixed number of changes).
+- Bai, Perron (1998). Econometrica 66(1):47-78 (m breaks, chosen by criterion or sequential tests).
+- Jakeman, Hornberger (1993). How much complexity is warranted in a rainfall-runoff model? WRR 29(8):2637-2649 (4-6 parameters per series).
+- Chen et al. (2024), CPT PSP 13(10):1784-1797, and Duvnjak et al. (2024), CPT PSP 13(10):1707-1721 (automatic model search drifts to over-complex models).
+- Daniels, Nemenman (2015). Nat. Commun. 6:8133 (hidden variables added one at a time in a fixed order).

@@ -31,3 +31,12 @@ Mechanism test: rates off by +50%/-40% are brought back within 0.03; a wrong str
 - A positive own-coefficient chosen together with a constant inflow is suspect (spurious reinforcing
   loops in sd-population long, sd-fishery long).
 - Spurious back-moves (trucks -> bins) and moves read backwards (elderly -> adults).
+
+## Literature
+From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
+- Playbook M2 (re-run on v2.1 as the final stage) and conflict C4 (simulation-error selection matters once the right structure is among the candidates).
+- Bock (1983). Recent advances in parameter identification techniques for O.D.E. Birkhäuser, 95-121 (multiple shooting).
+- Ribeiro, Tiels, Umenberger, Schön, Aguirre (2020). On the smoothness of nonlinear system identification. Automatica 121:109158.
+- Piroddi, Spinelli (2003). Int. J. Control 76(17):1767-1781; Farina, Piroddi (2012). Int. J. Systems Science 43(2):319-333 (simulation-error selection).
+- Čerepnalkoski et al. (2012). Ecol. Modelling 245:136-165 (the fitting method changes which structure is selected).
+- Kirchner (2009). WRR 45(2):W02429 (an input inferred by inverting the model takes on any misspecification: never re-estimate inflows in a refinement).

@@ -31,3 +31,11 @@ misfit).
 - Third co-moment (Poisson skewness) gives a move's direction for small flows.
 - Regress per-step products of residuals on levels to tell a move driven by A from one driven by B.
 - A joint fit of all rows with conservation built in (see joint-constrained-fit).
+
+## Literature
+From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
+- Four traditions recommend this evidence (playbook convergence 3); its continuation is playbook M4 in [count-likelihoods](count-likelihoods.md).
+- Vardi (1996). JASA 91(433):365-377 (second moments identify flows the means cannot).
+- Craciun, Pantea (2008). Identifiability of chemical reaction networks. J. Math. Chem. 44(1):244-259 (a move and an independent outflow plus inflow give the same mean equations).
+- Martinelli et al. (2022). Reactmine. arXiv:2209.03185 (reactions found by changes co-varying at fixed ratios).
+- Callaham, Loiseau, Rigas, Brunton (2021). Nonlinear stochastic modelling with Langevin regression. Proc. R. Soc. A 477:20210092.

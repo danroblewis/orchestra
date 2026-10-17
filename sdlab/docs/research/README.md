@@ -1,5 +1,8 @@
 # Discovery research
 
+**Start here: [PLAYBOOK.md](PLAYBOOK.md)**, the synthesis of the literature and our experiments: the procedure the research supports for discerning an SD model from data, mapped onto our pipeline, with a ranked experiment plan and checked citations.
+Literature reports it draws on: [system identification](literature/system-identification.md), [equation discovery](literature/equation-discovery.md), [signals and time series](literature/signals-and-time-series.md), [the System Dynamics field](literature/system-dynamics-field.md), [compartmental analogues](literature/compartmental-analogues.md), [research process](literature/research-process.md); and the [tools survey](SD-TOOLS-AND-DISCOVERY.md).
+
 One document per research topic: what was asked, what was done (branch and commit), results, verdict and open ideas.
 The step-by-step history of the main line is in [../DISCOVERY-EXPERIMENTS.md](../DISCOVERY-EXPERIMENTS.md); how experiments are run is in [../DISCOVERY-LOOP.md](../DISCOVERY-LOOP.md).
 When an experiment reports, update its topic document (status, results, verdict, open ideas) and this index.
@@ -41,3 +44,14 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Weak-form fitting](weak-form.md) | idea (not started) | - |
 | [XMILE export and interoperability](xmile-export.md) | idea (not started) | - |
 | [A complexity budget the analyst states](complexity-budget.md) | idea (not started) | - |
+| [Bench instrumentation: coverage, selection, failure classes, ablation](bench-instrumentation.md) | idea (not started) | - |
+| [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | idea (not started) | - |
+| [Effects as basis-expanded flow columns in the regression](effect-columns.md) | idea (not started) | - |
+| [A diagnose-and-expand loop driven by residual signatures](residual-diagnostics.md) | idea (not started) | - |
+| [Outside-input changes estimated on innovations, jointly with the dynamics](inflow-innovations.md) | idea (not started) | - |
+| [Hidden stocks by constrained deconvolution and order counting](delay-deconvolution.md) | idea (not started) | - |
+| [Partial-model simulation per row](partial-model-simulation.md) | idea (not started) | - |
+| [Floors and caps as censoring, offered only where the data reach them](censored-floors.md) | idea (not started) | - |
+| [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | idea (not started) | - |
+| [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
+| [A declarative library of SD processes](process-library.md) | idea (not started) | - |

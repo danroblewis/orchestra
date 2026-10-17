@@ -34,3 +34,10 @@ unannounced in most examples; a stale last piece dominates the error, so constan
   coarse outside inflow (asks the bench's question; needs a decision on using held-out data that way).
 - Flag pieces into an internal stock that track another stock's level.
 - More candidates (e.g. a link variant per changing row).
+
+## Literature
+From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
+- The failure is a known pitfall: cross-validation on dependent data with an unforecastable exogenous input measures extrapolation, not dynamics. Continuation: [inflow-conditioned-judge](inflow-conditioned-judge.md) (playbook M12).
+- Dawid (1984). Statistical theory: the prequential approach. JRSS A 147(2):278-292.
+- Racine (2000). hv-block cross-validation. J. Econometrics 99(1):39-61.
+- Bergmeir, Hyndman, Koo (2018). CSDA 120:70-83 (k-fold is valid only for one-step autoregressive settings).
