@@ -136,21 +136,26 @@ def levels_array(levels: dict, ids: list[str]) -> np.ndarray:
     return np.nan_to_num(np.array([np.asarray(levels.get(i, []), dtype=float) for i in ids]))
 
 
-def behaviour_error(flows: list[dict], ids: list[str], t: list, levels: dict, horizon: int = 20, starts: int = 80) -> float:
+def behaviour_error(flows: list[dict], ids: list[str], t: list, levels: dict, horizon: int = 20, starts: int = 80, inferred: dict | None = None) -> float:
     """How far the model's runs from ~`starts` moments in the data end up from what was measured
     `horizon` steps later (its own estimated outside inflows feed it), relative to how far the data
-    moved: 0 = perfect, 1 = no better than assuming nothing changes."""
-    A = levels_array(levels, ids)
+    moved: 0 = perfect, 1 = no better than assuming nothing changes.
+
+    inferred (optional): the model's own unmeasured stocks, {id: estimated level aligned with t};
+    each run starts them from that estimate, and only the measured stocks are compared."""
+    inferred = inferred or {}
+    S = len(ids)
+    A = levels_array({**levels, **inferred}, ids + list(inferred))
     n = A.shape[1]
     s0 = starts_for(n, horizon, starts)
     if not len(s0):
         return float("inf")
-    sd = A.std(axis=1)
+    sd = A[:S].std(axis=1)
     sd[sd == 0] = 1
     tt = np.asarray(t, dtype=float)
-    end = Model(flows, ids).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]])
-    obs = A[:, s0 + horizon - 1]
+    end = Model(flows, ids + list(inferred)).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]])[:S]
+    obs = A[:S, s0 + horizon - 1]
     e = ((end - obs) / sd[:, None]) ** 2
     e[~np.isfinite(e)] = 1e6
-    moved = (((obs - A[:, s0 - 1]) / sd[:, None]) ** 2).sum()
+    moved = (((obs - A[:S, s0 - 1]) / sd[:, None]) ** 2).sum()
     return float(e.sum() / max(1e-9, moved))

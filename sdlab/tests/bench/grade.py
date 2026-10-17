@@ -10,6 +10,11 @@ steps from every stock's true level, fed the same outside inflows (the truth's s
 found model's outside inflow into every stock the truth feeds from outside), so only their own
 dynamics differ. skill = 1 - (spread between them / how far the truth moved)^2: 1 = behaves as the
 truth, 0 = no better than assuming nothing changes, below 0 = worse.
+
+A found model may have unmeasured stocks of its own (any stock it names that is not measured), with
+its own estimate of their levels over the run (result["inferred_levels"]: {id: series aligned with
+t}): they are kept apart from the truth's stocks and started from that estimate (empty without one),
+never from the truth's levels.
 """
 
 from __future__ import annotations
@@ -74,7 +79,19 @@ def truth_of(example: str) -> dict:
 
 def found(result: dict) -> dict:
     rel, outside = {}, []
+    # a found model's own unmeasured stock H (result["inferred_levels"]): A -> H -> B is a hidden
+    # stock between A and B
+    inferred = set(result.get("inferred_levels") or {})
+    for h in inferred:
+        into = [f.get("from") or f.get("driver") for f in result["flows"] if f.get("to") == h]
+        for f in result["flows"]:
+            if f.get("from") == h and f.get("to"):
+                for a in into:
+                    if a:
+                        rel[f"{a}>{f['to']}"] = "hidden"
     for f in result["flows"]:
+        if f.get("from") in inferred or f.get("to") in inferred:
+            continue
         a, b, kind = None, f.get("to"), None
         if f.get("driver"):
             a, kind = f["driver"], "link"
@@ -135,6 +152,24 @@ def truth_by_time(truth_model: dict, times: list) -> tuple[list[dict], set]:
     return flows, fed
 
 
+def _renamed(x, names: dict):
+    """Flows with every stock reference (from, to, stock, driver) renamed by `names`."""
+    if isinstance(x, list):
+        return [_renamed(v, names) for v in x]
+    if isinstance(x, dict):
+        return {k: names.get(v, v) if k in ("from", "to", "stock", "driver") and isinstance(v, str) else _renamed(v, names) for k, v in x.items()}
+    return x
+
+
+def _names(x) -> set:
+    """Every stock the flows refer to (from, to, stock, driver)."""
+    if isinstance(x, list):
+        return set().union(*(_names(v) for v in x)) if x else set()
+    if isinstance(x, dict):
+        return {v for k, v in x.items() if k in ("from", "to", "stock", "driver") and isinstance(v, str)} | _names([v for v in x.values() if isinstance(v, (list, dict))])
+    return set()
+
+
 def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150) -> dict:
     t = data["t"]
     measured = list(data["levels"])
@@ -147,7 +182,18 @@ def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 2
     A = levels_array(all_levels, ids)
     s0 = starts_for(A.shape[1], horizon, starts)
     times = np.asarray(t, dtype=float)[s0[None, :] + np.arange(horizon)[:, None]]
-    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times)
+    # every stock the found model names that is not measured is its own, never the truth's hidden
+    # stock of the same name: kept apart, and started from the found model's own estimate of its
+    # level (result["inferred_levels"]), or empty without one
+    unmeasured = {x for x in _names(own) if x not in measured} | set(result.get("inferred_levels") or {})
+    if unmeasured:
+        names = {x: f"found:{x}" for x in sorted(unmeasured)}
+        own = _renamed(own, names)
+        est = result.get("inferred_levels") or {}
+        A_found = np.vstack([A] + [np.nan_to_num(np.asarray(est[x], dtype=float))[None, :] if x in est else np.zeros((1, A.shape[1])) for x in names])
+        found_end = Model(own + exo, ids + list(names.values())).run(A_found[:, s0 - 1], times)[: len(ids)]
+    else:
+        found_end = Model(own + exo, ids).run(A[:, s0 - 1], times)
     truth_end = Model(truth, ids).run(A[:, s0 - 1], times)
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())

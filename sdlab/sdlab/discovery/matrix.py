@@ -58,6 +58,11 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         return {"flows": [], "note": "Too few steps."}
     lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
     prev, dy = lv[:, :-1], np.diff(lv, axis=1)
+    # extra regressors (opts["extra"]: {"id", "series" aligned with t, "source", "rows"}), e.g. a
+    # delayed copy of a stock's level standing for an unmeasured stock; none by default
+    extra = opts.get("extra") or []
+    idsx = ids + [e["id"] for e in extra]
+    prevx = np.vstack([prev] + [np.asarray(e["series"], dtype=float)[None, :-1] for e in extra]) if extra else prev
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
@@ -76,9 +81,13 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
 
     def fit_row(s: int) -> dict:
         sid, y = ids[s], dy[s]
-        X = [prev[j] for j in range(S)]
-        col = [(j, -1) for j in range(S)]
+        X = [prevx[j] for j in range(len(idsx))]
+        col = [(j, -1) for j in range(len(idsx))]
         allowed = [j for j in range(S) if may_affect(j, s) and not (sid in final and j == s)]
+        allowed += [S + e for e, x in enumerate(extra) if sid in x["rows"]]
+        # a copy that stands in for its source's level in this row ("replaces"): not both
+        gone = {ids.index(x["source"]) for x in extra if sid in x["rows"] and x.get("replaces")}
+        allowed = [j for j in allowed if j not in gone]
         own = s in allowed
         Xa = np.array(X)
 
@@ -90,13 +99,15 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # level when there are few (backward elimination), from none when there are many.
         cuts = [0, T]
         chosen = list(allowed) if len(allowed) <= opts.get("backward_max", 0) else []
+        # opts["start_with"]: {stock: [columns its row starts from]} (none by default)
+        chosen = list(dict.fromkeys(chosen + [idsx.index(j) for j in (opts.get("start_with") or {}).get(sid, ()) if j in idsx and idsx.index(j) in allowed]))
         for p in range(5):
             sums = row_sums(y, Xa, cuts)
             chosen = step(sums, chosen)
             if p == 0 and L > 1:
                 # the levels this row uses (and its own) may have a number per configuration; they
                 # join before any change in the outside inflow is looked for
-                js = list(dict.fromkeys([col[q][0] for q in chosen] + ([s] if own else [])))
+                js = list(dict.fromkeys([col[q][0] for q in chosen if col[q][0] < S] + ([s] if own else [])))
                 for j in js:
                     for c in range(L):
                         X.append(np.where(cfg == c, prev[j], 0.0))
@@ -107,9 +118,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 chosen = step(sums, chosen)
             f = fit_subset(sums, chosen)
             res = y - (f.beta @ Xa[chosen] if chosen else 0)
-            nxt = [0, T] if opts.get("changes") is False else pelt(res, min_piece, 0.5 if p == 0 else 1)
+            # opts["steady"]: stocks whose outside inflow may not change (none by default)
+            nxt = [0, T] if opts.get("changes") is False or sid in opts.get("steady", ()) else pelt(res, min_piece, 0.5 if p == 0 else 1)
             if opts.get("trace") == sid:
-                print(f"  {sid} pass {p}: {len(cuts) - 1} pieces;", ", ".join(f"{ids[col[q][0]]}{'@' + str(col[q][1]) if col[q][1] >= 0 else ''} {b:.4f}" for q, b in zip(chosen, f.beta)), f"-> {len(nxt) - 1}")
+                print(f"  {sid} pass {p}: {len(cuts) - 1} pieces;", ", ".join(f"{idsx[col[q][0]]}{'@' + str(col[q][1]) if col[q][1] >= 0 else ''} {b:.4f}" for q, b in zip(chosen, f.beta)), f"-> {len(nxt) - 1}")
             if nxt == cuts and p >= 2:
                 break
             cuts = nxt
@@ -152,7 +164,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 if best is None:
                     break
                 if opts.get("trace") == sid:
-                    print(f"  {sid}: {ids[col[best[0][-1]][0]]} in place of pieces: {len(cuts) - 1} -> {len(best[1]) - 1}")
+                    print(f"  {sid}: {idsx[col[best[0][-1]][0]]} in place of pieces: {len(cuts) - 1} -> {len(best[1]) - 1}")
                 chosen, cuts, cur = best
 
         # the outside inflow: none, constant, or changing (only a stock with an inflow on average
@@ -182,7 +194,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
             j, lab = col[q]
             for c in range(L):
                 if lab < 0 or lab == c:
-                    coef_l[c][ids[j]] = coef_l[c].get(ids[j], 0.0) + float(b)
+                    coef_l[c][idsx[j]] = coef_l[c].get(idsx[j], 0.0) + float(b)
         inflow = []
         if pick["cuts"]:
             inflow = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(y, Xa, chosen, beta, pick["cuts"])]
@@ -201,10 +213,11 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         for c in range(L):
             m = cfg == c
             for j, k in row["coefL"][c].items():
-                res[m] -= k * prev[ids.index(j)][m]
+                res[m] -= k * prevx[idsx.index(j)][m]
         row["inflow"] = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(res, prev, [], np.zeros(0), row["cuts"])]
 
-    per_label = [read_flows(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
+    rows_of = lambda c: [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows]  # noqa: E731
+    per_label = [read_flows(stocks, rows_of(c), prev, opts.get("tol", 0.003), **({"extra": extra, "prevx": prevx} if extra else {})) for c in range(L)]
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
     matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta")} for r in rows]
     for r in matrix:
@@ -227,6 +240,10 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
             continue
         drain = [-(c.get(a) or 0.0) for c in row["coefL"]]
         moves = [sum(r["coefL"][c][a] for r in rows if r["id"] != a and (r["coefL"][c].get(a) or 0) > 0 and unit[r["id"]] == unit[a]) for c in range(L)]
+        # what receivers take through an unmeasured stock fed by a (opts["extra"] sourced by a)
+        via = [e["id"] for e in opts.get("extra") or [] if e["source"] == a]
+        if via:
+            moves = [m + sum(r["coefL"][c][e] for r in rows for e in via if r["id"] != a and (r["coefL"][c].get(e) or 0) > 0 and unit[r["id"]] == unit[a]) for c, m in enumerate(moves)]
         changing = bool(row["cuts"]) and len(row["cuts"]) > 2
         cand = [c for c in range(L) if moves[c] > 0 and ((changing and moves[c] > drain[c] and opts.get("trust_receivers") is not False) or drain[c] > moves[c])]
         if not cand:

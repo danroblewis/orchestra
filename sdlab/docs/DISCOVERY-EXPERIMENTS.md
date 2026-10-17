@@ -26,6 +26,91 @@ successes.
 
 ## Log
 
+### 2026-10-17: experiment hidden_delays - hidden stocks as delayed copies of a level - NEEDS A COMBINATION
+Branch `exp/hidden-delays`, strategy `hidden_delays` (`sdlab/discovery/hidden.py`,
+`sdlab/discovery/strategies/hidden_delays.py`), test `tests/test_strategy_hidden_delays.py`.
+**Hypothesis.** In 9 of the 12 examples short of the goal the truth has an unmeasured stock between
+two measured ones (kanban testing -> undetected -> bugs, supply warehouse -> trucks -> shop, ...).
+No row has a column for its arrivals, so they are read as the receiver's outside inflow in pieces or
+as wrong links. A stock H fed at k x A and drained at d x H is, in B's row, k x z(t-1) with z the
+copy of A's level delayed by d (z(t) = (1-d) z(t-1) + d A(t-1)); offer such copies, and turn a chosen
+one into A -> H -> B with H's level estimated as (k/d) x z.
+**Method (final).** The main line's 8-16 candidates are built and judged as usual; on the best one:
+(1) proposals: copies of every stock at d in {0.5, 0.3, 0.17, 0.1, 0.06, 0.03}, offered to the rows of
+same-unit stocks (matrix option `extra`), the ones the stepwise search picks with a positive number,
+plus the best per (A, B) by a row-level screen without pieces (top 6, must pay log T); (2) greedy:
+each proposal is tried alone in B's row in place of A's level (option `replaces`), as it is and as a
+"steady" receiver (no inflow pieces in B, B's row starting from the copy and its own level: options
+`steady`, `start_with`); accepted if H is fed mostly by a move out of A (not a link), the model
+explains the receivers better with their pieces held at their means (pieces fitted to the run explain
+any arrivals, so the plain judge always prefers them) by 2%, on a judge scaled per stock by how far
+it moved (the main judge's spread scale all but ignores a stock that only accumulates), without being
+more than 15% worse with its pieces (0% for steady, whose row must also beat the replaced row by BIC
+with each piece priced as two numbers); (3) the accepted delay is tuned by x1.4 steps. All new
+matrix/flows/simulate options default off: `--strategy matrix` on sd-saas, sd-eras, sd-pipeline
+gives zero deltas.
+**Mechanism test** (a -> h -> b, h unmeasured, a's inflow changing 3 times, 2000 steps, counting
+noise): hidden_delays finds a -> H 0.208 (truth 0.2), H -> b at d = 0.1 (0.1), b -> out 0.26 (0.25),
+no outside inflow into b; skill@20 94%, @100 98%. The matrix: b gets 12 inflow pieces, a drains to
+outside at 0.25; skill@20 -25%, @100 72%. Noise-free, both reach 100% (the matrix's pieces into b,
+fitted to the same run the grader replays, reproduce it exactly).
+**Bench vs "python"** (42 runs): **mean skill@20 70.8% -> 70.9%, skill@100 68.9% -> 68.6%, parts
+59.9% -> 62.0%, runs meeting the goal 18 -> 20** (sd-recycling long, sd-university default). Moved
+more than 2 points (skill@20 / @100): sd-ci default 93.9/91.8 -> 96.1/96.2 (todo -> builds, steady),
+sd-ci long 93.5/86.9 -> 95.9/96.6 (commits -> 0.17 -> builds: the true review stage, 0.2),
+sd-fishery long 29.5/30.8 -> 39.5/38.4 (landed -> 0.3 -> processed: the true cold store, 0.33),
+sd-moderation default @20 36.5 -> 38.8 (flagged -> 0.03 -> removed: the true vendor, 0.028),
+sd-moderation long 49.4/-32.4 -> 60.3/-12.8, sd-orders long @20 7.0 -> 27.6, sd-recycling long
+86.4/89.9 -> 91.5/94.3 (bales -> shelves: the true rail), sd-restaurant default 86.8/88.8 ->
+88.3/92.7 (cooking -> 0.7 -> pass: the true plating, 0.5), sd-university default 85.7/96.1 ->
+95.2/98.8, sd-hidden-chain long @5 +1.9; worse: **sd-population default 68.2/87.3 -> 6.7/20.3**
+(adults -> 0.7 -> elderly, steady: no hidden stock in the truth; better on the data, runs away fed
+the true inputs), sd-ev-fleet long @100 59.6 -> 57.4. Not found: kanban testing -> bugs (a row-level
+gain of ~7 against log T = 8: the arrivals are too small beside the sprint spikes), supply (the
+truck stage is fed by a gap on the shop, not by the warehouse's level), support-tiers, manufacturing,
+saas lapsed. Run time 220 s -> 805 s (summed over the bench).
+**Grader extension (tests/bench/grade.py), recorded as required**: a found result may carry its own
+unmeasured stocks, `result["inferred_levels"] = {id: series aligned with t}`; every stock a found
+model names that is not measured is renamed apart from the truth's stocks and started from that
+estimate (empty without one), never from the truth's level; `found()` reads A -> H -> B through such a
+stock as a hidden relation A > B. **Bug fixed with it**: before, a found flow naming a stock with the
+same id as the truth's hidden stock was run from the truth's hidden level (the exact structure with
+the stock called "h" graded 100% without any estimate; now it starts empty). Flows into other
+unknown stocks used to vanish; now they go into an empty found stock. Results that name only
+measured stocks (every main-line result) grade exactly as before: a frozen value test, and
+`--strategy matrix` zero deltas. `behaviour_error` (judge) takes the same `inferred` levels.
+Attempts on the way (all against "python", 42 runs; @20 / @100 / goal):
+- **v0, all copies as columns in every row, as extra candidates for every variant**: rows took 2-6
+  copies, both directions, mixed delays; runaways (restaurant: judge 136 vs 0.31). Never chosen.
+- **v2, greedy one pair at a time from the stepwise picks, judged on the data, 2% margin**: 69.0 /
+  64.5 / 19; sd-population long -104 (children -> adults fed by a link), sd-fishery long -18/-91.
+- **v3, + H must be fed mostly by a move**: 71.0 / 67.3 / 19 (population and supply fixed; fishery
+  long boat loop at_sea <-> in_port still accepted: better on the data, worse on processed, which the
+  spread-scaled judge cannot see).
+- **v4/v5, every horizon must improve / delay refinement**: 70.1 / 67.0 and 70.6 / 67.2 (refining
+  drifted population default to a worse delay).
+- **v6, receivers judged with their pieces held at their means ("structural")**: 71.1 / 67.0 / 19,
+  parts +2.4 (more true pairs: ci, ev-fleet road -> queue, fishery, moderation, restaurant).
+- **v7/v8, + per-stock "moved" scale, + screened proposals**: **72.1 / 69.6 / 20**, no run worse by
+  2 at @20 - the best bench, but it fails the mechanism test (synthetic skill@20 -310%: b keeps 38
+  pieces beside the copy, which bias its drain 0.39 and the delay to 0.06).
+- **v9, 10-delay grid**: 71.3 / 68.5 (more false picks). **v10, 5% margin, 5% slack**: 72.0 / 69.5.
+- **v11, receivers always steady**: 68.2 / 65.4 (moderation long -88, population default -61, eras
+  default -20: receivers with real changing inflows lose them). **v12, steady or not**: 69.6 / 67.4.
+  **v13, rows start from copy + own level, never steady**: 71.2 / 68.0 (start alone hurts).
+- **v14, steady only within 0% slack**: 70.4 / 69.0 / 19 (eras default still -20). **v15 = final,
+  + steady row must beat the replaced row by BIC**: eras fixed; population default remains.
+**Verdict: needs a combination.** The mechanism works in isolation and recovers true hidden stocks
+on real data (ci review, fishery cold store, moderation vendor, recycling rail, restaurant plating,
+ev-fleet partly), with clear gains on 9 runs and 2 more meeting the goal; but acceptance relies on a
+judge that is fooled by in-sample fits (population default, fishery boats), so the net mean is flat.
+Combine with a judge that is not (out-of-sample, or the stability check of the "runaway" idea), or
+adopt the v8 settings (no steady receivers: +1.2 / +0.7, 20 runs) if the mechanism test is relaxed
+to noise-free data. Other ideas noticed: the change scan's single noise variance over-segments
+heteroscedastic (counting) noise (synthetic a: 24-33 pieces for 4 true); the main judge's per-stock
+spread scale ignores accumulating stocks; inflow pieces into a stock the truth does not feed are
+fitted to the very run the grader replays (noise-free, a wrong model grades 100%).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
