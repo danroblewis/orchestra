@@ -3,7 +3,8 @@
 Flows are SD Lab's model flows (dicts): a rate in one of the forms constant, proportional, gap or
 linear (every rate is floored at 0, as SD Lab's own equations are); a rate that follows announced
 eras (`byTime`: segments {from, to, rate}); or a found outside inflow that changes (`inflow`:
-segments {from, to, value}). A segment holds for times from..to; a time no segment covers takes the
+segments {from, to, value}); and a flow may use up another stock as it moves (`uses`, a co-flow:
+`per` of it for each unit moved; a stock's outflows and the flows using it share what it holds). A segment holds for times from..to; a time no segment covers takes the
 last segment. Levels are floored at 0 after every step.
 """
 
@@ -91,6 +92,11 @@ class Model:
         self.ids = ids
         index = {s: i for i, s in enumerate(ids)}
         self.parts = []
+        # co-flows: (flow, used stock, per); a used stock's outflows and users share what it holds
+        self.uses = [(i, index[u["stock"]], float(u["per"])) for i, f in enumerate(flows) for u in f.get("uses") or []
+                     if u.get("stock") in index and float(u.get("per") or 0) > 0]
+        self.takers = {c: [(i, float(f.get("ratio") or 1)) for i, f in enumerate(flows) if index.get(f.get("from")) == c]
+                       + [(i, per) for i, cc, per in self.uses if cc == c] for c in {c for _, c, _ in self.uses}}
         for f in flows:
             src, dst = index.get(f.get("from")), index.get(f.get("to"))
             ratio = float(f.get("ratio") or 1)
@@ -112,12 +118,19 @@ class Model:
         for src, dst, ratio, segs, rate, vals in self.parts:
             seg = segs(t) if segs is not None else zero
             amounts.append(vals[seg] if vals is not None else rate(L, seg))
+        for c, takers in self.takers.items():                 # a flow cannot use more than there is
+            want = sum(amounts[i] * w for i, w in takers)
+            k = np.where(want > L[c], np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
+            for i, _ in takers:
+                amounts[i] = amounts[i] * k
         nxt = L.copy()
         for (src, dst, ratio, *_), a in zip(self.parts, amounts):
             if src is not None:
                 nxt[src] -= a * ratio
             if dst is not None:
                 nxt[dst] += a
+        for i, c, per in self.uses:
+            nxt[c] -= amounts[i] * per
         return np.where(nxt >= 0, nxt, 0.0)
 
     def run(self, L: np.ndarray, times: np.ndarray) -> np.ndarray:

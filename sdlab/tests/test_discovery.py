@@ -110,3 +110,9 @@ def test_synthetic_ground_truth_a_plain_chain_is_recovered_exactly_enough():
     r = identify(d["stocks"], d["run"])
     assert abs(k(find(r, "a", "b")) - 0.3) <= 0.02 and abs(k(find(r, "b", None)) - 0.2) <= 0.02
     assert skill(r, d) > 0.95
+
+
+def test_a_flow_that_uses_up_another_stock_takes_per_unit_and_stops_when_it_runs_out():
+    flows = [{"from": "blanks", "to": "parts", "rate": {"form": "constant", "value": 10}, "uses": [{"stock": "bits", "per": 0.5}]}]
+    L = Model(flows, ["blanks", "parts", "bits"]).step(np.array([[100.0, 100.0], [0.0, 0.0], [20.0, 2.0]]), np.array([1.0, 1.0]))
+    assert L.tolist() == [[90.0, 96.0], [10.0, 4.0], [15.0, 0.0]]

@@ -7,6 +7,8 @@ plus a few things a simulation of the real world needs:
     "steps", "long_steps", "seed"     how long a run is (default, and for the long-run tests)
     "noise": {"counts": true}         flows move whole things, drawn around their rate (Poisson):
                                       the counting noise a real system has; or {"relative": 0.1}
+    "uses": [{"stock": "s", "per": 0.1}]   (on a flow) a co-flow: each unit the flow moves also uses up
+                                      `per` of stock s; the flow cannot move more than s allows
     "schedule": {"every": 365, "changes": [{"t": 1, "label": "...", "set": {flow id: {rate}},
                                             "announce": true}]}
                                       on step t (of each period of `every` steps) a flow's equation
@@ -72,6 +74,12 @@ class Truth:
         changes: dict[int, list[dict]] = {}
         for e in eras:
             changes.setdefault(e["t"], []).append(e)
+        # co-flows: for each stock, the flows that use it up and how much per unit moved
+        users: dict[str, list] = {}
+        for f in flows:
+            for u in f.get("uses") or []:
+                if float(u.get("per") or 0) > 0:
+                    users.setdefault(u["stock"], []).append((f, float(u["per"])))
         levels = {s: [] for s in self.stock_ids}
         counters = {f["id"]: [] for f in flows}
         for t in range(1, steps + 1):
@@ -86,20 +94,27 @@ class Truth:
                 elif noise.get("relative"):
                     q = max(0.0, q * (1 + rng.gauss(0, float(noise["relative"]))))
                 amount[f["id"]] = q
-            # nothing leaves a stock that is not there: outflows share what it holds
+            # nothing leaves a stock that is not there: outflows share what it holds (with the flows
+            # that use it up as they move, co-flows: each unit they move takes `per` of it)
             for s in self.stock_ids:
                 outs = [f for f in flows if f.get("from") == s]
-                want = sum(amount[f["id"]] * float(f.get("ratio") or 1) for f in outs)
+                take = {f["id"]: float(f.get("ratio") or 1) for f in outs}
+                for f, per in users.get(s, []):
+                    take[f["id"]] = take.get(f["id"], 0.0) + per
+                want = sum(amount[fid] * w for fid, w in take.items())
                 if want > level[s] > -1:
                     k = max(0.0, level[s]) / want
-                    for f in outs:
-                        amount[f["id"]] = math.floor(amount[f["id"]] * k) if noise.get("counts") else amount[f["id"]] * k
+                    for fid in take:
+                        amount[fid] = math.floor(amount[fid] * k) if noise.get("counts") else amount[fid] * k
             for f in flows:
                 q = amount[f["id"]]
                 if f.get("from"):
                     level[f["from"]] -= q * float(f.get("ratio") or 1)
                 if f.get("to"):
                     level[f["to"]] += q
+                for u in f.get("uses") or []:
+                    if float(u.get("per") or 0) > 0:
+                        level[u["stock"]] -= q * float(u["per"])
                 counters[f["id"]].append(q if not noise.get("counts") else int(q))
             for s in self.stock_ids:
                 levels[s].append(round(level[s], 4) if not noise.get("counts") else int(round(level[s])))
@@ -123,7 +138,7 @@ class Truth:
     def truth(self) -> dict:
         M = set(self.measured_ids)
         stocks = {s["id"]: s for s in self.model["stocks"]}
-        moves, outside, links, hidden = [], [], [], []
+        moves, outside, links, hidden, coflows = [], [], [], [], []
         reads = lambda f: [x for x in [(f.get("rate") or {}).get("stock"), *((t.get("stock") for t in (f.get("rate") or {}).get("terms") or []))] if x]  # noqa: E731
         for f in self.model["flows"]:
             a, b = f.get("from"), f.get("to")
@@ -134,6 +149,10 @@ class Truth:
                 outside.append({"from": a, **entry})
             elif b in M and not a:
                 outside.append({"to": b, **entry})
+            # a co-flow: a measured stock the flow uses up as it moves
+            for u in f.get("uses") or []:
+                if u.get("stock") in M:
+                    coflows.append({"stock": u["stock"], "per": u.get("per"), "from": a if a in M else None, "to": b if b in M else None, **entry})
             # a flow into a measured stock whose equation reads another measured stock: a link
             if b in M and not a:
                 for d in reads(f):
@@ -149,7 +168,7 @@ class Truth:
                     delay = round(1 / float(rate["k"]), 3) if rate.get("form") == "proportional" and rate.get("k") else None
                     hidden.append({"from": i["from"], "to": o["to"], "via": h, "via_name": stocks[h].get("name", h),
                                    "shape": "exp", "delay": delay, "what": f"{i.get('name', i['id'])}, then {o.get('name', o['id'])}"})
-        return {"moves": moves, "outside": outside, "links": links, "hidden": hidden, "echoes": []}
+        return {"moves": moves, "outside": outside, "links": links, "hidden": hidden, "echoes": [], **({"coflows": coflows} if coflows else {})}
 
 
 def poisson(rng: random.Random, mean: float) -> int:

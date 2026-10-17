@@ -2,8 +2,9 @@
 
 parts: parts of the true model recovered in the right form (truth.json, "sd_structure"). A
 relationship is an ordered pair of stocks: a move (things go from A to B), a link (B's arrivals
-follow A's level), a hidden stock (things leave A and arrive in B later) or an echo (things come back
-into B some time after arriving in A); each flow to or from outside counts on its own.
+follow A's level), a hidden stock (things leave A and arrive in B later), an echo (things come back
+into B some time after arriving in A) or a use (a flow out of B, or into B from outside, uses up A
+as it moves: a co-flow); each flow to or from outside counts on its own.
 
 skill@H (same_behaviour): from ~150 moments in the run, the found and the true model are both run H
 steps from every stock's true level, fed the same outside inflows (the truth's schedule replaces the
@@ -58,6 +59,8 @@ def truth_of(example: str) -> dict:
         put(h["from"], h["to"], "hidden")
     for e in sd.get("echoes", []):
         put(e["source"], e["into"], "echo")
+    for c in sd.get("coflows", []):                     # a stock a flow uses up: paired with the flow's end
+        put(c["stock"], c.get("from") or c.get("to"), "uses")
     more = sd.get("in_long_runs") or {}
     for m in more.get("moves", []):
         put(m["from"], m["to"], "move")
@@ -83,6 +86,9 @@ def found(result: dict) -> dict:
             kind = "hidden" if f.get("from") else "echo"
         elif f.get("from") and f.get("to"):
             a, kind = f["from"], "move"
+        for u in f.get("uses") or []:
+            if f.get("from") or f.get("to"):
+                rel[f"{u['stock']}>{f.get('from') or f.get('to')}"] = "uses"
         if a and b:
             rel[f"{a}>{b}"] = kind
         else:
