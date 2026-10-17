@@ -330,4 +330,16 @@ def find(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             out[ids[s]] = fp
         if opts.get("trace_periodic"):
             print(f"  {ids[s]}{'' if ok else ' (not kept)'}: period {fp['P']}, {len(fp['segments'])} segments, {len(fp['slow']) - 1} slow pieces, BIC {fp['bic']:.0f} vs pieces {fp['pieces_bic']:.0f} ({fp['pieces']}) and constant {fp['const_bic']:.0f}")
+    # in a system driven by a repeating input, every stock's residual repeats a little (its misfit
+    # follows the driver): a profile is kept only where the period explains a good share of what the
+    # strongest profile at that period explains (the driven stock, not its echoes downstream)
+    ratio = opts.get("source_ratio", 0.25)
+    if ratio:
+        strongest: dict[int, float] = {}
+        for fp in out.values():
+            strongest[fp["P"]] = max(strongest.get(fp["P"], 0.0), fp["const_bic"] - fp["bic"])
+        for i in [i for i, fp in out.items() if fp["const_bic"] - fp["bic"] < ratio * strongest[fp["P"]]]:
+            if opts.get("trace_periodic"):
+                print(f"  {i}: an echo of a stronger profile, not kept")
+            del out[i]
     return out
