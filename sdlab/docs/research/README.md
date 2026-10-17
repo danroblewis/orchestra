@@ -60,7 +60,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |
 | [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | idea (not started, wave 4) | - |
 | [Outside inflows as a repeating profile](periodic-inflows.md) | idea (not started, wave 4) | - |
-| [Assembling the model row by row from the candidates](row-crossover.md) | idea (not started, wave 4) | - |
+| [Assembling the model row by row from the candidates](row-crossover.md) | done (wave 4, benchmark v2.1) | needs a combination (+6.1/+13.4, 14 of 62 meet the goal; judge fooled on webshop, moderation) |
 | [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
 | [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | idea (not started, wave 4) | - |
 | [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | idea (not started, wave 4) | - |
