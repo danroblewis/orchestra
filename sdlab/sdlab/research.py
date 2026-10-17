@@ -15,10 +15,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from .bench_stats import paired
 from .discovery.api import jsonable
 
 DOCS = Path(__file__).resolve().parent.parent / "docs" / "research"
 GOAL_SKILL20, GOAL_SKILL100 = 0.9, 0.8           # docs/DISCOVERY-GOAL.md, as tests/bench/evaluate.py
+FAILURES = ("not representable", "not chosen", "not supported", "error")   # as tests/bench/candidates.py
 ROW = re.compile(r"^\|\s*\[(?P<title>[^\]]+)\]\((?P<file>[^)]+)\)\s*\|\s*(?P<status>[^|]*)\|\s*(?P<verdict>[^|]*)\|\s*$")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$")
 
@@ -89,6 +91,10 @@ def summary(name: str, run: dict) -> dict:
 
     fresh = n > 0 and all(x.get("fresh") for x in res)
     parts, of = sum(x.get("parts") or 0 for x in res), sum(x.get("of") or 0 for x in res)
+    # every candidate graded (tests/bench/candidates.py): the best candidate, the judge's pick, failure classes
+    graded = [x["best"] for x in res if isinstance(x.get("best"), dict) and isinstance(x["best"].get("skill"), dict)]
+    best = {f"best{h}": sum(_clip(b["skill"].get(str(h))) for b in graded) / len(graded) if graded else None for h in (20, 100)}
+    failures = {c: sum(1 for x in res if x.get("failure") == c) for c in FAILURES} if any("failure" in x for x in res) else None
     return {"file": name, "baseline": name[len("baseline-"):-len(".json")] if name.startswith("baseline-") else None,
             "at": run.get("at"), "label": run.get("label") or "", "engine": run.get("engine") or "", "branch": run.get("branch") or "",
             "commit": run.get("commit") or "", "n": n, "examples": len({x.get("example") for x in res}),
@@ -96,7 +102,9 @@ def summary(name: str, run: dict) -> dict:
             "skill20": mean("skill", 20), "skill100": mean("skill", 100), "meets": sum(_meets(x, "skill") for x in res),
             "fresh20": mean("fresh", 20) if fresh else None, "fresh100": mean("fresh", 100) if fresh else None,
             "freshMeets": sum(_meets(x, "fresh") for x in res) if fresh else None,
-            "parts": parts / of if of else None, "errors": sum(1 for x in res if x.get("error"))}
+            "parts": parts / of if of else None, "errors": sum(1 for x in res if x.get("error")),
+            "graded": len(graded), "picked": sum(1 for b in graded if b.get("rank") == 1) if graded else None,
+            "bestMeets": sum(1 for b in graded if b.get("meets")) if graded else None, **best, "failures": failures}
 
 
 _cache: dict[str, tuple[tuple, dict]] = {}
@@ -127,13 +135,24 @@ def runs() -> dict:
     return jsonable({"folder": str(bench_runs()), "goal": {"skill20": GOAL_SKILL20, "skill100": GOAL_SKILL100}, "runs": out})
 
 
-@router.get("/runs/{name}")
-def run(name: str) -> dict:
+def _read(name: str) -> dict:
     files = run_files()
     if not NAME.match(name) or name not in files:
         raise HTTPException(404, "no such run")
     try:
-        data = json.loads(files[name].read_text())
+        return json.loads(files[name].read_text())
     except ValueError:
         raise HTTPException(422, "that run's file is not JSON")
-    return jsonable({"file": name, "summary": summary(name, data), **data})
+
+
+@router.get("/runs/{name}")
+def run(name: str) -> dict:
+    return jsonable({"file": name, "summary": summary(name, (data := _read(name))), **data})
+
+
+@router.get("/compare/{a}/{b}")
+def compare(a: str, b: str) -> dict:
+    """Paired tests from run a to run b over the runs in both (sdlab/bench_stats.py), for skill and
+    fresh-run skill at 20 and 100 steps."""
+    ra, rb = _read(a).get("results") or [], _read(b).get("results") or []
+    return jsonable({"a": a, "b": b, "tests": [paired(ra, rb, k, h) for k in ("skill", "fresh") for h in (20, 100)]})

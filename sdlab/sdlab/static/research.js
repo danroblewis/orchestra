@@ -201,14 +201,20 @@
     const x = Math.min(e.clientX + 14, innerWidth - t.offsetWidth - 8), y = Math.min(e.clientY + 14, innerHeight - t.offsetHeight - 8);
     t.style.left = `${x}px`; t.style.top = `${y}px`;
   }
+  // failure classes of the runs that miss the goal (tests/bench/candidates.py)
+  const FAIL = { "not representable": "R", "not chosen": "C", "not supported": "S", error: "E" };
+  const FAIL_TITLE = "Runs missing the goal, by why. R not representable: no candidate meets the goal, and the judge rates the true model better than the one chosen (a coverage gap). C not chosen: a candidate meets it, the judge kept another (a selection gap). S not supported: no candidate meets it, and the judge rates the true model no better than the one chosen (the data, as judged, cannot prefer the truth).";
+  const failures = (f) => (f ? `${f["not representable"]} / ${f["not chosen"]} / ${f["not supported"]}${f.error ? ` (+${f.error} errors)` : ""}` : "–");
   function renderRunsTable() {
     const runs = [...S.runs].reverse();
     $("runs-count").textContent = `${runs.length} saved, newest first`;
-    $("runs").innerHTML = `<thead><tr><th>when (UTC)</th><th>label</th><th>branch</th><th>strategy</th><th>commit</th><th>runs</th><th>skill@20</th><th>skill@100</th><th>meet goal</th><th>fresh @20</th><th>fresh @100</th><th>fresh meet</th><th></th></tr></thead><tbody>${runs.map((r) => r.broken
-      ? `<tr><td colspan="13" class="muted">${esc(r.file)}: not a readable run</td></tr>`
+    $("runs").innerHTML = `<thead><tr><th>when (UTC)</th><th>label</th><th>branch</th><th>strategy</th><th>commit</th><th>runs</th><th>skill@20</th><th>skill@100</th><th>meet goal</th><th>fresh @20</th><th>fresh @100</th><th>fresh meet</th>
+      <th title="The best-graded candidate's mean skill@20 (every candidate graded)">best cand. @20</th><th title="Runs where the judge picked the best-graded candidate">judge picked best</th><th title="${esc(FAIL_TITLE)}">failures R / C / S</th><th></th></tr></thead><tbody>${runs.map((r) => r.broken
+      ? `<tr><td colspan="16" class="muted">${esc(r.file)}: not a readable run</td></tr>`
       : `<tr><td class="mono">${esc((r.at || "").slice(0, 19).replace("T", " "))}</td><td>${r.baseline ? `<span class="chip">baseline ${esc(r.baseline)}</span> ` : ""}${esc(r.label)}</td><td>${esc(r.branch)}</td><td>${esc(r.engine)}</td><td class="mono">${esc(r.commit)}</td>
          <td class="num">${r.n}</td><td class="num">${pct(r.skill20)}</td><td class="num">${pct(r.skill100)}</td><td class="num">${r.meets} / ${r.n}</td>
          <td class="num">${pct(r.fresh20)}</td><td class="num">${pct(r.fresh100)}</td><td class="num">${r.freshMeets ?? "–"}</td>
+         <td class="num">${pct(r.best20)}</td><td class="num">${r.graded ? `${r.picked} / ${r.graded}` : "–"}</td><td class="num">${failures(r.failures)}</td>
          <td class="acts"><button class="btn small" data-show="${esc(r.file)}" title="See this run example by example">show</button><button class="btn small" data-cmp-a="${esc(r.file)}" title="Compare: use as the run before">A</button><button class="btn small" data-cmp-b="${esc(r.file)}" title="Compare: use as the run after">B</button></td></tr>`).join("")}</tbody>`;
     $("runs").querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => { $("run-a").value = b.dataset.show; renderRun(); remember(); $("run").scrollIntoView({ behavior: "smooth" }); }));
     $("runs").querySelectorAll("[data-cmp-a]").forEach((b) => b.addEventListener("click", () => { $("cmp-a").value = b.dataset.cmpA; renderCompare(); remember(); $("compare").scrollIntoView({ behavior: "smooth" }); }));
@@ -244,22 +250,36 @@
     const res = r.results || [], lengths = [...new Set(res.map((x) => String(x.length)))].sort(lengthOrder);
     const examples = [...new Set(res.map((x) => x.example))].sort();
     const at = (e, l) => res.find((x) => x.example === e && String(x.length) === l);
-    const hasFresh = res.some((x) => x.fresh);
+    const hasFresh = res.some((x) => x.fresh), hasBest = res.some((x) => x.best);
     const cols = [["skill", 20, S.goal.skill20, "skill@20"], ["skill", 100, S.goal.skill100, "skill@100"], ...(hasFresh ? [["fresh", 20, S.goal.skill20, "fresh@20"], ["fresh", 100, S.goal.skill100, "fresh@100"]] : [])];
+    const more = hasBest ? 3 : 0;                         // best candidate's skill@20, the judge's rank of it, the failure class
     const s = r.summary;
-    $("heat").innerHTML = `<p class="note"><b>${esc(r.label || file)}</b> · ${esc(r.at)} · ${esc(r.branch)} · ${esc(r.engine)} · ${esc(r.commit)}. Mean skill@20 ${pct(s.skill20)}, @100 ${pct(s.skill100)}; ${s.meets} of ${s.n} meet the goal${s.fresh20 !== null ? `; on fresh runs ${pct(s.fresh20)}, ${pct(s.fresh100)}, ${s.freshMeets} meet it` : ""}. Cells: ✓ meets its goal (skill@20 ≥ ${pct(S.goal.skill20)}, skill@100 ≥ ${pct(S.goal.skill100)}); amber within 20 points; red further.</p>
-      <div class="tablewrap"><table class="rtable heat"><thead><tr><th rowspan="2">example</th>${lengths.map((l) => `<th colspan="${cols.length + 1}" class="lenhead">${esc(l)}</th>`).join("")}</tr>
-      <tr>${lengths.map(() => cols.map((c) => `<th class="num">${c[3]}</th>`).join("") + `<th class="num">parts</th>`).join("")}</tr></thead>
+    const cand = hasBest ? ` Every candidate graded: the best candidate's mean skill@20 ${pct(s.best20)}, @100 ${pct(s.best100)}, meeting the goal in ${s.bestMeets} of ${s.graded}; the judge picked the best in ${s.picked} of ${s.graded}.${s.failures ? ` Runs missing the goal: ${s.failures["not representable"]} not representable (R), ${s.failures["not chosen"]} not chosen (C), ${s.failures["not supported"]} not supported (S)${s.failures.error ? `, ${s.failures.error} errors` : ""}.` : ""}` : "";
+    $("heat").innerHTML = `<p class="note"><b>${esc(r.label || file)}</b> · ${esc(r.at)} · ${esc(r.branch)} · ${esc(r.engine)} · ${esc(r.commit)}. Mean skill@20 ${pct(s.skill20)}, @100 ${pct(s.skill100)}; ${s.meets} of ${s.n} meet the goal${s.fresh20 !== null ? `; on fresh runs ${pct(s.fresh20)}, ${pct(s.fresh100)}, ${s.freshMeets} meet it` : ""}.${esc(cand)} Cells: ✓ meets its goal (skill@20 ≥ ${pct(S.goal.skill20)}, skill@100 ≥ ${pct(S.goal.skill100)}); amber within 20 points; red further.</p>
+      <div class="tablewrap"><table class="rtable heat"><thead><tr><th rowspan="2">example</th>${lengths.map((l) => `<th colspan="${cols.length + 1 + more}" class="lenhead">${esc(l)}</th>`).join("")}</tr>
+      <tr>${lengths.map(() => cols.map((c) => `<th class="num">${c[3]}</th>`).join("") + `<th class="num">parts</th>` + (more ? `<th class="num" title="The best-graded candidate's skill@20">best cand.</th><th class="num" title="The judge's rank of the best-graded candidate (1 = picked)">rank</th><th title="${esc(FAIL_TITLE)}">why</th>` : "")).join("")}</tr></thead>
       <tbody>${examples.map((e) => `<tr><th>${esc(e)}</th>${lengths.map((l) => {
         const x = at(e, l);
-        if (!x) return cols.map(() => `<td class="muted">–</td>`).join("") + `<td></td>`;
+        if (!x) return cols.map(() => `<td class="muted">–</td>`).join("") + `<td></td>` + `<td></td>`.repeat(more);
         const t = `${x.steps} steps, ${x.flows} flows, ${x.ms} ms${x.chosen ? `; ${x.chosen}` : ""}${x.error ? `; ERROR ${x.error}` : ""}`;
-        return cols.map((c) => goalCell(v(x, c[0], c[1]), c[2])).join("") + `<td class="num muted" title="${esc(t)}">${x.error ? "error" : `${x.parts}/${x.of}`}</td>`;
+        const b = x.best;
+        const extra = !more ? "" : !b ? `<td class="muted">–</td>`.repeat(2) + `<td>${esc(FAIL[x.failure] || "")}</td>`
+          : goalCell(v(b, "skill", 20), S.goal.skill20)
+            + `<td class="num${b.rank > 1 ? "" : " muted"}" title="${esc(`${b.name} (skill@20 ${pct(v(b, "skill", 20))}, @100 ${pct(v(b, "skill", 100))}): the judge ranked it ${b.rank} of ${b.of}`)}">${b.rank}</td><td title="${esc(x.failure || "")}">${esc(FAIL[x.failure] || "")}</td>`;
+        return cols.map((c) => goalCell(v(x, c[0], c[1]), c[2])).join("") + `<td class="num muted" title="${esc(t)}">${x.error ? "error" : `${x.parts}/${x.of}`}</td>` + extra;
       }).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+  // the paired tests over the runs in both (sdlab/bench_stats.py): is the change more than noise?
+  const pval = (p) => (p === null || p === undefined ? "–" : p < 0.001 ? "<0.001" : p.toFixed(3));
+  function pairedNote(r) {
+    const ts = ((r && r.tests) || []).filter((t) => t.n);
+    if (!ts.length) return "";
+    return `<p class="note">Paired tests over the runs in both (changes under half a point count as no change): ${ts.map((t) => `<b>${t.key === "fresh" ? "fresh " : ""}skill@${t.horizon}</b> ${t.better} better, ${t.worse} worse, ${t.same} same; ${t.sign_p === null ? "nothing to test" : `sign test p ${pval(t.sign_p)}, Wilcoxon p ${pval(t.wilcoxon_p)}`}`).join(" · ")}.</p>`;
   }
   async function renderCompare() {
     const fa = $("cmp-a").value, fb = $("cmp-b").value;
-    const [a, b] = await Promise.all([runData(fa).catch(() => null), runData(fb).catch(() => null)]);
+    const [a, b, tests] = await Promise.all([runData(fa).catch(() => null), runData(fb).catch(() => null),
+      fa && fb ? get(`/api/research/compare/${encodeURIComponent(fa)}/${encodeURIComponent(fb)}`).catch(() => null) : null]);
     if ($("cmp-a").value !== fa || $("cmp-b").value !== fb) return;
     if (!a || !b) { $("cmp").innerHTML = `<p class="note">Choose two runs.</p>`; return; }
     const key = (x) => `${x.example}\u0000${x.length}`;
@@ -272,6 +292,7 @@
     const meets = (x) => x && !x.error && v(x, "skill", 20) >= S.goal.skill20 && v(x, "skill", 100) >= S.goal.skill100;
     const gained = both.filter((k) => !meets(ra.get(k)) && meets(rb.get(k))).length, lost = both.filter((k) => meets(ra.get(k)) && !meets(rb.get(k))).length;
     $("cmp").innerHTML = `<p class="note">${both.length} example runs in both. Over those, mean skill@20 ${pct(mean(ra, "skill", 20))} → ${pct(mean(rb, "skill", 20))}, skill@100 ${pct(mean(ra, "skill", 100))} → ${pct(mean(rb, "skill", 100))}; ${gained} newly meet the goal, ${lost} no longer do. Deltas are in points; green better, red worse (pale under 2 points).</p>
+      ${pairedNote(tests)}
       <div class="tablewrap"><table class="rtable heat"><thead><tr><th>example</th><th>length</th>${head.map((h) => `<th class="num">${h[2]} before</th><th class="num">after</th><th class="num">Δ</th>`).join("")}<th>goal</th></tr></thead>
       <tbody>${keys.map((k) => {
         const [e, l] = k.split("\u0000"), x = ra.get(k), y = rb.get(k);
