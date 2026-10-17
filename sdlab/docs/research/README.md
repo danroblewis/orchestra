@@ -22,7 +22,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | done (wave 2, benchmark v2) | reject as a strategy; carry two pieces forward |
 | [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Searching SD structures: greedy, beam search, MCTS, genetic algorithms](structure-search.md) | running (wave 2, benchmark v2) | - |
-| [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | running (wave 2, benchmark v2) | - |
+| [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | done (wave 2, benchmark v2) | needs a combination (+19 points; judge blocker) |
 | [A procedural generator of ground-truth SD models](procedural-generator.md) | idea (not started) | - |
 | [Amortised / simulation-based inference of structure](simulation-based-inference.md) | idea (not started) | - |
 | [Bayesian structure learning and bootstrap ensembles](bayesian-structure.md) | idea (not started) | - |
