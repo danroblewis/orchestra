@@ -81,6 +81,38 @@ measured against the same baseline. At the end of a wave, compare them side by s
 winners one at a time (re-running the bench after each, since two winners can overlap), and plan the
 next wave from what was learned.
 
+## Generated models: the check against tuning to the 31
+
+The 31 examples are few, and every adopt decision is made on them, so a method can end up fitted to
+them. `tests/bench/generator.py` builds random ground-truth models from motif families (chains,
+branches, merges, rework, reinforcing loops with a limit, goal gaps, hidden delays, links, co-flows,
+linear and table effects, floors, caps, unannounced inflow steps, spikes and seasons, announced
+eras), 3-15 measured stocks, each checked as the examples are (bounded over 50x, never negative,
+still exercising its model, every flow moving) and redrawn until it passes. Each has a stable id
+(`gen1-dev-00042`) and its motif list; the same engine (`sdlab/sdtruth.py`) makes its data.
+
+```
+uv run python tests/bench/evaluate.py --generated 300 --jobs 4              # dev models 0-299, skill by motif
+uv run python tests/bench/evaluate.py --generated 100 --features coflow     # dev models built with a co-flow
+uv run python tests/bench/evaluate.py --generated 300 --baseline gen-main   # compared with a saved generated run (--save NAME)
+uv run python tests/bench/generator.py dev 0-19 --show                      # what those models are
+```
+
+- **Use the dev pool alongside the examples** in every experiment: a mechanism that helps the
+  examples but loses on the dev pool is fitted to the examples. Read the motif table: it says which
+  structures discovery handles and which it fails, and a change should move the motif it targets.
+- **Tune nothing on the sealed pool.** It has other seeds, a motif family (peaked table effects) and
+  motif combinations (hidden delay with a co-flow, a reinforcing loop with eras) that the dev pool
+  never contains. It is scored once per adoption, after the decision is made on dev and the
+  examples: `--generated 300 --pool sealed --i-am-adopting --label "adopt <name>"`. Without the flag
+  it is refused; every sealed scoring is appended to `sealed-log.jsonl` next to the runs, so it
+  shows when the pool has been looked at more than once.
+- Generated runs are saved under `<bench cache>/runs/generated/`, models and datasets under
+  `<bench cache>/generated/`, keyed by the generator's version and source: a change to the
+  generator makes new models (bump `VERSION` when it does, so ids say which generation they are).
+- "the true model's own skill@20" in the report is the truth's static flows graded the same way: below
+  100% where the truth changes a rate inside the system without announcing it (a demand, a season).
+
 ## Tests
 
 - `uv run pytest -q`: everything, including `tests/test_discovery.py` (recovery locked in on
@@ -96,6 +128,7 @@ uv run python tests/bench/evaluate.py --baseline python         # compared with 
 uv run python tests/bench/evaluate.py --examples sd-orders --lengths default
 uv run python tests/bench/evaluate.py --strategy <name>         # a strategy in sdlab/discovery/strategies
 uv run python tests/bench/evaluate.py --goal                    # exit 0 only when the goal is met
+uv run python tests/bench/evaluate.py --generated 300 --jobs 4  # 300 generated dev models, skill by motif
 uv run python tests/bench/datasets.py sd-saas --long            # path to a cached dataset
 ```
 
@@ -113,6 +146,7 @@ uv run python tests/bench/datasets.py sd-saas --long            # path to a cach
 | Grading | `tests/bench/grade.py` (`grade`, `same_behaviour`) |
 | Evaluation CLI | `tests/bench/evaluate.py` |
 | Datasets | `tests/bench/datasets.py` (cache: `~/.cache/sdlab/bench`) |
+| Generated models | `tests/bench/generator.py` (motifs, checks, pools, cache), `tests/bench/generated.py` (`--generated N`: the bench by motif) |
 | Ground truth | `sdlab/examples/sd-*/truth.model.json`, answer keys in `truth.json` |
 | Experiment log | `docs/DISCOVERY-EXPERIMENTS.md` |
 

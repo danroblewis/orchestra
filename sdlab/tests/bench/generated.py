@@ -207,7 +207,9 @@ def main(a, runs: Path, git, meets) -> None:
     def same_models(p: Path) -> bool:
         try:
             r = json.loads(p.read_text())
-            return r.get("branch") == run["branch"] and r.get("pool") == a.pool and {(x["example"], x["length"]) for x in r["results"]} >= keys
+            # the same models: same branch and pool, and the same generator (a changed generator
+            # keeps the ids but makes other models)
+            return r.get("branch") == run["branch"] and r.get("pool") == a.pool and r.get("source") == run["source"] and {(x["example"], x["length"]) for x in r["results"]} >= keys
         except Exception:
             return False
 
@@ -222,7 +224,8 @@ def main(a, runs: Path, git, meets) -> None:
 
     per_min = lambda k, s: f"{60 * k / s:.0f}" if s > 0 else "-"  # noqa: E731
     lines = [f"Discovery on generated models: {at}" + (f' "{a.label}"' if a.label else "") + f" ({a.strategy}) on {run['branch']} {run['commit']}"
-             + (f", compared with {base['at']}" + (f' "{base["label"]}"' if base.get("label") else "") if base else ""),
+             + (f", compared with {base['at']}" + (f' "{base["label"]}"' if base.get("label") else "")
+                + (" (WARNING: another generator, so other models under the same ids)" if base.get("source") != run["source"] else "") if base else ""),
              f"Pool {a.pool}: {len(built)} models (generator v{generator.VERSION}, indices 0-{n - 1}"
              + (f", built with {', '.join(features)}" if features else "") + f"), lengths {', '.join(lengths)}; "
              + (f"built {len(fresh_built)} models in {build_s:.0f} s ({per_min(len(fresh_built), build_s)} a minute), " if fresh_built else "models from the cache, ")
