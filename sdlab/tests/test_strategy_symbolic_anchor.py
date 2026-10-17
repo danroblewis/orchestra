@@ -3,7 +3,8 @@ docs/research/symbolic-addition-judge.md): symbolic effects accepted only when t
 predicts better than the model without them, both fed outside inflows the effects did not tailor.
 
   - a true effect (backlog -> done at k x backlog x table(skill)): the model with the effect, both
-    models given a coarse outside inflow re-measured under their own dynamics, beats the main line's
+    models given a coarse outside inflow re-measured under their own dynamics (and with its own pieces
+    against the base with the base's), beats the main line's
     model by more than the judge's noise: accepted, and it behaves much better than the main line's;
   - a spurious curve (a chain whose stage rates change at announced eras, no effect in the truth: the
     levels shift with the eras, so a curve of a level imitates the rate change): plain "symbolic"

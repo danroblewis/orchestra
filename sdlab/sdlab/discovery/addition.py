@@ -104,7 +104,7 @@ def _block_boot(d: np.ndarray, b: np.ndarray, moved: float, rng: np.random.Gener
 
 def addition_test(base: list[dict], cand: list[dict], stocks: list[dict], run: dict, inflow: str = "anchor",
                   horizons=HORIZONS, z: float = 2.0, floor: float = 0.02, pieces: bool = False, boot: int = 300,
-                  block: int = 8, extra: list[dict] | None = None, seed: int = 0) -> dict:
+                  block: int = 8, extra: list[dict] | None = None, seed: int = 0, refit_len: int | None = None) -> dict:
     """Is `cand` (base plus an addition) better than `base`, both fed an inflow the addition did not
     tailor? {"accept", "gain" (relative to the base's error), "noise" (the gain's bootstrap spread),
     "base", "cand" (the two errors), "load" (pieces' variance, base and cand)}."""
@@ -122,7 +122,8 @@ def addition_test(base: list[dict], cand: list[dict], stocks: list[dict], run: d
         Ub_, Uc_ = remeasure(Ub, base + extra, ids, t, levels), remeasure(Ub, cand + extra, ids, t, levels)
     elif inflow == "refit":
         feed = own_stocks(base, ids)
-        Ub_, Uc_ = refit_inflow(base + extra, ids, t, levels, feed), refit_inflow(cand + extra, ids, t, levels, feed)
+        Ub_, Uc_ = (refit_inflow(base + extra, ids, t, levels, feed, refit_len),
+                    refit_inflow(cand + extra, ids, t, levels, feed, refit_len))
     elif inflow == "own":
         Ub_, Uc_ = Ub, net_inflow(cand, ids, t)
     else:

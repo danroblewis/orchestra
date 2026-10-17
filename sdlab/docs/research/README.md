@@ -55,6 +55,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Partial-model simulation per row](partial-model-simulation.md) | idea (not started) | - |
 | [Floors and caps as censoring, offered only where the data reach them](censored-floors.md) | idea (not started) | - |
 | [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | done (wave 3, benchmark v2.1) | reject as the main judge; keep judges.py; judge additions with/without, fed the base model's inflow |
+| [Symbolic effects accepted by an addition judge inflow pieces cannot fool](symbolic-addition-judge.md) | done (wave 4, benchmark v2.1) | reject as stated (anchor refuses true effects); refit + own > 0 is do-no-harm (+5.9, 0 worse) but keeps a third of symbolic's +17.6 |
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |
 | [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |

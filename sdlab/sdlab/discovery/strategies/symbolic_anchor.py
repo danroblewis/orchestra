@@ -3,21 +3,28 @@ symbolic-addition-judge, docs/research/symbolic-addition-judge.md).
 
 The main line's model is the base. The effect search of strategy "symbolic" (effects.py: curves of a
 stock's level screened on what the rows leave unexplained, fitted as virtual stocks, translated into
-SD Lab effects) proposes additions; each is fitted with the base's own variant (the same search, the
-same kind of outside inflow: only the structure differs) and accepted only if addition.addition_test
-says the model with it, fed the BASE model's outside inflow, predicts better over 5/20/100 steps than
-the base by more than the judge's own noise. An effect whose work the base's pieces already did, or
-that only moves what pieces carried, gains nothing there and is refused.
+SD Lab effects) proposes additions; every variant is fitted with them, and a candidate is accepted
+only if addition.addition_test says that, with an outside inflow neither model tailored (by default
+a coarse inflow re-measured under each model's own dynamics frozen, into the stocks the base feeds),
+it predicts better over 5/20/100 steps than the base by more than the judge's own noise, AND that it
+also does better with its own pieces than the base with the base's (it must not need its pieces to
+look good, nor look good only once pieces are taken away). Measured: the base's own pieces
+("anchor") count a true effect twice and refuse every one; refit alone lets a candidate of another
+variant (constant inflows) win once everyone's inflow is coarse, with disastrous long runs.
 
 opts (or SDLAB_ANCHOR_OPTS, JSON, for the bench's ablations):
-  inflow     "anchor" (default): the base's inflow for both; "remeasure": the base's piece times with
-             values re-measured under each model's dynamics; "own": each its own (plain symbolic's
-             judge, with the noise margin)
+  inflow     "refit" (default): a coarse inflow re-measured for each model, dynamics frozen, into the
+             stocks the base feeds; "anchor": the base's own pieces for both; "remeasure": the base's
+             piece times with values re-measured under each model's dynamics; "own": each its own
+             (plain symbolic's judge, with the noise margin)
+  also       inflows under which the addition must also gain (more than nothing): default ["own"]
   mode       "set" (default): the screen's effects together; "each": one at a time, greedily, each
              judged against the model with the ones already accepted
-  search     "same" (default): the base's variant only; "all": every variant, the one the main judge
-             rates best tested
+  search     "all" (default): every variant with the effects; "same": the base's variant only
+  pick       "test" (default): every candidate tested, the largest gain that passes; "judge": the
+             main judge picks one candidate, which is tested
   z, floor   the margin: the gain must exceed z bootstrap spreads (default 2) and floor (default 0.02)
+  refit_len  the shortest piece of the refitted inflow (default: a fiftieth of the run, at least 20)
   pieces     also require the addition's pieces to vary no more than the base's (default False)
 """
 
@@ -32,7 +39,7 @@ from ..identify import VARIANTS, judge
 from ..identify import identify as matrix_identify
 from ..matrix import identify_one, known_flows
 
-DEFAULTS = {"inflow": "refit", "mode": "set", "search": "all", "pick": "test", "z": 2.0, "floor": 0.02, "pieces": False}
+DEFAULTS = {"inflow": "refit", "mode": "set", "search": "all", "pick": "test", "z": 2.0, "floor": 0.02, "pieces": False, "also": ["own"], "refit_len": None}
 
 
 def _label(cols: list[dict]) -> str:
@@ -85,7 +92,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         tests = []
         for name, flows, _ in cands:                      # else each is tested; the largest gain that passes
             test = addition_test(current, flows, stocks, run, inflow=opts["inflow"], z=opts["z"], floor=opts["floor"],
-                                 pieces=opts["pieces"], extra=extra)
+                                 pieces=opts["pieces"], extra=extra, refit_len=opts["refit_len"])
+            for other in opts["also"] if test["accept"] else []:
+                gain = addition_test(current, flows, stocks, run, inflow=other, extra=extra, refit_len=opts["refit_len"])["gain"]
+                test[f"gain {other}"] = gain
+                test["accept"] = test["accept"] and gain > 0
             tests.append((test, name, flows))
         test, name, flows = max(tests, key=lambda x: (x[0]["accept"], x[0]["gain"]))
         base["additions"].append({"effects": _label(g), "candidate": name, **test})

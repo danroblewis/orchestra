@@ -26,6 +26,33 @@ successes.
 
 ## Log
 
+### 2026-10-17: symbolic effects accepted by an addition judge (strategy `symbolic_anchor`, `discovery/addition.py`) - REJECTED (as stated)
+Branch `exp/symbolic-addition-judge`; topic [symbolic-addition-judge](research/symbolic-addition-judge.md).
+**Hypothesis:** symbolic's effects ([symbolic-regression](research/symbolic-regression.md)) with an
+acceptance rule inflow pieces cannot fool keep its gains and lose its losses: an effect set is accepted
+only if the model with it, fed the BASE model's outside inflow, predicts better over 5/20/100 steps than
+the base by more than a block-bootstrap margin (2 spreads, at least 2%). Symbolic code (b917b0f) and
+judges.py (5207b48) brought onto the main line; `matrix` unchanged (only_rows default off; sd-saas,
+sd-eras, sd-pipeline default: zero deltas against v2.1).
+**Mechanism test** (`tests/test_strategy_symbolic_anchor.py`): fed the base's pieces ("anchor") even a
+true effect loses (gain -1.6: the pieces already imitate it, the effect counts it twice); with a coarse
+inflow re-measured under each model's own dynamics ("refit") plus a positive gain under its own pieces,
+a true effect is accepted (skill@20 50% vs matrix -95%) and a spurious curve imitating announced rate
+changes is refused where plain symbolic takes it (88% -> 42%, 99% -> 34%).
+**Bench vs v2.1** (29.6% / 29.3%, 12 of 62; `--seeds 2`): plain symbolic on v2.1 47.2% / 42.6% (fresh 46.5% /
+42.9%), 13 runs, 17 better / 3 worse (sign p=0.0026, Wilcoxon 0.0020); worse: eras default, farm-soil
+long, fishery long, cloud-credits default. symbolic_anchor: refit over all variants 23.1% / 20.1%, 9 runs
+(variant switches to constant inflows and runaway curves on long runs: hidden-chain, reservoirs,
+services, sawmill to -100%); own inflow + margin, base's variant 37.4% / 35.3%, 14 runs, 9 better / 1
+worse (p=0.022); **refit and own > 0 (default) 35.6% / 31.2% (fresh 35.1% / 31.6%), 13 runs, 6 better /
+0 worse at skill@20 (p=0.031)**. Failure classes (NR / NC / NS): v2.1 44 / 1 / 5, symbolic 37 / 3 / 9,
+default 40 / 3 / 6. Against plain symbolic the default is -11.6 points (4 better / 13 worse, p=0.049).
+**Why:** the losses go, but so do most gains (bakery, print-shop, clinic-doses, brewery, kanban,
+services default, learning-curve long): those effects do not clear the margin under a coarse
+re-measured inflow, or not under their own pieces. **Verdict:** the anchor rule as stated is
+rejected (it refuses every true effect); the refit-and-own filter is a safe but small gain (+5.9,
+no run worse); plain symbolic remains the stronger strategy on the mean.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
