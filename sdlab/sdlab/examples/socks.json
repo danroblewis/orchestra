@@ -1,0 +1,188 @@
+{
+  "id": "socks",
+  "name": "Sock drawer",
+  "description": "Socks arrive in the laundry basket, get laid out, are paired by colour and size, and are filed into the dress or sport drawer. Every machine is a real program (examples/socks/machines/socks.py), so this model can run live. Pairing takes two related socks from the same stock, so the Loose socks stock is a store, not a queue.",
+  "time_unit": "minute",
+  "horizon": 120,
+  "dt": 0.25,
+  "stocks": [
+    {
+      "id": "basket",
+      "name": "Laundry basket",
+      "unit": "socks",
+      "initial": 0,
+      "x": 150,
+      "y": 200
+    },
+    {
+      "id": "loose",
+      "name": "Loose socks",
+      "unit": "socks",
+      "initial": 0,
+      "x": 420,
+      "y": 200
+    },
+    {
+      "id": "pairs",
+      "name": "Pairs",
+      "unit": "pairs",
+      "initial": 0,
+      "x": 690,
+      "y": 200
+    },
+    {
+      "id": "dress",
+      "name": "Dress drawer",
+      "unit": "pairs",
+      "initial": 0,
+      "x": 970,
+      "y": 110,
+      "target": {
+        "value": 120,
+        "by": 120
+      }
+    },
+    {
+      "id": "sport",
+      "name": "Sport drawer",
+      "unit": "pairs",
+      "initial": 0,
+      "x": 970,
+      "y": 300
+    },
+    {
+      "id": "lost",
+      "name": "Lost socks",
+      "unit": "socks",
+      "initial": 0,
+      "x": 420,
+      "y": 420
+    }
+  ],
+  "flows": [
+    {
+      "id": "arrive",
+      "name": "Laundry arrives",
+      "from": null,
+      "to": "basket",
+      "cloud": {
+        "x": -20,
+        "y": 232
+      },
+      "rate": {
+        "form": "constant",
+        "value": 4
+      },
+      "machine": "environment",
+      "program": "socks/socks",
+      "args": [
+        "arrive"
+      ]
+    },
+    {
+      "id": "unload",
+      "name": "Unload",
+      "from": "basket",
+      "to": "loose",
+      "take": [
+        {
+          "as": "item",
+          "from": "basket",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "proportional",
+        "stock": "basket",
+        "k": 1
+      },
+      "work": 0.2,
+      "machine": "worker",
+      "args": [
+        "unload"
+      ]
+    },
+    {
+      "id": "pair",
+      "name": "Pair",
+      "from": "loose",
+      "to": "pairs",
+      "ratio": 2,
+      "take": [
+        {
+          "as": "a",
+          "from": "loose"
+        },
+        {
+          "as": "b",
+          "from": "loose",
+          "where": {
+            "colour": "a.colour",
+            "size": "a.size"
+          }
+        }
+      ],
+      "rate": {
+        "form": "proportional",
+        "stock": "loose",
+        "k": 0.5
+      },
+      "work": 0.25,
+      "machine": "worker",
+      "args": [
+        "pair"
+      ]
+    },
+    {
+      "id": "file",
+      "name": "File",
+      "from": "pairs",
+      "to": "dress",
+      "outputs": [
+        "sport"
+      ],
+      "split": {
+        "dress": 0.6,
+        "sport": 0.4
+      },
+      "rate": {
+        "form": "proportional",
+        "stock": "pairs",
+        "k": 1
+      },
+      "work": 0.2,
+      "machine": "worker",
+      "args": [
+        "file"
+      ]
+    },
+    {
+      "id": "lose",
+      "name": "Lose a sock",
+      "from": "loose",
+      "to": "lost",
+      "rate": {
+        "form": "proportional",
+        "stock": "loose",
+        "k": 0.01
+      },
+      "machine": "environment",
+      "program": "socks/socks",
+      "args": [
+        "lose"
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "worker",
+      "name": "Worker",
+      "kind": "code",
+      "color": "#0f766e",
+      "capacity": 1,
+      "program": "socks/socks",
+      "args": [],
+      "description": "One program that does every laundry task; the flow's arguments say which. It has one minute of work per minute."
+    }
+  ]
+}

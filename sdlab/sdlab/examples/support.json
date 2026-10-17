@@ -1,0 +1,202 @@
+{
+  "id": "support",
+  "name": "Support desk with an AI agent",
+  "description": "Customer messages for Lumen, a photo-storage app, arrive in the Inbox (billing questions, bug reports, how-to questions and spam; examples/support/machines/desk.py). The Triage flow is run by an AI agent: a machine whose program is agents/llm and whose parameters are a prompt. It reads one message at a time and routes it to the Billing queue, the Engineering queue, Spam, or Answered directly, writing the reply itself for how-to questions. A billing clerk and an engineer, both people, work their queues off into Resolved. For comparison the model also has Rules triage (examples/support/machines/rules.py), plain keyword rules with a canned help-centre reply. Switch the Triage flow's machine between AI triage and Rules triage during a live run: each switch starts a new era, so you can compare how much reaches Answered directly and how much goes to the wrong queue. Some messages are written to fool keyword rules (a payment problem that mentions a crash, phishing dressed up as an invoice, a how-to without the word 'how'). The AI agent calls the local language model at http://127.0.0.1:8081/v1, a few seconds per message.",
+  "time_unit": "minute",
+  "horizon": 240,
+  "dt": 0.25,
+  "stocks": [
+    {
+      "id": "inbox",
+      "name": "Inbox",
+      "unit": "messages",
+      "initial": 0,
+      "x": 160,
+      "y": 290
+    },
+    {
+      "id": "billing",
+      "name": "Billing queue",
+      "unit": "messages",
+      "initial": 0,
+      "x": 520,
+      "y": 110
+    },
+    {
+      "id": "engineering",
+      "name": "Engineering queue",
+      "unit": "messages",
+      "initial": 0,
+      "x": 520,
+      "y": 240
+    },
+    {
+      "id": "answered",
+      "name": "Answered directly",
+      "unit": "messages",
+      "initial": 0,
+      "x": 520,
+      "y": 370,
+      "target": {
+        "value": 15,
+        "by": 240
+      }
+    },
+    {
+      "id": "spam",
+      "name": "Spam",
+      "unit": "messages",
+      "initial": 0,
+      "x": 520,
+      "y": 500
+    },
+    {
+      "id": "resolved",
+      "name": "Resolved",
+      "unit": "messages",
+      "initial": 0,
+      "x": 880,
+      "y": 175
+    }
+  ],
+  "flows": [
+    {
+      "id": "arrive",
+      "name": "Messages arrive",
+      "from": null,
+      "to": "inbox",
+      "cloud": {
+        "x": -20,
+        "y": 322
+      },
+      "rate": {
+        "form": "constant",
+        "value": 0.3
+      },
+      "machine": "environment",
+      "program": "support/desk",
+      "args": [
+        "arrive"
+      ]
+    },
+    {
+      "id": "triage",
+      "name": "Triage",
+      "from": "inbox",
+      "to": "billing",
+      "outputs": [
+        "engineering",
+        "answered",
+        "spam"
+      ],
+      "split": {
+        "billing": 0.3,
+        "engineering": 0.25,
+        "answered": 0.25,
+        "spam": 0.2
+      },
+      "take": [
+        {
+          "as": "item",
+          "from": "inbox",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "available"
+      },
+      "machine": "ai_triage",
+      "work": 0.5
+    },
+    {
+      "id": "settle",
+      "name": "Settle billing",
+      "from": "billing",
+      "to": "resolved",
+      "take": [
+        {
+          "as": "item",
+          "from": "billing",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "proportional",
+        "stock": "billing",
+        "k": 0.25
+      },
+      "machine": "clerk",
+      "work": 4,
+      "args": [
+        "settle"
+      ]
+    },
+    {
+      "id": "fix",
+      "name": "Fix bug",
+      "from": "engineering",
+      "to": "resolved",
+      "take": [
+        {
+          "as": "item",
+          "from": "engineering",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "proportional",
+        "stock": "engineering",
+        "k": 0.15
+      },
+      "machine": "engineer",
+      "work": 6,
+      "args": [
+        "fix"
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "ai_triage",
+      "name": "AI triage",
+      "kind": "agent",
+      "color": "#7c3aed",
+      "capacity": 1,
+      "program": "agents/llm",
+      "args": [],
+      "prompt": "You are the triage step of the support desk for Lumen, a photo-storage app. You are given one customer message (from, subject, text). Read it and route it to exactly one stock:\n- \"billing\": about money: charges, refunds, invoices, plans, cancelling a subscription. A payment problem stays billing even if the app also misbehaved.\n- \"engineering\": something in the app is broken or behaving wrongly (crashes, errors, sync failures, missing data).\n- \"answered\": a question about how to use Lumen that you can answer yourself. Include an \"answer\" field: a friendly reply of 1-3 sentences with concrete steps.\n- \"spam\": advertising, scams, phishing (for example fake invoices with outside payment links), or anything not from a real Lumen customer.\nMake exactly one item. Copy \"from\", \"subject\" and \"text\" unchanged, and add \"category\" (billing, bug, howto or spam) and \"reason\" (a few words on why).",
+      "timeout": 120,
+      "description": "An AI agent: the general agents/llm program with this prompt. Up to two messages a minute; each call to the local model takes a few seconds."
+    },
+    {
+      "id": "rules",
+      "name": "Rules triage",
+      "kind": "code",
+      "color": "#64748b",
+      "capacity": 1,
+      "program": "support/rules",
+      "args": [],
+      "description": "Keyword rules (spam words, then broken words, then money words, then question words); unmatched messages go to engineering. Idle until you give it the Triage flow."
+    },
+    {
+      "id": "clerk",
+      "name": "Billing clerk",
+      "kind": "person",
+      "color": "#b45309",
+      "capacity": 1,
+      "program": "support/desk",
+      "args": [],
+      "description": "Settles one billing message in about four minutes."
+    },
+    {
+      "id": "engineer",
+      "name": "Engineer",
+      "kind": "person",
+      "color": "#0f766e",
+      "capacity": 1,
+      "program": "support/desk",
+      "args": [],
+      "description": "Works one bug report in about six minutes."
+    }
+  ]
+}

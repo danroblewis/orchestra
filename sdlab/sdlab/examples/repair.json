@@ -1,0 +1,51 @@
+{
+  "id": "repair",
+  "name": "Repair shop with a hidden backroom",
+  "description": "Broken devices come in (more on busy days, fewer on quiet ones, and now and then a crowd), a technician repairs them, and customers pick them up. That is all the model shows. What it does not show: about a third of the devices are ones the shop cannot fix, and they quietly go out the back to a vendor and come back, repaired, 12 to 18 hours later. Those are hidden flows, and the devices at the vendor are a stock nobody measures. Run it for a couple of hundred hours, then use Discover flows: with the measured flows subtracted, it should find something leaving Intake and something arriving in Ready for pickup, and suggest they are one hidden stock with a delay between them.",
+  "time_unit": "hour",
+  "horizon": 200,
+  "dt": 0.25,
+  "stocks": [
+    {"id": "intake", "name": "Intake", "unit": "devices", "initial": 0, "x": 260, "y": 200},
+    {"id": "ready", "name": "Ready for pickup", "unit": "devices", "initial": 0, "x": 620, "y": 200}
+  ],
+  "flows": [
+    {
+      "id": "arrive", "name": "Devices brought in", "from": null, "to": "intake",
+      "cloud": {"x": 60, "y": 232},
+      "rate": {"form": "constant", "value": 1},
+      "machine": "environment", "program": "repair/shop", "args": ["arrive", "--mean", "4", "--cycle", "50", "--swing", "0.6"]
+    },
+    {
+      "id": "fix", "name": "Repair", "from": "intake", "to": "ready",
+      "take": [{"as": "item", "from": "intake", "order": "oldest"}],
+      "rate": {"form": "available", "stock": "intake"},
+      "work": 0.33, "machine": "tech", "args": ["fix"]
+    },
+    {
+      "id": "collect", "name": "Picked up", "from": "ready", "to": null,
+      "cloud": {"x": 840, "y": 232},
+      "rate": {"form": "proportional", "stock": "ready", "k": 0.3},
+      "machine": "environment", "program": "repair/shop", "args": ["collect"]
+    },
+    {
+      "id": "back", "name": "Vendor returns", "from": null, "to": "ready",
+      "hidden": true,
+      "rate": {"form": "constant", "value": 1},
+      "machine": "environment", "program": "repair/shop", "args": ["back"]
+    },
+    {
+      "id": "send", "name": "Sent to the vendor", "from": "intake", "to": null,
+      "hidden": true,
+      "rate": {"form": "proportional", "stock": "intake", "k": 0.1},
+      "machine": "environment", "program": "repair/shop", "args": ["send", "--min", "12", "--max", "18"]
+    }
+  ],
+  "machines": [
+    {
+      "id": "tech", "name": "Technician", "kind": "person", "color": "#0f766e",
+      "capacity": 1, "program": "repair/shop", "args": [],
+      "description": "One technician; each repair takes about 27 minutes (0.45 of an hour)."
+    }
+  ]
+}

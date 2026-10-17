@@ -1,0 +1,88 @@
+{
+ "id": "hospital",
+ "name": "Hospital (measured, with hidden stocks)",
+ "description": "Sixty days of a hospital's emergency department and ward, hour by hour, as its dashboard saw them: how many patients were in the waiting room, in an ED treatment bed and on the ward, and the running totals of patients discharged home and of those who left without being seen. Two counters are measured as flows: new registrations at the ED desk and admissions from an ED bed to the ward. Nothing else is measured. The number of staffed ED beds changed four times (each change starts an era), and there were surges. The real hospital has more places a patient can be than this dashboard shows: patients leave a measured stock for somewhere unmeasured and come back into a measured stock later, after a delay. Start plays the 60 days live, an hour per tick (Speed sets how fast); Import history loads them all at once. Then run Discover flows: the flows it finds to and from outside are what the measured flows leave unexplained, and matching pairs of them point at stocks nobody measures. A good inference should say how many hidden stocks there are, which measured stocks each one sits between, how long patients stay in it, and how many patients it holds. The answer is in hospital/README.md; do not read it first.",
+ "time_unit": "hour",
+ "horizon": 168,
+ "dt": 0.25,
+ "stocks": [
+  {
+   "id": "waiting",
+   "name": "Waiting room",
+   "unit": "patients",
+   "initial": 0,
+   "x": 120,
+   "y": 220
+  },
+  {
+   "id": "lwbs",
+   "name": "Left without being seen",
+   "unit": "patients",
+   "initial": 0,
+   "x": 300,
+   "y": 400,
+   "final": true
+  },
+  {
+   "id": "treatment",
+   "name": "In treatment",
+   "unit": "patients",
+   "initial": 0,
+   "x": 340,
+   "y": 220
+  },
+  {
+   "id": "ward",
+   "name": "Ward",
+   "unit": "patients",
+   "initial": 0,
+   "x": 560,
+   "y": 100
+  },
+  {
+   "id": "discharged",
+   "name": "Discharged home",
+   "unit": "patients",
+   "initial": 0,
+   "x": 780,
+   "y": 220,
+   "final": true
+  }
+ ],
+ "flows": [
+  {
+   "id": "arrivals",
+   "name": "Registrations",
+   "from": null,
+   "to": "waiting",
+   "rate": {
+    "form": "constant",
+    "value": 4
+   },
+   "machine": "environment",
+   "query": "new patients registered at the ED desk this hour"
+  },
+  {
+   "id": "admissions",
+   "name": "Admissions from the ED",
+   "from": "treatment",
+   "to": "ward",
+   "rate": {
+    "form": "constant",
+    "value": 0.9
+   },
+   "machine": "environment",
+   "query": "patients admitted from an ED bed to the ward this hour"
+  }
+ ],
+ "machines": [],
+ "history": {
+  "program": "hospital/history",
+  "args": []
+ },
+ "sensors": [
+  {
+   "program": "hospital/live"
+  }
+ ]
+}

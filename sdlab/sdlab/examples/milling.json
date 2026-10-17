@@ -1,0 +1,205 @@
+{
+  "id": "milling",
+  "name": "Milling shop",
+  "description": "A CNC machine mills blanks into parts. Every part wears the cutting bits (a co-flow: each part uses 0.1 bits, so a bit lasts about ten parts), and the CNC slows down as good bits run short (an effect of Bits on hand on milling speed: with fewer than five bits the operator runs gentler feeds). Purchasing orders bits to close the gap to four on hand, without counting what is already on order, and the supplier takes about ten minutes to deliver. The shop starts with one bit, so milling starts slow; it then settles with too few bits to keep up with the blanks, which pile up. Every flow is run by a real program (examples/milling/machines/), so this model can run live; a live run starts with empty stocks, so the first parts wait for the first delivery of bits.",
+  "time_unit": "minute",
+  "horizon": 120,
+  "dt": 0.25,
+  "stocks": [
+    {
+      "id": "blanks",
+      "name": "Blanks",
+      "unit": "blanks",
+      "initial": 0,
+      "x": 150,
+      "y": 200
+    },
+    {
+      "id": "parts",
+      "name": "Finished parts",
+      "unit": "parts",
+      "initial": 0,
+      "x": 470,
+      "y": 200
+    },
+    {
+      "id": "shipped",
+      "name": "Parts shipped",
+      "unit": "parts",
+      "initial": 0,
+      "x": 790,
+      "y": 200,
+      "target": {
+        "value": 420,
+        "by": 120
+      }
+    },
+    {
+      "id": "on_order",
+      "name": "Bits on order",
+      "unit": "bits",
+      "initial": 0,
+      "x": 150,
+      "y": 430
+    },
+    {
+      "id": "bits",
+      "name": "Bits on hand",
+      "unit": "bits",
+      "initial": 1,
+      "x": 470,
+      "y": 430
+    }
+  ],
+  "flows": [
+    {
+      "id": "arrive",
+      "name": "Blanks arrive",
+      "from": null,
+      "to": "blanks",
+      "cloud": {
+        "x": -20,
+        "y": 232
+      },
+      "rate": {
+        "form": "constant",
+        "value": 4
+      },
+      "machine": "environment",
+      "program": "milling/blanks",
+      "args": [
+        "--alloys",
+        "6061,7075"
+      ]
+    },
+    {
+      "id": "mill",
+      "name": "Mill",
+      "from": "blanks",
+      "to": "parts",
+      "take": [
+        {
+          "as": "blank",
+          "from": "blanks",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "available"
+      },
+      "machine": "cnc",
+      "work": 0.2,
+      "effects": [
+        {
+          "stock": "bits",
+          "shape": "table",
+          "points": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              0.25
+            ],
+            [
+              2,
+              0.5
+            ],
+            [
+              4,
+              0.85
+            ],
+            [
+              5,
+              1
+            ]
+          ]
+        }
+      ],
+      "uses": [
+        {
+          "stock": "bits",
+          "per": 0.1
+        }
+      ],
+      "args": [
+        "mill"
+      ]
+    },
+    {
+      "id": "ship",
+      "name": "Ship",
+      "from": "parts",
+      "to": "shipped",
+      "cloud": {
+        "x": 1000,
+        "y": 232
+      },
+      "rate": {
+        "form": "proportional",
+        "stock": "parts",
+        "k": 0.5
+      },
+      "machine": "environment",
+      "program": "milling/shipping"
+    },
+    {
+      "id": "order",
+      "name": "Order bits",
+      "from": null,
+      "to": "on_order",
+      "cloud": {
+        "x": -20,
+        "y": 462
+      },
+      "rate": {
+        "form": "gap",
+        "stock": "bits",
+        "goal": 4,
+        "time": 3
+      },
+      "machine": "environment",
+      "program": "milling/purchasing",
+      "args": [
+        "--supplier",
+        "Harvey Carbide"
+      ]
+    },
+    {
+      "id": "deliver",
+      "name": "Deliver bits",
+      "from": "on_order",
+      "to": "bits",
+      "take": [
+        {
+          "as": "po",
+          "from": "on_order",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "proportional",
+        "stock": "on_order",
+        "k": 0.1
+      },
+      "machine": "environment",
+      "program": "milling/supplier"
+    }
+  ],
+  "machines": [
+    {
+      "id": "cnc",
+      "name": "CNC mill",
+      "kind": "code",
+      "color": "#0f766e",
+      "capacity": 1,
+      "program": "milling/cnc",
+      "args": [
+        "--spindle-rpm",
+        "12000"
+      ],
+      "description": "A 3-axis CNC mill. A part takes 0.2 minutes with sharp bits; with few good bits on hand the operator runs gentler feeds and each part takes longer."
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "id": "team",
+  "name": "Growing team",
+  "description": "A new team starts with nobody. Work items arrive in the backlog and the Team turns them into done work. The Team's capacity is one week of work per week for each person in Staff, so with no staff nothing gets done and the team only gets faster by hiring. Hiring looks at the backlog: it wants enough people to clear the backlog in about four weeks, counts the people already in training, and closes the gap over four weeks. Recruits spend about four weeks in training before they join Staff, and while they train they slow the team down (someone has to teach them). Staff leave at about 2% a week. Hiring ignores the work that will still arrive while recruits train, so the team overshoots: by the time the backlog is gone it has more people than the work needs. Every flow is a real program (examples/team/machines), so this model can run live: staff are people, each with a name.",
+  "time_unit": "week",
+  "horizon": 26,
+  "dt": 0.25,
+  "stocks": [
+    {"id": "backlog", "name": "Backlog", "unit": "items", "initial": 0, "x": 150, "y": 180},
+    {"id": "done", "name": "Done work", "unit": "items", "initial": 0, "x": 700, "y": 180,
+     "target": {"value": 240, "by": 26}},
+    {"id": "training", "name": "In training", "unit": "people", "initial": 0, "x": 250, "y": 420},
+    {"id": "staff", "name": "Staff", "unit": "people", "initial": 0, "x": 520, "y": 420},
+    {"id": "left", "name": "Left", "unit": "people", "initial": 0, "x": 790, "y": 420}
+  ],
+  "flows": [
+    {
+      "id": "arrive", "name": "Work arrives", "from": null, "to": "backlog",
+      "cloud": {"x": -20, "y": 212},
+      "rate": {"form": "constant", "value": 10},
+      "machine": "environment", "program": "team/world", "args": ["arrive"]
+    },
+    {
+      "id": "work", "name": "Finish work", "from": "backlog", "to": "done",
+      "take": [{"as": "item", "from": "backlog", "order": "oldest"}],
+      "rate": {"form": "available"},
+      "machine": "team", "work": 1, "args": ["work"],
+      "effects": [{"stock": "training", "shape": "table", "points": [[0, 1], [4, 0.85], [10, 0.6]]}]
+    },
+    {
+      "id": "hire", "name": "Hire", "from": null, "to": "training",
+      "cloud": {"x": 60, "y": 452},
+      "rate": {"form": "linear", "c": 0, "terms": [
+        {"stock": "backlog", "k": 0.0625},
+        {"stock": "staff", "k": -0.25},
+        {"stock": "training", "k": -0.25}
+      ]},
+      "machine": "environment", "program": "team/world", "args": ["hire"]
+    },
+    {
+      "id": "onboard", "name": "Finish training", "from": "training", "to": "staff",
+      "take": [{"as": "item", "from": "training", "order": "oldest"}],
+      "rate": {"form": "proportional", "stock": "training", "k": 0.25},
+      "machine": "environment", "program": "team/world", "args": ["onboard"]
+    },
+    {
+      "id": "leave", "name": "Leave", "from": "staff", "to": "left",
+      "rate": {"form": "proportional", "stock": "staff", "k": 0.02},
+      "machine": "environment", "program": "team/world", "args": ["leave"]
+    }
+  ],
+  "machines": [
+    {
+      "id": "team", "name": "Team", "kind": "person", "color": "#7c3aed",
+      "capacity": 1, "capacity_stock": "staff",
+      "program": "team/team", "args": [],
+      "description": "The people in Staff. Each has one week of work per week, so the Team's capacity is 1 x Staff: it grows when recruits finish training and shrinks when people leave."
+    }
+  ]
+}

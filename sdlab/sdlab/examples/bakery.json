@@ -1,0 +1,136 @@
+{
+  "id": "bakery",
+  "name": "Bakery",
+  "description": "A small bakery: flour is ordered, mixed into dough and baked into loaves. Customers buy loaves from the shelf, and unsold loaves go stale. One Baker does all of the work.",
+  "time_unit": "hour",
+  "horizon": 336,
+  "dt": 0.25,
+  "stocks": [
+    {
+      "id": "flour",
+      "name": "Flour",
+      "unit": "kg",
+      "initial": 40,
+      "x": 150,
+      "y": 220
+    },
+    {
+      "id": "dough",
+      "name": "Dough",
+      "unit": "loaves",
+      "initial": 0,
+      "x": 460,
+      "y": 220
+    },
+    {
+      "id": "shelf",
+      "name": "On the shelf",
+      "unit": "loaves",
+      "initial": 20,
+      "x": 770,
+      "y": 220
+    },
+    {
+      "id": "sold",
+      "name": "Sold",
+      "unit": "loaves",
+      "initial": 0,
+      "x": 1080,
+      "y": 220,
+      "target": {
+        "value": 2500,
+        "by": 336
+      }
+    },
+    {
+      "id": "stale",
+      "name": "Stale",
+      "unit": "loaves",
+      "initial": 0,
+      "x": 770,
+      "y": 440
+    }
+  ],
+  "flows": [
+    {
+      "id": "order",
+      "name": "Order flour",
+      "from": null,
+      "to": "flour",
+      "cloud": {
+        "x": -40,
+        "y": 252
+      },
+      "rate": {
+        "form": "gap",
+        "stock": "flour",
+        "goal": 100,
+        "time": 6
+      },
+      "work": 0.005,
+      "machine": "baker"
+    },
+    {
+      "id": "mix",
+      "name": "Mix dough",
+      "from": "flour",
+      "to": "dough",
+      "ratio": 0.5,
+      "rate": {
+        "form": "gap",
+        "stock": "dough",
+        "goal": 24,
+        "time": 2
+      },
+      "work": 0.09,
+      "machine": "baker"
+    },
+    {
+      "id": "bake",
+      "name": "Bake",
+      "from": "dough",
+      "to": "shelf",
+      "rate": {
+        "form": "gap",
+        "stock": "shelf",
+        "goal": 40,
+        "time": 2
+      },
+      "work": 0.05,
+      "machine": "baker"
+    },
+    {
+      "id": "buy",
+      "name": "Customers buy",
+      "from": "shelf",
+      "to": "sold",
+      "rate": {
+        "form": "constant",
+        "value": 8
+      },
+      "machine": "environment"
+    },
+    {
+      "id": "spoil",
+      "name": "Go stale",
+      "from": "shelf",
+      "to": "stale",
+      "rate": {
+        "form": "proportional",
+        "stock": "shelf",
+        "k": 0.02
+      },
+      "machine": "environment"
+    }
+  ],
+  "machines": [
+    {
+      "id": "baker",
+      "name": "Baker",
+      "kind": "person",
+      "color": "#6d5bd0",
+      "capacity": 1,
+      "description": "Orders flour, mixes dough and bakes. Works one hour per hour."
+    }
+  ]
+}

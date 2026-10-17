@@ -1,0 +1,219 @@
+{
+  "id": "roastery",
+  "name": "Coffee roastery",
+  "description": "Green beans arrive, are roasted, cool on a tray, are packed into bags and shipped to customers, who order 6 bags an hour all week. The goal is 200 bags shipped by the end of a 40-hour week. Per bag, roasting looks like the slow step: 12 minutes on the roaster (work 0.2), against 6 minutes to pack (0.1) and 9 to ship (0.15). But one person at the packing bench does both packing and shipping, so every bag costs that bench 15 minutes: it can get out 4 bags an hour while the roaster could supply 5. Packing is throttled by a gap equation (keep about 10 bags ready on the shelf), so the bench spends whatever time is left on shipping, and cooled coffee piles up in front of it. TRY FIRST: open Leverage (“Where would more speed help?”). Ship ranks first and Pack second; Roast, the step everyone would guess, gains nothing, because more roasting only adds to the pile of cooled coffee waiting for the bench. THEN FIX IT: add a machine “Shipping desk” (capacity 1) and move Ship onto it. Shipped goes from about 152 to about 190, and Leverage now puts Roast first (+10%) while Ship drops to nothing: the bottleneck has moved to the roaster, the step you would have fixed first. AND AGAIN: give the Roaster capacity 2. Shipped reaches about 238 of the 240 ordered, the goal is met, and the only flow left that helps is Customers order: the limit is now demand, outside the roastery.",
+  "time_unit": "hour",
+  "horizon": 40,
+  "dt": 0.25,
+  "stocks": [
+    {
+      "id": "green",
+      "name": "Green beans",
+      "unit": "batches",
+      "initial": 0,
+      "x": 150,
+      "y": 200
+    },
+    {
+      "id": "roasted",
+      "name": "Hot roasted",
+      "unit": "batches",
+      "initial": 0,
+      "x": 380,
+      "y": 200
+    },
+    {
+      "id": "cooled",
+      "name": "Cooled coffee",
+      "unit": "batches",
+      "initial": 0,
+      "x": 610,
+      "y": 200
+    },
+    {
+      "id": "bags",
+      "name": "Bags on the shelf",
+      "unit": "bags",
+      "initial": 0,
+      "x": 840,
+      "y": 200
+    },
+    {
+      "id": "shipped",
+      "name": "Shipped",
+      "unit": "bags",
+      "initial": 0,
+      "x": 1070,
+      "y": 200,
+      "target": {
+        "value": 200,
+        "by": 40
+      }
+    },
+    {
+      "id": "orders",
+      "name": "Open orders",
+      "unit": "orders",
+      "initial": 0,
+      "x": 840,
+      "y": 400
+    }
+  ],
+  "flows": [
+    {
+      "id": "deliver",
+      "name": "Beans arrive",
+      "from": null,
+      "to": "green",
+      "cloud": {
+        "x": -20,
+        "y": 232
+      },
+      "rate": {
+        "form": "constant",
+        "value": 8
+      },
+      "machine": "environment",
+      "program": "roastery/roastery",
+      "args": [
+        "deliver"
+      ]
+    },
+    {
+      "id": "roast",
+      "name": "Roast",
+      "from": "green",
+      "to": "roasted",
+      "take": [
+        {
+          "as": "item",
+          "from": "green",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "available"
+      },
+      "machine": "roaster",
+      "work": 0.2,
+      "args": [
+        "roast"
+      ]
+    },
+    {
+      "id": "cool",
+      "name": "Cool",
+      "from": "roasted",
+      "to": "cooled",
+      "take": [
+        {
+          "as": "item",
+          "from": "roasted",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "proportional",
+        "stock": "roasted",
+        "k": 1
+      },
+      "machine": "environment",
+      "program": "roastery/roastery",
+      "args": [
+        "cool"
+      ]
+    },
+    {
+      "id": "package",
+      "name": "Pack",
+      "from": "cooled",
+      "to": "bags",
+      "take": [
+        {
+          "as": "item",
+          "from": "cooled",
+          "order": "oldest"
+        }
+      ],
+      "rate": {
+        "form": "gap",
+        "stock": "bags",
+        "goal": 10,
+        "time": 1
+      },
+      "machine": "packer",
+      "work": 0.1,
+      "args": [
+        "package"
+      ]
+    },
+    {
+      "id": "order",
+      "name": "Customers order",
+      "from": null,
+      "to": "orders",
+      "cloud": {
+        "x": 840,
+        "y": 560
+      },
+      "rate": {
+        "form": "constant",
+        "value": 6
+      },
+      "machine": "environment",
+      "program": "roastery/roastery",
+      "args": [
+        "order"
+      ]
+    },
+    {
+      "id": "ship",
+      "name": "Ship",
+      "from": "bags",
+      "to": "shipped",
+      "take": [
+        {
+          "as": "item",
+          "from": "bags",
+          "order": "oldest"
+        }
+      ],
+      "uses": [
+        {
+          "stock": "orders",
+          "per": 1
+        }
+      ],
+      "rate": {
+        "form": "available"
+      },
+      "machine": "packer",
+      "work": 0.15,
+      "args": [
+        "ship"
+      ]
+    }
+  ],
+  "machines": [
+    {
+      "id": "roaster",
+      "name": "Roaster",
+      "kind": "code",
+      "color": "#9a3412",
+      "capacity": 1,
+      "program": "roastery/roastery",
+      "args": [],
+      "description": "One drum roaster: 12 minutes a batch. It looks like the slow step."
+    },
+    {
+      "id": "packer",
+      "name": "Packing bench",
+      "kind": "code",
+      "color": "#0f766e",
+      "capacity": 1,
+      "program": "roastery/roastery",
+      "args": [],
+      "description": "One person who packs (6 minutes a bag) and ships (9 minutes a bag): 15 minutes of bench time for every bag that leaves."
+    }
+  ]
+}

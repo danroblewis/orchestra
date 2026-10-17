@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SD Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-mode="edit">
+<header class="top">
+  <div class="brand">SD Lab</div>
+  <select id="model-pick" aria-label="Model"></select>
+  <nav class="modes" role="tablist">
+    <button role="tab" data-mode="edit">Edit</button>
+    <button role="tab" data-mode="run">Run</button>
+  </nav>
+  <div class="status" id="status"></div>
+</header>
+
+<div class="main">
+  <aside class="machines-panel" id="machines-panel"></aside>
+  <section class="canvas-wrap">
+    <div class="toolbar" id="toolbar"></div>
+    <div class="hint" id="hint" hidden></div>
+    <div class="viewtools">
+      <input id="find" placeholder="&#128270; Find stocks" title="Find stocks by name, id or group; Enter selects them" aria-label="Find stocks">
+      <button id="arrange" class="btn icon" title="Arrange: lay out the stocks from their flows (the selection, or everything)" aria-label="Arrange">&#129513;</button>
+      <button id="unarrange" class="btn icon" title="Undo arrange" aria-label="Undo arrange" hidden>&#8617;&#65039;</button>
+      <button id="showhidden" class="btn" hidden></button>
+      <span class="zoom"><button id="zoomout" class="btn" title="Zoom out (-)" aria-label="Zoom out">&minus;</button><button id="fitview" class="btn" title="Fit everything (0)" aria-label="Fit everything">&#9974;</button><button id="zoomin" class="btn" title="Zoom in (+)" aria-label="Zoom in">+</button></span>
+    </div>
+    <div class="navhint">Scroll or drag with space held (or the middle button) to move; pinch, ctrl-scroll or +/− to zoom</div>
+    <svg id="canvas" tabindex="0" aria-label="Stock and flow diagram"></svg>
+  </section>
+  <aside class="inspector" id="inspector"></aside>
+</div>
+
+<div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom panel" title="Drag to resize; double-click to reset"></div>
+<section class="run-panel" id="run-panel"></section>
+
+<script src="/static/sim.js"></script>
+<script src="/static/discover.js"></script>
+<script src="/static/simplify.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

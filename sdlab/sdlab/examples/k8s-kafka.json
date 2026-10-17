@@ -1,0 +1,4231 @@
+{
+ "id": "k8s-kafka",
+ "name": "Kafka consumer lag (Prometheus)",
+ "description": "Every consumer group's lag as a stock, read from Prometheus with PromQL. Produced messages flow in and each group's consumption flows out, both measured. Some groups don't export a consumed counter; select their lag stocks and use Discover flows to find their consumption. Import history loads 29 days.",
+ "time_unit": "5-minute step",
+ "step_seconds": 300,
+ "horizon": 288,
+ "dt": 0.25,
+ "stocks": [
+  {
+   "id": "lag_ads_audit_failed_query_resolver",
+   "name": "ads.audit-failed \u2192 query-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.audit-failed/query-resolver",
+   "x": 120,
+   "y": 120,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.audit-failed\",consumergroup=\"query-resolver\"})"
+  },
+  {
+   "id": "lag_ads_order_completed_reviews_label_manager",
+   "name": "ads.order-completed \u2192 reviews-label-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.order-completed/reviews-label-manager",
+   "x": 120,
+   "y": 240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.order-completed\",consumergroup=\"reviews-label-manager\"})"
+  },
+  {
+   "id": "lag_ads_order_completed_route_store",
+   "name": "ads.order-completed \u2192 route-store",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.order-completed/route-store",
+   "x": 350,
+   "y": 240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.order-completed\",consumergroup=\"route-store\"})"
+  },
+  {
+   "id": "lag_ads_video_requested_media_config_service_6",
+   "name": "ads.video-requested \u2192 media-config-service-6",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.video-requested/media-config-service-6",
+   "x": 120,
+   "y": 360,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.video-requested\",consumergroup=\"media-config-service-6\"})"
+  },
+  {
+   "id": "lag_ads_wallet_created_address_resolver",
+   "name": "ads.wallet-created \u2192 address-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.wallet-created/address-resolver",
+   "x": 120,
+   "y": 480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.wallet-created\",consumergroup=\"address-resolver\"})"
+  },
+  {
+   "id": "lag_ads_wallet_created_device_resolver",
+   "name": "ads.wallet-created \u2192 device-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.wallet-created/device-resolver",
+   "x": 350,
+   "y": 480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.wallet-created\",consumergroup=\"device-resolver\"})"
+  },
+  {
+   "id": "lag_ads_wallet_created_token_resolver",
+   "name": "ads.wallet-created \u2192 token-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "ads.wallet-created/token-resolver",
+   "x": 580,
+   "y": 480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"ads.wallet-created\",consumergroup=\"token-resolver\"})"
+  },
+  {
+   "id": "lag_analytics_feature_created_profile_service",
+   "name": "analytics.feature-created \u2192 profile-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.feature-created/profile-service",
+   "x": 120,
+   "y": 600,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.feature-created\",consumergroup=\"profile-service\"})"
+  },
+  {
+   "id": "lag_analytics_feature_updated_ads_frontend",
+   "name": "analytics.feature-updated \u2192 ads-frontend",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.feature-updated/ads-frontend",
+   "x": 120,
+   "y": 720,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.feature-updated\",consumergroup=\"ads-frontend\"})"
+  },
+  {
+   "id": "lag_analytics_order_updated_address_manager",
+   "name": "analytics.order-updated \u2192 address-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.order-updated/address-manager",
+   "x": 120,
+   "y": 840,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.order-updated\",consumergroup=\"address-manager\"})"
+  },
+  {
+   "id": "lag_analytics_thumbnail_updated_pricing_public_api",
+   "name": "analytics.thumbnail-updated \u2192 pricing-public-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.thumbnail-updated/pricing-public-api",
+   "x": 120,
+   "y": 960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.thumbnail-updated\",consumergroup=\"pricing-public-api\"})"
+  },
+  {
+   "id": "lag_analytics_thumbnail_updated_video_worker",
+   "name": "analytics.thumbnail-updated \u2192 video-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.thumbnail-updated/video-worker",
+   "x": 350,
+   "y": 960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.thumbnail-updated\",consumergroup=\"video-worker\"})"
+  },
+  {
+   "id": "lag_analytics_token_failed_event_service",
+   "name": "analytics.token-failed \u2192 event-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.token-failed/event-service",
+   "x": 120,
+   "y": 1080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.token-failed\",consumergroup=\"event-service\"})"
+  },
+  {
+   "id": "lag_analytics_token_failed_recommendations_route_api",
+   "name": "analytics.token-failed \u2192 recommendations-route-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.token-failed/recommendations-route-api",
+   "x": 350,
+   "y": 1080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.token-failed\",consumergroup=\"recommendations-route-api\"})"
+  },
+  {
+   "id": "lag_analytics_token_failed_support_address_writer",
+   "name": "analytics.token-failed \u2192 support-address-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.token-failed/support-address-writer",
+   "x": 580,
+   "y": 1080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.token-failed\",consumergroup=\"support-address-writer\"})"
+  },
+  {
+   "id": "lag_analytics_video_changed_tax_reader",
+   "name": "analytics.video-changed \u2192 tax-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.video-changed/tax-reader",
+   "x": 120,
+   "y": 1200,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.video-changed\",consumergroup=\"tax-reader\"})"
+  },
+  {
+   "id": "lag_analytics_video_changed_video_manager",
+   "name": "analytics.video-changed \u2192 video-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.video-changed/video-manager",
+   "x": 350,
+   "y": 1200,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.video-changed\",consumergroup=\"video-manager\"})"
+  },
+  {
+   "id": "lag_analytics_wallet_indexed_feature_manager",
+   "name": "analytics.wallet-indexed \u2192 feature-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.wallet-indexed/feature-manager",
+   "x": 120,
+   "y": 1320,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.wallet-indexed\",consumergroup=\"feature-manager\"})"
+  },
+  {
+   "id": "lag_analytics_wallet_indexed_query_worker",
+   "name": "analytics.wallet-indexed \u2192 query-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "analytics.wallet-indexed/query-worker",
+   "x": 350,
+   "y": 1320,
+   "query": "sum(kafka_consumergroup_lag{topic=\"analytics.wallet-indexed\",consumergroup=\"query-worker\"})"
+  },
+  {
+   "id": "lag_catalog_event_created_route_api",
+   "name": "catalog.event-created \u2192 route-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "catalog.event-created/route-api",
+   "x": 120,
+   "y": 1440,
+   "query": "sum(kafka_consumergroup_lag{topic=\"catalog.event-created\",consumergroup=\"route-api\"})"
+  },
+  {
+   "id": "lag_catalog_event_indexed_config_resolver",
+   "name": "catalog.event-indexed \u2192 config-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "catalog.event-indexed/config-resolver",
+   "x": 120,
+   "y": 1560,
+   "query": "sum(kafka_consumergroup_lag{topic=\"catalog.event-indexed\",consumergroup=\"config-resolver\"})"
+  },
+  {
+   "id": "lag_catalog_event_indexed_report_api",
+   "name": "catalog.event-indexed \u2192 report-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "catalog.event-indexed/report-api",
+   "x": 350,
+   "y": 1560,
+   "query": "sum(kafka_consumergroup_lag{topic=\"catalog.event-indexed\",consumergroup=\"report-api\"})"
+  },
+  {
+   "id": "lag_catalog_event_indexed_support_web",
+   "name": "catalog.event-indexed \u2192 support-web",
+   "unit": "messages",
+   "initial": 0,
+   "group": "catalog.event-indexed/support-web",
+   "x": 580,
+   "y": 1560,
+   "query": "sum(kafka_consumergroup_lag{topic=\"catalog.event-indexed\",consumergroup=\"support-web\"})"
+  },
+  {
+   "id": "lag_catalog_session_completed_support_frontend",
+   "name": "catalog.session-completed \u2192 support-frontend",
+   "unit": "messages",
+   "initial": 0,
+   "group": "catalog.session-completed/support-frontend",
+   "x": 120,
+   "y": 1680,
+   "query": "sum(kafka_consumergroup_lag{topic=\"catalog.session-completed\",consumergroup=\"support-frontend\"})"
+  },
+  {
+   "id": "lag_checkout_coupon_requested_cart_api",
+   "name": "checkout.coupon-requested \u2192 cart-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.coupon-requested/cart-api",
+   "x": 120,
+   "y": 1800,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.coupon-requested\",consumergroup=\"cart-api\"})"
+  },
+  {
+   "id": "lag_checkout_coupon_requested_v4_support_session_writer",
+   "name": "checkout.coupon-requested-v4 \u2192 support-session-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.coupon-requested-v4/support-session-writer",
+   "x": 120,
+   "y": 1920,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.coupon-requested-v4\",consumergroup=\"support-session-writer\"})"
+  },
+  {
+   "id": "lag_checkout_coupon_requested_v4_thumbnail_writer",
+   "name": "checkout.coupon-requested-v4 \u2192 thumbnail-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.coupon-requested-v4/thumbnail-writer",
+   "x": 350,
+   "y": 1920,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.coupon-requested-v4\",consumergroup=\"thumbnail-writer\"})"
+  },
+  {
+   "id": "lag_checkout_query_created_ads_push_store",
+   "name": "checkout.query-created \u2192 ads-push-store",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.query-created/ads-push-store",
+   "x": 120,
+   "y": 2040,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.query-created\",consumergroup=\"ads-push-store\"})"
+  },
+  {
+   "id": "lag_checkout_query_created_rank_service",
+   "name": "checkout.query-created \u2192 rank-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.query-created/rank-service",
+   "x": 350,
+   "y": 2040,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.query-created\",consumergroup=\"rank-service\"})"
+  },
+  {
+   "id": "lag_checkout_query_created_risk_reader",
+   "name": "checkout.query-created \u2192 risk-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.query-created/risk-reader",
+   "x": 580,
+   "y": 2040,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.query-created\",consumergroup=\"risk-reader\"})"
+  },
+  {
+   "id": "lag_checkout_review_requested_billing_bff",
+   "name": "checkout.review-requested \u2192 billing-bff",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.review-requested/billing-bff",
+   "x": 120,
+   "y": 2160,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.review-requested\",consumergroup=\"billing-bff\"})"
+  },
+  {
+   "id": "lag_checkout_review_requested_sync_manager",
+   "name": "checkout.review-requested \u2192 sync-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.review-requested/sync-manager",
+   "x": 350,
+   "y": 2160,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.review-requested\",consumergroup=\"sync-manager\"})"
+  },
+  {
+   "id": "lag_checkout_review_requested_user_resolver",
+   "name": "checkout.review-requested \u2192 user-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.review-requested/user-resolver",
+   "x": 580,
+   "y": 2160,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.review-requested\",consumergroup=\"user-resolver\"})"
+  },
+  {
+   "id": "lag_checkout_thumbnail_updated_risk_resolver",
+   "name": "checkout.thumbnail-updated \u2192 risk-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "checkout.thumbnail-updated/risk-resolver",
+   "x": 120,
+   "y": 2280,
+   "query": "sum(kafka_consumergroup_lag{topic=\"checkout.thumbnail-updated\",consumergroup=\"risk-resolver\"})"
+  },
+  {
+   "id": "lag_fraud_cart_updated_notifications_quote_manager",
+   "name": "fraud.cart-updated \u2192 notifications-quote-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "fraud.cart-updated/notifications-quote-manager",
+   "x": 120,
+   "y": 2400,
+   "query": "sum(kafka_consumergroup_lag{topic=\"fraud.cart-updated\",consumergroup=\"notifications-quote-manager\"})"
+  },
+  {
+   "id": "lag_fraud_cart_updated_token_worker",
+   "name": "fraud.cart-updated \u2192 token-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "fraud.cart-updated/token-worker",
+   "x": 350,
+   "y": 2400,
+   "query": "sum(kafka_consumergroup_lag{topic=\"fraud.cart-updated\",consumergroup=\"token-worker\"})"
+  },
+  {
+   "id": "lag_fraud_inbox_requested_export_manager",
+   "name": "fraud.inbox-requested \u2192 export-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "fraud.inbox-requested/export-manager",
+   "x": 120,
+   "y": 2520,
+   "query": "sum(kafka_consumergroup_lag{topic=\"fraud.inbox-requested\",consumergroup=\"export-manager\"})"
+  },
+  {
+   "id": "lag_fraud_inbox_requested_media_reader",
+   "name": "fraud.inbox-requested \u2192 media-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "fraud.inbox-requested/media-reader",
+   "x": 350,
+   "y": 2520,
+   "query": "sum(kafka_consumergroup_lag{topic=\"fraud.inbox-requested\",consumergroup=\"media-reader\"})"
+  },
+  {
+   "id": "lag_fraud_refund_failed_flag_resolver",
+   "name": "fraud.refund-failed \u2192 flag-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "fraud.refund-failed/flag-resolver",
+   "x": 120,
+   "y": 2640,
+   "query": "sum(kafka_consumergroup_lag{topic=\"fraud.refund-failed\",consumergroup=\"flag-resolver\"})"
+  },
+  {
+   "id": "lag_fraud_refund_failed_media_profile_writer",
+   "name": "fraud.refund-failed \u2192 media-profile-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "fraud.refund-failed/media-profile-writer",
+   "x": 350,
+   "y": 2640,
+   "query": "sum(kafka_consumergroup_lag{topic=\"fraud.refund-failed\",consumergroup=\"media-profile-writer\"})"
+  },
+  {
+   "id": "lag_geo_cart_indexed_tax_service",
+   "name": "geo.cart-indexed \u2192 tax-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.cart-indexed/tax-service",
+   "x": 120,
+   "y": 2760,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.cart-indexed\",consumergroup=\"tax-service\"})"
+  },
+  {
+   "id": "lag_geo_consent_indexed_fraud_email_store",
+   "name": "geo.consent-indexed \u2192 fraud-email-store",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.consent-indexed/fraud-email-store",
+   "x": 120,
+   "y": 2880,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.consent-indexed\",consumergroup=\"fraud-email-store\"})"
+  },
+  {
+   "id": "lag_geo_consent_indexed_recommendations_mobile_api",
+   "name": "geo.consent-indexed \u2192 recommendations-mobile-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.consent-indexed/recommendations-mobile-api",
+   "x": 350,
+   "y": 2880,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.consent-indexed\",consumergroup=\"recommendations-mobile-api\"})"
+  },
+  {
+   "id": "lag_geo_flag_completed_risk_resolver",
+   "name": "geo.flag-completed \u2192 risk-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.flag-completed/risk-resolver",
+   "x": 120,
+   "y": 3000,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.flag-completed\",consumergroup=\"risk-resolver\"})"
+  },
+  {
+   "id": "lag_geo_flag_completed_tax_reader",
+   "name": "geo.flag-completed \u2192 tax-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.flag-completed/tax-reader",
+   "x": 350,
+   "y": 3000,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.flag-completed\",consumergroup=\"tax-reader\"})"
+  },
+  {
+   "id": "lag_geo_image_requested_device_worker",
+   "name": "geo.image-requested \u2192 device-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.image-requested/device-worker",
+   "x": 120,
+   "y": 3120,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.image-requested\",consumergroup=\"device-worker\"})"
+  },
+  {
+   "id": "lag_geo_query_created_ads_price_store",
+   "name": "geo.query-created \u2192 ads-price-store",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.query-created/ads-price-store",
+   "x": 120,
+   "y": 3240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.query-created\",consumergroup=\"ads-price-store\"})"
+  },
+  {
+   "id": "lag_geo_query_created_push_resolver",
+   "name": "geo.query-created \u2192 push-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "geo.query-created/push-resolver",
+   "x": 350,
+   "y": 3240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"geo.query-created\",consumergroup=\"push-resolver\"})"
+  },
+  {
+   "id": "lag_identity_account_created_inbox_api",
+   "name": "identity.account-created \u2192 inbox-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.account-created/inbox-api",
+   "x": 120,
+   "y": 3360,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.account-created\",consumergroup=\"inbox-api\"})"
+  },
+  {
+   "id": "lag_identity_image_indexed_consent_store",
+   "name": "identity.image-indexed \u2192 consent-store",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.image-indexed/consent-store",
+   "x": 120,
+   "y": 3480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.image-indexed\",consumergroup=\"consent-store\"})"
+  },
+  {
+   "id": "lag_identity_image_indexed_coupon_api",
+   "name": "identity.image-indexed \u2192 coupon-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.image-indexed/coupon-api",
+   "x": 350,
+   "y": 3480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.image-indexed\",consumergroup=\"coupon-api\"})"
+  },
+  {
+   "id": "lag_identity_notify_updated_stock_store",
+   "name": "identity.notify-updated \u2192 stock-store",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.notify-updated/stock-store",
+   "x": 120,
+   "y": 3600,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.notify-updated\",consumergroup=\"stock-store\"})"
+  },
+  {
+   "id": "lag_identity_order_indexed_export_reader",
+   "name": "identity.order-indexed \u2192 export-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.order-indexed/export-reader",
+   "x": 120,
+   "y": 3720,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.order-indexed\",consumergroup=\"export-reader\"})"
+  },
+  {
+   "id": "lag_identity_order_indexed_session_manager",
+   "name": "identity.order-indexed \u2192 session-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.order-indexed/session-manager",
+   "x": 350,
+   "y": 3720,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.order-indexed\",consumergroup=\"session-manager\"})"
+  },
+  {
+   "id": "lag_identity_sync_updated_token_api",
+   "name": "identity.sync-updated \u2192 token-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "identity.sync-updated/token-api",
+   "x": 120,
+   "y": 3840,
+   "query": "sum(kafka_consumergroup_lag{topic=\"identity.sync-updated\",consumergroup=\"token-api\"})"
+  },
+  {
+   "id": "lag_inventory_sync_created_media_chat_writer",
+   "name": "inventory.sync-created \u2192 media-chat-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "inventory.sync-created/media-chat-writer",
+   "x": 120,
+   "y": 3960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"inventory.sync-created\",consumergroup=\"media-chat-writer\"})"
+  },
+  {
+   "id": "lag_inventory_sync_created_search_frontend",
+   "name": "inventory.sync-created \u2192 search-frontend",
+   "unit": "messages",
+   "initial": 0,
+   "group": "inventory.sync-created/search-frontend",
+   "x": 350,
+   "y": 3960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"inventory.sync-created\",consumergroup=\"search-frontend\"})"
+  },
+  {
+   "id": "lag_inventory_user_created_flag_worker",
+   "name": "inventory.user-created \u2192 flag-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "inventory.user-created/flag-worker",
+   "x": 120,
+   "y": 4080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"inventory.user-created\",consumergroup=\"flag-worker\"})"
+  },
+  {
+   "id": "lag_inventory_user_created_upload_worker",
+   "name": "inventory.user-created \u2192 upload-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "inventory.user-created/upload-worker",
+   "x": 350,
+   "y": 4080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"inventory.user-created\",consumergroup=\"upload-worker\"})"
+  },
+  {
+   "id": "lag_media_invoice_requested_media_worker",
+   "name": "media.invoice-requested \u2192 media-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "media.invoice-requested/media-worker",
+   "x": 120,
+   "y": 4200,
+   "query": "sum(kafka_consumergroup_lag{topic=\"media.invoice-requested\",consumergroup=\"media-worker\"})"
+  },
+  {
+   "id": "lag_media_invoice_requested_report_manager",
+   "name": "media.invoice-requested \u2192 report-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "media.invoice-requested/report-manager",
+   "x": 350,
+   "y": 4200,
+   "query": "sum(kafka_consumergroup_lag{topic=\"media.invoice-requested\",consumergroup=\"report-manager\"})"
+  },
+  {
+   "id": "lag_media_push_indexed_session_manager",
+   "name": "media.push-indexed \u2192 session-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "media.push-indexed/session-manager",
+   "x": 120,
+   "y": 4320,
+   "query": "sum(kafka_consumergroup_lag{topic=\"media.push-indexed\",consumergroup=\"session-manager\"})"
+  },
+  {
+   "id": "lag_media_token_failed_pricing_refund_resolver",
+   "name": "media.token-failed \u2192 pricing-refund-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "media.token-failed/pricing-refund-resolver",
+   "x": 120,
+   "y": 4440,
+   "query": "sum(kafka_consumergroup_lag{topic=\"media.token-failed\",consumergroup=\"pricing-refund-resolver\"})"
+  },
+  {
+   "id": "lag_media_token_failed_thumbnail_resolver",
+   "name": "media.token-failed \u2192 thumbnail-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "media.token-failed/thumbnail-resolver",
+   "x": 350,
+   "y": 4440,
+   "query": "sum(kafka_consumergroup_lag{topic=\"media.token-failed\",consumergroup=\"thumbnail-resolver\"})"
+  },
+  {
+   "id": "lag_media_user_failed_pricing_frontend",
+   "name": "media.user-failed \u2192 pricing-frontend",
+   "unit": "messages",
+   "initial": 0,
+   "group": "media.user-failed/pricing-frontend",
+   "x": 120,
+   "y": 4560,
+   "query": "sum(kafka_consumergroup_lag{topic=\"media.user-failed\",consumergroup=\"pricing-frontend\"})"
+  },
+  {
+   "id": "lag_messaging_email_updated_messaging_mobile_api",
+   "name": "messaging.email-updated \u2192 messaging-mobile-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "messaging.email-updated/messaging-mobile-api",
+   "x": 120,
+   "y": 4680,
+   "query": "sum(kafka_consumergroup_lag{topic=\"messaging.email-updated\",consumergroup=\"messaging-mobile-api\"})"
+  },
+  {
+   "id": "lag_messaging_export_indexed_coupon_writer",
+   "name": "messaging.export-indexed \u2192 coupon-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "messaging.export-indexed/coupon-writer",
+   "x": 120,
+   "y": 4800,
+   "query": "sum(kafka_consumergroup_lag{topic=\"messaging.export-indexed\",consumergroup=\"coupon-writer\"})"
+  },
+  {
+   "id": "lag_messaging_session_failed_geo_account_writer",
+   "name": "messaging.session-failed \u2192 geo-account-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "messaging.session-failed/geo-account-writer",
+   "x": 120,
+   "y": 4920,
+   "query": "sum(kafka_consumergroup_lag{topic=\"messaging.session-failed\",consumergroup=\"geo-account-writer\"})"
+  },
+  {
+   "id": "lag_notifications_cache_requested_cart_writer",
+   "name": "notifications.cache-requested \u2192 cart-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "notifications.cache-requested/cart-writer",
+   "x": 120,
+   "y": 5040,
+   "query": "sum(kafka_consumergroup_lag{topic=\"notifications.cache-requested\",consumergroup=\"cart-writer\"})"
+  },
+  {
+   "id": "lag_notifications_cache_requested_messaging_tax_reader",
+   "name": "notifications.cache-requested \u2192 messaging-tax-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "notifications.cache-requested/messaging-tax-reader",
+   "x": 350,
+   "y": 5040,
+   "query": "sum(kafka_consumergroup_lag{topic=\"notifications.cache-requested\",consumergroup=\"messaging-tax-reader\"})"
+  },
+  {
+   "id": "lag_notifications_quote_indexed_notify_resolver",
+   "name": "notifications.quote-indexed \u2192 notify-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "notifications.quote-indexed/notify-resolver",
+   "x": 120,
+   "y": 5160,
+   "query": "sum(kafka_consumergroup_lag{topic=\"notifications.quote-indexed\",consumergroup=\"notify-resolver\"})"
+  },
+  {
+   "id": "lag_notifications_rate_changed_label_manager",
+   "name": "notifications.rate-changed \u2192 label-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "notifications.rate-changed/label-manager",
+   "x": 120,
+   "y": 5280,
+   "query": "sum(kafka_consumergroup_lag{topic=\"notifications.rate-changed\",consumergroup=\"label-manager\"})"
+  },
+  {
+   "id": "lag_notifications_rate_changed_pricing_risk_resolver",
+   "name": "notifications.rate-changed \u2192 pricing-risk-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "notifications.rate-changed/pricing-risk-resolver",
+   "x": 350,
+   "y": 5280,
+   "query": "sum(kafka_consumergroup_lag{topic=\"notifications.rate-changed\",consumergroup=\"pricing-risk-resolver\"})"
+  },
+  {
+   "id": "lag_payments_query_requested_balance_reader",
+   "name": "payments.query-requested \u2192 balance-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.query-requested/balance-reader",
+   "x": 120,
+   "y": 5400,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.query-requested\",consumergroup=\"balance-reader\"})"
+  },
+  {
+   "id": "lag_payments_rank_completed_event_service",
+   "name": "payments.rank-completed \u2192 event-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.rank-completed/event-service",
+   "x": 120,
+   "y": 5520,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.rank-completed\",consumergroup=\"event-service\"})"
+  },
+  {
+   "id": "lag_payments_rank_updated_config_service",
+   "name": "payments.rank-updated \u2192 config-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.rank-updated/config-service",
+   "x": 120,
+   "y": 5640,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.rank-updated\",consumergroup=\"config-service\"})"
+  },
+  {
+   "id": "lag_payments_rank_updated_config_worker",
+   "name": "payments.rank-updated \u2192 config-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.rank-updated/config-worker",
+   "x": 350,
+   "y": 5640,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.rank-updated\",consumergroup=\"config-worker\"})"
+  },
+  {
+   "id": "lag_payments_rank_updated_token_manager",
+   "name": "payments.rank-updated \u2192 token-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.rank-updated/token-manager",
+   "x": 580,
+   "y": 5640,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.rank-updated\",consumergroup=\"token-manager\"})"
+  },
+  {
+   "id": "lag_payments_refund_created_device_api",
+   "name": "payments.refund-created \u2192 device-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.refund-created/device-api",
+   "x": 120,
+   "y": 5760,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.refund-created\",consumergroup=\"device-api\"})"
+  },
+  {
+   "id": "lag_payments_upload_changed_payment_writer",
+   "name": "payments.upload-changed \u2192 payment-writer",
+   "unit": "messages",
+   "initial": 0,
+   "group": "payments.upload-changed/payment-writer",
+   "x": 120,
+   "y": 5880,
+   "query": "sum(kafka_consumergroup_lag{topic=\"payments.upload-changed\",consumergroup=\"payment-writer\"})"
+  },
+  {
+   "id": "lag_pricing_balance_requested_messaging_export_manager",
+   "name": "pricing.balance-requested \u2192 messaging-export-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "pricing.balance-requested/messaging-export-manager",
+   "x": 120,
+   "y": 6000,
+   "query": "sum(kafka_consumergroup_lag{topic=\"pricing.balance-requested\",consumergroup=\"messaging-export-manager\"})"
+  },
+  {
+   "id": "lag_recommendations_content_failed_review_api",
+   "name": "recommendations.content-failed \u2192 review-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "recommendations.content-failed/review-api",
+   "x": 120,
+   "y": 6120,
+   "query": "sum(kafka_consumergroup_lag{topic=\"recommendations.content-failed\",consumergroup=\"review-api\"})"
+  },
+  {
+   "id": "lag_reviews_event_requested_analytics_label_manager",
+   "name": "reviews.event-requested \u2192 analytics-label-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "reviews.event-requested/analytics-label-manager",
+   "x": 120,
+   "y": 6240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"reviews.event-requested\",consumergroup=\"analytics-label-manager\"})"
+  },
+  {
+   "id": "lag_reviews_event_requested_messaging_route_resolver_6",
+   "name": "reviews.event-requested \u2192 messaging-route-resolver-6",
+   "unit": "messages",
+   "initial": 0,
+   "group": "reviews.event-requested/messaging-route-resolver-6",
+   "x": 350,
+   "y": 6240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"reviews.event-requested\",consumergroup=\"messaging-route-resolver-6\"})"
+  },
+  {
+   "id": "lag_reviews_event_requested_profile_manager",
+   "name": "reviews.event-requested \u2192 profile-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "reviews.event-requested/profile-manager",
+   "x": 580,
+   "y": 6240,
+   "query": "sum(kafka_consumergroup_lag{topic=\"reviews.event-requested\",consumergroup=\"profile-manager\"})"
+  },
+  {
+   "id": "lag_search_profile_failed_risk_worker",
+   "name": "search.profile-failed \u2192 risk-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "search.profile-failed/risk-worker",
+   "x": 120,
+   "y": 6360,
+   "query": "sum(kafka_consumergroup_lag{topic=\"search.profile-failed\",consumergroup=\"risk-worker\"})"
+  },
+  {
+   "id": "lag_search_user_changed_order_service",
+   "name": "search.user-changed \u2192 order-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "search.user-changed/order-service",
+   "x": 120,
+   "y": 6480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"search.user-changed\",consumergroup=\"order-service\"})"
+  },
+  {
+   "id": "lag_search_user_changed_pricing_refund_resolver",
+   "name": "search.user-changed \u2192 pricing-refund-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "search.user-changed/pricing-refund-resolver",
+   "x": 350,
+   "y": 6480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"search.user-changed\",consumergroup=\"pricing-refund-resolver\"})"
+  },
+  {
+   "id": "lag_search_user_changed_refund_service",
+   "name": "search.user-changed \u2192 refund-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "search.user-changed/refund-service",
+   "x": 580,
+   "y": 6480,
+   "query": "sum(kafka_consumergroup_lag{topic=\"search.user-changed\",consumergroup=\"refund-service\"})"
+  },
+  {
+   "id": "lag_shipping_feature_requested_support_balance_resolver",
+   "name": "shipping.feature-requested \u2192 support-balance-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.feature-requested/support-balance-resolver",
+   "x": 120,
+   "y": 6600,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.feature-requested\",consumergroup=\"support-balance-resolver\"})"
+  },
+  {
+   "id": "lag_shipping_push_requested_rank_worker",
+   "name": "shipping.push-requested \u2192 rank-worker",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.push-requested/rank-worker",
+   "x": 120,
+   "y": 6720,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.push-requested\",consumergroup=\"rank-worker\"})"
+  },
+  {
+   "id": "lag_shipping_stock_indexed_coupon_manager",
+   "name": "shipping.stock-indexed \u2192 coupon-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.stock-indexed/coupon-manager",
+   "x": 120,
+   "y": 6840,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.stock-indexed\",consumergroup=\"coupon-manager\"})"
+  },
+  {
+   "id": "lag_shipping_stock_indexed_identity_token_api",
+   "name": "shipping.stock-indexed \u2192 identity-token-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.stock-indexed/identity-token-api",
+   "x": 350,
+   "y": 6840,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.stock-indexed\",consumergroup=\"identity-token-api\"})"
+  },
+  {
+   "id": "lag_shipping_stock_indexed_pricing_refund_resolver",
+   "name": "shipping.stock-indexed \u2192 pricing-refund-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.stock-indexed/pricing-refund-resolver",
+   "x": 580,
+   "y": 6840,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.stock-indexed\",consumergroup=\"pricing-refund-resolver\"})"
+  },
+  {
+   "id": "lag_shipping_wallet_changed_ads_config_manager",
+   "name": "shipping.wallet-changed \u2192 ads-config-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.wallet-changed/ads-config-manager",
+   "x": 120,
+   "y": 6960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.wallet-changed\",consumergroup=\"ads-config-manager\"})"
+  },
+  {
+   "id": "lag_shipping_wallet_changed_rate_manager",
+   "name": "shipping.wallet-changed \u2192 rate-manager",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.wallet-changed/rate-manager",
+   "x": 350,
+   "y": 6960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.wallet-changed\",consumergroup=\"rate-manager\"})"
+  },
+  {
+   "id": "lag_shipping_wallet_changed_tax_service",
+   "name": "shipping.wallet-changed \u2192 tax-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "shipping.wallet-changed/tax-service",
+   "x": 580,
+   "y": 6960,
+   "query": "sum(kafka_consumergroup_lag{topic=\"shipping.wallet-changed\",consumergroup=\"tax-service\"})"
+  },
+  {
+   "id": "lag_support_label_changed_geo_cart_api",
+   "name": "support.label-changed \u2192 geo-cart-api",
+   "unit": "messages",
+   "initial": 0,
+   "group": "support.label-changed/geo-cart-api",
+   "x": 120,
+   "y": 7080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"support.label-changed\",consumergroup=\"geo-cart-api\"})"
+  },
+  {
+   "id": "lag_support_label_changed_shipment_reader",
+   "name": "support.label-changed \u2192 shipment-reader",
+   "unit": "messages",
+   "initial": 0,
+   "group": "support.label-changed/shipment-reader",
+   "x": 350,
+   "y": 7080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"support.label-changed\",consumergroup=\"shipment-reader\"})"
+  },
+  {
+   "id": "lag_support_label_changed_sms_service",
+   "name": "support.label-changed \u2192 sms-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "support.label-changed/sms-service",
+   "x": 580,
+   "y": 7080,
+   "query": "sum(kafka_consumergroup_lag{topic=\"support.label-changed\",consumergroup=\"sms-service\"})"
+  },
+  {
+   "id": "lag_support_media_updated_geo_cart_resolver",
+   "name": "support.media-updated \u2192 geo-cart-resolver",
+   "unit": "messages",
+   "initial": 0,
+   "group": "support.media-updated/geo-cart-resolver",
+   "x": 120,
+   "y": 7200,
+   "query": "sum(kafka_consumergroup_lag{topic=\"support.media-updated\",consumergroup=\"geo-cart-resolver\"})"
+  },
+  {
+   "id": "lag_support_media_updated_label_service",
+   "name": "support.media-updated \u2192 label-service",
+   "unit": "messages",
+   "initial": 0,
+   "group": "support.media-updated/label-service",
+   "x": 350,
+   "y": 7200,
+   "query": "sum(kafka_consumergroup_lag{topic=\"support.media-updated\",consumergroup=\"label-service\"})"
+  }
+ ],
+ "flows": [
+  {
+   "id": "produced_ads_audit_failed_query_resolver",
+   "name": "ads.audit-failed produced",
+   "from": null,
+   "to": "lag_ads_audit_failed_query_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 90
+   },
+   "rate": {
+    "form": "constant",
+    "value": 792.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.audit-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_audit_failed_query_resolver",
+   "name": "query-resolver consumes",
+   "from": "lag_ads_audit_failed_query_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 190
+   },
+   "rate": {
+    "form": "constant",
+    "value": 792.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.audit-failed\",consumergroup=\"query-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_ads_order_completed_reviews_label_manager",
+   "name": "ads.order-completed produced",
+   "from": null,
+   "to": "lag_ads_order_completed_reviews_label_manager",
+   "cloud": {
+    "x": 60,
+    "y": 210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1661.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.order-completed\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_order_completed_reviews_label_manager",
+   "name": "reviews-label-manager consumes",
+   "from": "lag_ads_order_completed_reviews_label_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 310
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1657.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.order-completed\",consumergroup=\"reviews-label-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_ads_order_completed_route_store",
+   "name": "ads.order-completed produced",
+   "from": null,
+   "to": "lag_ads_order_completed_route_store",
+   "cloud": {
+    "x": 290,
+    "y": 210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1661.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.order-completed\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_order_completed_route_store",
+   "name": "route-store consumes",
+   "from": "lag_ads_order_completed_route_store",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 310
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1661.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.order-completed\",consumergroup=\"route-store\"}[5m]))"
+  },
+  {
+   "id": "produced_ads_video_requested_media_config_service_6",
+   "name": "ads.video-requested produced",
+   "from": null,
+   "to": "lag_ads_video_requested_media_config_service_6",
+   "cloud": {
+    "x": 60,
+    "y": 330
+   },
+   "rate": {
+    "form": "constant",
+    "value": 268.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.video-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_video_requested_media_config_service_6",
+   "name": "media-config-service-6 consumes",
+   "from": "lag_ads_video_requested_media_config_service_6",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 430
+   },
+   "rate": {
+    "form": "constant",
+    "value": 268.68
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.video-requested\",consumergroup=\"media-config-service-6\"}[5m]))"
+  },
+  {
+   "id": "produced_ads_wallet_created_address_resolver",
+   "name": "ads.wallet-created produced",
+   "from": null,
+   "to": "lag_ads_wallet_created_address_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4119.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.wallet-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_wallet_created_address_resolver",
+   "name": "address-resolver consumes",
+   "from": "lag_ads_wallet_created_address_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4118.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.wallet-created\",consumergroup=\"address-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_ads_wallet_created_device_resolver",
+   "name": "ads.wallet-created produced",
+   "from": null,
+   "to": "lag_ads_wallet_created_device_resolver",
+   "cloud": {
+    "x": 290,
+    "y": 450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4119.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.wallet-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_wallet_created_device_resolver",
+   "name": "device-resolver consumes",
+   "from": "lag_ads_wallet_created_device_resolver",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4109.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.wallet-created\",consumergroup=\"device-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_ads_wallet_created_token_resolver",
+   "name": "ads.wallet-created produced",
+   "from": null,
+   "to": "lag_ads_wallet_created_token_resolver",
+   "cloud": {
+    "x": 520,
+    "y": 450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4119.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"ads.wallet-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_ads_wallet_created_token_resolver",
+   "name": "token-resolver consumes",
+   "from": "lag_ads_wallet_created_token_resolver",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4117.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"ads.wallet-created\",consumergroup=\"token-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_feature_created_profile_service",
+   "name": "analytics.feature-created produced",
+   "from": null,
+   "to": "lag_analytics_feature_created_profile_service",
+   "cloud": {
+    "x": 60,
+    "y": 570
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6629.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.feature-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_feature_created_profile_service",
+   "name": "profile-service consumes",
+   "from": "lag_analytics_feature_created_profile_service",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 670
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6624.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.feature-created\",consumergroup=\"profile-service\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_feature_updated_ads_frontend",
+   "name": "analytics.feature-updated produced",
+   "from": null,
+   "to": "lag_analytics_feature_updated_ads_frontend",
+   "cloud": {
+    "x": 60,
+    "y": 690
+   },
+   "rate": {
+    "form": "constant",
+    "value": 5044.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.feature-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_feature_updated_ads_frontend",
+   "name": "ads-frontend consumes",
+   "from": "lag_analytics_feature_updated_ads_frontend",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 790
+   },
+   "rate": {
+    "form": "constant",
+    "value": 5050.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.feature-updated\",consumergroup=\"ads-frontend\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_order_updated_address_manager",
+   "name": "analytics.order-updated produced",
+   "from": null,
+   "to": "lag_analytics_order_updated_address_manager",
+   "cloud": {
+    "x": 60,
+    "y": 810
+   },
+   "rate": {
+    "form": "constant",
+    "value": 19339.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.order-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_order_updated_address_manager",
+   "name": "address-manager consumes",
+   "from": "lag_analytics_order_updated_address_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 910
+   },
+   "rate": {
+    "form": "constant",
+    "value": 19345.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.order-updated\",consumergroup=\"address-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_thumbnail_updated_pricing_public_api",
+   "name": "analytics.thumbnail-updated produced",
+   "from": null,
+   "to": "lag_analytics_thumbnail_updated_pricing_public_api",
+   "cloud": {
+    "x": 60,
+    "y": 930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3196.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.thumbnail-updated\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_thumbnail_updated_video_worker",
+   "name": "analytics.thumbnail-updated produced",
+   "from": null,
+   "to": "lag_analytics_thumbnail_updated_video_worker",
+   "cloud": {
+    "x": 290,
+    "y": 930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3196.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.thumbnail-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_thumbnail_updated_video_worker",
+   "name": "video-worker consumes",
+   "from": "lag_analytics_thumbnail_updated_video_worker",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 1030
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3195.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.thumbnail-updated\",consumergroup=\"video-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_token_failed_event_service",
+   "name": "analytics.token-failed produced",
+   "from": null,
+   "to": "lag_analytics_token_failed_event_service",
+   "cloud": {
+    "x": 60,
+    "y": 1050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4526.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.token-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_token_failed_event_service",
+   "name": "event-service consumes",
+   "from": "lag_analytics_token_failed_event_service",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4525.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.token-failed\",consumergroup=\"event-service\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_token_failed_recommendations_route_api",
+   "name": "analytics.token-failed produced",
+   "from": null,
+   "to": "lag_analytics_token_failed_recommendations_route_api",
+   "cloud": {
+    "x": 290,
+    "y": 1050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4526.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.token-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_token_failed_recommendations_route_api",
+   "name": "recommendations-route-api consumes",
+   "from": "lag_analytics_token_failed_recommendations_route_api",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 1150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4529.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.token-failed\",consumergroup=\"recommendations-route-api\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_token_failed_support_address_writer",
+   "name": "analytics.token-failed produced",
+   "from": null,
+   "to": "lag_analytics_token_failed_support_address_writer",
+   "cloud": {
+    "x": 520,
+    "y": 1050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4526.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.token-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_token_failed_support_address_writer",
+   "name": "support-address-writer consumes",
+   "from": "lag_analytics_token_failed_support_address_writer",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 1150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4526.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.token-failed\",consumergroup=\"support-address-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_video_changed_tax_reader",
+   "name": "analytics.video-changed produced",
+   "from": null,
+   "to": "lag_analytics_video_changed_tax_reader",
+   "cloud": {
+    "x": 60,
+    "y": 1170
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8517.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.video-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_video_changed_tax_reader",
+   "name": "tax-reader consumes",
+   "from": "lag_analytics_video_changed_tax_reader",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1270
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8514.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.video-changed\",consumergroup=\"tax-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_video_changed_video_manager",
+   "name": "analytics.video-changed produced",
+   "from": null,
+   "to": "lag_analytics_video_changed_video_manager",
+   "cloud": {
+    "x": 290,
+    "y": 1170
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8517.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.video-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_video_changed_video_manager",
+   "name": "video-manager consumes",
+   "from": "lag_analytics_video_changed_video_manager",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 1270
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8523.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.video-changed\",consumergroup=\"video-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_wallet_indexed_feature_manager",
+   "name": "analytics.wallet-indexed produced",
+   "from": null,
+   "to": "lag_analytics_wallet_indexed_feature_manager",
+   "cloud": {
+    "x": 60,
+    "y": 1290
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3876.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.wallet-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_wallet_indexed_feature_manager",
+   "name": "feature-manager consumes",
+   "from": "lag_analytics_wallet_indexed_feature_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1390
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3879.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.wallet-indexed\",consumergroup=\"feature-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_analytics_wallet_indexed_query_worker",
+   "name": "analytics.wallet-indexed produced",
+   "from": null,
+   "to": "lag_analytics_wallet_indexed_query_worker",
+   "cloud": {
+    "x": 290,
+    "y": 1290
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3876.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"analytics.wallet-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_analytics_wallet_indexed_query_worker",
+   "name": "query-worker consumes",
+   "from": "lag_analytics_wallet_indexed_query_worker",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 1390
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3873.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"analytics.wallet-indexed\",consumergroup=\"query-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_catalog_event_created_route_api",
+   "name": "catalog.event-created produced",
+   "from": null,
+   "to": "lag_catalog_event_created_route_api",
+   "cloud": {
+    "x": 60,
+    "y": 1410
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4273.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"catalog.event-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_catalog_event_created_route_api",
+   "name": "route-api consumes",
+   "from": "lag_catalog_event_created_route_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1510
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4274.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"catalog.event-created\",consumergroup=\"route-api\"}[5m]))"
+  },
+  {
+   "id": "produced_catalog_event_indexed_config_resolver",
+   "name": "catalog.event-indexed produced",
+   "from": null,
+   "to": "lag_catalog_event_indexed_config_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 1530
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8116.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"catalog.event-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_catalog_event_indexed_config_resolver",
+   "name": "config-resolver consumes",
+   "from": "lag_catalog_event_indexed_config_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1630
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8110.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"catalog.event-indexed\",consumergroup=\"config-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_catalog_event_indexed_report_api",
+   "name": "catalog.event-indexed produced",
+   "from": null,
+   "to": "lag_catalog_event_indexed_report_api",
+   "cloud": {
+    "x": 290,
+    "y": 1530
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8116.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"catalog.event-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_catalog_event_indexed_report_api",
+   "name": "report-api consumes",
+   "from": "lag_catalog_event_indexed_report_api",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 1630
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8116.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"catalog.event-indexed\",consumergroup=\"report-api\"}[5m]))"
+  },
+  {
+   "id": "produced_catalog_event_indexed_support_web",
+   "name": "catalog.event-indexed produced",
+   "from": null,
+   "to": "lag_catalog_event_indexed_support_web",
+   "cloud": {
+    "x": 520,
+    "y": 1530
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8116.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"catalog.event-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_catalog_event_indexed_support_web",
+   "name": "support-web consumes",
+   "from": "lag_catalog_event_indexed_support_web",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 1630
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8116.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"catalog.event-indexed\",consumergroup=\"support-web\"}[5m]))"
+  },
+  {
+   "id": "produced_catalog_session_completed_support_frontend",
+   "name": "catalog.session-completed produced",
+   "from": null,
+   "to": "lag_catalog_session_completed_support_frontend",
+   "cloud": {
+    "x": 60,
+    "y": 1650
+   },
+   "rate": {
+    "form": "constant",
+    "value": 31767.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"catalog.session-completed\"}[5m]))"
+  },
+  {
+   "id": "consumed_catalog_session_completed_support_frontend",
+   "name": "support-frontend consumes",
+   "from": "lag_catalog_session_completed_support_frontend",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1750
+   },
+   "rate": {
+    "form": "constant",
+    "value": 31767.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"catalog.session-completed\",consumergroup=\"support-frontend\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_coupon_requested_cart_api",
+   "name": "checkout.coupon-requested produced",
+   "from": null,
+   "to": "lag_checkout_coupon_requested_cart_api",
+   "cloud": {
+    "x": 60,
+    "y": 1770
+   },
+   "rate": {
+    "form": "constant",
+    "value": 17524.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.coupon-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_coupon_requested_cart_api",
+   "name": "cart-api consumes",
+   "from": "lag_checkout_coupon_requested_cart_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1870
+   },
+   "rate": {
+    "form": "constant",
+    "value": 17501.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.coupon-requested\",consumergroup=\"cart-api\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_coupon_requested_v4_support_session_writer",
+   "name": "checkout.coupon-requested-v4 produced",
+   "from": null,
+   "to": "lag_checkout_coupon_requested_v4_support_session_writer",
+   "cloud": {
+    "x": 60,
+    "y": 1890
+   },
+   "rate": {
+    "form": "constant",
+    "value": 30510.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.coupon-requested-v4\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_coupon_requested_v4_support_session_writer",
+   "name": "support-session-writer consumes",
+   "from": "lag_checkout_coupon_requested_v4_support_session_writer",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 1990
+   },
+   "rate": {
+    "form": "constant",
+    "value": 30568.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.coupon-requested-v4\",consumergroup=\"support-session-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_coupon_requested_v4_thumbnail_writer",
+   "name": "checkout.coupon-requested-v4 produced",
+   "from": null,
+   "to": "lag_checkout_coupon_requested_v4_thumbnail_writer",
+   "cloud": {
+    "x": 290,
+    "y": 1890
+   },
+   "rate": {
+    "form": "constant",
+    "value": 30510.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.coupon-requested-v4\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_coupon_requested_v4_thumbnail_writer",
+   "name": "thumbnail-writer consumes",
+   "from": "lag_checkout_coupon_requested_v4_thumbnail_writer",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 1990
+   },
+   "rate": {
+    "form": "constant",
+    "value": 30498.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.coupon-requested-v4\",consumergroup=\"thumbnail-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_query_created_ads_push_store",
+   "name": "checkout.query-created produced",
+   "from": null,
+   "to": "lag_checkout_query_created_ads_push_store",
+   "cloud": {
+    "x": 60,
+    "y": 2010
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38737.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.query-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_query_created_ads_push_store",
+   "name": "ads-push-store consumes",
+   "from": "lag_checkout_query_created_ads_push_store",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2110
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38749.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.query-created\",consumergroup=\"ads-push-store\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_query_created_rank_service",
+   "name": "checkout.query-created produced",
+   "from": null,
+   "to": "lag_checkout_query_created_rank_service",
+   "cloud": {
+    "x": 290,
+    "y": 2010
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38737.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.query-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_query_created_rank_service",
+   "name": "rank-service consumes",
+   "from": "lag_checkout_query_created_rank_service",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 2110
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38749.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.query-created\",consumergroup=\"rank-service\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_query_created_risk_reader",
+   "name": "checkout.query-created produced",
+   "from": null,
+   "to": "lag_checkout_query_created_risk_reader",
+   "cloud": {
+    "x": 520,
+    "y": 2010
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38737.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.query-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_query_created_risk_reader",
+   "name": "risk-reader consumes",
+   "from": "lag_checkout_query_created_risk_reader",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 2110
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38760.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.query-created\",consumergroup=\"risk-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_review_requested_billing_bff",
+   "name": "checkout.review-requested produced",
+   "from": null,
+   "to": "lag_checkout_review_requested_billing_bff",
+   "cloud": {
+    "x": 60,
+    "y": 2130
+   },
+   "rate": {
+    "form": "constant",
+    "value": 28939.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.review-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_review_requested_billing_bff",
+   "name": "billing-bff consumes",
+   "from": "lag_checkout_review_requested_billing_bff",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2230
+   },
+   "rate": {
+    "form": "constant",
+    "value": 28951.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.review-requested\",consumergroup=\"billing-bff\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_review_requested_sync_manager",
+   "name": "checkout.review-requested produced",
+   "from": null,
+   "to": "lag_checkout_review_requested_sync_manager",
+   "cloud": {
+    "x": 290,
+    "y": 2130
+   },
+   "rate": {
+    "form": "constant",
+    "value": 28939.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.review-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_review_requested_sync_manager",
+   "name": "sync-manager consumes",
+   "from": "lag_checkout_review_requested_sync_manager",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 2230
+   },
+   "rate": {
+    "form": "constant",
+    "value": 29056.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.review-requested\",consumergroup=\"sync-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_review_requested_user_resolver",
+   "name": "checkout.review-requested produced",
+   "from": null,
+   "to": "lag_checkout_review_requested_user_resolver",
+   "cloud": {
+    "x": 520,
+    "y": 2130
+   },
+   "rate": {
+    "form": "constant",
+    "value": 28939.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.review-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_review_requested_user_resolver",
+   "name": "user-resolver consumes",
+   "from": "lag_checkout_review_requested_user_resolver",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 2230
+   },
+   "rate": {
+    "form": "constant",
+    "value": 28951.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.review-requested\",consumergroup=\"user-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_checkout_thumbnail_updated_risk_resolver",
+   "name": "checkout.thumbnail-updated produced",
+   "from": null,
+   "to": "lag_checkout_thumbnail_updated_risk_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 2250
+   },
+   "rate": {
+    "form": "constant",
+    "value": 9175.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"checkout.thumbnail-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_checkout_thumbnail_updated_risk_resolver",
+   "name": "risk-resolver consumes",
+   "from": "lag_checkout_thumbnail_updated_risk_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2350
+   },
+   "rate": {
+    "form": "constant",
+    "value": 9175.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"checkout.thumbnail-updated\",consumergroup=\"risk-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_fraud_cart_updated_notifications_quote_manager",
+   "name": "fraud.cart-updated produced",
+   "from": null,
+   "to": "lag_fraud_cart_updated_notifications_quote_manager",
+   "cloud": {
+    "x": 60,
+    "y": 2370
+   },
+   "rate": {
+    "form": "constant",
+    "value": 307.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"fraud.cart-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_fraud_cart_updated_notifications_quote_manager",
+   "name": "notifications-quote-manager consumes",
+   "from": "lag_fraud_cart_updated_notifications_quote_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2470
+   },
+   "rate": {
+    "form": "constant",
+    "value": 307.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"fraud.cart-updated\",consumergroup=\"notifications-quote-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_fraud_cart_updated_token_worker",
+   "name": "fraud.cart-updated produced",
+   "from": null,
+   "to": "lag_fraud_cart_updated_token_worker",
+   "cloud": {
+    "x": 290,
+    "y": 2370
+   },
+   "rate": {
+    "form": "constant",
+    "value": 307.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"fraud.cart-updated\"}[5m]))"
+  },
+  {
+   "id": "produced_fraud_inbox_requested_export_manager",
+   "name": "fraud.inbox-requested produced",
+   "from": null,
+   "to": "lag_fraud_inbox_requested_export_manager",
+   "cloud": {
+    "x": 60,
+    "y": 2490
+   },
+   "rate": {
+    "form": "constant",
+    "value": 14266.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"fraud.inbox-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_fraud_inbox_requested_export_manager",
+   "name": "export-manager consumes",
+   "from": "lag_fraud_inbox_requested_export_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2590
+   },
+   "rate": {
+    "form": "constant",
+    "value": 14272.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"fraud.inbox-requested\",consumergroup=\"export-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_fraud_inbox_requested_media_reader",
+   "name": "fraud.inbox-requested produced",
+   "from": null,
+   "to": "lag_fraud_inbox_requested_media_reader",
+   "cloud": {
+    "x": 290,
+    "y": 2490
+   },
+   "rate": {
+    "form": "constant",
+    "value": 14266.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"fraud.inbox-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_fraud_inbox_requested_media_reader",
+   "name": "media-reader consumes",
+   "from": "lag_fraud_inbox_requested_media_reader",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 2590
+   },
+   "rate": {
+    "form": "constant",
+    "value": 14277.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"fraud.inbox-requested\",consumergroup=\"media-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_fraud_refund_failed_flag_resolver",
+   "name": "fraud.refund-failed produced",
+   "from": null,
+   "to": "lag_fraud_refund_failed_flag_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 2610
+   },
+   "rate": {
+    "form": "constant",
+    "value": 52736.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"fraud.refund-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_fraud_refund_failed_flag_resolver",
+   "name": "flag-resolver consumes",
+   "from": "lag_fraud_refund_failed_flag_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2710
+   },
+   "rate": {
+    "form": "constant",
+    "value": 52712.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"fraud.refund-failed\",consumergroup=\"flag-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_fraud_refund_failed_media_profile_writer",
+   "name": "fraud.refund-failed produced",
+   "from": null,
+   "to": "lag_fraud_refund_failed_media_profile_writer",
+   "cloud": {
+    "x": 290,
+    "y": 2610
+   },
+   "rate": {
+    "form": "constant",
+    "value": 52736.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"fraud.refund-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_fraud_refund_failed_media_profile_writer",
+   "name": "media-profile-writer consumes",
+   "from": "lag_fraud_refund_failed_media_profile_writer",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 2710
+   },
+   "rate": {
+    "form": "constant",
+    "value": 52736.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"fraud.refund-failed\",consumergroup=\"media-profile-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_cart_indexed_tax_service",
+   "name": "geo.cart-indexed produced",
+   "from": null,
+   "to": "lag_geo_cart_indexed_tax_service",
+   "cloud": {
+    "x": 60,
+    "y": 2730
+   },
+   "rate": {
+    "form": "constant",
+    "value": 79150.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.cart-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_cart_indexed_tax_service",
+   "name": "tax-service consumes",
+   "from": "lag_geo_cart_indexed_tax_service",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2830
+   },
+   "rate": {
+    "form": "constant",
+    "value": 79080.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.cart-indexed\",consumergroup=\"tax-service\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_consent_indexed_fraud_email_store",
+   "name": "geo.consent-indexed produced",
+   "from": null,
+   "to": "lag_geo_consent_indexed_fraud_email_store",
+   "cloud": {
+    "x": 60,
+    "y": 2850
+   },
+   "rate": {
+    "form": "constant",
+    "value": 15104.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.consent-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_consent_indexed_fraud_email_store",
+   "name": "fraud-email-store consumes",
+   "from": "lag_geo_consent_indexed_fraud_email_store",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 2950
+   },
+   "rate": {
+    "form": "constant",
+    "value": 15115.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.consent-indexed\",consumergroup=\"fraud-email-store\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_consent_indexed_recommendations_mobile_api",
+   "name": "geo.consent-indexed produced",
+   "from": null,
+   "to": "lag_geo_consent_indexed_recommendations_mobile_api",
+   "cloud": {
+    "x": 290,
+    "y": 2850
+   },
+   "rate": {
+    "form": "constant",
+    "value": 15104.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.consent-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_consent_indexed_recommendations_mobile_api",
+   "name": "recommendations-mobile-api consumes",
+   "from": "lag_geo_consent_indexed_recommendations_mobile_api",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 2950
+   },
+   "rate": {
+    "form": "constant",
+    "value": 15104.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.consent-indexed\",consumergroup=\"recommendations-mobile-api\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_flag_completed_risk_resolver",
+   "name": "geo.flag-completed produced",
+   "from": null,
+   "to": "lag_geo_flag_completed_risk_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 2970
+   },
+   "rate": {
+    "form": "constant",
+    "value": 2136.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.flag-completed\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_flag_completed_risk_resolver",
+   "name": "risk-resolver consumes",
+   "from": "lag_geo_flag_completed_risk_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3070
+   },
+   "rate": {
+    "form": "constant",
+    "value": 2136.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.flag-completed\",consumergroup=\"risk-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_flag_completed_tax_reader",
+   "name": "geo.flag-completed produced",
+   "from": null,
+   "to": "lag_geo_flag_completed_tax_reader",
+   "cloud": {
+    "x": 290,
+    "y": 2970
+   },
+   "rate": {
+    "form": "constant",
+    "value": 2136.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.flag-completed\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_flag_completed_tax_reader",
+   "name": "tax-reader consumes",
+   "from": "lag_geo_flag_completed_tax_reader",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 3070
+   },
+   "rate": {
+    "form": "constant",
+    "value": 2132.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.flag-completed\",consumergroup=\"tax-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_image_requested_device_worker",
+   "name": "geo.image-requested produced",
+   "from": null,
+   "to": "lag_geo_image_requested_device_worker",
+   "cloud": {
+    "x": 60,
+    "y": 3090
+   },
+   "rate": {
+    "form": "constant",
+    "value": 9361.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.image-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_image_requested_device_worker",
+   "name": "device-worker consumes",
+   "from": "lag_geo_image_requested_device_worker",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3190
+   },
+   "rate": {
+    "form": "constant",
+    "value": 9370.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.image-requested\",consumergroup=\"device-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_query_created_ads_price_store",
+   "name": "geo.query-created produced",
+   "from": null,
+   "to": "lag_geo_query_created_ads_price_store",
+   "cloud": {
+    "x": 60,
+    "y": 3210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4295.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.query-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_query_created_ads_price_store",
+   "name": "ads-price-store consumes",
+   "from": "lag_geo_query_created_ads_price_store",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3310
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4290.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.query-created\",consumergroup=\"ads-price-store\"}[5m]))"
+  },
+  {
+   "id": "produced_geo_query_created_push_resolver",
+   "name": "geo.query-created produced",
+   "from": null,
+   "to": "lag_geo_query_created_push_resolver",
+   "cloud": {
+    "x": 290,
+    "y": 3210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4295.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"geo.query-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_geo_query_created_push_resolver",
+   "name": "push-resolver consumes",
+   "from": "lag_geo_query_created_push_resolver",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 3310
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4292.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"geo.query-created\",consumergroup=\"push-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_account_created_inbox_api",
+   "name": "identity.account-created produced",
+   "from": null,
+   "to": "lag_identity_account_created_inbox_api",
+   "cloud": {
+    "x": 60,
+    "y": 3330
+   },
+   "rate": {
+    "form": "constant",
+    "value": 7845.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.account-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_account_created_inbox_api",
+   "name": "inbox-api consumes",
+   "from": "lag_identity_account_created_inbox_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3430
+   },
+   "rate": {
+    "form": "constant",
+    "value": 7840.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.account-created\",consumergroup=\"inbox-api\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_image_indexed_consent_store",
+   "name": "identity.image-indexed produced",
+   "from": null,
+   "to": "lag_identity_image_indexed_consent_store",
+   "cloud": {
+    "x": 60,
+    "y": 3450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 13399.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.image-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_image_indexed_consent_store",
+   "name": "consent-store consumes",
+   "from": "lag_identity_image_indexed_consent_store",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 13387.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.image-indexed\",consumergroup=\"consent-store\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_image_indexed_coupon_api",
+   "name": "identity.image-indexed produced",
+   "from": null,
+   "to": "lag_identity_image_indexed_coupon_api",
+   "cloud": {
+    "x": 290,
+    "y": 3450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 13399.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.image-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_image_indexed_coupon_api",
+   "name": "coupon-api consumes",
+   "from": "lag_identity_image_indexed_coupon_api",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 3550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 13402.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.image-indexed\",consumergroup=\"coupon-api\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_notify_updated_stock_store",
+   "name": "identity.notify-updated produced",
+   "from": null,
+   "to": "lag_identity_notify_updated_stock_store",
+   "cloud": {
+    "x": 60,
+    "y": 3570
+   },
+   "rate": {
+    "form": "constant",
+    "value": 10699.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.notify-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_notify_updated_stock_store",
+   "name": "stock-store consumes",
+   "from": "lag_identity_notify_updated_stock_store",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3670
+   },
+   "rate": {
+    "form": "constant",
+    "value": 10714.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.notify-updated\",consumergroup=\"stock-store\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_order_indexed_export_reader",
+   "name": "identity.order-indexed produced",
+   "from": null,
+   "to": "lag_identity_order_indexed_export_reader",
+   "cloud": {
+    "x": 60,
+    "y": 3690
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21329.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.order-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_order_indexed_export_reader",
+   "name": "export-reader consumes",
+   "from": "lag_identity_order_indexed_export_reader",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3790
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21323.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.order-indexed\",consumergroup=\"export-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_order_indexed_session_manager",
+   "name": "identity.order-indexed produced",
+   "from": null,
+   "to": "lag_identity_order_indexed_session_manager",
+   "cloud": {
+    "x": 290,
+    "y": 3690
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21329.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.order-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_order_indexed_session_manager",
+   "name": "session-manager consumes",
+   "from": "lag_identity_order_indexed_session_manager",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 3790
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21323.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.order-indexed\",consumergroup=\"session-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_identity_sync_updated_token_api",
+   "name": "identity.sync-updated produced",
+   "from": null,
+   "to": "lag_identity_sync_updated_token_api",
+   "cloud": {
+    "x": 60,
+    "y": 3810
+   },
+   "rate": {
+    "form": "constant",
+    "value": 689.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"identity.sync-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_identity_sync_updated_token_api",
+   "name": "token-api consumes",
+   "from": "lag_identity_sync_updated_token_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 3910
+   },
+   "rate": {
+    "form": "constant",
+    "value": 689.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"identity.sync-updated\",consumergroup=\"token-api\"}[5m]))"
+  },
+  {
+   "id": "produced_inventory_sync_created_media_chat_writer",
+   "name": "inventory.sync-created produced",
+   "from": null,
+   "to": "lag_inventory_sync_created_media_chat_writer",
+   "cloud": {
+    "x": 60,
+    "y": 3930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38528.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"inventory.sync-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_inventory_sync_created_media_chat_writer",
+   "name": "media-chat-writer consumes",
+   "from": "lag_inventory_sync_created_media_chat_writer",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4030
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38516.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"inventory.sync-created\",consumergroup=\"media-chat-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_inventory_sync_created_search_frontend",
+   "name": "inventory.sync-created produced",
+   "from": null,
+   "to": "lag_inventory_sync_created_search_frontend",
+   "cloud": {
+    "x": 290,
+    "y": 3930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38528.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"inventory.sync-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_inventory_sync_created_search_frontend",
+   "name": "search-frontend consumes",
+   "from": "lag_inventory_sync_created_search_frontend",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 4030
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38528.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"inventory.sync-created\",consumergroup=\"search-frontend\"}[5m]))"
+  },
+  {
+   "id": "produced_inventory_user_created_flag_worker",
+   "name": "inventory.user-created produced",
+   "from": null,
+   "to": "lag_inventory_user_created_flag_worker",
+   "cloud": {
+    "x": 60,
+    "y": 4050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3230.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"inventory.user-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_inventory_user_created_flag_worker",
+   "name": "flag-worker consumes",
+   "from": "lag_inventory_user_created_flag_worker",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3227.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"inventory.user-created\",consumergroup=\"flag-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_inventory_user_created_upload_worker",
+   "name": "inventory.user-created produced",
+   "from": null,
+   "to": "lag_inventory_user_created_upload_worker",
+   "cloud": {
+    "x": 290,
+    "y": 4050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3230.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"inventory.user-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_inventory_user_created_upload_worker",
+   "name": "upload-worker consumes",
+   "from": "lag_inventory_user_created_upload_worker",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 4150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3233.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"inventory.user-created\",consumergroup=\"upload-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_media_invoice_requested_media_worker",
+   "name": "media.invoice-requested produced",
+   "from": null,
+   "to": "lag_media_invoice_requested_media_worker",
+   "cloud": {
+    "x": 60,
+    "y": 4170
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4578.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"media.invoice-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_media_invoice_requested_media_worker",
+   "name": "media-worker consumes",
+   "from": "lag_media_invoice_requested_media_worker",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4270
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4578.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"media.invoice-requested\",consumergroup=\"media-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_media_invoice_requested_report_manager",
+   "name": "media.invoice-requested produced",
+   "from": null,
+   "to": "lag_media_invoice_requested_report_manager",
+   "cloud": {
+    "x": 290,
+    "y": 4170
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4578.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"media.invoice-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_media_invoice_requested_report_manager",
+   "name": "report-manager consumes",
+   "from": "lag_media_invoice_requested_report_manager",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 4270
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4584.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"media.invoice-requested\",consumergroup=\"report-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_media_push_indexed_session_manager",
+   "name": "media.push-indexed produced",
+   "from": null,
+   "to": "lag_media_push_indexed_session_manager",
+   "cloud": {
+    "x": 60,
+    "y": 4290
+   },
+   "rate": {
+    "form": "constant",
+    "value": 5361.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"media.push-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_media_push_indexed_session_manager",
+   "name": "session-manager consumes",
+   "from": "lag_media_push_indexed_session_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4390
+   },
+   "rate": {
+    "form": "constant",
+    "value": 5360.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"media.push-indexed\",consumergroup=\"session-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_media_token_failed_pricing_refund_resolver",
+   "name": "media.token-failed produced",
+   "from": null,
+   "to": "lag_media_token_failed_pricing_refund_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 4410
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1812.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"media.token-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_media_token_failed_pricing_refund_resolver",
+   "name": "pricing-refund-resolver consumes",
+   "from": "lag_media_token_failed_pricing_refund_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4510
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1809.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"media.token-failed\",consumergroup=\"pricing-refund-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_media_token_failed_thumbnail_resolver",
+   "name": "media.token-failed produced",
+   "from": null,
+   "to": "lag_media_token_failed_thumbnail_resolver",
+   "cloud": {
+    "x": 290,
+    "y": 4410
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1812.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"media.token-failed\"}[5m]))"
+  },
+  {
+   "id": "produced_media_user_failed_pricing_frontend",
+   "name": "media.user-failed produced",
+   "from": null,
+   "to": "lag_media_user_failed_pricing_frontend",
+   "cloud": {
+    "x": 60,
+    "y": 4530
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1598.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"media.user-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_media_user_failed_pricing_frontend",
+   "name": "pricing-frontend consumes",
+   "from": "lag_media_user_failed_pricing_frontend",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4630
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1597.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"media.user-failed\",consumergroup=\"pricing-frontend\"}[5m]))"
+  },
+  {
+   "id": "produced_messaging_email_updated_messaging_mobile_api",
+   "name": "messaging.email-updated produced",
+   "from": null,
+   "to": "lag_messaging_email_updated_messaging_mobile_api",
+   "cloud": {
+    "x": 60,
+    "y": 4650
+   },
+   "rate": {
+    "form": "constant",
+    "value": 43077.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"messaging.email-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_messaging_email_updated_messaging_mobile_api",
+   "name": "messaging-mobile-api consumes",
+   "from": "lag_messaging_email_updated_messaging_mobile_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4750
+   },
+   "rate": {
+    "form": "constant",
+    "value": 43077.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"messaging.email-updated\",consumergroup=\"messaging-mobile-api\"}[5m]))"
+  },
+  {
+   "id": "produced_messaging_export_indexed_coupon_writer",
+   "name": "messaging.export-indexed produced",
+   "from": null,
+   "to": "lag_messaging_export_indexed_coupon_writer",
+   "cloud": {
+    "x": 60,
+    "y": 4770
+   },
+   "rate": {
+    "form": "constant",
+    "value": 388.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"messaging.export-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_messaging_export_indexed_coupon_writer",
+   "name": "coupon-writer consumes",
+   "from": "lag_messaging_export_indexed_coupon_writer",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4870
+   },
+   "rate": {
+    "form": "constant",
+    "value": 388.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"messaging.export-indexed\",consumergroup=\"coupon-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_messaging_session_failed_geo_account_writer",
+   "name": "messaging.session-failed produced",
+   "from": null,
+   "to": "lag_messaging_session_failed_geo_account_writer",
+   "cloud": {
+    "x": 60,
+    "y": 4890
+   },
+   "rate": {
+    "form": "constant",
+    "value": 26734.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"messaging.session-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_messaging_session_failed_geo_account_writer",
+   "name": "geo-account-writer consumes",
+   "from": "lag_messaging_session_failed_geo_account_writer",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 4990
+   },
+   "rate": {
+    "form": "constant",
+    "value": 26757.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"messaging.session-failed\",consumergroup=\"geo-account-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_notifications_cache_requested_cart_writer",
+   "name": "notifications.cache-requested produced",
+   "from": null,
+   "to": "lag_notifications_cache_requested_cart_writer",
+   "cloud": {
+    "x": 60,
+    "y": 5010
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4285.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"notifications.cache-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_notifications_cache_requested_cart_writer",
+   "name": "cart-writer consumes",
+   "from": "lag_notifications_cache_requested_cart_writer",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5110
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4286.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"notifications.cache-requested\",consumergroup=\"cart-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_notifications_cache_requested_messaging_tax_reader",
+   "name": "notifications.cache-requested produced",
+   "from": null,
+   "to": "lag_notifications_cache_requested_messaging_tax_reader",
+   "cloud": {
+    "x": 290,
+    "y": 5010
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4285.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"notifications.cache-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_notifications_cache_requested_messaging_tax_reader",
+   "name": "messaging-tax-reader consumes",
+   "from": "lag_notifications_cache_requested_messaging_tax_reader",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 5110
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4289.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"notifications.cache-requested\",consumergroup=\"messaging-tax-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_notifications_quote_indexed_notify_resolver",
+   "name": "notifications.quote-indexed produced",
+   "from": null,
+   "to": "lag_notifications_quote_indexed_notify_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 5130
+   },
+   "rate": {
+    "form": "constant",
+    "value": 14478.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"notifications.quote-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_notifications_quote_indexed_notify_resolver",
+   "name": "notify-resolver consumes",
+   "from": "lag_notifications_quote_indexed_notify_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5230
+   },
+   "rate": {
+    "form": "constant",
+    "value": 14478.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"notifications.quote-indexed\",consumergroup=\"notify-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_notifications_rate_changed_label_manager",
+   "name": "notifications.rate-changed produced",
+   "from": null,
+   "to": "lag_notifications_rate_changed_label_manager",
+   "cloud": {
+    "x": 60,
+    "y": 5250
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21538.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"notifications.rate-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_notifications_rate_changed_label_manager",
+   "name": "label-manager consumes",
+   "from": "lag_notifications_rate_changed_label_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5350
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21544.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"notifications.rate-changed\",consumergroup=\"label-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_notifications_rate_changed_pricing_risk_resolver",
+   "name": "notifications.rate-changed produced",
+   "from": null,
+   "to": "lag_notifications_rate_changed_pricing_risk_resolver",
+   "cloud": {
+    "x": 290,
+    "y": 5250
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21538.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"notifications.rate-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_notifications_rate_changed_pricing_risk_resolver",
+   "name": "pricing-risk-resolver consumes",
+   "from": "lag_notifications_rate_changed_pricing_risk_resolver",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 5350
+   },
+   "rate": {
+    "form": "constant",
+    "value": 21527.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"notifications.rate-changed\",consumergroup=\"pricing-risk-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_query_requested_balance_reader",
+   "name": "payments.query-requested produced",
+   "from": null,
+   "to": "lag_payments_query_requested_balance_reader",
+   "cloud": {
+    "x": 60,
+    "y": 5370
+   },
+   "rate": {
+    "form": "constant",
+    "value": 2800.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.query-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_query_requested_balance_reader",
+   "name": "balance-reader consumes",
+   "from": "lag_payments_query_requested_balance_reader",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5470
+   },
+   "rate": {
+    "form": "constant",
+    "value": 2800.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.query-requested\",consumergroup=\"balance-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_rank_completed_event_service",
+   "name": "payments.rank-completed produced",
+   "from": null,
+   "to": "lag_payments_rank_completed_event_service",
+   "cloud": {
+    "x": 60,
+    "y": 5490
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8692.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.rank-completed\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_rank_completed_event_service",
+   "name": "event-service consumes",
+   "from": "lag_payments_rank_completed_event_service",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5590
+   },
+   "rate": {
+    "form": "constant",
+    "value": 8695.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.rank-completed\",consumergroup=\"event-service\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_rank_updated_config_service",
+   "name": "payments.rank-updated produced",
+   "from": null,
+   "to": "lag_payments_rank_updated_config_service",
+   "cloud": {
+    "x": 60,
+    "y": 5610
+   },
+   "rate": {
+    "form": "constant",
+    "value": 32337.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.rank-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_rank_updated_config_service",
+   "name": "config-service consumes",
+   "from": "lag_payments_rank_updated_config_service",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5710
+   },
+   "rate": {
+    "form": "constant",
+    "value": 32384.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.rank-updated\",consumergroup=\"config-service\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_rank_updated_config_worker",
+   "name": "payments.rank-updated produced",
+   "from": null,
+   "to": "lag_payments_rank_updated_config_worker",
+   "cloud": {
+    "x": 290,
+    "y": 5610
+   },
+   "rate": {
+    "form": "constant",
+    "value": 32337.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.rank-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_rank_updated_config_worker",
+   "name": "config-worker consumes",
+   "from": "lag_payments_rank_updated_config_worker",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 5710
+   },
+   "rate": {
+    "form": "constant",
+    "value": 32343.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.rank-updated\",consumergroup=\"config-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_rank_updated_token_manager",
+   "name": "payments.rank-updated produced",
+   "from": null,
+   "to": "lag_payments_rank_updated_token_manager",
+   "cloud": {
+    "x": 520,
+    "y": 5610
+   },
+   "rate": {
+    "form": "constant",
+    "value": 32337.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.rank-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_rank_updated_token_manager",
+   "name": "token-manager consumes",
+   "from": "lag_payments_rank_updated_token_manager",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 5710
+   },
+   "rate": {
+    "form": "constant",
+    "value": 32325.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.rank-updated\",consumergroup=\"token-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_refund_created_device_api",
+   "name": "payments.refund-created produced",
+   "from": null,
+   "to": "lag_payments_refund_created_device_api",
+   "cloud": {
+    "x": 60,
+    "y": 5730
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1656.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.refund-created\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_refund_created_device_api",
+   "name": "device-api consumes",
+   "from": "lag_payments_refund_created_device_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5830
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1657.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.refund-created\",consumergroup=\"device-api\"}[5m]))"
+  },
+  {
+   "id": "produced_payments_upload_changed_payment_writer",
+   "name": "payments.upload-changed produced",
+   "from": null,
+   "to": "lag_payments_upload_changed_payment_writer",
+   "cloud": {
+    "x": 60,
+    "y": 5850
+   },
+   "rate": {
+    "form": "constant",
+    "value": 454.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"payments.upload-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_payments_upload_changed_payment_writer",
+   "name": "payment-writer consumes",
+   "from": "lag_payments_upload_changed_payment_writer",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 5950
+   },
+   "rate": {
+    "form": "constant",
+    "value": 455.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"payments.upload-changed\",consumergroup=\"payment-writer\"}[5m]))"
+  },
+  {
+   "id": "produced_pricing_balance_requested_messaging_export_manager",
+   "name": "pricing.balance-requested produced",
+   "from": null,
+   "to": "lag_pricing_balance_requested_messaging_export_manager",
+   "cloud": {
+    "x": 60,
+    "y": 5970
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1519.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"pricing.balance-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_pricing_balance_requested_messaging_export_manager",
+   "name": "messaging-export-manager consumes",
+   "from": "lag_pricing_balance_requested_messaging_export_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6070
+   },
+   "rate": {
+    "form": "constant",
+    "value": 1519.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"pricing.balance-requested\",consumergroup=\"messaging-export-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_recommendations_content_failed_review_api",
+   "name": "recommendations.content-failed produced",
+   "from": null,
+   "to": "lag_recommendations_content_failed_review_api",
+   "cloud": {
+    "x": 60,
+    "y": 6090
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6231.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"recommendations.content-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_recommendations_content_failed_review_api",
+   "name": "review-api consumes",
+   "from": "lag_recommendations_content_failed_review_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6190
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6229.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"recommendations.content-failed\",consumergroup=\"review-api\"}[5m]))"
+  },
+  {
+   "id": "produced_reviews_event_requested_analytics_label_manager",
+   "name": "reviews.event-requested produced",
+   "from": null,
+   "to": "lag_reviews_event_requested_analytics_label_manager",
+   "cloud": {
+    "x": 60,
+    "y": 6210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4436.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"reviews.event-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_reviews_event_requested_analytics_label_manager",
+   "name": "analytics-label-manager consumes",
+   "from": "lag_reviews_event_requested_analytics_label_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6310
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4433.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"reviews.event-requested\",consumergroup=\"analytics-label-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_reviews_event_requested_messaging_route_resolver_6",
+   "name": "reviews.event-requested produced",
+   "from": null,
+   "to": "lag_reviews_event_requested_messaging_route_resolver_6",
+   "cloud": {
+    "x": 290,
+    "y": 6210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4436.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"reviews.event-requested\"}[5m]))"
+  },
+  {
+   "id": "produced_reviews_event_requested_profile_manager",
+   "name": "reviews.event-requested produced",
+   "from": null,
+   "to": "lag_reviews_event_requested_profile_manager",
+   "cloud": {
+    "x": 520,
+    "y": 6210
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4436.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"reviews.event-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_reviews_event_requested_profile_manager",
+   "name": "profile-manager consumes",
+   "from": "lag_reviews_event_requested_profile_manager",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 6310
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4437.09
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"reviews.event-requested\",consumergroup=\"profile-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_search_profile_failed_risk_worker",
+   "name": "search.profile-failed produced",
+   "from": null,
+   "to": "lag_search_profile_failed_risk_worker",
+   "cloud": {
+    "x": 60,
+    "y": 6330
+   },
+   "rate": {
+    "form": "constant",
+    "value": 34106.18
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"search.profile-failed\"}[5m]))"
+  },
+  {
+   "id": "consumed_search_profile_failed_risk_worker",
+   "name": "risk-worker consumes",
+   "from": "lag_search_profile_failed_risk_worker",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6430
+   },
+   "rate": {
+    "form": "constant",
+    "value": 34071.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"search.profile-failed\",consumergroup=\"risk-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_search_user_changed_order_service",
+   "name": "search.user-changed produced",
+   "from": null,
+   "to": "lag_search_user_changed_order_service",
+   "cloud": {
+    "x": 60,
+    "y": 6450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4286.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"search.user-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_search_user_changed_order_service",
+   "name": "order-service consumes",
+   "from": "lag_search_user_changed_order_service",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4296.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"search.user-changed\",consumergroup=\"order-service\"}[5m]))"
+  },
+  {
+   "id": "produced_search_user_changed_pricing_refund_resolver",
+   "name": "search.user-changed produced",
+   "from": null,
+   "to": "lag_search_user_changed_pricing_refund_resolver",
+   "cloud": {
+    "x": 290,
+    "y": 6450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4286.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"search.user-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_search_user_changed_pricing_refund_resolver",
+   "name": "pricing-refund-resolver consumes",
+   "from": "lag_search_user_changed_pricing_refund_resolver",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 6550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4286.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"search.user-changed\",consumergroup=\"pricing-refund-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_search_user_changed_refund_service",
+   "name": "search.user-changed produced",
+   "from": null,
+   "to": "lag_search_user_changed_refund_service",
+   "cloud": {
+    "x": 520,
+    "y": 6450
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4286.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"search.user-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_search_user_changed_refund_service",
+   "name": "refund-service consumes",
+   "from": "lag_search_user_changed_refund_service",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 6550
+   },
+   "rate": {
+    "form": "constant",
+    "value": 4283.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"search.user-changed\",consumergroup=\"refund-service\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_feature_requested_support_balance_resolver",
+   "name": "shipping.feature-requested produced",
+   "from": null,
+   "to": "lag_shipping_feature_requested_support_balance_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 6570
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38306.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.feature-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_feature_requested_support_balance_resolver",
+   "name": "support-balance-resolver consumes",
+   "from": "lag_shipping_feature_requested_support_balance_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6670
+   },
+   "rate": {
+    "form": "constant",
+    "value": 38306.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.feature-requested\",consumergroup=\"support-balance-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_push_requested_rank_worker",
+   "name": "shipping.push-requested produced",
+   "from": null,
+   "to": "lag_shipping_push_requested_rank_worker",
+   "cloud": {
+    "x": 60,
+    "y": 6690
+   },
+   "rate": {
+    "form": "constant",
+    "value": 9838.55
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.push-requested\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_push_requested_rank_worker",
+   "name": "rank-worker consumes",
+   "from": "lag_shipping_push_requested_rank_worker",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 6790
+   },
+   "rate": {
+    "form": "constant",
+    "value": 9835.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.push-requested\",consumergroup=\"rank-worker\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_stock_indexed_coupon_manager",
+   "name": "shipping.stock-indexed produced",
+   "from": null,
+   "to": "lag_shipping_stock_indexed_coupon_manager",
+   "cloud": {
+    "x": 60,
+    "y": 6810
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6043.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.stock-indexed\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_stock_indexed_identity_token_api",
+   "name": "shipping.stock-indexed produced",
+   "from": null,
+   "to": "lag_shipping_stock_indexed_identity_token_api",
+   "cloud": {
+    "x": 290,
+    "y": 6810
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6043.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.stock-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_stock_indexed_identity_token_api",
+   "name": "identity-token-api consumes",
+   "from": "lag_shipping_stock_indexed_identity_token_api",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 6910
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6039.27
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.stock-indexed\",consumergroup=\"identity-token-api\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_stock_indexed_pricing_refund_resolver",
+   "name": "shipping.stock-indexed produced",
+   "from": null,
+   "to": "lag_shipping_stock_indexed_pricing_refund_resolver",
+   "cloud": {
+    "x": 520,
+    "y": 6810
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6043.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.stock-indexed\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_stock_indexed_pricing_refund_resolver",
+   "name": "pricing-refund-resolver consumes",
+   "from": "lag_shipping_stock_indexed_pricing_refund_resolver",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 6910
+   },
+   "rate": {
+    "form": "constant",
+    "value": 6056.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.stock-indexed\",consumergroup=\"pricing-refund-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_wallet_changed_ads_config_manager",
+   "name": "shipping.wallet-changed produced",
+   "from": null,
+   "to": "lag_shipping_wallet_changed_ads_config_manager",
+   "cloud": {
+    "x": 60,
+    "y": 6930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3844.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.wallet-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_wallet_changed_ads_config_manager",
+   "name": "ads-config-manager consumes",
+   "from": "lag_shipping_wallet_changed_ads_config_manager",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 7030
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3835.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.wallet-changed\",consumergroup=\"ads-config-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_wallet_changed_rate_manager",
+   "name": "shipping.wallet-changed produced",
+   "from": null,
+   "to": "lag_shipping_wallet_changed_rate_manager",
+   "cloud": {
+    "x": 290,
+    "y": 6930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3844.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.wallet-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_wallet_changed_rate_manager",
+   "name": "rate-manager consumes",
+   "from": "lag_shipping_wallet_changed_rate_manager",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 7030
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3844.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.wallet-changed\",consumergroup=\"rate-manager\"}[5m]))"
+  },
+  {
+   "id": "produced_shipping_wallet_changed_tax_service",
+   "name": "shipping.wallet-changed produced",
+   "from": null,
+   "to": "lag_shipping_wallet_changed_tax_service",
+   "cloud": {
+    "x": 520,
+    "y": 6930
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3844.36
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"shipping.wallet-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_shipping_wallet_changed_tax_service",
+   "name": "tax-service consumes",
+   "from": "lag_shipping_wallet_changed_tax_service",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 7030
+   },
+   "rate": {
+    "form": "constant",
+    "value": 3842.91
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"shipping.wallet-changed\",consumergroup=\"tax-service\"}[5m]))"
+  },
+  {
+   "id": "produced_support_label_changed_geo_cart_api",
+   "name": "support.label-changed produced",
+   "from": null,
+   "to": "lag_support_label_changed_geo_cart_api",
+   "cloud": {
+    "x": 60,
+    "y": 7050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 304.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"support.label-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_support_label_changed_geo_cart_api",
+   "name": "geo-cart-api consumes",
+   "from": "lag_support_label_changed_geo_cart_api",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 7150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 305.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"support.label-changed\",consumergroup=\"geo-cart-api\"}[5m]))"
+  },
+  {
+   "id": "produced_support_label_changed_shipment_reader",
+   "name": "support.label-changed produced",
+   "from": null,
+   "to": "lag_support_label_changed_shipment_reader",
+   "cloud": {
+    "x": 290,
+    "y": 7050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 304.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"support.label-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_support_label_changed_shipment_reader",
+   "name": "shipment-reader consumes",
+   "from": "lag_support_label_changed_shipment_reader",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 7150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 306.41
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"support.label-changed\",consumergroup=\"shipment-reader\"}[5m]))"
+  },
+  {
+   "id": "produced_support_label_changed_sms_service",
+   "name": "support.label-changed produced",
+   "from": null,
+   "to": "lag_support_label_changed_sms_service",
+   "cloud": {
+    "x": 520,
+    "y": 7050
+   },
+   "rate": {
+    "form": "constant",
+    "value": 304.82
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"support.label-changed\"}[5m]))"
+  },
+  {
+   "id": "consumed_support_label_changed_sms_service",
+   "name": "sms-service consumes",
+   "from": "lag_support_label_changed_sms_service",
+   "to": null,
+   "cloud": {
+    "x": 790,
+    "y": 7150
+   },
+   "rate": {
+    "form": "constant",
+    "value": 304.73
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"support.label-changed\",consumergroup=\"sms-service\"}[5m]))"
+  },
+  {
+   "id": "produced_support_media_updated_geo_cart_resolver",
+   "name": "support.media-updated produced",
+   "from": null,
+   "to": "lag_support_media_updated_geo_cart_resolver",
+   "cloud": {
+    "x": 60,
+    "y": 7170
+   },
+   "rate": {
+    "form": "constant",
+    "value": 16203.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"support.media-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_support_media_updated_geo_cart_resolver",
+   "name": "geo-cart-resolver consumes",
+   "from": "lag_support_media_updated_geo_cart_resolver",
+   "to": null,
+   "cloud": {
+    "x": 330,
+    "y": 7270
+   },
+   "rate": {
+    "form": "constant",
+    "value": 16177.45
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"support.media-updated\",consumergroup=\"geo-cart-resolver\"}[5m]))"
+  },
+  {
+   "id": "produced_support_media_updated_label_service",
+   "name": "support.media-updated produced",
+   "from": null,
+   "to": "lag_support_media_updated_label_service",
+   "cloud": {
+    "x": 290,
+    "y": 7170
+   },
+   "rate": {
+    "form": "constant",
+    "value": 16203.64
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_topic_messages_in_total{topic=\"support.media-updated\"}[5m]))"
+  },
+  {
+   "id": "consumed_support_media_updated_label_service",
+   "name": "label-service consumes",
+   "from": "lag_support_media_updated_label_service",
+   "to": null,
+   "cloud": {
+    "x": 560,
+    "y": 7270
+   },
+   "rate": {
+    "form": "constant",
+    "value": 16192.0
+   },
+   "machine": "environment",
+   "query": "sum(rate(kafka_consumergroup_consumed_total{topic=\"support.media-updated\",consumergroup=\"label-service\"}[5m]))"
+  }
+ ],
+ "machines": [],
+ "sensors": [
+  {
+   "program": "prometheus/promql"
+  }
+ ],
+ "history": {
+  "program": "prometheus/promql",
+  "args": [
+   "history",
+   "--days",
+   "29"
+  ]
+ }
+}
