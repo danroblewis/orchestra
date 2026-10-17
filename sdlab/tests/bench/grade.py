@@ -153,4 +153,9 @@ def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 2
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())
     ratio = (apart / max(1e-9, moved)) ** 0.5
-    return {"horizon": horizon, "apart": ratio, "skill": 1 - ratio * ratio}
+    # how much there was to predict: the truth's movement over the horizon, in each stock's level
+    # spread (rms over stocks and starts); near 0 the skill's denominator is small and the grade fragile
+    sd = A[m].std(axis=1)
+    sd[sd == 0] = 1
+    spread = float(np.sqrt((((truth_end[m] - A[m][:, s0 - 1]) / sd[:, None]) ** 2).mean()))
+    return {"horizon": horizon, "apart": ratio, "skill": 1 - ratio * ratio, "moved": spread}
