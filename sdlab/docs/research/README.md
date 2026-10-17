@@ -72,3 +72,4 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Rows fitted with their own noise model (AR residuals)](ar-rows.md) | idea (not started, wave 4) | - |
 | [Announced eras as instruments for drains biased by inflow pieces](era-instruments.md) | idea (not started, wave 4) | - |
 | [Evolving discovery code against generated models](evolve-discovery.md) | idea (not started, wave 4) | - |
+| [Inflow attribution: which stocks get outside inflow, and unbiased drains](inflow-attribution.md) | done (wave 4, benchmark v2.1) | needs a combination (+3.8/+7.0, not significant alone; found a genuine pieces-gate bug) |
