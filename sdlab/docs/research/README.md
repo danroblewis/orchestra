@@ -61,7 +61,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | done (wave 4, benchmark v2.1) | needs a combination: best so far (+11.5/+11.6, 12 -> 17 of 62); one regime stands in for an inflow |
 | [Outside inflows as a repeating profile](periodic-inflows.md) | done (wave 4, benchmark v2.1) | needs a combination; strong adopt candidate (+11.7/+17.4, 15 of 62, holds on fresh runs) |
 | [Assembling the model row by row from the candidates](row-crossover.md) | done (wave 4, benchmark v2.1) | needs a combination (+6.1/+13.4, 14 of 62 meet the goal; judge fooled on webshop, moderation) |
-| [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
+| [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | done (wave 4, benchmark v2.1) | adopt after combining with the judge/gate (+7.4/+7.7, 14 of 62; fresh 15) |
 | [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | done (wave 4, benchmark v2.1) | needs a combination (6 real hidden stocks, no false ones; +1.1/+2.0) |
 | [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | done (wave 4, benchmark v2.1) | paced moves: reject as they stand; gap inflows: needs a combination (+5.3/+5.5, services meets the goal) |
 | [Drains measured where nothing flows in (recession analysis)](recession-drains.md) | done (wave 4, benchmark v2.1) | needs a combination (+10.5/+15.2, 16 of 62; fresh 14) |
