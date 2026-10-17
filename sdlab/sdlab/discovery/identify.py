@@ -7,7 +7,7 @@ steps (loops that only mimic an outside input drift apart later). Only the data 
 
 from __future__ import annotations
 
-from .matrix import identify_one
+from .matrix import identify_one, known_flows
 from .simulate import behaviour_error
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
@@ -33,11 +33,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     best, tried = None, []
+    # known changes (opts["known"]) are part of every candidate's behaviour when it is judged
+    extra = known_flows(opts["known"], [s["id"] for s in stocks], run["t"]) if opts.get("known") else []
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
         r = identify_one(stocks, run, {**opts, **v})
-        e = judge(r["flows"], stocks, run)
+        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run)
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
             best = (r, e, v["name"])
