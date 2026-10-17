@@ -242,7 +242,9 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
             continue
         drain = [-(c.get(a) or 0.0) for c in row["coefL"]]
         moves = [sum(r["coefL"][c][a] for r in rows if r["id"] != a and (r["coefL"][c].get(a) or 0) > 0 and unit[r["id"]] == unit[a]) for c in range(L)]
-        changing = bool(row["cuts"]) and len(row["cuts"]) > 2
+        # a row whose outside inflow changes (in pieces, or one a strategy knows varies: opts
+        # "varying_inflow", stock ids) cannot separate its drain from the changes
+        changing = (bool(row["cuts"]) and len(row["cuts"]) > 2) or a in (opts.get("varying_inflow") or ())
         cand = [c for c in range(L) if moves[c] > 0 and ((changing and moves[c] > drain[c] and opts.get("trust_receivers") is not False) or drain[c] > moves[c])]
         if not cand:
             continue
