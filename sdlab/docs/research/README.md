@@ -47,7 +47,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [XMILE export and interoperability](xmile-export.md) | idea (not started) | - |
 | [A complexity budget the analyst states](complexity-budget.md) | idea (not started) | - |
 | [Bench instrumentation: coverage, selection, failure classes, ablation](bench-instrumentation.md) | done (I1; infra/bench-instrumentation) | on v2.1: 44 of 50 failing runs not representable, 1 not chosen, 5 not supported; judge picked the best candidate in 33 of 62 |
-| [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | idea (not started) | - |
+| [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | done (wave 3, benchmark v2.1) | reject for the main line (25.3% with the 5x test; no change without); keep gate.py for flexible strategies |
 | [Effects as basis-expanded flow columns in the regression](effect-columns.md) | idea (not started) | - |
 | [A diagnose-and-expand loop driven by residual signatures](residual-diagnostics.md) | idea (not started) | - |
 | [Outside-input changes estimated on innovations, jointly with the dynamics](inflow-innovations.md) | idea (not started) | - |
