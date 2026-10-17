@@ -18,6 +18,10 @@ on: what it fitted to its own run's draws cannot help it there.
                                                                is met: every example at every length at least
                                                                GOAL_SKILL20 at skill@20 and GOAL_SKILL100 at
                                                                skill@100 (exit 2 otherwise)
+    uv run python tests/bench/evaluate.py --generated 300      generated models instead of the examples, reported
+                                                               by motif (generated.py; --pool dev|sealed,
+                                                               --features coflow,eras; the sealed pool only
+                                                               with --i-am-adopting)
 
 Runs are saved under ~/.cache/sdlab/bench/runs (or $SDLAB_BENCH_CACHE/runs), never in the repository,
 with the branch and commit they ran on. Without --baseline a run is compared with the latest earlier
@@ -41,6 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import datasets
+import generated
 from grade import grade, same_behaviour, truth_of
 
 from sdlab.discovery.strategies import load, names
@@ -118,7 +123,16 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--goal", action="store_true")
+    ap.add_argument("--generated", type=int, metavar="N", help="N generated models instead of the examples (generated.py)")
+    ap.add_argument("--pool", default="dev", choices=["dev", "sealed"])
+    ap.add_argument("--features", default="", help="generated models built with these motif families (comma-separated)")
+    ap.add_argument("--i-am-adopting", action="store_true", help="allow scoring the sealed pool (adoption only)")
     a = ap.parse_args()
+    if a.generated is not None or a.pool != "dev" or a.i_am_adopting or a.features:
+        if a.generated is None:
+            sys.exit("--pool, --features and --i-am-adopting go with --generated N")
+        generated.main(a, RUNS, git, meets)
+        return
     RUNS.mkdir(parents=True, exist_ok=True)
 
     examples = a.examples.split(",") if a.examples else all_examples()

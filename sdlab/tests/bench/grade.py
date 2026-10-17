@@ -44,7 +44,11 @@ def _from_hospital(t: dict) -> dict:
 
 def truth_of(example: str) -> dict:
     t = json.loads((EXAMPLES / example / "truth.json").read_text())
-    sd = t.get("sd_structure") or _from_hospital(t)
+    return key_of(t.get("sd_structure") or _from_hospital(t))
+
+
+def key_of(sd: dict) -> dict:
+    """The parts of an answer key in the shared format (Truth.truth(), truth.json's sd_structure)."""
     rel: dict[str, str] = {}
 
     def put(a, b, kind):
