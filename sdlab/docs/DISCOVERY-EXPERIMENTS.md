@@ -26,6 +26,82 @@ successes.
 
 ## Log
 
+### 2026-10-17: experiment change_price - pricing changes in the outside inflow honestly - REJECTED (gate: needs a combination)
+Branch `exp/change-price`, strategy `change_price`, building blocks in `sdlab/discovery/pricing.py`
+(`noise_variance`: differences or long-run; `scan`: PELT at mult x log n x that variance; `prune`).
+`matrix.py` gained options whose defaults keep `matrix` identical (checked: zero deltas on sd-saas,
+sd-eras, sd-pipeline default): `scan` (the change scan per phase: fine, pass, level, conserve),
+`gate`, `level_change_params` / `form_change_params` (BIC parameters per change).
+**Hypothesis**: changes are priced too cheaply (1 x log n, 0.5 in the fine pass; the textbook BIC
+price is 2 x log n, and the variance from successive differences, sigma^2 (1 - rho), shrinks when a
+missing level leaves autocorrelated residuals), so chance pieces stand in for internal dynamics.
+**Mechanism test** (`tests/test_strategy_change_price.py`, synthetic chain inbox -> b -> c -> out with
+the intake changing every 30 steps, 2000 steps): `matrix` gives the internal stock c 9 chance
+pieces and numbers b -> c 0.229, drain 0.212; `change_price` gives c none (0.203 / 0.201) and keeps the
+inbox's 62 pieces (drain 0.31). Also: the long-run variance of AR(0.6) noise is ~6 where differences
+say < 1; at 2 x log n no chance change in 3000 steps of noise; pruning PELT's optimum at its own price
+changes nothing.
+**Bench (vs "python": 18/42, skill@20 70.8%, skill@100 68.9%)**, every attempt:
+- **Textbook price in every pass** (2 x log n, differences' variance): skill@20 52.4% (-18.5),
+  @100 43.8% (-25.1), 17/42. With the long-run variance and every change paying alone: 57.8% / 50.1%,
+  17/42. sd-pipeline long 99% -> 45%, sd-hidden-chain long 97% -> -857%, sd-housing long 97% ->
+  -793%, sd-eras long 49% -> -227%, sd-population long 50% -> -148%, sd-restaurant long 86% -> 70%;
+  up: sd-support-tiers 652% better at default (still -298%), long -54% -> 62%, sd-recycling default
+  32% -> 92%.
+- **Why it hurts sd-pipeline (the price, through the refit)**: on the inbox's residual at the true
+  drain 0.30 the intake's 200 changes are found as 147 at 1 x log n and 76 at 2 x log n (the real
+  changes are individually weak: ~30 steps, steps of 3-6 against a noise variance of ~12). Missing
+  ones bias the drain, which hides more changes: drain 0.25 -> 23 pieces, 0.20 -> 1, and the refit
+  ends at drain 0.135 with one piece (the "spiral"). Both ends are self-consistent, and honest BIC
+  prefers the wrong one: constant 15776 vs 166 pieces 16974 (6000 steps). 2 x log n is derived for a
+  fixed number of changes as n grows; an intake that changes at a fixed rate is outside that regime,
+  and there no price for detecting changes is right: under-cutting a real changing inflow biases the
+  levels, over-cutting costs only variance. So the earlier attempt hurt through the price, but only
+  because the levels are refitted on the pieces it finds.
+- **Long-run variance at the usual price** (mult 1, rho from the differences' lag-1
+  autocorrelation): 68.0% (-2.9) / 62.7% (-6.3), 13/42; sd-pipeline long -54, sd-moderation long -110,
+  sd-university long -25; sd-support-tiers default +629 (to -24%), sd-ev-fleet long +16. (A first
+  version estimating rho around fine pieces barely moved the variance, since the pieces eat the
+  autocorrelation: 64.6% / 63.5%.)
+- **Every change must pay alone** (prune at the scan's own price): identical to baseline; PELT's
+  optimum already satisfies it.
+- **A level in place of pieces judged with 2 parameters per change**: 64.2% (-6.7) / 58.7% (-10.2),
+  16/42 (sd-pipeline long -55, sd-housing default -1206, sd-hospital default -25; sd-support-tiers
+  default +687 to 35%, sd-recycling default +65, sd-population default +31).
+- **The gate (the strategy as committed)**: passes at the matrix's price; at the first pass, beside
+  the levels alone (no pieces yet to bias them), a stock gets pieces only if a constant inflow beats
+  none or a change survives 2 x log n x the long-run variance. **71.0% (+0.2) / 69.5% (+0.6), 18/42,
+  parts 57.8% (-2.1).** Up: sd-recycling default +17.5 / +5.9, sd-pipeline default +8.7 / +64.7,
+  sd-moderation long +4.9 / +8.4, sd-eras default +2.6, sd-recycling long +2.1. Down: sd-university
+  default -10.6 / -5.3, sd-manufacturing default -5.4 / -6.7 and long -4.1 / -4.7, sd-eras long
+  -4.3 / -2.1, sd-kanban long -2.3 / -7.1 and default -1.8 / -9.0 @100, sd-support-tiers default
+  -16.8 (-669%). With the differences' variance in the gate: the same to 0.1. Constant-beats-none
+  alone (no change test): 70.7% / 67.5%. The losers are internal stocks whose pieces stand for
+  internal rates that change unannounced (sd-university's enrolment pulse, sd-manufacturing's
+  second line in a non-era candidate): there the pieces are real.
+- **Minimum piece length** (an aside the brief allowed): 10 steps everywhere 73.2% (+2.4) / 71.2%
+  (+2.3), 18/42: sd-pipeline default 58% -> 99% / -122% -> 99.8% (the inbox loses its spurious
+  done link), sd-eras long +26.7, sd-moderation long +23.7, sd-university default +12.4; but
+  sd-support-tiers default -308, sd-hospital default -14.7 / -33.4 (day/night), sd-restaurant long
+  -15.4 / -86.7, sd-housing long -12.6. Only in the fine pass: 72.7% / 71.9% but 16/42
+  (sd-reservoirs default -31). With the gate: 72.2% / 68.2%. 20 steps: 57.1%, sd-saas long blows
+  up. A fixed length is a knob, not a principle.
+**Verdict: REJECTED** as a price change: the honest price of a change is wrong for the stocks that
+matter most (inflows that change at a fixed rate), and every honest variant in the passes loses
+3-19 points. The gate is neutral overall (+0.2 / +0.6, the same 18 runs) and does what it claims on
+the mechanism; it **needs a combination** with something that models internal rates that change
+(per-configuration numbers for unannounced changes) before internal pieces can be banned.
+The pipeline xfail is **not fixed**: the inbox still takes +0.026 x working (pieces in the inbox
+are too few or too short there, not too many; the gate does not touch a stock with an inflow).
+Noticed, not pursued: (1) short pieces bias a row's own coefficient (the Nickell bias of fixed
+effects, ~(1 + a) / (m - 1) for pieces of m steps), which is why a 10-step minimum helps sd-pipeline
+default and sd-eras long; a minimum tied to the row's own time constant, or a bias correction, may
+get the gain without the losses at day/night and sprint spikes. (2) Estimate the levels with the
+cheap pieces and never refit them on the reported pieces: the spiral needs the refit. (3) Choose the
+inflow form per stock by behaviour (the judge), not one global "changing / constant" candidate.
+(4) sd-support-tiers default: new tickets' pieces take the customers link; neither price nor gate
+fixes it.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

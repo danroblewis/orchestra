@@ -69,6 +69,11 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     bic = lambda rss, p: T * math.log(max(rss, 1e-12) / T) + p * log_t  # noqa: E731
     add_gain = opts.get("add_gain", log_t)                                # a level joins a row only if clearly nonzero
     min_piece = opts.get("min_piece", 5)
+    # parameters a change in the outside inflow counts for in the BIC comparisons (a constant is 1)
+    per_change = {k: opts.get(f"{k}_change_params", 1) for k in ("level", "form")}
+    # how changes in the outside inflow are found in a residual series; phase is "fine" (the first
+    # pass), "pass" (later passes), "level" (a level tried in place of pieces) or "conserve"
+    scan = opts.get("scan") or (lambda r, phase: pelt(r, min_piece, 0.5 if phase == "fine" else 1))  # noqa: E731
 
     def may_affect(j, s):
         a, b = group[ids[j]], group[ids[s]]
@@ -90,6 +95,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # level when there are few (backward elimination), from none when there are many.
         cuts = [0, T]
         chosen = list(allowed) if len(allowed) <= opts.get("backward_max", 0) else []
+        no_pieces = False
         for p in range(5):
             sums = row_sums(y, Xa, cuts)
             chosen = step(sums, chosen)
@@ -107,7 +113,16 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 chosen = step(sums, chosen)
             f = fit_subset(sums, chosen)
             res = y - (f.beta @ Xa[chosen] if chosen else 0)
-            nxt = [0, T] if opts.get("changes") is False else pelt(res, min_piece, 0.5 if p == 0 else 1)
+            nxt = [0, T] if opts.get("changes") is False or no_pieces else scan(res, "fine" if p == 0 else "pass")
+            if p == 0 and opts.get("gate") and len(nxt) > 2:
+                # before any piece can bias the levels: a stock gets pieces only if, beside the levels
+                # alone, an outside inflow beats none or the gate finds a change in what they leave
+                const = bic(f.rss, len(chosen) + 1)
+                none_ = bic(fit_subset(row_sums(y, Xa, None), chosen).rss, len(chosen))
+                if const >= none_ and len(opts["gate"](res)) <= 2:
+                    if opts.get("trace") == sid:
+                        print(f"  {sid}: no outside inflow beside the levels alone; no pieces")
+                    nxt, no_pieces = [0, T], True
             if opts.get("trace") == sid:
                 print(f"  {sid} pass {p}: {len(cuts) - 1} pieces;", ", ".join(f"{ids[col[q][0]]}{'@' + str(col[q][1]) if col[q][1] >= 0 else ''} {b:.4f}" for q, b in zip(chosen, f.beta)), f"-> {len(nxt) - 1}")
             if nxt == cuts and p >= 2:
@@ -118,14 +133,14 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # fine pieces take it before the level is tried: the two levels whose means over the pieces
         # follow the pieces' values best are tried in place of pieces, and kept if the row with it,
         # and the pieces it still needs, is clearly better
-        if opts.get("level_for_pieces", True) and opts.get("changes") is not False and len(cuts) > 2:
+        if opts.get("level_for_pieces", True) and opts.get("changes") is not False and not no_pieces and len(cuts) > 2:
             def fit_on(cols, c):
                 f = fit_subset(row_sums(y, Xa[cols], c), list(range(len(cols))))
-                return f, bic(f.rss, len(cols) + len(c) - 1)
+                return f, bic(f.rss, len(cols) + 1 + per_change["level"] * (len(c) - 2))
 
             def pieces_for(cols, c):
                 f, _ = fit_on(cols, c)
-                return pelt(y - (f.beta @ Xa[cols] if cols else 0), min_piece, 1)
+                return scan(y - (f.beta @ Xa[cols] if cols else 0), "level")
 
             cur = fit_on(chosen, cuts)[1]
             for _ in range(3):
@@ -168,7 +183,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         constant = try_form([0, T], 1)
         pick = none if none["sc"] <= constant["sc"] else constant
         if len(cuts) > 2:
-            pieces = try_form(cuts, len(cuts) - 1)
+            pieces = try_form(cuts, 1 + per_change["form"] * (len(cuts) - 2))
             vals = piece_values(y, Xa, chosen, pieces["f"].beta, cuts)
             W = sum(p_["w"] for p_ in vals)
             mean = sum(p_["v"] * p_["w"] for p_ in vals) / W
@@ -243,7 +258,8 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
         idx = list(range(len(Xf)))
         if changing:
             fixed_part = sum((row["beta"][i] * row["X"][q] for q, i in others), np.zeros(len(y2)))
-            cuts2 = pelt(y2 - fixed_part, opts.get("min_piece", 5), 1)
+            scan = opts.get("scan") or (lambda r, phase: pelt(r, opts.get("min_piece", 5), 1))  # noqa: E731
+            cuts2 = scan(y2 - fixed_part, "conserve")
         else:
             cuts2 = row["cuts"]
         sums = row_sums(y2, Xf, cuts2)
