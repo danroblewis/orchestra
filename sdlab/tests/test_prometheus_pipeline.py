@@ -47,12 +47,12 @@ def test_history_from_promql_and_discovery_of_unexported_consumers(prom, tmp_pat
     monkeypatch.setenv("SDLAB_HOME", str(tmp_path))
     monkeypatch.setenv("SDLAB_PROM_URL", url)
     stocks, flows = builder.kafka_part(url, 0, 0)
-    model = builder.model("k8s-kafka", "Kafka", "", stocks, flows, 29, None)
+    model = builder.model("test-kafka", "Kafka", "", stocks, flows, 29, None)
     (tmp_path / "models").mkdir()
-    (tmp_path / "models" / "k8s-kafka.json").write_text(json.dumps(model))
+    (tmp_path / "models" / "test-kafka.json").write_text(json.dumps(model))
     client = TestClient(create_app())
 
-    snap = client.post("/api/models/k8s-kafka/live/import").json()
+    snap = client.post("/api/models/test-kafka/live/import").json()
     n = len(snap["series"]["t"])
     assert 3 * 288 - 5 <= n <= 3 * 288 + 1                         # three days of 5-minute steps
     assert not snap["errors"]

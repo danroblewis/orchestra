@@ -11,7 +11,15 @@
 <body data-mode="edit">
 <header class="top">
   <div class="brand">SD Lab</div>
-  <select id="model-pick" aria-label="Model"></select>
+  <div class="picker">
+    <button id="model-pick" class="pickbtn" aria-haspopup="listbox" aria-expanded="false" title="Choose a model"></button>
+    <div id="model-menu" class="pickmenu" role="listbox" aria-label="Models" hidden></div>
+  </div>
+  <span id="model-kind" class="badge" hidden>example</span>
+  <span class="filetools">
+    <button id="files-open" class="btn icon" title="Models: open, copy, delete, download, or open a file from your disk" aria-label="Models">&#128194;</button>
+    <button id="save-as" class="btn icon" title="Save as: a copy of this model (and its run) under a new name" aria-label="Save as">&#128190;</button>
+  </span>
   <nav class="modes" role="tablist">
     <button role="tab" data-mode="edit">Edit</button>
     <button role="tab" data-mode="run">Run</button>
@@ -39,6 +47,9 @@
 
 <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom panel" title="Drag to resize; double-click to reset"></div>
 <section class="run-panel" id="run-panel"></section>
+
+<dialog id="files" aria-label="Models"></dialog>
+<input id="file-in" type="file" accept=".json,application/json" hidden>
 
 <script src="/static/sim.js"></script>
 <script src="/static/discover.js"></script>

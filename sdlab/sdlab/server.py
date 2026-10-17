@@ -1,7 +1,9 @@
 """SD Lab server: stores models as JSON files and serves the editor.
 
-Models live in ``$SDLAB_HOME/models/<id>.json`` (default ``~/.sdlab``). The examples
-in ``sdlab/examples/`` are copied in the first time the server starts."""
+The examples in ``sdlab/examples/`` are read-only: they always open as shipped. The user's own
+models live in ``$SDLAB_HOME/models/<id>.json`` (default ``~/.sdlab``); a copy of an example
+(made when it is first edited, or with "Save as") is one of them. Runs live in
+``$SDLAB_HOME/runs/<id>/``, examples' included."""
 
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -38,11 +40,47 @@ def models_dir() -> Path:
     return d
 
 
-def seed_examples() -> None:
+def is_example(model_id: str) -> bool:
+    return bool(ID_RE.match(model_id)) and (EXAMPLES / f"{model_id}.json").exists()
+
+
+def unique_id(base: str) -> str:
+    """A free model id made from a name: lower case, letters, digits, dashes."""
+    slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:56] or "model"
+    if not slug[0].isalnum():
+        slug = "m" + slug
+    taken = {p.stem for p in models_dir().glob("*.json")} | {p.stem for p in EXAMPLES.glob("*.json")}
+    mid, n = slug, 2
+    while mid in taken:
+        mid, n = f"{slug}-{n}", n + 1
+    return mid
+
+
+def copy_run(src: str, dst: str) -> None:
+    a, b = home() / "runs" / src, home() / "runs" / dst
+    if a.is_dir() and not b.exists():
+        shutil.copytree(a, b)
+
+
+def adopt_old_copies() -> None:
+    """Servers before examples were read-only copied the examples into the models folder and saved
+    edits over them. An untouched copy is dropped; an edited one becomes the user's own model."""
     for ex in EXAMPLES.glob("*.json"):
-        dest = models_dir() / ex.name
-        if not dest.exists():
-            shutil.copyfile(ex, dest)
+        old = models_dir() / ex.name
+        if not old.exists():
+            continue
+        try:
+            mine, shipped = json.loads(old.read_text()), json.loads(ex.read_text())
+        except ValueError:
+            continue
+        if {**mine, "id": shipped.get("id")} != shipped:
+            mid = unique_id(f"{ex.stem}-edited")
+            mine.update(id=mid, name=f"{mine.get('name') or ex.stem} (edited)")
+            (models_dir() / f"{mid}.json").write_text(json.dumps(mine, indent=2))
+            run = home() / "runs" / ex.stem
+            if run.is_dir() and not (home() / "runs" / mid).exists():
+                run.rename(home() / "runs" / mid)                # the run was of the edited model: it goes with it
+        old.unlink()
 
 
 def validate(model: dict[str, Any]) -> list[str]:
@@ -121,7 +159,7 @@ def validate(model: dict[str, Any]) -> list[str]:
 
 
 def create_app() -> FastAPI:
-    seed_examples()
+    adopt_old_copies()
     runs: dict[str, LiveRun] = {}
 
     @asynccontextmanager
@@ -180,28 +218,38 @@ def create_app() -> FastAPI:
 
     @app.get("/api/models")
     def list_models() -> dict:
-        out = []
-        for p in sorted(models_dir().glob("*.json")):
-            try:
-                m = json.loads(p.read_text())
-            except ValueError:
-                continue
-            out.append({"id": p.stem, "name": m.get("name", p.stem)})
-        return {"models": out}
+        def listing(folder: Path) -> list[dict]:
+            out = []
+            for p in sorted(folder.glob("*.json")):
+                try:
+                    m = json.loads(p.read_text())
+                except ValueError:
+                    continue
+                row = {"id": p.stem, "name": m.get("name", p.stem), "modified": int(p.stat().st_mtime)}
+                r = runs.get(p.stem)
+                if r is not None and r.running:                   # running now: the page marks it
+                    row.update(running=True, t=r.t)
+                out.append(row)
+            return out
+        return {"examples": listing(EXAMPLES), "models": [m for m in listing(models_dir()) if not is_example(m["id"])]}
 
     # Hidden flows stand for parts of the real system nobody has modelled: the runner runs them,
     # but the page never receives them, and saving the page's model keeps them as they were.
     @app.get("/api/models/{model_id}")
     def get_model(model_id: str, reveal: bool = False) -> dict:
         m = json.loads(_path(model_id).read_text())
+        m["example"] = is_example(model_id)
         if not reveal:
             m["flows"] = [f for f in m.get("flows", []) if not f.get("hidden")]
         return m
 
     @app.put("/api/models/{model_id}")
     def put_model(model_id: str, model: dict[str, Any]) -> dict:
+        if is_example(model_id):
+            raise HTTPException(409, "examples are read-only: save a copy")
         p = _path(model_id, must_exist=False)
         model["id"] = model_id
+        model.pop("example", None)
         if p.exists():
             kept = [f for f in json.loads(p.read_text()).get("flows", []) if f.get("hidden")]
             ids = {f.get("id") for f in model.get("flows", [])}
@@ -214,13 +262,54 @@ def create_app() -> FastAPI:
         tmp.replace(p)
         return {"ok": True}
 
-    @app.post("/api/models/{model_id}/reset")
-    def reset_model(model_id: str) -> dict:
-        ex = EXAMPLES / f"{model_id}.json"
-        if not ex.exists():
-            raise HTTPException(404, "no example by that id")
-        shutil.copyfile(ex, _path(model_id, must_exist=False))
-        return json.loads(ex.read_text())
+    @app.post("/api/models")
+    def new_model(model: dict[str, Any]) -> dict:
+        """A new model of the user's own (an uploaded file, say), with an id made from its name."""
+        mid = unique_id(str(model.get("name") or model.get("id") or "model"))
+        put_model(mid, {**model, "flows": model.get("flows", []), "stocks": model.get("stocks", []), "machines": model.get("machines", [])})
+        return {"id": mid}
+
+    @app.post("/api/models/{model_id}/copy")
+    def copy_model(model_id: str, body: dict[str, Any] | None = None) -> dict:
+        """Save as: a copy of any model (hidden flows and the run included) under a new name."""
+        body = body or {}
+        src = json.loads(_path(model_id).read_text())
+        name = str(body.get("name") or f"{src.get('name', model_id)} (copy)")
+        mid = unique_id(name)
+        src.update(id=mid, name=name)
+        src.pop("example", None)
+        (models_dir() / f"{mid}.json").write_text(json.dumps(src, indent=2))
+        if body.get("run", True):
+            # the run goes with the copy: a running one is paused while its record is copied, and
+            # carries on as the copy's (the original keeps its record up to here)
+            was = runs[model_id] if model_id in runs and runs[model_id].running else None
+            if was:
+                was.stop()
+            copy_run(model_id, mid)
+            if was:
+                live(mid).start(was.seconds_per_tick)
+        return {"id": mid, "name": name}
+
+    @app.delete("/api/models/{model_id}")
+    def delete_model(model_id: str) -> dict:
+        if is_example(model_id):
+            raise HTTPException(409, "examples cannot be deleted")
+        p = _path(model_id)
+        if model_id in runs:
+            gone = runs.pop(model_id)
+            gone.stop()
+            gone.programs.close()
+        p.unlink()
+        shutil.rmtree(home() / "runs" / model_id, ignore_errors=True)
+        return {"ok": True}
+
+    @app.get("/api/models/{model_id}/download")
+    def download_model(model_id: str) -> Response:
+        """The model as a file to keep, hidden flows included (it is the user's own copy)."""
+        m = json.loads(_path(model_id).read_text())
+        m.pop("example", None)
+        return Response(json.dumps(m, indent=2), media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="{model_id}.json"'})
 
     @app.get("/")
     def index() -> HTMLResponse:
@@ -237,7 +326,7 @@ def create_app() -> FastAPI:
 def _path(model_id: str, must_exist: bool = True) -> Path:
     if not ID_RE.match(model_id):
         raise HTTPException(400, "bad model id")
-    p = models_dir() / f"{model_id}.json"
+    p = EXAMPLES / f"{model_id}.json" if is_example(model_id) else models_dir() / f"{model_id}.json"
     if must_exist and not p.exists():
         raise HTTPException(404, "no such model")
     return p

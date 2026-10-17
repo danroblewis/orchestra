@@ -265,3 +265,14 @@ def test_replay_clock_hides_the_future(data):
     assert raw["data"]["resultType"] == "matrix"
     assert max(t for t, _ in raw["data"]["result"][0]["values"]) == now
     assert math.isclose(clock.now(), now)
+
+
+def test_replay_clock_starts_over_at_the_end_so_live_runs_keep_moving(data, monkeypatch):
+    ds, _, _ = data
+    clock = Clock(ds, "replay", replay_from=1, speed=3600)          # an hour of data per second
+    import sdlab.promlab.api as api
+    monkeypatch.setattr(api.time, "time", lambda: clock.wall0 + 30)   # 30 hours in: past the end
+    assert math.isclose(clock.now(), ds.end - 86400 + 6 * 3600)       # started over 6 hours ago
+    still = Clock(ds, "replay", replay_from=1, speed=3600, loop=False)
+    monkeypatch.setattr(api.time, "time", lambda: still.wall0 + 30)
+    assert still.now() == ds.end

@@ -126,11 +126,13 @@ def main() -> None:
     fs, ff = fleet_part(a.prom, 120, 120)
     ks2, kf2 = kafka_part(a.prom, 120 + 21 * 260, 120)
     fleet = model("k8s-fleet", "Fleet: 400 gRPC services (Prometheus)",
-                  "The stress model: in-flight requests for every service and lag for every consumer group, from Prometheus. "
-                  "Calls between services flow in, handled requests flow out; each replica change starts an era. "
-                  "With this many stocks, select a team's services (search the namespace) before charting, fitting or discovering. "
-                  "Import history loads 7 days.",
-                  fs + ks2, ff + kf2, 7, "kube_deployment_spec_replicas")
+                  "The stress model: in-flight requests for every gRPC service and lag for every consumer group, read from "
+                  "Prometheus with PromQL. Only the stocks are given: no flows, not even the calls coming in or the handled "
+                  "requests going out. Import history (7 days) or Start, then Discover flows and see what the levels alone "
+                  "reveal. Each replica change starts an era. With this many stocks, select a team's services (search the "
+                  "namespace) before charting.",
+                  fs + ks2, [], 7, "kube_deployment_spec_replicas")
+    del ff, kf2                                              # the flows are for discovery to find
     for m in (kafka, fleet):
         (out / f"{m['id']}.json").write_text(json.dumps(m, indent=1))
         print(f"{m['id']}: {len(m['stocks'])} stocks, {len(m['flows'])} flows")

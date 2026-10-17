@@ -66,43 +66,135 @@
   }
 
   // ---------- persistence ----------
+  // Examples always open as shipped. The first edit to one saves a copy of the user's own (its
+  // run goes with it), and from then on the copy is what is edited.
+  async function fetchList() { S.list = await fetch("/api/models").then((x) => x.json()); return S.list; }
+  // a run going on right now is marked, so it is never a guess which ones are running
+  const runSign = (r) => [...r.models, ...r.examples].filter((m) => m.running).map((m) => m.id).sort().join();
+  // The model picker: our own list rather than a native select, so a running model can stand out
+  // (a green background and its step), and the list can be filtered by typing.
+  function renderPick(id) {
+    const r = S.list;
+    if (id) S.pickId = id;
+    S.listSign = runSign(r);
+    const all = [...r.models, ...r.examples], cur = all.find((m) => m.id === S.pickId);
+    const btn = $("model-pick");
+    btn.innerHTML = `${cur && cur.running ? '<span class="dot" aria-hidden="true"></span>' : ""}<span class="pname">${esc(cur ? cur.name : "Choose a model")}</span><span class="caret" aria-hidden="true">\u25be</span>`;
+    btn.classList.toggle("running", !!(cur && cur.running));
+    const menu = $("model-menu");
+    if (menu.hidden) return;
+    const q = (S.pickFilter || "").toLowerCase(), hit = (m) => !q || m.name.toLowerCase().includes(q) || m.id.includes(q);
+    const item = (m) => `<div role="option" class="pickitem${m.running ? " running" : ""}${m.id === S.pickId ? " cur" : ""}" data-pick="${m.id}" aria-selected="${m.id === S.pickId}">
+        <span class="pname">${esc(m.name)}</span>${m.running ? `<span class="ptag">\u25b6 running \u00b7 step ${m.t}</span>` : ""}</div>`;
+    const group = (label, list) => (list.filter(hit).length ? `<div class="pickgroup">${label}</div>${list.filter(hit).map(item).join("")}` : "");
+    const keep = menu.querySelector(".pickfind");
+    const body = group("My models", r.models) + group("Examples (open as shipped)", r.examples) || `<div class="pickgroup">No model matches</div>`;
+    if (!keep) menu.innerHTML = `<input class="pickfind" placeholder="Filter models" aria-label="Filter models"><div class="picklist">${body}</div>`;
+    else menu.querySelector(".picklist").innerHTML = body;
+    const items = [...menu.querySelectorAll("[data-pick]")];
+    if (!items.some((x) => x.classList.contains("hl"))) (items.find((x) => x.classList.contains("cur")) || items[0] || { classList: { add() {} } }).classList.add("hl");
+  }
+  function openPick() {
+    const menu = $("model-menu");
+    menu.hidden = false; $("model-pick").setAttribute("aria-expanded", "true");
+    S.pickFilter = ""; menu.innerHTML = "";
+    renderPick();
+    const f = menu.querySelector(".pickfind"); f.focus();
+    const cur = menu.querySelector(".cur"); if (cur) cur.scrollIntoView({ block: "nearest" });
+    fetchList().then(() => { if (!menu.hidden) renderPick(); }).catch(() => {});   // fresh running marks
+  }
+  function closePick() { $("model-menu").hidden = true; $("model-pick").setAttribute("aria-expanded", "false"); }
+  $("model-pick").addEventListener("click", () => ($("model-menu").hidden ? openPick() : closePick()));
+  $("model-menu").addEventListener("click", (e) => {
+    const it = e.target.closest("[data-pick]"); if (!it) return;
+    closePick();
+    if (it.dataset.pick !== S.model.id) loadModel(it.dataset.pick);
+  });
+  $("model-menu").addEventListener("input", (e) => { if (e.target.classList.contains("pickfind")) { S.pickFilter = e.target.value; renderPick(); } });
+  $("model-menu").addEventListener("keydown", (e) => {
+    const items = [...$("model-menu").querySelectorAll("[data-pick]")], at = items.findIndex((x) => x.classList.contains("hl"));
+    if (e.key === "Escape") { closePick(); $("model-pick").focus(); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const next = items[Math.max(0, Math.min(items.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))];
+      items.forEach((x) => x.classList.remove("hl")); if (next) { next.classList.add("hl"); next.scrollIntoView({ block: "nearest" }); }
+    }
+    if (e.key === "Enter" && items[at]) { e.preventDefault(); items[at].click(); }
+  });
+  document.addEventListener("pointerdown", (e) => { if (!$("model-menu").hidden && !e.target.closest(".picker")) closePick(); }, true);
   async function loadList(selectId) {
-    const r = await fetch("/api/models").then((x) => x.json());
-    const pick = $("model-pick");
-    pick.innerHTML = r.models.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
+    const r = await fetchList();
+    const all = [...r.models, ...r.examples];
     const fromUrl = new URLSearchParams(location.search).get("model");
     let remembered = null; try { remembered = localStorage.getItem("sdlab.model"); } catch { /* storage may be blocked */ }
-    const known = (id) => id && r.models.some((m) => m.id === id) ? id : null;
-    const id = selectId || known(fromUrl) || known(remembered) || (r.models.find((m) => m.id === "bakery") || r.models[0] || {}).id;
-    if (id) { pick.value = id; await loadModel(id); }
+    const known = (id) => id && all.some((m) => m.id === id) ? id : null;
+    const id = known(selectId) || known(fromUrl) || known(remembered) || (all.find((m) => m.id === "bakery") || all[0] || {}).id;
+    renderPick(id);
+    if (id) await loadModel(id);
   }
-  async function loadModel(id) {
-    S.model = await fetch(`/api/models/${id}`).then((x) => x.json());
+  function rememberModel(id) {
     const u = new URL(location.href); u.searchParams.set("model", id); history.replaceState(null, "", u);
     try { localStorage.setItem("sdlab.model", id); } catch { /* fine without it */ }
-    $("model-pick").value = id;
+  }
+  async function loadModel(id) {
+    await flushSave();
+    S.model = await fetch(`/api/models/${id}`).then((x) => x.json());
+    S.isExample = !!S.model.example; delete S.model.example;
+    rememberModel(id);
+    renderPick(id);
     S.model.stocks ||= []; S.model.flows ||= []; S.model.machines ||= [];
-    S.sel.clear(); S.editMachine = null; S.pending = null; S.recent = []; S.live = null; S.liveItems = null; S.undo = null;
+    S.sel.clear(); S.editMachine = null; S.pending = null; S.recent = []; S.live = null; S.paceLog = null; S.liveItems = null; S.undo = null;
     S.discovery = null; S.leverage = null; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.view = null; S.find = "";
     S.simplify = null; S.preview = null; S.previewIdx = null; S.undoSimplify = null; S.showHidden = false; S.undoLayout = null;
     if ($("unarrange")) $("unarrange").hidden = true;
     if ($("find")) $("find").value = "";
-    if (S.poll) { clearInterval(S.poll); S.poll = null; }
+    if (S.poll) { clearTimeout(S.poll.timer); S.poll = null; }
     changed(false);
+    renderSaveState();
     syncPolling();
+  }
+  // Save as: a copy of the current model (with its run) under a new name, which is then what is edited.
+  async function saveCopy(name) {
+    const r = await fetch(`/api/models/${S.model.id}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(name ? { name } : {}) });
+    if (!r.ok) { setStatus("Could not save a copy", true); return null; }
+    const c = await r.json();
+    S.model.id = c.id; S.model.name = c.name; S.isExample = false;
+    rememberModel(c.id);
+    await fetchList(); renderPick(c.id); renderSaveState();
+    return c;
+  }
+  async function writeModel() {
+    S.saveTimer = null;
+    if (S.isExample) {
+      const shipped = S.model.name;
+      S.forking = S.forking || saveCopy(`${S.model.name} (my copy)`);
+      const c = await S.forking; S.forking = null;
+      if (!c) return;
+      setStatus(`Saved as your own copy, “${c.name}”. The example “${shipped}” stays as shipped.`);
+    }
+    const r = await fetch(`/api/models/${S.model.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(S.model) });
+    if (r.ok) { if ($("status").textContent === "Unsaved changes") setStatus("Saved"); }   // keep a more useful message
+    else {
+      const body = await r.json().catch(() => ({}));
+      const errs = (body.detail && body.detail.errors) || [typeof body.detail === "string" ? body.detail : r.statusText];
+      setStatus("Not saved: " + errs.join("; "), true);
+    }
   }
   function save() {
     clearTimeout(S.saveTimer);
     setStatus("Unsaved changes");
-    S.saveTimer = setTimeout(async () => {
-      const r = await fetch(`/api/models/${S.model.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(S.model) });
-      if (r.ok) { if ($("status").textContent === "Unsaved changes") setStatus("Saved"); }   // keep a more useful message
-      else {
-        const body = await r.json().catch(() => ({}));
-        const errs = (body.detail && body.detail.errors) || [r.statusText];
-        setStatus("Not saved: " + errs.join("; "), true);
-      }
-    }, 400);
+    S.saveTimer = setTimeout(writeModel, 400);
+  }
+  // write any pending change now (before switching models, or starting a run)
+  async function flushSave() {
+    if (!S.saveTimer) return;
+    clearTimeout(S.saveTimer);
+    await writeModel();
+  }
+  function renderSaveState() {
+    const b = $("model-kind"); if (!b) return;
+    b.hidden = !S.isExample;
+    b.title = "An example always opens as shipped. Your first change saves a copy of your own, and that copy is what you edit.";
   }
   function setStatus(text, err) { const el = $("status"); el.textContent = text; el.classList.toggle("error", !!err); }
 
@@ -827,8 +919,6 @@
       openMenu(evt.clientX, evt.clientY, [
         { label: "Add a stock here", act: () => addStock(at) },
         { label: "Start a flow from outside, here", act: () => { S.pending = { from: null, cloud: at }; S.sel.clear(); renderAll(); } },
-        "-",
-        { label: "Reset to the example", confirm: "Click again to reset", danger: true, act: resetExample },
       ]);
     }
   });
@@ -846,12 +936,6 @@
       openPicker(S.pointer.x, S.pointer.y, selFlows());
     }
   });
-
-  async function resetExample() {
-    const r = await fetch(`/api/models/${S.model.id}/reset`, { method: "POST" });
-    if (r.ok) { await loadModel(S.model.id); setStatus("Reset to the example"); }
-    else setStatus("This model has no example to reset to", true);
-  }
 
   // ---------- live runs ----------
   // A model runs live when its machines (or environment flows) name programs. The server owns
@@ -883,6 +967,9 @@
       S.live = { ...fresh, series: L, eras: fresh.eras.map((e) => ({ ...e, model: e.model || models[e.n] })) };
     }
     fillInferred();
+    // how fast the run is really going, over the last few seconds
+    const at = performance.now();
+    S.paceLog = [...(S.paceLog || []), [at, S.live.t]].filter(([w]) => at - w < 6000);
     const one = inspected();
     if (one.type === "stock") await fetchItems(one.obj.id);
     if (`${S.live.t}:${S.live.running}:${(S.live.errors || []).length}` === before) return;
@@ -921,16 +1008,41 @@
     S.liveItems = r.ok ? { stock: stockId, ...(await r.json()) } : null;
   }
   async function liveAct(action, speed) {
-    const body = action === "start" ? JSON.stringify({ seconds_per_tick: speed || S.speed || (S.live && S.live.seconds_per_tick) || 1 }) : "{}";
-    if (action === "start" && S.saveTimer) { clearTimeout(S.saveTimer); await fetch(`/api/models/${S.model.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(S.model) }); }
+    const body = action === "start" ? JSON.stringify({ seconds_per_tick: speed ?? S.speed ?? (S.live && S.live.seconds_per_tick) ?? 1 }) : "{}";
+    if (action === "start") await flushSave();
     const r = await fetch(`/api/models/${S.model.id}/live/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
     if (r.ok) S.live = await r.json();
     await refetchLive();
+    pollSoon();
+    if (action === "start" || action === "stop" || action === "reset") { await fetchList(); renderPick(S.model.id); }
   }
   function syncPolling() {
     const want = S.model && runnable();
-    if (want && !S.poll) { fetchLive(); S.poll = setInterval(fetchLive, 1000); }
-    if (!want && S.poll) { clearInterval(S.poll); S.poll = null; }
+    if (want && !S.poll) { S.poll = {}; pollLoop(S.poll); }
+    if (!want && S.poll) { clearTimeout(S.poll.timer); S.poll = null; }
+  }
+  // While a run goes, ask for news as often as new steps arrive (at most about ten times a second);
+  // while it is paused, once a second. Never spend more than about a third of the time fetching and
+  // drawing, so a model with hundreds of stocks slows the updates rather than the page.
+  async function pollLoop(token) {
+    if (S.poll !== token) return;
+    const began = performance.now();
+    try { await fetchLive(); } catch { /* the server may be restarting: try again later */ }
+    if (S.poll !== token) return;
+    if (!S.listAt || began - S.listAt > 5000) {             // which models are running, every few seconds
+      S.listAt = began;
+      fetchList().then((r) => { if (runSign(r) !== S.listSign) renderPick(S.model.id); if ($("files").open) renderFiles(); }).catch(() => {});
+    }
+    const cost = performance.now() - began, L = S.live;
+    let wait = 1000;
+    if (L && L.running) wait = Math.min(1000, Math.max(100, 1000 * (L.seconds_per_tick ?? 1)));
+    token.timer = setTimeout(() => pollLoop(token), Math.max(wait, 2 * cost));
+  }
+  // after Start, Pause or a step: the next update now, not at the end of a slow wait
+  function pollSoon() {
+    const token = S.poll; if (!token) return;
+    clearTimeout(token.timer);
+    token.timer = setTimeout(() => pollLoop(token), 50);
   }
 
   // ---------- toolbar and hint ----------
@@ -948,7 +1060,12 @@
         h += L.running ? ib('data-live="stop"', "⏸️", "Pause the run")
           : ib(`data-live="start"${why ? " disabled" : ""}`, "▶️", why || "Start the run");
         h += ib(`data-live="step"${L.running || why ? " disabled" : ""}`, "⏭️", why || `Step one ${tu()}`);
-        h += `<label title="How fast the run goes">⏱️ <select id="speed" aria-label="Speed">${options([[0.25, "4/s"], [0.5, "2/s"], [1, "1/s"], [2, "1 per 2 s"], [10, "1 per 10 s"], [60, "1/min"]], L.seconds_per_tick || 1)}</select></label>`;
+        // speed is how much model time passes per real second: one step of the model is one time unit
+        const u = tu(), us = `${u}s`, per = L.seconds_per_tick ?? 1;
+        const speeds = [[60, `1 ${u} every 60 s`], [10, `1 ${u} every 10 s`], [2, `1 ${u} every 2 s`], [1, `1 ${u} a second`], [0.5, `2 ${us} a second`],
+          [0.25, `4 ${us} a second`], [0.1, `10 ${us} a second`], [0.04, `25 ${us} a second`], [0, "full speed"]]
+          .map(([v, l]) => [v, v && v === stepSeconds() ? `${l} (real time)` : l]);
+        h += `<label title="How fast the run goes: how many ${esc(us)} of the model pass each real second. Full speed runs as fast as the programs answer.">\u23f1\ufe0f <select id="speed" aria-label="Speed">${options(speeds, speeds.some(([v]) => v === per) ? per : 1)}</select></label>`;
         if (S.model.history) h += ib("data-import", "📥", "Import history: run this model's history program and replace the run with the levels it reports");
         h += ib('data-live="reset" class="danger"', "🗑️", "Empty every stock: throw the run away and start again");
         const eraLen = n ? (S.live.series.t[n - 1] - currentEra().start + 1) : 0;
@@ -1125,7 +1242,7 @@
     const k = e.target.dataset && e.target.dataset.model;
     if (!k) return;
     S.model[k] = e.target.value;
-    if (k === "name") { const o = $("model-pick").selectedOptions[0]; if (o) o.textContent = e.target.value; }
+    if (k === "name") { const m = [...S.list.models, ...S.list.examples].find((x) => x.id === S.model.id); if (m) { m.name = e.target.value; renderPick(); } }
     changed(true, { keepInspector: true });
   });
 
@@ -1426,7 +1543,15 @@
     const m = S.proj && S.proj.summary.machines.find((x) => x.machine === id);
     return { busy: m ? m.avgBusy : 0, measured: false };
   }
-  const WINDOWS = [[30, "last 30"], [60, "last 60"], [120, "last 120"], [240, "last 240"], [0, "everything"]];
+  const WINDOWS = [[30], [60], [120], [240], [0]];
+  // "last 60 minutes", or "last 240 5-minute steps (20 h)" when the unit is not a plain duration
+  function windowLabel(v) {
+    if (!v) return "everything";
+    const sec = stepSeconds(), plain = UNIT_SECONDS[tu().toLowerCase()] && !S.model.step_seconds;
+    if (!sec || plain) return `last ${v} ${tu()}s`;
+    const d = v * sec, [u, a] = [[604800, "wk"], [86400, "d"], [3600, "h"], [60, "min"], [1, "s"]].find(([x]) => d >= 2 * x) || [1, "s"];
+    return `last ${v} ${tu()}s (${fmt(d / u)} ${a})`;
+  }
   function renderRunPanel() {
     const box = $("run-panel");
     if (S.mode !== "run") { box.innerHTML = ""; box.dataset.skel = ""; return; }
@@ -1447,7 +1572,7 @@
         <div class="live-main">
           <div class="runbar">
             <div class="seg"><button data-tab="stocks" class="${S.tab === "stocks" ? "on" : ""}">Stocks</button><button data-tab="flows" class="${S.tab === "flows" ? "on" : ""}">Flows</button></div>
-            <label>Show <select id="win">${WINDOWS.map(([v, l]) => `<option value="${v}" ${S.win === v ? "selected" : ""}>${l}</option>`).join("")}</select> <span id="win-unit"></span></label>
+            <label title="How much of the run the charts show. One step of this model is one ${esc(tu())}.">Show <select id="win">${WINDOWS.map(([v]) => `<option value="${v}" ${S.win === v ? "selected" : ""}>${esc(windowLabel(v))}</option>`).join("")}</select> <span id="win-unit"></span></label>
             <input id="scroll" type="range" min="0" max="0" value="0" aria-label="Scroll back in time">
             <span id="scroll-at" class="muted"></span>
           </div>
@@ -1494,14 +1619,17 @@
     const canScroll = data && S.win && now - first > S.win;
     sc.hidden = !canScroll; $("scroll-at").textContent = canScroll && end !== now ? `ending at ${tu()} ${end}` : "";
     if (canScroll) { sc.min = String(first + S.win); sc.max = String(now); if (document.activeElement !== sc) sc.value = String(end); }
-    $("win-unit").textContent = `${tu()}s`;
+    $("win-unit").textContent = "";
 
     // left column
     const f = [];
     if (!runnable()) f.push(["", `This model's machines have no programs, so there is nothing to run; the charts show what its equations project from the starting values.`]);
     else if (!data) f.push(["", `No run yet: the charts show what the equations project from the starting values. Press Start to run the real programs.`]);
     else {
-      f.push(["", `${S.live.running ? "Running" : "Paused"} at ${esc(tu())} ${now}. Era ${era.n} began at ${esc(tu())} ${era.start}: ${esc(era.label)}.`]);
+      const P = S.paceLog || [], pace = P.length > 1 && S.live.running ? (P[P.length - 1][1] - P[0][1]) / ((P[P.length - 1][0] - P[0][0]) / 1000) : null;
+      const shown = pace !== null && pace > 0 ? (pace >= 10 ? Math.round(pace) : +pace.toFixed(1)) : null;
+      const going = shown ? ` (about ${shown} ${esc(tu())}${shown === 1 ? "" : "s"} a second)` : "";
+      f.push(["", `${S.live.running ? "Running" : "Paused"} at ${esc(tu())} ${now}${going}. Era ${era.n} began at ${esc(tu())} ${era.start}: ${esc(era.label)}.`]);
       const F = eraFit();
       if (F) {
         const ch = F.rows.filter((r) => r.change);
@@ -1572,7 +1700,7 @@
     const W = 260, H = 86, pad = 4, span = Math.max(1e-9, hi - lo);
     const x = (t) => pad + (W - 2 * pad) * ((t - lo) / span);
     const pct = (t) => `${(100 * (t - lo) / span).toFixed(2)}%`;
-    const ticks = niceTicks(lo, hi, 4);
+    const ticks = timeTicks(lo, hi, 4);
     const draw = (node, key, kind) => {
       const series = (s) => (s ? (kind === "s" ? s.levels[key] : s.rates[key]) || [] : []);
       const smooth = (a) => (kind === "f" ? a.map((_, i) => { const sl = a.slice(Math.max(0, i - 4), i + 1); return sl.reduce((p, q) => p + q, 0) / sl.length; }) : a);
@@ -1610,7 +1738,7 @@
       });
       if (data && end === now) g += `<line x1="${x(now)}" x2="${x(now)}" y1="${pad}" y2="${H - pad}" stroke="var(--fg)" stroke-opacity=".5"/>`;
       node.querySelector("svg").innerHTML = g;
-      node.querySelector(".axis").innerHTML = ticks.map((t) => { const r = (t - lo) / span; return `<span style="left:${pct(t)};transform:translateX(${r < 0.04 ? "0" : r > 0.96 ? "-100%" : "-50%"})">${fmt(t)}</span>`; }).join("");
+      node.querySelector(".axis").innerHTML = ticks.map(({ t, label }) => { const r = (t - lo) / span; return `<span style="left:${pct(t)};transform:translateX(${r < 0.04 ? "0" : r > 0.96 ? "-100%" : "-50%"})">${esc(label)}</span>`; }).join("");
       node.querySelector(".eralabs").innerHTML = visibleEras.filter((e) => e.n > 0 && e.start - 1 >= lo && (e.start - 1 - lo) / span < 0.85)
         .map((e) => `<span style="left:${pct(e.start - 1)}" title="${esc(e.label)}">era ${e.n}</span>`).join("");
       const last = L && kind === "s" ? (series(L)[series(L).length - 1] || 0) : L ? smooth(series(L)).slice(-1)[0] || 0 : series(P)[0] || 0;
@@ -1625,6 +1753,19 @@
       node.classList.toggle("hasfit", !!rows);
     };
     box.querySelectorAll(".chart").forEach((node) => draw(node, node.dataset.id, node.dataset.kind));
+  }
+  // How long one step of the model is, in seconds, when its time unit says so.
+  const UNIT_SECONDS = { second: 1, minute: 60, "quarter hour": 900, "half hour": 1800, hour: 3600, day: 86400, week: 604800, month: 2629800, year: 31557600 };
+  const stepSeconds = () => +S.model.step_seconds || UNIT_SECONDS[tu().toLowerCase()] || null;
+  // Axis marks in real time since the run began: minutes, hours, days or weeks, whichever reads
+  // best for the window shown. Models with an unknown time unit get step numbers and the unit.
+  function timeTicks(lo, hi, n) {
+    const sec = stepSeconds();
+    if (!sec) return niceTicks(lo, hi, n).map((t, i, a) => ({ t, label: i === a.length - 1 ? `${fmt(t)} ${tu()}s` : fmt(t) }));
+    const spanS = (hi - lo) * sec;
+    const units = [[1, "s"], [60, "min"], [3600, "h"], [86400, "d"], [604800, "wk"]];
+    const [us, abbr] = [...units].reverse().find(([u]) => spanS / u >= 2) || units[0];
+    return niceTicks(lo * sec / us, hi * sec / us, n).map((v) => ({ t: v * us / sec, label: `${fmt(v)} ${abbr}` }));
   }
   function niceTicks(lo, hi, n) {
     const span = Math.max(1, hi - lo), raw = span / n, mag = 10 ** Math.floor(Math.log10(raw));
@@ -1930,7 +2071,6 @@
     if (S.model) { syncPolling(); requestAnimationFrame(renderAll); }
   }
   document.querySelectorAll(".modes button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
-  $("model-pick").addEventListener("change", (e) => loadModel(e.target.value));
   window.addEventListener("resize", () => S.model && renderCanvas());
 
   function renderAll() { renderToolbar(); renderCanvas(); renderInspector(); renderMachineList(); renderRunPanel(); }
@@ -1939,5 +2079,77 @@
   fetch("/api/programs").then((r) => r.json()).then((r) => { S.programs = r.programs || []; }).catch(() => {});
   buildMachinePanel();
   setMode(location.hash.slice(1) === "run" ? "run" : "edit");
+  // ---------- models: open, copy, delete, and to and from disk ----------
+  function renderFiles() {
+    const d = $("files"), r = S.list, cur = S.model && S.model.id;
+    const when = (m) => new Date(m.modified * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    const row = (m, mine) => `<li class="${m.id === cur ? "current" : ""}"><span class="nm" title="${esc(m.id)}">${esc(m.name)}</span>
+      ${m.running ? `<span class="runtag" title="Its run is going on now">\u25b6 running \u00b7 step ${m.t}</span><button class="btn icon" data-f-pause="${m.id}" title="Pause its run">\u23f8\ufe0f</button>` : ""}
+      ${mine ? `<span class="when">${esc(when(m))}</span>` : ""}
+      <button class="btn" data-f-open="${m.id}" title="Open it">Open</button>
+      <button class="btn icon" data-f-copy="${m.id}" title="Save a copy of it (and its run) in My models">&#128203;</button>
+      <a class="btn icon" href="/api/models/${m.id}/download" download="${m.id}.json" title="Download it as a file">&#11015;&#65039;</a>
+      ${mine ? `<button class="btn icon danger" data-f-del="${m.id}" title="Delete it and its run">&#128465;&#65039;</button>` : ""}</li>`;
+    d.innerHTML = `<div class="fhead"><h2>Models</h2>
+        <button class="btn" data-f-upload title="Open a model file (.json) from your disk; it becomes one of your models">&#11014;&#65039; Open a file…</button>
+        <button class="btn icon" data-f-close title="Close" aria-label="Close">✕</button></div>
+      <div class="fbody">
+        <h3>My models</h3>${r.models.length ? `<ul>${r.models.map((m) => row(m, true)).join("")}</ul>` : `<p class="note">None yet. Change an example and it is saved here as your own copy.</p>`}
+        <h3>Examples</h3><ul>${r.examples.map((m) => row(m, false)).join("")}</ul>
+        <p class="note">Examples always open as shipped. Their runs are kept; a copy takes the run with it.</p>
+      </div>`;
+    d.querySelector("[data-f-close]").onclick = () => d.close();
+    d.querySelector("[data-f-upload]").onclick = () => $("file-in").click();
+    d.querySelectorAll("[data-f-open]").forEach((b) => (b.onclick = async () => { d.close(); await loadModel(b.dataset.fOpen); }));
+    d.querySelectorAll("[data-f-pause]").forEach((b) => (b.onclick = async () => {
+      await fetch(`/api/models/${b.dataset.fPause}/live/stop`, { method: "POST" });
+      await fetchList(); renderPick(S.model.id); renderFiles();
+      if (b.dataset.fPause === S.model.id) await refetchLive();
+    }));
+    const n = [...r.models, ...r.examples].filter((m) => m.running).length;
+    d.querySelector(".fhead h2").textContent = n ? `Models \u00b7 ${n} running` : "Models";
+    d.querySelectorAll("[data-f-copy]").forEach((b) => (b.onclick = async () => {
+      await flushSave();
+      const src = [...r.models, ...r.examples].find((m) => m.id === b.dataset.fCopy);
+      const name = prompt("Name of the copy", `${src.name} (copy)`); if (!name) return;
+      const res = await fetch(`/api/models/${src.id}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!res.ok) { setStatus("Could not copy", true); return; }
+      await fetchList(); renderPick(S.model.id); renderFiles(); setStatus(`Saved a copy: “${name}”`);
+    }));
+    d.querySelectorAll("[data-f-del]").forEach((b) => (b.onclick = async () => {
+      if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.textContent = "Delete?"; return; }   // a second click deletes
+      const id = b.dataset.fDel;
+      if (id === cur) { clearTimeout(S.saveTimer); S.saveTimer = null; }
+      const res = await fetch(`/api/models/${id}`, { method: "DELETE" });
+      if (!res.ok) { setStatus("Could not delete", true); return; }
+      await fetchList();
+      if (id === cur) await loadList(); else renderPick(cur);
+      renderFiles(); setStatus("Deleted");
+    }));
+  }
+  $("files-open").addEventListener("click", async () => { await flushSave(); await fetchList(); renderFiles(); $("files").showModal(); });
+  $("save-as").addEventListener("click", async () => {
+    await flushSave();
+    const name = prompt("Save as", S.isExample ? `${S.model.name} (my copy)` : `${S.model.name} (copy)`); if (!name) return;
+    const c = await saveCopy(name);
+    if (c) setStatus(`Saved as “${c.name}”; that is what you are editing now`);
+  });
+  $("file-in").addEventListener("change", async (e) => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+    let model;
+    try { model = JSON.parse(await file.text()); } catch { setStatus(`${file.name} is not a model file (not JSON)`, true); return; }
+    if (!model || !Array.isArray(model.stocks)) { setStatus(`${file.name} is not a model file (no stocks)`, true); return; }
+    if (!model.name) model.name = file.name.replace(/\.json$/i, "");
+    const res = await fetch("/api/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(model) });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setStatus(`Could not open ${file.name}: ${((body.detail && body.detail.errors) || [res.statusText]).join("; ")}`, true); return;
+    }
+    const { id } = await res.json();
+    if ($("files").open) $("files").close();
+    await fetchList(); renderPick(id); await loadModel(id);
+    setStatus(`Opened ${file.name} as one of your models`);
+  });
+
   loadList().catch((e) => setStatus("Could not load models: " + e.message, true));
 })();

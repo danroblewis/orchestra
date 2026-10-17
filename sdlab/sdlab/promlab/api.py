@@ -18,18 +18,22 @@ MAX_POINTS = 11000
 
 
 class Clock:
-    """What "now" is. `end`: the last sample. `replay`: starts `replay_from` days
-    before the end and runs at `speed` x wall clock, stopping at the end."""
+    """What "now" is. `end`: the last sample. `replay`: starts `replay_from` days before the end
+    and runs at `speed` x wall clock; at the end it starts over from there (with `loop`), so a live
+    run never goes flat, or else stays at the end."""
 
-    def __init__(self, ds: Dataset, mode: str = "end", replay_from: float = 1.0, speed: float = 1.0):
-        self.ds, self.mode, self.speed = ds, mode, speed
-        self.origin = ds.end - replay_from * 86400 if mode == "replay" else ds.end
+    def __init__(self, ds: Dataset, mode: str = "end", replay_from: float = 1.0, speed: float = 1.0, loop: bool = True):
+        self.ds, self.mode, self.speed, self.loop = ds, mode, speed, loop
+        self.origin = max(float(ds.start), ds.end - replay_from * 86400) if mode == "replay" else ds.end
         self.wall0 = time.time()
 
     def now(self) -> float:
         if self.mode != "replay":
             return float(self.ds.end)
-        return min(float(self.ds.end), self.origin + self.speed * (time.time() - self.wall0))
+        ran, span = self.speed * (time.time() - self.wall0), float(self.ds.end) - self.origin
+        if self.loop and span > 0:
+            ran %= span
+        return min(float(self.ds.end), self.origin + ran)
 
     def jmax(self, now: float | None = None) -> int:
         now = self.now() if now is None else now

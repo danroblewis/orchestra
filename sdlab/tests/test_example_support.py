@@ -23,15 +23,15 @@ def client(tmp_path, monkeypatch):
     return TestClient(create_app())
 
 
-def items(client, stock):
-    return client.get(f"/api/models/support/live/stocks/{stock}").json()["items"]
+def items(client, stock, mid="support"):
+    return client.get(f"/api/models/{mid}/live/stocks/{stock}").json()["items"]
 
 
-def triaged(client):
+def triaged(client, mid="support"):
     """Every message that has left the Inbox, with the stock Triage sent it to (resolved ones are
     traced back by the team that worked them)."""
-    out = [(s, it) for s in ROUTED for it in items(client, s)]
-    out += [("billing" if it["team"] == "billing" else "engineering", it) for it in items(client, "resolved")]
+    out = [(s, it) for s in ROUTED for it in items(client, s, mid)]
+    out += [("billing" if it["team"] == "billing" else "engineering", it) for it in items(client, "resolved", mid)]
     return out
 
 
@@ -41,12 +41,12 @@ def test_support_validates_and_rules_route_by_kind(client):
     triage = next(f for f in m["flows"] if f["id"] == "triage")
     assert triage["machine"] == "ai_triage" and next(x for x in m["machines"] if x["id"] == "ai_triage")["kind"] == "agent"
     triage["machine"] = "rules"
-    assert client.put("/api/models/support", json=m).json() == {"ok": True}
+    assert client.put("/api/models/my-support", json=m).json() == {"ok": True}
     for _ in range(30):
-        client.post("/api/models/support/live/step")
-    snap = client.get("/api/models/support/live").json()
+        client.post("/api/models/my-support/live/step")
+    snap = client.get("/api/models/my-support/live").json()
     assert snap["t"] == 30 and not snap["errors"], snap["errors"]
-    done = triaged(client)
+    done = triaged(client, "my-support")
     assert len(done) >= 3, "too few messages arrived in 30 minutes"
     plain = wrong = 0
     for stock, it in done:

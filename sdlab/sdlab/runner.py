@@ -34,6 +34,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .programs import Programs
+
 PROGRAM_RE = re.compile(r"^[a-z0-9_-]+/[a-z0-9_-]+$")
 
 
@@ -175,6 +177,7 @@ class LiveRun:
         self.thread: threading.Thread | None = None
         self.stop_flag = threading.Event()
         self.seconds_per_tick = 1.0
+        self.programs = Programs()
         self.rng = random.Random()
         self._reset_memory()
         self._replay()
@@ -272,31 +275,39 @@ class LiveRun:
             moved[fid] = {"took": {f["from"]: amt * ratio} if f.get("from") else {}, "made": {f["to"]: amt} if f.get("to") else {}}
         return moved
 
-    def read_sensors(self, model: dict) -> None:
+    def sense(self, model: dict, t: int) -> list[tuple[dict, dict]]:
+        """Run every sensor for step t: [(sensor, what it printed)]. Failures are noted as errors."""
+        out = []
         for sensor in model.get("sensors") or []:
             path = program_path(self.examples, sensor.get("program", ""))
             if path is None:
-                self.errors = (self.errors + [{"t": self.t, "flow": None, "error": f"no sensor program {sensor.get('program')!r}"}])[-20:]
+                self.errors = (self.errors + [{"t": t, "flow": None, "error": f"no sensor program {sensor.get('program')!r}"}])[-20:]
                 continue
             try:
-                p = subprocess.run([sys.executable, str(path), *map(str, sensor.get("args") or [])], input=self.measure_input(model, self.t),
-                                   capture_output=True, text=True, timeout=60, cwd=path.parent)
+                p = self.programs.run(path, [*map(str, sensor.get("args") or [])], self.measure_input(model, t), 60)
                 values = json.loads(p.stdout or "{}") if p.returncode == 0 else None
                 if values is None:
                     raise ValueError((p.stderr or "no output").strip()[-300:])
-                # either {stock: level} or {"levels": {...}, "flows": {flow: amount this step}}
-                levels = values.get("levels", values) if isinstance(values.get("levels"), dict) else values
-                for sid, v in levels.items():
-                    if v is not None and not isinstance(v, dict):
-                        self.observed[sid] = float(v)
-                if values.get("era"):                             # a change the sensor knows about (a staffing change)
-                    self._note_change(model, self.t, str(values["era"]))
-                if isinstance(values.get("flows"), dict):
-                    for fid, a in self._flows_to_moves(model, values["flows"]).items():
-                        self._acct[fid] = a
-                    self._sensed_rates = {k: float(v) for k, v in values["flows"].items() if v is not None}
+                if p.stderr.strip():                               # it read something, but says what it could not
+                    self.errors = (self.errors + [{"t": t, "flow": None, "error": f"sensor {sensor.get('program')}: {p.stderr.strip()}"[-300:]}])[-20:]
+                out.append((sensor, values))
             except (ValueError, subprocess.TimeoutExpired, OSError) as e:
-                self.errors = (self.errors + [{"t": self.t, "flow": None, "error": f"sensor {sensor.get('program')}: {e}"[-300:]}])[-20:]
+                self.errors = (self.errors + [{"t": t, "flow": None, "error": f"sensor {sensor.get('program')}: {e}"[-300:]}])[-20:]
+        return out
+
+    def apply_readings(self, model: dict, readings: list[tuple[dict, dict]]) -> None:
+        for _, values in readings:
+            # either {stock: level} or {"levels": {...}, "flows": {flow: amount this step}}
+            levels = values.get("levels", values) if isinstance(values.get("levels"), dict) else values
+            for sid, v in levels.items():
+                if v is not None and not isinstance(v, (dict, str)) and sid not in ("time", "era"):
+                    self.observed[sid] = float(v)
+            if values.get("era"):                                 # a change the sensor knows about (a staffing change)
+                self._note_change(model, self.t, str(values["era"]))
+            if isinstance(values.get("flows"), dict):
+                for fid, a in self._flows_to_moves(model, values["flows"]).items():
+                    self._acct[fid] = a
+                self._sensed_rates = {k: float(v) for k, v in values["flows"].items() if v is not None}
 
     def import_history(self) -> int:
         model = self.model()
@@ -442,7 +453,7 @@ class LiveRun:
         else:
             try:
                 timeout = float((machine or {}).get("timeout") or (180 if (machine or {}).get("kind") == "agent" else 20))
-                p = subprocess.run([sys.executable, str(path), *argv], input=stdin, capture_output=True, text=True, timeout=timeout, cwd=path.parent)
+                p = self.programs.run(path, argv, stdin, timeout)
                 stdout, stderr = p.stdout, p.stderr
                 if p.returncode != 0:
                     err = (p.stderr.strip() or f"exit {p.returncode}")[-300:]
@@ -509,9 +520,19 @@ class LiveRun:
             self.carry[key + ":t"] = self.t
         return int(self.carry[key + ":n"])
 
-    def tick(self) -> None:
+    def tick(self, force: bool = True) -> bool:
+        """One step. A measured model whose sensors report the time of their sample (a metrics
+        store, say) steps only when there is a new sample, unless forced (the Step button): a
+        live run cannot go faster than the system it measures. Returns whether it stepped."""
         with self.lock:
             model = self.model()
+            readings = None
+            if model.get("sensors"):
+                readings = self.sense(model, self.t + 1)
+                stamps = tuple(v.get("time") for _, v in readings)
+                if not force and readings and None not in stamps and stamps == getattr(self, "_last_stamp", None):
+                    return False
+                self._last_stamp = stamps
             self._note_era(model, self.t + 1)
             if self.t == 0:                                  # a run starts from each stock's starting value
                 for st in model.get("stocks", []):
@@ -521,8 +542,8 @@ class LiveRun:
                             self.put(st["id"], {"initial": True})
             self.t += 1
             self._acct = {}
-            if model.get("sensors"):
-                self.read_sensors(model)
+            if readings is not None:
+                self.apply_readings(model, readings)
             fires: dict[str, int] = {f["id"]: 0 for f in model.get("flows", [])}
             level = {s["id"]: self.level(s["id"]) for s in model.get("stocks", [])}
 
@@ -582,11 +603,12 @@ class LiveRun:
                 rec["observed"] = dict(self.observed)
             self._log(rec)
             self._record(rec)
+            return True
 
     # ---------- control ----------
     def start(self, seconds_per_tick: float | None = None) -> None:
-        if seconds_per_tick:
-            self.seconds_per_tick = max(0.05, float(seconds_per_tick))
+        if seconds_per_tick is not None:                     # 0: as fast as the programs go
+            self.seconds_per_tick = max(0.0, float(seconds_per_tick))
         if self.thread and self.thread.is_alive():
             return
         self.stop_flag.clear()
@@ -595,13 +617,15 @@ class LiveRun:
 
     def _loop(self) -> None:
         while not self.stop_flag.is_set():
-            began = time.time()
+            began, stepped = time.time(), True
             try:
-                self.tick()
+                stepped = self.tick(force=False)
             except Exception as e:                           # a bad model must not kill the server
                 with self.lock:
                     self.errors = (self.errors + [{"t": self.t, "flow": None, "error": repr(e)[-300:]}])[-20:]
-            self.stop_flag.wait(max(0.0, self.seconds_per_tick - (time.time() - began)))
+            # a short pause at full speed, so the page and other runs get a turn; a longer one when the
+            # measured system had nothing new yet (asking again at once would only load it)
+            self.stop_flag.wait(max(0.002 if stepped else 0.5, self.seconds_per_tick - (time.time() - began)))
 
     def stop(self) -> None:
         self.stop_flag.set()

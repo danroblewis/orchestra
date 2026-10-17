@@ -18,7 +18,7 @@ def test_the_milling_shop_loads_and_validates(client):
     mill = next(f for f in m["flows"] if f["id"] == "mill")
     assert mill["uses"] == [{"stock": "bits", "per": 0.1}]
     assert mill["effects"][0]["stock"] == "bits"
-    assert client.put("/api/models/milling", json=m).json() == {"ok": True}
+    assert client.put("/api/models/my-milling", json=m).json() == {"ok": True}
     progs = client.get("/api/programs").json()["programs"]
     assert {"milling/blanks", "milling/cnc", "milling/shipping", "milling/purchasing", "milling/supplier"} <= set(progs)
 
@@ -57,9 +57,9 @@ def test_more_bits_mill_faster_live(client):
     """Same run, but Purchasing aims for eight bits: the effect lifts and milling keeps up."""
     m = client.get("/api/models/milling").json()
     next(f for f in m["flows"] if f["id"] == "order")["rate"]["goal"] = 8
-    client.put("/api/models/milling", json=m)
+    client.put("/api/models/milling-eight-bits", json=m)
     for _ in range(60):
-        snap = client.post("/api/models/milling/live/step").json()
+        snap = client.post("/api/models/milling-eight-bits/live/step").json()
     assert not snap["errors"], snap["errors"]
     lv, rt = snap["series"]["levels"], snap["series"]["rates"]
     assert max(lv["bits"][-30:]) >= 5

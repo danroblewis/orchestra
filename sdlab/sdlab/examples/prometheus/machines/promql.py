@@ -16,21 +16,45 @@ SDLAB_PROM_URL (default http://127.0.0.1:9090); it only uses the standard HTTP A
 """
 
 import argparse
+import http.client
 import json
 import os
 import sys
+import threading
 import time
 import urllib.parse
-import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 URL = os.environ.get("SDLAB_PROM_URL", "http://127.0.0.1:9090").rstrip("/")
+_where = urllib.parse.urlsplit(URL)
+_local = threading.local()
+
+
+def _connection(fresh=False):
+    """One kept-alive connection per thread: a model with a thousand queries must not open a
+    thousand connections every step (that runs the machine out of ports)."""
+    if fresh or getattr(_local, "conn", None) is None:
+        cls = http.client.HTTPSConnection if _where.scheme == "https" else http.client.HTTPConnection
+        _local.conn = cls(_where.hostname, _where.port or (443 if _where.scheme == "https" else 80), timeout=120)
+    return _local.conn
 
 
 def api(path, **params):
-    url = f"{URL}{path}?{urllib.parse.urlencode(params)}"
-    with urllib.request.urlopen(url, timeout=120) as r:
-        body = json.load(r)
+    target = f"{_where.path.rstrip('/')}{path}?{urllib.parse.urlencode(params)}"
+    for attempt in range(2):
+        conn = _connection(fresh=attempt > 0)
+        try:
+            conn.request("GET", target, headers={"Connection": "keep-alive"})
+            r = conn.getresponse()
+            raw = r.read()
+            break
+        except (http.client.HTTPException, ConnectionError, OSError):
+            conn.close()
+            if attempt:
+                raise
+    if r.status >= 500 and not raw:
+        raise RuntimeError(f"HTTP {r.status} ({params.get('query')})")
+    body = json.loads(raw)
     if body.get("status") != "success":
         raise RuntimeError(f"{body.get('errorType')}: {body.get('error')} ({params.get('query')})")
     return body["data"]
@@ -92,11 +116,29 @@ def main():
     end -= end % step
 
     if args.mode == "sensor":
-        at = now(stocks[0]["query"] if stocks else None)     # the latest sample, not the step boundary
+        # the latest step boundary: every query reads the same moment, and the run can tell a new
+        # sample from one it has already recorded (it steps only when "time" moves on)
+        at = now(stocks[0]["query"] if stocks else None)
+        at -= at % step
+        # a query that fails leaves that one value out (None) instead of losing the whole reading;
+        # only when nothing could be read at all is the reading a failure
+        failed = []
+
+        def read(x):
+            try:
+                return instant(x["query"], at)
+            except Exception as e:
+                failed.append(f"{x['id']}: {e}")
+                return None
         with ThreadPoolExecutor(args.workers) as pool:
-            lv = dict(zip([s["id"] for s in stocks], pool.map(lambda s: instant(s["query"], at), stocks)))
-            fl = dict(zip([f["id"] for f in flows], pool.map(lambda f: instant(f["query"], at), flows)))
-        print(json.dumps({"levels": lv, "flows": {k: (v * step if v is not None else None) for k, v in fl.items()}}))
+            lv = dict(zip([s["id"] for s in stocks], pool.map(read, stocks)))
+            fl = dict(zip([f["id"] for f in flows], pool.map(read, flows)))
+        if failed and len(failed) == len(stocks) + len(flows):
+            sys.exit(f"no query could be read; the first failure: {failed[0]}")
+        if failed:
+            print(f"{len(failed)} of {len(stocks) + len(flows)} queries failed; the first: {failed[0]}", file=sys.stderr)
+        print(json.dumps({"time": at, "levels": {k: v for k, v in lv.items() if v is not None},
+                          "flows": {k: v * step for k, v in fl.items() if v is not None}}))
         return
 
     start = end - args.days * 86400

@@ -15,7 +15,7 @@ def test_the_team_model_loads(client):
     assert [s["id"] for s in m["stocks"]] == ["backlog", "done", "training", "staff", "left"]
     team = next(x for x in m["machines"] if x["id"] == "team")
     assert team["capacity_stock"] == "staff"
-    assert client.put("/api/models/team", json=m).json() == {"ok": True}
+    assert client.put("/api/models/my-team", json=m).json() == {"ok": True}
 
 
 def test_the_team_runs_live_and_its_capacity_follows_staff(client):

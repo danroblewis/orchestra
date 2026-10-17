@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
 def test_roastery_is_seeded_and_valid(client):
     m = client.get("/api/models/roastery").json()
     assert validate(m) == []
-    assert client.put("/api/models/roastery", json=m).json() == {"ok": True}
+    assert client.put("/api/models/my-roastery", json=m).json() == {"ok": True}
     assert [s["id"] for s in m["stocks"]] == ["green", "roasted", "cooled", "bags", "shipped", "orders"]
 
 
