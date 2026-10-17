@@ -7,17 +7,34 @@ is how much there was to predict: the truth's movement over 20 steps in each sto
 model on another run of the true model (same schedule, other random draws), which it was not fitted
 on: what it fitted to its own run's draws cannot help it there.
 
+Every candidate the strategy tried is graded too (candidates.py; strategies that list them, as
+`matrix` does): "best cand." is the best-graded candidate's skill@20 / @100, "rank" the judge's rank
+of it (1 = picked), and a run that misses the goal gets a failure class: not representable (no
+candidate meets it; the judge rates the truth clearly better than the model chosen: a coverage gap),
+not chosen (a candidate meets it; the judge kept another: a selection gap), not supported (no
+candidate meets it, and the judge rates the truth no clearly better than the model chosen). The
+headline counts each class and the judge's best-candidate pick rate.
+
     uv run python tests/bench/evaluate.py                      every example, compared with the last run
     uv run python tests/bench/evaluate.py --label "try X"      name this run (shown in comparisons)
-    uv run python tests/bench/evaluate.py --baseline best      compare with the run saved as "best" (--save best)
+    uv run python tests/bench/evaluate.py --baseline best      compare with the run saved as "best" (--save best),
+                                                               with a paired sign test and Wilcoxon test over runs
     uv run python tests/bench/evaluate.py --examples sd-saas,sd-orders --lengths default
     uv run python tests/bench/evaluate.py --strategy matrix    which strategy (sdlab/discovery/strategies)
     uv run python tests/bench/evaluate.py --strict             exit 1 if any skill@20 drops by more than 0.02
     uv run python tests/bench/evaluate.py --jobs 4             at most 4 runs at once (default: CPU cores - 1)
+    uv run python tests/bench/evaluate.py --no-candidates      skip grading every candidate (and the failure classes)
+    uv run python tests/bench/evaluate.py --seeds 2            also discover on 2 more runs (other seeds) of each
+                                                               example: mean and spread of skill over the seeds, and
+                                                               the main model graded on each of them (fresh)
     uv run python tests/bench/evaluate.py --goal               exit 0 only when the goal (docs/DISCOVERY-GOAL.md)
                                                                is met: every example at every length at least
                                                                GOAL_SKILL20 at skill@20 and GOAL_SKILL100 at
                                                                skill@100 (exit 2 otherwise)
+    uv run python tests/bench/compare.py A B                   paired tests between two saved runs
+
+Discovery is handed only what the page gives it (page_inputs): the measured stocks' id, name, unit,
+final and group, their levels over time, and the announced eras.
 
 Runs are saved under ~/.cache/sdlab/bench/runs (or $SDLAB_BENCH_CACHE/runs), never in the repository,
 with the branch and commit they ran on. Without --baseline a run is compared with the latest earlier
@@ -40,9 +57,12 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
+import candidates
 import datasets
-from grade import grade, same_behaviour, truth_of
+import seeds as seeding
+from grade import grade, same_behaviour, truth_of, truth_runs
 
+from sdlab.bench_stats import describe, paired
 from sdlab.discovery.strategies import load, names
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,42 +70,67 @@ EXAMPLES = ROOT / "sdlab" / "examples"
 RUNS = Path(os.environ.get("SDLAB_BENCH_CACHE") or Path.home() / ".cache" / "sdlab" / "bench") / "runs"
 HORIZONS = (5, 20, 100)
 GOAL_SKILL20, GOAL_SKILL100 = 0.9, 0.8
+PAGE_STOCK_FIELDS = ("id", "name", "unit", "final", "group")
 
 
 def all_examples() -> list[str]:
     return sorted(d.name for d in EXAMPLES.iterdir() if d.name.startswith("sd-") and (d / "truth.model.json").exists())
 
 
-def load_data(example: str, length: str, fresh: bool = False) -> dict:
+def load_data(example: str, length: str, fresh: bool = False, seed: int | None = None) -> dict:
     """The example's run (fresh: another run of the same true model and schedule, with other random
-    draws: the found model was not fitted on it)."""
+    draws: the found model was not fitted on it; seed: the run with that seed)."""
     steps = None if length in ("default", "long") else int(length)
-    seed = datasets.load_sim(example).SEED + 1 if fresh else None
+    if fresh:
+        seed = datasets.load_sim(example).SEED + 1
     return json.loads(datasets.dataset(example, steps=steps, seed=seed, long=length == "long").read_text())
 
 
-def evaluate_one(example: str, length: str, strategy: str) -> dict:
+def page_inputs(model: dict, data: dict) -> tuple[list[dict], dict, dict]:
+    """What the page would give discovery, and nothing else: the measured stocks (id, name, unit,
+    final, group), their levels over time, and the announced eras (more than one)."""
+    stocks = [{k: s[k] for k in PAGE_STOCK_FIELDS if k in s} for s in model["stocks"]]
+    eras = [{"start": e["start"], "label": e.get("label")} for e in data.get("eras") or []]
+    return stocks, {"t": data["t"], "levels": data["levels"]}, {"eras": eras if len(eras) > 1 else None}
+
+
+def discover(strategy: str, model: dict, data: dict, keep: bool = False) -> tuple[dict, str | None]:
+    stocks, run, opts = page_inputs(model, data)
+    try:
+        return load(strategy)(stocks, run, {**opts, "candidates": True} if keep else opts), None
+    except Exception:
+        return {"flows": []}, " ".join(traceback.format_exc().strip().splitlines()[-3:])
+
+
+def evaluate_one(example: str, length: str, strategy: str, with_candidates: bool = True, extra_seeds: int = 0) -> dict:
     model = json.loads((EXAMPLES / f"{example}.json").read_text())
     truth_model = json.loads((EXAMPLES / example / "truth.model.json").read_text())
     data = load_data(example, length)
-    eras = [{"start": e["start"], "label": e.get("label")} for e in data.get("eras") or []]
-    began, error = time.time(), None
-    try:
-        r = load(strategy)(model["stocks"], {"t": data["t"], "levels": data["levels"]}, {"eras": eras if len(eras) > 1 else None})
-    except Exception:
-        error = " ".join(traceback.format_exc().strip().splitlines()[-3:])
-        r = {"flows": []}
+    began = time.time()
+    r, error = discover(strategy, model, data, keep=with_candidates)
     ms = round(1000 * (time.time() - began))
     g = grade(r, truth_of(example))
-    behaviour = {h: same_behaviour(r, truth_model, data, horizon=h) for h in HORIZONS}
+    truth = {h: truth_runs(truth_model, data, horizon=h) for h in HORIZONS}
+    behaviour = {h: same_behaviour(r, truth_model, data, horizon=h, truth=truth[h]) for h in HORIZONS}
     skill = {str(h): b["skill"] for h, b in behaviour.items()}
     moved = {str(h): b["moved"] for h, b in behaviour.items()}
     # the same model graded on a fresh run: what it fitted to this run's own draws (inflow pieces
     # replaying history, say) cannot help it there
     other = load_data(example, length, fresh=True)
     fresh = {str(h): same_behaviour(r, truth_model, other, horizon=h)["skill"] for h in (20, 100)}
-    return {"example": example, "length": length, "steps": len(data["t"]), "parts": g["right"], "of": g["parts"], "skill": skill, "moved": moved, "fresh": fresh,
-            "ms": ms, "flows": len(r["flows"]), "chosen": r.get("chosen"), "error": error}
+    x = {"example": example, "length": length, "steps": len(data["t"]), "parts": g["right"], "of": g["parts"], "skill": skill, "moved": moved, "fresh": fresh,
+         "ms": ms, "flows": len(r["flows"]), "chosen": r.get("chosen"), "error": error}
+    if with_candidates and r.get("candidates"):
+        x.update(candidates.instrument(r, truth_model, data, truth))
+    if with_candidates:
+        x["failure"] = candidates.classify(x)
+    if extra_seeds:
+        x["seeds"] = []
+        for s in seeding.extra(example, extra_seeds):
+            d = load_data(example, length, seed=s)
+            again, err = discover(strategy, model, d)
+            x["seeds"].append(seeding.graded(s, r, again, err, truth_model, d))
+    return x
 
 
 def pct(v) -> str:
@@ -118,6 +163,8 @@ def main() -> None:
     ap.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--strict", action="store_true")
     ap.add_argument("--goal", action="store_true")
+    ap.add_argument("--candidates", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--seeds", type=int, default=0)
     a = ap.parse_args()
     RUNS.mkdir(parents=True, exist_ok=True)
 
@@ -127,9 +174,11 @@ def main() -> None:
         for n in a.lengths.split(","):
             for fresh in (False, True):
                 load_data(e, n, fresh)
+            for s in seeding.extra(e, a.seeds):
+                load_data(e, n, seed=s)
     results: dict[tuple, dict] = {}
     with ProcessPoolExecutor(max_workers=a.jobs) as pool:
-        futures = {pool.submit(evaluate_one, e, n, a.strategy): (e, n) for e, n in sorted(jobs, key=lambda j: j[1] != "long")}
+        futures = {pool.submit(evaluate_one, e, n, a.strategy, a.candidates, a.seeds): (e, n) for e, n in sorted(jobs, key=lambda j: j[1] != "long")}
         for fut in as_completed(futures):
             x = fut.result()
             results[futures[fut]] = x
@@ -167,10 +216,13 @@ def main() -> None:
     def sk(r, h):
         return r["skill"][str(h)]
 
+    more = a.candidates and any(x.get("best") for x in results)
     lines = [f"Discovery evaluation: {at}" + (f' "{a.label}"' if a.label else "") + f" ({a.strategy})"
              + f" on {run['branch']} {run['commit']}"
              + (f", compared with {base['at']}" + (f" ({base.get('branch')})" if base.get("branch") != run["branch"] else "") + (f' "{base["label"]}"' if base.get("label") else "") if base else ""), "",
-             "| example | length | parts | skill@5 | skill@20 | skill@100 | fresh run @20 / @100 | truth moved@20 | time |", "|---|---|---|---|---|---|---|---|---|"]
+             "| example | length | parts | skill@5 | skill@20 | skill@100 | fresh run @20 / @100 | truth moved@20 | time |"
+             + (" best cand. @20 / @100 | rank | failure |" if more else "") + (" seeds @20 |" if a.seeds else ""),
+             "|---|---|---|---|---|---|---|---|---|" + ("---|---|---|" if more else "") + ("---|" if a.seeds else "")]
     for x in results:
         b = before(x)
         parts = f"{x['parts']}/{x['of']}" + (f" ({'+' if x['parts'] > b['parts'] else ''}{x['parts'] - b['parts']})" if b and b["parts"] != x["parts"] else "")
@@ -178,13 +230,28 @@ def main() -> None:
         mv = (x.get("moved") or {}).get("20")
         fr = x.get("fresh")
         fresh = f"{pct(fr['20'])} / {pct(fr['100'])}" if fr else "-"
-        lines.append(f"| {x['example']} | {x['length']} ({x['steps']}) | {parts} | {cells} | {fresh} | {'-' if mv is None else f'{mv:.2f}'} | {x['ms']} ms{' ERROR' if x['error'] else ''} |")
+        row = f"| {x['example']} | {x['length']} ({x['steps']}) | {parts} | {cells} | {fresh} | {'-' if mv is None else f'{mv:.2f}'} | {x['ms']} ms{' ERROR' if x['error'] else ''} |"
+        if more:
+            bc = x.get("best")
+            tj, cj = x.get("truth_judge"), x.get("chosen_judge")
+            why = (x.get("failure") or "") + (f" (judge: truth {tj:.3f}, chosen {cj:.3f})" if x.get("failure") in ("not representable", "not supported") and tj is not None and cj is not None else "")
+            row += (f" {pct(bc['skill']['20'])} / {pct(bc['skill']['100'])} | {bc['rank']} of {bc['of']} |" if bc else " - | - |") + f" {why} |"
+        if a.seeds:
+            row += f" {seeding.spread(x, 20)} |"
+        lines.append(row)
     lines += ["", f"Overall: parts {pct(parts_share(results))}" + (delta(parts_share(results), parts_share(base['results'])) if base else "")
               + "".join(f", mean skill@{h} {pct(mean_skill(results, h))}" + (delta(mean_skill(results, h), mean_skill(base['results'], h)) if base else "") for h in (20, 100))
               + f", runs meeting the goal {sum(1 for x in results if meets(x))} of {len(results)}"
               + (f"; on fresh runs: mean skill@20 {pct(sum(max(-1.0, x['fresh']['20']) for x in results) / len(results))}, skill@100 "
                  f"{pct(sum(max(-1.0, x['fresh']['100']) for x in results) / len(results))}, meeting the goal {sum(1 for x in results if meets(x, fresh=True))}"
                  if all(x.get('fresh') for x in results) else "")]
+    if a.candidates:
+        lines += candidates.headline(results)
+    if a.seeds:
+        lines += seeding.headline(results)
+    if base:
+        lines += ["Paired with the baseline (runs in both): " + describe(paired(base["results"], results, "skill", 20)),
+                  "                                         " + describe(paired(base["results"], results, "skill", 100))]
     regressions = [x for x in results if (b := before(x)) and sk(x, 20) < sk(b, 20) - 0.02]
     if regressions:
         lines.append("Worse by more than 2 points at skill@20: " + ", ".join(f"{x['example']} ({x['length']})" for x in regressions))

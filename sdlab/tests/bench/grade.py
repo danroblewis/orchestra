@@ -148,20 +148,28 @@ def truth_by_time(truth_model: dict, times: list) -> tuple[list[dict], set]:
     return flows, fed
 
 
-def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150) -> dict:
+def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 150) -> dict:
+    """The truth's side of same_behaviour (the same for every model graded on this run and horizon):
+    pass it as `truth` to grade several models without running the truth again."""
     t = data["t"]
-    measured = list(data["levels"])
     all_levels = data.get("all_levels") or data["levels"]
     ids = list(all_levels)
     truth, fed = truth_by_time(truth_model, t)
     const = lambda r: r if (r or {}).get("form") == "constant" else {"form": "constant", "value": 0}  # noqa: E731
     exo = [{**f, "byTime": [{**g, "rate": const(g["rate"])} for g in f["byTime"]]} for f in truth if not f.get("from") and f.get("to") in fed]
-    own = [f for f in result["flows"] if not (not f.get("from") and f.get("to") in fed and not f.get("driver") and (f.get("rate") or {}).get("form") == "constant")]
     A = levels_array(all_levels, ids)
     s0 = starts_for(A.shape[1], horizon, starts)
     times = np.asarray(t, dtype=float)[s0[None, :] + np.arange(horizon)[:, None]]
-    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times)
     truth_end = Model(truth, ids).run(A[:, s0 - 1], times)
+    return {"horizon": horizon, "flows": truth, "ids": ids, "fed": fed, "exo": exo, "A": A, "s0": s0, "times": times, "truth_end": truth_end}
+
+
+def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150, truth: dict | None = None) -> dict:
+    tr = truth or truth_runs(truth_model, data, horizon, starts)
+    ids, fed, exo, A, s0, times, truth_end = (tr[k] for k in ("ids", "fed", "exo", "A", "s0", "times", "truth_end"))
+    measured = list(data["levels"])
+    own = [f for f in result["flows"] if not (not f.get("from") and f.get("to") in fed and not f.get("driver") and (f.get("rate") or {}).get("form") == "constant")]
+    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times)
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())

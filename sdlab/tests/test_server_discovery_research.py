@@ -112,6 +112,26 @@ def test_the_bench_runs_are_listed_summarised_and_fetched_by_name(client):
         assert client.get(f"/api/research/runs/{bad}").status_code == 404, bad
 
 
+def test_a_runs_candidates_and_failure_classes_are_summarised_and_two_runs_are_tested_paired(client):
+    d = client.bench
+    d.mkdir(parents=True, exist_ok=True)
+    before = [row(f"sd-{i}", "default", 0.5, 0.5) for i in range(10)]
+    after = [row(f"sd-{i}", "default", 0.6, 0.5) for i in range(10)]
+    after[0].update(best={"name": "f", "skill": {"20": 0.95, "100": 0.9}, "rank": 3, "of": 8, "meets": True}, failure="not chosen")
+    after[1].update(best={"name": "f", "skill": {"20": 0.6, "100": 0.5}, "rank": 1, "of": 8, "meets": False}, failure="not representable")
+    (d / "2026-10-17T03-00-00-000Z-before.json").write_text(json.dumps(run_file("2026-10-17T03:00:00.000Z", "before", before)))
+    (d / "2026-10-17T04-00-00-000Z-after.json").write_text(json.dumps(run_file("2026-10-17T04:00:00.000Z", "after", after)))
+    s = client.get("/api/research/runs/2026-10-17T04-00-00-000Z-after.json").json()["summary"]
+    assert (s["graded"], s["picked"], s["bestMeets"]) == (2, 1, 1) and s["best20"] == pytest.approx(0.775)
+    assert s["failures"] == {"not representable": 1, "not chosen": 1, "not supported": 0, "error": 0}
+    assert client.get("/api/research/runs/2026-10-17T03-00-00-000Z-before.json").json()["summary"]["failures"] is None
+    t = client.get("/api/research/compare/2026-10-17T03-00-00-000Z-before.json/2026-10-17T04-00-00-000Z-after.json").json()["tests"]
+    s20 = next(x for x in t if x["key"] == "skill" and x["horizon"] == 20)
+    assert (s20["n"], s20["better"], s20["worse"]) == (10, 10, 0) and s20["sign_p"] == pytest.approx(2 / 1024)
+    assert next(x for x in t if x["key"] == "skill" and x["horizon"] == 100)["sign_p"] is None
+    assert client.get("/api/research/compare/missing.json/2026-10-17T04-00-00-000Z-after.json").status_code == 404
+
+
 def test_the_research_topics_come_from_the_index_and_render_from_their_documents(client):
     r = client.get("/api/research/topics").json()
     assert len(r["topics"]) >= 30

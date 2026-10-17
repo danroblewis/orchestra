@@ -46,7 +46,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Weak-form fitting](weak-form.md) | idea (not started) | - |
 | [XMILE export and interoperability](xmile-export.md) | idea (not started) | - |
 | [A complexity budget the analyst states](complexity-budget.md) | idea (not started) | - |
-| [Bench instrumentation: coverage, selection, failure classes, ablation](bench-instrumentation.md) | idea (not started) | - |
+| [Bench instrumentation: coverage, selection, failure classes, ablation](bench-instrumentation.md) | done (I1; infra/bench-instrumentation) | on v2.1: 44 of 50 failing runs not representable, 1 not chosen, 5 not supported; judge picked the best candidate in 33 of 62 |
 | [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | idea (not started) | - |
 | [Effects as basis-expanded flow columns in the regression](effect-columns.md) | idea (not started) | - |
 | [A diagnose-and-expand loop driven by residual signatures](residual-diagnostics.md) | idea (not started) | - |
