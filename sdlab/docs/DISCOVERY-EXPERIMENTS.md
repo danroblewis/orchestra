@@ -26,6 +26,47 @@ successes.
 
 ## Log
 
+### 2026-10-17: row crossover, the model assembled row by row from the candidates (wave 4) - NEEDS A COMBINATION
+Branch `exp/row-crossover`, commit `525ac17`; topic [row-crossover](research/row-crossover.md).
+**Hypothesis.** The 16 candidates each make their choices for every stock at once (search direction,
+changing or constant inflows, trusting receivers, numbers per era), but different stocks need different
+choices. Taking each stock's row from whichever candidate suits it reaches models no single candidate
+has. **Change.** Strategy `row_crossover`: every candidate keeps its rows as fitted (`matrix.py` option
+`keep_rows`; the tail of `identify_one` is now `finish()`, behaviour unchanged). A stock's "gene" is
+(candidate row, trust receivers or not). A mixture is assembled with conservation, re-measuring and
+reading flows run again (`crossover.py`). Starting from the judge's pick, stocks are visited worst first
+by partial-model error (`partial.py`), and the best other gene for each is kept if the whole-model in-data
+judge falls by more than the margin. Two sweeps.
+**Mechanism test** (`tests/test_strategy_row_crossover.py`). An inbox with intake changing every 30 steps
+(drain 0.1), plus a bakery line (orders baked onto a shelf, using slowly restocked flour). The
+changing-inflow candidates run away on the bakery line, so `matrix` takes the constant-inflow candidate
+whole. It loses the inbox's drain (< 0.02) and gets skill@20 about -370%. The crossover takes only the
+inbox's row from a changing-inflow candidate: drain ~0.12, skill@20 > 85%, above every whole candidate
+(best ~82%). Control: with the inbox alone, no swap and the same model. A pure "pieces absorb a slow
+drain" subsystem, as the brief proposed, does **not** work: the in-data judge rates the piece-absorbed row
+as well as the right one, because its own pieces track the data.
+**Bench** (vs v2.1: in-sample 29.6% / 29.3% / 12 goal; fresh 28.9% / 29.7% / 12):
+| margin | skill@20 | skill@100 | goal | fresh @20 / @100 / goal | time (sum) |
+|---|---|---|---|---|---|
+| 2% | 35.2% | 42.9% | 14 | 34.2% / 43.6% / 14 | 615 s |
+| 10% | 35.6% | 40.3% | 12 | 34.7% / 40.9% / 12 | 905 s |
+| **5% (kept)** | **35.7%** | **42.7%** | **14** | **34.9% / 43.4% / 14** | 972 s (shared, loaded machine; per run ~1.5-2x matrix) |
+
+At 5%, skill@20 in-sample / fresh, gains: sd-bakery default -1170% -> 48% / 54%, long 19 -> 41;
+sd-fishery default 3 -> 94 (meets the goal), long -19 -> 47; sd-services default 7 -> 81, long 35 -> 55;
+sd-brewery long 66 -> 87; sd-cloud-credits long -17 -> 3; sd-population default 68 -> 80; sd-orders
+default 76 -> 80; sd-manufacturing default 65 -> 68; sd-restaurant default 64 -> 67 (@100 -15 -> 37).
+sd-farm-soil long @100 78 -> 84 (meets the goal). Clipped runs gaining only at @100: clinic-doses (both),
+print-shop default, sawmill long. Losses: **sd-webshop-stock default 61 -> -11** (fresh 55 -> -26): the
+packing row without pieces wins in-data at every horizon (0.35 -> 0.18 at 20 steps) and grades far
+worse, so the in-data judge is fooled. Also sd-moderation default -67 -> -100 (in-data 3.3 -> 1.2),
+moderation long @100 -10, learning-curve long -3, restaurant long @100 -8. At 2%, sd-eras default
+96.5 -> 36: a 2.3% "gain" replaced an era-split row with a plain one (judge noise), and 5% blocks it.
+Fresh-run numbers track in-sample everywhere, so the gains are not fitted to the run's own draws.
+**Verdict: needs a combination.** +6.1 points at @20 and +13.4 at @100 from rows we already compute, but
+every loss is a flexible row the in-data judge prefers. Run it with the piece-proof judge and the
+behaviour-consistency gate (`crossover_judge` takes any judge function).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
