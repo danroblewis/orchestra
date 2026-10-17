@@ -5,7 +5,8 @@ linear (every rate is floored at 0, as SD Lab's own equations are); a rate that 
 eras (`byTime`: segments {from, to, rate}); or a found outside inflow that changes (`inflow`:
 segments {from, to, value}); a flow's rate may be multiplied by effects (curves of other stocks'
 levels, as SD Lab's effect_value); and a flow may use up another stock as it moves (`uses`, a co-flow:
-`per` of it for each unit moved; a stock's outflows and the flows using it share what it holds). A segment holds for times from..to; a time no segment covers takes the
+`per` of it for each unit moved). A stock's outflows and the flows using it share what it holds, as in
+the ground-truth engine (nothing leaves a stock that is not there). A segment holds for times from..to; a time no segment covers takes the
 last segment. Levels are floored at 0 after every step.
 """
 
@@ -118,11 +119,14 @@ class Model:
         self.ids = ids
         index = {s: i for i, s in enumerate(ids)}
         self.parts = []
-        # co-flows: (flow, used stock, per); a used stock's outflows and users share what it holds
+        # co-flows: (flow, used stock, per)
         self.uses = [(i, index[u["stock"]], float(u["per"])) for i, f in enumerate(flows) for u in f.get("uses") or []
                      if u.get("stock") in index and float(u.get("per") or 0) > 0]
-        self.takers = {c: [(i, float(f.get("ratio") or 1)) for i, f in enumerate(flows) if index.get(f.get("from")) == c]
-                       + [(i, per) for i, cc, per in self.uses if cc == c] for c in {c for _, c, _ in self.uses}}
+        # nothing leaves a stock that is not there: a stock's outflows (and the flows that use it up)
+        # share what it holds, stock by stock in order, as the ground-truth engine does
+        takers = {c: [(i, float(f.get("ratio") or 1)) for i, f in enumerate(flows) if index.get(f.get("from")) == c]
+                  + [(i, per) for i, cc, per in self.uses if cc == c] for c in range(len(ids))}
+        self.takers = {c: t for c, t in takers.items() if t}
         self.effects = [(i, _Effects(f["effects"], index)) for i, f in enumerate(flows) if f.get("effects")]
         for f in flows:
             src, dst = index.get(f.get("from")), index.get(f.get("to"))
@@ -147,9 +151,9 @@ class Model:
             amounts.append(vals[seg] if vals is not None else rate(L, seg))
         for i, effect in self.effects:                       # effects: the rate times curves of other levels
             amounts[i] = amounts[i] * effect(L)
-        for c, takers in self.takers.items():                 # a flow cannot use more than there is
+        for c, takers in self.takers.items():                 # a flow cannot take more than there is
             want = sum(amounts[i] * w for i, w in takers)
-            k = np.where(want > L[c], np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
+            k = np.where((want > L[c]) & (L[c] > -1), np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
             for i, _ in takers:
                 amounts[i] = amounts[i] * k
         nxt = L.copy()

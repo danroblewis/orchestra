@@ -50,12 +50,13 @@ def test_pelt_finds_the_changes_in_a_noisy_series():
     assert {200, 400, 600} <= set(pelt(r, 5, 1))
 
 
-def test_a_model_steps_many_states_at_once_and_floors_at_zero():
+def test_a_model_steps_many_states_at_once_and_nothing_leaves_a_stock_that_is_not_there():
     flows = [{"from": "a", "to": "b", "rate": {"form": "proportional", "stock": "a", "k": 0.5}},
              {"from": None, "to": "a", "inflow": [{"from": 1, "to": 1, "value": 10}, {"from": 2, "to": 9, "value": 0}], "rate": {"form": "constant", "value": 5}},
              {"from": "b", "to": None, "rate": {"form": "constant", "value": 100}}]
     L = Model(flows, ["a", "b"]).step(np.array([[4.0, 8.0], [0.0, 1.0]]), np.array([1.0, 2.0]))
-    assert L.tolist() == [[12.0, 4.0], [0.0, 0.0]]
+    # b's outflow wants 100 but b holds 0 (and 1) at the start of the step: it takes what is there
+    assert L.tolist() == [[12.0, 4.0], [2.0, 4.0]]
 
 
 @pytest.mark.xfail(strict=True, reason="the inbox's row takes a spurious +0.026 x working (a link working -> inbox); with the "
@@ -128,3 +129,28 @@ def test_effects_multiply_a_flow_by_curves_of_other_levels_as_sd_lab_does():
     L = Model(flows, ids).step(np.array([[st[i] for st in states] for i in ids]), np.ones(len(states)))
     for k, st in enumerate(states):
         assert abs(L[1][k] - 50 * multiplier({"effects": effects}, st)) < 1e-9
+
+
+@pytest.mark.parametrize("example", sorted(p.parent.name for p in (ROOT / "sdlab" / "examples").glob("sd-*/truth.model.json")))
+def test_the_simulator_steps_every_true_model_as_the_ground_truth_engine_does(example, tmp_path):
+    """Without noise, a true model stepped by the discovery simulator (as the grader steps it) follows
+    the engine's own run: schedules, effects, co-flows, and outflows sharing what an emptied stock holds."""
+    import sys
+
+    from sdlab.sdtruth import Truth
+
+    sys.path.insert(0, str(ROOT / "tests" / "bench"))
+    from grade import truth_by_time
+
+    m = json.loads((ROOT / "sdlab" / "examples" / example / "truth.model.json").read_text())
+    m["noise"] = {}
+    (tmp_path / "truth.model.json").write_text(json.dumps(m))
+    t = Truth(tmp_path / "truth.model.json")
+    n = min(t.steps, 400)
+    engine = t.run(steps=n)["levels"]
+    flows, _ = truth_by_time(m, list(range(1, n + 1)))
+    model, L = Model(flows, t.stock_ids), np.array([[float(s.get("initial") or 0)] for s in m["stocks"]])
+    for k in range(1, n + 1):
+        L = model.step(L, np.array([float(k)]))
+        for i, s in enumerate(t.stock_ids):
+            assert abs(L[i, 0] - engine[s][k - 1]) <= 1e-3 * max(1.0, abs(engine[s][k - 1])), (s, k)

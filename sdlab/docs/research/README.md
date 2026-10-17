@@ -17,7 +17,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Hidden stocks from delayed copies of levels](hidden-stocks.md) | running (wave 1, benchmark v1) | - |
 | [Numerical gradients and derivative-free optimisers](numerical-optimisation.md) | running (wave 2, benchmark v2) | - |
 | [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | running (wave 2, benchmark v2) | - |
-| [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | running (wave 1, benchmark v1) | - |
+| [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Searching SD structures: greedy, beam search, MCTS, genetic algorithms](structure-search.md) | running (wave 2, benchmark v2) | - |
 | [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | running (wave 2, benchmark v2) | - |
 | [A procedural generator of ground-truth SD models](procedural-generator.md) | idea (not started) | - |
