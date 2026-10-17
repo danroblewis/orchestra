@@ -26,6 +26,92 @@ successes.
 
 ## Log
 
+### 2026-10-17: experiment gradient - numbers and structure by gradient descent through a differentiable simulator - NEEDS A COMBINATION (mechanism works; bench held back by the matrix's inflows and the judge)
+**Hypothesis.** The matrix method fits one step at a time and only rates linear in the levels.
+Writing the simulation itself in an autodiff framework and fitting a candidate structure's numbers
+on multi-step error from many start moments (multiple shooting, horizons 5 then 20) recovers what
+one-step regression cannot: effect curves, hidden-stock rates, co-flow ratios; and a generous
+structure (an effect table of every measured stock on every flow, a co-flow of every measured stock
+on every flow), pruned by sparsity during the fit, lets gradient descent choose structure too.
+**Building blocks** (branch `exp/gradient`): `sdlab/discovery/diffsim.py` (JAX copy of
+`simulate.Model`: rates as c + k.levels per distinct era rate, found inflow pieces, effects as
+tables - a linear clamp is a two-point table -, co-flows sharing what a stock holds in Model's order,
+floors; softplus floors while training; `to_flows` writes numbers back in their original forms),
+`gradfit.py` (masks of what moves, sign-keeping bounds, L-BFGS-B on scaled numbers, curriculum,
+group lasso on effect tables, L1 on co-flow ratios and optionally on the structure's own rates,
+penalties or total variation on learned inflow pieces, hidden stocks stepped through the data from
+a fitted starting level), `structure.py` (the generous candidates; a matrix "s drains faster when a
+is high" link becomes a co-flow seed), `hidden.py` (a hidden stock on a move, tried move by move),
+strategy `gradient` (`SDLAB_GRADIENT=<attempt>` picks the bench attempt). `tests/test_diffsim.py`:
+the JAX simulator equals `simulate.Model` to 1e-9 on 12 random models with every feature (byTime,
+inflow pieces, gap/linear/proportional/constant, linear and table effects, co-flows with sharing,
+ratio 2), smooth parts off; written-back numbers give the same model. `matrix` unchanged (sd-saas,
+sd-eras, sd-pipeline default: zero deltas).
+**Mechanism tests** (`tests/test_strategy_gradient.py`, 2000 steps, counting noise):
+- (a) a -> b at 0.3 x a x table(c), c moved by unannounced eras: the generous fit (links dropped,
+  inflows learned from flat under a total-variation price, L1 on rates) recovers the curve: rms
+  error 9.8% of its mean over c's 5-95% range (max 0.032 per unit of a), no leak out of a left;
+  skill@20/@100 0.97/0.99. Matrix: no effect form; a -> b 0.081 plus links c -> b, "a drains faster
+  with c", a leak a -> outside 0.084 and inflow pieces into a that follow c's eras; its linear
+  reading of the curve is 29% off (73% for its flat k); skill 0.36/0.82. **From the matrix's model
+  with its inflows fixed, the effect is not found** (skill 0.37-0.47 whatever the sparsity): the
+  matrix's inflow pieces into a already absorb what the effect does, and spurious flows sit in the
+  local optimum. Only starting the inflows flat and letting the data pull them apart works. From the
+  true structure with the table flat at 1 the fit recovers it to skill 0.999 - the simulator and the
+  descent are not the limit; the starting structure is.
+- (b) a -> hidden (0.2) -> b (0.1): routing the matrix's move through a hidden stock and fitting
+  gives 0.196 and 0.104, b's drain 0.2985 (truth 0.3), the leak a -> outside 0.157 -> 0.020. Matrix:
+  a -> b 0.06, a -> outside 0.157, b -> outside 0.093. **Not usable on the bench**: the grader (and
+  `simulate.Model`) step only the truth's stock ids, so a found hidden stock is silently dropped;
+  `hidden.collapse` hands it on as a direct move. Not in the bench attempts.
+- (c) a -> b at 0.4 x a using 0.5 kg of c per unit: the matrix's link "c drains faster with a"
+  (0.229 x a, ratio 0.52 to the move) becomes a co-flow, refitted ~0.53, the link gone. Matrix: the
+  same ratio as a link, no co-flow. Where c actually runs out (restock slowed by an era) the matrix
+  is lost (skill@20 -3.3, @100 -20.7; inflow pieces of +-20 absorb the stoppage); the generous fit
+  reaches 0.78/0.86 but as an effect of c on the move, not as a co-flow.
+**Bench vs v2** (62 runs; v2: mean skill@20 31.6%, skill@100 32.1%, 17 meet the goal, 326 s summed):
+- **refined** (matrix structure, every number refitted on 5- and 20-step error, inflows fixed, kept
+  only if identify()'s judge prefers it): **skill@20 34.5% (+2.9), skill@100 33.3% (+1.2), parts
+  55.4% (=), 18 meet the goal (+1)**; 757 s summed (max 49 s). Better: brewery 79/92 -> 94/98 and
+  88/96 -> 96/99 (both now meet), ci long 88/91 -> 93/95 (meets), cloud-credits default -859/-1648 ->
+  -38/11 and long -16/54 -> 61/84, print-shop default -547/-2330 -> -241/-243 and long -159/-197 ->
+  -117/-87, population long 50/92 -> 83/84, orders default 67/87 -> 82/93, kanban long 55/57 -> 63/78,
+  eras long 49/74 -> 59/79, manufacturing long 82/88 -> 88/93, restaurant default 64/59 -> 72/72,
+  support-tiers long 42/-13 -> 50/6, clinic-doses long -1106/-2704 -> -838/-1938, webshop default
+  -156/-224 -> -123/-170, bakery both (still far below 0), emergency both (+6), moderation long @100
+  -249 -> -131, pipeline default @100 -122 -> -83. Worse: hospital 96/98 -> 70/67 and 93/91 -> 75/69
+  (both lose the goal), ev-fleet 59/64 -> 42/54 and 76/79 -> 52/69, fishery long 35/25 -> 23/-19,
+  restaurant long 68/-39 -> 57/-147, reservoirs default 93/94 -> 90/91, recycling long 93/96 ->
+  91/94, sawmill both (-1 to -11).
+- **clean** (refined, plus generous-nolinks: effects and co-flows on every flow, links dropped,
+  inflow pieces learned from flat under total variation 0.02, L1 on rates, lambda 0.1, 500
+  iterations, 500 starts; best of matrix/refined/generous by the judge): **skill@20 34.5% (+2.9),
+  skill@100 29.5% (-2.6), parts 57.3% (+1.9), 16 meet the goal (-1)**; 22,365 s summed (max 3,460 s,
+  on a machine at load 80-160), i.e. 70x the matrix. Against refined it gains where the generous
+  model wins the judge: webshop-stock default -123/-170 -> 23/-139, clinic-doses long -838/-1938 ->
+  -256/-741, population default 69/87 -> 88/94, recycling default 73/97 -> 84/88, farm-soil default
+  @100 48 -> 80; and loses: recycling long 91/94 -> 63/66 and reservoirs default 90/91 -> 88/88
+  (both lose the goal), kanban default 43/32 -> 0/-35, cloud-credits default -38/11 -> -979/-1744,
+  bakery default -662/-1844 -> -1009/-10177, sawmill default -352/-131 -> -390/-159, brewery long
+  @100 99 -> 87.
+**Dependency**: `jax` 0.11.2 (+ jaxlib, ml_dtypes, opt_einsum): 273 MB in the venv, ~1 s import, CPU
+only, float64; one XLA thread per process (set in diffsim).
+**Verdict: needs a combination; do not adopt as is.** The refined attempt repeats the output-error
+experiment's gain on v2 (+2.9 / +1.2, one more run meets the goal) at 2.3x the run time, and repeats
+its failure mode: the data judge, which feeds models their own fitted inflow pieces, prefers refits
+that track the data's realised noise and then behave worse with the truth's inflows (hospital,
+ev-fleet: the truth's own judge error is often higher than the found model's - on the effect
+synthetic 0.146 vs 0.138). The mechanism is real - given a starting structure whose inflows do not
+already explain the nonlinearity, the descent recovers table effects (9.8% curve error), hidden
+stocks (rates within 5%) and co-flow ratios (within 7%) - but on the bench the generous fit mostly
+loses to, or is mis-chosen over, simpler models: the effects it keeps on real examples are often
+noise-fitting (at 0.1 x the error, the group lasso keeps several 5-30% tables besides the true one even on the synthetic models), dropping all links
+removes true ones, and it costs 70x. What would make it pay: (1) a held-out or truth-free judge that
+does not reward fitted inflow pieces (exp/held-out-judge), (2) inflow pieces chosen jointly with
+nonlinear structure instead of before it (flat start + total variation was the only thing that let
+an effect be found), (3) a grader and simulator that step found hidden stocks (initialised from
+the model's own estimate), without which hidden-stock recovery cannot show on the bench.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
