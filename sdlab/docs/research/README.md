@@ -45,7 +45,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [XMILE export and interoperability](xmile-export.md) | idea (not started) | - |
 | [A complexity budget the analyst states](complexity-budget.md) | idea (not started) | - |
 | [Bench instrumentation: coverage, selection, failure classes, ablation](bench-instrumentation.md) | idea (not started) | - |
-| [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | idea (not started) | - |
+| [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | done (wave 3, benchmark v2.1) | reject on the main line (neutral without the high-state test, -4.3 with it); keep `gate.py` as the acceptance check for strategies that add flexibility |
 | [Effects as basis-expanded flow columns in the regression](effect-columns.md) | idea (not started) | - |
 | [A diagnose-and-expand loop driven by residual signatures](residual-diagnostics.md) | idea (not started) | - |
 | [Outside-input changes estimated on innovations, jointly with the dynamics](inflow-innovations.md) | idea (not started) | - |

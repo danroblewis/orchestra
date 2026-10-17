@@ -26,6 +26,24 @@ successes.
 
 ## Log
 
+### 2026-10-17: behaviour-consistency gate before the judge (playbook M1, branch `exp/behaviour-gate`) - REJECTED (gate kept as a building block)
+Hypothesis: wrong candidates win the judge by replaying the data while holding behaviour the data rule
+out (runaway loops, growth from empty or extreme states); gating every candidate first, and refitting
+the culprit coefficient bounded at 0, lets the judge choose among consistent ones. Built
+`sdlab/discovery/gate.py` (`check`: free runs with floors and caps from observed / empty / 5 x max
+states, own and mean inflows, fail beyond 3 x the observed range allowing the data's own growth;
+culprit from the Jacobian at the failing state; `choose`) and strategies `gated` (gate + one bounded
+`lsq_linear` refit of the culprit row) and `gated_no_high` (ablation). Mechanism test
+`tests/test_strategy_gate.py`: a replaying spurious loop the judge prefers is rejected and the right
+model kept; the playbook trap is refitted to drain 0.083 (0.1); a growing population and
+sd-manufacturing's unstable-but-floored structure pass. Bench vs v2.1 (29.6% / 29.3% / 12):
+**`gated` 25.3% (-4.3) / 29.3% / 12, fresh 24.6% / 29.8%**: orders default +5.6 (refit removed a
+spurious loop), bakery long -871, support-tiers long -385, orders long -10.4, restaurant long -2.9
+(@100 +87), all losses from the 5 x max test. **`gated_no_high` identical to v2.1 in all 62 runs.**
+278 of 836 candidates rejected (high 258, observed 130, empty 93). Why: the judge already discards
+own-inflow runaways; the worst runs' winners are bounded under their own inflows and run away only
+under the truth's (misattributed outside inflow). Details: [behaviour-consistency](research/behaviour-consistency.md).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
