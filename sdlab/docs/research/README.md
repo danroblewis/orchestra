@@ -14,7 +14,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Refining rates by multi-step (output) error](output-error.md) | done (wave 1, benchmark v1) | needs a combination: keep as a final step after structural fixes |
 | [Shared noise: telling moves, links and co-flows apart](shared-noise.md) | done (wave 1, benchmark v1 + co-flow engine) | needs a combination (with a fix for drain bias) |
 | [Gradient descent through a differentiable SD simulator](gradient-descent.md) | running (wave 2, benchmark v2) | - |
-| [Hidden stocks from delayed copies of levels](hidden-stocks.md) | running (wave 1, benchmark v1) | - |
+| [Hidden stocks from delayed copies of levels](hidden-stocks.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Numerical gradients and derivative-free optimisers](numerical-optimisation.md) | running (wave 2, benchmark v2) | - |
 | [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | running (wave 2, benchmark v2) | - |
 | [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | done (wave 1, benchmark v1) | needs a combination |
