@@ -66,7 +66,9 @@ combined only after each has been measured alone, and a combination is its own e
    Read every row, not just the headline: a fix for one example often costs another.
 6. **Record it** in DISCOVERY-EXPERIMENTS.md: hypothesis, mechanism test, bench numbers against the
    baseline, verdict (adopt / reject / needs a combination), and why. Failures are most of what we
-   learn.
+   learn. Then update the topic's document in [research/](research/README.md) (one per research
+   topic: status, branch and commit, results, verdict, open ideas) and its row in the index; a new
+   topic gets a new document.
 7. **Adopting**: a winner is folded into the main line (into `matrix`, or as the new default
    strategy) in one change that names the experiment, the locked-in tests move with it, and the
    baseline is saved again (`--save python`, or a new name). Every experiment after that starts from
