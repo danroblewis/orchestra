@@ -26,6 +26,37 @@ successes.
 
 ## Log
 
+### 2026-10-17: hidden stocks reconstructed from a unit's mass balance (wave 4) - NEEDS A COMBINATION
+Branch `exp/mass-balance-hidden`, strategy `mass_balance` ([topic](research/mass-balance-hidden.md)).
+Hypothesis: the main line reads a hidden delay A -> H -> B as A losing to outside plus pieces into B;
+by conservation the gap between the two is H's level, so pairing them reconstructs H (no delay grid,
+no kernel), and a false pairing drifts. Mechanism (`discovery/balance.py`, `balance_filter.py`,
+`observer.py`): candidate pairs of one unit; the plain balance as a regression gate; H followed by a
+Kalman filter (the plain cumulative balance fails on counting data: A's loss at its rate differs from
+what really left, and the sum is a random walk as large as H); alpha, d and B's drain by the
+innovations' likelihood; accepted when it behaves better on the data than the old model with B's
+arrivals at their mean. Mechanism test (a -> h -> b, h unmeasured): a->H 0.215 / H->b 0.082 / b
+0.268 (truth 0.2 / 0.1 / 0.25), corr(H, h) 0.99, skill@20 82% / @100 95% (seeds 2, 3: 98%, 88%);
+`matrix` -25% / 72%. Controls (unrelated loss and inflow; a population) get no hidden stock.
+**Grader extension** (ported from `exp/hidden-delays` 2b8cbb8, extended): a found model's unmeasured
+stocks start from its own estimate (`inferred_levels` on its own run; on the fresh run, the found
+model's own estimate from that run's measured levels), never the truth's. Evidence: without it the
+grader drops H and the correct mechanism model grades -1813% instead of 82%; tested; `matrix` zero
+deltas on sd-saas, sd-eras, sd-pipeline.
+Bench vs v2.1 (in-sample 29.6% / 29.3%, fresh 28.9% / 29.7%, 12 of 62):
+- v1 (rest of A's loss kept when the data prefers it, residence < T/10): 30.0% / 31.1%, fresh 29.3% /
+  31.5%; a false near-integrator H on sd-ci long (d 0.001) cost it 26 points.
+- v2 (H must turn over 20 times in the run): 30.2% / 30.9%, fresh 29.6% / 31.3%.
+- **v3 (conservation first: A loses only what H takes, its pieces re-measured; committed)**: **30.7% /
+  31.3%, fresh 30.1% / 31.7%, 12 of 62 (fresh 12)**, bench time 675 s vs 586 s. sd-fishery default
+  2.8% -> 35.7% (@100 -102% -> 5.5%), long -18.5% -> 7.4%; sd-webshop-stock long 63.6% -> 69.6% (@100
+  48.6% -> 72.8%); sd-housing default 96.3% -> 94.0%; sd-sawmill long @100 -5% -> -60%. 6 hidden stocks
+  accepted, all true (cold_store, permits, kiln, in_transit).
+- v4 (`mass_balance_all`, every candidate): the same models, 30.7% / 31.3%, 2.2x time.
+Verdict: precise but small; most targets never offer a pair, and where H is found the co-flow errors
+dominate (sawmill, cloud-credits). The acceptance reference can be fooled by a slow H (the 20-turnover
+rule blocks it); combine behind the behaviour gate / piece-proof judge.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
