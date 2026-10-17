@@ -62,7 +62,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Outside inflows as a repeating profile](periodic-inflows.md) | idea (not started, wave 4) | - |
 | [Assembling the model row by row from the candidates](row-crossover.md) | done (wave 4, benchmark v2.1) | needs a combination (+6.1/+13.4, 14 of 62 meet the goal; judge fooled on webshop, moderation) |
 | [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
-| [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | idea (not started, wave 4) | - |
+| [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | done (wave 4, benchmark v2.1) | needs a combination (6 real hidden stocks, no false ones; +1.1/+2.0) |
 | [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | idea (not started, wave 4) | - |
 | [Drains measured where nothing flows in (recession analysis)](recession-drains.md) | idea (not started, wave 4) | - |
 | [An LLM structural critic in the loop](llm-critic.md) | idea (not started, wave 4) | - |
