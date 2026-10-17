@@ -63,7 +63,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Assembling the model row by row from the candidates](row-crossover.md) | done (wave 4, benchmark v2.1) | needs a combination (+6.1/+13.4, 14 of 62 meet the goal; judge fooled on webshop, moderation) |
 | [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
 | [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | done (wave 4, benchmark v2.1) | needs a combination (6 real hidden stocks, no false ones; +1.1/+2.0) |
-| [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | idea (not started, wave 4) | - |
+| [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | done (wave 4, benchmark v2.1) | paced moves: reject as they stand; gap inflows: needs a combination (+5.3/+5.5, services meets the goal) |
 | [Drains measured where nothing flows in (recession analysis)](recession-drains.md) | done (wave 4, benchmark v2.1) | needs a combination (+10.5/+15.2, 16 of 62; fresh 14) |
 | [An LLM structural critic in the loop](llm-critic.md) | idea (not started, wave 4) | - |
 | [Judge noise: tied candidates told apart by simplicity](judge-ties.md) | idea (not started, wave 4) | - |
