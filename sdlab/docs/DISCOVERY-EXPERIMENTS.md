@@ -26,6 +26,41 @@ successes.
 
 ## Log
 
+### 2026-10-17: paced moves and gap inflows (wave 4, rank 7) - NEEDS A COMBINATION (gap inflows); paced moves REJECTED on the bench
+Branch `exp/paced-moves` (commit `1474672`), strategy `paced_moves`, module `discovery/stoich.py`;
+`matrix.identify_one` gains `keep_fit` (off by default; `matrix` unchanged: zero deltas on sd-saas,
+sd-eras, sd-pipeline default). Details: [research/paced-moves.md](research/paced-moves.md).
+**Hypothesis**: a move whose rate reads a third stock (-k in the source's entry, +k in the receiver's)
+is read as "drains faster" plus a link; matched, refitted with one shared number, it conserves and
+stops when the source empties. A negative cross term beside a positive outside inflow is a gap
+inflow (c - k x C, floored), not an outflow.
+**Mechanism test** (`tests/test_strategy_paced_moves.py`, 4 pass): tier2 -> resolved at 0.5 x agents,
+tier2 low ~40% of steps: `matrix` reads tier2 drains 0.24 x agents and a link 0.31 (0.20-0.31 on
+seeds 1-8; a drain of tier2 imitates the cut-off); the strategy reads one move 0.465 x agents (0.37-0.53
+on seeds 1-8) and skill@20 0.51 -> 0.94 (seeds 1-8: mean 0.65 -> 0.84, 5 up, 2 down, 1 unmatched).
+Matching needed two fixes found here: refit on steps where the source held enough, with the source's
+own columns dropped, and the inflow pieces re-measured on those steps. Gap variant (on_order inflow
+max(0, 110 - 0.2 x shelf)): `matrix` -117% @20, strategy -0.206 x shelf, 98%/95%. Control (a real paced
+outflow and a link 0.25): not merged, result identical to `matrix`.
+**Bench vs v2.1 (29.6% / 29.3%, fresh 28.9% / 29.7%, 12 of 62)**, each attempt:
+| attempt | skill@20 | skill@100 | fresh @20 / @100 | goal | CPU |
+|---|---|---|---|---|---|
+| v1: SE match on raw rows, all gaps at once per stock, greedy, margin 0.1 | 32.9% | 34.4% | 31.9% / 34.5% | 14 | 1010 s |
+| v2: + masked refit dropping the source's drain, masked re-measure, paced discount 0.15 | 31.6% | 31.2% | 31.1% / 31.2% | 14 | 958 s |
+| v3: discount 0 | 32.7% | 34.0% | 31.7% / 34.1% | 14 | 1287 s |
+| v4: gap inflows per (stock, driver) pair (strategy default) | 34.0% | 32.7% | 33.0% / 32.9% | 14 | 1137 s |
+| v4 ablation: gap inflows only, no paced moves | **34.9%** | **34.8%** | **34.0% / 35.0%** | 14 | 902 s |
+(v2.1: 586 s.) v4 by run: sd-services default 7% -> 94% and long 35% -> 96% (both newly meet the goal;
+tokens<api), sd-fishery default 3% -> 46% (@100 -102% -> 30%), sd-moderation long -99% -> 12%,
+sd-ev-fleet long 18% -> 23%; sd-moderation default -67% -> -372% (@100 -172% -> -58%), sd-recycling
+default 72% -> 66% (paced). The ablation adds sd-fishery long -19% -> 35% and loses recycling's drop.
+**Verdict**: paced moves work on the synthetic model but rarely match on the examples (rows too messy;
+where they match the judge rarely prefers them) and cost on the bench: reject as they stand. Gap
+inflows are the gain (+5.3 / +5.5 points, fresh +5.1 / +5.3), mostly as stand-ins that behave better
+than "drains faster" outflows (services' tokens are really a co-flow); the judge can be fooled (the
+moderation default gap rescues a runaway candidate in-sample): combine with the behaviour gate and
+piece-proof judge before adopting.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
