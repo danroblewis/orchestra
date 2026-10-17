@@ -26,6 +26,36 @@ successes.
 
 ## Log
 
+### 2026-10-17: latent-eras, unannounced eras found as recurring regimes (wave 4, branch `exp/latent-eras`) - NEEDS A COMBINATION
+Hypothesis: unannounced changes to internal coefficients recur, show as regimes in a row's
+coefficients, and the era machinery fits them once they are labelled. Strategy `latent_eras`
+(`discovery/regimes.py`: Markov-switching regression per row, Student-t noise, EM; a regime must recur
+3+ times, beat no regimes with each switch priced at log T, and change a level's number with the row's
+inflow pieces taken out; rows with coinciding switches share a path; the regimes join the announced
+eras and the 8 "numbers per era" variants run again; a regime candidate must beat the main line's judge
+error by 10%). `matrix.py` option `era_levels` (default unchanged). Mechanism test
+(`tests/test_strategy_latent_eras.py`): a -> b at 0.5 / 0.1 switching every 12 steps: matrix finds one
+move 0.35 and skill@20 -207%; the strategy finds both regimes (all 166 switches within a step, rates
+0.4975 / 0.1003) and 100%. Controls (inflow change alone, no change) get no regime. The brief's model
+(a switching link on near-constant creators) does not separate them: pieces replay it, both above 99%.
+Bench vs v2.1 (29.6% / 29.3%, 12 of 62; fresh 28.9% / 29.7%, 12):
+- attempt 1 (found row's columns, Gaussian; targets only): bakery default -1170% -> 45%, university 75%
+  -> 98%, kanban 61% -> 74%.
+- attempt 2 (every allowed level, switch-priced BIC, each process alone and together): **33.0% / 33.6%,
+  15 of 62; fresh 32.1% / 34.1%, 15**. sd-population default (control) 68% -> -1110%: a regime stood in
+  for the migration pieces and won the judge by a tie.
+- attempt 3 (Student-t noise, PELT-piece starts, coefficient test within pieces, 10% judge margin):
+  **41.1% (+11.4) / 40.9% (+11.5), 17 of 62; fresh 40.1% / 41.3%, 16**. bakery 95% / 99%
+  (from -1170% / 19%), print-shop 60% / 66% (from -529% / -158%), university 98% / 96%, kanban 86% /
+  79%, ci long 91%, clinic-doses default -602% -> -55%. Worse: population long 50% -> 19% (@100 92% ->
+  -10%), clinic-doses long -347% -> -1226% (clipped either way), support-tiers default flat. Run time
+  1968 s summed vs 586 s (3.4x).
+- attempt 4 (diagnosis, not benched): a threshold on the coefficient gain's share of the existence gain
+  does not separate population long (1.2%) from print-shop's useful regimes (5-6%).
+Verdict: large, holds on fresh runs, but the judge can be fooled by regimes that stand in for an outside
+inflow (population long), so it needs the behaviour gate or a piece-proof judge. Kept as an option.
+Details: docs/research/latent-eras.md.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

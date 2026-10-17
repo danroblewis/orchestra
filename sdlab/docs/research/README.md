@@ -58,7 +58,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |
 | [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |
-| [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | idea (not started, wave 4) | - |
+| [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | done (wave 4, benchmark v2.1) | adopt behind the behaviour gate / piece-proof judge (+11.4 points, 12 -> 17 runs meeting the goal; the judge is fooled on population long) |
 | [Outside inflows as a repeating profile](periodic-inflows.md) | idea (not started, wave 4) | - |
 | [Assembling the model row by row from the candidates](row-crossover.md) | idea (not started, wave 4) | - |
 | [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
