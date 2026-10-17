@@ -99,41 +99,6 @@ test("fitting recovers a coefficient from a run that followed it", () => {
   assert.equal(rows.find((r) => r.flow === "in").change, false);   // the right equation is kept
 });
 
-test("discovery recovers the sock structure from stock levels alone, when the run has eras", () => {
-  const { discover } = require("../sdlab/static/discover.js");
-  const run = JSON.parse(readFileSync(new URL("./fixtures/socks-eras-run.json", import.meta.url)));
-  const stocks = JSON.parse(readFileSync(new URL("../sdlab/examples/socks.json", import.meta.url))).stocks;
-  const r = discover(stocks, run, { window: 5, eras: run.eras });
-  const find = (from, to) => r.flows.find((f) => f.from === from && f.to === to);
-  const inflow = find(null, "basket");
-  assert.ok(inflow && Math.abs(inflow.perStep - 4) < 1, `inflow ${inflow && inflow.perStep}`);        // 4 socks a minute arrive
-  const lose = find("loose", "lost");
-  assert.ok(lose && lose.rate.form === "proportional" && Math.abs(lose.rate.k - 0.01) < 0.004);        // 1% of loose socks a minute
-  assert.ok(r.flows.some((f) => f.from === "basket"), "something drains the basket");
-  for (const [id, u] of Object.entries(r.unexplained)) assert.ok(Math.abs(u.drift) < 0.05, `${id} drifts ${u.drift}`);
-});
-
-test("a run that never moves is reported as ambiguous", () => {
-  const { discover } = require("../sdlab/static/discover.js");
-  const run = JSON.parse(readFileSync(new URL("./fixtures/socks-run.json", import.meta.url)));
-  const stocks = JSON.parse(readFileSync(new URL("../sdlab/examples/socks.json", import.meta.url))).stocks;
-  const r = discover(stocks, run, { window: 5 });
-  assert.ok(r.flows.some((f) => f.nearly.length >= 3), "several structures fit equally well");
-});
-
-test("with the measured flows subtracted, discovery finds exactly the hidden ones", () => {
-  const { discover } = require("../sdlab/static/discover.js");
-  const run = JSON.parse(readFileSync(new URL("./fixtures/surprises-run.json", import.meta.url)));
-  const stocks = JSON.parse(readFileSync(new URL("../sdlab/examples/surprises.json", import.meta.url))).stocks;
-  const r = discover(stocks, run, { window: 5, eras: run.eras, moved: run.moved });
-  assert.equal(r.flows.length, 2, JSON.stringify(r.flows.map((f) => [f.from, f.to])));
-  const wear = r.flows.find((f) => f.from === "sport" && f.to === "basket");
-  assert.ok(wear && wear.ratio === 0.5, "worn sport pairs come back as two socks each");
-  assert.ok(wear.rates.every((x) => x.form === "proportional" && Math.abs(x.k - 0.04) < 0.01), JSON.stringify(wear.rates));  // 0.02 pairs = 0.04 socks
-  const dog = r.flows.find((f) => f.from === "loose" && f.to === null);
-  assert.ok(dog && Math.abs(dog.perStep - 0.2) < 0.05, "the dog takes 0.2 socks a minute");
-});
-
 test("an effect slows a flow as the stock it depends on runs low", () => {
   const { flowRates } = require("../sdlab/static/sim.js");
   const m = {
@@ -178,14 +143,4 @@ test("leverage ranks the flow that limits the goal first", () => {
   assert.deepEqual(r.goals, ["sold"]);
   assert.ok(r.rows[0].effect.sold.change > 0);
   assert.ok(["mix", "bake"].includes(r.rows[0].flow), `top: ${r.rows[0].flow}`);
-});
-
-test("discovering across the whole model splits it up and finds the same hidden flows", () => {
-  const { discoverAll } = require("../sdlab/static/discover.js");
-  const run = JSON.parse(readFileSync(new URL("./fixtures/surprises-run.json", import.meta.url)));
-  const stocks = JSON.parse(readFileSync(new URL("../sdlab/examples/surprises.json", import.meta.url))).stocks;
-  const r = discoverAll(stocks, run, { window: 5, eras: run.eras, moved: run.moved });
-  assert.ok(r.flows.some((f) => f.from === "sport" && f.to === "basket"), JSON.stringify(r.flows.map((f) => [f.from, f.to])));
-  assert.ok(r.flows.some((f) => f.from === "loose" && f.to === null));
-  assert.ok(r.explained >= 1, "stocks the measured flows explain are set aside");
 });
