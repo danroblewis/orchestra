@@ -26,6 +26,59 @@ successes.
 
 ## Log
 
+### 2026-10-17: experiment output_error - numbers refined by multi-step (output) error - NEEDS A COMBINATION
+**Hypothesis.** The matrix method fits every number on single steps; small one-step biases (misplaced
+inflow changes, unmodelled hidden stocks, a constant inflow standing in for a changing one) compound
+over many steps, so runs with good skill@20 fall apart at skill@100 (sd-pipeline default, sd-moderation
+long, sd-ev-fleet long, sd-kanban, sd-support-tiers long). Keeping the structure identify() chooses and
+moving only the flows' rates so the model, run 5, 20 and 100 steps from 80 moments in the data (own
+inflows feeding it), stays closest to what was measured (scipy `least_squares`, k >= 0, 15 evaluations)
+should give models that hold over 100 steps.
+**Strategy** `output_error` (`sdlab/discovery/strategies/output_error.py`, building block
+`sdlab/discovery/refine.py`; `simulate.Model.change` added, `step` untouched, `matrix` identical on
+sd-saas/sd-eras/sd-pipeline). The refined model is kept only if identify()'s judge prefers it.
+What the refinement may change matters more than anything else here:
+- **Outside inflows re-measured for every candidate** (each piece = the mean of what the stock's change
+  leaves over, "profiling"): mean skill@20 70.8% -> 66.6%, skill@100 68.9% -> 62.8%. The data judge
+  improves everywhere, but rates trade explanation with the inflows of stocks the bench feeds with the
+  truth's inflows: sd-population default 68% -> -335% (elderly -> adults move cut from 0.08 to 0.01, the
+  adults' re-measured inflow taking the rest, which the bench then replaces), sd-services default 97% ->
+  76%. With a one-step prior (chi-square of the single steps, priced at log T per number): the same
+  failure, 67.0% / 63.9%. REJECTED.
+- **Inflows fixed as found** (kept): the rates cannot hand their job to the inflows.
+- **A number per era for every era** (byTime rates freed era by era): sd-recycling long 86% -> 26%
+  (a short era's rates run free). Eras now share a number wherever the matrix found one value.
+- **Refine the best 3 candidates and choose by the judge**: 73.3% / 72.7%, 17 runs meet the goal;
+  sd-housing long 97% -> 87% (a refined other candidate fits the data better and behaves worse).
+  REJECTED. Horizons 5/20 only: 73.5% / 71.7% (19 meet the goal, 5x faster); 1/5/20/50/100: 73.0% /
+  72.3%; 150 starts and 40 evaluations: 73.1% / 72.8%; one-step prior with fixed inflows: 72.9% / 71.6%.
+**Mechanism test** (`tests/test_strategy_output_error.py`): (1) right structure and inflows, rates off
+by 50% / -40% (skill@100 < 0.5): the multi-step fit alone brings them back (0.3 and 0.2 within 0.03,
+skill@100 > 0.95). (2) Children and adults, births from adults, an unannounced changing migration,
+fitted with constant inflows (the variant the main line chooses on sd-population long and sd-fishery
+long): matrix reads a spurious "adults grow with themselves" loop (0.034 / 0.032 on seeds 1 / 2) and
+runs off, skill@20 -3.3 / -2.5, skill@100 -32 / -24; refined, the loop is 0.013 / 0.009, skill@20 -1.7
+/ -1.2, skill@100 -11 / -9. The 100-step error falls three times, but the structure stays wrong, so
+the model stays poor: the refinement repairs numbers, not parts. Synthetic models where it turns a
+bad model into a good one were not found (a square-wave inflow fitted as constant: the multi-step fit
+with the wrong inflow is itself biased toward a sluggish drain, 0.029 -> 0.031 vs truth 0.1).
+**Bench** (inflows fixed, eras tied, best candidate only) vs baseline python: **mean skill@20 70.8% ->
+73.5%, skill@100 68.9% -> 72.7%, runs meeting the goal 18 -> 18**, parts unchanged. Moved more than 2
+points (skill@20 / skill@100): sd-moderation long 49%/-32% -> 81%/73%, sd-population long 50%/93% ->
+89%/95%, sd-fishery long 30%/31% -> 35%/71%, sd-ci long 93.5%/87% -> 95%/95%, sd-university default
+86%/96% -> 90%/97% (89.7% @20, just short), sd-restaurant default @100 89% -> 94%, sd-support-tiers
+long -54%/-160% -> -27%/-121%, sd-moderation default 37%/29% -> 44%/23%; worse: sd-restaurant long
+86%/85% -> 77%/88% (trades 20 steps for 100: the hidden plating stock), sd-reservoirs default 93.5%/94%
+-> 91%/91% (k's near the truth already, moved by the targets' floor), sd-pipeline default @100 -122% ->
+-136% (the spurious done -> inbox link is structure; the refinement cannot remove it),
+sd-support-tiers default -652% -> -720%. Run time (summed over runs) 204 s -> 288 s (+40%).
+**Verdict: needs a combination.** It is a consistent gain on the long runs where a found loop is
+near the edge (moderation, population, fishery, ci) and never makes a run meeting the goal fail, but it
+moves no run across the goal on its own: what is left is structure (spurious links, hidden stocks,
+missing gap forms) that numbers cannot fix, and rates refined around a wrong structure can trade
+20-step accuracy for 100-step accuracy. Worth adopting as a last step once structural fixes land
+(hidden stocks, negative links), re-measured then; on its own the gain is +2.7 / +3.8 points mean.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

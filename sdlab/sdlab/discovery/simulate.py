@@ -104,6 +104,23 @@ class Model:
             else:
                 self.parts.append((src, dst, ratio, None, _Rate([f.get("rate") or {}], index), None))
 
+    def change(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """What the flows add to each stock in one step from levels L (stocks x states) at times t
+        (one per state), before levels are floored at 0."""
+        m = L.shape[1]
+        zero = np.zeros(m, int)
+        amounts = []
+        for src, dst, ratio, segs, rate, vals in self.parts:
+            seg = segs(t) if segs is not None else zero
+            amounts.append(vals[seg] if vals is not None else rate(L, seg))
+        d = np.zeros_like(L, dtype=float)
+        for (src, dst, ratio, *_), a in zip(self.parts, amounts):
+            if src is not None:
+                d[src] -= a * ratio
+            if dst is not None:
+                d[dst] += a
+        return d
+
     def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
         """One step from levels L (stocks x states) at times t (one per state)."""
         m = L.shape[1]
