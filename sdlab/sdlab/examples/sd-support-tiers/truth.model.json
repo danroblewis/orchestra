@@ -1,0 +1,468 @@
+{
+ "id": "sd-support-tiers-truth",
+ "name": "SD: Tiered customer support: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 730,
+ "long_steps": 7300,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "customers",
+   "name": "Active customers",
+   "unit": "customers",
+   "initial": 4600,
+   "x": 80,
+   "y": 80
+  },
+  {
+   "id": "new_tickets",
+   "name": "New tickets (untriaged)",
+   "unit": "tickets",
+   "initial": 110,
+   "x": 80,
+   "y": 260
+  },
+  {
+   "id": "tier1",
+   "name": "Tier-1 queue",
+   "unit": "tickets",
+   "initial": 180,
+   "x": 320,
+   "y": 260
+  },
+  {
+   "id": "tier2",
+   "name": "Tier-2 queue",
+   "unit": "tickets",
+   "initial": 135,
+   "x": 560,
+   "y": 260
+  },
+  {
+   "id": "tier2_agents",
+   "name": "Tier-2 agents",
+   "unit": "agents",
+   "initial": 10,
+   "x": 560,
+   "y": 80
+  },
+  {
+   "id": "engineering",
+   "name": "Engineering queue",
+   "unit": "tickets",
+   "initial": 80,
+   "x": 800,
+   "y": 260
+  },
+  {
+   "id": "resolved",
+   "name": "Resolved (awaiting close)",
+   "unit": "tickets",
+   "initial": 260,
+   "x": 1040,
+   "y": 260
+  },
+  {
+   "id": "reopened",
+   "name": "Reopened tickets",
+   "unit": "tickets",
+   "initial": 17,
+   "x": 1280,
+   "y": 260
+  },
+  {
+   "id": "trying",
+   "name": "Customers trying the fix (fix will not hold)",
+   "unit": "tickets",
+   "initial": 40,
+   "x": 1160,
+   "y": 440,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "signups",
+   "name": "New customers sign up",
+   "from": null,
+   "to": "customers",
+   "rate": {
+    "form": "constant",
+    "value": 25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "leave",
+   "name": "Customers leave",
+   "from": "customers",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "customers",
+      "k": 0.0035
+     },
+     {
+      "stock": "tier1",
+      "k": 0.05
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "tickets_opened",
+   "name": "Tickets opened by customers",
+   "from": null,
+   "to": "new_tickets",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "customers",
+      "k": 0.012
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "release_bugs",
+   "name": "Tickets from a bad release",
+   "from": null,
+   "to": "new_tickets",
+   "rate": {
+    "form": "constant",
+    "value": 0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "triage",
+   "name": "Triaged to tier 1",
+   "from": "new_tickets",
+   "to": "tier1",
+   "rate": {
+    "form": "proportional",
+    "stock": "new_tickets",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "solve_t1",
+   "name": "Solved at tier 1",
+   "from": "tier1",
+   "to": "resolved",
+   "rate": {
+    "form": "proportional",
+    "stock": "tier1",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "escalate_t2",
+   "name": "Escalated to tier 2",
+   "from": "tier1",
+   "to": "tier2",
+   "rate": {
+    "form": "proportional",
+    "stock": "tier1",
+    "k": 0.06
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "hire_t2",
+   "name": "Tier-2 agents hired",
+   "from": null,
+   "to": "tier2_agents",
+   "rate": {
+    "form": "gap",
+    "stock": "tier2_agents",
+    "goal": 12,
+    "time": 20
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "quit_t2",
+   "name": "Tier-2 agents leave",
+   "from": "tier2_agents",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "tier2_agents",
+    "k": 0.01
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "solve_t2",
+   "name": "Solved at tier 2",
+   "from": "tier2",
+   "to": "resolved",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "tier2",
+      "k": 0.05
+     },
+     {
+      "stock": "tier2_agents",
+      "k": 0.5
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "escalate_eng",
+   "name": "Escalated to engineering",
+   "from": "tier2",
+   "to": "engineering",
+   "rate": {
+    "form": "proportional",
+    "stock": "tier2",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fix",
+   "name": "Fixed by engineering",
+   "from": "engineering",
+   "to": "resolved",
+   "rate": {
+    "form": "proportional",
+    "stock": "engineering",
+    "k": 0.05
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "close",
+   "name": "Customer confirms, ticket closed",
+   "from": "resolved",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "resolved",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "try_fix",
+   "name": "Customer tries a fix that will not hold",
+   "from": "resolved",
+   "to": "trying",
+   "rate": {
+    "form": "proportional",
+    "stock": "resolved",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "reopen",
+   "name": "Ticket reopened",
+   "from": "trying",
+   "to": "reopened",
+   "rate": {
+    "form": "proportional",
+    "stock": "trying",
+    "k": 0.125
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "requeue",
+   "name": "Reopened ticket back to tier 2",
+   "from": "reopened",
+   "to": "tier2",
+   "rate": {
+    "form": "proportional",
+    "stock": "reopened",
+    "k": 0.3
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "New year: steady signups, no bad release",
+    "set": {
+     "signups": {
+      "form": "constant",
+      "value": 25
+     },
+     "release_bugs": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "New budget year: tier-2 staffing target 12 agents",
+    "set": {
+     "hire_t2": {
+      "form": "gap",
+      "stock": "tier2_agents",
+      "goal": 12,
+      "time": 20
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 40,
+    "label": "Release 4.1 ships with a bug (unannounced)",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 45
+     }
+    }
+   },
+   {
+    "t": 44,
+    "label": "Hotfix for 4.1",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 75,
+    "label": "Spring promotion: signups rise",
+    "set": {
+     "signups": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 130,
+    "label": "Promotion ends",
+    "set": {
+     "signups": {
+      "form": "constant",
+      "value": 22
+     }
+    }
+   },
+   {
+    "t": 150,
+    "label": "Release 4.2: a bad migration (unannounced)",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 90
+     }
+    }
+   },
+   {
+    "t": 153,
+    "label": "Migration fixed",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 180,
+    "label": "Tier-2 team grows: staffing target 20 agents",
+    "set": {
+     "hire_t2": {
+      "form": "gap",
+      "stock": "tier2_agents",
+      "goal": 20,
+      "time": 20
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 220,
+    "label": "Summer lull: signups fall",
+    "set": {
+     "signups": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 250,
+    "label": "Release 4.3 regression (unannounced)",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 256,
+    "label": "Regression fixed",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 280,
+    "label": "Autumn: signups recover",
+    "set": {
+     "signups": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 330,
+    "label": "Year-end release breaks billing (unannounced)",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 70
+     }
+    }
+   },
+   {
+    "t": 333,
+    "label": "Billing fixed",
+    "set": {
+     "release_bugs": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   }
+  ]
+ }
+}

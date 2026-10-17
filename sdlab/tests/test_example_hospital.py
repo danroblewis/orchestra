@@ -164,3 +164,51 @@ def test_the_live_sensor_announces_staffing_changes_and_ends_with_the_recording(
     assert "era" not in json.loads(live(360).stdout)
     end = live(sim.STEPS + 1)
     assert end.returncode != 0 and "recording ends" in end.stderr
+
+
+def test_measured_is_what_the_history_prints():
+    m, rows = sim.measured(), history()
+    assert m["t"] == [r["t"] for r in rows]
+    assert m["levels"] == {s: [r["levels"][s] for r in rows] for s in sim.MEASURED_STOCKS}
+    assert m["counters"] == {f: [r["flows"][f] for r in rows] for f in sim.MEASURED_FLOWS}
+    assert m["eras"][0]["start"] == 1 and m["eras"][1:] == [{"start": r["t"], "label": r["era"]} for r in rows if "era" in r]
+
+
+@pytest.fixture(scope="module")
+def long():
+    return sim.run(steps=3 * sim.STEPS)
+
+
+def test_a_long_run_starts_with_the_default_run_and_keeps_every_patient(long, res):
+    n = 3 * sim.STEPS
+    assert all(len(long.levels[s]) == n for s in sim.STOCKS) and all(len(long.flows[f]) == n for f in sim.FLOWS)
+    for s in sim.STOCKS:
+        assert long.levels[s][:sim.STEPS] == res.levels[s], s
+    arrived = list(itertools.accumulate(long.flows["arrivals"]))
+    assert all(sum(long.levels[s][i] for s in sim.STOCKS) == arrived[i] for i in range(n))
+    for s in sim.STOCKS:
+        prev = 0
+        for i in range(n):
+            assert long.levels[s][i] - prev == sum(long.flows[f][i] * ((to == s) - (fr == s)) for f, (fr, to) in sim.FLOWS.items()), (s, i)
+            prev = long.levels[s][i]
+    assert all(sum(long.flows[f][2 * sim.STEPS:]) > 100 for f in sim.FLOWS)     # every flow still carries patients
+
+
+def test_a_long_run_keeps_its_eras_and_surges_coming(long):
+    first = [e for e in long.eras if 1 < e["t"] <= sim.STEPS]
+    for k in (1, 2):
+        eras = [e for e in long.eras if k * sim.STEPS < e["t"] <= (k + 1) * sim.STEPS]
+        assert len(eras) >= len(first) and {e["label"] for e in eras} == {e["label"] for e in first}, k
+        assert len([s for s in long.surges if k * sim.STEPS <= s[0] < (k + 1) * sim.STEPS]) == len(sim.SURGES)
+    beds = {b for _, b, _ in long.beds}
+    assert beds == {b for _, b, _ in sim.BEDS}
+    assert long.eras[len(sim.BEDS):] != [{"t": e["t"] + sim.STEPS, "label": e["label"]} for e in long.eras[1:len(sim.BEDS)]], "a repetition moves its events"
+
+
+def test_a_long_run_is_deterministic(long):
+    again = sim.run(steps=3 * sim.STEPS)
+    assert again.levels == long.levels and again.flows == long.flows and again.eras == long.eras
+    assert sim.measured(steps=3 * sim.STEPS)["levels"] == {s: long.levels[s] for s in sim.MEASURED_STOCKS}
+    assert sim.run(7, 3 * sim.STEPS).levels != long.levels
+    short = sim.run(steps=100)
+    assert short.levels == {s: v[:100] for s, v in long.levels.items()} and [e["t"] for e in short.eras] == [1]

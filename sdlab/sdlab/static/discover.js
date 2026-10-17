@@ -122,10 +122,10 @@
       const eff = new Float64Array(S);
       if (c.from !== OUT) eff[ids.indexOf(c.from)] -= c.ratio;
       if (c.to !== OUT) eff[ids.indexOf(c.to)] += 1;
-      const inputs = { c: () => w, a: (k) => lvl[k][c.from] || 0, b: (k) => lvl[k][c.to] || 0 };
-      const shared = c.from === OUT || c.to === OUT;
+      const inputs = { c: () => w, a: (k) => lvl[k][c.from] || 0, b: (k) => lvl[k][c.to] || 0, d: (k) => driverW(c.driver)[k] };
+      const shared = sharedFlow(c);
       return terms.flatMap((term) => Array.from({ length: shared ? 1 : E }, (_, e) => {
-        const ck = `${c.from}>${c.to}x${c.ratio}|${term}|${e}`;
+        const ck = `${c.from}>${c.to}x${c.ratio}${tag(c)}|${term}|${e}`;
         if (colCache.has(ck)) return colCache.get(ck);
         const col = new Float64Array(N);
         for (let k = 0; k < W; k++) {
@@ -151,8 +151,12 @@
       return v;
     }
     const termsFor = (c) => ["c", ...(c.from !== OUT ? ["a"] : []), ...(c.to !== OUT ? ["b"] : [])];
-    // a rate that depends only on the level of the stock it fills, with no constant, means nothing
-    const sensible = (terms) => !(terms.includes("b") && !terms.includes("c"));
+    // A rate that depends only on the level of the stock it fills, with no constant, means nothing,
+    // except where the data shows one stock being pulled by another (opts.pulls, [{from, by}], from
+    // screenLinks): a pool of workers takes work from a queue as fast as its busy workers finish, so
+    // in proportion to its own level.
+    const pulled = (c) => (opts.pulls || []).some((p) => p.from === c.from && p.by === c.to);
+    const sensible = (terms, c) => !(terms.includes("b") && !terms.includes("c")) || (!!c && pulled(c));
 
     let yy = 0; for (let i = 0; i < N; i++) yy += y[i] * y[i];
     function solve(cols) {
@@ -198,9 +202,11 @@
     }
 
     // a flow must move a sensible amount: on average forward, and rarely backwards
-    const inputOf = (c, term, k) => (term === "c" ? w : term === "a" ? lvl[k][c.from] || 0 : term === "g" ? gainW(c.src)[k] : lvl[k][c.to] || 0);
-    // flows to or from outside, and flows through a hidden stock (whose contents span eras), keep one set of numbers
-    const sharedFlow = (c) => c.from === OUT || c.to === OUT || !!c.delay;
+    const inputOf = (c, term, k) => (term === "c" ? w : term === "a" ? lvl[k][c.from] || 0 : term === "g" ? gainW(c.src)[k] : term === "d" ? driverW(c.driver)[k] : lvl[k][c.to] || 0);
+    // flows to or from outside, and flows through a hidden stock (whose contents span eras), keep one set of
+    // numbers; a link driven by one of our stocks is part of our system, so like a flow between stocks it
+    // gets its own numbers in each era
+    const sharedFlow = (c) => ((c.from === OUT || c.to === OUT) && !c.driver) || !!c.delay;
     function columnUsed(c, term, e) {
       if (sharedFlow(c)) { if (e > 0) return false; for (let k = 0; k < W; k++) if (inputOf(c, term, k) !== 0) return true; return false; }
       for (let k = 0; k < W; k++) if (winEra[k] === e && inputOf(c, term, k) !== 0) return true;
@@ -219,6 +225,10 @@
     let strict = false;                                      // during the search a flow may run both ways (a net exchange)
     function plausible(c, terms, theta) {
       if (!strict) return true;
+      if (c.driver) {                                        // a link adds arrivals; it never takes them away
+        let i = 0;
+        for (const term of terms) for (let e = 0; e < E; e++) if (columnUsed(c, term, e)) { if (term === "d" && theta[i] < 0) return false; i++; }
+      }
       const q = amounts(c, terms, theta);
       return q.reduce((a, b) => a + b, 0) > 0 && q.filter((v) => v < -0.5).length <= 0.1 * W;
     }
@@ -315,6 +325,80 @@
     // an echo is timed by a final stock's gains: things that ended (were discharged, delivered) and come back
     const elsewhere = (opts.sources || []).filter((x) => x.final && !ids.includes(x.id) && run.levels[x.id] && ids.some((id) => canExchange(id, x.id) && (!x.group || x.group === group[id]))).map((x) => x.id);
     const echoSources = opts.closed ? [] : [...ids.filter((id) => final.has(id)), ...elsewhere];
+    // ---- driven flows ----
+    // Most relationships between parts of a system move nothing: a service that calls another keeps
+    // its own request while the other gets a new one; a request that publishes a message is not
+    // used up. In stock-and-flow terms these are inflows from outside whose rate follows another
+    // stock: "outside -> B at k x level of A" (with Little's law, A's level over its latency is how
+    // fast A works, so B's arrivals follow A's level). The driver can be any stock that may exchange
+    // with B, in this search or elsewhere in the model.
+    function driverW(id) {
+      const key = "DW" + id; if (stepCache.has(key)) return stepCache.get(key);
+      const u = levelsOf(id), out = new Float64Array(W);
+      for (let k = 0; k < W; k++) for (let i = k * w; i < (k + 1) * w; i++) out[k] += u[i];
+      stepCache.set(key, out); return out;
+    }
+    const drivenOn = opts.driven !== false;
+    const driverIds = [...new Set([...ids, ...(opts.sources || []).map((x) => x.id)])].filter((id) => run.levels[id]);
+    const driverGroup = Object.fromEntries((opts.sources || stocks).map((x) => [x.id, x.group]));
+    const mayDrive = (y, x) => y !== x && (!driverGroup[y] || !group[x] || driverGroup[y] === group[x]);
+    function residuals() {
+      const fit = fitOf(chosen), cols = chosen.flatMap((f) => columns(f.cand, f.terms));
+      const res = ids.map((_, j) => { const r = new Float64Array(W); for (let k = 0; k < W; k++) r[k] = y[k * R + j]; return r; });
+      cols.forEach((col, i) => { for (let k = 0; k < W; k++) for (let j = 0; j < S; j++) res[j][k] -= col[k * R + j] * fit.theta[i]; });
+      return res;
+    }
+    // Everything in a busy system rises and falls with the same daily traffic, so levels correlate
+    // whether or not they are related. Candidates are ranked on the quick swings instead: each
+    // series minus its own moving average, so only a driver whose ups and downs the target follows
+    // within minutes ranks high.
+    const span = Math.max(3, Math.min(60, Math.floor(W / 8)));
+    function quick(a) {
+      const out = new Float64Array(a.length);
+      let sum = 0;
+      const pre = [0]; for (let k = 0; k < a.length; k++) pre.push((sum += a[k]));
+      for (let k = 0; k < a.length; k++) { const lo = Math.max(0, k - span), hi = Math.min(a.length, k + span + 1); out[k] = a[k] - (pre[hi] - pre[lo]) / (hi - lo); }
+      return out;
+    }
+    const quickW = new Map();
+    const quickDriver = (d) => { if (!quickW.has(d)) quickW.set(d, quick(driverW(d))); return quickW.get(d); };
+    function drivenMoves(consider, res) {
+      if (!drivenOn) return;
+      const pairs = [];
+      ids.forEach((to, jt) => {
+        const r = quick(res[jt]);
+        driverIds.forEach((d) => {
+          if (!mayDrive(d, to) || chosen.some((f) => f.cand.driver === d && f.cand.to === to)) return;
+          if (opts.drivers && !(opts.drivers[to] || []).includes(d)) return;     // only drivers screened on single steps
+          const c = corrOf(quickDriver(d), r);
+          if (c > 0.2) pairs.push({ to, driver: d, corr: c });
+        });
+      });
+      pairs.sort((a, b) => b.corr - a.corr).slice(0, opts.drivenPairs || 10).forEach((o) => {
+        const cand = { from: OUT, to: o.to, ratio: 1, driver: o.driver };
+        const rivals = chosen.filter((f) => f.cand.from === OUT && f.cand.to === o.to && !f.cand.driver && !f.cand.delay);
+        [[], ...rivals.map((f) => [f])].forEach((drop) => [["d"], ["c", "d"]].forEach((terms) =>
+          consider([...chosen.filter((f) => !drop.includes(f)), { cand, terms }], `added ${label(cand)}`)));
+        // a stock that nothing drains yet gains a drain with it: arrivals alone would pile up
+        if (!chosen.some((f) => f.cand.from === o.to)) {
+          const out = cands.find((c) => c.from === o.to && c.to === OUT && c.ratio === 1);
+          if (out) [["a"], ["c"]].forEach((t) => consider([...chosen, { cand, terms: ["d"] }, { cand: out, terms: t }], `added ${label(cand)} and ${label(out)}`));
+        }
+      });
+      // A flow A -> B that moves things may really be a link: A's things leave (to outside) and B's
+      // arrivals follow A. Both explain B gaining as A works; only the data tells them apart.
+      chosen.forEach((f) => {
+        const a = f.cand.from, b = f.cand.to;
+        if (a === OUT || b === OUT || f.cand.delay || f.cand.driver || !mayDrive(a, b)) return;
+        const out = cands.find((c) => c.from === a && c.to === OUT && c.ratio === 1);
+        if (!out) return;
+        const has2 = (c) => chosen.some((g) => keyOf(g.cand) === keyOf(c));
+        const rest = chosen.filter((g) => g !== f);
+        const link = { cand: { from: OUT, to: b, ratio: 1, driver: a }, terms: ["d"] };
+        consider([...rest, ...(has2(out) ? [] : [{ cand: out, terms: ["a"] }]), link], `turned ${label(f.cand)} into ${label(link.cand)}`);
+      });
+    }
+
     function latentMoves(consider) {
       if (!latentOn) return;
       const fit = fitOf(chosen), cols = chosen.flatMap((f) => columns(f.cand, f.terms));
@@ -365,6 +449,7 @@
       const opts2 = [["c"]];
       if (c.from !== OUT) opts2.push(["a"]);
       if (c.to !== OUT) opts2.push(["c", "b"]);
+      if (pulled(c)) opts2.push(["b"]);
       return opts2;
     };
     function evaluate(set) {
@@ -381,13 +466,16 @@
     // a score for ranking candidates, without the forwards-only check
     function evaluateLoose(set) { const r = fitOf(set); return { set, score: total(set, r) }; }
     let chosen = [], cur = evaluate([]);
-    const rounds = [];
-    const byNode = (node) => cands.filter((c) => c.from === node || c.to === node);
+    let rounds = [];
+    let linksOnly = false;                                   // a pass with flows to or from outside (and links) only
+    const allowed = (c) => !linksOnly || c.from === OUT || c.to === OUT;
+    const byNode = (node) => cands.filter((c) => allowed(c) && (c.from === node || c.to === node));
+    function search() {
     for (let round = 0; round < 3 * maxFlows; round++) {
       let best = null, how = "";
       const consider = (set, label2) => { const e = evaluate(set); if (e && e.score < cur.score - 2 && (!best || e.score < best.score)) { best = e; how = label2; } };
       // add one
-      if (chosen.length < maxFlows) cands.forEach((c) => { if (!has(chosen, c)) fitTerms(c).forEach((t) => consider([...chosen, { cand: c, terms: t }], `added ${label(c)}`)); });
+      if (chosen.length < maxFlows) cands.forEach((c) => { if (allowed(c) && !has(chosen, c)) fitTerms(c).forEach((t) => consider([...chosen, { cand: c, terms: t }], `added ${label(c)}`)); });
       // add a chain of two through one stock (only the 6 most promising flows in and out of it)
       const prune = cands.length > 200;                     // small models try every chain
       const single = new Map();
@@ -395,18 +483,24 @@
       const topk = (list) => (prune ? list.filter((c) => single.has(c)).sort((a, b) => single.get(a) - single.get(b)).slice(0, 6) : list);
       if (chosen.length < maxFlows - 1) ids.forEach((node) => {
         const ins = topk(byNode(node).filter((c) => c.to === node && !has(chosen, c))), outs = topk(byNode(node).filter((c) => c.from === node && !has(chosen, c)));
-        ins.forEach((i) => outs.forEach((o) => { if (i.from === null || i.from !== o.to) consider([...chosen, { cand: i, terms: ["c"] }, { cand: o, terms: ["c"] }], `added ${label(i)} and ${label(o)}`); }));
+        // (constants; and where one stock is pulled by another, also taken in proportion to the taker's
+        // level and let go in proportion to it: a pool of workers and its queue)
+        ins.forEach((i) => outs.forEach((o) => {
+          if (i.from !== null && i.from === o.to) return;
+          [[["c"], ["c"]], ...(pulled(i) ? [[["b"], ["a"]]] : [])].forEach(([ti, to]) =>
+            consider([...chosen, { cand: i, terms: ti }, { cand: o, terms: to }], `added ${label(i)} and ${label(o)}`));
+        }));
       });
       // remove one
       chosen.forEach((f, i) => consider(chosen.filter((_, j) => j !== i), `dropped ${label(f.cand)}`));
       // reroute one end
       chosen.forEach((f, i) => cands.forEach((c) => {
-        if (has(chosen, c) || (c.from !== f.cand.from && c.to !== f.cand.to)) return;
+        if (!allowed(c) || has(chosen, c) || (c.from !== f.cand.from && c.to !== f.cand.to)) return;
         const terms = f.terms.filter((t) => termsFor(c).includes(t));
         consider(chosen.map((g, j) => (j === i ? { cand: c, terms: terms.length ? terms : ["c"] } : g)), `rerouted ${label(f.cand)} as ${label(c)}`);
       }));
       // pass a flow through a stock: a -> c becomes a -> b -> c (the stock in the middle can now fill and drain)
-      chosen.forEach((f, i) => ids.forEach((mid) => {
+      if (!linksOnly) chosen.forEach((f, i) => ids.forEach((mid) => {
         if (mid === f.cand.from || mid === f.cand.to) return;
         const first = cands.filter((c) => c.from === f.cand.from && c.to === mid), second = cands.filter((c) => c.from === mid && c.to === f.cand.to);
         first.forEach((x) => second.forEach((y) => {
@@ -414,16 +508,31 @@
           consider([...chosen.filter((_, j) => j !== i), { cand: x, terms: ["c"] }, { cand: y, terms: ["c"] }], `passed ${label(f.cand)} through ${mid}`);
         }));
       }));
+      if (chosen.length < maxFlows) drivenMoves(consider, residuals());
       if (chosen.length < maxFlows) latentMoves(consider);
       if (!best) break;
       chosen = best.set; cur = best;
       rounds.push({ added: how, nearly: [] });
     }
+    }
+    search();
+    // A local search can settle on things moving between stocks when the truth is links (each
+    // stock's things leave to outside and another's arrivals follow it): a move with a ratio fits
+    // nearly as well, and no single change gets from one to the other. So search a second time,
+    // links first, and keep whichever explains the data better.
+    if (drivenOn && S > 1 && S <= 40) {
+      const first = { chosen, cur, rounds };
+      chosen = []; cur = evaluate([]); rounds = [];
+      linksOnly = true; search();
+      linksOnly = false; search();
+      if (opts.debug) console.log("search", first.cur.score.toFixed(1), "links first", cur.score.toFixed(1), rounds.map((r) => r.added));
+      if (first.cur.score <= cur.score) ({ chosen, cur, rounds } = first);
+    }
     // simplify each flow's equation: drop terms that do not pay, try adding the level terms that do
     for (let i = 0; i < chosen.length; i++) {
       const f = chosen[i];
-      if (f.cand.delay) continue;
-      for (const terms of [...fitTerms(f.cand), ["c", "a"]].filter((t) => sensible(t) && t.every((x) => termsFor(f.cand).includes(x)))) {
+      if (f.cand.delay || f.cand.driver) continue;
+      for (const terms of [...fitTerms(f.cand), ["c", "a"]].filter((t) => sensible(t, f.cand) && t.every((x) => termsFor(f.cand).includes(x)))) {
         const e = evaluate(chosen.map((g, j) => (j === i ? { cand: g.cand, terms } : g)));
         if (e && e.score < cur.score - 2) { chosen = e.set; cur = e; }
       }
@@ -443,11 +552,14 @@
       delays.set(keyOf(f.cand), { min: Math.min(...near), max: Math.max(...near) });
     });
 
+    // for tests: the score of given structures ([{from, to, terms, delay?, driver?}]) next to the one found
+    const scored = (opts.score || []).map((set) => { const e = evaluateLoose(set.map((f) => ({ cand: { ratio: 1, ...f }, terms: f.terms }))); const r2 = fitOf(e.set); return { score: e.score, rss: r2.rss, theta: r2.theta }; });
+
     // Ambiguity: for each flow found, the alternatives (another ratio, another start or end) that
     // explain the data nearly as well. Many alternatives means the run cannot tell them apart.
     const alternatives = chosen.map((f, i) => {
       const alts = [];
-      if (f.cand.delay) return [];
+      if (f.cand.delay || f.cand.driver) return [];
       cands.forEach((c) => {
         if (keyOf(c) === keyOf(f.cand) && c.ratio === f.cand.ratio) return;
         if (c.from !== f.cand.from && c.to !== f.cand.to) return;
@@ -479,7 +591,7 @@
         return { from: f.cand.from, to: f.cand.to, ratio: 1, perStep, bothWays: false, nearly: [], rates: [rate], rate,
                  via: { shape: f.cand.delay.shape, delay: f.cand.delay.tau, delayMin: range.min, delayMax: range.max, holds, atStart: h0, share: k, echo: f.cand.src || null } };
       }
-      return { from: f.cand.from, to: f.cand.to, ratio: f.cand.ratio, perStep: q.reduce((a, b) => a + b, 0) / (W * w),
+      return { from: f.cand.from, to: f.cand.to, ratio: f.cand.ratio, perStep: q.reduce((a, b) => a + b, 0) / (W * w), driver: f.cand.driver || null,
                bothWays: q.filter((v) => v < -0.5).length > 0.1 * W, nearly: alternatives[chosen.indexOf(f)] || [],
                rates: sharedFlow(f.cand) ? [toRate(f.cand, perEra[0])] : perEra.map((coef) => toRate(f.cand, coef)),
                rate: toRate(f.cand, perEra[sharedFlow(f.cand) ? 0 : winEra[W - 1]]) };
@@ -528,16 +640,14 @@
     }));
     hidden.sort((a, b) => b.balance + b.corr - (a.balance + a.corr));
 
-    // for tests: the score of given structures ([{from, to, terms, delay?}]) next to the one found
-    const scored = (opts.score || []).map((set) => { const e = evaluateLoose(set.map((f) => ({ cand: { ratio: 1, ...f }, terms: f.terms }))); const r2 = fitOf(e.set); return { score: e.score, rss: r2.rss, theta: r2.theta }; });
     return { flows, unexplained, rounds, windows: W, window: w, hidden, score: cur.score, scored };
   }
 
   function label(c) {
-    const via = c.delay ? ` via a hidden stock (${c.delay.shape}, ${c.delay.tau} steps${c.src ? `, after ${c.src} gains` : ""})` : "";
+    const via = c.delay ? ` via a hidden stock (${c.delay.shape}, ${c.delay.tau} steps${c.src ? `, after ${c.src} gains` : ""})` : c.driver ? ` driven by ${c.driver}` : "";
     return `${c.from || "outside"} → ${c.to || "outside"}${c.ratio !== 1 ? ` (×${+c.ratio.toFixed(2)})` : ""}${via}`;
   }
-  const tag = (c) => (c.delay ? `~${c.delay.shape}${c.delay.tau}${c.src ? "<" + c.src : ""}` : "");
+  const tag = (c) => (c.delay ? `~${c.delay.shape}${c.delay.tau}${c.src ? "<" + c.src : ""}` : c.driver ? `^${c.driver}` : "");
   function corrOf(a, b) {
     const n = a.length; let ma = 0, mb = 0;
     for (let k = 0; k < n; k++) { ma += a[k]; mb += b[k]; }
@@ -549,6 +659,10 @@
 
   // the model's own equation forms, where a discovered equation is one of them; otherwise "linear"
   function toRate(c, coef) {
+    if (c.driver) {                                          // driven: a base rate plus k x the driver's level
+      const r2 = (v) => +(+v).toFixed(Math.abs(v) >= 10 ? 1 : Math.abs(v) >= 1 ? 2 : 4);
+      return { form: "linear", c: r2(coef.c || 0), terms: [{ stock: c.driver, k: r2(coef.d || 0) }] };
+    }
     const r = (v) => +(+v).toFixed(Math.abs(v) >= 10 ? 1 : Math.abs(v) >= 1 ? 2 : 3);
     const keys = Object.keys(coef);
     if (keys.length === 1 && keys[0] === "c") return { form: "constant", value: r(coef.c) };
@@ -574,6 +688,115 @@
       out[i] = d;
     }
     return out;
+  }
+
+  // ---------- links, screened step by step ----------
+  // A service that calls another moves nothing: its requests stay, the callee gets new ones, and
+  // the callee's arrivals follow the caller's level ("outside -> B at k x level of A"). When the
+  // stocks turn over within a step or two (requests that last a fraction of a second), the
+  // evidence lives in the levels of single steps: a window's change is only the difference of
+  // two snapshots, and everything in between is lost. So links are screened on single steps,
+  // whatever window the rest of the search uses:
+  //   change of B (step i) = a x level of B (step i-1) + sum over drivers of k x level of A
+  // where a driver's level is the mean of its level before and after the step (calls happen
+  // while the caller works through the step). Every series has its own moving average taken
+  // off first, so the shared daily cycle does not make every busy stock look like every other
+  // stock's driver; only the quick swings that B follows count. Drivers are added one at a time
+  // (forward stepwise least squares), each only while it pays for itself (BIC, with a stricter
+  // price than usual and a minimum share of B's swings explained, since in a long run tiny but
+  // real correlations through a third stock also become "significant").
+  //
+  // A level is a noisy reading of how busy a stock was, so a stock that only shares a driver
+  // with B (a sibling), or one upstream of B's driver, also helps predict B. Three rules remove
+  // most of those: (1) when A drives B and B drives A, the stronger direction stays; (2) a
+  // driver that is itself driven by a stronger driver of B is a sibling, not a cause; (3) a
+  // driver that reaches B through a stronger path A -> C -> B is not a direct link.
+  //
+  // A negative coefficient is a pull: B falls as A's level rises, as a queue does when a pool
+  // of workers takes from it. Pulls are not reported; they tell discoverAll which stocks to
+  // search together, since a real flow from B to A is what explains them.
+  function screenLinks(targets, drivers, run, opts) {
+    opts = opts || {};
+    const T = run.t.length, first = Math.max(1, T - (opts.linkSteps || 20000)), n = T - first;
+    const span = opts.linkSpan || 30, maxDrivers = opts.linkDrivers || 8;
+    if (n < Math.max(40, 4 * Math.min(span, 30))) return { links: [], pulls: [] };
+    const knownDelta = opts.knownDelta || null, start = opts.start || {};
+    const known = (i, id) => (knownDelta && knownDelta[i] && (i > 0 || id in start) ? knownDelta[i][id] || 0 : 0);
+    function quick(a) {                                     // the series minus its centred moving average
+      const out = new Float64Array(a.length), pre = new Float64Array(a.length + 1);
+      for (let k = 0; k < a.length; k++) pre[k + 1] = pre[k] + a[k];
+      for (let k = 0; k < a.length; k++) { const lo = Math.max(0, k - span), hi = Math.min(a.length, k + span + 1); out[k] = a[k] - (pre[hi] - pre[lo]) / (hi - lo); }
+      return out;
+    }
+    const series = (f) => { const o = new Float64Array(n); for (let k = 0; k < n; k++) o[k] = f(first + k); return quick(o); };
+    const lv = (id) => run.levels[id] || [];
+    const D = drivers.filter((x) => run.levels[x.id]), tg = targets.filter((x) => run.levels[x.id]);
+    const X = D.map((x) => { const L = lv(x.id); return series((i) => ((+L[i - 1] || 0) + (+L[i] || 0)) / 2); });
+    const O = tg.map((x) => { const L = lv(x.id); return series((i) => +L[i - 1] || 0); });
+    const Y = tg.map((x) => { const L = lv(x.id); return series((i) => (+L[i] || 0) - (+L[i - 1] || 0) - known(i, x.id)); });
+    const dotv = (a, b) => { let s = 0; for (let k = 0; k < n; k++) s += a[k] * b[k]; return s; };
+    const XX = X.map(() => new Float64Array(D.length));
+    for (let a = 0; a < D.length; a++) for (let b = a; b < D.length; b++) XX[a][b] = XX[b][a] = dotv(X[a], X[b]);
+    const dIdx = Object.fromEntries(D.map((x, i) => [x.id, i]));
+    const live = D.map((_, i) => XX[i][i] > 1e-9);
+    const sameGroup = (a, b) => !a.group || !b.group || a.group === b.group;
+    const pen = (opts.linkPenalty || 4) * Math.log(n), minGain = (opts.linkShare || 0.005) * n;
+    const found = [];
+    // Which targets turn over within a step or two: their quick swings do not last into the next step
+    // (a service whose requests take a fraction of a second; not a backlog, a basket or a ward). Only
+    // their links are reported: for slower stocks the windowed search sees the same relations, and
+    // weighs a link against a flow that moves things from the driver (the same levels fit both).
+    const fast = O.map((o) => corrOf(o.subarray(0, n - 1), o.subarray(1)) <= (opts.linkFast === undefined ? 0.7 : opts.linkFast));
+    tg.forEach((t, j) => {
+      // sums of products for this target: own level (-1), drivers (0..D-1), and the change
+      const xo = X.map((x) => dotv(x, O[j])), xy = X.map((x) => dotv(x, Y[j]));
+      const oo = dotv(O[j], O[j]), oy = dotv(O[j], Y[j]), yy = dotv(Y[j], Y[j]);
+      if (yy < 1e-9) return;
+      const g = (a, b) => (a === -1 ? (b === -1 ? oo : xo[b]) : b === -1 ? xo[a] : XX[a][b]);
+      const gy = (a) => (a === -1 ? oy : xy[a]);
+      function fit(cols) {                                   // least squares from the sums of products
+        const p = cols.length, A = cols.map((a, i) => { const r = cols.map((b) => g(a, b)); r[i] += 1e-9 * (1 + g(a, a)); r.push(gy(a)); return r; });
+        for (let i = 0; i < p; i++) {
+          let m = i; for (let r = i + 1; r < p; r++) if (Math.abs(A[r][i]) > Math.abs(A[m][i])) m = r;
+          [A[i], A[m]] = [A[m], A[i]];
+          for (let r = 0; r < p; r++) if (r !== i) { const f = A[r][i] / (A[i][i] || 1e-12); for (let c = i; c <= p; c++) A[r][c] -= f * A[i][c]; }
+        }
+        const th = A.map((r, i) => r[p] / (r[i] || 1e-12));
+        let rss = yy; cols.forEach((a, i) => { rss -= 2 * th[i] * gy(a); cols.forEach((b, l) => { rss += th[i] * th[l] * g(a, b); }); });
+        return { th, rss: Math.max(rss, 1e-12 * yy + 1e-300) };
+      }
+      const self = dIdx[t.id];
+      const ok = (d, k) => k > 0 || (D[d].unit || "") === (t.unit || "");
+      let chosen = [], cur = fit([-1]);
+      while (chosen.length < maxDrivers) {
+        let best = null;
+        D.forEach((x, d) => {
+          if (d === self || !live[d] || chosen.includes(d) || !sameGroup(x, t)) return;
+          const r = fit([-1, ...chosen, d]);
+          if (ok(d, r.th[r.th.length - 1]) && (!best || r.rss < best.r.rss)) best = { d, r };
+        });
+        if (!best || n * Math.log(cur.rss / best.r.rss) < Math.max(pen, minGain)) break;
+        chosen.push(best.d); cur = best.r;
+      }
+      chosen.forEach((d, i) => {
+        const without = fit([-1, ...chosen.filter((x) => x !== d)]), k = cur.th[i + 1];
+        const gain = n * Math.log(without.rss / cur.rss);
+        if (ok(d, k) && gain >= pen) found.push({ driver: D[d].id, to: t.id, k, gain, fast: fast[j] });
+      });
+    });
+    const pos = found.filter((f) => f.k > 0), key = (a, b) => `${a}>${b}`;
+    const E = new Map(pos.map((f) => [key(f.driver, f.to), f]));
+    const links = pos.filter((f) => {
+      if (!f.fast) return false;
+      const back = E.get(key(f.to, f.driver));
+      if (back && back.gain > f.gain) return false;                                         // (1) the stronger direction
+      if (pos.some((p) => p.to === f.to && p.driver !== f.driver && E.has(key(p.driver, f.driver)) && p.gain > f.gain)) return false;   // (2) sibling
+      return !pos.some((p) => p.driver === f.driver && p.to !== f.to && E.has(key(p.to, f.to)) && f.gain < Math.min(p.gain, E.get(key(p.to, f.to)).gain));   // (3) through a path
+    });
+    // every driver each stock's step-by-step changes follow, for the windowed search to weigh
+    const drivers2 = {}; pos.forEach((f) => { (drivers2[f.to] = drivers2[f.to] || []).push(f.driver); });
+    return { links, pulls: found.filter((f) => f.k < 0).map((f) => ({ from: f.to, by: f.driver, k: f.k, gain: f.gain })), steps: n,
+             fast: tg.filter((_, j) => fast[j]).map((x) => x.id), drivers: drivers2 };
   }
 
   // ---------- discovering across a whole model ----------
@@ -615,6 +838,31 @@
       return Math.abs(m) > Math.max(0.5 * jit / Math.sqrt(W), 0.002 * size[s.id], 1e-9) || sd > Math.max(2 * jit, 0.02 * size[s.id], 1e-9);
     });
     const explained = stocks.length - active.length;
+    // Links, screened on single steps (screenLinks): what they bring into each stock is then known,
+    // and the search below explains only the rest (drains, outside, flows between stocks).
+    const screenOn = opts.links !== false && active.length && stocks.length <= (opts.linkScreenMax || 150);
+    const screen = screenOn ? screenLinks(active, stocks, run, { ...opts, knownDelta }) : { links: [], pulls: [] };
+    // Pulls build up over minutes (a backlog a pool works through), so they are looked for with only
+    // each series' mean taken off; quick swings that mirror each other are busy stocks sharing
+    // traffic, not one taking from the other. Only the strongest pull on each stock counts, and only
+    // one that would move a noticeable share (at least 2% of the puller's level a step).
+    screen.pulls = [];
+    if (screenOn) {
+      const best = new Map();
+      screenLinks(active, stocks, run, { ...opts, knownDelta, linkSpan: T }).pulls.forEach((p) => {
+        if (-p.k >= (opts.pullShare || 0.02) && (!best.has(p.from) || best.get(p.from).gain < p.gain)) best.set(p.from, p);
+      });
+      screen.pulls = [...best.values()];
+    }
+    const fastIds = new Set(screen.fast || []);
+    let knownAll = knownDelta;
+    if (screen.links.length) {
+      knownAll = Array.from({ length: T }, (_, i) => ({ ...((knownDelta && knownDelta[i]) || {}) }));
+      screen.links.forEach((l) => {
+        const L = run.levels[l.driver];
+        for (let i = 1; i < T; i++) knownAll[i][l.to] = (knownAll[i][l.to] || 0) + l.k * ((+L[i - 1] || 0) + (+L[i] || 0)) / 2;
+      });
+    }
     // link stocks that may exchange and whose unexplained changes mirror each other
     const canExchange = (a, b) => !a.group || !b.group || a.group === b.group;
     const parent = new Map(active.map((s) => [s.id, s.id]));
@@ -624,18 +872,29 @@
     // ...at the same time, or one some windows after the other (things that waited in a stock nobody measures)
     const maxLag = active.length <= 300 ? Math.min(12, Math.floor(W / 4)) : 0;
     const lagged = (a, b, lag) => corr(a.slice(0, W - lag), b.slice(lag));
+    // With many stocks and few windows, some pair mirrors by chance: the bar rises with the number of
+    // pairs looked at (the largest of that many chance correlations), and falls as the run grows.
+    const pairs = (active.length * (active.length - 1)) / 2;
+    const bar = Math.max(opts.linkCorrelation || 0.3, Math.sqrt(2 * Math.log(Math.max(1, pairs))) / Math.sqrt(Math.max(1, W - maxLag)));
     for (let i = 0; i < active.length; i++) for (let j = i + 1; j < active.length; j++) {
       if (!canExchange(active[i], active[j])) continue;
       const a = resid[active[i].id], b = resid[active[j].id];
+      // Stocks that turn over within a step (screenLinks) and rise and fall together are sharing traffic,
+      // not exchanging anything; their changes a window apart look mirrored only because each level's
+      // noise comes and goes (A's jump at t, B's fall back at t+1), so their lags do not count.
       let c = corr(a, b);
+      if (c > 0.1 && fastIds.has(active[i].id) && fastIds.has(active[j].id)) continue;
       for (let lag = 1; lag <= maxLag; lag++) c = Math.min(c, lagged(a, b, lag), lagged(b, a, lag));
-      if (c < -(opts.linkCorrelation || 0.3)) links.push([c, active[i].id, active[j].id]);
+      if (c < -bar) links.push([c, active[i].id, active[j].id]);
     }
+    // ...or where one falls as the other's level rises (a pool of workers taking from a queue)
+    const isActive = new Set(active.map((s) => s.id));
+    screen.pulls.forEach((p) => { if (isActive.has(p.from) && isActive.has(p.by)) links.push([-1 - p.gain / 1e6, p.from, p.by, 4]); });
     links.sort((a, b) => a[0] - b[0]);                       // strongest mirroring first
     const count = new Map(active.map((s) => [s.id, 1]));
-    links.forEach(([, a, b]) => {
+    links.forEach(([, a, b, most]) => {
       const ra = find(a), rb = find(b);
-      if (ra === rb || count.get(ra) + count.get(rb) > maxGroup) return;
+      if (ra === rb || count.get(ra) + count.get(rb) > (most || maxGroup)) return;
       parent.set(rb, ra); count.set(ra, count.get(ra) + count.get(rb));
     });
     const groups = new Map();
@@ -647,15 +906,26 @@
     // a stock with no partner can only gain flows to or from outside: a tiny search of its own
     singles.forEach((s) => batches.push([s]));
     batches.forEach((g) => {
-      const r = discover(g, run, { ...opts, knownDelta, window: w, sources: stocks, maxFlows: Math.max(opts.maxFlows || 12, 2 * g.length + 2) });
+      // (links into stocks that turn over within a step were screened: in windows they are mostly echoes
+      // of the same traffic, and looking for them again makes the search several times slower)
+      const screened = g.every((x) => fastIds.has(x.id));
+      const r = discover(g, run, { ...opts, knownDelta: knownAll, pulls: screen.pulls, drivers: screenOn ? screen.drivers || {} : opts.drivers, driven: screened && opts.driven !== true ? false : opts.driven, window: w, sources: stocks, maxFlows: Math.max(opts.maxFlows || 12, 2 * g.length + 2) });
       flows.push(...r.flows); hidden.push(...(r.hidden || [])); rounds.push(...r.rounds);
       Object.assign(unexplained, r.unexplained);
     });
-    return { flows, unexplained, hidden, rounds, windows: W, window: w, searched: active.length, explained, groups: batches.length,
+    // the screened links, in the same form as the links the search finds
+    screen.links.forEach((l) => {
+      const L = run.levels[l.driver]; let sum = 0;
+      for (let i = 1; i < T; i++) sum += l.k * ((+L[i - 1] || 0) + (+L[i] || 0)) / 2;
+      const k = +l.k.toFixed(Math.abs(l.k) >= 10 ? 1 : Math.abs(l.k) >= 1 ? 2 : 4);
+      const rate = { form: "linear", c: 0, terms: [{ stock: l.driver, k }] };
+      flows.push({ from: OUT, to: l.to, ratio: 1, perStep: sum / Math.max(1, T - 1), driver: l.driver, bothWays: false, nearly: [], rates: [rate], rate, screened: true, evidence: +(l.gain / Math.log(screen.steps)).toFixed(1) });
+    });
+    return { flows, unexplained, hidden, rounds, windows: W, window: w, searched: active.length, explained, groups: batches.length, screenedLinks: screen.links.length,
              together: batches.filter((g) => g.length > 1).length };
   }
 
-  const api = { discover, discoverAll };
+  const api = { discover, discoverAll, screenLinks };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.SDDiscover = api;
 })(typeof window !== "undefined" ? window : globalThis);

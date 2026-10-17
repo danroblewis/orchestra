@@ -1,0 +1,211 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 730,
+ "measured": [
+  "ad_budget",
+  "visitors",
+  "trials",
+  "paying",
+  "churned"
+ ],
+ "hidden_stocks": [
+  "lapsed"
+ ],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "New year: $1,000 a day of ads",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 1000
+     },
+     "churn": {
+      "form": "proportional",
+      "stock": "paying",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 91,
+    "label": "Spring campaign: $2,500 a day",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 2500
+     }
+    }
+   },
+   {
+    "t": 181,
+    "label": "Budget cut: $600 a day",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 600
+     }
+    }
+   },
+   {
+    "t": 200,
+    "label": "Price rise: cancellations jump",
+    "set": {
+     "churn": {
+      "form": "proportional",
+      "stock": "paying",
+      "k": 0.02
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 210,
+    "label": "After the price rise",
+    "set": {
+     "churn": {
+      "form": "proportional",
+      "stock": "paying",
+      "k": 0.006
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 271,
+    "label": "Holiday campaign: $1,500 a day",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 1500
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "visitors",
+    "to": "trials",
+    "flow": "start_trial",
+    "what": "Start a trial",
+    "rate": {
+     "form": "proportional",
+     "stock": "visitors",
+     "k": 0.012
+    }
+   },
+   {
+    "from": "trials",
+    "to": "paying",
+    "flow": "convert",
+    "what": "Trial converts",
+    "rate": {
+     "form": "proportional",
+     "stock": "trials",
+     "k": 0.0157
+    }
+   },
+   {
+    "from": "paying",
+    "to": "churned",
+    "flow": "churn",
+    "what": "Cancel",
+    "rate": {
+     "form": "proportional",
+     "stock": "paying",
+     "k": 0.004
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "ad_budget",
+    "flow": "release",
+    "what": "Budget released",
+    "rate": {
+     "form": "constant",
+     "value": 1000
+    }
+   },
+   {
+    "from": "ad_budget",
+    "flow": "spend",
+    "what": "Ads bought",
+    "rate": {
+     "form": "proportional",
+     "stock": "ad_budget",
+     "k": 0.14285714285714285
+    }
+   },
+   {
+    "to": "visitors",
+    "flow": "ads",
+    "what": "Visitors from ads",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "ad_budget",
+       "k": 0.114
+      }
+     ]
+    }
+   },
+   {
+    "to": "visitors",
+    "flow": "organic",
+    "what": "Organic visitors",
+    "rate": {
+     "form": "constant",
+     "value": 250
+    }
+   },
+   {
+    "from": "visitors",
+    "flow": "quiet",
+    "what": "Visitors go quiet",
+    "rate": {
+     "form": "proportional",
+     "stock": "visitors",
+     "k": 0.25
+    }
+   },
+   {
+    "from": "trials",
+    "flow": "expire",
+    "what": "Trial expires",
+    "rate": {
+     "form": "proportional",
+     "stock": "trials",
+     "k": 0.0557
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "ad_budget",
+    "into": "visitors",
+    "flow": "ads",
+    "what": "Visitors from ads"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "paying",
+    "to": "trials",
+    "via": "lapsed",
+    "via_name": "Lapsed (may come back)",
+    "shape": "exp",
+    "delay": 90.0,
+    "what": "Lapse, then Come back for a trial"
+   }
+  ],
+  "echoes": []
+ }
+}

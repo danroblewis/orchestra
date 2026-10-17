@@ -1,0 +1,128 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 2000,
+ "measured": [
+  "raw",
+  "middle",
+  "finished"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 500,
+  "changes": [
+   {
+    "t": 1,
+    "label": "One machine at stage 1",
+    "set": {
+     "stage1": {
+      "form": "proportional",
+      "stock": "raw",
+      "k": 0.3
+     },
+     "deliver": {
+      "form": "constant",
+      "value": 10
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 121,
+    "label": "Second machine at stage 1",
+    "set": {
+     "stage1": {
+      "form": "proportional",
+      "stock": "raw",
+      "k": 0.55
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 251,
+    "label": "Stage 2 machine breaks down (half speed)",
+    "set": {
+     "stage2": {
+      "form": "proportional",
+      "stock": "middle",
+      "k": 0.2
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 331,
+    "label": "Stage 2 repaired",
+    "set": {
+     "stage2": {
+      "form": "proportional",
+      "stock": "middle",
+      "k": 0.4
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 401,
+    "label": "Busy deliveries",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 14
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "raw",
+    "to": "middle",
+    "flow": "stage1",
+    "what": "Stage 1",
+    "rate": {
+     "form": "proportional",
+     "stock": "raw",
+     "k": 0.3
+    }
+   },
+   {
+    "from": "middle",
+    "to": "finished",
+    "flow": "stage2",
+    "what": "Stage 2",
+    "rate": {
+     "form": "proportional",
+     "stock": "middle",
+     "k": 0.4
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "raw",
+    "flow": "deliver",
+    "what": "Deliveries",
+    "rate": {
+     "form": "constant",
+     "value": 10
+    }
+   },
+   {
+    "from": "finished",
+    "flow": "dispatch",
+    "what": "Dispatch",
+    "rate": {
+     "form": "proportional",
+     "stock": "finished",
+     "k": 0.25
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [],
+  "echoes": []
+ }
+}

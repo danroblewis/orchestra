@@ -284,3 +284,10 @@ body.resizing { cursor: row-resize; user-select: none; }
 .pickitem.running { background: color-mix(in srgb, var(--good) 14%, transparent); }
 .pickitem.running.hl { background: color-mix(in srgb, var(--good) 22%, transparent); }
 .pickitem .ptag { color: var(--good); font-size: 11.5px; font-family: var(--mono); white-space: nowrap; }
+
+/* stocks discovery proposes: draggable, and clickable for their own panel */
+.found-stock { cursor: grab; }
+.found-stock:active { cursor: grabbing; }
+table.kv { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+table.kv th { text-align: left; font-weight: 500; color: var(--muted); padding: 3px 8px 3px 0; vertical-align: top; }
+table.kv td { padding: 3px 0; }

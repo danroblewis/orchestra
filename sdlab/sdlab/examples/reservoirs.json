@@ -1,0 +1,70 @@
+{
+ "id": "reservoirs",
+ "name": "Reservoirs (a valley's water, measured)",
+ "description": "Ninety days of a valley's water, hour by hour, as the water board's telemetry saw it, all in megalitres (ML): the rain that fell on the catchment in the last hour, the water held in the catchment's soil, the water stored in three reservoirs, and the water in the town's water tower. Nothing else is measured, and no counters are given: only the levels. The weather changed during the run (wet weeks, a long dry spell, a big storm), and one week the operators took something out of service for maintenance; each of these starts an era. Start plays the 90 days live, an hour per tick (Speed sets how fast); Import history loads them all at once. Then run Discover flows. A good discovery should say where each stock's water comes from and where it goes (to another stock, or out of the valley), with an equation for each flow, and whether some water spends time somewhere the telemetry does not see on the way: where, for how long, and how much it holds. The answer is in reservoirs/README.md; do not read it first.",
+ "time_unit": "hour",
+ "horizon": 336,
+ "dt": 0.25,
+ "stocks": [
+  {
+   "id": "rain",
+   "name": "Rain in the last hour",
+   "unit": "ML",
+   "initial": 0,
+   "x": 100,
+   "y": 90
+  },
+  {
+   "id": "soil",
+   "name": "Soil moisture (catchment)",
+   "unit": "ML",
+   "initial": 0,
+   "x": 100,
+   "y": 270
+  },
+  {
+   "id": "upper",
+   "name": "Upper reservoir",
+   "unit": "ML",
+   "initial": 0,
+   "x": 320,
+   "y": 270
+  },
+  {
+   "id": "middle",
+   "name": "Middle reservoir",
+   "unit": "ML",
+   "initial": 0,
+   "x": 540,
+   "y": 270
+  },
+  {
+   "id": "lower",
+   "name": "Lower reservoir",
+   "unit": "ML",
+   "initial": 0,
+   "x": 760,
+   "y": 270
+  },
+  {
+   "id": "tower",
+   "name": "Water tower",
+   "unit": "ML",
+   "initial": 0,
+   "x": 980,
+   "y": 270
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "reservoirs/history",
+  "args": []
+ },
+ "sensors": [
+  {
+   "program": "reservoirs/live",
+   "args": []
+  }
+ ]
+}

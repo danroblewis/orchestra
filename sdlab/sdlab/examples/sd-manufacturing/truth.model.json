@@ -1,0 +1,380 @@
+{
+ "id": "sd-manufacturing-truth",
+ "name": "SD: Make-to-order factory: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 720,
+ "long_steps": 7200,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "backlog",
+   "name": "Customer orders backlog",
+   "unit": "orders",
+   "initial": 120,
+   "x": 80,
+   "y": 80
+  },
+  {
+   "id": "material",
+   "name": "Raw material inventory",
+   "unit": "kits",
+   "initial": 400,
+   "x": 80,
+   "y": 320
+  },
+  {
+   "id": "wip",
+   "name": "Work in progress",
+   "unit": "units",
+   "initial": 60,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "inspection",
+   "name": "Waiting for inspection",
+   "unit": "units",
+   "initial": 40,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "rework",
+   "name": "In rework",
+   "unit": "units",
+   "initial": 10,
+   "x": 560,
+   "y": 400
+  },
+  {
+   "id": "finished",
+   "name": "Finished goods",
+   "unit": "units",
+   "initial": 80,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "packing",
+   "name": "Being packed (not counted)",
+   "unit": "units",
+   "initial": 30,
+   "x": 800,
+   "y": 400,
+   "measured": false
+  },
+  {
+   "id": "on_order",
+   "name": "Material on order (at the supplier)",
+   "unit": "kits",
+   "initial": 140,
+   "x": 80,
+   "y": 520,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "demand",
+   "name": "Customer orders arrive",
+   "from": null,
+   "to": "backlog",
+   "rate": {
+    "form": "constant",
+    "value": 20
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fill",
+   "name": "Orders filled",
+   "from": "backlog",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "finished",
+      "k": 0.12
+     },
+     {
+      "stock": "backlog",
+      "k": 0.04
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "order_material",
+   "name": "Material ordered",
+   "from": null,
+   "to": "on_order",
+   "rate": {
+    "form": "gap",
+    "stock": "material",
+    "goal": 500,
+    "time": 6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "receive",
+   "name": "Material delivered",
+   "from": "on_order",
+   "to": "material",
+   "rate": {
+    "form": "proportional",
+    "stock": "on_order",
+    "k": 0.14285714285714285
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "spot_buy",
+   "name": "Spot purchases of material",
+   "from": null,
+   "to": "material",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "backlog",
+      "k": 0.03
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "start",
+   "name": "Production starts",
+   "from": "material",
+   "to": "wip",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "backlog",
+      "k": 0.06
+     },
+     {
+      "stock": "material",
+      "k": 0.02
+     },
+     {
+      "stock": "wip",
+      "k": -0.05
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "complete",
+   "name": "Units completed",
+   "from": "wip",
+   "to": "inspection",
+   "rate": {
+    "form": "proportional",
+    "stock": "wip",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pass",
+   "name": "Pass inspection, go to packing",
+   "from": "inspection",
+   "to": "packing",
+   "rate": {
+    "form": "proportional",
+    "stock": "inspection",
+    "k": 0.45
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "packed",
+   "name": "Packed into finished goods",
+   "from": "packing",
+   "to": "finished",
+   "rate": {
+    "form": "proportional",
+    "stock": "packing",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "reject",
+   "name": "Rejected at inspection",
+   "from": "inspection",
+   "to": "rework",
+   "rate": {
+    "form": "proportional",
+    "stock": "inspection",
+    "k": 0.06
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "reworked",
+   "name": "Back to the line after rework",
+   "from": "rework",
+   "to": "wip",
+   "rate": {
+    "form": "proportional",
+    "stock": "rework",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ship",
+   "name": "Shipments",
+   "from": "finished",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "backlog",
+      "k": 0.1
+     },
+     {
+      "stock": "finished",
+      "k": 0.05
+     }
+    ]
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 360,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Steady orders (20 a day); one production line",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 20
+     },
+     "start": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "backlog",
+        "k": 0.06
+       },
+       {
+        "stock": "material",
+        "k": 0.02
+       },
+       {
+        "stock": "wip",
+        "k": -0.05
+       }
+      ]
+     },
+     "complete": {
+      "form": "proportional",
+      "stock": "wip",
+      "k": 0.25
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "Orders pick up (30 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "Orders slump (12 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 12
+     }
+    }
+   },
+   {
+    "t": 181,
+    "label": "Second production line installed",
+    "set": {
+     "start": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "backlog",
+        "k": 0.09
+       },
+       {
+        "stock": "material",
+        "k": 0.03
+       },
+       {
+        "stock": "wip",
+        "k": -0.05
+       }
+      ]
+     },
+     "complete": {
+      "form": "proportional",
+      "stock": "wip",
+      "k": 0.4
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 211,
+    "label": "Big contract (36 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 36
+     }
+    }
+   },
+   {
+    "t": 271,
+    "label": "Orders ease (24 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 24
+     }
+    }
+   },
+   {
+    "t": 316,
+    "label": "Holiday lull (10 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 10
+     }
+    }
+   }
+  ]
+ }
+}

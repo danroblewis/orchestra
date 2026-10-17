@@ -1,0 +1,220 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 730,
+ "measured": [
+  "bins",
+  "trucks",
+  "backlog",
+  "bales",
+  "shelves",
+  "landfill"
+ ],
+ "hidden_stocks": [
+  "rail"
+ ],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "After the holidays: ordinary household waste",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 95,
+    "label": "Spring clean: more cardboard and glass",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 72
+     }
+    }
+   },
+   {
+    "t": 125,
+    "label": "Spring clean over",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 120,
+    "label": "Second sorting line opens",
+    "set": {
+     "sort": {
+      "form": "proportional",
+      "stock": "backlog",
+      "k": 0.3
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 180,
+    "label": "Summer: households away",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 46
+     }
+    }
+   },
+   {
+    "t": 245,
+    "label": "Autumn: back to normal",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 62
+     }
+    }
+   },
+   {
+    "t": 300,
+    "label": "Second sorting line closes for a refit",
+    "set": {
+     "sort": {
+      "form": "proportional",
+      "stock": "backlog",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 330,
+    "label": "Holiday season: packaging everywhere",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 95
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "bins",
+    "to": "trucks",
+    "flow": "collect",
+    "what": "Bins collected",
+    "rate": {
+     "form": "proportional",
+     "stock": "bins",
+     "k": 0.3
+    }
+   },
+   {
+    "from": "trucks",
+    "to": "backlog",
+    "flow": "tip",
+    "what": "Trucks tip at the facility",
+    "rate": {
+     "form": "proportional",
+     "stock": "trucks",
+     "k": 0.8
+    }
+   },
+   {
+    "from": "backlog",
+    "to": "bales",
+    "flow": "sort",
+    "what": "Sorted into bales",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.15
+    }
+   },
+   {
+    "from": "backlog",
+    "to": "landfill",
+    "flow": "reject",
+    "what": "Contaminated loads rejected",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.03
+    }
+   },
+   {
+    "from": "shelves",
+    "to": "bins",
+    "flow": "reuse",
+    "what": "Recycled products bought, used and binned",
+    "rate": {
+     "form": "proportional",
+     "stock": "shelves",
+     "k": 0.04
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "bins",
+    "flow": "discard",
+    "what": "Households put out recyclables",
+    "rate": {
+     "form": "constant",
+     "value": 60
+    }
+   },
+   {
+    "from": "shelves",
+    "flow": "keep",
+    "what": "Recycled products bought and kept",
+    "rate": {
+     "form": "proportional",
+     "stock": "shelves",
+     "k": 0.02
+    }
+   },
+   {
+    "to": "landfill",
+    "flow": "general",
+    "what": "General waste to landfill",
+    "rate": {
+     "form": "linear",
+     "c": 20,
+     "terms": [
+      {
+       "stock": "bins",
+       "k": 0.02
+      }
+     ]
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "bins",
+    "into": "landfill",
+    "flow": "general",
+    "what": "General waste to landfill"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "bales",
+    "to": "shelves",
+    "via": "rail",
+    "via_name": "In transit by rail to the processor",
+    "shape": "exp",
+    "delay": 6.0,
+    "what": "Bales sold and loaded on rail, then Recycled products reach shops"
+   }
+  ],
+  "echoes": []
+ }
+}

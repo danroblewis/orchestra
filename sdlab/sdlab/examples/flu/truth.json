@@ -1,0 +1,353 @@
+{
+ "seed": 20261016,
+ "steps": 200,
+ "step": "1 day",
+ "population": 50000,
+ "parameters": {
+  "beta": 0.4,
+  "holiday_contacts": 0.55,
+  "import_per_day": 4e-05,
+  "p_severe": 0.03,
+  "mild_days": 5.0,
+  "severe_stage_days": 1.5,
+  "hospital_days": 7.0,
+  "immunity_days": 120.0
+ },
+ "initial": {
+  "susceptible": 37950,
+  "mild": 40,
+  "severe1": 1,
+  "severe2": 1,
+  "hospital": 0,
+  "recovered": 12008,
+  "vaccinated": 0
+ },
+ "eras": [
+  {
+   "t": 1,
+   "label": "Term time"
+  },
+  {
+   "t": 41,
+   "label": "School holidays: fewer contacts"
+  },
+  {
+   "t": 55,
+   "label": "Schools reopen"
+  },
+  {
+   "t": 61,
+   "label": "Vaccination campaign: 120 a day"
+  },
+  {
+   "t": 101,
+   "label": "Second clinic opens: 200 vaccinations a day"
+  },
+  {
+   "t": 121,
+   "label": "Spring holidays: fewer contacts"
+  },
+  {
+   "t": 131,
+   "label": "Schools reopen"
+  },
+  {
+   "t": 161,
+   "label": "Vaccination campaign ends"
+  }
+ ],
+ "contacts": [
+  {
+   "from_day": 1,
+   "contact_factor": 1.0,
+   "label": "Term time"
+  },
+  {
+   "from_day": 41,
+   "contact_factor": 0.55,
+   "label": "School holidays: fewer contacts"
+  },
+  {
+   "from_day": 55,
+   "contact_factor": 1.0,
+   "label": "Schools reopen"
+  },
+  {
+   "from_day": 61,
+   "contact_factor": 1.0,
+   "label": "Vaccination campaign: 120 a day"
+  },
+  {
+   "from_day": 101,
+   "contact_factor": 1.0,
+   "label": "Second clinic opens: 200 vaccinations a day"
+  },
+  {
+   "from_day": 121,
+   "contact_factor": 0.55,
+   "label": "Spring holidays: fewer contacts"
+  },
+  {
+   "from_day": 131,
+   "contact_factor": 1.0,
+   "label": "Schools reopen"
+  },
+  {
+   "from_day": 161,
+   "contact_factor": 1.0,
+   "label": "Vaccination campaign ends"
+  }
+ ],
+ "measured": {
+  "stocks": [
+   "susceptible",
+   "sick",
+   "hospital",
+   "recovered",
+   "vaccinated"
+  ],
+  "flows": []
+ },
+ "counters": {
+  "infections": {
+   "from": "susceptible",
+   "to": "sick",
+   "total": 28700,
+   "per_day_mean": 143.5
+  },
+  "recoveries": {
+   "from": "sick",
+   "to": "recovered",
+   "total": 27802,
+   "per_day_mean": 139.01
+  },
+  "admissions": {
+   "from": "sick",
+   "to": "hospital",
+   "total": 925,
+   "per_day_mean": 4.625
+  },
+  "discharges": {
+   "from": "hospital",
+   "to": "recovered",
+   "total": 925,
+   "per_day_mean": 4.625
+  },
+  "waning": {
+   "from": "recovered",
+   "to": "susceptible",
+   "total": 28798,
+   "per_day_mean": 143.99
+  },
+  "vaccinations": {
+   "from": "susceptible",
+   "to": "vaccinated",
+   "total": 16709,
+   "per_day_mean": 83.545
+  }
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms, per day. 'moves' are real flows between measured stocks (ratio 1). Infection is nonlinear: susceptible -> sick at beta x S x sick / N per day; while S changes slowly a linear discovery should read it as k x sick (a term on the TARGET's level), k = beta x S / N, lower in holidays and falling as S falls (k per era in infection_by_era). sick -> hospital waits ~3 days inside the measured sick stock (erlang-2), so it shows as a lagged proportional drain of sick, not as a hidden stock. Nothing enters or leaves the town: no flows to or from outside, no hidden stocks, no echoes.",
+  "moves": [
+   {
+    "from": "susceptible",
+    "to": "sick",
+    "form": "linear in the target (nonlinear in truth)",
+    "equation": "beta x susceptible x sick / N + import x susceptible",
+    "beta": 0.4,
+    "beta_in_holidays": 0.22,
+    "N": 50000,
+    "k": 0.2002,
+    "k_fitted": 0.20273,
+    "term": "sick (the target)",
+    "import_per_day": 1.0,
+    "what": "infection: a rate that follows the number sick"
+   },
+   {
+    "from": "sick",
+    "to": "recovered",
+    "form": "proportional",
+    "k": 0.1964,
+    "k_fitted": 0.19744,
+    "hazard_mild": 0.2,
+    "what": "mild cases recover (exponential, ~5 days)"
+   },
+   {
+    "from": "sick",
+    "to": "hospital",
+    "form": "proportional (lagged ~3 days)",
+    "k": 0.00607,
+    "k_fitted": 0.0067,
+    "k_fitted_3_day_lag": 0.00655,
+    "delay": 3.0,
+    "shape": "erlang",
+    "share_of_cases": 0.03,
+    "what": "severe cases are admitted ~3 days after falling ill"
+   },
+   {
+    "from": "hospital",
+    "to": "recovered",
+    "form": "proportional",
+    "k": 0.1429,
+    "k_fitted": 0.13715,
+    "what": "hospital stays end (exponential, ~7 days)"
+   },
+   {
+    "from": "recovered",
+    "to": "susceptible",
+    "form": "proportional",
+    "k": 0.00833,
+    "k_fitted": 0.0084,
+    "what": "natural immunity wanes (exponential, ~120 days)"
+   },
+   {
+    "from": "susceptible",
+    "to": "vaccinated",
+    "form": "constant",
+    "value": "per era: 0, 120, 200, 0",
+    "per_era": [
+     {
+      "from_day": 1,
+      "per_day": 0,
+      "label": "Term time"
+     },
+     {
+      "from_day": 41,
+      "per_day": 0,
+      "label": "School holidays: fewer contacts"
+     },
+     {
+      "from_day": 55,
+      "per_day": 0,
+      "label": "Schools reopen"
+     },
+     {
+      "from_day": 61,
+      "per_day": 120,
+      "label": "Vaccination campaign: 120 a day"
+     },
+     {
+      "from_day": 101,
+      "per_day": 200,
+      "label": "Second clinic opens: 200 vaccinations a day"
+     },
+     {
+      "from_day": 121,
+      "per_day": 200,
+      "label": "Spring holidays: fewer contacts"
+     },
+     {
+      "from_day": 131,
+      "per_day": 200,
+      "label": "Schools reopen"
+     },
+     {
+      "from_day": 161,
+      "per_day": 0,
+      "label": "Vaccination campaign ends"
+     }
+    ],
+    "what": "vaccination campaign at the clinics' daily capacity"
+   }
+  ],
+  "outside": [],
+  "links": [],
+  "hidden": [],
+  "echoes": [],
+  "infection_by_era": [
+   {
+    "from_day": 1,
+    "label": "Term time",
+    "beta": 0.4,
+    "mean_susceptible": 37794,
+    "k_per_sick": 0.3023,
+    "k_fitted": 0.27937
+   },
+   {
+    "from_day": 41,
+    "label": "School holidays: fewer contacts",
+    "beta": 0.22,
+    "mean_susceptible": 32150,
+    "k_per_sick": 0.1415,
+    "k_fitted": 0.1453
+   },
+   {
+    "from_day": 55,
+    "label": "Schools reopen",
+    "beta": 0.4,
+    "mean_susceptible": 31219,
+    "k_per_sick": 0.2498,
+    "k_fitted": 0.23786
+   },
+   {
+    "from_day": 61,
+    "label": "Vaccination campaign: 120 a day",
+    "beta": 0.4,
+    "mean_susceptible": 25098,
+    "k_per_sick": 0.2008,
+    "k_fitted": 0.20139
+   },
+   {
+    "from_day": 101,
+    "label": "Second clinic opens: 200 vaccinations a day",
+    "beta": 0.4,
+    "mean_susceptible": 19671,
+    "k_per_sick": 0.1574,
+    "k_fitted": 0.15957
+   },
+   {
+    "from_day": 121,
+    "label": "Spring holidays: fewer contacts",
+    "beta": 0.22,
+    "mean_susceptible": 18409,
+    "k_per_sick": 0.081,
+    "k_fitted": 0.08244
+   },
+   {
+    "from_day": 131,
+    "label": "Schools reopen",
+    "beta": 0.4,
+    "mean_susceptible": 17526,
+    "k_per_sick": 0.1402,
+    "k_fitted": 0.15941
+   },
+   {
+    "from_day": 161,
+    "label": "Vaccination campaign ends",
+    "beta": 0.4,
+    "mean_susceptible": 19148,
+    "k_per_sick": 0.1532,
+    "k_fitted": 0.19595
+   }
+  ],
+  "in_long_runs": {
+   "moves": [
+    {
+     "from": "vaccinated",
+     "to": "susceptible",
+     "form": "yearly pulse",
+     "what": "vaccine protection wears off on the first day of each year after the first"
+    }
+   ]
+  }
+ },
+ "mean_levels": {
+  "susceptible": 25029.055,
+  "sick": 703.63,
+  "hospital": 33.305,
+  "recovered": 17147.92,
+  "vaccinated": 7086.09
+ },
+ "max_levels": {
+  "susceptible": 38863,
+  "sick": 2640,
+  "hospital": 107,
+  "recovered": 23277,
+  "vaccinated": 16709
+ },
+ "peak_sick_day": 40,
+ "attack": {
+  "infections": 28700,
+  "share_of_town": 0.574
+ }
+}

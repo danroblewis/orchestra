@@ -1,0 +1,110 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 1000,
+ "measured": [
+  "stock",
+  "pending"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 200,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (15 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "High demand (25 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   },
+   {
+    "t": 101,
+    "label": "Low demand (8 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 151,
+    "label": "Normal demand (14 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 14
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "pending",
+    "to": "stock",
+    "flow": "deliver",
+    "what": "Deliveries",
+    "rate": {
+     "form": "proportional",
+     "stock": "pending",
+     "k": 0.25
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "pending",
+    "flow": "order",
+    "what": "Order",
+    "rate": {
+     "form": "linear",
+     "c": 30,
+     "terms": [
+      {
+       "stock": "stock",
+       "k": -0.2
+      },
+      {
+       "stock": "pending",
+       "k": -0.1
+      }
+     ]
+    }
+   },
+   {
+    "from": "stock",
+    "flow": "sell",
+    "what": "Sales",
+    "rate": {
+     "form": "constant",
+     "value": 15
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "stock",
+    "into": "pending",
+    "flow": "order",
+    "what": "Order"
+   }
+  ],
+  "hidden": [],
+  "echoes": []
+ }
+}

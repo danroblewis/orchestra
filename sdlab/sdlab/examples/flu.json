@@ -1,0 +1,19 @@
+{
+ "id": "flu",
+ "name": "Flu season (a town of 50,000)",
+ "description": "Two hundred days of a flu season in a town of 50,000, day by day, as the public-health dashboard counted it at the end of every day: how many people could still catch flu, how many were sick at home, how many were in hospital, how many had recovered (immune for now) and how many had been vaccinated. Nobody moves in or out of town during the season. No counters are given, only the five counts. Schools closed twice for holidays, and the clinics ran a vaccination campaign at different daily capacities (each change starts an era). Start plays the season live, a day per tick (Speed sets how fast); Import history loads it all at once. Then run Discover flows. A good discovery should say which counts people move between, what each flow's rate depends on (and whether it reads the level of the count it comes from or of the count it goes into), how long people stay in each count, and what changed in each era. Some of the real dynamics are not linear: say what the best linear reading is. The answer is in flu/README.md; do not read it first.",
+ "time_unit": "day",
+ "horizon": 60,
+ "dt": 1,
+ "stocks": [
+  {"id": "susceptible", "name": "Susceptible", "unit": "people", "initial": 37950, "x": 120, "y": 220, "group": "town"},
+  {"id": "vaccinated", "name": "Vaccinated", "unit": "people", "initial": 0, "x": 340, "y": 400, "group": "town"},
+  {"id": "sick", "name": "Sick at home", "unit": "people", "initial": 42, "x": 340, "y": 220, "group": "town"},
+  {"id": "hospital", "name": "In hospital", "unit": "people", "initial": 0, "x": 560, "y": 80, "group": "town"},
+  {"id": "recovered", "name": "Recovered (immune)", "unit": "people", "initial": 12008, "x": 780, "y": 220, "group": "town"}
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {"program": "flu/history"},
+ "sensors": [{"program": "flu/live"}]
+}

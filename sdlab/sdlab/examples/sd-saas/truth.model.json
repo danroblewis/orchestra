@@ -1,0 +1,275 @@
+{
+ "id": "sd-saas-truth",
+ "name": "SD: SaaS growth: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 730,
+ "long_steps": 3650,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "ad_budget",
+   "name": "Ad budget left",
+   "unit": "dollars",
+   "initial": 7000,
+   "x": 80,
+   "y": 80
+  },
+  {
+   "id": "visitors",
+   "name": "Active visitors",
+   "unit": "people",
+   "initial": 4000,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "trials",
+   "name": "Trials",
+   "unit": "people",
+   "initial": 600,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "paying",
+   "name": "Paying customers",
+   "unit": "people",
+   "initial": 2000,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "churned",
+   "name": "Cancelled customers",
+   "unit": "people",
+   "initial": 0,
+   "x": 1040,
+   "y": 200,
+   "final": true
+  },
+  {
+   "id": "lapsed",
+   "name": "Lapsed (may come back)",
+   "unit": "people",
+   "initial": 100,
+   "x": 800,
+   "y": 380,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "release",
+   "name": "Budget released",
+   "from": null,
+   "to": "ad_budget",
+   "rate": {
+    "form": "constant",
+    "value": 1000
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "spend",
+   "name": "Ads bought",
+   "from": "ad_budget",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "ad_budget",
+    "k": 0.14285714285714285
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ads",
+   "name": "Visitors from ads",
+   "from": null,
+   "to": "visitors",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "ad_budget",
+      "k": 0.114
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "organic",
+   "name": "Organic visitors",
+   "from": null,
+   "to": "visitors",
+   "rate": {
+    "form": "constant",
+    "value": 250
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "quiet",
+   "name": "Visitors go quiet",
+   "from": "visitors",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "visitors",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "start_trial",
+   "name": "Start a trial",
+   "from": "visitors",
+   "to": "trials",
+   "rate": {
+    "form": "proportional",
+    "stock": "visitors",
+    "k": 0.012
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "convert",
+   "name": "Trial converts",
+   "from": "trials",
+   "to": "paying",
+   "rate": {
+    "form": "proportional",
+    "stock": "trials",
+    "k": 0.0157
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "expire",
+   "name": "Trial expires",
+   "from": "trials",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "trials",
+    "k": 0.0557
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "churn",
+   "name": "Cancel",
+   "from": "paying",
+   "to": "churned",
+   "rate": {
+    "form": "proportional",
+    "stock": "paying",
+    "k": 0.004
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "lapse",
+   "name": "Lapse",
+   "from": "paying",
+   "to": "lapsed",
+   "rate": {
+    "form": "proportional",
+    "stock": "paying",
+    "k": 0.001
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "winback",
+   "name": "Come back for a trial",
+   "from": "lapsed",
+   "to": "trials",
+   "rate": {
+    "form": "proportional",
+    "stock": "lapsed",
+    "k": 0.011111111111111112
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "New year: $1,000 a day of ads",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 1000
+     },
+     "churn": {
+      "form": "proportional",
+      "stock": "paying",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 91,
+    "label": "Spring campaign: $2,500 a day",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 2500
+     }
+    }
+   },
+   {
+    "t": 181,
+    "label": "Budget cut: $600 a day",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 600
+     }
+    }
+   },
+   {
+    "t": 200,
+    "label": "Price rise: cancellations jump",
+    "set": {
+     "churn": {
+      "form": "proportional",
+      "stock": "paying",
+      "k": 0.02
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 210,
+    "label": "After the price rise",
+    "set": {
+     "churn": {
+      "form": "proportional",
+      "stock": "paying",
+      "k": 0.006
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 271,
+    "label": "Holiday campaign: $1,500 a day",
+    "set": {
+     "release": {
+      "form": "constant",
+      "value": 1500
+     }
+    }
+   }
+  ]
+ }
+}

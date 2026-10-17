@@ -1,0 +1,65 @@
+{
+ "id": "library",
+ "name": "Public library (a year of circulation)",
+ "description": "A year of a public library's circulation dashboard, one reading at closing time each day: books on the shelves, books on loan, books in the return bin, books on the hold shelf waiting for the patrons who reserved them, and reservations waiting (each reservation is one book requested, so they are counted in books too). Nothing else is measured: no counters, no checkout records. The year starts on a Monday, 1 January, mid-stream (the library was already busy). It is closed on Sundays and a few holidays; demand rises and falls with the seasons. Twice the library changed how it works, and each change starts an era: the loan period changed once, and the library closed for a renovation and then reopened. The dashboard may not show every place a book can be. Start plays the year live, a day per tick (Speed sets how fast); Import history loads it all at once. Then run Discover flows. A good discovery should say how books move between these places, how long each stays, what drives what, and whether something nobody measures sits between two of them, how long it holds things and how much it holds. The answer is in library/README.md; do not read it first.",
+ "time_unit": "day",
+ "horizon": 365,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "reservations",
+   "name": "Reservations waiting (one per book requested)",
+   "unit": "books",
+   "initial": 0,
+   "x": 120,
+   "y": 320,
+   "group": "library"
+  },
+  {
+   "id": "shelves",
+   "name": "On the shelves",
+   "unit": "books",
+   "initial": 0,
+   "x": 300,
+   "y": 180,
+   "group": "library"
+  },
+  {
+   "id": "hold_shelf",
+   "name": "On the hold shelf",
+   "unit": "books",
+   "initial": 0,
+   "x": 480,
+   "y": 320,
+   "group": "library"
+  },
+  {
+   "id": "on_loan",
+   "name": "On loan",
+   "unit": "books",
+   "initial": 0,
+   "x": 660,
+   "y": 180,
+   "group": "library"
+  },
+  {
+   "id": "return_bin",
+   "name": "In the return bin",
+   "unit": "books",
+   "initial": 0,
+   "x": 840,
+   "y": 320,
+   "group": "library"
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "library/history"
+ },
+ "sensors": [
+  {
+   "program": "library/live"
+  }
+ ]
+}

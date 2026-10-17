@@ -1,0 +1,292 @@
+{
+ "id": "sd-recycling-truth",
+ "name": "SD: City recycling: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 730,
+ "long_steps": 7300,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "bins",
+   "name": "Recyclables in household bins",
+   "unit": "tonnes",
+   "initial": 400,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "trucks",
+   "name": "Loaded on collection trucks",
+   "unit": "tonnes",
+   "initial": 150,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "backlog",
+   "name": "Sorting facility backlog",
+   "unit": "tonnes",
+   "initial": 700,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "bales",
+   "name": "Sorted bales awaiting buyers",
+   "unit": "tonnes",
+   "initial": 650,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "shelves",
+   "name": "Recycled products in shops",
+   "unit": "tonnes",
+   "initial": 1800,
+   "x": 1040,
+   "y": 200
+  },
+  {
+   "id": "landfill",
+   "name": "Landfill",
+   "unit": "tonnes",
+   "initial": 0,
+   "x": 680,
+   "y": 40,
+   "final": true
+  },
+  {
+   "id": "rail",
+   "name": "In transit by rail to the processor",
+   "unit": "tonnes",
+   "initial": 600,
+   "x": 920,
+   "y": 380,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "discard",
+   "name": "Households put out recyclables",
+   "from": null,
+   "to": "bins",
+   "rate": {
+    "form": "constant",
+    "value": 60
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "collect",
+   "name": "Bins collected",
+   "from": "bins",
+   "to": "trucks",
+   "rate": {
+    "form": "proportional",
+    "stock": "bins",
+    "k": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "tip",
+   "name": "Trucks tip at the facility",
+   "from": "trucks",
+   "to": "backlog",
+   "rate": {
+    "form": "proportional",
+    "stock": "trucks",
+    "k": 0.8
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "sort",
+   "name": "Sorted into bales",
+   "from": "backlog",
+   "to": "bales",
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.15
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "reject",
+   "name": "Contaminated loads rejected",
+   "from": "backlog",
+   "to": "landfill",
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "sell",
+   "name": "Bales sold and loaded on rail",
+   "from": "bales",
+   "to": "rail",
+   "rate": {
+    "form": "linear",
+    "c": -40,
+    "terms": [
+     {
+      "stock": "bales",
+      "k": 0.2
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "arrive",
+   "name": "Recycled products reach shops",
+   "from": "rail",
+   "to": "shelves",
+   "rate": {
+    "form": "proportional",
+    "stock": "rail",
+    "k": 0.16666666666666666
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "reuse",
+   "name": "Recycled products bought, used and binned",
+   "from": "shelves",
+   "to": "bins",
+   "rate": {
+    "form": "proportional",
+    "stock": "shelves",
+    "k": 0.04
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "keep",
+   "name": "Recycled products bought and kept",
+   "from": "shelves",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "shelves",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "general",
+   "name": "General waste to landfill",
+   "from": null,
+   "to": "landfill",
+   "rate": {
+    "form": "linear",
+    "c": 20,
+    "terms": [
+     {
+      "stock": "bins",
+      "k": 0.02
+     }
+    ]
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "After the holidays: ordinary household waste",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 95,
+    "label": "Spring clean: more cardboard and glass",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 72
+     }
+    }
+   },
+   {
+    "t": 125,
+    "label": "Spring clean over",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 120,
+    "label": "Second sorting line opens",
+    "set": {
+     "sort": {
+      "form": "proportional",
+      "stock": "backlog",
+      "k": 0.3
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 180,
+    "label": "Summer: households away",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 46
+     }
+    }
+   },
+   {
+    "t": 245,
+    "label": "Autumn: back to normal",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 62
+     }
+    }
+   },
+   {
+    "t": 300,
+    "label": "Second sorting line closes for a refit",
+    "set": {
+     "sort": {
+      "form": "proportional",
+      "stock": "backlog",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 330,
+    "label": "Holiday season: packaging everywhere",
+    "set": {
+     "discard": {
+      "form": "constant",
+      "value": 95
+     }
+    }
+   }
+  ]
+ }
+}

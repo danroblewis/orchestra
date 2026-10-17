@@ -1,0 +1,121 @@
+{
+ "id": "sd-orders-truth",
+ "name": "SD: Ordering toward a target: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 1000,
+ "long_steps": 10000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "stock",
+   "name": "Shop stock",
+   "unit": "units",
+   "initial": 120,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "pending",
+   "name": "Orders on the way",
+   "unit": "units",
+   "initial": 60,
+   "x": 80,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "order",
+   "name": "Order",
+   "from": null,
+   "to": "pending",
+   "rate": {
+    "form": "linear",
+    "c": 30,
+    "terms": [
+     {
+      "stock": "stock",
+      "k": -0.2
+     },
+     {
+      "stock": "pending",
+      "k": -0.1
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deliver",
+   "name": "Deliveries",
+   "from": "pending",
+   "to": "stock",
+   "rate": {
+    "form": "proportional",
+    "stock": "pending",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "sell",
+   "name": "Sales",
+   "from": "stock",
+   "to": null,
+   "rate": {
+    "form": "constant",
+    "value": 15
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 200,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (15 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "High demand (25 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   },
+   {
+    "t": 101,
+    "label": "Low demand (8 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 151,
+    "label": "Normal demand (14 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 14
+     }
+    }
+   }
+  ]
+ }
+}

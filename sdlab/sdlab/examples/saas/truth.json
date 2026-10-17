@@ -1,0 +1,326 @@
+{
+ "seed": 20261016,
+ "steps": 365,
+ "step": "1 day",
+ "warmup_days": 200,
+ "parameters": {
+  "spend_share": 0.14285714285714285,
+  "visits_per_dollar": 0.8,
+  "organic_per_day": 250,
+  "p_trial": 0.012,
+  "p_quiet": 0.25,
+  "trial_days": 14,
+  "p_convert": 0.22,
+  "p_convert_new_price": 0.15,
+  "churn_per_day": 0.005,
+  "churn_per_day_announced": 0.035,
+  "churn_per_day_new_price": 0.0075,
+  "p_win_back": 0.3,
+  "win_back_days": 90
+ },
+ "eras": [
+  {
+   "t": 1,
+   "label": "Ad budget $1,000 a day"
+  },
+  {
+   "t": 61,
+   "label": "Spring campaign: $2,500 a day"
+  },
+  {
+   "t": 121,
+   "label": "Budget cut: $600 a day"
+  },
+  {
+   "t": 200,
+   "label": "Price rise announced: +30% in five days"
+  },
+  {
+   "t": 205,
+   "label": "New prices apply to every customer"
+  },
+  {
+   "t": 241,
+   "label": "Ad budget $1,500 a day"
+  },
+  {
+   "t": 301,
+   "label": "Holiday campaign: $3,000 a day"
+  }
+ ],
+ "viral_spike": {
+  "150": 3000,
+  "151": 1800,
+  "152": 900,
+  "153": 400
+ },
+ "start_levels": {
+  "ad_budget": 6178,
+  "visitors": 3793,
+  "trials": 662,
+  "paying": 2022,
+  "churned": 1594
+ },
+ "measured": {
+  "stocks": [
+   "ad_budget",
+   "visitors",
+   "trials",
+   "paying",
+   "churned"
+  ],
+  "flows": []
+ },
+ "counters": {
+  "budget_released": {
+   "from": null,
+   "to": "ad_budget",
+   "total": 567000,
+   "per_day_mean": 1553.425
+  },
+  "ad_spend": {
+   "from": "ad_budget",
+   "to": null,
+   "total": 551928,
+   "per_day_mean": 1512.132
+  },
+  "ad_visits": {
+   "from": null,
+   "to": "visitors",
+   "total": 443033,
+   "per_day_mean": 1213.789
+  },
+  "organic_visits": {
+   "from": null,
+   "to": "visitors",
+   "total": 97609,
+   "per_day_mean": 267.422
+  },
+  "trial_starts": {
+   "from": "visitors",
+   "to": "trials",
+   "total": 24747,
+   "per_day_mean": 67.8
+  },
+  "gone_quiet": {
+   "from": "visitors",
+   "to": null,
+   "total": 509242,
+   "per_day_mean": 1395.184
+  },
+  "conversions": {
+   "from": "trials",
+   "to": "paying",
+   "total": 4427,
+   "per_day_mean": 12.129
+  },
+  "trials_expired": {
+   "from": "trials",
+   "to": null,
+   "total": 19298,
+   "per_day_mean": 52.871
+  },
+  "cancellations": {
+   "from": "paying",
+   "to": "churned",
+   "total": 5596,
+   "per_day_mean": 15.332
+  },
+  "win_backs": {
+   "from": null,
+   "to": "paying",
+   "total": 1470,
+   "per_day_mean": 4.027
+  }
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms, per day. 'moves' are real flows between measured stocks (ratio 1). trials is a pipe: everything that enters leaves exactly 14 days later (k_proportional is the linear reading, share / 14). 'links': outside -> visitors at k x ad_budget (the ads spend about a seventh of the budget a day and bring 0.8 visitors a dollar; nothing leaves the budget for the visitors). 'echoes': win-backs arrive in paying, timed by churned's gains exactly 90 days earlier (a pipe); churned is a cumulative count and keeps them. No hidden stocks.",
+  "moves": [
+   {
+    "from": "visitors",
+    "to": "trials",
+    "form": "proportional",
+    "k": 0.012,
+    "k_fitted": 0.01202,
+    "what": "active visitors start a 14-day trial"
+   },
+   {
+    "from": "trials",
+    "to": "paying",
+    "form": "pipe",
+    "delay": 14,
+    "share": 0.22,
+    "share_new_price": 0.15,
+    "k_proportional": 0.01571,
+    "k_proportional_new_price": 0.01071,
+    "k_fitted": 0.01533,
+    "k_fitted_new_price": 0.01056,
+    "what": "trials convert on day 14 (a fixed delay)"
+   },
+   {
+    "from": "paying",
+    "to": "churned",
+    "form": "proportional",
+    "k": 0.005,
+    "k_announced": 0.035,
+    "k_new_price": 0.0075,
+    "k_fitted": 0.00503,
+    "k_fitted_new_price": 0.00776,
+    "k_fitted_announced": 0.03543,
+    "per_era": [
+     {
+      "from_day": 1,
+      "k": 0.005,
+      "label": "Ad budget $1,000 a day"
+     },
+     {
+      "from_day": 61,
+      "k": 0.005,
+      "label": "Spring campaign: $2,500 a day"
+     },
+     {
+      "from_day": 121,
+      "k": 0.005,
+      "label": "Budget cut: $600 a day"
+     },
+     {
+      "from_day": 200,
+      "k": 0.035,
+      "label": "Price rise announced: +30% in five days"
+     },
+     {
+      "from_day": 205,
+      "k": 0.0075,
+      "label": "New prices apply to every customer"
+     },
+     {
+      "from_day": 241,
+      "k": 0.0075,
+      "label": "Ad budget $1,500 a day"
+     },
+     {
+      "from_day": 301,
+      "k": 0.0075,
+      "label": "Holiday campaign: $3,000 a day"
+     }
+    ],
+    "what": "paying customers cancel"
+   }
+  ],
+  "outside": [
+   {
+    "to": "ad_budget",
+    "form": "constant",
+    "value": "per era",
+    "per_era": [
+     {
+      "from_day": 1,
+      "per_day": 1000,
+      "label": "Ad budget $1,000 a day"
+     },
+     {
+      "from_day": 61,
+      "per_day": 2500,
+      "label": "Spring campaign: $2,500 a day"
+     },
+     {
+      "from_day": 121,
+      "per_day": 600,
+      "label": "Budget cut: $600 a day"
+     },
+     {
+      "from_day": 200,
+      "per_day": 600,
+      "label": "Price rise announced: +30% in five days"
+     },
+     {
+      "from_day": 205,
+      "per_day": 600,
+      "label": "New prices apply to every customer"
+     },
+     {
+      "from_day": 241,
+      "per_day": 1500,
+      "label": "Ad budget $1,500 a day"
+     },
+     {
+      "from_day": 301,
+      "per_day": 3000,
+      "label": "Holiday campaign: $3,000 a day"
+     }
+    ],
+    "what": "the team releases the ad budget (set in eras)"
+   },
+   {
+    "from": "ad_budget",
+    "form": "proportional",
+    "k": 0.1429,
+    "k_fitted": 0.14307,
+    "what": "the ad platform spends the budget"
+   },
+   {
+    "to": "visitors",
+    "form": "constant",
+    "value": 250,
+    "viral_spike": {
+     "150": 3000,
+     "151": 1800,
+     "152": 900,
+     "153": 400
+    },
+    "what": "organic visitors (search, word of mouth), plus a viral spike"
+   },
+   {
+    "from": "visitors",
+    "form": "proportional",
+    "k": 0.247,
+    "k_fitted": 0.24742,
+    "what": "visitors go quiet"
+   },
+   {
+    "from": "trials",
+    "form": "pipe",
+    "delay": 14,
+    "share": 0.78,
+    "share_new_price": 0.85,
+    "k_proportional": 0.05571,
+    "what": "trials expire unconverted on day 14"
+   }
+  ],
+  "links": [
+   {
+    "driver": "ad_budget",
+    "into": "visitors",
+    "k": 0.1143,
+    "k_fitted": 0.1149,
+    "what": "ads bring visitors: 0.8 a dollar, spending ~1/7 of the budget a day"
+   }
+  ],
+  "hidden": [],
+  "echoes": [
+   {
+    "source": "churned",
+    "into": "paying",
+    "delay": 90,
+    "shape": "pipe",
+    "share": 0.3,
+    "realised_mean_delay": 90.0,
+    "what": "cancelled customers come back months later"
+   }
+  ]
+ },
+ "mean_levels": {
+  "ad_budget": 10581.907,
+  "visitors": 5655.616,
+  "trials": 930.932,
+  "paying": 2323.699,
+  "churned": 4162.671
+ },
+ "max_levels": {
+  "ad_budget": 21968,
+  "visitors": 10550,
+  "trials": 1752,
+  "paying": 2937,
+  "churned": 7190
+ }
+}

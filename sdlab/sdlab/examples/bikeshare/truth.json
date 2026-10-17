@@ -1,0 +1,2773 @@
+{
+ "seed": 20261016,
+ "steps": 4032,
+ "step": "5 minutes",
+ "days": 14,
+ "bikes": 200,
+ "rides": 18641,
+ "stations": {
+  "riverside": {
+   "name": "Riverside",
+   "docks": 65,
+   "bikes_at_start": 40,
+   "neighbour": "old_town",
+   "mean_level": 32.6183,
+   "min_level": 11,
+   "max_level": 53,
+   "rides_started": 2977,
+   "rides_ended": 2536,
+   "diverted_here": 0,
+   "van_loaded": 63,
+   "van_unloaded": 494
+  },
+  "old_town": {
+   "name": "Old Town",
+   "docks": 65,
+   "bikes_at_start": 44,
+   "neighbour": "central",
+   "mean_level": 45.6649,
+   "min_level": 17,
+   "max_level": 65,
+   "rides_started": 4632,
+   "rides_ended": 6486,
+   "diverted_here": 97,
+   "van_loaded": 1866,
+   "van_unloaded": 10
+  },
+  "central": {
+   "name": "Central Station",
+   "docks": 75,
+   "bikes_at_start": 48,
+   "neighbour": "old_town",
+   "mean_level": 34.6094,
+   "min_level": 13,
+   "max_level": 56,
+   "rides_started": 4233,
+   "rides_ended": 3739,
+   "diverted_here": 247,
+   "van_loaded": 67,
+   "van_unloaded": 551
+  },
+  "waterfront": {
+   "name": "Waterfront",
+   "docks": 50,
+   "bikes_at_start": 26,
+   "neighbour": "old_town",
+   "mean_level": 23.4058,
+   "min_level": 10,
+   "max_level": 44,
+   "rides_started": 1695,
+   "rides_ended": 1607,
+   "diverted_here": 0,
+   "van_loaded": 211,
+   "van_unloaded": 298
+  },
+  "university": {
+   "name": "University",
+   "docks": 70,
+   "bikes_at_start": 26,
+   "neighbour": "central",
+   "mean_level": 24.2976,
+   "min_level": 4,
+   "max_level": 49,
+   "rides_started": 2736,
+   "rides_ended": 1819,
+   "diverted_here": 2,
+   "van_loaded": 100,
+   "van_unloaded": 1020
+  },
+  "business_park": {
+   "name": "Business Park",
+   "docks": 44,
+   "bikes_at_start": 16,
+   "neighbour": "university",
+   "mean_level": 22.595,
+   "min_level": 5,
+   "max_level": 48,
+   "rides_started": 2368,
+   "rides_ended": 2449,
+   "diverted_here": 0,
+   "van_loaded": 560,
+   "van_unloaded": 494
+  }
+ },
+ "ride_minutes": {
+  "riverside__old_town": 10,
+  "riverside__central": 15,
+  "riverside__waterfront": 13,
+  "riverside__university": 20,
+  "riverside__business_park": 25,
+  "old_town__central": 10,
+  "old_town__waterfront": 11,
+  "old_town__university": 15,
+  "old_town__business_park": 21,
+  "central__waterfront": 12,
+  "central__university": 13,
+  "central__business_park": 17,
+  "waterfront__university": 18,
+  "waterfront__business_park": 23,
+  "university__business_park": 12,
+  "old_town__riverside": 10,
+  "central__riverside": 15,
+  "waterfront__riverside": 13,
+  "university__riverside": 20,
+  "business_park__riverside": 25,
+  "central__old_town": 10,
+  "waterfront__old_town": 11,
+  "university__old_town": 15,
+  "business_park__old_town": 21,
+  "waterfront__central": 12,
+  "university__central": 13,
+  "business_park__central": 17,
+  "university__waterfront": 18,
+  "business_park__waterfront": 23,
+  "business_park__university": 12
+ },
+ "hazard": {
+  "per_step": {
+   "riverside": 0.033,
+   "old_town": 0.039,
+   "central": 0.045,
+   "waterfront": 0.03,
+   "university": 0.036,
+   "business_park": 0.033
+  },
+  "time_of_day": "x0.35 at night (21:00-05:30), ramping to x1 by 07:30 and back down 20:00-22:00; weekdays add +0.3 exp(-((h-8)/1)^2) + 0.3 exp(-((h-17.5)/1.2)^2) (rush hours); weekends x0.8 of the plain day"
+ },
+ "destinations": {
+  "weekday": {
+   "riverside": {
+    "morning": {
+     "business_park": 0.7,
+     "old_town": 0.3
+    },
+    "midday": {
+     "business_park": 0.4,
+     "old_town": 0.6
+    },
+    "evening": {
+     "business_park": 0.2,
+     "old_town": 0.8
+    },
+    "night": {
+     "business_park": 0.2,
+     "old_town": 0.8
+    }
+   },
+   "old_town": {
+    "morning": {
+     "university": 0.6,
+     "central": 0.3,
+     "riverside": 0.1
+    },
+    "midday": {
+     "university": 0.3,
+     "central": 0.4,
+     "riverside": 0.3
+    },
+    "evening": {
+     "university": 0.1,
+     "central": 0.4,
+     "riverside": 0.5
+    },
+    "night": {
+     "university": 0.1,
+     "central": 0.4,
+     "riverside": 0.5
+    }
+   },
+   "central": {
+    "morning": {
+     "business_park": 0.6,
+     "waterfront": 0.1,
+     "old_town": 0.3
+    },
+    "midday": {
+     "business_park": 0.3,
+     "waterfront": 0.4,
+     "old_town": 0.3
+    },
+    "evening": {
+     "business_park": 0.1,
+     "waterfront": 0.4,
+     "old_town": 0.5
+    },
+    "night": {
+     "business_park": 0.1,
+     "waterfront": 0.3,
+     "old_town": 0.6
+    }
+   },
+   "waterfront": {
+    "morning": {
+     "central": 0.7,
+     "old_town": 0.3
+    },
+    "midday": {
+     "central": 0.5,
+     "old_town": 0.5
+    },
+    "evening": {
+     "central": 0.4,
+     "old_town": 0.6
+    },
+    "night": {
+     "central": 0.4,
+     "old_town": 0.6
+    }
+   },
+   "university": {
+    "morning": {
+     "business_park": 0.6,
+     "old_town": 0.4
+    },
+    "midday": {
+     "business_park": 0.3,
+     "old_town": 0.7
+    },
+    "evening": {
+     "business_park": 0.1,
+     "old_town": 0.9
+    },
+    "night": {
+     "business_park": 0.1,
+     "old_town": 0.9
+    }
+   },
+   "business_park": {
+    "morning": {
+     "university": 0.6,
+     "central": 0.2,
+     "riverside": 0.2
+    },
+    "midday": {
+     "university": 0.4,
+     "central": 0.3,
+     "riverside": 0.3
+    },
+    "evening": {
+     "university": 0.1,
+     "central": 0.4,
+     "riverside": 0.5
+    },
+    "night": {
+     "university": 0.1,
+     "central": 0.4,
+     "riverside": 0.5
+    }
+   }
+  },
+  "weekend": {
+   "riverside": {
+    "business_park": 0.1,
+    "old_town": 0.9
+   },
+   "old_town": {
+    "university": 0.1,
+    "central": 0.5,
+    "riverside": 0.4
+   },
+   "central": {
+    "business_park": 0.05,
+    "waterfront": 0.7,
+    "old_town": 0.25
+   },
+   "waterfront": {
+    "central": 0.5,
+    "old_town": 0.5
+   },
+   "university": {
+    "business_park": 0.1,
+    "old_town": 0.9
+   },
+   "business_park": {
+    "university": 0.3,
+    "central": 0.4,
+    "riverside": 0.3
+   }
+  }
+ },
+ "rain_day": {
+  "day": 2,
+  "factor": 0.5
+ },
+ "van": {
+  "capacity": 20,
+  "per_step": 5,
+  "load_down_to": 0.5,
+  "unload_up_to": 0.6,
+  "full_above": 0.6,
+  "empty_below": 0.4,
+  "idle_steps": 3,
+  "shift_hours": {
+   "before_day_11": [
+    6.5,
+    19.0
+   ],
+   "from_day_11": [
+    6.5,
+    23.5
+   ]
+  },
+  "trips": 231,
+  "bikes_moved": 2867,
+  "mean_level": 4.5734,
+  "max_level": 20,
+  "trip_log": [
+   {
+    "t": 79,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 16,
+    "left_on_van": 4,
+    "end_t": 89
+   },
+   {
+    "t": 90,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 16,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 100
+   },
+   {
+    "t": 101,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 110
+   },
+   {
+    "t": 111,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 123
+   },
+   {
+    "t": 124,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 132
+   },
+   {
+    "t": 148,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 155
+   },
+   {
+    "t": 156,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 163
+   },
+   {
+    "t": 164,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 169
+   },
+   {
+    "t": 170,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 176
+   },
+   {
+    "t": 183,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 18,
+    "unloaded": 18,
+    "left_on_van": 0,
+    "end_t": 192
+   },
+   {
+    "t": 193,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 200
+   },
+   {
+    "t": 201,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 211
+   },
+   {
+    "t": 212,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 219
+   },
+   {
+    "t": 220,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 230
+   },
+   {
+    "t": 367,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 15,
+    "left_on_van": 5,
+    "end_t": 377
+   },
+   {
+    "t": 378,
+    "from": "university",
+    "to": "waterfront",
+    "loaded": 6,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 385
+   },
+   {
+    "t": 386,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 395
+   },
+   {
+    "t": 396,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 16,
+    "unloaded": 16,
+    "left_on_van": 0,
+    "end_t": 407
+   },
+   {
+    "t": 408,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 420
+   },
+   {
+    "t": 421,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 429
+   },
+   {
+    "t": 430,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 436
+   },
+   {
+    "t": 440,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 449
+   },
+   {
+    "t": 450,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 456
+   },
+   {
+    "t": 463,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 470
+   },
+   {
+    "t": 474,
+    "from": "business_park",
+    "to": "university",
+    "loaded": 16,
+    "unloaded": 16,
+    "left_on_van": 0,
+    "end_t": 483
+   },
+   {
+    "t": 484,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 8,
+    "left_on_van": 12,
+    "end_t": 493
+   },
+   {
+    "t": 494,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 501
+   },
+   {
+    "t": 502,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 20,
+    "unloaded": 18,
+    "left_on_van": 2,
+    "end_t": 512
+   },
+   {
+    "t": 513,
+    "from": "riverside",
+    "to": "business_park",
+    "loaded": 10,
+    "unloaded": 4,
+    "left_on_van": 8,
+    "end_t": 520
+   },
+   {
+    "t": 521,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 12,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 529
+   },
+   {
+    "t": 655,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 665
+   },
+   {
+    "t": 669,
+    "from": "riverside",
+    "to": "waterfront",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 674
+   },
+   {
+    "t": 675,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 683
+   },
+   {
+    "t": 684,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 689
+   },
+   {
+    "t": 708,
+    "from": "business_park",
+    "to": "university",
+    "loaded": 17,
+    "unloaded": 14,
+    "left_on_van": 3,
+    "end_t": 716
+   },
+   {
+    "t": 717,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 11,
+    "unloaded": 13,
+    "left_on_van": 1,
+    "end_t": 724
+   },
+   {
+    "t": 725,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 5,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 732
+   },
+   {
+    "t": 757,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 18,
+    "unloaded": 10,
+    "left_on_van": 8,
+    "end_t": 766
+   },
+   {
+    "t": 767,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 8,
+    "end_t": 774
+   },
+   {
+    "t": 775,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 12,
+    "unloaded": 16,
+    "left_on_van": 4,
+    "end_t": 783
+   },
+   {
+    "t": 784,
+    "from": "riverside",
+    "to": "waterfront",
+    "loaded": 5,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 789
+   },
+   {
+    "t": 796,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 20,
+    "unloaded": 19,
+    "left_on_van": 1,
+    "end_t": 806
+   },
+   {
+    "t": 807,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 812
+   },
+   {
+    "t": 943,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 953
+   },
+   {
+    "t": 954,
+    "from": "central",
+    "to": "waterfront",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 959
+   },
+   {
+    "t": 960,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 972
+   },
+   {
+    "t": 973,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 985
+   },
+   {
+    "t": 986,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 997
+   },
+   {
+    "t": 998,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 11,
+    "unloaded": 8,
+    "left_on_van": 3,
+    "end_t": 1004
+   },
+   {
+    "t": 1005,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 6,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1012
+   },
+   {
+    "t": 1016,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 1023
+   },
+   {
+    "t": 1027,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 1031
+   },
+   {
+    "t": 1041,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 1050
+   },
+   {
+    "t": 1051,
+    "from": "business_park",
+    "to": "university",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 1058
+   },
+   {
+    "t": 1059,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 20,
+    "unloaded": 13,
+    "left_on_van": 7,
+    "end_t": 1068
+   },
+   {
+    "t": 1069,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 13,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 1077
+   },
+   {
+    "t": 1078,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 19,
+    "unloaded": 19,
+    "left_on_van": 0,
+    "end_t": 1087
+   },
+   {
+    "t": 1091,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 1098
+   },
+   {
+    "t": 1231,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 1241
+   },
+   {
+    "t": 1254,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 20,
+    "unloaded": 19,
+    "left_on_van": 1,
+    "end_t": 1266
+   },
+   {
+    "t": 1267,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 14,
+    "unloaded": 15,
+    "left_on_van": 0,
+    "end_t": 1275
+   },
+   {
+    "t": 1276,
+    "from": "university",
+    "to": "riverside",
+    "loaded": 18,
+    "unloaded": 18,
+    "left_on_van": 0,
+    "end_t": 1286
+   },
+   {
+    "t": 1287,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 1293
+   },
+   {
+    "t": 1294,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 1299
+   },
+   {
+    "t": 1300,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 1305
+   },
+   {
+    "t": 1306,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 12,
+    "unloaded": 10,
+    "left_on_van": 2,
+    "end_t": 1313
+   },
+   {
+    "t": 1314,
+    "from": "university",
+    "to": "riverside",
+    "loaded": 8,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 1320
+   },
+   {
+    "t": 1324,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1329
+   },
+   {
+    "t": 1330,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1336
+   },
+   {
+    "t": 1337,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1342
+   },
+   {
+    "t": 1343,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 1350
+   },
+   {
+    "t": 1351,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 18,
+    "unloaded": 13,
+    "left_on_van": 5,
+    "end_t": 1360
+   },
+   {
+    "t": 1361,
+    "from": "riverside",
+    "to": "central",
+    "loaded": 7,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 1367
+   },
+   {
+    "t": 1368,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 12,
+    "unloaded": 11,
+    "left_on_van": 1,
+    "end_t": 1375
+   },
+   {
+    "t": 1376,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 12,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 1383
+   },
+   {
+    "t": 1519,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 1530
+   },
+   {
+    "t": 1531,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 16,
+    "unloaded": 16,
+    "left_on_van": 0,
+    "end_t": 1540
+   },
+   {
+    "t": 1541,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 1553
+   },
+   {
+    "t": 1554,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 1559
+   },
+   {
+    "t": 1560,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 1566
+   },
+   {
+    "t": 1567,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 1572
+   },
+   {
+    "t": 1573,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 1580
+   },
+   {
+    "t": 1581,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 17,
+    "unloaded": 17,
+    "left_on_van": 0,
+    "end_t": 1590
+   },
+   {
+    "t": 1591,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 1600
+   },
+   {
+    "t": 1610,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 1618
+   },
+   {
+    "t": 1619,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 1625
+   },
+   {
+    "t": 1626,
+    "from": "waterfront",
+    "to": "central",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 1631
+   },
+   {
+    "t": 1632,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 12,
+    "left_on_van": 8,
+    "end_t": 1641
+   },
+   {
+    "t": 1642,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 12,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 1651
+   },
+   {
+    "t": 1652,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 1658
+   },
+   {
+    "t": 1662,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 17,
+    "left_on_van": 3,
+    "end_t": 1672
+   },
+   {
+    "t": 1673,
+    "from": null,
+    "to": "business_park",
+    "loaded": 0,
+    "unloaded": 3,
+    "left_on_van": 0,
+    "end_t": 1676
+   },
+   {
+    "t": 1807,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 19,
+    "unloaded": 19,
+    "left_on_van": 0,
+    "end_t": 1817
+   },
+   {
+    "t": 1818,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 1826
+   },
+   {
+    "t": 1827,
+    "from": "central",
+    "to": "business_park",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 1835
+   },
+   {
+    "t": 1836,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 1843
+   },
+   {
+    "t": 1847,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1853
+   },
+   {
+    "t": 1854,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 19,
+    "unloaded": 19,
+    "left_on_van": 0,
+    "end_t": 1864
+   },
+   {
+    "t": 1865,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1871
+   },
+   {
+    "t": 1872,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 14,
+    "unloaded": 8,
+    "left_on_van": 6,
+    "end_t": 1878
+   },
+   {
+    "t": 1879,
+    "from": "riverside",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 1886
+   },
+   {
+    "t": 1887,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 1893
+   },
+   {
+    "t": 1897,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 18,
+    "unloaded": 14,
+    "left_on_van": 4,
+    "end_t": 1905
+   },
+   {
+    "t": 1906,
+    "from": "riverside",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 1913
+   },
+   {
+    "t": 1914,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 1921
+   },
+   {
+    "t": 1922,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 1927
+   },
+   {
+    "t": 1928,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 1934
+   },
+   {
+    "t": 1938,
+    "from": "waterfront",
+    "to": "riverside",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1943
+   },
+   {
+    "t": 1944,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 1949
+   },
+   {
+    "t": 1953,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 17,
+    "unloaded": 17,
+    "left_on_van": 0,
+    "end_t": 1962
+   },
+   {
+    "t": 2095,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 19,
+    "unloaded": 17,
+    "left_on_van": 2,
+    "end_t": 2104
+   },
+   {
+    "t": 2105,
+    "from": "university",
+    "to": "riverside",
+    "loaded": 5,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 2111
+   },
+   {
+    "t": 2112,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 2117
+   },
+   {
+    "t": 2118,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2129
+   },
+   {
+    "t": 2130,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 2137
+   },
+   {
+    "t": 2138,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 16,
+    "unloaded": 16,
+    "left_on_van": 0,
+    "end_t": 2149
+   },
+   {
+    "t": 2156,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 2161
+   },
+   {
+    "t": 2162,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 2167
+   },
+   {
+    "t": 2180,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 2185
+   },
+   {
+    "t": 2198,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 2203
+   },
+   {
+    "t": 2207,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 13,
+    "unloaded": 11,
+    "left_on_van": 2,
+    "end_t": 2214
+   },
+   {
+    "t": 2215,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 11,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 2222
+   },
+   {
+    "t": 2223,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 2231
+   },
+   {
+    "t": 2232,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2242
+   },
+   {
+    "t": 2243,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 2248
+   },
+   {
+    "t": 2383,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 18,
+    "left_on_van": 2,
+    "end_t": 2393
+   },
+   {
+    "t": 2394,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 5,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 2399
+   },
+   {
+    "t": 2400,
+    "from": "university",
+    "to": "central",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 2404
+   },
+   {
+    "t": 2405,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 2414
+   },
+   {
+    "t": 2415,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2426
+   },
+   {
+    "t": 2427,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2439
+   },
+   {
+    "t": 2440,
+    "from": "riverside",
+    "to": "central",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 2445
+   },
+   {
+    "t": 2452,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2462
+   },
+   {
+    "t": 2466,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 13,
+    "unloaded": 11,
+    "left_on_van": 2,
+    "end_t": 2473
+   },
+   {
+    "t": 2474,
+    "from": null,
+    "to": "central",
+    "loaded": 0,
+    "unloaded": 2,
+    "left_on_van": 0,
+    "end_t": 2477
+   },
+   {
+    "t": 2478,
+    "from": "business_park",
+    "to": "central",
+    "loaded": 17,
+    "unloaded": 17,
+    "left_on_van": 0,
+    "end_t": 2488
+   },
+   {
+    "t": 2495,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 2502
+   },
+   {
+    "t": 2503,
+    "from": "riverside",
+    "to": "university",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 2510
+   },
+   {
+    "t": 2511,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2522
+   },
+   {
+    "t": 2523,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2533
+   },
+   {
+    "t": 2671,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2681
+   },
+   {
+    "t": 2688,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 2696
+   },
+   {
+    "t": 2697,
+    "from": "university",
+    "to": "riverside",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2708
+   },
+   {
+    "t": 2709,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2721
+   },
+   {
+    "t": 2722,
+    "from": "waterfront",
+    "to": "central",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 2726
+   },
+   {
+    "t": 2730,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 2735
+   },
+   {
+    "t": 2751,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 2757
+   },
+   {
+    "t": 2767,
+    "from": "business_park",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 2772
+   },
+   {
+    "t": 2773,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 2780
+   },
+   {
+    "t": 2784,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 2791
+   },
+   {
+    "t": 2792,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 18,
+    "unloaded": 18,
+    "left_on_van": 0,
+    "end_t": 2801
+   },
+   {
+    "t": 2802,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 15,
+    "unloaded": 15,
+    "left_on_van": 0,
+    "end_t": 2810
+   },
+   {
+    "t": 2811,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2822
+   },
+   {
+    "t": 2959,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 2969
+   },
+   {
+    "t": 2970,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 2975
+   },
+   {
+    "t": 2976,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 2985
+   },
+   {
+    "t": 2989,
+    "from": "university",
+    "to": "old_town",
+    "loaded": 12,
+    "unloaded": 10,
+    "left_on_van": 2,
+    "end_t": 2996
+   },
+   {
+    "t": 2997,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 14,
+    "unloaded": 16,
+    "left_on_van": 0,
+    "end_t": 3007
+   },
+   {
+    "t": 3008,
+    "from": "university",
+    "to": "waterfront",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 3016
+   },
+   {
+    "t": 3035,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 17,
+    "unloaded": 14,
+    "left_on_van": 3,
+    "end_t": 3043
+   },
+   {
+    "t": 3044,
+    "from": "central",
+    "to": "riverside",
+    "loaded": 6,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3049
+   },
+   {
+    "t": 3056,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 3061
+   },
+   {
+    "t": 3065,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 3072
+   },
+   {
+    "t": 3073,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 19,
+    "unloaded": 19,
+    "left_on_van": 0,
+    "end_t": 3082
+   },
+   {
+    "t": 3083,
+    "from": "old_town",
+    "to": "waterfront",
+    "loaded": 12,
+    "unloaded": 10,
+    "left_on_van": 2,
+    "end_t": 3090
+   },
+   {
+    "t": 3091,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 6,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3098
+   },
+   {
+    "t": 3099,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 19,
+    "unloaded": 19,
+    "left_on_van": 0,
+    "end_t": 3108
+   },
+   {
+    "t": 3247,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3257
+   },
+   {
+    "t": 3264,
+    "from": "university",
+    "to": "waterfront",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3270
+   },
+   {
+    "t": 3271,
+    "from": "business_park",
+    "to": "riverside",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3279
+   },
+   {
+    "t": 3280,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3287
+   },
+   {
+    "t": 3288,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 17,
+    "unloaded": 17,
+    "left_on_van": 0,
+    "end_t": 3297
+   },
+   {
+    "t": 3298,
+    "from": "business_park",
+    "to": "waterfront",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 3307
+   },
+   {
+    "t": 3311,
+    "from": "central",
+    "to": "riverside",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 3318
+   },
+   {
+    "t": 3319,
+    "from": "business_park",
+    "to": "university",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 3323
+   },
+   {
+    "t": 3327,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3332
+   },
+   {
+    "t": 3336,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3341
+   },
+   {
+    "t": 3342,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 3349
+   },
+   {
+    "t": 3362,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3372
+   },
+   {
+    "t": 3373,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 20,
+    "unloaded": 17,
+    "left_on_van": 3,
+    "end_t": 3383
+   },
+   {
+    "t": 3384,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 17,
+    "unloaded": 19,
+    "left_on_van": 1,
+    "end_t": 3394
+   },
+   {
+    "t": 3395,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 19,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3404
+   },
+   {
+    "t": 3405,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 3412
+   },
+   {
+    "t": 3413,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 3421
+   },
+   {
+    "t": 3422,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 18,
+    "unloaded": 18,
+    "left_on_van": 0,
+    "end_t": 3431
+   },
+   {
+    "t": 3438,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3444
+   },
+   {
+    "t": 3535,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3546
+   },
+   {
+    "t": 3547,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 3555
+   },
+   {
+    "t": 3556,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 15,
+    "unloaded": 14,
+    "left_on_van": 1,
+    "end_t": 3565
+   },
+   {
+    "t": 3566,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 6,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 3572
+   },
+   {
+    "t": 3576,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 3581
+   },
+   {
+    "t": 3582,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 18,
+    "unloaded": 18,
+    "left_on_van": 0,
+    "end_t": 3591
+   },
+   {
+    "t": 3592,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 3598
+   },
+   {
+    "t": 3599,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3606
+   },
+   {
+    "t": 3607,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3613
+   },
+   {
+    "t": 3614,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3620
+   },
+   {
+    "t": 3621,
+    "from": "waterfront",
+    "to": "central",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 3628
+   },
+   {
+    "t": 3629,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3634
+   },
+   {
+    "t": 3635,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3641
+   },
+   {
+    "t": 3642,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 3648
+   },
+   {
+    "t": 3649,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3654
+   },
+   {
+    "t": 3658,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 12,
+    "unloaded": 12,
+    "left_on_van": 0,
+    "end_t": 3665
+   },
+   {
+    "t": 3666,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3671
+   },
+   {
+    "t": 3672,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3679
+   },
+   {
+    "t": 3680,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3686
+   },
+   {
+    "t": 3687,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3693
+   },
+   {
+    "t": 3694,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 6,
+    "unloaded": 6,
+    "left_on_van": 0,
+    "end_t": 3700
+   },
+   {
+    "t": 3701,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3706
+   },
+   {
+    "t": 3713,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 10,
+    "unloaded": 10,
+    "left_on_van": 0,
+    "end_t": 3720
+   },
+   {
+    "t": 3823,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3834
+   },
+   {
+    "t": 3835,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3845
+   },
+   {
+    "t": 3846,
+    "from": "central",
+    "to": "riverside",
+    "loaded": 11,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 3853
+   },
+   {
+    "t": 3854,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3860
+   },
+   {
+    "t": 3861,
+    "from": "waterfront",
+    "to": "central",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3866
+   },
+   {
+    "t": 3867,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 20,
+    "unloaded": 20,
+    "left_on_van": 0,
+    "end_t": 3878
+   },
+   {
+    "t": 3879,
+    "from": "central",
+    "to": "university",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3884
+   },
+   {
+    "t": 3888,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 7,
+    "left_on_van": 0,
+    "end_t": 3893
+   },
+   {
+    "t": 3894,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 3902
+   },
+   {
+    "t": 3903,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 3908
+   },
+   {
+    "t": 3912,
+    "from": "waterfront",
+    "to": "central",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 3919
+   },
+   {
+    "t": 3920,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 18,
+    "unloaded": 18,
+    "left_on_van": 0,
+    "end_t": 3929
+   },
+   {
+    "t": 3930,
+    "from": "university",
+    "to": "business_park",
+    "loaded": 5,
+    "unloaded": 5,
+    "left_on_van": 0,
+    "end_t": 3934
+   },
+   {
+    "t": 3935,
+    "from": "old_town",
+    "to": "riverside",
+    "loaded": 18,
+    "unloaded": 14,
+    "left_on_van": 4,
+    "end_t": 3943
+   },
+   {
+    "t": 3944,
+    "from": "waterfront",
+    "to": "university",
+    "loaded": 7,
+    "unloaded": 11,
+    "left_on_van": 0,
+    "end_t": 3951
+   },
+   {
+    "t": 3952,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 14,
+    "unloaded": 14,
+    "left_on_van": 0,
+    "end_t": 3960
+   },
+   {
+    "t": 3961,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 13,
+    "unloaded": 13,
+    "left_on_van": 0,
+    "end_t": 3968
+   },
+   {
+    "t": 3969,
+    "from": "waterfront",
+    "to": "business_park",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 3976
+   },
+   {
+    "t": 3977,
+    "from": "old_town",
+    "to": "central",
+    "loaded": 11,
+    "unloaded": 9,
+    "left_on_van": 2,
+    "end_t": 3983
+   },
+   {
+    "t": 3984,
+    "from": "old_town",
+    "to": "business_park",
+    "loaded": 17,
+    "unloaded": 19,
+    "left_on_van": 0,
+    "end_t": 3994
+   },
+   {
+    "t": 3998,
+    "from": "central",
+    "to": "riverside",
+    "loaded": 9,
+    "unloaded": 9,
+    "left_on_van": 0,
+    "end_t": 4003
+   },
+   {
+    "t": 4004,
+    "from": "old_town",
+    "to": "university",
+    "loaded": 8,
+    "unloaded": 8,
+    "left_on_van": 0,
+    "end_t": 4009
+   }
+  ]
+ },
+ "eras": [
+  {
+   "t": 1,
+   "label": "Start"
+  },
+  {
+   "t": 1153,
+   "label": "Business Park: 20 more docks (44 to 64)"
+  },
+  {
+   "t": 2305,
+   "label": "Waterfront closed for a festival"
+  },
+  {
+   "t": 2593,
+   "label": "Waterfront reopened"
+  },
+  {
+   "t": 3169,
+   "label": "The van crew works a late shift too (until 23:30)"
+  }
+ ],
+ "measured": {
+  "stocks": [
+   "riverside",
+   "old_town",
+   "central",
+   "waterfront",
+   "university",
+   "business_park",
+   "van"
+  ],
+  "flows": []
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms, per 5-minute step. 'moves' are real stock-to-stock flows (ratio 1): the van's loading and unloading (k = total / \u03a3 the source's level over the steps before, the proportional equivalent). 'hidden': rides. A bike leaves a station (k x its docked bikes per step = share), is ridden for the pair's ride time (pipe-like: lognormal, cv 0.2, so delay = mean minutes / 5 steps) in a stock nobody counts, and docks at the destination. The share varies a lot through the day (commutes); 'share' is the run's average. Nothing leaves the system and nothing enters it: 'outside' and 'links' are empty.",
+  "moves": [
+   {
+    "from": "old_town",
+    "to": "van",
+    "form": "constant",
+    "value": 0.4628,
+    "total": 1866,
+    "k": 0.01014,
+    "what": "the van loads bikes at Old Town when it is the fullest station (5 a step, during the crew's shift)"
+   },
+   {
+    "from": "van",
+    "to": "university",
+    "form": "proportional",
+    "k": 0.05531,
+    "total": 1020,
+    "value": 0.253,
+    "what": "the van unloads at University when it is the emptiest station"
+   },
+   {
+    "from": "business_park",
+    "to": "van",
+    "form": "constant",
+    "value": 0.1389,
+    "total": 560,
+    "k": 0.00615,
+    "what": "the van loads bikes at Business Park when it is the fullest station (5 a step, during the crew's shift)"
+   },
+   {
+    "from": "van",
+    "to": "central",
+    "form": "proportional",
+    "k": 0.02988,
+    "total": 551,
+    "value": 0.1367,
+    "what": "the van unloads at Central Station when it is the emptiest station"
+   },
+   {
+    "from": "van",
+    "to": "riverside",
+    "form": "proportional",
+    "k": 0.02679,
+    "total": 494,
+    "value": 0.1225,
+    "what": "the van unloads at Riverside when it is the emptiest station"
+   },
+   {
+    "from": "van",
+    "to": "business_park",
+    "form": "proportional",
+    "k": 0.02679,
+    "total": 494,
+    "value": 0.1225,
+    "what": "the van unloads at Business Park when it is the emptiest station"
+   },
+   {
+    "from": "van",
+    "to": "waterfront",
+    "form": "proportional",
+    "k": 0.01616,
+    "total": 298,
+    "value": 0.0739,
+    "what": "the van unloads at Waterfront when it is the emptiest station"
+   },
+   {
+    "from": "waterfront",
+    "to": "van",
+    "form": "constant",
+    "value": 0.0523,
+    "total": 211,
+    "k": 0.00224,
+    "what": "the van loads bikes at Waterfront when it is the fullest station (5 a step, during the crew's shift)"
+   },
+   {
+    "from": "university",
+    "to": "van",
+    "form": "constant",
+    "value": 0.0248,
+    "total": 100,
+    "k": 0.00102,
+    "what": "the van loads bikes at University when it is the fullest station (5 a step, during the crew's shift)"
+   },
+   {
+    "from": "central",
+    "to": "van",
+    "form": "constant",
+    "value": 0.0166,
+    "total": 67,
+    "k": 0.00048,
+    "what": "the van loads bikes at Central Station when it is the fullest station (5 a step, during the crew's shift)"
+   },
+   {
+    "from": "riverside",
+    "to": "van",
+    "form": "constant",
+    "value": 0.0156,
+    "total": 63,
+    "k": 0.00048,
+    "what": "the van loads bikes at Riverside when it is the fullest station (5 a step, during the crew's shift)"
+   },
+   {
+    "from": "van",
+    "to": "old_town",
+    "form": "proportional",
+    "k": 0.00054,
+    "total": 10,
+    "value": 0.0025,
+    "what": "the van unloads at Old Town when it is the emptiest station"
+   }
+  ],
+  "outside": [],
+  "links": [],
+  "hidden": [
+   {
+    "from": "riverside",
+    "to": "old_town",
+    "shape": "pipe",
+    "delay": 2.0,
+    "delay_realised_steps": 2.009,
+    "delay_minutes": 10,
+    "cv": 0.2,
+    "share": 0.01598,
+    "holds": 1.0474,
+    "rides": 2102,
+    "per_step": 0.5213,
+    "what": "bikes ridden from Riverside to Old Town (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "university",
+    "to": "old_town",
+    "shape": "pipe",
+    "delay": 3.0,
+    "delay_realised_steps": 2.9817,
+    "delay_minutes": 15,
+    "cv": 0.2,
+    "share": 0.0207,
+    "holds": 1.499,
+    "rides": 2027,
+    "per_step": 0.5027,
+    "what": "bikes ridden from University to Old Town (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "old_town",
+    "to": "central",
+    "shape": "pipe",
+    "delay": 2.0,
+    "delay_realised_steps": 1.9989,
+    "delay_minutes": 10,
+    "cv": 0.2,
+    "share": 0.01021,
+    "holds": 0.932,
+    "rides": 1880,
+    "per_step": 0.4663,
+    "what": "bikes ridden from Old Town to Central Station (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "old_town",
+    "to": "riverside",
+    "shape": "pipe",
+    "delay": 2.0,
+    "delay_realised_steps": 1.9691,
+    "delay_minutes": 10,
+    "cv": 0.2,
+    "share": 0.0095,
+    "holds": 0.8537,
+    "rides": 1748,
+    "per_step": 0.4335,
+    "what": "bikes ridden from Old Town to Riverside (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "central",
+    "to": "waterfront",
+    "shape": "pipe",
+    "delay": 2.4,
+    "delay_realised_steps": 2.3973,
+    "delay_minutes": 12,
+    "cv": 0.2,
+    "share": 0.01229,
+    "holds": 1.0184,
+    "rides": 1714,
+    "per_step": 0.4251,
+    "what": "bikes ridden from Central Station to Waterfront (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "central",
+    "to": "old_town",
+    "shape": "pipe",
+    "delay": 2.0,
+    "delay_realised_steps": 2.003,
+    "delay_minutes": 10,
+    "cv": 0.2,
+    "share": 0.01183,
+    "holds": 0.8207,
+    "rides": 1652,
+    "per_step": 0.4097,
+    "what": "bikes ridden from Central Station to Old Town (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "old_town",
+    "to": "university",
+    "shape": "pipe",
+    "delay": 3.0,
+    "delay_realised_steps": 2.9861,
+    "delay_minutes": 15,
+    "cv": 0.2,
+    "share": 0.00545,
+    "holds": 0.7436,
+    "rides": 1004,
+    "per_step": 0.249,
+    "what": "bikes ridden from Old Town to University (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "riverside",
+    "to": "business_park",
+    "shape": "pipe",
+    "delay": 5.0,
+    "delay_realised_steps": 4.9943,
+    "delay_minutes": 25,
+    "cv": 0.2,
+    "share": 0.00665,
+    "holds": 1.0838,
+    "rides": 875,
+    "per_step": 0.217,
+    "what": "bikes ridden from Riverside to Business Park (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "central",
+    "to": "business_park",
+    "shape": "pipe",
+    "delay": 3.4,
+    "delay_realised_steps": 3.4048,
+    "delay_minutes": 17,
+    "cv": 0.2,
+    "share": 0.00621,
+    "holds": 0.7321,
+    "rides": 867,
+    "per_step": 0.215,
+    "what": "bikes ridden from Central Station to Business Park (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "waterfront",
+    "to": "old_town",
+    "shape": "pipe",
+    "delay": 2.2,
+    "delay_realised_steps": 2.2241,
+    "delay_minutes": 11,
+    "cv": 0.2,
+    "share": 0.00899,
+    "holds": 0.4678,
+    "rides": 848,
+    "per_step": 0.2103,
+    "what": "bikes ridden from Waterfront to Old Town (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "waterfront",
+    "to": "central",
+    "shape": "pipe",
+    "delay": 2.4,
+    "delay_realised_steps": 2.4085,
+    "delay_minutes": 12,
+    "cv": 0.2,
+    "share": 0.00898,
+    "holds": 0.506,
+    "rides": 847,
+    "per_step": 0.2101,
+    "what": "bikes ridden from Waterfront to Central Station (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "business_park",
+    "to": "university",
+    "shape": "pipe",
+    "delay": 2.4,
+    "delay_realised_steps": 2.3788,
+    "delay_minutes": 12,
+    "cv": 0.2,
+    "share": 0.00893,
+    "holds": 0.4797,
+    "rides": 813,
+    "per_step": 0.2016,
+    "what": "bikes ridden from Business Park to University (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "business_park",
+    "to": "riverside",
+    "shape": "pipe",
+    "delay": 5.0,
+    "delay_realised_steps": 5.0177,
+    "delay_minutes": 25,
+    "cv": 0.2,
+    "share": 0.00865,
+    "holds": 0.9819,
+    "rides": 789,
+    "per_step": 0.1957,
+    "what": "bikes ridden from Business Park to Riverside (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "business_park",
+    "to": "central",
+    "shape": "pipe",
+    "delay": 3.4,
+    "delay_realised_steps": 3.4178,
+    "delay_minutes": 17,
+    "cv": 0.2,
+    "share": 0.00841,
+    "holds": 0.6493,
+    "rides": 766,
+    "per_step": 0.19,
+    "what": "bikes ridden from Business Park to Central Station (some end at a neighbour when it is full or closed)"
+   },
+   {
+    "from": "university",
+    "to": "business_park",
+    "shape": "pipe",
+    "delay": 2.4,
+    "delay_realised_steps": 2.3907,
+    "delay_minutes": 12,
+    "cv": 0.2,
+    "share": 0.00724,
+    "holds": 0.4204,
+    "rides": 709,
+    "per_step": 0.1758,
+    "what": "bikes ridden from University to Business Park (some end at a neighbour when it is full or closed)"
+   }
+  ],
+  "echoes": []
+ },
+ "riding_total": {
+  "mean": 12.2356,
+  "max": 35
+ },
+ "mean_levels": {
+  "riverside": 32.6183,
+  "old_town": 45.6649,
+  "central": 34.6094,
+  "waterfront": 23.4058,
+  "university": 24.2976,
+  "business_park": 22.595,
+  "van": 4.5734
+ }
+}

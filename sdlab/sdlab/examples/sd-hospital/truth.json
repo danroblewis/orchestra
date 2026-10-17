@@ -1,0 +1,111 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 1440,
+ "measured": [
+  "waiting",
+  "treatment",
+  "ward",
+  "discharged"
+ ],
+ "hidden_stocks": [
+  "lab"
+ ],
+ "schedule": {
+  "every": 24,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Day: 6 arrivals an hour",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 13,
+    "label": "Night: 2.5 arrivals an hour",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 2.5
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "waiting",
+    "to": "treatment",
+    "flow": "start",
+    "what": "Start treatment",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.35
+    }
+   },
+   {
+    "from": "treatment",
+    "to": "discharged",
+    "flow": "discharge",
+    "what": "Discharge from treatment",
+    "rate": {
+     "form": "proportional",
+     "stock": "treatment",
+     "k": 0.25
+    }
+   },
+   {
+    "from": "treatment",
+    "to": "ward",
+    "flow": "admit",
+    "what": "Admit to the ward",
+    "rate": {
+     "form": "proportional",
+     "stock": "treatment",
+     "k": 0.05
+    }
+   },
+   {
+    "from": "ward",
+    "to": "discharged",
+    "flow": "ward_out",
+    "what": "Discharge from the ward",
+    "rate": {
+     "form": "proportional",
+     "stock": "ward",
+     "k": 0.02
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "waiting",
+    "flow": "arrive",
+    "what": "Arrivals",
+    "rate": {
+     "form": "constant",
+     "value": 6
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [
+   {
+    "from": "treatment",
+    "to": "ward",
+    "via": "lab",
+    "via_name": "Waiting for lab results",
+    "shape": "exp",
+    "delay": 5.0,
+    "what": "Send to the lab, then Lab results: admit"
+   }
+  ],
+  "echoes": []
+ }
+}

@@ -1,0 +1,277 @@
+{
+ "id": "sd-services-truth",
+ "name": "SD: Web services: the truth",
+ "time_unit": "second",
+ "seed": 20261016,
+ "steps": 3600,
+ "long_steps": 36000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "frontend",
+   "name": "Frontend in flight",
+   "unit": "requests",
+   "initial": 40,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "api",
+   "name": "API in flight",
+   "unit": "requests",
+   "initial": 30,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "auth",
+   "name": "Auth in flight",
+   "unit": "requests",
+   "initial": 10,
+   "x": 560,
+   "y": 80
+  },
+  {
+   "id": "catalog",
+   "name": "Catalog in flight",
+   "unit": "requests",
+   "initial": 20,
+   "x": 560,
+   "y": 320
+  },
+  {
+   "id": "queue",
+   "name": "Order queue",
+   "unit": "messages",
+   "initial": 10,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "workers",
+   "name": "Workers busy",
+   "unit": "messages",
+   "initial": 5,
+   "x": 1040,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "visits",
+   "name": "Visitors' requests",
+   "from": null,
+   "to": "frontend",
+   "rate": {
+    "form": "constant",
+    "value": 50
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fe_done",
+   "name": "Frontend finishes",
+   "from": "frontend",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "frontend",
+    "k": 0.8
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fe_api",
+   "name": "Frontend calls the API",
+   "from": null,
+   "to": "api",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "frontend",
+      "k": 0.8
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "api_done",
+   "name": "API finishes",
+   "from": "api",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "api",
+    "k": 0.9
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "api_auth",
+   "name": "API calls auth",
+   "from": null,
+   "to": "auth",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "api",
+      "k": 0.9
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "auth_done",
+   "name": "Auth finishes",
+   "from": "auth",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "auth",
+    "k": 0.6666666666666666
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "api_catalog",
+   "name": "API calls the catalog",
+   "from": null,
+   "to": "catalog",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "api",
+      "k": 1.8
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cat_done",
+   "name": "Catalog finishes",
+   "from": "catalog",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "orders",
+   "name": "API queues orders",
+   "from": null,
+   "to": "queue",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "api",
+      "k": 0.05
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "take",
+   "name": "Workers take orders",
+   "from": "queue",
+   "to": "workers",
+   "rate": {
+    "form": "proportional",
+    "stock": "queue",
+    "k": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "job_done",
+   "name": "Jobs finish",
+   "from": "workers",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "workers",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "wk_auth",
+   "name": "Workers call auth",
+   "from": null,
+   "to": "auth",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "workers",
+      "k": 0.4
+     }
+    ]
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 1800,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal traffic",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 50
+     }
+    }
+   },
+   {
+    "t": 601,
+    "label": "A sale (120 a second)",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 120
+     }
+    }
+   },
+   {
+    "t": 901,
+    "label": "After the sale (60 a second)",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 1201,
+    "label": "Quiet (30 a second)",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,398 @@
+{
+ "id": "shop",
+ "name": "Web shop (30 services, queues and workers)",
+ "description": "Two hours of a small online shop, second by second, as its Prometheus dashboard saw them: requests in flight (being served or waiting for a slot) in each of its 30 gRPC services, messages waiting in each of its 6 queues (consumer lag), and jobs in progress in each of its 6 worker pools. Customer and partner traffic arrives at three edge services; it rises and falls through the day, and there is a flash sale and a burst of partner traffic. Services call other services, some of them publish messages, each pool takes messages from one queue, and workers call services and publish messages of their own. Which service calls which, how often, and who publishes and consumes what is not measured: that is the question. No counters are given, only the levels. The worker pools were scaled up and down five times, including an outage of one pool (each change starts an era). Start plays the two hours live, a second per tick (Speed sets how fast); Import history loads them all at once. Then run Discover flows. A good discovery should report which stocks move things into which (a queue's messages becoming a pool's jobs), which stocks only drive another stock's arrivals without losing anything themselves (a caller's requests in flight driving its callee's arrivals), and roughly how many arrivals per second each unit of the driver causes. The answer is in shop/README.md; do not read it first.",
+ "time_unit": "second",
+ "horizon": 300,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "web_frontend",
+   "name": "web-frontend: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 120,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "mobile_api",
+   "name": "mobile-api: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 120,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "api_gateway",
+   "name": "api-gateway: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 320,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "feature_flags",
+   "name": "feature-flags: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 320,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "analytics_ingest",
+   "name": "analytics-ingest: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 320,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "auth",
+   "name": "auth: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 520,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "search",
+   "name": "search: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 520,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "recommendations",
+   "name": "recommendations: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 520,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "checkout",
+   "name": "checkout: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 520,
+   "y": 350,
+   "group": "shop"
+  },
+  {
+   "id": "merchant_api",
+   "name": "merchant-api: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 520,
+   "y": 440,
+   "group": "shop"
+  },
+  {
+   "id": "session",
+   "name": "session: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "catalog",
+   "name": "catalog: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "cart",
+   "name": "cart: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "payment",
+   "name": "payment: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 350,
+   "group": "shop"
+  },
+  {
+   "id": "tax",
+   "name": "tax: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 440,
+   "group": "shop"
+  },
+  {
+   "id": "shipping_quote",
+   "name": "shipping-quote: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 530,
+   "group": "shop"
+  },
+  {
+   "id": "order_service",
+   "name": "order-service: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 720,
+   "y": 620,
+   "group": "shop"
+  },
+  {
+   "id": "pricing",
+   "name": "pricing: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "inventory",
+   "name": "inventory: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "reviews",
+   "name": "reviews: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "image_service",
+   "name": "image-service: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 350,
+   "group": "shop"
+  },
+  {
+   "id": "fraud_check",
+   "name": "fraud-check: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 440,
+   "group": "shop"
+  },
+  {
+   "id": "address_validation",
+   "name": "address-validation: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 530,
+   "group": "shop"
+  },
+  {
+   "id": "loyalty",
+   "name": "loyalty: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 620,
+   "group": "shop"
+  },
+  {
+   "id": "notification",
+   "name": "notification: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 920,
+   "y": 710,
+   "group": "shop"
+  },
+  {
+   "id": "user_profile",
+   "name": "user-profile: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 1120,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "currency",
+   "name": "currency: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 1120,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "promotions",
+   "name": "promotions: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 1120,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "email_gateway",
+   "name": "email-gateway: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 1120,
+   "y": 350,
+   "group": "shop"
+  },
+  {
+   "id": "sms_gateway",
+   "name": "sms-gateway: requests in flight",
+   "unit": "requests",
+   "initial": 0,
+   "x": 1120,
+   "y": 440,
+   "group": "shop"
+  },
+  {
+   "id": "order_placed",
+   "name": "order-placed: messages waiting",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1320,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "payment_captured",
+   "name": "payment-captured: messages waiting",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1320,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "email_requested",
+   "name": "email-requested: messages waiting",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1320,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "product_changed",
+   "name": "product-changed: messages waiting",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1320,
+   "y": 350,
+   "group": "shop"
+  },
+  {
+   "id": "profile_updated",
+   "name": "profile-updated: messages waiting",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1320,
+   "y": 440,
+   "group": "shop"
+  },
+  {
+   "id": "clickstream",
+   "name": "clickstream: messages waiting",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1320,
+   "y": 530,
+   "group": "shop"
+  },
+  {
+   "id": "fulfillment_workers",
+   "name": "fulfillment-workers: messages in progress",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1520,
+   "y": 80,
+   "group": "shop"
+  },
+  {
+   "id": "loyalty_workers",
+   "name": "loyalty-workers: messages in progress",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1520,
+   "y": 170,
+   "group": "shop"
+  },
+  {
+   "id": "email_workers",
+   "name": "email-workers: messages in progress",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1520,
+   "y": 260,
+   "group": "shop"
+  },
+  {
+   "id": "search_indexer",
+   "name": "search-indexer: messages in progress",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1520,
+   "y": 350,
+   "group": "shop"
+  },
+  {
+   "id": "profile_sync_workers",
+   "name": "profile-sync-workers: messages in progress",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1520,
+   "y": 440,
+   "group": "shop"
+  },
+  {
+   "id": "analytics_workers",
+   "name": "analytics-workers: messages in progress",
+   "unit": "messages",
+   "initial": 0,
+   "x": 1520,
+   "y": 530,
+   "group": "shop"
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "shop/history"
+ },
+ "sensors": [
+  {
+   "program": "shop/live"
+  }
+ ]
+}

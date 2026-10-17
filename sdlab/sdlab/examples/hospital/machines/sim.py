@@ -16,11 +16,17 @@ patients, and nothing measures them:
 Everything is discrete-event in continuous hours; `run()` cuts it into 1-hour steps and returns
 the end-of-step level of every stock and the count of every true flow in every step.
 
+`run(seed, steps)` runs any number of hours. The 60-day schedule (staffing eras, flu season, heat
+wave, surges) recurs every 60 days: the first 60 days are always exactly the original ones, and
+each later 60 days moves its events by a few days (drawn from its own seeded generator) and gets
+fresh arrivals. The structure and every parameter stay the same at any length.
+
     python sim.py [seed]          prints a summary of one run
 """
 
 from __future__ import annotations
 
+import bisect
 import heapq
 import json
 import math
@@ -31,6 +37,8 @@ from dataclasses import dataclass, field
 DAYS = 60
 STEPS = DAYS * 24                     # one step is one hour
 SEED = 20261016
+PERIOD = STEPS                        # the schedule recurs every 60 days
+LONG_STEPS = 2 * 365 * 24             # two years of hours: the long run for the discovery test bed
 
 MEASURED_STOCKS = ["waiting", "treatment", "ward", "discharged", "lwbs"]
 HIDDEN_STOCKS = ["imaging", "lab", "followup"]
@@ -88,23 +96,44 @@ HEAT = (38 * 24 + 10, 38 * 24 + 22, 1.8)                 # a heat wave: arrivals
 FLU = (25 * 24, 45 * 24, 0.35)                           # flu season: ramps up to +35% and back
 
 
-def arrival_rate(h: float) -> float:
-    """New patients per hour at hour h (not counting surges)."""
+def schedule(seed: int, k: int) -> dict:
+    """Period k's events (the k-th 60 days) in absolute hours: staffed-bed changes [(hour, beds,
+    label)], surges, the heat wave and the flu season. Period 0 is the original schedule; later
+    ones move the same events by a few days, drawn from a generator of their own (so the
+    simulation's own random draws are untouched)."""
+    if k == 0:
+        return {"beds": [(day * 24, b, label) for day, b, label in BEDS], "surges": list(SURGES), "heat": HEAT, "flu": FLU}
+    r, off = random.Random(seed * 1_000_003 + k), k * PERIOD
+    sick = 15 + r.randint(-3, 3)
+    back = sick + r.randint(6, 10)
+    flu = 25 + r.randint(-3, 3)                              # the flu block: season, extra staff, heat wave
+    heat = flu + 13 + r.randint(-2, 2)
+    beds = [(sick, 12, BEDS[1][2]), (back, 16, BEDS[2][2]), (flu + 7, 20, BEDS[3][2]), (flu + 25, 16, BEDS[4][2])]
+    return {"beds": [(off + d * 24, b, label) for d, b, label in beds],
+            "surges": [(off + (20 + r.randint(-6, 6)) * 24 + r.randint(0, 23), *SURGES[0][1:]),
+                       (off + (44 + r.randint(-6, 6)) * 24 + r.randint(0, 23), *SURGES[1][1:])],
+            "heat": (off + heat * 24 + 10, off + heat * 24 + 22, HEAT[2]),
+            "flu": (off + flu * 24, off + (flu + 20) * 24, FLU[2])}
+
+
+def arrival_rate(h: float, sched: dict | None = None) -> float:
+    """New patients per hour at hour h (not counting surges), under the schedule of h's period
+    (the original 60 days by default)."""
     hod, dow = h % 24, int(h // 24) % 7                  # day 0 is a Monday
     daily = 1 + 0.6 * math.sin(2 * math.pi * (hod - 8) / 24) + 0.15 * math.sin(4 * math.pi * (hod - 10) / 24)
     weekly = [1.15, 1.05, 1.0, 1.0, 1.0, 0.9, 0.9][dow]
-    a, b, amp = FLU
+    sched = sched or schedule(SEED, 0)
+    a, b, amp = sched["flu"]
     flu = 1 + amp * max(0.0, math.sin(math.pi * (h - a) / (b - a))) if a <= h <= b else 1.0
-    heat = HEAT[2] if HEAT[0] <= h < HEAT[1] else 1.0
+    h0, h1, x = sched["heat"]
+    heat = x if h0 <= h < h1 else 1.0
     return P["base_arrivals_per_hour"] * max(0.15, daily) * weekly * flu * heat
 
 
-def beds_at(h: float) -> int:
-    n = BEDS[0][1]
-    for day, beds, _ in BEDS:
-        if h >= day * 24:
-            n = beds
-    return n
+def beds_at(h: float, changes: list[tuple[float, int, str]] | None = None) -> int:
+    """Staffed ED beds at hour h, given every change [(hour, beds, label)] in order."""
+    changes = changes or schedule(SEED, 0)["beds"]
+    return changes[max(0, bisect.bisect_right([c[0] for c in changes], h) - 1)][1]
 
 
 def lognormal(rng: random.Random, mean: float, sd: float) -> float:
@@ -130,9 +159,11 @@ class Result:
     eras: list[dict] = field(default_factory=list)                   # [{t, label}] t = first step of the era
     delays: dict[str, list[float]] = field(default_factory=dict)     # every realised delay, hours
     patients: int = 0
+    beds: list[tuple] = field(default_factory=list)                  # every staffed-bed change (hour, beds, label)
+    surges: list[tuple] = field(default_factory=list)                # every surge (hour, over hours, patients, what)
 
 
-def run(seed: int = SEED) -> Result:
+def run(seed: int = SEED, steps: int = STEPS) -> Result:
     rng = random.Random(seed)
     ev: list[tuple[float, int, int, str, int]] = []   # (time, ticks first, order, kind, patient)
     seq = 0
@@ -142,28 +173,35 @@ def run(seed: int = SEED) -> Result:
         seq += 1
         heapq.heappush(ev, (t, 0 if kind == "tick" else 1, seq, kind, pid))
 
-    horizon = float(STEPS)
+    assert steps >= 1
+    horizon = float(steps)
     patients: dict[int, Patient] = {}
     level = {s: 0 for s in STOCKS}
     queue: list[int] = []                                            # FIFO of patients waiting for a bed
-    res = Result(seed=seed, levels={s: [] for s in STOCKS}, flows={f: [0] * STEPS for f in FLOWS},
+    res = Result(seed=seed, levels={s: [] for s in STOCKS}, flows={f: [0] * steps for f in FLOWS},
                  delays={"imaging": [], "lab": [], "followup": []})
+    scheds = [schedule(seed, k) for k in range(-(-steps // PERIOD))]
+    changes = [c for s in scheds for c in s["beds"]]
+    change_hours = [c[0] for c in changes]
 
-    # arrivals: thinning of the non-homogeneous Poisson process, plus the surges
+    # arrivals: thinning of the non-homogeneous Poisson process, plus the surges. The first
+    # period draws from the simulation's generator, as it always has; later periods from their own.
     lam_max = P["base_arrivals_per_hour"] * 1.8 * 1.15 * 1.35 * HEAT[2]
-    t = 0.0
-    while True:
-        t += rng.expovariate(lam_max)
-        if t >= horizon:
-            break
-        if rng.random() < arrival_rate(t) / lam_max:
-            at(t, "arrive")
-    for h, span, n, _ in SURGES:
-        for _ in range(n):
-            at(h + rng.uniform(0, span), "arrive")
-    for day, _, _ in BEDS[1:]:
-        at(day * 24.0, "beds")
-    for k in range(1, STEPS + 1):
+    for k, sched in enumerate(scheds):
+        r = rng if k == 0 else random.Random(seed * 1_000_003 + 500_000 + k)
+        t, end = float(k * PERIOD), float((k + 1) * PERIOD)
+        while True:
+            t += r.expovariate(lam_max)
+            if t >= end:
+                break
+            if r.random() < arrival_rate(t, sched) / lam_max:
+                at(t, "arrive")
+        for h, span, n, _ in sched["surges"]:
+            for _ in range(n):
+                at(h + r.uniform(0, span), "arrive")
+    for h, _, _ in changes[1:]:
+        at(float(h), "beds")
+    for k in range(1, steps + 1):
         at(float(k), "tick")
 
     def move(p: Patient, to: str, flow: str, now: float) -> None:
@@ -172,13 +210,13 @@ def run(seed: int = SEED) -> Result:
             level[p.where] -= 1
         level[to] += 1
         p.where = to
-        res.flows[flow][min(STEPS - 1, int(now))] += 1
+        res.flows[flow][min(steps - 1, int(now))] += 1
 
     def occupied() -> int:
         return level["treatment"]
 
     def start_treatments(now: float) -> None:
-        while queue and occupied() < beds_at(now):
+        while queue and occupied() < changes[bisect.bisect_right(change_hours, now) - 1][1]:
             p = patients[queue.pop(0)]
             move(p, "treatment", "start", now)
             begin_treatment(p, now)
@@ -271,8 +309,19 @@ def run(seed: int = SEED) -> Result:
             start_treatments(now)
 
     res.patients = len(patients)
-    res.eras = [{"t": int(day * 24) + 1, "label": label} for day, _, label in BEDS]
+    res.beds = [c for c in changes if c[0] < horizon]
+    res.surges = [x for s in scheds for x in s["surges"] if x[0] < horizon]
+    res.eras = [{"t": int(h) + 1, "label": label} for h, _, label in res.beds]
     return res
+
+
+def measured(seed: int = SEED, steps: int = STEPS) -> dict:
+    """What SD Lab sees of a run: the dashboard's stocks and counters every hour, and the eras."""
+    res = cached(seed) if steps == STEPS else run(seed, steps)
+    return {"t": list(range(1, steps + 1)),
+            "levels": {s: list(res.levels[s]) for s in MEASURED_STOCKS},
+            "eras": [{"start": e["t"], "label": e["label"]} for e in res.eras],
+            "counters": {f: list(res.flows[f]) for f in MEASURED_FLOWS}}
 
 
 def ground_truth(res: Result) -> dict:
@@ -283,12 +332,12 @@ def ground_truth(res: Result) -> dict:
     lab_out = sum(res.flows["lab_back"]) + sum(res.flows["lab_admit"])
     return {
         "seed": res.seed,
-        "steps": STEPS,
+        "steps": len(levels["waiting"]),
         "step": "1 hour",
         "patients": res.patients,
         "parameters": P,
-        "beds": [{"day": d, "beds": b, "label": lab} for d, b, lab in BEDS],
-        "surges": [{"hour": h, "over_hours": s, "patients": n, "what": w} for h, s, n, w in SURGES],
+        "beds": [{"day": h // 24, "beds": b, "label": lab} for h, b, lab in res.beds],
+        "surges": [{"hour": h, "over_hours": s, "patients": n, "what": w} for h, s, n, w in res.surges],
         "measured": {"stocks": MEASURED_STOCKS, "flows": MEASURED_FLOWS},
         "hidden_stocks": {
             "imaging": {"between": {"out_of": "waiting", "into": ["treatment"]},
@@ -310,7 +359,7 @@ def ground_truth(res: Result) -> dict:
                          "kind": "higher-order delay (lognormal, cv 0.3)", "mean_level": mean(levels["followup"]), "max_level": max(levels["followup"])},
         },
         "flows": {f: {"from": a, "to": b, "measured": f in MEASURED_FLOWS, "total": sum(res.flows[f]),
-                      "per_step_mean": round(sum(res.flows[f]) / STEPS, 4), "per_step": res.flows[f]}
+                      "per_step_mean": round(sum(res.flows[f]) / len(res.flows[f]), 4), "per_step": res.flows[f]}
                   for f, (a, b) in FLOWS.items()},
         "unmeasured_flows": sorted(hidden_flows),
         "levels": levels,

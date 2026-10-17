@@ -1,0 +1,186 @@
+{
+ "id": "sd-hidden-chain-truth",
+ "name": "SD: Hidden two-stage delay: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 1500,
+ "long_steps": 15000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "received",
+   "name": "Parts received",
+   "unit": "parts",
+   "initial": 30,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "shipped",
+   "name": "Ready to ship",
+   "unit": "parts",
+   "initial": 10,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "scrap",
+   "name": "Scrap bin",
+   "unit": "parts",
+   "initial": 5,
+   "x": 320,
+   "y": 40
+  },
+  {
+   "id": "cleaning",
+   "name": "Being cleaned",
+   "unit": "parts",
+   "initial": 40,
+   "x": 320,
+   "y": 360,
+   "measured": false
+  },
+  {
+   "id": "repair",
+   "name": "Being repaired",
+   "unit": "parts",
+   "initial": 60,
+   "x": 560,
+   "y": 360,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "arrive",
+   "name": "Parts arrive",
+   "from": null,
+   "to": "received",
+   "rate": {
+    "form": "constant",
+    "value": 8
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "to_clean",
+   "name": "Start cleaning",
+   "from": "received",
+   "to": "cleaning",
+   "rate": {
+    "form": "proportional",
+    "stock": "received",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "to_repair",
+   "name": "Cleaned",
+   "from": "cleaning",
+   "to": "repair",
+   "rate": {
+    "form": "proportional",
+    "stock": "cleaning",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "repaired",
+   "name": "Repaired",
+   "from": "repair",
+   "to": "shipped",
+   "rate": {
+    "form": "proportional",
+    "stock": "repair",
+    "k": 0.125
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "scrapped",
+   "name": "Scrapped on arrival",
+   "from": "received",
+   "to": "scrap",
+   "rate": {
+    "form": "proportional",
+    "stock": "received",
+    "k": 0.05
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ship",
+   "name": "Ship",
+   "from": "shipped",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "shipped",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "empty_scrap",
+   "name": "Scrap collected",
+   "from": "scrap",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "scrap",
+    "k": 0.1
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 150,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal (8 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 41,
+    "label": "A big delivery (20 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   },
+   {
+    "t": 56,
+    "label": "Few parts (3 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3
+     }
+    }
+   },
+   {
+    "t": 96,
+    "label": "Normal again (9 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   }
+  ]
+ }
+}

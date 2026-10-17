@@ -1,0 +1,95 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 730,
+ "measured": [
+  "warehouse",
+  "shop"
+ ],
+ "hidden_stocks": [
+  "trucks"
+ ],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (40 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 100,
+    "label": "Demand up (60 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 240,
+    "label": "Promotion (80 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 80
+     }
+    }
+   },
+   {
+    "t": 254,
+    "label": "Back to normal (45 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 45
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [],
+  "outside": [
+   {
+    "to": "warehouse",
+    "flow": "produce",
+    "what": "Production",
+    "rate": {
+     "form": "gap",
+     "stock": "warehouse",
+     "goal": 300,
+     "time": 5
+    }
+   },
+   {
+    "from": "shop",
+    "flow": "sell",
+    "what": "Sales",
+    "rate": {
+     "form": "constant",
+     "value": 40
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [
+   {
+    "from": "warehouse",
+    "to": "shop",
+    "via": "trucks",
+    "via_name": "On trucks",
+    "shape": "exp",
+    "delay": 3.0,
+    "what": "Ship to the shop, then Deliveries"
+   }
+  ],
+  "echoes": []
+ }
+}

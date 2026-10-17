@@ -1,0 +1,301 @@
+{
+ "seed": 20261016,
+ "steps": 182,
+ "step": "1 working day",
+ "cards": 1266,
+ "parameters": {
+  "sprint_days": 14,
+  "sprint_mean": 76.0,
+  "effort_mean": 1.8,
+  "effort_cv": 0.6,
+  "bug_effort_mean": 1.5,
+  "rework_effort_mean": 1.0,
+  "p_triage": 0.2,
+  "p_review": 0.7,
+  "review_wip": 18,
+  "p_test": 0.4,
+  "p_reject": 0.2,
+  "p_defect": 0.25,
+  "defect_days": [
+   7,
+   21
+  ],
+  "dev_wip_per_dev": 2,
+  "p_pull": 0.15
+ },
+ "eras": [
+  {
+   "t": 1,
+   "label": "Start"
+  },
+  {
+   "t": 92,
+   "label": "Nine developers join (24 developers)"
+  },
+  {
+   "t": 141,
+   "label": "Release freeze: nothing goes to Done"
+  },
+  {
+   "t": 148,
+   "label": "Freeze lifted"
+  }
+ ],
+ "configuration": [
+  {
+   "from_day": 1,
+   "developers": 15,
+   "release_freeze": false,
+   "label": "Start"
+  },
+  {
+   "from_day": 92,
+   "developers": 24,
+   "release_freeze": false,
+   "label": "Nine developers join (24 developers)"
+  },
+  {
+   "from_day": 141,
+   "developers": 24,
+   "release_freeze": true,
+   "label": "Release freeze: nothing goes to Done"
+  },
+  {
+   "from_day": 148,
+   "developers": 24,
+   "release_freeze": false,
+   "label": "Freeze lifted"
+  }
+ ],
+ "measured": {
+  "stocks": [
+   "backlog",
+   "dev",
+   "review",
+   "testing",
+   "done",
+   "bugs"
+  ],
+  "flows": []
+ },
+ "hidden_stocks": {
+  "defects": {
+   "between": {
+    "timed_by_gains_of": "done",
+    "into": "bugs"
+   },
+   "mean_level": 23.033,
+   "max_level": 50,
+   "realised_delay": 14.039
+  }
+ },
+ "flows": {
+  "planned": {
+   "from": null,
+   "to": "backlog",
+   "total": 978,
+   "per_step_mean": 5.3736
+  },
+  "pulled": {
+   "from": "backlog",
+   "to": "dev",
+   "total": 965,
+   "per_step_mean": 5.3022
+  },
+  "to_review": {
+   "from": "dev",
+   "to": "review",
+   "total": 1500,
+   "per_step_mean": 8.2418
+  },
+  "approved": {
+   "from": "review",
+   "to": "testing",
+   "total": 1491,
+   "per_step_mean": 8.1923
+  },
+  "rejected": {
+   "from": "testing",
+   "to": "dev",
+   "total": 265,
+   "per_step_mean": 1.456
+  },
+  "released": {
+   "from": "testing",
+   "to": "done",
+   "total": 1211,
+   "per_step_mean": 6.6538
+  },
+  "triaged": {
+   "from": "bugs",
+   "to": "dev",
+   "total": 278,
+   "per_step_mean": 1.5275
+  },
+  "shipped_defect": {
+   "from": null,
+   "to": "defects",
+   "total": 310,
+   "per_step_mean": 1.7033
+  },
+  "reported": {
+   "from": "defects",
+   "to": "bugs",
+   "total": 288,
+   "per_step_mean": 1.5824
+  }
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms, one working day per step. Cards move left to right; testing sends some back to development; bugs are a delayed echo of Done: things that ended come back later as new arrivals into Open bugs, through a stock nobody counts (defects not yet noticed), and Done keeps its cards. Pulling from the Backlog and moving into review are capacity-limited (idle developers, the review WIP limit), so the closest linear forms are a constant per era or a share of the source; k_realised = cards moved / cards in the source the day before.",
+  "moves": [
+   {
+    "from": "backlog",
+    "to": "dev",
+    "form": "proportional",
+    "k": 0.15,
+    "k_realised": 0.0948,
+    "wip_limit": [
+     {
+      "from_day": 1,
+      "cards": 30
+     },
+     {
+      "from_day": 92,
+      "cards": 48
+     }
+    ],
+    "days_at_wip_limit": 65,
+    "what": "15% of Backlog cards a day become ready and are started, unless development is at its WIP limit (2 cards per developer); before the hiring it often is"
+   },
+   {
+    "from": "dev",
+    "to": "review",
+    "form": "capacity-limited",
+    "value": 8.242,
+    "k_realised": 0.3221,
+    "per_era": [
+     {
+      "from_day": 1,
+      "developers": 15,
+      "k_realised": 0.2599
+     },
+     {
+      "from_day": 92,
+      "developers": 24,
+      "k_realised": 0.3451
+     },
+     {
+      "from_day": 141,
+      "developers": 24,
+      "k_realised": 0.4876
+     },
+     {
+      "from_day": 148,
+      "developers": 24,
+      "k_realised": 0.4619
+     }
+    ],
+    "days_review_full": 24,
+    "what": "each developer works one card a day (effort ~1.8 developer-days a card, bugs ~1.5, rework ~1.0); finished cards move to review while it holds fewer than 18 (its WIP limit). Proportional while development holds fewer cards than developers; at most developers / effort a day when it holds more"
+   },
+   {
+    "from": "review",
+    "to": "testing",
+    "form": "proportional",
+    "k": 0.7,
+    "k_realised": 0.6958,
+    "what": "approved: each card in review has a 70% chance a day (mean 1.4 days)"
+   },
+   {
+    "from": "testing",
+    "to": "done",
+    "form": "proportional",
+    "k": 0.32,
+    "k_realised": 0.2973,
+    "what": "tested and released: 40% of cards in testing finish a day, 80% of those pass (none during the freeze, then all held cards at once)"
+   },
+   {
+    "from": "testing",
+    "to": "dev",
+    "form": "proportional",
+    "k": 0.08,
+    "k_realised": 0.0651,
+    "what": "rework: 20% of finished tests send the card back to development"
+   },
+   {
+    "from": "bugs",
+    "to": "dev",
+    "form": "proportional",
+    "k": 0.2,
+    "k_realised": 0.2114,
+    "what": "triaged bugs jump the queue into development"
+   }
+  ],
+  "outside": [
+   {
+    "to": "backlog",
+    "form": "constant",
+    "value": 5.374,
+    "pulses": {
+     "every_days": 14,
+     "first_day": 1,
+     "mean_cards": 76.0,
+     "cards": [
+      76,
+      85,
+      81,
+      91,
+      72,
+      82,
+      76,
+      66,
+      69,
+      79,
+      67,
+      75,
+      59
+     ]
+    },
+    "what": "sprint planning: a batch of new cards every 14 days"
+   }
+  ],
+  "links": [],
+  "hidden": [],
+  "echoes": [
+   {
+    "source": "done",
+    "into": "bugs",
+    "shape": "uniform (between erlang and pipe)",
+    "delay": 14.0,
+    "delay_range": [
+     7,
+     21
+    ],
+    "realised_delay": 14.039,
+    "share": 0.25,
+    "share_realised": 0.256,
+    "holds": 23.033,
+    "stock": "defects",
+    "what": "25% of cards reaching Done carry a defect; it is noticed 7-21 days later and opens a bug card (the card stays in Done)"
+   }
+  ]
+ },
+ "mean_levels": {
+  "backlog": 55.989,
+  "dev": 25.632,
+  "review": 11.824,
+  "testing": 22.462,
+  "done": 538.538,
+  "bugs": 7.28,
+  "defects": 23.033
+ },
+ "max_levels": {
+  "backlog": 144,
+  "dev": 48,
+  "review": 18,
+  "testing": 84,
+  "done": 1211,
+  "bugs": 20,
+  "defects": 50
+ }
+}

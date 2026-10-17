@@ -1,0 +1,1298 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 1344,
+ "measured": [
+  "parcels",
+  "ready",
+  "road",
+  "queue",
+  "charging",
+  "workshop",
+  "energy"
+ ],
+ "hidden_stocks": [
+  "returning"
+ ],
+ "schedule": {
+  "every": 672,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Fast-charge bay closed: six chargers",
+    "set": {
+     "plug": {
+      "form": "gap",
+      "stock": "charging",
+      "goal": 6,
+      "time": 1
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 1,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 10
+     }
+    }
+   },
+   {
+    "t": 7,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 181
+     }
+    }
+   },
+   {
+    "t": 12,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 140
+     }
+    }
+   },
+   {
+    "t": 18,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 37
+     }
+    }
+   },
+   {
+    "t": 25,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 31,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 223
+     }
+    }
+   },
+   {
+    "t": 36,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 83
+     }
+    }
+   },
+   {
+    "t": 42,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 42
+     }
+    }
+   },
+   {
+    "t": 49,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 17
+     }
+    }
+   },
+   {
+    "t": 55,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 152
+     }
+    }
+   },
+   {
+    "t": 60,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 103
+     }
+    }
+   },
+   {
+    "t": 66,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 26
+     }
+    }
+   },
+   {
+    "t": 73,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 79,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 204
+     }
+    }
+   },
+   {
+    "t": 84,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 93
+     }
+    }
+   },
+   {
+    "t": 90,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 27
+     }
+    }
+   },
+   {
+    "t": 97,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 103,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 195
+     }
+    }
+   },
+   {
+    "t": 108,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 106
+     }
+    }
+   },
+   {
+    "t": 114,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 32
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 14
+     }
+    }
+   },
+   {
+    "t": 127,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 62
+     }
+    }
+   },
+   {
+    "t": 132,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 57
+     }
+    }
+   },
+   {
+    "t": 138,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 26
+     }
+    }
+   },
+   {
+    "t": 145,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 151,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 86
+     }
+    }
+   },
+   {
+    "t": 156,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 58
+     }
+    }
+   },
+   {
+    "t": 162,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 32
+     }
+    }
+   },
+   {
+    "t": 169,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 17
+     }
+    }
+   },
+   {
+    "t": 175,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 220
+     }
+    }
+   },
+   {
+    "t": 180,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 120
+     }
+    }
+   },
+   {
+    "t": 186,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 26
+     }
+    }
+   },
+   {
+    "t": 193,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 14
+     }
+    }
+   },
+   {
+    "t": 199,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 213
+     }
+    }
+   },
+   {
+    "t": 204,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 117
+     }
+    }
+   },
+   {
+    "t": 210,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 26
+     }
+    }
+   },
+   {
+    "t": 217,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 223,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 168
+     }
+    }
+   },
+   {
+    "t": 228,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 82
+     }
+    }
+   },
+   {
+    "t": 234,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 29
+     }
+    }
+   },
+   {
+    "t": 241,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 10
+     }
+    }
+   },
+   {
+    "t": 247,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 177
+     }
+    }
+   },
+   {
+    "t": 252,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 106
+     }
+    }
+   },
+   {
+    "t": 258,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 42
+     }
+    }
+   },
+   {
+    "t": 265,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 12
+     }
+    }
+   },
+   {
+    "t": 271,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 155
+     }
+    }
+   },
+   {
+    "t": 276,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 116
+     }
+    }
+   },
+   {
+    "t": 282,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 42
+     }
+    }
+   },
+   {
+    "t": 289,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 10
+     }
+    }
+   },
+   {
+    "t": 295,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 86
+     }
+    }
+   },
+   {
+    "t": 300,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 61
+     }
+    }
+   },
+   {
+    "t": 306,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 28
+     }
+    }
+   },
+   {
+    "t": 313,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 18
+     }
+    }
+   },
+   {
+    "t": 319,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 78
+     }
+    }
+   },
+   {
+    "t": 324,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 58
+     }
+    }
+   },
+   {
+    "t": 330,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 31
+     }
+    }
+   },
+   {
+    "t": 337,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 343,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 187
+     }
+    }
+   },
+   {
+    "t": 348,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 86
+     }
+    }
+   },
+   {
+    "t": 354,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 27
+     }
+    }
+   },
+   {
+    "t": 361,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 17
+     }
+    }
+   },
+   {
+    "t": 367,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 212
+     }
+    }
+   },
+   {
+    "t": 372,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 83
+     }
+    }
+   },
+   {
+    "t": 378,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 31
+     }
+    }
+   },
+   {
+    "t": 385,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 391,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 203
+     }
+    }
+   },
+   {
+    "t": 396,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 123
+     }
+    }
+   },
+   {
+    "t": 402,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 38
+     }
+    }
+   },
+   {
+    "t": 409,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 17
+     }
+    }
+   },
+   {
+    "t": 415,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 180
+     }
+    }
+   },
+   {
+    "t": 420,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 109
+     }
+    }
+   },
+   {
+    "t": 426,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 39
+     }
+    }
+   },
+   {
+    "t": 433,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 11
+     }
+    }
+   },
+   {
+    "t": 439,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 186
+     }
+    }
+   },
+   {
+    "t": 444,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 99
+     }
+    }
+   },
+   {
+    "t": 450,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 457,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 11
+     }
+    }
+   },
+   {
+    "t": 463,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 82
+     }
+    }
+   },
+   {
+    "t": 468,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 64
+     }
+    }
+   },
+   {
+    "t": 474,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 27
+     }
+    }
+   },
+   {
+    "t": 481,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 487,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 78
+     }
+    }
+   },
+   {
+    "t": 492,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 49
+     }
+    }
+   },
+   {
+    "t": 498,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 505,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 511,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 183
+     }
+    }
+   },
+   {
+    "t": 516,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 126
+     }
+    }
+   },
+   {
+    "t": 522,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 34
+     }
+    }
+   },
+   {
+    "t": 529,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 535,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 217
+     }
+    }
+   },
+   {
+    "t": 540,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 84
+     }
+    }
+   },
+   {
+    "t": 546,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 41
+     }
+    }
+   },
+   {
+    "t": 553,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   },
+   {
+    "t": 559,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 193
+     }
+    }
+   },
+   {
+    "t": 564,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 90
+     }
+    }
+   },
+   {
+    "t": 570,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 35
+     }
+    }
+   },
+   {
+    "t": 577,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 583,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 159
+     }
+    }
+   },
+   {
+    "t": 588,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 139
+     }
+    }
+   },
+   {
+    "t": 594,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 38
+     }
+    }
+   },
+   {
+    "t": 601,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 607,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 145
+     }
+    }
+   },
+   {
+    "t": 612,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 122
+     }
+    }
+   },
+   {
+    "t": 618,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 42
+     }
+    }
+   },
+   {
+    "t": 625,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 13
+     }
+    }
+   },
+   {
+    "t": 631,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 78
+     }
+    }
+   },
+   {
+    "t": 636,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 65
+     }
+    }
+   },
+   {
+    "t": 642,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 35
+     }
+    }
+   },
+   {
+    "t": 649,
+    "label": "Night: few parcels",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 17
+     }
+    }
+   },
+   {
+    "t": 655,
+    "label": "Morning peak",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 82
+     }
+    }
+   },
+   {
+    "t": 660,
+    "label": "Afternoon",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 51
+     }
+    }
+   },
+   {
+    "t": 666,
+    "label": "Evening",
+    "set": {
+     "orders": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 337,
+    "label": "Fast-charge bay opens: ten chargers",
+    "set": {
+     "plug": {
+      "form": "gap",
+      "stock": "charging",
+      "goal": 10,
+      "time": 1
+     }
+    },
+    "announce": true
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "ready",
+    "to": "road",
+    "flow": "dispatch",
+    "what": "Vans dispatched",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "parcels",
+       "k": 0.01
+      },
+      {
+       "stock": "road",
+       "k": -0.25
+      }
+     ]
+    }
+   },
+   {
+    "from": "queue",
+    "to": "charging",
+    "flow": "plug",
+    "what": "Plugged in",
+    "rate": {
+     "form": "gap",
+     "stock": "charging",
+     "goal": 6,
+     "time": 1
+    }
+   },
+   {
+    "from": "charging",
+    "to": "ready",
+    "flow": "charged",
+    "what": "Fully charged",
+    "rate": {
+     "form": "proportional",
+     "stock": "charging",
+     "k": 0.25
+    }
+   },
+   {
+    "from": "road",
+    "to": "workshop",
+    "flow": "breakdown",
+    "what": "Breaks down",
+    "rate": {
+     "form": "proportional",
+     "stock": "road",
+     "k": 0.004
+    }
+   },
+   {
+    "from": "workshop",
+    "to": "ready",
+    "flow": "repaired",
+    "what": "Repaired",
+    "rate": {
+     "form": "proportional",
+     "stock": "workshop",
+     "k": 0.041666666666666664
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "parcels",
+    "flow": "orders",
+    "what": "Parcels arrive",
+    "rate": {
+     "form": "constant",
+     "value": 15
+    }
+   },
+   {
+    "from": "parcels",
+    "flow": "deliver",
+    "what": "Parcels delivered",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "road",
+       "k": 10
+      }
+     ]
+    }
+   },
+   {
+    "to": "energy",
+    "flow": "draw",
+    "what": "Energy drawn",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "charging",
+       "k": 40
+      }
+     ]
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "charging",
+    "into": "energy",
+    "flow": "draw",
+    "what": "Energy drawn"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "road",
+    "to": "queue",
+    "via": "returning",
+    "via_name": "Vans driving back to the depot",
+    "shape": "exp",
+    "delay": 2.0,
+    "what": "Route finished, then Back at the depot"
+   }
+  ],
+  "echoes": []
+ }
+}

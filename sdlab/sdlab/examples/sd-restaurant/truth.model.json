@@ -1,0 +1,284 @@
+{
+ "id": "sd-restaurant-truth",
+ "name": "SD: Restaurant service: the truth",
+ "time_unit": "minute",
+ "seed": 20261016,
+ "steps": 2160,
+ "long_steps": 21600,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "waiting",
+   "name": "Guests waiting for a table",
+   "unit": "guests",
+   "initial": 0,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "seated",
+   "name": "Guests seated",
+   "unit": "guests",
+   "initial": 10,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "orders",
+   "name": "Orders waiting for the kitchen",
+   "unit": "dishes",
+   "initial": 2,
+   "x": 560,
+   "y": 80
+  },
+  {
+   "id": "cooking",
+   "name": "Dishes cooking",
+   "unit": "dishes",
+   "initial": 4,
+   "x": 800,
+   "y": 80
+  },
+  {
+   "id": "pass",
+   "name": "Dishes ready at the pass",
+   "unit": "dishes",
+   "initial": 1,
+   "x": 1280,
+   "y": 80
+  },
+  {
+   "id": "served",
+   "name": "Dishes served",
+   "unit": "dishes",
+   "initial": 0,
+   "x": 1520,
+   "y": 80,
+   "final": true
+  },
+  {
+   "id": "plating",
+   "name": "Dishes resting and being plated",
+   "unit": "dishes",
+   "initial": 1,
+   "x": 1040,
+   "y": 260,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "arrive",
+   "name": "Guests arrive",
+   "from": null,
+   "to": "waiting",
+   "rate": {
+    "form": "constant",
+    "value": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "walk_away",
+   "name": "Guests give up and leave",
+   "from": "waiting",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "waiting",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "seat",
+   "name": "Guests seated at a table",
+   "from": "waiting",
+   "to": "seated",
+   "rate": {
+    "form": "linear",
+    "c": 3,
+    "terms": [
+     {
+      "stock": "waiting",
+      "k": 0.15
+     },
+     {
+      "stock": "seated",
+      "k": -0.025
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "leave",
+   "name": "Guests pay and leave",
+   "from": "seated",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "seated",
+    "k": 0.016666666666666666
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "order",
+   "name": "Dishes ordered",
+   "from": null,
+   "to": "orders",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "seated",
+      "k": 0.035
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fire",
+   "name": "Cook starts a dish",
+   "from": "orders",
+   "to": "cooking",
+   "rate": {
+    "form": "proportional",
+    "stock": "orders",
+    "k": 0.15
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cooked",
+   "name": "Dish comes off the heat",
+   "from": "cooking",
+   "to": "plating",
+   "rate": {
+    "form": "proportional",
+    "stock": "cooking",
+    "k": 0.08333333333333333
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "plated",
+   "name": "Dish plated, put on the pass",
+   "from": "plating",
+   "to": "pass",
+   "rate": {
+    "form": "proportional",
+    "stock": "plating",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "serve",
+   "name": "Waiter takes the dish to the table",
+   "from": "pass",
+   "to": "served",
+   "rate": {
+    "form": "proportional",
+    "stock": "pass",
+    "k": 0.4
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 720,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Morning: a few guests (0.3 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0.3
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "One cook on the line",
+    "set": {
+     "fire": {
+      "form": "proportional",
+      "stock": "orders",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 61,
+    "label": "Lunch rush (2.2 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 2.2
+     }
+    }
+   },
+   {
+    "t": 211,
+    "label": "Afternoon lull (0.4 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0.4
+     }
+    }
+   },
+   {
+    "t": 331,
+    "label": "A second cook starts the evening shift",
+    "set": {
+     "fire": {
+      "form": "proportional",
+      "stock": "orders",
+      "k": 0.35
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 361,
+    "label": "Dinner rush (2.8 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 2.8
+     }
+    }
+   },
+   {
+    "t": 571,
+    "label": "Late tables (0.5 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0.5
+     }
+    }
+   },
+   {
+    "t": 661,
+    "label": "Doors close (no new guests)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   }
+  ]
+ }
+}

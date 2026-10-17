@@ -1,0 +1,135 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 365,
+ "measured": [
+  "backlog",
+  "dev",
+  "review",
+  "testing",
+  "done",
+  "bugs"
+ ],
+ "hidden_stocks": [
+  "undetected"
+ ],
+ "schedule": {
+  "every": 14,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Sprint planning: 25 cards",
+    "set": {
+     "planned": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   },
+   {
+    "t": 2,
+    "label": "Sprint: 1 card a day",
+    "set": {
+     "planned": {
+      "form": "constant",
+      "value": 1
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "backlog",
+    "to": "dev",
+    "flow": "pull",
+    "what": "Pull into development",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.15
+    }
+   },
+   {
+    "from": "dev",
+    "to": "review",
+    "flow": "to_review",
+    "what": "Ready for review",
+    "rate": {
+     "form": "proportional",
+     "stock": "dev",
+     "k": 0.25
+    }
+   },
+   {
+    "from": "review",
+    "to": "testing",
+    "flow": "to_test",
+    "what": "Reviewed",
+    "rate": {
+     "form": "proportional",
+     "stock": "review",
+     "k": 0.5
+    }
+   },
+   {
+    "from": "testing",
+    "to": "done",
+    "flow": "ship",
+    "what": "Ship",
+    "rate": {
+     "form": "proportional",
+     "stock": "testing",
+     "k": 0.3
+    }
+   },
+   {
+    "from": "testing",
+    "to": "dev",
+    "flow": "rework",
+    "what": "Testing sends back",
+    "rate": {
+     "form": "proportional",
+     "stock": "testing",
+     "k": 0.06
+    }
+   },
+   {
+    "from": "bugs",
+    "to": "dev",
+    "flow": "fix",
+    "what": "Bugs into development",
+    "rate": {
+     "form": "proportional",
+     "stock": "bugs",
+     "k": 0.2
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "backlog",
+    "flow": "planned",
+    "what": "Sprint planning adds work",
+    "rate": {
+     "form": "constant",
+     "value": 2
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [
+   {
+    "from": "testing",
+    "to": "bugs",
+    "via": "undetected",
+    "via_name": "Defects not yet noticed",
+    "shape": "exp",
+    "delay": 14.0,
+    "what": "A defect slips through, then A defect is noticed"
+   }
+  ],
+  "echoes": []
+ }
+}

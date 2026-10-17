@@ -1,0 +1,180 @@
+{
+ "id": "sd-reservoirs-truth",
+ "name": "SD: Reservoir cascade: the truth",
+ "time_unit": "hour",
+ "seed": 20261016,
+ "steps": 2000,
+ "long_steps": 20000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "upper",
+   "name": "Upper reservoir",
+   "unit": "ML",
+   "initial": 400,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "middle",
+   "name": "Middle reservoir",
+   "unit": "ML",
+   "initial": 600,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "lower",
+   "name": "Lower reservoir",
+   "unit": "ML",
+   "initial": 500,
+   "x": 560,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "inflow",
+   "name": "River into the valley",
+   "from": null,
+   "to": "upper",
+   "rate": {
+    "form": "constant",
+    "value": 20
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "release_upper",
+   "name": "Upper releases",
+   "from": "upper",
+   "to": "middle",
+   "rate": {
+    "form": "linear",
+    "c": -6,
+    "terms": [
+     {
+      "stock": "upper",
+      "k": 0.02
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "release_middle",
+   "name": "Middle releases",
+   "from": "middle",
+   "to": "lower",
+   "rate": {
+    "form": "linear",
+    "c": -6,
+    "terms": [
+     {
+      "stock": "middle",
+      "k": 0.015
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "release_lower",
+   "name": "Lower releases",
+   "from": "lower",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": -5,
+    "terms": [
+     {
+      "stock": "lower",
+      "k": 0.012
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "evap_upper",
+   "name": "Evaporation",
+   "from": "upper",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "upper",
+    "k": 0.0005
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "town",
+   "name": "Town water",
+   "from": "middle",
+   "to": null,
+   "rate": {
+    "form": "constant",
+    "value": 4
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 480,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal river (20 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   },
+   {
+    "t": 97,
+    "label": "Storm (90 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 90
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "After the storm (30 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 241,
+    "label": "Dry spell (5 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 5
+     }
+    }
+   },
+   {
+    "t": 361,
+    "label": "Rain again (25 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   }
+  ]
+ }
+}

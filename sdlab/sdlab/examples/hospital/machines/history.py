@@ -29,7 +29,7 @@ def wanted(stdin: str) -> tuple[list[str], list[str]]:
 
 def lines(res: sim.Result, stocks: list[str], flows: list[str]):
     eras = {e["t"]: e["label"] for e in res.eras if e["t"] > 1}
-    for i in range(sim.STEPS):
+    for i in range(len(res.levels[sim.MEASURED_STOCKS[0]])):
         row = {"t": i + 1, "levels": {s: res.levels[s][i] for s in stocks}, "flows": {f: res.flows[f][i] for f in flows}}
         if i + 1 in eras:
             row["era"] = eras[i + 1]

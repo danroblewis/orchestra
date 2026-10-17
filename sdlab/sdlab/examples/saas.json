@@ -1,0 +1,66 @@
+{
+ "id": "saas",
+ "name": "SaaS growth (a year of the dashboard)",
+ "description": "One year of a small software-as-a-service business, day by day, as its growth dashboard showed it at the end of every day: the ad budget not yet spent, the active website visitors, the free trials in progress, the paying customers, and the running total of customers who ever cancelled. No counters are given, only the five levels. During the year the team changed how much ad budget it releases each day several times and raised its prices once (each change starts an era); something nobody planned also happened. Start plays the year live, a day per tick (Speed sets how fast); Import history loads it all at once. Then run Discover flows. A good discovery should say which levels people move between, which levels only drive another level's arrivals without losing anything themselves, what each flow's rate depends on, how long people stay where they are (and whether that time is fixed or spread out), and whether anything comes back long after it left. The answer is in saas/README.md; do not read it first.",
+ "time_unit": "day",
+ "horizon": 90,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "ad_budget",
+   "name": "Ad budget left",
+   "unit": "dollars",
+   "initial": 6178,
+   "x": 120,
+   "y": 220,
+   "group": "saas"
+  },
+  {
+   "id": "visitors",
+   "name": "Active website visitors",
+   "unit": "people",
+   "initial": 3793,
+   "x": 340,
+   "y": 220,
+   "group": "saas"
+  },
+  {
+   "id": "trials",
+   "name": "Trials in progress",
+   "unit": "people",
+   "initial": 662,
+   "x": 560,
+   "y": 220,
+   "group": "saas"
+  },
+  {
+   "id": "paying",
+   "name": "Paying customers",
+   "unit": "people",
+   "initial": 2022,
+   "x": 780,
+   "y": 220,
+   "group": "saas"
+  },
+  {
+   "id": "churned",
+   "name": "Churned customers (all time)",
+   "unit": "people",
+   "initial": 1594,
+   "x": 1000,
+   "y": 220,
+   "group": "saas",
+   "final": true
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "saas/history"
+ },
+ "sensors": [
+  {
+   "program": "saas/live"
+  }
+ ]
+}

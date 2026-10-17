@@ -1,0 +1,69 @@
+{
+ "id": "kanban",
+ "name": "Kanban board (a software team, measured)",
+ "description": "Six months of a software team's kanban board, day by day, as the board showed it at the end of every day: cards in the Backlog, In development, In review, In testing and Done, and open bug cards. How cards move between the columns, how long each column holds them, and where the bugs come from is not measured: that is the question. No counters are given, only the levels. Work is planned in two-week sprints. The team changed twice: it grew in month 3, and there was a release freeze for a week in month 5 (each change starts an era). Start plays the six months live, a day per tick (Speed sets how fast); Import history loads them all at once. Then run Discover flows. A good discovery should report which column feeds which and how fast, whether anything goes backwards, what comes in from outside, and where the open bugs come from. The answer is in kanban/README.md; do not read it first.",
+ "time_unit": "day",
+ "horizon": 60,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "backlog",
+   "name": "Backlog",
+   "unit": "cards",
+   "initial": 0,
+   "x": 120,
+   "y": 200
+  },
+  {
+   "id": "dev",
+   "name": "In development",
+   "unit": "cards",
+   "initial": 0,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "review",
+   "name": "In review",
+   "unit": "cards",
+   "initial": 0,
+   "x": 520,
+   "y": 200
+  },
+  {
+   "id": "testing",
+   "name": "In testing",
+   "unit": "cards",
+   "initial": 0,
+   "x": 720,
+   "y": 200
+  },
+  {
+   "id": "done",
+   "name": "Done",
+   "unit": "cards",
+   "initial": 0,
+   "x": 920,
+   "y": 200,
+   "final": true
+  },
+  {
+   "id": "bugs",
+   "name": "Open bugs",
+   "unit": "cards",
+   "initial": 0,
+   "x": 320,
+   "y": 380
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "kanban/history"
+ },
+ "sensors": [
+  {
+   "program": "kanban/live"
+  }
+ ]
+}

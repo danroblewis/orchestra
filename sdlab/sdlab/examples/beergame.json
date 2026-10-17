@@ -1,0 +1,84 @@
+{
+ "id": "beergame",
+ "name": "Beer game (four tiers, measured books)",
+ "description": "A year of a beer supply chain, day by day, as its four companies' books saw them at the end of every day: a retailer, a wholesaler, a distributor and a brewery, each with the cases in its warehouse and the cases it owes its customers (orders received and not yet filled). How beer and orders travel between them, how long that takes, and how each company decides how much to order is not measured: that is the question. No counters are given, only the levels. Customer demand changed during the year, and the brewery's capacity changed twice (each change starts an era). Start plays the year live, a day per tick (Speed sets how fast); Import history loads it all at once. Then run Discover flows. A good discovery should report what moves from which stock to which and how long it takes, which stocks only drive another stock's arrivals without losing anything themselves, and what comes in from and goes out to the outside. The answer is in beergame/README.md; do not read it first.",
+ "time_unit": "day",
+ "horizon": 60,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "inv_brewery",
+   "name": "Brewery: cases in stock",
+   "unit": "cases",
+   "initial": 120,
+   "x": 120,
+   "y": 120
+  },
+  {
+   "id": "backlog_brewery",
+   "name": "Brewery: cases owed (orders not yet filled)",
+   "unit": "cases owed",
+   "initial": 40,
+   "x": 120,
+   "y": 300
+  },
+  {
+   "id": "inv_distributor",
+   "name": "Distributor: cases in stock",
+   "unit": "cases",
+   "initial": 120,
+   "x": 340,
+   "y": 120
+  },
+  {
+   "id": "backlog_distributor",
+   "name": "Distributor: cases owed (orders not yet filled)",
+   "unit": "cases owed",
+   "initial": 40,
+   "x": 340,
+   "y": 300
+  },
+  {
+   "id": "inv_wholesaler",
+   "name": "Wholesaler: cases in stock",
+   "unit": "cases",
+   "initial": 120,
+   "x": 560,
+   "y": 120
+  },
+  {
+   "id": "backlog_wholesaler",
+   "name": "Wholesaler: cases owed (orders not yet filled)",
+   "unit": "cases owed",
+   "initial": 40,
+   "x": 560,
+   "y": 300
+  },
+  {
+   "id": "inv_retailer",
+   "name": "Retailer: cases in stock",
+   "unit": "cases",
+   "initial": 120,
+   "x": 780,
+   "y": 120
+  },
+  {
+   "id": "backlog_retailer",
+   "name": "Retailer: cases owed (orders not yet filled)",
+   "unit": "cases owed",
+   "initial": 40,
+   "x": 780,
+   "y": 300
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "beergame/history"
+ },
+ "sensors": [
+  {
+   "program": "beergame/live"
+  }
+ ]
+}

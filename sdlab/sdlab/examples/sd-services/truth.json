@@ -1,0 +1,244 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 3600,
+ "measured": [
+  "frontend",
+  "api",
+  "auth",
+  "catalog",
+  "queue",
+  "workers"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 1800,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal traffic",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 50
+     }
+    }
+   },
+   {
+    "t": 601,
+    "label": "A sale (120 a second)",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 120
+     }
+    }
+   },
+   {
+    "t": 901,
+    "label": "After the sale (60 a second)",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 1201,
+    "label": "Quiet (30 a second)",
+    "set": {
+     "visits": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "queue",
+    "to": "workers",
+    "flow": "take",
+    "what": "Workers take orders",
+    "rate": {
+     "form": "proportional",
+     "stock": "queue",
+     "k": 0.3
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "frontend",
+    "flow": "visits",
+    "what": "Visitors' requests",
+    "rate": {
+     "form": "constant",
+     "value": 50
+    }
+   },
+   {
+    "from": "frontend",
+    "flow": "fe_done",
+    "what": "Frontend finishes",
+    "rate": {
+     "form": "proportional",
+     "stock": "frontend",
+     "k": 0.8
+    }
+   },
+   {
+    "to": "api",
+    "flow": "fe_api",
+    "what": "Frontend calls the API",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "frontend",
+       "k": 0.8
+      }
+     ]
+    }
+   },
+   {
+    "from": "api",
+    "flow": "api_done",
+    "what": "API finishes",
+    "rate": {
+     "form": "proportional",
+     "stock": "api",
+     "k": 0.9
+    }
+   },
+   {
+    "to": "auth",
+    "flow": "api_auth",
+    "what": "API calls auth",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "api",
+       "k": 0.9
+      }
+     ]
+    }
+   },
+   {
+    "from": "auth",
+    "flow": "auth_done",
+    "what": "Auth finishes",
+    "rate": {
+     "form": "proportional",
+     "stock": "auth",
+     "k": 0.6666666666666666
+    }
+   },
+   {
+    "to": "catalog",
+    "flow": "api_catalog",
+    "what": "API calls the catalog",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "api",
+       "k": 1.8
+      }
+     ]
+    }
+   },
+   {
+    "from": "catalog",
+    "flow": "cat_done",
+    "what": "Catalog finishes",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "queue",
+    "flow": "orders",
+    "what": "API queues orders",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "api",
+       "k": 0.05
+      }
+     ]
+    }
+   },
+   {
+    "from": "workers",
+    "flow": "job_done",
+    "what": "Jobs finish",
+    "rate": {
+     "form": "proportional",
+     "stock": "workers",
+     "k": 0.2
+    }
+   },
+   {
+    "to": "auth",
+    "flow": "wk_auth",
+    "what": "Workers call auth",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "workers",
+       "k": 0.4
+      }
+     ]
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "frontend",
+    "into": "api",
+    "flow": "fe_api",
+    "what": "Frontend calls the API"
+   },
+   {
+    "driver": "api",
+    "into": "auth",
+    "flow": "api_auth",
+    "what": "API calls auth"
+   },
+   {
+    "driver": "api",
+    "into": "catalog",
+    "flow": "api_catalog",
+    "what": "API calls the catalog"
+   },
+   {
+    "driver": "api",
+    "into": "queue",
+    "flow": "orders",
+    "what": "API queues orders"
+   },
+   {
+    "driver": "workers",
+    "into": "auth",
+    "flow": "wk_auth",
+    "what": "Workers call auth"
+   }
+  ],
+  "hidden": [],
+  "echoes": []
+ }
+}

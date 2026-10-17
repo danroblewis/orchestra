@@ -74,6 +74,19 @@ plus a bus crash (18 patients, day 20 14:00) and a chemical leak (10 patients, d
 Eras (staffed ED beds): 16 from t=1, 12 from t=361 (staff sickness), 16 from t=553, 20 from t=769
 (flu season), 16 from t=1201.
 
+## Long runs
+
+`sim.run(seed, steps)` and `sim.measured(seed, steps)` run any number of hours (`sim.LONG_STEPS` =
+17,520, two years, for the discovery test bed: about 0.6 s, 0.5 MB of JSON). The 60-day schedule
+recurs every 60 days: staff sickness (12 beds, starting day 12-18 of the period, for 6-10 days),
+flu-season staffing (20 beds, day 29-35, for 18 days) with the flu season (+35%, 20 days) and a
+heat wave in it, the bus crash and the chemical leak (each within 6 days of its original day, at
+any hour). The moves come from a generator of each period's own, and later periods draw fresh
+arrivals from their own generators, so the first 60 days are always exactly the run described
+here. Four eras per later period (the period start is not a change); the structure, the hidden
+stocks and every parameter are the same at any length. `measured()` is what `history.py` prints:
+the five levels, the two counters (`arrivals`, `admissions`) and the eras.
+
 ## What makes it hard
 
 All three hidden stocks are small or stationary and return patients to *measured* stocks, so

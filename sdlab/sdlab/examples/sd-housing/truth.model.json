@@ -1,0 +1,366 @@
+{
+ "id": "sd-housing-truth",
+ "name": "SD: City housing: the truth",
+ "time_unit": "week",
+ "seed": 20261016,
+ "steps": 520,
+ "long_steps": 5200,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "applications",
+   "name": "Permit applications in review",
+   "unit": "homes",
+   "initial": 50,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "permits",
+   "name": "Permits approved, not started",
+   "unit": "homes",
+   "initial": 65,
+   "x": 280,
+   "y": 380,
+   "measured": false
+  },
+  {
+   "id": "building",
+   "name": "Homes under construction",
+   "unit": "homes",
+   "initial": 180,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "for_sale",
+   "name": "Homes for sale",
+   "unit": "homes",
+   "initial": 650,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "under_contract",
+   "name": "Homes under contract",
+   "unit": "homes",
+   "initial": 165,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "occupied",
+   "name": "Occupied homes",
+   "unit": "homes",
+   "initial": 16300,
+   "x": 1040,
+   "y": 200
+  },
+  {
+   "id": "demolished",
+   "name": "Demolished or abandoned",
+   "unit": "homes",
+   "initial": 0,
+   "x": 1280,
+   "y": 200,
+   "final": true
+  },
+  {
+   "id": "hunters",
+   "name": "House hunters",
+   "unit": "households",
+   "initial": 820,
+   "x": 800,
+   "y": 40
+  }
+ ],
+ "flows": [
+  {
+   "id": "apply",
+   "name": "Permit applications filed",
+   "from": null,
+   "to": "applications",
+   "rate": {
+    "form": "linear",
+    "c": 41,
+    "terms": [
+     {
+      "stock": "for_sale",
+      "k": -0.05
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "approve",
+   "name": "Permit approved",
+   "from": "applications",
+   "to": "permits",
+   "rate": {
+    "form": "proportional",
+    "stock": "applications",
+    "k": 0.16666666666666666
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "withdraw",
+   "name": "Application withdrawn",
+   "from": "applications",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "applications",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "start",
+   "name": "Construction starts",
+   "from": "permits",
+   "to": "building",
+   "rate": {
+    "form": "proportional",
+    "stock": "permits",
+    "k": 0.1
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "complete",
+   "name": "Construction completed, listed",
+   "from": "building",
+   "to": "for_sale",
+   "rate": {
+    "form": "proportional",
+    "stock": "building",
+    "k": 0.038461538461538464
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "contract",
+   "name": "Offer accepted",
+   "from": "for_sale",
+   "to": "under_contract",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "hunters",
+      "k": 0.03
+     },
+     {
+      "stock": "for_sale",
+      "k": 0.01
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fall_through",
+   "name": "Sale falls through",
+   "from": "under_contract",
+   "to": "for_sale",
+   "rate": {
+    "form": "proportional",
+    "stock": "under_contract",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "close",
+   "name": "Sale closes, buyers move in",
+   "from": "under_contract",
+   "to": "occupied",
+   "rate": {
+    "form": "proportional",
+    "stock": "under_contract",
+    "k": 0.16666666666666666
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "relist",
+   "name": "Owners sell up",
+   "from": "occupied",
+   "to": "for_sale",
+   "rate": {
+    "form": "proportional",
+    "stock": "occupied",
+    "k": 0.0012
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "demolish",
+   "name": "Demolished or abandoned",
+   "from": "occupied",
+   "to": "demolished",
+   "rate": {
+    "form": "proportional",
+    "stock": "occupied",
+    "k": 0.0005
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "newcomers",
+   "name": "New households start looking",
+   "from": null,
+   "to": "hunters",
+   "rate": {
+    "form": "constant",
+    "value": 32
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "movers",
+   "name": "Owners start looking to move",
+   "from": null,
+   "to": "hunters",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "occupied",
+      "k": 0.001
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "buy",
+   "name": "Hunters buy",
+   "from": "hunters",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "hunters",
+      "k": 0.03
+     },
+     {
+      "stock": "for_sale",
+      "k": 0.01
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "give_up",
+   "name": "Hunters give up",
+   "from": "hunters",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "hunters",
+    "k": 0.02
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 260,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Zoning reform lapses: old rules, slow permits and building",
+    "set": {
+     "start": {
+      "form": "proportional",
+      "stock": "permits",
+      "k": 0.1
+     },
+     "complete": {
+      "form": "proportional",
+      "stock": "building",
+      "k": 0.038461538461538464
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 1,
+    "label": "Ordinary mortgage rates",
+    "set": {
+     "newcomers": {
+      "form": "constant",
+      "value": 32
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "Rates cut: a buying boom",
+    "set": {
+     "newcomers": {
+      "form": "constant",
+      "value": 50
+     }
+    }
+   },
+   {
+    "t": 113,
+    "label": "Rates jump: buyers stay away",
+    "set": {
+     "newcomers": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 131,
+    "label": "Zoning reform: faster permits and building",
+    "set": {
+     "start": {
+      "form": "proportional",
+      "stock": "permits",
+      "k": 0.3
+     },
+     "complete": {
+      "form": "proportional",
+      "stock": "building",
+      "k": 0.0625
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 181,
+    "label": "Rates ease",
+    "set": {
+     "newcomers": {
+      "form": "constant",
+      "value": 36
+     }
+    }
+   },
+   {
+    "t": 225,
+    "label": "Rates edge up",
+    "set": {
+     "newcomers": {
+      "form": "constant",
+      "value": 26
+     }
+    }
+   }
+  ]
+ }
+}

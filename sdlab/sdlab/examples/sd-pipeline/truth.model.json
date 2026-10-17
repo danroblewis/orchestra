@@ -1,0 +1,153 @@
+{
+ "id": "sd-pipeline-truth",
+ "name": "SD: Work pipeline: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 600,
+ "long_steps": 6000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "inbox",
+   "name": "Inbox",
+   "unit": "items",
+   "initial": 40,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "working",
+   "name": "Working",
+   "unit": "items",
+   "initial": 20,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "review",
+   "name": "In review",
+   "unit": "items",
+   "initial": 10,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "done",
+   "name": "Done",
+   "unit": "items",
+   "initial": 0,
+   "x": 800,
+   "y": 200,
+   "final": true
+  }
+ ],
+ "flows": [
+  {
+   "id": "arrive",
+   "name": "Work arrives",
+   "from": null,
+   "to": "inbox",
+   "rate": {
+    "form": "constant",
+    "value": 5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "start",
+   "name": "Start work",
+   "from": "inbox",
+   "to": "working",
+   "rate": {
+    "form": "proportional",
+    "stock": "inbox",
+    "k": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "finish",
+   "name": "Finish work",
+   "from": "working",
+   "to": "review",
+   "rate": {
+    "form": "proportional",
+    "stock": "working",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "approve",
+   "name": "Approve",
+   "from": "review",
+   "to": "done",
+   "rate": {
+    "form": "proportional",
+    "stock": "review",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "rework",
+   "name": "Send back",
+   "from": "review",
+   "to": "working",
+   "rate": {
+    "form": "proportional",
+    "stock": "review",
+    "k": 0.05
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 120,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal intake (5 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5
+     }
+    }
+   },
+   {
+    "t": 31,
+    "label": "Busy month (9 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "Quiet month (3 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3
+     }
+    }
+   },
+   {
+    "t": 91,
+    "label": "Normal intake again (6 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   }
+  ]
+ }
+}

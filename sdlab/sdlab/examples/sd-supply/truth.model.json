@@ -1,0 +1,135 @@
+{
+ "id": "sd-supply-truth",
+ "name": "SD: Supply chain: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 730,
+ "long_steps": 3650,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "warehouse",
+   "name": "Warehouse",
+   "unit": "cases",
+   "initial": 300,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "shop",
+   "name": "Shop",
+   "unit": "cases",
+   "initial": 200,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "trucks",
+   "name": "On trucks",
+   "unit": "cases",
+   "initial": 80,
+   "x": 320,
+   "y": 360,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "produce",
+   "name": "Production",
+   "from": null,
+   "to": "warehouse",
+   "rate": {
+    "form": "gap",
+    "stock": "warehouse",
+    "goal": 300,
+    "time": 5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ship",
+   "name": "Ship to the shop",
+   "from": "warehouse",
+   "to": "trucks",
+   "rate": {
+    "form": "gap",
+    "stock": "shop",
+    "goal": 250,
+    "time": 3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deliver",
+   "name": "Deliveries",
+   "from": "trucks",
+   "to": "shop",
+   "rate": {
+    "form": "proportional",
+    "stock": "trucks",
+    "k": 0.3333333333333333
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "sell",
+   "name": "Sales",
+   "from": "shop",
+   "to": null,
+   "rate": {
+    "form": "constant",
+    "value": 40
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 365,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (40 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 100,
+    "label": "Demand up (60 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 240,
+    "label": "Promotion (80 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 80
+     }
+    }
+   },
+   {
+    "t": 254,
+    "label": "Back to normal (45 a day)",
+    "set": {
+     "sell": {
+      "form": "constant",
+      "value": 45
+     }
+    }
+   }
+  ]
+ }
+}

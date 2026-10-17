@@ -1,0 +1,1409 @@
+{
+ "id": "sd-moderation-truth",
+ "name": "SD: Content moderation: the truth",
+ "time_unit": "hour",
+ "seed": 20261016,
+ "steps": 1440,
+ "long_steps": 14400,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "creators",
+   "name": "Active creators",
+   "unit": "people",
+   "initial": 2150,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "screening",
+   "name": "Waiting for automated screening",
+   "unit": "posts",
+   "initial": 300,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "flagged",
+   "name": "Flagged for human review",
+   "unit": "posts",
+   "initial": 270,
+   "x": 560,
+   "y": 320
+  },
+  {
+   "id": "moderators",
+   "name": "Moderators on staff",
+   "unit": "people",
+   "initial": 10,
+   "x": 560,
+   "y": 500
+  },
+  {
+   "id": "appeals",
+   "name": "In appeal",
+   "unit": "posts",
+   "initial": 50,
+   "x": 800,
+   "y": 440
+  },
+  {
+   "id": "published",
+   "name": "Published (live in feeds)",
+   "unit": "posts",
+   "initial": 10800,
+   "x": 1040,
+   "y": 80
+  },
+  {
+   "id": "removed",
+   "name": "Removed",
+   "unit": "posts",
+   "initial": 0,
+   "x": 1040,
+   "y": 320,
+   "final": true
+  },
+  {
+   "id": "vendor",
+   "name": "Vendor's offshore review queue",
+   "unit": "posts",
+   "initial": 0,
+   "x": 800,
+   "y": 620,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "join",
+   "name": "Creators become active",
+   "from": null,
+   "to": "creators",
+   "rate": {
+    "form": "constant",
+    "value": 20
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "quit",
+   "name": "Creators go inactive (discouraged by the flag queue)",
+   "from": "creators",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "creators",
+      "k": 0.008
+     },
+     {
+      "stock": "flagged",
+      "k": 0.01
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "post",
+   "name": "New posts",
+   "from": null,
+   "to": "screening",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "creators",
+      "k": 0.03
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "screen_clean",
+   "name": "Passes automated screening",
+   "from": "screening",
+   "to": "published",
+   "rate": {
+    "form": "proportional",
+    "stock": "screening",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "screen_flag",
+   "name": "Flagged by the screening model",
+   "from": "screening",
+   "to": "flagged",
+   "rate": {
+    "form": "proportional",
+    "stock": "screening",
+    "k": 0.05
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "mod_approve",
+   "name": "Moderator approves",
+   "from": "flagged",
+   "to": "published",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "moderators",
+      "k": 0.75
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "mod_remove",
+   "name": "Moderator removes",
+   "from": "flagged",
+   "to": "removed",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "moderators",
+      "k": 0.6
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "mod_appealed",
+   "name": "Moderator removes, creator appeals",
+   "from": "flagged",
+   "to": "appeals",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "moderators",
+      "k": 0.15
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "escalate",
+   "name": "Backlog over 300 sent to the vendor",
+   "from": "flagged",
+   "to": "vendor",
+   "rate": {
+    "form": "linear",
+    "c": -30,
+    "terms": [
+     {
+      "stock": "flagged",
+      "k": 0.1
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "vendor_remove",
+   "name": "Vendor removes",
+   "from": "vendor",
+   "to": "removed",
+   "rate": {
+    "form": "proportional",
+    "stock": "vendor",
+    "k": 0.027777777777777776
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "overturn",
+   "name": "Appeal upheld: post restored",
+   "from": "appeals",
+   "to": "published",
+   "rate": {
+    "form": "proportional",
+    "stock": "appeals",
+    "k": 0.01
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deny",
+   "name": "Appeal denied",
+   "from": "appeals",
+   "to": "removed",
+   "rate": {
+    "form": "proportional",
+    "stock": "appeals",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "age_out",
+   "name": "Posts age out of feeds",
+   "from": "published",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "published",
+    "k": 0.013888888888888888
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "hire",
+   "name": "Moderators hired (staffing to the backlog)",
+   "from": null,
+   "to": "moderators",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "flagged",
+      "k": 0.004
+     },
+     {
+      "stock": "moderators",
+      "k": -0.1
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "mod_leave",
+   "name": "Moderators leave",
+   "from": "moderators",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "moderators",
+    "k": 0.01
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 720,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Screening model v1",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     },
+     "screen_clean": {
+      "form": "proportional",
+      "stock": "screening",
+      "k": 0.5
+     },
+     "screen_flag": {
+      "form": "proportional",
+      "stock": "screening",
+      "k": 0.05
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 9,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 23,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 33,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 47,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 57,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 71,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 81,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 95,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 105,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 119,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 129,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 143,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 153,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 167,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 177,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 191,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 200,
+    "label": "News event: breaking story",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 600,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 201,
+    "label": "News spike",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 600,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 206,
+    "label": "News spike fades",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 215,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 225,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 239,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 249,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 263,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 273,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 287,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 297,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 311,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 321,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 335,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 345,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 359,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 361,
+    "label": "New screening model (v2) deployed: flags more posts",
+    "set": {
+     "screen_clean": {
+      "form": "proportional",
+      "stock": "screening",
+      "k": 0.47
+     },
+     "screen_flag": {
+      "form": "proportional",
+      "stock": "screening",
+      "k": 0.08
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 369,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 383,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 393,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 407,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 417,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 431,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 441,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 455,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 465,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 470,
+    "label": "News event: viral controversy",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 400,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 474,
+    "label": "News spike fades",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 479,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 489,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 503,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 513,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 527,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 537,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 551,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 561,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 575,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 585,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 599,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 609,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 610,
+    "label": "News event: major election night",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 800,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 613,
+    "label": "News spike fades",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 623,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 633,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 647,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 657,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 671,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 681,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 695,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 705,
+    "label": "Daytime posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 719,
+    "label": "Night posting",
+    "set": {
+     "post": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "creators",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   }
+  ]
+ }
+}

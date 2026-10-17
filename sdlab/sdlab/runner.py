@@ -529,6 +529,18 @@ class LiveRun:
             readings = None
             if model.get("sensors"):
                 readings = self.sense(model, self.t + 1)
+                # no sensor could read anything (the recording ended, the source is down): there is
+                # nothing new to record, so no step is taken; recording the last levels again would
+                # fill the run with a stretch where nothing happens
+                if not readings and not force:
+                    # three failed reads in a row and the run stops, saying why: a source that keeps
+                    # failing (a recording that ended, a server that is down) is not a quiet system
+                    self._failed_reads = getattr(self, "_failed_reads", 0) + 1
+                    if self._failed_reads >= 3:
+                        why = (self.errors[-1]["error"] if self.errors else "no sensor could read anything")
+                        self.stopped_because = {"t": self.t, "reason": why}
+                    return False
+                self._failed_reads = 0
                 stamps = tuple(v.get("time") for _, v in readings)
                 if not force and readings and None not in stamps and stamps == getattr(self, "_last_stamp", None):
                     return False
@@ -611,6 +623,7 @@ class LiveRun:
             self.seconds_per_tick = max(0.0, float(seconds_per_tick))
         if self.thread and self.thread.is_alive():
             return
+        self.stopped_because, self._failed_reads = None, 0
         self.stop_flag.clear()
         self.thread = threading.Thread(target=self._loop, daemon=True)
         self.thread.start()
@@ -625,6 +638,9 @@ class LiveRun:
                     self.errors = (self.errors + [{"t": self.t, "flow": None, "error": repr(e)[-300:]}])[-20:]
             # a short pause at full speed, so the page and other runs get a turn; a longer one when the
             # measured system had nothing new yet (asking again at once would only load it)
+            if getattr(self, "stopped_because", None):          # the source failed: stop, do not record
+                self.stop_flag.set()
+                break
             self.stop_flag.wait(max(0.002 if stepped else 0.5, self.seconds_per_tick - (time.time() - began)))
 
     def stop(self) -> None:
@@ -638,6 +654,7 @@ class LiveRun:
             if self.log_path.exists():
                 self.log_path.unlink()
             self._reset_memory()
+            self.stopped_because, self._failed_reads = None, 0
 
     @property
     def running(self) -> bool:
@@ -672,6 +689,7 @@ class LiveRun:
                     "recent": [{k: v for k, v in r.items() if k not in ("stdin", "stdout", "stderr")} for r in self.recent[-40:] if r["flow"] not in hide],
                     "eras": [{**{k: e[k] for k in ("n", "start", "label", "equations")}, **({"model": strip(e["model"])} if since == 0 else {})} for e in self.eras],
                     "length": len(s["t"]),
+                    "stopped": getattr(self, "stopped_because", None),
                     "errors": [e for e in self.errors[-8:] if e.get("flow") not in hide]}
 
     def firing(self, n: int) -> dict | None:

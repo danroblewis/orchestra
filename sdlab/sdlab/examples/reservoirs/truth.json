@@ -1,0 +1,430 @@
+{
+ "seed": 20261016,
+ "steps": 2160,
+ "step": "1 hour",
+ "unit": "ML (megalitres)",
+ "parameters": {
+  "catchment_km2": 40,
+  "field_capacity_ml": 3500.0,
+  "runoff_k": 0.03,
+  "et_k": 0.0012,
+  "evap_k": 0.00025,
+  "spill_share": 0.5,
+  "env_min_ml_per_h": 1.5,
+  "release_noise_cv": 0.04,
+  "reach_um_stage_h": 3.0,
+  "reach_ml_pipe_h": 6,
+  "pump_time_h": 4.0,
+  "pump_max_ml_per_h": 8.0,
+  "town_mean_ml_per_h": 2.5,
+  "town_noise_cv": 0.08
+ },
+ "reservoirs": {
+  "upper": {
+   "name": "Upper reservoir",
+   "crest_ml": 1800.0,
+   "target_ml": 150.0,
+   "release_time_h": 60.0,
+   "initial_ml": 900.0
+  },
+  "middle": {
+   "name": "Middle reservoir",
+   "crest_ml": 3000.0,
+   "target_ml": 400.0,
+   "release_time_h": 120.0,
+   "initial_ml": 1900.0
+  },
+  "lower": {
+   "name": "Lower reservoir",
+   "crest_ml": 2400.0,
+   "target_ml": 300.0,
+   "release_time_h": 90.0,
+   "initial_ml": 1300.0
+  }
+ },
+ "tower": {
+  "target_ml": 30.0,
+  "initial_ml": 26.0
+ },
+ "soil_initial_ml": 5200.0,
+ "weather": {
+  "dry_spell_hours": [
+   432,
+   960
+  ],
+  "big_storm": {
+   "start_hour": 966,
+   "hours": 30
+  },
+  "rain_total_ml": 34917.5,
+  "rain_hours": 478
+ },
+ "maintenance_hours": [
+  1440,
+  1608
+ ],
+ "eras": [
+  {
+   "t": 1,
+   "label": "Start"
+  },
+  {
+   "t": 433,
+   "label": "Dry spell"
+  },
+  {
+   "t": 961,
+   "label": "Storm"
+  },
+  {
+   "t": 1033,
+   "label": "After the storm"
+  },
+  {
+   "t": 1441,
+   "label": "Maintenance week: the middle dam's gates are closed"
+  },
+  {
+   "t": 1609,
+   "label": "Middle dam back in service"
+  }
+ ],
+ "measured": {
+  "stocks": [
+   "rain",
+   "soil",
+   "upper",
+   "middle",
+   "lower",
+   "tower"
+  ],
+  "flows": []
+ },
+ "flows": {
+  "rainfall": {
+   "from": null,
+   "to": "rain",
+   "total_ml": 34917.5,
+   "per_step_mean": 16.1655
+  },
+  "soak": {
+   "from": "rain",
+   "to": "soil",
+   "total_ml": 34878.9,
+   "per_step_mean": 16.1476
+  },
+  "soil_et": {
+   "from": "soil",
+   "to": null,
+   "total_ml": 9617.4,
+   "per_step_mean": 4.4525
+  },
+  "runoff": {
+   "from": "soil",
+   "to": "upper",
+   "total_ml": 26916.4,
+   "per_step_mean": 12.4613
+  },
+  "upper_release": {
+   "from": "upper",
+   "to": "river_um1",
+   "total_ml": 25486.4,
+   "per_step_mean": 11.7992
+  },
+  "upper_spill": {
+   "from": "upper",
+   "to": "river_um1",
+   "total_ml": 1693.3,
+   "per_step_mean": 0.7839
+  },
+  "upper_evap": {
+   "from": "upper",
+   "to": null,
+   "total_ml": 451.1,
+   "per_step_mean": 0.2088
+  },
+  "river_um_mid": {
+   "from": "river_um1",
+   "to": "river_um2",
+   "total_ml": 27212.7,
+   "per_step_mean": 12.5985
+  },
+  "river_um_arrive": {
+   "from": "river_um2",
+   "to": "middle",
+   "total_ml": 27245.6,
+   "per_step_mean": 12.6137
+  },
+  "middle_release": {
+   "from": "middle",
+   "to": "river_ml",
+   "total_ml": 26018.4,
+   "per_step_mean": 12.0455
+  },
+  "middle_spill": {
+   "from": "middle",
+   "to": "river_ml",
+   "total_ml": 1244.2,
+   "per_step_mean": 0.576
+  },
+  "middle_evap": {
+   "from": "middle",
+   "to": null,
+   "total_ml": 1085.8,
+   "per_step_mean": 0.5027
+  },
+  "river_ml_arrive": {
+   "from": "river_ml",
+   "to": "lower",
+   "total_ml": 27317.7,
+   "per_step_mean": 12.6471
+  },
+  "lower_release": {
+   "from": "lower",
+   "to": null,
+   "total_ml": 22040.2,
+   "per_step_mean": 10.2038
+  },
+  "lower_spill": {
+   "from": "lower",
+   "to": null,
+   "total_ml": 0.0,
+   "per_step_mean": 0.0
+  },
+  "lower_evap": {
+   "from": "lower",
+   "to": null,
+   "total_ml": 647.1,
+   "per_step_mean": 0.2996
+  },
+  "pumping": {
+   "from": "lower",
+   "to": "tower",
+   "total_ml": 5388.0,
+   "per_step_mean": 2.4944
+  },
+  "town_use": {
+   "from": "tower",
+   "to": null,
+   "total_ml": 5394.1,
+   "per_step_mean": 2.4972
+  }
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms, per hour, in ML. 'moves' are flows between measured stocks; 'outside' flows to and from outside; 'hidden' flows from one measured stock to another through a river nobody measures (release and spill both go down it); no links and no echoes (nothing here is final). Gap forms on the source (release toward a target, runoff above field capacity) are 'linear' in discovery's terms: c + k x source, c < 0.",
+  "moves": [
+   {
+    "from": "rain",
+    "to": "soil",
+    "form": "proportional",
+    "k": 1.0,
+    "k_realised": 1.0,
+    "flow": "soak",
+    "what": "last hour's rain soaks into the soil (all of it, one hour later). Equivalently a link outside -> soil at 1 x the gauge plus the gauge emptying to outside at k = 1; as a move it costs nothing to outside."
+   },
+   {
+    "from": "soil",
+    "to": "upper",
+    "form": "linear (gap on the source)",
+    "k": 0.03,
+    "c": -105.0,
+    "threshold": 3500.0,
+    "flow": "runoff",
+    "k_realised_above_threshold": 0.03,
+    "share_of_hours_running": 0.7116,
+    "what": "runoff: k x (soil - field capacity) per hour, nothing below field capacity (it stops in the dry spell)"
+   },
+   {
+    "from": "lower",
+    "to": "tower",
+    "form": "gap",
+    "stock": "tower",
+    "goal": 30.0,
+    "time": 4.0,
+    "k": 0.25,
+    "value_max": 8.0,
+    "flow": "pumping",
+    "what": "the town pumps from the lower reservoir to close the tower's gap to 30 ML over 4 hours (at most 8 ML/h)"
+   }
+  ],
+  "outside": [
+   {
+    "to": "rain",
+    "form": "constant",
+    "value": 16.1655,
+    "flow": "rainfall",
+    "what": "rain on the catchment: exogenous storms and a dry spell (mean shown; it is anything but constant)"
+   },
+   {
+    "from": "soil",
+    "form": "proportional",
+    "k": 0.0012,
+    "k_realised": 0.0012,
+    "flow": "soil_et",
+    "what": "evapotranspiration, by day only (daily mean k)"
+   },
+   {
+    "from": "upper",
+    "form": "proportional",
+    "k": 0.00025,
+    "k_realised": 0.0002,
+    "flow": "upper_evap",
+    "what": "evaporation from the upper reservoir, by day only (daily mean k)"
+   },
+   {
+    "from": "middle",
+    "form": "proportional",
+    "k": 0.00025,
+    "k_realised": 0.0002,
+    "flow": "middle_evap",
+    "what": "evaporation from the middle reservoir, by day only (daily mean k)"
+   },
+   {
+    "from": "lower",
+    "form": "proportional",
+    "k": 0.00025,
+    "k_realised": 0.0002,
+    "flow": "lower_evap",
+    "what": "evaporation from the lower reservoir, by day only (daily mean k)"
+   },
+   {
+    "from": "lower",
+    "form": "linear (gap on the source)",
+    "k": 0.0111,
+    "c": -3.3333,
+    "goal": 300.0,
+    "time": 90.0,
+    "value_min": 1.5,
+    "crest": 2400.0,
+    "spill_share": 0.5,
+    "hours_spilling": 0,
+    "hours_at_minimum": 190,
+    "hours_shut": 0,
+    "fit_where_linear": {
+     "k": 0.0111,
+     "c": -3.35
+    },
+    "k_if_proportional": 0.0085,
+    "rule": "release = max(1.5 x min(1, level / 300), (level - 300) / 90) per hour, x (1 + 4% noise); spill = 0.5 x (level - 2400) above the crest",
+    "flow": "lower_release",
+    "what": "the lower dam's release leaves the valley: (level - target) / time, at least the environmental minimum (scaled by level / target below the target)"
+   },
+   {
+    "from": "lower",
+    "form": "spillway (nonlinear)",
+    "k": 0.5,
+    "threshold": 2400.0,
+    "flow": "lower_spill",
+    "hours_spilling": 0,
+    "what": "spillway: half of what is above the crest each hour"
+   },
+   {
+    "from": "tower",
+    "form": "constant",
+    "value": 2.4972,
+    "flow": "town_use",
+    "what": "the town draws from the tower with a daily cycle (mean shown) and noise"
+   }
+  ],
+  "links": [],
+  "hidden": [
+   {
+    "from": "upper",
+    "to": "middle",
+    "shape": "erlang",
+    "delay": 6.0,
+    "share": 1.0,
+    "holds": 75.606,
+    "holds_max": 551.3,
+    "stocks": [
+     "river_um1",
+     "river_um2"
+    ],
+    "flow_in_per_h": 12.5832,
+    "form": "linear (gap on the source)",
+    "k": 0.0167,
+    "c": -2.5,
+    "goal": 150.0,
+    "time": 60.0,
+    "value_min": 1.5,
+    "crest": 1800.0,
+    "spill_share": 0.5,
+    "hours_spilling": 69,
+    "hours_at_minimum": 421,
+    "hours_shut": 0,
+    "fit_where_linear": {
+     "k": 0.0167,
+     "c": -2.51
+    },
+    "k_if_proportional": 0.0141,
+    "rule": "release = max(1.5 x min(1, level / 150), (level - 150) / 60) per hour, x (1 + 4% noise); spill = 0.5 x (level - 1800) above the crest",
+    "what": "the river from the upper to the middle dam: two linear stretches of 3 h each (mean 6 h)"
+   },
+   {
+    "from": "middle",
+    "to": "lower",
+    "shape": "pipe",
+    "delay": 6,
+    "share": 1.0,
+    "holds": 75.793,
+    "holds_max": 151.1,
+    "stocks": [
+     "river_ml"
+    ],
+    "flow_in_per_h": 12.6216,
+    "form": "linear (gap on the source)",
+    "k": 0.0083,
+    "c": -3.3333,
+    "goal": 400.0,
+    "time": 120.0,
+    "value_min": 1.5,
+    "crest": 3000.0,
+    "spill_share": 0.5,
+    "hours_spilling": 128,
+    "hours_at_minimum": 128,
+    "hours_shut": 168,
+    "fit_where_linear": {
+     "k": 0.0083,
+     "c": -3.36
+    },
+    "k_if_proportional": 0.006,
+    "rule": "release = max(1.5 x min(1, level / 400), (level - 400) / 120) per hour, x (1 + 4% noise), nothing in the maintenance week; spill = 0.5 x (level - 3000) above the crest",
+    "what": "the river from the middle to the lower dam: everything arrives 6 hours after it left"
+   }
+  ],
+  "echoes": []
+ },
+ "mean_levels": {
+  "rain": 16.166,
+  "soil": 3729.275,
+  "upper": 837.393,
+  "middle": 2021.393,
+  "lower": 1203.732,
+  "tower": 20.019,
+  "river_um1": 37.78,
+  "river_um2": 37.826,
+  "river_ml": 75.793
+ },
+ "max_levels": {
+  "rain": 733.3,
+  "soil": 7927.2,
+  "upper": 1947.8,
+  "middle": 3031.0,
+  "lower": 1895.3,
+  "tower": 26.4,
+  "river_um1": 288.1,
+  "river_um2": 274.9,
+  "river_ml": 151.1
+ },
+ "min_levels": {
+  "rain": 0.0,
+  "soil": 2023.9,
+  "upper": 6.8,
+  "middle": 415.4,
+  "lower": 97.0,
+  "tower": 15.5,
+  "river_um1": 0.2,
+  "river_um2": 0.2,
+  "river_ml": 0.0
+ }
+}

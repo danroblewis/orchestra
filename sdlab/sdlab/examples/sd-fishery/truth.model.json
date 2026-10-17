@@ -1,0 +1,644 @@
+{
+ "id": "sd-fishery-truth",
+ "name": "SD: a managed fishery: the truth",
+ "time_unit": "week",
+ "seed": 20261016,
+ "steps": 520,
+ "long_steps": 5200,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "juveniles",
+   "name": "Juvenile fish",
+   "unit": "thousand fish",
+   "initial": 4000,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "adults",
+   "name": "Adult fish",
+   "unit": "thousand fish",
+   "initial": 10000,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "in_port",
+   "name": "Boats in port",
+   "unit": "boats",
+   "initial": 40,
+   "x": 320,
+   "y": 400
+  },
+  {
+   "id": "at_sea",
+   "name": "Boats at sea",
+   "unit": "boats",
+   "initial": 0,
+   "x": 560,
+   "y": 400
+  },
+  {
+   "id": "landed",
+   "name": "Fish landed at port",
+   "unit": "thousand fish",
+   "initial": 80,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "cold_store",
+   "name": "On ice, waiting at the plant",
+   "unit": "thousand fish",
+   "initial": 60,
+   "x": 800,
+   "y": 80,
+   "measured": false
+  },
+  {
+   "id": "processed",
+   "name": "Fish processed",
+   "unit": "thousand fish",
+   "initial": 0,
+   "x": 1040,
+   "y": 200,
+   "final": true
+  }
+ ],
+ "flows": [
+  {
+   "id": "recruit",
+   "name": "Young fish recruited",
+   "from": null,
+   "to": "juveniles",
+   "rate": {
+    "form": "linear",
+    "c": 300,
+    "terms": [
+     {
+      "stock": "adults",
+      "k": 0.03
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "juv_die",
+   "name": "Juveniles die",
+   "from": "juveniles",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "juveniles",
+    "k": 0.06
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "mature",
+   "name": "Juveniles mature",
+   "from": "juveniles",
+   "to": "adults",
+   "rate": {
+    "form": "proportional",
+    "stock": "juveniles",
+    "k": 0.04
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "adult_die",
+   "name": "Adults die",
+   "from": "adults",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "adults",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catch",
+   "name": "Fish caught and landed",
+   "from": "adults",
+   "to": "landed",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "at_sea",
+      "k": 4
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "launch",
+   "name": "Boats go out",
+   "from": "in_port",
+   "to": "at_sea",
+   "rate": {
+    "form": "gap",
+    "stock": "at_sea",
+    "goal": 0,
+    "time": 2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "return",
+   "name": "Boats come home",
+   "from": "at_sea",
+   "to": "in_port",
+   "rate": {
+    "form": "proportional",
+    "stock": "at_sea",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "sell_fresh",
+   "name": "Sold fresh on the quay",
+   "from": "landed",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "landed",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "truck",
+   "name": "Trucked to the plant",
+   "from": "landed",
+   "to": "cold_store",
+   "rate": {
+    "form": "proportional",
+    "stock": "landed",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "process",
+   "name": "Processed",
+   "from": "cold_store",
+   "to": "processed",
+   "rate": {
+    "form": "proportional",
+    "stock": "cold_store",
+    "k": 0.33
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 520,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Open access: no quota",
+    "set": {
+     "catch": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "at_sea",
+        "k": 4
+       }
+      ]
+     },
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     },
+     "recruit": {
+      "form": "linear",
+      "c": 300,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 14,
+    "label": "Year 1: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 36,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 40,
+    "label": "Year 1: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 53,
+    "label": "Year 2: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 420,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 66,
+    "label": "Year 2: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 36,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 92,
+    "label": "Year 2: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 105,
+    "label": "Year 3: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 200,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 118,
+    "label": "Year 3: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 36,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 144,
+    "label": "Year 3: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 157,
+    "label": "Year 4: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 300,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 170,
+    "label": "Year 4: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 36,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 196,
+    "label": "Year 4: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 209,
+    "label": "Year 5: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 480,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 222,
+    "label": "Year 5: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 36,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 248,
+    "label": "Year 5: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "Year 6: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 160,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "Quota introduced: trip limits and a smaller fleet",
+    "set": {
+     "catch": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "at_sea",
+        "k": 2.5
+       }
+      ]
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 274,
+    "label": "Year 6: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 22,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 300,
+    "label": "Year 6: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 313,
+    "label": "Year 7: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 340,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 326,
+    "label": "Year 7: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 22,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 352,
+    "label": "Year 7: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 365,
+    "label": "Year 8: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 260,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 378,
+    "label": "Year 8: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 22,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 404,
+    "label": "Year 8: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 417,
+    "label": "Year 9: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 440,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 430,
+    "label": "Year 9: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 22,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 456,
+    "label": "Year 9: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 469,
+    "label": "Year 10: young fish drifting in",
+    "set": {
+     "recruit": {
+      "form": "linear",
+      "c": 220,
+      "terms": [
+       {
+        "stock": "adults",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 482,
+    "label": "Year 10: season opens",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 22,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 508,
+    "label": "Year 10: season closes",
+    "set": {
+     "launch": {
+      "form": "gap",
+      "stock": "at_sea",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   }
+  ]
+ }
+}

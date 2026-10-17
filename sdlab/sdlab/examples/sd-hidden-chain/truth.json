@@ -1,0 +1,108 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 1500,
+ "measured": [
+  "received",
+  "shipped",
+  "scrap"
+ ],
+ "hidden_stocks": [
+  "cleaning",
+  "repair"
+ ],
+ "schedule": {
+  "every": 150,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal (8 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 41,
+    "label": "A big delivery (20 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   },
+   {
+    "t": 56,
+    "label": "Few parts (3 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3
+     }
+    }
+   },
+   {
+    "t": 96,
+    "label": "Normal again (9 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "received",
+    "to": "scrap",
+    "flow": "scrapped",
+    "what": "Scrapped on arrival",
+    "rate": {
+     "form": "proportional",
+     "stock": "received",
+     "k": 0.05
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "received",
+    "flow": "arrive",
+    "what": "Parts arrive",
+    "rate": {
+     "form": "constant",
+     "value": 8
+    }
+   },
+   {
+    "from": "shipped",
+    "flow": "ship",
+    "what": "Ship",
+    "rate": {
+     "form": "proportional",
+     "stock": "shipped",
+     "k": 0.5
+    }
+   },
+   {
+    "from": "scrap",
+    "flow": "empty_scrap",
+    "what": "Scrap collected",
+    "rate": {
+     "form": "proportional",
+     "stock": "scrap",
+     "k": 0.1
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [],
+  "echoes": []
+ }
+}

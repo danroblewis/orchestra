@@ -1,0 +1,119 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 600,
+ "measured": [
+  "inbox",
+  "working",
+  "review",
+  "done"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 120,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal intake (5 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5
+     }
+    }
+   },
+   {
+    "t": 31,
+    "label": "Busy month (9 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "Quiet month (3 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3
+     }
+    }
+   },
+   {
+    "t": 91,
+    "label": "Normal intake again (6 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "inbox",
+    "to": "working",
+    "flow": "start",
+    "what": "Start work",
+    "rate": {
+     "form": "proportional",
+     "stock": "inbox",
+     "k": 0.3
+    }
+   },
+   {
+    "from": "working",
+    "to": "review",
+    "flow": "finish",
+    "what": "Finish work",
+    "rate": {
+     "form": "proportional",
+     "stock": "working",
+     "k": 0.2
+    }
+   },
+   {
+    "from": "review",
+    "to": "done",
+    "flow": "approve",
+    "what": "Approve",
+    "rate": {
+     "form": "proportional",
+     "stock": "review",
+     "k": 0.25
+    }
+   },
+   {
+    "from": "review",
+    "to": "working",
+    "flow": "rework",
+    "what": "Send back",
+    "rate": {
+     "form": "proportional",
+     "stock": "review",
+     "k": 0.05
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "inbox",
+    "flow": "arrive",
+    "what": "Work arrives",
+    "rate": {
+     "form": "constant",
+     "value": 5
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [],
+  "echoes": []
+ }
+}

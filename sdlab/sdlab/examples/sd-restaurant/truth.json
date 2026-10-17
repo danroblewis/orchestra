@@ -1,0 +1,217 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 2160,
+ "measured": [
+  "waiting",
+  "seated",
+  "orders",
+  "cooking",
+  "pass",
+  "served"
+ ],
+ "hidden_stocks": [
+  "plating"
+ ],
+ "schedule": {
+  "every": 720,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Morning: a few guests (0.3 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0.3
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "One cook on the line",
+    "set": {
+     "fire": {
+      "form": "proportional",
+      "stock": "orders",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 61,
+    "label": "Lunch rush (2.2 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 2.2
+     }
+    }
+   },
+   {
+    "t": 211,
+    "label": "Afternoon lull (0.4 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0.4
+     }
+    }
+   },
+   {
+    "t": 331,
+    "label": "A second cook starts the evening shift",
+    "set": {
+     "fire": {
+      "form": "proportional",
+      "stock": "orders",
+      "k": 0.35
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 361,
+    "label": "Dinner rush (2.8 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 2.8
+     }
+    }
+   },
+   {
+    "t": 571,
+    "label": "Late tables (0.5 a minute)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0.5
+     }
+    }
+   },
+   {
+    "t": 661,
+    "label": "Doors close (no new guests)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "waiting",
+    "to": "seated",
+    "flow": "seat",
+    "what": "Guests seated at a table",
+    "rate": {
+     "form": "linear",
+     "c": 3,
+     "terms": [
+      {
+       "stock": "waiting",
+       "k": 0.15
+      },
+      {
+       "stock": "seated",
+       "k": -0.025
+      }
+     ]
+    }
+   },
+   {
+    "from": "orders",
+    "to": "cooking",
+    "flow": "fire",
+    "what": "Cook starts a dish",
+    "rate": {
+     "form": "proportional",
+     "stock": "orders",
+     "k": 0.15
+    }
+   },
+   {
+    "from": "pass",
+    "to": "served",
+    "flow": "serve",
+    "what": "Waiter takes the dish to the table",
+    "rate": {
+     "form": "proportional",
+     "stock": "pass",
+     "k": 0.4
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "waiting",
+    "flow": "arrive",
+    "what": "Guests arrive",
+    "rate": {
+     "form": "constant",
+     "value": 0.3
+    }
+   },
+   {
+    "from": "waiting",
+    "flow": "walk_away",
+    "what": "Guests give up and leave",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.03
+    }
+   },
+   {
+    "from": "seated",
+    "flow": "leave",
+    "what": "Guests pay and leave",
+    "rate": {
+     "form": "proportional",
+     "stock": "seated",
+     "k": 0.016666666666666666
+    }
+   },
+   {
+    "to": "orders",
+    "flow": "order",
+    "what": "Dishes ordered",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "seated",
+       "k": 0.035
+      }
+     ]
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "seated",
+    "into": "orders",
+    "flow": "order",
+    "what": "Dishes ordered"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "cooking",
+    "to": "pass",
+    "via": "plating",
+    "via_name": "Dishes resting and being plated",
+    "shape": "exp",
+    "delay": 2.0,
+    "what": "Dish comes off the heat, then Dish plated, put on the pass"
+   }
+  ],
+  "echoes": []
+ }
+}

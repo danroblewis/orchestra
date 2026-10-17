@@ -46,6 +46,7 @@
   const selFlows = () => [...S.sel].filter((k) => k[0] === "f").map((k) => k.slice(2));
   const isSel = (key) => S.sel.has(key);
 
+  try { S.autoDiscover = localStorage.getItem("sdlab.autoDiscover") === "1"; } catch { /* off without storage */ }
   function uniqueId(base) {
     base = (base || "item").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "item";
     if (!/^[a-z]/.test(base)) base = "x_" + base;
@@ -144,7 +145,7 @@
     renderPick(id);
     S.model.stocks ||= []; S.model.flows ||= []; S.model.machines ||= [];
     S.sel.clear(); S.editMachine = null; S.pending = null; S.recent = []; S.live = null; S.paceLog = null; S.liveItems = null; S.undo = null;
-    S.discovery = null; S.leverage = null; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.view = null; S.find = "";
+    S.discovery = null; S.lastAutoN = 0; S.lastAutoAt = 0; S.leverage = null; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.view = null; S.find = "";
     S.simplify = null; S.preview = null; S.previewIdx = null; S.undoSimplify = null; S.showHidden = false; S.undoLayout = null;
     if ($("unarrange")) $("unarrange").hidden = true;
     if ($("find")) $("find").value = "";
@@ -426,6 +427,7 @@
   // Where a stock nobody measures goes: between the stocks it sits between, a little to the side
   // (several hidden stocks are spread apart, alternating sides, so their boxes do not overlap)
   function hiddenPos(f) {
+    if (f.via.pos) return f.via.pos;                         // dragged or arranged
     const a = stock(f.from || f.via.echo), b = stock(f.to);
     const ca = a ? center(a) : center(b), cb = center(b);
     const dx = cb.x - ca.x, dy = cb.y - ca.y, L = Math.hypot(dx, dy);
@@ -439,10 +441,11 @@
     return p;
   }
   function drawHiddenFound(g, f) {
-    const p = hiddenPos(f), box = { x: p.x, y: p.y };
-    el("rect", { x: p.x, y: p.y, width: BOX.w, height: BOX.h, rx: 8, fill: "var(--canvas)", stroke: "var(--fit)", "stroke-width": 2, "stroke-dasharray": "6 4" }, g);
-    text(g, p.x + BOX.w / 2, p.y + 25, "not measured", { "text-anchor": "middle", "font-size": 11, fill: "var(--fit)", "font-weight": 700 });
-    text(g, p.x + BOX.w / 2, p.y + 44, `holds ~${fmt(f.via.holds)}, ${fmt(f.via.delay)} ${tu()}s`, { "text-anchor": "middle", "font-size": 11, fill: "var(--fit)" });
+    const p = hiddenPos(f), box = { x: p.x, y: p.y }, k = S.discovery.flows.indexOf(f), picked = S.foundPick === k;
+    const hg = el("g", { class: "found-stock" + (picked ? " sel" : ""), "data-found-stock": k }, g);
+    el("rect", { x: p.x, y: p.y, width: BOX.w, height: BOX.h, rx: 8, fill: "var(--canvas)", stroke: "var(--fit)", "stroke-width": picked ? 3.5 : 2, "stroke-dasharray": "6 4" }, hg);
+    text(hg, p.x + BOX.w / 2, p.y + 25, "not measured", { "text-anchor": "middle", "font-size": 11, fill: "var(--fit)", "font-weight": 700 });
+    text(hg, p.x + BOX.w / 2, p.y + 44, `holds ~${fmt(f.via.holds)}, ${fmt(f.via.delay)} ${tu()}s`, { "text-anchor": "middle", "font-size": 11, fill: "var(--fit)" });
     const line = (from, to, dashed) => {
       const a = from.box ? clip(from.box, center(to.box || to.s)) : clip(from.s, center(to.box || to.s));
       const b = to.box ? clip(to.box, center(from.box || from.s)) : clip(to.s, center(from.box || from.s));
@@ -605,6 +608,13 @@
     if (evt.button === 1 || (evt.button === 0 && S.space)) { evt.preventDefault(); return startPan(evt); }
     if (evt.button !== 0) return;                    // right-click opens a menu instead
     const p = svgPoint(evt);
+    const fs = evt.target.closest("[data-found-stock]");
+    if (fs && S.discovery) {                                  // a stock discovery proposes: drag it, or click to see it
+      const f = S.discovery.flows[+fs.dataset.foundStock], at = hiddenPos(f);
+      S.drag = { sx: p.x, sy: p.y, moving: [], found: { f, x: at.x, y: at.y, k: +fs.dataset.foundStock }, moved: false };
+      svg.setPointerCapture(evt.pointerId);
+      return;
+    }
     const st = evt.target.closest("[data-stock]"), cl = evt.target.closest("[data-cloud]"), fl = evt.target.closest("[data-flow]");
     const key = st ? "s:" + st.dataset.stock : cl ? "f:" + cl.dataset.cloud : fl ? "f:" + fl.dataset.flow : null;
 
@@ -658,6 +668,7 @@
     const dx = p.x - d.sx, dy = p.y - d.sy;
     d.moving.forEach((m) => { const s = stock(m.id); s.x = Math.round(m.x + dx); s.y = Math.round(m.y + dy); });
     if (d.cloud) flow(d.cloud.id).cloud = { x: Math.round(d.cloud.x + dx), y: Math.round(d.cloud.y + dy) };
+    if (d.found) d.found.f.via.pos = { x: Math.round(d.found.x + dx), y: Math.round(d.found.y + dy) };
     renderCanvas();
   });
   svg.addEventListener("pointerup", () => {
@@ -672,6 +683,10 @@
       return selectionChanged();
     }
     const d = S.drag; S.drag = null; if (!d) return;
+    if (d.found) {                                            // not part of the model yet: nothing to save
+      if (!d.moved) { S.foundPick = S.foundPick === d.found.k ? null : d.found.k; renderInspector(); }
+      renderCanvas(); return;
+    }
     if (d.moved) { save(); renderCanvas(); return; }
     if (!d.shift && d.wasSelected && S.sel.size > 1) { S.sel = new Set([d.key]); selectionChanged(); }
   });
@@ -734,16 +749,47 @@
   }
 
   // ---------- arrange: lay the stocks out from their flows ----------
-  // Stocks connected by flows go in columns from upstream to downstream (the longest chain of flows
-  // leading to a stock decides its column), ordered within a column to keep flows from crossing.
-  // Stocks with no flows to other stocks are packed into a grid, by group and then by name.
+  // Stocks that are related go in columns from upstream to downstream (the longest chain leading to
+  // a stock decides its column), ordered within a column so related stocks sit side by side.
+  // Related means any of: a flow moves things from one to the other; a flow into or out of one has
+  // an equation that reads the other (a link: B's arrivals follow A's level), an effect, or a
+  // co-flow that uses it up; the flows an open discovery found count too. Stocks related to
+  // nothing are packed into a grid, by group and then by name.
+  function relations(set) {
+    const pairs = [];
+    const add = (a, b) => { if (a && b && a !== b && set.has(a) && set.has(b)) pairs.push([a, b]); };
+    const found = S.discovery ? S.discovery.flows.map((f) => ({ from: f.from, to: f.to, rate: f.rate })) : [];
+    [...S.model.flows, ...found].forEach((f) => {
+      add(f.from, f.to);
+      (f.outputs || []).forEach((o) => add(f.from, o));
+      const end = f.to || f.from;                              // the stock the flow's equation acts on
+      const reads = [f.rate && f.rate.stock, ...((f.rate && f.rate.terms) || []).map((t) => t.stock),
+                     ...(f.effects || []).map((e) => e.stock), ...(f.uses || []).map((u) => u.stock)];
+      reads.forEach((r) => { if (r !== f.from && r !== f.to) add(r, end); });
+    });
+    return pairs;
+  }
   function arrange() {
     const pick = selStocks();
     const ids = pick.length > 1 ? pick : S.model.stocks.map((x) => x.id);
     const set = new Set(ids), list = ids.map(stock);
-    const edges = S.model.flows.filter((f) => set.has(f.from) && set.has(f.to) && f.from !== f.to);
+    // stocks discovery proposes (not in the model yet) are laid out with the rest, between the
+    // stocks they connect; their places are kept on the proposal
+    const virt = {}, extra = [];
+    if (S.discovery) S.discovery.flows.forEach((f, k) => {
+      if (!f.via || !(set.has(f.to) && (set.has(f.from) || set.has(f.via.echo)))) return;
+      const id = `found:${k}`, at = hiddenPos(f);
+      virt[id] = { id, x: at.x, y: at.y, name: "not measured", f };
+      ids.push(id);
+      extra.push([f.from || f.via.echo, id], [id, f.to]);
+    });
+    const node = (a) => virt[a] || stock(a);
     const out = new Map(ids.map((i) => [i, []])), inn = new Map(ids.map((i) => [i, []]));
-    edges.forEach((f) => { out.get(f.from).push(f.to); inn.get(f.to).push(f.from); });
+    const seenPair = new Set();
+    [...relations(set), ...extra].forEach(([a, b]) => {
+      const k = `${a}>${b}`; if (seenPair.has(k)) return; seenPair.add(k);
+      out.get(a).push(b); inn.get(b).push(a);
+    });
     const old = Object.fromEntries(list.map((x) => [x.id, { x: x.x, y: x.y }]));
     const oldClouds = Object.fromEntries(S.model.flows.filter((f) => f.cloud && (set.has(f.from) || set.has(f.to))).map((f) => [f.id, f.cloud]));
     const x0 = Math.min(...list.map((x) => x.x)), y0 = Math.min(...list.map((x) => x.y));
@@ -780,10 +826,10 @@
       const pos = new Map();
       const place = () => cols.forEach((c) => c.forEach((a, i) => pos.set(a, i)));
       place();
-      for (let sweep = 0; sweep < 4; sweep++) {
+      for (let sweep = 0; sweep < 8; sweep++) {
         const order = sweep % 2 ? [...cols.keys()].reverse() : [...cols.keys()];
         order.forEach((ci) => {
-          const nb = (a) => (sweep % 2 ? out.get(a) : inn.get(a)).filter((b) => pos.has(b));
+          const nb = (a) => { const one = (sweep % 2 ? out.get(a) : inn.get(a)).filter((b) => pos.has(b)); return one.length ? one : [...out.get(a), ...inn.get(a)].filter((b) => pos.has(b)); };
           const key = (a) => { const n = nb(a); return n.length ? n.reduce((s, b) => s + pos.get(b), 0) / n.length : pos.get(a); };
           cols[ci].sort((a, b) => key(a) - key(b));
           cols[ci].forEach((a, i) => pos.set(a, i));
@@ -791,24 +837,25 @@
       }
       const tall = Math.max(...cols.map((c) => c.length));
       cols.forEach((c, ci) => c.forEach((a, i) => {
-        const st = stock(a); st.x = Math.round(x0 + ci * COLW); st.y = Math.round(y + (i + (tall - c.length) / 2) * ROWH);
+        const st = node(a); st.x = Math.round(x0 + ci * COLW); st.y = Math.round(y + (i + (tall - c.length) / 2) * ROWH);
       }));
       y += tall * ROWH + 80;
     });
     S.model.flows.forEach((f) => { if (set.has(f.from) || set.has(f.to)) delete f.cloud; });
     if (alone.length) {
       // a grid shaped like the canvas; each stock's clouds sit diagonally above-left and below-right
-      alone.sort((a, b) => (stock(a).group || "").localeCompare(stock(b).group || "") || stockName(a).localeCompare(stockName(b)));
+      alone.sort((a, b) => (node(a).group || "").localeCompare(node(b).group || "") || stockName(a).localeCompare(stockName(b)));
       const CW = 300, CH = 175, rect = svg.getBoundingClientRect(), aspect = Math.max(0.5, rect.width / Math.max(1, rect.height));
       const per = Math.max(1, Math.min(alone.length, Math.round(Math.sqrt(alone.length * aspect * CH / CW))));
       alone.forEach((a, i) => {
-        const st = stock(a); st.x = Math.round(x0 + (i % per) * CW); st.y = Math.round(y + 40 + Math.floor(i / per) * CH);
+        const st = node(a); st.x = Math.round(x0 + (i % per) * CW); st.y = Math.round(y + 40 + Math.floor(i / per) * CH);
         S.model.flows.forEach((f) => {
           if (f.to === a && !f.from) f.cloud = { x: st.x - 50, y: st.y - 40 };
           if (f.from === a && !f.to) f.cloud = { x: st.x + BOX.w + 50, y: st.y + BOX.h + 40 };
         });
       });
     }
+    Object.values(virt).forEach((v) => { v.f.via.pos = { x: v.x, y: v.y }; });
     S.undoLayout = { old, oldClouds };
     S.view = null;
     $("unarrange").hidden = false;
@@ -970,6 +1017,7 @@
     // how fast the run is really going, over the last few seconds
     const at = performance.now();
     S.paceLog = [...(S.paceLog || []), [at, S.live.t]].filter(([w]) => at - w < 6000);
+    maybeRediscover();
     const one = inspected();
     if (one.type === "stock") await fetchItems(one.obj.id);
     if (`${S.live.t}:${S.live.running}:${(S.live.errors || []).length}` === before) return;
@@ -1015,6 +1063,7 @@
     await refetchLive();
     pollSoon();
     if (action === "start" || action === "stop" || action === "reset") { await fetchList(); renderPick(S.model.id); }
+    if (S.discovery && (action === "start" || action === "stop")) renderInspector();   // approving is for a paused run
   }
   function syncPolling() {
     const want = S.model && runnable();
@@ -1073,6 +1122,9 @@
         h += ib(`data-upd${eraLen >= 15 ? "" : " disabled"}`, "📐", eraLen >= 15 ? "Fit all equations to this era: fit every flow and save the better equations" : `Fit all equations to this era (run at least 15 ${tu()}s in this era first)`);
         if (S.undo) h += ib("data-undo", "↩️", "Undo the saved fits");
         h += ib(`data-discover${n >= 40 ? "" : " disabled"}`, "🔍", n >= 40 ? "Discover flows from stock levels: the simplest flows (and stocks nobody measures) that explain how the stocks changed" : "Discover flows from stock levels (run at least 40 steps first)");
+        h += ib(`data-autodisc${S.autoDiscover ? ' class="on"' : ""}${n >= 40 ? "" : " disabled"}`, "\ud83d\udd04", S.autoDiscover
+          ? "Keep discovering is on: discovery runs again as new data arrives. Click to stop."
+          : "Keep discovering: run discovery again as new data arrives, and keep its suggestions on screen. Pause the run to approve them.");
         h += ib("data-simplify", "✂️", "Simplify: flows that could go or be merged, and stocks that could be hidden");
       }
       h += `<label title="How far ahead to project, in ${esc(tu())}s">🔭 <input id="horizon" type="number" min="1" value="${S.model.horizon || 100}" aria-label="Project ahead"></label>`;
@@ -1083,7 +1135,13 @@
     tb.innerHTML = h;
     tb.querySelectorAll("[data-upd]").forEach((b) => b.addEventListener("click", updateEquations));
     tb.querySelectorAll("[data-undo]").forEach((b) => b.addEventListener("click", undoEquations));
-    tb.querySelectorAll("[data-discover]").forEach((b) => b.addEventListener("click", runDiscovery));
+    tb.querySelectorAll("[data-discover]").forEach((b) => b.addEventListener("click", () => runDiscovery()));
+    tb.querySelectorAll("[data-autodisc]").forEach((b) => b.addEventListener("click", () => {
+      S.autoDiscover = !S.autoDiscover;
+      try { localStorage.setItem("sdlab.autoDiscover", S.autoDiscover ? "1" : ""); } catch { /* fine without it */ }
+      renderToolbar();
+      if (S.autoDiscover) runDiscovery(true); else if (S.discovery) renderInspector();
+    }));
     tb.querySelectorAll("[data-simplify]").forEach((b) => b.addEventListener("click", runSimplify));
     tb.querySelectorAll("[data-leverage]").forEach((b) => b.addEventListener("click", runLeverage));
     tb.querySelectorAll("[data-import]").forEach((b) => b.addEventListener("click", async () => {
@@ -1116,6 +1174,8 @@
   function inspected() {
     const st = selStocks(), fl = selFlows();
     const sameSel = S.panelSel === [...S.sel].sort().join();
+    if (S.discovery && S.foundPick !== null && S.foundPick !== undefined && S.discovery.flows[S.foundPick]) return { type: "found-stock", obj: S.discovery.flows[S.foundPick] };
+    if (S.autoDiscover && S.mode === "run" && S.discovery) return { type: "discovery", obj: S.discovery };   // it stays open
     if (S.leverage && sameSel) return { type: "leverage", obj: S.leverage };
     if (S.discovery && sameSel) return { type: "discovery", obj: S.discovery };
     if (S.simplify && sameSel) return { type: "simplify", obj: S.simplify };
@@ -1136,6 +1196,7 @@
     if (it.type === "machine") box.innerHTML = machineForm(it.obj);
     if (it.type === "firing") box.innerHTML = firingView(it.obj);
     if (it.type === "discovery") { box.innerHTML = discoveryView(it.obj); wireDiscovery(box); }
+    if (it.type === "found-stock") { box.innerHTML = foundStockView(it.obj); wireFoundStock(box, it.obj); }
     if (it.type === "simplify") { box.innerHTML = simplifyView(it.obj); wireSimplify(box); }
     if (it.type === "leverage") { box.innerHTML = leverageView(it.obj); const c = box.querySelector("[data-lev-close]"); if (c) c.addEventListener("click", () => { S.leverage = null; renderInspector(); }); }
     wireFirings(box);
@@ -1655,7 +1716,8 @@
     });
     const unassigned = S.model.flows.filter((x) => !x.machine);
     if (unassigned.length) f.push(["warn", `No machine, so these never run: ${esc(unassigned.map((x) => x.name).join(", "))}.`]);
-    if (data) (S.live.errors || []).slice(-3).forEach((e) => f.push(["bad", `${esc(e.flow ? (flow(e.flow) || {}).name || e.flow : "Run")} failed at ${esc(tu())} ${e.t}: ${esc(e.error)}`]));
+    if (S.live && S.live.stopped) f.push(["bad", `<b>The run stopped at ${esc(tu())} ${S.live.stopped.t}</b>, because its source keeps failing: ${esc(S.live.stopped.reason)}. Nothing after that was recorded.`]);
+    else if (data) (S.live.errors || []).slice(-3).forEach((e) => f.push(["bad", `${esc(e.flow ? (flow(e.flow) || {}).name || e.flow : "Run")} failed at ${esc(tu())} ${e.t}: ${esc(e.error)}`]));
     const fh = f.map(([c, t]) => `<li class="${c}">${t}</li>`).join("");
     if ($("rf").dataset.html !== fh) { $("rf").dataset.html = fh; $("rf").innerHTML = fh; }
     const recent = data ? (S.live.recent || []).slice(-12).reverse().map(firingRow).join("") : "";
@@ -1850,12 +1912,24 @@
   }
 
   // ---------- discovering flows from stock levels alone ----------
-  function runDiscovery() {
-    if (!hasData()) return;
+  // Keep discovering: run discovery again once enough new steps have arrived, and never spend
+  // more than about a third of the time on it (a large model takes a second or more).
+  function maybeRediscover() {
+    if (!S.autoDiscover || S.mode !== "run" || !hasData() || S.discovering) return;
+    const n = S.live.series.t.length;
+    if (n < 40 || (S.lastAutoN && n - S.lastAutoN < Math.max(5, Math.round(0.01 * n)))) return;
+    if (performance.now() - (S.lastAutoAt || 0) < Math.max(2000, 3 * ((S.discovery && S.discovery.ms) || 0))) return;
+    runDiscovery(true);
+  }
+  function runDiscovery(auto) {
+    if (!hasData() || S.discovering) return;
     const pick = selStocks().filter((id) => !(stock(id) || {}).inferred);   // stocks found earlier have no data of their own
     if (S.discoverFromNothing === undefined) S.discoverFromNothing = false;
-    setStatus("Searching for the simplest flows that explain the stocks\u2026");
+    if (!auto) setStatus("Searching for the simplest flows that explain the stocks\u2026");
+    S.discovering = true;
     setTimeout(() => {
+      S.discovering = false;
+      if (!hasData()) return;
       const t0 = performance.now();
       const E = eras().map((e) => ({ start: e.start }));
       // measured models send no per-step accounting: it is each measured flow's amount, from and to its stocks
@@ -1901,9 +1975,20 @@
       r.scope = pick.length; r.total = scopeStocks.length;
       r.steps = S.live.series.t.length; r.eras = E.length; r.ms = Math.round(performance.now() - t0);
       r.residual = useKnown; r.canResidual = !!measuredMoves;
-      S.discovery = r; S.leverage = null; S.editMachine = null; S.firing = null; S.panelSel = [...S.sel].sort().join();
-      renderCanvas(); renderInspector();
-      setStatus(`Found ${r.flows.length} flow${r.flows.length === 1 ? "" : "s"} in ${r.ms} ms`);
+      r.at = S.live.series.t[S.live.series.t.length - 1];
+      S.lastAutoN = S.live.series.t.length; S.lastAutoAt = performance.now();
+      // a proposed stock that was dragged keeps its place when the same one is found again
+      const placed = new Map(((S.discovery && S.discovery.flows) || []).filter((f) => f.via && f.via.pos).map((f) => [`${f.from}>${f.to}<${f.via.echo || ""}`, f.via.pos]));
+      r.flows.forEach((f) => { if (f.via && placed.has(`${f.from}>${f.to}<${f.via.echo || ""}`)) f.via.pos = placed.get(`${f.from}>${f.to}<${f.via.echo || ""}`); });
+      const pickedKey = S.discovery && S.foundPick != null && S.discovery.flows[S.foundPick] ? `${S.discovery.flows[S.foundPick].from}>${S.discovery.flows[S.foundPick].to}` : null;
+      S.foundPick = pickedKey ? (() => { const i = r.flows.findIndex((f) => f.via && `${f.from}>${f.to}` === pickedKey); return i >= 0 ? i : null; })() : null;
+      S.discovery = r; S.leverage = null; S.panelSel = [...S.sel].sort().join();
+      if (!auto) { S.editMachine = null; S.firing = null; }
+      renderCanvas();
+      // keep the panel where it was scrolled: it is redrawn every time new suggestions arrive
+      const box = $("inspector"), top = box.scrollTop;
+      renderInspector(); box.scrollTop = top;
+      if (!auto) setStatus(`Found ${r.flows.length} flow${r.flows.length === 1 ? "" : "s"} in ${r.ms} ms`);
     }, 30);
   }
   const nodeName = (id) => (id ? stockName(id) : "outside");
@@ -1916,6 +2001,36 @@
       ? `About ${fmt(f.perStep)} per ${esc(tu())} leave <b>${esc(stockName(f.from))}</b> and arrive in <b>${esc(stockName(f.to))}</b> about ${fmt(v.delay)} ${esc(tu())}s later${span}.`
       : `About ${fmt(f.perStep)} per ${esc(tu())} arrive in <b>${esc(stockName(f.to))}</b> about ${fmt(v.delay)} ${esc(tu())}s after arriving in <b>${esc(stockName(v.echo))}</b>${span}: ${fmt(v.share * 100)}% of them come back.`;
     return `<li>${what} In between they wait in a stock nobody measures, holding about <b>${fmt(v.holds)}</b> at a time; ${SHAPES[v.shape]}.</li>`;
+  }
+  // One stock discovery proposes, picked on the canvas: what it is, and adding just it.
+  function foundStockView(f) {
+    const v = f.via, live = S.autoDiscover && S.live && S.live.running;
+    const into = f.from ? stockName(f.from) : `after arriving in ${stockName(v.echo)}`;
+    return `<h2>Stock nobody measures</h2><h3>Between ${esc(into)} and ${esc(stockName(f.to))}</h3>
+      <p class="note">Proposed by discovery, not part of the model yet. Drag it on the canvas to place it; adding it keeps that place.</p>
+      <ul class="found-list">${hiddenView(f)}</ul>
+      <table class="kv">
+        <tr><th>Holds on average</th><td>${fmt(v.holds)}</td></tr>
+        <tr><th>Delay</th><td>${fmt(v.delay)} ${esc(tu())}s${v.delayMin !== v.delayMax ? ` (${fmt(v.delayMin)} to ${fmt(v.delayMax)} fit about as well)` : ""}</td></tr>
+        <tr><th>Shape</th><td>${esc(v.shape)}</td></tr>
+        <tr><th>Flow in</th><td>${esc(describeRate(f.rate, stockName, tu()))}</td></tr>
+      </table>
+      <p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" data-found-one ${live ? 'disabled title="Pause the run to approve it"' : ""}>Add this stock and its two flows</button>
+        <button class="btn" data-found-back>All findings</button></p>`;
+  }
+  function wireFoundStock(box, f) {
+    box.querySelector("[data-found-back]").addEventListener("click", () => { S.foundPick = null; renderCanvas(); renderInspector(); });
+    box.querySelector("[data-found-one]").addEventListener("click", () => {
+      const parts = hiddenParts(f, uniqueId, uniqueId);
+      parts.stocks.forEach((x) => S.model.stocks.push(x));
+      parts.flows.forEach((x) => S.model.flows.push(x));
+      S.discovery.flows = S.discovery.flows.filter((g) => g !== f);
+      S.foundPick = null;
+      S.sel = new Set([...parts.stocks.map((x) => "s:" + x.id), ...parts.flows.map((x) => "f:" + x.id)]);
+      fillInferred(); changed();
+      setStatus(`Added ${parts.stocks[0].name} and its two flows`);
+    });
   }
   function discoveryView(r) {
     const latent = r.flows.filter((f) => f.via);
@@ -1932,7 +2047,9 @@
       : `The simplest set of flows that explains how every stock changed over ${r.steps} ${esc(tu())}s${r.eras > 1 ? ` and ${r.eras} eras` : ""}, from the stock levels alone, ignoring the flows you have. They are drawn in orange on the canvas. Other structures may explain the data too; what matters is that this one does.`;
     const scopeNote = (r.scope ? `<p class="note">Searched among the ${r.scope} selected stocks; flows to stocks outside the selection show as flows to or from outside.</p>` : "")
       + (r.searched !== undefined ? `<p class="note">${r.explained} of the ${r.total} stocks were already fully explained${r.residual ? " by the measured flows" : ""}; the other ${r.searched} were searched${r.together ? `, ${r.together} groups of related stocks together and the rest one by one` : " one by one"}.</p>` : "");
-    return `<h2>Flows found from stock levels</h2>${scopeNote}<h3>${r.flows.length ? `${r.flows.length} flow${r.flows.length === 1 ? "" : "s"}${r.residual ? " the model is missing" : ""}` : r.residual ? "Nothing is missing" : "No flows"}</h3>
+    const live = S.autoDiscover && S.live && S.live.running;
+    const autoNote = S.autoDiscover ? `<p class="note autonote">\ud83d\udd04 Keeps updating as data arrives: last at ${esc(tu())} ${r.at} (${r.ms} ms). ${live ? "Pause the run to approve these flows." : "The run is paused: approve these flows, or start it again to keep watching."}</p>` : "";
+    return `<h2>Flows found from stock levels</h2>${autoNote}${scopeNote}<h3>${r.flows.length ? `${r.flows.length} flow${r.flows.length === 1 ? "" : "s"}${r.residual ? " the model is missing" : ""}` : r.residual ? "Nothing is missing" : "No flows"}</h3>
       <p class="note">${intro}</p>
       ${r.canResidual ? `<label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-found-nothing ${S.discoverFromNothing ? "checked" : ""}> Ignore my flows and start from nothing</label>` : ""}
       ${r.residual && !r.flows.length ? `<p class="note">The measured flows explain every stock's change; what remains is step-to-step scatter.</p>` : ""}
@@ -1942,7 +2059,7 @@
       <h2 style="margin-top:14px">Not explained</h2>
       ${left.length ? `<ul class="found-list">${left.map(([id, u]) => `<li><b>${esc(stockName(id))}</b> drifts ${fmt(u.drift)} per ${esc(tu())} that no flow explains. A stock or flow is probably missing here.</li>`).join("")}</ul>` : `<p class="note">Every stock's change is explained; what remains is step-to-step scatter.</p>`}
       ${(r.hidden || []).length && !latent.length ? `<h2 style="margin-top:14px">Probably a stock nobody measures</h2><ul class="found-list">${r.hidden.slice(0, 3).map((h) => `<li>Things leave <b>${esc(stockName(h.from))}</b> and about as many arrive in <b>${esc(stockName(h.to))}</b>${h.delay !== null ? ` about ${fmt(h.delay)} ${esc(tu())}s later` : ""}. They are probably waiting somewhere in between${h.holds !== null ? `: a stock holding about ${fmt(h.holds)} at a time` : ""}. Measure it and add it to the model.</li>`).join("")}</ul>` : ""}
-      <p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">${r.flows.length ? (r.residual ? `<button class="btn primary" data-found-add>Add these flows to the model</button>` : `<button class="btn primary" data-found-model>Make a new model from these flows</button>`) : ""}<button class="btn" data-found-close>Close</button></p>`;
+      <p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">${r.flows.length ? (r.residual ? `<button class="btn primary" data-found-add ${live ? 'disabled title="Pause the run to approve these flows"' : ""}>Add these flows to the model</button>` : `<button class="btn primary" data-found-model ${live ? 'disabled title="Pause the run to approve these flows"' : ""}>Make a new model from these flows</button>`) : ""}<button class="btn" data-found-close>Close</button></p>`;
   }
   function wireDiscovery(box) {
     const c = box.querySelector("[data-found-close]"); if (c) c.addEventListener("click", () => { S.discovery = null; renderCanvas(); renderInspector(); });
@@ -1987,6 +2104,7 @@
     fillInferred();
     changed();
     setStatus(`Added ${added.length} flow${added.length === 1 ? "" : "s"}${stocks.length ? ` and ${stocks.length} stock${stocks.length === 1 ? "" : "s"} nobody measures` : ""}, found in the data`);
+    if (S.autoDiscover && S.mode === "run") runDiscovery(true);    // look again, now for what the new flows leave unexplained
   }
   // A new model with the same stocks and the discovered flows, so the original stays as it is.
   async function makeFoundModel() {

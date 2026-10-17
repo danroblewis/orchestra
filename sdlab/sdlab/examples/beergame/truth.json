@@ -1,0 +1,321 @@
+{
+ "seed": 20261016,
+ "steps": 365,
+ "step": "1 day",
+ "parameters": {
+  "demand_before": 40.0,
+  "demand_after": 60.0,
+  "step_day": 100,
+  "promotion": [
+   240,
+   254,
+   1.4
+  ],
+  "net_stock_goal": 80,
+  "alpha_stock": 0.2,
+  "alpha_supply": 0.1,
+  "theta": 0.25,
+  "initial_demand": 40,
+  "ship_days": {
+   "wholesaler": 2,
+   "distributor": 3,
+   "brewery": 4
+  },
+  "brew_days": 3
+ },
+ "capacity": [
+  {
+   "from_day": 1,
+   "cases_per_day": 200,
+   "label": "Start"
+  },
+  {
+   "from_day": 200,
+   "cases_per_day": 40,
+   "label": "Brewery: one line down for maintenance (40 cases a day)"
+  },
+  {
+   "from_day": 214,
+   "cases_per_day": 200,
+   "label": "Brewery: both lines back (200 cases a day)"
+  }
+ ],
+ "measured": {
+  "stocks": [
+   "inv_retailer",
+   "inv_wholesaler",
+   "inv_distributor",
+   "inv_brewery",
+   "backlog_retailer",
+   "backlog_wholesaler",
+   "backlog_distributor",
+   "backlog_brewery"
+  ],
+  "flows": []
+ },
+ "hidden_stocks": {
+  "transit_retailer": {
+   "mean_level": 111.436,
+   "max_level": 232
+  },
+  "transit_wholesaler": {
+   "mean_level": 167.611,
+   "max_level": 455
+  },
+  "transit_distributor": {
+   "mean_level": 224.175,
+   "max_level": 685
+  },
+  "brewing": {
+   "mean_level": 169.074,
+   "max_level": 599
+  },
+  "mail": {
+   "mean_level": 168.175,
+   "max_level": 379
+  }
+ },
+ "ordering_rule": "order = max(0, round(E + alpha_stock x (net_stock_goal - inventory + backlog) + alpha_supply x (E x lead - supply line))); E += theta x (orders in - E); supply line = upstream backlog + cases in trucks (brewery: in the tanks); lead = 1 day of picking + truck days (brewery: 3 brewing days)",
+ "totals": {
+  "customer_orders": 20304,
+  "brewed": 20604,
+  "produced": 20502,
+  "shipped__retailer": 20296,
+  "received__retailer": 20305,
+  "orders_in__retailer": 20304,
+  "ordered__retailer": 20381,
+  "shipped__wholesaler": 20347,
+  "received__wholesaler": 20355,
+  "orders_in__wholesaler": 20367,
+  "ordered__wholesaler": 20455,
+  "shipped__distributor": 20413,
+  "received__distributor": 20387,
+  "orders_in__distributor": 20434,
+  "ordered__distributor": 20548,
+  "shipped__brewery": 20496,
+  "received__brewery": 20502,
+  "orders_in__brewery": 20522,
+  "ordered__brewery": 20604
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms, one day per step. There are no direct stock-to-stock moves: every shipment leaves a tier's inventory, rides a truck nobody counts (a pipe delay) and arrives in the next tier's inventory (hidden). The rate of a shipment is set by the shipper's backlog of the day before (min(inventory, backlog)), not by its inventory: 'share' is shipments / inventory of the day before, realised, for comparison with a proportional fit; 'rate_driver' gives the true driver. The same cases also leave the shipper's backlog (outside flows from backlog_*). Orders are information: nothing leaves the tier that orders; the upstream backlog gains a day later at a rate that rises with the orderer's backlog and falls with its inventory (links, k = +-alpha_stock, plus expected demand and the supply-line term, which no measured stock carries).",
+  "moves": [],
+  "outside": [
+   {
+    "to": "backlog_retailer",
+    "form": "constant",
+    "value": 55.627,
+    "piecewise": [
+     {
+      "from_day": 1,
+      "mean": 40.0
+     },
+     {
+      "from_day": 100,
+      "mean": 60.0
+     },
+     {
+      "from_day": 240,
+      "to_day": 253,
+      "mean": 84.0
+     }
+    ],
+    "what": "customer orders (Poisson): 40 a day, 60 from day 100, x1.4 in the promotion"
+   },
+   {
+    "from": "inv_retailer",
+    "form": "proportional",
+    "stock": "backlog_retailer",
+    "k": 1.0,
+    "k_inventory": 0.4179,
+    "what": "sales: the retailer hands customers yesterday's orders, as far as its stock goes (k = 1 x backlog while stocked)"
+   },
+   {
+    "to": "inv_brewery",
+    "form": "pipe",
+    "delay": 3,
+    "value": 56.17,
+    "stock": "brewing",
+    "what": "production: what the brewery started brewing 3 days before (its own order, capped by capacity)"
+   },
+   {
+    "from": "backlog_retailer",
+    "form": "proportional",
+    "k": 1.0,
+    "k_nominal": 1.0,
+    "what": "orders the retailer filled (the same cases leave inv_retailer): all of yesterday's backlog while stocked"
+   },
+   {
+    "from": "backlog_wholesaler",
+    "form": "proportional",
+    "k": 0.9819,
+    "k_nominal": 1.0,
+    "what": "orders the wholesaler filled (the same cases leave inv_wholesaler): all of yesterday's backlog while stocked"
+   },
+   {
+    "from": "backlog_distributor",
+    "form": "proportional",
+    "k": 0.8693,
+    "k_nominal": 1.0,
+    "what": "orders the distributor filled (the same cases leave inv_distributor): all of yesterday's backlog while stocked"
+   },
+   {
+    "from": "backlog_brewery",
+    "form": "proportional",
+    "k": 0.9468,
+    "k_nominal": 1.0,
+    "what": "orders the brewery filled (the same cases leave inv_brewery): all of yesterday's backlog while stocked"
+   }
+  ],
+  "links": [
+   {
+    "driver": "backlog_retailer",
+    "into": "backlog_wholesaler",
+    "k": 0.2,
+    "delay": 1,
+    "what": "the retailer's orders reach the wholesaler's backlog a day later: expected demand + 0.2 x (80 - inv_retailer + backlog_retailer) + 0.1 x supply-line gap"
+   },
+   {
+    "driver": "inv_retailer",
+    "into": "backlog_wholesaler",
+    "k": -0.2,
+    "delay": 1,
+    "what": "the retailer's orders reach the wholesaler's backlog a day later: expected demand + 0.2 x (80 - inv_retailer + backlog_retailer) + 0.1 x supply-line gap"
+   },
+   {
+    "driver": "backlog_wholesaler",
+    "into": "backlog_distributor",
+    "k": 0.2,
+    "delay": 1,
+    "what": "the wholesaler's orders reach the distributor's backlog a day later: expected demand + 0.2 x (80 - inv_wholesaler + backlog_wholesaler) + 0.1 x supply-line gap"
+   },
+   {
+    "driver": "inv_wholesaler",
+    "into": "backlog_distributor",
+    "k": -0.2,
+    "delay": 1,
+    "what": "the wholesaler's orders reach the distributor's backlog a day later: expected demand + 0.2 x (80 - inv_wholesaler + backlog_wholesaler) + 0.1 x supply-line gap"
+   },
+   {
+    "driver": "backlog_distributor",
+    "into": "backlog_brewery",
+    "k": 0.2,
+    "delay": 1,
+    "what": "the distributor's orders reach the brewery's backlog a day later: expected demand + 0.2 x (80 - inv_distributor + backlog_distributor) + 0.1 x supply-line gap"
+   },
+   {
+    "driver": "inv_distributor",
+    "into": "backlog_brewery",
+    "k": -0.2,
+    "delay": 1,
+    "what": "the distributor's orders reach the brewery's backlog a day later: expected demand + 0.2 x (80 - inv_distributor + backlog_distributor) + 0.1 x supply-line gap"
+   },
+   {
+    "driver": "backlog_brewery",
+    "into": "inv_brewery",
+    "k": 0.2,
+    "delay": 3,
+    "what": "the brewery's brewing decision, ready 3 days later (capped by capacity)"
+   },
+   {
+    "driver": "inv_brewery",
+    "into": "inv_brewery",
+    "k": -0.2,
+    "delay": 3,
+    "what": "the brewery's brewing decision, ready 3 days later (capped by capacity)"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "inv_wholesaler",
+    "to": "inv_retailer",
+    "shape": "pipe",
+    "delay": 2,
+    "share": 0.4278,
+    "holds": 111.436,
+    "stock": "transit_retailer",
+    "rate": "min(inv_wholesaler, backlog_wholesaler of the day before)",
+    "rate_driver": {
+     "stock": "backlog_wholesaler",
+     "k": 0.9819
+    },
+    "what": "the wholesaler ships to the retailer: cases ride a truck for 2 days (nobody counts trucks)"
+   },
+   {
+    "from": "inv_distributor",
+    "to": "inv_wholesaler",
+    "shape": "pipe",
+    "delay": 3,
+    "share": 0.3677,
+    "holds": 167.611,
+    "stock": "transit_wholesaler",
+    "rate": "min(inv_distributor, backlog_distributor of the day before)",
+    "rate_driver": {
+     "stock": "backlog_distributor",
+     "k": 0.8693
+    },
+    "what": "the distributor ships to the wholesaler: cases ride a truck for 3 days (nobody counts trucks)"
+   },
+   {
+    "from": "inv_brewery",
+    "to": "inv_distributor",
+    "shape": "pipe",
+    "delay": 4,
+    "share": 0.3057,
+    "holds": 224.175,
+    "stock": "transit_distributor",
+    "rate": "min(inv_brewery, backlog_brewery of the day before)",
+    "rate_driver": {
+     "stock": "backlog_brewery",
+     "k": 0.9468
+    },
+    "what": "the brewery ships to the distributor: cases ride a truck for 4 days (nobody counts trucks)"
+   }
+  ],
+  "echoes": []
+ },
+ "mean_levels": {
+  "inv_retailer": 133.079,
+  "inv_wholesaler": 130.332,
+  "inv_distributor": 152.03,
+  "inv_brewery": 183.679,
+  "backlog_retailer": 55.627,
+  "backlog_wholesaler": 56.827,
+  "backlog_distributor": 64.389,
+  "backlog_brewery": 59.381
+ },
+ "max_levels": {
+  "inv_retailer": 288,
+  "inv_wholesaler": 480,
+  "inv_distributor": 806,
+  "inv_brewery": 628,
+  "backlog_retailer": 94,
+  "backlog_wholesaler": 146,
+  "backlog_distributor": 277,
+  "backlog_brewery": 301
+ },
+ "min_levels": {
+  "inv_retailer": 33,
+  "inv_wholesaler": 0,
+  "inv_distributor": 0,
+  "inv_brewery": 0,
+  "backlog_retailer": 25,
+  "backlog_wholesaler": 31,
+  "backlog_distributor": 0,
+  "backlog_brewery": 0
+ },
+ "eras": [
+  {
+   "t": 1,
+   "label": "Start"
+  },
+  {
+   "t": 200,
+   "label": "Brewery: one line down for maintenance (40 cases a day)"
+  },
+  {
+   "t": 214,
+   "label": "Brewery: both lines back (200 cases a day)"
+  }
+ ]
+}

@@ -1,0 +1,1368 @@
+{
+ "id": "sd-ci-truth",
+ "name": "SD: Software delivery pipeline: the truth",
+ "time_unit": "hour",
+ "seed": 20261016,
+ "steps": 1344,
+ "long_steps": 13440,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "todo",
+   "name": "Work in progress (developers)",
+   "unit": "changes",
+   "initial": 60,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "commits",
+   "name": "Commits waiting to build",
+   "unit": "changes",
+   "initial": 10,
+   "x": 300,
+   "y": 200
+  },
+  {
+   "id": "review",
+   "name": "Waiting for code review",
+   "unit": "changes",
+   "initial": 20,
+   "x": 520,
+   "y": 380,
+   "measured": false
+  },
+  {
+   "id": "builds",
+   "name": "Builds running",
+   "unit": "changes",
+   "initial": 6,
+   "x": 520,
+   "y": 200
+  },
+  {
+   "id": "tests",
+   "name": "Tests running",
+   "unit": "changes",
+   "initial": 8,
+   "x": 740,
+   "y": 200
+  },
+  {
+   "id": "artifacts",
+   "name": "Artifacts waiting to deploy",
+   "unit": "changes",
+   "initial": 12,
+   "x": 960,
+   "y": 200
+  },
+  {
+   "id": "live",
+   "name": "Recently deployed (being watched)",
+   "unit": "changes",
+   "initial": 30,
+   "x": 1180,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "pull",
+   "name": "Developers pick up work",
+   "from": null,
+   "to": "todo",
+   "rate": {
+    "form": "linear",
+    "c": 14,
+    "terms": [
+     {
+      "stock": "todo",
+      "k": -0.1
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "bugs",
+   "name": "Bugs reported from production",
+   "from": null,
+   "to": "todo",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "live",
+      "k": 0.002
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "commit",
+   "name": "Push a commit",
+   "from": "todo",
+   "to": "commits",
+   "rate": {
+    "form": "proportional",
+    "stock": "todo",
+    "k": 0.06
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "open_pr",
+   "name": "Open for review",
+   "from": "commits",
+   "to": "review",
+   "rate": {
+    "form": "proportional",
+    "stock": "commits",
+    "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "approve",
+   "name": "Review approved, build starts",
+   "from": "review",
+   "to": "builds",
+   "rate": {
+    "form": "proportional",
+    "stock": "review",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "build_done",
+   "name": "Build finishes, tests start",
+   "from": "builds",
+   "to": "tests",
+   "rate": {
+    "form": "proportional",
+    "stock": "builds",
+    "k": 0.35
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pass",
+   "name": "Tests pass",
+   "from": "tests",
+   "to": "artifacts",
+   "rate": {
+    "form": "proportional",
+    "stock": "tests",
+    "k": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fail",
+   "name": "Tests fail: back to the developer",
+   "from": "tests",
+   "to": "todo",
+   "rate": {
+    "form": "proportional",
+    "stock": "tests",
+    "k": 0.06
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "flaky",
+   "name": "Flaky test: rebuild and rerun",
+   "from": "tests",
+   "to": "builds",
+   "rate": {
+    "form": "proportional",
+    "stock": "tests",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deploy",
+   "name": "Deploy",
+   "from": "artifacts",
+   "to": "live",
+   "rate": {
+    "form": "proportional",
+    "stock": "artifacts",
+    "k": 0.12
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "settle",
+   "name": "Release settles",
+   "from": "live",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "live",
+    "k": 0.02
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 1344,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Night",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "Build farm back to two agents",
+    "set": {
+     "build_done": {
+      "form": "proportional",
+      "stock": "builds",
+      "k": 0.35
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 673,
+    "label": "Two more build agents added",
+    "set": {
+     "build_done": {
+      "form": "proportional",
+      "stock": "builds",
+      "k": 0.7
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 1,
+    "label": "Flaky tests at their usual rate",
+    "set": {
+     "flaky": {
+      "form": "proportional",
+      "stock": "tests",
+      "k": 0.03
+     }
+    }
+   },
+   {
+    "t": 400,
+    "label": "A flaky test suite slips in",
+    "set": {
+     "flaky": {
+      "form": "proportional",
+      "stock": "tests",
+      "k": 0.12
+     }
+    }
+   },
+   {
+    "t": 520,
+    "label": "Flaky suite quarantined",
+    "set": {
+     "flaky": {
+      "form": "proportional",
+      "stock": "tests",
+      "k": 0.03
+     }
+    }
+   },
+   {
+    "t": 10,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 30,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 18,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 34,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 42,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 58,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 66,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 82,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 90,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 106,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 114,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 178,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 186,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 202,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 210,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 226,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 234,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 250,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 258,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 274,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 282,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 346,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 30,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 354,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 370,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 378,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 394,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 402,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 418,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 426,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 442,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 450,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 514,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 522,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 538,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 546,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 562,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 570,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 586,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 594,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 610,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 618,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 682,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 30,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 690,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 706,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 714,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 730,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 738,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 754,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 762,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 778,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 786,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 850,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 858,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 874,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 882,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 898,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 906,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 922,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 930,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 946,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 954,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1018,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 30,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1026,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1042,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1050,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1066,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1074,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1090,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1098,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1114,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1122,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1186,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1194,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1210,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1218,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1234,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 14,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1242,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1258,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1266,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   },
+   {
+    "t": 1282,
+    "label": "Working hours",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 20,
+      "terms": [
+       {
+        "stock": "todo",
+        "k": -0.1
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 1290,
+    "label": "Evening",
+    "set": {
+     "pull": {
+      "form": "linear",
+      "c": 0,
+      "terms": []
+     }
+    }
+   }
+  ]
+ }
+}

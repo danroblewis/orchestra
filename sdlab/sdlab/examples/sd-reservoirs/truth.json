@@ -1,0 +1,150 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 2000,
+ "measured": [
+  "upper",
+  "middle",
+  "lower"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 480,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal river (20 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   },
+   {
+    "t": 97,
+    "label": "Storm (90 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 90
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "After the storm (30 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 241,
+    "label": "Dry spell (5 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 5
+     }
+    }
+   },
+   {
+    "t": 361,
+    "label": "Rain again (25 ML/h)",
+    "set": {
+     "inflow": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "upper",
+    "to": "middle",
+    "flow": "release_upper",
+    "what": "Upper releases",
+    "rate": {
+     "form": "linear",
+     "c": -6,
+     "terms": [
+      {
+       "stock": "upper",
+       "k": 0.02
+      }
+     ]
+    }
+   },
+   {
+    "from": "middle",
+    "to": "lower",
+    "flow": "release_middle",
+    "what": "Middle releases",
+    "rate": {
+     "form": "linear",
+     "c": -6,
+     "terms": [
+      {
+       "stock": "middle",
+       "k": 0.015
+      }
+     ]
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "upper",
+    "flow": "inflow",
+    "what": "River into the valley",
+    "rate": {
+     "form": "constant",
+     "value": 20
+    }
+   },
+   {
+    "from": "lower",
+    "flow": "release_lower",
+    "what": "Lower releases",
+    "rate": {
+     "form": "linear",
+     "c": -5,
+     "terms": [
+      {
+       "stock": "lower",
+       "k": 0.012
+      }
+     ]
+    }
+   },
+   {
+    "from": "upper",
+    "flow": "evap_upper",
+    "what": "Evaporation",
+    "rate": {
+     "form": "proportional",
+     "stock": "upper",
+     "k": 0.0005
+    }
+   },
+   {
+    "from": "middle",
+    "flow": "town",
+    "what": "Town water",
+    "rate": {
+     "form": "constant",
+     "value": 4
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [],
+  "echoes": []
+ }
+}

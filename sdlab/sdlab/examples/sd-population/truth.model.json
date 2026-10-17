@@ -1,0 +1,161 @@
+{
+ "id": "sd-population-truth",
+ "name": "SD: Population: the truth",
+ "time_unit": "year",
+ "seed": 20261016,
+ "steps": 300,
+ "long_steps": 3000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "children",
+   "name": "Children",
+   "unit": "people",
+   "initial": 20000,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "adults",
+   "name": "Adults",
+   "unit": "people",
+   "initial": 50000,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "elderly",
+   "name": "Older people",
+   "unit": "people",
+   "initial": 15000,
+   "x": 560,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "births",
+   "name": "Births",
+   "from": null,
+   "to": "children",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "adults",
+      "k": 0.022
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "grow_up",
+   "name": "Growing up",
+   "from": "children",
+   "to": "adults",
+   "rate": {
+    "form": "proportional",
+    "stock": "children",
+    "k": 0.05555555555555555
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "retire",
+   "name": "Growing older",
+   "from": "adults",
+   "to": "elderly",
+   "rate": {
+    "form": "proportional",
+    "stock": "adults",
+    "k": 0.022222222222222223
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "adult_deaths",
+   "name": "Adult deaths",
+   "from": "adults",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "adults",
+    "k": 0.002
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deaths",
+   "name": "Deaths",
+   "from": "elderly",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "elderly",
+    "k": 0.1
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "migrate",
+   "name": "Migration",
+   "from": null,
+   "to": "adults",
+   "rate": {
+    "form": "constant",
+    "value": 800
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 60,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Steady migration",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 800
+     }
+    }
+   },
+   {
+    "t": 21,
+    "label": "A migration wave",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 3000
+     }
+    }
+   },
+   {
+    "t": 31,
+    "label": "Migration slows",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 300
+     }
+    }
+   },
+   {
+    "t": 46,
+    "label": "Migration back to normal",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 900
+     }
+    }
+   }
+  ]
+ }
+}

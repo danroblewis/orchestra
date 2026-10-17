@@ -1,0 +1,1079 @@
+{
+ "id": "sd-university-truth",
+ "name": "SD: University: the truth",
+ "time_unit": "week",
+ "seed": 20261016,
+ "steps": 520,
+ "long_steps": 5200,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "applicants",
+   "name": "Applications under review",
+   "unit": "students",
+   "initial": 300,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "admitted",
+   "name": "Admitted, waiting to start",
+   "unit": "students",
+   "initial": 500,
+   "x": 300,
+   "y": 200
+  },
+  {
+   "id": "year1",
+   "name": "First-year students",
+   "unit": "students",
+   "initial": 650,
+   "x": 520,
+   "y": 200
+  },
+  {
+   "id": "year2",
+   "name": "Second-year students",
+   "unit": "students",
+   "initial": 550,
+   "x": 740,
+   "y": 200
+  },
+  {
+   "id": "final",
+   "name": "Final-year students",
+   "unit": "students",
+   "initial": 500,
+   "x": 960,
+   "y": 200
+  },
+  {
+   "id": "graduates",
+   "name": "Graduates",
+   "unit": "students",
+   "initial": 0,
+   "x": 1180,
+   "y": 200,
+   "final": true
+  },
+  {
+   "id": "yearout",
+   "name": "On a year out / leave of absence",
+   "unit": "students",
+   "initial": 40,
+   "x": 850,
+   "y": 380,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "apply",
+   "name": "Applications arrive",
+   "from": null,
+   "to": "applicants",
+   "rate": {
+    "form": "linear",
+    "c": 40,
+    "terms": [
+     {
+      "stock": "final",
+      "k": 0.03
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "decline",
+   "name": "Applicants go elsewhere",
+   "from": "applicants",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "applicants",
+    "k": 0.06
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "admit",
+   "name": "Offers accepted",
+   "from": "applicants",
+   "to": "admitted",
+   "rate": {
+    "form": "gap",
+    "stock": "admitted",
+    "goal": 800,
+    "time": 6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "melt",
+   "name": "Admitted students drop out before starting",
+   "from": "admitted",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "admitted",
+    "k": 0.004
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "enroll",
+   "name": "Start first year",
+   "from": "admitted",
+   "to": "year1",
+   "rate": {
+    "form": "proportional",
+    "stock": "admitted",
+    "k": 0.004
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pass1",
+   "name": "Pass first year",
+   "from": "year1",
+   "to": "year2",
+   "rate": {
+    "form": "proportional",
+    "stock": "year1",
+    "k": 0.019
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "drop1",
+   "name": "First-years drop out",
+   "from": "year1",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "year1",
+    "k": 0.0035
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "repeat",
+   "name": "Second-years repeat first year",
+   "from": "year2",
+   "to": "year1",
+   "rate": {
+    "form": "proportional",
+    "stock": "year2",
+    "k": 0.0015
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pass2",
+   "name": "Pass second year",
+   "from": "year2",
+   "to": "final",
+   "rate": {
+    "form": "proportional",
+    "stock": "year2",
+    "k": 0.018
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "drop2",
+   "name": "Second-years drop out",
+   "from": "year2",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "year2",
+    "k": 0.0015
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "leave",
+   "name": "Take a year out",
+   "from": "year2",
+   "to": "yearout",
+   "rate": {
+    "form": "proportional",
+    "stock": "year2",
+    "k": 0.0025
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "back",
+   "name": "Return from the year out",
+   "from": "yearout",
+   "to": "final",
+   "rate": {
+    "form": "proportional",
+    "stock": "yearout",
+    "k": 0.019230769230769232
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "graduate",
+   "name": "Graduate",
+   "from": "final",
+   "to": "graduates",
+   "rate": {
+    "form": "proportional",
+    "stock": "final",
+    "k": 0.019
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "drop3",
+   "name": "Final-years drop out",
+   "from": "final",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "final",
+    "k": 0.001
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 520,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Main campus only: 800 places",
+    "set": {
+     "admit": {
+      "form": "gap",
+      "stock": "admitted",
+      "goal": 800,
+      "time": 6
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 1,
+    "label": "Year 1: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 45.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 6,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 14.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 22,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 36,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 40,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 28.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 53,
+    "label": "Year 2: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 51.7,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 58,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 16.1,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 74,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.6,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 88,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 92,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 32.2,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 105,
+    "label": "Year 3: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 40.5,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 110,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 12.6,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 126,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 3.6,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 140,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 144,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 25.2,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 157,
+    "label": "Year 4: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 47.2,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 162,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 14.7,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 178,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.2,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 192,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 196,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 29.4,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 209,
+    "label": "Year 5: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 54.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 214,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 16.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 230,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 244,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 248,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 33.6,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "Year 6: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 42.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "New campus opens: 1,100 places",
+    "set": {
+     "admit": {
+      "form": "gap",
+      "stock": "admitted",
+      "goal": 1100,
+      "time": 6
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 266,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 13.3,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 282,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 3.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 296,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 300,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 26.6,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 313,
+    "label": "Year 7: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 49.5,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 318,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 15.4,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 334,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.4,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 348,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 352,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 30.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 365,
+    "label": "Year 8: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 38.2,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 370,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 11.9,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 386,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 3.4,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 400,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 404,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 23.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 417,
+    "label": "Year 9: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 45.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 422,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 14.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 438,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 452,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 456,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 28.0,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   },
+   {
+    "t": 469,
+    "label": "Year 10: January deadline rush",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 49.5,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 474,
+    "label": "Spring: late applications",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 15.4,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 490,
+    "label": "Summer: clearing only",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 4.4,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     }
+    }
+   },
+   {
+    "t": 504,
+    "label": "Term starts: admitted students enrol",
+    "set": {
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.35
+     }
+    }
+   },
+   {
+    "t": 508,
+    "label": "Autumn: next year's applications open",
+    "set": {
+     "apply": {
+      "form": "linear",
+      "c": 30.8,
+      "terms": [
+       {
+        "stock": "final",
+        "k": 0.03
+       }
+      ]
+     },
+     "enroll": {
+      "form": "proportional",
+      "stock": "admitted",
+      "k": 0.004
+     }
+    }
+   }
+  ]
+ }
+}

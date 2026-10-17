@@ -1,0 +1,138 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 300,
+ "measured": [
+  "children",
+  "adults",
+  "elderly"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 60,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Steady migration",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 800
+     }
+    }
+   },
+   {
+    "t": 21,
+    "label": "A migration wave",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 3000
+     }
+    }
+   },
+   {
+    "t": 31,
+    "label": "Migration slows",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 300
+     }
+    }
+   },
+   {
+    "t": 46,
+    "label": "Migration back to normal",
+    "set": {
+     "migrate": {
+      "form": "constant",
+      "value": 900
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "children",
+    "to": "adults",
+    "flow": "grow_up",
+    "what": "Growing up",
+    "rate": {
+     "form": "proportional",
+     "stock": "children",
+     "k": 0.05555555555555555
+    }
+   },
+   {
+    "from": "adults",
+    "to": "elderly",
+    "flow": "retire",
+    "what": "Growing older",
+    "rate": {
+     "form": "proportional",
+     "stock": "adults",
+     "k": 0.022222222222222223
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "children",
+    "flow": "births",
+    "what": "Births",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "adults",
+       "k": 0.022
+      }
+     ]
+    }
+   },
+   {
+    "from": "adults",
+    "flow": "adult_deaths",
+    "what": "Adult deaths",
+    "rate": {
+     "form": "proportional",
+     "stock": "adults",
+     "k": 0.002
+    }
+   },
+   {
+    "from": "elderly",
+    "flow": "deaths",
+    "what": "Deaths",
+    "rate": {
+     "form": "proportional",
+     "stock": "elderly",
+     "k": 0.1
+    }
+   },
+   {
+    "to": "adults",
+    "flow": "migrate",
+    "what": "Migration",
+    "rate": {
+     "form": "constant",
+     "value": 800
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "adults",
+    "into": "children",
+    "flow": "births",
+    "what": "Births"
+   }
+  ],
+  "hidden": [],
+  "echoes": []
+ }
+}

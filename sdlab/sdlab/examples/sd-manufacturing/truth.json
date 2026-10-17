@@ -1,0 +1,280 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 720,
+ "measured": [
+  "backlog",
+  "material",
+  "wip",
+  "inspection",
+  "rework",
+  "finished"
+ ],
+ "hidden_stocks": [
+  "packing",
+  "on_order"
+ ],
+ "schedule": {
+  "every": 360,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Steady orders (20 a day); one production line",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 20
+     },
+     "start": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "backlog",
+        "k": 0.06
+       },
+       {
+        "stock": "material",
+        "k": 0.02
+       },
+       {
+        "stock": "wip",
+        "k": -0.05
+       }
+      ]
+     },
+     "complete": {
+      "form": "proportional",
+      "stock": "wip",
+      "k": 0.25
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "Orders pick up (30 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "Orders slump (12 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 12
+     }
+    }
+   },
+   {
+    "t": 181,
+    "label": "Second production line installed",
+    "set": {
+     "start": {
+      "form": "linear",
+      "c": 0,
+      "terms": [
+       {
+        "stock": "backlog",
+        "k": 0.09
+       },
+       {
+        "stock": "material",
+        "k": 0.03
+       },
+       {
+        "stock": "wip",
+        "k": -0.05
+       }
+      ]
+     },
+     "complete": {
+      "form": "proportional",
+      "stock": "wip",
+      "k": 0.4
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 211,
+    "label": "Big contract (36 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 36
+     }
+    }
+   },
+   {
+    "t": 271,
+    "label": "Orders ease (24 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 24
+     }
+    }
+   },
+   {
+    "t": 316,
+    "label": "Holiday lull (10 a day)",
+    "set": {
+     "demand": {
+      "form": "constant",
+      "value": 10
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "material",
+    "to": "wip",
+    "flow": "start",
+    "what": "Production starts",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "backlog",
+       "k": 0.06
+      },
+      {
+       "stock": "material",
+       "k": 0.02
+      },
+      {
+       "stock": "wip",
+       "k": -0.05
+      }
+     ]
+    }
+   },
+   {
+    "from": "wip",
+    "to": "inspection",
+    "flow": "complete",
+    "what": "Units completed",
+    "rate": {
+     "form": "proportional",
+     "stock": "wip",
+     "k": 0.25
+    }
+   },
+   {
+    "from": "inspection",
+    "to": "rework",
+    "flow": "reject",
+    "what": "Rejected at inspection",
+    "rate": {
+     "form": "proportional",
+     "stock": "inspection",
+     "k": 0.06
+    }
+   },
+   {
+    "from": "rework",
+    "to": "wip",
+    "flow": "reworked",
+    "what": "Back to the line after rework",
+    "rate": {
+     "form": "proportional",
+     "stock": "rework",
+     "k": 0.2
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "backlog",
+    "flow": "demand",
+    "what": "Customer orders arrive",
+    "rate": {
+     "form": "constant",
+     "value": 20
+    }
+   },
+   {
+    "from": "backlog",
+    "flow": "fill",
+    "what": "Orders filled",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "finished",
+       "k": 0.12
+      },
+      {
+       "stock": "backlog",
+       "k": 0.04
+      }
+     ]
+    }
+   },
+   {
+    "to": "material",
+    "flow": "spot_buy",
+    "what": "Spot purchases of material",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "backlog",
+       "k": 0.03
+      }
+     ]
+    }
+   },
+   {
+    "from": "finished",
+    "flow": "ship",
+    "what": "Shipments",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "backlog",
+       "k": 0.1
+      },
+      {
+       "stock": "finished",
+       "k": 0.05
+      }
+     ]
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "backlog",
+    "into": "material",
+    "flow": "spot_buy",
+    "what": "Spot purchases of material"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "inspection",
+    "to": "finished",
+    "via": "packing",
+    "via_name": "Being packed (not counted)",
+    "shape": "exp",
+    "delay": 4.0,
+    "what": "Pass inspection, go to packing, then Packed into finished goods"
+   }
+  ],
+  "echoes": []
+ }
+}

@@ -1,0 +1,83 @@
+{
+ "id": "bikeshare",
+ "name": "Bike share (6 stations and a van)",
+ "description": "Two weeks of a city bike share, five minutes at a time, as the operator's dashboard saw them: how many bikes were docked at each of its six stations, and how many bikes were on board the rebalancing van. The fleet is 200 bikes. Nothing else is measured: no counters, no trip records, and nobody counts the bikes that are out on the street. The two weeks start on a Monday; one weekday it rained all day. The operator changed four things (each starts an era): a station got more docks, a station was closed for a day and then reopened, and the van's schedule changed. Start plays the two weeks live, five minutes per tick (Speed sets how fast); Import history loads them all at once. Then run Discover flows. A good discovery should say which stations bikes move between, how long a bike is away between leaving one station and docking at another, how many bikes are out at a time, and where the van takes bikes from and where it leaves them. The answer is in bikeshare/README.md; do not read it first.",
+ "time_unit": "5-minute step",
+ "horizon": 288,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "riverside",
+   "name": "Riverside: bikes docked",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 120,
+   "y": 120,
+   "group": "city"
+  },
+  {
+   "id": "old_town",
+   "name": "Old Town: bikes docked",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 300,
+   "y": 220,
+   "group": "city"
+  },
+  {
+   "id": "central",
+   "name": "Central Station: bikes docked",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 480,
+   "y": 120,
+   "group": "city"
+  },
+  {
+   "id": "waterfront",
+   "name": "Waterfront: bikes docked",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 480,
+   "y": 340,
+   "group": "city"
+  },
+  {
+   "id": "university",
+   "name": "University: bikes docked",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 660,
+   "y": 220,
+   "group": "city"
+  },
+  {
+   "id": "business_park",
+   "name": "Business Park: bikes docked",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 840,
+   "y": 120,
+   "group": "city"
+  },
+  {
+   "id": "van",
+   "name": "Rebalancing van: bikes on board",
+   "unit": "bikes",
+   "initial": 0,
+   "x": 660,
+   "y": 420,
+   "group": "city"
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "bikeshare/history"
+ },
+ "sensors": [
+  {
+   "program": "bikeshare/live"
+  }
+ ]
+}

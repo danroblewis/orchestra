@@ -1,0 +1,166 @@
+{
+ "id": "sd-hospital-truth",
+ "name": "SD: Hospital: the truth",
+ "time_unit": "hour",
+ "seed": 20261016,
+ "steps": 1440,
+ "long_steps": 17520,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "waiting",
+   "name": "Waiting room",
+   "unit": "patients",
+   "initial": 10,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "treatment",
+   "name": "In treatment",
+   "unit": "patients",
+   "initial": 15,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "ward",
+   "name": "Ward",
+   "unit": "patients",
+   "initial": 60,
+   "x": 560,
+   "y": 80
+  },
+  {
+   "id": "discharged",
+   "name": "Discharged",
+   "unit": "patients",
+   "initial": 0,
+   "x": 800,
+   "y": 200,
+   "final": true
+  },
+  {
+   "id": "lab",
+   "name": "Waiting for lab results",
+   "unit": "patients",
+   "initial": 5,
+   "x": 560,
+   "y": 360,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "arrive",
+   "name": "Arrivals",
+   "from": null,
+   "to": "waiting",
+   "rate": {
+    "form": "constant",
+    "value": 6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "start",
+   "name": "Start treatment",
+   "from": "waiting",
+   "to": "treatment",
+   "rate": {
+    "form": "proportional",
+    "stock": "waiting",
+    "k": 0.35
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "discharge",
+   "name": "Discharge from treatment",
+   "from": "treatment",
+   "to": "discharged",
+   "rate": {
+    "form": "proportional",
+    "stock": "treatment",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "admit",
+   "name": "Admit to the ward",
+   "from": "treatment",
+   "to": "ward",
+   "rate": {
+    "form": "proportional",
+    "stock": "treatment",
+    "k": 0.05
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "to_lab",
+   "name": "Send to the lab",
+   "from": "treatment",
+   "to": "lab",
+   "rate": {
+    "form": "proportional",
+    "stock": "treatment",
+    "k": 0.08
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "lab_admit",
+   "name": "Lab results: admit",
+   "from": "lab",
+   "to": "ward",
+   "rate": {
+    "form": "proportional",
+    "stock": "lab",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ward_out",
+   "name": "Discharge from the ward",
+   "from": "ward",
+   "to": "discharged",
+   "rate": {
+    "form": "proportional",
+    "stock": "ward",
+    "k": 0.02
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 24,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Day: 6 arrivals an hour",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 13,
+    "label": "Night: 2.5 arrivals an hour",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 2.5
+     }
+    }
+   }
+  ]
+ }
+}

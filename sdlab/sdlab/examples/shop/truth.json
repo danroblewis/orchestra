@@ -1,0 +1,2616 @@
+{
+ "seed": 20261016,
+ "steps": 7200,
+ "step": "1 second",
+ "requests": 6017561,
+ "messages": 96014,
+ "sizes": {
+  "services": 30,
+  "queues": 6,
+  "pools": 6,
+  "calls": 48,
+  "worker_calls": 8,
+  "produces": 9
+ },
+ "services": {
+  "web_frontend": {
+   "name": "web-frontend",
+   "latency_mean_s": 0.3,
+   "latency_cv": 0.5,
+   "capacity": 36,
+   "depth": 0,
+   "external_per_s_average": 30.0,
+   "realised_mean_time_in_system_s": 0.2999
+  },
+  "mobile_api": {
+   "name": "mobile-api",
+   "latency_mean_s": 0.25,
+   "latency_cv": 0.5,
+   "capacity": 20,
+   "depth": 0,
+   "external_per_s_average": 20.0,
+   "realised_mean_time_in_system_s": 0.2509
+  },
+  "api_gateway": {
+   "name": "api-gateway",
+   "latency_mean_s": 0.08,
+   "latency_cv": 0.4,
+   "capacity": 17,
+   "depth": 1,
+   "external_per_s_average": 4.0,
+   "realised_mean_time_in_system_s": 0.0802
+  },
+  "auth": {
+   "name": "auth",
+   "latency_mean_s": 0.06,
+   "latency_cv": 0.5,
+   "capacity": 10,
+   "depth": 2,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.0605
+  },
+  "session": {
+   "name": "session",
+   "latency_mean_s": 0.03,
+   "latency_cv": 0.4,
+   "capacity": 9,
+   "depth": 3,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.0303
+  },
+  "feature_flags": {
+   "name": "feature-flags",
+   "latency_mean_s": 0.02,
+   "latency_cv": 0.3,
+   "capacity": 4,
+   "depth": 1,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.0202
+  },
+  "user_profile": {
+   "name": "user-profile",
+   "latency_mean_s": 0.12,
+   "latency_cv": 0.5,
+   "capacity": 16,
+   "depth": 8,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.1206
+  },
+  "catalog": {
+   "name": "catalog",
+   "latency_mean_s": 0.15,
+   "latency_cv": 0.5,
+   "capacity": 32,
+   "depth": 6,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.1501
+  },
+  "search": {
+   "name": "search",
+   "latency_mean_s": 0.35,
+   "latency_cv": 0.6,
+   "capacity": 23,
+   "depth": 5,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.3501
+  },
+  "pricing": {
+   "name": "pricing",
+   "latency_mean_s": 0.08,
+   "latency_cv": 0.4,
+   "capacity": 25,
+   "depth": 7,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.08
+  },
+  "currency": {
+   "name": "currency",
+   "latency_mean_s": 0.03,
+   "latency_cv": 0.3,
+   "capacity": 5,
+   "depth": 8,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.0303
+  },
+  "inventory": {
+   "name": "inventory",
+   "latency_mean_s": 0.1,
+   "latency_cv": 0.5,
+   "capacity": 18,
+   "depth": 7,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.1001
+  },
+  "recommendations": {
+   "name": "recommendations",
+   "latency_mean_s": 0.45,
+   "latency_cv": 0.6,
+   "capacity": 21,
+   "depth": 2,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.488
+  },
+  "reviews": {
+   "name": "reviews",
+   "latency_mean_s": 0.2,
+   "latency_cv": 0.5,
+   "capacity": 13,
+   "depth": 7,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.201
+  },
+  "image_service": {
+   "name": "image-service",
+   "latency_mean_s": 0.25,
+   "latency_cv": 0.7,
+   "capacity": 66,
+   "depth": 7,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.2639
+  },
+  "cart": {
+   "name": "cart",
+   "latency_mean_s": 0.2,
+   "latency_cv": 0.5,
+   "capacity": 13,
+   "depth": 3,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.2007
+  },
+  "checkout": {
+   "name": "checkout",
+   "latency_mean_s": 2.0,
+   "latency_cv": 0.4,
+   "capacity": 18,
+   "depth": 2,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 1.989
+  },
+  "payment": {
+   "name": "payment",
+   "latency_mean_s": 1.5,
+   "latency_cv": 0.5,
+   "capacity": 9,
+   "depth": 3,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 3.0306
+  },
+  "fraud_check": {
+   "name": "fraud-check",
+   "latency_mean_s": 1.0,
+   "latency_cv": 0.6,
+   "capacity": 9,
+   "depth": 4,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.9998
+  },
+  "tax": {
+   "name": "tax",
+   "latency_mean_s": 0.8,
+   "latency_cv": 0.4,
+   "capacity": 8,
+   "depth": 3,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.8042
+  },
+  "shipping_quote": {
+   "name": "shipping-quote",
+   "latency_mean_s": 0.8,
+   "latency_cv": 0.5,
+   "capacity": 12,
+   "depth": 5,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.8007
+  },
+  "address_validation": {
+   "name": "address-validation",
+   "latency_mean_s": 0.6,
+   "latency_cv": 0.5,
+   "capacity": 10,
+   "depth": 6,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.6005
+  },
+  "promotions": {
+   "name": "promotions",
+   "latency_mean_s": 0.06,
+   "latency_cv": 0.4,
+   "capacity": 8,
+   "depth": 8,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.0609
+  },
+  "order_service": {
+   "name": "order-service",
+   "latency_mean_s": 1.5,
+   "latency_cv": 0.5,
+   "capacity": 13,
+   "depth": 3,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 1.4996
+  },
+  "loyalty": {
+   "name": "loyalty",
+   "latency_mean_s": 0.6,
+   "latency_cv": 0.5,
+   "capacity": 9,
+   "depth": 11,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.5995
+  },
+  "notification": {
+   "name": "notification",
+   "latency_mean_s": 1.0,
+   "latency_cv": 0.5,
+   "capacity": 5,
+   "depth": 4,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 1.0181
+  },
+  "email_gateway": {
+   "name": "email-gateway",
+   "latency_mean_s": 0.6,
+   "latency_cv": 0.5,
+   "capacity": 10,
+   "depth": 13,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.6054
+  },
+  "sms_gateway": {
+   "name": "sms-gateway",
+   "latency_mean_s": 2.0,
+   "latency_cv": 0.5,
+   "capacity": 5,
+   "depth": 5,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 2.0353
+  },
+  "analytics_ingest": {
+   "name": "analytics-ingest",
+   "latency_mean_s": 0.05,
+   "latency_cv": 0.4,
+   "capacity": 8,
+   "depth": 1,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 0.0508
+  },
+  "merchant_api": {
+   "name": "merchant-api",
+   "latency_mean_s": 1.5,
+   "latency_cv": 0.5,
+   "capacity": 5,
+   "depth": 2,
+   "external_per_s_average": 0,
+   "realised_mean_time_in_system_s": 1.5401
+  }
+ },
+ "queues": {
+  "order_placed": {
+   "name": "order-placed",
+   "depth": 3,
+   "consumer": "fulfillment_workers",
+   "producers": [
+    "checkout"
+   ],
+   "realised_mean_wait_s": 19.6257
+  },
+  "payment_captured": {
+   "name": "payment-captured",
+   "depth": 4,
+   "consumer": "loyalty_workers",
+   "producers": [
+    "payment"
+   ],
+   "realised_mean_wait_s": 71.8334
+  },
+  "email_requested": {
+   "name": "email-requested",
+   "depth": 11,
+   "consumer": "email_workers",
+   "producers": [
+    "order_service",
+    "fulfillment_workers",
+    "loyalty_workers",
+    "profile_sync_workers"
+   ],
+   "realised_mean_wait_s": 100.0482
+  },
+  "product_changed": {
+   "name": "product-changed",
+   "depth": 3,
+   "consumer": "search_indexer",
+   "producers": [
+    "merchant_api"
+   ],
+   "realised_mean_wait_s": 79.8618
+  },
+  "profile_updated": {
+   "name": "profile-updated",
+   "depth": 9,
+   "consumer": "profile_sync_workers",
+   "producers": [
+    "user_profile"
+   ],
+   "realised_mean_wait_s": 45.0997
+  },
+  "clickstream": {
+   "name": "clickstream",
+   "depth": 2,
+   "consumer": "analytics_workers",
+   "producers": [
+    "analytics_ingest"
+   ],
+   "realised_mean_wait_s": 2.0469
+  }
+ },
+ "pools": {
+  "fulfillment_workers": {
+   "name": "fulfillment-workers",
+   "consumes": "order_placed",
+   "job_mean_s": 4.0,
+   "job_cv": 0.4,
+   "depth": 4,
+   "calls": [
+    {
+     "service": "inventory",
+     "fan_out": 1.0
+    },
+    {
+     "service": "shipping_quote",
+     "fan_out": 1.0
+    }
+   ],
+   "produces": [
+    {
+     "queue": "email_requested",
+     "probability": 1.0
+    }
+   ],
+   "workers": [
+    {
+     "from_t": 1,
+     "workers": 10
+    },
+    {
+     "from_t": 2401,
+     "workers": 16
+    }
+   ],
+   "realised_mean_job_s": 4.0022
+  },
+  "loyalty_workers": {
+   "name": "loyalty-workers",
+   "consumes": "payment_captured",
+   "job_mean_s": 1.0,
+   "job_cv": 0.5,
+   "depth": 5,
+   "calls": [
+    {
+     "service": "loyalty",
+     "fan_out": 1.0
+    }
+   ],
+   "produces": [
+    {
+     "queue": "email_requested",
+     "probability": 0.2
+    }
+   ],
+   "workers": [
+    {
+     "from_t": 1,
+     "workers": 3
+    }
+   ],
+   "realised_mean_job_s": 0.998
+  },
+  "email_workers": {
+   "name": "email-workers",
+   "consumes": "email_requested",
+   "job_mean_s": 1.0,
+   "job_cv": 0.5,
+   "depth": 12,
+   "calls": [
+    {
+     "service": "email_gateway",
+     "fan_out": 1.0
+    }
+   ],
+   "produces": [],
+   "workers": [
+    {
+     "from_t": 1,
+     "workers": 12
+    },
+    {
+     "from_t": 4801,
+     "workers": 0
+    },
+    {
+     "from_t": 5701,
+     "workers": 12
+    }
+   ],
+   "realised_mean_job_s": 1.0035
+  },
+  "search_indexer": {
+   "name": "search-indexer",
+   "consumes": "product_changed",
+   "job_mean_s": 3.0,
+   "job_cv": 0.5,
+   "depth": 4,
+   "calls": [
+    {
+     "service": "catalog",
+     "fan_out": 1.0
+    },
+    {
+     "service": "image_service",
+     "fan_out": 1.0
+    },
+    {
+     "service": "search",
+     "fan_out": 1.0
+    }
+   ],
+   "produces": [],
+   "workers": [
+    {
+     "from_t": 1,
+     "workers": 3
+    },
+    {
+     "from_t": 6001,
+     "workers": 1
+    }
+   ],
+   "realised_mean_job_s": 2.9852
+  },
+  "profile_sync_workers": {
+   "name": "profile-sync-workers",
+   "consumes": "profile_updated",
+   "job_mean_s": 2.0,
+   "job_cv": 0.5,
+   "depth": 10,
+   "calls": [
+    {
+     "service": "loyalty",
+     "fan_out": 1.0
+    }
+   ],
+   "produces": [
+    {
+     "queue": "email_requested",
+     "probability": 0.3
+    }
+   ],
+   "workers": [
+    {
+     "from_t": 1,
+     "workers": 2
+    }
+   ],
+   "realised_mean_job_s": 2.0201
+  },
+  "analytics_workers": {
+   "name": "analytics-workers",
+   "consumes": "clickstream",
+   "job_mean_s": 1.0,
+   "job_cv": 0.4,
+   "depth": 3,
+   "calls": [],
+   "produces": [],
+   "workers": [
+    {
+     "from_t": 1,
+     "workers": 6
+    },
+    {
+     "from_t": 1201,
+     "workers": 9
+    }
+   ],
+   "realised_mean_job_s": 0.9999
+  }
+ },
+ "calls": [
+  {
+   "caller": "web_frontend",
+   "callee": "api_gateway",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "web_frontend",
+   "callee": "session",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "web_frontend",
+   "callee": "feature_flags",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "web_frontend",
+   "callee": "image_service",
+   "fan_out": 2.0
+  },
+  {
+   "caller": "web_frontend",
+   "callee": "analytics_ingest",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "mobile_api",
+   "callee": "api_gateway",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "mobile_api",
+   "callee": "session",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "mobile_api",
+   "callee": "feature_flags",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "mobile_api",
+   "callee": "analytics_ingest",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "auth",
+   "fan_out": 0.8
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "catalog",
+   "fan_out": 0.6
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "search",
+   "fan_out": 0.3
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "recommendations",
+   "fan_out": 0.3
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "cart",
+   "fan_out": 0.25
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "user_profile",
+   "fan_out": 0.2
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "checkout",
+   "fan_out": 0.04
+  },
+  {
+   "caller": "api_gateway",
+   "callee": "merchant_api",
+   "fan_out": 0.012
+  },
+  {
+   "caller": "auth",
+   "callee": "session",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "auth",
+   "callee": "user_profile",
+   "fan_out": 0.3
+  },
+  {
+   "caller": "search",
+   "callee": "catalog",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "search",
+   "callee": "pricing",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "recommendations",
+   "callee": "catalog",
+   "fan_out": 0.8
+  },
+  {
+   "caller": "recommendations",
+   "callee": "user_profile",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "merchant_api",
+   "callee": "catalog",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "catalog",
+   "callee": "pricing",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "catalog",
+   "callee": "inventory",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "catalog",
+   "callee": "image_service",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "catalog",
+   "callee": "reviews",
+   "fan_out": 0.3
+  },
+  {
+   "caller": "reviews",
+   "callee": "user_profile",
+   "fan_out": 0.2
+  },
+  {
+   "caller": "cart",
+   "callee": "pricing",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "cart",
+   "callee": "inventory",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "cart",
+   "callee": "promotions",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "checkout",
+   "callee": "cart",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "checkout",
+   "callee": "payment",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "checkout",
+   "callee": "tax",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "checkout",
+   "callee": "shipping_quote",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "checkout",
+   "callee": "address_validation",
+   "fan_out": 0.8
+  },
+  {
+   "caller": "checkout",
+   "callee": "promotions",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "checkout",
+   "callee": "order_service",
+   "fan_out": 0.9
+  },
+  {
+   "caller": "payment",
+   "callee": "fraud_check",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "payment",
+   "callee": "currency",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "pricing",
+   "callee": "currency",
+   "fan_out": 0.4
+  },
+  {
+   "caller": "pricing",
+   "callee": "promotions",
+   "fan_out": 0.3
+  },
+  {
+   "caller": "shipping_quote",
+   "callee": "address_validation",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "order_service",
+   "callee": "inventory",
+   "fan_out": 1.0
+  },
+  {
+   "caller": "order_service",
+   "callee": "notification",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "order_service",
+   "callee": "loyalty",
+   "fan_out": 0.5
+  },
+  {
+   "caller": "notification",
+   "callee": "sms_gateway",
+   "fan_out": 0.5
+  }
+ ],
+ "worker_calls": [
+  {
+   "pool": "fulfillment_workers",
+   "service": "inventory",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "fulfillment_workers",
+   "service": "shipping_quote",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "loyalty_workers",
+   "service": "loyalty",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "email_workers",
+   "service": "email_gateway",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "search_indexer",
+   "service": "catalog",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "search_indexer",
+   "service": "image_service",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "search_indexer",
+   "service": "search",
+   "fan_out": 1.0
+  },
+  {
+   "pool": "profile_sync_workers",
+   "service": "loyalty",
+   "fan_out": 1.0
+  }
+ ],
+ "produces": [
+  {
+   "producer": "checkout",
+   "queue": "order_placed",
+   "probability": 0.85
+  },
+  {
+   "producer": "payment",
+   "queue": "payment_captured",
+   "probability": 0.8
+  },
+  {
+   "producer": "order_service",
+   "queue": "email_requested",
+   "probability": 1.0
+  },
+  {
+   "producer": "merchant_api",
+   "queue": "product_changed",
+   "probability": 0.9
+  },
+  {
+   "producer": "user_profile",
+   "queue": "profile_updated",
+   "probability": 0.015
+  },
+  {
+   "producer": "analytics_ingest",
+   "queue": "clickstream",
+   "probability": 0.08
+  },
+  {
+   "producer": "fulfillment_workers",
+   "queue": "email_requested",
+   "probability": 1.0
+  },
+  {
+   "producer": "loyalty_workers",
+   "queue": "email_requested",
+   "probability": 0.2
+  },
+  {
+   "producer": "profile_sync_workers",
+   "queue": "email_requested",
+   "probability": 0.3
+  }
+ ],
+ "consumes": [
+  {
+   "queue": "order_placed",
+   "pool": "fulfillment_workers"
+  },
+  {
+   "queue": "payment_captured",
+   "pool": "loyalty_workers"
+  },
+  {
+   "queue": "email_requested",
+   "pool": "email_workers"
+  },
+  {
+   "queue": "product_changed",
+   "pool": "search_indexer"
+  },
+  {
+   "queue": "profile_updated",
+   "pool": "profile_sync_workers"
+  },
+  {
+   "queue": "clickstream",
+   "pool": "analytics_workers"
+  }
+ ],
+ "traffic": {
+  "edge": [
+   "web_frontend",
+   "mobile_api",
+   "api_gateway"
+  ],
+  "external_per_s_average": {
+   "web_frontend": 30.0,
+   "mobile_api": 20.0,
+   "api_gateway": 4.0
+  },
+  "daily_cycle": "x(1 - 0.5 cos(2 pi t / 7200) + 0.08 sin(6 pi t / 7200)): quiet at the start and end, busiest at t = 3600",
+  "flash_sale": {
+   "from_s": 3600,
+   "to_s": 4200,
+   "factor": 2.0,
+   "edges": [
+    "web_frontend",
+    "mobile_api"
+   ],
+   "ramp_s": 60
+  },
+  "partner_burst": {
+   "from_s": 5000,
+   "to_s": 5100,
+   "factor": 5.0,
+   "edges": [
+    "api_gateway"
+   ]
+  }
+ },
+ "eras": [
+  {
+   "t": 1,
+   "label": "Start"
+  },
+  {
+   "t": 1201,
+   "label": "analytics-workers scaled up to 9"
+  },
+  {
+   "t": 2401,
+   "label": "fulfillment-workers scaled up to 16 for the flash sale"
+  },
+  {
+   "t": 4801,
+   "label": "email-workers outage (0 workers)"
+  },
+  {
+   "t": 5701,
+   "label": "email-workers restored (12 workers)"
+  },
+  {
+   "t": 6001,
+   "label": "search-indexer scaled down to 1"
+  }
+ ],
+ "outage": {
+  "pool": "email_workers",
+  "from": 4800,
+  "to": 5700
+ },
+ "sd_structure": {
+  "note": "In SD Lab terms. 'flows' move things between stocks (or to outside); 'driven_inflows' are information links: outside -> `into` at k x level of `driver` per second (nothing leaves the driver). A stock with several drivers has one linear inflow: external + sum of k x level of each driver (inflow_equations). k_nominal = fan-out (or probability) / the driver's mean latency or job time (Little's law); k_realised = what the run gives, which is lower for drivers that queue (their in-flight includes requests waiting for a slot).",
+  "flows": [
+   {
+    "from": "web_frontend",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 3.3333,
+    "k_realised": 3.3545,
+    "counter": "handled__web_frontend"
+   },
+   {
+    "from": "mobile_api",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 4.0,
+    "k_realised": 3.9664,
+    "counter": "handled__mobile_api"
+   },
+   {
+    "from": "api_gateway",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 12.5,
+    "k_realised": 12.4398,
+    "counter": "handled__api_gateway"
+   },
+   {
+    "from": "auth",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 16.6667,
+    "k_realised": 16.6176,
+    "counter": "handled__auth"
+   },
+   {
+    "from": "session",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 33.3333,
+    "k_realised": 32.9937,
+    "counter": "handled__session"
+   },
+   {
+    "from": "feature_flags",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 50.0,
+    "k_realised": 50.5548,
+    "counter": "handled__feature_flags"
+   },
+   {
+    "from": "user_profile",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 8.3333,
+    "k_realised": 8.2621,
+    "counter": "handled__user_profile"
+   },
+   {
+    "from": "catalog",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 6.6667,
+    "k_realised": 6.6522,
+    "counter": "handled__catalog"
+   },
+   {
+    "from": "search",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 2.8571,
+    "k_realised": 2.8596,
+    "counter": "handled__search"
+   },
+   {
+    "from": "pricing",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 12.5,
+    "k_realised": 12.5249,
+    "counter": "handled__pricing"
+   },
+   {
+    "from": "currency",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 33.3333,
+    "k_realised": 33.2259,
+    "counter": "handled__currency"
+   },
+   {
+    "from": "inventory",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 10.0,
+    "k_realised": 9.9856,
+    "counter": "handled__inventory"
+   },
+   {
+    "from": "recommendations",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 2.2222,
+    "k_realised": 2.0476,
+    "counter": "handled__recommendations"
+   },
+   {
+    "from": "reviews",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 5.0,
+    "k_realised": 4.9408,
+    "counter": "handled__reviews"
+   },
+   {
+    "from": "image_service",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 4.0,
+    "k_realised": 3.7908,
+    "counter": "handled__image_service"
+   },
+   {
+    "from": "cart",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 5.0,
+    "k_realised": 4.9871,
+    "counter": "handled__cart"
+   },
+   {
+    "from": "checkout",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 0.5,
+    "k_realised": 0.5034,
+    "counter": "handled__checkout"
+   },
+   {
+    "from": "payment",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 0.6667,
+    "k_realised": 0.3296,
+    "counter": "handled__payment"
+   },
+   {
+    "from": "fraud_check",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.0,
+    "k_realised": 0.9991,
+    "counter": "handled__fraud_check"
+   },
+   {
+    "from": "tax",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.25,
+    "k_realised": 1.2469,
+    "counter": "handled__tax"
+   },
+   {
+    "from": "shipping_quote",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.25,
+    "k_realised": 1.2522,
+    "counter": "handled__shipping_quote"
+   },
+   {
+    "from": "address_validation",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.6667,
+    "k_realised": 1.6686,
+    "counter": "handled__address_validation"
+   },
+   {
+    "from": "promotions",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 16.6667,
+    "k_realised": 16.6159,
+    "counter": "handled__promotions"
+   },
+   {
+    "from": "order_service",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 0.6667,
+    "k_realised": 0.6675,
+    "counter": "handled__order_service"
+   },
+   {
+    "from": "loyalty",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.6667,
+    "k_realised": 1.6673,
+    "counter": "handled__loyalty"
+   },
+   {
+    "from": "notification",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.0,
+    "k_realised": 0.9825,
+    "counter": "handled__notification"
+   },
+   {
+    "from": "email_gateway",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 1.6667,
+    "k_realised": 1.6603,
+    "counter": "handled__email_gateway"
+   },
+   {
+    "from": "sms_gateway",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 0.5,
+    "k_realised": 0.4895,
+    "counter": "handled__sms_gateway"
+   },
+   {
+    "from": "analytics_ingest",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 20.0,
+    "k_realised": 19.576,
+    "counter": "handled__analytics_ingest"
+   },
+   {
+    "from": "merchant_api",
+    "to": null,
+    "what": "requests finish",
+    "form": "proportional",
+    "k_nominal": 0.6667,
+    "k_realised": 0.652,
+    "counter": "handled__merchant_api"
+   },
+   {
+    "from": "order_placed",
+    "to": "fulfillment_workers",
+    "what": "a worker takes a message: it becomes a job",
+    "form": "capacity-limited: min(free workers, messages waiting) per job time; at most workers / mean job time per second",
+    "counter": "consumed__order_placed"
+   },
+   {
+    "from": "fulfillment_workers",
+    "to": null,
+    "what": "jobs finish",
+    "form": "proportional",
+    "k_nominal": 0.25,
+    "k_realised": 0.2498,
+    "counter": "done__fulfillment_workers"
+   },
+   {
+    "from": "payment_captured",
+    "to": "loyalty_workers",
+    "what": "a worker takes a message: it becomes a job",
+    "form": "capacity-limited: min(free workers, messages waiting) per job time; at most workers / mean job time per second",
+    "counter": "consumed__payment_captured"
+   },
+   {
+    "from": "loyalty_workers",
+    "to": null,
+    "what": "jobs finish",
+    "form": "proportional",
+    "k_nominal": 1.0,
+    "k_realised": 1.0077,
+    "counter": "done__loyalty_workers"
+   },
+   {
+    "from": "email_requested",
+    "to": "email_workers",
+    "what": "a worker takes a message: it becomes a job",
+    "form": "capacity-limited: min(free workers, messages waiting) per job time; at most workers / mean job time per second",
+    "counter": "consumed__email_requested"
+   },
+   {
+    "from": "email_workers",
+    "to": null,
+    "what": "jobs finish",
+    "form": "proportional",
+    "k_nominal": 1.0,
+    "k_realised": 0.9965,
+    "counter": "done__email_workers"
+   },
+   {
+    "from": "product_changed",
+    "to": "search_indexer",
+    "what": "a worker takes a message: it becomes a job",
+    "form": "capacity-limited: min(free workers, messages waiting) per job time; at most workers / mean job time per second",
+    "counter": "consumed__product_changed"
+   },
+   {
+    "from": "search_indexer",
+    "to": null,
+    "what": "jobs finish",
+    "form": "proportional",
+    "k_nominal": 0.3333,
+    "k_realised": 0.3353,
+    "counter": "done__search_indexer"
+   },
+   {
+    "from": "profile_updated",
+    "to": "profile_sync_workers",
+    "what": "a worker takes a message: it becomes a job",
+    "form": "capacity-limited: min(free workers, messages waiting) per job time; at most workers / mean job time per second",
+    "counter": "consumed__profile_updated"
+   },
+   {
+    "from": "profile_sync_workers",
+    "to": null,
+    "what": "jobs finish",
+    "form": "proportional",
+    "k_nominal": 0.5,
+    "k_realised": 0.4938,
+    "counter": "done__profile_sync_workers"
+   },
+   {
+    "from": "clickstream",
+    "to": "analytics_workers",
+    "what": "a worker takes a message: it becomes a job",
+    "form": "capacity-limited: min(free workers, messages waiting) per job time; at most workers / mean job time per second",
+    "counter": "consumed__clickstream"
+   },
+   {
+    "from": "analytics_workers",
+    "to": null,
+    "what": "jobs finish",
+    "form": "proportional",
+    "k_nominal": 1.0,
+    "k_realised": 0.9978,
+    "counter": "done__analytics_workers"
+   }
+  ],
+  "driven_inflows": [
+   {
+    "kind": "call",
+    "driver": "web_frontend",
+    "into": "api_gateway",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.3,
+    "k_nominal": 3.3333,
+    "k_realised": 3.3546,
+    "counter": "calls__web_frontend__api_gateway"
+   },
+   {
+    "kind": "call",
+    "driver": "web_frontend",
+    "into": "session",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.3,
+    "k_nominal": 3.3333,
+    "k_realised": 3.3546,
+    "counter": "calls__web_frontend__session"
+   },
+   {
+    "kind": "call",
+    "driver": "web_frontend",
+    "into": "feature_flags",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.3,
+    "k_nominal": 1.6667,
+    "k_realised": 1.6779,
+    "counter": "calls__web_frontend__feature_flags"
+   },
+   {
+    "kind": "call",
+    "driver": "web_frontend",
+    "into": "image_service",
+    "fan_out": 2.0,
+    "driver_mean_latency_s": 0.3,
+    "k_nominal": 6.6667,
+    "k_realised": 6.7091,
+    "counter": "calls__web_frontend__image_service"
+   },
+   {
+    "kind": "call",
+    "driver": "web_frontend",
+    "into": "analytics_ingest",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.3,
+    "k_nominal": 3.3333,
+    "k_realised": 3.3545,
+    "counter": "calls__web_frontend__analytics_ingest"
+   },
+   {
+    "kind": "call",
+    "driver": "mobile_api",
+    "into": "api_gateway",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.25,
+    "k_nominal": 4.0,
+    "k_realised": 3.9664,
+    "counter": "calls__mobile_api__api_gateway"
+   },
+   {
+    "kind": "call",
+    "driver": "mobile_api",
+    "into": "session",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.25,
+    "k_nominal": 4.0,
+    "k_realised": 3.9664,
+    "counter": "calls__mobile_api__session"
+   },
+   {
+    "kind": "call",
+    "driver": "mobile_api",
+    "into": "feature_flags",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.25,
+    "k_nominal": 4.0,
+    "k_realised": 3.9664,
+    "counter": "calls__mobile_api__feature_flags"
+   },
+   {
+    "kind": "call",
+    "driver": "mobile_api",
+    "into": "analytics_ingest",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.25,
+    "k_nominal": 2.0,
+    "k_realised": 1.9791,
+    "counter": "calls__mobile_api__analytics_ingest"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "auth",
+    "fan_out": 0.8,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 10.0,
+    "k_realised": 9.9544,
+    "counter": "calls__api_gateway__auth"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "catalog",
+    "fan_out": 0.6,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 7.5,
+    "k_realised": 7.4627,
+    "counter": "calls__api_gateway__catalog"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "search",
+    "fan_out": 0.3,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 3.75,
+    "k_realised": 3.7425,
+    "counter": "calls__api_gateway__search"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "recommendations",
+    "fan_out": 0.3,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 3.75,
+    "k_realised": 3.7203,
+    "counter": "calls__api_gateway__recommendations"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "cart",
+    "fan_out": 0.25,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 3.125,
+    "k_realised": 3.108,
+    "counter": "calls__api_gateway__cart"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "user_profile",
+    "fan_out": 0.2,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 2.5,
+    "k_realised": 2.4949,
+    "counter": "calls__api_gateway__user_profile"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "checkout",
+    "fan_out": 0.04,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 0.5,
+    "k_realised": 0.497,
+    "counter": "calls__api_gateway__checkout"
+   },
+   {
+    "kind": "call",
+    "driver": "api_gateway",
+    "into": "merchant_api",
+    "fan_out": 0.012,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 0.15,
+    "k_realised": 0.1479,
+    "counter": "calls__api_gateway__merchant_api"
+   },
+   {
+    "kind": "call",
+    "driver": "auth",
+    "into": "session",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.06,
+    "k_nominal": 8.3333,
+    "k_realised": 8.314,
+    "counter": "calls__auth__session"
+   },
+   {
+    "kind": "call",
+    "driver": "auth",
+    "into": "user_profile",
+    "fan_out": 0.3,
+    "driver_mean_latency_s": 0.06,
+    "k_nominal": 5.0,
+    "k_realised": 4.9898,
+    "counter": "calls__auth__user_profile"
+   },
+   {
+    "kind": "call",
+    "driver": "search",
+    "into": "catalog",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.35,
+    "k_nominal": 1.4286,
+    "k_realised": 1.4386,
+    "counter": "calls__search__catalog"
+   },
+   {
+    "kind": "call",
+    "driver": "search",
+    "into": "pricing",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.35,
+    "k_nominal": 1.4286,
+    "k_realised": 1.4337,
+    "counter": "calls__search__pricing"
+   },
+   {
+    "kind": "call",
+    "driver": "recommendations",
+    "into": "catalog",
+    "fan_out": 0.8,
+    "driver_mean_latency_s": 0.45,
+    "k_nominal": 1.7778,
+    "k_realised": 1.637,
+    "counter": "calls__recommendations__catalog"
+   },
+   {
+    "kind": "call",
+    "driver": "recommendations",
+    "into": "user_profile",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.45,
+    "k_nominal": 1.1111,
+    "k_realised": 1.0199,
+    "counter": "calls__recommendations__user_profile"
+   },
+   {
+    "kind": "call",
+    "driver": "merchant_api",
+    "into": "catalog",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 1.5,
+    "k_nominal": 0.6667,
+    "k_realised": 0.6522,
+    "counter": "calls__merchant_api__catalog"
+   },
+   {
+    "kind": "call",
+    "driver": "catalog",
+    "into": "pricing",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.15,
+    "k_nominal": 6.6667,
+    "k_realised": 6.6522,
+    "counter": "calls__catalog__pricing"
+   },
+   {
+    "kind": "call",
+    "driver": "catalog",
+    "into": "inventory",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.15,
+    "k_nominal": 3.3333,
+    "k_realised": 3.3331,
+    "counter": "calls__catalog__inventory"
+   },
+   {
+    "kind": "call",
+    "driver": "catalog",
+    "into": "image_service",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.15,
+    "k_nominal": 3.3333,
+    "k_realised": 3.3312,
+    "counter": "calls__catalog__image_service"
+   },
+   {
+    "kind": "call",
+    "driver": "catalog",
+    "into": "reviews",
+    "fan_out": 0.3,
+    "driver_mean_latency_s": 0.15,
+    "k_nominal": 2.0,
+    "k_realised": 1.9949,
+    "counter": "calls__catalog__reviews"
+   },
+   {
+    "kind": "call",
+    "driver": "reviews",
+    "into": "user_profile",
+    "fan_out": 0.2,
+    "driver_mean_latency_s": 0.2,
+    "k_nominal": 1.0,
+    "k_realised": 0.9865,
+    "counter": "calls__reviews__user_profile"
+   },
+   {
+    "kind": "call",
+    "driver": "cart",
+    "into": "pricing",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.2,
+    "k_nominal": 5.0,
+    "k_realised": 4.9871,
+    "counter": "calls__cart__pricing"
+   },
+   {
+    "kind": "call",
+    "driver": "cart",
+    "into": "inventory",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 0.2,
+    "k_nominal": 5.0,
+    "k_realised": 4.9871,
+    "counter": "calls__cart__inventory"
+   },
+   {
+    "kind": "call",
+    "driver": "cart",
+    "into": "promotions",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.2,
+    "k_nominal": 2.5,
+    "k_realised": 2.4892,
+    "counter": "calls__cart__promotions"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "cart",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.5034,
+    "counter": "calls__checkout__cart"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "payment",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.5034,
+    "counter": "calls__checkout__payment"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "tax",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.5034,
+    "counter": "calls__checkout__tax"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "shipping_quote",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.5034,
+    "counter": "calls__checkout__shipping_quote"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "address_validation",
+    "fan_out": 0.8,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.4,
+    "k_realised": 0.4043,
+    "counter": "calls__checkout__address_validation"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "promotions",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.5034,
+    "counter": "calls__checkout__promotions"
+   },
+   {
+    "kind": "call",
+    "driver": "checkout",
+    "into": "order_service",
+    "fan_out": 0.9,
+    "driver_mean_latency_s": 2.0,
+    "k_nominal": 0.45,
+    "k_realised": 0.4528,
+    "counter": "calls__checkout__order_service"
+   },
+   {
+    "kind": "call",
+    "driver": "payment",
+    "into": "fraud_check",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 1.5,
+    "k_nominal": 0.6667,
+    "k_realised": 0.3296,
+    "counter": "calls__payment__fraud_check"
+   },
+   {
+    "kind": "call",
+    "driver": "payment",
+    "into": "currency",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 1.5,
+    "k_nominal": 0.3333,
+    "k_realised": 0.1667,
+    "counter": "calls__payment__currency"
+   },
+   {
+    "kind": "call",
+    "driver": "pricing",
+    "into": "currency",
+    "fan_out": 0.4,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 5.0,
+    "k_realised": 5.021,
+    "counter": "calls__pricing__currency"
+   },
+   {
+    "kind": "call",
+    "driver": "pricing",
+    "into": "promotions",
+    "fan_out": 0.3,
+    "driver_mean_latency_s": 0.08,
+    "k_nominal": 3.75,
+    "k_realised": 3.7587,
+    "counter": "calls__pricing__promotions"
+   },
+   {
+    "kind": "call",
+    "driver": "shipping_quote",
+    "into": "address_validation",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 0.8,
+    "k_nominal": 0.625,
+    "k_realised": 0.625,
+    "counter": "calls__shipping_quote__address_validation"
+   },
+   {
+    "kind": "call",
+    "driver": "order_service",
+    "into": "inventory",
+    "fan_out": 1.0,
+    "driver_mean_latency_s": 1.5,
+    "k_nominal": 0.6667,
+    "k_realised": 0.6677,
+    "counter": "calls__order_service__inventory"
+   },
+   {
+    "kind": "call",
+    "driver": "order_service",
+    "into": "notification",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 1.5,
+    "k_nominal": 0.3333,
+    "k_realised": 0.3353,
+    "counter": "calls__order_service__notification"
+   },
+   {
+    "kind": "call",
+    "driver": "order_service",
+    "into": "loyalty",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 1.5,
+    "k_nominal": 0.3333,
+    "k_realised": 0.3338,
+    "counter": "calls__order_service__loyalty"
+   },
+   {
+    "kind": "call",
+    "driver": "notification",
+    "into": "sms_gateway",
+    "fan_out": 0.5,
+    "driver_mean_latency_s": 1.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.4943,
+    "counter": "calls__notification__sms_gateway"
+   },
+   {
+    "kind": "worker call",
+    "driver": "fulfillment_workers",
+    "into": "inventory",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 4.0,
+    "k_nominal": 0.25,
+    "k_realised": 0.2499,
+    "counter": "calls__fulfillment_workers__inventory"
+   },
+   {
+    "kind": "worker call",
+    "driver": "fulfillment_workers",
+    "into": "shipping_quote",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 4.0,
+    "k_nominal": 0.25,
+    "k_realised": 0.2499,
+    "counter": "calls__fulfillment_workers__shipping_quote"
+   },
+   {
+    "kind": "worker call",
+    "driver": "loyalty_workers",
+    "into": "loyalty",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 1.0,
+    "k_nominal": 1.0,
+    "k_realised": 1.0077,
+    "counter": "calls__loyalty_workers__loyalty"
+   },
+   {
+    "kind": "worker call",
+    "driver": "email_workers",
+    "into": "email_gateway",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 1.0,
+    "k_nominal": 1.0,
+    "k_realised": 0.9965,
+    "counter": "calls__email_workers__email_gateway"
+   },
+   {
+    "kind": "worker call",
+    "driver": "search_indexer",
+    "into": "catalog",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 3.0,
+    "k_nominal": 0.3333,
+    "k_realised": 0.3353,
+    "counter": "calls__search_indexer__catalog"
+   },
+   {
+    "kind": "worker call",
+    "driver": "search_indexer",
+    "into": "image_service",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 3.0,
+    "k_nominal": 0.3333,
+    "k_realised": 0.3353,
+    "counter": "calls__search_indexer__image_service"
+   },
+   {
+    "kind": "worker call",
+    "driver": "search_indexer",
+    "into": "search",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 3.0,
+    "k_nominal": 0.3333,
+    "k_realised": 0.3353,
+    "counter": "calls__search_indexer__search"
+   },
+   {
+    "kind": "worker call",
+    "driver": "profile_sync_workers",
+    "into": "loyalty",
+    "fan_out": 1.0,
+    "driver_mean_job_s": 2.0,
+    "k_nominal": 0.5,
+    "k_realised": 0.4939,
+    "counter": "calls__profile_sync_workers__loyalty"
+   },
+   {
+    "kind": "produce",
+    "driver": "checkout",
+    "into": "order_placed",
+    "probability": 0.85,
+    "driver_mean_time_s": 2.0,
+    "k_nominal": 0.425,
+    "k_realised": 0.4262,
+    "counter": "produced__checkout__order_placed"
+   },
+   {
+    "kind": "produce",
+    "driver": "payment",
+    "into": "payment_captured",
+    "probability": 0.8,
+    "driver_mean_time_s": 1.5,
+    "k_nominal": 0.5333,
+    "k_realised": 0.2641,
+    "counter": "produced__payment__payment_captured"
+   },
+   {
+    "kind": "produce",
+    "driver": "order_service",
+    "into": "email_requested",
+    "probability": 1.0,
+    "driver_mean_time_s": 1.5,
+    "k_nominal": 0.6667,
+    "k_realised": 0.6675,
+    "counter": "produced__order_service__email_requested"
+   },
+   {
+    "kind": "produce",
+    "driver": "merchant_api",
+    "into": "product_changed",
+    "probability": 0.9,
+    "driver_mean_time_s": 1.5,
+    "k_nominal": 0.6,
+    "k_realised": 0.5856,
+    "counter": "produced__merchant_api__product_changed"
+   },
+   {
+    "kind": "produce",
+    "driver": "user_profile",
+    "into": "profile_updated",
+    "probability": 0.015,
+    "driver_mean_time_s": 0.12,
+    "k_nominal": 0.125,
+    "k_realised": 0.1195,
+    "counter": "produced__user_profile__profile_updated"
+   },
+   {
+    "kind": "produce",
+    "driver": "analytics_ingest",
+    "into": "clickstream",
+    "probability": 0.08,
+    "driver_mean_time_s": 0.05,
+    "k_nominal": 1.6,
+    "k_realised": 1.5579,
+    "counter": "produced__analytics_ingest__clickstream"
+   },
+   {
+    "kind": "produce",
+    "driver": "fulfillment_workers",
+    "into": "email_requested",
+    "probability": 1.0,
+    "driver_mean_time_s": 4.0,
+    "k_nominal": 0.25,
+    "k_realised": 0.2498,
+    "counter": "produced__fulfillment_workers__email_requested"
+   },
+   {
+    "kind": "produce",
+    "driver": "loyalty_workers",
+    "into": "email_requested",
+    "probability": 0.2,
+    "driver_mean_time_s": 1.0,
+    "k_nominal": 0.2,
+    "k_realised": 0.2005,
+    "counter": "produced__loyalty_workers__email_requested"
+   },
+   {
+    "kind": "produce",
+    "driver": "profile_sync_workers",
+    "into": "email_requested",
+    "probability": 0.3,
+    "driver_mean_time_s": 2.0,
+    "k_nominal": 0.15,
+    "k_realised": 0.1514,
+    "counter": "produced__profile_sync_workers__email_requested"
+   }
+  ],
+  "inflow_equations": {
+   "web_frontend": {
+    "external_mean_per_s": 33.242,
+    "terms": []
+   },
+   "mobile_api": {
+    "external_mean_per_s": 22.0,
+    "terms": []
+   },
+   "api_gateway": {
+    "external_mean_per_s": 4.275,
+    "terms": [
+     {
+      "driver": "web_frontend",
+      "k_nominal": 3.3333,
+      "k_realised": 3.3546,
+      "kind": "call"
+     },
+     {
+      "driver": "mobile_api",
+      "k_nominal": 4.0,
+      "k_realised": 3.9664,
+      "kind": "call"
+     }
+    ]
+   },
+   "auth": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 10.0,
+      "k_realised": 9.9544,
+      "kind": "call"
+     }
+    ]
+   },
+   "session": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "web_frontend",
+      "k_nominal": 3.3333,
+      "k_realised": 3.3546,
+      "kind": "call"
+     },
+     {
+      "driver": "mobile_api",
+      "k_nominal": 4.0,
+      "k_realised": 3.9664,
+      "kind": "call"
+     },
+     {
+      "driver": "auth",
+      "k_nominal": 8.3333,
+      "k_realised": 8.314,
+      "kind": "call"
+     }
+    ]
+   },
+   "feature_flags": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "web_frontend",
+      "k_nominal": 1.6667,
+      "k_realised": 1.6779,
+      "kind": "call"
+     },
+     {
+      "driver": "mobile_api",
+      "k_nominal": 4.0,
+      "k_realised": 3.9664,
+      "kind": "call"
+     }
+    ]
+   },
+   "user_profile": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 2.5,
+      "k_realised": 2.4949,
+      "kind": "call"
+     },
+     {
+      "driver": "auth",
+      "k_nominal": 5.0,
+      "k_realised": 4.9898,
+      "kind": "call"
+     },
+     {
+      "driver": "recommendations",
+      "k_nominal": 1.1111,
+      "k_realised": 1.0199,
+      "kind": "call"
+     },
+     {
+      "driver": "reviews",
+      "k_nominal": 1.0,
+      "k_realised": 0.9865,
+      "kind": "call"
+     }
+    ]
+   },
+   "catalog": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 7.5,
+      "k_realised": 7.4627,
+      "kind": "call"
+     },
+     {
+      "driver": "search",
+      "k_nominal": 1.4286,
+      "k_realised": 1.4386,
+      "kind": "call"
+     },
+     {
+      "driver": "recommendations",
+      "k_nominal": 1.7778,
+      "k_realised": 1.637,
+      "kind": "call"
+     },
+     {
+      "driver": "merchant_api",
+      "k_nominal": 0.6667,
+      "k_realised": 0.6522,
+      "kind": "call"
+     },
+     {
+      "driver": "search_indexer",
+      "k_nominal": 0.3333,
+      "k_realised": 0.3353,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "search": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 3.75,
+      "k_realised": 3.7425,
+      "kind": "call"
+     },
+     {
+      "driver": "search_indexer",
+      "k_nominal": 0.3333,
+      "k_realised": 0.3353,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "pricing": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "search",
+      "k_nominal": 1.4286,
+      "k_realised": 1.4337,
+      "kind": "call"
+     },
+     {
+      "driver": "catalog",
+      "k_nominal": 6.6667,
+      "k_realised": 6.6522,
+      "kind": "call"
+     },
+     {
+      "driver": "cart",
+      "k_nominal": 5.0,
+      "k_realised": 4.9871,
+      "kind": "call"
+     }
+    ]
+   },
+   "currency": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "payment",
+      "k_nominal": 0.3333,
+      "k_realised": 0.1667,
+      "kind": "call"
+     },
+     {
+      "driver": "pricing",
+      "k_nominal": 5.0,
+      "k_realised": 5.021,
+      "kind": "call"
+     }
+    ]
+   },
+   "inventory": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "catalog",
+      "k_nominal": 3.3333,
+      "k_realised": 3.3331,
+      "kind": "call"
+     },
+     {
+      "driver": "cart",
+      "k_nominal": 5.0,
+      "k_realised": 4.9871,
+      "kind": "call"
+     },
+     {
+      "driver": "order_service",
+      "k_nominal": 0.6667,
+      "k_realised": 0.6677,
+      "kind": "call"
+     },
+     {
+      "driver": "fulfillment_workers",
+      "k_nominal": 0.25,
+      "k_realised": 0.2499,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "recommendations": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 3.75,
+      "k_realised": 3.7203,
+      "kind": "call"
+     }
+    ]
+   },
+   "reviews": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "catalog",
+      "k_nominal": 2.0,
+      "k_realised": 1.9949,
+      "kind": "call"
+     }
+    ]
+   },
+   "image_service": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "web_frontend",
+      "k_nominal": 6.6667,
+      "k_realised": 6.7091,
+      "kind": "call"
+     },
+     {
+      "driver": "catalog",
+      "k_nominal": 3.3333,
+      "k_realised": 3.3312,
+      "kind": "call"
+     },
+     {
+      "driver": "search_indexer",
+      "k_nominal": 0.3333,
+      "k_realised": 0.3353,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "cart": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 3.125,
+      "k_realised": 3.108,
+      "kind": "call"
+     },
+     {
+      "driver": "checkout",
+      "k_nominal": 0.5,
+      "k_realised": 0.5034,
+      "kind": "call"
+     }
+    ]
+   },
+   "checkout": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 0.5,
+      "k_realised": 0.497,
+      "kind": "call"
+     }
+    ]
+   },
+   "payment": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "checkout",
+      "k_nominal": 0.5,
+      "k_realised": 0.5034,
+      "kind": "call"
+     }
+    ]
+   },
+   "fraud_check": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "payment",
+      "k_nominal": 0.6667,
+      "k_realised": 0.3296,
+      "kind": "call"
+     }
+    ]
+   },
+   "tax": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "checkout",
+      "k_nominal": 0.5,
+      "k_realised": 0.5034,
+      "kind": "call"
+     }
+    ]
+   },
+   "shipping_quote": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "checkout",
+      "k_nominal": 0.5,
+      "k_realised": 0.5034,
+      "kind": "call"
+     },
+     {
+      "driver": "fulfillment_workers",
+      "k_nominal": 0.25,
+      "k_realised": 0.2499,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "address_validation": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "checkout",
+      "k_nominal": 0.4,
+      "k_realised": 0.4043,
+      "kind": "call"
+     },
+     {
+      "driver": "shipping_quote",
+      "k_nominal": 0.625,
+      "k_realised": 0.625,
+      "kind": "call"
+     }
+    ]
+   },
+   "promotions": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "cart",
+      "k_nominal": 2.5,
+      "k_realised": 2.4892,
+      "kind": "call"
+     },
+     {
+      "driver": "checkout",
+      "k_nominal": 0.5,
+      "k_realised": 0.5034,
+      "kind": "call"
+     },
+     {
+      "driver": "pricing",
+      "k_nominal": 3.75,
+      "k_realised": 3.7587,
+      "kind": "call"
+     }
+    ]
+   },
+   "order_service": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "checkout",
+      "k_nominal": 0.45,
+      "k_realised": 0.4528,
+      "kind": "call"
+     }
+    ]
+   },
+   "loyalty": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "order_service",
+      "k_nominal": 0.3333,
+      "k_realised": 0.3338,
+      "kind": "call"
+     },
+     {
+      "driver": "loyalty_workers",
+      "k_nominal": 1.0,
+      "k_realised": 1.0077,
+      "kind": "worker call"
+     },
+     {
+      "driver": "profile_sync_workers",
+      "k_nominal": 0.5,
+      "k_realised": 0.4939,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "notification": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "order_service",
+      "k_nominal": 0.3333,
+      "k_realised": 0.3353,
+      "kind": "call"
+     }
+    ]
+   },
+   "email_gateway": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "email_workers",
+      "k_nominal": 1.0,
+      "k_realised": 0.9965,
+      "kind": "worker call"
+     }
+    ]
+   },
+   "sms_gateway": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "notification",
+      "k_nominal": 0.5,
+      "k_realised": 0.4943,
+      "kind": "call"
+     }
+    ]
+   },
+   "analytics_ingest": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "web_frontend",
+      "k_nominal": 3.3333,
+      "k_realised": 3.3545,
+      "kind": "call"
+     },
+     {
+      "driver": "mobile_api",
+      "k_nominal": 2.0,
+      "k_realised": 1.9791,
+      "kind": "call"
+     }
+    ]
+   },
+   "merchant_api": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "api_gateway",
+      "k_nominal": 0.15,
+      "k_realised": 0.1479,
+      "kind": "call"
+     }
+    ]
+   },
+   "order_placed": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "checkout",
+      "k_nominal": 0.425,
+      "k_realised": 0.4262,
+      "kind": "produce"
+     }
+    ]
+   },
+   "payment_captured": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "payment",
+      "k_nominal": 0.5333,
+      "k_realised": 0.2641,
+      "kind": "produce"
+     }
+    ]
+   },
+   "email_requested": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "order_service",
+      "k_nominal": 0.6667,
+      "k_realised": 0.6675,
+      "kind": "produce"
+     },
+     {
+      "driver": "fulfillment_workers",
+      "k_nominal": 0.25,
+      "k_realised": 0.2498,
+      "kind": "produce"
+     },
+     {
+      "driver": "loyalty_workers",
+      "k_nominal": 0.2,
+      "k_realised": 0.2005,
+      "kind": "produce"
+     },
+     {
+      "driver": "profile_sync_workers",
+      "k_nominal": 0.15,
+      "k_realised": 0.1514,
+      "kind": "produce"
+     }
+    ]
+   },
+   "product_changed": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "merchant_api",
+      "k_nominal": 0.6,
+      "k_realised": 0.5856,
+      "kind": "produce"
+     }
+    ]
+   },
+   "profile_updated": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "user_profile",
+      "k_nominal": 0.125,
+      "k_realised": 0.1195,
+      "kind": "produce"
+     }
+    ]
+   },
+   "clickstream": {
+    "external_mean_per_s": 0,
+    "terms": [
+     {
+      "driver": "analytics_ingest",
+      "k_nominal": 1.6,
+      "k_realised": 1.5579,
+      "kind": "produce"
+     }
+    ]
+   }
+  }
+ },
+ "mean_levels": {
+  "web_frontend": 9.91,
+  "mobile_api": 5.546,
+  "api_gateway": 4.784,
+  "auth": 2.866,
+  "session": 2.397,
+  "feature_flags": 0.764,
+  "user_profile": 4.688,
+  "catalog": 9.111,
+  "search": 6.484,
+  "pricing": 6.958,
+  "currency": 1.088,
+  "inventory": 5.184,
+  "recommendations": 8.693,
+  "reviews": 3.679,
+  "image_service": 25.713,
+  "cart": 3.458,
+  "checkout": 4.724,
+  "payment": 7.214,
+  "fraud_check": 2.38,
+  "tax": 1.907,
+  "shipping_quote": 3.507,
+  "address_validation": 2.458,
+  "promotions": 2.235,
+  "order_service": 3.204,
+  "loyalty": 2.12,
+  "notification": 1.093,
+  "email_gateway": 2.832,
+  "sms_gateway": 1.104,
+  "analytics_ingest": 2.259,
+  "merchant_api": 1.085,
+  "order_placed": 39.523,
+  "payment_captured": 136.841,
+  "email_requested": 470.423,
+  "product_changed": 50.76,
+  "profile_updated": 25.271,
+  "clickstream": 7.204,
+  "fulfillment_workers": 8.056,
+  "loyalty_workers": 1.89,
+  "email_workers": 4.718,
+  "search_indexer": 1.895,
+  "profile_sync_workers": 1.135,
+  "analytics_workers": 3.527
+ },
+ "max_levels": {
+  "web_frontend": 46,
+  "mobile_api": 33,
+  "api_gateway": 23,
+  "auth": 18,
+  "session": 19,
+  "feature_flags": 8,
+  "user_profile": 38,
+  "catalog": 39,
+  "search": 37,
+  "pricing": 34,
+  "currency": 12,
+  "inventory": 28,
+  "recommendations": 91,
+  "reviews": 20,
+  "image_service": 301,
+  "cart": 18,
+  "checkout": 23,
+  "payment": 99,
+  "fraud_check": 11,
+  "tax": 12,
+  "shipping_quote": 18,
+  "address_validation": 14,
+  "promotions": 17,
+  "order_service": 16,
+  "loyalty": 11,
+  "notification": 11,
+  "email_gateway": 16,
+  "sms_gateway": 10,
+  "analytics_ingest": 17,
+  "merchant_api": 12,
+  "order_placed": 586,
+  "payment_captured": 1051,
+  "email_requested": 4542,
+  "product_changed": 334,
+  "profile_updated": 284,
+  "clickstream": 141,
+  "fulfillment_workers": 16,
+  "loyalty_workers": 3,
+  "email_workers": 12,
+  "search_indexer": 3,
+  "profile_sync_workers": 2,
+  "analytics_workers": 9
+ }
+}
