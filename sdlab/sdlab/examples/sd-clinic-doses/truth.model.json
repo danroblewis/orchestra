@@ -1,0 +1,619 @@
+{
+ "id": "sd-clinic-doses-truth",
+ "name": "SD: A vaccination clinic's doses: the truth",
+ "description": "Tests co-flows on a stock that also drains: every vaccination uses a dose, both of booked patients from the waiting list and of walk-ins who come straight from outside, while doses also expire; the vaccinations and the expiry share what the fridge holds. Doses come once a week, so late in a busy week they run out and the waiting list grows. A second nurse (an announced era) doubles how fast the waiting list is seen.",
+ "time_unit": "day",
+ "seed": 20261019,
+ "steps": 700,
+ "long_steps": 7000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "waiting",
+   "name": "Waiting list",
+   "unit": "patients",
+   "initial": 220,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "vaccinated",
+   "name": "Vaccinated, awaiting follow-up",
+   "unit": "patients",
+   "initial": 500,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "doses",
+   "name": "Doses in the fridge",
+   "unit": "doses",
+   "initial": 300,
+   "x": 320,
+   "y": 40
+  },
+  {
+   "id": "expired",
+   "name": "Expired doses awaiting disposal",
+   "unit": "doses",
+   "initial": 15,
+   "x": 560,
+   "y": 40
+  }
+ ],
+ "flows": [
+  {
+   "id": "book",
+   "name": "Appointments booked",
+   "from": null,
+   "to": "waiting",
+   "rate": {
+    "form": "constant",
+    "value": 45
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "vaccinate",
+   "name": "Vaccinated by appointment",
+   "from": "waiting",
+   "to": "vaccinated",
+   "rate": {
+    "form": "proportional",
+    "stock": "waiting",
+    "k": 0.2
+   },
+   "uses": [
+    {
+     "stock": "doses",
+     "per": 1
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "walk_in",
+   "name": "Walk-ins vaccinated",
+   "from": null,
+   "to": "vaccinated",
+   "rate": {
+    "form": "constant",
+    "value": 8
+   },
+   "uses": [
+    {
+     "stock": "doses",
+     "per": 1
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "follow_up",
+   "name": "Followed up",
+   "from": "vaccinated",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "vaccinated",
+    "k": 0.1
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deliver",
+   "name": "Doses delivered",
+   "from": null,
+   "to": "doses",
+   "rate": {
+    "form": "constant",
+    "value": 450
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "expire",
+   "name": "Doses expire",
+   "from": "doses",
+   "to": "expired",
+   "rate": {
+    "form": "proportional",
+    "stock": "doses",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "dispose",
+   "name": "Expired doses disposed of",
+   "from": "expired",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "expired",
+    "k": 0.25
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 140,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal bookings (45 a day), 8 walk-ins a day",
+    "set": {
+     "book": {
+      "form": "constant",
+      "value": 45
+     },
+     "walk_in": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 2,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 8,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 9,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 15,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 16,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 22,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 23,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 29,
+    "label": "Campaign: bookings up (60 a day)",
+    "set": {
+     "book": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 29,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 30,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 36,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 37,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 43,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 44,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 50,
+    "label": "A second nurse starts",
+    "set": {
+     "vaccinate": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.35
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 50,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 51,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 57,
+    "label": "Campaign over (45 a day)",
+    "set": {
+     "book": {
+      "form": "constant",
+      "value": 45
+     }
+    }
+   },
+   {
+    "t": 57,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 58,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 64,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 65,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 71,
+    "label": "Weekly delivery (cut to 320 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 320
+     }
+    }
+   },
+   {
+    "t": 72,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 78,
+    "label": "Weekly delivery (cut to 320 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 320
+     }
+    }
+   },
+   {
+    "t": 79,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 85,
+    "label": "Weekly delivery (cut to 320 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 320
+     }
+    }
+   },
+   {
+    "t": 86,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 92,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 93,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 99,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 100,
+    "label": "Back to one nurse",
+    "set": {
+     "vaccinate": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.2
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 100,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 106,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 107,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 113,
+    "label": "Quiet weeks (35 bookings a day, 4 walk-ins)",
+    "set": {
+     "book": {
+      "form": "constant",
+      "value": 35
+     },
+     "walk_in": {
+      "form": "constant",
+      "value": 4
+     }
+    }
+   },
+   {
+    "t": 113,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 114,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 120,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 127,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 128,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 134,
+    "label": "Weekly delivery (450 doses)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 450
+     }
+    }
+   },
+   {
+    "t": 135,
+    "label": "No delivery until next week",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   }
+  ]
+ }
+}

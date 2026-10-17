@@ -8,6 +8,7 @@
   "tier1",
   "tier2",
   "tier2_agents",
+  "hiring_budget",
   "engineering",
   "resolved",
   "reopened"
@@ -352,6 +353,17 @@
      "stock": "resolved",
      "k": 0.2
     }
+   },
+   {
+    "to": "hiring_budget",
+    "flow": "budget_in",
+    "what": "Hiring budget released",
+    "rate": {
+     "form": "gap",
+     "stock": "hiring_budget",
+     "goal": 60,
+     "time": 20
+    }
    }
   ],
   "links": [
@@ -373,6 +385,22 @@
     "what": "Customer tries a fix that will not hold, then Ticket reopened"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "hiring_budget",
+    "per": 10,
+    "from": null,
+    "to": "tier2_agents",
+    "flow": "hire_t2",
+    "what": "Tier-2 agents hired",
+    "rate": {
+     "form": "gap",
+     "stock": "tier2_agents",
+     "goal": 12,
+     "time": 20
+    }
+   }
+  ]
  }
 }

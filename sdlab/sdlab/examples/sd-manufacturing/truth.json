@@ -8,7 +8,8 @@
   "wip",
   "inspection",
   "rework",
-  "finished"
+  "finished",
+  "cartons"
  ],
  "hidden_stocks": [
   "packing",
@@ -237,6 +238,17 @@
     }
    },
    {
+    "to": "cartons",
+    "flow": "carton_delivery",
+    "what": "Cartons delivered",
+    "rate": {
+     "form": "gap",
+     "stock": "cartons",
+     "goal": 350,
+     "time": 5
+    }
+   },
+   {
     "from": "finished",
     "flow": "ship",
     "what": "Shipments",
@@ -275,6 +287,21 @@
     "what": "Pass inspection, go to packing, then Packed into finished goods"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "cartons",
+    "per": 1,
+    "from": null,
+    "to": "finished",
+    "flow": "packed",
+    "what": "Packed into finished goods",
+    "rate": {
+     "form": "proportional",
+     "stock": "packing",
+     "k": 0.25
+    }
+   }
+  ]
  }
 }

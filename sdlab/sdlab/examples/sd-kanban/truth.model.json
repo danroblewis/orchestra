@@ -59,6 +59,14 @@
    "y": 40
   },
   {
+   "id": "capacity",
+   "name": "Sprint capacity left",
+   "unit": "cards",
+   "initial": 40,
+   "x": 320,
+   "y": 40
+  },
+  {
    "id": "undetected",
    "name": "Defects not yet noticed",
    "unit": "cards",
@@ -90,7 +98,13 @@
     "stock": "backlog",
     "k": 0.15
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "capacity",
+     "per": 1
+    }
+   ]
   },
   {
    "id": "to_review",
@@ -175,6 +189,17 @@
     "k": 0.2
    },
    "machine": "environment"
+  },
+  {
+   "id": "capacity_set",
+   "name": "Sprint planning sets the team's capacity",
+   "from": null,
+   "to": "capacity",
+   "rate": {
+    "form": "constant",
+    "value": 0
+   },
+   "machine": "environment"
   }
  ],
  "machines": [],
@@ -198,6 +223,28 @@
      "planned": {
       "form": "constant",
       "value": 1
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "Sprint planning: capacity for 50 cards",
+    "set": {
+     "capacity_set": {
+      "form": "gap",
+      "stock": "capacity",
+      "goal": 50,
+      "time": 1
+     }
+    }
+   },
+   {
+    "t": 2,
+    "label": "Sprint: capacity only used up",
+    "set": {
+     "capacity_set": {
+      "form": "constant",
+      "value": 0
      }
     }
    }

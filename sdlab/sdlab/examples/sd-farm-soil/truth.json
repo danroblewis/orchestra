@@ -1,0 +1,361 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261017,
+ "steps": 1040,
+ "measured": [
+  "nitrogen",
+  "field",
+  "barn"
+ ],
+ "hidden_stocks": [
+  "ripe"
+ ],
+ "schedule": {
+  "every": 520,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Continuous cropping: wheat every year",
+    "announce": true,
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     },
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 150,
+      "time": 12
+     }
+    }
+   },
+   {
+    "t": 12,
+    "label": "Year 1: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 41,
+    "label": "Year 1: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 64,
+    "label": "Year 2: growing season, a wet year",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 62
+     }
+    }
+   },
+   {
+    "t": 93,
+    "label": "Year 2: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 116,
+    "label": "Year 3: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 145,
+    "label": "Year 3: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 157,
+    "label": "Year 4: a dry year (soil slow to recover, poor growth)",
+    "set": {
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 150,
+      "time": 30
+     }
+    }
+   },
+   {
+    "t": 168,
+    "label": "Year 4: growing season, dry",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 36
+     }
+    }
+   },
+   {
+    "t": 197,
+    "label": "Year 4: autumn rains",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     },
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 150,
+      "time": 12
+     }
+    }
+   },
+   {
+    "t": 220,
+    "label": "Year 5: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 249,
+    "label": "Year 5: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "Crop rotation starts: clover and beans one year in three",
+    "announce": true,
+    "set": {
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 165,
+      "time": 8
+     }
+    }
+   },
+   {
+    "t": 272,
+    "label": "Year 6: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Year 6: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 324,
+    "label": "Year 7: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 353,
+    "label": "Year 7: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 376,
+    "label": "Year 8: growing season, a wet year",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 54
+     }
+    }
+   },
+   {
+    "t": 405,
+    "label": "Year 8: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 417,
+    "label": "Year 9: a dry year (soil slow to recover, poor growth)",
+    "set": {
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 165,
+      "time": 30
+     }
+    }
+   },
+   {
+    "t": 428,
+    "label": "Year 9: growing season, dry",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 31
+     }
+    }
+   },
+   {
+    "t": 457,
+    "label": "Year 9: autumn rains",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     },
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 165,
+      "time": 8
+     }
+    }
+   },
+   {
+    "t": 480,
+    "label": "Year 10: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 509,
+    "label": "Year 10: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [],
+  "outside": [
+   {
+    "to": "field",
+    "flow": "grow",
+    "what": "Crop grows",
+    "rate": {
+     "form": "constant",
+     "value": 0
+    }
+   },
+   {
+    "from": "barn",
+    "flow": "sell",
+    "what": "Sold to the mill",
+    "rate": {
+     "form": "proportional",
+     "stock": "barn",
+     "k": 0.03
+    }
+   },
+   {
+    "to": "nitrogen",
+    "flow": "restore",
+    "what": "Nitrogen restored (fallow, manure and fertiliser)",
+    "rate": {
+     "form": "gap",
+     "stock": "nitrogen",
+     "goal": 150,
+     "time": 12
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [
+   {
+    "from": "field",
+    "to": "barn",
+    "via": "ripe",
+    "via_name": "Ripe crop waiting for the combine",
+    "shape": "exp",
+    "delay": 2.0,
+    "what": "Ripens, then Harvested into the barn"
+   }
+  ],
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "nitrogen",
+    "per": 0.35,
+    "from": null,
+    "to": "barn",
+    "flow": "harvest",
+    "what": "Harvested into the barn",
+    "rate": {
+     "form": "proportional",
+     "stock": "ripe",
+     "k": 0.5
+    }
+   }
+  ],
+  "effects": [
+   {
+    "stock": "nitrogen",
+    "shape": "table",
+    "from": null,
+    "to": "field",
+    "flow": "grow",
+    "what": "Crop grows",
+    "rate": {
+     "form": "constant",
+     "value": 0
+    }
+   }
+  ]
+ }
+}

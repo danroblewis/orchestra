@@ -59,6 +59,14 @@
    "final": true
   },
   {
+   "id": "rooms",
+   "name": "Free rooms in halls",
+   "unit": "rooms",
+   "initial": 600,
+   "x": 300,
+   "y": 380
+  },
+  {
    "id": "yearout",
    "name": "On a year out / leave of absence",
    "unit": "students",
@@ -133,6 +141,12 @@
     "stock": "admitted",
     "k": 0.004
    },
+   "uses": [
+    {
+     "stock": "rooms",
+     "per": 1
+    }
+   ],
    "machine": "environment"
   },
   {
@@ -240,6 +254,19 @@
     "form": "proportional",
     "stock": "final",
     "k": 0.001
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ready_rooms",
+   "name": "Rooms vacated and made ready",
+   "from": null,
+   "to": "rooms",
+   "rate": {
+    "form": "gap",
+    "stock": "rooms",
+    "goal": 600,
+    "time": 6
    },
    "machine": "environment"
   }

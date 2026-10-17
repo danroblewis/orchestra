@@ -74,6 +74,14 @@
    "initial": 820,
    "x": 800,
    "y": 40
+  },
+  {
+   "id": "plots",
+   "name": "Serviced building plots",
+   "unit": "plots",
+   "initial": 120,
+   "x": 320,
+   "y": 40
   }
  ],
  "flows": [
@@ -127,6 +135,25 @@
     "form": "proportional",
     "stock": "permits",
     "k": 0.1
+   },
+   "uses": [
+    {
+     "stock": "plots",
+     "per": 1
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "service",
+   "name": "Plots serviced",
+   "from": null,
+   "to": "plots",
+   "rate": {
+    "form": "gap",
+    "stock": "plots",
+    "goal": 120,
+    "time": 5
    },
    "machine": "environment"
   },

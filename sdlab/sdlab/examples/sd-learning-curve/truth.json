@@ -1,0 +1,218 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261017,
+ "steps": 1000,
+ "measured": [
+  "backlog",
+  "awaiting",
+  "experience"
+ ],
+ "hidden_stocks": [
+  "escalated"
+ ],
+ "schedule": {
+  "every": 500,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (30 tickets a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "Normal staff turnover",
+    "set": {
+     "forget": {
+      "form": "proportional",
+      "stock": "experience",
+      "k": 0.02
+     }
+    }
+   },
+   {
+    "t": 91,
+    "label": "A release brings more tickets (45 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 45
+     }
+    }
+   },
+   {
+    "t": 161,
+    "label": "Quiet (25 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   },
+   {
+    "t": 231,
+    "label": "Busy (40 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Reorganisation: experienced staff leave for a new product team",
+    "set": {
+     "forget": {
+      "form": "proportional",
+      "stock": "experience",
+      "k": 0.08
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 381,
+    "label": "Team settled: normal turnover again",
+    "set": {
+     "forget": {
+      "form": "proportional",
+      "stock": "experience",
+      "k": 0.02
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 421,
+    "label": "Holidays (20 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "backlog",
+    "to": "awaiting",
+    "flow": "solve",
+    "what": "Answered",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.3
+    }
+   },
+   {
+    "from": "awaiting",
+    "to": "backlog",
+    "flow": "reopen",
+    "what": "Reopened (not solved)",
+    "rate": {
+     "form": "proportional",
+     "stock": "awaiting",
+     "k": 0.03
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "backlog",
+    "flow": "arrive",
+    "what": "Tickets opened",
+    "rate": {
+     "form": "constant",
+     "value": 30
+    }
+   },
+   {
+    "from": "awaiting",
+    "flow": "close",
+    "what": "Closed by the customer",
+    "rate": {
+     "form": "proportional",
+     "stock": "awaiting",
+     "k": 0.3
+    }
+   },
+   {
+    "to": "experience",
+    "flow": "learn",
+    "what": "Practice gained",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.15
+    }
+   },
+   {
+    "from": "experience",
+    "flow": "forget",
+    "what": "Experience lost (forgetting, turnover)",
+    "rate": {
+     "form": "proportional",
+     "stock": "experience",
+     "k": 0.02
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "backlog",
+    "into": "experience",
+    "flow": "learn",
+    "what": "Practice gained"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "backlog",
+    "to": "awaiting",
+    "via": "escalated",
+    "via_name": "With engineering",
+    "shape": "exp",
+    "delay": 5.0,
+    "what": "Escalated to engineering, then Fixed by engineering"
+   }
+  ],
+  "echoes": [],
+  "effects": [
+   {
+    "stock": "experience",
+    "shape": "table",
+    "from": "backlog",
+    "to": "awaiting",
+    "flow": "solve",
+    "what": "Answered",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.3
+    }
+   },
+   {
+    "stock": "experience",
+    "shape": "table",
+    "from": null,
+    "to": "experience",
+    "flow": "learn",
+    "what": "Practice gained",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.15
+    }
+   }
+  ]
+ }
+}

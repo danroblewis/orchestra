@@ -42,6 +42,14 @@
    "y": 400
   },
   {
+   "id": "fuel",
+   "name": "Diesel at the fuel dock",
+   "unit": "thousand litres",
+   "initial": 120,
+   "x": 80,
+   "y": 400
+  },
+  {
    "id": "landed",
    "name": "Fish landed at port",
    "unit": "thousand fish",
@@ -150,6 +158,12 @@
     "goal": 0,
     "time": 2
    },
+   "uses": [
+    {
+     "stock": "fuel",
+     "per": 5
+    }
+   ],
    "machine": "environment"
   },
   {
@@ -161,6 +175,19 @@
     "form": "proportional",
     "stock": "at_sea",
     "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "deliver_fuel",
+   "name": "Fuel delivered",
+   "from": null,
+   "to": "fuel",
+   "rate": {
+    "form": "gap",
+    "stock": "fuel",
+    "goal": 120,
+    "time": 3
    },
    "machine": "environment"
   },

@@ -20,8 +20,11 @@ from pathlib import Path
 
 
 def recording(sim, machines: Path, seed: int, steps: int) -> dict:
+    # everything that decides the data: the example's programs, and (for a ground-truth example) its
+    # truth model and the engine that steps it
     h = hashlib.sha256()
-    for p in sorted(machines.glob("*.py")):
+    sources = sorted(machines.glob("*.py")) + [p for p in (machines.parent / "truth.model.json", Path(__file__).with_name("sdtruth.py")) if p.exists() and (machines.parent / "truth.model.json").exists()]
+    for p in sources:
         h.update(p.name.encode() + p.read_bytes())
     path = Path(tempfile.gettempdir()) / f"sdlab-live-{machines.parent.name}-{seed}-{steps}-{h.hexdigest()[:12]}.json"
     try:

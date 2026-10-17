@@ -1,0 +1,303 @@
+{
+ "id": "sd-brewery-truth",
+ "name": "SD: Brewery on water and yeast: the truth",
+ "time_unit": "day",
+ "seed": 20261016,
+ "steps": 1200,
+ "long_steps": 12000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "malt",
+   "name": "Malt in store",
+   "unit": "hL of beer",
+   "initial": 120,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "wort",
+   "name": "Wort cooling",
+   "unit": "hL",
+   "initial": 30,
+   "x": 320,
+   "y": 200,
+   "measured": false
+  },
+  {
+   "id": "fermenting",
+   "name": "Beer fermenting",
+   "unit": "hL",
+   "initial": 150,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "kegs",
+   "name": "Beer in kegs",
+   "unit": "hL",
+   "initial": 100,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "water",
+   "name": "Water tank",
+   "unit": "hL",
+   "initial": 300,
+   "x": 320,
+   "y": 40
+  },
+  {
+   "id": "yeast",
+   "name": "Yeast on hand",
+   "unit": "kg",
+   "initial": 20,
+   "x": 560,
+   "y": 40
+  }
+ ],
+ "flows": [
+  {
+   "id": "malt_in",
+   "name": "Malt delivered",
+   "from": null,
+   "to": "malt",
+   "rate": {
+    "form": "gap",
+    "stock": "malt",
+    "goal": 250,
+    "time": 7
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "mash",
+   "name": "Mash and boil",
+   "from": "malt",
+   "to": "wort",
+   "rate": {
+    "form": "proportional",
+    "stock": "malt",
+    "k": 0.15
+   },
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "water",
+     "per": 3
+    }
+   ]
+  },
+  {
+   "id": "pitch",
+   "name": "Pitch into the fermenter",
+   "from": "wort",
+   "to": "fermenting",
+   "rate": {
+    "form": "proportional",
+    "stock": "wort",
+    "k": 0.5
+   },
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "yeast",
+     "per": 0.2
+    }
+   ]
+  },
+  {
+   "id": "rack",
+   "name": "Rack into kegs",
+   "from": "fermenting",
+   "to": "kegs",
+   "rate": {
+    "form": "proportional",
+    "stock": "fermenting",
+    "k": 0.1
+   },
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "water",
+     "per": 0.5
+    }
+   ]
+  },
+  {
+   "id": "ship",
+   "name": "Kegs shipped",
+   "from": "kegs",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "kegs",
+    "k": 0.08
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "refill",
+   "name": "Water refilled",
+   "from": null,
+   "to": "water",
+   "rate": {
+    "form": "gap",
+    "stock": "water",
+    "goal": 600,
+    "time": 4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "harvest",
+   "name": "Yeast harvested from the fermenter",
+   "from": null,
+   "to": "yeast",
+   "rate": {
+    "form": "proportional",
+    "stock": "fermenting",
+    "k": 0.01
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "buy_yeast",
+   "name": "Yeast bought when low",
+   "from": null,
+   "to": "yeast",
+   "rate": {
+    "form": "gap",
+    "stock": "yeast",
+    "goal": 25,
+    "time": 2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "yeast_spoils",
+   "name": "Yeast spoils",
+   "from": "yeast",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "yeast",
+    "k": 0.03
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 600,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Small fermenter",
+    "set": {
+     "mash": {
+      "form": "proportional",
+      "stock": "malt",
+      "k": 0.15
+     },
+     "pitch": {
+      "form": "proportional",
+      "stock": "wort",
+      "k": 0.5
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 91,
+    "label": "Busy season (shipping more)",
+    "set": {
+     "ship": {
+      "form": "proportional",
+      "stock": "kegs",
+      "k": 0.12
+     }
+    }
+   },
+   {
+    "t": 151,
+    "label": "Yeast supplier out of stock",
+    "set": {
+     "buy_yeast": {
+      "form": "gap",
+      "stock": "yeast",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 186,
+    "label": "Yeast supplier back",
+    "set": {
+     "buy_yeast": {
+      "form": "gap",
+      "stock": "yeast",
+      "goal": 25,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Bigger fermenter",
+    "set": {
+     "mash": {
+      "form": "proportional",
+      "stock": "malt",
+      "k": 0.22
+     },
+     "pitch": {
+      "form": "proportional",
+      "stock": "wort",
+      "k": 0.7
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 361,
+    "label": "Low water pressure (slow refill)",
+    "set": {
+     "refill": {
+      "form": "gap",
+      "stock": "water",
+      "goal": 600,
+      "time": 12
+     }
+    }
+   },
+   {
+    "t": 431,
+    "label": "Water pressure back",
+    "set": {
+     "refill": {
+      "form": "gap",
+      "stock": "water",
+      "goal": 600,
+      "time": 4
+     }
+    }
+   },
+   {
+    "t": 481,
+    "label": "Quiet season (shipping less)",
+    "set": {
+     "ship": {
+      "form": "proportional",
+      "stock": "kegs",
+      "k": 0.06
+     }
+    }
+   }
+  ]
+ }
+}

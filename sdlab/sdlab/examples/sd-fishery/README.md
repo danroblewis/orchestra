@@ -5,7 +5,9 @@ drift onto the fishing grounds and are spawned there by the adults; juveniles di
 adults die or are caught by the boats at sea. Boats go out toward a target fleet size while the
 season is open and come home when it closes. The catch is landed on the quay, where some is sold
 fresh and the rest is trucked to the plant, waits on ice, and is processed. In year 6 a quota is
-introduced. The data is made by stepping `truth.model.json` with SD Lab's own equations, with
+introduced. Every boat that puts to sea takes about 5,000 litres of diesel from the port's fuel
+dock, which tankers refill toward 120,000 litres (a third of the shortfall a week); when the
+season opens the dock runs low and boats wait in port until it is refilled. The data is made by stepping `truth.model.json` with SD Lab's own equations, with
 Poisson counting noise (`sdlab/sdtruth.py`).
 
 ## The true structure
@@ -21,6 +23,8 @@ flowchart LR
   at_sea -. drives .-> landed
   in_port[Boats in port] -- "launch: (goal - at_sea) / 2" --> at_sea[Boats at sea]
   at_sea -- "return: 0.25 x at_sea" --> in_port
+  out5((outside)) -- "deliver_fuel: (120 - fuel) / 3" --> fuel[Diesel at the fuel dock]
+  in_port -. "co-flow: each launch uses 5" .-> fuel
   landed -- "sell_fresh: 0.2 x landed" --> out4((outside))
   landed -- "truck: 0.5 x landed" --> cold[[On ice, waiting at the plant - not measured]]
   cold -- "process: 0.33 x cold_store" --> processed[Fish processed - final]
@@ -28,7 +32,8 @@ flowchart LR
 
 Two kinds of thing: fish (thousand fish: `juveniles`, `adults`, `landed`, `cold_store`,
 `processed`) and boats (`in_port`, `at_sea`, a fleet of 40 that never changes size). Fish and boats
-never exchange things: the boats drive the catch through its equation only.
+never exchange things: the boats drive the catch through its equation only. A third kind, diesel
+(`fuel`, thousand litres), is used up by the boats going out.
 
 | flow | from -> to | equation |
 |---|---|---|
@@ -42,6 +47,9 @@ never exchange things: the boats drive the catch through its equation only.
 | sell_fresh | landed -> outside | proportional, k = 0.2 |
 | truck | landed -> cold_store | proportional, k = 0.5 |
 | process | cold_store -> processed | proportional, k = 0.33 (about three weeks on ice) |
+| deliver_fuel | outside -> fuel | gap: (120 - fuel) / 3 |
+
+Co-flow: `launch` uses up 5 thousand litres of `fuel` for each boat it moves (`"uses": [{"stock": "fuel", "per": 5}]`).
 
 The reinforcing loop adults -> juveniles -> adults has a gain of
 0.03 x 0.04 / ((0.06 + 0.04) x 0.02) = 0.6 < 1, so without the larvae drifting in from outside the
@@ -75,3 +83,6 @@ decade's range.
 - **Unannounced changes** in what arrives from outside (year classes) and in the season, which
   keep the system from settling, and **one announced era** (the quota) that changes the catch
   equation.
+- **A co-flow**: each launch uses up 5 thousand litres of diesel; the fuel dock's fall is
+  explained by `launch` (in_port -> at_sea), and at the season's opening the dock runs low and
+  holds launches back below their equation.

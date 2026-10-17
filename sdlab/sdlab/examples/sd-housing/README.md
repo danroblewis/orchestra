@@ -6,11 +6,13 @@ wait (unseen) until construction starts; finished homes are listed; house hunter
 close and buyers move in; owners eventually sell up and put their homes back on the market, and a
 few homes are demolished or abandoned each week. Mortgage rates swing without warning, changing how
 many new households start looking. A zoning reform, announced, speeds up building for half of every
-five-year cycle.
+five-year cycle. Every home that starts construction uses up a serviced building plot; the city
+services plots toward 120 ready (a fifth of the shortfall a week), so in a building rush the plots
+run low and construction starts wait.
 
 The user sees seven stocks (`../sd-housing.json`): permit applications in review, homes under
 construction, homes for sale, homes under contract, occupied homes, demolished or abandoned homes
-(final), and house hunters (households, a different unit from homes). Approved permits not yet
+(final), house hunters (households, a different unit from homes), and serviced building plots (plots). Approved permits not yet
 started are not measured.
 
 ## True structure
@@ -21,6 +23,8 @@ flowchart LR
   applications -- "withdraw: 0.03" --> out2((outside))
   applications -- "approve: 1/6" --> permits[(permits: hidden)]
   permits -- "start: 0.1 (reform 0.3)" --> building
+  out7((outside)) -- "service: (120 - plots) / 5" --> plots[Serviced building plots]
+  permits -. "co-flow: each start uses 1 plot" .-> plots
   building -- "complete: 1/26 (reform 1/16)" --> for_sale
   for_sale -- "contract: 0.03*hunters + 0.01*for_sale" --> under_contract
   under_contract -- "fall_through: 0.02" --> for_sale
@@ -52,6 +56,9 @@ flowchart LR
 | movers | outside -> hunters | linear: 0.001 * occupied |
 | buy | hunters -> outside | linear: 0.03 * hunters + 0.01 * for_sale |
 | give_up | hunters -> outside | proportional: 0.02 * hunters |
+| service | outside -> plots | gap: (120 - plots) / 5 |
+
+Co-flow: `start` uses up one plot (`plots`) for each home it moves (`"uses": [{"stock": "plots", "per": 1}]`).
 
 Counting noise (Poisson) on every flow; seed 20261016.
 
@@ -85,3 +92,5 @@ piling up and applications stop) and never settles or drifts away.
 - **Unannounced regimes** in what arrives from outside (`newcomers`), so the system never settles.
 - **Announced eras** changing two rates at once, one of them out of the hidden stock.
 - **A final stock** (`demolished`) that only accumulates.
+- **A co-flow** (`start` uses `plots`): the plots fall as homes start, out of the hidden permits
+  stock into building, and when the plots run low the starts are held back below their equation.

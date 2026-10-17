@@ -8,7 +8,8 @@
   "backlog",
   "bales",
   "shelves",
-  "landfill"
+  "landfill",
+  "wagons"
  ],
  "hidden_stocks": [
   "rail"
@@ -171,6 +172,17 @@
     }
    },
    {
+    "to": "wagons",
+    "flow": "wagons_back",
+    "what": "Empty wagons sent back",
+    "rate": {
+     "form": "gap",
+     "stock": "wagons",
+     "goal": 45,
+     "time": 5
+    }
+   },
+   {
     "from": "shelves",
     "flow": "keep",
     "what": "Recycled products bought and kept",
@@ -215,6 +227,26 @@
     "what": "Bales sold and loaded on rail, then Recycled products reach shops"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "wagons",
+    "per": 0.05,
+    "from": "bales",
+    "to": null,
+    "flow": "sell",
+    "what": "Bales sold and loaded on rail",
+    "rate": {
+     "form": "linear",
+     "c": -40,
+     "terms": [
+      {
+       "stock": "bales",
+       "k": 0.2
+      }
+     ]
+    }
+   }
+  ]
  }
 }

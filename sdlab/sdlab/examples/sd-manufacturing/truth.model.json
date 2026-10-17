@@ -58,6 +58,14 @@
    "y": 200
   },
   {
+   "id": "cartons",
+   "name": "Shipping cartons on hand",
+   "unit": "cartons",
+   "initial": 350,
+   "x": 1040,
+   "y": 400
+  },
+  {
    "id": "packing",
    "name": "Being packed (not counted)",
    "unit": "units",
@@ -209,6 +217,25 @@
     "form": "proportional",
     "stock": "packing",
     "k": 0.25
+   },
+   "uses": [
+    {
+     "stock": "cartons",
+     "per": 1
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "carton_delivery",
+   "name": "Cartons delivered",
+   "from": null,
+   "to": "cartons",
+   "rate": {
+    "form": "gap",
+    "stock": "cartons",
+    "goal": 350,
+    "time": 5
    },
    "machine": "environment"
   },

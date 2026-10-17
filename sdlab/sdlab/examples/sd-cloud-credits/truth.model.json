@@ -1,0 +1,230 @@
+{
+ "id": "sd-cloud-credits-truth",
+ "name": "SD: Cloud batch jobs on a credit budget: the truth",
+ "time_unit": "hour",
+ "seed": 20261016,
+ "steps": 1440,
+ "long_steps": 14400,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "queued",
+   "name": "Jobs queued",
+   "unit": "jobs",
+   "initial": 20,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "running",
+   "name": "Jobs running",
+   "unit": "jobs",
+   "initial": 15,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "postproc",
+   "name": "Post-processing",
+   "unit": "jobs",
+   "initial": 30,
+   "x": 560,
+   "y": 360,
+   "measured": false
+  },
+  {
+   "id": "results",
+   "name": "Results ready",
+   "unit": "jobs",
+   "initial": 20,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "credits",
+   "name": "Compute credits",
+   "unit": "credits",
+   "initial": 400,
+   "x": 320,
+   "y": 40
+  }
+ ],
+ "flows": [
+  {
+   "id": "submit",
+   "name": "Jobs submitted",
+   "from": null,
+   "to": "queued",
+   "rate": {
+    "form": "constant",
+    "value": 4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "start",
+   "name": "Jobs start",
+   "from": "queued",
+   "to": "running",
+   "rate": {
+    "form": "proportional",
+    "stock": "queued",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "credits",
+     "per": 2
+    }
+   ]
+  },
+  {
+   "id": "cancel",
+   "name": "Jobs cancelled while waiting",
+   "from": "queued",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "queued",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "finish",
+   "name": "Jobs finish",
+   "from": "running",
+   "to": "postproc",
+   "rate": {
+    "form": "proportional",
+    "stock": "running",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "land",
+   "name": "Results land",
+   "from": "postproc",
+   "to": "results",
+   "rate": {
+    "form": "proportional",
+    "stock": "postproc",
+    "k": 0.1
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fetch",
+   "name": "Results fetched",
+   "from": "results",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "results",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "grant",
+   "name": "Credits granted",
+   "from": null,
+   "to": "credits",
+   "rate": {
+    "form": "constant",
+    "value": 9
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "expire",
+   "name": "Unused credits expire",
+   "from": "credits",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "credits",
+    "k": 0.003
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 720,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Usual load (4 jobs an hour), full budget (9 credits an hour)",
+    "set": {
+     "submit": {
+      "form": "constant",
+      "value": 4
+     },
+     "grant": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 181,
+    "label": "Month-end crunch (8 jobs an hour)",
+    "set": {
+     "submit": {
+      "form": "constant",
+      "value": 8
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Quiet (3 jobs an hour)",
+    "set": {
+     "submit": {
+      "form": "constant",
+      "value": 3
+     }
+    }
+   },
+   {
+    "t": 401,
+    "label": "Budget cut (6 credits an hour)",
+    "set": {
+     "grant": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 481,
+    "label": "Load back up (4 jobs an hour)",
+    "set": {
+     "submit": {
+      "form": "constant",
+      "value": 4
+     }
+    }
+   },
+   {
+    "t": 601,
+    "label": "Budget restored (10 credits an hour), light load (3 jobs an hour)",
+    "set": {
+     "grant": {
+      "form": "constant",
+      "value": 10
+     },
+     "submit": {
+      "form": "constant",
+      "value": 3
+     }
+    }
+   }
+  ]
+ }
+}

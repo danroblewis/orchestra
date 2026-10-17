@@ -1,0 +1,339 @@
+{
+ "id": "sd-learning-curve-truth",
+ "name": "SD: A support team that learns on the job: the truth",
+ "description": "Tests an effect shaped like a learning curve. Support tickets are answered at a rate proportional to the backlog, times an effect of the team's experience: a table sampled from 0.2 + 0.8 x (1 - (1 - 0.5)^(experience / 400)), so a new team works at 0.2 of full speed and productivity saturates as experience grows. Experience grows with the work done (0.5 practice points per ticket answered: the same equation and effect as answering) and decays 2.0% a day (forgetting, staff turnover); an announced era (a reorganisation) makes it decay faster for a while, so the team's productivity falls and the backlog rises. Demand changes without notice. Some tickets go to engineering (not measured) and come back answered; some answers are reopened.",
+ "time_unit": "day",
+ "seed": 20261017,
+ "steps": 1000,
+ "long_steps": 10000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "backlog",
+   "name": "Tickets waiting",
+   "unit": "tickets",
+   "initial": 200,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "escalated",
+   "name": "With engineering",
+   "unit": "tickets",
+   "initial": 20,
+   "x": 320,
+   "y": 360,
+   "measured": false
+  },
+  {
+   "id": "awaiting",
+   "name": "Answered, awaiting the customer",
+   "unit": "tickets",
+   "initial": 60,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "experience",
+   "name": "Team experience",
+   "unit": "practice points",
+   "initial": 400,
+   "x": 320,
+   "y": 40
+  }
+ ],
+ "flows": [
+  {
+   "id": "arrive",
+   "name": "Tickets opened",
+   "from": null,
+   "to": "backlog",
+   "rate": {
+    "form": "constant",
+    "value": 30
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "solve",
+   "name": "Answered",
+   "from": "backlog",
+   "to": "awaiting",
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.3
+   },
+   "effects": [
+    {
+     "stock": "experience",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.2
+      ],
+      [
+       100,
+       0.327
+      ],
+      [
+       200,
+       0.434
+      ],
+      [
+       300,
+       0.524
+      ],
+      [
+       400,
+       0.6
+      ],
+      [
+       600,
+       0.717
+      ],
+      [
+       800,
+       0.8
+      ],
+      [
+       1000,
+       0.859
+      ],
+      [
+       1200,
+       0.9
+      ],
+      [
+       1600,
+       0.95
+      ],
+      [
+       2000,
+       0.975
+      ]
+     ]
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "escalate",
+   "name": "Escalated to engineering",
+   "from": "backlog",
+   "to": "escalated",
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fix",
+   "name": "Fixed by engineering",
+   "from": "escalated",
+   "to": "awaiting",
+   "rate": {
+    "form": "proportional",
+    "stock": "escalated",
+    "k": 0.2
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "close",
+   "name": "Closed by the customer",
+   "from": "awaiting",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "awaiting",
+    "k": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "reopen",
+   "name": "Reopened (not solved)",
+   "from": "awaiting",
+   "to": "backlog",
+   "rate": {
+    "form": "proportional",
+    "stock": "awaiting",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "learn",
+   "name": "Practice gained",
+   "from": null,
+   "to": "experience",
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.15
+   },
+   "effects": [
+    {
+     "stock": "experience",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.2
+      ],
+      [
+       100,
+       0.327
+      ],
+      [
+       200,
+       0.434
+      ],
+      [
+       300,
+       0.524
+      ],
+      [
+       400,
+       0.6
+      ],
+      [
+       600,
+       0.717
+      ],
+      [
+       800,
+       0.8
+      ],
+      [
+       1000,
+       0.859
+      ],
+      [
+       1200,
+       0.9
+      ],
+      [
+       1600,
+       0.95
+      ],
+      [
+       2000,
+       0.975
+      ]
+     ]
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "forget",
+   "name": "Experience lost (forgetting, turnover)",
+   "from": "experience",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "experience",
+    "k": 0.02
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 500,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (30 tickets a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "Normal staff turnover",
+    "set": {
+     "forget": {
+      "form": "proportional",
+      "stock": "experience",
+      "k": 0.02
+     }
+    }
+   },
+   {
+    "t": 91,
+    "label": "A release brings more tickets (45 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 45
+     }
+    }
+   },
+   {
+    "t": 161,
+    "label": "Quiet (25 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 25
+     }
+    }
+   },
+   {
+    "t": 231,
+    "label": "Busy (40 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Reorganisation: experienced staff leave for a new product team",
+    "set": {
+     "forget": {
+      "form": "proportional",
+      "stock": "experience",
+      "k": 0.08
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 381,
+    "label": "Team settled: normal turnover again",
+    "set": {
+     "forget": {
+      "form": "proportional",
+      "stock": "experience",
+      "k": 0.02
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 421,
+    "label": "Holidays (20 a day)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 20
+     }
+    }
+   }
+  ]
+ }
+}

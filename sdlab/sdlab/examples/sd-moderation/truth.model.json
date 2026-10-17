@@ -67,6 +67,14 @@
    "final": true
   },
   {
+   "id": "credits",
+   "name": "Vendor review credits left",
+   "unit": "credits",
+   "initial": 300,
+   "x": 560,
+   "y": 620
+  },
+  {
    "id": "vendor",
    "name": "Vendor's offshore review queue",
    "unit": "posts",
@@ -216,6 +224,12 @@
      }
     ]
    },
+   "uses": [
+    {
+     "stock": "credits",
+     "per": 1
+    }
+   ],
    "machine": "environment"
   },
   {
@@ -227,6 +241,19 @@
     "form": "proportional",
     "stock": "vendor",
     "k": 0.027777777777777776
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "buy_credits",
+   "name": "Review credits bought",
+   "from": null,
+   "to": "credits",
+   "rate": {
+    "form": "gap",
+    "stock": "credits",
+    "goal": 300,
+    "time": 48
    },
    "machine": "environment"
   },

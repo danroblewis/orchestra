@@ -1,0 +1,357 @@
+{
+ "id": "sd-webshop-stock-truth",
+ "name": "SD: a web shop's stock and backlog: the truth",
+ "description": "Tests effects on both sides of the shelf. Picking slows when the shelves run low (a linear effect of the stock on the shelves, normal 300 items, at most 1: pickers cannot pick what is not there), and every order shipped books one item out of stock (a co-flow). The buyer reorders toward 550 items on the shelf, faster the bigger the backlog of customer orders waiting to be picked (a table effect that saturates). The supplier dispatches open purchase orders in about three days, and the goods then spend about a week on the road (a stock the shop does not see) before they reach the shelves. Demand changes without being announced.",
+ "time_unit": "day",
+ "seed": 20261017,
+ "steps": 730,
+ "long_steps": 7300,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "backlog",
+   "name": "Customer orders waiting to be picked",
+   "unit": "orders",
+   "initial": 100,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "packing",
+   "name": "Orders at the packing bench",
+   "unit": "orders",
+   "initial": 30,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "shelf",
+   "name": "Stock on the shelves",
+   "unit": "items",
+   "initial": 400,
+   "x": 320,
+   "y": 40
+  },
+  {
+   "id": "on_order",
+   "name": "Purchase orders the supplier has not dispatched",
+   "unit": "items",
+   "initial": 150,
+   "x": 560,
+   "y": 40
+  },
+  {
+   "id": "in_transit",
+   "name": "Goods on the road from the supplier",
+   "unit": "items",
+   "initial": 150,
+   "x": 800,
+   "y": 40,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "order_in",
+   "name": "Customers order",
+   "from": null,
+   "to": "backlog",
+   "rate": {
+    "form": "constant",
+    "value": 60
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pick",
+   "name": "Picked",
+   "from": "backlog",
+   "to": "packing",
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.6
+   },
+   "effects": [
+    {
+     "stock": "shelf",
+     "shape": "linear",
+     "normal": 300,
+     "max": 1
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "cancel",
+   "name": "Customers give up and cancel",
+   "from": "backlog",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "backlog",
+    "k": 0.04
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ship",
+   "name": "Packed and shipped (booked out of stock)",
+   "from": "packing",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "packing",
+    "k": 0.7
+   },
+   "uses": [
+    {
+     "stock": "shelf",
+     "per": 1
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "reorder",
+   "name": "Ordered from the supplier",
+   "from": null,
+   "to": "on_order",
+   "rate": {
+    "form": "gap",
+    "stock": "shelf",
+    "goal": 550,
+    "time": 5
+   },
+   "effects": [
+    {
+     "stock": "backlog",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       50,
+       0.75
+      ],
+      [
+       100,
+       0.95
+      ],
+      [
+       200,
+       1.35
+      ],
+      [
+       300,
+       1.6
+      ],
+      [
+       450,
+       1.8
+      ],
+      [
+       600,
+       1.85
+      ]
+     ]
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "dispatch",
+   "name": "Dispatched by the supplier",
+   "from": "on_order",
+   "to": "in_transit",
+   "rate": {
+    "form": "proportional",
+    "stock": "on_order",
+    "k": 0.33
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "receive",
+   "name": "Received onto the shelves",
+   "from": "in_transit",
+   "to": "shelf",
+   "rate": {
+    "form": "proportional",
+    "stock": "in_transit",
+    "k": 0.15
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 730,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal trade (about 60 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 46,
+    "label": "A product goes viral (about 102 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 102
+     }
+    }
+   },
+   {
+    "t": 76,
+    "label": "Back to normal (about 60 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "Summer lull (about 42 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 42
+     }
+    }
+   },
+   {
+    "t": 181,
+    "label": "Back to normal (about 60 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 231,
+    "label": "Back-to-school rush (about 78 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 78
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "Back to normal (about 60 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 316,
+    "label": "Black Friday and the run-up to Christmas (about 120 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 120
+     }
+    }
+   },
+   {
+    "t": 346,
+    "label": "January lull (about 48 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 366,
+    "label": "Quieter new year (about 54 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 54
+     }
+    }
+   },
+   {
+    "t": 426,
+    "label": "Featured on a blog (about 90 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 90
+     }
+    }
+   },
+   {
+    "t": 456,
+    "label": "Back to normal (about 60 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 60
+     }
+    }
+   },
+   {
+    "t": 516,
+    "label": "Summer lull (about 42 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 42
+     }
+    }
+   },
+   {
+    "t": 576,
+    "label": "Steady growth (about 72 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 72
+     }
+    }
+   },
+   {
+    "t": 656,
+    "label": "Black Friday and the run-up to Christmas (about 108 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 108
+     }
+    }
+   },
+   {
+    "t": 711,
+    "label": "January lull (about 48 orders a day)",
+    "set": {
+     "order_in": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   }
+  ]
+ }
+}

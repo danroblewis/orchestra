@@ -8,7 +8,8 @@
   "review",
   "testing",
   "done",
-  "bugs"
+  "bugs",
+  "capacity"
  ],
  "hidden_stocks": [
   "undetected"
@@ -33,6 +34,28 @@
      "planned": {
       "form": "constant",
       "value": 1
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "Sprint planning: capacity for 50 cards",
+    "set": {
+     "capacity_set": {
+      "form": "gap",
+      "stock": "capacity",
+      "goal": 50,
+      "time": 1
+     }
+    }
+   },
+   {
+    "t": 2,
+    "label": "Sprint: capacity only used up",
+    "set": {
+     "capacity_set": {
+      "form": "constant",
+      "value": 0
      }
     }
    }
@@ -116,6 +139,15 @@
      "form": "constant",
      "value": 2
     }
+   },
+   {
+    "to": "capacity",
+    "flow": "capacity_set",
+    "what": "Sprint planning sets the team's capacity",
+    "rate": {
+     "form": "constant",
+     "value": 0
+    }
    }
   ],
   "links": [],
@@ -130,6 +162,21 @@
     "what": "A defect slips through, then A defect is noticed"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "capacity",
+    "per": 1,
+    "from": "backlog",
+    "to": "dev",
+    "flow": "pull",
+    "what": "Pull into development",
+    "rate": {
+     "form": "proportional",
+     "stock": "backlog",
+     "k": 0.15
+    }
+   }
+  ]
  }
 }

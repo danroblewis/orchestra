@@ -59,6 +59,14 @@
    "final": true
   },
   {
+   "id": "wagons",
+   "name": "Empty rail wagons at the yard",
+   "unit": "wagons",
+   "initial": 45,
+   "x": 800,
+   "y": 380
+  },
+  {
    "id": "rail",
    "name": "In transit by rail to the processor",
    "unit": "tonnes",
@@ -142,6 +150,25 @@
       "k": 0.2
      }
     ]
+   },
+   "uses": [
+    {
+     "stock": "wagons",
+     "per": 0.05
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "wagons_back",
+   "name": "Empty wagons sent back",
+   "from": null,
+   "to": "wagons",
+   "rate": {
+    "form": "gap",
+    "stock": "wagons",
+    "goal": 45,
+    "time": 5
    },
    "machine": "environment"
   },

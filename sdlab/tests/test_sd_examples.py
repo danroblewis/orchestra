@@ -63,7 +63,8 @@ def test_a_very_long_run_stays_sane(example):
     start = {s["id"]: s.get("initial") or 0 for s in t.model["stocks"]}
     for s in t.stock_ids:
         net = sum(sum(r["counters"][f["id"]]) for f in t.model["flows"] if f.get("to") == s) \
-            - sum(sum(r["counters"][f["id"]]) * float(f.get("ratio") or 1) for f in t.model["flows"] if f.get("from") == s)
+            - sum(sum(r["counters"][f["id"]]) * float(f.get("ratio") or 1) for f in t.model["flows"] if f.get("from") == s) \
+            - sum(sum(r["counters"][f["id"]]) * float(u.get("per") or 0) for f in t.model["flows"] for u in f.get("uses") or [] if u.get("stock") == s)
         assert abs(start[s] + net - r["levels"][s][-1]) < 1e-6 * max(1, abs(net)) + 1, s
 
 

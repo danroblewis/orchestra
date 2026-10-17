@@ -68,12 +68,11 @@
   },
   {
    "id": "energy",
-   "name": "Energy drawn by the chargers",
+   "name": "Energy in the depot battery",
    "unit": "kWh",
-   "initial": 0,
+   "initial": 2400,
    "x": 1280,
-   "y": 260,
-   "final": true
+   "y": 260
   }
  ],
  "flows": [
@@ -173,6 +172,12 @@
     "stock": "charging",
     "k": 0.25
    },
+   "uses": [
+    {
+     "stock": "energy",
+     "per": 160
+    }
+   ],
    "machine": "environment"
   },
   {
@@ -200,19 +205,15 @@
    "machine": "environment"
   },
   {
-   "id": "draw",
-   "name": "Energy drawn",
+   "id": "grid",
+   "name": "Battery topped up from the grid",
    "from": null,
    "to": "energy",
    "rate": {
-    "form": "linear",
-    "c": 0,
-    "terms": [
-     {
-      "stock": "charging",
-      "k": 40
-     }
-    ]
+    "form": "gap",
+    "stock": "energy",
+    "goal": 2400,
+    "time": 8
    },
    "machine": "environment"
   }

@@ -7,6 +7,7 @@
   "api",
   "auth",
   "catalog",
+  "tokens",
   "queue",
   "workers"
  ],
@@ -204,6 +205,17 @@
       }
      ]
     }
+   },
+   {
+    "to": "tokens",
+    "flow": "refill",
+    "what": "Rate limiter refills its bucket",
+    "rate": {
+     "form": "gap",
+     "stock": "tokens",
+     "goal": 600,
+     "time": 2
+    }
    }
   ],
   "links": [
@@ -239,6 +251,26 @@
    }
   ],
   "hidden": [],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "tokens",
+    "per": 1,
+    "from": null,
+    "to": "catalog",
+    "flow": "api_catalog",
+    "what": "API calls the catalog",
+    "rate": {
+     "form": "linear",
+     "c": 0,
+     "terms": [
+      {
+       "stock": "api",
+       "k": 1.8
+      }
+     ]
+    }
+   }
+  ]
  }
 }

@@ -6,7 +6,8 @@
   "waiting",
   "treatment",
   "ward",
-  "discharged"
+  "discharged",
+  "kits"
  ],
  "hidden_stocks": [
   "lab"
@@ -92,6 +93,17 @@
      "form": "constant",
      "value": 6
     }
+   },
+   {
+    "to": "kits",
+    "flow": "restock",
+    "what": "Kit deliveries from the store room",
+    "rate": {
+     "form": "gap",
+     "stock": "kits",
+     "goal": 50,
+     "time": 9
+    }
    }
   ],
   "links": [],
@@ -106,6 +118,21 @@
     "what": "Send to the lab, then Lab results: admit"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "kits",
+    "per": 1,
+    "from": "waiting",
+    "to": "treatment",
+    "flow": "start",
+    "what": "Start treatment",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.35
+    }
+   }
+  ]
  }
 }

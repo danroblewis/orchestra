@@ -1,0 +1,1628 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261017,
+ "steps": 1344,
+ "measured": [
+  "waiting",
+  "observation",
+  "staff",
+  "fatigue"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 672,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Night staffing; Night arrivals (usual); Usual triage",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     },
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     },
+     "treat": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.3
+     },
+     "tire": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.15
+     }
+    }
+   },
+   {
+    "t": 8,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 9,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 18,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 20,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 25,
+    "label": "Night arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     }
+    }
+   },
+   {
+    "t": 32,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 33,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 42,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 44,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 49,
+    "label": "Night arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     }
+    }
+   },
+   {
+    "t": 56,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 57,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 66,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 68,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 73,
+    "label": "Night arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     }
+    }
+   },
+   {
+    "t": 80,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 81,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 90,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 92,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 97,
+    "label": "Night arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     }
+    }
+   },
+   {
+    "t": 104,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 105,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 114,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 116,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "Night arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     }
+    }
+   },
+   {
+    "t": 128,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 129,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 138,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 140,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 145,
+    "label": "Night arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.0
+     }
+    }
+   },
+   {
+    "t": 152,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 153,
+    "label": "Daytime arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.0
+     }
+    }
+   },
+   {
+    "t": 162,
+    "label": "Evening arrivals (usual)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 9.0
+     }
+    }
+   },
+   {
+    "t": 164,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 169,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 176,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 177,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 186,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 188,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 193,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 200,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 201,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 210,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 212,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 217,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 224,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 225,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 234,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 236,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 241,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 248,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 249,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 258,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 260,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 265,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 272,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 273,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 282,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 284,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 289,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 296,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 297,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 306,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 308,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 313,
+    "label": "Night arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 5.4
+     }
+    }
+   },
+   {
+    "t": 320,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 321,
+    "label": "Daytime arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 16.2
+     }
+    }
+   },
+   {
+    "t": 330,
+    "label": "Evening arrivals (flu season)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 12.15
+     }
+    }
+   },
+   {
+    "t": 332,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 337,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 344,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 345,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 354,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 356,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 361,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 368,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 369,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 372,
+    "label": "New triage policy: a fast track for minor cases",
+    "set": {
+     "treat": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.4
+     },
+     "tire": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.2
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 378,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 380,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 385,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 392,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 393,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 402,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 404,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 409,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 416,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 417,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 426,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 428,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 433,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 440,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 441,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 450,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 452,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 457,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 464,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 465,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 474,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 476,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 481,
+    "label": "Night arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 3.6
+     }
+    }
+   },
+   {
+    "t": 488,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 489,
+    "label": "Daytime arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 498,
+    "label": "Evening arrivals (quiet)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 8.1
+     }
+    }
+   },
+   {
+    "t": 500,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 505,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 512,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 513,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 522,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 524,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 529,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 536,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 537,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 540,
+    "label": "Fast track closed (the trial ends)",
+    "set": {
+     "treat": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.3
+     },
+     "tire": {
+      "form": "proportional",
+      "stock": "waiting",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 546,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 548,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 553,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 560,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 561,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 570,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 572,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 577,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 584,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 585,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 594,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 596,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 601,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 608,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 609,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 618,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 620,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 625,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 632,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 633,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 642,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 644,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   },
+   {
+    "t": 649,
+    "label": "Night arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 4.8
+     }
+    }
+   },
+   {
+    "t": 656,
+    "label": "Day shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 3.5
+     }
+    }
+   },
+   {
+    "t": 657,
+    "label": "Daytime arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 14.4
+     }
+    }
+   },
+   {
+    "t": 666,
+    "label": "Evening arrivals (busy)",
+    "set": {
+     "arrive": {
+      "form": "constant",
+      "value": 10.8
+     }
+    }
+   },
+   {
+    "t": 668,
+    "label": "Night shift",
+    "set": {
+     "come_on": {
+      "form": "constant",
+      "value": 2
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "waiting",
+    "to": "observation",
+    "flow": "treat",
+    "what": "Treated",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.3
+    }
+   },
+   {
+    "from": "observation",
+    "to": "waiting",
+    "flow": "bounce_back",
+    "what": "Sent back by a mistake",
+    "rate": {
+     "form": "proportional",
+     "stock": "observation",
+     "k": 0.02
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "waiting",
+    "flow": "arrive",
+    "what": "Patients arrive",
+    "rate": {
+     "form": "constant",
+     "value": 12
+    }
+   },
+   {
+    "from": "observation",
+    "flow": "discharge",
+    "what": "Discharged",
+    "rate": {
+     "form": "proportional",
+     "stock": "observation",
+     "k": 0.25
+    }
+   },
+   {
+    "to": "fatigue",
+    "flow": "tire",
+    "what": "Fatigue builds",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.15
+    }
+   },
+   {
+    "from": "fatigue",
+    "flow": "rest",
+    "what": "Fatigue recovers",
+    "rate": {
+     "form": "proportional",
+     "stock": "fatigue",
+     "k": 0.1
+    }
+   },
+   {
+    "to": "staff",
+    "flow": "come_on",
+    "what": "Staff come on shift",
+    "rate": {
+     "form": "constant",
+     "value": 3.5
+    }
+   },
+   {
+    "from": "staff",
+    "flow": "go_off",
+    "what": "Staff go off (breaks, other wards, shift end)",
+    "rate": {
+     "form": "proportional",
+     "stock": "staff",
+     "k": 0.25
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "waiting",
+    "into": "fatigue",
+    "flow": "tire",
+    "what": "Fatigue builds"
+   }
+  ],
+  "hidden": [],
+  "echoes": [],
+  "effects": [
+   {
+    "stock": "staff",
+    "shape": "linear",
+    "from": "waiting",
+    "to": "observation",
+    "flow": "treat",
+    "what": "Treated",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.3
+    }
+   },
+   {
+    "stock": "waiting",
+    "shape": "table",
+    "from": "waiting",
+    "to": "observation",
+    "flow": "treat",
+    "what": "Treated",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.3
+    }
+   },
+   {
+    "stock": "fatigue",
+    "shape": "table",
+    "from": "observation",
+    "to": "waiting",
+    "flow": "bounce_back",
+    "what": "Sent back by a mistake",
+    "rate": {
+     "form": "proportional",
+     "stock": "observation",
+     "k": 0.02
+    }
+   },
+   {
+    "stock": "staff",
+    "shape": "linear",
+    "from": null,
+    "to": "fatigue",
+    "flow": "tire",
+    "what": "Fatigue builds",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.15
+    }
+   },
+   {
+    "stock": "waiting",
+    "shape": "table",
+    "from": null,
+    "to": "fatigue",
+    "flow": "tire",
+    "what": "Fatigue builds",
+    "rate": {
+     "form": "proportional",
+     "stock": "waiting",
+     "k": 0.15
+    }
+   }
+  ]
+ }
+}

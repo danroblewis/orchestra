@@ -12,8 +12,11 @@ parked vans out when parcels pile up, aiming for about one van on the road per 2
 A van on its route delivers about 10 parcels an hour; a route lasts about 6 hours. Then the van
 drives back to the depot (about 2 hours; the depot does not count these vans), waits for a free
 charger, charges for about 4 hours and parks, ready again. Now and then a van breaks down on its
-route and spends about a day in the workshop. The chargers draw 40 kWh per hour per charging van,
-and the depot's meter is counted.
+route and spends about a day in the workshop. The chargers run off the depot's battery bank: each
+van that finishes charging has taken about 160 kWh from it (40 kWh an hour for about 4 hours), and
+the grid tops the battery up toward 2400 kWh, an eighth of the shortfall each hour. When many vans
+charge at once the battery runs low and vans stay on the chargers until it recovers. The energy
+left in the battery is counted.
 
 The depot has six chargers. Every second fortnight a fast-charge bay opens and there are ten; this
 change is announced (an era). The daily demand peaks are not announced.
@@ -31,14 +34,14 @@ flowchart LR
   charging -- "Fully charged = charging / 4" --> ready
   road -- "Breaks down = 0.004 x road" --> workshop[In the workshop]
   workshop -- "Repaired = workshop / 24" --> ready
-  out3((outside)) -- "Energy drawn = 40 x charging" --> energy[Energy drawn, kWh]
+  out3((outside)) -- "Grid top-up = (2400 - energy) / 8" --> energy[Energy in the battery, kWh]
+  charging -. "each van charged uses 160 kWh" .-> energy
   road -. reads .-> parcels
   parcels -. reads .-> ready
-  charging -. reads .-> energy
 ```
 
 Stocks (vans unless noted): `parcels` (parcels, 300), `ready` (20), `road` (8), `returning` (2,
-hidden), `queue` (2), `charging` (4), `workshop` (4), `energy` (kWh, 0, final). The van stocks hold
+hidden), `queue` (2), `charging` (4), `workshop` (4), `energy` (kWh, 2400). The van stocks hold
 the whole fleet of 40 and nothing enters or leaves it.
 
 | flow | from -> to | equation (per hour) |
@@ -52,10 +55,13 @@ the whole fleet of 40 and nothing enters or leaves it.
 | charged | charging -> ready | proportional: charging / 4 |
 | breakdown | road -> workshop | proportional: 0.004 x road |
 | repaired | workshop -> ready | proportional: workshop / 24 |
-| draw | outside -> energy | linear: 40 x charging |
+| grid | outside -> energy | gap: (2400 - energy) / 8 |
+
+Co-flow: `charged` uses up 160 kWh of `energy` for each van it moves (`"uses": [{"stock": "energy", "per": 160}]`).
 
 Outflows never take more than a stock holds (`sdtruth` shares it out), so dispatch is capped by
-the vans ready and plugging in by the vans queueing.
+the vans ready and plugging in by the vans queueing; vans finishing their charge share the battery
+with nothing else, so `charged` is capped at energy / 160.
 
 ## The schedule
 
@@ -78,7 +84,9 @@ The default run is 1344 hours (two periods, eight weeks); `long_steps` is 13440.
   are never counted; discovery should find the delayed road -> queue move.
 - **Goal-seeking flows**: dispatch is a linear equation with a negative term (it seeks a target
   number on the road set by parcels waiting); plugging in is a gap toward the charger count.
-- **A link**: energy drawn follows the level of vans charging, not anything flowing out of it.
+- **A co-flow**: every van that finishes charging uses up 160 kWh of the battery; the battery's
+  fall is explained by the charged flow (vans charging -> ready), not by a flow of its own, and when
+  the battery runs low (mostly in the fast-charge weeks) that flow is held back.
 - **A balancing loop with a delay**: more parcels -> more dispatch -> more vans on the road -> more
   deliveries -> fewer parcels (damped oscillation of about a day).
 - **Unannounced changes**: the daily demand peaks change parcel arrivals without an era; discovery

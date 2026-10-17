@@ -8,7 +8,8 @@
   "year1",
   "year2",
   "final",
-  "graduates"
+  "graduates",
+  "rooms"
  ],
  "hidden_stocks": [
   "yearout"
@@ -979,6 +980,17 @@
      "stock": "final",
      "k": 0.001
     }
+   },
+   {
+    "to": "rooms",
+    "flow": "ready_rooms",
+    "what": "Rooms vacated and made ready",
+    "rate": {
+     "form": "gap",
+     "stock": "rooms",
+     "goal": 600,
+     "time": 6
+    }
    }
   ],
   "links": [
@@ -1000,6 +1012,21 @@
     "what": "Take a year out, then Return from the year out"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "rooms",
+    "per": 1,
+    "from": "admitted",
+    "to": "year1",
+    "flow": "enroll",
+    "what": "Start first year",
+    "rate": {
+     "form": "proportional",
+     "stock": "admitted",
+     "k": 0.004
+    }
+   }
+  ]
  }
 }

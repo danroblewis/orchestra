@@ -5,7 +5,10 @@ A university's student records, counted every week over ten academic years (520 
 elsewhere; admitted students wait for term to start, then move through first, second and final
 year to graduation. Students drop out at every stage, some second-years are sent back to repeat
 first year, and some take a year out (a placement or a leave of absence) that the records do not
-count, returning straight into the final year. The data is made by stepping `truth.model.json`
+count, returning straight into the final year. Every new first-year takes a room in halls: the
+rooms are freed and made ready again over the year (toward 600 free, a sixth of the shortfall a
+week), and in the term-start rush they can run out, holding enrolment back until more are ready.
+The free rooms are counted. The data is made by stepping `truth.model.json`
 with SD Lab's own equations, with Poisson counting noise (`sdlab/sdtruth.py`).
 
 ## The true structure
@@ -27,6 +30,8 @@ flowchart LR
   final -- "graduate: 0.019 x final" --> graduates[Graduates - final]
   final -- "drop3: 0.001 x final" --> out6((outside))
   final -. "link: reputation" .-> applicants
+  out7((outside)) -- "ready_rooms: (600 - rooms) / 6" --> rooms[Free rooms in halls]
+  admitted -. "co-flow: each student enrolled uses 1 room" .-> rooms
 ```
 
 | flow | from -> to | equation |
@@ -45,6 +50,9 @@ flowchart LR
 | back | yearout -> final | proportional, k = 1/52 (a year away) |
 | graduate | final -> graduates | proportional, k = 0.019 |
 | drop3 | final -> outside | proportional, k = 0.001 |
+| ready_rooms | outside -> rooms | gap: (600 - rooms) / 6 weeks |
+
+Co-flow: `enroll` uses up one room (`rooms`) for each student it moves (`"uses": [{"stock": "rooms", "per": 1}]`).
 
 The admitted pool is held toward the target class size: offers flow only while the pool is short of
 the goal, and are capped by the applications on hand (in summer applications run out and the gap
@@ -85,3 +93,6 @@ Each year y (weeks 52(y-1)+...), with a year factor f = 1.0, 1.15, 0.9, 1.05, 1.
 - **Unannounced changes**: application seasons, year-to-year swings in demand, and the term-start
   enrolment pulse, none reported as eras.
 - **A final stock**: `graduates` only accumulates.
+- **A co-flow**: each enrolment uses up a free room in halls; the rooms' fall is explained by
+  `enroll` (admitted -> year1), and when the rooms run low at the start of term that flow is held
+  back below its equation.

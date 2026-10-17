@@ -42,6 +42,14 @@
    "y": 320
   },
   {
+   "id": "tokens",
+   "name": "Catalog rate-limit tokens",
+   "unit": "tokens",
+   "initial": 400,
+   "x": 800,
+   "y": 40
+  },
+  {
    "id": "queue",
    "name": "Order queue",
    "unit": "messages",
@@ -155,7 +163,13 @@
      }
     ]
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "tokens",
+     "per": 1
+    }
+   ]
   },
   {
    "id": "cat_done",
@@ -224,6 +238,19 @@
       "k": 0.4
      }
     ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "refill",
+   "name": "Rate limiter refills its bucket",
+   "from": null,
+   "to": "tokens",
+   "rate": {
+    "form": "gap",
+    "stock": "tokens",
+    "goal": 600,
+    "time": 2
    },
    "machine": "environment"
   }

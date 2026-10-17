@@ -59,6 +59,14 @@
    "final": true
   },
   {
+   "id": "prep",
+   "name": "Prepped portions on the line",
+   "unit": "portions",
+   "initial": 100,
+   "x": 320,
+   "y": 40
+  },
+  {
    "id": "plating",
    "name": "Dishes resting and being plated",
    "unit": "dishes",
@@ -152,7 +160,13 @@
     "stock": "orders",
     "k": 0.15
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "prep",
+     "per": 1
+    }
+   ]
   },
   {
    "id": "cooked",
@@ -187,6 +201,19 @@
     "form": "proportional",
     "stock": "pass",
     "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "prep_work",
+   "name": "Prep cook preps portions",
+   "from": null,
+   "to": "prep",
+   "rate": {
+    "form": "gap",
+    "stock": "prep",
+    "goal": 120,
+    "time": 25
    },
    "machine": "environment"
   }

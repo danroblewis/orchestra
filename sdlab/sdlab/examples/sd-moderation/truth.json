@@ -9,7 +9,8 @@
   "moderators",
   "appeals",
   "published",
-  "removed"
+  "removed",
+  "credits"
  ],
  "hidden_stocks": [
   "vendor"
@@ -1259,6 +1260,17 @@
     }
    },
    {
+    "to": "credits",
+    "flow": "buy_credits",
+    "what": "Review credits bought",
+    "rate": {
+     "form": "gap",
+     "stock": "credits",
+     "goal": 300,
+     "time": 48
+    }
+   },
+   {
     "from": "published",
     "flow": "age_out",
     "what": "Posts age out of feeds",
@@ -1323,6 +1335,26 @@
     "what": "Backlog over 300 sent to the vendor, then Vendor removes"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "credits",
+    "per": 1,
+    "from": "flagged",
+    "to": null,
+    "flow": "escalate",
+    "what": "Backlog over 300 sent to the vendor",
+    "rate": {
+     "form": "linear",
+     "c": -30,
+     "terms": [
+      {
+       "stock": "flagged",
+       "k": 0.1
+      }
+     ]
+    }
+   }
+  ]
  }
 }

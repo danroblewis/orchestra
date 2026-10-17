@@ -4,7 +4,8 @@
  "steps": 1000,
  "measured": [
   "stock",
-  "pending"
+  "pending",
+  "budget"
  ],
  "hidden_stocks": [],
  "schedule": {
@@ -94,6 +95,17 @@
      "form": "constant",
      "value": 15
     }
+   },
+   {
+    "to": "budget",
+    "flow": "fund",
+    "what": "Budget top-ups",
+    "rate": {
+     "form": "gap",
+     "stock": "budget",
+     "goal": 320,
+     "time": 8
+    }
    }
   ],
   "links": [
@@ -105,6 +117,30 @@
    }
   ],
   "hidden": [],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "budget",
+    "per": 2,
+    "from": null,
+    "to": "pending",
+    "flow": "order",
+    "what": "Order",
+    "rate": {
+     "form": "linear",
+     "c": 30,
+     "terms": [
+      {
+       "stock": "stock",
+       "k": -0.2
+      },
+      {
+       "stock": "pending",
+       "k": -0.1
+      }
+     ]
+    }
+   }
+  ]
  }
 }

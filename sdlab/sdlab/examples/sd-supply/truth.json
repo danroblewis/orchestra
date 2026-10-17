@@ -4,7 +4,8 @@
  "steps": 730,
  "measured": [
   "warehouse",
-  "shop"
+  "shop",
+  "fuel"
  ],
  "hidden_stocks": [
   "trucks"
@@ -76,6 +77,17 @@
      "form": "constant",
      "value": 40
     }
+   },
+   {
+    "to": "fuel",
+    "flow": "refuel",
+    "what": "Fuel deliveries",
+    "rate": {
+     "form": "gap",
+     "stock": "fuel",
+     "goal": 130,
+     "time": 4
+    }
    }
   ],
   "links": [],
@@ -90,6 +102,22 @@
     "what": "Ship to the shop, then Deliveries"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "fuel",
+    "per": 0.5,
+    "from": "warehouse",
+    "to": null,
+    "flow": "ship",
+    "what": "Ship to the shop",
+    "rate": {
+     "form": "gap",
+     "stock": "shop",
+     "goal": 250,
+     "time": 3
+    }
+   }
+  ]
  }
 }

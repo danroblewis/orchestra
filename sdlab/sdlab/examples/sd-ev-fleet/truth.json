@@ -1260,28 +1260,17 @@
    },
    {
     "to": "energy",
-    "flow": "draw",
-    "what": "Energy drawn",
+    "flow": "grid",
+    "what": "Battery topped up from the grid",
     "rate": {
-     "form": "linear",
-     "c": 0,
-     "terms": [
-      {
-       "stock": "charging",
-       "k": 40
-      }
-     ]
+     "form": "gap",
+     "stock": "energy",
+     "goal": 2400,
+     "time": 8
     }
    }
   ],
-  "links": [
-   {
-    "driver": "charging",
-    "into": "energy",
-    "flow": "draw",
-    "what": "Energy drawn"
-   }
-  ],
+  "links": [],
   "hidden": [
    {
     "from": "road",
@@ -1293,6 +1282,21 @@
     "what": "Route finished, then Back at the depot"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "energy",
+    "per": 160,
+    "from": "charging",
+    "to": "ready",
+    "flow": "charged",
+    "what": "Fully charged",
+    "rate": {
+     "form": "proportional",
+     "stock": "charging",
+     "k": 0.25
+    }
+   }
+  ]
  }
 }

@@ -1,0 +1,435 @@
+{
+ "id": "sd-farm-soil-truth",
+ "name": "SD: an arable farm and its soil: the truth",
+ "description": "Tests an effect closing a balancing loop: soil nitrogen (a stock outside the crop's chain) speeds up crop growth through a diminishing-returns lookup (a table sampled from log(1 + N/40)/log(1 + 200/40): the first kilos of nitrogen matter most). Every tonne harvested into the barn takes 0.35 kg N per hectare out of the soil (a co-flow), so a heavy harvest slows next season's growth; fallow, manure and fertiliser restore nitrogen toward a target. Dry and wet years are not announced; the start of crop rotation (nitrogen restored faster, to a higher level) is.",
+ "time_unit": "week",
+ "seed": 20261017,
+ "steps": 1040,
+ "long_steps": 10400,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "nitrogen",
+   "name": "Soil nitrogen",
+   "unit": "kg N per hectare",
+   "initial": 140,
+   "x": 320,
+   "y": 40
+  },
+  {
+   "id": "field",
+   "name": "Crop standing in the fields",
+   "unit": "tonnes",
+   "initial": 0,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "ripe",
+   "name": "Ripe crop waiting for the combine",
+   "unit": "tonnes",
+   "initial": 0,
+   "x": 320,
+   "y": 200,
+   "measured": false
+  },
+  {
+   "id": "barn",
+   "name": "Grain in the barn",
+   "unit": "tonnes",
+   "initial": 300,
+   "x": 560,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "grow",
+   "name": "Crop grows",
+   "from": null,
+   "to": "field",
+   "rate": {
+    "form": "constant",
+    "value": 0
+   },
+   "effects": [
+    {
+     "stock": "nitrogen",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.0
+      ],
+      [
+       10,
+       0.125
+      ],
+      [
+       20,
+       0.226
+      ],
+      [
+       40,
+       0.387
+      ],
+      [
+       60,
+       0.511
+      ],
+      [
+       80,
+       0.613
+      ],
+      [
+       100,
+       0.699
+      ],
+      [
+       120,
+       0.774
+      ],
+      [
+       160,
+       0.898
+      ],
+      [
+       200,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "ripen",
+   "name": "Ripens",
+   "from": "field",
+   "to": "ripe",
+   "rate": {
+    "form": "proportional",
+    "stock": "field",
+    "k": 0.12
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "harvest",
+   "name": "Harvested into the barn",
+   "from": "ripe",
+   "to": "barn",
+   "rate": {
+    "form": "proportional",
+    "stock": "ripe",
+    "k": 0.5
+   },
+   "uses": [
+    {
+     "stock": "nitrogen",
+     "per": 0.35
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "sell",
+   "name": "Sold to the mill",
+   "from": "barn",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "barn",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "restore",
+   "name": "Nitrogen restored (fallow, manure and fertiliser)",
+   "from": null,
+   "to": "nitrogen",
+   "rate": {
+    "form": "gap",
+    "stock": "nitrogen",
+    "goal": 150,
+    "time": 12
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 520,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Continuous cropping: wheat every year",
+    "announce": true,
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     },
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 150,
+      "time": 12
+     }
+    }
+   },
+   {
+    "t": 12,
+    "label": "Year 1: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 41,
+    "label": "Year 1: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 64,
+    "label": "Year 2: growing season, a wet year",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 62
+     }
+    }
+   },
+   {
+    "t": 93,
+    "label": "Year 2: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 116,
+    "label": "Year 3: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 145,
+    "label": "Year 3: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 157,
+    "label": "Year 4: a dry year (soil slow to recover, poor growth)",
+    "set": {
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 150,
+      "time": 30
+     }
+    }
+   },
+   {
+    "t": 168,
+    "label": "Year 4: growing season, dry",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 36
+     }
+    }
+   },
+   {
+    "t": 197,
+    "label": "Year 4: autumn rains",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     },
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 150,
+      "time": 12
+     }
+    }
+   },
+   {
+    "t": 220,
+    "label": "Year 5: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 249,
+    "label": "Year 5: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 261,
+    "label": "Crop rotation starts: clover and beans one year in three",
+    "announce": true,
+    "set": {
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 165,
+      "time": 8
+     }
+    }
+   },
+   {
+    "t": 272,
+    "label": "Year 6: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Year 6: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 324,
+    "label": "Year 7: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 353,
+    "label": "Year 7: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 376,
+    "label": "Year 8: growing season, a wet year",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 54
+     }
+    }
+   },
+   {
+    "t": 405,
+    "label": "Year 8: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   },
+   {
+    "t": 417,
+    "label": "Year 9: a dry year (soil slow to recover, poor growth)",
+    "set": {
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 165,
+      "time": 30
+     }
+    }
+   },
+   {
+    "t": 428,
+    "label": "Year 9: growing season, dry",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 31
+     }
+    }
+   },
+   {
+    "t": 457,
+    "label": "Year 9: autumn rains",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     },
+     "restore": {
+      "form": "gap",
+      "stock": "nitrogen",
+      "goal": 165,
+      "time": 8
+     }
+    }
+   },
+   {
+    "t": 480,
+    "label": "Year 10: growing season",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 48
+     }
+    }
+   },
+   {
+    "t": 509,
+    "label": "Year 10: growing season over",
+    "set": {
+     "grow": {
+      "form": "constant",
+      "value": 0
+     }
+    }
+   }
+  ]
+ }
+}

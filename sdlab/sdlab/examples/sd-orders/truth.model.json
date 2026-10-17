@@ -24,6 +24,14 @@
    "initial": 60,
    "x": 80,
    "y": 200
+  },
+  {
+   "id": "budget",
+   "name": "Purchasing budget",
+   "unit": "dollars",
+   "initial": 300,
+   "x": 80,
+   "y": 40
   }
  ],
  "flows": [
@@ -46,7 +54,13 @@
      }
     ]
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 2
+    }
+   ]
   },
   {
    "id": "deliver",
@@ -68,6 +82,19 @@
    "rate": {
     "form": "constant",
     "value": 15
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "fund",
+   "name": "Budget top-ups",
+   "from": null,
+   "to": "budget",
+   "rate": {
+    "form": "gap",
+    "stock": "budget",
+    "goal": 320,
+    "time": 8
    },
    "machine": "environment"
   }

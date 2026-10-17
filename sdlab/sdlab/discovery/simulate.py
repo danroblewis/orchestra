@@ -3,7 +3,8 @@
 Flows are SD Lab's model flows (dicts): a rate in one of the forms constant, proportional, gap or
 linear (every rate is floored at 0, as SD Lab's own equations are); a rate that follows announced
 eras (`byTime`: segments {from, to, rate}); or a found outside inflow that changes (`inflow`:
-segments {from, to, value}); and a flow may use up another stock as it moves (`uses`, a co-flow:
+segments {from, to, value}); a flow's rate may be multiplied by effects (curves of other stocks'
+levels, as SD Lab's effect_value); and a flow may use up another stock as it moves (`uses`, a co-flow:
 `per` of it for each unit moved; a stock's outflows and the flows using it share what it holds). A segment holds for times from..to; a time no segment covers takes the
 last segment. Levels are floored at 0 after every step.
 """
@@ -69,6 +70,31 @@ class _Rate:
         return np.maximum(0.0, v)
 
 
+class _Effects:
+    """A flow's effects: its rate multiplied by a curve of each named stock's level (SD Lab's
+    effect_value: "linear" is level / normal clamped to [min, max]; "table" interpolates between
+    points and holds the end values beyond them)."""
+
+    def __init__(self, effects: list[dict], index: dict[str, int]):
+        self.parts = []
+        for e in effects:
+            i = index.get(e.get("stock"))
+            if e.get("shape") == "table" and e.get("points"):
+                pts = sorted((float(a), float(b)) for a, b in e["points"])
+                self.parts.append(("table", i, np.array([a for a, _ in pts]), np.array([b for _, b in pts])))
+            else:
+                lo = float(e["min"]) if e.get("min") is not None else 0.0
+                hi = float(e["max"]) if e.get("max") is not None else 1.0
+                self.parts.append(("linear", i, max(1e-9, float(e.get("normal") or 1)), (lo, hi)))
+
+    def __call__(self, L: np.ndarray) -> np.ndarray:
+        m = np.ones(L.shape[1])
+        for kind, i, a, b in self.parts:
+            x = L[i] if i is not None else np.zeros(L.shape[1])
+            m = m * (np.maximum(0.0, np.interp(x, a, b)) if kind == "table" else np.minimum(b[1], np.maximum(b[0], x / a)))
+        return m
+
+
 class _Segments:
     """Which segment holds at each time: the first that covers it, else the last."""
 
@@ -97,6 +123,7 @@ class Model:
                      if u.get("stock") in index and float(u.get("per") or 0) > 0]
         self.takers = {c: [(i, float(f.get("ratio") or 1)) for i, f in enumerate(flows) if index.get(f.get("from")) == c]
                        + [(i, per) for i, cc, per in self.uses if cc == c] for c in {c for _, c, _ in self.uses}}
+        self.effects = [(i, _Effects(f["effects"], index)) for i, f in enumerate(flows) if f.get("effects")]
         for f in flows:
             src, dst = index.get(f.get("from")), index.get(f.get("to"))
             ratio = float(f.get("ratio") or 1)
@@ -118,6 +145,8 @@ class Model:
         for src, dst, ratio, segs, rate, vals in self.parts:
             seg = segs(t) if segs is not None else zero
             amounts.append(vals[seg] if vals is not None else rate(L, seg))
+        for i, effect in self.effects:                       # effects: the rate times curves of other levels
+            amounts[i] = amounts[i] * effect(L)
         for c, takers in self.takers.items():                 # a flow cannot use more than there is
             want = sum(amounts[i] * w for i, w in takers)
             k = np.where(want > L[c], np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)

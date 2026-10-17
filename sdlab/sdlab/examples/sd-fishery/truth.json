@@ -7,6 +7,7 @@
   "adults",
   "in_port",
   "at_sea",
+  "fuel",
   "landed",
   "processed"
  ],
@@ -542,6 +543,17 @@
     }
    },
    {
+    "to": "fuel",
+    "flow": "deliver_fuel",
+    "what": "Fuel delivered",
+    "rate": {
+     "form": "gap",
+     "stock": "fuel",
+     "goal": 120,
+     "time": 3
+    }
+   },
+   {
     "from": "landed",
     "flow": "sell_fresh",
     "what": "Sold fresh on the quay",
@@ -571,6 +583,22 @@
     "what": "Trucked to the plant, then Processed"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "fuel",
+    "per": 5,
+    "from": "in_port",
+    "to": "at_sea",
+    "flow": "launch",
+    "what": "Boats go out",
+    "rate": {
+     "form": "gap",
+     "stock": "at_sea",
+     "goal": 0,
+     "time": 2
+    }
+   }
+  ]
  }
 }

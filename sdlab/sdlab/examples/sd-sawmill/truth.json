@@ -1,0 +1,231 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261017,
+ "steps": 1000,
+ "measured": [
+  "logs",
+  "planks",
+  "lumber",
+  "sharpness"
+ ],
+ "hidden_stocks": [
+  "kiln"
+ ],
+ "schedule": {
+  "every": 500,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal log deliveries (9 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "One sharpening station",
+    "set": {
+     "sharpen": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 81,
+    "label": "Heavy deliveries (15 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 161,
+    "label": "Light deliveries (6 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 221,
+    "label": "Steady deliveries (12 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 12
+     }
+    }
+   },
+   {
+    "t": 281,
+    "label": "Very heavy deliveries (18 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 18
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "A second sharpening station opens",
+    "set": {
+     "sharpen": {
+      "form": "constant",
+      "value": 11
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 341,
+    "label": "Normal log deliveries (9 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 401,
+    "label": "Back to one sharpening station (the second is moved to another mill)",
+    "set": {
+     "sharpen": {
+      "form": "constant",
+      "value": 6
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 421,
+    "label": "Heavy deliveries (16 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 461,
+    "label": "Light deliveries (7 m\u00b3 an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 7
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "logs",
+    "to": "planks",
+    "flow": "cut",
+    "what": "Sawn into planks",
+    "rate": {
+     "form": "proportional",
+     "stock": "logs",
+     "k": 0.25
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "logs",
+    "flow": "deliver",
+    "what": "Logs delivered",
+    "rate": {
+     "form": "constant",
+     "value": 9
+    }
+   },
+   {
+    "from": "lumber",
+    "flow": "ship",
+    "what": "Shipped",
+    "rate": {
+     "form": "proportional",
+     "stock": "lumber",
+     "k": 0.1
+    }
+   },
+   {
+    "to": "sharpness",
+    "flow": "sharpen",
+    "what": "Blades sharpened",
+    "rate": {
+     "form": "constant",
+     "value": 6
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [
+   {
+    "from": "planks",
+    "to": "lumber",
+    "via": "kiln",
+    "via_name": "Planks drying in the kiln",
+    "shape": "exp",
+    "delay": 23.981,
+    "what": "Loaded into the kiln, then Dried"
+   }
+  ],
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "sharpness",
+    "per": 0.5,
+    "from": "logs",
+    "to": "planks",
+    "flow": "cut",
+    "what": "Sawn into planks",
+    "rate": {
+     "form": "proportional",
+     "stock": "logs",
+     "k": 0.25
+    }
+   }
+  ],
+  "effects": [
+   {
+    "stock": "sharpness",
+    "shape": "table",
+    "from": "logs",
+    "to": "planks",
+    "flow": "cut",
+    "what": "Sawn into planks",
+    "rate": {
+     "form": "proportional",
+     "stock": "logs",
+     "k": 0.25
+    }
+   },
+   {
+    "stock": "sharpness",
+    "shape": "table",
+    "from": null,
+    "to": "sharpness",
+    "flow": "sharpen",
+    "what": "Blades sharpened",
+    "rate": {
+     "form": "constant",
+     "value": 6
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,204 @@
+{
+ "id": "sd-bakery-truth",
+ "name": "SD: A bakery that runs out of flour: the truth",
+ "description": "Tests a co-flow: every loaf baked uses half a kilo of flour, so when the flour runs out baking stops and orders pile up. Flour is restocked toward a target by a supplier whose deliveries slow down now and then, unannounced.",
+ "time_unit": "hour",
+ "seed": 20261017,
+ "steps": 1000,
+ "long_steps": 10000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "orders",
+   "name": "Orders waiting",
+   "unit": "loaves",
+   "initial": 80,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "shelf",
+   "name": "Ready for pickup",
+   "unit": "loaves",
+   "initial": 160,
+   "x": 560,
+   "y": 200
+  },
+  {
+   "id": "flour",
+   "name": "Flour in the store",
+   "unit": "kg",
+   "initial": 400,
+   "x": 320,
+   "y": 40
+  },
+  {
+   "id": "stale",
+   "name": "Day-old bread",
+   "unit": "loaves",
+   "initial": 20,
+   "x": 800,
+   "y": 200
+  }
+ ],
+ "flows": [
+  {
+   "id": "order",
+   "name": "Orders placed",
+   "from": null,
+   "to": "orders",
+   "rate": {
+    "form": "constant",
+    "value": 40
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "bake",
+   "name": "Baked",
+   "from": "orders",
+   "to": "shelf",
+   "rate": {
+    "form": "proportional",
+    "stock": "orders",
+    "k": 0.5
+   },
+   "uses": [
+    {
+     "stock": "flour",
+     "per": 0.5
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "pickup",
+   "name": "Picked up",
+   "from": "shelf",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "shelf",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "go_stale",
+   "name": "Goes stale",
+   "from": "shelf",
+   "to": "stale",
+   "rate": {
+    "form": "proportional",
+    "stock": "shelf",
+    "k": 0.03
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "give_away",
+   "name": "Given to the food bank",
+   "from": "stale",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "stale",
+    "k": 0.1
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "restock",
+   "name": "Flour delivered",
+   "from": null,
+   "to": "flour",
+   "rate": {
+    "form": "gap",
+    "stock": "flour",
+    "goal": 600,
+    "time": 10
+   },
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 250,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal demand (40 loaves an hour), supplier on time",
+    "set": {
+     "order": {
+      "form": "constant",
+      "value": 40
+     },
+     "restock": {
+      "form": "gap",
+      "stock": "flour",
+      "goal": 600,
+      "time": 10
+     }
+    }
+   },
+   {
+    "t": 61,
+    "label": "Supplier delays (flour comes six times slower)",
+    "set": {
+     "restock": {
+      "form": "gap",
+      "stock": "flour",
+      "goal": 600,
+      "time": 60
+     }
+    }
+   },
+   {
+    "t": 121,
+    "label": "Supplier back on time",
+    "set": {
+     "restock": {
+      "form": "gap",
+      "stock": "flour",
+      "goal": 600,
+      "time": 10
+     }
+    }
+   },
+   {
+    "t": 151,
+    "label": "Busy (55 loaves an hour)",
+    "set": {
+     "order": {
+      "form": "constant",
+      "value": 55
+     }
+    }
+   },
+   {
+    "t": 201,
+    "label": "Quiet (30 loaves an hour)",
+    "set": {
+     "order": {
+      "form": "constant",
+      "value": 30
+     }
+    }
+   },
+   {
+    "t": 221,
+    "label": "Supplier slow again (four times slower)",
+    "set": {
+     "restock": {
+      "form": "gap",
+      "stock": "flour",
+      "goal": 600,
+      "time": 40
+     }
+    }
+   }
+  ]
+ }
+}

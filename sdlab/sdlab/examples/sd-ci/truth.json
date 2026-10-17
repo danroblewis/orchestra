@@ -8,7 +8,8 @@
   "builds",
   "tests",
   "artifacts",
-  "live"
+  "live",
+  "minutes"
  ],
  "hidden_stocks": [
   "review"
@@ -1275,6 +1276,17 @@
      "stock": "live",
      "k": 0.02
     }
+   },
+   {
+    "to": "minutes",
+    "flow": "quota",
+    "what": "The CI quota refills",
+    "rate": {
+     "form": "gap",
+     "stock": "minutes",
+     "goal": 600,
+     "time": 12
+    }
    }
   ],
   "links": [
@@ -1296,6 +1308,21 @@
     "what": "Open for review, then Review approved, build starts"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "minutes",
+    "per": 10,
+    "from": null,
+    "to": "builds",
+    "flow": "approve",
+    "what": "Review approved, build starts",
+    "rate": {
+     "form": "proportional",
+     "stock": "review",
+     "k": 0.2
+    }
+   }
+  ]
  }
 }

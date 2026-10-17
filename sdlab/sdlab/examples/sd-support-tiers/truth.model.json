@@ -50,6 +50,14 @@
    "y": 80
   },
   {
+   "id": "hiring_budget",
+   "name": "Tier-2 hiring budget",
+   "unit": "thousand dollars",
+   "initial": 40,
+   "x": 560,
+   "y": 40
+  },
+  {
    "id": "engineering",
    "name": "Engineering queue",
    "unit": "tickets",
@@ -191,7 +199,13 @@
     "goal": 12,
     "time": 20
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "hiring_budget",
+     "per": 10
+    }
+   ]
   },
   {
    "id": "quit_t2",
@@ -295,6 +309,19 @@
     "form": "proportional",
     "stock": "reopened",
     "k": 0.3
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "budget_in",
+   "name": "Hiring budget released",
+   "from": null,
+   "to": "hiring_budget",
+   "rate": {
+    "form": "gap",
+    "stock": "hiring_budget",
+    "goal": 60,
+    "time": 20
    },
    "machine": "environment"
   }

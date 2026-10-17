@@ -9,7 +9,8 @@
   "under_contract",
   "occupied",
   "demolished",
-  "hunters"
+  "hunters",
+  "plots"
  ],
  "hidden_stocks": [
   "permits"
@@ -208,6 +209,17 @@
     }
    },
    {
+    "to": "plots",
+    "flow": "service",
+    "what": "Plots serviced",
+    "rate": {
+     "form": "gap",
+     "stock": "plots",
+     "goal": 120,
+     "time": 5
+    }
+   },
+   {
     "to": "hunters",
     "flow": "newcomers",
     "what": "New households start looking",
@@ -286,6 +298,21 @@
     "what": "Permit approved, then Construction starts"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "plots",
+    "per": 1,
+    "from": null,
+    "to": "building",
+    "flow": "start",
+    "what": "Construction starts",
+    "rate": {
+     "form": "proportional",
+     "stock": "permits",
+     "k": 0.1
+    }
+   }
+  ]
  }
 }

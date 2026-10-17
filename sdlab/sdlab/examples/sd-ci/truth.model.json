@@ -65,6 +65,14 @@
    "initial": 30,
    "x": 1180,
    "y": 200
+  },
+  {
+   "id": "minutes",
+   "name": "Build minutes left in the quota",
+   "unit": "minutes",
+   "initial": 400,
+   "x": 560,
+   "y": 40
   }
  ],
  "flows": [
@@ -136,7 +144,13 @@
     "stock": "review",
     "k": 0.2
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "minutes",
+     "per": 10
+    }
+   ]
   },
   {
    "id": "build_done",
@@ -207,6 +221,19 @@
     "form": "proportional",
     "stock": "live",
     "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "quota",
+   "name": "The CI quota refills",
+   "from": null,
+   "to": "minutes",
+   "rate": {
+    "form": "gap",
+    "stock": "minutes",
+    "goal": 600,
+    "time": 12
    },
    "machine": "environment"
   }

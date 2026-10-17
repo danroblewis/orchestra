@@ -1,0 +1,311 @@
+{
+ "id": "sd-sawmill-truth",
+ "name": "SD: A sawmill whose blades go dull: the truth",
+ "description": "Tests effects: blade sharpness speeds up or slows down sawing. Logs are sawn into planks at a rate proportional to the logs in the yard, times an effect of blade sharpness (a table: sharp blades, 90 points and up, cut at full speed; below about 60 the rate falls off sharply, to a tenth for blunt blades). Every cubic metre sawn wears 0.5 points off the blades (a co-flow); the sharpening station restores 6 points an hour, tapering to nothing between 80 and 96 points (an effect of sharpness on its own inflow). So a balancing loop keeps the blades sharp, and when log deliveries rise (unannounced) beyond what sharpening can keep up with, the blades dull, sawing slows and logs pile up. Green planks go into the kiln (not measured) for about a day, and dry lumber is shipped. An announced era adds a second sharpening station (11 points an hour).",
+ "time_unit": "hour",
+ "seed": 20261017,
+ "steps": 1000,
+ "long_steps": 10000,
+ "noise": {
+  "counts": true
+ },
+ "stocks": [
+  {
+   "id": "logs",
+   "name": "Logs in the yard",
+   "unit": "m³",
+   "initial": 120,
+   "x": 80,
+   "y": 200
+  },
+  {
+   "id": "planks",
+   "name": "Green planks",
+   "unit": "m³",
+   "initial": 40,
+   "x": 320,
+   "y": 200
+  },
+  {
+   "id": "kiln",
+   "name": "Planks drying in the kiln",
+   "unit": "m³",
+   "initial": 200,
+   "x": 560,
+   "y": 200,
+   "measured": false
+  },
+  {
+   "id": "lumber",
+   "name": "Dry lumber ready to ship",
+   "unit": "m³",
+   "initial": 60,
+   "x": 800,
+   "y": 200
+  },
+  {
+   "id": "sharpness",
+   "name": "Blade sharpness",
+   "unit": "points (0-100)",
+   "initial": 90,
+   "x": 320,
+   "y": 40
+  }
+ ],
+ "flows": [
+  {
+   "id": "deliver",
+   "name": "Logs delivered",
+   "from": null,
+   "to": "logs",
+   "rate": {
+    "form": "constant",
+    "value": 9
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cut",
+   "name": "Sawn into planks",
+   "from": "logs",
+   "to": "planks",
+   "rate": {
+    "form": "proportional",
+    "stock": "logs",
+    "k": 0.25
+   },
+   "effects": [
+    {
+     "stock": "sharpness",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.1
+      ],
+      [
+       20,
+       0.12
+      ],
+      [
+       40,
+       0.25
+      ],
+      [
+       55,
+       0.55
+      ],
+      [
+       70,
+       0.85
+      ],
+      [
+       80,
+       0.97
+      ],
+      [
+       90,
+       1
+      ],
+      [
+       100,
+       1
+      ]
+     ]
+    }
+   ],
+   "uses": [
+    {
+     "stock": "sharpness",
+     "per": 0.5
+    }
+   ],
+   "machine": "environment"
+  },
+  {
+   "id": "load_kiln",
+   "name": "Loaded into the kiln",
+   "from": "planks",
+   "to": "kiln",
+   "rate": {
+    "form": "proportional",
+    "stock": "planks",
+    "k": 0.25
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "dry",
+   "name": "Dried",
+   "from": "kiln",
+   "to": "lumber",
+   "rate": {
+    "form": "proportional",
+    "stock": "kiln",
+    "k": 0.0417
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "ship",
+   "name": "Shipped",
+   "from": "lumber",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "lumber",
+    "k": 0.1
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "sharpen",
+   "name": "Blades sharpened",
+   "from": null,
+   "to": "sharpness",
+   "rate": {
+    "form": "constant",
+    "value": 6
+   },
+   "effects": [
+    {
+     "stock": "sharpness",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       1
+      ],
+      [
+       96,
+       0
+      ]
+     ]
+    }
+   ],
+   "machine": "environment"
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 500,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal log deliveries (9 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 1,
+    "label": "One sharpening station",
+    "set": {
+     "sharpen": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 81,
+    "label": "Heavy deliveries (15 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 15
+     }
+    }
+   },
+   {
+    "t": 161,
+    "label": "Light deliveries (6 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 6
+     }
+    }
+   },
+   {
+    "t": 221,
+    "label": "Steady deliveries (12 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 12
+     }
+    }
+   },
+   {
+    "t": 281,
+    "label": "Very heavy deliveries (18 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 18
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "A second sharpening station opens",
+    "set": {
+     "sharpen": {
+      "form": "constant",
+      "value": 11
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 341,
+    "label": "Normal log deliveries (9 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 9
+     }
+    }
+   },
+   {
+    "t": 401,
+    "label": "Back to one sharpening station (the second is moved to another mill)",
+    "set": {
+     "sharpen": {
+      "form": "constant",
+      "value": 6
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 421,
+    "label": "Heavy deliveries (16 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 16
+     }
+    }
+   },
+   {
+    "t": 461,
+    "label": "Light deliveries (7 m³ an hour)",
+    "set": {
+     "deliver": {
+      "form": "constant",
+      "value": 7
+     }
+    }
+   }
+  ]
+ }
+}

@@ -116,3 +116,15 @@ def test_a_flow_that_uses_up_another_stock_takes_per_unit_and_stops_when_it_runs
     flows = [{"from": "blanks", "to": "parts", "rate": {"form": "constant", "value": 10}, "uses": [{"stock": "bits", "per": 0.5}]}]
     L = Model(flows, ["blanks", "parts", "bits"]).step(np.array([[100.0, 100.0], [0.0, 0.0], [20.0, 2.0]]), np.array([1.0, 1.0]))
     assert L.tolist() == [[90.0, 96.0], [10.0, 4.0], [15.0, 0.0]]
+
+
+def test_effects_multiply_a_flow_by_curves_of_other_levels_as_sd_lab_does():
+    from sdlab.runner import multiplier
+
+    effects = [{"stock": "sharp", "shape": "table", "points": [[0, 0.1], [50, 0.6], [100, 1]]}, {"stock": "crew", "shape": "linear", "normal": 4, "max": 1.5}]
+    flows = [{"from": "logs", "to": "planks", "rate": {"form": "proportional", "stock": "logs", "k": 0.5}, "effects": effects}]
+    states = [{"logs": 100.0, "planks": 0.0, "sharp": s, "crew": c} for s, c in ((0, 4), (25, 2), (80, 9), (130, 0))]
+    ids = ["logs", "planks", "sharp", "crew"]
+    L = Model(flows, ids).step(np.array([[st[i] for st in states] for i in ids]), np.ones(len(states)))
+    for k, st in enumerate(states):
+        assert abs(L[1][k] - 50 * multiplier({"effects": effects}, st)) < 1e-9

@@ -1,0 +1,265 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261016,
+ "steps": 1200,
+ "measured": [
+  "malt",
+  "fermenting",
+  "kegs",
+  "water",
+  "yeast"
+ ],
+ "hidden_stocks": [
+  "wort"
+ ],
+ "schedule": {
+  "every": 600,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Small fermenter",
+    "set": {
+     "mash": {
+      "form": "proportional",
+      "stock": "malt",
+      "k": 0.15
+     },
+     "pitch": {
+      "form": "proportional",
+      "stock": "wort",
+      "k": 0.5
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 91,
+    "label": "Busy season (shipping more)",
+    "set": {
+     "ship": {
+      "form": "proportional",
+      "stock": "kegs",
+      "k": 0.12
+     }
+    }
+   },
+   {
+    "t": 151,
+    "label": "Yeast supplier out of stock",
+    "set": {
+     "buy_yeast": {
+      "form": "gap",
+      "stock": "yeast",
+      "goal": 0,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 186,
+    "label": "Yeast supplier back",
+    "set": {
+     "buy_yeast": {
+      "form": "gap",
+      "stock": "yeast",
+      "goal": 25,
+      "time": 2
+     }
+    }
+   },
+   {
+    "t": 301,
+    "label": "Bigger fermenter",
+    "set": {
+     "mash": {
+      "form": "proportional",
+      "stock": "malt",
+      "k": 0.22
+     },
+     "pitch": {
+      "form": "proportional",
+      "stock": "wort",
+      "k": 0.7
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 361,
+    "label": "Low water pressure (slow refill)",
+    "set": {
+     "refill": {
+      "form": "gap",
+      "stock": "water",
+      "goal": 600,
+      "time": 12
+     }
+    }
+   },
+   {
+    "t": 431,
+    "label": "Water pressure back",
+    "set": {
+     "refill": {
+      "form": "gap",
+      "stock": "water",
+      "goal": 600,
+      "time": 4
+     }
+    }
+   },
+   {
+    "t": 481,
+    "label": "Quiet season (shipping less)",
+    "set": {
+     "ship": {
+      "form": "proportional",
+      "stock": "kegs",
+      "k": 0.06
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "fermenting",
+    "to": "kegs",
+    "flow": "rack",
+    "what": "Rack into kegs",
+    "rate": {
+     "form": "proportional",
+     "stock": "fermenting",
+     "k": 0.1
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "malt",
+    "flow": "malt_in",
+    "what": "Malt delivered",
+    "rate": {
+     "form": "gap",
+     "stock": "malt",
+     "goal": 250,
+     "time": 7
+    }
+   },
+   {
+    "from": "kegs",
+    "flow": "ship",
+    "what": "Kegs shipped",
+    "rate": {
+     "form": "proportional",
+     "stock": "kegs",
+     "k": 0.08
+    }
+   },
+   {
+    "to": "water",
+    "flow": "refill",
+    "what": "Water refilled",
+    "rate": {
+     "form": "gap",
+     "stock": "water",
+     "goal": 600,
+     "time": 4
+    }
+   },
+   {
+    "to": "yeast",
+    "flow": "harvest",
+    "what": "Yeast harvested from the fermenter",
+    "rate": {
+     "form": "proportional",
+     "stock": "fermenting",
+     "k": 0.01
+    }
+   },
+   {
+    "to": "yeast",
+    "flow": "buy_yeast",
+    "what": "Yeast bought when low",
+    "rate": {
+     "form": "gap",
+     "stock": "yeast",
+     "goal": 25,
+     "time": 2
+    }
+   },
+   {
+    "from": "yeast",
+    "flow": "yeast_spoils",
+    "what": "Yeast spoils",
+    "rate": {
+     "form": "proportional",
+     "stock": "yeast",
+     "k": 0.03
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "fermenting",
+    "into": "yeast",
+    "flow": "harvest",
+    "what": "Yeast harvested from the fermenter"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "malt",
+    "to": "fermenting",
+    "via": "wort",
+    "via_name": "Wort cooling",
+    "shape": "exp",
+    "delay": 2.0,
+    "what": "Mash and boil, then Pitch into the fermenter"
+   }
+  ],
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "water",
+    "per": 3,
+    "from": "malt",
+    "to": null,
+    "flow": "mash",
+    "what": "Mash and boil",
+    "rate": {
+     "form": "proportional",
+     "stock": "malt",
+     "k": 0.15
+    }
+   },
+   {
+    "stock": "yeast",
+    "per": 0.2,
+    "from": null,
+    "to": "fermenting",
+    "flow": "pitch",
+    "what": "Pitch into the fermenter",
+    "rate": {
+     "form": "proportional",
+     "stock": "wort",
+     "k": 0.5
+    }
+   },
+   {
+    "stock": "water",
+    "per": 0.5,
+    "from": "fermenting",
+    "to": "kegs",
+    "flow": "rack",
+    "what": "Rack into kegs",
+    "rate": {
+     "form": "proportional",
+     "stock": "fermenting",
+     "k": 0.1
+    }
+   }
+  ]
+ }
+}

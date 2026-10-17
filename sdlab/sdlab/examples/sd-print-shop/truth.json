@@ -1,0 +1,233 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261018,
+ "steps": 1000,
+ "measured": [
+  "mono_queue",
+  "colour_queue",
+  "done",
+  "paper",
+  "toner"
+ ],
+ "hidden_stocks": [],
+ "schedule": {
+  "every": 200,
+  "changes": [
+   {
+    "t": 1,
+    "label": "Normal work (200 mono and 40 colour pages an hour), deliveries on time",
+    "set": {
+     "mono_jobs": {
+      "form": "constant",
+      "value": 200
+     },
+     "colour_jobs": {
+      "form": "constant",
+      "value": 40
+     },
+     "paper_restock": {
+      "form": "gap",
+      "stock": "paper",
+      "goal": 3000,
+      "time": 5
+     },
+     "toner_restock": {
+      "form": "gap",
+      "stock": "toner",
+      "goal": 600,
+      "time": 15
+     }
+    }
+   },
+   {
+    "t": 41,
+    "label": "Colour rush (110 colour pages an hour)",
+    "set": {
+     "colour_jobs": {
+      "form": "constant",
+      "value": 110
+     }
+    }
+   },
+   {
+    "t": 81,
+    "label": "Colour back to normal",
+    "set": {
+     "colour_jobs": {
+      "form": "constant",
+      "value": 40
+     }
+    }
+   },
+   {
+    "t": 101,
+    "label": "Paper supplier late (six times slower)",
+    "set": {
+     "paper_restock": {
+      "form": "gap",
+      "stock": "paper",
+      "goal": 3000,
+      "time": 30
+     }
+    }
+   },
+   {
+    "t": 141,
+    "label": "Paper supplier back on time",
+    "set": {
+     "paper_restock": {
+      "form": "gap",
+      "stock": "paper",
+      "goal": 3000,
+      "time": 5
+     }
+    }
+   },
+   {
+    "t": 161,
+    "label": "Busy mono (300 pages an hour)",
+    "set": {
+     "mono_jobs": {
+      "form": "constant",
+      "value": 300
+     }
+    }
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "mono_queue",
+    "to": "done",
+    "flow": "print_mono",
+    "what": "Mono printing",
+    "rate": {
+     "form": "proportional",
+     "stock": "mono_queue",
+     "k": 0.5
+    }
+   },
+   {
+    "from": "colour_queue",
+    "to": "done",
+    "flow": "print_colour",
+    "what": "Colour printing",
+    "rate": {
+     "form": "proportional",
+     "stock": "colour_queue",
+     "k": 0.4
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "mono_queue",
+    "flow": "mono_jobs",
+    "what": "Mono pages sent",
+    "rate": {
+     "form": "constant",
+     "value": 200
+    }
+   },
+   {
+    "to": "colour_queue",
+    "flow": "colour_jobs",
+    "what": "Colour pages sent",
+    "rate": {
+     "form": "constant",
+     "value": 40
+    }
+   },
+   {
+    "from": "done",
+    "flow": "collect",
+    "what": "Collected",
+    "rate": {
+     "form": "proportional",
+     "stock": "done",
+     "k": 0.2
+    }
+   },
+   {
+    "to": "paper",
+    "flow": "paper_restock",
+    "what": "Paper delivered",
+    "rate": {
+     "form": "gap",
+     "stock": "paper",
+     "goal": 3000,
+     "time": 5
+    }
+   },
+   {
+    "to": "toner",
+    "flow": "toner_restock",
+    "what": "Toner delivered",
+    "rate": {
+     "form": "gap",
+     "stock": "toner",
+     "goal": 600,
+     "time": 15
+    }
+   }
+  ],
+  "links": [],
+  "hidden": [],
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "paper",
+    "per": 1,
+    "from": "mono_queue",
+    "to": "done",
+    "flow": "print_mono",
+    "what": "Mono printing",
+    "rate": {
+     "form": "proportional",
+     "stock": "mono_queue",
+     "k": 0.5
+    }
+   },
+   {
+    "stock": "toner",
+    "per": 0.04,
+    "from": "mono_queue",
+    "to": "done",
+    "flow": "print_mono",
+    "what": "Mono printing",
+    "rate": {
+     "form": "proportional",
+     "stock": "mono_queue",
+     "k": 0.5
+    }
+   },
+   {
+    "stock": "paper",
+    "per": 1,
+    "from": "colour_queue",
+    "to": "done",
+    "flow": "print_colour",
+    "what": "Colour printing",
+    "rate": {
+     "form": "proportional",
+     "stock": "colour_queue",
+     "k": 0.4
+    }
+   },
+   {
+    "stock": "toner",
+    "per": 0.4,
+    "from": "colour_queue",
+    "to": "done",
+    "flow": "print_colour",
+    "what": "Colour printing",
+    "rate": {
+     "form": "proportional",
+     "stock": "colour_queue",
+     "k": 0.4
+    }
+   }
+  ]
+ }
+}

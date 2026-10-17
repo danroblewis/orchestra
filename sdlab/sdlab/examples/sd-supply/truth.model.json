@@ -26,6 +26,14 @@
    "y": 200
   },
   {
+   "id": "fuel",
+   "name": "Diesel at the depot",
+   "unit": "litres",
+   "initial": 100,
+   "x": 320,
+   "y": 40
+  },
+  {
    "id": "trucks",
    "name": "On trucks",
    "unit": "cases",
@@ -60,7 +68,13 @@
     "goal": 250,
     "time": 3
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "fuel",
+     "per": 0.5
+    }
+   ]
   },
   {
    "id": "deliver",
@@ -82,6 +96,19 @@
    "rate": {
     "form": "constant",
     "value": 40
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "refuel",
+   "name": "Fuel deliveries",
+   "from": null,
+   "to": "fuel",
+   "rate": {
+    "form": "gap",
+    "stock": "fuel",
+    "goal": 130,
+    "time": 4
    },
    "machine": "environment"
   }

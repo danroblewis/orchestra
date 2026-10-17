@@ -43,6 +43,14 @@
    "final": true
   },
   {
+   "id": "kits",
+   "name": "Treatment kits in stock",
+   "unit": "kits",
+   "initial": 40,
+   "x": 320,
+   "y": 40
+  },
+  {
    "id": "lab",
    "name": "Waiting for lab results",
    "unit": "patients",
@@ -74,7 +82,13 @@
     "stock": "waiting",
     "k": 0.35
    },
-   "machine": "environment"
+   "machine": "environment",
+   "uses": [
+    {
+     "stock": "kits",
+     "per": 1
+    }
+   ]
   },
   {
    "id": "discharge",
@@ -133,6 +147,19 @@
     "form": "proportional",
     "stock": "ward",
     "k": 0.02
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "restock",
+   "name": "Kit deliveries from the store room",
+   "from": null,
+   "to": "kits",
+   "rate": {
+    "form": "gap",
+    "stock": "kits",
+    "goal": 50,
+    "time": 9
    },
    "machine": "environment"
   }

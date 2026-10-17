@@ -8,7 +8,8 @@
   "orders",
   "cooking",
   "pass",
-  "served"
+  "served",
+  "prep"
  ],
  "hidden_stocks": [
   "plating"
@@ -191,6 +192,17 @@
       }
      ]
     }
+   },
+   {
+    "to": "prep",
+    "flow": "prep_work",
+    "what": "Prep cook preps portions",
+    "rate": {
+     "form": "gap",
+     "stock": "prep",
+     "goal": 120,
+     "time": 25
+    }
    }
   ],
   "links": [
@@ -212,6 +224,21 @@
     "what": "Dish comes off the heat, then Dish plated, put on the pass"
    }
   ],
-  "echoes": []
+  "echoes": [],
+  "coflows": [
+   {
+    "stock": "prep",
+    "per": 1,
+    "from": "orders",
+    "to": "cooking",
+    "flow": "fire",
+    "what": "Cook starts a dish",
+    "rate": {
+     "form": "proportional",
+     "stock": "orders",
+     "k": 0.15
+    }
+   }
+  ]
  }
 }

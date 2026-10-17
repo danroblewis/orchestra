@@ -138,7 +138,7 @@ class Truth:
     def truth(self) -> dict:
         M = set(self.measured_ids)
         stocks = {s["id"]: s for s in self.model["stocks"]}
-        moves, outside, links, hidden, coflows = [], [], [], [], []
+        moves, outside, links, hidden, coflows, effects = [], [], [], [], [], []
         reads = lambda f: [x for x in [(f.get("rate") or {}).get("stock"), *((t.get("stock") for t in (f.get("rate") or {}).get("terms") or []))] if x]  # noqa: E731
         for f in self.model["flows"]:
             a, b = f.get("from"), f.get("to")
@@ -153,6 +153,10 @@ class Truth:
             for u in f.get("uses") or []:
                 if u.get("stock") in M:
                     coflows.append({"stock": u["stock"], "per": u.get("per"), "from": a if a in M else None, "to": b if b in M else None, **entry})
+            # an effect: a measured stock whose level speeds the flow up or slows it down
+            for e in f.get("effects") or []:
+                if e.get("stock") in M:
+                    effects.append({"stock": e["stock"], "shape": e.get("shape") or "linear", "from": a if a in M else None, "to": b if b in M else None, **entry})
             # a flow into a measured stock whose equation reads another measured stock: a link
             if b in M and not a:
                 for d in reads(f):
@@ -168,7 +172,7 @@ class Truth:
                     delay = round(1 / float(rate["k"]), 3) if rate.get("form") == "proportional" and rate.get("k") else None
                     hidden.append({"from": i["from"], "to": o["to"], "via": h, "via_name": stocks[h].get("name", h),
                                    "shape": "exp", "delay": delay, "what": f"{i.get('name', i['id'])}, then {o.get('name', o['id'])}"})
-        return {"moves": moves, "outside": outside, "links": links, "hidden": hidden, "echoes": [], **({"coflows": coflows} if coflows else {})}
+        return {"moves": moves, "outside": outside, "links": links, "hidden": hidden, "echoes": [], **({"coflows": coflows} if coflows else {}), **({"effects": effects} if effects else {})}
 
 
 def poisson(rng: random.Random, mean: float) -> int:
