@@ -1,91 +1,117 @@
-# The discovery improvement loop
+# Improving discovery: experiments
 
-How to work on discovery: one change at a time, measured against models we know exactly, with every
-attempt recorded in [DISCOVERY-EXPERIMENTS.md](DISCOVERY-EXPERIMENTS.md).
+How to work on discovery: strategies tried one at a time, each in its own branch and worktree,
+measured against models we know exactly, with every attempt recorded in
+[DISCOVERY-EXPERIMENTS.md](DISCOVERY-EXPERIMENTS.md). The target is in
+[DISCOVERY-GOAL.md](DISCOVERY-GOAL.md).
 
 ## The rule that does not bend
 
 **The simulations are fixed.** Never change `sdlab/sdtruth.py`, the equations it uses in
-`sdlab/runner.py` (`desired_rate`, `multiplier`), any `sdlab/examples/sd-*/` file (truth models,
-schedules, wrappers), or the long-run tests of them (`tests/test_sd_examples.py`). Discovery is
-working against them: a change that "improves" a score by changing what generates the data proves
-nothing. Everything else is open: `sdlab/static/identify.js` (the matrix method),
-`sdlab/static/discover.js` (the old search), the graders in `tests/bench/`, new features, new forms.
+`sdlab/runner.py` (`desired_rate`, `multiplier`, `effect_value`), any `sdlab/examples/sd-*` file, or
+the fingerprints in `tests/simulations.sha256`. Discovery works against them: a change that
+"improves" a score by changing what generates the data proves nothing. Discovery sees only what the
+page would give it: the measured stocks, their levels, and announced eras.
 
 ## What we measure
 
 The ground-truth examples (`sdlab/examples/sd-*`) are system dynamics models. Their data is made by
 stepping the model with SD Lab's own equations, with counting noise and changes nobody announces.
-The example shows only the measured stocks; discovery has to find the rest.
 
-- **parts**: parts of the true model recovered in the right form (each relationship between stocks
-  with the right kind - move, link, hidden stock, echo - and each flow to or from outside).
 - **skill@H**: the share of the true model's movement over H steps that the found model predicts.
-  Both models start from the same states at ~150 moments across the run and are fed the same outside
-  inflows (the truth's), so only their own dynamics differ. 100% = behaves as the truth; 0% = no better
-  than assuming nothing changes; below 0 = worse than that (it runs off on its own). Two models that
-  behave the same are equally good, whatever they look like.
+  Both models start from the same states at ~150 moments and are fed the same outside inflows (the
+  truth's), so only their own dynamics differ. 100% = behaves as the truth; 0% = no better than
+  assuming nothing changes; below 0 = worse. Two models that behave the same are equally good,
+  whatever they look like.
+- **parts**: parts of the true model recovered in the right form (a diagnostic, not the target).
 
-The **headline is mean skill@20** over every example at both lengths (each clipped at -100% so one
-runaway does not hide everything else), with parts and skill@100 next to it.
+The headline is mean skill@20 over every example at both lengths (each clipped at -100%), with
+skill@100 and the number of runs meeting the goal next to it.
 
-Each example is run at its default length (the first months) and its long length (years): more data
-must not make discovery worse.
+## Why experiments, not one long refinement
 
-## The loop
+A method refined change by change, each kept because the bench went up, becomes a pile of rules that
+happen to work together; nobody knows which one does what, and the next change fights the last.
+So each idea is an **experiment**: one hypothesis, tried in isolation, with a test that shows the
+mechanism does what it claims, and a bench run that shows what it does to behaviour. Ideas are
+combined only after each has been measured alone, and a combination is its own experiment.
 
-1. **Run the evaluation** and keep its output:
+## An experiment
 
-   ```
-   node tests/bench/evaluate.mjs --label "what I am trying"
-   ```
-
-   It runs every ground-truth example at both lengths (datasets are generated once and cached in
-   `~/.cache/sdlab/bench`, rebuilt only if a simulation's code changes, which it must not), compares
-   with the previous run, and saves the run under `~/.cache/sdlab/bench/runs`. `--examples a,b` and
-   `--lengths default` make it quicker while exploring; always finish with a full run.
-2. **Pick the worst thing**: the lowest skill, or a part that is never found. Look at what discovery
-   returns for it next to the truth (`sdlab/examples/<id>/truth.model.json`):
+1. **A branch and a worktree of its own**, from the current main line of discovery:
 
    ```
-   node -e 'const {identify}=require("./sdlab/static/identify.js"); ...'   # or a scratch script
+   git worktree add ../sdlab-exp-<name> -b exp/<name>
    ```
 
-   `identify(stocks, run, {trace: "<stock id>"})` prints how a stock's row was fitted, pass by pass.
-3. **Form one hypothesis** about why, and check it directly before changing code: score the true
-   structure, print a row's coefficients, look at the residual. Most early guesses here were wrong
-   (see the experiment log).
-4. **Change one thing.** Keep it explainable in a sentence; prefer a principle (conservation, units,
-   uncertainty) over a threshold tuned to one example.
-5. **Re-run the evaluation.** Read every row, not just the headline: a fix for one example often
-   costs another.
-6. **Record it** in DISCOVERY-EXPERIMENTS.md: what, why, the numbers before and after, kept or
-   reverted. Record failures too; they are most of what we learn.
-7. **Keep the tests green**: `node --test tests/*.mjs`, `uv run pytest -q`, `uv run ruff check sdlab tests`.
-   When an example reaches a new level, lock it in (`tests/identify.test.mjs`).
-8. When the overall numbers reach a new best, save a baseline: `--save best`, and compare later work
-   with `--baseline best`.
+   (or an agent started with worktree isolation). Experiments in different worktrees run at the
+   same time; they share the dataset cache and the saved baselines, and each run records its branch,
+   so comparisons do not cross by accident.
+2. **State the hypothesis** in a sentence, with the evidence for it: which examples, which rows,
+   what the data shows (score the true structure, print a row, look at residuals).
+3. **A strategy**: `sdlab/discovery/strategies/<name>.py`, with `identify(stocks, run, opts)`. It may
+   reuse the building blocks (`changes`, `regression`, `matrix`, `flows`, `simulate`) and add new ones,
+   but it does not change the baseline strategy `matrix`, so the comparison stays clean. A switch on
+   an existing step (an `opts` flag) is an experiment too: an ablation.
+4. **A mechanism test first**: `tests/test_strategy_<name>.py`, on the smallest synthetic model where
+   the answer is exact (`tests/synth.py` hands a model to the ground-truth engine), showing the
+   mechanism does what it claims, and that the baseline does not. If the mechanism cannot be shown
+   working in isolation, the bench number is luck.
+5. **The bench**, against the shared baseline:
+
+   ```
+   uv run python tests/bench/evaluate.py --strategy <name> --baseline python --label "<name>: what"
+   ```
+
+   Read every row, not just the headline: a fix for one example often costs another.
+6. **Record it** in DISCOVERY-EXPERIMENTS.md: hypothesis, mechanism test, bench numbers against the
+   baseline, verdict (adopt / reject / needs a combination), and why. Failures are most of what we
+   learn.
+7. **Adopting**: a winner is folded into the main line (into `matrix`, or as the new default
+   strategy) in one change that names the experiment, the locked-in tests move with it, and the
+   baseline is saved again (`--save python`, or a new name). Every experiment after that starts from
+   the new main line.
+
+## Waves
+
+Experiments run in waves: several independent hypotheses at once, each in its own worktree, each
+measured against the same baseline. At the end of a wave, compare them side by side, adopt the
+winners one at a time (re-running the bench after each, since two winners can overlap), and plan the
+next wave from what was learned.
+
+## Tests
+
+- `uv run pytest -q`: everything, including `tests/test_discovery.py` (recovery locked in on
+  ground-truth data; known failures marked `xfail(strict=True)` with the reason, so a fix shows up).
+- `uv run ruff check sdlab tests`, `node --test tests/*.mjs` (the page).
+- When the main line reaches a new level on an example, lock it in with a test.
 
 ## Useful commands
 
 ```
-node tests/bench/evaluate.mjs                                  # everything, compared with the last run
-node tests/bench/evaluate.mjs --baseline start                 # compared with the first baseline
-node tests/bench/evaluate.mjs --examples sd-orders --lengths default,long
-node tests/bench/evaluate.mjs --strict                         # exit 1 on a regression of 2 points
-node tests/bench/evaluate.mjs --engine discover                # the old search, for comparison
-node --test tests/bench/*.test.mjs                             # the long-run bench (slices, consistency)
-uv run python tests/bench/datasets.py sd-saas --long           # path to a cached dataset
+uv run python tests/bench/evaluate.py                           # everything, compared with this branch's last run
+uv run python tests/bench/evaluate.py --baseline python         # compared with the shared baseline
+uv run python tests/bench/evaluate.py --examples sd-orders --lengths default
+uv run python tests/bench/evaluate.py --strategy <name>         # a strategy in sdlab/discovery/strategies
+uv run python tests/bench/evaluate.py --goal                    # exit 0 only when the goal is met
+uv run python tests/bench/datasets.py sd-saas --long            # path to a cached dataset
 ```
+
+`identify(stocks, run, {"trace": "<stock id>"})` prints how a stock's row was fitted, pass by pass.
 
 ## Where things are
 
 | | |
 |---|---|
-| The matrix method | `sdlab/static/identify.js` |
-| The old search | `sdlab/static/discover.js` (see docs/DISCOVERY.md) |
-| Grading | `tests/bench/grade.mjs` (`grade`, `sameBehaviour`) |
-| Evaluation CLI | `tests/bench/evaluate.mjs` |
+| Discovery (the matrix method) | `sdlab/discovery/` (`identify.py`: candidates and the judge; `matrix.py`: the rows, eras and conservation; `flows.py`: structure off the matrix; `changes.py`: inflow changes; `regression.py`; `simulate.py`) |
+| Strategies | `sdlab/discovery/strategies/` (`matrix`: the main line) |
+| Synthetic ground truth | `tests/synth.py` |
+| Grading | `tests/bench/grade.py` (`grade`, `same_behaviour`) |
+| Evaluation CLI | `tests/bench/evaluate.py` |
 | Datasets | `tests/bench/datasets.py` (cache: `~/.cache/sdlab/bench`) |
 | Ground truth | `sdlab/examples/sd-*/truth.model.json`, answer keys in `truth.json` |
 | Experiment log | `docs/DISCOVERY-EXPERIMENTS.md` |
+
+The page's Discover button still runs the older search in the browser (`sdlab/static/discover.js`,
+graded by `tests/bench/discovery.bench.test.mjs` and `grade.mjs`); it moves to `sdlab/discovery`
+behind a server endpoint once the method is settled.

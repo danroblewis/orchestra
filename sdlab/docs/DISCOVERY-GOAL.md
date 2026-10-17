@@ -12,7 +12,7 @@ model) must be recovered well enough that the discovered model **behaves like th
 > For every sd-* example, at both its default length and its long length:
 > **skill@20 >= 90% and skill@100 >= 80%**
 
-measured by `node tests/bench/evaluate.mjs --goal`, which exits 0 only when every run meets it.
+measured by `uv run python tests/bench/evaluate.py --goal`, which exits 0 only when every run meets it.
 
 skill@H is the share of the true model's movement over H steps that the found model predicts, both
 started from the same states at ~150 moments and fed the same outside inflows: 100% = behaves as the
@@ -24,8 +24,7 @@ different one (see "Ideas" below). When it is met, keep it met: lock the result 
 
 ## What you may do
 
-Anything to discovery. Rewrite `sdlab/static/identify.js` or replace it; reuse or delete parts of
-`sdlab/static/discover.js`; add equation forms, model hidden stocks, model eras, estimate outside
+Anything to discovery (`sdlab/discovery/`, in Python): rewrite it or replace it, add strategies; add equation forms, model hidden stocks, model eras, estimate outside
 inflows differently, use simulation error in model selection, add a nonlinear search, ensembles,
 whatever works. Change the graders only to fix a genuine bug in them (record it in the experiment
 log with the evidence), never to make a number look better. Add tests freely.
@@ -41,20 +40,19 @@ log with the evidence), never to make a number look better. Add tests freely.
   levels over time, plus announced eras. Not `truth.model.json`, not `truth.json`, not the hidden
   levels, not the schedule. No per-example special cases or tuning keyed to an example's id or
   stock names.
-- Do not break the rest: keep `node --test tests/*.mjs`, `uv run pytest -q` and
+- Do not break the rest: keep `uv run pytest -q`, `node --test tests/*.mjs` and
   `uv run ruff check sdlab tests` green. If the page's Discover button uses the engine you change,
   it must keep working.
 
 ## How to work
 
-Follow DISCOVERY-LOOP.md. In short: run `node tests/bench/evaluate.mjs --label "..."` (all examples in
-parallel, about a minute; compared with the last full run), pick the worst example, form one
-hypothesis, check it directly (score the true structure, print a row, look at residuals), change one
-thing, re-run, read every row, and **record every attempt in DISCOVERY-EXPERIMENTS.md** - what,
-why, numbers before and after, kept or reverted. Save a baseline when the overall numbers reach a new
-best (`--save best`). Commit nothing unless asked.
+Follow DISCOVERY-LOOP.md: each idea is an experiment on its own branch and worktree, a strategy with a
+mechanism test on synthetic ground truth, measured with `uv run python tests/bench/evaluate.py
+--strategy <name> --baseline python` (all examples in parallel, about 30 seconds), and **recorded in
+DISCOVERY-EXPERIMENTS.md** - hypothesis, numbers against the baseline, verdict. Winners are adopted
+into the main line one at a time.
 
-## Where it stands (baseline "start21", 2026-10-17)
+## Where it stood at the start (baseline "start21", 2026-10-17)
 
 21 ground-truth examples, 42 runs (default and long lengths). **9 of 42 runs meet the goal.**
 Parts 62.6%, mean skill@20 15.5%, mean skill@100 17.9% (each run clipped at -100% in the means).
@@ -69,6 +67,15 @@ Parts 62.6%, mean skill@20 15.5%, mean skill@100 17.9% (each run clipped at -100
   sd-support-tiers, sd-orders (long), sd-housing (long), sd-university (default).
 
 Compare with `--baseline start21`.
+
+## Where it stands (baseline "python", 2026-10-17)
+
+Discovery ported to Python (`sdlab/discovery/`), with the same results as the JavaScript it
+replaced: **18 of 42 runs meet the goal; mean skill@20 70.8%, skill@100 68.9%, parts 59.9%.** Short
+of it, worst first: sd-support-tiers (both), sd-pipeline (default, @100), sd-moderation (both),
+sd-orders (long), sd-fishery (long), sd-recycling (default), sd-supply (both), sd-eras (long),
+sd-population (both), sd-kanban (both), sd-ev-fleet (long), sd-manufacturing (both), sd-restaurant
+(both), sd-university (default), sd-recycling (long), sd-ev-fleet (default), sd-orders (default).
 
 ## Ideas (not instructions)
 

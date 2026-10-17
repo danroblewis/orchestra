@@ -1,0 +1,156 @@
+"""Running a model forward from many moments at once, and judging it on the data.
+
+Flows are SD Lab's model flows (dicts): a rate in one of the forms constant, proportional, gap or
+linear (every rate is floored at 0, as SD Lab's own equations are); a rate that follows announced
+eras (`byTime`: segments {from, to, rate}); or a found outside inflow that changes (`inflow`:
+segments {from, to, value}). A segment holds for times from..to; a time no segment covers takes the
+last segment. Levels are floored at 0 after every step.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+class _Rate:
+    """One rate, or one rate per segment (all of one form over the same stocks), evaluated for many
+    states at once."""
+
+    def __init__(self, rates: list[dict], index: dict[str, int]):
+        self.rates = rates
+        self.index = index
+        forms = {r.get("form") for r in rates}
+        self.form = forms.pop() if len(forms) == 1 else None
+        stocks = {self._stocks(r) for r in rates}
+        if self.form is None or len(stocks) != 1:
+            self.form = "mixed"
+            return
+        self.stocks = [index.get(s) for s in stocks.pop()]
+        num = lambda key: np.array([float(r.get(key) or 0) for r in rates])  # noqa: E731
+        if self.form == "constant":
+            self.value = num("value")
+        elif self.form == "proportional":
+            self.k = num("k")
+        elif self.form == "gap":
+            self.goal, self.time = num("goal"), np.maximum(1e-9, np.array([float(r.get("time") or 1) for r in rates]))
+        elif self.form == "linear":
+            self.c = num("c")
+            self.ks = [np.array([float(r["terms"][i].get("k") or 0) for r in rates]) for i in range(len(self.stocks))]
+
+    @staticmethod
+    def _stocks(r: dict) -> tuple:
+        if r.get("form") in ("proportional", "gap"):
+            return (r.get("stock"),)
+        if r.get("form") == "linear":
+            return tuple(x.get("stock") for x in r.get("terms") or [])
+        return ()
+
+    def _level(self, L: np.ndarray, i: int | None) -> np.ndarray:
+        return L[i] if i is not None else np.zeros(L.shape[1])
+
+    def __call__(self, L: np.ndarray, seg: np.ndarray) -> np.ndarray:
+        if self.form == "mixed":
+            out = np.zeros(L.shape[1])
+            for g in np.unique(seg):
+                m = seg == g
+                out[m] = _Rate([self.rates[g]], self.index)(L[:, m], np.zeros(int(m.sum()), int))
+            return out
+        if self.form == "constant":
+            v = self.value[seg]
+        elif self.form == "proportional":
+            v = self.k[seg] * self._level(L, self.stocks[0])
+        elif self.form == "gap":
+            v = (self.goal[seg] - self._level(L, self.stocks[0])) / self.time[seg]
+        elif self.form == "linear":
+            v = self.c[seg] + sum(k[seg] * self._level(L, i) for k, i in zip(self.ks, self.stocks))
+        else:
+            v = np.zeros(L.shape[1])
+        return np.maximum(0.0, v)
+
+
+class _Segments:
+    """Which segment holds at each time: the first that covers it, else the last."""
+
+    def __init__(self, segs: list[dict]):
+        order = sorted(range(len(segs)), key=lambda i: segs[i]["from"])
+        self.order = np.array(order)
+        self.froms = np.array([segs[i]["from"] for i in order], dtype=float)
+        self.tos = np.array([segs[i]["to"] for i in order], dtype=float)
+        self.last = len(segs) - 1
+
+    def __call__(self, t: np.ndarray) -> np.ndarray:
+        pos = np.searchsorted(self.froms, t, side="right") - 1
+        ok = (pos >= 0) & (t <= self.tos[np.clip(pos, 0, None)])
+        return np.where(ok, self.order[np.clip(pos, 0, None)], self.last)
+
+
+class Model:
+    """A list of flows, compiled for stepping the stocks `ids` (any other stock reads as 0)."""
+
+    def __init__(self, flows: list[dict], ids: list[str]):
+        self.ids = ids
+        index = {s: i for i, s in enumerate(ids)}
+        self.parts = []
+        for f in flows:
+            src, dst = index.get(f.get("from")), index.get(f.get("to"))
+            ratio = float(f.get("ratio") or 1)
+            if f.get("byTime"):
+                segs = f["byTime"]
+                self.parts.append((src, dst, ratio, _Segments(segs), _Rate([g["rate"] for g in segs], index), None))
+            elif f.get("inflow"):
+                segs = f["inflow"]
+                vals = np.maximum(0.0, np.array([float(g["value"]) for g in segs]))
+                self.parts.append((src, dst, ratio, _Segments(segs), None, vals))
+            else:
+                self.parts.append((src, dst, ratio, None, _Rate([f.get("rate") or {}], index), None))
+
+    def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """One step from levels L (stocks x states) at times t (one per state)."""
+        m = L.shape[1]
+        zero = np.zeros(m, int)
+        amounts = []
+        for src, dst, ratio, segs, rate, vals in self.parts:
+            seg = segs(t) if segs is not None else zero
+            amounts.append(vals[seg] if vals is not None else rate(L, seg))
+        nxt = L.copy()
+        for (src, dst, ratio, *_), a in zip(self.parts, amounts):
+            if src is not None:
+                nxt[src] -= a * ratio
+            if dst is not None:
+                nxt[dst] += a
+        return np.where(nxt >= 0, nxt, 0.0)
+
+    def run(self, L: np.ndarray, times: np.ndarray) -> np.ndarray:
+        """Levels after len(times) steps; times is steps x states."""
+        for t in times:
+            L = self.step(L, t)
+        return L
+
+
+def starts_for(n: int, horizon: int, count: int) -> np.ndarray:
+    every = max(1, (n - horizon - 1) // count)
+    return np.arange(1, n - horizon, every)
+
+
+def levels_array(levels: dict, ids: list[str]) -> np.ndarray:
+    return np.nan_to_num(np.array([np.asarray(levels.get(i, []), dtype=float) for i in ids]))
+
+
+def behaviour_error(flows: list[dict], ids: list[str], t: list, levels: dict, horizon: int = 20, starts: int = 80) -> float:
+    """How far the model's runs from ~`starts` moments in the data end up from what was measured
+    `horizon` steps later (its own estimated outside inflows feed it), relative to how far the data
+    moved: 0 = perfect, 1 = no better than assuming nothing changes."""
+    A = levels_array(levels, ids)
+    n = A.shape[1]
+    s0 = starts_for(n, horizon, starts)
+    if not len(s0):
+        return float("inf")
+    sd = A.std(axis=1)
+    sd[sd == 0] = 1
+    tt = np.asarray(t, dtype=float)
+    end = Model(flows, ids).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]])
+    obs = A[:, s0 + horizon - 1]
+    e = ((end - obs) / sd[:, None]) ** 2
+    e[~np.isfinite(e)] = 1e6
+    moved = (((obs - A[:, s0 - 1]) / sd[:, None]) ** 2).sum()
+    return float(e.sum() / max(1e-9, moved))

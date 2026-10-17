@@ -845,7 +845,7 @@ current state, and this section as the outline.
     and does more data make it better, not worse?
   - **settled** slices: six equal slices of the second half. Once settled, does it keep saying the
     same thing?
-- `grade.mjs` scores a result against the answer key. The headline is **parts of the true model
+- `grade.py` (and `grade.mjs`, for the page's older search) scores a result against the answer key. The headline is **parts of the true model
   recovered in the right form**: each true relationship (move, link, hidden stock, echo) named
   with the right kind, plus each true flow to or from outside. It also reports pairs found, true,
   reversed and wrong; recall and precision; the share of flows that only connect to outside (near
@@ -911,7 +911,7 @@ suggest an experiment; run off the main thread (a worker, or the server).
 
 - **Answer-key formats differ.** `sd_structure` (the shared format, derived from a truth model),
   the hospital's older format (flows plus named hidden stocks) and the shop's (flows plus
-  `driven_inflows`), plus `in_long_runs` additions for some. `grade.mjs` converts them. A rewrite
+  `driven_inflows`), plus `in_long_runs` additions for some. `grade.py` converts them. A rewrite
   should derive every answer key from a truth model and have one format.
 - **The older simulators versus SD-truth examples.** The hand-written simulators (beer game, bike
   share, flu, hospital, kanban, library, reservoirs, SaaS, shop) have mechanics SD Lab's forms

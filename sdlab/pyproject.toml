@@ -5,6 +5,9 @@ description = "Design system dynamics models, then apply machines to their flows
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
+    "numba>=0.68.0",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
     "uvicorn[standard]>=0.30",
 ]
 

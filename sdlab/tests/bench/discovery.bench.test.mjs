@@ -23,9 +23,8 @@ import { truthOf, grade, agreement, prediction, sameBehaviour } from "./grade.mj
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const { discover, discoverAll } = require(path.join(ROOT, "sdlab/static/discover.js"));
-const { identify } = require(path.join(ROOT, "sdlab/static/identify.js"));
-// which discovery to grade: "identify" (the matrix method) or "discover" (the search the page used)
-const ENGINE = process.env.SDLAB_BENCH_ENGINE || "identify";
+// the search the page runs (the matrix method, sdlab/discovery, has its own bench: evaluate.py)
+const ENGINE = "discover";
 const EXAMPLES = (process.env.SDLAB_BENCH_EXAMPLES || "sd-pipeline,sd-saas,sd-hospital,sd-kanban,sd-supply,hospital,shop,bikeshare,library,beergame,kanban,flu,saas,reservoirs").split(",").filter(Boolean);
 const FRACTIONS = [1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1];
 const SLICES = 6;
@@ -61,8 +60,7 @@ function discoverLikeThePage(model, run) {
   }))) : undefined;
   const opts = { window: 5, eras: eras.length > 1 ? eras : undefined, moved };
   const t0 = Date.now();
-  const r = ENGINE === "identify" ? identify(model.stocks, run, { moved })
-    : model.stocks.length > 12 ? discoverAll(model.stocks, run, opts) : discover(model.stocks, run, opts);
+  const r = model.stocks.length > 12 ? discoverAll(model.stocks, run, opts) : discover(model.stocks, run, opts);
   r.ms = Date.now() - t0;
   return r;
 }

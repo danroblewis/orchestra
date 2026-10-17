@@ -112,6 +112,10 @@ function rateOf(rate, level) {
 }
 function step(flows, level, t) {
   const amount = flows.map((f) => {
+    if (f.byTime && f.byTime.length) {                        // a rate that changes with announced eras
+      const seg = f.byTime.find((g) => t >= g.from && t <= g.to) || f.byTime[f.byTime.length - 1];
+      return rateOf(seg.rate, level);
+    }
     if (f.inflow && f.inflow.length) {                        // a found outside inflow that changes
       const p = f.inflow.find((g) => t >= g.from && t <= g.to) || f.inflow[f.inflow.length - 1];
       return Math.max(0, p.value);
