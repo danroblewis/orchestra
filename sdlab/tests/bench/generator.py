@@ -401,7 +401,7 @@ def m_eras(b):
     if not cands:
         return
     picked = r.sample(cands, min(len(cands), r.choice((1, 1, 2))))
-    times = sorted(r.sample(range(int(b.P * 0.1), int(b.P * 0.9)), r.randint(1, 3)))
+    times = spaced(r, b.P, r.randint(1, 3), max(10, b.P // 8))
     for f in picked:
         b.sched.append((1, f["id"], dict(f["rate"]), True))
     for t in times:
@@ -409,6 +409,16 @@ def m_eras(b):
         b.sched.append((t, f["id"], {**f["rate"], "k": round(f["rate"]["k"] * U(r, 0.4, 2.2), 5)}, True))
     b.details["eras"] = len(times)
     b.motifs.add("eras")
+
+
+def spaced(r: random.Random, P: int, n: int, gap: int) -> list[int]:
+    """n step times in a period of P, each level holding at least `gap` steps (a level held for a
+    step or two is a spike, which is its own family)."""
+    n = max(1, min(n, P // gap - 1))
+    while True:
+        ts = sorted(r.sample(range(1 + gap, P + 2 - gap), n))
+        if all(b - a >= gap for a, b in zip(ts, ts[1:])):
+            return ts
 
 
 def inputs(b, kinds: list[str]) -> None:
@@ -425,7 +435,7 @@ def inputs(b, kinds: list[str]) -> None:
         if kind != "inflow_season":
             b.sched.append((1, fid, const(v), False))
         if kind == "inflow_steps":
-            for t in sorted(r.sample(range(2, P + 1), r.randint(2, 5))):
+            for t in spaced(r, P, r.randint(2, 5), max(10, P // 8)):
                 b.sched.append((t, fid, const(v * U(r, 0.4, 1.8)), False))
         elif kind == "inflow_spikes":
             n = r.randint(1, 3)
