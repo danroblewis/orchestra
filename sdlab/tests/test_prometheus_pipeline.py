@@ -3,7 +3,6 @@ with PromQL, and discovery finding the consumers whose counters are not exported
 
 import json
 import socket
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -12,6 +11,7 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 
+from sdlab.discovery.api import discover
 from sdlab.promlab import models as builder
 from sdlab.promlab.api import create_app as prom_app
 from sdlab.promlab.generate import generate
@@ -61,16 +61,19 @@ def test_history_from_promql_and_discovery_of_unexported_consumers(prom, tmp_pat
     assert not any(f["id"] == builder.slug("consumed", h["topic"], h["consumergroup"]) for f in flows for h in truth["hidden_consumers"])
 
     # ...and discovery, given the lag of every group and the measured flows, finds their consumption
-    run = {"t": snap["series"]["t"], "levels": snap["series"]["levels"], "rates": snap["series"]["rates"]}
-    script = f"""
-      const {{ discover }} = require({json.dumps(str(ROOT / "sdlab/static/discover.js"))});
-      const model = {json.dumps(model)}, run = {json.dumps(run)};
-      const qf = model.flows.filter((f) => f.query && run.rates[f.id]);
-      const moved = run.t.map((_, i) => Object.fromEntries(qf.map((f) => [f.id, {{ took: f.from ? {{ [f.from]: run.rates[f.id][i] }} : {{}}, made: f.to ? {{ [f.to]: run.rates[f.id][i] }} : {{}} }}])));
-      const r = discover(model.stocks, run, {{ window: 5, moved }});
-      console.log(JSON.stringify(r.flows.map((f) => [f.from, f.to, f.perStep])));
-    """
-    found = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True, timeout=600).stdout)
+    # (the measured flows are what the page subtracts first: the known change of each stock per step)
+    t, levels, rates = snap["series"]["t"], snap["series"]["levels"], snap["series"]["rates"]
+    known = {}
+    for f in model["flows"]:
+        if not f.get("query") or f["id"] not in rates:
+            continue
+        for end, sign in (("to", 1), ("from", -1)):
+            if f.get(end):
+                k = known.setdefault(f[end], [0.0] * len(t))
+                for i, v in enumerate(rates[f["id"]]):
+                    k[i] += sign * (v or 0)
+    r = discover({"stocks": model["stocks"], "run": {"t": t, "levels": levels}, "known": known})
+    found = [(f["from"], f["to"], f["perStep"]) for f in r["flows"]]
     drains = {f[0] for f in found if f[1] is None}
     assert hidden <= drains, (hidden, found)
     assert len(found) <= len(hidden) + 2, found                     # little else is invented

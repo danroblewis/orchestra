@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SD Lab research</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="research-page">
+<header class="top">
+  <div class="brand">SD Lab</div>
+  <a class="btn icon" href="/" title="Back to the editor" aria-label="Back to the editor">&#9998;&#65039;</a>
+  <h1 class="rtitle">Discovery research</h1>
+  <nav class="rnav" aria-label="Sections">
+    <a href="#topics">Topics</a><a href="#history">Bench history</a><a href="#run">One run</a><a href="#compare">Compare two</a>
+  </nav>
+  <div class="status" id="status"></div>
+</header>
+
+<main class="rmain" id="main">
+  <section id="topics" class="rsec">
+    <h2>Research topics</h2>
+    <p class="note" id="topics-intro"></p>
+    <div class="board" id="board"></div>
+    <div id="other-docs"></div>
+  </section>
+
+  <section id="history" class="rsec">
+    <h2>Bench history</h2>
+    <p class="note" id="history-note"></p>
+    <div class="rcontrols" id="history-controls"></div>
+    <div class="chartbox" id="chart"></div>
+    <div class="legend" id="legend"></div>
+    <h3>Named baselines</h3>
+    <div class="chips" id="baselines"></div>
+    <h3>Runs <span class="muted small" id="runs-count"></span></h3>
+    <div class="tablewrap"><table class="rtable" id="runs"></table></div>
+  </section>
+
+  <section id="run" class="rsec">
+    <h2>One run, example by example</h2>
+    <div class="rcontrols"><label>Run <select id="run-a" aria-label="Run to show"></select></label></div>
+    <div id="heat"></div>
+  </section>
+
+  <section id="compare" class="rsec">
+    <h2>Compare two runs</h2>
+    <div class="rcontrols">
+      <label>Before <select id="cmp-a" aria-label="Run before"></select></label>
+      <label>After <select id="cmp-b" aria-label="Run after"></select></label>
+    </div>
+    <div id="cmp"></div>
+  </section>
+</main>
+
+<aside class="docpanel" id="doc" hidden aria-label="Research document">
+  <div class="dochead"><span id="doc-name" class="muted small"></span><button class="btn" id="doc-close" title="Close (Esc)">Close</button></div>
+  <article class="md" id="doc-body"></article>
+</aside>
+<div class="tip" id="tip" hidden></div>
+
+<script src="/static/research.js"></script>
+</body>
+</html>

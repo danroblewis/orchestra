@@ -78,7 +78,7 @@
       case "proportional": return `${fmt(rate.k)} × ${stockName(rate.stock)}`;
       case "gap": return `gap to ${fmt(rate.goal)} in ${stockName(rate.stock)}`;
       case "available": return rate.stock ? `everything in ${stockName(rate.stock)}` : "everything available";
-      case "linear": return [fmt(rate.c || 0), ...(rate.terms || []).map((t) => `${fmt(t.k)} \u00d7 ${stockName(t.stock)}`)].join(" + ");
+      case "linear": return [...(+rate.c || !(rate.terms || []).length ? [fmt(rate.c || 0)] : []), ...(rate.terms || []).map((t) => `${fmt(t.k)} \u00d7 ${stockName(t.stock)}`)].join(" + ");
       default: return rate.form;
     }
   }

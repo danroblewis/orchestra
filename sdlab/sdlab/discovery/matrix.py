@@ -49,6 +49,17 @@ def configurations(eras: list[dict] | None, t: list) -> tuple[list[str], np.ndar
     return labels, cfg, spans
 
 
+def known_changes(known: dict, ids: list[str], n: int) -> np.ndarray:
+    """The known change of each stock at each step (stocks x steps), 0 where nothing is known."""
+    out = np.zeros((len(ids), n))
+    for k, i in enumerate(ids):
+        v = known.get(i)
+        if v is not None:
+            a = np.nan_to_num(np.asarray(v, dtype=float))[:n]
+            out[k, : len(a)] = a
+    return out
+
+
 def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     ids = [s["id"] for s in stocks]
     S = len(ids)
@@ -58,6 +69,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         return {"flows": [], "note": "Too few steps."}
     lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
     prev, dy = lv[:, :-1], np.diff(lv, axis=1)
+    if opts.get("known"):
+        # what is already known (measured flows, the model's own equations) is taken out first, so
+        # the rows explain the rest: known[s][i] is the known change of s from step i - 1 to i
+        dy = dy - known_changes(opts["known"], ids, len(t))[:, 1:]
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
@@ -254,3 +269,18 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
             for c in cand:
                 row["coefL"][c][a] = -moves[c]
             row["conserved"] = True
+
+
+def known_flows(known: dict, ids: list[str], t: list) -> list[dict]:
+    """The known changes as flows the simulator runs: per stock, what arrives (an inflow from
+    outside) and what leaves (an outflow to outside), step by step."""
+    ch = known_changes(known, ids, len(t))
+    out = []
+    for k, i in enumerate(ids):
+        if not ch[k].any():
+            continue
+        for sign, ends in ((1, {"from": None, "to": i}), (-1, {"from": i, "to": None})):
+            v = np.maximum(0.0, sign * ch[k])
+            if v.any():
+                out.append({**ends, "ratio": 1, "inflow": [{"from": t[s], "to": t[s], "value": float(v[s])} for s in range(len(t))], "known": True})
+    return out

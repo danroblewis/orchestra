@@ -105,8 +105,10 @@ uv run python tests/bench/datasets.py sd-saas --long            # path to a cach
 
 | | |
 |---|---|
-| Discovery (the matrix method) | `sdlab/discovery/` (`identify.py`: candidates and the judge; `matrix.py`: the rows, eras and conservation; `flows.py`: structure off the matrix; `changes.py`: inflow changes; `regression.py`; `simulate.py`) |
+| Discovery (the matrix method) | `sdlab/discovery/` (`identify.py`: candidates and the judge; `matrix.py`: the rows, eras, conservation and known changes; `flows.py`: structure off the matrix; `changes.py`: inflow changes; `regression.py`; `simulate.py`) |
 | Strategies | `sdlab/discovery/strategies/` (`matrix`: the main line) |
+| The page's discovery | `sdlab/discovery/api.py` (`discover(request)`: what the page sends, `unexplained`, JSON-safe results), run as background jobs by `sdlab/discovery_jobs.py` behind `POST/GET/DELETE /api/models/{id}/discovery` (`sdlab/server.py`); the page's side is `runDiscovery` in `sdlab/static/app.js` |
+| Research view | `/research` (`sdlab/static/research.html`, `research.js`; endpoints in `sdlab/research.py`): the topics in `docs/research/` and the saved bench runs |
 | Synthetic ground truth | `tests/synth.py` |
 | Grading | `tests/bench/grade.py` (`grade`, `same_behaviour`) |
 | Evaluation CLI | `tests/bench/evaluate.py` |
@@ -114,6 +116,7 @@ uv run python tests/bench/datasets.py sd-saas --long            # path to a cach
 | Ground truth | `sdlab/examples/sd-*/truth.model.json`, answer keys in `truth.json` |
 | Experiment log | `docs/DISCOVERY-EXPERIMENTS.md` |
 
-The page's Discover button still runs the older search in the browser (`sdlab/static/discover.js`,
-graded by `tests/bench/discovery.bench.test.mjs` and `grade.mjs`); it moves to `sdlab/discovery`
-behind a server endpoint once the method is settled.
+The page's Discover button and "keep discovering" run the main line (`matrix`) on the server, so
+what the bench measures is what the page shows; a request may name another strategy
+(`"strategy"`), which is how an experiment can be tried on the page. The older JavaScript search
+(`discover.js`) and its bench were removed.

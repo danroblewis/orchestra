@@ -1,4 +1,8 @@
-# How "Discover flows" works
+# How "Discover flows" worked (the JavaScript search, now removed)
+
+> **History.** This describes the search the page ran in the browser until discovery moved to the
+> server's Python engine (`sdlab/discovery`, the matrix method: SPEC.md section 6.2). `discover.js`
+> and the tests that drove it were removed; the document stays as the record of what was tried.
 
 A design brief for SD Lab's discovery feature: what it does, the techniques it uses, the choices
 behind them, and where it stops working. The code is `sdlab/static/discover.js` (the search) and

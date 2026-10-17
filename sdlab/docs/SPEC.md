@@ -16,7 +16,7 @@ How to read it:
 - Section 8 lists the tests and which of them a rewrite should keep.
 
 Companion documents: [MODEL.md](../MODEL.md) (the model file format, in detail) and
-[DISCOVERY.md](DISCOVERY.md) (how the current discovery search works). Where this spec and the
+[DISCOVERY.md](DISCOVERY.md) (how the older JavaScript search worked; the current method is in section 6.2). Where this spec and the
 code disagree, the code was checked last; where something is uncertain, it says so.
 
 ---
@@ -320,9 +320,11 @@ flows), `repair` (hidden backroom), `milling` (effects and co-flows), `roastery`
 
 ## 4. The UI as it stands
 
-One page, `index.html`, with plain scripts: `sim.js` (simulator, fitting, leverage), `discover.js`
-(discovery), `simplify.js` (simplify), `app.js` (everything else, about 2,300 lines). Font IBM
-Plex Sans and Mono. Light and dark themes from `prefers-color-scheme`.
+One page, `index.html`, with plain scripts: `sim.js` (simulator, fitting, leverage), `simplify.js`
+(simplify), `app.js` (everything else, about 2,400 lines). Discovery runs on the server, in the
+Python engine (`sdlab/discovery`, 4.7 and 5.3). A second, read-only page, `research.html` with
+`research.js`, shows the discovery research (4.12). Font IBM Plex Sans and Mono. Light and dark
+themes from `prefers-color-scheme`.
 
 ### 4.1 Layout
 
@@ -360,7 +362,8 @@ Plex Sans and Mono. Light and dark themes from `prefers-color-scheme`.
 - **Example badge**: shown when the open model is an example. Its tooltip says the first change
   saves a copy.
 - **Files** (folder icon) opens the files dialog (4.10). **Save as** (disk icon) prompts for a name
-  and copies the model and its run; the copy is then what is edited.
+  and copies the model and its run; the copy is then what is edited. **Research** (microscope
+  icon) opens the research view (4.12) in a new tab.
 - **Edit | Run** tabs. The mode is in the URL hash (`#run`).
 - **Status** on the right, monospace: save state ("Unsaved changes", "Saved", "Not saved: …"),
   results ("Found 4 flows in 120 ms"), errors in red.
@@ -574,37 +577,53 @@ changes my scroll position")**.
 
 Opened by 🔍, or kept open and refreshed by 🔄 keep discovering.
 
-- **Scope**: the selected (non-inferred) stocks, or every non-inferred stock. More than 12 stocks
-  are split automatically into independent groups (`discoverAll`) **(asked for: discover over the
-  whole model, without hand-picking stocks or a 60-stock limit)**.
+**Where it runs.** On the server, in the Python engine (`sdlab/discovery`, the bench's main line,
+strategy `matrix`), as a background job (5.3). The page sends the stocks in scope, their levels,
+the announced eras (start and label) and what it already knows per step; the server runs the job
+in a worker process, so neither the page nor the server's event loop waits for it. A model has one
+job at a time: a newer request (a click on 🔍 while one runs, or a change of "Ignore my flows")
+supersedes the older one. While a job runs, 🔍 pulses (its tooltip says how many steps are being
+searched), an open findings panel says "Discovering again…", and the last findings stay on the
+canvas and in the panel until the new ones arrive. Measured on a laptop: about 0.6 to 1 s for the
+SaaS example's first hundred to seven hundred days; 35 s for two years of hourly hospital history
+(17,520 steps), with the page and the server responsive throughout.
+
+- **Scope**: the selected (non-inferred) stocks, or every non-inferred stock, searched together
+  **(asked for: discover over the whole model, without hand-picking stocks or a 60-stock limit)**.
+  Stocks outside a selection show as outside.
 - **Known flows subtracted**: measured flow amounts, plus what the model's own unmeasured flows'
-  equations predict, are subtracted first, so discovery finds what the model is missing. A
-  checkbox "Ignore my flows and start from nothing" turns this off.
+  equations predict, are sent as the known change of each stock in each step (`known`); the engine
+  explains the rest (it fits each stock's change minus the known change, and judges its candidate
+  models with the known changes fed in), so discovery finds what the model is missing. A checkbox
+  "Ignore my flows and start from nothing" turns this off.
 - **Content**: an introduction (what was explained by what, over how many steps and eras), the
-  scope note, the found flows (from → to, amount per step, both ways, the equation per era, and
-  "fits about as well" alternatives), a warning when many flows have alternatives (suggesting an
-  experiment), stocks nobody measures (where, delay and its plausible range, how much it holds, in
-  words), what is not explained (stocks with a steady drift no flow explains), and, when no hidden
-  stock was proposed, matched out/in pairs that probably hide one.
+  scope note, the found flows (from → to, amount per step; the equation, or one per era
+  configuration when the rates differ between eras, named by the era's label; "follows the level
+  of X" for a link; an outside inflow that changes over time, with how many times, its range and its
+  level now), which strategy found them and how long it took, what is not explained (stocks with
+  a steady drift the found and known flows do not explain, from one-step residuals), and the
+  approve buttons. The Python engine reports no "fits about as well" alternatives and no stocks
+  nobody measures; the page still shows them (below) for a strategy that does
+  (`nearly`, `via`, `hidden`).
 - **Proposed stocks are objects on the canvas**: dashed orange boxes placed between the stocks
   they connect (spread apart, never over a stock), draggable, clickable, kept in place across
   refreshes when the same one is found again, and included by Arrange **(asked for)**. Clicking
   one opens its own panel: what it is, holds, delay, shape, flow in, "Add this stock and its two
-  flows", "All findings".
+  flows", "All findings". (Only a strategy that proposes hidden stocks, as a flow with `via`,
+  produces them.)
 - **Approving**: "Add these flows to the model" (when known flows were subtracted) or "Make a new
   model from these flows" (from nothing; the original stays as it is). While keep-discovering is
   on and the run is going, approving is disabled: pause to approve **(asked for: keep predicting;
   the right panel stays open; approve a new flow map when paused)**.
-- **What adding does**: found flows join as environment flows with `found` set; a hidden stock
-  becomes an `inferred` stock with a flow in (the found rate) and a proportional flow out (1 /
-  delay; for a fixed delay this is the nearest form the model has). With keep-discovering on,
-  discovery runs again for what the new flows leave unexplained.
-- **Keep discovering** reruns when at least 40 steps exist, enough new steps have arrived
-  (5, or 1% of the run), and at least max(2 s, 3 × the last run's time) has passed. The panel keeps
-  its scroll position across refreshes.
-
-Discovery runs in the page, on the main thread, after a 30 ms timeout. On long runs it freezes the
-page (6.5).
+- **What adding does**: found flows join as environment flows with `found` set, each with the rate
+  it has now (a flow whose rate differs by era gets the current configuration's; an outside inflow
+  that changes gets its latest level); a hidden stock becomes an `inferred` stock with a flow in
+  (the found rate) and a proportional flow out (1 / delay; for a fixed delay this is the nearest
+  form the model has). With keep-discovering on, discovery runs again for what the new flows leave
+  unexplained.
+- **Keep discovering** reruns when at least 40 steps exist, no job is running, enough new steps
+  have arrived (5, or 1% of the run), and at least max(2 s, 3 × the last discovery's round trip)
+  has passed. The panel keeps its scroll position across refreshes.
 
 ### 4.8 Simplify panel
 
@@ -679,6 +698,32 @@ For the rewrite's reviewers, the explicit requests in one place:
 | A failing source stops the run | 3.2 |
 | Long-run bench with a cache outside the repository | 6.3 |
 | Ground-truth SD examples | 3.4, 6.3 |
+| Discovery off the page's main thread, on the Python engine | 4.7, 5.3 |
+| A view of research progress | 4.12 |
+
+### 4.12 Research view
+
+`/research` (the 🔬 button in the header, a new tab), read only, plain and fast, light and dark:
+
+- **Research topics**: the table in `docs/research/README.md` as a board in columns Running, Done
+  and Ideas; each card has the title, the status and the verdict. Clicking one opens its document
+  in a side panel, rendered from markdown by the page's own renderer (all text is escaped; only
+  headings, lists, tables, code, emphasis and links are made into markup; links to other research
+  documents open in the panel, `http(s)` links in a new tab, anything else stays text). Other
+  documents (the literature notes) are listed below.
+- **Bench history**: every run evaluate.py saved, as points over time: mean skill@20, mean
+  skill@100, the same on fresh runs, or the number of runs meeting the goal; by default only the
+  runs over every example and length (runs over fewer are not comparable), with the goal as a
+  dashed line. The main line (branch `sdlab`, or strategy `matrix` when grouped by strategy) and
+  one highlighted branch or strategy are coloured and joined in time; the rest are grey; named
+  baselines are diamonds. Hover for the run, click to open it below. Then the named baselines, and
+  every run in a table (newest first) with its headline and buttons to open it or compare it.
+- **One run**: a table of examples by length with skill@20, skill@100, fresh@20, fresh@100 and
+  parts; a cell is green with a tick when it meets its goal (skill@20 ≥ 90%, skill@100 ≥ 80%),
+  amber within 20 points, red further, darker red more than 100 points away.
+- **Compare two runs**: before and after per example and length (skill@20, @100, fresh @20,
+  @100), the deltas in points (green better, red worse, pale under 2 points), and which runs newly
+  meet or no longer meet the goal. The chosen runs are kept in the URL.
 
 ---
 
@@ -748,12 +793,43 @@ Snapshot:
 
 Hidden flows never appear in any of it: not in series, firings, errors or era models.
 
-### 5.3 Static
+### 5.3 Discovery jobs and the research view
 
-`GET /` serves `index.html` with each asset stamped `?v=<mtime>` and `Cache-Control: no-cache`, so
-the tunnel's cache never serves a stale script. `/static/*` serves the scripts and stylesheet.
+Discovery (`sdlab/discovery_jobs.py`, `sdlab/discovery/api.py`) runs in a pool of worker processes
+(spawned, at most `SDLAB_DISCOVERY_WORKERS`, default min(4, cores − 1)); one current job per model.
 
-### 5.4 Environment variables
+| Method and path | Request | Response | Notes |
+|---|---|---|---|
+| `POST /api/models/{id}/discovery` | `{stocks: [{id, unit?, final?, group?}], run: {t, levels: {stock: [...]}}, eras?: [{start, label?}], known?: {stock: [change per step]}, strategy?}` | `{job, state: "running", strategy, steps, started, ms}` | Returns at once. 404 for an unknown model; 422 when a stock has no id, a series has the wrong length, or the strategy is unknown (`sdlab/discovery/strategies`, default `matrix`). Supersedes the model's running job: a waiting one is cancelled, a running one finishes in its worker and its result is dropped. |
+| `GET /api/models/{id}/discovery?job=&wait=` | | `{job, state, ms, result?, error?, last?}` | `state`: `idle` (no job yet), `running`, `done`, `error`, `superseded`, `cancelled`. `wait` (seconds, at most 30) holds the request until the job ends, without blocking the event loop. While a newer job runs, `last` is the model's last finished job, result included. |
+| `DELETE /api/models/{id}/discovery` | | the status | Cancels the running job. |
+| `GET /api/discovery/strategies` | | `{strategies, default}` | |
+
+A result is the strategy's (`flows`, `chosen`, `tried`, `method`, `windows`; `labels` when rates
+follow era configurations), plus `unexplained` (per stock `{drift, wobble, persistent}`), `hidden`
+(empty for `matrix`), `strategy` and `computeMs`. Every number is a plain float; inf and nan
+become null. Flows have `from`, `to`, `ratio`, `rate`, `rates` (one per era configuration),
+`perStep`, `nearly`, `bothWays`, and as found `driver` (a link), `note`, `inflow` (pieces
+`{from, to, value}` of an outside inflow that changes), `changes`, `byTime` (`{from, to, rate}` per
+era span).
+
+The research view reads, never writes; it takes no paths from the client:
+
+| Method and path | Response |
+|---|---|
+| `GET /research` | The research page. |
+| `GET /api/research/topics` | `{intro, topics: [{title, file, status, kind: done/running/idea/other, verdict}], documents}` from the table in `docs/research/README.md`; `documents` are the other `.md` files under `docs/research`. |
+| `GET /api/research/topics/{name}` | `{name, markdown}`; 404 unless `name` is one of the listed documents. |
+| `GET /api/research/runs` | `{folder, goal, runs: [summary]}`: every `*.json` in `$SDLAB_BENCH_CACHE/runs` (default `~/.cache/sdlab/bench/runs`), oldest first. A summary: `file`, `baseline` (the name, for `baseline-<name>.json`), `at`, `label`, `engine`, `branch`, `commit`, `n`, `examples`, `lengths`, `skill20`, `skill100` (means clipped at −100%, as evaluate.py), `meets`, `fresh20`, `fresh100`, `freshMeets` (null when the run did not grade fresh runs), `parts`, `errors`; `broken: true` for an unreadable file. |
+| `GET /api/research/runs/{file}` | The run as saved, plus `summary`; 404 unless `file` is in the listing. |
+
+### 5.4 Static
+
+`GET /` and `GET /research` serve `index.html` and `research.html` with each asset stamped
+`?v=<mtime>` and `Cache-Control: no-cache`, so the tunnel's cache never serves a stale script.
+`/static/*` serves the scripts and stylesheet.
+
+### 5.5 Environment variables
 
 | Variable | Used by |
 |---|---|
@@ -762,7 +838,8 @@ the tunnel's cache never serves a stale script. `/static/*` serves the scripts a
 | `SDLAB_LLM_URL`, `SDLAB_LLM_MODEL` | The AI agent machine. |
 | `SDLAB_LIVE_STEPS` | Live feeds: recording length (`default` for the simulator's default; the tests use it). |
 | `SDLAB_PROM_URL` | The PromQL sensor (default `http://127.0.0.1:9090`). |
-| `SDLAB_BENCH_CACHE`, `SDLAB_BENCH_EXAMPLES`, `SDLAB_BENCH_MEETS` | The discovery bench (8.3). |
+| `SDLAB_DISCOVERY_WORKERS` | Worker processes for discovery jobs (5.3). |
+| `SDLAB_BENCH_CACHE` | The discovery bench's datasets and saved runs (6.3), read by the research view. |
 
 ---
 
@@ -770,92 +847,65 @@ the tunnel's cache never serves a stale script. `/static/*` serves the scripts a
 
 ### 6.1 The contract
 
-Discovery is a pure function of measurements. It must stay independent of the UI and the server
-(today it is a browser script that also runs under Node for tests; it could equally be a Python
-module the server calls).
+Discovery is a pure function of measurements, independent of the UI and the server: the Python
+package `sdlab/discovery`. A strategy is `identify(stocks, run, opts) -> result`
+(`sdlab/discovery/strategies/`, the main line is `matrix`); the page reaches it through
+`sdlab/discovery/api.py` (`discover(request)`), which the server runs as a background job (5.3).
+The JavaScript search the page used to run (`discover.js`) is gone; DISCOVERY.md describes it, for
+the record.
 
 **Inputs**
 
 | Input | Meaning |
 |---|---|
 | stocks | `[{id, unit, final?, group?}]`: the stocks in scope. |
-| run | `{t: [...], levels: {stock: [...]}, rates?: {flow: [...]}}`: one value per step. |
-| moved | Optional, per step `{flow: {took: {stock: n}, made: {stock: n}}}`: what is already known (measured flows, and predictions of the model's own unmeasured flows). Subtracted first. |
-| eras | Optional `[{start}]`: where the system's configuration changed. |
-| start | Optional levels before the first step. Without them, the first step has no change to explain. |
-| options | Window, limits on flows and group sizes, switches for links, hidden stocks, pulls. |
+| run | `{t: [...], levels: {stock: [...]}}`: one value per step. |
+| eras | Optional `[{start, label?}]` (`opts.eras`): where the system's configuration changed; eras with the same label are one configuration. |
+| known | Optional `{stock: [change per step]}` (`opts.known`): what is already known (measured flows, and predictions of the model's own unmeasured flows), as each stock's known change from step i − 1 to i. Subtracted first, and fed in when candidate models are judged. |
+| options | The strategy's own (`variants`, `trace`, switches for an ablation). |
 
 **Outputs**
 
 | Output | Meaning |
 |---|---|
-| flows | `[{from, to, ratio, rate, rates (one per era), perStep, bothWays, nearly (alternatives that fit about as well), driver? (a link), via? (a hidden stock: shape, delay, delayMin, delayMax, holds, atStart, share, echo), screened?, evidence?}]`; `from`/`to` null means outside. Every `rate` is one of the model's equation forms, so a result can be added to a model directly. |
-| unexplained | Per stock: `{drift, wobble, persistent}`: a steady drift no flow explains is a sign of a missing flow or stock. |
-| hidden | Matched out/in pairs that probably hide a stock (delay, holds), when no hidden-stock flow was accepted. |
-| diagnostics | Windows and window width, the search rounds, the score; for whole models, how many stocks were already explained, searched, and in how many groups. |
+| flows | `[{from, to, ratio, rate, rates (one per era configuration), perStep, bothWays, nearly, driver? (a link), note?, inflow? (pieces of an outside inflow that changes), changes?, byTime? (the rate per era span), via? (a hidden stock, for a strategy that proposes them)}]`; `from`/`to` null means outside. Every `rate` is one of the model's equation forms, so a result can be added to a model directly. |
+| unexplained | Per stock: `{drift, wobble, persistent}` (added by api.py from one-step residuals): a steady drift no flow explains is a sign of a missing flow or stock. |
+| chosen, tried | The candidate the strategy kept, and every candidate's behaviour error. |
+| labels | The era configurations `rates` follow, when there are two or more. |
 
-A rewrite should keep the shape (flows in the model's own forms, per-era coefficients,
-alternatives, hidden stocks with delay ranges, the unexplained residue) and should add an explicit
-"not enough variation to tell" result instead of falling back to flows to and from outside
-(6.5).
+Still wanted: an explicit "not enough variation to tell" result instead of falling back to flows
+to and from outside (6.5), alternatives that fit about as well, and hidden stocks with delay
+ranges (research topic "Hidden stocks from delayed copies of levels").
 
 ### 6.2 The current method, in brief
 
-Details in [DISCOVERY.md](DISCOVERY.md). In one sentence: sparse system identification.
-
-1. Change per stock per step, minus what is known, summed into windows (at least 5 steps, and wide
-   enough for at most about 400 windows).
-2. Candidate flows between every ordered pair of stocks and to and from outside, pruned by
-   `final`, `group`, and unit ratios (2, 3, ½, ⅓ between different units).
-3. Each candidate's amount per step is linear in its coefficients:
-   `q = c + a × source + b × target` (+ `d × driver` for a link), so any set of flows is one
-   weighted least-squares fit. Stocks are weighted by their jitter; one extra row per unit holds
-   total change (the conservation evidence). Flows between stocks get coefficients per era; flows
-   to or from outside keep one set.
-4. Score = BIC + a conservation price for outside flows and unit conversions + a movement price
-   (rules out invisible circulation) + extra for hidden-stock flows. Flows must run forwards.
-5. Greedy local search from no flows: add a flow, add a chain through a stock, remove, reroute,
-   pass through a stock, add a flow through a hidden stock (exp, erlang or pipe delay on a grid of
-   about 26 values from 1 to 360 steps, after a correlation pre-screen). Keep the best move while
-   it improves the score by more than 2. Tidy equation terms. Report alternatives within 4 points.
-6. More than 12 stocks: subtract measured flows, set aside stocks already explained, link stocks
-   whose unexplained changes mirror each other (with a bar that rises with the number of pairs),
-   union-find into groups of at most 40, search each.
-7. Links (an inflow from outside whose rate follows another stock's level) are screened on single
-   steps first (`screenLinks`): forward stepwise least squares per target on detrended series, a
-   stricter price than BIC, three rules against siblings and shortcuts. Only stocks that turn
-   over within a step get screened links. Pulls (a queue falling as a pool gets busier) put the two
-   stocks in one group.
-
-`discover.js` is being changed while this is written; treat DISCOVERY.md and the code as the
-current state, and this section as the outline.
+The matrix method (`sdlab/discovery/matrix.py`, `identify.py`): in a model whose flows are linear
+in the levels, every stock's change in a step is a linear function of the levels at the start of
+the step plus what arrives from outside. Each stock's row is fitted by stepwise least squares on
+single steps (BIC), its outside inflow in pieces found by change-point detection (PELT); same-unit
+drains are made to match what other stocks are seen to receive (conservation unless the data
+clearly says otherwise); eras may give a level its own number per configuration. Structure is read
+off the matrix (`flows.py`). Several variants are fitted and the one whose model behaves best when
+run forward from many moments in the data (5, 20 and 100 steps) is kept. The history of how it got
+here, and every experiment tried, is in [DISCOVERY-EXPERIMENTS.md](DISCOVERY-EXPERIMENTS.md); how
+experiments are run is [DISCOVERY-LOOP.md](DISCOVERY-LOOP.md).
 
 ### 6.3 Acceptance criteria
 
-**The bench** (`tests/bench/`, run with `node --test tests/bench/`, not part of the regular suite):
+**The bench** (`tests/bench/`, not part of the regular suite; [DISCOVERY-LOOP.md](DISCOVERY-LOOP.md)):
 
 - `datasets.py <example> [--long]` generates a long run with the example's simulator
   (`measured(seed, steps)`) and caches it outside the repository (`~/.cache/sdlab/bench` or
   `$SDLAB_BENCH_CACHE`), keyed by a hash of the simulator's sources, length, seed and format; for
   `sd-*` examples the hash also covers `truth.model.json`, `sdtruth.py` and `runner.py`. Changing
   a simulator rebuilds its data and removes the old files **(asked for)**.
-- `discovery.bench.test.mjs` runs discovery the way the page does (whole model, window 5, the run's
-  eras, measured flows subtracted, `discoverAll` above 12 stocks) on:
-  - **growing** data: the first 1/32, 1/16, … of the run up to all of it. Does it find the truth,
-    and does more data make it better, not worse?
-  - **settled** slices: six equal slices of the second half. Once settled, does it keep saying the
-    same thing?
-- `grade.py` (and `grade.mjs`, for the page's older search) scores a result against the answer key. The headline is **parts of the true model
-  recovered in the right form**: each true relationship (move, link, hidden stock, echo) named
-  with the right kind, plus each true flow to or from outside. It also reports pairs found, true,
-  reversed and wrong; recall and precision; the share of flows that only connect to outside (near
-  1 means discovery gave up on structure); a "movement" score per slice (how much the data moved
-  beyond step-to-step noise; near 0 means a settled system nothing can be learned from); agreement
-  between consecutive slices (Jaccard).
-- Quality checks (marked todo until an example passes; graduate an example with
-  `SDLAB_BENCH_MEETS`): parts right ≥ 50%; recall and precision ≥ 50%; with all the data, recall no
-  more than 10 points below its best and at most 60% of flows only to or from outside; consecutive
-  slices agree ≥ 60%. The report is written to `bench-report.md` in the cache folder.
+- `evaluate.py` runs a strategy on every ground-truth example at two lengths, grades it with
+  `grade.py` (parts of the true model recovered in the right form, and skill@5/20/100: the share of
+  the true model's movement the found model predicts, on its own run and on a fresh run it was not
+  fitted on), compares with the last run of the branch or a named baseline, and saves the run under
+  `runs/` in the cache folder. The research view (4.12) shows these runs.
+- The goal ([DISCOVERY-GOAL.md](DISCOVERY-GOAL.md)): skill@20 ≥ 90% and skill@100 ≥ 80% for every
+  example at every length.
 
 **Ground truth first.** The order of acceptance:
 
@@ -864,23 +914,17 @@ current state, and this section as the outline.
    `sd-supply`), goal-seeking flows (`sd-supply`), announced and unannounced changes.
 3. Only then the older simulators and real data.
 
-**Grading by behaviour (to build).** The user's criterion is that a discovered model is good if
-its predictions are nearly identical to the true model's. The bench does not check this yet. It
-needs: start the discovered model and the truth model from the same measured state, project both
-over a horizon (and across a scheduled change), and compare their trajectories on the measured
-stocks against the truth's own noise. The grader should report structural and behavioural scores
-side by side, and a structurally different model that predicts as well should pass. Note that the
-page's simulator integrates with `dt` (default 0.25) while the truth steps once per time unit
-(7.2); the comparison must use one convention.
+**Grading by behaviour (built).** The user's criterion is that a discovered model is good if its
+predictions are nearly identical to the true model's. `grade.same_behaviour` starts the discovered
+model and the truth model from the same measured states at many moments, feeds both the truth's
+outside inflows, and reports skill@H; both step once per time unit, as the truth does (7.2).
 
 ### 6.4 Where it stands
 
-The most recent bench (October 17, before the current work on discovery): on `sd-pipeline` it
-recovers 0 to 2 of 5 parts at any amount of data, with 3 of 4 true pairs found but mostly in the
-wrong form; on `sd-saas` 2 to 6 of 10; on the older simulators every example peaks early and
-declines as data grows, ending at zero parts for four of them. All quality checks are todo. The
-shop's links (DISCOVERY.md section 8) are the one area with good numbers, and that came from
-special handling for that example (7.1).
+The main line (baseline `v2.1`, October 17) meets the goal on 12 of 62 example runs, with mean
+skill@20 29.6% and skill@100 29.3% (each clipped at −100%); the research view (4.12) shows every
+run since, by branch. The section below lists the problems of the older JavaScript search the page
+ran until it moved to the server; several (the windows, speed) do not apply to the matrix method.
 
 ### 6.5 Known problems
 
@@ -892,7 +936,7 @@ special handling for that example (7.1).
 | **One number per flow over long drifting runs** | Only declared eras get their own coefficients; flows to and from outside never do. Years of slow change force one compromise rate. | Kanban (a Done stock growing for five years), SaaS (an ad budget that changes by unannounced campaign). |
 | **Missing equation forms** | No capacity limit (min of a maximum and the stock), no rate set by a third stock on a flow between two others, no fixed delay (a 14-day trial is found as an exponential wait), no products (infection ∝ susceptible × sick). | Shop and kanban (capacity), beer game (third stock), SaaS (fixed delay), flu (product). |
 | **Settling and lack of excitation** | A system with negative feedback settles; levels stop moving and structures become indistinguishable; the cheapest explanation is a few outside flows or nothing. Discovery should say so rather than guess. | Hospital and flu short runs (movement falls by half to two thirds after start-up). The truth models add unannounced changes so they never settle. |
-| **Speed on long runs** | Discovery runs on the page's main thread: 19 s for 5 years of SaaS, 37 s for 3 years of reservoirs, 270 s for the shop's three days. The page freezes. | Bench timings. |
+| **Speed on long runs** (solved: discovery now runs on the server, 4.7) | The JavaScript search ran on the page's main thread: 19 s for 5 years of SaaS, 37 s for 3 years of reservoirs, 270 s for the shop's three days, with the page frozen. The matrix method takes about 1 s for the default-length examples and up to about a minute for the longest; the page stays responsive. | Bench timings. |
 | **Ambiguity of fast pairs and siblings** | At one-second steps, the direction of a link between two fast stocks is a coin toss; stocks sharing a driver also predict a target. | Shop: 6 of 23 false links are reversals, 14 are siblings or ancestors (DISCOVERY.md section 10). |
 | **Fast stocks: moves look like links** | At a stock that turns over within a step, the levels cannot tell a move from a link; the screen says link. | Kanban's review column at daily steps. |
 | **Inconsistency** | Consecutive slices of a settled run agree on 0 to 60% of relationships. | Every bench example. |
@@ -901,7 +945,7 @@ What the evidence suggests for the next discovery (not decided): fit at full res
 step), with a bounded look-back rather than wider windows; make conservation hard rather than
 priced (or price links so they cannot beat a conserving explanation); let rates vary over time or
 weight periods by how much they moved; add the missing forms; report "not enough variation" and
-suggest an experiment; run off the main thread (a worker, or the server).
+suggest an experiment; run off the main thread (done: the server, 4.7).
 
 ---
 
@@ -965,7 +1009,7 @@ suggest an experiment; run off the main thread (a worker, or the server).
   discovery panel still show equations in words, and the user later said "I can't actually see
   what the chosen equation was". Settled: lines first, words as a secondary detail. Not settled:
   how much text, and where.
-- **Discovery on the main thread** (6.5). Move it off.
+- **Discovery on the main thread** (6.5): moved off, to the server (4.7, 5.3).
 - **`app.js` is one 2,300-line file** with global state and string-built HTML. Two functions
   (`machineStat`) are defined twice. Some CSS rules are dead (`body.fitting`, `body.live-view`).
   None of this should be carried over; the behaviours in section 4 should.
@@ -1018,13 +1062,14 @@ variability as a measurement source was discussed but not addressed. Open.
 | `tests/test_sensor_pacing.py` | pytest | A run steps only on a new sample; waits when no sensor reads; stops when its source keeps failing. |
 | `tests/test_sd_examples.py` | pytest | There are at least 5 ground-truth examples; each shows only measured stocks and no flows; the truth is a valid model; 50× its default length stays finite, non-negative, bounded and conserved; a longer run begins with the shorter one; history prints what `measured()` returns; the live feed never runs out; the answer key is current. |
 | `tests/test_example_*.py` | pytest | Per older example: its simulator's mechanics and long runs, its feeds, and for some a discovery check. |
-| `tests/test_promlab.py`, `tests/test_prometheus_pipeline.py` | pytest | The fake Prometheus and the PromQL history; discovery of unexported consumers. |
-| `tests/sim.test.mjs` | `node --test tests/*.test.mjs` | Simulator: machines that don't run, conservation through ratios, splits, fair sharing, effects, co-flows, capacity per stock; fitting recovers a coefficient; discovery recovers the socks' structure with eras, reports a run that never moves as ambiguous, finds exactly the hidden flows when measured flows are subtracted, and splits a whole model; leverage ranks the limiting flow first. |
-| `tests/latent.test.mjs` | node | Hidden stocks (exp, erlang, pipe) found with their delay and size; with them off, outside flows; `discoverAll` links lagged mirrors; the hospital's lab found with about the true delay. |
+| `tests/test_promlab.py`, `tests/test_prometheus_pipeline.py` | pytest | The fake Prometheus and the PromQL history; discovery (the Python engine, with the measured flows known) finds the unexported consumers. |
+| `tests/test_discovery.py` | pytest | The matrix method's recovery on ground-truth data, known failures marked `xfail(strict=True)`. |
+| `tests/test_discovery_page.py` | pytest | Discovery as the page asks for it (api.py): with the measured flows known it finds what the model is missing (surprises, repair); from levels alone the lost socks follow the loose ones; the result is JSON-safe and has the fields the page reads; nothing known gives the engine's own result. |
+| `tests/test_server_discovery_research.py` | pytest | Discovery jobs: start without waiting, finish with the page's shape, a newer request supersedes an older one while the last result is kept, cancel, requests checked. The research endpoints: runs listed, summarised and fetched only by a listed name; topics from the index; the page is served. |
+| `tests/sim.test.mjs` | `node --test tests/*.mjs` | Simulator: machines that don't run, conservation through ratios, splits, fair sharing, effects, co-flows, capacity per stock; fitting recovers a coefficient; leverage ranks the limiting flow first. |
 | `tests/simplify.test.mjs` | node | Each simplify rule, and that goals and keep marks are respected. |
-| `tests/shop_discovery.test.mjs` | node | The shop's call graph as links, workers as flows, every drain; links from the first minutes; `screenLinks` direction and that slow stocks get none. |
 | `tests/example_*.test.mjs` | node | Teaching examples tell their story (bottleneck moves, effects slow milling, staff capacity). |
-| `tests/bench/` | `node --test tests/bench/` | Section 6.3. Not part of the regular suite. |
+| `tests/bench/` | `uv run python tests/bench/evaluate.py` | Section 6.3. Not part of the regular suite. |
 | `tests/bench/ui_arrange_keeps_discovery.py` | Python with Playwright and Chrome | Browser check: open `sd-saas` in Run, keep discovering at full speed, pause, note the flows, Arrange, check the flows are unchanged. |
 
 ### 8.2 What the rewrite should keep

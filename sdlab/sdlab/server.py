@@ -20,6 +20,9 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from .discovery.strategies import names as strategy_names
+from .discovery_jobs import DiscoveryJobs
+from .research import router as research_router
 from .runner import LiveRun, available_programs, program_path
 
 HERE = Path(__file__).parent
@@ -161,12 +164,14 @@ def validate(model: dict[str, Any]) -> list[str]:
 def create_app() -> FastAPI:
     adopt_old_copies()
     runs: dict[str, LiveRun] = {}
+    jobs = DiscoveryJobs()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         yield
         for r in runs.values():
             r.stop()
+        jobs.close()
 
     app = FastAPI(title="SD Lab", lifespan=lifespan)
 
@@ -214,6 +219,30 @@ def create_app() -> FastAPI:
     @app.get("/api/models/{model_id}/live/stocks/{stock_id}")
     def live_items(model_id: str, stock_id: str) -> dict:
         return live(model_id).stock_items(stock_id)
+
+    # Discovery runs as a background job per model (discovery_jobs.py): the page posts what it
+    # measured, then waits for the job; a newer request supersedes an older one.
+    @app.get("/api/discovery/strategies")
+    def discovery_strategies() -> dict:
+        return {"strategies": strategy_names(), "default": "matrix"}
+
+    @app.post("/api/models/{model_id}/discovery")
+    def start_discovery(model_id: str, body: dict[str, Any]) -> dict:
+        _path(model_id)
+        req = check_discovery_request(body)
+        return jobs.submit(model_id, req).view(with_result=False)
+
+    @app.get("/api/models/{model_id}/discovery")
+    async def discovery_status(model_id: str, job: int | None = None, wait: float = 0) -> dict:
+        _path(model_id)
+        if wait > 0:
+            return await jobs.wait(model_id, job, min(wait, 30.0))
+        return jobs.status(model_id, job)
+
+    @app.delete("/api/models/{model_id}/discovery")
+    def cancel_discovery(model_id: str) -> dict:
+        _path(model_id)
+        return jobs.cancel(model_id)
 
 
     @app.get("/api/models")
@@ -299,6 +328,7 @@ def create_app() -> FastAPI:
             gone = runs.pop(model_id)
             gone.stop()
             gone.programs.close()
+        jobs.forget(model_id)
         p.unlink()
         shutil.rmtree(home() / "runs" / model_id, ignore_errors=True)
         return {"ok": True}
@@ -311,16 +341,48 @@ def create_app() -> FastAPI:
         return Response(json.dumps(m, indent=2), media_type="application/json",
                         headers={"Content-Disposition": f'attachment; filename="{model_id}.json"'})
 
-    @app.get("/")
-    def index() -> HTMLResponse:
+    def page(file: str) -> HTMLResponse:
         # stamp each asset with its modification time so caches (Cloudflare's included) never serve a stale copy
-        html = (STATIC / "index.html").read_text()
-        for name in ("app.js", "sim.js", "discover.js", "simplify.js", "style.css"):
+        html = (STATIC / file).read_text()
+        for name in ("app.js", "sim.js", "simplify.js", "research.js", "style.css"):
             html = html.replace(f"/static/{name}", f"/static/{name}?v={int((STATIC / name).stat().st_mtime)}")
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
+    @app.get("/")
+    def index() -> HTMLResponse:
+        return page("index.html")
+
+    @app.get("/research")
+    def research_page() -> HTMLResponse:
+        return page("research.html")
+
+    app.include_router(research_router)
+
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
+
+
+def check_discovery_request(body: dict[str, Any]) -> dict[str, Any]:
+    """What the page sends for discovery, checked: the stocks in scope, the measured series, the
+    announced eras, the known change per stock and step, and a strategy by name."""
+    stocks, run = body.get("stocks"), body.get("run") or {}
+    t, levels = run.get("t"), run.get("levels")
+    if not isinstance(stocks, list) or not stocks or not all(isinstance(s, dict) and isinstance(s.get("id"), str) for s in stocks):
+        raise HTTPException(422, "stocks: a list of stocks with ids")
+    if not isinstance(t, list) or not isinstance(levels, dict):
+        raise HTTPException(422, "run: {t: [...], levels: {stock: [...]}}")
+    ids = {s["id"] for s in stocks}
+    if any(not isinstance(levels.get(i, []), list) or len(levels.get(i, [])) not in (0, len(t)) for i in ids):
+        raise HTTPException(422, "run.levels: one value per step for every stock in scope")
+    known = body.get("known") or {}
+    if not isinstance(known, dict) or any(not isinstance(v, list) or len(v) != len(t) for v in known.values()):
+        raise HTTPException(422, "known: one change per step for each stock")
+    strategy = body.get("strategy") or "matrix"
+    if strategy not in strategy_names():
+        raise HTTPException(422, f"no strategy {strategy!r}")
+    eras = [{"start": e["start"], "label": e.get("label")} for e in body.get("eras") or [] if isinstance(e, dict) and isinstance(e.get("start"), (int, float))]
+    return {"stocks": stocks, "run": {"t": t, "levels": {i: levels.get(i) or [0] * len(t) for i in ids}}, "eras": eras,
+            "known": {i: v for i, v in known.items() if i in ids}, "strategy": strategy}
 
 
 def _path(model_id: str, must_exist: bool = True) -> Path:
