@@ -20,12 +20,12 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Shared noise: telling moves, links and co-flows apart](shared-noise.md) | done (wave 1, benchmark v1 + co-flow engine) | needs a combination (with a fix for drain bias) |
 | [Gradient descent through a differentiable SD simulator](gradient-descent.md) | running (wave 2, benchmark v2) | - |
 | [Hidden stocks from delayed copies of levels](hidden-stocks.md) | done (wave 1, benchmark v1) | needs a combination |
-| [Numerical gradients and derivative-free optimisers](numerical-optimisation.md) | running (wave 2, benchmark v2) | - |
+| [Numerical gradients and derivative-free optimisers](numerical-optimisation.md) | done (wave 2, benchmark v2) | needs a combination (+1.0/+2.1, 20 of 62 with finite differences, 8x time; the optimiser is not the bottleneck) |
 | [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | done (wave 2, benchmark v2) | reject as a strategy; carry two pieces forward |
 | [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Searching SD structures: greedy, beam search, MCTS, genetic algorithms](structure-search.md) | running (wave 2, benchmark v2) | - |
 | [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | done (wave 2, benchmark v2) | needs a combination (+19 points; judge blocker) |
-| [A procedural generator of ground-truth SD models](procedural-generator.md) | built (I2) | the main line does not generalise: worse than no change in 73% of generated runs |
+| [A procedural generator of ground-truth SD models](procedural-generator.md) | done (I2; merged) | main line on 300 generated models: -49% mean skill@20, 22 of 600 runs meet the goal (examples: 29.6%) |
 | [Amortised / simulation-based inference of structure](simulation-based-inference.md) | idea (not started) | - |
 | [Bayesian structure learning and bootstrap ensembles](bayesian-structure.md) | idea (not started) | - |
 | [Causal discovery on time series (PCMCI+, Granger)](causal-discovery.md) | idea (not started) | - |
