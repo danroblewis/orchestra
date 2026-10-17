@@ -1,6 +1,12 @@
 # Partial-model simulation per row
 
-**Status:** idea (not started)
+**Status:** built as part of [inflow attribution](inflow-attribution.md) (branch `exp/inflow-attribution`):
+`sdlab/discovery/partial.py`, one row simulated alone with the other levels fed in as measured, robust
+(median) error against holding the level. Result there: a poor *flag* (a row with a collapsed drain
+still tracks its stock alone, its own inflow pieces replaying the data; a correct linear row fails
+exactly where a co-flow caps it) but a useful *acceptance check* for a refitted row (it stopped
+degenerate all-zero refits that cost sd-ci long -39, sd-clinic-doses long -720, sd-ev-fleet default
+-35 points). The flag that works is counting noise (residual variance against implied throughput).
 
 ## Why
 The SD field's calibration practice tests each piece of a model by driving it with the measured values

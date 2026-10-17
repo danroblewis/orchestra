@@ -188,7 +188,15 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
             W = sum(p_["w"] for p_ in vals)
             mean = sum(p_["v"] * p_["w"] for p_ in vals) / W
             sd = math.sqrt(sum(p_["w"] * (p_["v"] - mean) ** 2 for p_ in vals) / W)
-            if (pick is constant or abs(mean) > 0.5 * sd) and pieces["sc"] < pick["sc"]:
+            # "clearly one way": by default against the spread of the pieces' values (a few short,
+            # large pieces - a stock run dry, a burst - can veto a row whose pieces BIC prefers by
+            # far); opts["pieces_gate"] = "noise" tests the mean against its own standard error
+            # from the steps' noise instead (2 x sqrt(rss / T) / sqrt(T))
+            if opts.get("pieces_gate") == "noise":
+                clear = abs(mean) > 2 * math.sqrt(pieces["f"].rss / T) / math.sqrt(T)
+            else:
+                clear = abs(mean) > 0.5 * sd
+            if (pick is constant or clear) and pieces["sc"] < pick["sc"]:
                 pick = pieces
         # each configuration's numbers: the shared one plus the configuration's own
         beta = pick["f"].beta

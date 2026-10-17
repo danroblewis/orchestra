@@ -52,7 +52,8 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [A diagnose-and-expand loop driven by residual signatures](residual-diagnostics.md) | idea (not started) | - |
 | [Outside-input changes estimated on innovations, jointly with the dynamics](inflow-innovations.md) | idea (not started) | - |
 | [Hidden stocks by constrained deconvolution and order counting](delay-deconvolution.md) | idea (not started) | - |
-| [Partial-model simulation per row](partial-model-simulation.md) | idea (not started) | - |
+| [Partial-model simulation per row](partial-model-simulation.md) | built in inflow attribution | an acceptance check, not a flag |
+| [Inflow attribution: counting noise, drains on stretches, inflow with the drain held](inflow-attribution.md) | done (benchmark v2.1; exp/inflow-attribution) | needs a combination: +3.8 / +7.0 points (p = 0.19 / 0.06), bakery -1170% -> 55%; matrix pieces-gate flaw confirmed, neutral alone |
 | [Floors and caps as censoring, offered only where the data reach them](censored-floors.md) | idea (not started) | - |
 | [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | done (wave 3, benchmark v2.1) | reject as the main judge; keep judges.py; judge additions with/without, fed the base model's inflow |
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |

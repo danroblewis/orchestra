@@ -26,6 +26,54 @@ successes.
 
 ## Log
 
+### 2026-10-17: inflow attribution: counting noise, drains on stretches, inflow with the drain held - NEEDS A COMBINATION (branch `exp/inflow-attribution`)
+**Hypothesis.** Deciding which stocks receive an outside inflow, and estimating drains so that they
+do not absorb it, is the main lever. The v2.1 runaways run away only under the truth's inflows. In
+sd-bakery default the orders row has no inflow and a drain of 0.0046, against 40 an hour from outside
+baked at 0.5 x orders. Details are in [research/inflow-attribution.md](research/inflow-attribution.md).
+
+**Built.**
+- `counting.py`: a row's robust residual variance over the gross throughput its terms imply. It is ~1
+  when the row is right, > 4 when flows are missing, < 0.25 when spurious.
+- `stretches.py`: numbers as medians of fits within 25-step stretches, with stretches that break the
+  row left out and the own number bias-corrected.
+- `partial.py`: one row simulated alone.
+- `attribution.py`: flagged rows are refitted, and the inflow is recovered with the drain held. A
+  refit is accepted when it is unflagged and its partial error is no worse.
+- Strategy `inflow_attribution`: every candidate repaired, then judged. Ablations `_both` and
+  `_refine`.
+
+**Mechanism test.** `tests/test_strategy_inflow_attribution.py`, 6 tests. On a synthetic bakery, the
+main line's orders row has drain 0.004 and no inflow (skill@20 -1128%). z > 20 flags it. Stretches
+give a drain of 0.49 (truth 0.5) and an inflow of 68 on average (truth ~42 plus the pile-ups). The
+strategy's skill@20 is +54%. Control: a right row is untouched.
+
+**Bench** (`--jobs 3 --seeds 2`, against v2.1 29.6% / 29.3% / 12):
+- `inflow_attribution`: **33.4% (+3.8) / 36.3% (+7.0) / 12**, fresh 32.5% / 36.5%. Seeds' mean
+  skill@20 is 29.3% against 25.2% for the main line.
+- Paired: @20 4 better and 1 worse (Wilcoxon p = 0.19); @100 5 better and 0 worse (p = 0.0625).
+- Movers: sd-bakery default -1170 -> 54.8 and long 18.8 -> 52.6; sd-fishery long -18.5 -> 40.1 and
+  default 2.8 -> 16.7; sd-cloud-credits default -859 -> -152; sd-print-shop default -529 -> -358;
+  sd-support-tiers default -548 -> -419; sd-moderation default -67 -> -93 (@100 -172 -> -70).
+- Failure classes are unchanged (44 / 1 / 5). Accepting any z improvement (the first cut) was
+  +3.6 / +7.6 with 3 more losses, from degenerate all-zero refits.
+- `_refine`: +3.0 / +3.5.
+- `matrix` zero-delta check: 3 of 3 the same.
+
+**Verdict.** A clear mechanism and the largest gains on the runaways, but it is not significant alone
+and no run crosses the goal. Combine it with conservation re-run on the repaired rows, with
+bias-corrected drains everywhere, and with the pieces gate (below).
+
+**Separately, the matrix pieces gate (a lead from row crossover).**
+- The traced flaw: the last form choice vetoes changing inflow pieces when their mean is under half
+  their spread. On sd-bakery orders, pieces beat "none" by 1000 BIC but are refused (mean 5.75,
+  spread 15.9, inflated by the pile-up pieces). The drain is then refit with no intercept (0.0046).
+- Option `pieces_gate="noise"` (mean against its standard error; default unchanged), strategy
+  `pieces_gate`: sd-bakery default -1170 -> -243, cloud-credits default +192, support-tiers long
+  +22.6, support-tiers default -4.1.
+- Headline: 30.0% (+0.4) / 30.0% (+0.7), Wilcoxon p = 0.81. Genuine but neutral alone: the drain
+  stays biased by the 5-step pieces.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
