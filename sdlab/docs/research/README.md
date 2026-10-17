@@ -24,7 +24,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | done (wave 2, benchmark v2) | reject as a strategy; carry two pieces forward |
 | [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Searching SD structures: greedy, beam search, MCTS, genetic algorithms](structure-search.md) | running (wave 2, benchmark v2) | - |
-| [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | done (wave 2, benchmark v2) | needs a combination (+19 points; judge blocker) |
+| [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | done (wave 2; re-measured on v2.1) | best single mechanism on v2.1: 47.2% / 42.6% (+17.6/+13.3, p=0.002); needs a combination |
 | [A procedural generator of ground-truth SD models](procedural-generator.md) | done (I2; merged) | main line on 300 generated models: -49% mean skill@20, 22 of 600 runs meet the goal (examples: 29.6%) |
 | [Amortised / simulation-based inference of structure](simulation-based-inference.md) | idea (not started) | - |
 | [Bayesian structure learning and bootstrap ensembles](bayesian-structure.md) | idea (not started) | - |
@@ -73,3 +73,4 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Announced eras as instruments for drains biased by inflow pieces](era-instruments.md) | idea (not started, wave 4) | - |
 | [Evolving discovery code against generated models](evolve-discovery.md) | idea (not started, wave 4) | - |
 | [Inflow attribution: which stocks get outside inflow, and unbiased drains](inflow-attribution.md) | done (wave 4, benchmark v2.1) | needs a combination (+3.8/+7.0, not significant alone; found a genuine pieces-gate bug) |
+| [Symbolic effects with an addition judge](symbolic-addition-judge.md) | done (combination, benchmark v2.1) | anchor rule rejected; plain symbolic on v2.1 is the best single mechanism (47.2%/42.6%, p=0.002); safe rule keeps a third of it with no losses |
