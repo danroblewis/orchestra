@@ -76,6 +76,14 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
+    if opts.get("keep") is not None:
+        # only these steps are fitted (the others, e.g. where a used stock ran dry, are left out);
+        # an outside inflow's piece spans the steps left out between its kept steps
+        keep = np.asarray(opts["keep"], dtype=int)
+        if len(keep) < 20:
+            return {"flows": [], "note": "Too few steps."}
+        prev, dy, cfg, T = prev[:, keep], dy[:, keep], cfg[keep], len(keep)
+        at = lambda k: t[keep[k] + 1]  # noqa: E731
     L = len(labels)
     final = {s["id"] for s in stocks if s.get("final")}
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
