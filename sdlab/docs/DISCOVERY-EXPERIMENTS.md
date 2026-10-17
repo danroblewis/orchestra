@@ -26,6 +26,31 @@ successes.
 
 ## Log
 
+### 2026-10-17: starved-coflows (wave 4, rank 1): co-flows fitted where the used stock did not run dry - ADOPT AS CANDIDATES (branch `exp/starved-coflows`, `054cb95`)
+Hypothesis: where a used stock C runs dry the engine cuts its users' flow, the source piles up, and a
+row fitted through both regimes gets a fraction of the drain (sd-bakery default: orders drain 0.0046
+and no inflow at all, so the true 40 an hour never leaves). Strategy `starved_coflows`
+(`discovery/starvation.py`, `matrix` option `keep`, default unchanged): users of C measured where C is
+plentiful, steps where C held less than 1.5 x their demand left out, cross terms "C drains faster when
+A is high" (A of another unit) read as `uses` on A's move if A's residual on the dry steps is positive,
+outside inflows re-measured on every step with the capped model, candidates judged with the main line's.
+Mechanism test (synthetic bakery): the mask covers all 150 capped steps (163 left out); masked rows give
+drain 0.501 and per 0.497 (constant inflow); the co-flow candidates alone grade 0.86-0.90 vs the main
+line below 0; controls (flour never dry; a flour outflow that does not cap the bake) get no `uses`.
+Through the full strategy the judge keeps the main line on the synthetic case (its pieces replay the
+pile-ups), and chance inflow pieces pull the drain to 0.57.
+Bench vs v2.1 (29.6% / 29.3%, fresh 28.9% / 29.7%, 12 of 62): **final v3 40.5% / 44.3%, fresh 39.4% /
+44.2%, 14 of 62 (fresh 14)**, 3.2x run time. bakery -1170% -> 95.5% (default), 18.8% -> 98.1% (long);
+cloud-credits -859% -> 14.5%, -16.5% -> 42.0%; print-shop default -529% -> 28.1%; restaurant @100
+-14% -> 94%, -75% -> 91%; ev-fleet +16 / +20; clinic-doses default -602% -> -235%. Losses where the
+judge picks a spurious co-flow: manufacturing long 87% -> 40%, moderation default -67% -> -422%.
+Attempts: v1 (no unit rule) 40.0% / 45.6% (ev-fleet: ready -> road "uses" queue, -91); v2 (+ unit rule)
+42.6% / 49.3%, 4.4x time; v3 (+ dry on at most half the steps) 40.5% / 44.3% (loses fishery long's
+gain from a wrong used stock, 3.2x time); v4 per from the dry steps 37.6% / 43.3% (inherits inflow
+pieces' errors); v5 co-flow taken over the judge 37.7% / 39.0%, 12 of 62 (hospital, webshop collapse).
+First mask tried at C below 10% of its median: demand measured 10x too low (the steps right after a
+refill are still capped). Details: [research/starved-coflows.md](research/starved-coflows.md).
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

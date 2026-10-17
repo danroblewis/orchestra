@@ -57,7 +57,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | idea (not started) | - |
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |
-| [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |
+| [Co-flows found where the used stock runs dry](starved-coflows.md) | done (wave 4, benchmark v2) | adopt as a candidate family (+10.9 / +15.0, fresh +10.5 / +14.5); judge-fooled losses need a piece-proof judge |
 | [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | idea (not started, wave 4) | - |
 | [Outside inflows as a repeating profile](periodic-inflows.md) | idea (not started, wave 4) | - |
 | [Assembling the model row by row from the candidates](row-crossover.md) | idea (not started, wave 4) | - |
