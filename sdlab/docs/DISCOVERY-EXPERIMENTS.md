@@ -26,6 +26,37 @@ successes.
 
 ## Log
 
+### 2026-10-17: impulse-inputs - pulses and short bursts as their own kind of input (wave 4) - ADOPT CANDIDATE
+Branch `exp/impulse-inputs`; strategy `impulses`, module `discovery/pulses.py`; topic
+[research/impulse-inputs.md](research/impulse-inputs.md). **Hypothesis:** 1-step deliveries and 3-6
+step bursts cannot be pieces (minimum 5 steps), so drains absorb them (clinic-doses: doses drain 0.41,
+truth 0.02). Found jointly with each row's numbers (Chen-Liu: largest standardised 1-6 step window
+above sqrt(2 log 6T) robust SDs, level shifts left to PELT, pulse steps masked from the row's fit) and
+handed to the main line as known changes, the drains come out right. **Mechanism test**
+(`tests/test_strategy_impulses.py`: 450 doses every 7th step, expire 0.02, used at 0.2 x waiting):
+matrix drains doses 0.33 with links, skill@20 -1985%; impulses finds 142 of 142 deliveries, 0 false,
+drain 0.0200, skill@20 99.3% / @100 98.4%. Controls: no pulses in counting noise (2000 steps) or at a
+level shift (which stays a piece; same model as matrix). **Bench vs v2.1** (29.6% / 29.3%, fresh
+28.9% / 29.7%, 12 of 62, 586 s):
+- v1 (own-level start, joint masked rows, gains and losses): 33.2% / 34.0%, fresh 32.4% / 34.4%, 14;
+  2113 s. clinic-doses long -347% -> -1007% (lone losses replay the fridge running dry).
+- v2 (gains only): 29.8% / 27.6%, 11. university collapses (enrolment bursts need both ends).
+- v3 (a loss kept only with a gain in a same-unit stock in the same step): 35.5% / 36.4%, fresh 34.4% /
+  36.5%, 11; university long runs away (-110514%: rooms' co-flow loss dropped).
+- **v4 (a loss kept with a gain in any other stock): 37.0% / 37.0%, fresh 36.2% / 37.1%, 14 of 62
+  meet the goal (15 on fresh runs); 1465 s.** clinic-doses long -347/-208 -> 91/90, university
+  75/88 -> 97/96 and 76/94 -> 99/100, kanban 61/63 -> 76/96 and 57/60 -> 76/99, emergency default
+  5/69 -> 68/88, support-tiers long 42/-13 -> 65/29, moderation long -99/-91 -> 25/-17; worse:
+  moderation default -67/-172 -> -358/-52, hospital long 92/86 -> 86/69, learning-curve default -72 ->
+  -81. matrix unchanged (zero deltas on saas, eras, pipeline default).
+- A first probe detected around a running median of each change: fast stocks turn an inflow change
+  into a transient that looks like a burst (moderation's day/night screening: 140 false pulses).
+  Dropped for the own-level joint start. A robust scale alone gave 432 "pulses" of +-1 in a stock
+  that changes by 0 most steps: whole-number stocks get a counting-noise floor.
+**Verdict:** adopt candidate, combined with the behaviour gate and the piece-proof judge: pulses are
+replayed inputs the judge rewards like pieces (university's enrolment burst, an internal rate change,
+becomes paired pulses), and several moves are the judge picking another variant.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
