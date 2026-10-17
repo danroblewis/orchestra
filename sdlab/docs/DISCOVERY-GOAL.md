@@ -31,7 +31,7 @@ log with the evidence), never to make a number look better. Add tests freely.
 
 ## What you must not do
 
-- **Never change a simulation.** `sdlab/sdtruth.py`, the equation functions in `sdlab/runner.py`
+- **Never change a simulation** (one authorised revision so far: benchmark v2, below). `sdlab/sdtruth.py`, the equation functions in `sdlab/runner.py`
   (`desired_rate`, `multiplier`, `effect_value`), and every file of every `sdlab/examples/sd-*`
   example are fixed: discovery works against them. `tests/test_simulations_frozen.py` checks their
   fingerprints and must keep passing; never re-record them.
@@ -68,7 +68,19 @@ Parts 62.6%, mean skill@20 15.5%, mean skill@100 17.9% (each run clipped at -100
 
 Compare with `--baseline start21`.
 
-## Where it stands (baseline "python", 2026-10-17)
+## Benchmark v2 (baseline "v2", 2026-10-17)
+
+The ground truth was revised once, at the user's request: the engine gained co-flows (`uses`; every
+existing example's data unchanged by that alone), co-flows were added to 15 examples (the six
+simplest kept as controls: pipeline, hidden-chain, eras, population, reservoirs, saas), and ten
+examples were added, five built around co-flows and five around effects (a stock's level multiplying
+a flow's rate through a linear or table curve). Fingerprints were re-recorded for that revision; the
+rule against changing simulations holds again from here on. The goal now covers all 31 examples
+(62 runs). **Main line on v2: 17 of 62 runs meet the goal; mean skill@20 31.6%, skill@100 32.1%,
+parts 55.4%.** Compare with `--baseline v2`; results on the original examples remain comparable
+through the controls.
+
+## Where it stood on benchmark v1 (baseline "python", 2026-10-17)
 
 Discovery ported to Python (`sdlab/discovery/`), with the same results as the JavaScript it
 replaced: **18 of 42 runs meet the goal; mean skill@20 70.8%, skill@100 68.9%, parts 59.9%.** Short
