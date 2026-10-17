@@ -19,8 +19,8 @@ the *coefficients* and hands them to the existing per-configuration columns
 ([regime-models](regime-models.md) proposed switching models for the outside inflow instead).
 
 ## What was done
-Branch `exp/latent-eras` (from `3197240`), worktree `.claude/worktrees/agent-a2925152de5202a4f`; commit
-in the log entry below.
+Branch `exp/latent-eras` (from `3197240`), commit `2374b80`, worktree
+`.claude/worktrees/agent-a2925152de5202a4f`.
 
 - `sdlab/discovery/regimes.py` (new): per stock row, a K-regime Markov-switching regression of the
   row's change on the constant and every level the row may use (Hamilton filter and Kim smoother in
