@@ -19,7 +19,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Gradient descent through a differentiable SD simulator](gradient-descent.md) | running (wave 2, benchmark v2) | - |
 | [Hidden stocks from delayed copies of levels](hidden-stocks.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Numerical gradients and derivative-free optimisers](numerical-optimisation.md) | running (wave 2, benchmark v2) | - |
-| [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | running (wave 2, benchmark v2) | - |
+| [PySINDy with SD-shaped libraries and conservation constraints](pysindy.md) | done (wave 2, benchmark v2) | reject as a strategy; carry two pieces forward |
 | [Rates floored at zero and outflows capped by what a stock holds](floors-and-caps.md) | done (wave 1, benchmark v1) | needs a combination |
 | [Searching SD structures: greedy, beam search, MCTS, genetic algorithms](structure-search.md) | running (wave 2, benchmark v2) | - |
 | [Symbolic regression for rate equations and effect curves](symbolic-regression.md) | running (wave 2, benchmark v2) | - |
