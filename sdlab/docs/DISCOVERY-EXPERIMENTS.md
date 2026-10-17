@@ -26,6 +26,83 @@ successes.
 
 ## Log
 
+### 2026-10-17: shared noise tells moves, links and co-flows apart (`exp/shared-noise`) - NEEDS A COMBINATION
+**Hypothesis.** A flow's amount each step is one Poisson draw that every stock it touches sees, so
+the rows' residuals (after the levels and the inflow's pieces) carry structure the averages cannot:
+a move A -> B makes cov(res_A, res_B) = -Var(draw) and counts in both variances; a link A => B is
+drawn on its own (no covariance, A's variance does not see it); a co-flow (A -> B uses `per` of C)
+makes cov(res_C, res_B) = per x cov(res_A, res_B). Reading the matrix's gains with that should
+recover structure the averages cannot, and improve skill where the wrong reading changes behaviour
+(sd-population births read as a move; links vs moves in sd-services).
+**Mechanism** (`sdlab/discovery/shared_noise.py`, strategy `shared_noise`, opt-in `shared_noise`
+switch in `matrix.identify_one`; `matrix` unchanged: zero deltas on sd-saas/sd-eras/sd-pipeline).
+Every same-unit gain B[s][a] is a candidate move or link; each reading predicts the whole residual
+covariance matrix (dispersion x sum over flows of mean amount x v v', the source's drain beyond its
+moves going outside), fitted to the observed covariances weighted by their own sampling errors;
+the best reading is found by flips from all-moves and all-links, and a gain is decided only where
+flipping it costs more than z^2 = 9. A decided link takes nothing from the source in conservation
+and in `read_flows`, and a stock with such a link has its drain lowered only by the refit test (not
+the 30% slack: in the synthetic population the slack lowered the adults' drain to the retirements
+and the re-measured inflow went negative, skill 99% -> -62%). Co-flows: a "C drains faster when A is
+high" term becomes `uses: [{stock: C, per}]` on A's flow when cov(C, B) and cov(C, A) are significant
+and the noise ratio (per = cov(C,B)/cov(A,B)) agrees with the averages' (q/k) and with cov(C,A)
+within a factor 2; per is the noise ratio (less biased than q/k, which carries A's drain bias).
+Simulation and grading of `uses` are the main line's (commit 5d5fd8d); this branch adds none.
+**Mechanism tests** (`tests/test_strategy_shared_noise.py`, all pass): (a) synth, a -> b move 0.1,
+a => c link 0.1, a -> outside 0.1: `matrix` reads a -> c as a move (a's drain pays for it);
+`shared_noise` reads move a -> b, link a => c, a -> outside 0.10, skill 99.5%. (b) synth population
+(births 0.03 x adults as a link, growing up 0.06, retiring 0.025, adult deaths 0.01): `matrix` reads
+births as a move adults -> children (0.029; skill 99.1% because the numbers compensate);
+`shared_noise` reads the link, the growing up and retiring as moves, skill 98.8%. (c) co-flow
+series made by hand with numpy (one Poisson draw leaves a, arrives in b, takes 0.5 x itself from c),
+seeds 1-3: `matrix` reads "c drains faster when a is high"; `shared_noise` proposes `uses c` on
+a -> b with per 0.49-0.56; a control where c drains with a's level on its own draws gets no `uses`;
+a true co-flow from the ground-truth engine (synth `uses`) is found with per within 0.08, skill > 97%.
+**Bench** (full suite, both lengths, `--baseline python`: mean skill@20 70.8%, skill@100 68.9%,
+parts 59.9%, 18 of 42 meet the goal):
+
+| attempt | parts | skill@20 | skill@100 | meet goal |
+|---|---|---|---|---|
+| v1 joint reading, per = q/k, co-flow on cov(C,B) only | 63.4% (+3.5) | 70.6% (-0.2) | 68.9% (0) | 17 |
+| v2 + decided links keep their source's drain (no slack lowering) | 63.4% (+3.5) | 70.5% (-0.3) | 69.1% (+0.2) | 17 |
+| v3 + flips must beat the best reading's misfit scale, reverse-direction swaps, one-sided variances | 62.0% (+2.1) | 69.9% (-0.9) | 68.8% (-0.1) | 16 |
+| v4 v3 + co-flow must also share the draw with its source (cov(C,A)) | 62.3% (+2.4) | 70.4% (-0.5) | 68.7% (-0.2) | 17 |
+| **v5 (kept as the strategy)** v2 + the strict co-flow test | 63.4% (+3.5) | 70.5% (-0.4) | 68.9% (-0.1) | 17 |
+
+v5 moved by more than 2 points: sd-services default skill@20 97.1% -> 79.8% (@5 -27, @100 -5.7;
+parts 12 -> 15 of 16), sd-services long 99.1% -> 96.8% (parts 10 -> 13), sd-recycling long 86.4% ->
+89.8% (@5 +10.8; parts +1), sd-ci long @100 +4.3; parts also +1 sd-hidden-chain (both), +2/+3
+sd-university, -1 sd-restaurant default. 14 relationships gained, 1 lost (+3.5 points of parts).
+(v1/v2's university long proposed a spurious co-flow (admitted -> applicants uses year1) that the
+cov(C,A) test removes; v2's sd-kanban long +2.3/+10.7 came with its looser co-flow test and is gone
+in v5.)
+**What the data shows.** The covariance reading is right where the rows are right: sd-services
+reads every API call as a link and the queue -> workers as a move (both lengths), the pipeline,
+hospital, kanban, saas and support-tiers moves are confirmed, dispersion ~0.9-1.0 (counting noise).
+But behaviour gets worse in sd-services: with the links read right, the frontend keeps its own row's
+drain, 0.893 (truth 0.80, biased by its unannounced inflow changes); the matrix method's wrong
+reading "frontend -> api move" set the drain by conservation to the API's gain, 0.79, which is right
+only because the truth's link rate equals its drain rate. sd-population is not solved: in the long
+run the adults' row is misfit (151 inflow pieces, a spurious 0.065 x elderly), births (0.022 x
+392k = 8.6k a year) and growing up (0.056 x 154k = 8.5k) have the same variance, so the shared
+covariance of the pair cannot say which way the one move runs; v1-v2 read it backwards (no behaviour
+change: the judge's chosen candidate is the same), v3's swap test leaves it undecided. At 300 steps
+(default) the population rows are almost empty, so there is nothing to read.
+**Verdict: needs a combination, not adopted alone.** It recovers structure (+3.5 points of parts,
+mostly links read as links) but does not move skill: the structure it fixes was
+behaviourally equivalent, and in sd-services the right structure exposes a biased drain that the
+wrong one masked. Worth combining with a better outside-inflow / drain estimate (the change-price or
+floors experiments), after which the right reading should no longer cost behaviour.
+Other observations, not pursued: (1) the residual covariance gives each flow's variance, i.e. its
+mean under counting noise, so it can estimate a drain independently of the inflow pieces that bias
+it (Var(res_frontend) = inflow + drain x level); (2) the third co-moment (Poisson skewness = mean)
+gives a move's direction for small flows; (3) the per-step product res_A x res_B regressed on levels
+separates a move driven by A from one driven by B where levels are not collinear; (4) what limits
+sd-population is the rows, not the reading: a rows fit that uses conservation inside the
+regression (joint, not per row) would remove the adults row's spurious terms.
+**Main-line note**: on the sdlab tip (5d5fd8d) `tests/test_simulations_frozen.py` fails
+(`sdlab/sdtruth.py` changed by the co-flow commit, fingerprint not re-recorded); not touched here.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the
