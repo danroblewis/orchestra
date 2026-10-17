@@ -21,7 +21,7 @@ and a level shift apart by detecting them jointly with the model's coefficients.
 ranked this sixth, and it is not yet in any topic.
 
 ## What was done
-Branch `exp/impulse-inputs` (worktree `.claude/worktrees/agent-af30dd0135be12792`), commit in the
+Branch `exp/impulse-inputs`, commit `0869f84` (worktree `.claude/worktrees/agent-af30dd0135be12792`); see the
 experiment log. Modules: `sdlab/discovery/pulses.py` (building blocks), strategy
 `sdlab/discovery/strategies/impulses.py`. Nothing shared was changed: the strategy hands the pulses to
 the main line through the existing `opts["known"]` (known changes are taken out of the rows before
