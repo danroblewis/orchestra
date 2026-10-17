@@ -3,6 +3,8 @@
 **Start here: [PLAYBOOK.md](PLAYBOOK.md)**, the synthesis of the literature and our experiments: the procedure the research supports for discerning an SD model from data, mapped onto our pipeline, with a ranked experiment plan and checked citations.
 Literature reports it draws on: [system identification](literature/system-identification.md), [equation discovery](literature/equation-discovery.md), [signals and time series](literature/signals-and-time-series.md), [the System Dynamics field](literature/system-dynamics-field.md), [compartmental analogues](literature/compartmental-analogues.md), [research process](literature/research-process.md); and the [tools survey](SD-TOOLS-AND-DISCOVERY.md).
 
+Wave 4 candidates, ranked, with ready-to-run briefs and every brainstormed idea: [IDEAS-WAVE4.md](IDEAS-WAVE4.md).
+
 One document per research topic: what was asked, what was done (branch and commit), results, verdict and open ideas.
 The step-by-step history of the main line is in [../DISCOVERY-EXPERIMENTS.md](../DISCOVERY-EXPERIMENTS.md); how experiments are run is in [../DISCOVERY-LOOP.md](../DISCOVERY-LOOP.md).
 When an experiment reports, update its topic document (status, results, verdict, open ideas) and this index.
@@ -55,3 +57,18 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Inflow-conditioned held-out judge and era hold-out](inflow-conditioned-judge.md) | idea (not started) | - |
 | [Behaviour-mode fingerprints as structure priors](behaviour-fingerprints.md) | idea (not started) | - |
 | [A declarative library of SD processes](process-library.md) | idea (not started) | - |
+| [Co-flows found where the used stock runs dry](starved-coflows.md) | idea (not started, wave 4) | - |
+| [Unannounced eras: recurring regimes found in the data, then fitted as eras](latent-eras.md) | idea (not started, wave 4) | - |
+| [Outside inflows as a repeating profile](periodic-inflows.md) | idea (not started, wave 4) | - |
+| [Assembling the model row by row from the candidates](row-crossover.md) | idea (not started, wave 4) | - |
+| [Pulses: one-step arrivals and short bursts as their own kind of input](impulse-inputs.md) | idea (not started, wave 4) | - |
+| [Hidden stocks reconstructed from a unit's mass balance](mass-balance-hidden.md) | idea (not started, wave 4) | - |
+| [Moves paced by a third stock: reading the matrix as stoichiometry times rates](paced-moves.md) | idea (not started, wave 4) | - |
+| [Drains measured where nothing flows in (recession analysis)](recession-drains.md) | idea (not started, wave 4) | - |
+| [An LLM structural critic in the loop](llm-critic.md) | idea (not started, wave 4) | - |
+| [Judge noise: tied candidates told apart by simplicity](judge-ties.md) | idea (not started, wave 4) | - |
+| [Closed subsystems: totals that never change](conserved-totals.md) | idea (not started, wave 4) | - |
+| [Do no harm: falling back to persistence where the model is known to be worse](persistence-fallback.md) | idea (not started, wave 4) | - |
+| [Rows fitted with their own noise model (AR residuals)](ar-rows.md) | idea (not started, wave 4) | - |
+| [Announced eras as instruments for drains biased by inflow pieces](era-instruments.md) | idea (not started, wave 4) | - |
+| [Evolving discovery code against generated models](evolve-discovery.md) | idea (not started, wave 4) | - |
