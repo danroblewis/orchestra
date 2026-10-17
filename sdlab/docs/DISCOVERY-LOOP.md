@@ -28,6 +28,28 @@ stepping the model with SD Lab's own equations, with counting noise and changes 
 The headline is mean skill@20 over every example at both lengths (each clipped at -100%), with
 skill@100 and the number of runs meeting the goal next to it.
 
+Under the headline, the bench says *why* runs miss the goal ([bench
+instrumentation](research/bench-instrumentation.md)):
+
+- **every candidate graded**: `identify()` tries 8 or 16 variants and its judge keeps one; the bench
+  grades each (`--no-candidates` skips it; it costs a few percent). Per run: the **best candidate's**
+  skill@20 / @100 and the **judge's rank** of it (1 = picked). Headline: the best candidate's mean
+  skill and how often the judge picked it.
+- **failure class** per run missing the goal: *not representable* (no candidate meets it, and the
+  judge rates the true model clearly better than the one chosen: a coverage gap, a new generator
+  could fix it), *not chosen* (a candidate meets it, the judge kept another: a selection gap),
+  *not supported* (no candidate meets it, and the judge rates even the true model no clearly better
+  than the one chosen: more data, a better judge or a prior is needed). Counted in the headline.
+- **noise**: `--seeds K` discovers on K more runs of each example (other random draws) and reports
+  mean ± spread per run and of the headline; with `--baseline` the bench prints a **paired** sign
+  test and Wilcoxon signed-rank test over the runs in both (`tests/bench/compare.py A B` does it for
+  two saved runs). Adopt a change when the paired test says it is more than noise, not on the
+  headline alone.
+- **leakage**: the bench hands discovery only the page's inputs (`page_inputs`: the measured stocks'
+  id, name, unit, final, group; their levels; announced eras), and `tests/test_bench_instrumentation.py`
+  checks that discovery finds the same model with the truth files unreadable and the stocks renamed
+  to random strings.
+
 ## Why experiments, not one long refinement
 
 A method refined change by change, each kept because the bench went up, becomes a pile of rules that
@@ -96,6 +118,8 @@ uv run python tests/bench/evaluate.py --baseline python         # compared with 
 uv run python tests/bench/evaluate.py --examples sd-orders --lengths default
 uv run python tests/bench/evaluate.py --strategy <name>         # a strategy in sdlab/discovery/strategies
 uv run python tests/bench/evaluate.py --goal                    # exit 0 only when the goal is met
+uv run python tests/bench/evaluate.py --seeds 2                 # also 2 more seeds: mean and spread
+uv run python tests/bench/compare.py v2.1 latest                # paired sign / Wilcoxon tests between two runs
 uv run python tests/bench/datasets.py sd-saas --long            # path to a cached dataset
 ```
 
@@ -110,8 +134,8 @@ uv run python tests/bench/datasets.py sd-saas --long            # path to a cach
 | The page's discovery | `sdlab/discovery/api.py` (`discover(request)`: what the page sends, `unexplained`, JSON-safe results), run as background jobs by `sdlab/discovery_jobs.py` behind `POST/GET/DELETE /api/models/{id}/discovery` (`sdlab/server.py`); the page's side is `runDiscovery` in `sdlab/static/app.js` |
 | Research view | `/research` (`sdlab/static/research.html`, `research.js`; endpoints in `sdlab/research.py`): the topics in `docs/research/` and the saved bench runs |
 | Synthetic ground truth | `tests/synth.py` |
-| Grading | `tests/bench/grade.py` (`grade`, `same_behaviour`) |
-| Evaluation CLI | `tests/bench/evaluate.py` |
+| Grading | `tests/bench/grade.py` (`grade`, `same_behaviour`); `tests/bench/candidates.py` (every candidate, judge rank, failure classes); `tests/bench/seeds.py` |
+| Evaluation CLI | `tests/bench/evaluate.py`; `tests/bench/compare.py` (paired tests, `sdlab/bench_stats.py`) |
 | Datasets | `tests/bench/datasets.py` (cache: `~/.cache/sdlab/bench`) |
 | Ground truth | `sdlab/examples/sd-*/truth.model.json`, answer keys in `truth.json` |
 | Experiment log | `docs/DISCOVERY-EXPERIMENTS.md` |
