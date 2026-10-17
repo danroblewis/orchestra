@@ -27,6 +27,7 @@ accident; baselines (--save NAME, --baseline NAME) are shared by every worktree.
 
 from __future__ import annotations
 
+import single_thread  # noqa: F401  (first: one numpy thread per worker)
 import argparse
 import json
 import os
