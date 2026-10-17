@@ -26,6 +26,75 @@ successes.
 
 ## Log
 
+### 2026-10-17: choose among candidates on data they were not fitted on (exp/held-out-judge) - REJECTED
+**Hypothesis**: identify() keeps the candidate with the lowest multi-step error on the data it was
+fitted on, each fed its own estimated outside inflows; in sample, inflow pieces can absorb almost
+anything (sd-support-tiers default: chosen candidate, judge 0.297, graded -652%; "backward, constant
+inflows, trust receivers, numbers per era", judge 0.555, graded +35%). Judging out of sample, or
+pricing pieces as parameters, should pick the candidates the bench rewards.
+**What was built**: `identify_one` takes `steps` (fit on those steps only; default: all, `matrix`
+unchanged - zero deltas on sd-saas, sd-eras, sd-pipeline default); `discovery/holdout.py` (blocked
+cross-validation: cut the run into contiguous blocks, fit on all but one, run forward from moments in
+the held-out block, its outside inflow there = the piece in force before it, or the pieces' mean;
+never the block's data); strategies `held_out` (lowest mean held-out error over 5 blocks, horizons
+5/20/100, each block capped at 1000; the chosen candidate refitted on all the data) and
+`held_out_blend` (log in-sample error + 0.1 x log held-out error, 10 blocks, horizons 20/100).
+**Mechanism test** (`tests/test_strategy_held_out.py`): children/adults, births = 0.022 x adults,
+600 steps. With a candidate that trusts receivers whatever it costs (the rule before "trusting
+receivers must pass a test"), in sample that candidate wins (error 0.013 vs 0.034/0.876): births read
+as a move adults -> children paid back by adults' inflow pieces averaging 234 a step (truth 80 then
+160); `matrix`'s judge picks it, graded 65.6% skill@20. Held out, it is the worst candidate (1.20 vs
+0.74/0.15); the held-out judge picks constant inflows, births a link 0.0238 x adults, graded 73.7%.
+The second test shows the failure that sinks it: customers/tickets with signups that really change
+(730 steps): `matrix` picks changing inflows (68.5%), held out the stale last piece loses to a constant
+inflow and `held_out` picks constant inflows (-298%).
+**Offline first** (every candidate of every run fitted and graded once, scratch; the bench numbers
+below reproduce these exactly). Oracle (best-graded candidate per run): mean skill@20 78.3%, @100
+76.2%; the in-sample judge picks it (within 2 points of skill@20 + skill@100) in 31 of 42 runs.
+- Fit on the first 50/60/70/80% (and averages of these), judge forward on the rest, inflows extrapolated
+  as the last piece, the mean, or the last quarter's mean, horizons 5/20/100, 20/100 or 20: mean
+  skill@20 between -12.6% and +7.2%, 3-9 runs meet the goal, best-graded picked in 4-12 of 42.
+- Blocked CV, 5 or 10 blocks, last piece or mean, any horizons, mean/log-mean/median over blocks:
+  skill@20 -8.6% to +3.3%. It picks a constant-inflow candidate in 41 of 42 runs.
+- BIC-like criterion on the in-sample multi-step error, T log(error) + lam x (pieces [+ coefficients])
+  x log T: lam 0.25 70.2% (18 runs), 0.5 66.2% (19), 1 64.5% (18), 2 41.9%, 4 17.3%.
+- Held-out error as a veto (in-sample judge among candidates within m x the best held-out error):
+  m 1.1-5 18.6%-58.9%, m 10 70.3%. Held-out only within the inflow form the in-sample judge chose:
+  63.6-70.9%, 16-19 runs. Blend log in-sample + a x log held-out: a 0.1 70.2-70.9%, 19-20 runs;
+  a >= 0.5 54-64%.
+**Bench** (`--baseline python`, full suite, both lengths):
+- `held_out` (5 blocks, last piece): **mean skill@20 70.8% -> -4.8%, skill@100 68.9% -> -6.3%,
+  runs meeting the goal 18 -> 3**, parts 59.9% -> 55.1%. Chosen candidate changed in 40 of 42 runs;
+  best-graded candidate picked in 31 -> 9. Better by > 2 points at skill@20: sd-support-tiers default
+  -652% -> 35%, sd-ev-fleet long 79% -> 94.5%, default 87% -> 94%, sd-recycling default 32% -> 55%,
+  sd-kanban long 74% -> 80%. Worse: sd-services -61295% / -55552% (from 97/99%), sd-saas -12648% /
+  -16119% (from 100%), sd-housing -989% / -1193%, sd-hidden-chain -896% / -857%, sd-manufacturing
+  -564% / -512%, sd-eras -200% / -312%, sd-moderation long -297%, sd-support-tiers long -54% -> -302%,
+  sd-reservoirs -95% / -165%, sd-supply -1.5% / 6%, sd-pipeline 40% / 44.5% (long from 99%), sd-ci
+  60.5% / 54%, sd-orders default 21%, sd-population default 29%, sd-fishery default 32%,
+  sd-restaurant 70% / 70%, sd-university 75% / 76%, sd-hospital default 84%, sd-recycling long 77%.
+  Run time ~3-5x.
+- `held_out_blend`: **70.8% -> 70.5%, 68.9% -> 68.1%, meeting the goal 18 -> 20**; changed in 13
+  runs; best-graded picked 31 -> 30. Moved > 2 points at skill@20: sd-ev-fleet long 79% -> 94.5%
+  (@100 60% -> 99.5%), sd-kanban default 77% -> 91% (@100 66.5% -> 84%); sd-pipeline default 58% ->
+  40% (@100 -122% -> -178%), sd-restaurant long 86% -> 70% (@100 85% -> -2%), sd-university default
+  86% -> 75%. Run time ~6x (sd-hospital long 243 s).
+**Why it fails**: the bench feeds every model the truth's outside inflows, so it asks only whether
+the model's own dynamics are right. A held-out judge must also forecast the outside inflow, which
+in these examples changes unannounced (demand, sprints, intake every 30 days, bug spikes); the
+forecast error of a stale last piece dwarfs the dynamics, so candidates that need a changing
+inflow (most of the right ones: hidden stocks seen as outside inflows, real demand changes) lose
+to constant inflows whose wrong dynamics happen to drift less over a block. The in-sample judge,
+feeding each candidate its own inflow estimate, is closer to what the bench asks. Pricing pieces as
+parameters fails the same way: the pieces are needed. Neither can tell pieces into a stock the truth
+feeds from outside (harmless: the bench replaces them) from pieces that stand in for an internal
+flow (the sd-support-tiers failure: tickets that follow customers read as pieces). Even the right
+candidate on sd-support-tiers default does not beat the wrong one held out (0.84 vs 0.64 at 60%).
+**Verdict: reject** `held_out`. `held_out_blend` is noise-level (+2 runs meeting the goal, means
+slightly down, 6x the time, best-graded picks 31 -> 30); not adopted. The held-out mechanism is real
+but narrow (it does reject compensating pieces that do not carry over to unseen data); what the
+bench needs is a judge of dynamics given inflows, not of forecasts.
+
 ### 2026-10-17: discovery ported to Python (`sdlab/discovery/`) - KEPT
 The matrix method, its judge, the grader and the evaluation CLI moved from JavaScript to Python
 (numpy; the change scan in numba). Every one of the 42 runs gives the same parts and skill as the

@@ -61,6 +61,13 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
+    if opts.get("steps") is not None:
+        # fit on these steps only (index k: from t[k] to t[k+1]); the others are held out
+        keep = np.flatnonzero(np.asarray(opts["steps"]))
+        prev, dy, cfg, T = prev[:, keep], dy[:, keep], cfg[keep], len(keep)
+        at = lambda k: t[keep[k] + 1]  # noqa: E731
+        if T < 20:
+            return {"flows": [], "note": "Too few steps."}
     L = len(labels)
     final = {s["id"] for s in stocks if s.get("final")}
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
