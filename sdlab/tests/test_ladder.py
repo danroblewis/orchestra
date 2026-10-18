@@ -331,3 +331,28 @@ def test_the_read_endpoints(client):
                                  "/api/ladder/summary?strategies=matrix,nope"])
 def test_the_read_endpoints_refuse_unknown_names(client, url):
     assert client.get(url).status_code == 404
+
+
+def test_the_page_s_endpoints(client):
+    page = client.get("/ladder")
+    assert page.status_code == 200 and "ladder.js?v=" in page.text and "diagram.js?v=" in page.text
+    d = client.get("/api/ladder/cases/015-hidden-stock/data/none-short").json()
+    assert d["measured"] == ["A", "B"] and set(d["all_levels"]) == {"A", "H", "B"} and "H" not in d["levels"]
+    assert len(d["t"]) == len(d["levels"]["A"]) == 300
+    fresh = client.get("/api/ladder/cases/021-daily-inflow/data/counts-short", params={"fresh": True}).json()
+    assert fresh["fresh"] and fresh["levels"] != client.get("/api/ladder/cases/021-daily-inflow/data/counts-short").json()["levels"]
+    assert client.get("/api/ladder/strategies/matrix/timeline").json() == []
+
+    for _ in range(2):
+        cli.main(["run", "--strategies", "matrix", "--cases", "003", "--variants", "none-short", "--jobs", "1", "--quiet"])
+    h = client.get("/api/ladder/results/003-chain-2/none-short/matrix/history").json()
+    one = client.get(f"/api/ladder/result/{h[-1]['id']}").json()
+    assert one["id"] == h[-1]["id"] and one["found"] and not one["latest"]
+    tl = client.get("/api/ladder/strategies/matrix/timeline").json()
+    assert len(tl) == 1 and tl[0]["ran"] == 2 and tl[0]["totals"]["pass"] == 1 and tl[0]["of"] == 4 * len(casemod.case_ids())
+
+
+@pytest.mark.parametrize("url", ["/api/ladder/cases/nope/data/none-short", "/api/ladder/cases/003-chain-2/data/bogus",
+                                 "/api/ladder/result/999999", "/api/ladder/strategies/nope/timeline", "/api/ladder/strategies/..%2Fos/timeline"])
+def test_the_page_s_endpoints_refuse_unknown_names(client, url):
+    assert client.get(url).status_code == 404
