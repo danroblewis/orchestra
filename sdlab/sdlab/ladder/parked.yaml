@@ -1,0 +1,13 @@
+# Strategies the ladder skips by default ("all" in run / sync / watch / status), because they are slow
+# and no better than the main line on the ladder. They still run when named (--strategies numopt_bo)
+# or with --strategies everything. Measured on the full ladder, 2026-10-18 (compute summed over runs).
+numopt_bo: Bayesian optimisation of the numbers; 969 s per ladder, 34% pass (matrix 35%)
+numopt_fd_coarse: finite differences with coarse learnable inflows; 325 s, 22% pass
+numopt_fd: finite-difference refit; 142 s, 20% pass
+numopt_fd_profile: finite-difference refit with profiled inflows; 164 s, 22% pass
+numopt_cma: CMA-ES refit; 229 s, 34% pass
+numopt_lbfgs: L-BFGS-B refit; 188 s, 31% pass
+numopt_nm: Nelder-Mead refit; 186 s, 34% pass
+numopt_powell: Powell refit; 173 s, 34% pass
+gradient: JAX refit through a differentiable simulator; 197 s, 35% pass (same as matrix)
+held_out_blend: held-out judge blended with the in-sample one; 124 s, 36% pass

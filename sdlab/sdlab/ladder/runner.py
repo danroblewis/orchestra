@@ -15,6 +15,7 @@ import threading
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 
 from ..discovery.api import jsonable
 from . import cases as casemod
@@ -43,10 +44,27 @@ def select_cases(spec: str | None) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+PARKED = Path(__file__).with_name("parked.yaml")
+
+
+def parked() -> dict[str, str]:
+    """Strategies skipped by default (slow and no better than the main line): {name: why}."""
+    import yaml
+
+    return dict(yaml.safe_load(PARKED.read_text()) or {}) if PARKED.exists() else {}
+
+
 def select_strategies(spec: str | None) -> tuple[list[dict], list[dict]]:
-    """(available, skipped) strategy listings for a comma list or "all"."""
+    """(available, skipped) strategy listings for a comma list, "all" (every strategy except the
+    parked ones, parked.yaml) or "everything"."""
     every = {s["name"]: s for s in catalog.listing()}
-    names = list(every) if not spec or spec == "all" else [n.strip() for n in spec.split(",") if n.strip()]
+    if not spec or spec == "all":
+        skip = parked()
+        names = [n for n in every if n not in skip]
+    elif spec == "everything":
+        names = list(every)
+    else:
+        names = [n.strip() for n in spec.split(",") if n.strip()]
     unknown = [n for n in names if n not in every]
     if unknown:
         raise SystemExit(f"unknown strategies: {', '.join(unknown)} (have: {', '.join(every)})")
