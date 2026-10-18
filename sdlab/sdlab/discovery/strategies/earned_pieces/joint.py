@@ -24,6 +24,8 @@ import math
 
 import numpy as np
 
+from ...changes import pelt
+
 FLOOR = 0.5          # the least throughput a step can have (half a thing): counting.gross's floor
 
 
@@ -53,29 +55,34 @@ class System:
     configuration or -1), cuts) and the system they share (ids, units, configurations)."""
 
     def __init__(self, rows: list[dict], ids: list[str], unit: dict, final: set, dy: np.ndarray, cfg: np.ndarray, L: int,
-                 counting: bool = True):
+                 counting: bool = True, min_piece: int = 5):
+        self.min_piece = min_piece
         self.counting = counting          # False: plain least squares (every step's variance the same)
         self.rows, self.ids, self.unit, self.final, self.dy, self.cfg, self.L = rows, ids, unit, final, dy, cfg, L
         self.S, self.T = len(ids), dy.shape[1]
         # every free number: (row index, column index q in the row's X)
         self.free = [(s, q) for s, r in enumerate(rows) for q in r["set"]]
 
-    def ties(self) -> list[tuple[int, int]]:
-        """(source stock, configuration) pairs a tie can be made for: a non-final source whose own
-        level is in its row (in that configuration) and that some same-unit row gains from."""
-        out = []
-        for a in range(self.S):
-            if self.ids[a] in self.final:
-                continue
-            for c in range(self.L):
-                if self._reading(a, a, c) and any(self._reading(s, a, c) for s in self._same_unit(a)):
-                    out.append((a, c))
-        return out
+    def configs(self, a: int) -> list[int]:
+        """The configurations in which source a can be tied: its own level is in its row and some
+        same-unit row gains from it."""
+        if self.ids[a] in self.final:
+            return []
+        return [c for c in range(self.L) if self._reading(a, a, c) and any(self._reading(s, a, c) for s in self._same_unit(a))]
+
+    def ties(self) -> list[int]:
+        """The sources a tie can be made for (in every configuration it can be made in at once)."""
+        return [a for a in range(self.S) if self.configs(a)]
 
     def changing(self, a: int) -> bool:
         """Whether row a's outside inflow is in pieces."""
         cuts = self.rows[a]["cuts"]
         return bool(cuts) and len(cuts) > 2
+
+    def own(self, fit: dict, a: int, c: int) -> float:
+        """a's own number in configuration c, in a fit (minus its drain)."""
+        r = self.rows[a]
+        return float(sum(fit["beta"][a][r["set"].index(q)] for q in self._reading(a, a, c)))
 
     def gain(self, fit: dict, a: int, c: int) -> float:
         """What a's same-unit receivers gain per unit of a's level in configuration c, in a fit."""
@@ -101,7 +108,7 @@ class System:
         index = {p: i for i, p in enumerate(self.free)}
         P = len(self.free)
         A = []
-        for a, c in sorted(tied):
+        for a, c in sorted((a, c) for a in tied for c in self.configs(a)):
             row = np.zeros(P)
             for q in self._reading(a, a, c):
                 row[index[(a, q)]] += 1.0
@@ -113,7 +120,8 @@ class System:
         # a tied source whose outside inflow changes cannot tell its drain from the changes (pieces
         # bias it): the receivers alone measure the tied number, and the source's other numbers are
         # then fitted with it held
-        held = {a for a, c in tied if self.changing(a)}
+        held = {a for a in tied if self.changing(a)}
+        cuts = [r["cuts"] for r in self.rows]
         w = [np.ones(self.T) for _ in self.rows]
         theta = np.zeros(P)
         for _ in range(iters):
@@ -124,8 +132,8 @@ class System:
                 if not cols or s in held:
                     continue
                 idx = [index[(s, q)] for q in cols]
-                X = _weighted_demean(r["X"][cols], w[s], r["cuts"])
-                y = _weighted_demean(self.dy[s], w[s], r["cuts"])
+                X = _weighted_demean(r["X"][cols], w[s], cuts[s])
+                y = _weighted_demean(self.dy[s], w[s], cuts[s])
                 Xw = X * w[s]
                 G[np.ix_(idx, idx)] += Xw @ X.T
                 b[idx] += Xw @ y
@@ -140,30 +148,36 @@ class System:
                 r = self.rows[a]
                 own = [q for q in r["set"] if r["col"][q][0] == a]
                 rest = [q for q in r["set"] if r["col"][q][0] != a]
-                if not rest:
-                    continue
                 y = self.dy[a] - sum((theta[index[(a, q)]] * r["X"][q] for q in own), np.zeros(self.T))
-                X = _weighted_demean(r["X"][rest], w[a], r["cuts"])
-                Xw = X * w[a]
-                Gr = Xw @ X.T
-                Gr[np.diag_indices_from(Gr)] += 1e-9 * (np.abs(np.diag(Gr)) + 1)
-                sol = np.linalg.lstsq(Gr, Xw @ _weighted_demean(y, w[a], r["cuts"]), rcond=None)[0]
-                for q, v in zip(rest, sol):
-                    theta[index[(a, q)]] = v
-            out = self._evaluate(theta, index, w)
+                # the pieces are found again with the drain held (found beside the row's own,
+                # biased drain, they would favour it), then the row's other numbers refitted
+                for _ in range(2):
+                    left = y - sum((theta[index[(a, q)]] * r["X"][q] for q in rest), np.zeros(self.T))
+                    cuts[a] = pelt(left, self.min_piece, 1)
+                    if not rest:
+                        break
+                    X = _weighted_demean(r["X"][rest], w[a], cuts[a])
+                    Xw = X * w[a]
+                    Gr = Xw @ X.T
+                    Gr[np.diag_indices_from(Gr)] += 1e-9 * (np.abs(np.diag(Gr)) + 1)
+                    sol = np.linalg.lstsq(Gr, Xw @ _weighted_demean(y, w[a], cuts[a]), rcond=None)[0]
+                    for q, v in zip(rest, sol):
+                        theta[index[(a, q)]] = v
+            out = self._evaluate(theta, index, w, cuts)
             w = [1.0 / g for g in out["gross"]]
-        out["P"] = P - len(A) + sum(len(r["cuts"]) - 1 if r["cuts"] else 0 for r in self.rows)
+        out["P"] = P - len(A) + sum(len(c) - 1 if c else 0 for c in cuts)
+        out["cuts"] = cuts
         out["tied"] = set(tied)
         out["theta"] = theta
         return out
 
-    def _evaluate(self, theta, index, w=None) -> dict:
+    def _evaluate(self, theta, index, w, cuts) -> dict:
         betas, res, gross, inflow = [], [], [], []
         for s, r in enumerate(self.rows):
             cols = r["set"]
             beta = np.array([theta[index[(s, q)]] for q in cols]) if cols else np.zeros(0)
             fitted = beta @ r["X"][cols] if cols else np.zeros(self.T)
-            u = _piece_means(self.dy[s] - fitted, w[s], r["cuts"])
+            u = _piece_means(self.dy[s] - fitted, w[s], cuts[s])
             e = self.dy[s] - fitted - u
             g = np.abs(u) + (np.abs(beta) @ np.abs(r["X"][cols]) if cols else 0.0)
             betas.append(beta)
@@ -182,17 +196,18 @@ class System:
 
 
 def decide(system: System, log_t: float, trust_receivers: bool = True, trace: bool = False) -> dict:
-    """Tie or free each source, one at a time while BIC on the counting likelihood improves,
+    """Tie or free each source (in all its configurations at once), one at a time while BIC on the counting likelihood improves,
     starting from every source free. A source whose outside inflow changes cannot measure its own
     drain apart from the changes (the pieces bias it), so with trust_receivers it is tied whenever
-    its receivers are seen to gain from it, as the matrix's conservation does."""
+    its receivers are seen to gain more from it than its own row says it loses, as the matrix's
+    conservation does."""
     cands = system.ties()
     free = system.fit(set())
     forced = set()
     if trust_receivers:
-        for a, c in cands:
-            if system.changing(a) and system.gain(free, a, c) > 0:
-                forced.add((a, c))
+        for a in cands:
+            if system.changing(a) and any(system.gain(free, a, c) > max(0.0, -system.own(free, a, c)) for c in system.configs(a)):
+                forced.add(a)
     cands = [t for t in cands if t not in forced]
     tied = set(forced)
     best = system.fit(tied) if tied else free
@@ -204,7 +219,7 @@ def decide(system: System, log_t: float, trust_receivers: bool = True, trace: bo
             f = system.fit(trial)
             sc = f["nll"] + f["P"] * log_t
             if trace:
-                print(f"    tie {system.ids[t[0]]}@{t[1]} {'on' if t in trial else 'off'}: {sc:.2f} vs {score:.2f}")
+                print(f"    tie {system.ids[t]} {'on' if t in trial else 'off'}: {sc:.2f} vs {score:.2f}")
             if sc < score - 1e-9 and (step is None or sc < step[1]):
                 step = (trial, sc, f)
         if step is None:

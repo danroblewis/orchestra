@@ -28,7 +28,7 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
     L = len(fit["labels"])
     if opts.get("reselect", True):
         rows = [reselect(row, s, ids, stocks, fit["prev"], fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", 0.01))["row"] for s, row in enumerate(rows)]
-    system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", True))
+    system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", True), opts.get("min_piece", 5))
     best = decide(system, ctx["log_t"], opts.get("trust_receivers") is not False, trace=opts.get("trace_joint", False))
     at = fit["at"]
     new = []
@@ -40,11 +40,12 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
                 if lab < 0 or lab == c:
                     coef_l[c][ids[j]] = coef_l[c].get(ids[j], 0.0) + float(b)
         u = best["inflow"][s]
-        inflow = [{"from": at[a], "to": at[b - 1], "value": float(u[a])} for a, b in zip(row["cuts"][:-1], row["cuts"][1:])] if row["cuts"] else []
-        new.append({"id": row["id"], "coefL": coef_l, "inflow": inflow, "cuts": row["cuts"], "set": [], "col": [],
+        cuts = best["cuts"][s]
+        inflow = [{"from": at[a], "to": at[b - 1], "value": float(u[a])} for a, b in zip(cuts[:-1], cuts[1:])] if cuts else []
+        new.append({"id": row["id"], "coefL": coef_l, "inflow": inflow, "cuts": cuts, "set": [], "col": [],
                     "X": np.zeros((0, system.T)), "beta": np.zeros(0), "rss": 0.0, "p": 0})
     out = finish(new, {**ctx, "final": set(ids)}, opts)
-    out["tied"] = sorted(f"{ids[a]}@{c}" for a, c in best["tied"])
+    out["tied"] = sorted(ids[a] for a in best["tied"])
     return out
 
 
