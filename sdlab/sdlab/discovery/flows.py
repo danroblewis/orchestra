@@ -16,10 +16,17 @@ def r4(v: float) -> float:
     return round(float(v), 1 if a >= 10 else 3 if a >= 1 else 4)
 
 
-def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: float = 0.003, kinds: dict | None = None) -> list[dict]:
+def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: float = 0.003, kinds: dict | None = None,
+               extra: list[dict] | None = None, prevx: np.ndarray | None = None) -> list[dict]:
     """rows: one per stock, {"id", "coef": {stock: number}, "inflow": [{from, to, value}]}. kinds:
     (source, receiver) -> "move" | "link", where the shared noise has decided (a link takes nothing
-    from the source's drain)."""
+    from the source's drain).
+
+    extra (optional): delayed copies of a stock's level standing for unmeasured stocks ({"id",
+    "source", "delay"}; their levels in prevx, after the stocks'). A row's positive number k on a
+    copy of A delayed by d is an unmeasured stock H fed from A at k x A and drained into the row's
+    stock at d x H (a move out of A as far as A's drain allows, a link beyond it); the flow out
+    of H carries "inferred": {"id": H, "copy": copy id, "scale": k / d} (H's level = scale x copy)."""
     kinds = kinds or {}
     ids = [s["id"] for s in stocks]
     B = {r["id"]: r["coef"] for r in rows}
@@ -38,10 +45,24 @@ def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: floa
     def linear(stock, k):
         return {"form": "linear", "c": 0, "terms": [{"stock": stock, "k": r4(k)}]}
 
+    extra = extra or []
+    for i, e in enumerate(extra):
+        means[e["id"]] = float(prevx[len(ids) + i].mean()) if prevx is not None and prevx.shape[1] else 0.0
     for a in ids:
         drain = 0.0 if a in final else -(B[a].get(a) or 0.0)
         gains = sorted(((s, B[s][a]) for s in ids if s != a and (B[s].get(a) or 0) > tol), key=lambda x: -x[1])
         left = max(0.0, drain)
+        hidden = sorted(((s, B[s][e["id"]], e) for e in extra if e["source"] == a for s in ids if s != a and (B[s].get(e["id"]) or 0) > tol), key=lambda x: -x[1])
+        for s, k, e in hidden:
+            h, d = f"{e['id']}>{s}", e["delay"]
+            means[h] = k / d * means[e["id"]]
+            move = max(0.0, min(k, left)) if unit[s] == unit[a] else 0.0
+            if move > tol:
+                flow(a, h, {"form": "proportional", "stock": a, "k": r4(move)}, hidden=h)
+                left -= move
+            if k - move > tol:
+                flow(None, h, linear(a, k - move), driver=a, hidden=h)
+            flow(h, s, {"form": "proportional", "stock": h, "k": r4(d)}, hidden=h, inferred={"id": h, "copy": e["id"], "scale": k / d})
         for s, k in gains:
             move = max(0.0, min(k, left)) if unit[s] == unit[a] and kinds.get((a, s)) != "link" else 0.0
             if move > tol:
