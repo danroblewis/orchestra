@@ -9,7 +9,8 @@ into B at d a step: a delay of 1 / d) and as the plain alternative (B gets a sha
 straight away). Each in variants: A's outside inflow refitted as one constant or kept as found; B with
 or without an outside constant. The transit stock is accepted when its best variant beats the best
 plain one by BIC (numbers fitted, and pieces kept from the main line, cost log T each) by a margin,
-and the model with it behaves about as well on the data as the main line's. Pairs are taken greedily,
+and the model with it behaves better on the data than the main line's with B's outside
+inflow held at its mean (its pieces, fitted to this run, would make it look better on it). Pairs are taken greedily,
 best first, each stock in one pair at most.
 
 "All of A's loss goes to H" (kin = kA) is the default: B's response to A alone cannot tell a
@@ -21,8 +22,9 @@ its rate (scale 1), which also pins the rates' sizes where a short run's mean le
 that are not counts get a concentrated scale.
 
 opts: "ht_margin" (BIC margin, default 10), "ht_slack" (the model may behave this much worse than the
-main line's on the data, default 0.25), "ht_max" (hidden stocks at most, default 2), "ht_turns" (H must turn over at least this many
-times in the run: delay <= T / ht_turns, default 15), "ht_trace".
+reference on the data, default 0: it must behave better), "ht_max" (hidden stocks at most, default 2), "ht_turns" (H must turn over at least this many
+times in the run: delay <= T / ht_turns, default 15), "ht_min_delay" (a shorter delay is a move;
+default 1.5 steps), "ht_trace".
 """
 
 from __future__ import annotations
@@ -113,7 +115,8 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     margin = opts.pop("ht_margin", 10.0)
-    slack = opts.pop("ht_slack", 0.25)
+    slack = opts.pop("ht_slack", 0.0)
+    shortest = opts.pop("ht_min_delay", 1.5)
     most = opts.pop("ht_max", 2)
     trace = opts.pop("ht_trace", False)
     turns = opts.pop("ht_turns", 15)
@@ -151,7 +154,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                           f"kb {f['kb']:.4f}, A in {np.round(f['values'], 2).tolist()[:6]}, cB {f['cB']:.3f} ({f['cB_on']})")
                 # H must turn over many times in the run (a longer delay is a slow drift, which
                 # pieces or a schedule explain as well)
-                if 1 / f["d"] > len(run["t"]) / turns:
+                if not shortest <= 1 / f["d"] <= len(run["t"]) / turns:
                     continue
                 if res["gain"] > margin and (best is None or res["gain"] > best[0]["gain"]):
                     best = (res, a, b)
@@ -164,7 +167,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         # pieces fitted to this run make the found model look good on it: the reference holds B's
         # outside constants (the arrivals H would explain) at their mean
         e = judge(new, stocks, run, inf)
-        ref = judge(at_means(flows, {b}), stocks, run, inferred)
+        # (and A's too when the transit holds A's inflow constant: like against like)
+        ref = judge(at_means(flows, {b} | ({a} if len(f["spans"]) <= 1 else set())), stocks, run, inferred)
         if trace:
             print(f"  accept {a} -> H -> {b}? judge {e:.4f} vs {ref:.4f} (as found {base_e:.4f}); plain {res['plain']['bic']:.1f}, found {res['found']['bic']:.1f}, transit {f['bic']:.1f}")
         if not e <= (1 + slack) * ref + 1e-9:
