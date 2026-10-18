@@ -98,7 +98,11 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     add_gain = opts.get("add_gain", log_t)                                # a level joins a row only if clearly nonzero
     min_piece = opts.get("min_piece", 5)
 
+    only_rows = opts.get("only_rows") or {}                              # a level that may join only these rows
+
     def may_affect(j, s):
+        if ids[j] in only_rows and ids[s] not in only_rows[ids[j]]:
+            return False
         a, b = group[ids[j]], group[ids[s]]
         return j == s or not a or not b or a == b
 
