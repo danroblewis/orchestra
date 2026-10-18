@@ -81,6 +81,14 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
+    if opts.get("keep") is not None:
+        # only these steps are fitted (the others, e.g. where a used stock ran dry, are left out);
+        # an outside inflow's piece spans the steps left out between its kept steps
+        keep = np.asarray(opts["keep"], dtype=int)
+        if len(keep) < 20:
+            return {"flows": [], "note": "Too few steps."}
+        prev, dy, cfg, T = prev[:, keep], dy[:, keep], cfg[keep], len(keep)
+        at = lambda k: t[keep[k] + 1]  # noqa: E731
     L = len(labels)
     final = {s["id"] for s in stocks if s.get("final")}
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
@@ -223,7 +231,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
 
     rows = [fit_row(s) for s in range(S)]
     ctx = {"stocks": stocks, "ids": ids, "t": t, "final": final, "unit": unit, "prev": prev, "dy": dy, "cfg": cfg, "L": L,
-           "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T}
+           "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T, "at": at}
     # opts["keep_rows"]: the rows as fitted, before conservation, with what finish() needs to assemble
     # a model from them (the row_crossover strategy mixes rows of several candidates)
     kept = [raw_row(r) for r in rows] if opts.get("keep_rows") else None
@@ -246,7 +254,7 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     inflows re-measured where it changed a row, and the structure read off the matrix."""
     stocks, ids, t, prev, dy, cfg, L = ctx["stocks"], ctx["ids"], ctx["t"], ctx["prev"], ctx["dy"], ctx["cfg"], ctx["L"]
     labels, conf = ctx["labels"], ctx["conf"]
-    at = lambda k: t[k + 1]  # noqa: E731
+    at = ctx.get("at") or (lambda k: t[k + 1])                            # (opts "keep": the kept steps' times)
     conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts)
 
     # a row whose numbers conservation changed: its outside inflow's pieces are measured again with
