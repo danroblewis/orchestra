@@ -77,6 +77,15 @@ class System:
         cuts = self.rows[a]["cuts"]
         return bool(cuts) and len(cuts) > 2
 
+    def gain(self, fit: dict, a: int, c: int) -> float:
+        """What a's same-unit receivers gain per unit of a's level in configuration c, in a fit."""
+        total = 0.0
+        for s in self._same_unit(a):
+            r = self.rows[s]
+            for q in self._reading(s, a, c):
+                total += float(fit["beta"][s][r["set"].index(q)])
+        return total
+
     def _same_unit(self, a: int) -> list[int]:
         return [s for s in range(self.S) if s != a and self.unit[self.ids[s]] == self.unit[self.ids[a]]]
 
@@ -172,12 +181,21 @@ class System:
         return {"beta": betas, "res": res, "gross": gross, "inflow": inflow, "nll": nll}
 
 
-def decide(system: System, log_t: float, trace: bool = False) -> dict:
+def decide(system: System, log_t: float, trust_receivers: bool = True, trace: bool = False) -> dict:
     """Tie or free each source, one at a time while BIC on the counting likelihood improves,
-    starting from every source free."""
+    starting from every source free. A source whose outside inflow changes cannot measure its own
+    drain apart from the changes (the pieces bias it), so with trust_receivers it is tied whenever
+    its receivers are seen to gain from it, as the matrix's conservation does."""
     cands = system.ties()
-    tied: set = set()
-    best = system.fit(tied)
+    free = system.fit(set())
+    forced = set()
+    if trust_receivers:
+        for a, c in cands:
+            if system.changing(a) and system.gain(free, a, c) > 0:
+                forced.add((a, c))
+    cands = [t for t in cands if t not in forced]
+    tied = set(forced)
+    best = system.fit(tied) if tied else free
     score = best["nll"] + best["P"] * log_t
     while True:
         step = None

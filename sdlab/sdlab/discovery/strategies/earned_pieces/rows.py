@@ -102,12 +102,19 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
     X, col = columns(s, ids, prev, cfg, L, allowed)
     if not len(col):
         return best
+    # with pieces, the levels are chosen beside them (so that changes in the inflow cannot hide in
+    # levels that happen to follow them), and then the pieces are dropped
+    start = backward(y, X, row["cuts"], list(range(len(col))), inflow_params(row["cuts"], per_change))[0] if pieces else None
     for name, cuts in (("none", None), ("constant", [0, T])):
-        chosen, rss, b = backward(y, X, cuts, list(range(len(col))), inflow_params(cuts, per_change))
+        if pieces:
+            chosen = start
+            f = fit_subset(row_sums(y, X, cuts), chosen)
+            rss, b = f.rss, _bic(T, f.rss, len(chosen) + inflow_params(cuts, per_change))
+        else:
+            chosen, rss, b = backward(y, X, cuts, list(range(len(col))), inflow_params(cuts, per_change))
         if b >= best["bic"] - 1e-9:
             continue
         if pieces:
-            f = fit_subset(row_sums(y, X, cuts), chosen)
             e = y - (f.beta @ X[chosen] if chosen else 0.0)
             if not white(e - (e.mean() if cuts else 0.0), alpha):
                 continue
