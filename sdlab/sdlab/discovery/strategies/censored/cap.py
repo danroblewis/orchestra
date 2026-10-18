@@ -47,7 +47,7 @@ def cost(rss: float, T: int, pieces: int, k: int, floor: float) -> float:
 
 
 def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d0: float, floor: float,
-           min_piece: int = 5, grid: int = 64, changes: bool = True, mult: float = 2.0) -> dict | None:
+           min_piece: int = 5, grid: int = 17, changes: bool = True, mult: float = 2.0) -> dict | None:
     """The best (D, d) with its pieces, or None; with "plain", the best score with D = 0 (no cap).
     d is tried on a grid over [0, 1] and at the main line's d0."""
     T = len(y)
@@ -55,6 +55,7 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
     if span <= 0:
         return None
     Ds = np.linspace(0.0, 2.0 * span, grid)
+    last = [0.0]
 
     def cuts_of(u):
         return pelt(u, min_piece, mult) if changes else [0, T]
@@ -67,18 +68,28 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
         c = cuts_of(u)
         _, rss = piece_fit(u, c)
         sc = cost(rss, T, len(c) - 1, (1 if D > 0 else 0) + (1 if d > 0 else 0), floor)
+        last[0] = sc
         if best is None or sc < best["score"]:
             best = {"D": float(D), "d": float(d), "cuts": c, "rss": rss, "score": sc, "capped": capped}
         if D == 0 and (plain is None or sc < plain[0]):
             plain = (sc, d, {"D": 0.0, "d": float(d), "cuts": c, "rss": rss, "score": sc, "capped": capped})
 
     # the plain fit first (no demand: the own drain on a grid), then the demand with the drains
-    # worth trying (none, the main line's, the plain fit's)
-    for d in sorted({0.0, max(0.0, d0), *np.linspace(0.0, 1.0, 21)[1:]}):
-        consider(0.0, d)
+    # worth trying (none, the main line's, the plain fit's); each grid coarse, then finer around
+    # its best point
+    def sweep(values, at):
+        scores = []
+        for v in values:
+            consider(*at(v))
+            scores.append(last[0])
+        k = int(np.argmin(scores))
+        lo, hi = values[max(0, k - 1)], values[min(len(values) - 1, k + 1)]
+        for v in np.linspace(lo, hi, 9)[1:-1]:
+            consider(*at(v))
+
+    sweep(np.array(sorted({0.0, max(0.0, d0), *np.linspace(0.0, 1.0, 11)[1:]})), lambda d: (0.0, d))
     for d in sorted({0.0, max(0.0, d0), plain[1]}):
-        for D in Ds[1:]:
-            consider(D, d)
+        sweep(Ds[1:], lambda D: (D, d))
     plain_fit = plain[2]
     if best["D"] <= 0:
         return {**best, "plain": plain[0], "plain_fit": plain_fit}

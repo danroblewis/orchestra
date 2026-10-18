@@ -188,8 +188,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             break
     if not taken:
         return {**r0, "censored": []}
+    if not o["judge_slack"]:
+        return {**r0, "flows": flows, "censored": taken}
     e0 = judge(r0.get("flows") or [], stocks, run, injections=opts.get("injections"))
     e1 = judge(flows, stocks, run, injections=opts.get("injections"))
-    if o["judge_slack"] and math.isfinite(e0) and e1 > o["judge_slack"] * e0:
+    if math.isfinite(e0) and e1 > o["judge_slack"] * e0:
         return {**r0, "censored": taken, "censored_rejected": {"judge": e1, "main_line": e0}}
     return {**r0, "flows": flows, "censored": taken, "judge": {"censored": e1, "main_line": e0}}
