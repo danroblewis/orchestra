@@ -78,6 +78,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # step starts from the level plus the injection, and its change less the injection is the flows'
         inj = injected(opts["injections"], ids, t)[:, 1:]
         prev, dy = prev + inj, dy - inj
+    if opts.get("dy_adjust") is not None:
+        # what each stock's change would have been without what the measurement hides (a strategy's
+        # estimate: outflows cut short by an emptied stock); stocks x steps, added to the changes
+        dy = dy + opts["dy_adjust"]
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
@@ -109,6 +113,14 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
 
     only_rows = opts.get("only_rows") or {}                              # a level that may join only these rows
 
+    # columns a strategy offers beside the levels (each a function of one stock's level, named, with
+    # that stock as its base, and the rows that may take it); without them the columns are the levels
+    extras = opts.get("extra_columns") or []
+    names = ids + [e["id"] for e in extras]
+    base = list(range(S)) + [ids.index(e["base"]) for e in extras]
+    columns = np.vstack([prev] + [np.asarray(e["x"], dtype=float)[None, :] for e in extras]) if extras else prev
+    N = len(names)
+
     def may_affect(j, s):
         if ids[j] in only_rows and ids[s] not in only_rows[ids[j]]:
             return False
@@ -117,9 +129,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
 
     def fit_row(s: int) -> dict:
         sid, y = ids[s], dy[s]
-        X = [prev[j] for j in range(S)]
-        col = [(j, -1) for j in range(S)]
-        allowed = [j for j in range(S) if may_affect(j, s) and not (sid in final and j == s)]
+        X = [columns[j] for j in range(N)]
+        col = [(j, -1) for j in range(N)]
+        allowed = [j for j in range(N) if may_affect(base[j], s) and not (sid in final and base[j] == s)
+                   and (j < S or extras[j - S].get("rows") is None or sid in extras[j - S]["rows"])]
         own = s in allowed
         Xa = np.array(X)
 
@@ -145,7 +158,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                     js = list(dict.fromkeys(js + [q for q in allowed if col[q][1] < 0]))
                 for j in js:
                     for c in range(L):
-                        X.append(np.where(cfg == c, prev[j], 0.0))
+                        X.append(np.where(cfg == c, columns[j], 0.0))
                         col.append((j, c))
                         allowed.append(len(X) - 1)
                 Xa = np.array(X)
@@ -245,7 +258,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
             j, lab = col[q]
             for c in range(L):
                 if lab < 0 or lab == c:
-                    coef_l[c][ids[j]] = coef_l[c].get(ids[j], 0.0) + float(b)
+                    coef_l[c][names[j]] = coef_l[c].get(names[j], 0.0) + float(b)
         inflow = []
         if pick["cuts"]:
             inflow = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(y, Xa, chosen, beta, pick["cuts"])]
@@ -254,7 +267,8 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
 
     rows = [fit_row(s) for s in range(S)]
     ctx = {"stocks": stocks, "ids": ids, "t": t, "final": final, "unit": unit, "prev": prev, "dy": dy, "cfg": cfg, "L": L,
-           "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T, "at": at}
+           "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T, "at": at,
+           "extras": extras, "names": names, "columns": columns}
     # opts["keep_rows"]: the rows as fitted, before conservation, with what finish() needs to assemble
     # a model from them (the row_crossover strategy mixes rows of several candidates)
     kept = [raw_row(r) for r in rows] if opts.get("keep_rows") else None
@@ -278,6 +292,7 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     stocks, ids, t, prev, dy, cfg, L = ctx["stocks"], ctx["ids"], ctx["t"], ctx["prev"], ctx["dy"], ctx["cfg"], ctx["L"]
     labels, conf = ctx["labels"], ctx["conf"]
     at = ctx.get("at") or (lambda k: t[k + 1])                            # (opts "keep": the kept steps' times)
+    extras, names, columns = ctx.get("extras") or [], ctx.get("names") or ids, ctx.get("columns", prev)   # (opts "extra_columns")
     conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts)
 
     # a row whose numbers conservation changed: its outside inflow's pieces are measured again with
@@ -289,10 +304,15 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
         for c in range(L):
             m = cfg == c
             for j, k in row["coefL"][c].items():
-                res[m] -= k * prev[ids.index(j)][m]
+                res[m] -= k * columns[names.index(j)][m]
         row["inflow"] = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(res, prev, [], np.zeros(0), row["cuts"])]
 
-    per_label = [read_flows(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
+    read = read_flows
+    if extras:
+        from .hinges import read_flows_hinged
+
+        read = lambda st, rs, pv, tol: read_flows_hinged(st, rs, pv, tol, extras)  # noqa: E731
+    per_label = [read(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
     matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta", "trust_receivers")} for r in rows]
     for r in matrix:
