@@ -10,9 +10,8 @@
 (function () {
   "use strict";
   const { simulate, describeRate, fmt } = window.SDSim;
-  const BOX = { w: 150, h: 64 };
+  const { BOX, center, clip, shorten, el, text, arrowHead, columns } = window.SDDiagram;
   const PALETTE = ["#6d5bd0", "#c2410c", "#0f766e", "#2563eb", "#be185d", "#15803d", "#b45309", "#7e22ce"];
-  const SVGNS = "http://www.w3.org/2000/svg";
 
   const S = {
     model: null, mode: "edit",
@@ -236,13 +235,7 @@
   }
 
   // ---------- geometry ----------
-  const center = (s) => ({ x: s.x + BOX.w / 2, y: s.y + BOX.h / 2 });
-  function clip(s, toward) {
-    const c = center(s), dx = toward.x - c.x, dy = toward.y - c.y;
-    if (!dx && !dy) return c;
-    const k = Math.min(dx ? (BOX.w / 2) / Math.abs(dx) : Infinity, dy ? (BOX.h / 2) / Math.abs(dy) : Infinity);
-    return { x: c.x + dx * k, y: c.y + dy * k };
-  }
+  // center, clip and shorten come from diagram.js (shared with the ladder page)
   function cloudPos(f) {
     if (f.cloud) return f.cloud;
     if (!f.from && f.to) { const s = stock(f.to); return { x: s.x - 90, y: s.y + BOX.h / 2 }; }
@@ -261,10 +254,6 @@
     }
     return { a, b };
   }
-  function shorten(p, toward, d) {
-    const dx = toward.x - p.x, dy = toward.y - p.y, L = Math.hypot(dx, dy) || 1;
-    return { x: p.x + dx / L * d, y: p.y + dy / L * d };
-  }
   function segmentHitsRect(a, b, r) {
     const inside = (p) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
     if (inside(a) || inside(b)) return true;
@@ -275,13 +264,7 @@
   }
 
   // ---------- canvas ----------
-  function el(tag, attrs, parent) {
-    const e = document.createElementNS(SVGNS, tag);
-    for (const k in attrs) if (attrs[k] !== undefined && attrs[k] !== null) e.setAttribute(k, attrs[k]);
-    if (parent) parent.appendChild(e);
-    return e;
-  }
-  function text(parent, x, y, str, attrs) { const t = el("text", { x, y, ...attrs }, parent); t.textContent = str; return t; }
+  // el, text and arrowHead come from diagram.js
 
   // The numbers on the canvas are the present: the live run's latest step, or the start of the projection.
   const isLive = hasData;
@@ -475,18 +458,7 @@
     const scale = Math.min(1, W / (maxX - minX), (H - top) / (maxY - minY + top));
     svg.setAttribute("viewBox", `${minX} ${minY - top / scale} ${W / scale} ${H / scale}`);
   }
-  function arrowHead(parent, from, to, col, size) {
-    const dx = to.x - from.x, dy = to.y - from.y, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
-    const bx = to.x - ux * size, by = to.y - uy * size, w = size * 0.55;
-    el("polygon", { points: `${to.x},${to.y} ${bx - uy * w},${by + ux * w} ${bx + uy * w},${by - ux * w}`, fill: col }, parent);
-  }
-  function drawCloud(parent, f) {
-    const p = cloudPos(f);
-    const g = el("g", { class: "cloud", "data-cloud": f.id, fill: "var(--canvas)", stroke: "var(--muted)", "stroke-width": 1.3 }, parent);
-    el("circle", { cx: p.x - 7, cy: p.y + 2, r: 8 }, g);
-    el("circle", { cx: p.x + 7, cy: p.y + 2, r: 8 }, g);
-    el("circle", { cx: p.x, cy: p.y - 5, r: 8 }, g);
-  }
+  function drawCloud(parent, f) { window.SDDiagram.cloud(parent, cloudPos(f), { "data-cloud": f.id }); }
   function marqueeRect() {
     const m = S.marquee; if (!m) return null;
     return { x: Math.min(m.x0, m.x1), y: Math.min(m.y0, m.y1), w: Math.abs(m.x1 - m.x0), h: Math.abs(m.y1 - m.y0) };
@@ -807,34 +779,8 @@
     let y = y0;
     const COLW = 260, ROWH = 120;
     connected.forEach((g) => {
-      // columns: longest chain of flows from a stock with no inflow from inside the group (cycles are cut)
-      const col = new Map(), seen = new Set(), onPath = new Set();
-      const visit = (a) => {
-        if (col.has(a)) return col.get(a);
-        if (onPath.has(a)) return 0;
-        onPath.add(a);
-        const c = Math.max(0, ...inn.get(a).filter((b) => !onPath.has(b)).map((b) => visit(b) + 1));
-        onPath.delete(a); col.set(a, c); seen.add(a);
-        return c;
-      };
-      g.forEach(visit);
-      const ncol = Math.max(...g.map((a) => col.get(a))) + 1;
-      const cols = Array.from({ length: ncol }, () => []);
-      g.forEach((a) => cols[col.get(a)].push(a));
-      cols.forEach((c) => c.sort((a, b) => stockName(a).localeCompare(stockName(b))));
-      // order within columns by the average position of neighbours, a few sweeps each way
-      const pos = new Map();
-      const place = () => cols.forEach((c) => c.forEach((a, i) => pos.set(a, i)));
-      place();
-      for (let sweep = 0; sweep < 8; sweep++) {
-        const order = sweep % 2 ? [...cols.keys()].reverse() : [...cols.keys()];
-        order.forEach((ci) => {
-          const nb = (a) => { const one = (sweep % 2 ? out.get(a) : inn.get(a)).filter((b) => pos.has(b)); return one.length ? one : [...out.get(a), ...inn.get(a)].filter((b) => pos.has(b)); };
-          const key = (a) => { const n = nb(a); return n.length ? n.reduce((s, b) => s + pos.get(b), 0) / n.length : pos.get(a); };
-          cols[ci].sort((a, b) => key(a) - key(b));
-          cols[ci].forEach((a, i) => pos.set(a, i));
-        });
-      }
+      // columns from upstream to downstream, ordered by neighbours (diagram.js)
+      const cols = columns(g, inn, out, stockName);
       const tall = Math.max(...cols.map((c) => c.length));
       cols.forEach((c, ci) => c.forEach((a, i) => {
         const st = node(a); st.x = Math.round(x0 + ci * COLW); st.y = Math.round(y + (i + (tall - c.length) / 2) * ROWH);
