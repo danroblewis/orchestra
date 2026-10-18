@@ -113,6 +113,22 @@ def history(case: str, variant: str, strategy: str, found: bool = False) -> list
         return [_row(r, found) for r in rows]
 
 
+def get(result_id: int, found: bool = True) -> dict | None:
+    """One result by its id (None if there is none)."""
+    with connect(readonly=True) as con:
+        r = con.execute("SELECT * FROM results WHERE id = ?", (int(result_id),)).fetchone()
+        return _row(r, found) if r else None
+
+
+def statuses(strategy: str) -> list[dict]:
+    """Every result of a strategy, oldest first, without scores or found flows: {id, case, variant,
+    strategy_hash, score_hash, at, status}."""
+    with connect(readonly=True) as con:
+        rows = con.execute("SELECT id, case_id, variant, strategy_hash, score_hash, at, status FROM results WHERE strategy = ? ORDER BY id", (strategy,))
+        return [{"id": r["id"], "case": r["case_id"], "variant": r["variant"], "strategy_hash": r["strategy_hash"],
+                 "score_hash": r["score_hash"], "at": r["at"], "status": r["status"]} for r in rows]
+
+
 def staleness(row: dict | None, case_hash: str, strategy_hash: str, score_hash: str) -> str | None:
     """Why a pair must run again (None: its latest result is current)."""
     if row is None:

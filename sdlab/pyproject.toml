@@ -13,6 +13,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
+# packages only some research strategies need (numopt_cma, gradient, sindy); without them those
+# strategies raise MissingExtra (sdlab/discovery/optional.py)
+research = ["cma>=4.5.0", "cvxpy>=1.9.3", "jax>=0.11.2", "pysindy>=2.1.0"]
 
 [project.scripts]
 sdlab = "sdlab.server:main"

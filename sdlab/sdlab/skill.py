@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .discovery.observer import observe, unmeasured
 from .discovery.simulate import Model, levels_array, starts_for
 
 BOOTSTRAP = 1000
@@ -76,15 +77,41 @@ def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 1
             "injections": injections}
 
 
+def _renamed(x, names: dict):
+    """Flows with every stock reference (from, to, stock, driver) renamed by `names`."""
+    if isinstance(x, list):
+        return [_renamed(v, names) for v in x]
+    if isinstance(x, dict):
+        return {k: names.get(v, v) if k in ("from", "to", "stock", "driver") and isinstance(v, str) else _renamed(v, names) for k, v in x.items()}
+    return x
+
+
 def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150, truth: dict | None = None,
-                   ci: bool = False) -> dict:
+                   ci: bool = False, own_run: bool = True) -> dict:
     """skill@horizon of result's flows against the truth on this run; with ci, also "ci": the 95%
-    bootstrap interval over the start moments ([lo, hi])."""
+    bootstrap interval over the start moments ([lo, hi]).
+
+    A found model may have unmeasured stocks of its own (any stock its flows move things into or out of
+    that is not measured). They are kept apart from the truth's stocks (never started from the truth's
+    level of a stock that happens to share the name) and started from the found model's own estimate of
+    their levels: result["inferred_levels"] ({id: series aligned with t}) on the run it was fitted on;
+    on any other run (own_run=False, e.g. a fresh run), or without one, the estimate the found model
+    itself gives from that run's measured levels (sdlab/discovery/observer.py)."""
     tr = truth or truth_runs(truth_model, data, horizon, starts)
     ids, fed, exo, A, s0, times, truth_end = (tr[k] for k in ("ids", "fed", "exo", "A", "s0", "times", "truth_end"))
     measured = list(data["levels"])
     own = [f for f in result["flows"] if not (not f.get("from") and f.get("to") in fed and not f.get("driver") and (f.get("rate") or {}).get("form") == "constant")]
-    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times, tr.get("injections"))
+    hidden = list(dict.fromkeys(unmeasured(own, measured) + list(result.get("inferred_levels") or {})))
+    if hidden:
+        est = dict(result.get("inferred_levels") or {}) if own_run else {}
+        if any(h not in est for h in hidden):
+            first = {h: v[0] for h, v in (result.get("inferred_levels") or {}).items() if v}
+            est = {**observe(own, measured, data["t"], data["levels"], hidden, first), **est}
+        names = {x: f"found:{x}" for x in hidden}
+        A_found = np.vstack([A] + [np.nan_to_num(np.asarray(est[x], dtype=float))[None, :] for x in hidden])
+        found_end = Model(_renamed(own, names) + exo, ids + list(names.values())).run(A_found[:, s0 - 1], times, tr.get("injections"))[: len(ids)]
+    else:
+        found_end = Model(own + exo, ids).run(A[:, s0 - 1], times, tr.get("injections"))
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())

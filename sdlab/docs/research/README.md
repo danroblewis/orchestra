@@ -11,6 +11,13 @@ When an experiment reports, update its topic document (status, results, verdict,
 
 **Summary of every effort and how well it worked, with diagrams: [tries.md](tries.md).**
 
+**Every experiment's strategy is now on the main line**, side by side and each still isolated (its own
+module, shared-module changes behind options that default to `matrix`'s behaviour): the list, one line
+each, is [sdlab/discovery/strategies/README.md](../../sdlab/discovery/strategies/README.md). Waves 1-4 are
+all there (`sindy`, `gradient` and `numopt_cma` need `uv sync --extra research`); not brought in:
+structure search, the LLM critic, active probing and natural experiments (unfinished), and the gplearn
+comparison script of exp/symbolic-regression.
+
 | topic | status | verdict |
 |---|---|---|
 | [Benchmark v2: co-flows and effects in the ground truth](benchmark-v2.md) | done | - |

@@ -28,7 +28,7 @@ def graded(seed: int, main: dict, again: dict, error: str | None, truth_model: d
     """On the run with this seed: the model discovered on it, and the main run's model."""
     return {"seed": seed, "error": error,
             "skill": {str(h): same_behaviour(again, truth_model, data, horizon=h)["skill"] for h in (20, 100)},
-            "fresh": {str(h): same_behaviour(main, truth_model, data, horizon=h)["skill"] for h in (20, 100)}}
+            "fresh": {str(h): same_behaviour(main, truth_model, data, horizon=h, own_run=False)["skill"] for h in (20, 100)}}
 
 
 def _clip(v) -> float:

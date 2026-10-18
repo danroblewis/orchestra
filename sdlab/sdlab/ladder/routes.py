@@ -6,6 +6,9 @@
     GET /api/ladder/results?case=&variant=&strategy=          latest result per (case, variant, strategy)
     GET /api/ladder/results/{case}/{variant}/{strategy}       the latest one, with the found flows
     GET /api/ladder/results/{case}/{variant}/{strategy}/history   every result for it, newest first
+    GET /api/ladder/cases/{case}/data/{variant}?fresh=        the case's data in a variant (levels, every stock's levels, eras)
+    GET /api/ladder/result/{id}                               one stored result by id, with the found flows
+    GET /api/ladder/strategies/{strategy}/timeline            the strategy's totals after each version
     GET /api/ladder/progress                                  the current or last run
     GET /api/ladder/summary?strategies=a,b                    the matrix (cells, per-tag and per-strategy totals)
 
@@ -83,6 +86,25 @@ def history(case_id: str, variant: str, strategy: str) -> list[dict]:
     _variant(_case(case_id), variant)
     _strategy(strategy)
     return api.history(case_id, variant, strategy)
+
+
+@router.get("/cases/{case_id}/data/{variant}")
+def case_data(case_id: str, variant: str, fresh: bool = False) -> dict:
+    _variant(_case(case_id), variant)
+    return api.case_data(case_id, variant, fresh)
+
+
+@router.get("/result/{result_id}")
+def result_by_id(result_id: int) -> dict:
+    r = api.result_by_id(result_id)
+    if r is None:
+        raise HTTPException(404, "no such result")
+    return r
+
+
+@router.get("/strategies/{strategy}/timeline")
+def timeline(strategy: str) -> list[dict]:
+    return api.timeline(_strategy(strategy))
 
 
 @router.get("/progress")

@@ -7,6 +7,9 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
     results(case, variant, strategy)     the latest result per (case, variant, strategy), filtered by any given
     result(case, variant, strategy)      the latest result for one, with the found flows (None if never run)
     history(case, variant, strategy)     every result for one, newest first (without found flows)
+    result_by_id(id)                     one stored result by its id, with the found flows (None if unknown)
+    case_data(case_id, variant, fresh)   the case's data in a variant: t, levels (measured), all_levels, eras, ...
+    timeline(strategy)                   the strategy's totals after each version (strategy and scorer hash) it ran with
     progress()                           the current or last run: {run, items}
     summary()                            the matrix: strategies, cases, cells (one per case x variant x
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
@@ -19,7 +22,7 @@ from __future__ import annotations
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import catalog, score, store
+from . import catalog, data, score, store
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -56,6 +59,47 @@ def result(case: str, variant: str, strategy: str) -> dict | None:
 
 def history(case: str, variant: str, strategy: str) -> list[dict]:
     return jsonable(store.history(case, variant, strategy))
+
+
+def result_by_id(result_id: int) -> dict | None:
+    r = store.get(result_id, found=True)
+    return jsonable(r) if r else None
+
+
+def case_data(case_id: str, variant: str, fresh: bool = False) -> dict:
+    """What the detector sees (levels of the measured stocks) and what it does not (all_levels: every
+    stock, hidden ones too), for a page to plot."""
+    c = casemod.load(case_id)
+    d = data.load(c, variant, fresh=fresh)
+    measured = [s["id"] for s in c["model"]["stocks"] if s.get("measured", True)]
+    out = {"case": case_id, "variant": variant, "fresh": bool(fresh), "t": d["t"], "levels": d["levels"], "all_levels": d["all_levels"],
+           "measured": measured, "eras": d.get("eras") or [], "injections": d.get("injections") or []}
+    return jsonable(out)
+
+
+def timeline(strategy: str) -> list[dict]:
+    """One point per version of a strategy (its strategy hash and the scorer's hash, in the order they
+    first ran): when it first ran, how many results it made, and the ladder's totals just after it
+    (for each case and variant, the newest result up to then; cases no longer in the ladder are left out)."""
+    rows = store.statuses(strategy)
+    live = {(c, v["name"]) for c in casemod.case_ids() for v in casemod.load(c)["variants"]}
+    versions: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r["strategy_hash"], r["score_hash"])
+        v = versions.setdefault(key, {"strategy_hash": key[0], "score_hash": key[1], "first": r["at"], "first_id": r["id"], "ran": 0})
+        v["ran"] += 1
+        v["last"], v["last_id"] = r["at"], r["id"]
+    out = []
+    for v in sorted(versions.values(), key=lambda x: x["first_id"]):
+        now: dict[tuple, str] = {}
+        for r in rows:
+            if r["id"] <= v["last_id"] and (r["case"], r["variant"]) in live:
+                now[(r["case"], r["variant"])] = r["status"]
+        counts = {k: 0 for k in STATUSES}
+        for st in now.values():
+            counts[st] = counts.get(st, 0) + 1
+        out.append({**{k: v[k] for k in ("strategy_hash", "score_hash", "first", "last", "ran")}, "totals": counts, "of": len(live)})
+    return jsonable(out)
 
 
 def progress() -> dict:

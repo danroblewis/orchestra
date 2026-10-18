@@ -107,6 +107,7 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
         noise = casemod.variant(c, item["variant"])["noise"]
         model = casemod.truth_model(c, item["variant"])
         d = data.load(c, item["variant"])
+        inferred = None
         if item.get("mode") == "rescore":
             prev = next(iter(store.latest(item["case"], item["variant"], item["strategy"], found=True)), None)
             flows, seconds = (prev or {}).get("found") or [], (prev or {}).get("seconds")
@@ -115,8 +116,9 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
             r = discover(item["strategy"], model, d)
             seconds = round(time.perf_counter() - began, 3)
             flows = jsonable(r.get("flows") or [])
+            inferred = r.get("inferred_levels")
         fresh = data.load(c, item["variant"], fresh=True)
-        s = score.score(c, noise, model, flows, d, fresh)
+        s = score.score(c, noise, model, flows, d, fresh, inferred)
         row.update(status=s["status"], seconds=seconds, scores=jsonable(s), found=flows)
     except Timeout as e:
         row.update(status="timeout", error=str(e))

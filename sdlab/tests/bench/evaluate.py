@@ -125,7 +125,7 @@ def evaluate_one(example: str, length: str, strategy: str, with_candidates: bool
     # the same model graded on a fresh run: what it fitted to this run's own draws (inflow pieces
     # replaying history, say) cannot help it there
     other = load_data(example, length, fresh=True)
-    fresh_b = {str(h): same_behaviour(r, truth_model, other, horizon=h, ci=True) for h in (20, 100)}
+    fresh_b = {str(h): same_behaviour(r, truth_model, other, horizon=h, ci=True, own_run=False) for h in (20, 100)}
     fresh = {h: b["skill"] for h, b in fresh_b.items()}
     x = {"example": example, "length": length, "steps": len(data["t"]), "parts": g["right"], "of": g["parts"], "skill": skill, "moved": moved, "fresh": fresh,
          "skill_ci": {str(h): b["ci"] for h, b in behaviour.items()}, "fresh_ci": {h: b["ci"] for h, b in fresh_b.items()},

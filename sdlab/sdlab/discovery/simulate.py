@@ -141,8 +141,8 @@ class Model:
             else:
                 self.parts.append((src, dst, ratio, None, _Rate([f.get("rate") or {}], index), None))
 
-    def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
-        """One step from levels L (stocks x states) at times t (one per state)."""
+    def _amounts(self, L: np.ndarray, t: np.ndarray) -> list:
+        """Each flow's amount in one step from levels L (stocks x states) at times t (one per state)."""
         m = L.shape[1]
         zero = np.zeros(m, int)
         amounts = []
@@ -156,6 +156,25 @@ class Model:
             k = np.where((want > L[c]) & (L[c] > -1), np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
             for i, _ in takers:
                 amounts[i] = amounts[i] * k
+        return amounts
+
+    def change(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """What the flows add to each stock in one step from levels L (stocks x states) at times t
+        (one per state), before levels are floored at 0."""
+        amounts = self._amounts(L, t)
+        d = np.zeros_like(L, dtype=float)
+        for (src, dst, ratio, *_), a in zip(self.parts, amounts):
+            if src is not None:
+                d[src] -= a * ratio
+            if dst is not None:
+                d[dst] += a
+        for i, c, per in self.uses:
+            d[c] -= amounts[i] * per
+        return d
+
+    def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """One step from levels L (stocks x states) at times t (one per state)."""
+        amounts = self._amounts(L, t)
         nxt = L.copy()
         for (src, dst, ratio, *_), a in zip(self.parts, amounts):
             if src is not None:
@@ -193,21 +212,26 @@ def levels_array(levels: dict, ids: list[str]) -> np.ndarray:
 
 
 def behaviour_error(flows: list[dict], ids: list[str], t: list, levels: dict, horizon: int = 20, starts: int = 80,
-                    injections: list[dict] | None = None) -> float:
+                    injections: list[dict] | None = None, inferred: dict | None = None) -> float:
     """How far the model's runs from ~`starts` moments in the data end up from what was measured
     `horizon` steps later (its own estimated outside inflows feed it), relative to how far the data
-    moved: 0 = perfect, 1 = no better than assuming nothing changes."""
-    A = levels_array(levels, ids)
+    moved: 0 = perfect, 1 = no better than assuming nothing changes.
+
+    inferred (optional): the model's own unmeasured stocks, {id: estimated level aligned with t};
+    each run starts them from that estimate, and only the measured stocks are compared."""
+    inferred = inferred or {}
+    S = len(ids)
+    A = levels_array({**levels, **inferred}, ids + list(inferred))
     n = A.shape[1]
     s0 = starts_for(n, horizon, starts)
     if not len(s0):
         return float("inf")
-    sd = A.std(axis=1)
+    sd = A[:S].std(axis=1)
     sd[sd == 0] = 1
     tt = np.asarray(t, dtype=float)
-    end = Model(flows, ids).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]], injections)
-    obs = A[:, s0 + horizon - 1]
+    end = Model(flows, ids + list(inferred)).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]], injections)[:S]
+    obs = A[:S, s0 + horizon - 1]
     e = ((end - obs) / sd[:, None]) ** 2
     e[~np.isfinite(e)] = 1e6
-    moved = (((obs - A[:, s0 - 1]) / sd[:, None]) ** 2).sum()
+    moved = (((obs - A[:S, s0 - 1]) / sd[:, None]) ** 2).sum()
     return float(e.sum() / max(1e-9, moved))

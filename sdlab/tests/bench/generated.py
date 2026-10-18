@@ -87,7 +87,7 @@ def evaluate_generated(spec: tuple, length: str, strategy: str) -> dict:
     g = grade(r, key_of(generator.truth(model).truth()))
     behaviour = {h: same_behaviour(r, model, data, horizon=h) for h in HORIZONS}
     other = generator.dataset(model, steps, model["seed"] + 1)
-    fresh = {str(h): same_behaviour(r, model, other, horizon=h)["skill"] for h in (20, 100)}
+    fresh = {str(h): same_behaviour(r, model, other, horizon=h, own_run=False)["skill"] for h in (20, 100)}
     # the ceiling: the true flows themselves, without the schedule's unannounced changes to rates
     # inside the system (a demand, a season); 100% when every unannounced change is an outside inflow
     ceiling = same_behaviour({"flows": model["flows"]}, model, data, horizon=20)["skill"]

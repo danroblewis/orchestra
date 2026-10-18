@@ -247,8 +247,10 @@ def _show(v):
 
 # ---- behaviour ----
 
-def behaviour(truth_model: dict, found_flows: list[dict], data: dict, fresh: dict | None) -> dict:
-    """skill@20 / @100 with 95% bootstrap intervals, in-sample and (if given) on a fresh run."""
+def behaviour(truth_model: dict, found_flows: list[dict], data: dict, fresh: dict | None, inferred: dict | None = None) -> dict:
+    """skill@20 / @100 with 95% bootstrap intervals, in-sample and (if given) on a fresh run. A found
+    model's own unmeasured stocks start from its estimate of their levels (`inferred`) on the run it
+    saw, and from the estimate it gives from the fresh run's levels on the fresh run."""
     out = {}
     for name, d in (("in_sample", data), ("fresh", fresh)):
         if d is None:
@@ -258,7 +260,8 @@ def behaviour(truth_model: dict, found_flows: list[dict], data: dict, fresh: dic
             if len(d["t"]) < h + 10:
                 continue
             tr = truth_runs(truth_model, d, horizon=h)
-            b = same_behaviour({"flows": found_flows}, truth_model, d, horizon=h, truth=tr, ci=True)
+            result = {"flows": found_flows, **({"inferred_levels": inferred} if inferred and name == "in_sample" else {})}
+            b = same_behaviour(result, truth_model, d, horizon=h, truth=tr, ci=True, own_run=name == "in_sample")
             res[str(h)] = {"skill": _finite(b["skill"]), "ci": [_finite(x) for x in b["ci"]] if b.get("ci") else None, "moved": _finite(b["moved"])}
         out[name] = res
     return out
@@ -269,7 +272,8 @@ def _finite(x):
     return x if math.isfinite(x) else None
 
 
-def score(case: dict, noise: str, truth_model: dict, found_flows: list[dict], data: dict, fresh: dict | None = None) -> dict:
+def score(case: dict, noise: str, truth_model: dict, found_flows: list[dict], data: dict, fresh: dict | None = None,
+          inferred: dict | None = None) -> dict:
     """Everything the ladder records for one found model: equations and behaviour."""
     eq = equations(case, noise, truth_model, found_flows, data)
-    return {**eq, "behaviour": behaviour(truth_model, found_flows, data, fresh)}
+    return {**eq, "behaviour": behaviour(truth_model, found_flows, data, fresh, inferred)}

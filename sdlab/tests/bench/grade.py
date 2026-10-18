@@ -11,7 +11,8 @@ steps from every stock's true level, fed the same outside inflows (the truth's s
 found model's outside inflow into every stock the truth feeds from outside), so only their own
 dynamics differ. skill = 1 - (spread between them / how far the truth moved)^2: 1 = behaves as the
 truth, 0 = no better than assuming nothing changes, below 0 = worse. It lives in sdlab/skill.py (the
-ladder uses it too), with a bootstrap interval over the start moments (ci=True).
+ladder uses it too), with a bootstrap interval over the start moments (ci=True). A found model's own
+unmeasured stocks are simulated from its own estimate of their levels (see sdlab/skill.py).
 """
 
 from __future__ import annotations
@@ -84,7 +85,19 @@ def key_of(sd: dict) -> dict:
 
 def found(result: dict) -> dict:
     rel, outside = {}, []
+    # a found model's own unmeasured stock H (result["inferred_levels"]): A -> H -> B is a hidden
+    # stock between A and B
+    inferred = set(result.get("inferred_levels") or {})
+    for h in inferred:
+        into = [f.get("from") or f.get("driver") for f in result["flows"] if f.get("to") == h]
+        for f in result["flows"]:
+            if f.get("from") == h and f.get("to"):
+                for a in into:
+                    if a:
+                        rel[f"{a}>{f['to']}"] = "hidden"
     for f in result["flows"]:
+        if f.get("from") in inferred or f.get("to") in inferred:
+            continue
         a, b, kind = None, f.get("to"), None
         if f.get("driver"):
             a, kind = f["driver"], "link"
