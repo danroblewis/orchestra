@@ -10,7 +10,7 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
     result_by_id(id)                     one stored result by its id, with the found flows (None if unknown)
     case_data(case_id, variant, fresh)   the case's data in a variant: t, levels (measured), all_levels, eras, ...
     timeline(strategy)                   the strategy's totals after each version (strategy and scorer hash) it ran with
-    progress()                           the current or last run: {run, items}
+    progress(recent?)                    the current or last run: {run, items}; with recent, a light copy for polling
     summary()                            the matrix: strategies, cases, cells (one per case x variant x
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
 
@@ -102,8 +102,20 @@ def timeline(strategy: str) -> list[dict]:
     return jsonable(out)
 
 
-def progress() -> dict:
-    return jsonable(store.progress())
+def progress(recent: int | None = None) -> dict:
+    """The current or last run. With recent, a light copy for polling: only the running items and the
+    `recent` most recently finished ones, plus `counts` (finished items by status) and `queued`."""
+    p = store.progress()
+    if recent is None:
+        return jsonable(p)
+    items = p["items"]
+    counts: dict[str, int] = {}
+    for i in items:
+        if i["state"] == "done":
+            counts[i["status"]] = counts.get(i["status"], 0) + 1
+    done = sorted((i for i in items if i["state"] == "done" and i["finished"]), key=lambda i: i["finished"], reverse=True)[:max(0, recent)]
+    return jsonable({"run": p["run"], "items": [i for i in items if i["state"] == "running"] + done, "counts": counts,
+                     "queued": sum(i["state"] == "queued" for i in items)})
 
 
 def flatten(row: dict | None) -> dict:

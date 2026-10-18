@@ -247,7 +247,10 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `results(case?, variant?, strategy?)` | the latest result per (case, variant, strategy), filtered |
 | `result(case, variant, strategy)` | the latest one with `found` (the found flows), or None |
 | `history(case, variant, strategy)` | every result for it, newest first |
-| `progress()` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}` |
+| `result_by_id(id)` | one stored result (any, not only the latest) with `found`, or None |
+| `case_data(case, variant, fresh?)` | `{case, variant, fresh, t, levels (measured stocks), all_levels (every stock, hidden ones too), measured, eras, injections}`: what discovery sees, and what it does not |
+| `timeline(strategy)` | one point per version (strategy hash and scorer hash, in the order they first ran): `{strategy_hash, score_hash, first, last, ran, totals: {status: n}, of}`, the totals being the ladder's state just after that version (each case and variant's newest result up to then) |
+| `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
 | `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash}` |
 
 A result is `{id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status,
@@ -265,12 +268,38 @@ GET /api/ladder/strategies
 GET /api/ladder/results?case=&variant=&strategy=
 GET /api/ladder/results/{case}/{variant}/{strategy}
 GET /api/ladder/results/{case}/{variant}/{strategy}/history
-GET /api/ladder/progress
+GET /api/ladder/cases/{case}/data/{variant}?fresh=
+GET /api/ladder/result/{id}
+GET /api/ladder/strategies/{strategy}/timeline
+GET /api/ladder/progress?recent=
 GET /api/ladder/summary?strategies=a,b
 ```
 
-A case, variant or strategy must be one the listings name; anything else is a 404. No path comes from
-the client.
+A case, variant or strategy must be one the listings name, and a result id an integer that is stored;
+anything else is a 404 (422 for an id that is not a number). No path comes from the client.
+
+## The page
+
+`/ladder` (the 🪜 button in the editor and the research view) shows all of this, read only
+(`sdlab/static/ladder.html`, `ladder.js`, `ladder-compare.js`, drawing with `diagram.js`; SPEC.md
+4.13):
+
+- **Now**: what is running (polled every second) and, following the run as it finishes items or
+  for any case, variant and strategy picked, the true model's diagram beside the found one, laid
+  out identically, flows coloured green (right), amber (a number off: true vs found shown), red
+  dashed (missing), red (spurious), blue (equivalent), grey (too small); then the equations side
+  by side, every part's numbers, and the scores with their intervals.
+- **Matrix**: strategies x cases, four squares a cell (P E F X T ·, hatched when stale), per-strategy
+  totals and per-tag summaries; a filter and an order for the columns when there are many
+  strategies; click a square to open it in Now.
+- **History**: a case and strategy's results over time (when it started passing or failing,
+  recall or skill per variant, every result clickable into Now) and each strategy's totals per
+  version.
+- **Cases**: every case with its "tests" sentence, true diagram and equations, and a plot of its
+  data in any variant.
+
+Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-ladder sync` (or
+`watch`) in another terminal to see it live.
 
 ## Where things are
 
@@ -283,4 +312,5 @@ the client.
 | Store | `store.py` (`results.sqlite`: results with history, runs and progress) |
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
-| Tests | `tests/test_ladder.py` |
+| Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
+| Tests | `tests/test_ladder.py`, `tests/ladder_compare.test.mjs` |

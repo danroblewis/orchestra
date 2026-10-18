@@ -321,9 +321,11 @@ flows), `repair` (hidden backroom), `milling` (effects and co-flows), `roastery`
 ## 4. The UI as it stands
 
 One page, `index.html`, with plain scripts: `sim.js` (simulator, fitting, leverage), `simplify.js`
-(simplify), `app.js` (everything else, about 2,400 lines). Discovery runs on the server, in the
-Python engine (`sdlab/discovery`, 4.7 and 5.3). A second, read-only page, `research.html` with
-`research.js`, shows the discovery research (4.12). Font IBM Plex Sans and Mono. Light and dark
+(simplify), `diagram.js` (the diagram's marks and the column layout, shared with the ladder page),
+`app.js` (everything else, about 2,300 lines). Discovery runs on the server, in the Python engine
+(`sdlab/discovery`, 4.7 and 5.3). Two more pages are read only: `research.html` with `research.js`
+shows the discovery research (4.12), and `ladder.html` with `ladder.js` and `ladder-compare.js`
+shows the ladder (4.13). Font IBM Plex Sans and Mono. Light and dark
 themes from `prefers-color-scheme`.
 
 ### 4.1 Layout
@@ -363,7 +365,8 @@ themes from `prefers-color-scheme`.
   saves a copy.
 - **Files** (folder icon) opens the files dialog (4.10). **Save as** (disk icon) prompts for a name
   and copies the model and its run; the copy is then what is edited. **Research** (microscope
-  icon) opens the research view (4.12) in a new tab.
+  icon) opens the research view (4.12) in a new tab, and **Ladder** (ladder icon) the ladder view
+  (4.13).
 - **Edit | Run** tabs. The mode is in the URL hash (`#run`).
 - **Status** on the right, monospace: save state ("Unsaved changes", "Saved", "Not saved: …"),
   results ("Found 4 flows in 120 ms"), errors in red.
@@ -725,6 +728,64 @@ For the rewrite's reviewers, the explicit requests in one place:
   @100), the deltas in points (green better, red worse, pale under 2 points), and which runs newly
   meet or no longer meet the goal. The chosen runs are kept in the URL.
 
+### 4.13 Ladder view
+
+`/ladder` (the 🪜 button in the editor's and the research view's header), read only, plain and
+fast, light and dark, down to phone width. It shows the ladder (`docs/LADDER.md`): every discovery
+strategy on tiny true models, scored equation by equation. Four tabs; the tab and what it shows
+are kept in the URL (`?view=now&case=&variant=&strategy=&result=`).
+
+- **Now**: what the ladder is running, polled every second (`/api/ladder/progress?recent=20`): the
+  command, done of total, a bar by status (pass, equivalent, fail, error, timeout, running,
+  queued) and the items running now. With **follow the run** on (the default), the view shows
+  each result as the run finishes it (an item still running shows its previous result, marked).
+  Picking anything (a case, variant, strategy, a running item, a matrix square, a history point)
+  turns following off. With no run going, it shows the last result of the last run. Under it:
+  - a picker: the case (◀ ▶, or the arrow keys, step through cases), the four variants, the
+    strategy, and the cell's four squares;
+  - the case's title, level, tags and "tests" sentence; the scores: status, recall, precision,
+    parts right, spurious, skill@20 and @100 with their 95% intervals, the same on the fresh run,
+    discovery's time, when, and the strategy and scorer hashes;
+  - **the true model on the left and the found model on the right**, drawn by `diagram.js` the
+    way the editor draws (stocks as boxes, flows as thick arrows, clouds for outside, a link from
+    each stock an equation reads, dashed; effects dashed and labelled; co-flows dotted, "uses n").
+    Both sides use one layout made from the truth (columns from upstream to downstream, wrapped
+    after 3 columns, 2 below 1150 px, 1 below 600 px) and one viewBox, so a stock sits in the same
+    place on both. A stock nobody measures is a dashed box; a stock only the found model names (an
+    inferred hidden stock, or a flow's `via`) is a dashed box where the true hidden stock between
+    the same two stocks sits (long ids get short names, listed under the legend). Flows are
+    coloured by verdict, from the scorer's parts (`ladder-compare.js`): green found and right;
+    amber found with a number off (the true side shows the found number, the found side the true
+    one); red dashed missing (true side); red spurious (found side); blue when the result is
+    equivalent (the found flows make the same linear system, not a pass); grey too small to count
+    or not scored. Hover a flow for its whole equation and what is off;
+  - the equations side by side, one row per pair of ends (true flows, found flows, verdict and
+    what is off), then every part with its true and found numbers (per window), error, the
+    oracle's standard error and verdict, the spurious parts, notes and any error.
+- **Matrix**: strategies (columns, names written upwards) by cases (rows, grouped by level; hover
+  a case for its "tests" sentence). Each cell has four squares, one per variant (none-short,
+  none-long, counts-short, counts-long), lettered and coloured P pass (green), E equivalent
+  (blue), F fail (red), X error (purple), T timeout (amber), · not run; stale ones are hatched.
+  Hover a square for its scores; click it (or the cell) to open it in Now. With dozens of
+  strategies, a filter (names or parts of names, comma separated; quick picks all, the best 5,
+  matrix) and an order (most passing first, or by name) pick the columns; both are kept in the
+  browser. The header row and case column stay put while the table scrolls. Under it: each
+  strategy's pass + equivalent of all, with counts and a bar; then the per-tag table (pass +
+  equivalent of the variants of the tag's cases, per strategy).
+- **History**: a case and a strategy. Per variant, a strip of its results, oldest first, and how
+  long it has been in its current status; a chart of recall (or precision, skill@20, skill@100,
+  fresh skill@20) over time, one line per variant; every result in a table, newest first, saying
+  where it started passing or failing and whether the strategy, the scorer or the case changed.
+  Click any result to see its found model in Now (`/api/ladder/result/{id}`). Below: per
+  strategy, its totals per version (stacked bars, one per strategy-and-scorer hash, the ladder's
+  state just after that version ran).
+- **Cases**: every case as a card (filter by text or tag), and for the chosen one: title, level,
+  tags, "tests" sentence, its status squares per strategy, the true model's diagram and
+  equations (eras and schedules spelled out), the stocks' starting levels, and a plot of its data
+  in a chosen variant (or its fresh run): the measured stocks' levels over time, as discovery
+  sees them, with unmeasured stocks dashed for reference, eras shaded and injections ticked;
+  hover for the values at a step.
+
 ---
 
 ## 5. Server API
@@ -823,9 +884,12 @@ The research view reads, never writes; it takes no paths from the client:
 | `GET /api/research/runs` | `{folder, goal, runs: [summary]}`: every `*.json` in `$SDLAB_BENCH_CACHE/runs` (default `~/.cache/sdlab/bench/runs`), oldest first. A summary: `file`, `baseline` (the name, for `baseline-<name>.json`), `at`, `label`, `engine`, `branch`, `commit`, `n`, `examples`, `lengths`, `skill20`, `skill100` (means clipped at −100%, as evaluate.py), `meets`, `fresh20`, `fresh100`, `freshMeets` (null when the run did not grade fresh runs), `parts`, `errors`; `broken: true` for an unreadable file. |
 | `GET /api/research/runs/{file}` | The run as saved, plus `summary`; 404 unless `file` is in the listing. |
 
+The ladder's read endpoints (`/api/ladder/...`, `sdlab/ladder/routes.py`) are listed in
+`docs/LADDER.md`; the ladder view (4.13) uses them and nothing else.
+
 ### 5.4 Static
 
-`GET /` and `GET /research` serve `index.html` and `research.html` with each asset stamped
+`GET /`, `GET /research` and `GET /ladder` serve `index.html`, `research.html` and `ladder.html` with each asset stamped
 `?v=<mtime>` and `Cache-Control: no-cache`, so the tunnel's cache never serves a stale script.
 `/static/*` serves the scripts and stylesheet.
 

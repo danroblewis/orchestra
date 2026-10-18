@@ -9,7 +9,7 @@
     GET /api/ladder/cases/{case}/data/{variant}?fresh=        the case's data in a variant (levels, every stock's levels, eras)
     GET /api/ladder/result/{id}                               one stored result by id, with the found flows
     GET /api/ladder/strategies/{strategy}/timeline            the strategy's totals after each version
-    GET /api/ladder/progress                                  the current or last run
+    GET /api/ladder/progress?recent=                          the current or last run (recent: only running + the n latest done)
     GET /api/ladder/summary?strategies=a,b                    the matrix (cells, per-tag and per-strategy totals)
 
 Nothing takes a path from the client: a case, variant or strategy must be one the listings name
@@ -108,8 +108,8 @@ def timeline(strategy: str) -> list[dict]:
 
 
 @router.get("/progress")
-def progress() -> dict:
-    return api.progress()
+def progress(recent: int | None = None) -> dict:
+    return api.progress(None if recent is None else max(0, min(recent, 1000)))
 
 
 @router.get("/summary")

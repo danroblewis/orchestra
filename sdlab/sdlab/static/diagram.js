@@ -167,6 +167,7 @@
     svg.innerHTML = "";
     const vb = opts.viewBox || bounds(pos, D.flows, box);
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    if (opts.maxScale) svg.style.maxWidth = `${Math.round(vb.w * opts.maxScale)}px`;   // a tiny model is not blown up
     const flows = D.flows.filter((f) => (!f.from || pos[f.from]) && (!f.to || pos[f.to]) && (f.from || f.to));
     const spots = cloudSpots(flows, pos, box);
     // flows between the same pair of stocks (either way) are spread apart
@@ -213,7 +214,7 @@
       if (offsetOf(f) < 0) { nx = -nx; ny = -ny; }
       const lines = [f.label, f.label2].filter(Boolean);
       const w = Math.max(...lines.map((s) => s.length * 6.6), 10) + 10, h = lines.length * 14 + 4;
-      const dist = Math.abs(nx) * (w / 2) + Math.abs(ny) * (h / 2) + 6;
+      const dist = Math.abs(nx) * (w / 2) + Math.abs(ny) * (h / 2) + 10;
       const lx = mid.x + nx * dist, ly = mid.y + ny * dist;
       const lg = el("g", { class: `dlabel ${f.cls || ""}` }, gLabels);
       if (f.title) el("title", {}, lg).textContent = f.title;

@@ -348,6 +348,9 @@ def test_the_page_s_endpoints(client):
     h = client.get("/api/ladder/results/003-chain-2/none-short/matrix/history").json()
     one = client.get(f"/api/ladder/result/{h[-1]['id']}").json()
     assert one["id"] == h[-1]["id"] and one["found"] and not one["latest"]
+    light = client.get("/api/ladder/progress", params={"recent": 0}).json()
+    assert light["items"] == [] and light["counts"] == {"pass": 1} and light["queued"] == 0 and light["run"]["done"] == 1
+    assert len(client.get("/api/ladder/progress", params={"recent": 5}).json()["items"]) == 1
     tl = client.get("/api/ladder/strategies/matrix/timeline").json()
     assert len(tl) == 1 and tl[0]["ran"] == 2 and tl[0]["totals"]["pass"] == 1 and tl[0]["of"] == 4 * len(casemod.case_ids())
 
