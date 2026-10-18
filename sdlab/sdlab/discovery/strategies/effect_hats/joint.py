@@ -167,8 +167,21 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     X = np.array(blocks).T                                   # (S*T) x P
     y = target.reshape(-1)
     w = np.ones(S)
-    # steps left out of the fit (opts["skip"]: a boolean per step), e.g. those next to an inflow's change
-    use = np.ones(T) if opts.get("skip") is None else (~np.asarray(opts["skip"], dtype=bool)).astype(float)
+    # steps left out of the fit (opts["skip"]: a boolean per step), and (opts["guard"]: g) the steps
+    # within g of a change in an outside inflow: where a change's step is uncertain by a step or two,
+    # those steps decide a drain's number more than all the others (a cut one step late reads it 10%
+    # faster), so they are left to the pieces alone
+    skip = np.zeros(T, dtype=bool) if opts.get("skip") is None else np.asarray(opts["skip"], dtype=bool).copy()
+    if opts.get("guard"):
+        g = int(opts["guard"])
+        for f in flows:
+            segs = f.get("inflow") or []
+            for a, b in zip(segs, segs[1:]):
+                if a.get("pool") is None or a.get("pool") != b.get("pool"):
+                    skip |= (tt >= b["from"] - g) & (tt <= b["from"] + g - 1)
+    if skip.mean() > 0.5:
+        skip[:] = False
+    use = (~skip).astype(float)
     theta = None
     for _ in range(2 if opts.get("weighted", True) else 1):
         W = np.repeat(w, T) * np.tile(use, S)

@@ -36,7 +36,7 @@ from .pieces import resegment
 from .screen import fit_curve, placements, scan
 from .translate import translate
 
-DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True, "seg_margin": 3.0}
+DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True, "seg_margin": 3.0, "guard": 2, "level_price": 2.0}
 
 
 def _arrays(stocks, run, opts):
@@ -101,13 +101,14 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     ids, prev, dy = _arrays(stocks, run, opts)
     cands = scan(stocks, prev, dy, o)
     base["effects_tried"] = [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
-    fit_opts = {**opts, "weighted": o["weighted"]}
+    fit_opts = {**opts, "weighted": o["weighted"], "guard": o["guard"], "level_price": o["level_price"]}
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
     seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]
     base_b = price(seg, ids, run)
     fair_e = judge(seg, stocks, run, injections=opts.get("injections")) if o["pool"] else base_e
     base["bic"] = base_b
+    base["judged"] = {"base": base_e, "recut": fair_e}
     if not cands:
         return _seg_base(base, seg, o, ids, run, base_e, fair_e)
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
@@ -117,7 +118,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for cand in cands[: o["most"]]:
         fits = []
         for frm, to in placements(cand):
-            c = best_curve(ids, prev, dy, cand["base"], cand["stock"], frm, to, o["knots"], also=tuple(r for r, _ in cand["rows"]))
+            c = best_curve(ids, prev, dy, cand["base"], cand["stock"], frm, to, o["knots"], also=tuple(dict.fromkeys([r for r, _ in cand["rows"]] + ([cand["base"]] if cand["base"] else []))))
             if c is None or c["positive"] < 0.9:
                 continue
             fits.append({**c, "base": cand["base"], "stock": cand["stock"], "frm": frm, "to": to})
@@ -178,7 +179,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return t["bic"] + (0.0 if f["base"] in (f["frm"], None) else o["prior"] * log_t)
     best = min(ok, key=lambda t: t["error"]) if o["select"] == "judge" else min(ok, key=rank)
     out = {**best["r"], "flows": _clean(best["flows"]), "chosen": best["name"], "tried": base["tried"],
-           "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b}
+           "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b,
+           "judged": base["judged"]}
     if keep:
         out["candidates"] = base.get("candidates") or []
     return out

@@ -103,13 +103,16 @@ def _kmeans(x: np.ndarray, w: np.ndarray, L: int) -> np.ndarray:
 
 
 def resegment(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None, rounds: int = 4, most: int = 4,
-              change: float = 2.0) -> list[dict]:
+              change: float = 2.0, level_price: float | None = None) -> list[dict]:
     """Each changing outside inflow re-cut as a few pooled values: for 1..most values (started from
     the pieces' values), each step is assigned to a value (Viterbi; a change costs `change` x log T in
     the row's noise) and the model refitted, alternately for a few rounds; the count of values whose
-    model prices best (price(): one number per value and per change) is kept."""
+    model prices best (price(): one number per value and per change, and level_price x log T more per
+    value beyond the first: freely placed changes let an extra value fit the noise) is kept."""
     from .joint import price
 
+    opts = opts or {}
+    lp = float(opts.get("level_price", 2.0) if level_price is None else level_price) * math.log(len(run["t"]) - 1)
     idx = {s: i for i, s in enumerate(ids)}
     tt = np.asarray(run["t"], dtype=float)[1:]
     T = len(tt)
@@ -123,7 +126,7 @@ def resegment(flows: list[dict], ids: list[str], run: dict, opts: dict | None = 
         r, sign = int(rows[0]), float(st[rows[0]])
         vals = np.array([float(g["value"]) for g in f["inflow"]])
         lens = np.array([max(1, g["to"] - g["from"] + 1) for g in f["inflow"]], dtype=float)
-        best = (price(cur, ids, run), cur)
+        best = (price(cur, ids, run) + lp * (len(_pools(cur[j])) - 1), cur)
         for L in range(1, min(most, len(vals)) + 1):
             levels = _kmeans(vals, lens, L)
             trial = cur
@@ -143,7 +146,7 @@ def resegment(flows: list[dict], ids: list[str], run: dict, opts: dict | None = 
                 if len(new) == len(levels) and np.allclose(new, levels, rtol=1e-6, atol=1e-9):
                     break
                 levels = new
-            p = price(trial, ids, run)
+            p = price(trial, ids, run) + lp * (len(_pools(trial[j])) - 1)
             if p < best[0]:
                 best = (p, trial)
         cur = best[1]

@@ -80,6 +80,11 @@ def placements(cand: dict) -> list[tuple[str | None, str | None]]:
         out += [(p, q), (q, p)]
     for p in rows:
         out += [(p, None), (None, p)]
+    # a flow out of its base stock may show most where it arrives and in a stock it uses up (a
+    # co-flow), and least in the base's own row
+    b = cand.get("base")
+    if b is not None and b not in rows:
+        out += [(b, p) for p in rows]
     return out
 
 
