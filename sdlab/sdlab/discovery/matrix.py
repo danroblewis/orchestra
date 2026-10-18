@@ -23,6 +23,7 @@ import numpy as np
 from .changes import pelt
 from .flows import merge_by_label, read_flows
 from .regression import fit_subset, piece_values, row_sums, stepwise
+from .shared_noise import analyse, coflows
 
 
 def configurations(eras: list[dict] | None, t: list) -> tuple[list[str], np.ndarray, list[dict]] | None:
@@ -293,7 +294,10 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     labels, conf = ctx["labels"], ctx["conf"]
     at = ctx.get("at") or (lambda k: t[k + 1])                            # (opts "keep": the kept steps' times)
     extras, names, columns = ctx.get("extras") or [], ctx.get("names") or ids, ctx.get("columns", prev)   # (opts "extra_columns")
-    conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts)
+    # shared noise (opt-in): which gains are moves and which links, read off the rows' residuals
+    noise = analyse(rows, ids, dy, prev, ctx["unit"], ctx["final"], opts.get("noise_z", 3.0), opts.get("tol", 0.003), opts.get("noise_misfit", False), opts.get("noise_swap", False), opts.get("noise_one_sided", False)) if opts.get("shared_noise") else None
+    kinds = noise.kinds if noise else None
+    conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts, kinds)
 
     # a row whose numbers conservation changed: its outside inflow's pieces are measured again with
     # the numbers it ends with (the pieces were measured beside the row's own, biased, drain)
@@ -307,12 +311,14 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
                 res[m] -= k * columns[names.index(j)][m]
         row["inflow"] = [{"from": at(p_["a"]), "to": at(p_["b"] - 1), "value": p_["v"]} for p_ in piece_values(res, prev, [], np.zeros(0), row["cuts"])]
 
-    read = read_flows
     if extras:
         from .hinges import read_flows_hinged
 
-        read = lambda st, rs, pv, tol: read_flows_hinged(st, rs, pv, tol, extras)  # noqa: E731
-    per_label = [read(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
+        per_label = [read_flows_hinged(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003), extras) for c in range(L)]
+    else:
+        per_label = [read_flows(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003), kinds) for c in range(L)]
+    if noise and opts.get("coflows", True):
+        per_label = [coflows(f, noise) for f in per_label]
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
     matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta", "trust_receivers")} for r in rows]
     for r in matrix:
@@ -328,21 +334,25 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     return out
 
 
-def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None:
+def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=None) -> None:
     """Conservation unless the data clearly says otherwise: a stock's drain is what same-unit stocks
     are seen to receive from it (measured, often more precisely, in their rows). Per configuration,
     tested together: setting the drain to what the receivers take must cost the row no more than
     log T in BIC (refitting the rest), or, for a row with a changing inflow (which cannot separate
-    its drain from the changes), be within 30%."""
+    its drain from the changes), be within 30%. A receiver whose gain the shared noise reads as a link
+    (`kinds`) takes nothing from the stock; and a stock with such a link has its drain lowered only
+    when the refit test passes (the link's gain is no evidence that its drain is too high)."""
+    kinds = kinds or {}
     for s, row in enumerate(rows):
         a = row["id"]
         if a in final:
             continue
         drain = [-(c.get(a) or 0.0) for c in row["coefL"]]
-        moves = [sum(r["coefL"][c][a] for r in rows if r["id"] != a and (r["coefL"][c].get(a) or 0) > 0 and unit[r["id"]] == unit[a]) for c in range(L)]
+        moves = [sum(r["coefL"][c][a] for r in rows if r["id"] != a and (r["coefL"][c].get(a) or 0) > 0 and unit[r["id"]] == unit[a] and kinds.get((a, r["id"])) != "link") for c in range(L)]
         # a row whose outside inflow changes (in pieces, or one a strategy knows varies: opts
         # "varying_inflow", stock ids) cannot separate its drain from the changes
         changing = (bool(row["cuts"]) and len(row["cuts"]) > 2) or a in (opts.get("varying_inflow") or ())
+        linked = any(kinds.get((a, r["id"])) == "link" for r in rows)
         trust = row.get("trust_receivers", opts.get("trust_receivers")) is not False   # a row may carry its own setting
         cand = [c for c in range(L) if moves[c] > 0 and ((changing and moves[c] > drain[c] and trust) or drain[c] > moves[c])]
         if not cand:
@@ -367,7 +377,7 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
         fixed = fit_subset(sums, idx).rss
         p2 = len(idx) + (len(cuts2) - 1 if cuts2 else 0)
         slack = opts.get("slack", 0.3)
-        if bic(fixed, p2) <= bic(row["rss"], row["p"]) + log_t or (changing and all(abs(drain[c] - moves[c]) / max(drain[c], moves[c]) < slack for c in cand)):
+        if bic(fixed, p2) <= bic(row["rss"], row["p"]) + log_t or (changing and all(abs(drain[c] - moves[c]) / max(drain[c], moves[c]) < slack and not (linked and drain[c] > moves[c]) for c in cand)):
             for c in cand:
                 row["coefL"][c][a] = -moves[c]
             row["conserved"] = True

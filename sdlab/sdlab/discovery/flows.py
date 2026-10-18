@@ -16,8 +16,11 @@ def r4(v: float) -> float:
     return round(float(v), 1 if a >= 10 else 3 if a >= 1 else 4)
 
 
-def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: float = 0.003) -> list[dict]:
-    """rows: one per stock, {"id", "coef": {stock: number}, "inflow": [{from, to, value}]}."""
+def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: float = 0.003, kinds: dict | None = None) -> list[dict]:
+    """rows: one per stock, {"id", "coef": {stock: number}, "inflow": [{from, to, value}]}. kinds:
+    (source, receiver) -> "move" | "link", where the shared noise has decided (a link takes nothing
+    from the source's drain)."""
+    kinds = kinds or {}
     ids = [s["id"] for s in stocks]
     B = {r["id"]: r["coef"] for r in rows}
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
@@ -40,7 +43,7 @@ def read_flows(stocks: list[dict], rows: list[dict], prev: np.ndarray, tol: floa
         gains = sorted(((s, B[s][a]) for s in ids if s != a and (B[s].get(a) or 0) > tol), key=lambda x: -x[1])
         left = max(0.0, drain)
         for s, k in gains:
-            move = max(0.0, min(k, left)) if unit[s] == unit[a] else 0.0
+            move = max(0.0, min(k, left)) if unit[s] == unit[a] and kinds.get((a, s)) != "link" else 0.0
             if move > tol:
                 flow(a, s, {"form": "proportional", "stock": a, "k": r4(move)})
                 left -= move
