@@ -6,8 +6,8 @@ every case on its own. The ladder asks whether discovery recovered the **true eq
 flow and number by number, not only whether it predicts well. Behaviour (skill@H) is reported next
 to that.
 
-Everything is fast: the whole ladder with `matrix` (25 cases x 4 variants) runs in about 3 seconds
-on 27 workers. Results are kept in a store, so only what changed runs again:
+Everything is fast: the whole ladder with `matrix` (25 cases x 4 variants, 100 items) runs in about 2.5 seconds from a cold cache
+on 27 workers (20 seconds on one). Results are kept in a store, so only what changed runs again:
 
 - a new or changed case runs every strategy on it;
 - a new or changed strategy, or any change to `sdlab/discovery`, runs that strategy on every case;
