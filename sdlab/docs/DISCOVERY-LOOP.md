@@ -5,6 +5,18 @@ measured against models we know exactly, with every attempt recorded in
 [DISCOVERY-EXPERIMENTS.md](DISCOVERY-EXPERIMENTS.md). The target is in
 [DISCOVERY-GOAL.md](DISCOVERY-GOAL.md).
 
+**The primary test bench is the ladder** ([LADDER.md](LADDER.md)). It is a list of tiny
+ground-truth models, simplest first, with one new feature per rung. Every strategy runs on every
+case in isolation, and is scored on whether it recovered the **true equations** (pass / equivalent
+/ fail, part by part), with behaviour next to it. It takes seconds and re-tests itself: a new case
+runs every strategy, and a new or changed strategy runs on every case
+(`uv run sdlab-ladder sync`, or `watch`). Climb it rung by rung: a mechanism that does not pass the
+rung it targets is not ready for the examples. A failure seen anywhere becomes a new case.
+
+The 31 examples (`sdlab/examples/sd-*`, `tests/bench/evaluate.py`) and the generated models
+(`--generated`) are **secondary benchmarks**. They check that what passes the ladder carries over to
+larger, mixed models, and that nothing is tuned to the ladder.
+
 ## The rule that does not bend
 
 **The simulations are fixed.** Never change `sdlab/sdtruth.py`, the equations it uses in
@@ -14,6 +26,10 @@ the fingerprints in `tests/simulations.sha256`. Discovery works against them: a 
 page would give it: the measured stocks, their levels, and announced eras.
 
 ## What we measure
+
+On the ladder: equation recovery per case and variant (no noise / counting noise, short / long),
+and skill@20 / @100 with 95% bootstrap intervals, read from `uv run sdlab-ladder status`
+([LADDER.md](LADDER.md)). On the secondary benchmarks, as follows.
 
 The ground-truth examples (`sdlab/examples/sd-*`) are system dynamics models. Their data is made by
 stepping the model with SD Lab's own equations, with counting noise and changes nobody announces.
@@ -79,13 +95,18 @@ combined only after each has been measured alone, and a combination is its own e
    the answer is exact (`tests/synth.py` hands a model to the ground-truth engine), showing the
    mechanism does what it claims, and that the baseline does not. If the mechanism cannot be shown
    working in isolation, the bench number is luck.
-5. **The bench**, against the shared baseline:
+5. **The ladder first**: `uv run sdlab-ladder sync --strategies <name>`, then
+   `uv run sdlab-ladder status --strategies matrix,<name> --detail`. The rung the mechanism targets
+   should go from F to P (or E where the data cannot tell), and no other rung should get worse. If
+   the ladder has no case for what the mechanism does, add one first (LADDER.md, "Adding a case").
+   **Then the bench**, against the shared baseline:
 
    ```
    uv run python tests/bench/evaluate.py --strategy <name> --baseline python --label "<name>: what"
    ```
 
-   Read every row, not just the headline: a fix for one example often costs another.
+   Read every row, not just the headline: a fix for one example often costs another. The bench
+   prints its means with 95% bootstrap intervals over runs, and stores per-run intervals.
 6. **Record it** in DISCOVERY-EXPERIMENTS.md: hypothesis, mechanism test, bench numbers against the
    baseline, verdict (adopt / reject / needs a combination), and why. Failures are most of what we
    learn. Then update the topic's document in [research/](research/README.md) (one per research
@@ -145,6 +166,9 @@ uv run python tests/bench/generator.py dev 0-19 --show                      # wh
 ## Useful commands
 
 ```
+uv run sdlab-ladder sync                                        # the ladder: every stale (case, variant, strategy)
+uv run sdlab-ladder status                                      # the ladder's strategy x case matrix
+uv run sdlab-ladder show 011 --strategy matrix                  # true vs found equations on one case
 uv run python tests/bench/evaluate.py                           # everything, compared with this branch's last run
 uv run python tests/bench/evaluate.py --baseline python         # compared with the shared baseline
 uv run python tests/bench/evaluate.py --examples sd-orders --lengths default
@@ -166,8 +190,9 @@ uv run python tests/bench/datasets.py sd-saas --long            # path to a cach
 | Strategies | `sdlab/discovery/strategies/` (`matrix`: the main line) |
 | The page's discovery | `sdlab/discovery/api.py` (`discover(request)`: what the page sends, `unexplained`, JSON-safe results), run as background jobs by `sdlab/discovery_jobs.py` behind `POST/GET/DELETE /api/models/{id}/discovery` (`sdlab/server.py`); the page's side is `runDiscovery` in `sdlab/static/app.js` |
 | Research view | `/research` (`sdlab/static/research.html`, `research.js`; endpoints in `sdlab/research.py`): the topics in `docs/research/` and the saved bench runs |
+| The ladder (primary bench) | `sdlab/ladder/` (cases, scoring, store, CLI `sdlab-ladder`, read API and `/api/ladder` endpoints); [LADDER.md](LADDER.md) |
 | Synthetic ground truth | `tests/synth.py` |
-| Grading | `tests/bench/grade.py` (`grade`, `same_behaviour`); `tests/bench/candidates.py` (every candidate, judge rank, failure classes); `tests/bench/seeds.py` |
+| Grading | `sdlab/skill.py` (`same_behaviour`, skill@H with a bootstrap interval), `tests/bench/grade.py` (`grade`, parts); `tests/bench/candidates.py` (every candidate, judge rank, failure classes); `tests/bench/seeds.py` |
 | Evaluation CLI | `tests/bench/evaluate.py`; `tests/bench/compare.py` (paired tests, `sdlab/bench_stats.py`) |
 | Datasets | `tests/bench/datasets.py` (cache: `~/.cache/sdlab/bench`) |
 | Generated models | `tests/bench/generator.py` (motifs, checks, pools, cache), `tests/bench/generated.py` (`--generated N`: the bench by motif) |

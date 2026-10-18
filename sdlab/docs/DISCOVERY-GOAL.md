@@ -47,7 +47,8 @@ log with the evidence), never to make a number look better. Add tests freely.
 ## How to work
 
 Follow DISCOVERY-LOOP.md: each idea is an experiment on its own branch and worktree, a strategy with a
-mechanism test on synthetic ground truth, measured with `uv run python tests/bench/evaluate.py
+mechanism test on synthetic ground truth, tested first on the ladder ([LADDER.md](LADDER.md): tiny
+true models, scored on whether the true equations are recovered; `uv run sdlab-ladder sync`), then measured with `uv run python tests/bench/evaluate.py
 --strategy <name> --baseline python` (all examples in parallel, about 30 seconds), and **recorded in
 DISCOVERY-EXPERIMENTS.md** - hypothesis, numbers against the baseline, verdict. Winners are adopted
 into the main line one at a time.
