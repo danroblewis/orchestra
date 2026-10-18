@@ -47,7 +47,7 @@ def cost(rss: float, T: int, pieces: int, k: int, floor: float) -> float:
 
 
 def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d0: float, floor: float,
-           min_piece: int = 5, grid: int = 17, changes: bool = True, mult: float = 2.0) -> dict | None:
+           min_piece: int = 5, grid: int = 17, changes: bool = True, mult: float = 2.0, low_share: float = 0.05) -> dict | None:
     """The best (D, d) with its pieces, or None; with "plain", the best score with D = 0 (no cap).
     d is tried on a grid over [0, 1] and at the main line's d0."""
     T = len(y)
@@ -88,8 +88,12 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
             consider(*at(v))
 
     sweep(np.array(sorted({0.0, max(0.0, d0), *np.linspace(0.0, 1.0, 11)[1:]})), lambda d: (0.0, d))
-    for d in sorted({0.0, max(0.0, d0), plain[1]}):
-        sweep(Ds[1:], lambda D: (D, d))
+    # a demand can be capped only in a stock that sits near the bottom of its range for a while
+    # (an emptied stock holds what arrived): otherwise the demand sweep is skipped
+    low = float((x <= x.min() + 0.05 * np.ptp(x)).mean()) if np.ptp(x) > 0 else 0.0
+    if low >= low_share:
+        for d in sorted({0.0, plain[1]}):
+            sweep(Ds[1:], lambda D: (D, d))
     plain_fit = plain[2]
     if best["D"] <= 0:
         return {**best, "plain": plain[0], "plain_fit": plain_fit}

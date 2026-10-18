@@ -28,9 +28,19 @@ def _fit(y: np.ndarray, cols: list[np.ndarray]) -> tuple[np.ndarray, float]:
     return beta, float(r @ r)
 
 
+def _projector(cols: list[np.ndarray]):
+    """Residualising against the columns: v -> v less its least-squares fit on them."""
+    if not cols:
+        return lambda v: v
+    Q, _ = np.linalg.qr(np.array(cols).T)
+    return lambda v: v - Q @ (Q.T @ v)
+
+
 def search(y: np.ndarray, prev: np.ndarray, i: int, others: list[int], grid: int = 48, bind: tuple[float, float] = (0.03, 0.97),
            constant: bool = False) -> list[dict]:
-    """The best hinge per (reader, side): {j, s, theta, beta (hinge, own, others..., const?), rss, binds}."""
+    """The best hinge per (reader, side): {j, s, theta, beta (hinge, own, others..., const?), rss, binds,
+    line_rss, smooth_rss}. Each threshold's rss comes from the hinge column with the other columns
+    projected out (all thresholds of a grid at once), so the search costs one QR per reader."""
     S, T = prev.shape
     out = []
     for j in range(S):
@@ -40,29 +50,32 @@ def search(y: np.ndarray, prev: np.ndarray, i: int, others: list[int], grid: int
         rest = [prev[i]] + [prev[m] for m in others if m != j and m != i]
         if constant:
             rest.append(np.ones(T))
+        proj = _projector(rest)
+        yr = proj(y)
+        base = float(yr @ yr)
         qs = np.unique(np.quantile(x, np.linspace(bind[0], bind[1], grid)))
         for s in (1.0, -1.0):
-            def rss_at(th):
-                h = np.maximum(0.0, s * (x - th))
-                return _fit(y, [h] + rest)[1]
+            def rss_of(H):
+                Hr = proj(H)
+                den = (Hr * Hr).sum(axis=0)
+                num = (Hr.T @ yr) ** 2
+                return np.where(den > 1e-12 * T, base - num / np.where(den > 0, den, 1.0), np.inf)
 
-            best = None
-            for k, th in enumerate(qs):
-                h = np.maximum(0.0, s * (x - th))
-                share = float((h == 0).mean())
-                if not (bind[0] <= share <= bind[1]) or not h.any():
-                    continue
-                r = rss_at(th)
-                if best is None or r < best[1]:
-                    best = (k, r)
-            if best is None:
+            H = np.maximum(0.0, s * (x[:, None] - qs[None, :]))
+            share = (H == 0).mean(axis=0)
+            ok = (share >= bind[0]) & (share <= bind[1]) & H.any(axis=0)
+            if not ok.any():
                 continue
-            k = best[0]
+            r = np.where(ok, rss_of(H), np.inf)
+            k = int(np.argmin(r))
+            if not np.isfinite(r[k]):
+                continue
             lo, hi = qs[max(0, k - 1)], qs[min(len(qs) - 1, k + 1)]
             th = float(qs[k])
             if hi > lo:
-                res = minimize_scalar(rss_at, bounds=(lo, hi), method="bounded", options={"xatol": 1e-6 * max(1.0, abs(th))})
-                if res.fun < best[1]:
+                res = minimize_scalar(lambda v: float(rss_of(np.maximum(0.0, s * (x - v))[:, None])[0]), bounds=(lo, hi),
+                                      method="bounded", options={"xatol": 1e-6 * max(1.0, abs(th))})
+                if res.fun < r[k]:
                     th = float(res.x)
             h = np.maximum(0.0, s * (x - th))
             beta, rss = _fit(y, [h] + rest)
