@@ -1,0 +1,13 @@
+title: A stepping inflow and a drain
+level: 3
+tags: [inflow-change, unannounced, outflow]
+tests: "one stock whose outside inflow steps between 3 and 7 every 100 steps without announcement, drained at 0.1 (the C row of 017 and 018 on its own): the drain is not read faster for cutting the inflow into pieces"
+seed: 27
+stocks: {C: 50}
+flows:
+  outside -> C: 3
+  C -> outside: 0.1 * C
+schedule:
+  every: 200
+  at 1 low: {outside -> C: 3}
+  at 101 high: {outside -> C: 7}
