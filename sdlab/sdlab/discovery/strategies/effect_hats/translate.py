@@ -44,7 +44,7 @@ def _split(rate: dict, meta: dict) -> tuple[dict | None, dict[str, float]] | Non
     return rate, {}
 
 
-def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarray, ids: list[str]) -> list[dict] | None:
+def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarray, ids: list[str], coflows: bool = True) -> list[dict] | None:
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
     idx = {s: i for i, s in enumerate(ids)}
     plain, eff = [], {}                   # eff[v] = [[from, to, k]]
@@ -77,10 +77,20 @@ def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarra
                     moves.append([o[0], i[1], k])
                     o[2] -= k
                     i[2] -= k
-        for frm, to, k in moves + outs + ins:
+        # what is left draining a third stock on the same curve as a move is that move using it up
+        # as it goes (a co-flow: per unit moved, the drain's number over the move's)
+        uses: dict[int, list] = {}
+        if coflows and moves:
+            lead = max(range(len(moves)), key=lambda q: moves[q][2])
+            for o in outs:
+                if o[2] > 1e-12 and o[0] not in (moves[lead][0], moves[lead][1]) and moves[lead][2] > 0:
+                    uses.setdefault(lead, []).append({"stock": o[0], "per": float(o[2] / moves[lead][2])})
+                    o[2] = 0.0
+        for q, (frm, to, k) in enumerate(moves + outs + ins):
             if abs(k) <= 1e-12:
                 continue
-            out.append(hat_flow(frm, to, m["base"], m["stock"], m["knots"], k * np.asarray(m["weights"]), prev, idx))
+            extra = {"uses": uses[q]} if q in uses else None
+            out.append(hat_flow(frm, to, m["base"], m["stock"], m["knots"], k * np.asarray(m["weights"]), prev, idx, extra))
     return fold(out)
 
 

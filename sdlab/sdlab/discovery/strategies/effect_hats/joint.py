@@ -75,6 +75,33 @@ def _columns(f: dict, prev: np.ndarray, idx: dict, tt: np.ndarray) -> tuple[list
     return None
 
 
+def _repers(X, owned, spans, theta, res, pers, idx, S, T, use):
+    X = X.copy()
+    for q, ((f, _), (a, b, _)) in enumerate(zip(owned, spans)):
+        if not pers[q]:
+            continue
+        cols = X[:, a:b]
+        st = _stoich(f, idx, S)
+        # the flow's amount per step: its columns in a row it enters with a known sign
+        r0 = int(np.flatnonzero((st != 0) & ~np.isin(np.arange(S), [idx[u["stock"]] for u in f["uses"] if u.get("stock") in idx]))[0])
+        amount = (cols.reshape(S, T, -1)[r0] @ theta[a:b]) / st[r0]
+        for k, u in enumerate(f["uses"]):
+            if u.get("stock") not in idx:
+                continue
+            j = idx[u["stock"]]
+            aa = float((amount * amount * use) @ np.ones(T))
+            if aa <= 1e-12:
+                continue
+            new = max(0.0, pers[q][k] + float(((-res[j]) * amount * use).sum()) / aa)
+            block = cols.reshape(S, T, -1)
+            unit = block[r0] / st[r0]
+            block[j] = block[j] + (pers[q][k] - new) * unit
+            pers[q][k] = new
+            X[:, a:b] = block.reshape(S * T, -1)
+            cols = X[:, a:b]
+    return X
+
+
 def _pools(f: dict) -> list[list[int]]:
     """The pieces of an outside inflow grouped by their pool (each its own without one)."""
     groups: dict = {}
@@ -167,6 +194,7 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     X = np.array(blocks).T                                   # (S*T) x P
     y = target.reshape(-1)
     w = np.ones(S)
+    pers = [[float(u.get("per") or 0) for u in (f.get("uses") or [])] for f, _ in owned]
     # steps left out of the fit (opts["skip"]: a boolean per step), and (opts["guard"]: g) the steps
     # within g of a change in an outside inflow: where a change's step is uncertain by a step or two,
     # those steps decide a drain's number more than all the others (a cut one step late reads it 10%
@@ -183,22 +211,29 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
         skip[:] = False
     use = (~skip).astype(float)
     theta = None
-    for _ in range(2 if opts.get("weighted", True) else 1):
+    coflow = any(pers_f for pers_f in pers) and opts.get("coflow_per", True)
+    for it in range((2 if opts.get("weighted", True) else 1) + (3 if coflow else 0)):
         W = np.repeat(w, T) * np.tile(use, S)
         theta = np.linalg.lstsq(X * W[:, None], y * W, rcond=None)[0]
         res = (y - X @ theta).reshape(S, T)
         sig = np.sqrt((res ** 2 * use).sum(axis=1) / max(1.0, use.sum()))
         floor = max(1e-9, 1e-3 * float(np.median(sig[sig > 0])) if np.any(sig > 0) else 1e-9)
         w = 1.0 / np.maximum(sig, floor)
+        if coflow:
+            # a co-flow's per (how much of the used stock goes with each unit moved) is a number of
+            # the stoichiometry, not of the rate: re-read it from the used stock's row, then refit
+            X = _repers(X, owned, spans, theta, res, pers, idx, S, T, use)
     out = []
     oi = 0
     for f in flows:
         if any(f is g for g, _ in held):
             out.append(f)
             continue
-        _, (_, _) = owned[oi]
         a, b, how = spans[oi]
-        out.append(_write(f, how, theta[a:b], prev, idx))
+        g = _write(f, how, theta[a:b], prev, idx)
+        if pers[oi]:
+            g = {**g, "uses": [{**u, "per": r6(p)} for u, p in zip(f["uses"], pers[oi])]}
+        out.append(g)
         oi += 1
     res = (y - X @ theta).reshape(S, T)
     return out, {"rss": (res ** 2).sum(axis=1), "params": X.shape[1], "res": res}
