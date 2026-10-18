@@ -140,8 +140,22 @@ def flatten(row: dict | None) -> dict:
     return out
 
 
+_summaries: dict = {}
+
+
 def summary(strategy_filter: list[str] | None = None) -> dict:
-    strats = [s for s in catalog.listing() if not strategy_filter or s["name"] in strategy_filter]
+    """The matrix (see the module docstring), cached in memory until a result is stored, a case or
+    a strategy changes, or the scorer changes."""
+    listing = catalog.listing()
+    key = (store.version(), tuple((s["name"], s["hash"], s["available"]) for s in listing),
+           tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), tuple(strategy_filter or ()), str(store.path()))
+    if _summaries.get("key") != key:
+        _summaries.update(key=key, value=_summary(strategy_filter, listing))
+    return _summaries["value"]
+
+
+def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
+    strats = [s for s in listing if not strategy_filter or s["name"] in strategy_filter]
     sh = score.score_hash()
     have = {(r["case"], r["variant"], r["strategy"]): r for r in store.latest()}
     cs = [casemod.load(i) for i in casemod.case_ids()]

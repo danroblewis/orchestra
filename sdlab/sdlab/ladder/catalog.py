@@ -7,14 +7,19 @@ strategies folder, plus strategies/__init__.py): a change to any of them makes i
 Other strategies' modules are left out, so adding a strategy does not re-run the others.
 
 A strategy that cannot be imported (an optional package missing) is listed as unavailable, with
-the reason, and skipped.
+the reason, and skipped. Listing imports nothing: availability is read from the source (the packages
+its files import at module level, outside try blocks, looked up with importlib.util.find_spec, and an
+`identify` defined or imported in its module), and the listing is cached in memory until a file
+under sdlab/discovery changes (its path, size or modification time), so a page can ask often.
 """
 
 from __future__ import annotations
 
+import ast
 import hashlib
-import importlib
+import importlib.util
 import re
+import sys
 from pathlib import Path
 
 from ..discovery import strategies as _strategies
@@ -29,6 +34,17 @@ def names() -> list[str]:
     return [n for n in _strategies.names() if NAME_RE.match(n)]
 
 
+def _key() -> tuple:
+    """Every file under sdlab/discovery with its size and modification time: the cache key."""
+    out = []
+    for p in sorted(DISCOVERY.rglob("*.py")):
+        if "__pycache__" in p.parts:
+            continue
+        st = p.stat()
+        out.append((p.as_posix(), st.st_size, st.st_mtime_ns))
+    return tuple(out)
+
+
 def _files(path: Path) -> list[Path]:
     if path.is_dir():
         return sorted(p for p in path.rglob("*.py") if "__pycache__" not in p.parts)
@@ -36,7 +52,15 @@ def _files(path: Path) -> list[Path]:
 
 
 def _module_path(name: str) -> Path:
-    return STRATEGIES / name if (STRATEGIES / name).is_dir() else STRATEGIES / f"{name}.py"
+    """The strategy's package folder or file, found without importing it (it may live on another
+    path of the strategies package)."""
+    if (STRATEGIES / name).is_dir() or (STRATEGIES / f"{name}.py").exists():
+        return STRATEGIES / name if (STRATEGIES / name).is_dir() else STRATEGIES / f"{name}.py"
+    spec = importlib.util.find_spec(f"{_strategies.__name__}.{name}")
+    if spec is None or not spec.origin:
+        return STRATEGIES / f"{name}.py"
+    origin = Path(spec.origin)
+    return origin.parent if spec.submodule_search_locations else origin
 
 
 def _own_files(name: str, seen: set | None = None) -> list[Path]:
@@ -61,27 +85,62 @@ def _shared_files() -> list[Path]:
 def strategy_hash(name: str) -> str:
     h = hashlib.sha256()
     for p in sorted(set(_own_files(name))) + _shared_files():
-        h.update(p.relative_to(DISCOVERY).as_posix().encode() + b"\n" + p.read_bytes() + b"\n")
+        rel = p.relative_to(DISCOVERY).as_posix() if DISCOVERY in p.parents else p.name
+        h.update(rel.encode() + b"\n" + p.read_bytes() + b"\n")
     return h.hexdigest()[:16]
 
 
+def _required(tree: ast.Module) -> set[str]:
+    """Top-level packages a module imports at module level, outside try blocks (absolute imports only)."""
+    out: set[str] = set()
+
+    def visit(nodes):
+        for node in nodes:
+            if isinstance(node, ast.Import):
+                out.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                out.add(node.module.split(".")[0])
+            elif isinstance(node, ast.If):                      # if TYPE_CHECKING / version checks: both arms count
+                visit(node.body)
+                visit(node.orelse)
+    visit(tree.body)
+    return out
+
+
 def availability(name: str) -> tuple[bool, str | None]:
-    """(True, None) if the strategy imports and has identify(); else (False, why)."""
+    """(True, None) if every package its files import is installed and its module has identify();
+    else (False, why). Nothing is imported."""
+    mod = _module_path(name)
+    main = mod / "__init__.py" if mod.is_dir() else mod
     try:
-        mod = importlib.import_module(f"{_strategies.__name__}.{name}")
-    except ModuleNotFoundError as e:
-        return False, f"missing package: {e.name}"
-    except Exception as e:                                    # noqa: BLE001
-        return False, f"import failed: {type(e).__name__}: {e}"
-    if not callable(getattr(mod, "identify", None)):
-        return False, "no identify(stocks, run, opts)"
-    return True, None
+        trees = {p: ast.parse(p.read_text(errors="replace")) for p in _own_files(name)}
+    except SyntaxError as e:
+        return False, f"import failed: SyntaxError: {e}"
+    for tree in trees.values():
+        for pkg in sorted(_required(tree)):
+            if pkg in ("sdlab", "__future__") or pkg in sys.stdlib_module_names:
+                continue
+            if importlib.util.find_spec(pkg) is None:
+                return False, f"missing package: {pkg}"
+    tree = trees.get(main)
+    defined = tree is not None and any(
+        (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "identify")
+        or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "identify" for t in n.targets))
+        or (isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == "identify" for a in n.names))
+        for n in tree.body)
+    return (True, None) if defined else (False, "no identify(stocks, run, opts)")
+
+
+_cache: dict = {}
 
 
 def listing(check: bool = True) -> list[dict]:
-    """[{name, hash, available, reason}] for every strategy module."""
-    out = []
-    for n in names():
-        ok, why = availability(n) if check else (True, None)
-        out.append({"name": n, "hash": strategy_hash(n), "available": ok, "reason": why})
-    return out
+    """[{name, hash, available, reason}] for every strategy module (cached until a file changes)."""
+    key = (_key(), tuple(names()), tuple(map(str, _strategies.__path__)), check)
+    if _cache.get("key") != key:
+        out = []
+        for n in names():
+            ok, why = availability(n) if check else (True, None)
+            out.append({"name": n, "hash": strategy_hash(n), "available": ok, "reason": why})
+        _cache.update(key=key, value=out)
+    return [dict(x) for x in _cache["value"]]

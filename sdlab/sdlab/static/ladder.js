@@ -209,6 +209,7 @@
       renderPick();
     }
     S.shown = r;
+    $("dpair").hidden = false;
     renderCompare(S.byId[S.sel.case], r, err);
   }
 
@@ -665,7 +666,7 @@
   (async function start() {
     try {
       [S.cases, S.strategies] = await Promise.all([get("/api/ladder/cases"), get("/api/ladder/strategies")]);
-    } catch (e) { setStatus(e.message, true); return; }
+    } catch (e) { setStatus(e.message, true); $("cmp-head").innerHTML = `<p class="note error">Could not load the ladder: ${esc(e.message)}</p>`; return; }
     S.cases.forEach((c) => { S.byId[c.id] = c; });
     const p = new URLSearchParams(location.search);
     const view = ["now", "matrix", "history", "cases"].includes(p.get("view")) ? p.get("view") : "now";
@@ -675,8 +676,9 @@
     }
     if (view === "history") S.hsel = { case: S.byId[p.get("case")] ? p.get("case") : null, strategy: p.get("strategy") };
     if (view === "cases" && S.byId[p.get("case")]) S.csel.case = p.get("case");
-    await loadSummary();
     try { S.progress = await get("/api/ladder/progress?recent=20"); } catch { S.progress = null; }
+    // the matrix's numbers come in the background: the comparison does not wait for them
+    if (view !== "matrix") loadSummary().then(() => { if (S.view === "now") renderPick(); });
     if (S.follow) followTick(true);
     setView(view);
     renderLive();

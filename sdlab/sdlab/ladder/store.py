@@ -113,6 +113,13 @@ def history(case: str, variant: str, strategy: str, found: bool = False) -> list
         return [_row(r, found) for r in rows]
 
 
+def version() -> tuple:
+    """Changes whenever a result is stored: (newest id, how many)."""
+    with connect(readonly=True) as con:
+        r = con.execute("SELECT MAX(id), COUNT(*) FROM results").fetchone()
+        return (r[0] or 0, r[1])
+
+
 def get(result_id: int, found: bool = True) -> dict | None:
     """One result by its id (None if there is none)."""
     with connect(readonly=True) as con:

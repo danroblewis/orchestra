@@ -137,6 +137,14 @@ def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT
     jobs = jobs or max(1, (os.cpu_count() or 2) - 1)
     run_id = store.start_run(command, items)
     rows = []
+    # a terminated run (SIGTERM, SIGHUP) still marks itself finished in the store, through the finally below
+    old = {}
+    if threading.current_thread() is threading.main_thread():
+        def stop(signum, _frame):
+            raise SystemExit(128 + signum)
+        for sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+            if sig is not None:
+                old[sig] = signal.signal(sig, stop)
 
     def done(item, row):
         store.record(row)
@@ -164,4 +172,6 @@ def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT
                     done(it, row)
     finally:
         store.finish_run(run_id)
+        for sig, h in old.items():
+            signal.signal(sig, h)
     return rows
