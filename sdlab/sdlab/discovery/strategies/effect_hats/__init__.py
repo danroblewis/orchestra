@@ -36,7 +36,7 @@ from .pieces import resegment
 from .screen import fit_curve, placements, scan
 from .translate import translate
 
-DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4}
+DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True, "seg_margin": 3.0}
 
 
 def _arrays(stocks, run, opts):
@@ -101,8 +101,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     ids, prev, dy = _arrays(stocks, run, opts)
     cands = scan(stocks, prev, dy, o)
     base["effects_tried"] = [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
-    if not cands:
-        return base
     fit_opts = {**opts, "weighted": o["weighted"]}
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
@@ -110,6 +108,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     base_b = price(seg, ids, run)
     fair_e = judge(seg, stocks, run, injections=opts.get("injections")) if o["pool"] else base_e
     base["bic"] = base_b
+    if not cands:
+        return _seg_base(base, seg, o, ids, run, base_e, fair_e)
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     group = {s["id"]: s.get("group") for s in stocks}
     raw, trials = [], []
@@ -169,7 +169,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in trials)
     ok = [t for t in trials if t["fit"]["halves_ok"] and t["bic"] < base_b and t["error"] < o["margin"] * fair_e]
     if not ok:
-        return base
+        return _seg_base(base, seg, o, ids, run, base_e, fair_e)
     log_t = math.log(max(2, len(run["t"]) - 1))
 
     def rank(t):
@@ -182,6 +182,16 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if keep:
         out["candidates"] = base.get("candidates") or []
     return out
+
+
+def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, base_e: float, fair_e: float) -> dict:
+    """The base, or (opts["seg_base"]) the base with its inflows pooled and re-cut when that prices
+    better and behaves within the margin."""
+    if not o["seg_base"] or seg is base["flows"]:
+        return base
+    if price(seg, ids, run) < price(base["flows"], ids, run) and fair_e < o["seg_margin"] * base_e:
+        return {**base, "flows": _clean(seg), "chosen": f"{base.get('chosen')}, inflows re-cut"}
+    return base
 
 
 def _signature(flows: list[dict]) -> str:
