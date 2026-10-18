@@ -20,24 +20,47 @@ import numpy as np
 ROUNDING = 1 / 6        # the variance of a change between two levels each rounded to a whole thing
 
 
-def nll(theta: np.ndarray, V: np.ndarray, Z: np.ndarray, Y: np.ndarray, delta: float = ROUNDING, grad: bool = True):
+def nll(theta: np.ndarray, V: np.ndarray, Z: np.ndarray, Y: np.ndarray, delta: float = ROUNDING, grad: bool = True,
+        pool: np.ndarray | None = None, sign: np.ndarray | None = None, eps: float = 0.05):
     """The negative log-likelihood (without the constant) and its gradient in theta.
-    V: stocks x flows; Z: flows x steps; Y: stocks x steps."""
+    V: stocks x flows; Z: flows x steps; Y: stocks x steps.
+
+    pool (optional, per atom): the stock whose outside inflow the atom is part of (-1: none). An
+    outside inflow is one draw, whatever its equation: its constant (sign +1) and the terms that
+    lower it as a level rises (a gap, sign -1) add up to one rate, whose variance is that rate
+    (its size, kept above eps)."""
     S, T = Y.shape
+    F = len(theta)
+    pool = np.full(F, -1) if pool is None else pool
+    sign = np.ones(F) if sign is None else sign
     q = np.maximum(theta, 0.0)[:, None] * Z                       # F x T
     r = Y - V @ q                                                   # S x T
-    sig = np.einsum("if,ft,jf->tij", V, q, V, optimize=True)
-    sig[:, np.arange(S), np.arange(S)] += delta
+    rest = pool < 0
+    Vr = V[:, rest]
+    sig = np.einsum("if,ft,jf->tij", Vr, q[rest], Vr, optimize=True)
+    pooled = ~rest
+    net = np.zeros((S, T))
+    if pooled.any():
+        np.add.at(net, pool[pooled], sign[pooled, None] * q[pooled])
+    # a rate below zero is not a draw of nothing: what a gap takes beyond the inflow is noise again
+    live = np.abs(net) > eps
+    sig[:, np.arange(S), np.arange(S)] += np.where(live, np.abs(net), eps).T + delta
     W = np.linalg.inv(sig)                                          # T x S x S
-    sign, logdet = np.linalg.slogdet(sig)
+    _, logdet = np.linalg.slogdet(sig)
     a = np.einsum("tij,jt->ti", W, r)                               # T x S
     val = 0.5 * float(logdet.sum() + np.einsum("it,ti->", r, a))
     if not grad:
         return val
-    va = V.T @ a.T                                                  # F x T
-    M = np.einsum("tij,jf->tif", W, V, optimize=True)
-    dq = np.einsum("if,tif->ft", V, M, optimize=True)               # v_f' W_t v_f
-    g = (Z * (-va + 0.5 * (dq - va * va))).sum(axis=1)
+    va = V.T @ a.T                                                  # F x T: v_f . a_t (the mean's part)
+    g = np.empty(F)
+    M = np.einsum("tij,jf->tif", W, Vr, optimize=True)
+    dq = np.einsum("if,tif->ft", Vr, M, optimize=True)              # v_f' W_t v_f
+    g[rest] = (Z[rest] * (-va[rest] + 0.5 * (dq - va[rest] ** 2))).sum(axis=1)
+    if pooled.any():
+        Wd = W[:, np.arange(S), np.arange(S)].T                     # S x T
+        p = pool[pooled]
+        dvar = sign[pooled, None] * (live * np.sign(net))[p] * (Wd[p] - a.T[p] ** 2)
+        g[pooled] = (Z[pooled] * (-va[pooled] + 0.5 * dvar)).sum(axis=1)
     return val, g
 
 

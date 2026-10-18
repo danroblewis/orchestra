@@ -9,7 +9,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.optimize import lsq_linear, minimize
 
-from .atoms import Atom, features, stoich
+from .atoms import Atom, features, pooling, stoich
 from .likelihood import ROUNDING, nll
 
 
@@ -54,8 +54,10 @@ def fit(atoms: list[Atom], d: Data, start: np.ndarray | None = None, maxiter: in
     x0 = (mean_start(atoms, d) if start is None else np.asarray(start, float)) * scale
     x0 = np.maximum(x0, 1e-3)
 
+    pool, sign = pooling(atoms)
+
     def f(x):
-        v, g = nll(x / scale, V, Z, d.dy, d.delta)
+        v, g = nll(x / scale, V, Z, d.dy, d.delta, pool=pool, sign=sign)
         return v, g / scale
 
     r = minimize(f, x0, jac=True, method="L-BFGS-B", bounds=[(0, None)] * len(atoms), options={"maxiter": maxiter})

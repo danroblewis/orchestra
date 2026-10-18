@@ -8,7 +8,7 @@ import math
 import numpy as np
 
 from ...changes import pelt
-from .atoms import Atom, features, stoich
+from .atoms import Atom, features, stoich, variances
 from .fit import Data, Fitted, fit
 
 
@@ -17,35 +17,37 @@ def _moments(cur: Fitted, d: Data) -> tuple[np.ndarray, np.ndarray]:
     S = d.dy.shape[0]
     V, Z = stoich(cur.atoms, S), features(cur.atoms, d.prev, d.cfg)
     q = cur.theta[:, None] * Z
-    return d.dy - V @ q, np.sqrt((V * V) @ q + d.delta)
+    return d.dy - V @ q, np.sqrt(variances(cur.atoms, cur.theta, Z, S) + d.delta)
 
 
 def pieces(cur: Fitted, d: Data, min_len: int = 5, mult: float = 1.0, price: float | None = None) -> Fitted:
-    """Each stock's outside inflow, cut where its standardised residual changes level (PELT), kept
-    if the likelihood gains more than the BIC price of the extra pieces."""
+    """Each stock's outside inflow cut afresh where what the other flows leave unexplained changes
+    level (PELT on the residual standardised by its counting noise), kept if the likelihood gains
+    more than the BIC price of the extra pieces."""
     S, T = d.dy.shape
     price = 0.5 * math.log(T) if price is None else price
     for s in range(S):
-        r, sd = _moments(cur, d)
-        z = r[s] / sd[s]
-        cuts = pelt(z, min_len, mult)
-        if len(cuts) <= 2:
-            continue
         idx = [i for i, a in enumerate(cur.atoms) if a.kind == "in" and a.dst == s]
         if not idx:
             continue
-        base = sum(cur.theta[i] for i in idx if cur.atoms[i].span is None) / max(1, len({cur.atoms[i].era for i in idx}))
+        r, sd = _moments(cur, d)
+        Z = features([cur.atoms[i] for i in idx], d.prev, d.cfg)
+        own = cur.theta[idx] @ Z                         # the inflow as it stands, added back
+        y = r[s] + own
         keep = [i for i in range(len(cur.atoms)) if i not in idx]
-        new = []
-        for a, b in zip(cuts[:-1], cuts[1:]):
-            # the inflow over the piece: what was there plus the piece's mean residual
-            old = sum(cur.theta[i] for i in idx if cur.atoms[i].span and cur.atoms[i].span[0] <= a < cur.atoms[i].span[1])
-            new.append((a, b, max(1e-3, base + old + float(r[s, a:b].mean()))))
-        atoms = [cur.atoms[i] for i in keep] + [Atom("in", dst=s, span=(a, b)) for a, b, _ in new]
-        g = fit(atoms, d, np.append(cur.theta[keep], [v for _, _, v in new]))
-        n_old = max(1, sum(1 for i in idx if cur.theta[i] > 0))
-        if cur.nll - g.nll > price * (len(new) - n_old):
-            cur = g
+        n_old = sum(1 for i in idx if cur.theta[i] > 0)
+        best = None
+        for cuts in (pelt(y / sd[s], min_len, mult), [0, T]):
+            new = [(a, b, max(1e-3, float(y[a:b].mean()))) for a, b in zip(cuts[:-1], cuts[1:])]
+            atoms = [cur.atoms[i] for i in keep] + [Atom("in", dst=s, span=None if len(new) == 1 else (a, b)) for a, b, _ in new]
+            if sorted(atoms, key=repr) == sorted(cur.atoms, key=repr):
+                continue
+            g = fit(atoms, d, np.append(cur.theta[keep], [v for _, _, v in new]))
+            gain = cur.nll - g.nll - price * (len(new) - n_old)
+            if gain > 0 and (best is None or gain > best[0]):
+                best = (gain, g)
+        if best is not None:
+            cur = best[1]
     return cur
 
 

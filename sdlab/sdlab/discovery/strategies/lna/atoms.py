@@ -6,6 +6,8 @@
     link    outside -> b              theta x a   (nothing leaves a)
     grow    outside -> a              theta x a   (a stock that grows with itself: births)
     drain   c -> outside              theta x a   (c drains faster when a is high)
+    gap     outside -> b              -theta x a  (b's outside inflow falls as a rises: a goal gap;
+                                                   one draw with b's inflow, so its noise is theirs)
     a move may carry `uses` [(c, per)]: each unit moved also uses up per of c (a co-flow)
 
 An atom's number may hold in one era only (`era`), and an inflow over a span of steps (`span`).
@@ -42,7 +44,7 @@ def stoich(atoms: list[Atom], S: int) -> np.ndarray:
         if a.src is not None:
             V[a.src, f] -= 1
         if a.dst is not None:
-            V[a.dst, f] += 1
+            V[a.dst, f] += -1 if a.kind == "gap" else 1
         for c, per in a.uses:
             V[c, f] -= per
     return V
@@ -63,7 +65,27 @@ def features(atoms: list[Atom], prev: np.ndarray, cfg: np.ndarray | None) -> np.
     return Z
 
 
-def superset(S: int, unit: list[str], final: set[int], group: list, allow_links: bool = True) -> list[Atom]:
+def pooling(atoms: list[Atom]) -> tuple[np.ndarray, np.ndarray]:
+    """Per atom: the stock whose outside inflow it is part of (-1: none), and its sign there."""
+    pool = np.array([a.dst if a.kind in ("in", "gap") else -1 for a in atoms], dtype=int)
+    sign = np.array([-1.0 if a.kind == "gap" else 1.0 for a in atoms])
+    return pool, sign
+
+
+def variances(atoms: list[Atom], theta: np.ndarray, Z: np.ndarray, S: int, eps: float = 0.05) -> np.ndarray:
+    """Each stock's counting-noise variance, step by step (stocks x steps)."""
+    V = stoich(atoms, S)
+    q = theta[:, None] * Z
+    pool, sign = pooling(atoms)
+    rest = pool < 0
+    out = (V[:, rest] ** 2) @ q[rest]
+    net = np.zeros_like(out)
+    if (~rest).any():
+        np.add.at(net, pool[~rest], sign[~rest, None] * q[~rest])
+    return out + np.maximum(np.abs(net), eps)
+
+
+def superset(S: int, unit: list[str], final: set[int], group: list, allow_links: bool = True, gaps: bool = True) -> list[Atom]:
     """Every atom between the stocks the page allows (same unit for moves; groups as the matrix
     reads them: a stock affects another only in its own group, or when either has none)."""
     def may(j, s):
@@ -85,4 +107,6 @@ def superset(S: int, unit: list[str], final: set[int], group: list, allow_links:
                 out.append(Atom("link", dst=b, driver=a))
             if b not in final:
                 out.append(Atom("drain", src=b, driver=a))
+    if gaps:
+        out += [Atom("gap", dst=b, driver=a) for b in range(S) for a in range(S) if may(a, b)]
     return out

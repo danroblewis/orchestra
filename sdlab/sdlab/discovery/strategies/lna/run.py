@@ -5,11 +5,12 @@ from __future__ import annotations
 import numpy as np
 
 from ...matrix import configurations, injected
-from .atoms import Atom, features, stoich, superset
+from .atoms import Atom, features, stoich, superset, variances
 from .fit import Data, fit, mean_start, prune
 from .changes import merge_eras, pieces, split_eras
 from .coflows import refine_per, with_coflows
 from .flows import to_flows
+from .swaps import swaps
 
 
 def dispersion(atoms: list[Atom], theta: np.ndarray, d: Data) -> float:
@@ -17,9 +18,8 @@ def dispersion(atoms: list[Atom], theta: np.ndarray, d: Data) -> float:
     residuals over the variance its flows would draw): about 1 under counting noise, 0 without."""
     S, T = d.dy.shape
     V, Z = stoich(atoms, S), features(atoms, d.prev, d.cfg)
-    q = theta[:, None] * Z
-    r = d.dy - V @ q
-    var = (V * V) @ q
+    r = d.dy - V @ (theta[:, None] * Z)
+    var = variances(atoms, theta, Z, S)
     return float((r * r).sum() / max(1e-12, var.sum()))
 
 
@@ -39,7 +39,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
     unit = [s.get("unit") or "" for s in stocks]
     final = {k for k, s in enumerate(stocks) if s.get("final")}
     group = [s.get("group") for s in stocks]
-    atoms = superset(S, unit, final, group)
+    atoms = superset(S, unit, final, group, gaps=False)
     phi = dispersion(atoms, mean_start(atoms, d), d)
     if phi < 0.2:
         return None                    # no counting noise to read: the matrix's reading stands
@@ -49,7 +49,11 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
     # changes in the outside inflows first, beside every flow (so that levels do not stand in for them)
     cur = pieces(cur, d, mult=0.5)
     cur = prune(with_coflows(cur, d), d)
-    cur = pieces(cur, d)
+    for _ in range(3):
+        before = cur.atoms
+        cur = prune(swaps(prune(pieces(cur, d), d), d), d)
+        if cur.atoms == before:
+            break
     cur = prune(refine_per(cur, d), d)
     cur = merge_eras(cur, d)
     at = lambda k: t[k + 1]  # noqa: E731

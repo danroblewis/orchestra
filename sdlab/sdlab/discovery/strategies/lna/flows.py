@@ -26,10 +26,29 @@ def to_flows(atoms: list[Atom], theta: np.ndarray, ids: list[str], prev: np.ndar
             groups.setdefault(a.key(), []).append((a, float(th)))
     out = []
     T = prev.shape[1]
+    # a goal gap (b's outside inflow c - k x a) is one flow with b's inflow when that is one constant;
+    # otherwise it is written as the drain it equals on average (the simulator floors each flow at 0)
+    gaps: dict[int, list[tuple[int, float]]] = {}
+    for key, items in list(groups.items()):
+        if key[0] != "gap":
+            continue
+        inflow = groups.get(("in", None, key[2], None, ()), [])
+        if len(inflow) == 1 and inflow[0][0].span is None and inflow[0][0].era is None and all(a.era is None for a, _ in items):
+            gaps.setdefault(key[2], []).append((key[3], sum(th for _, th in items)))
+        else:
+            kind = "out" if key[3] == key[2] else "drain"
+            groups.setdefault((kind, key[2], None, key[3], ()), []).extend((a.with_(kind=kind, src=key[2], dst=None), th) for a, th in items)
+        del groups[key]
     for key, items in groups.items():
         kind, src, dst, driver, uses = key
         name = lambda i: None if i is None else ids[i]  # noqa: E731
         extra = {"uses": [{"stock": ids[c], "per": round(per, 4)} for c, per in uses]} if uses else {}
+        if kind == "in" and dst in gaps:
+            c = items[0][1]
+            terms = [{"stock": ids[j], "k": r4(-k)} for j, k in gaps[dst]]
+            per_step = c - sum(k * means[j] for j, k in gaps[dst])
+            out.append(_flow(None, name(dst), {"form": "linear", "c": r4(c), "terms": terms}, per_step, note="goal gap"))
+            continue
         if kind == "in" and all(a.era is None for a, _ in items):
             pieces = sorted(((a.span or (0, T)), th) for a, th in items)
             if len(pieces) > 1 or pieces[0][0] != (0, T):
