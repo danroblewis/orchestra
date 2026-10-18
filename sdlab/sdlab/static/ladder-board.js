@@ -171,7 +171,13 @@
   window.SDLadderBoard = {
     init(page) { P = page; },
     render,
-    refresh() { return render(true); },
+    // during a run: fetch again, and redraw only when this strategy's results changed
+    async refresh() {
+      const sig = (d) => (d ? d.results.map((r) => r.id).join() : "");
+      const before = sig(B.data);
+      try { await load(true); } catch { return false; }
+      return sig(B.data) === before ? true : render(false);
+    },
     redraw() { document.querySelectorAll("#board [data-draw][data-drawn]").forEach(draw); },
     get strategy() { return B.strategy; },
   };

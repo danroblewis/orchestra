@@ -548,7 +548,8 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
 .btab .sq { width: 14px; height: 14px; font-size: 9px; line-height: 12px; }
 .bdiag { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 120px; }
 .bdiag .dpanel { padding: 4px 6px; }
-.bdiag .dpanel svg { max-height: 210px; }
+.bdiag .dpanel svg { max-height: 320px; }
+.bmeas .wide dd { white-space: normal; }
 .bexplain { font-size: 13.5px; margin: 8px 0 6px; }
 .bmeas { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px 12px; margin: 0; font-size: 12.5px; }
 .bmeas div { min-width: 0; }
@@ -578,3 +579,4 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
   .dline .dtrue, .dline .dnote { grid-column: 2; }
   .bdiag { grid-template-columns: 1fr; }
 }
+@media (max-width: 800px) { .bmeas dd { white-space: normal; } .bmeas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
