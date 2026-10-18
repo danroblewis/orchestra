@@ -1,0 +1,108 @@
+"""The ladder's read API: what a page (or anything else) needs to show the ladder. Read only, every
+value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see docs/LADDER.md.
+
+    cases()                              every case: id, title, level, tags, tests, hash, variants, tolerance, model
+    case(case_id)                        one case (None if unknown)
+    strategies()                         every strategy: name, hash, available, reason
+    results(case, variant, strategy)     the latest result per (case, variant, strategy), filtered by any given
+    result(case, variant, strategy)      the latest result for one, with the found flows (None if never run)
+    history(case, variant, strategy)     every result for one, newest first (without found flows)
+    progress()                           the current or last run: {run, items}
+    summary()                            the matrix: strategies, cases, cells (one per case x variant x
+                                         strategy, flattened scores, stale or not) and per-tag and per-strategy totals
+
+A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status
+("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}.
+"""
+
+from __future__ import annotations
+
+from ..discovery.api import jsonable
+from . import cases as casemod
+from . import catalog, score, store
+
+STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
+
+
+def _case(cid: str) -> dict:
+    c = casemod.load(cid)
+    return {**c, "variants": [dict(v) for v in c["variants"]]}
+
+
+def cases() -> list[dict]:
+    return jsonable([_case(i) for i in casemod.case_ids()])
+
+
+def case(case_id: str) -> dict | None:
+    return jsonable(_case(case_id)) if case_id in casemod.case_files() else None
+
+
+def strategies() -> list[dict]:
+    return jsonable(catalog.listing())
+
+
+def strategy_names() -> list[str]:
+    return catalog.names()
+
+
+def results(case: str | None = None, variant: str | None = None, strategy: str | None = None) -> list[dict]:
+    return jsonable(store.latest(case, variant, strategy))
+
+
+def result(case: str, variant: str, strategy: str) -> dict | None:
+    rows = store.latest(case, variant, strategy, found=True)
+    return jsonable(rows[0]) if rows else None
+
+
+def history(case: str, variant: str, strategy: str) -> list[dict]:
+    return jsonable(store.history(case, variant, strategy))
+
+
+def progress() -> dict:
+    return jsonable(store.progress())
+
+
+def flatten(row: dict | None) -> dict:
+    """The numbers a matrix cell shows, from a result."""
+    if row is None:
+        return {"status": None}
+    s = row.get("scores") or {}
+    b = s.get("behaviour") or {}
+
+    def sk(where, h):
+        x = (b.get(where) or {}).get(str(h)) or {}
+        return x.get("skill"), x.get("ci")
+
+    out = {"status": row["status"], "recall": s.get("recall"), "precision": s.get("precision"), "right": s.get("right"), "of": s.get("of"),
+           "spurious": len(s.get("spurious") or []), "seconds": row.get("seconds"), "at": row.get("at"), "error": row.get("error")}
+    for where, tag in (("in_sample", "skill"), ("fresh", "fresh")):
+        for h in score.HORIZONS:
+            out[f"{tag}{h}"], out[f"{tag}{h}_ci"] = sk(where, h)
+    return out
+
+
+def summary(strategy_filter: list[str] | None = None) -> dict:
+    strats = [s for s in catalog.listing() if not strategy_filter or s["name"] in strategy_filter]
+    sh = score.score_hash()
+    have = {(r["case"], r["variant"], r["strategy"]): r for r in store.latest()}
+    cs = [casemod.load(i) for i in casemod.case_ids()]
+    cells, by_tag, totals = [], {}, {}
+    for c in cs:
+        for v in c["variants"]:
+            for s in strats:
+                row = have.get((c["id"], v["name"], s["name"]))
+                stale = store.staleness(row, c["hash"], s["hash"], sh) if s["available"] else None
+                cell = {"case": c["id"], "variant": v["name"], "strategy": s["name"], "stale": stale, **flatten(row)}
+                cells.append(cell)
+                t = totals.setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "stale": 0, "total": 0, "seconds": 0.0})
+                t["total"] += 1
+                t[cell["status"] or "missing"] += 1
+                t["stale"] += bool(stale and row)
+                t["seconds"] += cell.get("seconds") or 0.0
+                for tag in c["tags"]:
+                    g = by_tag.setdefault(tag, {}).setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "total": 0})
+                    g["total"] += 1
+                    g[cell["status"] or "missing"] += 1
+    return jsonable({"strategies": strats,
+                     "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} for c in cs],
+                     "cells": cells, "by_tag": by_tag, "totals": totals, "score_hash": sh})

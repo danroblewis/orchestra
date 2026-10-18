@@ -1,0 +1,15 @@
+{
+  "title": "One stock filled from outside",
+  "level": 1,
+  "tags": ["inflow"],
+  "tests": "a constant outside inflow into a stock nothing leaves is recovered",
+  "model": {
+    "seed": 1,
+    "stocks": [
+      {"id": "A", "initial": 0, "final": true}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}}
+    ]
+  }
+}

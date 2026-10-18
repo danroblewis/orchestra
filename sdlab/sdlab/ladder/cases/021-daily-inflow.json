@@ -1,0 +1,19 @@
+{
+  "title": "A daily inflow",
+  "level": 12,
+  "tags": ["inflow-change", "periodic", "unannounced"],
+  "tests": "an outside inflow with a daily cycle (night, day, evening every 24 steps) is tracked, and the chain's rates stay right",
+  "model": {
+    "seed": 21,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 5}},
+      {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.5}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
+    ],
+    "schedule": {"every": 24, "changes": [{"t": 1, "label": "night", "set": {"in": {"form": "constant", "value": 5}}}, {"t": 9, "label": "day", "set": {"in": {"form": "constant", "value": 30}}}, {"t": 19, "label": "evening", "set": {"in": {"form": "constant", "value": 10}}}]}
+  }
+}

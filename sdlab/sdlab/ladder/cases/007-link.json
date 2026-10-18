@@ -1,0 +1,19 @@
+{
+  "title": "A link",
+  "level": 5,
+  "tags": ["link"],
+  "tests": "an outside inflow whose rate follows another stock's level (nothing leaves that stock) is a link, not a move",
+  "model": {
+    "seed": 7,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
+      {"id": "a_out", "from": "A", "to": null, "rate": {"form": "proportional", "stock": "A", "k": 0.2}},
+      {"id": "b_in", "from": null, "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.1}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
+    ]
+  }
+}

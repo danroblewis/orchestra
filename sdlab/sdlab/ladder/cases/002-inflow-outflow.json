@@ -1,0 +1,16 @@
+{
+  "title": "One stock, in and out",
+  "level": 1,
+  "tags": ["inflow", "outflow"],
+  "tests": "a constant outside inflow and a proportional outflow of one stock are recovered",
+  "model": {
+    "seed": 2,
+    "stocks": [
+      {"id": "A", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
+      {"id": "a_out", "from": "A", "to": null, "rate": {"form": "proportional", "stock": "A", "k": 0.1}}
+    ]
+  }
+}

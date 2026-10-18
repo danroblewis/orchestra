@@ -1,0 +1,22 @@
+{
+  "title": "A table effect",
+  "level": 12,
+  "tags": ["effect", "effect-table"],
+  "tests": "a move whose rate is multiplied by a curve (a table) of a third stock's level is recovered with its effect",
+  "model": {
+    "seed": 18,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0},
+      {"id": "C", "initial": 50}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 10}},
+      {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.3}, "effects": [{"stock": "C", "shape": "table", "points": [[0, 0.2], [50, 1], [100, 1.4]]}]},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}},
+      {"id": "c_in", "from": null, "to": "C", "rate": {"form": "constant", "value": 3}},
+      {"id": "c_out", "from": "C", "to": null, "rate": {"form": "proportional", "stock": "C", "k": 0.1}}
+    ],
+    "schedule": {"every": 200, "changes": [{"t": 1, "label": "low", "set": {"c_in": {"form": "constant", "value": 3}}}, {"t": 101, "label": "high", "set": {"c_in": {"form": "constant", "value": 7}}}]}
+  }
+}

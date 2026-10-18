@@ -1,0 +1,22 @@
+{
+  "title": "Chain of four",
+  "level": 4,
+  "tags": ["chain", "move"],
+  "tests": "three moves in a row are recovered, the slowest stock at the end",
+  "model": {
+    "seed": 5,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0},
+      {"id": "C", "initial": 0},
+      {"id": "D", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
+      {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.5}},
+      {"id": "bc", "from": "B", "to": "C", "rate": {"form": "proportional", "stock": "B", "k": 0.25}},
+      {"id": "cd", "from": "C", "to": "D", "rate": {"form": "proportional", "stock": "C", "k": 0.1}},
+      {"id": "d_out", "from": "D", "to": null, "rate": {"form": "proportional", "stock": "D", "k": 0.05}}
+    ]
+  }
+}

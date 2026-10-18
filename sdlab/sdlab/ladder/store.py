@@ -1,0 +1,169 @@
+"""The ladder's results: SQLite at $SDLAB_LADDER_CACHE/results.sqlite (default
+~/.cache/sdlab/ladder/results.sqlite).
+
+results: one row per run of a strategy on a case's variant, never deleted. A row records the case's
+hash, the strategy's hash and the scorer's hash it ran with, when, its status (pass, equivalent,
+fail, error, timeout), the scores (JSON), the found flows (JSON), how long discovery took and any
+error. The newest row for each (case, variant, strategy) has latest = 1. A pair is stale when it has
+no row, or its latest row ran with another case hash, strategy hash or scorer hash (score_only: only
+the scorer changed, so the stored flows are scored again without running discovery).
+
+runs and progress: what the current (or last) run is doing, for a live view: one row per run
+(command, started, finished, total) and one per item of it (queued, running, done, with when it
+started and finished); items of earlier runs are dropped when a new run starts.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .data import cache_root
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    case_id TEXT NOT NULL, case_hash TEXT NOT NULL, variant TEXT NOT NULL,
+    strategy TEXT NOT NULL, strategy_hash TEXT NOT NULL, score_hash TEXT NOT NULL,
+    at TEXT NOT NULL, latest INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL, seconds REAL, error TEXT,
+    scores TEXT, found TEXT
+);
+CREATE INDEX IF NOT EXISTS results_key ON results (case_id, variant, strategy, latest);
+CREATE TABLE IF NOT EXISTS runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    command TEXT, started TEXT NOT NULL, finished TEXT, total INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS progress (
+    run_id INTEGER NOT NULL, case_id TEXT NOT NULL, variant TEXT NOT NULL, strategy TEXT NOT NULL,
+    state TEXT NOT NULL, reason TEXT, started TEXT, finished TEXT, status TEXT,
+    PRIMARY KEY (run_id, case_id, variant, strategy)
+);
+"""
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def path() -> Path:
+    return cache_root() / "results.sqlite"
+
+
+@contextmanager
+def connect(readonly: bool = False):
+    p = path()
+    if readonly and not p.exists():
+        con = sqlite3.connect(":memory:")
+    else:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(p, timeout=30)
+        con.execute("PRAGMA journal_mode=WAL")
+    con.row_factory = sqlite3.Row
+    try:
+        con.executescript(SCHEMA)
+        yield con
+        con.commit()
+    finally:
+        con.close()
+
+
+def _row(r: sqlite3.Row, found: bool = False) -> dict:
+    out = {"id": r["id"], "case": r["case_id"], "case_hash": r["case_hash"], "variant": r["variant"], "strategy": r["strategy"],
+           "strategy_hash": r["strategy_hash"], "score_hash": r["score_hash"], "at": r["at"], "latest": bool(r["latest"]),
+           "status": r["status"], "seconds": r["seconds"], "error": r["error"], "scores": json.loads(r["scores"]) if r["scores"] else None}
+    if found:
+        out["found"] = json.loads(r["found"]) if r["found"] else None
+    return out
+
+
+def record(row: dict) -> int:
+    """Store a result (case, variant, strategy, case_hash, strategy_hash, score_hash, status,
+    seconds?, error?, scores?, found?) as the latest for its key."""
+    with connect() as con:
+        con.execute("UPDATE results SET latest = 0 WHERE case_id = ? AND variant = ? AND strategy = ? AND latest = 1",
+                    (row["case"], row["variant"], row["strategy"]))
+        cur = con.execute(
+            "INSERT INTO results (case_id, case_hash, variant, strategy, strategy_hash, score_hash, at, latest, status, seconds, error, scores, found)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
+            (row["case"], row["case_hash"], row["variant"], row["strategy"], row["strategy_hash"], row["score_hash"], row.get("at") or now(),
+             row["status"], row.get("seconds"), row.get("error"),
+             json.dumps(row["scores"]) if row.get("scores") is not None else None,
+             json.dumps(row["found"]) if row.get("found") is not None else None))
+        return int(cur.lastrowid)
+
+
+def latest(case: str | None = None, variant: str | None = None, strategy: str | None = None, found: bool = False) -> list[dict]:
+    q, args = "SELECT * FROM results WHERE latest = 1", []
+    for col, v in (("case_id", case), ("variant", variant), ("strategy", strategy)):
+        if v is not None:
+            q += f" AND {col} = ?"
+            args.append(v)
+    with connect(readonly=True) as con:
+        return [_row(r, found) for r in con.execute(q + " ORDER BY case_id, strategy, variant", args)]
+
+
+def history(case: str, variant: str, strategy: str, found: bool = False) -> list[dict]:
+    with connect(readonly=True) as con:
+        rows = con.execute("SELECT * FROM results WHERE case_id = ? AND variant = ? AND strategy = ? ORDER BY id DESC", (case, variant, strategy))
+        return [_row(r, found) for r in rows]
+
+
+def staleness(row: dict | None, case_hash: str, strategy_hash: str, score_hash: str) -> str | None:
+    """Why a pair must run again (None: its latest result is current)."""
+    if row is None:
+        return "new"
+    if row["case_hash"] != case_hash:
+        return "case changed"
+    if row["strategy_hash"] != strategy_hash:
+        return "strategy changed"
+    if row["score_hash"] != score_hash:
+        return "score_only" if row["status"] not in ("error", "timeout") else "scoring changed"
+    return None
+
+
+# ---- progress ----
+
+def start_run(command: str, items: list[dict]) -> int:
+    with connect() as con:
+        con.execute("DELETE FROM progress")
+        cur = con.execute("INSERT INTO runs (command, started, total) VALUES (?, ?, ?)", (command, now(), len(items)))
+        run_id = int(cur.lastrowid)
+        con.executemany("INSERT OR REPLACE INTO progress (run_id, case_id, variant, strategy, state, reason) VALUES (?, ?, ?, ?, 'queued', ?)",
+                        [(run_id, i["case"], i["variant"], i["strategy"], i.get("reason")) for i in items])
+        return run_id
+
+
+def mark(run_id: int, item: dict, state: str, status: str | None = None) -> None:
+    col = "started" if state == "running" else "finished"
+    for attempt in range(5):
+        try:
+            with connect() as con:
+                con.execute(f"UPDATE progress SET state = ?, {col} = ?, status = COALESCE(?, status) WHERE run_id = ? AND case_id = ? AND variant = ? AND strategy = ?",
+                            (state, now(), status, run_id, item["case"], item["variant"], item["strategy"]))
+            return
+        except sqlite3.OperationalError:
+            time.sleep(0.05 * (attempt + 1))
+
+
+def finish_run(run_id: int) -> None:
+    with connect() as con:
+        con.execute("UPDATE runs SET finished = ? WHERE id = ?", (now(), run_id))
+
+
+def progress() -> dict:
+    """{"run": {id, command, started, finished, total, done, running} | None, "items": [...]}"""
+    with connect(readonly=True) as con:
+        r = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        if r is None:
+            return {"run": None, "items": []}
+        items = [{"case": x["case_id"], "variant": x["variant"], "strategy": x["strategy"], "state": x["state"], "reason": x["reason"],
+                  "started": x["started"], "finished": x["finished"], "status": x["status"]}
+                 for x in con.execute("SELECT * FROM progress WHERE run_id = ? ORDER BY case_id, strategy, variant", (r["id"],))]
+    run = {"id": r["id"], "command": r["command"], "started": r["started"], "finished": r["finished"], "total": r["total"],
+           "done": sum(i["state"] == "done" for i in items), "running": sum(i["state"] == "running" for i in items)}
+    return {"run": run, "items": items}

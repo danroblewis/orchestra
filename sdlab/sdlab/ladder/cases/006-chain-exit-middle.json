@@ -1,0 +1,19 @@
+{
+  "title": "Chain with an exit in the middle",
+  "level": 5,
+  "tags": ["chain", "move", "outflow"],
+  "tests": "a stock's drain is split correctly between a measured receiver and outside",
+  "model": {
+    "seed": 6,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
+      {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.3}},
+      {"id": "a_out", "from": "A", "to": null, "rate": {"form": "proportional", "stock": "A", "k": 0.2}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
+    ]
+  }
+}

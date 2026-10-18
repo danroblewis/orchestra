@@ -1,0 +1,17 @@
+{
+  "title": "A stock that runs empty",
+  "level": 12,
+  "tags": ["cap", "empty", "nonlinear"],
+  "tests": "a constant demand that empties its stock (and is then capped at what arrives) is recovered as the constant demand",
+  "model": {
+    "seed": 25,
+    "stocks": [
+      {"id": "A", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 2}},
+      {"id": "demand", "from": "A", "to": null, "rate": {"form": "constant", "value": 7}}
+    ],
+    "schedule": {"every": 200, "changes": [{"t": 1, "label": "low", "set": {"in": {"form": "constant", "value": 2}}}, {"t": 101, "label": "high", "set": {"in": {"form": "constant", "value": 10}}}]}
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "title": "Two inputs merging",
+  "level": 10,
+  "tags": ["merge", "move"],
+  "tests": "two stocks each fed from outside drain into one: both moves and both inflows are recovered",
+  "model": {
+    "seed": 13,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0},
+      {"id": "C", "initial": 0}
+    ],
+    "flows": [
+      {"id": "a_in", "from": null, "to": "A", "rate": {"form": "constant", "value": 10}},
+      {"id": "b_in", "from": null, "to": "B", "rate": {"form": "constant", "value": 15}},
+      {"id": "ac", "from": "A", "to": "C", "rate": {"form": "proportional", "stock": "A", "k": 0.3}},
+      {"id": "bc", "from": "B", "to": "C", "rate": {"form": "proportional", "stock": "B", "k": 0.2}},
+      {"id": "c_out", "from": "C", "to": null, "rate": {"form": "proportional", "stock": "C", "k": 0.1}}
+    ]
+  }
+}

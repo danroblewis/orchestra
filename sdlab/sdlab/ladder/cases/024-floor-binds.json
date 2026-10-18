@@ -1,0 +1,20 @@
+{
+  "title": "A floor that binds",
+  "level": 12,
+  "tags": ["floor", "link", "nonlinear"],
+  "tests": "a link with a negative coefficient (B's inflow 30 - 0.25 A) that stops at zero when A is high is recovered with its floor",
+  "model": {
+    "seed": 24,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 10}},
+      {"id": "a_out", "from": "A", "to": null, "rate": {"form": "proportional", "stock": "A", "k": 0.2}},
+      {"id": "b_in", "from": null, "to": "B", "rate": {"form": "linear", "c": 30, "terms": [{"stock": "A", "k": -0.25}]}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.1}}
+    ],
+    "schedule": {"every": 200, "changes": [{"t": 1, "label": "low", "set": {"in": {"form": "constant", "value": 10}}}, {"t": 101, "label": "high", "set": {"in": {"form": "constant", "value": 40}}}]}
+  }
+}

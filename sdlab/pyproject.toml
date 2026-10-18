@@ -16,6 +16,7 @@ dev = ["pytest>=8.0", "httpx>=0.27"]
 
 [project.scripts]
 sdlab = "sdlab.server:main"
+sdlab-ladder = "sdlab.ladder.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,19 @@
+{
+  "title": "Rework",
+  "level": 9,
+  "tags": ["loop", "move", "rework"],
+  "tests": "a back-flow (B -> A) beside the forward move (A -> B) is recovered, both directions",
+  "model": {
+    "seed": 12,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
+      {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.4}},
+      {"id": "rework", "from": "B", "to": "A", "rate": {"form": "proportional", "stock": "B", "k": 0.1}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
+    ]
+  }
+}

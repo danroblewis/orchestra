@@ -1,0 +1,19 @@
+{
+  "title": "Unannounced steps in an inflow",
+  "level": 12,
+  "tags": ["inflow-change", "unannounced"],
+  "tests": "an outside inflow that steps between 10 and 30 without announcement is tracked, and the chain's rates stay right",
+  "model": {
+    "seed": 20,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 10}},
+      {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.5}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
+    ],
+    "schedule": {"every": 200, "changes": [{"t": 1, "label": "low", "set": {"in": {"form": "constant", "value": 10}}}, {"t": 101, "label": "high", "set": {"in": {"form": "constant", "value": 30}}}]}
+  }
+}

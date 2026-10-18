@@ -1,0 +1,20 @@
+{
+  "title": "A hidden stock between two measured ones",
+  "level": 12,
+  "tags": ["hidden", "delay"],
+  "tests": "things leave A, wait in an unmeasured stock, and arrive in B: an inferred stock with the right delay",
+  "model": {
+    "seed": 15,
+    "stocks": [
+      {"id": "A", "initial": 0},
+      {"id": "H", "initial": 0, "measured": false},
+      {"id": "B", "initial": 0}
+    ],
+    "flows": [
+      {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
+      {"id": "a_h", "from": "A", "to": "H", "rate": {"form": "proportional", "stock": "A", "k": 0.2}},
+      {"id": "h_b", "from": "H", "to": "B", "rate": {"form": "proportional", "stock": "H", "k": 0.1}},
+      {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
+    ]
+  }
+}

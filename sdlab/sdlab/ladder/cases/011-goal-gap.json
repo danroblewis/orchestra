@@ -1,0 +1,18 @@
+{
+  "title": "Goal-seeking orders",
+  "level": 8,
+  "tags": ["gap", "balancing", "loop"],
+  "tests": "a balancing loop: orders into a supply line follow the gap between a goal and the inventory it feeds",
+  "model": {
+    "seed": 11,
+    "stocks": [
+      {"id": "P", "initial": 0},
+      {"id": "I", "initial": 0}
+    ],
+    "flows": [
+      {"id": "orders", "from": null, "to": "P", "rate": {"form": "gap", "stock": "I", "goal": 300, "time": 5}},
+      {"id": "arrive", "from": "P", "to": "I", "rate": {"form": "proportional", "stock": "P", "k": 0.25}},
+      {"id": "demand", "from": "I", "to": null, "rate": {"form": "proportional", "stock": "I", "k": 0.1}}
+    ]
+  }
+}
