@@ -11,6 +11,14 @@ steps from every stock's true level, fed the same outside inflows (the truth's s
 found model's outside inflow into every stock the truth feeds from outside), so only their own
 dynamics differ. skill = 1 - (spread between them / how far the truth moved)^2: 1 = behaves as the
 truth, 0 = no better than assuming nothing changes, below 0 = worse.
+
+A found model may have unmeasured stocks of its own (any stock its flows move things into or out of
+that is not measured). They are kept apart from the truth's stocks (never started from the truth's
+level of a stock that happens to share the name) and started from the found model's own estimate of
+their levels: result["inferred_levels"] ({id: series aligned with t}) on the run it was fitted on;
+on any other run (own_run=False, the fresh run), or without one, the estimate the found model itself
+gives from that run's measured levels (sdlab/discovery/observer.py), started from the first value
+of its own estimate.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
+from sdlab.discovery.observer import observe, unmeasured
 from sdlab.discovery.simulate import Model, levels_array, starts_for
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "sdlab" / "examples"
@@ -85,7 +94,19 @@ def key_of(sd: dict) -> dict:
 
 def found(result: dict) -> dict:
     rel, outside = {}, []
+    # a found model's own unmeasured stock H (result["inferred_levels"]): A -> H -> B is a hidden
+    # stock between A and B
+    inferred = set(result.get("inferred_levels") or {})
+    for h in inferred:
+        into = [f.get("from") or f.get("driver") for f in result["flows"] if f.get("to") == h]
+        for f in result["flows"]:
+            if f.get("from") == h and f.get("to"):
+                for a in into:
+                    if a:
+                        rel[f"{a}>{f['to']}"] = "hidden"
     for f in result["flows"]:
+        if f.get("from") in inferred or f.get("to") in inferred:
+            continue
         a, b, kind = None, f.get("to"), None
         if f.get("driver"):
             a, kind = f["driver"], "link"
@@ -152,6 +173,15 @@ def truth_by_time(truth_model: dict, times: list) -> tuple[list[dict], set]:
     return flows, fed
 
 
+def _renamed(x, names: dict):
+    """Flows with every stock reference (from, to, stock, driver) renamed by `names`."""
+    if isinstance(x, list):
+        return [_renamed(v, names) for v in x]
+    if isinstance(x, dict):
+        return {k: names.get(v, v) if k in ("from", "to", "stock", "driver") and isinstance(v, str) else _renamed(v, names) for k, v in x.items()}
+    return x
+
+
 def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 150) -> dict:
     """The truth's side of same_behaviour (the same for every model graded on this run and horizon):
     pass it as `truth` to grade several models without running the truth again."""
@@ -170,12 +200,26 @@ def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 1
             "injections": injections}
 
 
-def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150, truth: dict | None = None) -> dict:
+def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150, truth: dict | None = None,
+                   own_run: bool = True) -> dict:
     tr = truth or truth_runs(truth_model, data, horizon, starts)
     ids, fed, exo, A, s0, times, truth_end = (tr[k] for k in ("ids", "fed", "exo", "A", "s0", "times", "truth_end"))
+    t = data["t"]
     measured = list(data["levels"])
     own = [f for f in result["flows"] if not (not f.get("from") and f.get("to") in fed and not f.get("driver") and (f.get("rate") or {}).get("form") == "constant")]
-    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times, tr.get("injections"))
+    # the found model's own unmeasured stocks: kept apart from the truth's, started from its own
+    # estimate of their levels (its stored one on its own run, else the one it gives on this run)
+    hidden = list(dict.fromkeys(unmeasured(own, measured) + list(result.get("inferred_levels") or {})))
+    if hidden:
+        est = dict(result.get("inferred_levels") or {}) if own_run else {}
+        if any(h not in est for h in hidden):
+            first = {h: v[0] for h, v in (result.get("inferred_levels") or {}).items() if v}
+            est = {**observe(own, measured, t, data["levels"], hidden, first), **est}
+        names = {x: f"found:{x}" for x in hidden}
+        A_found = np.vstack([A] + [np.nan_to_num(np.asarray(est[x], dtype=float))[None, :] for x in hidden])
+        found_end = Model(_renamed(own, names) + exo, ids + list(names.values())).run(A_found[:, s0 - 1], times, tr.get("injections"))[: len(ids)]
+    else:
+        found_end = Model(own + exo, ids).run(A[:, s0 - 1], times, tr.get("injections"))
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())
