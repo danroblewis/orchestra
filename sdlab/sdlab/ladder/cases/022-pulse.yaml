@@ -1,0 +1,14 @@
+title: A pulse input
+level: 12
+tags: [inflow-change, pulse, unannounced]
+tests: a one-step burst of 300 into a chain every 100 steps (unannounced) does not distort the chain's rates
+seed: 22
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 10
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+schedule:
+  every: 100
+  at 50 burst: {outside -> A: 300}
+  at 51 calm: {outside -> A: 10}

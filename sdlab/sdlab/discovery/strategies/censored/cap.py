@@ -8,9 +8,10 @@ seen while the stock has stock), but the emptied steps can: there, everything le
 
     u_t = change_t - (moves in)_t + min(level_t, D + d x level_t + (other outflows wanted)_t),
 
-cut into pieces of constant mean (PELT, as the main line cuts inflows), and the (D, d) whose pieces
-fit best by BIC is kept, refined by a local search with the cuts held. D = 0 is the plain fit, so a
-cap is offered only where the emptied steps say it binds.
+cut into pieces of constant mean (PELT; each change priced at `mult` x log n x the noise variance,
+2 by default: the main line's 1 cuts pure counting noise into dozens of pieces), and the (D, d)
+whose pieces fit best by BIC is kept, refined by a local search with the cuts held. D = 0 is the
+plain fit (returned as "plain_fit"), so a cap is offered only where the emptied steps say it binds.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ def cost(rss: float, T: int, pieces: int, k: int, floor: float) -> float:
 
 
 def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d0: float, floor: float,
-           min_piece: int = 5, grid: int = 64, changes: bool = True) -> dict | None:
+           min_piece: int = 5, grid: int = 64, changes: bool = True, mult: float = 2.0) -> dict | None:
     """The best (D, d) with its pieces, or None; with "plain", the best score with D = 0 (no cap).
     d is tried on a grid over [0, 1] and at the main line's d0."""
     T = len(y)
@@ -56,7 +57,7 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
     Ds = np.linspace(0.0, 2.0 * span, grid)
 
     def cuts_of(u):
-        return pelt(u, min_piece, 1.0) if changes else [0, T]
+        return pelt(u, min_piece, mult) if changes else [0, T]
 
     best, plain = None, None
 
@@ -69,7 +70,7 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
         if best is None or sc < best["score"]:
             best = {"D": float(D), "d": float(d), "cuts": c, "rss": rss, "score": sc, "capped": capped}
         if D == 0 and (plain is None or sc < plain[0]):
-            plain = (sc, d)
+            plain = (sc, d, {"D": 0.0, "d": float(d), "cuts": c, "rss": rss, "score": sc, "capped": capped})
 
     # the plain fit first (no demand: the own drain on a grid), then the demand with the drains
     # worth trying (none, the main line's, the plain fit's)
@@ -78,8 +79,9 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
     for d in sorted({0.0, max(0.0, d0), plain[1]}):
         for D in Ds[1:]:
             consider(D, d)
-    if best is None or best["D"] <= 0:
-        return best
+    plain_fit = plain[2]
+    if best["D"] <= 0:
+        return {**best, "plain": plain[0], "plain_fit": plain_fit}
     plain = plain[0]
     best["plain"] = plain
     # refine (D, d) with the cuts held, then cut again
@@ -103,6 +105,7 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
         if sc >= best["score"] - 1e-9:
             break
         best = {"D": D, "d": d, "cuts": c2, "rss": rss, "score": sc, "capped": capped, "plain": plain}
+    best["plain_fit"] = plain_fit
     return best
 
 

@@ -1,0 +1,10 @@
+title: Goal-seeking orders
+level: 8
+tags: [gap, balancing, loop]
+tests: "a balancing loop: orders into a supply line follow the gap between a goal and the inventory it feeds"
+seed: 11
+stocks: {P: 0, I: 0}
+flows:
+  outside -> P as orders: (300 - I) / 5
+  P -> I as arrive: 0.25 * P
+  I -> outside as demand: 0.1 * I

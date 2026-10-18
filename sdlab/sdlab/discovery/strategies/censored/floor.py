@@ -8,7 +8,9 @@ flows kept from the main line (moves), is fitted as
     a x max(0, s (x_j - theta))  +  b x own level  +  sum_m c_m x level_m  (+ a constant)
 
 for every reader j, side s and threshold theta (a grid over x_j's range, then refined), by least
-squares. A hinge whose floor never binds (or always does) is not a floor and is not offered. The
+squares. A hinge whose floor never binds (or always does) is not a floor and is not offered; the
+caller also asks it to beat the same row with x_j as a straight line and as a cubic (a smooth bend,
+such as an effect or a delay, is not a floor). The
 fit is read back as flows: the hinge as a floored linear rate into the stock (a > 0) or out of it
 (a < 0), the levels as drains and links, the constant as an outside inflow or outflow.
 """
@@ -66,7 +68,10 @@ def search(y: np.ndarray, prev: np.ndarray, i: int, others: list[int], grid: int
             beta, rss = _fit(y, [h] + rest)
             # the same row with x_j as a straight line (and a constant): what the hinge must beat
             line = _fit(y, [x] + rest + ([] if constant else [np.ones(T)]))[1]
-            out.append({"j": j, "s": s, "theta": th, "beta": beta, "rss": rss, "line_rss": line, "binds": float((h == 0).mean()),
+            # and a smooth curve in x_j (a cubic): a floor is a kink, not any bend
+            z = (x - x.mean()) / (x.std() or 1.0)
+            smooth = _fit(y, [z, z * z, z ** 3] + rest + ([] if constant else [np.ones(T)]))[1]
+            out.append({"j": j, "s": s, "theta": th, "beta": beta, "rss": rss, "line_rss": line, "smooth_rss": smooth, "binds": float((h == 0).mean()),
                         "others": [m for m in others if m != j and m != i], "constant": constant})
     return out
 

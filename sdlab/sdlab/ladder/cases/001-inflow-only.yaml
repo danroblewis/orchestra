@@ -1,0 +1,8 @@
+title: One stock filled from outside
+level: 1
+tags: [inflow]
+tests: a constant outside inflow into a stock nothing leaves is recovered
+seed: 1
+stocks: {A: 0 final}
+flows:
+  outside -> A: 20

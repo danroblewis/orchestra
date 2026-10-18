@@ -1,0 +1,11 @@
+title: Chain with an exit in the middle
+level: 5
+tags: [chain, move, outflow]
+tests: a stock's drain is split correctly between a measured receiver and outside
+seed: 6
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.3 * A
+  A -> outside: 0.2 * A
+  B -> outside: 0.2 * B

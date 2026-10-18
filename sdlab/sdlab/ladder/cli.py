@@ -9,7 +9,9 @@
     show   CASE [--strategy S] [--variant V]
                                   true and found equations side by side, part by part, with the scores
     watch  [--every 3]            sync now, then again whenever a case, a strategy or discovery changes
-    check  [--cases ...]          the case checks (bounded, moving, every flow moves)
+    check  [--cases ...]          every case file compiles, then the case checks (bounded, moving, every flow moves)
+    new    SLUG [--title T] [--level N]
+                                  write the next case, cases/NNN-SLUG.yaml, from a template to edit
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -217,12 +219,49 @@ def watch(a) -> int:
 
 
 def check(a) -> int:
+    try:
+        files = casemod.case_files()
+    except casemod.CaseError as e:
+        print(e)
+        return 1
     bad = 0
-    for cid in runner.select_cases(a.cases):
-        p = checks.problems(casemod.load(cid))
+    for cid in runner.select_cases(a.cases) if a.cases else list(files):
+        try:
+            p = checks.problems(casemod.load(cid))
+        except casemod.CaseError as e:
+            p = [str(e)]
         bad += bool(p)
         print(f"{cid}: " + ("ok" if not p else "; ".join(p)))
     return 1 if bad else 0
+
+
+TEMPLATE = """\
+title: {title}
+level: {level}
+tags: [chain]
+tests: one sentence on what discovery must recover
+stocks: {{A: 0, B: 0}}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+"""
+
+
+def new(a) -> int:
+    slug = a.slug.strip().lower().replace(" ", "-")
+    files = casemod.case_files()
+    number = max((int(i[:3]) for i in files), default=0) + 1
+    cid = f"{number:03d}-{slug}"
+    if not casemod.ID_RE.match(cid):
+        print(f"{slug!r} is not a slug (lower-case letters, digits, -)", file=sys.stderr)
+        return 2
+    levels = [casemod.load(i)["level"] for i in files]
+    path = casemod.CASES / f"{cid}.yaml"
+    path.write_text(TEMPLATE.format(title=a.title or slug.replace("-", " ").capitalize(), level=a.level if a.level is not None else max(levels, default=1)))
+    print(path)
+    print(f"Edit it (format: docs/LADDER.md), then: uv run sdlab-ladder check --cases {number:03d}", file=sys.stderr)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -253,6 +292,10 @@ def main(argv: list[str] | None = None) -> int:
     w.add_argument("--every", type=float, default=3.0)
     ck = sub.add_parser("check", help="check the cases are sane")
     ck.add_argument("--cases")
+    nw = sub.add_parser("new", help="write the next case file from a template")
+    nw.add_argument("slug")
+    nw.add_argument("--title")
+    nw.add_argument("--level", type=int)
     a = ap.parse_args(argv)
     if a.command == "run":
         return do_run(a, True, "run")
@@ -266,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         return watch(a)
     if a.command == "check":
         return check(a)
+    if a.command == "new":
+        return new(a)
     return 2
 
 

@@ -1346,6 +1346,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "numba" },
     { name = "numpy" },
+    { name = "pyyaml" },
     { name = "scipy" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1373,6 +1374,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.4" },
     { name = "pysindy", marker = "extra == 'research'", specifier = ">=2.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "scipy", specifier = ">=1.18.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]

@@ -1,0 +1,13 @@
+title: A loop with a branch
+level: 7
+tags: [loop, link, move, branch]
+tests: "a link loop with a move leaving it to a third stock: the loop's stock splits its drain between the branch and outside"
+seed: 10
+stocks: {A: 0, B: 0, C: 0}
+flows:
+  outside -> A: 10
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+  outside -> A as births: 0.05 * B
+  B -> C: 0.1 * B
+  C -> outside: 0.1 * C

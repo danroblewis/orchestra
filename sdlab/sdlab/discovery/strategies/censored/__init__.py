@@ -16,8 +16,10 @@ flows to and from outside (moves between measured stocks are kept):
   pieces measured as what arrived, D chosen by profiling the pieces' fit.
 
 A rewrite is kept only if the whole model's one-step BIC, with floors and caps applied as the engine
-applies them (onestep.py), improves by more than `margin` x log T; and the result must behave on the
-data (the main line's judge) no worse than `judge_slack` x the main line's model.
+applies them (onestep.py), improves by more than `margin` x log T. (Option `judge_slack`: also ask
+the result to behave on the data no worse than that many times the main line's model by the main
+line's judge; off by default, because that judge replays each model's own inflow pieces and so
+prefers the main line's many pieces even where the rewrite is the truth: 013 counts-short, 2.15x.)
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from ...matrix import injected
 from ...simulate import Model
 from . import cap, floor, onestep
 
-DEFAULTS = {"margin": 2.0, "judge_slack": 1.1, "floors": True, "caps": True, "passes": 2}
+DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -85,7 +87,7 @@ def _came_and_wanted(base: list[dict], ids: list[str], t: list, prev: np.ndarray
     return came, wanted
 
 
-def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin):
+def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0):
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
@@ -104,14 +106,15 @@ def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin):
             for fit in floor.search(y, prev, i, others, constant=constant):
                 # a kink only if the hinge beats a straight line through the same columns
                 gain = T * math.log(max(fit["line_rss"], floor_rss) / max(fit["rss"], floor_rss))
-                if gain < (1 + margin) * math.log(T):
+                bend = T * math.log(max(fit["smooth_rss"], floor_rss) / max(fit["rss"], floor_rss))
+                if gain < (1 + margin) * math.log(T) or bend < o_bend * math.log(T):
                     continue
                 fit["i"] = i
                 out.append((base + floor.as_flows(fit, ids), f"floor on {ids[fit['j']]} into {ids[i]}" + (" (inflow pieces kept)" if keep_pieces else "")))
     return out
 
 
-def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, changes=True):
+def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, mult=2.0, changes=True):
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
@@ -123,13 +126,20 @@ def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, changes=True):
              (f.get("from") == row and (not _reads(f) or _reads(f) == [row]) and (f.get("rate") or {}).get("form") in ("constant", "proportional"))]
     base = [f for f in rest] + [f for f in mine if f not in refit]
     came, wanted = _came_and_wanted(base, ids, t, prev, i)
-    fit = cap.search(prev[i], dy[i], came, wanted, _own_drain(refit, row), floor_rss, changes=changes)
-    if fit is None or fit["D"] <= 0 or fit["capped"].sum() < max(5, 0.02 * len(dy[i])):
-        return []
-    if fit["plain"] is not None and fit["score"] > fit["plain"] - margin * math.log(len(dy[i])):
+    fit = cap.search(prev[i], dy[i], came, wanted, _own_drain(refit, row), floor_rss, changes=changes, mult=mult)
+    if fit is None:
         return []
     at = lambda k: t[k + 1]  # noqa: E731
-    return [(base + cap.as_flows(fit, row, prev[i], dy[i], came, wanted, at), f"demand {fit['D']:.3g} from {row} capped on {int(fit['capped'].sum())} steps")]
+    out = []
+    # (recut) the plain fit: the outside inflow's pieces at an honest price, with the own drain
+    if recut and fit.get("plain_fit"):
+        pf = fit["plain_fit"]
+        out.append((base + cap.as_flows(pf, row, prev[i], dy[i], came, wanted, at), f"inflow into {row} re-cut ({len(pf['cuts']) - 1} pieces, drain {pf['d']:.3g})"))
+    if fit["D"] <= 0 or fit["capped"].sum() < max(5, 0.02 * len(dy[i])):
+        return out
+    if fit["plain"] is not None and fit["score"] > fit["plain"] - margin * math.log(len(dy[i])):
+        return out
+    return out + [(base + cap.as_flows(fit, row, prev[i], dy[i], came, wanted, at), f"demand {fit['D']:.3g} from {row} capped on {int(fit['capped'].sum())} steps")]
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -161,9 +171,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 continue
             cands = []
             if o["floors"]:
-                cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"])
-            if o["caps"]:
-                cands += cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"])
+                cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["bend"])
+            if o["caps"] or o["recut"]:
+                cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"])
+                cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
             best = None
             for fl, name in cands:
                 sc = onestep.bic(fl, ids, t, prev, dy, floor_rss)
@@ -179,6 +190,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return {**r0, "censored": []}
     e0 = judge(r0.get("flows") or [], stocks, run, injections=opts.get("injections"))
     e1 = judge(flows, stocks, run, injections=opts.get("injections"))
-    if math.isfinite(e0) and e1 > o["judge_slack"] * e0:
+    if o["judge_slack"] and math.isfinite(e0) and e1 > o["judge_slack"] * e0:
         return {**r0, "censored": taken, "censored_rejected": {"judge": e1, "main_line": e0}}
     return {**r0, "flows": flows, "censored": taken, "judge": {"censored": e1, "main_line": e0}}

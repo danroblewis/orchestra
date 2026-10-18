@@ -1,0 +1,14 @@
+title: An announced era
+level: 12
+tags: [eras, announced]
+tests: a move's rate that changes at announced eras (0.5 in one, 0.25 in the other) is recovered per era
+seed: 19
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+schedule:
+  every: 200
+  at 1 fast announced: {A -> B: 0.5 * A}
+  at 101 slow announced: {A -> B: 0.25 * A}

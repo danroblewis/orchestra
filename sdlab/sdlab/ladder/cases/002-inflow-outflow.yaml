@@ -1,0 +1,9 @@
+title: One stock, in and out
+level: 1
+tags: [inflow, outflow]
+tests: a constant outside inflow and a proportional outflow of one stock are recovered
+seed: 2
+stocks: {A: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.1 * A

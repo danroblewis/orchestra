@@ -1,0 +1,12 @@
+title: A co-flow
+level: 12
+tags: [coflow]
+tests: a move that uses up a third stock as it goes (0.5 of R per unit moved) is recovered as a co-flow
+seed: 16
+stocks: {A: 0, B: 0, R: 60}
+flows:
+  outside -> A: 10
+  A -> B: 0.3 * A uses(R, 0.5)
+  B -> outside: 0.2 * B
+  outside -> R: 8
+  R -> outside: 0.05 * R

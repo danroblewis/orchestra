@@ -1,0 +1,10 @@
+title: Chain of two
+level: 2
+tags: [chain, move]
+tests: a proportional move between two measured stocks, with the chain's inflow and exit, is recovered
+seed: 3
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B

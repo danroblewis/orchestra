@@ -185,7 +185,7 @@ def two_cases(tmp_path, monkeypatch):
     folder = tmp_path / "cases"
     folder.mkdir()
     for i in ("002-inflow-outflow", "003-chain-2"):
-        shutil.copy(casemod.case_files()[i], folder / f"{i}.json")
+        (folder / f"{i}.json").write_text(json.dumps(casemod.spec(i)))     # a JSON case still loads
     monkeypatch.setattr(casemod, "CASES", folder)
     return folder
 

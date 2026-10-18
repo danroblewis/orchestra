@@ -1,0 +1,11 @@
+title: A link
+level: 5
+tags: [link]
+tests: an outside inflow whose rate follows another stock's level (nothing leaves that stock) is a link, not a move
+seed: 7
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 0.1 * A
+  B -> outside: 0.2 * B

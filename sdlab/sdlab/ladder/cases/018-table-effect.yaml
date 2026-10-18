@@ -1,0 +1,16 @@
+title: A table effect
+level: 12
+tags: [effect, effect-table]
+tests: a move whose rate is multiplied by a curve (a table) of a third stock's level is recovered with its effect
+seed: 18
+stocks: {A: 0, B: 0, C: 50}
+flows:
+  outside -> A: 10
+  A -> B: 0.3 * A * effect(C, table, [[0, 0.2], [50, 1], [100, 1.4]])
+  B -> outside: 0.2 * B
+  outside -> C: 3
+  C -> outside: 0.1 * C
+schedule:
+  every: 200
+  at 1 low: {outside -> C: 3}
+  at 101 high: {outside -> C: 7}

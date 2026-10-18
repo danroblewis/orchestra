@@ -28,7 +28,8 @@ uv run sdlab-ladder status                             # the strategy x case mat
 uv run sdlab-ladder status --strategies matrix --variant counts-short   # one strategy, one variant in detail
 uv run sdlab-ladder show 011 --strategy matrix         # true vs found equations, part by part, with scores
 uv run sdlab-ladder watch                              # sync now, then whenever a case or strategy changes
-uv run sdlab-ladder check                              # the cases' sanity checks
+uv run sdlab-ladder check                              # every case file compiles, and the cases' sanity checks
+uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
 ```
 
 `python -m sdlab.ladder ...` works too. Cases are chosen by id or number prefix (`003`,
@@ -42,54 +43,179 @@ Data and results live outside the repository, in `$SDLAB_LADDER_CACHE` (default
 
 ## Cases
 
-One JSON file per case in `sdlab/sdlab/ladder/cases/`, named `NNN-slug.json` (the number sets the
-order):
+One file per case in `sdlab/sdlab/ladder/cases/`, named `NNN-slug.yaml` (the number sets the order;
+the id is the file name without `.yaml`). A case is a few lines of YAML, written by hand:
+
+```yaml
+title: Chain of three
+level: 3                        # the rung: 1 is the simplest
+tags: [chain, move]             # motifs, for the per-tag summary
+tests: two moves in a row are recovered, each at its own rate     # one sentence
+seed: 4                         # optional (default 1)
+stocks: {A: 0, B: 0, C: 0}      # each stock's initial level, in order
+flows:
+  outside -> A: 20              # constant                       id: in
+  A -> B: 0.5 * A               # proportional                   id: ab
+  B -> C: 0.25 * B              #                                id: bc
+  C -> outside: 0.1 * C         #                                id: c_out
+```
+
+### Add a case in a minute
+
+1. `uv run sdlab-ladder new my-slug` writes the next case (`NNN-my-slug.yaml`, a chain of two) and
+   prints its path. Edit it: the smallest model that shows the feature or the failure, one change
+   relative to a simpler case. Pick numbers that keep it bounded and moving: start stocks away from
+   equilibrium, and drive slow parts with a schedule (a square wave in an inflow) if they would
+   otherwise settle.
+2. `uv run sdlab-ladder check --cases NNN` must say `ok`. It compiles every case file (a mistake is
+   reported as `file:line: ...`), then checks that, over 5x the long length, levels stay finite,
+   non-negative and bounded, that flows add up, that every flow moves, and that the stocks keep
+   moving. `tests/test_ladder.py` runs the same check on every case, and also checks that the true
+   model passes its own scoring.
+3. `uv run sdlab-ladder sync` runs every strategy on the new case.
+
+Do not change what an existing case means: its history would no longer compare. Add a new case
+instead. Changing a case's model makes all its results stale; rewriting how it is written does not
+(see the hash, below).
+
+### The format
+
+**Top level.** `title`, `level`, `tags`, `tests`, `stocks` and `flows`; optional `seed`, `schedule`,
+`injections`, `variants` and `tolerance`. Any other key is an error.
+
+**Stocks** map an id (letters, digits, `_`; not `outside`) to its initial level. Words after the
+level mark it, or give the long form for anything else (`unit`, ...; extra keys are passed through):
+
+```yaml
+stocks: {A: 0, H: 0 hidden, Done: 0 final, R: {initial: 60, unit: cups, hidden: true}}
+```
+
+`hidden` is an unmeasured stock (`"measured": false`: discovery never sees it); `final` is a stock
+nothing ever leaves.
+
+**Flows** map `FROM -> TO` to a rate; either end may be `outside`. The flow's id comes from its ends:
+
+| flow | id |
+|---|---|
+| `outside -> X` | `in` for the case's first flow from outside (named or not), `x_in` for later ones |
+| `X -> outside` | `x_out` |
+| `X -> Y` | `xy` when both ids are one letter (`ab`), else `x_y` (`work_done`) |
+
+`A -> B as rework: ...` names a flow. Two flows with the same ends need a name for one of them
+(`A -> B as fast`); a repeated key is an error, never silently dropped. `flows:` may also be a list
+of one-key items (`- A -> B: 0.5 * A`), which reads the same.
+
+**Rates** are arithmetic on numbers and stock ids, parsed by a small parser (no eval). Every rate is
+floored at 0 by the engine, so `max(0, ...)` around a rate is allowed and changes nothing.
+
+| written | form (MODEL.md) | JSON |
+|---|---|---|
+| `20` | constant | `{"form": "constant", "value": 20}` |
+| `0.5 * A` (or `A * 0.5`, `A / 2`, `A`) | proportional | `{"form": "proportional", "stock": "A", "k": 0.5}` |
+| `(300 - I) / 5` | gap: (goal - stock) / time | `{"form": "gap", "stock": "I", "goal": 300, "time": 5}` |
+| `30 - 0.25 * A + 0.1 * B` | linear: c + terms | `{"form": "linear", "c": 30, "terms": [{"stock": "A", "k": -0.25}, {"stock": "B", "k": 0.1}]}` |
+| `0.01 * A + 0.02 * B` | linear without c | `{"form": "linear", "terms": [...]}` |
+| `max(0, 0.2 * A - 30)` | linear (the floor binds below A = 150) | `{"form": "linear", "c": -30, "terms": [...]}` |
+| `available`, `available(A)` | available | `{"form": "available"}` (`"stock": "A"`) |
+
+A rate times one or more **effects** multiplies it by a stock's level (several multiply, in order):
+
+```yaml
+  A -> B: 0.3 * A * effect(C, linear, normal=50, max=2)          # x clamp(C / 50, min, max); min, max optional (0, 1)
+  A -> B: 0.3 * A * effect(C, table, [[0, 0.2], [50, 1], [100, 1.4]])   # a curve through (level, multiplier) points
+```
+
+A **co-flow** follows the rate: `A -> B: 0.3 * A uses(R, 0.5)` uses up 0.5 of `R` per unit moved
+(`"uses": [{"stock": "R", "per": 0.5}]`); several `uses(...)` may follow.
+
+**The long form** of a flow is a mapping with `rate` and any other flow keys (`ratio`, `name`,
+`outputs`, `split`, ...; passed through). Its `rate` may also be the JSON rate itself:
+
+```yaml
+  A -> B:
+    rate: 0.5 * A
+    ratio: 2
+  B -> outside:
+    rate: {form: constant, value: 3}
+```
+
+**Schedule**: every `every` steps (one period; leave it out for once only), each change sets new
+rates at step `t` of the period. A change is `at T [label] [announced]: {flow: rate, ...}`; a flow is
+named by its id or, when only one flow has them, its ends. `announced` makes the change an era the
+data announces; without it the change happens unannounced.
+
+```yaml
+schedule:
+  every: 200
+  at 1 low: {outside -> C: 3}
+  at 101 high: {outside -> C: 7}
+  at 50 "second machine" announced:
+    ab: 0.6 * A
+```
+
+The JSON form (`changes: [{t, label, set, announce}]`) is accepted as is.
+
+**Injections** (announced additions to a stock at the start of step `t`):
+
+```yaml
+injections:
+  - {t: 50, stock: A, amount: 400}
+  - {t: 150, stock: A, amount: 400}
+```
+
+**Variants** default to both noises (`none`, `counts`) at both lengths (`short` 300 and `long` 2000
+steps); `variants: {noise: [counts], lengths: {short: 300}}` overrides that (`variants: default` is
+the same as leaving it out). **Tolerance** overrides the scorer's (Scoring, below), e.g.
+`tolerance: {rel: 0.1}`.
+
+**YAML traps.** Inside `{...}` (flow style) a comma ends the value, so a rate with commas
+(`effect(...)`, `max(0, ...)`, `uses(...)`) goes on its own line (block style). A value that starts
+with `- ` or `[` reads as a list: quote it. Strings with `: ` or ` #` (a title,
+a test sentence) need quotes.
+
+### What a case compiles to
+
+The loader (`cases.py`) compiles a YAML case (`caseformat.py`) to the case dict the ladder has always
+used; a `NNN-slug.json` file holding that dict directly still loads (one id in both formats is an
+error). `cases.spec(id)` gives the dict:
 
 ```jsonc
 {
-  "title": "Chain of two",
-  "level": 2,                                   // the rung: 1 is the simplest
-  "tags": ["chain", "move"],                    // motifs, for the per-tag summary
-  "tests": "a proportional move between two measured stocks ... is recovered",   // one sentence
-  "tolerance": {"rel": 0.1},                    // optional overrides (Scoring, below)
-  "variants": {"noise": ["none", "counts"], "lengths": {"short": 300, "long": 2000}},   // optional; these are the defaults
+  "title": "Chain of two", "level": 2, "tags": ["chain", "move"], "tests": "...",
+  "tolerance": {"rel": 0.1},                    // optional
+  "variants": {"noise": ["none", "counts"], "lengths": {"short": 300, "long": 2000}},   // optional
   "model": {                                    // the truth.model.json format (sdlab/sdtruth.py)
     "seed": 3,
-    "stocks": [{"id": "A", "initial": 0}, {"id": "B", "initial": 0}],   // "measured": false for a hidden stock, "final", "unit"
+    "stocks": [{"id": "A", "initial": 0}, {"id": "B", "initial": 0}],
     "flows": [
       {"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}},
       {"id": "ab", "from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.5}},
       {"id": "b_out", "from": "B", "to": null, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}
-    ]
-    // optional: "schedule" (eras: "announce": true; unannounced changes), "injections", co-flows ("uses"), "effects"
+    ],
+    "schedule": {"every": 200, "changes": [{"t": 1, "label": "low", "set": {"in": {...}}, "announce": true}]},
+    "injections": [{"t": 50, "stock": "A", "amount": 400}]
   }
 }
 ```
+
+**The case hash** (which decides whether a result is stale) covers what a run is made from, not the
+file: the compiled case as canonical JSON, the truth model of every variant, the engine
+(`sdtruth.py` and the equations it uses from `runner.py`) and `data.py`. A comment, a reordered
+term (`A * 0.5` for `0.5 * A`) or moving a case between YAML and JSON leaves its results current.
+(Until October 2026 the hash covered the case file's bytes and `cases.py`; the results stored then
+were moved to the new hashes when the 25 cases became YAML, and
+`tests/test_ladder_caseformat.py` checks each converted case compiles to exactly the JSON it
+replaced.)
 
 Every case runs in each **variant**: `none` (the engine's exact flows, where the equations should be
 recovered essentially exactly) and `counts` (whole things moved, drawn Poisson around the rate), each
 at `short` (300 steps) and `long` (2000 steps). The data comes from the ground-truth engine
 (`sdlab/sdtruth.py`, which is never edited; the case's model is simply handed to it). Data is cached
-under a key made of the case file, the engine and the ladder's data code. Each variant also has a
-**fresh run** (the next seed), used to grade generalisation; without noise it is the same run.
+under the case's hash. Each variant also has a **fresh run** (the next seed), used to grade
+generalisation; without noise it is the same run.
 
 Discovery gets only what the page would give it: the measured stocks (id, name, unit, final, group),
 their levels, the announced eras and the announced injections.
-
-### Adding a case
-
-1. Write the smallest model that shows the feature or the failure, as `NNN-slug.json`, next in
-   number after the cases it builds on. Change one thing relative to a simpler case. Pick numbers
-   that keep it bounded and moving: start stocks away from equilibrium, and drive slow parts with a
-   schedule (a square wave in an inflow) if they would otherwise settle.
-2. `uv run sdlab-ladder check --cases NNN` must say `ok`. It checks that, over 5x the long length,
-   levels stay finite, non-negative and bounded, that flows add up, that every flow moves, and that
-   the stocks keep moving. `tests/test_ladder.py` runs the same check on every case, and also checks
-   that the true model passes its own scoring.
-3. `uv run sdlab-ladder sync` runs every strategy on the new case.
-
-Do not change what an existing case means: its history would no longer compare. Add a new case
-instead. Editing a case makes all its results stale.
 
 ### The first ladder
 
@@ -305,7 +431,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 
 | | |
 |---|---|
-| Cases | `sdlab/sdlab/ladder/cases/*.json`; format and variants in `cases.py`; checks in `checks.py` |
+| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; the YAML format in `caseformat.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors) |
 | Strategies | `catalog.py` (listing, hashes, availability) |
@@ -313,4 +439,4 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
-| Tests | `tests/test_ladder.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_caseformat.py`, `tests/ladder_compare.test.mjs` |

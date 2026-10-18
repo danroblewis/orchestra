@@ -1,0 +1,12 @@
+title: Chain of four
+level: 4
+tags: [chain, move]
+tests: three moves in a row are recovered, the slowest stock at the end
+seed: 5
+stocks: {A: 0, B: 0, C: 0, D: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> C: 0.25 * B
+  C -> D: 0.1 * C
+  D -> outside: 0.05 * D

@@ -1,0 +1,11 @@
+title: A hidden stock between two measured ones
+level: 12
+tags: [hidden, delay]
+tests: "things leave A, wait in an unmeasured stock, and arrive in B: an inferred stock with the right delay"
+seed: 15
+stocks: {A: 0, H: 0 hidden, B: 0}
+flows:
+  outside -> A: 20
+  A -> H as a_h: 0.2 * A
+  H -> B as h_b: 0.1 * H
+  B -> outside: 0.2 * B

@@ -1,0 +1,11 @@
+title: Rework
+level: 9
+tags: [loop, move, rework]
+tests: a back-flow (B -> A) beside the forward move (A -> B) is recovered, both directions
+seed: 12
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.4 * A
+  B -> A as rework: 0.1 * B
+  B -> outside: 0.2 * B

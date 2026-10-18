@@ -1,0 +1,15 @@
+title: A daily inflow
+level: 12
+tags: [inflow-change, periodic, unannounced]
+tests: an outside inflow with a daily cycle (night, day, evening every 24 steps) is tracked, and the chain's rates stay right
+seed: 21
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 5
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+schedule:
+  every: 24
+  at 1 night: {outside -> A: 5}
+  at 9 day: {outside -> A: 30}
+  at 19 evening: {outside -> A: 10}

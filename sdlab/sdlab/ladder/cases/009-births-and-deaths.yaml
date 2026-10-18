@@ -1,0 +1,10 @@
+title: Births and deaths
+level: 6
+tags: [loop, self-link, aliasing]
+tests: "births and deaths in proportion to the same stock: only their difference is identifiable, so the best answer is an equivalent net flow"
+seed: 9
+stocks: {P: 100}
+flows:
+  outside -> P as immigration: 10
+  outside -> P as births: 0.03 * P
+  P -> outside as deaths: 0.05 * P

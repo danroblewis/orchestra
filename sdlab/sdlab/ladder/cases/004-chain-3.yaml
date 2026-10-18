@@ -1,0 +1,11 @@
+title: Chain of three
+level: 3
+tags: [chain, move]
+tests: two moves in a row are recovered, each at its own rate
+seed: 4
+stocks: {A: 0, B: 0, C: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> C: 0.25 * B
+  C -> outside: 0.1 * C

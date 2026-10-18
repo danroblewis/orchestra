@@ -1,0 +1,13 @@
+title: A stock that runs empty
+level: 12
+tags: [cap, empty, nonlinear]
+tests: a constant demand that empties its stock (and is then capped at what arrives) is recovered as the constant demand
+seed: 25
+stocks: {A: 0}
+flows:
+  outside -> A: 2
+  A -> outside as demand: 7
+schedule:
+  every: 200
+  at 1 low: {outside -> A: 2}
+  at 101 high: {outside -> A: 10}

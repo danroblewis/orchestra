@@ -1,0 +1,15 @@
+title: A floor that binds
+level: 12
+tags: [floor, link, nonlinear]
+tests: a link with a negative coefficient (B's inflow 30 - 0.25 A) that stops at zero when A is high is recovered with its floor
+seed: 24
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 10
+  A -> outside: 0.2 * A
+  outside -> B: 30 - 0.25 * A
+  B -> outside: 0.1 * B
+schedule:
+  every: 200
+  at 1 low: {outside -> A: 10}
+  at 101 high: {outside -> A: 40}
