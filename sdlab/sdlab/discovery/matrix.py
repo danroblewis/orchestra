@@ -214,7 +214,32 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 "cuts": pick["cuts"], "rss": pick["f"].rss, "p": len(chosen) + (len(pick["cuts"]) - 1 if pick["cuts"] else 0)}
 
     rows = [fit_row(s) for s in range(S)]
-    conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts)
+    ctx = {"stocks": stocks, "ids": ids, "t": t, "final": final, "unit": unit, "prev": prev, "dy": dy, "cfg": cfg, "L": L,
+           "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T}
+    # opts["keep_rows"]: the rows as fitted, before conservation, with what finish() needs to assemble
+    # a model from them (the row_crossover strategy mixes rows of several candidates)
+    kept = [raw_row(r) for r in rows] if opts.get("keep_rows") else None
+    out = finish(rows, ctx, opts)
+    if kept is not None:
+        out["raw_rows"], out["ctx"] = kept, ctx
+    return out
+
+
+def raw_row(row: dict) -> dict:
+    """A copy of a fitted row that conservation and re-measuring (which change rows in place) leave
+    alone; of its columns only the chosen ones are kept (all conservation reads)."""
+    sel = list(row["set"])
+    return {**row, "coefL": [dict(c) for c in row["coefL"]], "inflow": [dict(g) for g in row["inflow"]],
+            "X": row["X"][sel] if sel else row["X"][:0], "col": [row["col"][q] for q in sel], "set": list(range(len(sel)))}
+
+
+def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
+    """From fitted rows (one per stock, changed in place) to the model: conservation, the outside
+    inflows re-measured where it changed a row, and the structure read off the matrix."""
+    stocks, ids, t, prev, dy, cfg, L = ctx["stocks"], ctx["ids"], ctx["t"], ctx["prev"], ctx["dy"], ctx["cfg"], ctx["L"]
+    labels, conf = ctx["labels"], ctx["conf"]
+    at = lambda k: t[k + 1]  # noqa: E731
+    conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts)
 
     # a row whose numbers conservation changed: its outside inflow's pieces are measured again with
     # the numbers it ends with (the pieces were measured beside the row's own, biased, drain)
@@ -230,10 +255,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
 
     per_label = [read_flows(stocks, [{"id": r["id"], "coef": r["coefL"][c], "inflow": r["inflow"] if c == 0 else []} for r in rows], prev, opts.get("tol", 0.003)) for c in range(L)]
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
-    matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta")} for r in rows]
+    matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta", "trust_receivers")} for r in rows]
     for r in matrix:
         r["coef"] = r["coefL"][0]
-    out = {"flows": flows, "matrix": matrix, "method": "identify", "windows": T, "window": 1}
+    out = {"flows": flows, "matrix": matrix, "method": "identify", "windows": ctx["T"], "window": 1}
     if L > 1:
         out["eras"] = labels
     return out
@@ -254,7 +279,8 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
         # a row whose outside inflow changes (in pieces, or one a strategy knows varies: opts
         # "varying_inflow", stock ids) cannot separate its drain from the changes
         changing = (bool(row["cuts"]) and len(row["cuts"]) > 2) or a in (opts.get("varying_inflow") or ())
-        cand = [c for c in range(L) if moves[c] > 0 and ((changing and moves[c] > drain[c] and opts.get("trust_receivers") is not False) or drain[c] > moves[c])]
+        trust = row.get("trust_receivers", opts.get("trust_receivers")) is not False   # a row may carry its own setting
+        cand = [c for c in range(L) if moves[c] > 0 and ((changing and moves[c] > drain[c] and trust) or drain[c] > moves[c])]
         if not cand:
             continue
         in_cand = np.zeros(L, bool)
