@@ -67,7 +67,7 @@ import generated
 import seeds as seeding
 from grade import grade, same_behaviour, truth_of, truth_runs
 
-from sdlab.bench_stats import describe, paired
+from sdlab.bench_stats import bootstrap_mean, describe, paired, with_ci
 from sdlab.discovery.strategies import load, names
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -119,14 +119,16 @@ def evaluate_one(example: str, length: str, strategy: str, with_candidates: bool
     ms = round(1000 * (time.time() - began))
     g = grade(r, truth_of(example))
     truth = {h: truth_runs(truth_model, data, horizon=h) for h in HORIZONS}
-    behaviour = {h: same_behaviour(r, truth_model, data, horizon=h, truth=truth[h]) for h in HORIZONS}
+    behaviour = {h: same_behaviour(r, truth_model, data, horizon=h, truth=truth[h], ci=True) for h in HORIZONS}
     skill = {str(h): b["skill"] for h, b in behaviour.items()}
     moved = {str(h): b["moved"] for h, b in behaviour.items()}
     # the same model graded on a fresh run: what it fitted to this run's own draws (inflow pieces
     # replaying history, say) cannot help it there
     other = load_data(example, length, fresh=True)
-    fresh = {str(h): same_behaviour(r, truth_model, other, horizon=h)["skill"] for h in (20, 100)}
+    fresh_b = {str(h): same_behaviour(r, truth_model, other, horizon=h, ci=True) for h in (20, 100)}
+    fresh = {h: b["skill"] for h, b in fresh_b.items()}
     x = {"example": example, "length": length, "steps": len(data["t"]), "parts": g["right"], "of": g["parts"], "skill": skill, "moved": moved, "fresh": fresh,
+         "skill_ci": {str(h): b["ci"] for h, b in behaviour.items()}, "fresh_ci": {h: b["ci"] for h, b in fresh_b.items()},
          "ms": ms, "flows": len(r["flows"]), "chosen": r.get("chosen"), "error": error}
     if with_candidates and r.get("candidates"):
         x.update(candidates.instrument(r, truth_model, data, truth))
@@ -154,6 +156,11 @@ def delta(now, then) -> str:
 
 def mean_skill(results, h) -> float:
     return sum(max(-1.0, x["skill"][str(h)]) for x in results) / max(1, len(results))
+
+
+def mean_ci(results, h, key="skill") -> list[float] | None:
+    """95% bootstrap interval of the mean (each run clipped at -100%), resampling the runs."""
+    return bootstrap_mean([max(-1.0, x[key][str(h)]) for x in results])
 
 
 def parts_share(results) -> float:
@@ -257,10 +264,10 @@ def main() -> None:
             row += f" {seeding.spread(x, 20)} |"
         lines.append(row)
     lines += ["", f"Overall: parts {pct(parts_share(results))}" + (delta(parts_share(results), parts_share(base['results'])) if base else "")
-              + "".join(f", mean skill@{h} {pct(mean_skill(results, h))}" + (delta(mean_skill(results, h), mean_skill(base['results'], h)) if base else "") for h in (20, 100))
+              + "".join(f", mean skill@{h} {with_ci(mean_skill(results, h), mean_ci(results, h))}" + (delta(mean_skill(results, h), mean_skill(base['results'], h)) if base else "") for h in (20, 100))
               + f", runs meeting the goal {sum(1 for x in results if meets(x))} of {len(results)}"
-              + (f"; on fresh runs: mean skill@20 {pct(sum(max(-1.0, x['fresh']['20']) for x in results) / len(results))}, skill@100 "
-                 f"{pct(sum(max(-1.0, x['fresh']['100']) for x in results) / len(results))}, meeting the goal {sum(1 for x in results if meets(x, fresh=True))}"
+              + (f"; on fresh runs: mean skill@20 {with_ci(sum(max(-1.0, x['fresh']['20']) for x in results) / len(results), mean_ci(results, 20, 'fresh'))}, skill@100 "
+                 f"{with_ci(sum(max(-1.0, x['fresh']['100']) for x in results) / len(results), mean_ci(results, 100, 'fresh'))}, meeting the goal {sum(1 for x in results if meets(x, fresh=True))}"
                  if all(x.get('fresh') for x in results) else "")]
     if a.candidates:
         lines += candidates.headline(results)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 from scipy.stats import binomtest, wilcoxon
 
 TIE = 0.0005
@@ -56,3 +57,19 @@ def describe(t: dict) -> str:
     m = t["mean"] or 0.0
     p = "no change to test" if t["sign_p"] is None else f"sign test p={t['sign_p']:.3g}, Wilcoxon p={t['wilcoxon_p']:.3g}"
     return f"{label}: {t['better']} better, {t['worse']} worse, {t['same']} same of {t['n']}; mean {'+' if m >= 0 else ''}{100 * m:.1f} points; {p}"
+
+
+def bootstrap_mean(values: list[float], n: int = 2000, seed: int = 0) -> list[float] | None:
+    """95% percentile bootstrap interval of the mean of `values` (resampled with replacement), or
+    None for fewer than two values: how much a headline mean over runs depends on which runs."""
+    v = np.asarray([float(x) for x in values], dtype=float)
+    if len(v) < 2:
+        return None
+    means = v[np.random.default_rng(seed).integers(0, len(v), size=(n, len(v)))].mean(axis=1)
+    lo, hi = np.percentile(means, [2.5, 97.5])
+    return [float(lo), float(hi)]
+
+
+def with_ci(mean: float, ci: list[float] | None) -> str:
+    """'47.2% [44.1, 50.3]' (percent, the interval in points)."""
+    return f"{100 * mean:.1f}%" + (f" [{100 * ci[0]:.1f}, {100 * ci[1]:.1f}]" if ci else "")
