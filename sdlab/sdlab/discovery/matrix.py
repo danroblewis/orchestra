@@ -261,6 +261,11 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     out = {"flows": flows, "matrix": matrix, "method": "identify", "windows": ctx["T"], "window": 1}
     if L > 1:
         out["eras"] = labels
+    if opts.get("keep_fit"):
+        # the rows as fitted (columns, chosen set, numbers, pieces), for a strategy that reads the
+        # matrix another way (off by default: the result stays as it was)
+        out["fit"] = {"rows": rows, "ids": ids, "prev": prev, "dy": dy, "cfg": cfg, "labels": labels,
+                      "spans": conf[2] if conf else None, "at": [at(k) for k in range(ctx["T"])]}
     return out
 
 
