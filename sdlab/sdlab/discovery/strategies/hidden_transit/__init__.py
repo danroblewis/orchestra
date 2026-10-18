@@ -1,0 +1,177 @@
+"""Experiment hidden_transit (docs/research/hidden_transit.md): an unmeasured transit stock between
+two measured ones (A -> H -> B), with the pair's rows refitted as one model by a Kalman filter's
+likelihood, on top of the main line.
+
+The main line's model is found as usual. Then, for every pair (A loses in proportion to its level,
+to outside or straight to B; B gets things from outside or from A), the pair's rows are refitted
+twice by the same likelihood (kalman.py, fit.py): as a transit stock (A's loss goes into H, H drains
+into B at d a step: a delay of 1 / d) and as the plain alternative (B gets a share of A's loss
+straight away). Each in variants: A's outside inflow refitted as one constant or kept as found; B with
+or without an outside constant. The transit stock is accepted when its best variant beats the best
+plain one by BIC (numbers fitted, and pieces kept from the main line, cost log T each) by a margin,
+and the model with it behaves about as well on the data as the main line's. Pairs are taken greedily,
+best first, each stock in one pair at most.
+
+"All of A's loss goes to H" (kin = kA) is the default: B's response to A alone cannot tell a
+delay d with B's drain kb from the mirror (d and kb swapped, kin scaled), but A's balance can.
+A share (kin < kA, the rest to outside) is accepted only when it is better by BIC.
+
+The counting noise is used as it is: the data are counts (whole numbers), so each flow's variance is
+its rate (scale 1), which also pins the rates' sizes where a short run's mean levels cannot. Data
+that are not counts get a concentrated scale.
+
+opts: "ht_margin" (BIC margin, default 10), "ht_slack" (the model may behave this much worse than the
+main line's on the data, default 0.25), "ht_max" (hidden stocks at most, default 2), "ht_turns" (H must turn over at least this many
+times in the run: delay <= T / ht_turns, default 15), "ht_trace".
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from ...identify import identify as main_line
+from ...simulate import behaviour_error, levels_array
+from .fit import fit_plain, fit_transit, screen
+from .kalman import Pair
+from .pairs import at_means, build, candidate, exogenous, flow_numbers, kept_numbers, split
+
+HORIZONS = (5, 20, 100)
+
+
+def judge(flows: list[dict], stocks: list[dict], run: dict, inferred: dict | None = None) -> float:
+    hs = [h for h in HORIZONS if h < len(run["t"]) / 4]
+    if not flows or not hs:
+        return float("inf")
+    ids = [s["id"] for s in stocks]
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, inferred=inferred) for h in hs) / len(hs)
+
+
+def counts(run: dict) -> bool:
+    """The data are counts: whole numbers that move (each flow then varies as much as its rate)."""
+    moved = False
+    for v in run["levels"].values():
+        x = np.asarray(v, dtype=float)
+        x = x[np.isfinite(x)]
+        if x.size and np.abs(x - np.round(x)).max() > 1e-9:
+            return False
+        moved = moved or (x.size > 1 and np.abs(np.diff(x)).max() > 0)
+    return moved
+
+
+def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str, b: str, scale: float) -> dict | None:
+    """The pair's best transit and best plain fits over the variants, each with its BIC, and the
+    found model's own rows by the same likelihood; None when a least-squares screen of B's row finds
+    no sign of a delay."""
+    t = run["t"]
+    L = levels_array(levels, ids)
+    T = L.shape[1] - 1
+    logn = math.log(2 * T)
+    best_t, best_p, pairs = None, None, {}
+    for cA_on in (True, False):
+        out, keep = split(flows, a, b, cA_on)
+        xA, gA = exogenous(flows, keep, ids, t, L, a)
+        xB, gB = exogenous(flows, keep, ids, t, L, b)
+        pair = Pair(L[ids.index(a)], L[ids.index(b)], xA, gA, xB, gB, scale)
+        pairs[cA_on] = (pair, keep, kept_numbers(flows, keep, a, b))
+        if cA_on and not screen(pair, T):
+            return None
+    for cA_on, (pair, keep, extra) in pairs.items():
+        for cB_on in (False, True):
+            p = fit_plain(pair, cA_on, cB_on)
+            p_bic = p["nll"] + (p["k"] + extra) * logn
+            if best_p is None or p_bic < best_p["bic"]:
+                best_p = {**p, "bic": p_bic}
+            f = fit_transit(pair, cA_on, cB_on, True)
+            if f is None:
+                continue
+            bic = f["nll"] + (f["k"] + extra) * logn
+            if best_t is None or bic < best_t["bic"]:
+                best_t = {**f, "bic": bic, "cA_on": cA_on, "cB_on": cB_on, "keep": keep, "all_to_h": True}
+    if best_t is None:
+        return None
+    # a share of A's loss to H (the rest to outside), on the best variant only
+    pair, keep, extra = pairs[best_t["cA_on"]]
+    f = fit_transit(pair, best_t["cA_on"], best_t["cB_on"], False)
+    if f is not None and f["nll"] + (f["k"] + extra) * logn < best_t["bic"]:
+        best_t = {**best_t, **f, "bic": f["nll"] + (f["k"] + extra) * logn, "all_to_h": False}
+    # the found model's own rows of A and B, by the same likelihood (its pieces cost their numbers)
+    allk = list(range(len(flows)))
+    xA, gA = exogenous(flows, allk, ids, t, L, a)
+    xB, gB = exogenous(flows, allk, ids, t, L, b)
+    pair = Pair(L[ids.index(a)], L[ids.index(b)], xA, gA, xB, gB, scale)
+    k = sum(flow_numbers(f) for f in flows if {a, b} & {f.get("from"), f.get("to")})
+    found = {"nll": pair.plain(0.0, 0.0, 0.0, 0.0, 0.0), "k": k}
+    found["bic"] = found["nll"] + k * logn
+    other = min(best_p["bic"], found["bic"])
+    return {"transit": best_t, "plain": best_p, "found": found, "gain": other - best_t["bic"]}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    opts = dict(opts or {})
+    margin = opts.pop("ht_margin", 10.0)
+    slack = opts.pop("ht_slack", 0.25)
+    most = opts.pop("ht_max", 2)
+    trace = opts.pop("ht_trace", False)
+    turns = opts.pop("ht_turns", 15)
+    r = main_line(stocks, run, opts)
+    flows = r["flows"]
+    ids = [s["id"] for s in stocks]
+    if len(run["t"]) < 30 or not flows:
+        return r
+    unit = {s["id"]: (s.get("unit") or "", s.get("group")) for s in stocks}
+    final = {s["id"] for s in stocks if s.get("final")}
+    scale = 1.0 if counts(run) else 0.0
+    inferred: dict[str, list[float]] = {}
+    used: set[str] = set()
+    base_e = judge(flows, stocks, run)
+    tried = []
+    for _ in range(most):
+        levels = {**run["levels"], **inferred}
+        all_ids = ids + list(inferred)
+        best = None
+        for a in ids:
+            for b in ids:
+                if a == b or a in final or a in used or b in used or unit[a][0] != unit[b][0]:
+                    continue
+                if unit[a][1] and unit[b][1] and unit[a][1] != unit[b][1]:
+                    continue
+                if not candidate(flows, a, b):
+                    continue
+                res = try_pair(flows, all_ids, run, levels, a, b, scale)
+                if res is None:
+                    continue
+                f = res["transit"]
+                tried.append({"pair": f"{a}>{b}", "gain": res["gain"], "delay": 1 / f["d"], "kin": f["kin"], "kA": f["kA"], "kb": f["kb"]})
+                if trace:
+                    print(f"  {a} -> H -> {b}: gain {res['gain']:.1f}; delay {1 / f['d']:.3f}, kin {f['kin']:.4f} of {f['kA']:.4f}, "
+                          f"kb {f['kb']:.4f}, cA {f['cA']:.3f} ({f['cA_on']}), cB {f['cB']:.3f} ({f['cB_on']})")
+                # H must turn over many times in the run (a longer delay is a slow drift, which
+                # pieces or a schedule explain as well)
+                if 1 / f["d"] > len(run["t"]) / turns:
+                    continue
+                if res["gain"] > margin and (best is None or res["gain"] > best[0]["gain"]):
+                    best = (res, a, b)
+        if best is None:
+            break
+        res, a, b = best
+        f = res["transit"]
+        new, h = build(flows, f["keep"], a, b, f, f["cA_on"], f["cB_on"])
+        inf = {**inferred, h: np.maximum(0.0, f["H"]).tolist()}
+        # pieces fitted to this run make the found model look good on it: the reference holds A's
+        # and B's outside constants at their means
+        e = judge(new, stocks, run, inf)
+        ref = judge(at_means(flows, {a, b}), stocks, run, inferred)
+        if trace:
+            print(f"  accept {a} -> H -> {b}? judge {e:.4f} vs {ref:.4f} (as found {base_e:.4f}); plain {res['plain']['bic']:.1f}, found {res['found']['bic']:.1f}, transit {f['bic']:.1f}")
+        if not e <= (1 + slack) * ref + 1e-9:
+            break
+        flows, inferred, base_e = new, inf, e
+        used |= {a, b}
+    r["flows"] = flows
+    r["transit"] = tried
+    if inferred:
+        r["inferred_levels"] = inferred
+        r["chosen"] = f"{r.get('chosen')} + {len(inferred)} transit stock(s)"
+    return r
