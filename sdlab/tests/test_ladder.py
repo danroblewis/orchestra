@@ -336,6 +336,7 @@ def test_the_read_endpoints_refuse_unknown_names(client, url):
 def test_the_page_s_endpoints(client):
     page = client.get("/ladder")
     assert page.status_code == 200 and "ladder.js?v=" in page.text and "diagram.js?v=" in page.text
+    assert client.get("/ladder/leaderboard").status_code == 200
     d = client.get("/api/ladder/cases/015-hidden-stock/data/none-short").json()
     assert d["measured"] == ["A", "B"] and set(d["all_levels"]) == {"A", "H", "B"} and "H" not in d["levels"]
     assert len(d["t"]) == len(d["levels"]["A"]) == 300

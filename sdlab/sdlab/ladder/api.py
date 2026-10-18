@@ -8,7 +8,7 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
     result(case, variant, strategy)      the latest result for one, with the found flows (None if never run)
     history(case, variant, strategy)     every result for one, newest first (without found flows)
     result_by_id(id)                     one stored result by its id, with the found flows (None if unknown)
-    case_data(case_id, variant, fresh)   the case's data in a variant: t, levels (measured), all_levels, eras, ...
+    case_data(case_id, variant, fresh, flows)   the case's data in a variant: t, levels (measured), all_levels, eras, (flows)
     timeline(strategy)                   the strategy's totals after each version (strategy and scorer hash) it ran with
     progress(recent?)                    the current or last run: {run, items}; with recent, a light copy for polling
     summary()                            the matrix: strategies, cases, cells (one per case x variant x
@@ -66,14 +66,17 @@ def result_by_id(result_id: int) -> dict | None:
     return jsonable(r) if r else None
 
 
-def case_data(case_id: str, variant: str, fresh: bool = False) -> dict:
+def case_data(case_id: str, variant: str, fresh: bool = False, flows: bool = False) -> dict:
     """What the detector sees (levels of the measured stocks) and what it does not (all_levels: every
-    stock, hidden ones too), for a page to plot."""
+    stock, hidden ones too), for a page to plot; with flows, also every true flow's amount per step
+    (`flows`, which discovery never sees)."""
     c = casemod.load(case_id)
     d = data.load(c, variant, fresh=fresh)
     measured = [s["id"] for s in c["model"]["stocks"] if s.get("measured", True)]
     out = {"case": case_id, "variant": variant, "fresh": bool(fresh), "t": d["t"], "levels": d["levels"], "all_levels": d["all_levels"],
            "measured": measured, "eras": d.get("eras") or [], "injections": d.get("injections") or []}
+    if flows:
+        out["flows"] = d.get("counters") or {}
     return jsonable(out)
 
 

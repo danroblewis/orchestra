@@ -71,26 +71,37 @@
   async function fetchList() { S.list = await fetch("/api/models").then((x) => x.json()); return S.list; }
   // a run going on right now is marked, so it is never a guess which ones are running
   const runSign = (r) => [...r.models, ...r.examples].filter((m) => m.running).map((m) => m.id).sort().join();
+  // The ladder's cases are the basic models, listed first; the older models (the examples and the
+  // user's own) are behind "Show older models", off by default and remembered per browser.
+  try { S.showOld = localStorage.getItem("sdlab.showOld") === "1"; } catch { S.showOld = false; }
+  function setShowOld(on) {
+    S.showOld = !!on;
+    try { localStorage.setItem("sdlab.showOld", S.showOld ? "1" : ""); } catch { /* fine without it */ }
+  }
+  const basicsOf = (r) => r.basics || [];
+  const allModels = (r) => [...basicsOf(r), ...r.models, ...r.examples];
   // The model picker: our own list rather than a native select, so a running model can stand out
   // (a green background and its step), and the list can be filtered by typing.
   function renderPick(id) {
     const r = S.list;
     if (id) S.pickId = id;
     S.listSign = runSign(r);
-    const all = [...r.models, ...r.examples], cur = all.find((m) => m.id === S.pickId);
+    const all = allModels(r), cur = all.find((m) => m.id === S.pickId);
     const btn = $("model-pick");
     btn.innerHTML = `${cur && cur.running ? '<span class="dot" aria-hidden="true"></span>' : ""}<span class="pname">${esc(cur ? cur.name : "Choose a model")}</span><span class="caret" aria-hidden="true">\u25be</span>`;
     btn.classList.toggle("running", !!(cur && cur.running));
     const menu = $("model-menu");
     if (menu.hidden) return;
-    const q = (S.pickFilter || "").toLowerCase(), hit = (m) => !q || m.name.toLowerCase().includes(q) || m.id.includes(q);
-    const item = (m) => `<div role="option" class="pickitem${m.running ? " running" : ""}${m.id === S.pickId ? " cur" : ""}" data-pick="${m.id}" aria-selected="${m.id === S.pickId}">
-        <span class="pname">${esc(m.name)}</span>${m.running ? `<span class="ptag">\u25b6 running \u00b7 step ${m.t}</span>` : ""}</div>`;
+    const q = (S.pickFilter || "").toLowerCase(), hit = (m) => !q || m.name.toLowerCase().includes(q) || m.id.includes(q) || (m.tests || "").toLowerCase().includes(q);
+    const item = (m) => `<div role="option" class="pickitem${m.running ? " running" : ""}${m.id === S.pickId ? " cur" : ""}${m.case ? " basic" : ""}" data-pick="${m.id}" aria-selected="${m.id === S.pickId}"${m.tests ? ` title="${esc(`Tests: ${m.tests}`)}"` : ""}>
+        ${m.case ? `<span class="plevel" title="Level ${esc(m.level)}">${esc(m.case.slice(0, 3))}</span>` : ""}<span class="pname">${esc(m.name)}${m.tests ? `<span class="ptests">${esc(m.tests)}</span>` : ""}</span>${m.running ? `<span class="ptag">\u25b6 running \u00b7 step ${m.t}</span>` : ""}</div>`;
     const group = (label, list) => (list.filter(hit).length ? `<div class="pickgroup">${label}</div>${list.filter(hit).map(item).join("")}` : "");
     const keep = menu.querySelector(".pickfind");
-    const body = group("My models", r.models) + group("Examples (open as shipped)", r.examples) || `<div class="pickgroup">No model matches</div>`;
-    if (!keep) menu.innerHTML = `<input class="pickfind" placeholder="Filter models" aria-label="Filter models"><div class="picklist">${body}</div>`;
-    else menu.querySelector(".picklist").innerHTML = body;
+    const older = S.showOld ? group("My models", r.models) + group("Examples (open as shipped)", r.examples) : "";
+    const body = group("Basic models (ladder)", basicsOf(r)) + older || `<div class="pickgroup">No model matches</div>`;
+    const toggle = `<label class="pickold" title="The examples and your own models"><input type="checkbox" data-show-old ${S.showOld ? "checked" : ""}> Show older models (${r.models.length + r.examples.length})</label>`;
+    if (!keep) menu.innerHTML = `<input class="pickfind" placeholder="Filter models" aria-label="Filter models"><div class="picklist">${body}</div>${toggle}`;
+    else { menu.querySelector(".picklist").innerHTML = body; menu.querySelector("[data-show-old]").checked = S.showOld; }
     const items = [...menu.querySelectorAll("[data-pick]")];
     if (!items.some((x) => x.classList.contains("hl"))) (items.find((x) => x.classList.contains("cur")) || items[0] || { classList: { add() {} } }).classList.add("hl");
   }
@@ -111,6 +122,7 @@
     if (it.dataset.pick !== S.model.id) loadModel(it.dataset.pick);
   });
   $("model-menu").addEventListener("input", (e) => { if (e.target.classList.contains("pickfind")) { S.pickFilter = e.target.value; renderPick(); } });
+  $("model-menu").addEventListener("change", (e) => { if (e.target.matches("[data-show-old]")) { setShowOld(e.target.checked); renderPick(); } });
   $("model-menu").addEventListener("keydown", (e) => {
     const items = [...$("model-menu").querySelectorAll("[data-pick]")], at = items.findIndex((x) => x.classList.contains("hl"));
     if (e.key === "Escape") { closePick(); $("model-pick").focus(); return; }
@@ -124,11 +136,11 @@
   document.addEventListener("pointerdown", (e) => { if (!$("model-menu").hidden && !e.target.closest(".picker")) closePick(); }, true);
   async function loadList(selectId) {
     const r = await fetchList();
-    const all = [...r.models, ...r.examples];
+    const all = allModels(r);
     const fromUrl = new URLSearchParams(location.search).get("model");
     let remembered = null; try { remembered = localStorage.getItem("sdlab.model"); } catch { /* storage may be blocked */ }
     const known = (id) => id && all.some((m) => m.id === id) ? id : null;
-    const id = known(selectId) || known(fromUrl) || known(remembered) || (all.find((m) => m.id === "bakery") || all[0] || {}).id;
+    const id = known(selectId) || known(fromUrl) || known(remembered) || (basicsOf(r)[0] || all.find((m) => m.id === "bakery") || all[0] || {}).id;
     renderPick(id);
     if (id) await loadModel(id);
   }
@@ -143,6 +155,7 @@
     rememberModel(id);
     renderPick(id);
     S.model.stocks ||= []; S.model.flows ||= []; S.model.machines ||= [];
+    if (S.model.basic) layoutBasic();
     S.sel.clear(); S.editMachine = null; S.pending = null; S.recent = []; S.live = null; S.paceLog = null; S.liveItems = null; S.undo = null;
     S.discovery = null; S.discovering = null; S.discToken = (S.discToken || 0) + 1; S.lastAutoN = 0; S.lastAutoAt = 0; S.leverage = null; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.view = null; S.find = "";
     S.simplify = null; S.preview = null; S.previewIdx = null; S.undoSimplify = null; S.showHidden = false; S.undoLayout = null;
@@ -153,6 +166,24 @@
     renderSaveState();
     syncPolling();
   }
+  // A basic model (a ladder case) comes without positions: the ladder page's layout, at the
+  // editor's box size. Its run is the case's recorded data in one variant (counting noise, long, by
+  // default; the choice is remembered per browser).
+  function layoutBasic() {
+    const pos = window.SDDiagram.layout(S.model.stocks.map((s) => s.id), S.model.flows, { maxCols: 3, colw: 360, rowh: 200 });
+    S.model.stocks.forEach((s) => { const p = pos[s.id] || { x: 0, y: 0 }; s.x = p.x; s.y = p.y; });
+    let v = null; try { v = localStorage.getItem("sdlab.basicVariant"); } catch { /* fine */ }
+    S.basicVariant = S.model.basic.variants.includes(v) ? v : S.model.basic.variant;
+  }
+  const liveQuery = () => (S.model && S.model.basic ? `&variant=${encodeURIComponent(S.basicVariant)}` : "");
+  async function setBasicVariant(v) {
+    S.basicVariant = v;
+    try { localStorage.setItem("sdlab.basicVariant", v); } catch { /* fine */ }
+    S.discovery = null; S.discToken = (S.discToken || 0) + 1; S.fitCache = null; S.fitPrev = null; S.fitHist = null;
+    await refetchLive();
+    setStatus(`Recorded data: ${v} (${S.live ? S.live.series.t.length : 0} ${tu()}s)`);
+  }
+
   // Save as: a copy of the current model (with its run) under a new name, which is then what is edited.
   async function saveCopy(name) {
     const r = await fetch(`/api/models/${S.model.id}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(name ? { name } : {}) });
@@ -165,6 +196,10 @@
   }
   async function writeModel() {
     S.saveTimer = null;
+    if (S.model.basic) {                       // a ladder case stays as it is: changes are for looking only
+      setStatus("A basic model is not saved: your changes last until you open another model (Save as keeps a copy, without the recorded data)");
+      return;
+    }
     if (S.isExample) {
       const shipped = S.model.name;
       S.forking = S.forking || saveCopy(`${S.model.name} (my copy)`);
@@ -194,7 +229,10 @@
   function renderSaveState() {
     const b = $("model-kind"); if (!b) return;
     b.hidden = !S.isExample;
-    b.title = "An example always opens as shipped. Your first change saves a copy of your own, and that copy is what you edit.";
+    const basic = S.model && S.model.basic;
+    b.textContent = basic ? `ladder ${basic.case.slice(0, 3)}` : "example";
+    b.title = basic ? `A basic model: ladder case ${basic.case}, level ${basic.level}. Tests: ${basic.tests} It plays back the case's recorded data; changes are not saved.`
+      : "An example always opens as shipped. Your first change saves a copy of your own, and that copy is what you edit.";
   }
   function setStatus(text, err) { const el = $("status"); el.textContent = text; el.classList.toggle("error", !!err); }
 
@@ -302,7 +340,7 @@
     const lv = (id) => ser.levels[id] ? ser.levels[id][ti] || 0 : 0;
     const rt = (id) => ser.rates[id] ? ser.rates[id][ti] || 0 : 0;
     const gLinks = el("g", {}, svg), gFlows = el("g", {}, svg), gStocks = el("g", {}, svg), gLabels = el("g", {}, svg);
-    const visFlows = S.model.flows.filter((f) => shown(f.from) && shown(f.to)), visStocks = S.model.stocks.filter((x) => shown(x.id));
+    const visFlows = S.hideTruth && S.model.basic ? [] : S.model.flows.filter((f) => shown(f.from) && shown(f.to)), visStocks = S.model.stocks.filter((x) => shown(x.id));
 
     // information links: a flow's equation reads a stock; an effect reads one (dashed, labelled);
     // a co-flow uses one up (dotted, labelled "uses")
@@ -364,7 +402,7 @@
 
     visStocks.forEach((s) => {
       const found = S.find && (s.name + " " + s.id + " " + (s.group || "")).toLowerCase().includes(S.find);
-      const g = el("g", { class: "stock" + (isSel("s:" + s.id) ? " sel" : "") + (S.pending ? " pick" : "") + (found ? " found" : ""), "data-stock": s.id, transform: `translate(${s.x} ${s.y})` }, gStocks);
+      const g = el("g", { class: "stock" + (isSel("s:" + s.id) ? " sel" : "") + (S.pending ? " pick" : "") + (found ? " found" : "") + (s.measured === false ? " unmeasured" : ""), "data-stock": s.id, transform: `translate(${s.x} ${s.y})` }, gStocks);
       el("rect", { class: "box", width: BOX.w, height: BOX.h, rx: 3 }, g);
       // How full it is: the box fills from the bottom, like a tank. "Full" is the most it has held
       // so far (or its goal, if that is higher), until we know its real capacity.
@@ -933,13 +971,13 @@
   // ---------- live runs ----------
   // A model runs live when its machines (or environment flows) name programs. The server owns
   // the stocks and the clock; the page polls it once a second while the Live view is open.
-  const runnable = () => S.model.machines.some((m) => m.program) || S.model.flows.some((f) => f.program) || !!(S.model.sensors && S.model.sensors.length) || !!S.model.history;
+  const runnable = () => S.model.machines.some((m) => m.program) || S.model.flows.some((f) => f.program) || !!(S.model.sensors && S.model.sensors.length) || !!S.model.history || !!S.model.recorded;
   // Polled once a second for a model that can run. Only what changed is redrawn, in place.
   // The first fetch brings the whole run; after that only the steps since the last one, which are
   // appended here, so a run of thousands of steps and hundreds of stocks is not resent every second.
   async function fetchLive() {
     const have = S.live && S.live.series && S.live.series.t.length ? S.live.series.t[S.live.series.t.length - 1] : 0;
-    const r = await fetch(`/api/models/${S.model.id}/live?since=${have}`);
+    const r = await fetch(`/api/models/${S.model.id}/live?since=${have}${liveQuery()}`);
     if (!r.ok) return;
     const before = S.live ? `${S.live.t}:${S.live.running}:${(S.live.errors || []).length}` : "";
     const fresh = await r.json();
@@ -973,7 +1011,7 @@
     refreshLiveParts(one);
   }
   async function refetchLive() {
-    const r = await fetch(`/api/models/${S.model.id}/live?since=0`);
+    const r = await fetch(`/api/models/${S.model.id}/live?since=0${liveQuery()}`);
     if (!r.ok) return;
     S.live = await r.json(); fillInferred();
     project(); renderAll();
@@ -1052,11 +1090,20 @@
     const tb = $("toolbar");
     let h = "";
     if (S.mode === "run") {
+      if (S.model.recorded && S.model.basic) {
+        const b = S.model.basic;
+        h += `<label title="The ladder case's recorded data this model plays back: noise none (the engine's exact flows) or counts (whole things), short or long">\ud83d\udcbe <select id="basic-variant" aria-label="Recorded data">${options(b.variants.map((v) => [v, v]), S.basicVariant)}</select></label>`;
+        h += ib(`data-truth${S.hideTruth ? "" : ' class="on"'}`, "\ud83d\udc41\ufe0f", S.hideTruth ? "Show the truth: draw the case's true flows again" : "Hide the truth: draw only the stocks (and what Discover finds), to compare");
+        h += `<a class="btn icon" href="/ladder?view=cases&case=${encodeURIComponent(b.case)}" target="_blank" rel="noopener" title="This case in the ladder view: what every strategy found" aria-label="Open in the ladder view">\ud83e\ude9c</a>`;
+        h += `<span class="tsep"></span>`;
+      }
       if (runnable()) {
         const L = S.live || {}, n = L.series ? L.series.t.length : 0;
+        const recorded = !!S.model.recorded;
         // a model measured only by its history has nothing to run: a live run would record nothing
         const nothingLive = !S.model.sensors && !!S.model.history && !S.model.machines.some((m) => m.program) && !S.model.flows.some((f) => f.program);
         const why = nothingLive ? "Nothing measures this model live: it only has a history. Use Import history." : "";
+        if (!recorded) {
         h += L.running ? ib('data-live="stop"', "⏸️", "Pause the run")
           : ib(`data-live="start"${why ? " disabled" : ""}`, "▶️", why || "Start the run");
         h += ib(`data-live="step"${L.running || why ? " disabled" : ""}`, "⏭️", why || `Step one ${tu()}`);
@@ -1068,6 +1115,7 @@
         h += `<label title="How fast the run goes: how many ${esc(us)} of the model pass each real second. Full speed runs as fast as the programs answer.">\u23f1\ufe0f <select id="speed" aria-label="Speed">${options(speeds, speeds.some(([v]) => v === per) ? per : 1)}</select></label>`;
         if (S.model.history) h += ib("data-import", "📥", "Import history: run this model's history program and replace the run with the levels it reports");
         h += ib('data-live="reset" class="danger"', "🗑️", "Empty every stock: throw the run away and start again");
+        }
         const eraLen = n ? (S.live.series.t[n - 1] - currentEra().start + 1) : 0;
         h += `<span class="tsep"></span>`;
         h += ib(`data-upd${eraLen >= 15 ? "" : " disabled"}`, "📐", eraLen >= 15 ? "Fit all equations to this era: fit every flow and save the better equations" : `Fit all equations to this era (run at least 15 ${tu()}s in this era first)`);
@@ -1104,6 +1152,8 @@
       S.live = await r.json(); fillInferred(); project(); renderAll(); setStatus(`Imported ${S.live.series.t.length} ${tu()}s of history`);
     }));
     tb.querySelectorAll("[data-live]").forEach((b) => b.addEventListener("click", () => liveAct(b.dataset.live)));
+    const bv = $("basic-variant"); if (bv) bv.addEventListener("change", () => setBasicVariant(bv.value));
+    tb.querySelectorAll("[data-truth]").forEach((b) => b.addEventListener("click", () => { S.hideTruth = !S.hideTruth; renderToolbar(); renderCanvas(); }));
     const sp = $("speed"); if (sp) sp.addEventListener("change", () => { if (S.live && S.live.running) liveAct("start", +sp.value); else S.speed = +sp.value; });
     const hz = $("horizon"); if (hz) hz.addEventListener("change", () => { S.model.horizon = Math.max(1, +hz.value || 1); changed(); });
 
@@ -1878,7 +1928,7 @@
   // already known about each step (measured flows, and what the model's own unmeasured flows'
   // equations predict), as the known change of each stock in each step.
   function discoveryRequest() {
-    const pick = selStocks().filter((id) => !(stock(id) || {}).inferred);   // stocks found earlier have no data of their own
+    const pick = selStocks().filter((id) => !(stock(id) || {}).inferred && (stock(id) || {}).measured !== false);   // stocks found earlier, or nobody measures, have no data
     const L = S.live.series;
     const E = eras().map((e) => ({ start: e.start, label: e.label || null }));
     // measured models send no per-step accounting: it is each measured flow's amount, from and to its stocks
@@ -1915,7 +1965,7 @@
       }
     }
     const useKnown = !S.discoverFromNothing && !!measuredMoves;
-    const scopeStocks = pick.length ? S.model.stocks.filter((x) => pick.includes(x.id)) : S.model.stocks.filter((x) => !x.inferred);
+    const scopeStocks = pick.length ? S.model.stocks.filter((x) => pick.includes(x.id)) : S.model.stocks.filter((x) => !x.inferred && x.measured !== false);
     const ids = new Set(scopeStocks.map((x) => x.id)), n = L.t.length;
     const known = {};
     if (useKnown) moved.forEach((m, i) => Object.values(m || {}).forEach((x) => {
@@ -2227,11 +2277,15 @@
         <button class="btn" data-f-upload title="Open a model file (.json) from your disk; it becomes one of your models">&#11014;&#65039; Open a file…</button>
         <button class="btn icon" data-f-close title="Close" aria-label="Close">✕</button></div>
       <div class="fbody">
-        <h3>My models</h3>${r.models.length ? `<ul>${r.models.map((m) => row(m, true)).join("")}</ul>` : `<p class="note">None yet. Change an example and it is saved here as your own copy.</p>`}
+        <h3>Basic models (ladder)</h3><ul>${basicsOf(r).map((m) => row(m, false)).join("")}</ul>
+        <p class="note">The ladder's tiny true models, simplest first; each opens with its recorded data, ready for Discover.</p>
+        <label class="pickold"><input type="checkbox" data-f-old ${S.showOld ? "checked" : ""}> Show older models (${r.models.length + r.examples.length})</label>
+        ${S.showOld ? `<h3>My models</h3>${r.models.length ? `<ul>${r.models.map((m) => row(m, true)).join("")}</ul>` : `<p class="note">None yet. Change an example and it is saved here as your own copy.</p>`}
         <h3>Examples</h3><ul>${r.examples.map((m) => row(m, false)).join("")}</ul>
-        <p class="note">Examples always open as shipped. Their runs are kept; a copy takes the run with it.</p>
+        <p class="note">Examples always open as shipped. Their runs are kept; a copy takes the run with it.</p>` : ""}
       </div>`;
     d.querySelector("[data-f-close]").onclick = () => d.close();
+    d.querySelector("[data-f-old]").onchange = (e) => { setShowOld(e.target.checked); renderFiles(); renderPick(); };
     d.querySelector("[data-f-upload]").onclick = () => $("file-in").click();
     d.querySelectorAll("[data-f-open]").forEach((b) => (b.onclick = async () => { d.close(); await loadModel(b.dataset.fOpen); }));
     d.querySelectorAll("[data-f-pause]").forEach((b) => (b.onclick = async () => {
@@ -2243,7 +2297,7 @@
     d.querySelector(".fhead h2").textContent = n ? `Models \u00b7 ${n} running` : "Models";
     d.querySelectorAll("[data-f-copy]").forEach((b) => (b.onclick = async () => {
       await flushSave();
-      const src = [...r.models, ...r.examples].find((m) => m.id === b.dataset.fCopy);
+      const src = allModels(r).find((m) => m.id === b.dataset.fCopy);
       const name = prompt("Name of the copy", `${src.name} (copy)`); if (!name) return;
       const res = await fetch(`/api/models/${src.id}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
       if (!res.ok) { setStatus("Could not copy", true); return; }

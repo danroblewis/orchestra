@@ -424,6 +424,14 @@ anything else is a 404 (422 for an id that is not a number). No path comes from 
 - **Cases**: every case with its "tests" sentence, true diagram and equations, and a plot of its
   data in any variant.
 
+The **leaderboard** (`/ladder/leaderboard`, 🏆 from the ladder and research pages) ranks every
+strategy by pass rate, recall, precision and skill, sortable, with variant and level filters.
+
+In the **editor**, every case is also a read-only **basic model** (`ladder-<case>`, listed first in
+the model picker; SPEC.md 4.14): its true model, laid out the same way, playing back the case's
+recorded data in a variant (`counts-long` by default), so Discover can be run on it there and its
+flows compared with the truth.
+
 Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-ladder sync` (or
 `watch`) in another terminal to see it live.
 

@@ -356,12 +356,16 @@ themes from `prefers-color-scheme`.
 ### 4.2 Header
 
 - **Model picker**: a custom dropdown, not a native select, so it can show state. Typing filters.
-  Arrow keys and Enter choose; Escape closes. Two groups: "My models" and "Examples (open as
-  shipped)". A model whose run is going on now has a green background and "▶ running · step N",
+  Arrow keys and Enter choose; Escape closes. First, "Basic models (ladder)": every ladder case
+  (4.14), simplest first, each with its number, title and what it tests (typing filters on that
+  too). The older models, "My models" and "Examples (open as shipped)", are behind **Show older
+  models** at the foot of the list, off by default and remembered per browser **(asked for: the
+  ladder's basic models first, the old ones hidden)**. A model whose run is going on now has a green background and "▶ running · step N",
   and the picker button itself turns green with a dot when the open model is running
   **(asked for: show which are running, with a background colour)**. The list refreshes every
   few seconds while polling.
-- **Example badge**: shown when the open model is an example. Its tooltip says the first change
+- **Example badge**: shown when the open model is an example ("ladder NNN" for a basic model,
+  its tooltip the case and what it tests). Its tooltip says the first change
   saves a copy.
 - **Files** (folder icon) opens the files dialog (4.10). **Save as** (disk icon) prompts for a name
   and copies the model and its run; the copy is then what is edited. **Research** (microscope
@@ -656,7 +660,8 @@ require a selection.
 - **Examples always open as shipped** **(asked for)**. The server refuses to save over them. The
   first edit to an example saves a copy named "<name> (my copy)" in My models, and the status line
   says so; from then on the copy is edited. The run goes with the copy.
-- **Files dialog** (folder icon): My models (name, last modified, Open, Copy, Download, Delete with
+- **Files dialog** (folder icon): Basic models (ladder) first (Open, Copy, Download), then, with
+  "Show older models" (the same setting as the picker's), My models (name, last modified, Open, Copy, Download, Delete with
   a second click to confirm) and Examples (Open, Copy, Download). A running model shows
   "▶ running · step N" and a pause button; the title counts running models. "Open a file…" uploads
   a `.json` model, which becomes one of the user's models (refused when it is not JSON or has no
@@ -732,7 +737,9 @@ For the rewrite's reviewers, the explicit requests in one place:
 
 `/ladder` (the 🪜 button in the editor's and the research view's header), read only, plain and
 fast, light and dark, down to phone width. It shows the ladder (`docs/LADDER.md`): every discovery
-strategy on tiny true models, scored equation by equation. Four tabs; the tab and what it shows
+strategy on tiny true models, scored equation by equation. A 🏆 Leaderboard button opens
+`/ladder/leaderboard` (`leaderboard.html`: per strategy the pass / equivalent / fail bar, pass rate,
+recall, precision, skill, runs and time, sortable by any column, with variant and level filters). Four tabs; the tab and what it shows
 are kept in the URL (`?view=now&case=&variant=&strategy=&result=`).
 
 - **Now**: what the ladder is running, polled every second (`/api/ladder/progress?recent=20`): the
@@ -786,6 +793,26 @@ are kept in the URL (`?view=now&case=&variant=&strategy=&result=`).
   sees them, with unmeasured stocks dashed for reference, eras shaded and injections ticked;
   hover for the values at a step.
 
+### 4.14 Basic models (the ladder's cases in the editor)
+
+Every ladder case (`docs/LADDER.md`) is a read-only model `ladder-<case>` (`sdlab/basics.py`, read
+through the ladder's API, so any case format the ladder reads works). Opening one shows its true
+model: the case's stocks and flows (machine "environment"), laid out by `diagram.js` as the ladder
+page lays it out; a stock nobody measures is a dashed box. It cannot run live: its run is the
+case's **recorded data** played back as history (the measured stocks' levels, and each true flow's
+amount per step as what happened; announced eras as eras), in one variant, counting noise and long
+(`counts-long`) by default. In Run mode the toolbar has, instead of the live controls:
+
+- 💾 the variant (none or counts, short or long; remembered per browser), which reloads the data;
+- 👁️ **show / hide the truth**: hiding draws only the stocks, so what Discover finds (drawn over
+  the canvas in orange) stands alone; showing puts the true flows back beside the found ones;
+- 🪜 the case in the ladder view.
+
+Discover, fits, Simplify and the projection work as for any measured model; discovery is given the
+measured stocks' levels only (never a stock nobody measures, never the true flows). Changes are not
+saved (the status line says so); Save as or Copy makes a model of the user's own from the true model,
+without the recorded data. The server refuses to save over, delete or run one (409).
+
 ---
 
 ## 5. Server API
@@ -802,8 +829,8 @@ Storage: `$SDLAB_HOME` (default `~/.sdlab`): `models/<id>.json` for the user's m
 
 | Method and path | Request | Response | Notes |
 |---|---|---|---|
-| `GET /api/models` | | `{"examples": [row], "models": [row]}`, row `{id, name, modified, running?, t?}` | `running` and `t` only for a run going on now. |
-| `GET /api/models/{id}?reveal=false` | | the model, plus `"example": bool` | Hidden flows are removed unless `reveal=true`. |
+| `GET /api/models` | | `{"basics": [{id, name, case, level, tags, tests}], "examples": [row], "models": [row]}`, row `{id, name, modified, running?, t?}` | `running` and `t` only for a run going on now. `basics`: every ladder case as a model (4.14), by level. |
+| `GET /api/models/{id}?reveal=false` | | the model, plus `"example": bool` | Hidden flows are removed unless `reveal=true`. A basic model (`ladder-<case>`) is its case's true model with `example: true`, `recorded: true` and `basic: {case, level, tags, tests, variants, variant, schedule?}`. |
 | `PUT /api/models/{id}` | the model | `{"ok": true}` | 409 for an example; 422 `{"detail": {"errors": [...]}}` when invalid; hidden flows already on disk are kept; written atomically. |
 | `POST /api/models` | a model | `{"id"}` | A new user model with an id made from its name (unique among models and examples). |
 | `POST /api/models/{id}/copy` | `{"name"?, "run"?: true}` | `{"id", "name"}` | Copies hidden flows and, by default, the run (pausing and resuming a running one). |
@@ -826,7 +853,7 @@ read stocks; sensor and history programs exist; `capacity_stock` names a stock.
 
 | Method and path | Request | Response |
 |---|---|---|
-| `GET /api/models/{id}/live?since=<t>` | | snapshot (below), with only steps after `since` |
+| `GET /api/models/{id}/live?since=<t>` | | snapshot (below), with only steps after `since`; for a basic model (4.14), its recorded data in `variant` (default `counts-long`), never running, and every POST below is 409 |
 | `POST /api/models/{id}/live/start` | `{"seconds_per_tick"?: number}` (0 = full speed) | snapshot(0) |
 | `POST /api/models/{id}/live/stop` | | snapshot(0) |
 | `POST /api/models/{id}/live/reset` | | snapshot(0): stops, deletes the log |
@@ -889,7 +916,8 @@ The ladder's read endpoints (`/api/ladder/...`, `sdlab/ladder/routes.py`) are li
 
 ### 5.4 Static
 
-`GET /`, `GET /research` and `GET /ladder` serve `index.html`, `research.html` and `ladder.html` with each asset stamped
+`GET /`, `GET /research`, `GET /ladder` and `GET /ladder/leaderboard` serve `index.html`, `research.html`,
+`ladder.html` and `leaderboard.html` with each asset stamped
 `?v=<mtime>` and `Cache-Control: no-cache`, so the tunnel's cache never serves a stale script.
 `/static/*` serves the scripts and stylesheet.
 

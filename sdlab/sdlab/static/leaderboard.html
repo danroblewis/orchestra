@@ -133,7 +133,7 @@ function render() {
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder#matrix" style="color:inherit">${r.name}</a></td>`;
+    if (c.key === "name") return `<td class="name"><a href="/ladder?view=history&strategy=${encodeURIComponent(r.name)}" style="color:inherit" title="Its results over time in the ladder view">${r.name}</a></td>`;
     if (c.key === "bar") {
       const w = (v) => (100 * v / r.runs).toFixed(2) + "%";
       return `<td class="bar"><div class="stack" title="${r.p} pass, ${r.e} equivalent, ${r.fl} fail, ${r.o} other, of ${r.runs}">` +

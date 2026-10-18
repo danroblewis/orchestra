@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import basics
 from .discovery.strategies import names as strategy_names
 from .discovery_jobs import DiscoveryJobs
 from .ladder.routes import router as ladder_router
@@ -186,12 +187,17 @@ def create_app() -> FastAPI:
     def programs() -> dict:
         return {"programs": available_programs(EXAMPLES)}
 
+    # A basic model (a ladder case, basics.py) plays back its recorded data in one variant; it never runs.
     @app.get("/api/models/{model_id}/live")
-    def live_state(model_id: str, since: int = 0) -> dict:
+    def live_state(model_id: str, since: int = 0, variant: str | None = None) -> dict:
+        if basics.is_basic(model_id):
+            return basics.snapshot(model_id, variant, since)
         return live(model_id).snapshot(since)
 
     @app.post("/api/models/{model_id}/live/{action}")
     def live_control(model_id: str, action: str, body: dict[str, Any] | None = None) -> dict:
+        if basics.is_basic(model_id):
+            raise HTTPException(409, "a basic model plays back its recorded data: it does not run")
         run = live(model_id)
         if action == "start":
             run.start((body or {}).get("seconds_per_tick"))
@@ -212,6 +218,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/models/{model_id}/live/firings/{n}")
     def live_firing(model_id: str, n: int) -> dict:
+        rec = None if basics.is_basic(model_id) else live(model_id).firing(n)
+        if rec is None:
+            raise HTTPException(404, "that firing is no longer kept; only the most recent 60 are")
+        return rec
         rec = live(model_id).firing(n)
         if rec is None:
             raise HTTPException(404, "that firing is no longer kept; only the most recent 60 are")
@@ -219,6 +229,8 @@ def create_app() -> FastAPI:
 
     @app.get("/api/models/{model_id}/live/stocks/{stock_id}")
     def live_items(model_id: str, stock_id: str) -> dict:
+        if basics.is_basic(model_id):
+            return {"count": 0, "items": []}
         return live(model_id).stock_items(stock_id)
 
     # Discovery runs as a background job per model (discovery_jobs.py): the page posts what it
@@ -229,20 +241,20 @@ def create_app() -> FastAPI:
 
     @app.post("/api/models/{model_id}/discovery")
     def start_discovery(model_id: str, body: dict[str, Any]) -> dict:
-        _path(model_id)
+        _known(model_id)
         req = check_discovery_request(body)
         return jobs.submit(model_id, req).view(with_result=False)
 
     @app.get("/api/models/{model_id}/discovery")
     async def discovery_status(model_id: str, job: int | None = None, wait: float = 0) -> dict:
-        _path(model_id)
+        _known(model_id)
         if wait > 0:
             return await jobs.wait(model_id, job, min(wait, 30.0))
         return jobs.status(model_id, job)
 
     @app.delete("/api/models/{model_id}/discovery")
     def cancel_discovery(model_id: str) -> dict:
-        _path(model_id)
+        _known(model_id)
         return jobs.cancel(model_id)
 
 
@@ -261,12 +273,14 @@ def create_app() -> FastAPI:
                     row.update(running=True, t=r.t)
                 out.append(row)
             return out
-        return {"examples": listing(EXAMPLES), "models": [m for m in listing(models_dir()) if not is_example(m["id"])]}
+        return {"basics": basics.listing(), "examples": listing(EXAMPLES), "models": [m for m in listing(models_dir()) if not is_example(m["id"])]}
 
     # Hidden flows stand for parts of the real system nobody has modelled: the runner runs them,
     # but the page never receives them, and saving the page's model keeps them as they were.
     @app.get("/api/models/{model_id}")
     def get_model(model_id: str, reveal: bool = False) -> dict:
+        if basics.is_basic(model_id):
+            return {**basics.model(model_id), "example": True}
         m = json.loads(_path(model_id).read_text())
         m["example"] = is_example(model_id)
         if not reveal:
@@ -275,7 +289,7 @@ def create_app() -> FastAPI:
 
     @app.put("/api/models/{model_id}")
     def put_model(model_id: str, model: dict[str, Any]) -> dict:
-        if is_example(model_id):
+        if is_example(model_id) or basics.is_basic(model_id):
             raise HTTPException(409, "examples are read-only: save a copy")
         p = _path(model_id, must_exist=False)
         model["id"] = model_id
@@ -303,7 +317,11 @@ def create_app() -> FastAPI:
     def copy_model(model_id: str, body: dict[str, Any] | None = None) -> dict:
         """Save as: a copy of any model (hidden flows and the run included) under a new name."""
         body = body or {}
-        src = json.loads(_path(model_id).read_text())
+        if basics.is_basic(model_id):                         # the true model alone, without the ladder's data
+            src = {k: v for k, v in basics.model(model_id).items() if k not in ("recorded", "basic")}
+            body = {**body, "run": False}
+        else:
+            src = json.loads(_path(model_id).read_text())
         name = str(body.get("name") or f"{src.get('name', model_id)} (copy)")
         mid = unique_id(name)
         src.update(id=mid, name=name)
@@ -322,7 +340,7 @@ def create_app() -> FastAPI:
 
     @app.delete("/api/models/{model_id}")
     def delete_model(model_id: str) -> dict:
-        if is_example(model_id):
+        if is_example(model_id) or basics.is_basic(model_id):
             raise HTTPException(409, "examples cannot be deleted")
         p = _path(model_id)
         if model_id in runs:
@@ -337,7 +355,7 @@ def create_app() -> FastAPI:
     @app.get("/api/models/{model_id}/download")
     def download_model(model_id: str) -> Response:
         """The model as a file to keep, hidden flows included (it is the user's own copy)."""
-        m = json.loads(_path(model_id).read_text())
+        m = basics.model(model_id) if basics.is_basic(model_id) else json.loads(_path(model_id).read_text())
         m.pop("example", None)
         return Response(json.dumps(m, indent=2), media_type="application/json",
                         headers={"Content-Disposition": f'attachment; filename="{model_id}.json"'})
@@ -360,6 +378,10 @@ def create_app() -> FastAPI:
     @app.get("/ladder")
     def ladder_page() -> HTMLResponse:
         return page("ladder.html")
+
+    @app.get("/ladder/leaderboard")
+    def leaderboard_page() -> HTMLResponse:
+        return page("leaderboard.html")
 
     app.include_router(research_router)
     app.include_router(ladder_router)
@@ -389,6 +411,12 @@ def check_discovery_request(body: dict[str, Any]) -> dict[str, Any]:
     eras = [{"start": e["start"], "label": e.get("label")} for e in body.get("eras") or [] if isinstance(e, dict) and isinstance(e.get("start"), (int, float))]
     return {"stocks": stocks, "run": {"t": t, "levels": {i: levels.get(i) or [0] * len(t) for i in ids}}, "eras": eras,
             "known": {i: v for i, v in known.items() if i in ids}, "strategy": strategy}
+
+
+def _known(model_id: str) -> None:
+    """404 unless the model exists (a stored model, an example, or a basic model)."""
+    if not basics.is_basic(model_id):
+        _path(model_id)
 
 
 def _path(model_id: str, must_exist: bool = True) -> Path:
