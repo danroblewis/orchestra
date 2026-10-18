@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SD Lab ladder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="research-page ladder-page">
+<header class="top">
+  <div class="brand">SD Lab</div>
+  <a class="btn icon" href="/" title="Back to the editor" aria-label="Back to the editor">&#9998;&#65039;</a>
+  <a class="btn icon" href="/research" title="Research: discovery's research topics and the bench's history of runs" aria-label="Research">&#128300;</a>
+  <h1 class="rtitle">Ladder</h1>
+  <nav class="ltabs" role="tablist" aria-label="Views">
+    <button role="tab" data-view="now" title="What the ladder is running now, or one result: the true model beside the found one">Now</button>
+    <button role="tab" data-view="matrix" title="Every strategy on every case, four variants per cell">Matrix</button>
+    <button role="tab" data-view="history" title="A case and strategy's results over time, and each strategy's totals per version">History</button>
+    <button role="tab" data-view="cases" title="Every case: what it tests, its true model and its data">Cases</button>
+  </nav>
+  <div class="status" id="status"></div>
+</header>
+
+<main class="rmain" id="main">
+  <section class="rsec lview" data-view="now" id="view-now">
+    <div class="live" id="live"></div>
+    <div class="rcontrols" id="pick"></div>
+    <div id="cmp-head"></div>
+    <div class="dpair" id="dpair">
+      <figure class="dpanel"><figcaption>True model</figcaption><svg id="d-true" role="img" aria-label="The true model"></svg></figure>
+      <figure class="dpanel"><figcaption id="found-cap">Found</figcaption><svg id="d-found" role="img" aria-label="The found model"></svg></figure>
+    </div>
+    <div class="legend dlegend" id="dlegend"></div>
+    <div id="cmp-body"></div>
+  </section>
+
+  <section class="rsec lview" data-view="matrix" id="view-matrix" hidden>
+    <p class="note" id="matrix-note"></p>
+    <div class="rcontrols" id="mcontrols"></div>
+    <div class="legend" id="mlegend"></div>
+    <div class="tablewrap"><table class="rtable lmatrix" id="matrix"></table></div>
+    <h3>By tag <span class="muted small">pass + equivalent of all variants</span></h3>
+    <div class="tablewrap"><table class="rtable" id="tags"></table></div>
+  </section>
+
+  <section class="rsec lview" data-view="history" id="view-history" hidden>
+    <div class="rcontrols" id="hpick"></div>
+    <div id="hbody"></div>
+    <h3>Each strategy's totals per version</h3>
+    <p class="note">One bar per version of a strategy (its code, or the scorer, changed): the ladder's state just after it ran, for every case and variant.</p>
+    <div id="timeline"></div>
+  </section>
+
+  <section class="rsec lview" data-view="cases" id="view-cases" hidden>
+    <div class="cbrowse">
+      <div class="clist" id="clist"></div>
+      <div class="cdetail" id="cdetail"></div>
+    </div>
+  </section>
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script src="/static/diagram.js"></script>
+<script src="/static/ladder-compare.js"></script>
+<script src="/static/ladder.js"></script>
+</body>
+</html>
