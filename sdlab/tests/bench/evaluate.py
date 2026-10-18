@@ -38,7 +38,7 @@ headline counts each class and the judge's best-candidate pick rate.
                                                                with --i-am-adopting)
 
 Discovery is handed only what the page gives it (page_inputs): the measured stocks' id, name, unit,
-final and group, their levels over time, and the announced eras.
+final and group, their levels over time, the announced eras, and any announced injections.
 
 Runs are saved under ~/.cache/sdlab/bench/runs (or $SDLAB_BENCH_CACHE/runs), never in the repository,
 with the branch and commit they ran on. Without --baseline a run is compared with the latest earlier
@@ -96,7 +96,10 @@ def page_inputs(model: dict, data: dict) -> tuple[list[dict], dict, dict]:
     final, group), their levels over time, and the announced eras (more than one)."""
     stocks = [{k: s[k] for k in PAGE_STOCK_FIELDS if k in s} for s in model["stocks"]]
     eras = [{"start": e["start"], "label": e.get("label")} for e in data.get("eras") or []]
-    return stocks, {"t": data["t"], "levels": data["levels"]}, {"eras": eras if len(eras) > 1 else None}
+    opts = {"eras": eras if len(eras) > 1 else None}
+    if data.get("injections"):                               # announced interventions, like eras
+        opts["injections"] = [{"t": j["t"], "stock": j["stock"], "amount": j["amount"]} for j in data["injections"]]
+    return stocks, {"t": data["t"], "levels": data["levels"]}, opts
 
 
 def discover(strategy: str, model: dict, data: dict, keep: bool = False) -> tuple[dict, str | None]:

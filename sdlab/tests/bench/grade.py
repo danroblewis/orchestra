@@ -164,8 +164,10 @@ def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 1
     A = levels_array(all_levels, ids)
     s0 = starts_for(A.shape[1], horizon, starts)
     times = np.asarray(t, dtype=float)[s0[None, :] + np.arange(horizon)[:, None]]
-    truth_end = Model(truth, ids).run(A[:, s0 - 1], times)
-    return {"horizon": horizon, "flows": truth, "ids": ids, "fed": fed, "exo": exo, "A": A, "s0": s0, "times": times, "truth_end": truth_end}
+    injections = data.get("injections")                     # announced interventions, made in both models
+    truth_end = Model(truth, ids).run(A[:, s0 - 1], times, injections)
+    return {"horizon": horizon, "flows": truth, "ids": ids, "fed": fed, "exo": exo, "A": A, "s0": s0, "times": times, "truth_end": truth_end,
+            "injections": injections}
 
 
 def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150, truth: dict | None = None) -> dict:
@@ -173,7 +175,7 @@ def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 2
     ids, fed, exo, A, s0, times, truth_end = (tr[k] for k in ("ids", "fed", "exo", "A", "s0", "times", "truth_end"))
     measured = list(data["levels"])
     own = [f for f in result["flows"] if not (not f.get("from") and f.get("to") in fed and not f.get("driver") and (f.get("rate") or {}).get("form") == "constant")]
-    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times)
+    found_end = Model(own + exo, ids).run(A[:, s0 - 1], times, tr.get("injections"))
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())

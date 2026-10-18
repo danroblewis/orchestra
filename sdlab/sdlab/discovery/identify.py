@@ -23,17 +23,18 @@ for search in ({"name": "forward"}, {"name": "backward", "backward_max": 20}):
                 VARIANTS.append({**search, **inflow, **recv, **era, "name": f"{search['name']}, {inflow['name']}, {recv['name']}{era['name']}"})
 
 
-def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100)) -> float:
+def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None) -> float:
     hs = [h for h in horizons if h < len(run["t"]) / 4]
     if not flows or not hs:
         return float("inf")
     ids = [s["id"] for s in stocks]
-    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h) for h in hs) / len(hs)
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections) for h in hs) / len(hs)
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     keep = opts.pop("candidates", False)                 # the bench grades every candidate
+
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     best, tried, candidates = None, [], []
     # known changes (opts["known"]) are part of every candidate's behaviour when it is judged
@@ -42,7 +43,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if v.get("split_eras") and not has_eras:
             continue
         r = identify_one(stocks, run, {**opts, **v})
-        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run)
+        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"))
         tried.append({"name": v["name"], "error": e})
         if keep:
             candidates.append({"name": v["name"], "error": e, "flows": r["flows"]})

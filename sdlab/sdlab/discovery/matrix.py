@@ -73,6 +73,11 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # what is already known (measured flows, the model's own equations) is taken out first, so
         # the rows explain the rest: known[s][i] is the known change of s from step i - 1 to i
         dy = dy - known_changes(opts["known"], ids, len(t))[:, 1:]
+    if opts.get("injections"):
+        # an announced injection is added at the start of its step, before that step's flows: the
+        # step starts from the level plus the injection, and its change less the injection is the flows'
+        inj = injected(opts["injections"], ids, t)[:, 1:]
+        prev, dy = prev + inj, dy - inj
     at = lambda k: t[k + 1]  # noqa: E731
     conf = configurations(opts.get("eras"), t) if opts.get("split_eras") else None
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
@@ -269,6 +274,17 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts) -> None
             for c in cand:
                 row["coefL"][c][a] = -moves[c]
             row["conserved"] = True
+
+
+def injected(injections: list[dict], ids: list[str], t: list) -> np.ndarray:
+    """Announced injections ({t, stock, amount}) as stocks x steps: what was added at the start of
+    each step."""
+    out = np.zeros((len(ids), len(t)))
+    index = {v: i for i, v in enumerate(t)}
+    for j in injections:
+        if j.get("stock") in ids and j["t"] in index:
+            out[ids.index(j["stock"]), index[j["t"]]] += float(j["amount"])
+    return out
 
 
 def known_flows(known: dict, ids: list[str], t: list) -> list[dict]:

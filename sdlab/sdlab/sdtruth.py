@@ -7,6 +7,10 @@ plus a few things a simulation of the real world needs:
     "steps", "long_steps", "seed"     how long a run is (default, and for the long-run tests)
     "noise": {"counts": true}         flows move whole things, drawn around their rate (Poisson):
                                       the counting noise a real system has; or {"relative": 0.1}
+    "injections": [{"t": 100, "stock": "s", "amount": 1500}]
+                                      announced interventions: at the start of step t, the amount
+                                      is added to the stock from outside (taken away if negative,
+                                      never below 0); a run can also be given injections to make
     "uses": [{"stock": "s", "per": 0.1}]   (on a flow) a co-flow: each unit the flow moves also uses up
                                       `per` of stock s; the flow cannot move more than s allows
     "schedule": {"every": 365, "changes": [{"t": 1, "label": "...", "set": {flow id: {rate}},
@@ -62,7 +66,7 @@ class Truth:
         return out
 
     # ---- a run ----
-    def run(self, seed: int | None = None, steps: int | None = None) -> dict:
+    def run(self, seed: int | None = None, steps: int | None = None, injections: list[dict] | None = None) -> dict:
         seed = self.seed if seed is None else seed
         steps = self.steps if steps is None else steps
         rng = random.Random(seed)
@@ -80,12 +84,24 @@ class Truth:
             for u in f.get("uses") or []:
                 if float(u.get("per") or 0) > 0:
                     users.setdefault(u["stock"], []).append((f, float(u["per"])))
+        # injections (announced interventions): at the start of step t, `amount` of a stock is added
+        # (or taken away; a stock never goes below 0) from outside the system, before that step's
+        # flows: an impulse whose spread through the system shows how stocks are connected
+        injected: dict[int, list[dict]] = {}
+        for j in list(self.model.get("injections") or []) + list(injections or []):
+            if int(j["t"]) <= steps and j.get("stock") in level:
+                injected.setdefault(int(j["t"]), []).append(j)
+        applied = []
         levels = {s: [] for s in self.stock_ids}
         counters = {f["id"]: [] for f in flows}
         for t in range(1, steps + 1):
             for e in changes.get(t, []):
                 for fid, rate in e["set"].items():
                     byid[fid]["rate"] = rate
+            for j in injected.get(t, []):
+                before = level[j["stock"]]
+                level[j["stock"]] = max(0.0, before + float(j["amount"]))
+                applied.append({"t": t, "stock": j["stock"], "amount": level[j["stock"]] - before})
             amount = {}
             for f in flows:
                 q = desired_rate(f.get("rate"), level, f) * multiplier(f, level)
@@ -118,21 +134,27 @@ class Truth:
                 counters[f["id"]].append(q if not noise.get("counts") else int(q))
             for s in self.stock_ids:
                 levels[s].append(round(level[s], 4) if not noise.get("counts") else int(round(level[s])))
-        return {"levels": levels, "counters": counters, "eras": [{"t": e["t"], "label": e["label"]} for e in eras if e["announce"]]}
+        out = {"levels": levels, "counters": counters, "eras": [{"t": e["t"], "label": e["label"]} for e in eras if e["announce"]]}
+        if applied:
+            out["injections"] = applied
+        return out
 
-    def measured(self, seed: int | None = None, steps: int | None = None) -> dict:
-        """What SD Lab sees: the measured stocks, the eras, and every flow's amount per step (a
-        model may name a flow to have it measured)."""
+    def measured(self, seed: int | None = None, steps: int | None = None, injections: list[dict] | None = None) -> dict:
+        """What SD Lab sees: the measured stocks, the eras, every flow's amount per step (a model may
+        name a flow to have it measured), and the injections made (announced, like eras)."""
         steps = self.steps if steps is None else steps
-        r = self.run(seed, steps)
+        r = self.run(seed, steps, injections)
         eras, seen = [{"start": 1, "label": "Start"}], {1}
         for e in r["eras"]:
             if e["t"] in seen:
                 continue
             seen.add(e["t"])
             eras.append({"start": e["t"], "label": e["label"]})
-        return {"t": list(range(1, steps + 1)), "levels": {s: r["levels"][s] for s in self.measured_ids},
-                "eras": eras, "counters": r["counters"]}
+        out = {"t": list(range(1, steps + 1)), "levels": {s: r["levels"][s] for s in self.measured_ids},
+               "eras": eras, "counters": r["counters"]}
+        if r.get("injections"):
+            out["injections"] = r["injections"]
+        return out
 
     # ---- the answer key ----
     def truth(self) -> dict:
