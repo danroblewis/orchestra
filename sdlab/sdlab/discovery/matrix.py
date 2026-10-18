@@ -117,6 +117,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 # the levels this row uses (and its own) may have a number per configuration; they
                 # join before any change in the outside inflow is looked for
                 js = list(dict.fromkeys([col[q][0] for q in chosen] + ([s] if own else [])))
+                if opts.get("era_levels") == "allowed":
+                    # (an option) every level the row may use, not only those it chose without eras:
+                    # a level that barely moves is chosen only once its number may follow the configuration
+                    js = list(dict.fromkeys(js + [q for q in allowed if col[q][1] < 0]))
                 for j in js:
                     for c in range(L):
                         X.append(np.where(cfg == c, prev[j], 0.0))
