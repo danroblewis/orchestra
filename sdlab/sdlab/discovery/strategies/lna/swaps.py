@@ -33,7 +33,7 @@ def swaps(cur: Fitted, d: Data, rounds: int = 6, margin: float = 2.0) -> Fitted:
                     continue
                 atoms = list(cur.atoms)
                 atoms[i] = b
-                g = fit(atoms, d, cur.theta, maxiter=200)
+                g = fit(atoms, d, cur.theta, maxiter=200, tau=cur.tau)
                 need = margin if b.kind == "gap" else 1e-6
                 if g.nll < cur.nll - need and (best is None or g.nll < best.nll):
                     best = g

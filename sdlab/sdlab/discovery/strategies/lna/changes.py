@@ -42,7 +42,7 @@ def pieces(cur: Fitted, d: Data, min_len: int = 5, mult: float = 1.0, price: flo
             atoms = [cur.atoms[i] for i in keep] + [Atom("in", dst=s, span=None if len(new) == 1 else (a, b)) for a, b, _ in new]
             if sorted(atoms, key=repr) == sorted(cur.atoms, key=repr):
                 continue
-            g = fit(atoms, d, np.append(cur.theta[keep], [v for _, _, v in new]))
+            g = fit(atoms, d, np.append(cur.theta[keep], [v for _, _, v in new]), tau=cur.tau)
             gain = cur.nll - g.nll - price * (len(new) - n_old)
             if gain > 0 and (best is None or gain > best[0]):
                 best = (gain, g)
@@ -71,7 +71,7 @@ def merge_eras(cur: Fitted, d: Data) -> Fitted:
                 continue
             rest = [j for j in range(len(cur.atoms)) if j not in split]
             th = float(np.mean([cur.theta[i] for i in split]))
-            g = fit([cur.atoms[j] for j in rest] + [cur.atoms[split[0]].with_(era=None)], d, np.append(cur.theta[rest], th), maxiter=300)
+            g = fit([cur.atoms[j] for j in rest] + [cur.atoms[split[0]].with_(era=None)], d, np.append(cur.theta[rest], th), maxiter=300, tau=cur.tau)
             cost = (g.nll - cur.nll) / (len(split) - 1)
             if cost < price and (best is None or cost < best[0]):
                 best = (cost, g)

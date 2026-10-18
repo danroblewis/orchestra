@@ -15,6 +15,9 @@ from .atoms import Atom
 from .fit import Data, Fitted, fit
 
 
+PER = (0.01, 100.0)          # the co-flow ratios offered (beyond them, a near-zero move or drain)
+
+
 def offer(cur: Fitted) -> list[tuple[Atom, float]]:
     """(co-flow atom, starting number) for every drain beside a move from its driver."""
     out = []
@@ -25,6 +28,8 @@ def offer(cur: Fitted) -> list[tuple[Atom, float]]:
             if mv.kind != "move" or mv.driver != dr.driver or cur.theta[j] <= 0 or dr.src in (mv.src, mv.dst) or mv.uses or mv.era is not None:
                 continue
             per = float(cur.theta[i] / cur.theta[j])
+            if not PER[0] <= per <= PER[1]:
+                continue
             out.append((mv.with_(uses=((dr.src, per),)), float(cur.theta[j])))
     return out
 
@@ -34,7 +39,7 @@ def with_coflows(cur: Fitted, d: Data) -> Fitted:
     if not extra:
         return cur
     atoms = cur.atoms + [a for a, _ in extra]
-    return fit(atoms, d, np.append(cur.theta, [th for _, th in extra]))
+    return fit(atoms, d, np.append(cur.theta, [th for _, th in extra]), tau=cur.tau)
 
 
 def refine_per(cur: Fitted, d: Data, steps: int = 14) -> Fitted:
@@ -48,7 +53,7 @@ def refine_per(cur: Fitted, d: Data, steps: int = 14) -> Fitted:
         def at(p, cur=cur, i=i, a=a, c=c):
             atoms = list(cur.atoms)
             atoms[i] = a.with_(uses=((c, float(p)),))
-            return fit(atoms, d, cur.theta, maxiter=200)
+            return fit(atoms, d, cur.theta, maxiter=200, tau=cur.tau)
 
         lo, hi = np.log(per / 2), np.log(per * 2)
         g = (np.sqrt(5) - 1) / 2

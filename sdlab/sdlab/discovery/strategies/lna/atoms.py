@@ -110,3 +110,23 @@ def superset(S: int, unit: list[str], final: set[int], group: list, allow_links:
     if gaps:
         out += [Atom("gap", dst=b, driver=a) for b in range(S) for a in range(S) if may(a, b)]
     return out
+
+
+def restricted(S: int, coef: list[dict[int, float]], unit: list[str], final: set[int]) -> list[Atom]:
+    """The atoms that can make the numbers a fitted matrix has (coef[s]: {j: B[s][j]} for its nonzero
+    entries), each entry in every reading the averages allow: a stock's own number as an outflow or
+    growth; a gain as a move (same unit) or a link; a loss as a drain."""
+    out = [Atom("in", dst=s) for s in range(S)]
+    for s in range(S):
+        for j, k in coef[s].items():
+            if j == s:
+                if s not in final:
+                    out.append(Atom("out", src=s, driver=s))
+                out.append(Atom("grow", dst=s, driver=s))
+            elif k > 0:
+                if unit[j] == unit[s] and j not in final:
+                    out.append(Atom("move", src=j, dst=s, driver=j))
+                out.append(Atom("link", dst=s, driver=j))
+            elif s not in final:
+                out.append(Atom("drain", src=s, driver=j))
+    return list(dict.fromkeys(out))
