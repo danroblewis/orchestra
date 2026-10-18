@@ -192,7 +192,121 @@
       extraStocks: [...new Set(found.flatMap((f) => [f.from, f.to]).filter((x) => x && !truth.stocks.some((s) => s.id === x)))] };
   }
 
-  const api = { fmt, parseKey, readers, rateText, equation, compare };
+  // ---------- error measures and a plain-language explanation, from the scorer's parts ----------
+  // A part in words: "the move A → B", "the drain of B", "the inflow to A", "the link B ⇒ A", ...
+  function partName(key) {
+    const k = parseKey(key) || {}, end = (x) => x || "outside";
+    if (k.kind === "hidden") return `the hidden stock between ${k.from} and ${k.to}`;
+    if (k.kind === "uses") return `the co-flow (${k.from} → ${k.to} uses ${k.stock})`;
+    if (k.kind === "effect") return `the effect of ${k.stock} on ${end(k.from)} → ${end(k.to)}`;
+    if (k.kind !== "flow") return key;
+    const r = k.reader === "const" ? "" : k.reader;
+    if (k.from && k.to) return `the move ${k.from} → ${k.to}${r && r !== k.from ? ` (reading ${r})` : ""}`;
+    if (k.to) return r ? `the link ${r} ⇒ ${k.to}` : `the inflow to ${k.to}`;
+    return r && r !== k.from ? `the outflow from ${k.from} reading ${r}` : `the drain of ${k.from}${r ? "" : " (constant)"}`;
+  }
+  const num = (v) => (typeof v === "number" ? v : v && typeof v === "object" && typeof v.mean === "number" ? v.mean : null);
+
+  // The measures a card shows. errorScore, the headline: the share of the equations' numbers that
+  // are wrong, (true parts missing + true parts off + spurious parts) / true parts; 0 = the true
+  // equations exactly (within tolerance), 1 = as many wrong numbers as there are true ones.
+  function measures(scores) {
+    const s = scores || {}, parts = s.parts || [], sp = s.spurious || [];
+    const b = s.behaviour || {}, sk = (w, h) => (b[w] || {})[String(h)] || {};
+    const matched = parts.filter((p) => p.found && typeof p.error === "number" && Number.isFinite(p.error) && p.kind !== "effect");
+    const worst = matched.reduce((w, p) => (!w || p.error > w.error ? p : w), null);
+    const missing = parts.filter((p) => !p.found).length, off = parts.filter((p) => p.found && !p.ok).length;
+    const of = parts.length || s.of || 0;
+    return {
+      status: s.status || null, recall: s.recall ?? null, precision: s.precision ?? null, right: s.right ?? null, of,
+      missing, off, spurious: sp.length, spuriousSize: sp.reduce((a, p) => a + (num(p.size) || 0), 0),
+      rateMean: matched.length ? matched.reduce((a, p) => a + p.error, 0) / matched.length : null,
+      rateMax: worst ? worst.error : null, rateWorst: worst ? partName(worst.key) : null,
+      skill20: sk("in_sample", 20).skill ?? null, skill20ci: sk("in_sample", 20).ci || null,
+      skill100: sk("in_sample", 100).skill ?? null, skill100ci: sk("in_sample", 100).ci || null,
+      fresh20: sk("fresh", 20).skill ?? null,
+      errorScore: of ? (missing + off + sp.length) / of : null,
+    };
+  }
+
+  const pc = (x) => `${Math.round(100 * x)}%`;
+  const list = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  // 1-3 sentences: what was right, what was missed, what was invented, and why the verdict
+  function explain(scores) {
+    const s = scores || {}, parts = s.parts || [], sp = s.spurious || [];
+    if (!s.status) return "";
+    const ok = parts.filter((p) => p.ok), off = parts.filter((p) => p.found && !p.ok), miss = parts.filter((p) => !p.found);
+    const out = [];
+    const errs = ok.map((p) => p.error).filter((e) => typeof e === "number" && Number.isFinite(e));
+    if (ok.length) {
+      const within = errs.length ? ` within ${Math.max(1, Math.ceil(100 * Math.max(...errs)))}%` : "";
+      out.push(ok.length === parts.length ? `Found ${parts.length === 1 ? "the one true number" : `all ${parts.length} true numbers`}${within}.` : `Found ${list(ok.slice(0, 3).map((p) => partName(p.key)))}${ok.length > 3 ? ` and ${ok.length - 3} more` : ""}${within}.`);
+    }
+    const bits = [];
+    if (miss.length) bits.push(`missed ${list(miss.slice(0, 3).map((p) => partName(p.key)))}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
+    if (off.length) {
+      const worst = [...off].sort((a, b) => (b.error || 0) - (a.error || 0)).slice(0, 2);
+      bits.push(`got ${list(worst.map((p) => typeof num(p.found_value) === "number" && typeof num(p.true) === "number"
+        ? `${partName(p.key)} ${num(p.found_value) > num(p.true) ? "too high" : "too low"} (${fmt(p.found_value)} for ${fmt(p.true)}${typeof p.error === "number" ? `, ${pc(p.error)} off` : ""})`
+        : `${partName(p.key)} wrong (${fmt(p.found_value)} for ${fmt(p.true)})`))}${off.length > 2 ? ` and ${off.length - 2} more off` : ""}`);
+    }
+    if (sp.length) bits.push(`invented ${list(sp.slice(0, 3).map((p) => `${partName(p.key)} (${fmt(p.value)})`))}${sp.length > 3 ? ` and ${sp.length - 3} more` : ""}`);
+    if (bits.length) out.push(`${cap(list(bits))}.`);
+    if (s.status === "pass") out.push("Pass: every true number is right in every window and nothing is invented.");
+    else if (s.status === "equivalent") {
+      const read = miss.length || sp.length ? `It read ${list(miss.map((p) => partName(p.key))) || "the truth"} as ${list(sp.map((p) => partName(p.key))) || "other numbers"}: ` : "";
+      out.push(`Equivalent, not a pass. ${read}the same equations for every stock's change, so the data cannot tell the two apart (they would differ only if a floor bound or a stock emptied).`);
+    } else if (s.status === "fail") {
+      const why = [miss.length && `${miss.length} true number${miss.length === 1 ? "" : "s"} missing`, off.length && `${off.length} off`, sp.length && `${sp.length} invented`].filter(Boolean);
+      out.push(`Fail: ${list(why) || "the equations differ"}${why.length ? "" : ""}.`);
+    } else out.push(`${cap(s.status)}: the strategy did not finish.`);
+    return out.join(" ");
+  }
+
+  // The comparison as a diff, one line per flow, like a code diff:
+  //   ✓ outside → A   in 20                 found 20.1
+  //   ~ A → B         ab 0.3·A              found 0.24·A (20% low)
+  //   − B → outside   b_out 0.2·B           missed
+  //   + A → outside                         invented 0.16·A
+  //   ≈ outside → B                         read as 0.2·A (equivalent to the link A ⇒ B)
+  // {sign, cls, ends, truth, note}; truth is the true flow's id and equation ("" for an invented one).
+  function diffLines(cmp) {
+    const lines = [];
+    const endsOf = (f) => `${f.from || "outside"} → ${f.to || "outside"}`;
+    const foundFor = (t) => cmp.found.filter((x) => x.parts.some((p) => t.parts.some((q) => q.key === p.key)));
+    const dir = (p) => {
+      const a = num(p.found_value), b = num(p.true);
+      return typeof a === "number" && typeof b === "number" && b ? ` (${Math.round(100 * Math.abs(a - b) / Math.abs(b))}% ${a < b ? "low" : "high"})` : "";
+    };
+    cmp.truth.forEach((t) => {
+      const fs = foundFor(t), feq = fs.map((x) => x.equation).join("; ");
+      const off = t.parts.filter((p) => p.found && !p.ok), miss = t.parts.filter((p) => !p.found);
+      let sign = "·", note = "not scored";
+      if (t.cls === "ok") { sign = "✓"; note = feq ? `found ${feq}` : "found"; }
+      else if (t.cls === "missing") { sign = "−"; note = "missed"; }
+      else if (t.cls === "wrong") {
+        sign = "~";
+        const bits = [...off.map((p) => `${p.kind === "effect" || p.kind === "hidden" ? partName(p.key) + " " : ""}${fmt(p.found_value)} for ${fmt(p.true)}${dir(p)}`), ...miss.map((p) => `missed ${partName(p.key)}`)];
+        note = `${feq ? `found ${feq}` : "found"}: ${bits.join("; ")}`;
+      } else if (t.cls === "equiv") {
+        sign = "≈";
+        note = `${feq ? `found ${feq}; ` : ""}${miss.length ? `missed ${miss.map((p) => partName(p.key)).join(", ")}, ` : ""}read another way with the same behaviour (equivalent)`;
+      }
+      lines.push({ sign, cls: t.cls === "missing" ? "missed" : t.cls, ends: t.flow.via ? `${t.flow.from} → (hidden) → ${t.flow.to}` : endsOf(t.flow), truth: `${t.flow.id} ${t.equation}`, note });
+    });
+    const missedNames = cmp.truth.flatMap((t) => t.parts.filter((p) => !p.found).map((p) => partName(p.key)));
+    cmp.found.forEach((x) => {
+      const f = x.flow, ends = f.via ? `${f.from} → (hidden) → ${f.to}` : endsOf(f);
+      if (x.cls === "spurious") lines.push({ sign: "+", cls: "spurious", ends, truth: "", note: `invented ${x.equation}` });
+      else if (x.cls === "equiv" && !x.parts.length) lines.push({ sign: "≈", cls: "equiv", ends, truth: "", note: `read as ${x.equation}${missedNames.length ? ` (equivalent to ${missedNames.join(", ")})` : " (equivalent)"}` });
+      else if (x.spurious.length && x.parts.length) lines.push({ sign: "+", cls: x.cls === "equiv" ? "equiv" : "spurious", ends, truth: "", note: `extra term on ${x.equation}: ${x.spurious.map((p) => `${partName(p.key)} ${fmt(p.value)}`).join(", ")}` });
+      else if (x.cls === "small") lines.push({ sign: "·", cls: "small", ends, truth: "", note: `too small to count: ${x.equation}` });
+    });
+    return lines;
+  }
+
+  const api = { fmt, parseKey, readers, rateText, equation, compare, partName, measures, explain, diffLines };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.SDLadder = api;
 })(typeof window !== "undefined" ? window : globalThis);

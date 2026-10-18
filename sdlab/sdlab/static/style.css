@@ -528,3 +528,53 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
 .pickitem .ptests { display: block; font-size: 11.5px; color: var(--muted); white-space: normal; line-height: 1.3; }
 .pickold { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 8px; border-top: 1px solid var(--rule); }
 .stock.unmeasured .box { stroke-dasharray: 6 4; }
+
+/* Now: every case on one page (ladder-board.js) */
+.bsum { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font-size: 13px; }
+.bsum b { font-family: var(--mono); font-weight: 500; }
+.board-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 620px), 1fr)); gap: 14px; margin-top: 10px; }
+.bcard { background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--st, var(--rule)); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.bcard.st-none { border-left-color: var(--rule); }
+.bhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.btitle { background: none; border: 0; padding: 0; font-weight: 600; font-size: 15px; text-align: left; color: var(--fg); }
+.btitle:hover { text-decoration: underline; }
+.berr { margin-left: auto; display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.berr b { font: 600 22px var(--mono); }
+.berr small { font-size: 11px; color: var(--muted); }
+.bcard .tests { margin: 4px 0 6px; font-size: 13px; }
+.btabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.btab { display: inline-flex; gap: 4px; align-items: center; background: var(--canvas); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 6px 1px 2px; font: 11.5px var(--mono); }
+.btab.on { border-color: var(--fg); }
+.btab .sq { width: 14px; height: 14px; font-size: 9px; line-height: 12px; }
+.bdiag { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 120px; }
+.bdiag .dpanel { padding: 4px 6px; }
+.bdiag .dpanel svg { max-height: 210px; }
+.bexplain { font-size: 13.5px; margin: 8px 0 6px; }
+.bmeas { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 4px 12px; margin: 0; font-size: 12.5px; }
+.bmeas div { min-width: 0; }
+.bmeas .wide { grid-column: span 2; }
+.bmeas dt { color: var(--muted); font-size: 11px; }
+.bmeas dd { margin: 0; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+@media (max-width: 600px) { .bdiag { grid-template-columns: 1fr; } .bmeas .wide { grid-column: span 1; } }
+
+/* the comparison as a diff: three panels (true, found, differences) and a list */
+.dpair.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dpair.three.stack { grid-template-columns: 1fr; }
+.dcap { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.d-ok { color: var(--good); } .d-wrong { color: var(--warn); } .d-missed, .d-missing { color: var(--muted); } .d-spurious { color: var(--bad); } .d-equiv { color: var(--eq); } .d-small, .d-plain, .d-unscored { color: var(--muted); }
+.dlist { font: 12.5px var(--mono); margin: 8px 0; border: 1px solid var(--rule); border-radius: 5px; background: var(--canvas); overflow-x: auto; }
+.dline { display: grid; grid-template-columns: 1.6em minmax(9em, max-content) minmax(10em, max-content) 1fr; gap: 0 14px; padding: 2px 8px; color: var(--fg); }
+.dline + .dline { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
+.dline .dsign { font-weight: 700; text-align: center; }
+.dline.d-ok .dsign { color: var(--good); } .dline.d-wrong .dsign, .dline.d-wrong .dnote { color: var(--warn); }
+.dline.d-missed .dsign, .dline.d-missed .dnote { color: var(--muted); } .dline.d-missed { background: color-mix(in srgb, var(--muted) 8%, transparent); }
+.dline.d-spurious .dsign, .dline.d-spurious .dnote { color: var(--bad); } .dline.d-spurious { background: color-mix(in srgb, var(--bad) 7%, transparent); }
+.dline.d-equiv .dsign, .dline.d-equiv .dnote { color: var(--eq); }
+.dline.d-wrong { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.board-cards { grid-template-columns: 1fr; }
+.bdiag { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 800px) {
+  .dline { grid-template-columns: 1.4em 1fr; }
+  .dline .dtrue, .dline .dnote { grid-column: 2; }
+  .bdiag { grid-template-columns: 1fr; }
+}

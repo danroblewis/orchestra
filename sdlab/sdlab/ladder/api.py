@@ -11,6 +11,8 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
     case_data(case_id, variant, fresh, flows)   the case's data in a variant: t, levels (measured), all_levels, eras, (flows)
     timeline(strategy)                   the strategy's totals after each version (strategy and scorer hash) it ran with
     progress(recent?)                    the current or last run: {run, items}; with recent, a light copy for polling
+    board(strategy, variant?)            every case with one strategy's latest results (found flows included)
+    best_strategy()                      the available strategy with the highest pass rate
     summary()                            the matrix: strategies, cases, cells (one per case x variant x
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
 
@@ -103,6 +105,27 @@ def timeline(strategy: str) -> list[dict]:
             counts[st] = counts.get(st, 0) + 1
         out.append({**{k: v[k] for k in ("strategy_hash", "score_hash", "first", "last", "ran")}, "totals": counts, "of": len(live)})
     return jsonable(out)
+
+
+def best_strategy() -> str | None:
+    """The available strategy with the highest pass rate over the whole ladder (then pass + equivalent)."""
+    sm = summary()
+    ok = [x["name"] for x in sm["strategies"] if x["available"]]
+    if not ok:
+        return None
+    t = sm["totals"]
+    return max(ok, key=lambda n: ((t.get(n) or {}).get("pass", 0), (t.get(n) or {}).get("equivalent", 0), n == "matrix"))
+
+
+def board(strategy: str, variant: str | None = None) -> dict:
+    """Every case with one strategy's latest result in a variant (every variant when None), found
+    flows included: what the all-cases view shows. {strategy, variant, best, cases, results}."""
+    names = None if variant is None else {variant}
+    rows = [r for r in store.latest(strategy=strategy, found=True) if names is None or r["variant"] in names]
+    known = set(casemod.case_ids())
+    return jsonable({"strategy": strategy, "variant": variant, "best": best_strategy(),
+                     "cases": [_case(i) for i in casemod.case_ids()],
+                     "results": [r for r in rows if r["case"] in known]})
 
 
 def progress(recent: int | None = None) -> dict:

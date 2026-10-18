@@ -18,13 +18,13 @@
   const LAYOUT = { box: BOX, colw: BOX.w + 150, rowh: BOX.h + 100 };
   const STATUS_LETTER = { pass: "P", equivalent: "E", fail: "F", error: "X", timeout: "T" };
   const STATUS_WORD = { pass: "pass", equivalent: "equivalent", fail: "fail", error: "error", timeout: "timeout" };
-  const CLS_COLOR = { ok: "var(--good)", wrong: "var(--warn)", missing: "var(--bad)", spurious: "var(--bad)", equiv: "var(--eq)", small: "var(--muted)", unscored: "var(--muted)", plain: "var(--fg)" };
-  const CLS_WORD = { ok: "found, right", wrong: "found, a number off", missing: "missing", spurious: "spurious", equiv: "equivalent", small: "too small to count", unscored: "not scored" };
+  const CLS_COLOR = { ok: "var(--good)", wrong: "var(--warn)", missing: "var(--muted)", missed: "var(--muted)", spurious: "var(--bad)", equiv: "var(--eq)", small: "var(--muted)", unscored: "var(--muted)", plain: "var(--fg)" };
+  const CLS_WORD = { ok: "found, right", wrong: "found, a number off", missing: "missed", missed: "missed", spurious: "spurious", equiv: "equivalent", small: "too small to count", unscored: "not scored" };
   const SERIES = 8;                                      // categorical slots --c1..--c8 (style.css)
 
   const S = {
     view: "now", cases: [], byId: {}, strategies: [], summary: null, progress: null,
-    sel: { case: null, variant: null, strategy: null, id: null }, follow: true, shown: null,
+    sel: { case: null, variant: null, strategy: null, id: null }, follow: false, shown: null, nowMode: "board",
     hsel: { case: null, strategy: null }, csel: { case: null, variant: null, fresh: false }, cache: {},
   };
 
@@ -42,7 +42,7 @@
     const u = new URL(location.href), p = u.searchParams;
     [...p.keys()].forEach((k) => p.delete(k));
     p.set("view", S.view);
-    if (S.view === "now" && !S.follow) {
+    if (S.view === "now" && !S.follow && S.nowMode === "one") {
       ["case", "variant", "strategy"].forEach((k) => S.sel[k] && p.set(k, S.sel[k]));
       if (S.sel.id) p.set("result", S.sel.id);
     }
@@ -72,7 +72,7 @@
     document.querySelectorAll(".ltabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
     document.querySelectorAll(".lview").forEach((s) => { s.hidden = s.dataset.view !== v; });
     remember();
-    if (v === "now") showCompare();
+    if (v === "now") showNow();
     if (v === "matrix") loadSummary().then(renderMatrix);
     if (v === "history") renderHistory();
     if (v === "cases") renderCases();
@@ -123,7 +123,7 @@
       </div>
       <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="${r.total}" aria-valuenow="${r.done}">${bar}</div>
       ${running.length ? `<div class="chips running-now"><span class="muted small">running now:</span>${running.slice(0, 6).map((i) => `<button class="chip" data-case="${esc(i.case)}" data-variant="${esc(i.variant)}" data-strategy="${esc(i.strategy)}">${esc(i.case)} · ${esc(i.variant)} · ${esc(i.strategy)}</button>`).join("")}${running.length > 6 ? `<span class="muted small">+${running.length - 6}</span>` : ""}</div>` : ""}`;
-    $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; if (S.follow) followTick(true); remember(); });
+    $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; if (S.follow) { S.nowMode = "one"; followTick(true); } remember(); });
     box.querySelectorAll(".chip[data-case]").forEach((b) => b.addEventListener("click", () => pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy })));
   }
   let casesAt = 0;
@@ -144,28 +144,47 @@
     S.focusKey = key;
     S.sel = { case: f.case, variant: f.variant, strategy: f.strategy, id: null };
     S.focusRunning = f.state !== "done";
-    if (S.view === "now") showCompare();
+    S.nowMode = "one";
+    if (S.view === "now") showNow();
   }
   function defaultSel() {
     const c = S.sel.case || (S.cases[0] || {}).id;
     S.sel = { case: c, variant: S.sel.variant || ((S.byId[c] || {}).variants || [{}])[0].name, strategy: S.sel.strategy || defaultStrategy(), id: null };
-    if (S.view === "now") showCompare();
+    if (S.view === "now") showNow();
   }
   const defaultStrategy = () => ((S.strategies.find((s) => s.name === "matrix") || S.strategies.find((s) => s.available) || S.strategies[0]) || {}).name;
 
   // the user picks: stop following
   function pick(sel) {
-    S.follow = false; S.focusRunning = false;
+    S.follow = false; S.focusRunning = false; S.nowMode = "one";
     S.sel = { ...S.sel, id: null, ...sel };
-    if (S.view !== "now") setView("now"); else { remember(); showCompare(); }
+    if (S.view !== "now") setView("now"); else { remember(); showNow(); }
     const f = $("follow"); if (f) f.checked = false;
+  }
+
+  // ---------- Now: every case (ladder-board.js), or one result ----------
+  // The all-cases board is the default; picking a case (or following the run) shows one result.
+  // If the board cannot load (an older server without /api/ladder/board), the single view stays.
+  async function showNow() {
+    const board = S.nowMode === "board" && window.SDLadderBoard;
+    $("board-wrap").hidden = !board;
+    $("one-wrap").hidden = !!board;
+    remember();
+    if (!board) return showCompare();
+    const ok = await window.SDLadderBoard.render(false);
+    if (!ok && S.nowMode === "board") { S.nowMode = "one"; if (!S.sel.case) defaultSel(); else showNow(); }
+  }
+  function toBoard() {
+    S.follow = false; S.nowMode = "board";
+    const f = $("follow"); if (f) f.checked = false;
+    showNow();
   }
 
   // ---------- Now: picker ----------
   function renderPick() {
     const c = S.byId[S.sel.case]; if (!c) return;
     const i = S.cases.indexOf(c);
-    $("pick").innerHTML = `
+    $("pick").innerHTML = `${window.SDLadderBoard ? `<button class="btn" id="to-board" title="Every case on one page">&#8592; All cases</button>` : ""}
       <span class="stepper"><button class="btn" id="prev" ${i <= 0 ? "disabled" : ""} title="The case before (←)" aria-label="Previous case">&#9664;</button>
       <select id="p-case" aria-label="Case">${S.cases.map((x) => `<option value="${esc(x.id)}" ${x.id === c.id ? "selected" : ""}>${esc(x.id)}</option>`).join("")}</select>
       <button class="btn" id="next" ${i >= S.cases.length - 1 ? "disabled" : ""} title="The case after (→)" aria-label="Next case">&#9654;</button></span>
@@ -173,6 +192,7 @@
       <label>Strategy <select id="p-strat" aria-label="Strategy">${S.strategies.map((s) => `<option value="${esc(s.name)}" ${s.name === S.sel.strategy ? "selected" : ""} ${s.available ? "" : "disabled"}>${esc(s.name)}${s.available ? "" : " (unavailable)"}</option>`).join("")}</select></label>
       ${S.sel.id ? `<span class="badge">result #${esc(S.sel.id)} from history</span> <button class="btn" id="latest">latest</button>` : ""}
       <span class="sqwrap muted small">${squares(c.id, S.sel.strategy, { current: S.sel.id ? null : S.sel.variant })}</span>`;
+    if ($("to-board")) $("to-board").onclick = toBoard;
     const step = (d) => { const n = S.cases[i + d]; if (n) pick({ case: n.id }); };
     $("prev").onclick = () => step(-1);
     $("next").onclick = () => step(1);
@@ -231,18 +251,18 @@
     </div>`;
   }
 
-  // the two diagrams' models, from the comparison
+  // The three diagrams' models, from the comparison, all in the truth's layout: the true model and
+  // the found one each plain (neither is marked: the truth is the reference), and the differences:
+  // every flow of either model marked ✓ matched, ~ a number off, − missed, + invented, ≈ equivalent.
   function diagrams(c, cmp, found) {
     const truth = c.model, measured = new Set(cmp.measured);
     const readsOf = (f, extra) => [...L.readers(f)].filter((x) => x !== "const" && x !== f.from).map((stock) => ({ stock })).concat(extra || []);
+    const extrasOf = (f, cls) => [...(f.effects || []).map((e) => ({ stock: e.stock, label: "effect", dash: "5 4", cls })), ...(f.uses || []).map((u) => ({ stock: u.stock, label: `uses ${fmt(+u.per)}`, dash: "1 3", cls }))];
+    const tStocks = truth.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured", title: `${s.id}: starts at ${fmt(s.initial)}${measured.has(s.id) ? "" : ", not measured"}` }));
     const tD = {
-      stocks: truth.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured", title: `${s.id}: starts at ${fmt(s.initial)}${measured.has(s.id) ? "" : ", not measured"}` })),
-      flows: cmp.truth.map((t) => ({
-        from: t.flow.from, to: t.flow.to, cls: t.cls, dashed: t.cls === "missing", label: t.flow.id,
-        label2: `${short2(L.rateText(t.flow.rate))}${t.badge ? ` · ${t.badge}` : ""}`,
-        title: `${t.flow.id}: ${t.equation}\n${CLS_WORD[t.cls] || t.cls}${t.notes.length ? "\n" + t.notes.join("\n") : ""}`,
-        reads: readsOf(t.flow, t.reads.map((x) => ({ stock: x.stock, label: x.kind === "uses" ? `uses ${fmt(x.per)}` : "effect", dash: x.kind === "uses" ? "1 3" : "5 4", cls: x.cls || "plain" }))),
-      })),
+      stocks: tStocks,
+      flows: cmp.truth.map((t) => ({ from: t.flow.from, to: t.flow.to, cls: "plain", label: t.flow.id, label2: short2(L.rateText(t.flow.rate)),
+        title: `${t.flow.id}: ${t.equation}`, reads: readsOf(t.flow, extrasOf(t.flow, "plain")) })),
     };
     // a stock only the found model names (an inferred one) may have a long id: short names in the drawing
     const alias = {};
@@ -250,23 +270,41 @@
     const al = (t) => cmp.extraStocks.reduce((acc, id) => acc.split(id).join(alias[id]), t);
     const fStocks = truth.stocks.filter((s) => measured.has(s.id)).map((s) => ({ id: s.id, name: s.id }))
       .concat(cmp.extraStocks.map((id) => ({ id, name: alias[id], dashed: true, sub: "inferred", title: `${alias[id]}: ${id}, a stock the found model infers (not measured)` })));
-    const fFlows = [], vias = {};
+    const fFlows = [], vias = {}, viaOf = new Map();
+    const rateLabel = (f) => short2(al(f.inflow && f.inflow.length > 1 ? L.equation(f).split(" on average")[0] : f.byTime && f.byTime.length > 1 ? `${L.rateText(f.rate)} (by time)` : L.rateText(f.rate)));
     cmp.found.forEach((x, k) => {
-      const f = x.flow;
-      const common = { cls: x.cls, thin: x.cls === "small", label: short2(al(f.inflow && f.inflow.length > 1 ? L.equation(f).split(" on average")[0] : f.byTime && f.byTime.length > 1 ? `${L.rateText(f.rate)} (by time)` : L.rateText(f.rate))),
-        label2: x.badge || (x.cls === "spurious" ? "not in the truth" : x.cls === "equiv" ? "equivalent" : ""),
-        title: `${L.equation(f)}\n${CLS_WORD[x.cls] || x.cls}${x.notes.length ? "\n" + x.notes.join("\n") : ""}${f.note ? "\n" + f.note : ""}` };
+      const f = x.flow, common = { cls: "plain", label: rateLabel(f), label2: "", title: `${L.equation(f)}${f.note ? "\n" + f.note : ""}` };
       if (f.via) {
         const id = `via:${k}`;
-        vias[id] = { from: f.from, to: f.to };
-        fStocks.push({ id, name: "hidden", dashed: true, sub: `delay ${fmt(+f.via.delay)}`, cls: x.cls });
-        fFlows.push({ ...common, from: f.from || f.via.echo, to: id, reads: [] }, { ...common, label: "", label2: "", from: id, to: f.to, reads: [] });
-      } else {
-        fFlows.push({ ...common, from: f.from, to: f.to,
-          reads: readsOf(f, [...(f.effects || []).map((e) => ({ stock: e.stock, label: "effect", dash: "5 4" })), ...(f.uses || []).map((u) => ({ stock: u.stock, label: `uses ${fmt(+u.per)}`, dash: "1 3" }))]) });
-      }
+        vias[id] = { from: f.from, to: f.to }; viaOf.set(x, id);
+        fStocks.push({ id, name: "hidden", dashed: true, sub: `delay ${fmt(+f.via.delay)}` });
+        fFlows.push({ ...common, from: f.from || f.via.echo, to: id, reads: [] }, { ...common, label: "", from: id, to: f.to, reads: [] });
+      } else fFlows.push({ ...common, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, "plain")) });
     });
-    return { tD, fD: { stocks: fStocks, flows: fFlows }, vias, alias };
+    // the differences
+    const off = (t) => t.parts.filter((p) => p.found && !p.ok && p.kind !== "effect").map((p) => `${fmt(p.true)} → ${fmt(p.found_value)}`).join(", ");
+    const missedParts = (t) => t.parts.filter((p) => !p.found).map((p) => L.partName(p.key).replace(/^the /, "")).join(", ");
+    const dFlows = cmp.truth.map((t) => {
+      const sign = { ok: "✓", wrong: "~", missing: "−", equiv: "≈" }[t.cls] || "·", cls = t.cls === "missing" ? "missed" : t.cls === "unscored" ? "plain" : t.cls;
+      const label2 = t.cls === "wrong" ? (off(t) || `missed ${missedParts(t)}`) : t.cls === "missing" ? `missed ${short2(L.rateText(t.flow.rate))}` : short2(L.rateText(t.flow.rate));
+      return { from: t.flow.from, to: t.flow.to, cls, dashed: t.cls === "missing", label: `${sign} ${t.flow.id}`, label2,
+        title: `${t.flow.id}: ${t.equation}\n${CLS_WORD[t.cls] || t.cls}${t.notes.length ? "\n" + t.notes.join("\n") : ""}`,
+        reads: readsOf(t.flow, t.reads.map((x) => ({ stock: x.stock, label: x.kind === "uses" ? `uses ${fmt(x.per)}` : "effect", dash: x.kind === "uses" ? "1 3" : "5 4", cls: x.cls === "missing" ? "missed" : x.cls || "plain" }))) };
+    });
+    const dStocks = [...tStocks, ...fStocks.filter((s) => !tStocks.some((t) => t.id === s.id))];
+    cmp.found.forEach((x) => {
+      const f = x.flow, invented = x.cls === "spurious", reread = x.cls === "equiv" && !x.parts.length, extra = x.spurious.length && x.parts.length;
+      if (!invented && !reread && !extra) return;
+      const cls = reread || (x.cls === "equiv") ? "equiv" : "spurious";
+      const label = reread ? "≈ read as" : extra ? "+ extra term" : "+ invented";
+      const label2 = extra ? x.spurious.map((p) => `${p.reader || ""} ${fmt(p.value)}`.trim()).join(", ") : rateLabel(f);
+      const title = `${L.equation(f)}\n${x.notes.join("\n")}`;
+      if (viaOf.has(x)) {
+        const id = viaOf.get(x);
+        dFlows.push({ cls, label, label2, title, from: f.from || f.via.echo, to: id, reads: [] }, { cls, label: "", from: id, to: f.to, reads: [] });
+      } else dFlows.push({ cls, thin: !!extra, label, label2, title, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, cls)) });
+    });
+    return { tD, fD: { stocks: fStocks, flows: fFlows }, dD: { stocks: dStocks, flows: dFlows }, vias, alias };
   }
   const short2 = (s) => (s.length > 30 ? s.slice(0, 29) + "…" : s);
 
@@ -274,8 +312,8 @@
   // one layout for both sides, made from the truth alone (so a case always looks the same); a stock
   // only the found model names (an inferred hidden stock, or a flow's hidden stock) sits where the
   // true hidden stock between the same two stocks sits, or below the stocks it connects
-  function sharedLayout(c, found, vias) {
-    const pos = D.layout(c.model.stocks.map((s) => s.id), c.model.flows, { ...LAYOUT, maxCols: maxCols() });
+  function sharedLayout(c, found, vias, cols) {
+    const pos = D.layout(c.model.stocks.map((s) => s.id), c.model.flows, { ...LAYOUT, maxCols: cols || maxCols() });
     const truthIds = new Set(c.model.stocks.map((s) => s.id)), taken = new Set();
     const between = (a, b) => c.model.stocks.find((s) => s.measured === false && !taken.has(s.id) && c.model.flows.some((f) => f.to === s.id && f.from === a) && c.model.flows.some((f) => f.from === s.id && f.to === b));
     let k = 0;
@@ -296,6 +334,32 @@
     return pos;
   }
 
+  // the true model and the found one, drawn the same way into two svgs; returns {vb, alias, cmp}
+  // the true model, the found one and their differences, drawn the same way into three svgs (the
+  // differences only once there is a result); returns {vb, alias, cmp}
+  function drawPair(c, r, svgTrue, svgFound, cmp, cols, svgDiff) {
+    const found = (r && r.found) || [];
+    cmp = cmp || L.compare(c.model, found, r && r.scores);
+    const { tD, fD, dD, vias, alias } = diagrams(c, cmp, found);
+    const pos = sharedLayout(c, found, vias, cols);
+    const bs = [D.bounds(pos, tD.flows, BOX), D.bounds(pos, r ? fD.flows : [], BOX), D.bounds(pos, r ? dD.flows : [], BOX)];
+    const x0 = Math.min(...bs.map((b) => b.x)), y0 = Math.min(...bs.map((b) => b.y));
+    const vb = { x: x0, y: y0, w: Math.max(...bs.map((b) => b.x + b.w)) - x0, h: Math.max(...bs.map((b) => b.y + b.h)) - y0 };
+    const color = (cls) => CLS_COLOR[cls] || "var(--fg)";
+    D.draw(svgTrue, tD, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
+    D.draw(svgFound, r ? fD : { stocks: fD.stocks, flows: [] }, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
+    if (svgDiff) D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
+    return { vb, alias, cmp };
+  }
+  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml: (c, r) => diffHtml(L.compare(c.model, (r && r.found) || [], r && r.scores)), legend: () => LEGEND, open: (sel) => pick(sel) });
+
+  const LEGEND = `<span class="d-ok">✓ matched</span> · <span class="d-wrong">~ number off</span> · <span class="d-missed">− missed</span> · <span class="d-spurious">+ invented</span> · <span class="d-equiv">≈ equivalent reading</span>`;
+  // the differences as a list, one line per flow
+  function diffHtml(cmp) {
+    const lines = L.diffLines(cmp);
+    return `<div class="dlist" role="list">${lines.map((l) => `<div class="dline d-${l.cls}" role="listitem"><span class="dsign">${esc(l.sign)}</span><span class="dends">${esc(l.ends)}</span><span class="dtrue">${esc(l.truth)}</span><span class="dnote">${esc(l.note)}</span></div>`).join("") || '<div class="muted small">nothing to compare</div>'}</div>`;
+  }
+
   function renderCompare(c, r, err) {
     const found = (r && r.found) || [];
     const cmp = L.compare(c.model, found, r && r.scores);
@@ -308,21 +372,10 @@
       ${err ? `<p class="note error">${esc(err.message)}</p>` : ""}
       ${scoreTable(r)}`;
     $("found-cap").textContent = r ? `Found by ${r.strategy}` : `Found by ${S.sel.strategy}: not run yet`;
-    const { tD, fD, vias, alias } = diagrams(c, cmp, found);
-    const pos = sharedLayout(c, found, vias);
-    const b1 = D.bounds(pos, tD.flows, BOX), b2 = D.bounds(pos, r ? fD.flows : [], BOX);
-    const x0 = Math.min(b1.x, b2.x), y0 = Math.min(b1.y, b2.y);
-    const vb = { x: x0, y: y0, w: Math.max(b1.x + b1.w, b2.x + b2.w) - x0, h: Math.max(b1.y + b1.h, b2.y + b2.h) - y0 };
-    const color = (cls) => CLS_COLOR[cls] || "var(--fg)";
-    D.draw($("d-true"), tD, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
-    D.draw($("d-found"), r ? fD : { stocks: fD.stocks, flows: [] }, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
-    $("dpair").classList.toggle("stack", vb.w / vb.h < 1.05 || innerWidth < 900);
-    const used = new Set([...cmp.truth.map((t) => t.cls), ...cmp.found.map((x) => x.cls)]);
-    $("dlegend").innerHTML = ["ok", "wrong", "missing", "spurious", "equiv", "small", "unscored"].filter((k) => used.has(k)).map((k) =>
-      `<span><span class="lsw ${k === "missing" ? "dash" : ""}" style="background:${CLS_COLOR[k]}"></span>${esc(CLS_WORD[k])}</span>`).join("")
-      + `<span><span class="lsw link"></span>reads a stock</span>`
-      + Object.entries(alias).filter(([id, n]) => id !== n).map(([id, n]) => `<span class="mono">${esc(n)} = ${esc(id)}</span>`).join("")
-      + (cmp.equivalent ? `<span class="eqnote">Equivalent: the found flows make the same linear system as the truth, so the data cannot tell them apart. Not a pass.</span>` : "");
+    const { alias } = drawPair(c, r, $("d-true"), $("d-found"), cmp, innerWidth >= 900 ? 2 : null, $("d-diff"));
+    $("dpair").classList.toggle("stack", innerWidth < 900);
+    $("dlegend").innerHTML = LEGEND + Object.entries(alias).filter(([id, n]) => id !== n).map(([id, n]) => ` · <span class="mono">${esc(n)} = ${esc(id)}</span>`).join("");
+    $("dlist").innerHTML = r ? `${diffHtml(cmp)}<p class="bexplain">${esc(L.explain(r.scores))}</p>` : "";
     $("cmp-body").innerHTML = equationsHtml(c, cmp, r);
   }
 
@@ -641,6 +694,11 @@
       const done = S.progress.run ? `${S.progress.run.id}:${S.progress.run.done}` : null;
       if (done !== lastDone) {
         lastDone = done;
+        // the board shows new results as a run makes them, at most every 10 seconds
+        if (S.view === "now" && S.nowMode === "board" && window.SDLadderBoard && Date.now() - (S.boardAt || 0) > 10000) {
+          S.boardAt = Date.now();
+          window.SDLadderBoard.refresh();
+        }
         if (S.view === "matrix" || S.view === "cases" || (S.view === "now" && S.sel.case)) {
           await loadSummary();
           if (S.view === "matrix") renderMatrix();
@@ -656,7 +714,8 @@
   addEventListener("resize", () => {
     clearTimeout(resizeT);
     resizeT = setTimeout(() => {
-      if (S.view === "now" && S.shown !== undefined && S.sel.case) renderCompare(S.byId[S.sel.case], S.shown);
+      if (S.view === "now" && S.nowMode === "board" && window.SDLadderBoard) window.SDLadderBoard.redraw();
+      else if (S.view === "now" && S.shown !== undefined && S.sel.case) renderCompare(S.byId[S.sel.case], S.shown);
       if (S.view === "cases") renderCase();
       if (S.view === "history") renderHistory();
     }, 200);
@@ -671,7 +730,7 @@
     const p = new URLSearchParams(location.search);
     const view = ["now", "matrix", "history", "cases"].includes(p.get("view")) ? p.get("view") : "now";
     if (view === "now" && p.get("case") && S.byId[p.get("case")]) {
-      S.follow = false;
+      S.follow = false; S.nowMode = "one";
       S.sel = { case: p.get("case"), variant: p.get("variant"), strategy: p.get("strategy"), id: p.get("result") ? +p.get("result") : null };
     }
     if (view === "history") S.hsel = { case: S.byId[p.get("case")] ? p.get("case") : null, strategy: p.get("strategy") };

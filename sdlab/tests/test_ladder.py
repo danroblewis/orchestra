@@ -376,3 +376,17 @@ def test_a_run_whose_process_died_is_reported_over(monkeypatch):
         store.mark(rid, it, "done", "pass")
     p = store.progress()["run"]
     assert p["finished"] and not p["aborted"], "everything done: over, though nobody marked it finished"
+
+
+def test_the_board_has_every_case_with_one_strategy_s_results(client):
+    cli.main(["run", "--strategies", "matrix", "--cases", "003,007", "--jobs", "1", "--quiet"])
+    b = client.get("/api/ladder/board", params={"strategy": "matrix", "variant": "counts-long"}).json()
+    assert b["strategy"] == "matrix" and b["variant"] == "counts-long" and b["best"] == "matrix"
+    assert [c["id"] for c in b["cases"]] == casemod.case_ids()
+    assert {(r["case"], r["variant"]) for r in b["results"]} == {("003-chain-2", "counts-long"), ("007-link", "counts-long")}
+    assert all(r["found"] is not None and r["scores"]["parts"] for r in b["results"])
+    every = client.get("/api/ladder/board", params={"strategy": "matrix", "variant": "all"}).json()
+    assert every["variant"] is None and len(every["results"]) == 8
+    assert client.get("/api/ladder/board").json()["strategy"] == "matrix", "the best strategy by default"
+    assert client.get("/api/ladder/board", params={"strategy": "nope"}).status_code == 404
+    assert client.get("/api/ladder/board", params={"variant": "bogus"}).status_code == 404

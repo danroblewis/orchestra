@@ -9,6 +9,7 @@
     GET /api/ladder/cases/{case}/data/{variant}?fresh=        the case's data in a variant (levels, every stock's levels, eras)
     GET /api/ladder/result/{id}                               one stored result by id, with the found flows
     GET /api/ladder/strategies/{strategy}/timeline            the strategy's totals after each version
+    GET /api/ladder/board?strategy=&variant=                  every case with one strategy's latest results (default: the best strategy; variant all)
     GET /api/ladder/progress?recent=                          the current or last run (recent: only running + the n latest done)
     GET /api/ladder/summary?strategies=a,b                    the matrix (cells, per-tag and per-strategy totals)
 
@@ -105,6 +106,16 @@ def result_by_id(result_id: int) -> dict:
 @router.get("/strategies/{strategy}/timeline")
 def timeline(strategy: str) -> list[dict]:
     return api.timeline(_strategy(strategy))
+
+
+@router.get("/board")
+def board(strategy: str | None = None, variant: str | None = None) -> dict:
+    name = _strategy(strategy) if strategy else api.best_strategy()
+    if name is None:
+        raise HTTPException(404, "no strategy is available")
+    if variant and variant != "all":
+        _variant(None, variant)
+    return api.board(name, None if not variant or variant == "all" else variant)
 
 
 @router.get("/progress")

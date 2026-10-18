@@ -376,6 +376,8 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `result_by_id(id)` | one stored result (any, not only the latest) with `found`, or None |
 | `case_data(case, variant, fresh?)` | `{case, variant, fresh, t, levels (measured stocks), all_levels (every stock, hidden ones too), measured, eras, injections}`: what discovery sees, and what it does not |
 | `timeline(strategy)` | one point per version (strategy hash and scorer hash, in the order they first ran): `{strategy_hash, score_hash, first, last, ran, totals: {status: n}, of}`, the totals being the ladder's state just after that version (each case and variant's newest result up to then) |
+| `board(strategy, variant?)` | `{strategy, variant, best, cases, results}`: every case and one strategy's latest results (found flows included) in a variant, or all four |
+| `best_strategy()` | the available strategy with the highest pass rate |
 | `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
 | `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash}` |
 
@@ -397,6 +399,7 @@ GET /api/ladder/results/{case}/{variant}/{strategy}/history
 GET /api/ladder/cases/{case}/data/{variant}?fresh=
 GET /api/ladder/result/{id}
 GET /api/ladder/strategies/{strategy}/timeline
+GET /api/ladder/board?strategy=&variant=
 GET /api/ladder/progress?recent=
 GET /api/ladder/summary?strategies=a,b
 ```
@@ -410,7 +413,7 @@ anything else is a 404 (422 for an id that is not a number). No path comes from 
 (`sdlab/static/ladder.html`, `ladder.js`, `ladder-compare.js`, drawing with `diagram.js`; SPEC.md
 4.13):
 
-- **Now**: what is running (polled every second) and, following the run as it finishes items or
+- **Now** (default: every case on one page for one strategy and variant, `GET /api/ladder/board?strategy=&variant=`): per case the true model, the found model and their differences (✓ matched, ~ off, − missed, + invented, ≈ equivalent) as a diagram and a diff list, a plain-language explanation, and the error measures, headed by the **equation error** = (true numbers missing + off + invented numbers) ÷ true numbers. Click a case for the single result: what is running (polled every second) and, following the run as it finishes items or
   for any case, variant and strategy picked, the true model's diagram beside the found one, laid
   out identically, flows coloured green (right), amber (a number off: true vs found shown), red
   dashed (missing), red (spurious), blue (equivalent), grey (too small); then the equations side

@@ -742,7 +742,28 @@ strategy on tiny true models, scored equation by equation. A 🏆 Leaderboard bu
 recall, precision, skill, runs and time, sortable by any column, with variant and level filters). Four tabs; the tab and what it shows
 are kept in the URL (`?view=now&case=&variant=&strategy=&result=`).
 
-- **Now**: what the ladder is running, polled every second (`/api/ladder/progress?recent=20`): the
+- **Now, every case** (the default; `ladder-board.js`, from `GET /api/ladder/board`): every case on
+  one page, for one strategy (default: the best pass rate) and one variant (default counts-long, or
+  all four as tabs on each card, opening on the worst), filtered by verdict, level and tag, sorted
+  by level, worst verdict or largest error. A summary bar on top: counts by verdict and the mean
+  equation error, recall, precision, rate error, skill@20 and fresh skill@20, and the leaderboard.
+  Each card (diagrams drawn lazily as it scrolls into view): the title, "tests" sentence and
+  verdict; the headline **equation error**, the share of the equations' numbers that are wrong:
+  (true numbers missing + true numbers off + invented numbers) ÷ true numbers, 0% being the true
+  equations within tolerance; three small panels, the true model and the found model each drawn
+  plain (neither is marked: the truth is the reference) and the **differences** in the truth's
+  layout (✓ matched green, ~ a number off amber with "true → found", − missed grey dashed, +
+  invented red, ≈ an equivalent reading blue; the legend is one line under that panel); the
+  same diff as a list, one line per flow (`✓ outside → A  in 20  found 20.1`, `~ A → B  ab 0.3·A
+  found 0.24·A: 0.24 for 0.3 (20% low)`, `− B → outside  b_out 0.2·B  missed`, `+ R → outside
+  invented 0.16·A`); a plain-language explanation made from the scorer's parts (what was right
+  and within how much, what was missed, what was off and how, what was invented, and why the
+  verdict; for an equivalent result, which reading it chose instead); and the error measures,
+  each with its definition on hover: recall, precision, rate error (mean and worst relative error
+  of the found true numbers, naming the worst), spurious (count and size per step), skill@20 and
+  @100 with 95% intervals, fresh skill@20. Clicking a card's title opens the single result below
+  ("← All cases" returns). During a run the board refreshes at most every 10 seconds.
+- **Now, one result**: what the ladder is running, polled every second (`/api/ladder/progress?recent=20`): the
   command, done of total, a bar by status (pass, equivalent, fail, error, timeout, running,
   queued) and the items running now. With **follow the run** on (the default), the view shows
   each result as the run finishes it (an item still running shows its previous result, marked).
@@ -753,7 +774,8 @@ are kept in the URL (`?view=now&case=&variant=&strategy=&result=`).
   - the case's title, level, tags and "tests" sentence; the scores: status, recall, precision,
     parts right, spurious, skill@20 and @100 with their 95% intervals, the same on the fresh run,
     discovery's time, when, and the strategy and scorer hashes;
-  - **the true model on the left and the found model on the right**, drawn by `diagram.js` the
+  - three panels, as on the cards (true, found, differences), then the diff list and the
+    explanation; the description of the drawing below applies to them. Earlier: **the true model on the left and the found model on the right**, drawn by `diagram.js` the
     way the editor draws (stocks as boxes, flows as thick arrows, clouds for outside, a link from
     each stock an equation reads, dashed; effects dashed and labelled; co-flows dotted, "uses n").
     Both sides use one layout made from the truth (columns from upstream to downstream, wrapped

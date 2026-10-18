@@ -27,14 +27,23 @@
 <main class="rmain" id="main">
   <section class="rsec lview" data-view="now" id="view-now">
     <div class="live" id="live"></div>
+    <div id="board-wrap" hidden>
+      <div class="rcontrols" id="board-controls"></div>
+      <div id="board-sum"></div>
+      <p class="note">Each case: the true model, what the strategy found, and their differences (in the third panel and as a list): <b class="d-ok">✓</b> matched, <b class="d-wrong">~</b> a number off, <b class="d-missed">−</b> missed, <b class="d-spurious">+</b> invented, <b class="d-equiv">≈</b> an equivalent reading. Click a case's title for every part.</p>
+      <div id="board" class="board-cards"><p class="note">Loading every case…</p></div>
+    </div>
+    <div id="one-wrap" hidden>
     <div class="rcontrols" id="pick"></div>
     <div id="cmp-head"><p class="note">Loading the ladder…</p></div>
-    <div class="dpair" id="dpair" hidden>
-      <figure class="dpanel"><figcaption>True model</figcaption><svg id="d-true" role="img" aria-label="The true model"></svg></figure>
-      <figure class="dpanel"><figcaption id="found-cap">Found</figcaption><svg id="d-found" role="img" aria-label="The found model"></svg></figure>
+    <div class="dpair three" id="dpair" hidden>
+      <figure class="dpanel"><figcaption>True model</figcaption><svg id="d-true" role="img" aria-label="The true model"></svg><p class="dcap">What generated the data: the reference.</p></figure>
+      <figure class="dpanel"><figcaption id="found-cap">Found</figcaption><svg id="d-found" role="img" aria-label="The found model"></svg><p class="dcap">What the strategy recovered from the levels, in its own equations.</p></figure>
+      <figure class="dpanel"><figcaption>Differences</figcaption><svg id="d-diff" role="img" aria-label="The differences"></svg><p class="dcap" id="dlegend"></p></figure>
     </div>
-    <div class="legend dlegend" id="dlegend"></div>
+    <div id="dlist"></div>
     <div id="cmp-body"></div>
+    </div>
   </section>
 
   <section class="rsec lview" data-view="matrix" id="view-matrix" hidden>
@@ -65,6 +74,7 @@
 
 <script src="/static/diagram.js"></script>
 <script src="/static/ladder-compare.js"></script>
+<script src="/static/ladder-board.js"></script>
 <script src="/static/ladder.js"></script>
 </body>
 </html>
