@@ -141,8 +141,8 @@ class Model:
             else:
                 self.parts.append((src, dst, ratio, None, _Rate([f.get("rate") or {}], index), None))
 
-    def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
-        """One step from levels L (stocks x states) at times t (one per state)."""
+    def _amounts(self, L: np.ndarray, t: np.ndarray) -> list:
+        """Each flow's amount in one step from levels L (stocks x states) at times t (one per state)."""
         m = L.shape[1]
         zero = np.zeros(m, int)
         amounts = []
@@ -156,6 +156,25 @@ class Model:
             k = np.where((want > L[c]) & (L[c] > -1), np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
             for i, _ in takers:
                 amounts[i] = amounts[i] * k
+        return amounts
+
+    def change(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """What the flows add to each stock in one step from levels L (stocks x states) at times t
+        (one per state), before levels are floored at 0."""
+        amounts = self._amounts(L, t)
+        d = np.zeros_like(L, dtype=float)
+        for (src, dst, ratio, *_), a in zip(self.parts, amounts):
+            if src is not None:
+                d[src] -= a * ratio
+            if dst is not None:
+                d[dst] += a
+        for i, c, per in self.uses:
+            d[c] -= amounts[i] * per
+        return d
+
+    def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """One step from levels L (stocks x states) at times t (one per state)."""
+        amounts = self._amounts(L, t)
         nxt = L.copy()
         for (src, dst, ratio, *_), a in zip(self.parts, amounts):
             if src is not None:
