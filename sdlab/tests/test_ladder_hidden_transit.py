@@ -27,9 +27,10 @@ def found(case_id: str, variant: str) -> tuple[dict, dict]:
     return r, score.equations(c, casemod.variant(c, variant)["noise"], model, r["flows"], d)
 
 
-@pytest.mark.parametrize("variant", ["none-short", "none-long", "counts-long"])
-def test_the_hidden_stock_rung_passes(variant):
-    r, s = found("015-hidden-stock", variant)
+@pytest.mark.parametrize("case_id,variant", [("015-hidden-stock", "none-short"), ("015-hidden-stock", "none-long"),
+                                             ("015-hidden-stock", "counts-long"), ("026-hidden-stock-driven", "counts-short")])
+def test_the_hidden_stock_rungs_pass(case_id, variant):
+    r, s = found(case_id, variant)
     assert s["status"] == "pass", s["parts"]
     assert set(r["inferred_levels"]) == {"A~B"}
 
@@ -47,7 +48,7 @@ def test_the_mirror_is_told_apart_by_a_s_balance():
     d = data.load(casemod.load("015-hidden-stock"), "none-short")
     A, B = (np.array(d["levels"][s], dtype=float) for s in "AB")
     z = np.zeros(len(A) - 1)
-    f = fit_transit(Pair(A, B, z, z, z, z, 0.0), True, False, True)
+    f = fit_transit(Pair(A, B, z, z, z, z, 0.0, np.zeros(len(z), int)), False, True)
     assert abs(1 / f["d"] - 10) < 0.01 and abs(f["kb"] - 0.2) < 1e-3 and abs(f["kin"] - 0.2) < 1e-3
 
 

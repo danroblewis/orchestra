@@ -1,0 +1,15 @@
+title: A hidden stock behind a stepping inflow
+level: 13
+tags: [hidden, delay, inflow-change, unannounced]
+tests: "015's hidden stock with the sender's outside inflow stepping between 10 and 30 without announcement: the delay is excited, and the steps must not be mistaken for the hidden stock or the reverse"
+seed: 26
+stocks: {A: 0, H: 0 hidden, B: 0}
+flows:
+  outside -> A: 10
+  A -> H as a_h: 0.2 * A
+  H -> B as h_b: 0.1 * H
+  B -> outside: 0.2 * B
+schedule:
+  every: 200
+  at 1 low: {outside -> A: 10}
+  at 101 high: {outside -> A: 30}

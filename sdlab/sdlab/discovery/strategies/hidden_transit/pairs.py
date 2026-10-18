@@ -65,21 +65,45 @@ def at_means(flows: list[dict], stocks: set) -> list[dict]:
     return out
 
 
-def split(flows: list[dict], a: str, b: str, cA_on: bool) -> tuple[list[int], list[int]]:
+def split(flows: list[dict], a: str, b: str) -> tuple[list[int], list[int]]:
     """(indexes of the flows the transit replaces, indexes kept)."""
     out = []
     for i, f in enumerate(flows):
         if f.get("from") == a and f.get("to") in (None, b) and _prop_on(f, a):
             out.append(i)
-        elif _outside_const(f, b):
+        elif _outside_const(f, b) or _outside_const(f, a):
             out.append(i)
         elif f.get("to") == b and f.get("from") is None and f.get("driver") == a:
             out.append(i)
         elif f.get("from") == b and f.get("to") is None and _prop_on(f, b):
             out.append(i)
-        elif cA_on and _outside_const(f, a):
-            out.append(i)
     return out, [i for i in range(len(flows)) if i not in set(out)]
+
+
+def pieces(flows: list[dict], a: str, t: list) -> tuple[np.ndarray | None, list[tuple[int, int]]]:
+    """A's outside inflow as the main line cut it: each step's piece (step k moves the levels from
+    t[k] to t[k + 1] and counts at t[k + 1]) and the pieces' spans; (None, []) when A has no outside
+    constant, one piece when it is not cut."""
+    own = [f for f in flows if _outside_const(f, a)]
+    if not own:
+        return None, []
+    tt = np.asarray(t, dtype=float)[1:]
+    starts = sorted({int(g["from"]) for f in own for g in f.get("inflow") or []} | {int(t[1]) if len(t) > 1 else int(t[0])})
+    starts = [x for x in starts if x <= tt[-1]] or [int(tt[0])]
+    seg = np.searchsorted(np.array(starts, dtype=float), tt, side="right") - 1
+    seg = np.maximum(seg, 0)
+    used = sorted(set(seg.tolist()))
+    remap = {j: i for i, j in enumerate(used)}
+    seg = np.array([remap[j] for j in seg])
+    spans = [(int(starts[j]) if i else int(min(starts[j], tt[0])), int(starts[used[i + 1]] - 1) if i + 1 < len(used) else int(t[-1]))
+             for i, j in enumerate(used)]
+    return seg, spans
+
+
+def one_piece(seg: np.ndarray | None, spans: list) -> tuple[np.ndarray | None, list]:
+    if seg is None:
+        return None, []
+    return np.zeros_like(seg), [(spans[0][0], spans[-1][1])]
 
 
 def candidate(flows: list[dict], a: str, b: str) -> bool:
@@ -109,26 +133,25 @@ def exogenous(flows: list[dict], keep: list[int], ids: list[str], t: list, L: np
     return net, gross
 
 
-def kept_numbers(flows: list[dict], keep: list[int], a: str, b: str) -> int:
-    """Numbers in the kept outside constants of A and B (pieces fitted to this run cost their numbers)."""
-    return sum(numbers(flows[i]) for i in keep if _outside_const(flows[i], a) or _outside_const(flows[i], b))
-
-
-def build(flows: list[dict], keep: list[int], a: str, b: str, fit: dict, cA_on: bool, cB_on: bool) -> tuple[list[dict], str]:
+def build(flows: list[dict], keep: list[int], a: str, b: str, fit: dict, spans: list) -> tuple[list[dict], str]:
     """The model with A -> H -> B in place of the replaced flows, and H's id."""
     h = f"{a}~{b}"
     out = [flows[i] for i in keep]
     prop = lambda s, k: {"form": "proportional", "stock": s, "k": float(k)}  # noqa: E731
-    if cA_on and abs(fit["cA"]) > 1e-9:
-        out.append({"from": None, "to": a, "ratio": 1, "rate": {"form": "constant", "value": abs(fit["cA"])}} if fit["cA"] > 0
-                   else {"from": a, "to": None, "ratio": 1, "rate": {"form": "constant", "value": -fit["cA"]}})
+    vals = [max(0.0, float(v)) for v in fit["values"]]
+    if len(vals) == 1:
+        out.append({"from": None, "to": a, "ratio": 1, "rate": {"form": "constant", "value": vals[0]}})
+    elif vals:
+        w = [hi - lo + 1 for lo, hi in spans]
+        out.append({"from": None, "to": a, "ratio": 1, "rate": {"form": "constant", "value": float(np.dot(vals, w) / sum(w))},
+                    "inflow": [{"from": lo, "to": hi, "value": v} for (lo, hi), v in zip(spans, vals)], "changes": len(vals) - 1})
     out.append({"from": a, "to": h, "ratio": 1, "rate": prop(a, fit["kin"]), "hidden": h})
     if fit["kA"] - fit["kin"] > 1e-3 * fit["kA"]:
         out.append({"from": a, "to": None, "ratio": 1, "rate": prop(a, fit["kA"] - fit["kin"])})
     out.append({"from": h, "to": b, "ratio": 1, "rate": prop(h, fit["d"]), "hidden": h})
     if fit["kb"] > 1e-6:
         out.append({"from": b, "to": None, "ratio": 1, "rate": prop(b, fit["kb"])})
-    if cB_on and abs(fit["cB"]) > 1e-9:
+    if abs(fit["cB"]) > 1e-9:
         out.append({"from": None, "to": b, "ratio": 1, "rate": {"form": "constant", "value": fit["cB"]}} if fit["cB"] > 0
                    else {"from": b, "to": None, "ratio": 1, "rate": {"form": "constant", "value": -fit["cB"]}})
     return out, h

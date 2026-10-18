@@ -2,7 +2,7 @@
 
 The local model of a pair (sender A, receiver B, unmeasured H between them), one step at a time:
 
-    A(t) - A(t-1) = xA(t) + cA - kA A(t-1)                  (xA: what the kept flows do to A)
+    A(t) - A(t-1) = xA(t) + cA(t) - kA A(t-1)               (xA: what the kept flows do to A)
     H(t)          = (1 - d) H(t-1) + kin A(t-1)            (kin <= kA; the rest leaves to outside)
     B(t) - B(t-1) = xB(t) + cB + d H(t-1) - kb B(t-1)
 
@@ -17,6 +17,10 @@ reads the delay too long).
 `scale` 1 fixes the noise at the counts' own variance (the data are counts); 0 concentrates an
 unknown scale out (noise of unknown size, or none: the fit is then a weighted least squares).
 The plain alternative (no H: B gets kd x A directly) is scored by the same likelihood (`plain`).
+
+A's outside inflow cA(t) is one constant or pieces (the main line's cuts): for a given kA each
+piece's value is the mean of A's change plus kA x A over it (A's row alone says it; H does not enter
+A's mean), so it is never a number the optimiser searches.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ FLOOR = 0.05       # a count's variance is never taken below this (a rate of ~0 
 
 
 @njit(cache=True)
-def _transit(A, B, xA, gA, xB, gB, cA, kA, kin, d, kb, cB, m0, P0, out):
+def _transit(A, B, xA, gA, xB, gB, cAs, kA, kin, d, kb, cB, m0, P0, out):
     n = A.shape[0]
     m, P = m0, P0
     ss = 0.0
@@ -39,6 +43,7 @@ def _transit(A, B, xA, gA, xB, gB, cA, kA, kin, d, kb, cB, m0, P0, out):
     for t in range(1, n):
         a = A[t - 1]
         b = B[t - 1]
+        cA = cAs[t - 1]
         vo = max(kin * a, FLOOR)
         vA = gA[t - 1] + abs(cA) + max((kA - kin) * a, 0.0) + FLOOR
         vp = max(d * max(m, 0.0), FLOOR)
@@ -64,13 +69,14 @@ def _transit(A, B, xA, gA, xB, gB, cA, kA, kin, d, kb, cB, m0, P0, out):
 
 
 @njit(cache=True)
-def _plain(A, B, xA, gA, xB, gB, cA, kA, kd, kb, cB):
+def _plain(A, B, xA, gA, xB, gB, cAs, kA, kd, kb, cB):
     n = A.shape[0]
     ss = 0.0
     ld = 0.0
     for t in range(1, n):
         a = A[t - 1]
         b = B[t - 1]
+        cA = cAs[t - 1]
         vd = max(kd * a, FLOOR)
         sA = gA[t - 1] + abs(cA) + max((kA - kd) * a, 0.0) + vd + FLOOR
         sB = gB[t - 1] + max(kb * b, 0.0) + abs(cB) + vd + FLOOR
@@ -89,21 +95,41 @@ def _nll(ss: float, ld: float, n: int, scale: float) -> float:
 
 
 class Pair:
-    """The data of one pair: the two levels and what the kept flows do to each (net and gross, per
-    step)."""
+    """The data of one pair: the two levels, what the kept flows do to each (net and gross, per
+    step), and the pieces of A's outside inflow (seg: each step's piece, or None: no inflow of its
+    own beyond the kept flows)."""
 
-    def __init__(self, A, B, xA, gA, xB, gB, scale: float):
+    def __init__(self, A, B, xA, gA, xB, gB, scale: float, seg: np.ndarray | None = None):
         self.A, self.B = (np.ascontiguousarray(v, dtype=float) for v in (A, B))
         self.xA, self.gA, self.xB, self.gB = (np.ascontiguousarray(v, dtype=float) for v in (xA, gA, xB, gB))
         self.scale = scale
         self.n = 2 * (len(self.A) - 1)
         self.P0 = max(1.0, float(np.mean(np.abs(self.B))) ** 2)
+        self.seg = None if seg is None else np.asarray(seg, dtype=int)
+        if self.seg is not None:
+            self.count = np.maximum(1, np.bincount(self.seg))
+            self.dA = np.diff(self.A) - self.xA
 
-    def transit(self, cA, kA, kin, d, kb, cB, m0) -> tuple[float, np.ndarray]:
+    @property
+    def pieces(self) -> int:
+        return 0 if self.seg is None else len(self.count)
+
+    def values(self, kA: float) -> np.ndarray:
+        """A's outside inflow per piece, given kA."""
+        if self.seg is None:
+            return np.zeros(0)
+        return np.bincount(self.seg, weights=self.dA + kA * self.A[:-1], minlength=len(self.count)) / self.count
+
+    def a_in(self, kA: float) -> np.ndarray:
+        if self.seg is None:
+            return np.zeros(len(self.A) - 1)
+        return np.ascontiguousarray(self.values(kA)[self.seg])
+
+    def transit(self, kA, kin, d, kb, cB, m0) -> tuple[float, np.ndarray]:
         out = np.zeros(len(self.A))
-        ss, ld = _transit(self.A, self.B, self.xA, self.gA, self.xB, self.gB, cA, kA, kin, d, kb, cB, m0, self.P0, out)
+        ss, ld = _transit(self.A, self.B, self.xA, self.gA, self.xB, self.gB, self.a_in(kA), kA, kin, d, kb, cB, m0, self.P0, out)
         return _nll(ss, ld, self.n, self.scale), out
 
-    def plain(self, cA, kA, kd, kb, cB) -> float:
-        ss, ld = _plain(self.A, self.B, self.xA, self.gA, self.xB, self.gB, cA, kA, kd, kb, cB)
+    def plain(self, kA, kd, kb, cB) -> float:
+        ss, ld = _plain(self.A, self.B, self.xA, self.gA, self.xB, self.gB, self.a_in(kA), kA, kd, kb, cB)
         return _nll(ss, ld, self.n, self.scale)

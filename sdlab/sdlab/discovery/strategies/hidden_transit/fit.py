@@ -38,12 +38,12 @@ def _log(x):
     return math.log(max(x, 1e-6))
 
 
-def a_row(pair: Pair, cA_on: bool) -> tuple[float, float]:
-    """A's inflow constant and loss rate by least squares."""
+def a_loss(pair: Pair) -> float:
+    """A's loss rate by least squares, beside its pieces."""
     y = np.diff(pair.A) - pair.xA
-    cols = ([np.ones(len(y))] if cA_on else []) + [-pair.A[:-1]]
+    cols = [-pair.A[:-1]] + ([np.eye(pair.pieces)[pair.seg].T[j] for j in range(pair.pieces)] if pair.pieces else [])
     beta = np.linalg.lstsq(np.column_stack(cols), y, rcond=None)[0]
-    return (float(beta[0]) if cA_on else 0.0), max(1e-4, float(beta[-1]))
+    return max(1e-4, float(beta[0]))
 
 
 def _ls_b(pair: Pair, d: float, cB_on: bool):
@@ -96,10 +96,11 @@ def _minimize(cost, x0):
     return p if p.fun <= o.fun else o
 
 
-def fit_transit(pair: Pair, cA_on: bool, cB_on: bool, all_to_h: bool = True, starts: list[dict] | None = None) -> dict | None:
-    """The transit model's numbers by maximum likelihood: {cA, kA, kin, d, kb, cB, m0, nll, k (numbers
-    fitted), H (the filtered level)}. all_to_h: kin = kA (A loses only what H takes)."""
-    cA0, kA0 = a_row(pair, cA_on)
+def fit_transit(pair: Pair, cB_on: bool, all_to_h: bool = True, starts: list[dict] | None = None) -> dict | None:
+    """The transit model's numbers by maximum likelihood: {kA, kin, d, kb, cB, m0, values (A's inflow
+    pieces), nll, k (numbers searched), H (the filtered level)}. all_to_h: kin = kA (A loses only what
+    H takes)."""
+    kA0 = a_loss(pair)
     starts = starts if starts is not None else profile(pair, cB_on)
     if not starts:
         return None
@@ -111,11 +112,8 @@ def fit_transit(pair: Pair, cA_on: bool, cB_on: bool, all_to_h: bool = True, sta
                           "m0": s["m0"] * s["d"] / s["kb"]})
 
     def unpack(p):
-        i = 0
-        cA = p[i] if cA_on else 0.0
-        i += cA_on
-        kA = _exp(p[i])
-        i += 1
+        kA = _exp(p[0])
+        i = 1
         if all_to_h:
             kin = kA
         else:
@@ -126,7 +124,7 @@ def fit_transit(pair: Pair, cA_on: bool, cB_on: bool, all_to_h: bool = True, sta
         i += 2
         cB = p[i] if cB_on else 0.0
         i += cB_on
-        return cA, kA, kin, d, kb, cB, p[i]
+        return kA, kin, d, kb, cB, p[i]
 
     def cost(p):
         v = pair.transit(*unpack(p))[0]
@@ -135,43 +133,41 @@ def fit_transit(pair: Pair, cA_on: bool, cB_on: bool, all_to_h: bool = True, sta
     best = None
     for s in tried:
         kA = max(kA0, 1e-4)
-        x0 = ([cA0] if cA_on else []) + [_log(kA)] + ([] if all_to_h else [_logit(min(0.999, max(0.01, s["kin"] / kA)))])
+        x0 = [_log(kA)] + ([] if all_to_h else [_logit(min(0.999, max(0.01, s["kin"] / kA)))])
         x0 += [_logit(min(0.999, s["d"] / D_MAX)), _log(max(s["kb"], 1e-4))] + ([s["cB"]] if cB_on else []) + [s["m0"]]
         o = _minimize(cost, np.array(x0))
         if best is None or o.fun < best.fun:
             best = o
     if best is None or not math.isfinite(best.fun) or best.fun >= 1e299:
         return None
-    cA, kA, kin, d, kb, cB, m0 = unpack(best.x)
-    nll, H = pair.transit(cA, kA, kin, d, kb, cB, m0)
-    return {"cA": cA, "kA": kA, "kin": kin, "d": d, "kb": kb, "cB": cB, "m0": m0, "nll": nll, "k": len(best.x) + 0, "H": H}
+    kA, kin, d, kb, cB, m0 = unpack(best.x)
+    nll, H = pair.transit(kA, kin, d, kb, cB, m0)
+    return {"kA": kA, "kin": kin, "d": d, "kb": kb, "cB": cB, "m0": m0, "values": pair.values(kA).tolist(), "nll": nll,
+            "k": len(best.x), "H": H}
 
 
-def fit_plain(pair: Pair, cA_on: bool, cB_on: bool) -> dict:
+def fit_plain(pair: Pair, cB_on: bool) -> dict:
     """The alternative without H: B gets kd x A straight from A (a move; the rest of A's loss to
     outside), by the same likelihood."""
-    cA0, kA0 = a_row(pair, cA_on)
+    kA0 = a_loss(pair)
     y = np.diff(pair.B) - pair.xB
     cols = [pair.A[:-1], -pair.B[:-1]] + ([np.ones(len(y))] if cB_on else [])
     beta = np.linalg.lstsq(np.column_stack(cols), y, rcond=None)[0]
 
     def unpack(p):
-        i = 0
-        cA = p[0] if cA_on else 0.0
-        i += cA_on
-        kA = _exp(p[i])
-        kd = kA * _sig(p[i + 1])
-        kb = _exp(p[i + 2])
-        cB = p[i + 3] if cB_on else 0.0
-        return cA, kA, kd, kb, cB
+        kA = _exp(p[0])
+        kd = kA * _sig(p[1])
+        kb = _exp(p[2])
+        cB = p[3] if cB_on else 0.0
+        return kA, kd, kb, cB
 
     def cost(p):
         v = pair.plain(*unpack(p))
         return v if math.isfinite(v) else 1e300
 
     kA = max(kA0, 1e-4)
-    x0 = ([cA0] if cA_on else []) + [_log(kA), _logit(min(0.999, max(0.001, float(beta[0]) / kA))), _log(max(float(beta[1]), 1e-4))]
+    x0 = [_log(kA), _logit(min(0.999, max(0.001, float(beta[0]) / kA))), _log(max(float(beta[1]), 1e-4))]
     x0 += [float(beta[2])] if cB_on else []
     o = _minimize(cost, np.array(x0))
-    cA, kA, kd, kb, cB = unpack(o.x)
-    return {"cA": cA, "kA": kA, "kd": kd, "kb": kb, "cB": cB, "nll": float(o.fun), "k": len(o.x)}
+    kA, kd, kb, cB = unpack(o.x)
+    return {"kA": kA, "kd": kd, "kb": kb, "cB": cB, "nll": float(o.fun), "k": len(o.x)}
