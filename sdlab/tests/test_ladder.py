@@ -359,3 +359,19 @@ def test_the_page_s_endpoints(client):
                                  "/api/ladder/result/999999", "/api/ladder/strategies/nope/timeline", "/api/ladder/strategies/..%2Fos/timeline"])
 def test_the_page_s_endpoints_refuse_unknown_names(client, url):
     assert client.get(url).status_code == 404
+
+
+def test_a_run_whose_process_died_is_reported_over(monkeypatch):
+    items = [{"case": "003-chain-2", "variant": v, "strategy": "matrix"} for v in ("none-short", "none-long")]
+    rid = store.start_run("run", items)
+    store.mark(rid, items[0], "running")
+    p = store.progress()["run"]
+    assert p["finished"] is None and p["running"] == 1, "a live run is live"
+    monkeypatch.setattr(store, "STALL", -1)
+    p = store.progress()
+    assert p["run"]["finished"] and p["run"]["aborted"] and p["run"]["running"] == 0 and p["items"][0]["state"] in ("aborted", "queued")
+    monkeypatch.setattr(store, "STALL", 10_000)
+    for it in items:
+        store.mark(rid, it, "done", "pass")
+    p = store.progress()["run"]
+    assert p["finished"] and not p["aborted"], "everything done: over, though nobody marked it finished"

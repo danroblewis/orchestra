@@ -95,8 +95,12 @@
   }
 
   // ---------- Now: live strip ----------
+  // the item to show: the one finished last (or one running), among the cases this page knows; a
+  // case it does not know yet (added since the page loaded) makes it fetch the case list again
   function liveFocus(p) {
-    const items = (p && p.items) || [];
+    const all = (p && p.items) || [];
+    if (all.some((i) => !S.byId[i.case])) refreshCases();
+    const items = all.filter((i) => S.byId[i.case]);
     const done = items.filter((i) => i.state === "done" && i.finished).sort((a, b) => (a.finished < b.finished ? 1 : -1));
     const running = items.filter((i) => i.state === "running");
     return done[0] || running[0] || null;
@@ -104,7 +108,7 @@
   function renderLive() {
     const p = S.progress, box = $("live");
     if (!p || !p.run) { box.innerHTML = `<p class="note">No ladder run yet. Start one with <code>uv run sdlab-ladder sync</code>; it shows here as it goes.</p>`; return; }
-    const r = p.run, active = !r.finished, items = p.items || [];
+    const r = p.run, active = !r.finished, items = p.items || [];   // the server reports a dead run as finished (aborted)
     const counts = p.counts || {};
     const running = items.filter((i) => i.state === "running");
     const bar = ["pass", "equivalent", "fail", "error", "timeout"].map((k) => counts[k] ? `<span class="seg st-${k}" style="flex:${counts[k]}" data-tip="${counts[k]} ${k}"></span>` : "").join("")
@@ -113,7 +117,7 @@
     const tally = Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing finished yet";
     box.innerHTML = `<div class="livehead">
         <span class="livedot${active ? " on" : ""}" aria-hidden="true"></span>
-        <b>${active ? "Running" : "Last run"}</b> <code>${esc(r.command || "sdlab-ladder")}</code>
+        <b>${active ? "Running" : r.aborted ? "Last run (stopped before the end)" : "Last run"}</b> <code>${esc(r.command || "sdlab-ladder")}</code>
         <span class="muted small">${r.done}/${r.total} done${active ? `, ${r.running} running` : ""} · ${esc(tally)} · ${active ? `started ${esc(when(r.started))}` : `finished ${esc(when(r.finished))}`}</span>
         <label class="follow" title="Show each result as the run finishes it"><input type="checkbox" id="follow" ${S.follow ? "checked" : ""}> follow the run</label>
       </div>
@@ -121,6 +125,15 @@
       ${running.length ? `<div class="chips running-now"><span class="muted small">running now:</span>${running.slice(0, 6).map((i) => `<button class="chip" data-case="${esc(i.case)}" data-variant="${esc(i.variant)}" data-strategy="${esc(i.strategy)}">${esc(i.case)} · ${esc(i.variant)} · ${esc(i.strategy)}</button>`).join("")}${running.length > 6 ? `<span class="muted small">+${running.length - 6}</span>` : ""}</div>` : ""}`;
     $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; if (S.follow) followTick(true); remember(); });
     box.querySelectorAll(".chip[data-case]").forEach((b) => b.addEventListener("click", () => pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy })));
+  }
+  let casesAt = 0;
+  async function refreshCases() {
+    if (Date.now() - casesAt < 10000) return;
+    casesAt = Date.now();
+    try {
+      S.cases = await get("/api/ladder/cases");
+      S.byId = {}; S.cases.forEach((c) => { S.byId[c.id] = c; });
+    } catch { /* the next poll tries again */ }
   }
   function followTick(force) {
     if (!S.follow) return;
@@ -179,8 +192,9 @@
   // ---------- Now: the comparison ----------
   let token = 0;
   async function showCompare() {
+    if (!S.sel.case || !S.byId[S.sel.case]) S.sel = { ...S.sel, case: (S.cases[0] || {}).id, id: null };   // never a blank page
     const sel = { ...S.sel }, my = ++token;
-    if (!sel.case || !S.byId[sel.case]) return;
+    if (!sel.case || !S.byId[sel.case]) { $("cmp-head").innerHTML = `<p class="note">No ladder cases found.</p>`; return; }
     if (!S.byId[sel.case].variants.some((v) => v.name === sel.variant)) S.sel.variant = sel.variant = S.byId[sel.case].variants[0].name;
     if (!sel.strategy) S.sel.strategy = sel.strategy = defaultStrategy();
     renderPick();

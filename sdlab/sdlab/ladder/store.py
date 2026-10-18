@@ -171,8 +171,13 @@ def finish_run(run_id: int) -> None:
         con.execute("UPDATE runs SET finished = ? WHERE id = ?", (now(), run_id))
 
 
+STALL = 180          # seconds without any item starting or finishing: the run's process is gone (items time out at 120 s)
+
+
 def progress() -> dict:
-    """{"run": {id, command, started, finished, total, done, running} | None, "items": [...]}"""
+    """{"run": {id, command, started, finished, total, done, running, aborted?} | None, "items": [...]}; a run
+    that never finished is reported finished (aborted when not everything was done) once all its
+    items are done or it has stalled for STALL seconds."""
     with connect(readonly=True) as con:
         r = con.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
         if r is None:
@@ -182,4 +187,12 @@ def progress() -> dict:
                  for x in con.execute("SELECT * FROM progress WHERE run_id = ? ORDER BY case_id, strategy, variant", (r["id"],))]
     run = {"id": r["id"], "command": r["command"], "started": r["started"], "finished": r["finished"], "total": r["total"],
            "done": sum(i["state"] == "done" for i in items), "running": sum(i["state"] == "running" for i in items)}
+    if not run["finished"]:
+        # a run whose process died (killed, interrupted) is never marked finished: report it as over
+        # once everything is done, or once nothing has started or finished for STALL seconds
+        last = max([run["started"]] + [x for i in items for x in (i["started"], i["finished"]) if x])
+        idle = (datetime.now(timezone.utc) - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds()
+        if run["done"] >= run["total"] or idle > STALL:
+            run.update(finished=last, aborted=run["done"] < run["total"], running=0)
+            items = [{**i, "state": "aborted"} if i["state"] == "running" else i for i in items]
     return {"run": run, "items": items}
