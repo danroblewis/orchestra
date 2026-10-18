@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ladder leaderboard</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e3e1db; --card: #ffffff;
+    --pass: #2f7d4f; --equiv: #2f6fd6; --fail: #c0392b; --other: #9b9892; --accent: #1d1d1b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c;
+      --pass: #4fae74; --equiv: #6b9cf0; --fail: #e0685a; --other: #77756f; --accent: #ecebe6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c;
+    --pass: #4fae74; --equiv: #6b9cf0; --fail: #e0685a; --other: #77756f; --accent: #ecebe6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 14px; }
+  .controls label { color: var(--muted); }
+  select, input { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  .note { color: var(--muted); margin: 0 0 14px; max-width: 900px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); margin-bottom: 10px; font-size: 13px; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--bg); }
+  th.sorted { color: var(--fg); }
+  td.name, th.name { text-align: left; }
+  td.rank { color: var(--muted); width: 32px; }
+  td.bar { width: 42%; min-width: 220px; }
+  .stack { display: flex; height: 16px; border-radius: 3px; overflow: hidden; background: var(--line); }
+  .stack span { display: block; height: 100%; }
+  .num { font-variant-numeric: tabular-nums; }
+  .best td { font-weight: 600; }
+  tr:hover td { background: color-mix(in srgb, var(--line) 35%, transparent); }
+  .wrap { overflow-x: auto; }
+  @media (max-width: 700px) { td.bar { min-width: 140px; } .hide-sm { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ladder leaderboard</h1>
+  <a href="/ladder">Ladder</a>
+  <a href="/research">Research</a>
+  <a href="/">Editor</a>
+</header>
+<main>
+  <p class="note">Every strategy on every ladder case and variant. <b>Pass rate</b>: the share of runs where every true flow was
+  recovered with the right kind and a rate within tolerance, and nothing spurious. <b>Equivalent</b>: the same linear system with a
+  different structure. <b>Recall / precision</b>: true flows found / found flows that are true. <b>Skill@20</b>: the share of the true
+  model's movement over 20 steps the found model predicts (100% = same as the truth; each run clipped at -100%), on the run it saw and on
+  a fresh run. Click a column to sort.</p>
+  <div class="controls">
+    <label>Runs <select id="variants">
+      <option value="all">all variants</option>
+      <option value="none">no noise</option>
+      <option value="counts">counting noise</option>
+      <option value="short">short runs</option>
+      <option value="long">long runs</option>
+    </select></label>
+    <label>Cases <select id="level"><option value="0">all levels</option></select></label>
+    <label>Filter <input id="filter" placeholder="strategy name"></label>
+    <span id="count" class="note" style="margin:0"></span>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--pass)"></i>pass</span>
+    <span><i class="sw" style="background:var(--equiv)"></i>equivalent</span>
+    <span><i class="sw" style="background:var(--fail)"></i>fail</span>
+    <span><i class="sw" style="background:var(--other)"></i>error / timeout / not run</span>
+  </div>
+  <div class="wrap"><table id="t"><thead></thead><tbody></tbody></table></div>
+</main>
+<script>
+const COLS = [
+  { key: "rank", label: "#", cls: "rank", sortable: false },
+  { key: "name", label: "strategy", cls: "name" },
+  { key: "bar", label: "pass / equivalent / fail", cls: "bar", sortable: false },
+  { key: "pass", label: "pass rate", fmt: pct },
+  { key: "passeq", label: "pass + equivalent", fmt: pct, cls: "hide-sm" },
+  { key: "recall", label: "recall", fmt: pct },
+  { key: "precision", label: "precision", fmt: pct, cls: "hide-sm" },
+  { key: "skill20", label: "skill@20", fmt: pct },
+  { key: "fresh20", label: "fresh skill@20", fmt: pct, cls: "hide-sm" },
+  { key: "skill100", label: "skill@100", fmt: pct, cls: "hide-sm" },
+  { key: "runs", label: "runs", fmt: (v) => v, cls: "hide-sm" },
+  { key: "seconds", label: "time (s)", fmt: (v) => v.toFixed(1), cls: "hide-sm" },
+];
+let data = null, sortKey = "pass", sortDir = -1;
+function pct(v) { return v == null || Number.isNaN(v) ? "–" : (100 * v).toFixed(1) + "%"; }
+const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+const clip = (v) => (v == null ? null : Math.max(-1, v));
+
+function rows() {
+  const vf = document.getElementById("variants").value, lv = +document.getElementById("level").value;
+  const f = document.getElementById("filter").value.trim().toLowerCase();
+  const level = Object.fromEntries(data.cases.map((c) => [c.id, c.level]));
+  const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv);
+  const by = {};
+  for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
+  for (const c of data.cells) if (by[c.strategy] && keep(c)) by[c.strategy].push(c);
+  return Object.entries(by).filter(([, cs]) => cs.length).map(([name, cs]) => {
+    const n = cs.length, k = (s) => cs.filter((c) => c.status === s).length;
+    const num = (key) => cs.map((c) => clip(c[key])).filter((v) => v != null && Number.isFinite(v));
+    return {
+      name, runs: n, p: k("pass"), e: k("equivalent"), fl: k("fail"), o: n - k("pass") - k("equivalent") - k("fail"),
+      pass: k("pass") / n, passeq: (k("pass") + k("equivalent")) / n,
+      recall: mean(num("recall")), precision: mean(num("precision")),
+      skill20: mean(num("skill20")), fresh20: mean(num("fresh20")), skill100: mean(num("skill100")),
+      seconds: cs.reduce((x, c) => x + (c.seconds || 0), 0),
+    };
+  });
+}
+
+function render() {
+  const rs = rows().sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (typeof x === "string") return sortDir * x.localeCompare(y);
+    const d = (Number.isNaN(x) ? -Infinity : x) - (Number.isNaN(y) ? -Infinity : y);
+    return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
+  });
+  document.querySelector("#t thead").innerHTML = "<tr>" + COLS.map((c) =>
+    `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}">${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
+  const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
+  document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
+    if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
+    if (c.key === "name") return `<td class="name"><a href="/ladder#matrix" style="color:inherit">${r.name}</a></td>`;
+    if (c.key === "bar") {
+      const w = (v) => (100 * v / r.runs).toFixed(2) + "%";
+      return `<td class="bar"><div class="stack" title="${r.p} pass, ${r.e} equivalent, ${r.fl} fail, ${r.o} other, of ${r.runs}">` +
+        `<span style="width:${w(r.p)};background:var(--pass)"></span><span style="width:${w(r.e)};background:var(--equiv)"></span>` +
+        `<span style="width:${w(r.fl)};background:var(--fail)"></span><span style="width:${w(r.o)};background:var(--other)"></span></div></td>`;
+    }
+    return `<td class="num ${c.cls || ""}">${c.fmt(r[c.key])}</td>`;
+  }).join("") + "</tr>").join("");
+  document.getElementById("count").textContent = `${rs.length} strategies`;
+  document.querySelectorAll("#t th[data-key]").forEach((th) => {
+    const col = COLS.find((c) => c.key === th.dataset.key);
+    if (col.sortable === false) return;
+    th.onclick = () => { if (sortKey === col.key) sortDir = -sortDir; else { sortKey = col.key; sortDir = col.key === "name" ? 1 : -1; } render(); };
+  });
+}
+
+async function load() {
+  data = await (await fetch("/api/ladder/summary")).json();
+  const lv = document.getElementById("level");
+  if (lv.options.length === 1) for (const l of [...new Set(data.cases.map((c) => c.level))].sort((a, b) => a - b))
+    lv.insertAdjacentHTML("beforeend", `<option value="${l}">level ${l}</option>`);
+  render();
+}
+for (const id of ["variants", "level"]) document.getElementById(id).onchange = render;
+document.getElementById("filter").oninput = render;
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
