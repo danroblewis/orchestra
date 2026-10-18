@@ -9,6 +9,8 @@ One document per research topic: what was asked, what was done (branch and commi
 The step-by-step history of the main line is in [../DISCOVERY-EXPERIMENTS.md](../DISCOVERY-EXPERIMENTS.md); how experiments are run is in [../DISCOVERY-LOOP.md](../DISCOVERY-LOOP.md).
 When an experiment reports, update its topic document (status, results, verdict, open ideas) and this index.
 
+**Summary of every effort and how well it worked, with diagrams: [tries.md](tries.md).**
+
 | topic | status | verdict |
 |---|---|---|
 | [Benchmark v2: co-flows and effects in the ground truth](benchmark-v2.md) | done | - |
