@@ -31,11 +31,12 @@ from ...identify import identify as matrix_identify
 from ...matrix import identify_one, injected
 from ...onestep import bic
 from .basis import curve, knots
-from .joint import prune, refit
+from .joint import price, prune, refit
+from .pieces import resegment
 from .screen import fit_curve, placements, scan
 from .translate import translate
 
-DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True}
+DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4}
 
 
 def _arrays(stocks, run, opts):
@@ -95,8 +96,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     ids = [s["id"] for s in stocks]
     base = matrix_identify(stocks, run, {**opts, "candidates": keep})
     base_e = min((x["error"] for x in base.get("tried") or []), default=float("inf"))
-    base_b = bic(base["flows"], ids, run["t"], run["levels"])
-    base["bic"] = base_b
     if len(run["t"]) < 60:
         return base
     ids, prev, dy = _arrays(stocks, run, opts)
@@ -104,10 +103,17 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     base["effects_tried"] = [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
     if not cands:
         return base
+    fit_opts = {**opts, "weighted": o["weighted"]}
+    # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
+    # since the judge feeds a model its own pieces, and fewer pieces always look worse)
+    seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]
+    base_b = price(seg, ids, run)
+    fair_e = judge(seg, stocks, run, injections=opts.get("injections")) if o["pool"] else base_e
+    base["bic"] = base_b
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     group = {s["id"]: s.get("group") for s in stocks}
-    trials = []
-    seen = set()
+    raw, trials = [], []
+    seen, shapes = set(), set()
     for cand in cands[: o["most"]]:
         fits = []
         for frm, to in placements(cand):
@@ -138,28 +144,39 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 flows = translate(r.get("flows") or [], meta, stocks, prev, ids)
                 if not flows or not any(f.get("hat") for f in flows):
                     continue
-                flows, _ = refit(flows, ids, run, {**opts, "weighted": o["weighted"]})
-                if o["prune"]:
-                    flows = prune(flows, ids, run, {**opts, "weighted": o["weighted"]})
-                    if not any(f.get("hat") for f in flows):
-                        continue
-                e = judge(flows, stocks, run, injections=opts.get("injections"))
-                b = bic(flows, ids, run["t"], run["levels"])
+                flows, _ = refit(flows, ids, run, fit_opts)
+                sig = _signature(flows)
+                if sig in shapes:
+                    continue
+                shapes.add(sig)
                 name = f"effect {c['base'] or 1} x f({c['stock']}) {c['frm'] or 'outside'}->{c['to'] or 'outside'} ({len(c['knots'])} knots), {v['name']}"
-                trials.append({"name": name, "error": e, "bic": b, "flows": flows, "fit": c, "r": r})
+                raw.append({"name": name, "bic": bic(flows, ids, run["t"], run["levels"]), "flows": flows, "fit": c, "r": r})
+    # the most promising few are finished: inflows pooled and re-cut, flows the data does not need
+    # dropped, then judged
+    raw.sort(key=lambda t: t["bic"])
+    for t in raw[: o["finish"]]:
+        flows = t["flows"]
+        if o["pool"]:
+            flows = resegment(flows, ids, run, fit_opts)
+        if o["prune"]:
+            flows = prune(flows, ids, run, fit_opts)
+        if not any(f.get("hat") for f in flows):
+            continue
+        e = judge(flows, stocks, run, injections=opts.get("injections"))
+        trials.append({**t, "flows": flows, "error": e, "bic": price(flows, ids, run)})
     base["tried"] = list(base.get("tried") or []) + [{"name": t["name"], "error": t["error"], "bic": t["bic"]} for t in trials]
     if keep:
         base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in trials)
-    ok = [t for t in trials if t["fit"]["halves_ok"] and t["bic"] < base_b and t["error"] < o["margin"] * base_e]
+    ok = [t for t in trials if t["fit"]["halves_ok"] and t["bic"] < base_b and t["error"] < o["margin"] * fair_e]
     if not ok:
         return base
     log_t = math.log(max(2, len(run["t"]) - 1))
 
-    def price(t):
+    def rank(t):
         # SD's usual form: a flow's rate is its source's level (or a constant) times the effect
         f = t["fit"]
         return t["bic"] + (0.0 if f["base"] in (f["frm"], None) else o["prior"] * log_t)
-    best = min(ok, key=lambda t: t["error"]) if o["select"] == "judge" else min(ok, key=price)
+    best = min(ok, key=lambda t: t["error"]) if o["select"] == "judge" else min(ok, key=rank)
     out = {**best["r"], "flows": _clean(best["flows"]), "chosen": best["name"], "tried": base["tried"],
            "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b}
     if keep:
@@ -167,5 +184,30 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return out
 
 
+def _signature(flows: list[dict]) -> str:
+    def rnd(x):
+        if isinstance(x, float):
+            return float(f"{x:.4g}")
+        if isinstance(x, dict):
+            return {k: rnd(v) for k, v in x.items() if k not in ("rates", "driver", "curve")}
+        if isinstance(x, list):
+            return [rnd(v) for v in x]
+        return x
+    return json.dumps(sorted(json.dumps(rnd(f), sort_keys=True) for f in flows))
+
+
 def _clean(flows: list[dict]) -> list[dict]:
-    return [{k: v for k, v in f.items() if k != "hat"} for f in flows]
+    """Without the fit's own notes; neighbouring pieces of one pool joined."""
+    out = []
+    for f in flows:
+        f = {k: v for k, v in f.items() if k != "hat"}
+        if f.get("inflow"):
+            segs = []
+            for g in f["inflow"]:
+                if segs and g.get("pool") is not None and segs[-1].get("pool") == g.get("pool") and segs[-1]["to"] + 1 >= g["from"]:
+                    segs[-1] = {**segs[-1], "to": g["to"]}
+                else:
+                    segs.append(dict(g))
+            f["inflow"] = [{k: v for k, v in g.items() if k != "pool"} for g in segs]
+        out.append(f)
+    return out

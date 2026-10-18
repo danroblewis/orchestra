@@ -59,7 +59,9 @@ def _columns(f: dict, prev: np.ndarray, idx: dict, tt: np.ndarray) -> tuple[list
         covered = np.sum(cols, axis=0) > 0
         if len(cols):
             cols[-1] = np.where(covered, cols[-1], 1.0)
-        return cols, "inflow"
+        # pieces of one pool (pool_pieces) share a value: one column
+        pools = _pools(f)
+        return [np.sum([cols[i] for i in members], axis=0) for members in pools], "inflow"
     form = rate.get("form")
     if form == "constant":
         return [np.ones(prev.shape[1])], "constant"
@@ -71,6 +73,14 @@ def _columns(f: dict, prev: np.ndarray, idx: dict, tt: np.ndarray) -> tuple[list
             cols = [np.ones(prev.shape[1])] + cols
         return cols, "linear"
     return None
+
+
+def _pools(f: dict) -> list[list[int]]:
+    """The pieces of an outside inflow grouped by their pool (each its own without one)."""
+    groups: dict = {}
+    for i, g in enumerate(f["inflow"]):
+        groups.setdefault(g.get("pool", ("own", i)), []).append(i)
+    return list(groups.values())
 
 
 def _stoich(f: dict, idx: dict, S: int) -> np.ndarray:
@@ -103,7 +113,12 @@ def _write(f: dict, how: str, theta: np.ndarray, prev: np.ndarray, idx: dict) ->
         eff = {"stock": f["hat"]["stock"], "shape": "table", "points": pts}
         return {**f, "rate": rate, "rates": [rate], "effects": [eff], "hat": {**f["hat"], "weights": [float(w) for w in theta]}}
     if how == "inflow":
-        pieces = [{**g, "value": float(v)} for g, v in zip(f["inflow"], theta)]
+        value = {}
+        for v, members in zip(theta, _pools(f)):
+            for i in members:
+                value[i] = float(v)
+        pieces = [{**g, "value": value[i]} for i, g in enumerate(f["inflow"])]
+        theta = np.array([value[i] for i in range(len(pieces))])
         lens = np.array([max(1, g["to"] - g["from"] + 1) for g in pieces], dtype=float)
         rate = {**rate, "form": "constant", "value": r6(float(np.dot(lens, theta) / lens.sum()))}
         return {**f, "inflow": pieces, "rate": rate, "rates": [rate]}
@@ -148,16 +163,18 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
             blocks.append(np.outer(st, c).reshape(-1))      # stocks x steps, stacked by stock
         spans.append((start, len(blocks), how))
     if not blocks:
-        return flows, {"rss": (target ** 2).sum(axis=1), "params": 0}
+        return flows, {"rss": (target ** 2).sum(axis=1), "params": 0, "res": target}
     X = np.array(blocks).T                                   # (S*T) x P
     y = target.reshape(-1)
     w = np.ones(S)
+    # steps left out of the fit (opts["skip"]: a boolean per step), e.g. those next to an inflow's change
+    use = np.ones(T) if opts.get("skip") is None else (~np.asarray(opts["skip"], dtype=bool)).astype(float)
     theta = None
     for _ in range(2 if opts.get("weighted", True) else 1):
-        W = np.repeat(w, T)
+        W = np.repeat(w, T) * np.tile(use, S)
         theta = np.linalg.lstsq(X * W[:, None], y * W, rcond=None)[0]
         res = (y - X @ theta).reshape(S, T)
-        sig = np.sqrt((res ** 2).mean(axis=1))
+        sig = np.sqrt((res ** 2 * use).sum(axis=1) / max(1.0, use.sum()))
         floor = max(1e-9, 1e-3 * float(np.median(sig[sig > 0])) if np.any(sig > 0) else 1e-9)
         w = 1.0 / np.maximum(sig, floor)
     out = []
@@ -171,16 +188,14 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
         out.append(_write(f, how, theta[a:b], prev, idx))
         oi += 1
     res = (y - X @ theta).reshape(S, T)
-    return out, {"rss": (res ** 2).sum(axis=1), "params": X.shape[1]}
+    return out, {"rss": (res ** 2).sum(axis=1), "params": X.shape[1], "res": res}
 
 
 def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None, score=None) -> list[dict]:
     """Flows dropped one at a time, refitting the rest jointly, while the model's price falls
     (score(flows), lower is better: by default the one-step BIC over every row). An effect flow and
     a stock's only outside inflow are dropped like any other flow."""
-    from ...onestep import bic
-
-    score = score or (lambda fl: bic(fl, ids, run["t"], run["levels"]))
+    score = score or (lambda fl: price(fl, ids, run))
     cur = flows
     best = score(cur)
     while len(cur) > 1:
@@ -194,3 +209,32 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
             break
         best, cur = trial
     return cur
+
+
+def size(flows: list[dict]) -> int:
+    """onestep.size, with an outside inflow priced by its values (pooled pieces share one) and its changes."""
+    p = 0
+    for f in flows:
+        if f.get("inflow"):
+            p += len(_pools(f)) + len(f["inflow"]) - 1      # a number per value, and per change
+            continue
+        rates = [g["rate"] for g in f["byTime"]] if f.get("byTime") else [f.get("rate") or {}]
+        p += len({repr(r) for r in rates})
+        p += 2 * len(f.get("effects") or []) if not f.get("hat") else len(f["hat"]["knots"]) - 1
+    return p
+
+
+def price(flows: list[dict], ids: list[str], run: dict) -> float:
+    """onestep.bic with size() above: every row's one-step fit, every number costs log T."""
+    import math
+
+    from ...simulate import levels_array
+
+    A = levels_array(run["levels"], ids)
+    T = A.shape[1] - 1
+    if T < 2:
+        return float("inf")
+    nxt = Model(flows, ids).step(A[:, :-1], np.asarray(run["t"], dtype=float)[1:])
+    rss = ((nxt - A[:, 1:]) ** 2).sum(axis=1)
+    return float(sum(T * math.log(max(r, 1e-9) / T) for r in rss) + size(flows) * math.log(T))
+
