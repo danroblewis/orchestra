@@ -1,7 +1,7 @@
 # Discovery research
 
 **Start here: [PLAYBOOK.md](PLAYBOOK.md)**, the synthesis of the literature and our experiments: the procedure the research supports for discerning an SD model from data, mapped onto our pipeline, with a ranked experiment plan and checked citations.
-Literature reports it draws on: [system identification](literature/system-identification.md), [equation discovery](literature/equation-discovery.md), [signals and time series](literature/signals-and-time-series.md), [the System Dynamics field](literature/system-dynamics-field.md), [compartmental analogues](literature/compartmental-analogues.md), [research process](literature/research-process.md); and the [tools survey](SD-TOOLS-AND-DISCOVERY.md).
+Literature reports it draws on: [system identification](literature/system-identification.md), [equation discovery](literature/equation-discovery.md), [signals and time series](literature/signals-and-time-series.md), [the System Dynamics field](literature/system-dynamics-field.md), [compartmental analogues](literature/compartmental-analogues.md), [research process](literature/research-process.md), [causal inference](literature/causal-inference.md) (Pearl's do-calculus, causality in dynamic systems, interventions and invariance, applied to injections and eras); and the [tools survey](SD-TOOLS-AND-DISCOVERY.md).
 
 Wave 4 candidates, ranked, with ready-to-run briefs and every brainstormed idea: [IDEAS-WAVE4.md](IDEAS-WAVE4.md).
 
@@ -74,3 +74,7 @@ When an experiment reports, update its topic document (status, results, verdict,
 | [Evolving discovery code against generated models](evolve-discovery.md) | idea (not started, wave 4) | - |
 | [Inflow attribution: which stocks get outside inflow, and unbiased drains](inflow-attribution.md) | done (wave 4, benchmark v2.1) | needs a combination (+3.8/+7.0, not significant alone; found a genuine pieces-gate bug) |
 | [Symbolic effects with an addition judge](symbolic-addition-judge.md) | done (combination, benchmark v2.1) | anchor rule rejected; plain symbolic on v2.1 is the best single mechanism (47.2%/42.6%, p=0.002); safe rule keeps a third of it with no losses |
+| [An interventional judge: injection responses every candidate must reproduce](injection-response-judge.md) | idea (not started; causal inference) | - |
+| [Injections as instruments for rows confounded by unannounced inflows](injection-instruments.md) | idea (not started; causal inference) | - |
+| [Invariance across eras and probes: which rows an era changed, and which predictors are real](invariant-rows.md) | idea (not started; causal inference) | - |
+| [Probe design: which stock to inject, when and how much](probe-design.md) | idea (not started; causal inference) | - |
