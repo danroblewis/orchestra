@@ -11,7 +11,7 @@ row X reads
     H_1(t+1)      = (1 - d) H_1(t) + u(t),   u = sum_j a_j z_j(t)                 z: 1, X', measured inputs, levels read
     H_i(t+1)      = (1 - d) H_i(t) + d H_(i-1)(t)                                 (a chain of n = 1 or 3: DELAY1, DELAY3)
 
-w: measured inputs and levels read that act at once (a shipment that is the demand). With d
+w: measured inputs that act at once (a shipment that is the demand). With d
 given, H_n is a filter of the z's plus the decay of each stage's starting level, so X's row is
 linear in the a's, the starting levels, kX and the b's: a least-squares profile over the delay,
 polished by a bounded search. The terms are chosen by BIC over small subsets; the alternatives are
@@ -45,6 +45,7 @@ from .pairs import flow_numbers
 
 SINK = "__stage_amount__"
 ORDERS = (1, 3)
+MOST_TERMS = 6         # candidate terms of u at most (with 1 and X); direct terms are measured inputs only
 EXACT = 1e-6           # without counts, the stage's residual at most this share of the row's variance
                        # (or the levels' rounding, whichever is larger)
 
@@ -291,9 +292,12 @@ def try_stock(flows: list[dict], ids: list[str], run: dict, x: str, injections: 
     L = np.nan_to_num(np.array([np.asarray(run["levels"][s], dtype=float) for s in ids]))
     i = ids.index(x)
     m = P.shape[1]
-    am = step_amounts(flows, ids, t, P, inputs)
     sign = np.array([(1.0 if f.get("to") == x else 0.0) - (float(f.get("ratio") or 1) if f.get("from") == x else 0.0)
                      - sum(float(u.get("per") or 0) for u in f.get("uses") or [] if u.get("stock") == x) for f in flows])
+    am = np.zeros((len(flows), m))                      # only the flows that move X (large models: every
+    touch = [j for j in range(len(flows)) if sign[j]]  # flow for every stock would take minutes)
+    if touch:
+        am[touch] = step_amounts([flows[j] for j in touch], ids, t, P, inputs)
     kept = sum((sign[j] * am[j] for j in keep), np.zeros(m))
     found = sum((sign[j] * am[j] for j in replaced), np.zeros(m))
     y = np.diff(L[i]) - inj[i] - kept
@@ -305,7 +309,9 @@ def try_stock(flows: list[dict], ids: list[str], run: dict, x: str, injections: 
             cands[name] = direct[name] = np.nan_to_num(np.asarray(v, dtype=float))[1 : m + 1]
     for s in sorted(read_by(flows, replaced)):
         if s in ids and s != x:
-            cands[s] = direct[s] = P[ids.index(s)]
+            cands[s] = P[ids.index(s)]
+    if len(cands) > MOST_TERMS:    # the subsets grow as the cube of the terms (large models: skip the stock)
+        return None
     w = None
     if counts:                     # each step's change varies as much as what moved through X (counts)
         gross = sum((abs(sign[j]) * np.abs(am[j]) for j in range(len(flows))), np.zeros(m))
