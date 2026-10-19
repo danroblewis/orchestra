@@ -11,6 +11,22 @@ for `combined` on the test cases).
 
 ## Queued
 
+2f. **combined, round 2** (from `docs/research/combined.md`, code ded5e80). Start it once the
+   noise-robust (`kalman_lna`) and structures agents have committed.
+   - **A behaviour judge** that does not replay each model's own inflow pieces, e.g. a held-out
+     era or rolling-origin forecasts. In-data error can't tell the lna family's runaway models
+     from effect_hats' sound ones (sd-webshop-stock: 0.239 vs 0.181 in-data, skill −7.6 vs 0.74).
+     Realistic skill@20 is 41.1% for combined against 49.9% for effect_hats. Close that gap
+     without losing test cells.
+   - **New candidates:** add `kalman_lna` (60 cells combined misses, mainly the noisy cases
+     080-087) and `structures` (25 cells, canonical 100-110), with a likelihood that knows about
+     measurement noise.
+   - **Small counts:** a discrete likelihood for small counts (056).
+   - **Speed:** skip common_cause when no two stocks move alike. combined averages 11 s per test
+     cell, against lna's 1.1 s.
+
+   Report tests, strict, realistic and noisy results.
+
 2d. **Engine features for the remaining blockers** (HOLD until the watcher's backlog is under ~10k items: a `simulate.py` change re-runs every strategy) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
    - two-way flows (30 SDXorg models) and negative stocks (9), opt-in per stock or flow;
