@@ -47,18 +47,23 @@ fresh=True)`) the same code gives delay 2.04; on the long run the two seeds give
 hidden-oracle gives no standard error for this truth, so the scorer's tolerance is the fixed 10%.
 
 Whole ladder (`uv run sdlab-ladder sync --strategies loop_transit --jobs 2 --timeout 300`,
-single-threaded): 1318 items in 4439 s (552 pass, 204 equivalent, 510 fail, 52 differs; no errors or timeouts). Paired
-with realistic_hats' latest results on the 1218 cells both have (`scratchpad/pair.py loop_transit realistic_hats`):
-loop_transit 555 pass / 203 equivalent / 460 fail, realistic_hats 552 / 203 / 463; **4 better, 1 worse**.
+single-threaded, c3161de's code): 1,318 items in 4,439 s (552 pass, 204 equivalent, 510 fail, 52
+differs; no errors or timeouts). Paired with realistic_hats' stored results on the 1,218 cells both
+have: 4 better, 1 worse. The worse cell, 045-random-link#7 none-long (equivalent -> fail), had a
+"stage" `B -> H -> A` carrying 0.0002 of B's 0.35 loss, whose decaying start level fitted a transient;
+realistic_hats makes the same mistake on 047-random-goal-gap#2 none-long (kin 2e-15 of 0.08; both
+strategies run on the cell unrecorded). 6e4b7b9 requires a stage to take at least 5% of its sender's
+loss (`ht_min_share`). The 314 cells of every case where loop_transit had found a stage were re-run at
+6e4b7b9 (`sdlab-ladder run --cases 014,015,026,041,042,043,044,045,047,049,058,063,085,088,124,137,138,
+156,161,sd-farm-soil,sd-hidden-chain,sd-recycling,sd-webshop-stock`); the guard only removes stages,
+so no other cell can change. Paired again:
 
-- Better: 156 none-short, none-long and counts-long (fail → pass, the target), and 047-random-goal-gap#2
-  none-long (fail → equivalent).
-- Worse: 045-random-link#7 none-long (equivalent → fail). On noise-free data the pair search accepts a
-  hidden stage `B -> B~A -> A` with a stage rate of 0.0002 (found 13 parts against the truth's 8; skill
-  still 99.9%). A minimum stage size (the stage's flow as a share of the move it replaces), or the noise-free
-  BIC floor at the data's rounding, would stop it; not done.
-- realistic_hats' rows are its stored ones (06b0062), so 2 of the 1220 cells it has and loop_transit's 144
-  extra cells (cases added since) are not paired.
+- **9 better, 0 worse** of 1,218: 156 none-short, none-long, counts-long (fail -> pass);
+  049-sweep-drain-ratio#6 and #7 none-long (fail -> pass); 047-random-goal-gap#2, #5, #7 none-long
+  and #6 none-short (fail -> equivalent).
+- loop_transit overall: 565 pass, 214 equivalent, 531 fail, 52 differs (real-data cells) of 1,362.
+- Some of realistic_hats' stored rows are at older code (02e0124); the 144 cells of cases added since
+  are not paired (realistic_hats has not run them).
 
 Hard cases: unchanged against realistic_hats (both still fail every variant, same models). Neither is
 blocked by the loop any more but by mechanisms other agents own:
