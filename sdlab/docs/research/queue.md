@@ -11,73 +11,6 @@ for `combined` on the test cases).
 
 ## Queued
 
-0b. **Noise-robust discovery** (added 2026-10-18 from the noise-variant results, commit 10f1d24).
-   Every strategy breaks under measurement error (from 2% on long runs), outliers, gaps, weekly
-   reporting and bias. The analysis says the data allow passes there, so it's the methods' fault.
-   Build strategies, or shared helpers offered as options, that:
-   - treat levels as noisy observations of the true stocks (errors-in-variables; a Kalman filter
-     or smoother on the stock-flow state-space model, e.g. reuse `noise_kf.py`'s model or the
-     lna likelihood with observation noise);
-   - handle uneven times: rates per step, with gaps scaled by elapsed time; weekly data as the
-     mean over the window;
-   - drop gross outliers with robust losses;
-   - read a biased stock as a scale factor where conservation pins it, not as a spurious link.
-
-   Target cases 080-088 (tag `noisy`) and the measurement-error sweep 088. Report where each
-   method breaks against the bound. Keep test and realistic results at least as good.
-
-0. **Engine features the sources need** (approved by the user on 2026-10-18; started first, since
-   items 2 and 5 depend on it). Additive changes to `sdlab/sdtruth.py`, the case format and the
-   simulator `sdlab/discovery/simulate.py`, plus the page's run input:
-   - measured input series (an outside driver given as data, which discovery sees as known input);
-   - a step `dt` smaller than one recorded step;
-   - stock ceilings;
-   - DELAY1/DELAY3/SMOOTH and PULSE/STEP/RAMP functions. Prefer exact rewrites into existing parts
-     where possible, e.g. DELAY3 as three hidden stocks.
-
-   Every existing case, example and fingerprint must give exactly the same numbers (a test
-   proves it). Discovery may read inputs only as page inputs. Document in MODEL.md / LADDER.md.
-
-1. **Noise variants (harder data).** Today a case has only noise `none` and `counts` (the
-   randomness of whole units moving). Add variants for the noise real data carries, each a
-   separate variant name, so every case can be run under it:
-   - measurement error (relative and absolute Gaussian on the reported levels);
-   - missing points and uneven sampling;
-   - aggregated reporting (weekly totals or averages instead of every step);
-   - a reporting delay;
-   - occasional outliers;
-   - a multiplicative bias on one stock's count.
-
-   Rules:
-   - The engine is fixed: noise is applied to the recorded levels after simulation, in the
-     ladder's data layer.
-   - A variant must be deterministic from the case seed.
-   - Existing variants and their results must stay unchanged, so the defaults stay `none` and
-     `counts`.
-   - New variants run where a case or a new top-level setting asks for them. Start with a
-     `noisy` tag on a set of representative cases, plus a sweep of measurement-error size.
-   - The analysis (`analysis.py`, `fisher.py`) must say what is achievable under each new noise,
-     so tolerances stay honest.
-   - The scorer's tolerances follow the oracle, not a fixed relaxation.
-
-   Report which strategies break first and how.
-2. **Canonical system dynamics models.** Import classic SD models as new ladder cases (new ids,
-   tag `canonical`), for example:
-   - Bass diffusion and SIR/SEIR epidemics;
-   - inventory with a supply line and the beer game;
-   - workforce/hiring, a project model with rework, a commodity cycle;
-   - World3 subsystems, the market-growth model and limits-to-growth archetypes.
-
-   How:
-   - Prefer machine-readable sources (PySD's test-models, Vensim/XMILE samples), converted
-     through PySD where possible. See `docs/research/case-study-sources.md` when it exists.
-   - Each case states its source and licence.
-   - Where a model uses a function SD Lab's format lacks (DELAY3, SMOOTH, PULSE TRAIN, ...),
-     write the equivalent structure explicitly (e.g. a third-order delay as three hidden stocks)
-     if it is exact. Otherwise list it under "Needs you": changing the engine needs the user's
-     approval.
-
-   Run the leaders on them and report.
 3. **Strict pass tier.** Add a second, stricter verdict beside pass/equivalent/fail. Do not
    replace pass, so history stays comparable. Strict pass requires all of:
    - a pass;
@@ -150,13 +83,13 @@ for `combined` on the test cases).
 
 ## Started
 
+- 2026-10-18 20:50: item 0b, noise-robust discovery.
+
 - 2026-10-18 20:30: item 2, canonical system dynamics models.
 
-
-- 2026-10-18: realistic examples run (7 leaders × 31 examples × 2 lengths, `~/.sdlab/realistic-run.log`).
-
-
 ## Done
+
+- 2026-10-18: realistic examples run (7 leaders on the 31 sd-* cases; results in the journal's 19:45 entry).
 
 - 2026-10-19: item 1, noise variants: meas, gaps, weekly, lag, outliers, bias (noise.py, opt-in),
   Kalman-scaled tolerances and labels, cases 080-088, the leaders run (docs/LADDER.md, "Real-world
