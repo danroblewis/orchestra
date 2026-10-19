@@ -49,7 +49,7 @@ def cell(case_id, variant):
     stocks = casemod.page_stocks(model)
     inj = [{"t": j["t"], "stock": j["stock"], "amount": j["amount"]} for j in d.get("injections") or []] or None
     run = {"t": d["t"], "levels": d["levels"]}
-    return c, model, d, stocks, run, J.Data(stocks, run, inj)
+    return c, model, d, stocks, run, J.Data(stocks, run, inj, d.get("inputs"))
 
 
 def hidden_starts(model):
@@ -167,6 +167,31 @@ def test_a_candidate_that_runs_away_is_set_aside():
     cfg = {**combined.DEFAULTS, "refit": False}
     assert combined.choose(cands, D, run, cfg)["name"] == "truth"
     assert cands[0]["score"]["ran_away"] and not cands[1]["score"]["ran_away"]
+
+
+def test_a_flow_that_reads_a_measured_input_is_judged_and_refitted_with_it():
+    from sdlab.discovery.strategies.combined.refit import refit
+    _, model, d, _, run, D = cell("062-tank-fed-by-measured-pump", "none-long")
+    truth = truth_flows(model, d)
+    assert D.inputs and J.misfit(truth, D) < 0.5
+    assert J.behaviour(truth, D, run) < 0.01
+    off = copy.deepcopy(truth)
+    next(f for f in off if not f.get("from"))["rate"]["k"] *= 1.1
+    assert J.misfit(refit(off, D), D) < 0.5
+
+
+def test_a_specialist_over_its_cap_is_stopped_and_the_rest_run(monkeypatch):
+    import time
+    _, _, _, stocks, run, _ = cell("002-inflow-outflow", "counts-short")
+
+    def slow(*a, **k):
+        time.sleep(30)
+    monkeypatch.setitem(combined.STRATEGIES, "censored", slow)
+    began = time.perf_counter()
+    r = combined.identify(stocks, run, {"specialists": ["censored", "lna"], "cap": 1})
+    assert time.perf_counter() - began < 20
+    assert r["combined"]["chosen"] == "lna"
+    assert r["combined"]["candidates"][0]["error"].startswith("capped")
 
 
 def test_exact_ties_go_to_flows_that_read_their_own_stocks():

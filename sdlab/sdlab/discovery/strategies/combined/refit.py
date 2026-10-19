@@ -24,7 +24,7 @@ import copy
 import numpy as np
 
 from ...simulate import Model, _Effects
-from .judge import Data, _refs, expand_via
+from .judge import Data, _refs, expand_via, unmeasured
 
 
 def _rate_cols(rate: dict, X: np.ndarray, index: dict) -> list[tuple]:
@@ -69,10 +69,14 @@ def refit(flows: list[dict], data: Data, weights: np.ndarray | None = None) -> l
         return None
     flows = expand_via(copy.deepcopy(flows))
     ids = data.ids
-    hidden = sorted({s for f in flows for s in _refs(f)} - set(ids))
-    index = {s: i for i, s in enumerate(ids)}
-    X, t, S, T = data.prev, data.tt, len(ids), data.T
-    model = Model(flows, ids + hidden)
+    hidden = unmeasured(flows, data)
+    S, T = len(ids), data.T
+    names = list(data.inputs)
+    # the levels a rate may read: the stocks at the start of each step, then the inputs at its time
+    X = np.vstack([data.prev] + [np.asarray(data.inputs[k], dtype=float)[1:][None, :] for k in names]) if names else data.prev
+    index = {s: i for i, s in enumerate(ids + names)}
+    t = data.tt
+    model = Model(flows, ids + hidden, inputs=data.model_inputs)
     V = np.zeros((len(flows), S))
     for k, (src, dst, ratio, *_) in enumerate(model.parts):
         if src is not None and src < S:
@@ -87,7 +91,7 @@ def refit(flows: list[dict], data: Data, weights: np.ndarray | None = None) -> l
     for k, f in enumerate(flows):
         mult = np.ones(T)
         if f.get("effects"):
-            mult = _Effects(f["effects"], index)(np.vstack([X, np.zeros((len(hidden), T))]))
+            mult = _Effects(f["effects"], index)(X)
         refs = _refs(f)
         own = None
         if not (refs & set(hidden)) and not np.allclose(V[k], 0):
@@ -116,7 +120,7 @@ def refit(flows: list[dict], data: Data, weights: np.ndarray | None = None) -> l
             else:
                 own = _rate_cols(f.get("rate") or {}, X, index)
         if own is None:
-            amt = Model([f], ids + hidden)._amounts(np.vstack([X, np.zeros((len(hidden), T))]), t)[0] if not refs & set(hidden) else None
+            amt = Model([f], ids, inputs=data.model_inputs)._amounts(data.prev, t)[0] if not refs & set(hidden) else None
             if amt is None:
                 return None                                  # a flow through an unmeasured stock: not refitted here
             fixed += V[k][:, None] * amt[None, :]

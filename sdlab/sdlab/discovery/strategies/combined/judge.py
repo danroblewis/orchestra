@@ -74,12 +74,20 @@ def _refs(f: dict) -> set:
     return {s for s in out if s}
 
 
+def unmeasured(flows: list[dict], data: "Data") -> list[str]:
+    """The stocks the flows name that are neither measured nor a measured input."""
+    return sorted({s for f in flows for s in _refs(f)} - set(data.ids) - set(data.inputs))
+
+
 class Data:
     """What the judge reads from a run: levels, the change of every step (injections taken out),
     the times each step uses, whether the levels are counts, and their quantum."""
 
-    def __init__(self, stocks: list[dict], run: dict, injections: list[dict] | None = None):
+    def __init__(self, stocks: list[dict], run: dict, injections: list[dict] | None = None, inputs: dict | None = None):
         self.ids = [s["id"] for s in stocks]
+        # measured inputs ({name: value per step, aligned with t}) that rates and effects may read
+        self.inputs = {k: list(v) for k, v in (inputs or {}).items() if k not in self.ids}
+        self.model_inputs = {"t": list(run["t"]), "values": self.inputs} if self.inputs else None
         self.L = levels_array(run["levels"], self.ids)
         self.t = np.asarray(run["t"], dtype=float)
         prev = self.L[:, :-1].copy()
@@ -136,8 +144,8 @@ def one_step(flows: list[dict], data: Data, starts: dict | None = None) -> tuple
     the covariance of the change (T x S x S). Unmeasured stocks start where the likelihood is best
     among the starts hidden_paths tries."""
     flows = expand_via(flows)
-    hidden = sorted({s for f in flows for s in _refs(f)} - set(data.ids))
-    model = Model(flows, data.ids + hidden)
+    hidden = unmeasured(flows, data)
+    model = Model(flows, data.ids + hidden, inputs=data.model_inputs)
     if not hidden:
         return _moments(model, data.prev, data)
     return _best_path(model, data, hidden, starts)[1]
@@ -158,10 +166,10 @@ def hidden_estimate(flows: list[dict], data: Data, starts: dict | None = None) -
     """The flows (via delays written as stocks) and their unmeasured stocks' levels at every time of
     the run, run open loop from the best start ({} when there are none)."""
     flows = expand_via(flows)
-    hidden = sorted({s for f in flows for s in _refs(f)} - set(data.ids))
+    hidden = unmeasured(flows, data)
     if not hidden:
         return flows, {}
-    model = Model(flows, data.ids + hidden)
+    model = Model(flows, data.ids + hidden, inputs=data.model_inputs)
     path = _best_path(model, data, hidden, starts)[2]
     last = model.step(np.vstack([data.prev[:, -1:], path[:, -1:]]), data.tt[-1:])[len(data.ids):, 0]
     return flows, {h: list(path[i]) + [float(last[i])] for i, h in enumerate(hidden)}
@@ -179,7 +187,7 @@ def behaviour(flows: list[dict], data: Data, run: dict, starts: dict | None = No
         return float("inf")
     flows, inferred = hidden_estimate(flows, data, starts)
     return sum(behaviour_error(flows, data.ids, run["t"], run["levels"], horizon=h, injections=data.injections,
-                               inferred=inferred or None) for h in hs) / len(hs)
+                               inferred=inferred or None, inputs=data.inputs or None) for h in hs) / len(hs)
 
 
 def _moments(model: Model, X: np.ndarray, data: Data) -> tuple[np.ndarray, np.ndarray | None]:

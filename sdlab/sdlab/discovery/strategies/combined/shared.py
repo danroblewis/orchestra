@@ -52,12 +52,20 @@ def _key(stocks: list[dict], opts: dict) -> str | None:
 
 
 def _cached(fn, cache: dict):
+    """fn run once per key; a run stopped by a cap (or that raised) is remembered and raised again,
+    so a step that ran out of time is not started again by the next specialist."""
     def cached(stocks, run, opts=None):
         key = _key(stocks, opts or {})
         if key is None:
             return fn(stocks, run, opts)
         if key not in cache:
-            cache[key] = fn(stocks, run, dict(opts or {}))
+            try:
+                cache[key] = fn(stocks, run, dict(opts or {}))
+            except BaseException as e:                   # noqa: BLE001
+                cache[key] = e
+                raise
+        if isinstance(cache[key], BaseException):
+            raise cache[key]
         return copy.deepcopy(cache[key])
     return cached
 

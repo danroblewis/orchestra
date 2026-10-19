@@ -2,39 +2,43 @@
 (docs/research/combined.md).
 
 1. Candidates. Each specialist is called as a black box through its own `identify()`, so its
-   improvements flow in: lna (the best single strategy: flows chosen by the counting likelihood),
-   gap_prior (lna with a drain read off another stock written as the goal gap it equals),
-   lna_pulses (one-step bursts taken out before lna reads the moves), lna_stack (lna with the
-   revisit's stages composed: pulses, recurring inflow levels, moves scaled by a third stock,
-   gap_prior's noise-free conventions; lna_loops is deliberately not a candidate),
-   common_cause (independent and identical stocks, noise-free fits, inflow changes the data
-   earns), censored (floors that bind, stocks that run empty), hidden_transit (an unmeasured stock
-   between two measured ones), effect_hats (effects of a third stock's level; also re-cuts the
-   outside inflows) and periodic_inflows (an inflow that repeats). The specialists that start from
-   the matrix method's model share one computation of it (shared.py). A specialist that raises is
-   skipped; once `budget` seconds have gone, the remaining ones are skipped too.
+   improvements flow in, in this order: lna (the best single strategy: flows chosen by the
+   counting likelihood), censored (floors that bind, stocks that run empty), effect_hats (effects
+   of a third stock's level; also re-cuts the outside inflows), hidden_transit (an unmeasured
+   stock between two measured ones), periodic_inflows (an inflow that repeats), gap_prior (lna
+   with a drain read off another stock written as the goal gap it equals), lna_pulses (one-step
+   bursts taken out before lna reads the moves), lna_stack (lna with the revisit's stages
+   composed; lna_loops is deliberately not a candidate: its wins are on cells the data cannot
+   decide) and common_cause (independent and identical stocks, noise-free fits, inflow changes the
+   data earns). The specialists that start from the matrix method's model, or from lna's, share
+   one computation of it (shared.py). Each runs under a cap (deadline.py: `cap` seconds, never
+   past the budget); one that raises or runs out of time is left out, and once the budget is spent
+   the rest are skipped. The budget is `budget` seconds or 70% of what the caller's timer leaves.
 2. One judge (judge.py): the one-step likelihood of the measured changes under each candidate's
-   equations, applied exactly as the simulator applies them (floors, caps, effects, co-flows,
-   unmeasured stocks run open loop), with counting noise read through the linear noise
-   approximation (each flow a Poisson draw) or, for data that are not counts, each stock's own
-   variance floored at the data's rounding; plus a BIC price of 0.5 log T for every number the
-   candidate wrote down (params.py: rate numbers, inflow values and change places, effect points,
-   co-flows, unmeasured stocks). Before it is judged, every candidate's numbers are refitted on the
-   same terms (refit.py: least squares of the one-step changes, its structure kept), and the
-   refitted numbers are kept when they raise its likelihood. A guard first sets aside candidates
-   that run away: one whose multi-step behaviour on the data (the main line's judge: runs from many
-   moments over 5, 20 and 100 steps, unmeasured stocks started from their open-loop estimate) is
-   both worse than "nothing changes" (error above `guard_floor` = 1) and `guard` (4) times worse
-   than the best candidate's. The one-step likelihood cannot see a model that drifts off over many
-   steps; this only removes such models, it never ranks the rest. The lowest score wins; exact ties go to the model with fewer flows
-   that read a stock other than the ones they join, then to fewer numbers, then to the earlier
-   candidate in the list.
+   equations, applied exactly as the simulator applies them (measured inputs, floors, caps,
+   effects, co-flows, unmeasured stocks run open loop), with counting noise read through the
+   linear noise approximation (each flow a Poisson draw) or, for data that are not counts, each
+   stock's own variance floored at the data's rounding; plus a BIC price of 0.5 log T for every
+   number the candidate wrote down (params.py: rate numbers, inflow values and change places,
+   effect points, co-flows, unmeasured stocks). Before it is judged, every candidate's numbers are
+   refitted on the same terms (refit.py: least squares of the one-step changes, its structure
+   kept), and the refitted numbers are kept when they raise its likelihood.
+3. A behaviour guard first sets aside candidates that behave clearly worse over many steps than
+   the best one: a candidate whose multi-step error on the data (the main line's judge: runs from
+   many moments over 5, 20 and 100 steps, measured inputs fed, unmeasured stocks started from
+   their open-loop estimate; 1 = no better than nothing changing) is above both `guard` (4) times
+   the best candidate's and `guard_floor` (0.1). The one-step likelihood cannot see a model that
+   drifts off over many steps (it picked such models on the realistic examples); the guard only
+   removes them and never ranks the rest, because this in-data judge replays each model's own
+   inflow pieces and so favours many pieces (a tighter guard, 2x, loses about 20 test cells).
+4. The lowest score wins; exact ties go to the model with fewer flows that read a stock other
+   than the ones they join, then to fewer numbers, then to the earlier candidate in the list.
 
 opts (also SDLAB_COMBINED, JSON): "specialists" (names, in order; default SPECIALISTS), "price"
 (the BIC multiplier, default 1), "per_flow" (numbers a flow costs for being there, default 0: a
-flow is priced by its numbers), "budget" (seconds, default 75), "refit" (refit every candidate's numbers, default on), "guard" and "guard_floor" (the
-runaway guard, default 4 and 1; guard 0 turns it off), "trace" (keep every candidate's
-flows in the result).
+flow is priced by its numbers), "budget" (seconds, default 240), "cap" (seconds per specialist,
+default 60), "refit" (refit every candidate's numbers, default on), "guard" and "guard_floor"
+(default 4 and 0.1; guard 0 turns it off), "trace" (keep every candidate's flows in the result).
 """
 
 from __future__ import annotations
@@ -54,13 +58,14 @@ from sdlab.discovery.strategies.lna_stack import identify as lna_stack
 from sdlab.discovery.strategies.periodic_inflows import identify as periodic_inflows
 
 from . import judge as J
+from .deadline import Overrun, deadline, outer_left
 from .refit import refit
 from .shared import once
 
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "lna_stack": lna_stack, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
-SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "lna_stack", "censored", "hidden_transit", "periodic_inflows", "effect_hats", "common_cause"]
-DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 75.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 1.0}
+SPECIALISTS = ["lna", "censored", "effect_hats", "hidden_transit", "periodic_inflows", "gap_prior", "lna_pulses", "lna_stack", "common_cause"]
+DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 240.0, "cap": 60.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 0.1}
 
 
 def cross_reads(flows: list[dict]) -> int:
@@ -77,17 +82,28 @@ def cross_reads(flows: list[dict]) -> int:
     return n
 
 
-def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], budget: float) -> list[dict]:
+def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg: dict) -> list[dict]:
+    """Each specialist's result, in order. Each runs under a cap (`cap` seconds, and never past the
+    time left in the budget); once the budget is spent the rest are skipped. The budget is `budget`
+    seconds, or 70% of what the caller's own timer leaves, whichever is less (the judge needs the
+    rest)."""
     out = []
     began = time.perf_counter()
+    left = outer_left()
+    budget = float(cfg["budget"]) if left is None else min(float(cfg["budget"]), 0.7 * left)
     with once() as cached:
         for name in names:
-            if out and time.perf_counter() - began > budget:
+            spent = time.perf_counter() - began
+            if out and spent > budget:
                 out.append({"name": name, "skipped": "budget"})
                 continue
             t0 = time.perf_counter()
             try:
-                r = (cached.get(name) or STRATEGIES[name])(stocks, run, dict(opts))
+                with deadline(max(1.0, min(float(cfg["cap"]), budget - spent))):
+                    r = (cached.get(name) or STRATEGIES[name])(stocks, run, dict(opts))
+            except Overrun as e:
+                out.append({"name": name, "error": f"capped: {e}", "seconds": round(time.perf_counter() - t0, 3)})
+                continue
             except Exception as e:                       # noqa: BLE001
                 out.append({"name": name, "error": f"{type(e).__name__}: {e}"[:300]})
                 continue
@@ -148,8 +164,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     own = {k: opts.pop(k) for k in list(opts) if k in DEFAULTS or k == "specialists"}
     cfg = {**DEFAULTS, **own, **env}
     names = list(cfg.get("specialists") or SPECIALISTS)
-    cands = candidates(stocks, run, opts, names, float(cfg["budget"]))
-    data = J.Data(stocks, run, opts.get("injections"))
+    cands = candidates(stocks, run, opts, names, cfg)
+    data = J.Data(stocks, run, opts.get("injections"), opts.get("inputs"))
     best = choose(cands, data, run, cfg)
     if best is None:
         return {"flows": [], "combined": {"chosen": None, "candidates": _summary(cands, cfg)}}
