@@ -14,14 +14,20 @@ from .ladder import api as ladder
 
 PREFIX = "ladder-"
 DEFAULT_VARIANT = "counts-long"
+DRAW_SEP = "~"
 
 
 def case_id(model_id: str) -> str | None:
-    """The case behind a basic model's id (None if it is not one)."""
+    """The case behind a basic model's id (None if it is not one). A parametric case's draw
+    `043-x#2` is the model `ladder-043-x~2` ("#" would end a URL's path)."""
     if not model_id.startswith(PREFIX):
         return None
-    cid = model_id[len(PREFIX):]
+    cid = model_id[len(PREFIX):].replace(DRAW_SEP, "#")
     return cid if ladder.case(cid) is not None else None
+
+
+def model_id_of(cid: str) -> str:
+    return PREFIX + cid.replace("#", DRAW_SEP)
 
 
 def is_basic(model_id: str) -> bool:
@@ -32,6 +38,13 @@ def listing() -> list[dict]:
     """Every case as a model row, simplest first: {id, name, case, level, tags, tests}."""
     cs = sorted((c for c in ladder.cases() if not c.get("draw") and not c.get("example")), key=lambda c: (c["level"], c["id"]))   # draws stay on the ladder page; realistic cases are the sd-* examples, already in the editor
     return [{"id": PREFIX + c["id"], "name": c["title"], "case": c["id"], "level": c["level"], "tags": c["tags"], "tests": c["tests"]} for c in cs]
+
+
+def draw_listing() -> list[dict]:
+    """Every parametric case's draws as model rows (the page lists them only when asked)."""
+    cs = sorted((c for c in ladder.cases() if c.get("draw")), key=lambda c: (c["level"], c["id"].split("#")[0], c["draw"].get("i", 0)))
+    return [{"id": model_id_of(c["id"]), "name": f"{c['title']} #{c['draw'].get('i')}", "case": c["id"], "level": c["level"], "tags": c["tags"],
+             "tests": c["tests"], "draw": True} for c in cs]
 
 
 def variant_of(c: dict, variant: str | None) -> str:
@@ -54,7 +67,7 @@ def model(model_id: str) -> dict:
             if f.get(k) is not None:
                 g[k] = f[k]
         flows.append(g)
-    return {"id": model_id, "name": f"{c['id'][:3]} {c['title']}", "description": f"Ladder case {c['id']}: {c['tests']}", "time_unit": "step",
+    return {"id": model_id, "name": f"{c['id'][:3]} {c['title']}{' #' + c['id'].split('#')[1] if '#' in c['id'] else ''}", "description": f"Ladder case {c['id']}: {c['tests']}", "time_unit": "step",
             "stocks": stocks, "flows": flows, "machines": [], "recorded": True,
             "basic": {"case": c["id"], "level": c["level"], "tags": c["tags"], "tests": c["tests"], "variants": [v["name"] for v in c["variants"]],
                       "variant": variant_of(c, None), **({"schedule": m["schedule"]} if m.get("schedule") else {})}}

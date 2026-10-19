@@ -21,6 +21,7 @@ from typing import Any
 
 from .discovery.api import discover
 
+SINGLE_THREAD = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS", "NUMBA_NUM_THREADS")
 
 @dataclass
 class Job:
@@ -56,6 +57,9 @@ class DiscoveryJobs:
 
     def _pool(self) -> ProcessPoolExecutor:
         if self.pool is None:
+            # each job single-threaded (the machine is shared): the spawned workers inherit these
+            for k in SINGLE_THREAD:
+                os.environ.setdefault(k, "1")
             # spawn, not fork: the server has threads (live runs), which a forked child would not
             self.pool = ProcessPoolExecutor(max_workers=self.workers, mp_context=multiprocessing.get_context("spawn"))
         return self.pool

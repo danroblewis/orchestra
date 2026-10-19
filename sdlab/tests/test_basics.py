@@ -32,7 +32,7 @@ def test_a_basic_model_is_the_true_model_and_read_only(client):
     assert {f["id"] for f in m["flows"]} == {"in", "a_h", "h_b", "b_out"}
     assert client.put("/api/models/ladder-015-hidden-stock", json=m).status_code == 409
     assert client.delete("/api/models/ladder-015-hidden-stock").status_code == 409
-    assert client.post("/api/models/ladder-015-hidden-stock/live/start", json={}).status_code == 409
+    assert client.post("/api/models/ladder-015-hidden-stock/live/import", json={}).status_code == 409, "a basic model has no history to import"
     copy = client.post("/api/models/ladder-015-hidden-stock/copy", json={"name": "my hidden stock"}).json()
     mine = client.get(f"/api/models/{copy['id']}").json()
     assert not mine["example"] and "recorded" not in mine and len(mine["flows"]) == 4

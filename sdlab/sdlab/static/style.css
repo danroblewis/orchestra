@@ -593,3 +593,25 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
 .drawn code { margin-right: 6px; padding: 1px 5px; border-radius: 4px; background: var(--panel2, rgba(127, 127, 127, 0.12)); white-space: nowrap; }
 .sq.an-data-limited { box-shadow: inset 0 -3px 0 var(--warn); }
 .sq.an-unidentifiable { box-shadow: inset 0 -3px 0 var(--muted); }
+
+/* the strategy picker and which strategy made an estimate */
+.stratpick select { max-width: 260px; }
+.stratbox { border: 1px solid var(--rule); border-left: 3px solid var(--accent); border-radius: 6px; padding: 8px 10px; margin: 6px 0 12px; background: var(--canvas); }
+.stratbox .stratname { font-size: 14px; }
+.stratbox .stratbest { color: var(--accent); font-weight: 500; font-size: 12.5px; }
+.stratbox .stratmark { color: var(--warn); font-size: 12px; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
+.stratbox details summary { cursor: pointer; color: var(--fg); }
+/* a basic model's estimate against its truth, and how it converges */
+table.cmp td, table.cmp th { padding: 3px 6px 3px 0; font-size: 12.5px; }
+table.cmp td:nth-child(n+3) { font-family: var(--mono); }
+tr.cmp-ok td:first-child { color: var(--good); }
+tr.cmp-wrong td:first-child, tr.cmp-wrong td:last-child { color: var(--warn); }
+tr.cmp-missing td:first-child, tr.cmp-spurious td:first-child, tr.cmp-missing td:nth-child(4), tr.cmp-spurious td:last-child { color: var(--bad); }
+.cmp-verdict.cmp-pass { color: var(--good); } .cmp-verdict.cmp-fail { color: var(--bad); } .cmp-verdict.cmp-equivalent { color: var(--accent); }
+.convs { display: grid; gap: 8px; }
+figure.conv { margin: 0; }
+figure.conv figcaption { font-size: 12px; color: var(--muted); }
+.conv-truth { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.conv-est { fill: none; stroke: var(--fit); stroke-width: 2; stroke-linejoin: round; }
+.conv-dot { fill: var(--fit); stroke: var(--canvas); stroke-width: 2; }
+.conv-ax { font-size: 9.5px; fill: var(--muted); font-family: var(--mono); }

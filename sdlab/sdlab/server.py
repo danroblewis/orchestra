@@ -16,12 +16,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import basics
+from . import basics, strategy_menu
+from .basic_live import BasicLiveRuns
+from .basic_live import compare as basic_compare
+from .ladder import api as ladder_api
 from .discovery.strategies import names as strategy_names
 from .discovery_jobs import DiscoveryJobs
 from .ladder.analysis_routes import router as analysis_router
@@ -169,12 +172,15 @@ def create_app() -> FastAPI:
     adopt_old_copies()
     runs: dict[str, LiveRun] = {}
     jobs = DiscoveryJobs()
+    basic_runs = BasicLiveRuns()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        strategy_menu.menu()                   # start working out the strategy picker's numbers now
         yield
         for r in runs.values():
             r.stop()
+        basic_runs.stop_all()
         jobs.close()
 
     app = FastAPI(title="SD Lab", lifespan=lifespan)
@@ -190,17 +196,31 @@ def create_app() -> FastAPI:
     def programs() -> dict:
         return {"programs": available_programs(EXAMPLES)}
 
-    # A basic model (a ladder case, basics.py) plays back its recorded data in one variant; it never runs.
+    # A basic model (a ladder case, basics.py) plays back its recorded data in one variant, or, with
+    # live=1, runs live: its true model stepped by the ground-truth engine (basic_live.py).
     @app.get("/api/models/{model_id}/live")
-    def live_state(model_id: str, since: int = 0, variant: str | None = None) -> dict:
+    def live_state(model_id: str, since: int = 0, variant: str | None = None, running: bool = Query(False, alias="live")) -> dict:
         if basics.is_basic(model_id):
-            return basics.snapshot(model_id, variant, since)
+            return basic_runs.get(model_id, variant).snapshot(since) if running else basics.snapshot(model_id, variant, since)
         return live(model_id).snapshot(since)
 
     @app.post("/api/models/{model_id}/live/{action}")
-    def live_control(model_id: str, action: str, body: dict[str, Any] | None = None) -> dict:
+    def live_control(model_id: str, action: str, body: dict[str, Any] | None = None, variant: str | None = None) -> dict:
         if basics.is_basic(model_id):
-            raise HTTPException(409, "a basic model plays back its recorded data: it does not run")
+            b = basic_runs.get(model_id, variant or (body or {}).get("variant"))
+            if action == "start":
+                b.start((body or {}).get("seconds_per_tick"))
+            elif action == "stop":
+                b.stop()
+            elif action == "reset":
+                b.reset()
+            elif action == "step":
+                b.tick()
+            elif action == "import":
+                raise HTTPException(409, "a basic model has no history to import: its recorded data is the other mode")
+            else:
+                raise HTTPException(404, "unknown action")
+            return b.snapshot(0)
         run = live(model_id)
         if action == "start":
             run.start((body or {}).get("seconds_per_tick"))
@@ -242,6 +262,31 @@ def create_app() -> FastAPI:
     def discovery_strategies() -> dict:
         return {"strategies": strategy_names(), "default": "matrix"}
 
+    # A basic model's found flows against its truth (basic_live.compare): on the steps they were found
+    # from, live or recorded. The page shows it only while the truth is shown.
+    @app.post("/api/models/{model_id}/truth-compare")
+    def truth_compare(model_id: str, body: dict[str, Any]) -> dict:
+        if not basics.is_basic(model_id):
+            raise HTTPException(404, "only a basic model has a truth to compare with")
+        flows, steps, variant = body.get("flows"), int(body.get("steps") or 0), body.get("variant")
+        if not isinstance(flows, list):
+            raise HTTPException(422, "flows: the found flows")
+        if body.get("live"):
+            d = basic_runs.get(model_id, variant).data_until(steps)
+        else:
+            full = ladder_api.case_data(basics.case_id(model_id), basics.variant_of(ladder_api.case(basics.case_id(model_id)), variant))
+            n = steps or len(full["t"])
+            d = {"t": full["t"][:n], "levels": {k: v[:n] for k, v in full["levels"].items()},
+                 "all_levels": {k: v[:n] for k, v in full["all_levels"].items()}, "eras": full["eras"]}
+        if not d["t"]:
+            raise HTTPException(422, "no data yet")
+        return basic_compare(model_id, variant, flows, d)
+
+    @app.get("/api/discovery/menu")
+    def discovery_menu() -> dict:
+        """The editor's strategy picker (strategy_menu.py): every strategy, best on the ladder first."""
+        return strategy_menu.menu()
+
     @app.post("/api/models/{model_id}/discovery")
     def start_discovery(model_id: str, body: dict[str, Any]) -> dict:
         _known(model_id)
@@ -276,7 +321,12 @@ def create_app() -> FastAPI:
                     row.update(running=True, t=r.t)
                 out.append(row)
             return out
-        return {"basics": basics.listing(), "examples": listing(EXAMPLES), "models": [m for m in listing(models_dir()) if not is_example(m["id"])]}
+        rows = basics.listing()
+        for row in rows:
+            b = basic_runs.running(row["id"])
+            if b is not None:
+                row.update(running=True, t=b.t)
+        return {"basics": rows, "draws": basics.draw_listing(), "examples": listing(EXAMPLES), "models": [m for m in listing(models_dir()) if not is_example(m["id"])]}
 
     # Hidden flows stand for parts of the real system nobody has modelled: the runner runs them,
     # but the page never receives them, and saving the page's model keeps them as they were.

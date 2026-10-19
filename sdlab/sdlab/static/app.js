@@ -79,7 +79,7 @@
     try { localStorage.setItem("sdlab.showOld", S.showOld ? "1" : ""); } catch { /* fine without it */ }
   }
   const basicsOf = (r) => r.basics || [];
-  const allModels = (r) => [...basicsOf(r), ...r.models, ...r.examples];
+  const allModels = (r) => [...basicsOf(r), ...(r.draws || []), ...r.models, ...r.examples];
   // The model picker: our own list rather than a native select, so a running model can stand out
   // (a green background and its step), and the list can be filtered by typing.
   function renderPick(id) {
@@ -98,9 +98,13 @@
     const group = (label, list) => (list.filter(hit).length ? `<div class="pickgroup">${label}</div>${list.filter(hit).map(item).join("")}` : "");
     const keep = menu.querySelector(".pickfind");
     const older = S.showOld ? group("My models", r.models) + group("Examples (open as shipped)", r.examples) : "";
-    const body = group("Basic models (ladder)", basicsOf(r)) + older || `<div class="pickgroup">No model matches</div>`;
-    const toggle = `<label class="pickold" title="The examples and your own models"><input type="checkbox" data-show-old ${S.showOld ? "checked" : ""}> Show older models (${r.models.length + r.examples.length})</label>`;
-    if (!keep) menu.innerHTML = `<input class="pickfind" placeholder="Filter models" aria-label="Filter models"><div class="picklist">${body}</div>${toggle}`;
+    // a parametric case's random draws: listed when the filter asks (or one is open), to keep the list short
+    const draws = (r.draws || []).filter((m) => q || m.id === S.pickId);
+    const body = group("Basic models (ladder)", basicsOf(r)) + group("Random draws (ladder)", draws) + older
+      || `<div class="pickgroup">No model matches</div>`;
+    const toggle = (r.draws || []).length ? `<div class="pickgroup small">Type to find the ${r.draws.length} random draws too (e.g. “043”)</div>` : "";
+    const toggleOld = `<label class="pickold" title="The examples and your own models"><input type="checkbox" data-show-old ${S.showOld ? "checked" : ""}> Show older models (${r.models.length + r.examples.length})</label>`;
+    if (!keep) menu.innerHTML = `<input class="pickfind" placeholder="Filter models" aria-label="Filter models"><div class="picklist">${body}</div>${toggle}${toggleOld}`;
     else { menu.querySelector(".picklist").innerHTML = body; menu.querySelector("[data-show-old]").checked = S.showOld; }
     const items = [...menu.querySelectorAll("[data-pick]")];
     if (!items.some((x) => x.classList.contains("hl"))) (items.find((x) => x.classList.contains("cur")) || items[0] || { classList: { add() {} } }).classList.add("hl");
@@ -137,7 +141,9 @@
   async function loadList(selectId) {
     const r = await fetchList();
     const all = allModels(r);
-    const fromUrl = new URLSearchParams(location.search).get("model");
+    let fromUrl = new URLSearchParams(location.search).get("model");
+    // ?model=ladder-043-x#2 (a draw named as the ladder names it): the draw's model is ladder-043-x~2
+    if (fromUrl && /^#\d+$/.test(location.hash) && !all.some((m) => m.id === fromUrl)) fromUrl = `${fromUrl}~${location.hash.slice(1)}`;
     let remembered = null; try { remembered = localStorage.getItem("sdlab.model"); } catch { /* storage may be blocked */ }
     const known = (id) => id && all.some((m) => m.id === id) ? id : null;
     const id = known(selectId) || known(fromUrl) || known(remembered) || (basicsOf(r)[0] || all.find((m) => m.id === "bakery") || all[0] || {}).id;
@@ -172,14 +178,26 @@
   function layoutBasic() {
     const pos = window.SDDiagram.layout(S.model.stocks.map((s) => s.id), S.model.flows, { maxCols: 3, colw: 360, rowh: 200 });
     S.model.stocks.forEach((s) => { const p = pos[s.id] || { x: 0, y: 0 }; s.x = p.x; s.y = p.y; });
-    let v = null; try { v = localStorage.getItem("sdlab.basicVariant"); } catch { /* fine */ }
+    let v = null, live = null; try { v = localStorage.getItem("sdlab.basicVariant"); live = localStorage.getItem("sdlab.basicLive"); } catch { /* fine */ }
     S.basicVariant = S.model.basic.variants.includes(v) ? v : S.model.basic.variant;
+    S.basicLive = live === "1";
+    S.estHist = null;
   }
-  const liveQuery = () => (S.model && S.model.basic ? `&variant=${encodeURIComponent(S.basicVariant)}` : "");
+  // a basic model's run: its recorded data (the ladder's), or live (its true model stepped by the engine, from step 0)
+  const liveQuery = () => (S.model && S.model.basic ? `&variant=${encodeURIComponent(S.basicVariant)}${S.basicLive ? "&live=1" : ""}` : "");
+  async function setBasicLive(on, start) {
+    S.basicLive = !!on;
+    try { localStorage.setItem("sdlab.basicLive", S.basicLive ? "1" : ""); } catch { /* fine */ }
+    S.discovery = null; S.discovering = null; S.discToken = (S.discToken || 0) + 1; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.estHist = null; S.lastAutoN = 0;
+    S.live = null;
+    if (S.basicLive && !S.autoDiscover) { S.autoDiscover = true; try { localStorage.setItem("sdlab.autoDiscover", "1"); } catch { /* fine */ } }
+    if (start) await liveAct("start"); else await refetchLive();
+    setStatus(S.basicLive ? `Live run of the true model (${S.basicVariant}): it steps as the clock ticks; discovery re-estimates as data arrives` : `Recorded data: ${S.basicVariant}`);
+  }
   async function setBasicVariant(v) {
     S.basicVariant = v;
     try { localStorage.setItem("sdlab.basicVariant", v); } catch { /* fine */ }
-    S.discovery = null; S.discToken = (S.discToken || 0) + 1; S.fitCache = null; S.fitPrev = null; S.fitHist = null;
+    S.discovery = null; S.discToken = (S.discToken || 0) + 1; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.estHist = null; S.live = null;
     await refetchLive();
     setStatus(`Recorded data: ${v} (${S.live ? S.live.series.t.length : 0} ${tu()}s)`);
   }
@@ -1042,7 +1060,7 @@
   async function liveAct(action, speed) {
     const body = action === "start" ? JSON.stringify({ seconds_per_tick: speed ?? S.speed ?? (S.live && S.live.seconds_per_tick) ?? 1 }) : "{}";
     if (action === "start") await flushSave();
-    const r = await fetch(`/api/models/${S.model.id}/live/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    const r = await fetch(`/api/models/${S.model.id}/live/${action}${liveQuery().replace(/^&/, "?")}`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
     if (r.ok) S.live = await r.json();
     await refetchLive();
     pollSoon();
@@ -1092,14 +1110,16 @@
     if (S.mode === "run") {
       if (S.model.recorded && S.model.basic) {
         const b = S.model.basic;
-        h += `<label title="The ladder case's recorded data this model plays back: noise none (the engine's exact flows) or counts (whole things), short or long">\ud83d\udcbe <select id="basic-variant" aria-label="Recorded data">${options(b.variants.map((v) => [v, v]), S.basicVariant)}</select></label>`;
+        h += `<label title="Recorded: play back the ladder's recorded data for this case. Live: run the true model now, step by step, through the same engine and seed (its first steps are the recorded data), and keep going past it."><select id="basic-mode" aria-label="Run source">${options([["rec", "Recorded data"], ["live", "Live run"]], S.basicLive ? "live" : "rec")}</select></label>`;
+        h += `<label title="The variant: noise none (the engine's exact flows) or counts (whole things), short or long (the recorded length; a live run goes on past it)">\ud83d\udcbe <select id="basic-variant" aria-label="Variant">${options(b.variants.map((v) => [v, v]), S.basicVariant)}</select></label>`;
         h += ib(`data-truth${S.hideTruth ? "" : ' class="on"'}`, "\ud83d\udc41\ufe0f", S.hideTruth ? "Show the truth: draw the case's true flows again" : "Hide the truth: draw only the stocks (and what Discover finds), to compare");
         h += `<a class="btn icon" href="/ladder?view=cases&case=${encodeURIComponent(b.case)}" target="_blank" rel="noopener" title="This case in the ladder view: what every strategy found" aria-label="Open in the ladder view">\ud83e\ude9c</a>`;
         h += `<span class="tsep"></span>`;
       }
       if (runnable()) {
         const L = S.live || {}, n = L.series ? L.series.t.length : 0;
-        const recorded = !!S.model.recorded;
+        const recorded = !!S.model.recorded && !(S.model.basic && S.basicLive);
+        if (recorded && S.model.basic) h += ib('data-golive', "▶️", "Run it live: the true model steps through the engine as the clock ticks, with discovery re-estimating as data arrives");
         // a model measured only by its history has nothing to run: a live run would record nothing
         const nothingLive = !S.model.sensors && !!S.model.history && !S.model.machines.some((m) => m.program) && !S.model.flows.some((f) => f.program);
         const why = nothingLive ? "Nothing measures this model live: it only has a history. Use Import history." : "";
@@ -1120,6 +1140,7 @@
         h += `<span class="tsep"></span>`;
         h += ib(`data-upd${eraLen >= 15 ? "" : " disabled"}`, "📐", eraLen >= 15 ? "Fit all equations to this era: fit every flow and save the better equations" : `Fit all equations to this era (run at least 15 ${tu()}s in this era first)`);
         if (S.undo) h += ib("data-undo", "↩️", "Undo the saved fits");
+        h += strategyPicker();
         const busy = S.discovering ? ` class="busy"` : "";
         h += ib(`data-discover${busy}${n >= 40 ? "" : " disabled"}`, "🔍", S.discovering ? `Discovering on the server, with ${S.discovering.steps} ${tu()}s of data… Click to start again with the latest data.`
           : n >= 40 ? "Discover flows from stock levels: the simplest flows that explain how the stocks changed" : "Discover flows from stock levels (run at least 40 steps first)");
@@ -1153,7 +1174,10 @@
     }));
     tb.querySelectorAll("[data-live]").forEach((b) => b.addEventListener("click", () => liveAct(b.dataset.live)));
     const bv = $("basic-variant"); if (bv) bv.addEventListener("change", () => setBasicVariant(bv.value));
-    tb.querySelectorAll("[data-truth]").forEach((b) => b.addEventListener("click", () => { S.hideTruth = !S.hideTruth; renderToolbar(); renderCanvas(); }));
+    const bm = $("basic-mode"); if (bm) bm.addEventListener("change", () => setBasicLive(bm.value === "live"));
+    tb.querySelectorAll("[data-golive]").forEach((b) => b.addEventListener("click", () => setBasicLive(true, true)));
+    const sg = $("strategy"); if (sg) sg.addEventListener("change", () => setStrategy(sg.value));
+    tb.querySelectorAll("[data-truth]").forEach((b) => b.addEventListener("click", () => { S.hideTruth = !S.hideTruth; renderToolbar(); renderCanvas(); const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; }));
     const sp = $("speed"); if (sp) sp.addEventListener("change", () => { if (S.live && S.live.running) liveAct("start", +sp.value); else S.speed = +sp.value; });
     const hz = $("horizon"); if (hz) hz.addEventListener("change", () => { S.model.horizon = Math.max(1, +hz.value || 1); changed(); });
 
@@ -1914,6 +1938,56 @@
       <ul class="levlist">${rows}</ul><p><button class="btn" data-lev-close>Close</button></p>`;
   }
 
+  // ---------- which strategy discovers ----------
+  // The picker lists every strategy, best on the ladder first (pass rate over the cells it has run,
+  // and coverage), from /api/discovery/menu; the default is the ladder's best, and a choice is
+  // remembered per browser. The page always sends the strategy by name.
+  async function loadMenu() {
+    let m = null;
+    try { const r = await fetch("/api/discovery/menu"); if (r.ok) m = await r.json(); } catch { /* the server may be restarting */ }
+    if (m && Array.isArray(m.strategies)) S.menu = m;
+    if (!S.menu || !S.menu.ready) { S.menuTries = (S.menuTries || 0) + 1; if (S.menuTries < 60) setTimeout(loadMenu, 5000); }              // the ladder's numbers are still being worked out
+    if (S.model && S.mode === "run") { renderToolbar(); if (S.discovery) { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; } }
+  }
+  const menuRow = (name) => ((S.menu && Array.isArray(S.menu.strategies) && S.menu.strategies) || []).find((x) => x.name === name) || null;
+  function currentStrategy() {
+    let mine = null; try { mine = localStorage.getItem("sdlab.strategy"); } catch { /* fine */ }
+    if (mine && menuRow(mine) && menuRow(mine).available !== false) return mine;
+    return (S.menu && S.menu.default) || "matrix";
+  }
+  const pct = (x) => (x === null || x === undefined ? "–" : `${Math.round(100 * x)}%`);
+  const STATUS_MARK = { parked: "parked", "work in progress": "work in progress", "retire-candidate": "retire candidate" };
+  function strategyLabel(x, best) {
+    const nums = x.pass_rate !== undefined ? ` — ${pct(x.pass_rate)} pass, ${pct(x.coverage)} run` : "";
+    const mark = STATUS_MARK[x.status] ? ` [${STATUS_MARK[x.status]}]` : "";
+    return `${x.name === best ? "★ " : ""}${x.name}${nums}${mark}${x.available === false ? " (unavailable)" : ""}`;
+  }
+  function strategyPicker() {
+    const m = S.menu && Array.isArray(S.menu.strategies) ? S.menu : { strategies: [], best: null }, cur = currentStrategy();
+    const opts = (m.strategies.length ? m.strategies : [{ name: cur }]).map((x) =>
+      `<option value="${esc(x.name)}" ${x.name === cur ? "selected" : ""} ${x.available === false ? "disabled" : ""} title="${esc([x.idea, x.how, x.note].filter(Boolean).join("\n\n"))}">${esc(strategyLabel(x, m.best))}</option>`).join("");
+    const tip = m.ready ? `Which strategy discovers. Ordered by the ladder's pass rate over the cells each has run (with its coverage). ★ best on the ladder: ${m.best}.` : "Which strategy discovers (the ladder's numbers are still loading)";
+    return `<label class="stratpick" title="${esc(tip)}">🧪 <select id="strategy" aria-label="Discovery strategy">${opts}</select></label>`;
+  }
+  function setStrategy(name) {
+    try { localStorage.setItem("sdlab.strategy", name); } catch { /* fine */ }
+    S.estHist = null;
+    renderToolbar();
+    setStatus(`Discovery strategy: ${name}${S.menu && name === S.menu.best ? " (best on the ladder)" : ""}`);
+    if (hasData() && S.live.series.t.length >= 40 && (S.discovery || S.autoDiscover)) runDiscovery(S.autoDiscover);   // a newer job replaces a running one
+  }
+  // Which strategy made an estimate, and which version of it: prominent, beside the estimate.
+  function strategyBox(r) {
+    const name = r.strategy || "matrix", x = menuRow(name) || {}, best = S.menu && S.menu.best;
+    const ver = x.commit ? `commit ${esc(x.commit)}${x.date ? ` (${esc(x.date)})` : ""}${x.uncommitted ? ", with uncommitted changes" : ""}` : "";
+    const hash = x.hash ? `version ${esc(x.hash)}` : "";
+    const nums = x.pass_rate !== undefined && x.pass_rate !== null ? `${pct(x.pass_rate)} pass on the ladder over the ${x.ran} cells it has run (${pct(x.coverage)} of ${x.total})` : "";
+    const mark = STATUS_MARK[x.status] ? ` <span class="stratmark">${esc(STATUS_MARK[x.status])}</span>` : "";
+    return `<div class="stratbox"><div class="stratname">Estimated by <b>${esc(name)}</b>${name === best ? ' <span class="stratbest">★ best on the ladder</span>' : ""}${mark}</div>
+      <div class="small">${[hash, ver].filter(Boolean).join(" · ")}${nums ? `<br>${nums}` : ""}${r.chosen ? `<br>chose ${esc(r.chosen)}` : ""}</div>
+      ${x.idea ? `<details class="small"><summary>${esc(x.idea)}</summary>${esc(x.how || "")}${x.note ? `<p class="muted">${esc(x.note)}</p>` : ""}</details>` : ""}</div>`;
+  }
+
   // ---------- discovering flows from stock levels alone ----------
   // Keep discovering: run discovery again once enough new steps have arrived, and never spend
   // more than about a third of the time on it (a large model takes a second or more).
@@ -1976,7 +2050,7 @@
     const body = {
       stocks: scopeStocks.map((x) => ({ id: x.id, unit: x.unit, final: x.final, group: x.group })),
       run: { t: L.t, levels: Object.fromEntries(scopeStocks.map((x) => [x.id, L.levels[x.id] || new Array(n).fill(0)])) },
-      eras: E.length > 1 ? E : [], known, strategy: S.strategy || undefined,
+      eras: E.length > 1 ? E : [], known, strategy: currentStrategy(),
     };
     return { body, pick, scopeStocks, eras: E.length, useKnown, canResidual: !!measuredMoves };
   }
@@ -2030,6 +2104,80 @@
     const box = $("inspector"), top = box.scrollTop;
     renderInspector(); box.scrollTop = top;
     if (!auto) setStatus(`Found ${r.flows.length} flow${r.flows.length === 1 ? "" : "s"} in ${r.ms} ms`);
+    if (S.model.basic) compareWithTruth(r, model);
+  }
+  // A basic model's estimate against its truth (the ladder's scorer, on the steps it was found
+  // from), and the estimate's history: each true number's estimate as the steps accumulate.
+  async function compareWithTruth(r, model) {
+    let c;
+    try {
+      const res = await fetch(`/api/models/${model}/truth-compare`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ flows: r.flows, steps: r.steps, variant: S.basicVariant, live: !!S.basicLive }) });
+      if (!res.ok) return;
+      c = await res.json();
+    } catch { return; }
+    if (S.discovery !== r || !S.model || S.model.id !== model) return;
+    r.compare = c;
+    const key = `${S.basicVariant}|${S.basicLive ? "live" : "rec"}|${r.strategy}`;
+    if (!S.estHist || S.estHist.key !== key) S.estHist = { key, parts: {} };
+    const num = (v) => (typeof v === "number" ? v : v && typeof v === "object" && typeof v.mean === "number" ? v.mean : null);
+    c.parts.forEach((p) => {
+      const tv = num(p.true); if (tv === null) return;
+      const h = S.estHist.parts[p.key] || (S.estHist.parts[p.key] = { truth: tv, pts: [] });
+      h.truth = tv;
+      h.pts = h.pts.filter((q) => q[0] < r.steps);                 // a run started again: the old points go
+      h.pts.push([r.steps, p.found ? num(p.found_value) : null]);
+      if (h.pts.length > 400) h.pts.splice(0, h.pts.length - 400);
+    });
+    if (inspected().type === "discovery") { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; }
+  }
+  const signedNum = (x) => (x > 0 ? "+" : x < 0 ? "−" : "±") + fmt(Math.abs(x));
+  function truthCompareHtml(r) {
+    if (!S.model.basic) return "";
+    if (S.hideTruth) return `<p class="note">The truth is hidden: show it (\ud83d\udc41\ufe0f) to compare this estimate with the true equations.</p>`;
+    const c = r.compare;
+    if (!c) return `<p class="note">Comparing with the truth…</p>`;
+    const L = window.SDLadder, pn = (k) => (L ? L.partName(k) : k), fv = (v) => (L ? L.fmt(v) : fmt(v));
+    const num = (v) => (typeof v === "number" ? v : v && typeof v === "object" && typeof v.mean === "number" ? v.mean : null);
+    const rows = c.parts.map((p) => {
+      const a = num(p.found_value), b = num(p.true);
+      const diff = p.found && a !== null && b !== null ? `${signedNum(a - b)}${b ? ` (${signedNum(100 * (a - b) / Math.abs(b))}%)` : ""}` : "";
+      const cls = p.ok ? "ok" : p.found ? "wrong" : "missing";
+      return `<tr class="cmp-${cls}"><td>${p.ok ? "✓" : p.found ? "~" : "−"}</td><td>${esc(pn(p.key))}</td><td>${esc(fv(p.true))}</td><td>${p.found ? esc(fv(p.found_value)) : "not found"}</td><td>${esc(diff)}</td></tr>`;
+    }).join("") + c.spurious.map((p) => `<tr class="cmp-spurious"><td>+</td><td>${esc(pn(p.key))}</td><td>–</td><td>${esc(fv(p.value))}</td><td>remove</td></tr>`).join("");
+    const rep = c.repairs;
+    const verdict = { pass: "right: every true number within tolerance, nothing extra", equivalent: "equivalent: the same behaviour, read another way", fail: "not right yet" }[c.status] || c.status;
+    return `<h2 style="margin-top:14px">Against the truth</h2>
+      <p class="note">On the ${c.steps} ${esc(tu())}s it was found from, by the ladder's scorer: <b class="cmp-verdict cmp-${esc(c.status)}">${esc(verdict)}</b>${rep && rep.headline ? ` · ${esc(rep.headline)}` : ""}.</p>
+      <table class="kv cmp"><tr><th></th><th>Part</th><th>True</th><th>Estimate</th><th>Difference</th></tr>${rows}</table>
+      ${rep && rep.items && rep.items.length ? `<ul class="found-list">${rep.items.map((it) => `<li>${esc(it.text)}</li>`).join("")}</ul>` : ""}
+      ${convergenceHtml()}`;
+  }
+  // Small multiples: each true number's estimate (line) against its true value (dashed) as the steps grew.
+  function convergenceHtml() {
+    const H = S.estHist && S.estHist.parts, keys = H ? Object.keys(H).filter((k) => H[k].pts.length) : [];
+    if (!keys.length) return "";
+    const L = window.SDLadder, pn = (k) => (L ? L.partName(k) : k);
+    const W = 300, Hh = 64, P = { l: 44, r: 8, t: 6, b: 16 };
+    const charts = keys.map((k) => {
+      const h = H[k], pts = h.pts.filter((q) => q[1] !== null && Number.isFinite(q[1]));
+      const xs = h.pts.map((q) => q[0]), x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
+      const ys = [h.truth, ...pts.map((q) => q[1])], y0 = Math.min(...ys), y1 = Math.max(...ys), pad = (y1 - y0) * 0.1 || Math.abs(h.truth) * 0.1 || 1;
+      const lo = y0 - pad, hi = y1 + pad;
+      const X = (x) => P.l + (W - P.l - P.r) * (x - x0) / (x1 - x0), Y = (y) => P.t + (Hh - P.t - P.b) * (1 - (y - lo) / (hi - lo));
+      const line = pts.map((q, i) => `${i ? "L" : "M"}${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join("");
+      const last = pts[pts.length - 1];
+      const dots = pts.map((q) => `<circle cx="${X(q[0]).toFixed(1)}" cy="${Y(q[1]).toFixed(1)}" r="5" fill="transparent"><title>${esc(tu())} ${q[0]}: ${fmt(q[1])} (true ${fmt(h.truth)})</title></circle>`).join("");
+      return `<figure class="conv"><figcaption>${esc(pn(k))}: true ${fmt(h.truth)}${last ? `, now ${fmt(last[1])}` : ", not found"}</figcaption>
+        <svg viewBox="0 0 ${W} ${Hh}" width="100%" role="img" aria-label="${esc(`Estimate of ${pn(k)} as the steps grew, against its true value ${fmt(h.truth)}`)}">
+          <line x1="${P.l}" x2="${W - P.r}" y1="${Y(h.truth).toFixed(1)}" y2="${Y(h.truth).toFixed(1)}" class="conv-truth"/>
+          <text x="${P.l - 4}" y="${(Y(hi - pad) + 4).toFixed(1)}" class="conv-ax" text-anchor="end">${fmt(hi - pad)}</text>
+          <text x="${P.l - 4}" y="${Y(lo + pad).toFixed(1)}" class="conv-ax" text-anchor="end">${fmt(lo + pad)}</text>
+          <text x="${P.l}" y="${Hh - 3}" class="conv-ax">${x0}</text><text x="${W - P.r}" y="${Hh - 3}" class="conv-ax" text-anchor="end">${x1} ${esc(tu())}s</text>
+          <path d="${line}" class="conv-est"/>${last ? `<circle cx="${X(last[0]).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="4" class="conv-dot"/>` : ""}${dots}
+        </svg></figure>`;
+    }).join("");
+    return `<h3 style="margin-top:12px">How the estimate converges</h3><p class="note">Each true number's estimate after each re-discovery (line), against its true value (dashed).</p><div class="convs">${charts}</div>`;
   }
   // Discovery is running: the toolbar's button says so, and an open findings panel notes it.
   function showDiscovering() {
@@ -2112,12 +2260,13 @@
     const autoNote = S.autoDiscover ? `<p class="note autonote">\ud83d\udd04 Keeps updating as data arrives: last at ${esc(tu())} ${r.at} (${r.ms} ms). ${live ? "Pause the run to approve these flows." : "The run is paused: approve these flows, or start it again to keep watching."}</p>` : "";
     const running = `<p class="note discrunning" data-disc-running ${S.discovering ? "" : "hidden"}>⏳ Discovering again with the latest data; these are the last findings until it is done.</p>`;
     const engine = `<p class="note small">Found on the server by the <b>${esc(r.strategy || "matrix")}</b> strategy${r.chosen ? ` (${esc(r.chosen)})` : ""}, in ${fmt(r.computeMs || 0)} ms.</p>`;
-    return `<h2>Flows found from stock levels</h2>${running}${autoNote}${scopeNote}<h3>${r.flows.length ? `${r.flows.length} flow${r.flows.length === 1 ? "" : "s"}${r.residual ? " the model is missing" : ""}` : r.residual ? "Nothing is missing" : "No flows"}</h3>
+    return `<h2>Flows found from stock levels</h2>${strategyBox(r)}${running}${autoNote}${scopeNote}<h3>${r.flows.length ? `${r.flows.length} flow${r.flows.length === 1 ? "" : "s"}${r.residual ? " the model is missing" : ""}` : r.residual ? "Nothing is missing" : "No flows"}</h3>
       <p class="note">${intro}</p>
       ${r.canResidual ? `<label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-found-nothing ${S.discoverFromNothing ? "checked" : ""}> Ignore my flows and start from nothing</label>` : ""}
       ${r.residual && !r.flows.length ? `<p class="note">The measured flows explain every stock's change; what remains is step-to-step scatter.</p>` : ""}
       ${ambiguous ? `<p class="note warnc">For ${ambiguous} of these, other flows fit about as well. This run did not move enough to tell them apart: change something (a machine, a capacity) and run again, and the difference in how the stocks respond will separate them.</p>` : ""}
       <ul class="found-list">${flows}</ul>
+      ${truthCompareHtml(r)}
       ${latent.length ? `<h2 style="margin-top:14px">${latent.length} stock${latent.length === 1 ? "" : "s"} nobody measures</h2><p class="note">These are inferred from the timing: what arrives is a delayed copy of what left. They are drawn dashed on the canvas. Adding them adds the hidden stock and its two flows, so projections include the wait; measuring it would confirm it.</p><ul class="found-list">${latent.map(hiddenView).join("")}</ul>` : ""}
       <h2 style="margin-top:14px">Not explained</h2>
       ${left.length ? `<ul class="found-list">${left.map(([id, u]) => `<li><b>${esc(stockName(id))}</b> drifts ${fmt(u.drift)} per ${esc(tu())} that no flow explains. A stock or flow is probably missing here.</li>`).join("")}</ul>` : `<p class="note">Every stock's change is explained; what remains is step-to-step scatter.</p>`}
@@ -2260,6 +2409,7 @@
   function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
   fetch("/api/programs").then((r) => r.json()).then((r) => { S.programs = r.programs || []; }).catch(() => {});
+  loadMenu();
   buildMachinePanel();
   setMode(location.hash.slice(1) === "run" ? "run" : "edit");
   // ---------- models: open, copy, delete, and to and from disk ----------
