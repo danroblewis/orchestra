@@ -286,8 +286,13 @@ def report(strategies: list[str] | None, case_sel: str | None) -> list[dict]:
         key = (r["case"], r["variant"])
         if key not in cache:
             c = casemod.load(r["case"])
-            s = setup(c, r["variant"])
-            cache[key] = (s, true_metrics(s))
+            if r["variant"] not in {v["name"] for v in c["variants"]}:     # a variant since dropped (prune.py archives such rows)
+                cache[key] = None
+            else:
+                s = setup(c, r["variant"])
+                cache[key] = (s, true_metrics(s))
+        if cache[key] is None:
+            continue
         s, tm = cache[key]
         found = r.get("found")
         flows = found.get("flows") if isinstance(found, dict) else found

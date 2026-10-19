@@ -110,6 +110,15 @@ def mark_found(found_flows: list[dict], truth_model: dict) -> list[dict]:
     return out
 
 
+def _two_args(prog: _Program, flow: dict):
+    """prog.flow(flow) as fn(view, flows): the engine compiles a rate that is neither an expression nor
+    two-way (a linear rate that reads a switch, `8 * heater`) as fn(levels), which reads no flows."""
+    fn = prog.flow(flow)
+    if (flow.get("rate") or {}).get("form") == "expr" or flow.get("two_way"):
+        return fn
+    return lambda view, fl=None: fn(view)
+
+
 def amounts(f: dict, data: dict, states: list[dict]) -> np.ndarray:
     """A whole flow's amount per step on the run's states (see the module docstring); byTime segments
     (its schedule) followed."""
@@ -117,7 +126,7 @@ def amounts(f: dict, data: dict, states: list[dict]) -> np.ndarray:
     aux = (f.get("whole") or {}).get("auxiliaries") or {}
     prog = _Program({"stocks": [{"id": n} for n in sorted(names)], "auxiliaries": aux, "flows": []})
     segs = f.get("byTime") or [{"from": -np.inf, "to": np.inf, "rate": f.get("rate")}]
-    fns = [prog.flow({**f, "rate": g["rate"]}) for g in segs]
+    fns = [_two_args(prog, {**f, "rate": g["rate"]}) for g in segs]
     t = data["t"]
     counters = data.get("counters") or {}
     out = np.zeros(len(states))

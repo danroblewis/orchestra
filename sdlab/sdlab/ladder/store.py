@@ -297,3 +297,26 @@ def progress() -> dict:
             run.update(finished=last, aborted=run["done"] < run["total"], running=0)
             items = [{**i, "state": "aborted"} if i["state"] == "running" else i for i in items]
     return {"run": run, "items": items}
+
+
+# ---- archive ----
+
+def latest_keys() -> list[tuple]:
+    """(id, case, variant, strategy) of every latest result (light: no scores or flows)."""
+    with connect(readonly=True) as con:
+        return [tuple(r) for r in con.execute("SELECT id, case_id, variant, strategy FROM results WHERE latest = 1 ORDER BY case_id, variant, strategy")]
+
+
+def archive(ids: list[int], why: dict[int, str]) -> int:
+    """Take results out of the latest (latest = 0) and list them in `archived` with why and when; the
+    rows themselves are kept (prune.py: a result whose case or variant no longer exists). Returns how
+    many were archived."""
+    with connect() as con:
+        con.execute("CREATE TABLE IF NOT EXISTS archived (result_id INTEGER PRIMARY KEY, at TEXT NOT NULL, why TEXT)")
+        at, n = now(), 0
+        for i in ids:
+            cur = con.execute("UPDATE results SET latest = 0 WHERE id = ? AND latest = 1", (int(i),))
+            if cur.rowcount:
+                con.execute("INSERT OR REPLACE INTO archived (result_id, at, why) VALUES (?, ?, ?)", (int(i), at, why.get(i)))
+                n += 1
+        return n

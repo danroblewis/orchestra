@@ -8,7 +8,7 @@ negative; a stock that is not final stays within 5x (+50) of its highest level i
 run; everything that moved is accounted for (each stock's change is its inflows minus its outflows,
 what co-flows used, plus injections); every flow moves; and over the longest variant, every stock
 that is not final keeps moving as much late in the run as early on (the spread of its step changes in the last tenth at least half the second
-tenth's). Without noise: every measured stock's level changes over each variant's run. (Queue item 2d: a signed
+tenth's; a run under 20 steps compares its last quarter with its second, and one under 8 steps is not checked). Without noise: every measured stock's level changes over each variant's run. (Queue item 2d: a signed
 stock may go negative, a switch is not checked as a stock, and a two-way flow moves when it moves either way.)
 """
 
@@ -45,10 +45,10 @@ def problems(case: dict) -> list[str]:
             if s not in final and max(lv) > 5 * first + 50:
                 out.append(f"{s} grew from at most {first} to {max(lv)}")
             lv = lv[: v["steps"]]                        # moving: over the case's own longest run
-            w = len(lv) // 10
+            w = len(lv) // 10 if len(lv) >= 20 else len(lv) // 4     # under 20 steps a tenth has under 2 changes: quarters
             early, late = lv[w: 2 * w], lv[-w:]
             spread = lambda a: statistics.pstdev([b - x for x, b in zip(a, a[1:])])  # noqa: E731
-            if s not in final and spread(early) > 0 and spread(late) < 0.5 * spread(early):
+            if s not in final and w >= 2 and spread(early) > 0 and spread(late) < 0.5 * spread(early):
                 out.append(f"{s} stops moving: {spread(late):.2f} late vs {spread(early):.2f} early")
         start = {s["id"]: float(s.get("initial") or 0) for s in model["stocks"]}
         for s in (x for x in start if x not in switch):

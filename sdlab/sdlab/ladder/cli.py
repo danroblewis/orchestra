@@ -23,6 +23,8 @@
     strict [--strategies ...] [--cases ...] [--all] [--no-fill] [--set tests|realistic|all] [--top N]
                                   fill strict pass's long-run metrics and per-cell references (strict.py), then
                                   pass against strict pass per strategy (strict_report.py)
+    prune  [--dry-run]            latest results whose case or variant no longer exists: list them (--dry-run)
+                                  or archive them (latest = 0, listed in the archived table; prune.py)
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -463,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--rescore", action="store_true", help="the cost of re-scoring them (a scorer change), not of running them")
     co.add_argument("--stale", action="store_true", help="only what is stale now, each run or re-scored as it is stale")
     co.add_argument("--server", default="http://127.0.0.1:8020", help="where the runs panel (the watcher's backlog) is read")
+    pr = sub.add_parser("prune", help="archive latest results whose case or variant no longer exists (prune.py)")
+    pr.add_argument("--dry-run", action="store_true", help="only list them")
     an = sub.add_parser("analyse", help="what a case's data can deliver: identifiability and the Cramér-Rao bound")
     an.add_argument("case", nargs="?")
     an.add_argument("--variant")
@@ -497,6 +501,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.command == "strict":
         from . import strict_report
         return strict_report.main(a)
+    if a.command == "prune":
+        from . import prune
+        return prune.main(a)
     if a.command == "analyse":
         from . import analysis_report
         if a.all:
