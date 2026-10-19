@@ -119,10 +119,38 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     return {"transit": best_t, "plain": best_p, "found": found, "gain": other - best_t["bic"]}
 
 
+def _size(rate: dict, means: dict) -> float:
+    """A rate's mean amount a step at the data's mean levels (proportional and linear rates)."""
+    if rate.get("form") == "proportional":
+        return abs(float(rate.get("k") or 0) * means.get(rate.get("stock"), 0.0))
+    if rate.get("form") == "linear":
+        return abs(float(rate.get("c") or 0) + sum(float(t.get("k") or 0) * means.get(t.get("stock"), 0.0) for t in rate.get("terms") or []))
+    return 0.0
+
+
+def used_stock(flows: list[dict], a: str, means: dict) -> bool:
+    """A's loss mostly follows other stocks (outflows of A whose rate reads another stock carry more
+    than its own-level outflows, at the data's mean levels: a stock used up by other flows, as a
+    co-flow's, not a stage's source; sd-brewery's water read as water -> H -> fermenting)."""
+    own = other = 0.0
+    for f in flows:
+        if f.get("from") != a or f.get("to") is None and (f.get("rate") or {}).get("form") == "constant":
+            continue
+        r = f.get("rate") or {}
+        reads = {r.get("stock")} | {t.get("stock") for t in r.get("terms") or []}
+        reads.discard(None)
+        size = _size(r, means)
+        if reads and reads <= {a}:
+            own += size
+        elif reads:
+            other += size
+    return other > own
+
+
 def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """realistic_hats: hidden_transit's pairs (as identify below did) on a found model r instead of the
     main line's; a pair whose stocks a flow with an effect or a co-flow touches is left alone (the
-    pair's Kalman rows are linear)."""
+    pair's Kalman rows are linear); a pair with a move B -> A is tried too (a closed loop)."""
     opts = dict(opts or {})
     margin = opts.pop("ht_margin", 4.0)
     found_ratio = opts.pop("ht_found_ratio", 1.5)
@@ -144,6 +172,7 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     inferred: dict[str, list[float]] = {}
     used: set[str] = set()
     base_e = judge(flows, stocks, run, None, injections, inputs)
+    means = {k: float(np.nanmean(np.asarray(v, dtype=float))) for k, v in run["levels"].items()}
     tried = []
     for _ in range(most):
         levels = {**run["levels"], **inferred}
@@ -157,7 +186,12 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
                     continue
                 if any((f.get("effects") or f.get("uses")) and {a, b} & {f.get("from"), f.get("to")} for f in flows):
                     continue
-                if not candidate(flows, a, b) or any(f.get("from") == b and f.get("to") == a for f in flows):
+                # (hidden_transit also skips a pair with a move B -> A, "a loop's echo"; on a closed loop
+                # the return move is real (156, sd-ev-fleet, sd-recycling), and the acceptance below
+                # finds no transit on 008, 010 or 012 without that rule)
+                if used_stock(flows, a, means):
+                    continue
+                if not candidate(flows, a, b):
                     continue
                 res = try_pair(flows, all_ids, run, levels, a, b, scale)
                 if res is None:
