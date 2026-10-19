@@ -230,7 +230,7 @@ def test_a_specialist_that_raises_is_skipped(monkeypatch):
 SPECIALISTS = combined.SPECIALISTS
 
 
-def sanity(price: float = 1.0) -> list[dict]:
+def sanity(price: float = 1.0, upto: int | None = None) -> list[dict]:
     """For every case and variant in the store: the truth (its numbers fitted by the judge's own
     likelihood, starting at the truth) against every specialist's latest model that does not pass,
     its numbers refitted as the strategy refits them.
@@ -245,6 +245,8 @@ def sanity(price: float = 1.0) -> list[dict]:
             by[(r["case"], r["variant"])][s] = r
     rows = []
     for (case_id, variant), res in sorted(by.items()):
+        if upto is not None and not (case_id[:3].isdigit() and int(case_id[:3]) <= upto):
+            continue
         try:
             _, model, d, _, _, D = cell(case_id, variant)
         except (KeyError, ValueError, FileNotFoundError):
@@ -320,7 +322,8 @@ def fit(flows: list[dict], D: J.Data, starts: dict, most: int = 40) -> list[dict
 
 if __name__ == "__main__":
     price = float(sys.argv[1]) if len(sys.argv) > 1 else 1.0
-    rows = sanity(price)
+    upto = int(sys.argv[2]) if len(sys.argv) > 2 else None     # only cases numbered up to this
+    rows = sanity(price, upto)
     for r in rows:
         print(r)
     print(f"{len(rows)} wrong models scored better than the fitted truth")
