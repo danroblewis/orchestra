@@ -808,7 +808,7 @@ better); else **fail**; error and timeout as everywhere.
 - **on/off control with hysteresis** (thermostat): no switch with memory. The best SD model is a
   proportional controller floored at 0. Under control the outside temperature barely moves T (the
   heater's duty cycle absorbs it), so the best *predicting* SD model all but drops T <- outside
-  (6% of the strongest coupling, under the 10% threshold): the reference itself fails the
+  (6-7% of the strongest coupling, under the 10% threshold): the reference itself fails the
   structure there. That is the closed-loop identifiability problem, not a fault of the reference.
 - **signed states** (spring): exact only through offsets, each signed term split into two one-way
   flows, the offsets as constant flows.
@@ -832,6 +832,69 @@ invented ones too), fresh skill@20 and @100 and the long-run error beside the re
 the reference as "Best SD model (reference)". The strategy page has a physics filter, and its
 tests totals leave physics out. `sdlab-ladder strict` and `longrun` skip physics cases, and the
 editor does not list them as basic models (there is no SD truth to play back).
+
+**Results** (18 October 2026: `sdlab-ladder run --strategies combined,lna,effect_hats,censored,earned_pieces,matrix
+--cases tag:physics --jobs 3 --timeout 300`, single-threaded, at 2cde024; re-scored by `sdlab-ladder
+sync` at 382ea4d, which added the sampling couplings (47 passes after, 44 before); numbers from
+`api.summary()["physics"]` and the store; 168 cells, no errors or timeouts). Means over the 28
+cells; the reference's mean fresh skill@20 is 97.1% and its long-run error 17.0% (Lotka-Volterra's
+phase drift is most of it):
+
+| strategy | phys pass | structure agrees | couplings right | shape right | fresh skill@20 | vs ref @20 (points) | long-run err | diverges | time (s) |
+|---|---|---|---|---|---|---|---|---|---|
+| combined | 12/28 | 14/28 | 78.9% | 47.9% | 71.9% | -25.3 | 28.2% | 0 | 516 |
+| lna | 13/28 | 14/28 | 81.8% | 51.8% | 86.6% | -10.5 | 27.0% | 0 | 6 |
+| matrix | 13/28 | 14/28 | 81.8% | 51.8% | 86.6% | -10.5 | 27.0% | 0 | 4 |
+| censored | 4/28 | 14/28 | 82.7% | 51.8% | -7.3% | -104.4 | 54.9% | 0 | 8 |
+| effect_hats | 2/28 | 10/28 | 75.3% | 50.0% | -18.9% | -116.0 | 68.9% | 1 | 42 |
+| earned_pieces | 3/28 | 3/28 | 55.4% | 30.4% | 12.8% | -84.3 | 36.5% | 0 | 5 |
+
+Per case, passes / structure agreeing, of the four variants (none-short, none-long, meas-short,
+meas-long), and the reference's fresh skill@20 in each:
+
+| case | reference fresh@20 | combined | lna | matrix | censored | effect_hats | earned_pieces |
+|---|---|---|---|---|---|---|---|
+| phys-coupled-tanks | 99, 98, 99, 98 | 1 / 1 | 1 / 1 | 1 / 1 | 0 / 1 | 0 / 1 | 0 / 0 |
+| phys-draining-tank | 98, 98, 98, 98 | 3 / 3 | 4 / 4 | 4 / 4 | 2 / 4 | 0 / 2 | 0 / 0 |
+| phys-lotka-volterra | 99, 99, 99, 99 | 0 / 1 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| phys-mass-spring-damper | 100, 100, 100, 100 | 2 / 2 | 2 / 2 | 2 / 2 | 0 / 2 | 0 / 1 | 0 / 0 |
+| phys-newton-cooling | 100, 100, 100, 100 | 4 / 4 | 4 / 4 | 4 / 4 | 0 / 4 | 0 / 4 | 0 / 0 |
+| phys-reaction-chain | 100, 100, 100, 100 | 2 / 2 | 2 / 2 | 2 / 2 | 2 / 2 | 2 / 2 | 3 / 3 |
+| phys-thermostat | 89, 79, 89, 79 | 0 / 1 | 0 / 1 | 0 / 1 | 0 / 1 | 0 / 0 | 0 / 0 |
+
+What they find against the physics:
+
+- **lna is matrix here**: its model is matrix's in all 28 cells (lna hands data that are not counts
+  to matrix), so the two rows are one result.
+- **Exactly linear physics** (cooling, the chain, the spring without noise): matrix, lna and
+  combined recover the coupling graph and match the reference (100% fresh skill@20). The numbers are
+  per step, not the ODE's rates: cooling's input coefficient 0.029556 is 1 - e^-0.03, not k = 0.03.
+- **sqrt tanks**: the graph and signs right, the shape linear in every run (no strategy can write
+  sqrt). matrix and lna reach the reference's skill on the single tank (98%) with a drain
+  c + k x H, the constant written as an outflow in 33 pieces (extra complexity the physics view
+  does not charge). On the cascade's short runs matrix and lna invent H2 <- pump and combined drops
+  H1 <- pump; only the long noise-free run passes.
+- **Lotka-Volterra**: every leader writes the linearised oscillator - X <- Y and Y <- X as linear
+  links - and misses the self-couplings that change sign around the cycle, i.e. the products,
+  although products are exact in SD Lab's forms (a rate times a linear effect). Fresh skill@20 is
+  91-97% against the reference's 99%, skill@100 52-97% against 94%. Only combined on meas-long has
+  all four couplings, all linear.
+- **Thermostat**: nothing passes. Noise-free long runs give matrix, lna and combined all three
+  couplings, linear (a controller without its floor), at fresh skill@20 59% against the reference's
+  79% and a long-run error of 87% against 12%; short runs miss T <- T or give it, or the outside's
+  coupling, the wrong sign. The reference itself drops T <- outside (closed loop, above).
+- **Measurement noise** breaks the linear cases that pass without it: on the spring every leader
+  loses V <- P and V <- force (fresh skill@20 6-50% against ~100%); on the chain every leader but
+  earned_pieces (meas-short) loses C <- B (C only grows, to 285 on the short run and 1,568 on the
+  long one, so its 2% error reaches an sd of 6-31 a point against a change of about 1 a step); on the cascade's short run H2's couplings go. This is the
+  errors-in-variables bias of the noise section; whether the data allow these couplings is not
+  analysed here.
+- **Inputs mishandled**: censored and effect_hats keep matrix's input flow (k x input) but refit the
+  rest without the input in their own fit, so the input is counted twice: on cooling noise-free long,
+  censored has the graph right and in-sample skill@20 -113% (fresh -415%), with a drain 0.025 for
+  0.0296 and an extra inflow of 0.29 in 293 pieces. earned_pieces drops the input couplings outright
+  (H <- pump, T <- outside, V <- force). Their own refits do not take the input columns
+  (`input_columns`, Inputs above): a fix for those strategies, not for the scorer.
 
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
