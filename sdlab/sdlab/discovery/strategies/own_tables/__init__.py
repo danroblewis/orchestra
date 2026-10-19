@@ -153,10 +153,20 @@ def candidates(flows, ids, t, prev, dy, i, floor_rss, o, inp=None):
     wt = None
     if o["weighted"]:
         wt = _weights(y, x, np.array([x.min(), np.median(x), x.max()]) if np.ptp(x) > 0 else np.array([x.min(), x.min() + 1]), Z)
+    if np.ptp(x) <= 0:
+        return []
+    # a cheap screen first: fixed points at the level's quantiles must already beat the straight line
+    # (the free-point search is the expensive part, and most rows are straight)
+    log_t = math.log(T)
+    qk = np.unique(np.quantile(x, np.linspace(0, 1, 9)))
+    if len(qk) < 3:
+        return []
+    bic = lambda rss, K: T * math.log(max(rss, floor_rss) / T) + K * log_t  # noqa: E731
+    if bic(curve.fit(y, x, qk, Z, wt)[1], len(qk)) > bic(curve.fit(y, x, qk[[0, -1]], Z, wt)[1], 2) - o["margin"] * log_t:
+        return []
     cv = curve.search(y, x, Z, floor_rss, wt=wt, most=o["most"])
     if cv is None or len(cv["knots"]) <= 2:
         return []
-    log_t = math.log(T)
     if cv["bic"] > cv["line_bic"] - o["margin"] * log_t:
         return []
     if o["halves"] and not _halves_ok(y, x, cv["knots"], Z, wt):

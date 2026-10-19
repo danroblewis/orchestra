@@ -46,7 +46,7 @@ def _supported(x: np.ndarray, kn: np.ndarray, support: int) -> bool:
 
 
 def search(y: np.ndarray, x: np.ndarray, Z: np.ndarray, floor: float, wt: np.ndarray | None = None, grid: int = 40,
-           support: int | None = None, most: int = 12, refine: int = 8, max_steps: int = 4000) -> dict | None:
+           support: int | None = None, most: int = 12, refine: int = 8, max_steps: int = 2000) -> dict | None:
     """The best curve by BIC: {knots, values, z (Z's numbers), rss, bic, line_bic}; None if the level
     barely moves."""
     T = len(y)
@@ -100,7 +100,7 @@ def search(y: np.ndarray, x: np.ndarray, Z: np.ndarray, floor: float, wt: np.nda
                 return rss0 * 10 + 1.0
             return n * fit(y, x, k2, Z, wt)[1]
 
-        res = minimize(obj, k0[1:-1], method="Nelder-Mead", options={"xatol": 1e-7 * (hi - lo), "fatol": 1e-14, "maxiter": 400 * K})
+        res = minimize(obj, k0[1:-1], method="Nelder-Mead", options={"xatol": 1e-7 * (hi - lo), "fatol": 1e-14, "maxiter": 150 * K})
         if res.fun < rss0:
             path[K] = (float(res.fun), np.concatenate([[lo], np.sort(np.clip(res.x, lo, hi)), [hi]]))
     K = min((k for k in path if k <= most), key=lambda k: bic(path[k][0], k))
