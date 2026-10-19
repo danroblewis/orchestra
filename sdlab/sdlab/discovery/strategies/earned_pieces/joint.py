@@ -55,9 +55,9 @@ class System:
     configuration or -1), cuts) and the system they share (ids, units, configurations)."""
 
     def __init__(self, rows: list[dict], ids: list[str], unit: dict, final: set, dy: np.ndarray, cfg: np.ndarray, L: int,
-                 counting: bool = True, min_piece: int = 5):
+                 counting: bool = False, min_piece: int = 5):
         self.min_piece = min_piece
-        self.counting = counting          # False: plain least squares (every step's variance the same)
+        self.counting = counting          # False: stacked least squares (one variance for a unit's rows)
         self.rows, self.ids, self.unit, self.final, self.dy, self.cfg, self.L = rows, ids, unit, final, dy, cfg, L
         self.S, self.T = len(ids), dy.shape[1]
         # every free number: (row index, column index q in the row's X)
@@ -195,22 +195,14 @@ class System:
         return {"beta": betas, "res": res, "gross": gross, "inflow": inflow, "nll": nll}
 
 
-def decide(system: System, log_t: float, trust_receivers: bool = True, trace: bool = False) -> dict:
-    """Tie or free each source (in all its configurations at once), one at a time while BIC on the counting likelihood improves,
-    starting from every source free. A source whose outside inflow changes cannot measure its own
-    drain apart from the changes (the pieces bias it), so with trust_receivers it is tied whenever
-    its receivers are seen to gain more from it than its own row says it loses, as the matrix's
-    conservation does."""
+def decide(system: System, log_t: float, trace: bool = False) -> dict:
+    """Tie or free each source (in all its configurations at once), one at a time while BIC on the
+    counting likelihood improves, starting from every source free. A source whose outside inflow
+    changes has its pieces found again with its drain held, so that its own (biased) drain is not
+    favoured by pieces chosen beside it."""
     cands = system.ties()
-    free = system.fit(set())
-    forced = set()
-    if trust_receivers:
-        for a in cands:
-            if system.changing(a) and any(system.gain(free, a, c) > max(0.0, -system.own(free, a, c)) for c in system.configs(a)):
-                forced.add(a)
-    cands = [t for t in cands if t not in forced]
-    tied = set(forced)
-    best = system.fit(tied) if tied else free
+    tied: set = set()
+    best = system.fit(tied)
     score = best["nll"] + best["P"] * log_t
     while True:
         step = None

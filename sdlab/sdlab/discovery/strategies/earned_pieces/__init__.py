@@ -28,8 +28,8 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
     L = len(fit["labels"])
     if opts.get("reselect", True):
         rows = [reselect(row, s, ids, stocks, fit["prev"], fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", 0.01))["row"] for s, row in enumerate(rows)]
-    system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", True), opts.get("min_piece", 5))
-    best = decide(system, ctx["log_t"], opts.get("trust_receivers") is not False, trace=opts.get("trace_joint", False))
+    system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", False), opts.get("min_piece", 5))
+    best = decide(system, ctx["log_t"], trace=opts.get("trace_joint", False))
     at = fit["at"]
     new = []
     for s, row in enumerate(rows):
