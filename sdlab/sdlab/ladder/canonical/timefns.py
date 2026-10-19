@@ -96,6 +96,14 @@ def evaluate(expr, t: float, dt: float, lookups: dict, env: dict | None = None) 
             name = type(e).__name__
             if name in lookups:
                 return lookup(lookups[name], ev(e.args[0]))
+            if name == "DELAYF":                                   # DELAY FIXED of a function of TIME (read.py)
+                _, x, order, init, t0 = e.args
+                if (x.free_symbols - {TIME}) or x.has(sp.Function("DELAY"), sp.Function("SMOOTH")):
+                    raise Blocked("fixed delay (DELAY FIXED) of a stock, inside an expression", str(e)[:60])
+                back = t - int(order) * dt
+                if back < float(t0) - 1e-9 * max(1.0, abs(dt)):
+                    return evaluate(init, float(t0), dt, lookups, env)
+                return evaluate(x, back, dt, lookups, env)
             if name in fns:
                 if name == "F_if_then_else":
                     return ev(e.args[1]) if ev(e.args[0]) else ev(e.args[2])

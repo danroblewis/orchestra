@@ -8,7 +8,8 @@ negative; a stock that is not final stays within 5x (+50) of its highest level i
 run; everything that moved is accounted for (each stock's change is its inflows minus its outflows,
 what co-flows used, plus injections); every flow moves; and over the longest variant, every stock
 that is not final keeps moving as much late in the run as early on (the spread of its step changes in the last tenth at least half the second
-tenth's). Without noise: every measured stock's level changes over each variant's run.
+tenth's). Without noise: every measured stock's level changes over each variant's run. (Queue item 2d: a signed
+stock may go negative, a switch is not checked as a stock, and a two-way flow moves when it moves either way.)
 """
 
 from __future__ import annotations
@@ -33,8 +34,12 @@ def problems(case: dict) -> list[str]:
         short = min(x["steps"] for x in counts)
         r = simulate(model, steps=v["steps"] * 5)
         final = {s["id"] for s in model["stocks"] if s.get("final")}
+        signed = {s["id"] for s in model["stocks"] if s.get("signed")}               # 2d: a signed stock may go negative
+        switch = {s["id"] for s in model["stocks"] if s.get("switch")}               # 2d: a switch is 0 or 1, set by its rule
         for s, lv in r["all_levels"].items():
-            if not all(math.isfinite(x) and x >= 0 for x in lv):
+            if s in switch:
+                continue
+            if not all(math.isfinite(x) and (x >= 0 or s in signed) for x in lv):
                 out.append(f"{s} goes negative or not finite")
             first = max(lv[:short])
             if s not in final and max(lv) > 5 * first + 50:
@@ -46,14 +51,14 @@ def problems(case: dict) -> list[str]:
             if s not in final and spread(early) > 0 and spread(late) < 0.5 * spread(early):
                 out.append(f"{s} stops moving: {spread(late):.2f} late vs {spread(early):.2f} early")
         start = {s["id"]: float(s.get("initial") or 0) for s in model["stocks"]}
-        for s in start:
+        for s in (x for x in start if x not in switch):
             net = sum(j["amount"] for j in r.get("injections") or [] if j["stock"] == s) + sum(sum(r["counters"][f["id"]]) for f in model["flows"] if f.get("to") == s) \
                 - sum(sum(r["counters"][f["id"]]) * float(f.get("ratio") or 1) for f in model["flows"] if f.get("from") == s) \
                 - sum(sum(r["counters"][f["id"]]) * float(u.get("per") or 0) for f in model["flows"] for u in f.get("uses") or [] if u.get("stock") == s)
             if abs(start[s] + net - r["all_levels"][s][-1]) > 1e-6 * max(1, abs(net)) + 1:
                 out.append(f"{s}: its flows do not add up to its level")
         for f in model["flows"]:
-            if sum(r["counters"][f["id"]]) <= 0:
+            if sum(abs(x) for x in r["counters"][f["id"]]) <= 0:
                 out.append(f"flow {f['id']} never moves")
     for v in case["variants"]:
         if v["noise"] != "none":

@@ -27,6 +27,7 @@ from pathlib import Path
 from ..discovery.api import jsonable
 from . import cases as casemod
 from . import catalog, data, particles, physics, provenance, score, store
+from . import sim as _sim
 from . import realistic as _realistic
 from .real import data as _real_data
 from .real import score as _real_score
@@ -96,6 +97,7 @@ def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None
     for cid in case_ids:
         c = casemod.load(cid)
         shc = particles.score_hash(sh) if particles.is_particles(c) else physics.score_hash(sh) if physics.is_physics(c) else sh     # a physics or particle case: its scoring code too
+        shc = _sim.code_hash(shc) if _sim.uses_new(c.get("model") or {}) else shc       # a truth with 2d's engine features: sim.py too
         for v in c["variants"]:
             if variants and v["name"] not in variants and v["noise"] not in variants and v["length"] not in variants:
                 continue

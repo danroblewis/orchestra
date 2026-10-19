@@ -1,6 +1,6 @@
 # Canonical coverage: how much of SDXorg/test-models SD Lab's case format holds exactly
 
-**Status:** done (measurement; queue items 2 and 2c). **Code:** the importer at 2deb86d
+**Status:** done (measurement; queue items 2, 2c and 2d: 139 of 165 exact after 2d, below). **Code:** the importer at 2deb86d
 (`sdlab/ladder/pysd_import.py`, `sdlab/ladder/canonical/`: arrays, macros, external data and DELAY N /
 SMOOTH N added in e83aa25, item 2c; the first measurement was on 3660a5d, item 2). **Measured** on
 2026-10-18 with
@@ -27,6 +27,64 @@ convert but differ, 24 of them because a rate or a stock goes negative (SD Lab f
 
 Samples alone: 2 exact before, 3 after (the `arrays` sample); the other 9 lack engine features (below)
 or cannot be read by PySD.
+
+## Queue item 2d (2026-10-19): the engine features, and the coverage after them
+
+**Measured** on 2026-10-19 with
+`uv run --with pysd --with sympy python -m sdlab.ladder.canonical.coverage <test-models> --json ... --markdown ... --jobs 2`
+on the same SDXorg/test-models (21aab02), PySD 3.14.3; "before" is the same command on 05ae898 (the
+code before 2d), which reproduced 2deb86d's table exactly.
+
+| status | before (05ae898) | after (2d) |
+|---|---|---|
+| exact | 75 | 94 |
+| exact with inputs | 15 | 45 |
+| **exact, total** | **90** | **139** |
+| differs | 27 | 2 |
+| blocked | 46 | 22 |
+| no model | 2 | 2 |
+| total | 165 | 165 |
+
+Samples: 3 exact before, **9 after** (simple harmonic oscillator, Workforce, pendulum, Lotka-Volterra,
+Roessler, Population, besides SIR, teacup and arrays). Moves: 25 differs -> exact (19 with inputs),
+24 blocked -> exact (11 with inputs); no model that was exact before changed status or text.
+
+What did it, by the engine feature (sdtruth.py, sdtruth_expr.py; MODEL.md, docs/LADDER.md
+"Expressions, signed stocks, two-way flows, switches, fixed delays") and its converter mapping:
+
+| feature | engine / case format | converter (pysd_import.py, canonical/) | models it was the blocker of (before) |
+|---|---|---|---|
+| two-way flows | `"two_way": true`, `A <-> B` | a flow whose rate goes negative on PySD's run (evaluated, or PySD's own values of it) | 30 (28 only) |
+| signed stocks | `"signed": true`, `X: 0 signed` | a stock that starts or goes below 0; and `convert_checked`: the stocks SD Lab's floor cuts where Euler has none (Lotka-Volterra's prey, `arguments`' fast stages, special_characters) | 9 + 2 (floor) |
+| expressions | `{"form": "expr"}`: ratios, MIN/MAX, CEIL, SQRT, power, IF THEN ELSE, EXP/LN, ABS, XIDZ/ZIDZ, trigonometry, lookups of expressions | any rate with no linear form (`match.expr_text`) | MIN/MAX 2, IF THEN ELSE 1, a polynomial 1, trigonometry 1; ratios (World3 full, now case 116) |
+| DELAY FIXED | `delay_fixed(rate, T)` (a pipe), `delayed(x, T)` (information) | order fixed at the start as PySD/Vensim fix it; of TIME a measured input | 3 |
+| pipeline stocks | (a material DELAY out of a measured stock is exactly the SMOOTH of the same order) | Population, delay_numeric_error, subscripted_delays | 3 |
+| TREND / FORECAST | `trend(x, T, g)`, `forecast(x, T, h)`: a smoothing and an expression | read as PySD computes them | 3 |
+| auxiliaries | `"auxiliaries": {...}` | SMOOTH / DELAY of an expression smooths an auxiliary | - |
+| (converter fixes found on the way) | two smoothings of one input from different starts got one stock | a DELAY's order lowered until a stage takes a step, as PySD does | `arguments`, `delay_pipeline`, subscripted_delays |
+
+Also added, for the Kubernetes model and the physics findings, with no SDXorg model needing them:
+switches with memory (hysteresis), `flow(id)` (a flow equal to another's amount), `max=N net` (a ceiling
+that holds at N at dt 1), and delays whose time is an expression (`delay3(rate, 2 + B / 10)`, Vensim's
+semantics: the stages at 3 / the current time).
+
+**What remains** (22 blocked, 2 differ): a delay or smoothing whose time or order changes during the
+run (3: `delays`, `smooth`, `subscripted_smooth`; PySD gives each stage the time at which its
+contents entered, the engine uses the current time); vector and matrix functions (3), ALLOCATE (2),
+SAMPLE IF TRUE (1), random functions (Query_file), a simulation setting that changes (2), a number
+that is not finite (3), files PySD cannot read or run (4), data files not in the repository (2), no
+stocks (1). The two that differ: `exponentiation` (PySD's code generation, as before) and
+`subscripted_round` (INTEGER of a ZIDZ of inputs lands on the other side of a whole number in a few
+steps: PySD's vectorised arithmetic and the importer's scalar one round differently).
+
+**New canonical cases** (`canonical/recipes.yaml`, built and checked against PySD by `build.py`):
+113-canonical-harmonic-oscillator (SDXorg sample: signed stocks, two-way flows, dt 1/100, noise `none`
+only), 114-canonical-workforce-capacity (SDXorg sample: MIN of staff capacity and backlog, dt 1/32),
+115-canonical-enrolment-pipeline (a pipeline stock: graduation the DELAY3 of enrolment),
+116-canonical-world3-pollution-full (the assimilation half-life multiplier: a ratio of the stock to a
+table of it, spills of 400 push it above 1970's level), 117-canonical-fixed-delay-line (DELAY FIXED: a
+pipe of 5 hidden stages). Strategies know none of the new features; their results on these are
+findings (the watcher runs them).
 
 ## What item 2c added (the converter only; no engine change)
 
@@ -60,7 +118,7 @@ Every converted model is still checked against PySD's own run, at every recorded
 (`arguments`: a DELAY3 of time 2 has stages at 1.5 per step; Euler overshoots, SD Lab's floor caps the
 outflow at the level) and **external data in a file that is not there**.
 
-## Remaining blockers, by count (all 165 models; a model can have several)
+## Remaining blockers before 2d, by count (at 2deb86d; all 165 models; a model can have several)
 
 For **queue item 2d (the engine)**:
 
@@ -197,16 +255,16 @@ on SIR, SEIR, Bass, logistic, teacup, rework and limits to growth for most leade
   assimilation). Case 110 is the sector below its 1970 level. Market growth (Forrester) was not
   attempted, for the same reason (backlog / capacity).
 
-## Tables (generated by `coverage.py` at 2deb86d)
+## Tables (generated by `coverage.py` after queue item 2d, 2026-10-19)
 
 ### Sample models (12)
 
 | status | models |
 |---|---|
-| exact | 3 |
+| exact | 9 |
 | exact with inputs | 0 |
-| differs | 1 |
-| blocked | 8 |
+| differs | 0 |
+| blocked | 3 |
 | no model | 0 |
 | total | 12 |
 
@@ -214,10 +272,10 @@ on SIR, SEIR, Bass, logistic, teacup, rework and limits to growth for most leade
 
 | status | models |
 |---|---|
-| exact | 72 |
-| exact with inputs | 15 |
-| differs | 26 |
-| blocked | 38 |
+| exact | 85 |
+| exact with inputs | 45 |
+| differs | 2 |
+| blocked | 19 |
 | no model | 2 |
 | total | 153 |
 
@@ -227,42 +285,36 @@ A blocked model can lack several features; "only blocker" counts the models that
 
 | feature | models | only blocker |
 |---|---|---|
-| a two-way flow (a rate goes negative) | 30 | 28 |
-| a stock that goes negative | 9 | 9 |
-| a delay whose material sits in a measured stock (Vensim's pipeline stock) | 3 | 3 |
-| fixed delay (DELAY FIXED) | 3 | 2 |
-| a number that is not finite | 3 | 1 |
+| a number that is not finite | 3 | 3 |
 | a delay or smoothing whose time changes | 3 | 0 |
 | a DELAY N / SMOOTH N whose order changes | 3 | 0 |
-| TREND / FORECAST | 3 | 3 |
 | vector and matrix functions (VECTOR SELECT, VECTOR ELM MAP, ...) | 3 | 3 |
-| MIN / MAX | 2 | 1 |
 | PySD cannot read it | 2 | 2 |
 | ALLOCATE | 2 | 2 |
 | a simulation setting that changes | 2 | 2 |
 | PySD cannot run it | 2 | 2 |
+| the runs differ | 2 | 2 |
 | external data in a file that is not there | 2 | 2 |
-| an outflow larger than the stock within one step (the engine's floor ignores the step's inflows) | 1 | 1 |
-| random functions | 1 | 0 |
-| IF THEN ELSE | 1 | 0 |
-| a nonlinear polynomial (not a product of linear factors) | 1 | 1 |
-| trigonometry of a stock | 1 | 1 |
+| random functions | 1 | 1 |
 | no stocks | 1 | 1 |
-| a drain faster than one step (k x dt > 1: the engine's floor caps it at the level, Euler overshoots) | 1 | 1 |
-| the runs differ | 1 | 1 |
 | SAMPLE IF TRUE | 1 | 1 |
 
 ### Functions of time held as measured inputs (in the "exact with inputs" models)
 
 | function | models |
 |---|---|
-| IF_THEN_ELSE | 5 |
-| CMP_GT | 4 |
-| LOOKUP | 4 |
+| LOOKUP | 15 |
+| TIME | 7 |
+| STEP | 7 |
+| SIN | 7 |
+| IF_THEN_ELSE | 7 |
+| CMP_GT | 6 |
+| RAMP | 4 |
 | CMP_LT | 3 |
+| DELAYF | 3 |
+| COS | 3 |
 | CMP_EQ | 2 |
-| STEP | 2 |
-| SIN | 2 |
+| MODULO | 2 |
 | CMP_AND | 2 |
 | CMP_OR | 2 |
 | MAX | 1 |
@@ -270,37 +322,46 @@ A blocked model can lack several features; "only blocker" counts the models that
 | CMP_GE | 1 |
 | CMP_LE | 1 |
 | CMP_NE | 1 |
-| TIME | 1 |
 | PULSE | 1 |
 | PULSE_TRAIN | 1 |
-| RAMP | 1 |
-| MODULO | 1 |
+| POWER | 1 |
+| INTEGER | 1 |
 | CMP_NOT | 1 |
+| ABS | 1 |
+| ARCCOS | 1 |
+| ARCSIN | 1 |
+| ARCTAN | 1 |
+| COSH | 1 |
+| EXP | 1 |
+| LN | 1 |
+| SINH | 1 |
+| TAN | 1 |
+| TANH | 1 |
 
 ### Every model
 
 | folder | file | status | features or reason |
 |---|---|---|---|
-| samples/Lotka_Volterra | samples/Lotka_Volterra/Lotka_Volterra.mdl | differs | an outflow larger than the stock within one step (the engine's floor ignores the step's inflows) |
-| samples/Population | samples/Population/Subscripted Population Model.mdl | blocked | a delay whose material sits in a measured stock (Vensim's pipeline stock) |
-| samples/Query_file | samples/Query_file/Query_file.mdl | blocked | fixed delay (DELAY FIXED), random functions, IF THEN ELSE, MIN / MAX |
-| samples/Roessler_Chaos | samples/Roessler_Chaos/roessler_chaos.mdl | blocked | a nonlinear polynomial (not a product of linear factors) |
+| samples/Lotka_Volterra | samples/Lotka_Volterra/Lotka_Volterra.mdl | exact |  |
+| samples/Population | samples/Population/Subscripted Population Model.mdl | exact |  |
+| samples/Query_file | samples/Query_file/Query_file.mdl | blocked | random functions |
+| samples/Roessler_Chaos | samples/Roessler_Chaos/roessler_chaos.mdl | exact |  |
 | samples/SIR | samples/SIR/SIR.mdl | exact |  |
-| samples/Workforce | samples/Workforce/workforce.mdl | blocked | MIN / MAX |
+| samples/Workforce | samples/Workforce/workforce.mdl | exact |  |
 | samples/arrays | samples/arrays/a2a/a2a.stmx | exact | accumulated |
 | samples/bpowers-hares_and_lynxes_modules | samples/bpowers-hares_and_lynxes_modules/model.xmile | blocked | PySD cannot read it |
 | samples/display | samples/display/1style.stmx | blocked | PySD cannot read it |
-| samples/pendulum | samples/pendulum/Single_Pendulum.mdl | blocked | trigonometry of a stock |
-| samples/simple_harmonic_oscillator | samples/simple_harmonic_oscillator/simple_harmonic_oscillator.mdl | blocked | a two-way flow (a rate goes negative) |
+| samples/pendulum | samples/pendulum/Single_Pendulum.mdl | exact |  |
+| samples/simple_harmonic_oscillator | samples/simple_harmonic_oscillator/simple_harmonic_oscillator.mdl | exact |  |
 | samples/teacup | samples/teacup/teacup.mdl | exact |  |
-| tests/abs | tests/abs/test_abs.mdl | blocked | a stock that goes negative |
+| tests/abs | tests/abs/test_abs.mdl | exact |  |
 | tests/active_initial | tests/active_initial/test_active_initial.mdl | exact |  |
 | tests/active_initial_circular | tests/active_initial_circular/test_active_initial_circular.mdl | blocked | no stocks |
 | tests/allocate_available | tests/allocate_available/test_allocate_available.mdl | blocked | ALLOCATE |
 | tests/allocate_by_priority | tests/allocate_by_priority/test_allocate_by_priority.mdl | blocked | ALLOCATE |
-| tests/arguments | tests/arguments/test_arguments.mdl | differs | a drain faster than one step (k x dt > 1: the engine's floor caps it at the level, Euler overshoots) |
-| tests/arithmetics | tests/arithmetics/test_arithmetics.mdl | blocked | a two-way flow (a rate goes negative), a number that is not finite |
-| tests/arithmetics_exp | tests/arithmetics_exp/test_arithmetics_exp.mdl | blocked | a number that is not finite, a two-way flow (a rate goes negative) |
+| tests/arguments | tests/arguments/test_arguments.mdl | exact with inputs | accumulated; inputs: TIME |
+| tests/arithmetics | tests/arithmetics/test_arithmetics.mdl | blocked | a number that is not finite |
+| tests/arithmetics_exp | tests/arithmetics_exp/test_arithmetics_exp.mdl | blocked | a number that is not finite |
 | tests/array_with_line_break | tests/array_with_line_break/test_array_with_line_break.mdl | exact | accumulated |
 | tests/builtin_max | tests/builtin_max/builtin_max.mdl | exact with inputs | accumulated; inputs: MAX |
 | tests/builtin_min | tests/builtin_min/builtin_min.mdl | exact with inputs | accumulated; inputs: MIN |
@@ -311,39 +372,39 @@ A blocked model can lack several features; "only blocker" counts the models that
 | tests/constant_expressions | tests/constant_expressions/test_constant_expressions.mdl | exact | accumulated |
 | tests/control_vars | tests/control_vars/test_control_vars.mdl | blocked | a simulation setting that changes |
 | tests/data_from_other_model | tests/data_from_other_model/model_to_generate_data.mdl | blocked | PySD cannot run it |
-| tests/delay_fixed | tests/delay_fixed/test_delay_fixed.mdl | blocked | fixed delay (DELAY FIXED) |
-| tests/delay_numeric_error | tests/delay_numeric_error/test_delay_numeric_error.mdl | blocked | a delay whose material sits in a measured stock (Vensim's pipeline stock) |
+| tests/delay_fixed | tests/delay_fixed/test_delay_fixed.mdl | exact with inputs | accumulated; inputs: DELAYF |
+| tests/delay_numeric_error | tests/delay_numeric_error/test_delay_numeric_error.mdl | exact with inputs | inputs: STEP |
 | tests/delay_parentheses | tests/delay_parentheses/test_delay_parentheses.mdl | exact with inputs | accumulated; inputs: STEP |
-| tests/delay_pipeline | tests/delay_pipeline/test_pipeline_delays.mdl | blocked | fixed delay (DELAY FIXED) |
+| tests/delay_pipeline | tests/delay_pipeline/test_pipeline_delays.mdl | exact with inputs | accumulated; inputs: DELAYF, STEP |
 | tests/delay_xmile | tests/delay_xmile/test_delay_xmile.xmile | exact |  |
 | tests/delays | tests/delays/test_delays.mdl | blocked | a delay or smoothing whose time changes, a DELAY N / SMOOTH N whose order changes |
 | tests/dynamic_final_time | tests/dynamic_final_time/test_dynamic_final_time.mdl | blocked | a simulation setting that changes |
 | tests/elm_count | tests/elm_count/test_elm_count.mdl | exact | accumulated |
-| tests/euler_step_vs_saveper | tests/euler_step_vs_saveper/test_euler_step_vs_saveper.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/euler_step_vs_saveper | tests/euler_step_vs_saveper/test_euler_step_vs_saveper.mdl | exact with inputs | inputs: COS |
 | tests/eval_order | tests/eval_order/eval_order.xmile | exact | accumulated |
 | tests/except | tests/except/test_except.mdl | exact with inputs | inputs: SIN, TIME |
-| tests/except_multiple | tests/except_multiple/test_except_multiple.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/except_multiple | tests/except_multiple/test_except_multiple.mdl | exact with inputs | accumulated; inputs: TIME |
 | tests/except_subranges | tests/except_subranges/test_except_subranges.mdl | exact | accumulated |
-| tests/exp | tests/exp/test_exp.mdl | blocked | a stock that goes negative |
+| tests/exp | tests/exp/test_exp.mdl | exact |  |
 | tests/exponentiation | tests/exponentiation/exponentiation.mdl | differs | the runs differ |
-| tests/forecast | tests/forecast/test_forecast.mdl | blocked | TREND / FORECAST |
+| tests/forecast | tests/forecast/test_forecast.mdl | exact with inputs | accumulated; inputs: DELAYF, RAMP, SIN, STEP |
 | tests/fully_invalid_names | tests/fully_invalid_names/test_fully_invalid_names.mdl | exact | accumulated |
-| tests/function_capitalization | tests/function_capitalization/test_function_capitalization.mdl | blocked | a stock that goes negative |
+| tests/function_capitalization | tests/function_capitalization/test_function_capitalization.mdl | exact |  |
 | tests/game | tests/game/test_game.mdl | exact |  |
 | tests/get_constants | tests/get_constants/test_get_constants.mdl | blocked | external data in a file that is not there |
 | tests/get_constants_incomplete_subscript | tests/get_constants_incomplete_subscript/test_get_constants_incomplete_subscript.mdl | exact | accumulated |
 | tests/get_constants_subranges | tests/get_constants_subranges/test_get_constants_subranges.mdl | exact | accumulated |
 | tests/get_data | tests/get_data/test_get_data.mdl | blocked | external data in a file that is not there |
-| tests/get_data_args_3d_xls | tests/get_data_args_3d_xls/test_get_data_args_3d_xls.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/get_lookups_data_3d_xls | tests/get_lookups_data_3d_xls/test_get_lookups_data_3d_xls.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/get_lookups_subscripted_args | tests/get_lookups_subscripted_args/test_get_lookups_subscripted_args.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/get_lookups_subset | tests/get_lookups_subset/test_get_lookups_subset.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/get_data_args_3d_xls | tests/get_data_args_3d_xls/test_get_data_args_3d_xls.mdl | exact with inputs | inputs: LOOKUP |
+| tests/get_lookups_data_3d_xls | tests/get_lookups_data_3d_xls/test_get_lookups_data_3d_xls.mdl | exact with inputs | inputs: LOOKUP |
+| tests/get_lookups_subscripted_args | tests/get_lookups_subscripted_args/test_get_lookups_subscripted_args.mdl | exact with inputs | accumulated; inputs: COS, LOOKUP, SIN |
+| tests/get_lookups_subset | tests/get_lookups_subset/test_get_lookups_subset.mdl | exact with inputs | accumulated; inputs: LOOKUP |
 | tests/get_mixed_definitions | tests/get_mixed_definitions/test_get_mixed_definitions.mdl | exact with inputs | accumulated; inputs: LOOKUP |
 | tests/get_subscript_3d_arrays_xls | tests/get_subscript_3d_arrays_xls/test_get_subscript_3d_arrays_xls.mdl | exact | accumulated |
 | tests/get_time_value | tests/get_time_value/test_get_time_value.mdl | blocked | PySD cannot run it |
 | tests/get_values_order | tests/get_values_order/test_get_values_order.mdl | exact | accumulated |
 | tests/get_with_missing_values_xlsx | tests/get_with_missing_values_xlsx/test_get_with_missing_values_xlsx.mdl | exact with inputs | accumulated; inputs: LOOKUP |
-| tests/get_xls_cellrange | tests/get_xls_cellrange/test_get_xls_cellrange.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/get_xls_cellrange | tests/get_xls_cellrange/test_get_xls_cellrange.mdl | exact with inputs | accumulated; inputs: LOOKUP |
 | tests/if_stmt | tests/if_stmt/if_stmt.mdl | exact with inputs | accumulated; inputs: CMP_GT, IF_THEN_ELSE |
 | tests/initial_function | tests/initial_function/test_initial.mdl | exact |  |
 | tests/input_functions | tests/input_functions/test_inputs.mdl | exact with inputs | inputs: PULSE, PULSE_TRAIN, RAMP, STEP |
@@ -354,13 +415,13 @@ A blocked model can lack several features; "only blocker" counts the models that
 | tests/ln | tests/ln/test_ln.mdl | exact |  |
 | tests/log | tests/log/test_log.mdl | exact | accumulated |
 | tests/logicals | tests/logicals/test_logicals.mdl | exact | accumulated |
-| tests/lookups | tests/lookups/test_lookups.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/lookups_funcnames | tests/lookups_funcnames/test_lookups_funcnames.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/lookups_inline | tests/lookups_inline/test_lookups_inline.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/lookups | tests/lookups/test_lookups.mdl | exact with inputs | inputs: LOOKUP |
+| tests/lookups_funcnames | tests/lookups_funcnames/test_lookups_funcnames.mdl | exact with inputs | inputs: LOOKUP |
+| tests/lookups_inline | tests/lookups_inline/test_lookups_inline.mdl | exact with inputs | accumulated; inputs: LOOKUP |
 | tests/lookups_inline_bounded | tests/lookups_inline_bounded/test_lookups_inline_bounded.mdl | exact | accumulated |
-| tests/lookups_inline_spaces | tests/lookups_inline_spaces/test_lookups_inline_spaces.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/lookups_inline_spaces | tests/lookups_inline_spaces/test_lookups_inline_spaces.mdl | exact with inputs | accumulated; inputs: LOOKUP |
 | tests/lookups_with_expr | tests/lookups_with_expr/test_lookups_with_expr.mdl | exact with inputs | accumulated; inputs: LOOKUP, SIN |
-| tests/lookups_without_range | tests/lookups_without_range/test_lookups_without_range.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/lookups_without_range | tests/lookups_without_range/test_lookups_without_range.mdl | exact with inputs | inputs: LOOKUP |
 | tests/macro_cross_reference | tests/macro_cross_reference/test_macro_cross_reference.mdl | exact | accumulated |
 | tests/macro_expression | tests/macro_expression/test_macro_expression.mdl | exact | accumulated |
 | tests/macro_multi_expression | tests/macro_multi_expression/test_macro_multi_expression.mdl | exact | accumulated |
@@ -372,25 +433,25 @@ A blocked model can lack several features; "only blocker" counts the models that
 | tests/multiple_lines_def | tests/multiple_lines_def/test_multiple_lines_def.mdl | exact | accumulated |
 | tests/na | tests/na/test_na.mdl | blocked | a number that is not finite |
 | tests/nested_functions | tests/nested_functions/test_nested_functions.mdl | exact with inputs | inputs: CMP_LT, IF_THEN_ELSE, MODULO |
-| tests/non_negative_all | tests/non_negative_all/test_non_negative_all1.xmile | differs | a stock that goes negative |
-| tests/non_negative_flows | tests/non_negative_flows/test_non_negative_flows.xmile | differs | a two-way flow (a rate goes negative) |
-| tests/non_negative_stocks | tests/non_negative_stocks/test_non_negative_stocks.xmile | differs | a two-way flow (a rate goes negative) |
+| tests/non_negative_all | tests/non_negative_all/test_non_negative_all1.xmile | exact with inputs | inputs: CMP_GT, IF_THEN_ELSE, TIME |
+| tests/non_negative_flows | tests/non_negative_flows/test_non_negative_flows.xmile | exact with inputs | inputs: TIME |
+| tests/non_negative_stocks | tests/non_negative_stocks/test_non_negative_stocks.xmile | exact with inputs | inputs: CMP_GT, IF_THEN_ELSE |
 | tests/number_handling | tests/number_handling/test_number_handling.mdl | exact | accumulated |
 | tests/odd_number_quotes | tests/odd_number_quotes/teacup_3quotes.mdl | exact |  |
 | tests/parentheses | tests/parentheses/test_parens.mdl | exact | accumulated |
 | tests/partial_range_definitions | tests/partial_range_definitions/test_partial_range_definitions.mdl | exact with inputs | accumulated; inputs: LOOKUP |
-| tests/pi | tests/pi/test_pi.xmile | blocked | a two-way flow (a rate goes negative) |
-| tests/power | tests/power/power.mdl | blocked | a two-way flow (a rate goes negative) |
+| tests/pi | tests/pi/test_pi.xmile | exact | accumulated |
+| tests/power | tests/power/power.mdl | exact with inputs | accumulated; inputs: POWER, RAMP |
 | tests/reality_checks | tests/reality_checks/test_reality_checks.mdl | exact | accumulated |
 | tests/reference_capitalization | tests/reference_capitalization/test_reference_capitalization.mdl | exact | accumulated |
 | tests/repeated_subscript | tests/repeated_subscript/test_repeated_subscript.mdl | exact | accumulated |
-| tests/rounding | tests/rounding/test_rounding.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/rounding | tests/rounding/test_rounding.mdl | exact with inputs | accumulated; inputs: INTEGER, MODULO |
 | tests/sample_if_true | tests/sample_if_true/test_sample_if_true.mdl | blocked | SAMPLE IF TRUE |
-| tests/smaller_range | tests/smaller_range/test_smaller_range.mdl | blocked | a two-way flow (a rate goes negative) |
+| tests/smaller_range | tests/smaller_range/test_smaller_range.mdl | exact with inputs | accumulated; inputs: TIME |
 | tests/smooth | tests/smooth/test_smooth.mdl | blocked | a DELAY N / SMOOTH N whose order changes, a delay or smoothing whose time changes |
 | tests/smooth_and_stock | tests/smooth_and_stock/test_smooth_and_stock.mdl | exact |  |
-| tests/special_characters | tests/special_characters/test_special_variable_names.mdl | differs | a stock that goes negative |
-| tests/special_characters_xmile | tests/special_characters_xmile/test_special_variable_names.xmile | differs | a stock that goes negative |
+| tests/special_characters | tests/special_characters/test_special_variable_names.mdl | exact |  |
+| tests/special_characters_xmile | tests/special_characters_xmile/test_special_variable_names.xmile | exact |  |
 | tests/sqrt | tests/sqrt/test_sqrt.mdl | exact |  |
 | tests/subrange_merge | tests/subrange_merge/test_subrange_merge.mdl | exact | accumulated |
 | tests/subscript_1d_arrays | tests/subscript_1d_arrays/test_subscript_1d_arrays.mdl | exact |  |
@@ -410,8 +471,8 @@ A blocked model can lack several features; "only blocker" counts the models that
 | tests/subscript_individually_defined_1d_arrays | tests/subscript_individually_defined_1d_arrays/subscript_individually_defined_1d_arrays.mdl | exact |  |
 | tests/subscript_individually_defined_stocks | tests/subscript_individually_defined_stocks/test_subscript_individually_defined_stocks.mdl | exact |  |
 | tests/subscript_logicals | tests/subscript_logicals/test_subscript_logicals.mdl | exact with inputs | accumulated; inputs: CMP_AND, CMP_GT, CMP_OR, IF_THEN_ELSE |
-| tests/subscript_mapping_simple | tests/subscript_mapping_simple/test_subscript_mapping_simple.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/subscript_mapping_vensim | tests/subscript_mapping_vensim/test_subscript_mapping_vensim.mdl | differs | a stock that goes negative |
+| tests/subscript_mapping_simple | tests/subscript_mapping_simple/test_subscript_mapping_simple.mdl | exact |  |
+| tests/subscript_mapping_vensim | tests/subscript_mapping_vensim/test_subscript_mapping_vensim.mdl | exact |  |
 | tests/subscript_mixed_assembly | tests/subscript_mixed_assembly/test_subscript_mixed_assembly.mdl | exact | accumulated |
 | tests/subscript_multiples | tests/subscript_multiples/test_multiple_subscripts.mdl | exact |  |
 | tests/subscript_numeric_range | tests/subscript_numeric_range/test_subscript_numeric_range.mdl | exact |  |
@@ -419,30 +480,30 @@ A blocked model can lack several features; "only blocker" counts the models that
 | tests/subscript_subranges | tests/subscript_subranges/test_subscript_subrange.mdl | exact |  |
 | tests/subscript_subranges_equal | tests/subscript_subranges_equal/test_subscript_subrange_equal.mdl | exact |  |
 | tests/subscript_switching | tests/subscript_switching/subscript_switching.mdl | exact |  |
-| tests/subscript_transposition | tests/subscript_transposition/test_subscript_transposition.mdl | blocked | a two-way flow (a rate goes negative) |
+| tests/subscript_transposition | tests/subscript_transposition/test_subscript_transposition.mdl | exact | accumulated |
 | tests/subscript_updimensioning | tests/subscript_updimensioning/test_subscript_updimensioning.mdl | exact | accumulated |
-| tests/subscripted_delays | tests/subscripted_delays/test_subscripted_delays.mdl | blocked | a delay whose material sits in a measured stock (Vensim's pipeline stock) |
+| tests/subscripted_delays | tests/subscripted_delays/test_subscripted_delays.mdl | exact with inputs | inputs: STEP |
 | tests/subscripted_eqns |  | no model |  |
 | tests/subscripted_flows | tests/subscripted_flows/test_subscripted_flows.mdl | exact |  |
-| tests/subscripted_if_then_else | tests/subscripted_if_then_else/test_subscripted_if_then_else.mdl | blocked | a two-way flow (a rate goes negative) |
+| tests/subscripted_if_then_else | tests/subscripted_if_then_else/test_subscripted_if_then_else.mdl | exact | accumulated |
 | tests/subscripted_logicals | tests/subscripted_logicals/test_subscripted_logicals.mdl | exact with inputs | accumulated; inputs: CMP_AND, CMP_GT, CMP_LT, CMP_NOT, CMP_OR, IF_THEN_ELSE |
-| tests/subscripted_lookups | tests/subscripted_lookups/test_subscripted_lookups.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/subscripted_ramp_step | tests/subscripted_ramp_step/test_subscripted_ramp_step.mdl | differs | a two-way flow (a rate goes negative) |
-| tests/subscripted_round | tests/subscripted_round/test_subscripted_round.mdl | differs | a two-way flow (a rate goes negative) |
+| tests/subscripted_lookups | tests/subscripted_lookups/test_subscripted_lookups.mdl | exact with inputs | accumulated; inputs: LOOKUP |
+| tests/subscripted_ramp_step | tests/subscripted_ramp_step/test_subscripted_ramp_step.mdl | exact with inputs | accumulated; inputs: RAMP, STEP |
+| tests/subscripted_round | tests/subscripted_round/test_subscripted_round.mdl | differs | the runs differ |
 | tests/subscripted_smooth | tests/subscripted_smooth/test_subscripted_smooth.mdl | blocked | a delay or smoothing whose time changes, a DELAY N / SMOOTH N whose order changes |
-| tests/subscripted_trend | tests/subscripted_trend/test_subscripted_trend.mdl | blocked | TREND / FORECAST |
-| tests/subscripted_trig | tests/subscripted_trig/test_subscripted_trig.mdl | blocked | a two-way flow (a rate goes negative) |
-| tests/subscripted_xidz | tests/subscripted_xidz/test_subscripted_xidz.mdl | blocked | a two-way flow (a rate goes negative) |
+| tests/subscripted_trend | tests/subscripted_trend/test_subscripted_trend.mdl | exact with inputs | accumulated; inputs: SIN |
+| tests/subscripted_trig | tests/subscripted_trig/test_subscripted_trig.mdl | exact with inputs | accumulated; inputs: ABS, ARCCOS, ARCSIN, ARCTAN, COS, COSH, EXP, LN, SIN, SINH, TAN, TANH |
+| tests/subscripted_xidz | tests/subscripted_xidz/test_subscripted_xidz.mdl | exact | accumulated |
 | tests/subset_duplicated_coord | tests/subset_duplicated_coord/test_subset_duplicated_coord.mdl | exact | accumulated |
 | tests/tabbed_arrays | tests/tabbed_arrays/tabbed_arrays.mdl | exact | accumulated |
 | tests/time | tests/time/test_time.mdl | exact with inputs | inputs: CMP_EQ, IF_THEN_ELSE |
-| tests/trend | tests/trend/test_trend.mdl | blocked | TREND / FORECAST |
-| tests/trig | tests/trig/test_trig.mdl | blocked | a stock that goes negative |
+| tests/trend | tests/trend/test_trend.mdl | exact with inputs | accumulated; inputs: SIN |
+| tests/trig | tests/trig/test_trig.mdl | exact |  |
 | tests/unchangeable_constant | tests/unchangeable_constant/test_unchangeable_constant.mdl | exact | accumulated |
 | tests/unicode_characters | tests/unicode_characters/unicode_test_model.mdl | exact | accumulated |
-| tests/variable_ranges | tests/variable_ranges/test_variable_ranges.mdl | differs | a stock that goes negative |
+| tests/variable_ranges | tests/variable_ranges/test_variable_ranges.mdl | exact |  |
 | tests/vector_order | tests/vector_order/test_vector_order.mdl | blocked | vector and matrix functions (VECTOR SELECT, VECTOR ELM MAP, ...) |
 | tests/vector_select | tests/vector_select/test_vector_select.mdl | blocked | vector and matrix functions (VECTOR SELECT, VECTOR ELM MAP, ...) |
 | tests/with_lookup | tests/with_lookup/test_with_lookup.mdl | exact | accumulated |
 | tests/xidz_zidz | tests/xidz_zidz/xidz_zidz.mdl | exact | accumulated |
-| tests/zeroled_decimals | tests/zeroled_decimals/test_zeroled_decimals.mdl | blocked | a two-way flow (a rate goes negative) |
+| tests/zeroled_decimals | tests/zeroled_decimals/test_zeroled_decimals.mdl | exact with inputs | inputs: TIME |

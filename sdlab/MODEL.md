@@ -71,6 +71,7 @@ A model is one JSON file. Examples live in `sdlab/examples/<id>.json`, with thei
 | `gap` | (`goal` − level of `stock`) / `time`, never below 0 |
 | `available` | everything in the source (the machine sets the pace) |
 | `linear` | `c` + Σ `k` × level of `stock` over `terms` |
+| `expr` | an expression (ground truth only, 2026-10-19; below) |
 
 A rate (`stock` of proportional, gap or a linear term) and an effect may read a **measured input**
 by its name instead of a stock.
@@ -102,6 +103,42 @@ too. Each is additive: a model without it runs exactly as before.
   and drained at its own level/T, with `"exact"` flows; SMOOTH3 is three such stages at 3/T. STEP,
   PULSE, RAMP and PULSE TRAIN in a rate are schedule changes (unannounced); an announced PULSE of
   material is an injection; as data an outside driver is an input (above).
+
+## Expressions, auxiliaries, switches, signed stocks, two-way flows, fixed delays
+
+Added on 2026-10-19 (queue item 2d) for ground-truth models (`sdlab/sdtruth.py`,
+`sdlab/sdtruth_expr.py`) and the ladder's cases (`docs/LADDER.md`, "Expressions, signed stocks,
+two-way flows, switches, fixed delays"). Each is opt-in and additive: a model that uses none of them
+runs through the engine exactly as before (`tests/test_engine_additive.py`); one that uses any runs
+through `Truth._run_ext`, the same loop with these added (`tests/test_engine_2d.py` checks it gives
+every existing case the same numbers too). The editor (`static/sim.js`) does not run them yet.
+
+- **`{"form": "expr", "expr": "0.3 * sqrt(T) + min(A, B / max(1, C))"}`**: a rate as an expression of
+  stocks, inputs and auxiliaries: `+ - * / ^`, comparisons (`<`, `<=`, `>`, `>=`, `==`, `!=`, 1 or 0),
+  `min`, `max`, `abs`, `sqrt`, `exp`, `ln`, `log(x, base)`, `power`, `ceil`, `floor`, `integer`,
+  `modulo`, `quantum`, trigonometry, `if_then_else(c, a, b)`, `and`, `or`, `not`, `xidz`, `zidz`,
+  `lookup(x, [[x0, y0], ...])` (linear, held at the ends) and `flow(id)` (another flow's amount in this
+  sub-step, after its noise and the floor and ceiling, as a rate; it may not itself read a flow).
+  Floored at 0 like every rate, unless the flow is two-way. Division by zero is an error (use `zidz`).
+- **`"auxiliaries": {"util": "cpu / max(1, ready)"}`**: algebraic variables (no stock), computed in
+  every sub-step from the levels and inputs (and each other, in dependency order; a loop is an error),
+  read by name by a rate, an expression, an effect or a switch. A run reports each one's mean per
+  step (`"auxiliaries"`).
+- **`"switch": {"of": "T", "on_below": 19, "off_above": 21}`** (on a stock, level 0 or 1): a switch with
+  memory (hysteresis), set at the start of every sub-step from its expression: 1 below `on_below`, 0
+  above `off_above`, held in between (or `on_above` / `off_below`). No flow may move it.
+- **`"signed": true`** (on a stock): it may go negative: no floor on its outflows, and an injection may
+  take it below 0.
+- **`"two_way": true`** (on a flow): its rate is not floored at 0; a negative rate moves material back
+  (from `to` to `from`). Counting noise is the signed Poisson of its size. The floor of an unsigned
+  stock and a ceiling apply to whichever stock it takes from or fills.
+- **`"max_net": true`** (on a stock with `max`): the room under the ceiling counts the step's
+  outflows, so a full stock holds at `max` at dt = 1 (rather than `max / (1 + k dt)`).
+- **`"delay": {..., "shape": "pipe"}`**: a stage of a compiled DELAY FIXED (`delay_fixed(rate, T)` in
+  the case format): time / dt hidden stages, each passed on whole in one sub-step (exact flows at
+  k = 1 / dt), so what leaves arrives exactly T later; the answer key reports a pipe. A DELAYn whose
+  `time` is an expression (its stages `{"form": "expr", "expr": "3 * H / (time)"}`) reports
+  `delay_expr` and no number.
 
 ## Programs
 

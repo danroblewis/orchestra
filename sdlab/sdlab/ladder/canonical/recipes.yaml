@@ -120,3 +120,48 @@
   tests: "a subscripted model (Categories[Cats], switching through a 5 x 5 transition matrix with SUM over Cats!) flattens into five stocks, and the switching is recovered as the model writes it: each category drains at 0.1 x its level, and fills from outside at 0.1 x the matrix's column times the other four (e.g. c1 fills at 0.01 c2 + 0.03 c3 + 0.02 c4 + 0.04 c5), so the total is conserved; an announced 4999 into c1 at step 1 (the model starts with a total of 1), then every 100 steps 1000 moved into c1 from the other four (announced injections, 250 out of each), shows the mixing again"
   inject: [{t: 1, stock: Categories__c1, amount: 4999}]
   pulses: {first: 100, every: 100, add: {Categories__c1: 1000, Categories__c2: -250, Categories__c3: -250, Categories__c4: -250, Categories__c5: -250}}
+
+# ---- queue item 2d (2026-10-19): engine features the canonical sources needed ----
+
+- id: 113-canonical-harmonic-oscillator
+  model: sdxorg-harmonic-oscillator.mdl
+  source: "SDXorg/test-models samples/simple_harmonic_oscillator/simple_harmonic_oscillator.mdl (MIT licence, Copyright 2015 The test-models Authors; models/LICENSE-sdxorg-test-models), imported unchanged through PySD"
+  title: "Harmonic oscillator (SDXorg sample)"
+  level: 13
+  tags: [canonical, signed, two-way, coupled, dt]
+  tests: "a spring (position' = speed, speed' = -0.05 x position, Euler at dt 1/100) is recovered as two two-way flows of signed stocks: position fills (and empties) at its speed, and speed at -0.05 x position; both swing through 0 with a period of about 28 steps, so neither stock nor rate keeps a sign; without counting noise (whole things moved at random would pump energy into an undamped spring)"
+  variants: {noise: [none], lengths: {short: 300, long: 2000}}
+
+- id: 114-canonical-workforce-capacity
+  model: sdxorg-workforce.mdl
+  source: "SDXorg/test-models samples/Workforce/workforce.mdl (MIT licence, Copyright 2015 The test-models Authors; models/LICENSE-sdxorg-test-models), imported unchanged through PySD"
+  title: "Workforce with capacity-limited completion (SDXorg sample)"
+  level: 14
+  tags: [canonical, min, effect, chain, injection, dt]
+  tests: "the SDXorg Workforce sample (Euler at dt 1/32) is recovered: tasks are completed at MIN(4 x experts - 0.67 x rookies, backlog), the capacity of the staff or the whole backlog, whichever is less; hiring is a table effect of the backlog, rookies mature at 1/15 and experts depart at 1/35; announced bursts of 800 tasks every 150 steps"
+  pulses: {first: 100, every: 150, add: {Task_Backlog: 800}}
+
+- id: 115-canonical-enrolment-pipeline
+  model: enrolment-pipeline.mdl
+  source: "written for SD Lab after Vensim's pipeline stock (the SDXorg Population sample's Population = INTEG(Births - DELAY3(Births, ...))); MIT, as SD Lab"
+  title: "Enrolment pipeline (a pipeline stock)"
+  level: 14
+  tags: [canonical, input, delay, hidden, pipeline]
+  tests: "a pipeline stock is recovered: students enrol at a measured input and graduate a third-order delay of 4 steps later, so the graduation that drains the stock is the input smoothed three times (SMOOTH3, three hidden stages fed from outside), not a fraction of the stock"
+
+- id: 116-canonical-world3-pollution-full
+  model: world3-pollution-full.mdl
+  source: "written for SD Lab from World3-03's persistent pollution equations with the assimilation half-life multiplier (Meadows, Randers and Meadows 2004; PPASR = PPOL / (1.4 x AHL70 x AHLM(PPOL / PPOL70))); MIT, as SD Lab"
+  title: "World3 persistent pollution with saturating assimilation"
+  level: 15
+  tags: [canonical, input, delay, hidden, ratio, injection]
+  tests: "World3's persistent pollution sector is recovered with its nonlinear assimilation: generation (a measured input) appears after a 20-step third-order delay, and assimilation PPOL / (2.1 x AHLM(PPOL / 136)) slows as pollution rises above its 1970 level (the half-life multiplier grows 1 + (x - 1) / 25): a ratio of the stock to a table of the stock; announced spills of 400 every 100 steps push it there"
+  pulses: {first: 60, every: 100, add: {Persistent_Pollution: 400}}
+
+- id: 117-canonical-fixed-delay-line
+  model: fixed-delay-line.mdl
+  source: "written for SD Lab after Sterman (2000) Business Dynamics ch. 11 (a pipeline delay, Vensim's DELAY FIXED); MIT, as SD Lab"
+  title: "Production line with a fixed throughput time"
+  level: 14
+  tags: [canonical, input, delay, hidden, pipe]
+  tests: "a fixed delay is recovered: orders (a measured input) fill the backlog, production starts at backlog / 4 and everything started arrives in inventory exactly 5 steps later (DELAY FIXED: a pipe of five hidden stages, not an exponential or Erlang delay), and shipments drain inventory at 1/6"

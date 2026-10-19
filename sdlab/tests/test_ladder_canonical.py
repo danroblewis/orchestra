@@ -128,10 +128,10 @@ def test_steps_and_pulses_of_time_are_measured_inputs(tmp_path):
     assert conv.drivers == ["PULSE", "STEP"] and "inputs:" in conv.text
 
 
+# (SQRT, MIN, IF THEN ELSE, a ratio, EXP, a power and DELAY FIXED of a stock were named here as missing
+# until queue item 2d; they convert now: the tests after this one)
 @pytest.mark.parametrize("expr,feature", [
-    ("SQRT(A)", "SQRT"), ("MIN(A, 3)", "MIN / MAX"), ("IF THEN ELSE(A > 5, 1, 0)", "IF THEN ELSE"),
-    ("A/B", "division by a stock (a ratio)"), ("EXP(A/100)", "EXP / LN / LOG"), ("A^0.5", "a non-integer power"),
-    ("DELAY FIXED(A, 3, 0)", "fixed delay (DELAY FIXED)"),
+    ("RANDOM UNIFORM(0, A, 1)", "random functions"), ("STEP(A, 5)", "STEP / PULSE / RAMP of a stock"),
 ])
 def test_what_cannot_be_held_is_named(tmp_path, expr, feature):
     _need_pysd()
@@ -140,20 +140,73 @@ def test_what_cannot_be_held_is_named(tmp_path, expr, feature):
     assert conv.text is None and feature in conv.features, conv.blocked
 
 
-def test_a_two_way_flow_converts_but_differs_and_says_why(tmp_path):
+# ---- the engine features of queue item 2d ----
+
+@pytest.mark.parametrize("expr,text", [
+    ("SQRT(A)", "sqrt(A)"), ("MIN(A, 3)", "min(A, 3)"), ("IF THEN ELSE(A > 5, 1, 0)", "if_then_else((A > 5), 1, 0)"),
+    ("A/B", "(A / (B))"), ("EXP(A/100)", "exp((0.01 * A))"), ("A^0.5", "(A ^ 0.5)"),
+])
+def test_a_rate_without_a_linear_form_is_an_expression(tmp_path, expr, text):
+    _need_pysd()
+    body = _stock("A", "Inflow-Out", 10) + _stock("B", "Out", 5) + _eq("Inflow", "2") + _eq("Out", expr)
+    conv, eq = _convert(tmp_path, body)
+    assert conv.text is not None and eq.ok, (conv.blocked, eq)
+    assert f'A -> B as out: "{text}"' in conv.text, conv.text
+
+
+def test_delay_fixed_into_a_stock_is_a_pipe_and_out_of_one_a_delayed_reader(tmp_path):
+    _need_pysd()
+    body = (_stock("A", "Inflow-Leaving", 50) + _stock("B", "Arriving-Out", 0) + _eq("Inflow", "5") + _eq("Leaving", "A/10")
+            + _eq("Arriving", "DELAY FIXED(Leaving, 3, 2)") + _eq("Out", "B/5"))
+    conv, eq = _convert(tmp_path, body, final=40)
+    assert eq.ok, eq
+    assert 'A -> B as arriving: "delay_fixed(0.1 * A, 3, initial=2)"' in conv.text
+    body = _stock("A", "Inflow-Out", 10) + _stock("B", "Out", 5) + _eq("Inflow", "2+STEP(3, 5)") + _eq("Out", "DELAY FIXED(A, 3, 0)")
+    conv, eq = _convert(tmp_path, body, final=40)
+    assert eq.ok, eq
+    assert 'A <-> B as out: "delayed(A, 3, initial=0)"' in conv.text          # (A goes negative, and so does the delayed A)
+
+
+def test_trend_and_forecast_are_a_smoothing_and_an_expression(tmp_path):
+    _need_pysd()
+    body = (_stock("A", "Inflow", 10) + _stock("T", "Tr", 0) + _stock("F", "Fc", 0) + _eq("Inflow", "1+STEP(2, 8)")
+            + _eq("Tr", "TREND(A, 4, 0.1)") + _eq("Fc", "FORECAST(A, 4, 2)"))
+    conv, eq = _convert(tmp_path, body, final=30)
+    assert eq.ok, eq
+    assert "zidz(" in conv.text and "smooth(A, 4, initial=" in conv.text
+
+
+def test_a_two_way_flow_and_a_signed_stock_convert_exactly(tmp_path):
     _need_pysd()
     body = _stock("A", "Net", 10) + _eq("Net", "5-0.5*A+3*SIN(Time)")       # goes negative once A is above 10 + ...
     conv, eq = _convert(tmp_path, body, final=30)
-    assert conv.text is not None and not eq.ok and eq.reason.startswith("a two-way flow"), eq
+    assert conv.text is not None and eq.ok, eq
+    assert "outside <-> A as net:" in conv.text
+    body = _stock("X", "Vx", 1) + _stock("V", "Ax", 0) + _eq("Vx", "V") + _eq("Ax", "-0.25*X")      # a spring
+    conv, eq = _convert(tmp_path, body, final=30)
+    assert conv.text is not None and eq.ok, eq
+    assert "X: 1 signed" in conv.text and "V: 0 signed" in conv.text
 
 
-def test_the_full_world3_pollution_sector_is_blocked_by_its_ratio():
+def test_the_floor_is_lifted_only_where_euler_has_none(tmp_path):
+    """Births 200, aging out 300 from 1000: SD Lab's floor cuts the last step's outflow, Euler does not;
+    convert_checked makes that stock signed and no other."""
+    _need_pysd()
+    from sdlab.ladder.pysd_import import convert_checked
+
+    body = _stock("P", "Births-Aging", 1000) + _stock("Q", "Aging-Out", 10) + _eq("Births", "200") + _eq("Aging", "300") + _eq("Out", "Q/10")
+    conv, eq = convert_checked(_model(tmp_path, body, final=10, dt=1))
+    assert eq.ok, eq
+    assert "P: 1000 signed" in conv.text and "Q: 10\n" in conv.text
+
+
+def test_the_full_world3_pollution_sector_converts_now():
     _need_pysd()
     from sdlab.ladder.canonical.build import MODELS
-    from sdlab.ladder.pysd_import import convert
+    from sdlab.ladder.pysd_import import convert, equivalent
 
     conv = convert(MODELS / "world3-pollution-full.mdl")
-    assert conv.text is None and conv.features == ["division by a stock (a ratio)"]
+    assert conv.text is not None and equivalent(conv).ok
 
 
 # ---- arrays, macros, external data, DELAY N / SMOOTH N (queue item 2c) ----

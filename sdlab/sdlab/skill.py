@@ -19,6 +19,7 @@ import numpy as np
 
 from .discovery.observer import observe, unmeasured
 from .discovery.simulate import Model, levels_array, starts_for
+from .sdtruth import uses_2d
 
 BOOTSTRAP = 1000
 
@@ -75,7 +76,11 @@ def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 1
     # measured inputs (both models read them), and the truth's own sub-step and ceilings (2026-10-18)
     inputs = {"t": t, "values": data["inputs"]} if data.get("inputs") else None
     ceilings = {s["id"]: s["max"] for s in truth_model.get("stocks") or [] if s.get("max") is not None}
-    truth_end = Model(truth, ids, inputs=inputs, dt=float(truth_model.get("dt") or 1), ceilings=ceilings).run(A[:, s0 - 1], times, injections)
+    if uses_2d(truth_model):                               # queue item 2d's features: the engine itself runs the truth (sdlab/ladder/sim.py)
+        from .ladder.sim import truth_end as engine_end
+        truth_end = engine_end(truth_model, A, ids, s0, t, horizon)
+    else:
+        truth_end = Model(truth, ids, inputs=inputs, dt=float(truth_model.get("dt") or 1), ceilings=ceilings).run(A[:, s0 - 1], times, injections)
     return {"horizon": horizon, "flows": truth, "ids": ids, "fed": fed, "exo": exo, "A": A, "s0": s0, "times": times, "truth_end": truth_end,
             "injections": injections, "inputs": inputs}
 

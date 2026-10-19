@@ -54,6 +54,7 @@ from .arrays import F_ARRAYS, Subscripts, label
 TIME = sp.Symbol("TIME", real=True)
 DELAY = sp.Function("DELAY")
 SMOOTH = sp.Function("SMOOTH")
+DELAYF = sp.Function("DELAYF")      # DELAY FIXED (2d): DELAYF(TIME, input, order, initial, t0), the delay order x TIME STEP
 CONTROL = {"initial_time", "final_time", "time_step", "saveper"}
 TIME_FNS = {"step", "pulse", "pulse_train", "ramp", "Xpulse", "Xpulse_train", "Xramp", "get_time_value"}
 RANDOM = {"random_0_1", "random_uniform", "random_normal", "random_exponential", "random_poisson", "random_triangular",
@@ -455,7 +456,7 @@ class _Reader:
             if fname in TIME_FNS:                                                  # reads TIME without naming it
                 return sp.Function(f"F_{fname}")(TIME, *args)
             out = sp.Function(f"F_{fname}")(*args)
-            if fname not in RANDOM and not any(a.free_symbols or a.has(DELAY, SMOOTH) for a in args):   # a function of numbers is a number
+            if fname not in RANDOM and not any(a.free_symbols or a.has(DELAY, SMOOTH, DELAYF) for a in args):   # a function of numbers is a number
                 from .timefns import evaluate
                 try:
                     return number(evaluate(out, 0.0, 1.0, {}))
@@ -477,9 +478,11 @@ class _Reader:
         if isinstance(node, ae.SmoothNStructure):
             return self.stateful(SMOOTH, node.input, node.smooth_time, node.initial, node.order, where)
         if isinstance(node, ae.DelayFixedStructure):
-            raise Blocked(F_FIXED, where)
-        if isinstance(node, (ae.TrendStructure, ae.ForecastStructure)):
-            raise Blocked(F_TREND, where)
+            return self.delay_fixed(node, where)
+        if isinstance(node, ae.TrendStructure):
+            return self.trend(node, where)
+        if isinstance(node, ae.ForecastStructure):
+            return self.forecast(node, where)
         if isinstance(node, ae.SampleIfTrueStructure):
             raise Blocked(F_SAMPLE, where)
         if isinstance(node, (ae.AllocateAvailableStructure, ae.AllocateByPriorityStructure)):
@@ -510,7 +513,7 @@ class _Reader:
         """A function of numbers (no stock, no TIME) as its number."""
         from .timefns import evaluate
 
-        if e.free_symbols or e.has(DELAY, SMOOTH) or any(type(a).__name__.removeprefix("F_") in RANDOM for a in e.atoms(sp.Function)):
+        if e.free_symbols or e.has(DELAY, SMOOTH, DELAYF) or any(type(a).__name__.removeprefix("F_") in RANDOM for a in e.atoms(sp.Function)):
             return e
         try:
             return number(evaluate(e, 0.0, 1.0, self.m.lookups))
@@ -554,7 +557,42 @@ class _Reader:
             raise Blocked(F_DELAYN, where)
         if t.free_symbols:
             raise Blocked(F_DELAYT, where)
-        return fn(self.expr(inp, where), t, self.expr(init, where), sp.Integer(int(n)))
+        n = int(n)
+        if fn is DELAY:                    # PySD lowers a DELAY's order until each stage takes a TIME STEP at least (2d)
+            while n > 1 and n * self.m.dt > float(t) + 1e-12:
+                n -= 1
+        return fn(self.expr(inp, where), t, self.expr(init, where), sp.Integer(n))
+
+    def delay_fixed(self, node, where: str):
+        """DELAY FIXED(x, time, initial) (2d): its order is fixed when the model starts, as PySD and
+        Vensim fix it: round(max(time / TIME STEP, 1)) of the time's initial value. The output is x that
+        many TIME STEPs ago, and `initial` before then. TIME is its first argument (it changes with
+        time even when x does not), so a fixed delay of a function of TIME is a function of TIME."""
+        t = self.initial_value(self.expr(node.delay_time, where), where)
+        order = round(max(float(t) / self.m.dt, 1) + 1e-6)
+        init = self.initial_value(self.expr(node.initial, where), where)
+        return DELAYF(TIME, self.expr(node.input, where), sp.Integer(order), init, number(self.m.t0))
+
+    def _average(self, node, where: str):
+        x, t = self.expr(node.input, where), self.expr(node.average_time, where)
+        if t.free_symbols:
+            raise Blocked(F_DELAYT, where)
+        return x, t, self.expr(node.initial_trend, where)
+
+    def trend(self, node, where: str):
+        """TREND(x, time, initial trend) (2d) as PySD computes it: average = SMOOTH(x, time) from
+        x / (1 + initial trend x time); zidz(x - average, time x |average|)."""
+        x, t, g = self._average(node, where)
+        av = SMOOTH(x, t, x / (1 + g * t), sp.Integer(1))
+        return sp.Function("F_zidz")(x - av, t * sp.Function("F_abs")(av))
+
+    def forecast(self, node, where: str):
+        """FORECAST(x, time, horizon, initial trend) (2d) as PySD computes it: average = SMOOTH(x, time)
+        from x / (1 + initial trend); x (1 + zidz(x - average, time x average) x horizon)."""
+        x, t, g = self._average(node, where)
+        h = self.expr(node.horizon, where)
+        av = SMOOTH(x, t, x / (1 + g), sp.Integer(1))
+        return x * (1 + sp.Function("F_zidz")(x - av, t * av) * h)
 
     def initial_value(self, e, where: str):
         """INITIAL(x): x at the start (stocks at their initial levels, TIME at the initial time)."""

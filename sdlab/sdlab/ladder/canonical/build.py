@@ -39,6 +39,8 @@ def case_text(r: dict, conv) -> str:
              "# canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).",
              f"title: {_q(r['title'])}", f"level: {r['level']}", f"tags: [{', '.join(r['tags'])}]",
              f"tests: {_q(r['tests'])}", f"source: {_q(r['source'])}", f"seed: {int(r['id'][:3])}"]
+    if r.get("variants"):                          # the case's own variants (2d: a signed oscillator is run without counting noise)
+        lines.append("variants: " + yaml.safe_dump(r["variants"], default_flow_style=True, sort_keys=False).strip())
     lines.append(render(conv.parts, r.get("words")).rstrip("\n"))
     p = r.get("pulses")
     once = r.get("inject") or []                   # one-off injections, before the pulses
@@ -55,12 +57,11 @@ def case_text(r: dict, conv) -> str:
 
 def build_one(r: dict) -> tuple[str, object, object]:
     """(case text, conversion, equivalence); raises if the import is blocked or differs from PySD."""
-    from ..pysd_import import convert, equivalent
+    from ..pysd_import import convert_checked
 
-    conv = convert(MODELS / r["model"])
+    conv, eq = convert_checked(MODELS / r["model"])               # (2d: convert, then signed where only the floor differs)
     if conv.text is None:
         raise ValueError(f"{r['id']}: {r['model']} does not convert: {'; '.join(conv.features)}")
-    eq = equivalent(conv)
     if not eq.ok:
         raise ValueError(f"{r['id']}: {r['model']} converts, but SD Lab's run differs from PySD's ({eq.reason}; {eq.error})")
     return case_text(r, conv), conv, eq

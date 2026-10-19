@@ -1,0 +1,41 @@
+{UTF-8}
+Students= INTEG (
+	Enrolment-Graduation,
+		400)
+	~	Students
+	~	A pipeline stock (Vensim's pattern, as in the SDXorg Population sample): the students enrolled are in the stock until they graduate, a third-order delay of their enrolment (written for SD Lab).
+	|
+Enrolment=
+	100+30*SIN(2*3.14159265358979*Time/50)+40*PULSE TRAIN(30, 60, 200, 1e+09)
+	~	Students/Year
+	~	A measured input: a seasonal intake and a larger cohort for 60 years in every 200.
+	|
+Graduation=
+	DELAY3(Enrolment, Study Time)
+	~	Students/Year
+	~	Those enrolled leave the stock a third-order delay later: the delay's contents are the stock itself.
+	|
+Study Time=
+	4
+	~	Year
+	~	
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 100
+	~	Year
+	~		|
+INITIAL TIME  = 0
+	~	Year
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Year
+	~		|
+TIME STEP  = 1
+	~	Year
+	~		|
+\\\---/// Sketch information - do not modify anything except names

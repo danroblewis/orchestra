@@ -52,20 +52,22 @@ def classify(path: str) -> dict:
     import warnings
 
     warnings.filterwarnings("ignore")
-    from ..pysd_import import convert, equivalent
+    from ..pysd_import import convert, convert_checked
 
     try:
         conv = convert(path)
     except Exception as e:                                                      # noqa: BLE001
         return {"status": "blocked", "features": ["the importer fails"], "where": [f"{type(e).__name__}: {str(e)[:160]}"]}
-    out = {"wrapped": conv.wrapped, "scale": conv.scale, "dt": conv.dt, "steps": conv.steps, "drivers": conv.drivers,
-           "values": conv.uses_values, "notes": conv.notes}
     if conv.text is None:
+        out = {"wrapped": conv.wrapped, "scale": conv.scale, "dt": conv.dt, "steps": conv.steps, "drivers": conv.drivers,
+               "values": conv.uses_values, "notes": conv.notes}
         return out | {"status": "blocked", "features": conv.features, "where": [f"{f}: {w}" for f, w in conv.blocked][:12]}
     try:
-        eq = equivalent(conv)
+        conv, eq = convert_checked(path)                                        # (2d: signed where only the floor differs)
     except Exception as e:                                                      # noqa: BLE001
-        return out | {"status": "differs", "reason": f"SD Lab cannot run it: {type(e).__name__}: {str(e)[:160]}", "text": conv.text}
+        return {"wrapped": conv.wrapped, "status": "differs", "reason": f"SD Lab cannot run it: {type(e).__name__}: {str(e)[:160]}", "text": conv.text}
+    out = {"wrapped": conv.wrapped, "scale": conv.scale, "dt": conv.dt, "steps": conv.steps, "drivers": conv.drivers,
+           "values": conv.uses_values, "notes": conv.notes}
     if not eq.ok:
         return out | {"status": "differs", "reason": eq.reason, "error": eq.error, "text": conv.text}
     return out | {"status": "exact with inputs" if conv.drivers else "exact", "error": eq.error, "text": conv.text}

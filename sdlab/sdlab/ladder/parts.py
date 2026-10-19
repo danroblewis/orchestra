@@ -101,7 +101,7 @@ def _hidden_chains(flows: list[dict], measured: set) -> tuple[dict, set]:
     # measured B is one hidden path whose delay is the DELAY's time ("time")
     groups: dict = {}
     for i, f in enumerate(flows):
-        if isinstance(f.get("delay"), dict) and f["delay"].get("of", 1) > 1:
+        if isinstance(f.get("delay"), dict) and f["delay"].get("of", 1) > 1 and isinstance(f["delay"].get("time"), (int, float)):   # (2d: a time that changes is no number)
             groups.setdefault(f["delay"]["id"], []).append((f["delay"]["stage"], i, f))
     for g in groups.values():
         g.sort(key=lambda x: x[0])
@@ -195,6 +195,13 @@ def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set
         if i in used:
             continue
         a = f.get("from") if f.get("from") in measured else None
+        if f.get("whole"):                                # 2d (sim.py): an expression, two-way, auxiliary or switch flow, compared as a whole
+            b = f.get("to") if f.get("to") in measured else None
+            if (f.get("from") and a is None) or (f.get("to") and b is None) or (a is None and b is None):
+                notes.append(f"{f.get('id') or f.get('from')}->{f.get('to')}: touches an unmeasured stock, not scored")
+                continue
+            out[("whole", a, b)] = {"rate": f.get("rate"), **({"two_way": True} if f.get("two_way") else {})}
+            continue
         b = f.get("to") if f.get("to") in measured else None
         if (f.get("from") and a is None) or (f.get("to") and b is None) or (a is None and b is None):
             notes.append(f"{f.get('id') or f.get('from')}->{f.get('to')}: touches an unmeasured stock, not scored")
@@ -221,6 +228,8 @@ def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set
 
 
 def kind(key: tuple) -> str:
+    if key[0] == "whole":
+        return "whole flow"
     if key[0] in ("uses", "effect", "hidden", "via", "viaeffect"):
         return {"uses": "co-flow", "effect": "effect", "hidden": "hidden", "via": "hidden inflow", "viaeffect": "hidden inflow effect"}[key[0]]
     _, a, b, r = key
@@ -237,6 +246,8 @@ def label(key: tuple) -> str:
         return f"{end(key[1])} -> {end(key[2])} [{'const' if key[3] == ONE else key[3]}]"
     if key[0] == "hidden":
         return f"{end(key[1])} -> (hidden) -> {key[2]}"
+    if key[0] == "whole":
+        return f"{end(key[1])} -> {end(key[2])} [as a whole]"
     if key[0] == "via":
         return f"outside -> (hidden) -> {key[2]} [{'const' if key[3] == ONE else key[3]}]"
     if key[0] == "viaeffect":

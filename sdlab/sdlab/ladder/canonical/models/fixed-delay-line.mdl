@@ -1,0 +1,67 @@
+{UTF-8}
+Backlog= INTEG (
+	Orders-Production Starts,
+		200)
+	~	Orders
+	~	A production line with a fixed throughput time (Sterman 2000 ch. 11, DELAY FIXED: a pipeline delay; written for SD Lab).
+	|
+Inventory= INTEG (
+	Production Completion-Shipments,
+		300)
+	~	Units
+	~	
+	|
+Orders=
+	50+20*PULSE TRAIN(30, 40, 120, 1e+09)
+	~	Orders/Week
+	~	A measured input: 50 a week, and 70 for 40 weeks in every 120.
+	|
+Production Starts=
+	Backlog/Start Time
+	~	Units/Week
+	~	
+	|
+Production Completion=
+	DELAY FIXED(Production Starts, Throughput Time, 50)
+	~	Units/Week
+	~	Everything started is finished exactly Throughput Time later: a pipe of hidden stages.
+	|
+Shipments=
+	Inventory/Shipping Time
+	~	Units/Week
+	~	
+	|
+Start Time=
+	4
+	~	Week
+	~	
+	|
+Throughput Time=
+	5
+	~	Week
+	~	
+	|
+Shipping Time=
+	6
+	~	Week
+	~	
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 100
+	~	Week
+	~		|
+INITIAL TIME  = 0
+	~	Week
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Week
+	~		|
+TIME STEP  = 1
+	~	Week
+	~		|
+\\\---/// Sketch information - do not modify anything except names

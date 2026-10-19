@@ -133,19 +133,16 @@ injections: [{t: 100, stock: A, amount: 500}]
 
 # ---- mistakes ----
 
+# (A * B, A ^ 2, 1 + 2 + A, (A - 300) / 5 and max(1, A) were errors here until queue item 2d made every
+# other rate an expression: tests/test_engine_2d.py checks that they compile to one now)
 @pytest.mark.parametrize("body, line, words", [
     ("  A -> B: 0.5 ** A\n", 7, "expected a number"),
     ("  A -> B: 0.5 * Z\n", 7, "unknown stock 'Z'"),
-    ("  A -> B: 0.5 * A * B\n", 7, "a rate is a number"),
-    ("  A -> B: 0.5 * A ^ 2\n", 7, "unexpected '^'"),
-    ("  A -> B: 1 + 2 + A\n", 7, "one number"),
-    ("  A -> B: (A - 300) / 5\n", 7, "gap"),
     ("  A -> B: 0.5 * A * effect(C, cubic)\n", 7, "linear or table"),
     ("  A -> B: 0.5 * A * effect(C, table)\n", 7, "points"),
     ("  A -> B: 0.5 * A * effect(C, linear, slope=2)\n", 7, "no 'slope'"),
     ("  A -> B: 0.5 * A uses(C)\n", 7, "uses takes"),
     ("  A -> B: 0.5 * A + uses(C, 1)\n", 7, ""),
-    ("  A -> B: max(1, A)\n", 7, "floored"),
     ("  A -> Z: 1\n", 7, "unknown stock 'Z'"),
     ("  A => B: 1\n", 7, "is not 'A -> B'"),
     ("  outside -> outside: 1\n", 7, "one end"),

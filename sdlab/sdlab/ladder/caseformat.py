@@ -36,6 +36,23 @@ Added on 2026-10-18 (engine features, additive; docs/LADDER.md "Inputs, sub-step
       outside -> C: 0.2 * smooth(A, 5)       # SMOOTH (smooth3 too): a hidden stock, exact flows
       outside -> D: 10 + step(5, 100) + pulse(20, 300, 2)   # test inputs: unannounced schedule changes
 
+Added on 2026-10-19 (queue item 2d, engine features, additive; docs/LADDER.md "Expressions, signed stocks,
+two-way flows, switches, fixed delays"):
+
+    auxiliaries:                             # algebraic variables (no stock): read by name in rates
+      util: cpu / max(1, ready)
+    switches:                                # a switch with memory (hysteresis): a hidden 0/1 stock
+      heater: {of: T, on_below: 19, off_above: 21, initial: 1}
+    stocks: {x: 1 signed, T: 0 max=50 net}   # signed: may go negative; net: the ceiling counts the step's outflows
+    flows:
+      T -> outside: 0.3 * sqrt(T)            # any other rate is an expression (sdtruth_expr.py): + - * / ^,
+      outside -> A: min(5, B / C) * (T > 2)  #   comparisons, min, max, ceil, sqrt, power, lookup, if_then_else, ...
+      x <-> v: 0.1 * v                       # a two-way flow: a negative rate moves back (also {rate:, two_way: true})
+      outside -> R: flow(kill)               # another flow's amount (after noise and limits) as a rate
+      A -> B: delay_fixed(0.5 * A, 4)        # DELAY FIXED: a pipe of 4 / dt hidden stages, each passed on whole
+      A -> C: delay3(0.5 * A, 2 + B / 10)    # a delay whose time changes (stages at 3 / time, an expression)
+      outside -> D: 2 * trend(A, 5, 0)       # TREND(x, time, initial trend) and FORECAST(x, time, horizon[, initial trend])
+
 A number anywhere may instead be a range to draw from, draw(lo, hi) (a parametric case; draws.py
 resolves those to numbers before the text is compiled here).
 
@@ -52,8 +69,9 @@ import yaml
 
 OUTSIDE = "outside"
 TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws",
-            "dt", "inputs", "source"}
+            "dt", "inputs", "source", "auxiliaries", "switches"}
 DELAYS = {"delay1": 1, "delay3": 3}                               # DELAYn(rate, time): n hidden stocks in a chain
+TRENDS = ("trend", "forecast")                                     # TREND / FORECAST: a smoothing and an expression (2d)
 SMOOTHS = {"smooth": 1, "smooth3": 3}                             # SMOOTHn(x, time): n hidden stocks, exact flows
 TESTS = {"step": ("height", "start"), "pulse": ("height", "start", "width"), "ramp": ("slope", "start", "end"),
          "pulse_train": ("height", "first", "width", "every", "last")}
@@ -64,6 +82,7 @@ CASES_DIR = __import__("pathlib").Path(__file__).resolve().parent / "cases"
 FORMS = {"constant", "proportional", "gap", "linear", "available"}
 ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 FLOW_KEY_RE = re.compile(r"^\s*(\S+)\s*->\s*(\S+)\s*(?:\bas\s+(\S+)\s*)?$")
+TWO_WAY_KEY_RE = re.compile(r"^\s*(\S+?)\s*<->\s*(\S+)\s*(?:\bas\s+(\S+)\s*)?$")          # a two-way flow (2d)
 CHANGE_KEY_RE = re.compile(r"^\s*at\s+(\d+)\s*(.*?)\s*$")
 
 
@@ -102,7 +121,8 @@ _Loader.add_constructor("tag:yaml.org,2002:map", _construct_map)
 
 # ---- rate expressions ----
 
-TOKEN_RE = re.compile(r"\s*(?:(?P<num>(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)|(?P<name>[A-Za-z_][A-Za-z0-9_]*)|(?P<op>[-+*/(),=\[\]]))")
+TOKEN_RE = re.compile(r"\s*(?:(?P<num>(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)|(?P<name>[A-Za-z_][A-Za-z0-9_]*)|(?P<op><=|>=|==|!=|[-+*/(),=\[\]<>^]))")
+COMPARE = ("<=", ">=", "==", "!=", "<", ">")
 
 
 def _number(text: str) -> int | float:
@@ -148,8 +168,17 @@ class _Expr:
     def done(self) -> bool:
         return self.i >= len(self.toks)
 
-    # grammar: sum := ['-'] product (('+'|'-') product)*;  product := factor (('*'|'/') factor)*
-    #          factor := number | name | name '(' args ')' | '(' sum ')' | '[' list ']'
+    # grammar: cmp := sum [compare sum];  sum := ['-'] product (('+'|'-') product)*;  product := factor (('*'|'/') factor)*
+    #          factor := '-' factor | atom ['^' factor];  atom := number | name | name '(' args ')' | '(' cmp ')' | '[' list ']'
+    # (a comparison, '^' and a '-' inside a product were added for 2d: a text that has one did not parse before)
+    def cmp(self):
+        a = self.sum()
+        for op in COMPARE:
+            if self.peek(op):
+                self.take(op)
+                return ("cmp", op, a, self.sum())
+        return a
+
     def sum(self):
         terms = [("+" if not self.peek("-") else (self.take("-") and "-"), self.product())]
         while self.peek("+") or self.peek("-"):
@@ -163,11 +192,21 @@ class _Expr:
         return ("product", parts) if len(parts) > 1 else parts[0][1]
 
     def factor(self):
+        if self.peek("-"):
+            self.take("-")
+            return ("sum", [("-", self.factor())])
+        a = self.atom()
+        if self.peek("^"):
+            self.take("^")
+            return ("pow", a, self.factor())
+        return a
+
+    def atom(self):
         if self.peek(kind="num"):
             return ("num", _number(self.take(kind="num")))
         if self.peek("("):
             self.take("(")
-            inner = self.sum()
+            inner = self.cmp()
             self.take(")")
             return ("group", inner)
         if self.peek("["):
@@ -201,9 +240,9 @@ class _Expr:
             if self.peek(kind="name") and self.i + 1 < len(self.toks) and self.toks[self.i + 1][1] == "=":
                 k = self.take(kind="name")
                 self.take("=")
-                kw[k] = self.sum()
+                kw[k] = self.cmp()
             else:
-                pos.append(self.sum())
+                pos.append(self.cmp())
             if not self.peek(")"):
                 self.take(",", what="',' or ')'")
         self.take(")")
@@ -342,11 +381,35 @@ def _lift_tests(node, ex: _Expr) -> tuple:
     return (rest[0][1] if len(rest) == 1 and rest[0][0] == "+" else ("sum", rest)), tests
 
 
-def _lift_smooths(node, ex: _Expr, names: set[str], out: dict):
+def _lift_smooths(node, ex: _Expr, names: set[str], out: dict, prior: dict | None = None, dt: float = 1.0):
     """smooth(x, time[, initial=]) and smooth3(...) replaced by the hidden stock that holds the smoothed
-    value (its id added to names; out: {id: {"of", "time", "order", "initial"?}})."""
+    value (its id added to names; out: {id: {"of", "time", "order", "initial"?}}); trend(x, time,
+    initial trend) and forecast(x, time, horizon[, initial trend]) (2d) by the expression they are of
+    such a stock (PySD's TREND and FORECAST: average = SMOOTH(x, time) from x / (1 + initial trend x time),
+    resp. x / (1 + initial trend); trend = zidz(x - average, time x |average|), forecast =
+    x (1 + zidz(x - average, time x average) x horizon))."""
+    prior = {} if prior is None else prior
     if not isinstance(node, tuple):
         return node
+    if node[0] == "call" and node[1] in TRENDS:
+        return _lift_trend(node, ex, names, out)
+    if node[0] == "call" and node[1] == "delayed":                 # x a fixed time ago (2d): an information pipe
+        pos, kw = node[2], node[3]
+        if len(pos) != 2 or set(kw) - {"initial"}:
+            raise ex.err("delayed takes (stock, input or auxiliary, time, initial=its value during the first time)")
+        of = _stock(pos[0], ex, names, "a stock, an input or an auxiliary")
+        tau = _num_value(pos[1], ex, "a delay's time")
+        if tau <= 0:
+            raise ex.err("a delay's time is more than 0")
+        n = max(1, round(tau / dt + 1e-6))
+        sid = f"delayed_{of}_{str(tau).replace('.', 'p').replace('-', 'm')}"
+        spec = {"of": of, "time": tau, "order": "pipe", "n": n, "dt": dt, **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
+        base, i = sid, 2
+        while (out.get(sid) or prior.get(sid) or spec) != spec:
+            sid, i = f"{base}_s{i}", i + 1
+        out[sid] = spec
+        names.add(sid)
+        return ("name", sid) if dt == 1 else ("group", ("product", [("*", ("name", sid)), ("/", ("num", dt))]))
     if node[0] == "call" and node[1] in SMOOTHS:
         pos, kw = node[2], node[3]
         if len(pos) != 2 or set(kw) - {"initial"}:
@@ -356,19 +419,52 @@ def _lift_smooths(node, ex: _Expr, names: set[str], out: dict):
         if tau <= 0:
             raise ex.err("a smoothing time is more than 0")
         sid = f"{node[1]}_{of}_{str(tau).replace('.', 'p').replace('-', 'm')}"
-        out[sid] = {"of": of, "time": tau, "order": SMOOTHS[node[1]], **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
+        spec = {"of": of, "time": tau, "order": SMOOTHS[node[1]], **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
+        base, i = sid, 2
+        while (out.get(sid) or prior.get(sid) or spec) != spec:     # the same smoothing from another start (2d): its own stock
+            sid, i = f"{base}_s{i}", i + 1
+        out[sid] = spec
         names.add(sid)
         return ("name", sid)
     if node[0] in ("sum", "product"):
-        return (node[0], [(op, _lift_smooths(n, ex, names, out)) for op, n in node[1]])
+        return (node[0], [(op, _lift_smooths(n, ex, names, out, prior, dt)) for op, n in node[1]])
     if node[0] == "group":
-        return ("group", _lift_smooths(node[1], ex, names, out))
+        return ("group", _lift_smooths(node[1], ex, names, out, prior, dt))
+    if node[0] == "pow":
+        return ("pow", _lift_smooths(node[1], ex, names, out, prior, dt), _lift_smooths(node[2], ex, names, out, prior, dt))
+    if node[0] == "cmp":
+        return ("cmp", node[1], _lift_smooths(node[2], ex, names, out, prior, dt), _lift_smooths(node[3], ex, names, out, prior, dt))
     if node[0] == "call":
-        return ("call", node[1], [_lift_smooths(n, ex, names, out) for n in node[2]], {k: _lift_smooths(v, ex, names, out) for k, v in node[3].items()})
+        return ("call", node[1], [_lift_smooths(n, ex, names, out, prior, dt) for n in node[2]], {k: _lift_smooths(v, ex, names, out, prior, dt) for k, v in node[3].items()})
     return node
 
 
-def flow_body(text, stocks: set[str]) -> dict:
+def _lift_trend(node, ex: _Expr, names: set[str], out: dict):
+    fn, pos, kw = node[1], node[2], node[3]
+    want = 3 if fn == "trend" else 4
+    if kw or not (want - 1 <= len(pos) <= want):
+        raise ex.err("trend takes (x, time, initial trend)" if fn == "trend" else "forecast takes (x, time, horizon, initial trend = 0)")
+    of = _stock(pos[0], ex, names, "a stock, an input or an auxiliary")
+    tau = _num_value(pos[1], ex, "an averaging time")
+    if tau <= 0:
+        raise ex.err("an averaging time is more than 0")
+    g = _num_value(pos[2 if fn == "trend" else 3], ex, "an initial trend") if len(pos) == want else 0
+    scale = 1 / (1 + g * tau) if fn == "trend" else 1 / (1 + g)
+    sid = f"{fn}_{of}_{str(tau).replace('.', 'p').replace('-', 'm')}"
+    if scale != 1:
+        sid += "_g" + str(g).replace(".", "p").replace("-", "m")
+    out[sid] = {"of": of, "time": tau, "order": 1, "scale": scale}
+    names.add(sid)
+    x, av = ("name", of), ("name", sid)
+    gap = ("sum", [("+", x), ("-", av)])
+    if fn == "trend":
+        return ("call", "zidz", [gap, ("product", [("*", ("num", tau)), ("*", ("call", "abs", [av], {}))])], {})
+    horizon = pos[2]
+    return ("product", [("*", x), ("*", ("group", ("sum", [("+", ("num", 1)), ("+", ("product", [
+        ("*", ("call", "zidz", [gap, ("product", [("*", ("num", tau)), ("*", av)])], {})), ("*", ("group", horizon))]))])))])
+
+
+def flow_body(text, stocks: set[str], prior: dict | None = None, dt: float = 1.0) -> dict:
     """A flow's rate expression, effects and co-flows: {"rate": {...}, "effects"?: [...], "uses"?: [...]}.
     A rate may also be wrapped in delay1/delay3 ("_delay": {order, time, initial?}), read smooth/smooth3
     ("_smooths": {hidden id: {of, time, order, initial?}}) and add test inputs ("_tests": [input terms]);
@@ -381,7 +477,7 @@ def flow_body(text, stocks: set[str]) -> dict:
     ex = _Expr(text)
     if ex.done():
         raise CaseError("empty rate")
-    node = ex.sum()
+    node = ex.cmp()
     uses = []
     while not ex.done():
         if not ex.peek("uses"):
@@ -396,15 +492,27 @@ def flow_body(text, stocks: set[str]) -> dict:
         pos, kw = node[2], node[3]
         if len(pos) != 2 or set(kw) - {"initial"}:
             raise ex.err(f"{node[1]} takes (rate, time, initial=level of each hidden stock)")
-        time = _num_value(pos[1], ex, "a delay's time")
-        if time <= 0:
+        try:
+            time = _num_value(pos[1], ex, "a delay's time")
+        except CaseError:                                          # a delay whose time changes (2d): an expression
+            time = _engine_text(pos[1], ex, stocks)
+        if not isinstance(time, str) and time <= 0:
             raise ex.err("a delay's time is more than 0")
         extra["_delay"] = {"order": DELAYS[node[1]], "time": time, **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
         node = pos[0]
+    elif node[0] == "call" and node[1] == "delay_fixed":           # DELAY FIXED (2d): a pipe
+        pos, kw = node[2], node[3]
+        if len(pos) != 2 or set(kw) - {"initial"}:
+            raise ex.err("delay_fixed takes (rate, time, initial=the rate that comes out during the first time)")
+        time = _num_value(pos[1], ex, "a fixed delay's time")
+        if time <= 0:
+            raise ex.err("a delay's time is more than 0")
+        extra["_delay"] = {"order": "fixed", "time": time, **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
+        node = pos[0]
     smooths: dict = {}
-    if any(f"{k}(" in text.replace(" ", "") for k in SMOOTHS):
+    if any(f"{k}(" in text.replace(" ", "") for k in (*SMOOTHS, *TRENDS, "delayed")):
         stocks = set(stocks)
-        node = _lift_smooths(node, ex, stocks, smooths)
+        node = _lift_smooths(node, ex, stocks, smooths, prior or {}, dt)
     if smooths:
         extra["_smooths"] = smooths
     if any(f"{k}(" in text.replace(" ", "") for k in TESTS):
@@ -427,13 +535,65 @@ def flow_body(text, stocks: set[str]) -> dict:
             node = ("product", keep) if len(keep) > 1 else keep[0][1]
     elif node[0] == "call" and node[1] == "effect":
         raise ex.err("an effect multiplies a rate: rate * effect(...)")
-    out = {"rate": _rate(node, ex, stocks)}
+    try:
+        out = {"rate": _rate(node, ex, stocks)}
+    except CaseError as first:                                     # any other rate is an expression (2d)
+        try:
+            out = {"rate": {"form": "expr", "expr": _engine_text(node, ex, stocks)}}
+        except CaseError as second:
+            raise (second if "unknown stock" in str(second) or "not allowed" in str(second) else first) from None
     if effects:
         out["effects"] = effects
     if uses:
         out["uses"] = uses
     out.update(extra)
     return out
+
+
+def _engine_text(node, ex: _Expr, readable: set[str]) -> str:
+    """A rate that has no linear form as the engine's expression text (sdtruth_expr.py; 2d), checked:
+    every name it reads is a stock, input, auxiliary or switch, every function one the engine has."""
+    from ..sdtruth_expr import ExprError, names, parse
+
+    def go(n) -> str:
+        k = n[0]
+        if k == "num":
+            v = n[1]
+            return str(v) if isinstance(v, int) else repr(v)
+        if k == "name":
+            return n[1]
+        if k == "group":
+            return go(n[1]) if n[1][0] in ("sum", "product", "pow", "cmp") else f"({go(n[1])})"
+        if k == "sum":
+            parts = []
+            for i, (sign, x) in enumerate(n[1]):
+                parts.append(("-" if sign == "-" else "") + go(x) if i == 0 else f" {sign} {go(x)}")
+            return "(" + "".join(parts) + ")"
+        if k == "product":
+            return "(" + go(n[1][0][1]) + "".join(f" {op} {go(x)}" for op, x in n[1][1:]) + ")"
+        if k == "pow":
+            return f"({go(n[1])} ^ {go(n[2])})"
+        if k == "cmp":
+            return f"({go(n[2])} {n[1]} {go(n[3])})"
+        if k == "list":
+            return "[" + ", ".join("[" + ", ".join(repr(float(v)) for v in p) + "]" for p in n[1]) + "]"
+        if k == "call":
+            if n[3]:
+                raise ex.err(f"{n[1]}() takes no named arguments inside an expression")
+            if n[1] in ("effect", "uses", *DELAYS, "delay_fixed", *TESTS, *SMOOTHS, *TRENDS, "delayed"):
+                raise ex.err(f"{n[1]}() is not allowed inside an expression")
+            return f"{n[1]}({', '.join(go(a) for a in n[2])})"
+        raise ex.err("not an expression")
+
+    text = go(node)
+    try:
+        tree = parse(text)
+    except ExprError as e:
+        raise ex.err(str(e)) from None
+    unknown = sorted(names(tree) - set(readable))
+    if unknown:
+        raise ex.err(f"unknown stock {unknown[0]!r}")
+    return text
 
 
 # ---- the case ----
@@ -472,19 +632,25 @@ def _stocks(raw, name: str) -> list[dict]:
                     s["measured"] = False
                 elif w == "final":
                     s["final"] = True
+                elif w == "signed":                                # may go negative (2d)
+                    s["signed"] = True
+                elif w == "net":                                   # its ceiling counts the step's outflows (2d)
+                    s["max_net"] = True
                 elif w.startswith("max="):
                     try:
                         s["max"] = _number(w[4:])
                     except ValueError:
                         raise CaseError(f"{where}: stock {sid}: {w!r}: a ceiling is max=<number>") from None
                 else:
-                    raise CaseError(f"{where}: stock {sid}: unknown word {w!r} (hidden, final, max=N)")
+                    raise CaseError(f"{where}: stock {sid}: unknown word {w!r} (hidden, final, max=N, signed, net)")
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
             s["initial"] = v
         else:
             raise CaseError(f"{where}: stock {sid}: {v!r} is not an initial level")
         if "max" in s and (isinstance(s["max"], bool) or not isinstance(s["max"], (int, float)) or s["max"] <= 0):
             raise CaseError(f"{where}: stock {sid}: a ceiling (max) is a number above 0")
+        if s.get("max_net") and "max" not in s:
+            raise CaseError(f"{where}: stock {sid}: net is a word of a ceiling (max=N net)")
         out.append(s)
     return out
 
@@ -514,16 +680,22 @@ def _flow_items(raw, name: str) -> list[tuple[str, object, str]]:
     raise CaseError(f"{name}: flows is a mapping of 'A -> B: rate'")
 
 
-def _flows(raw, stocks: set[str], name: str, inputs: set[str] = frozenset(), hidden: list | None = None) -> list[dict]:
+def _flows(raw, stocks: set[str], name: str, inputs: set[str] = frozenset(), hidden: list | None = None, also: set[str] = frozenset(),
+           dt: float = 1.0) -> list[dict]:
     """The flows; a delay's or a smoothing's hidden stocks are appended to `hidden` (and their flows
-    to the flows); a flow's test inputs are left on it as "_tests" for compile_case."""
+    to the flows); a flow's test inputs are left on it as "_tests" for compile_case. also: other names a
+    rate may read (auxiliaries and switches, 2d); dt: the case's sub-step (a fixed delay's stages)."""
     out, ids, inflow_seen = [], {}, False
-    readable = set(stocks) | set(inputs)
+    readable = set(stocks) | set(inputs) | set(also)
     smoothed: dict = {}
     for key, v, where in _flow_items(raw, name):
         m = FLOW_KEY_RE.match(str(key))
+        two_way = False
         if not m:
-            raise CaseError(f"{where}: {key!r} is not 'A -> B' or 'A -> B as id'")
+            m = TWO_WAY_KEY_RE.match(str(key))
+            two_way = bool(m)
+        if not m:
+            raise CaseError(f"{where}: {key!r} is not 'A -> B', 'A <-> B' or 'A -> B as id'")
         ends = []
         for end in m.group(1, 2):
             if end != OUTSIDE and end not in stocks:
@@ -540,7 +712,7 @@ def _flows(raw, stocks: set[str], name: str, inputs: set[str] = frozenset(), hid
         if fid in ids:
             raise CaseError(f"{where}: flow id {fid!r} is taken (by '{ids[fid]}'): name this one with '{m.group(1)} -> {m.group(2)} as <id>'")
         ids[fid] = key
-        f = {"id": fid, "from": ends[0], "to": ends[1]}
+        f = {"id": fid, "from": ends[0], "to": ends[1], **({"two_way": True} if two_way else {})}
         extra = {}
         if isinstance(v, dict):
             extra = dict(v)
@@ -548,7 +720,7 @@ def _flows(raw, stocks: set[str], name: str, inputs: set[str] = frozenset(), hid
                 raise CaseError(f"{where}: flow {fid} needs a rate")
             v = extra.pop("rate")
         try:
-            body = {"rate": dict(v)} if isinstance(v, dict) else flow_body(v, readable)
+            body = {"rate": dict(v)} if isinstance(v, dict) else flow_body(v, readable, smoothed, dt)
         except CaseError as e:
             raise CaseError(f"{where}: flow {key}: {e}") from None
         for u in body.get("uses") or []:
@@ -566,7 +738,7 @@ def _flows(raw, stocks: set[str], name: str, inputs: set[str] = frozenset(), hid
             continue
         if hidden is None:
             raise CaseError(f"{where}: a delay is not allowed here")
-        out += _delay_chain(f, delay, stocks, hidden, where)
+        out += _pipe(f, delay, stocks, hidden, where, dt) if delay["order"] == "fixed" else _delay_chain(f, delay, stocks, hidden, where)
     for sid, sm in smoothed.items():
         if hidden is None:
             raise CaseError(f"{name}: a smoothing is not allowed here")
@@ -581,15 +753,38 @@ def _delay_chain(f: dict, delay: dict, stocks: set[str], hidden: list, where: st
     at `initial` (default 0)."""
     n, time = delay["order"], delay["time"]
     hs = [f"{f['id']}_d{i}" for i in range(1, n + 1)]
+    two = {"two_way": True} if f.get("two_way") else {}            # 2d: a two-way delay's stages may hold a negative amount
     for h in hs:
         if h in stocks or any(x["id"] == h for x in hidden):
             raise CaseError(f"{where}: the delay's hidden stock {h} clashes with a stock")
-        hidden.append({"id": h, "initial": delay.get("initial", 0), "measured": False})
+        hidden.append({"id": h, "initial": delay.get("initial", 0), "measured": False, **({"signed": True} if two else {})})
     tag = lambda i: {"id": f["id"], "stage": i, "of": n, "time": time}  # noqa: E731
     out = [{**f, "to": hs[0], "delay": tag(0)}]
     for i, h in enumerate(hs, start=1):
+        rate = {"form": "expr", "expr": f"{n} * {h} / ({time})"} if isinstance(time, str) else {"form": "proportional", "stock": h, "k": n / time}
+        out.append({"id": f"{f['id']}_{i}", "from": h, "to": hs[i] if i < n else f["to"], "rate": rate, "delay": tag(i), **two})
+    return out
+
+
+def _pipe(f: dict, delay: dict, stocks: set[str], hidden: list, where: str, dt: float) -> list[dict]:
+    """DELAY FIXED(rate, time) from A to B (2d): A -> H1 at the rate (the flow keeps its id), then
+    H1 -> H2 ... Hn -> B, n = time / dt stages (rounded, as PySD does), each passed on whole in one
+    sub-step (k = 1 / dt, exact), so what leaves A arrives at B exactly `time` later. Each stage starts
+    at initial x dt (initial: the rate that comes out during the first `time`, default 0)."""
+    time = delay["time"]
+    n = max(1, round(time / dt + 1e-6))
+    hs = [f"{f['id']}_p{i}" for i in range(1, n + 1)]
+    two = {"two_way": True} if f.get("two_way") else {}            # a two-way pipe's stages may hold a negative amount
+    for h in hs:
+        if h in stocks or any(x["id"] == h for x in hidden):
+            raise CaseError(f"{where}: the fixed delay's hidden stock {h} clashes with a stock")
+        hidden.append({"id": h, "initial": delay.get("initial", 0) * dt if dt != 1 else delay.get("initial", 0), "measured": False,
+                       **({"signed": True} if two else {})})
+    tag = lambda i: {"id": f["id"], "stage": i, "of": n, "time": time, "shape": "pipe"}  # noqa: E731
+    out = [{**f, "to": hs[0], "delay": tag(0)}]
+    for i, h in enumerate(hs, start=1):
         out.append({"id": f"{f['id']}_{i}", "from": h, "to": hs[i] if i < n else f["to"],
-                    "rate": {"form": "proportional", "stock": h, "k": n / time}, "delay": tag(i)})
+                    "rate": {"form": "proportional", "stock": h, "k": 1 / dt if dt != 1 else 1}, "exact": True, "delay": tag(i), **two})
     return out
 
 
@@ -598,8 +793,10 @@ def _smoothing(sid: str, sm: dict, stocks: set[str], hidden: list) -> list[dict]
     fills at x_(i-1) x n / time from outside (it reads x, it does not drain it) and drains at its own
     level x n / time. Its flows are exact (no counting noise: information, not material). Each stage
     starts at `initial` (default: x's initial level when x is a stock, else 0)."""
+    if sm["order"] == "pipe":
+        return _info_pipe(sid, sm, stocks, hidden)
     n, k = sm["order"], sm["order"] / sm["time"]
-    start = sm.get("initial", {"initial of": sm["of"]})             # compile_case reads x's initial level
+    start = sm.get("initial", {"initial of": sm["of"], **({"scale": sm["scale"]} if "scale" in sm else {})})   # compile_case reads x's initial level
     names = [f"{sid}_{i}" for i in range(1, n)] + [sid]
     out, prev = [], sm["of"]
     for h in names:
@@ -612,11 +809,33 @@ def _smoothing(sid: str, sm: dict, stocks: set[str], hidden: list) -> list[dict]
     return out
 
 
+def _info_pipe(sid: str, sm: dict, stocks: set[str], hidden: list) -> list[dict]:
+    """delayed(x, time) (2d): x as it was `time` ago (Vensim's DELAY FIXED of information). n = time / dt
+    hidden stages <sid>_1 .. <sid>_(n-1), sid: the first fed from outside at x, each passed on whole in
+    one sub-step, the last (sid) drained to outside; sid holds x(t - time) x dt at the start of a
+    sub-step, so the reader is sid / dt. Signed stages and two-way exact flows (information may be
+    negative). Each stage starts at initial x dt (initial: the value during the first `time`; default:
+    x's initial level when x is a stock, else 0)."""
+    n, dt = sm["n"], sm["dt"]
+    start = sm["initial"] * dt if "initial" in sm else {"initial of": sm["of"], "scale": dt}
+    names = [f"{sid}_{i}" for i in range(1, n)] + [sid]
+    if any(h in stocks or any(x["id"] == h for x in hidden) for h in names):
+        return []                                                  # the same delay used twice
+    out, k = [], (1 / dt if dt != 1 else 1)
+    for i, h in enumerate(names):
+        hidden.append({"id": h, "initial": start, "measured": False, "signed": True})
+        if i == 0:
+            out.append({"id": f"{h}_in", "from": None, "to": h, "rate": {"form": "proportional", "stock": sm["of"], "k": 1}, "exact": True, "two_way": True})
+        out.append({"id": f"{h}_out", "from": h, "to": names[i + 1] if i + 1 < n else None, "rate": {"form": "proportional", "stock": h, "k": k},
+                    "exact": True, "two_way": True})
+    return out
+
+
 def _flow_ref(ref, flows: list[dict], where: str) -> str:
     """A flow in a schedule: its id, or its ends ('A -> B') when one flow has them."""
     if any(f["id"] == ref for f in flows):
         return ref
-    m = FLOW_KEY_RE.match(str(ref))
+    m = FLOW_KEY_RE.match(str(ref)) or TWO_WAY_KEY_RE.match(str(ref))
     if m and not m.group(3):
         ends = [None if e == OUTSIDE else e for e in m.group(1, 2)]
         got = [f["id"] for f in flows if [f["from"], f["to"]] == ends]
@@ -700,20 +919,29 @@ def compile_case(text: str, name: str = "<case>") -> dict:
     stocks = _stocks(raw["stocks"], name)
     ids = {s["id"] for s in stocks}
     inputs = _inputs(raw["inputs"], ids, _at(raw, "inputs", name)) if raw.get("inputs") else {}
+    switches = _switches(raw["switches"], ids | set(inputs), _at(raw, "switches", name)) if raw.get("switches") else []
+    names = ids | set(inputs) | {s["id"] for s in switches}
+    aux = _auxiliaries(raw["auxiliaries"], names, _at(raw, "auxiliaries", name)) if raw.get("auxiliaries") else {}
+    for sw in switches:
+        sw["switch"]["of"] = _check_names(sw["switch"]["of"], names | set(aux), f"{_at(raw, 'switches', name)}: switch {sw['id']}")
     hidden: list[dict] = []
-    flows = _flows(raw["flows"], ids, name, set(inputs), hidden)
+    dt = _dt(raw["dt"], _at(raw, "dt", name)) if "dt" in raw else 1.0
+    flows = _flows(raw["flows"], ids, name, set(inputs), hidden, {s["id"] for s in switches} | set(aux), float(dt))
     first = {s["id"]: s["initial"] for s in stocks}
     for h in hidden:                                               # a smoothing starts at what it smooths
         if isinstance(h["initial"], dict):
-            h["initial"] = first.get(h["initial"]["initial of"], 0)
-    stocks = stocks + hidden
+            h["initial"] = first.get(h["initial"]["initial of"], 0) * h["initial"].get("scale", 1) if "scale" in h["initial"] \
+                else first.get(h["initial"]["initial of"], 0)
+    stocks = stocks + switches + hidden
     model = {**({"seed": raw["seed"]} if "seed" in raw else {}), "stocks": stocks, "flows": flows}
+    if aux:
+        model["auxiliaries"] = aux
     if "dt" in raw:
         model["dt"] = _dt(raw["dt"], _at(raw, "dt", name))
     if inputs:
         model["inputs"] = inputs
     if raw.get("schedule"):
-        model["schedule"] = _schedule(raw["schedule"], flows, ids | set(inputs), name)
+        model["schedule"] = _schedule(raw["schedule"], flows, ids | set(inputs) | {s["id"] for s in switches} | set(aux), name)
     if any(f.get("_tests") for f in flows):
         _test_changes(model, raw, _at(raw, "flows", name))
     if raw.get("injections"):
@@ -724,8 +952,72 @@ def compile_case(text: str, name: str = "<case>") -> dict:
             if j["stock"] not in ids:
                 raise CaseError(f"{_at(raw, 'injections', name)}: injection into unknown stock {j['stock']!r}")
         model["injections"] = inj
+    from ..sdtruth import _Program, uses_2d
+    if uses_2d(model):                                             # the engine's own checks of 2d's features
+        from ..sdtruth_expr import ExprError
+        try:
+            _Program(model)
+        except ExprError as e:
+            raise CaseError(f"{name}: {e}") from None
     out["model"] = model
     return _plain(out)
+
+
+def _check_names(text, readable: set[str], where: str) -> str:
+    """An expression (the engine's syntax; input(x) is x) that reads only these names."""
+    from ..sdtruth_expr import ExprError, parse
+    text = INPUT_REF_RE.sub(r"\1", str(text)) if not isinstance(text, (int, float)) else text
+    try:
+        ex = _Expr(str(text))
+        out = _engine_text(ex.cmp(), ex, readable)
+        if not ex.done():
+            raise ex.err("unexpected text after the expression")
+        parse(out)
+    except (CaseError, ExprError) as e:
+        raise CaseError(f"{where}: {e}") from None
+    return out
+
+
+def _auxiliaries(raw, readable: set[str], where: str) -> dict:
+    """auxiliaries: {name: expression} (2d): algebraic variables a rate reads by name, each computed
+    from the levels and inputs (and the auxiliaries before it) in every sub-step."""
+    if not isinstance(raw, dict):
+        raise CaseError(f"{where}: auxiliaries is a mapping of name to its expression")
+    out = {}
+    for k, v in raw.items():
+        at = _at(raw, k, where.split(":")[0])
+        if not isinstance(k, str) or not ID_RE.match(k) or k == OUTSIDE or k in readable:
+            raise CaseError(f"{at}: {k!r} is not an auxiliary name (letters, digits, _; not a stock's or input's id)")
+        out[k] = v
+    known = set(readable) | set(out)
+    return {k: _check_names(v, known, f"{_at(raw, k, where.split(':')[0])}: auxiliary {k}") for k, v in out.items()}
+
+
+def _switches(raw, readable: set[str], where: str) -> list[dict]:
+    """switches: {id: {of, on_below, off_above | on_above, off_below, initial = 0, measured = false}}
+    (2d): a hidden stock that is 1 or 0, set in every sub-step from `of` (an expression): on below one
+    level and off above another, held in between (or the reverse), never moved by flows."""
+    if not isinstance(raw, dict):
+        raise CaseError(f"{where}: switches is a mapping of switch id to {{of, on_below, off_above}}")
+    out = []
+    for k, v in raw.items():
+        at = _at(raw, k, where.split(":")[0])
+        if not isinstance(k, str) or not ID_RE.match(k) or k == OUTSIDE or k in readable:
+            raise CaseError(f"{at}: {k!r} is not a switch id (letters, digits, _; not a stock's or input's id)")
+        if not isinstance(v, dict) or "of" not in v:
+            raise CaseError(f"{at}: switch {k} is {{of: expression, on_below: N, off_above: M}} (or on_above, off_below)")
+        rule = {x: v[x] for x in ("on_below", "off_above", "on_above", "off_below") if x in v}
+        if set(rule) not in ({"on_below", "off_above"}, {"on_above", "off_below"}) or not all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) for x in rule.values()):
+            raise CaseError(f"{at}: switch {k} needs numbers on_below and off_above, or on_above and off_below")
+        unknown = set(v) - {"of", "initial", "measured", *rule}
+        if unknown:
+            raise CaseError(f"{at}: switch {k}: unknown key {sorted(unknown)[0]!r}")
+        if v.get("initial", 0) not in (0, 1):
+            raise CaseError(f"{at}: switch {k} starts at 0 or 1")
+        out.append({"id": k, "initial": v.get("initial", 0), **({} if v.get("measured") else {"measured": False}),
+                    "switch": {"of": v["of"], **rule}})
+    return out
 
 
 def _dt(v, where: str) -> float:
@@ -844,6 +1136,8 @@ def _with_constant(rate: dict, c: float) -> dict:
         return {**rate, "c": rate.get("c", 0) + c}
     if form == "gap":
         return {**rate, "goal": rate["goal"] + c * rate["time"]}
+    if form == "expr":
+        return {**rate, "expr": f"({rate['expr']}) + {c!r}"}
     raise CaseError(f"a test input cannot be added to a rate of form {form}")
 
 

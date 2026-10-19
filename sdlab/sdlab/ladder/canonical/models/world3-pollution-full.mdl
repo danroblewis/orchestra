@@ -3,7 +3,7 @@ Persistent Pollution= INTEG (
 	Pollution Appearance-Pollution Assimilation,
 		25)
 	~	Pollution units (millions)
-	~	World3-03's persistent pollution sector with its assimilation half-life multiplier: a ratio SD Lab's format cannot hold (kept to test that the importer says so).
+	~	World3-03's persistent pollution sector with its assimilation half-life multiplier: a ratio, which SD Lab's format holds as an expression since queue item 2d (case 116).
 	|
 Pollution Appearance=
 	DELAY3(Pollution Generation, Transmission Delay)

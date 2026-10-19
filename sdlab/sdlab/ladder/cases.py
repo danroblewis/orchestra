@@ -54,17 +54,39 @@ SUFFIXES = (".json", ".yaml")
 # every such case bit-identical data (tests/engine_outputs.sha256, recorded before the change). A case
 # that uses one is hashed with the code as it is now.
 LEGACY_ENGINE, LEGACY_DATA = "d9f38a8c64cdac28", "39b9a5b7cf6a49b6"
+# The same for the engine and data.py as they were before queue item 2d's features (2026-10-19:
+# expressions, auxiliaries, switches, signed stocks, two-way flows, fixed delays, ...; sdtruth.py at
+# 05ae898). A case that uses the 2026-10-18 features but none of 2d's is hashed with these: the engine
+# gives it bit-identical data (tests/engine_outputs.sha256 recorded every such case at 05ae898, before
+# the change, in the commit that follows it). A case that uses one of 2d's is hashed with the code as it is now.
+ENGINE_1018, DATA_1018 = "f305d535fde44722", "2af883cc571b0d05"
 
 
 def uses_added_features(model: dict) -> bool:
-    """Does a case's model use any engine feature added on 2026-10-18?"""
+    """Does a case's model use any engine feature added on 2026-10-18 (or since, queue item 2d)?"""
     return (model.get("dt") is not None or bool(model.get("inputs")) or any(s.get("max") is not None for s in model.get("stocks") or [])
-            or any(f.get("exact") or f.get("delay") for f in model.get("flows") or []))
+            or any(f.get("exact") or f.get("delay") for f in model.get("flows") or []) or uses_2d_features(model))
+
+
+def uses_2d_features(model: dict) -> bool:
+    """Does a case's model use a feature added for queue item 2d (sdtruth.uses_2d, or a fixed delay)?"""
+    from ..sdtruth import uses_2d
+    return uses_2d(model) or any(isinstance(f.get("delay"), dict) and f["delay"].get("shape") == "pipe" for f in model.get("flows") or [])
 
 
 def engine_hash() -> str:
-    """The ground-truth engine: sdtruth.py and the equation functions it uses from runner.py."""
+    """The ground-truth engine as a model that uses none of queue item 2d's features sees it: frozen at
+    ENGINE_1018, since the engine gives every such model bit-identical numbers (tests/test_engine_additive.py
+    checks every case, example and bench model, real cases' twins included). real/case.py hashes real
+    cases with it. engine_hash_now() is the engine's code as it is."""
+    return ENGINE_1018
+
+
+def engine_hash_now() -> str:
+    """The ground-truth engine: sdtruth.py, its expressions (sdtruth_expr.py) and the equation
+    functions it uses from runner.py."""
     h = hashlib.sha256((SDLAB / "sdtruth.py").read_bytes())
+    h.update((SDLAB / "sdtruth_expr.py").read_bytes())
     for fn in (_runner.desired_rate, _runner.multiplier, _runner.effect_value):
         h.update(inspect.getsource(fn).encode())
     return h.hexdigest()[:16]
@@ -306,8 +328,10 @@ def case_hash(case: dict) -> str:
     for x in case["variants"]:
         tm = truth_model(case, x["name"])
         h.update(_canonical({k: v for k, v in tm.items() if k not in ("id", "name")}))
-    if uses_added_features(case["model"]):
-        h.update(engine_hash().encode() + _code_hash().encode())
+    if uses_2d_features(case["model"]):
+        h.update(engine_hash_now().encode() + _code_hash().encode())
+    elif uses_added_features(case["model"]):
+        h.update(ENGINE_1018.encode() + DATA_1018.encode())
     else:
         h.update(LEGACY_ENGINE.encode() + LEGACY_DATA.encode())
     if any(x.get("observe") for x in case["variants"]):          # opted in to noise.py's variants: their code too

@@ -58,6 +58,7 @@ from ..skill import same_behaviour, truth_by_time, truth_runs
 from .noise_oracle import make_hidden_oracle, make_oracle
 from .parts import ONE, _hidden_chains, form_over, kind, label, linear_system, parts, windows
 from .substep import per_step
+from . import sim as _sim
 
 DEFAULTS = {"rel": 0.10, "rel_exact": 0.02, "floor": 0.01, "floor_exact": 0.002, "spurious": 0.05, "z": 3.0}
 HORIZONS = (20, 100)
@@ -111,6 +112,9 @@ def _flow_amounts(flows: list[dict], data: dict, states: list[dict] | None = Non
     states = states if states is not None else _levels_at(data)
     total = np.zeros(len(t) - 1)
     for f in flows:
+        if f.get("whole"):                                    # 2d: the engine's own rate (sim.py)
+            total += _sim.amounts(f, data, states)
+            continue
         for i, level in enumerate(states):
             lf = form_over(f, t[i + 1], t[i + 1])
             if lf is None:
@@ -120,12 +124,16 @@ def _flow_amounts(flows: list[dict], data: dict, states: list[dict] | None = Non
     return total
 
 
-def _amounts(flows: list[dict], ends: tuple, measured: set, data: dict) -> np.ndarray | None:
+def _amounts(flows: list[dict], ends: tuple, measured: set, data: dict, net: bool = False) -> np.ndarray | None:
     """The amount per step of the flows between `ends` on the run's states (rate x effects, floored
-    at 0 as the engine does; no cap)."""
-    sel = [f for f in flows if not f.get("via") and ((f.get("from") if f.get("from") in measured else None),
-                                                    (f.get("to") if f.get("to") in measured else None)) == ends]
-    return _flow_amounts(sel, data)
+    at 0 as the engine does; no cap); net (a two-way flow, 2d): less the flows the other way."""
+    at = lambda f: ((f.get("from") if f.get("from") in measured else None), (f.get("to") if f.get("to") in measured else None))  # noqa: E731
+    sel = [f for f in flows if not f.get("via") and at(f) == ends]
+    out = _flow_amounts(sel, data)
+    if net and out is not None:
+        back = _flow_amounts([f for f in flows if not f.get("via") and at(f) == ends[::-1]], data)
+        out = None if back is None else out - back
+    return out
 
 
 def _path_inflow(flows: list[dict], b: str, measured: set) -> list[dict]:
@@ -159,8 +167,15 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     wins = windows(truth_model, t)
     truth_flows, _ = truth_by_time(truth_model, t)
     truth_flows, _ = per_step(truth_flows, data, truth_model)      # a truth at a sub-step: its per-recorded-step numbers (substep.py)
+    truth_flows = _sim.mark(truth_flows, truth_model)             # 2d's expression, two-way, auxiliary and switch flows: compared as a whole
+    found_flows = _sim.mark_found(found_flows, truth_model)
     effect_ends = {(f.get("from") if f.get("from") in measured else None, f.get("to") if f.get("to") in measured else None)
                    for f in truth_model["flows"] if f.get("effects")}
+    ends_of = lambda f: (f.get("from") if f.get("from") in measured else None, f.get("to") if f.get("to") in measured else None)  # noqa: E731
+    whole_ends = {ends_of(f) for f in truth_flows if f.get("whole")}
+    two_way_ends = {ends_of(f) for f in truth_flows if f.get("whole") and f.get("two_way")}
+    loose = whole_ends | {e[::-1] for e in two_way_ends}          # found parts on these ends are compared within the whole, never spurious
+    effect_ends = effect_ends | whole_ends
     true_w, found_w, notes = [], [], []
     for w in wins:
         tp, tn = parts(truth_flows, measured, w, inputs)
@@ -180,8 +195,8 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     hidden = make_hidden_oracle(truth_flows, data, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
     function_check: dict[tuple, tuple[bool, float]] = {}
     for ends in effect_ends:
-        want = _amounts(truth_flows, ends, measured, data)
-        got = _amounts(found_flows, ends, measured, data)
+        want = _amounts(truth_flows, ends, measured, data, net=ends in two_way_ends)
+        got = _amounts(found_flows, ends, measured, data, net=ends in two_way_ends)
         if want is None or got is None:
             function_check[ends] = (False, math.inf)
             continue
@@ -200,7 +215,13 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     rows = []
     for k in true_keys:
         row = {"key": label(k), "kind": kind(k), "found": k in found_keys}
-        if k[0] == "effect" or (k[0] in ("flow", "uses") and (k[1], k[2]) in effect_ends):
+        if k[0] == "whole":                                       # 2d: any found flow between its stocks (either way for a two-way one)
+            row["found"] = any(fk[0] in ("flow", "uses", "effect", "whole") and ((fk[1], fk[2]) == (k[1], k[2]) or ((k[1], k[2]) in two_way_ends
+                                                                                                    and (fk[1], fk[2]) == (k[2], k[1]))) for fk in found_keys)
+            ok, err = function_check[(k[1], k[2])]
+            row.update(true=_show(true_w[0].get(k)), found_value=None, ok=bool(row["found"] and ok), error=err,
+                       compared="as a whole flow (an expression, a two-way flow, or one that reads an auxiliary or a switch)")
+        elif k[0] == "effect" or (k[0] in ("flow", "uses") and (k[1], k[2]) in effect_ends):
             ok, err = function_check[(k[1], k[2])]
             row.update(true=_show(true_w[0].get(k)), found_value=_show(next((fp[k] for fp in found_w if k in fp), None)),
                        ok=bool(row["found"] and ok), error=err, compared="as a whole flow (effects)")
@@ -245,7 +266,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
 
     spurious, extra = [], []
     for k in found_keys:
-        if k in true_keys:
+        if k in true_keys or (k[0] in ("flow", "uses", "effect") and (k[1], k[2]) in loose):
             continue
         size = sum(wt * _size(k, fp[k], means, fp) for wt, fp in zip(weights, found_w) if k in fp)
         # an extra term is spurious when it is large, and (with an oracle) clearly more than the data's

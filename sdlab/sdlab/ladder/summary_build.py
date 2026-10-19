@@ -21,6 +21,7 @@ import threading
 
 from ..discovery.api import jsonable
 from . import analysis, complexity, longrun_cache, particles, physics, realistic, score, store, strict
+from . import sim as _sim
 from . import cases as casemod
 from .real import case as _real_case
 from .real import score as _real_score
@@ -160,6 +161,7 @@ def _build(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     for c in cs:
         group = _group(c)
         shc = particles.score_hash(sh) if particles.is_particles(c) else physics.score_hash(sh) if physics.is_physics(c) else sh
+        shc = _sim.code_hash(shc) if _sim.uses_new(c.get("model") or {}) else shc       # a truth with 2d's engine features: sim.py too
         for v in c["variants"]:
             an = analysis.cell(c["id"], v["name"], c["hash"])
             ref = refs.get((c["id"], c["hash"], v["name"]))

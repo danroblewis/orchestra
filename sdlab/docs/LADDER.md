@@ -263,6 +263,80 @@ outside (a supply line, a delayed input: 105, 108, 110, 133, 134) is the part
 DELAY3 case is scored with the tolerances alone. A rate that reads a smoothing's hidden stock is not scored (it reads an unmeasured stock), so
 SMOOTH is for building realistic models, not yet for a scored case.
 
+### Expressions, signed stocks, two-way flows, switches, fixed delays
+
+Added on 2026-10-19 (queue item 2d, the engine features the canonical, real, control and Kubernetes
+sources needed; approved if additive). Each is opt-in; a case that uses none compiles and runs exactly
+as before: `tests/test_engine_additive.py` checks every existing case, example and bench model
+bit for bit against `tests/engine_outputs.sha256` (every case added since 2026-10-18 was recorded at
+05ae898, before the change), `tests/test_engine_2d.py` runs every existing case through the extended
+loop too (bit-identical), and every case keeps its hash (`cases.py`: a case that uses the 2026-10-18
+features but none of these is hashed with the engine of that day, `ENGINE_1018`). A case that uses one
+is hashed with the engine as it is (`engine_hash_now`). Rates that compiled before compile the same; a
+rate that was an error and is now an expression (`A * B`, `A ^ 2`, `max(1, A)`, `(A - 300) / 5`) is
+the only change of meaning.
+
+```yaml
+auxiliaries:                                   # algebraic variables (no stock), recomputed every sub-step
+  util: cpu / max(1, ready)
+switches:                                      # a switch with memory: a hidden 0/1 stock set by its rule
+  heater: {of: T, on_below: 19, off_above: 21, initial: 1}     # (or on_above / off_below; measured: true)
+stocks: {x: 1 signed, v: 0 signed, T: 15, Q: 0 max=50 net}    # signed: no floor; net: the ceiling counts the outflows
+flows:
+  outside -> T: 2 * heater                     # a rate reads a switch or an auxiliary by name
+  T -> outside: 0.3 * sqrt(T)                  # any rate that is not linear is an expression
+  outside -> Q: min(5, util / 10) * (T > 18)
+  outside <-> x: v                             # a two-way flow (or {rate: ..., two_way: true}): a negative rate moves back
+  outside <-> v: -0.25 * x
+  outside -> R as restarts: {rate: "flow(kill)", exact: true}  # another flow's amount, as moved
+  A -> B: delay_fixed(0.1 * A, 5, initial=2)   # DELAY FIXED: arrives exactly 5 later (a pipe of 5 / dt hidden stages)
+  A -> C: delay3(0.1 * A, 2 + B / 10)          # a delay whose time changes: stages at 3 / time
+  outside -> D: 0.5 * delayed(A, 3)            # A as it was 3 ago (DELAY FIXED of information)
+  outside -> E: 100 * trend(A, 5, 0.1)         # TREND(x, time, initial trend); forecast(x, time, horizon)
+```
+
+- **Expressions** (`sdlab/sdtruth_expr.py`, the engine's own parser): `+ - * / ^`, comparisons (1 or
+  0), `min`, `max`, `abs`, `sqrt`, `exp`, `ln`, `log`, `power`, `ceil`, `floor`, `integer`, `modulo`,
+  `quantum`, trigonometry, `if_then_else`, `and`, `or`, `not`, `xidz`, `zidz` (Vensim's guarded
+  divisions), `lookup(x, [[x0, y0], ...])`, `flow(id)`. A smoothing, trend or `delayed` may sit inside
+  one; an effect multiplies it as it multiplies any rate; `delay1/3`, `delay_fixed`, test inputs and
+  `uses` may not be inside one. Floored at 0 unless two-way; division by zero is an error.
+- **Two-way flows and signed stocks.** A two-way flow's negative amount moves from its `to` to its
+  `from`; an unsigned stock's floor still applies to whichever stock it takes from. Counting noise is
+  `±Poisson(|rate x dt|)`. A signed stock has no floor, and a negative injection may take it below 0.
+  A two-way delay's or pipe's hidden stages are signed and two-way too.
+- **Switches** are set at the start of every sub-step, before the rates (after the auxiliaries, which
+  are recomputed if a switch moved); their level is recorded as a hidden stock's.
+- **`flow(id)`**: the flows that read a flow are decided after all the others (their noise, floor and
+  ceiling), from what those moved and against what they left.
+- **`net`** (`max=N net`): the ceiling's room counts the step's outflows, so a full stock holds at N at
+  dt 1 (the Kubernetes memory limit was `max = 1.5 x limit` to land at the limit).
+- **`delay_fixed(rate, T, initial=)`**: n = round(T / dt) stages (PySD's and Vensim's rounding), each
+  passed on whole in one sub-step (exact flows), each starting at `initial x dt` (`initial`: the rate
+  that comes out during the first T). The answer key reads the chain as one hidden path of shape
+  `pipe` and delay T, scored as any hidden path. `delayed(x, T, initial=)` is the information version
+  (x a stock, input or auxiliary): a pipe fed from outside, read as its last stage / dt.
+- **`trend(x, T, g)` / `forecast(x, T, h, g = 0)`** compile as PySD computes TREND and FORECAST: a
+  smoothing of x over T (from x / (1 + g T), resp. x / (1 + g)) and `zidz(x - av, T |av|)`, resp.
+  `x (1 + zidz(x - av, T av) h)`.
+
+**Scoring such a truth** (`sdlab/ladder/sim.py`; the discovery library's simulator is pinned and
+unchanged). A flow that is an expression, two-way, or reads an auxiliary or a switch has no numbers to
+compare one by one: it is the part `A -> B [as a whole]`, right when found flows between the same
+stocks (both ways for a two-way flow: found `A -> B` less found `B -> A`) give its amount on the run's
+states within the relative tolerance, as a flow with effects is compared; found parts between those
+stocks are not counted spurious. Its amount is the engine's own rate on each recorded state
+(auxiliaries computed from it, a switch read from its recorded level, `flow(id)` from the run's
+counters; at dt < 1 the rate at the step's start). skill@H's truth side is the engine itself, run H
+steps from each start's recorded state (`Truth.run(start=, t0=)`). Such a case's score hash adds
+sim.py's (`runner.py`, `summary_build.py`). Not done: a delay whose time changes is not scored as a
+number (its hidden part never matches); a rate that reads a smoothing or a `delayed` stage reads an
+unmeasured stock and is not scored (115's graduation); strategies know none of these features (their
+failures on 113-117 are findings).
+
+The case checks (`checks.py`) let a signed stock go negative, skip a switch's level, and count a
+two-way flow as moving when it moves either way.
+
 **YAML traps.** Inside `{...}` (flow style) a comma ends the value, so a rate with commas
 (`effect(...)`, `max(0, ...)`, `uses(...)`) goes on its own line (block style). A value that starts
 with `- ` or `[` reads as a list: quote it. Strings with `: ` or ` #` (a title,
@@ -489,7 +563,7 @@ total delay; injections every 100 steps).
 ## Canonical cases (`canonical/`, `pysd_import.py`)
 
 Classic system dynamics models, imported from a modeller's file rather than written as probes: cases
-100-111, tag `canonical`, each with a `source:` naming where it comes from and its licence.
+100-111 and 113-117 (added with queue item 2d's engine features), tag `canonical`, each with a `source:` naming where it comes from and its licence.
 
 | case | model | source |
 |---|---|---|
@@ -505,6 +579,11 @@ Classic system dynamics models, imported from a modeller's file rather than writ
 | 109-canonical-limits-to-growth | population on a logistic renewable resource | written for SD Lab (Meadows et al. 1972) |
 | 110-canonical-world3-pollution | World3-03 persistent pollution below its 1970 level: DELAY3 and assimilation | written for SD Lab from the published equations |
 | 111-canonical-arrayed-switching | five subscripted categories switching through a 5 x 5 matrix, flattened into five stocks | SDXorg/test-models `tests/subscript_switching` (MIT) |
+| 113-canonical-harmonic-oscillator | an undamped spring, dt 1/100: signed stocks, two-way flows (noise `none` only) | SDXorg/test-models `samples/simple_harmonic_oscillator` (MIT) |
+| 114-canonical-workforce-capacity | tasks completed at MIN(staff capacity, backlog), dt 1/32 | SDXorg/test-models `samples/Workforce` (MIT) |
+| 115-canonical-enrolment-pipeline | a pipeline stock: graduation is the DELAY3 of enrolment (a measured input) | written for SD Lab (the Population sample's pattern) |
+| 116-canonical-world3-pollution-full | World3-03 persistent pollution with the assimilation half-life multiplier (a ratio of a stock to a table of it), spills push it above 1970's level | written for SD Lab from the published equations |
+| 117-canonical-fixed-delay-line | a production line with DELAY FIXED: a pipe of 5 hidden stages | written for SD Lab (Sterman 2000 ch. 11) |
 
 **How a case is made.** The source is a Vensim file in `canonical/models/` (the SDXorg ones copied
 unchanged with their licence, the others written for SD Lab). `pysd_import.py` reads it through PySD's
@@ -563,7 +642,21 @@ sympy are optional packages, imported only there):
 - **DELAY N / SMOOTH N** of any whole order n: orders 1 and 3 keep `delay1/3` and `smooth/smooth3`;
   another order is written out as the format compiles those, n hidden stocks (`<flow>_d1..dn`, a
   material chain at n / T each; `SM_k_1..n` smoothing stages with exact flows, the rate reading the
-  last). An order or a delay time that changes during the run stays blocked (the engine).
+  last). An order or a delay time that changes during the run stays blocked (PySD gives each stage
+  the time at which its contents entered, which the engine does not);
+- **since queue item 2d** (2026-10-19): a rate with no linear form (a ratio, MIN / MAX, SQRT, a
+  power, IF THEN ELSE, EXP, ABS, XIDZ / ZIDZ, trigonometry, a lookup of an expression, a nonlinear
+  polynomial) is written as an expression; a flow whose rate goes negative on PySD's run is two-way
+  (`A <-> B`) and a stock that goes or starts below 0 is `signed`; when SD Lab's floor alone makes the
+  runs differ (`convert_checked`: an outflow larger than the stock within a step, a stage faster than a
+  step) the stocks whose outflows exceed their level on the Euler path are made signed, and only
+  those; DELAY FIXED's order is fixed at the start (as PySD and Vensim fix it), of a function of TIME it
+  is a measured input, as a whole rate into a stock `delay_fixed(...)`, out of a measured stock or
+  inside an expression `delayed(...)`; a material DELAY out of a measured stock (Vensim's pipeline
+  stock) is the SMOOTH of the same order it equals; TREND and FORECAST are a smoothing and an
+  expression; SMOOTH or DELAY of an expression smooths an auxiliary; a DELAY's order is lowered until
+  each stage takes a TIME STEP at least, as PySD lowers it; two smoothings of the same input from
+  different starts get their own stocks (the case format gave them one).
 
 **Acceptance.** A model becomes a case only if PySD's run (Euler at the model's TIME STEP) and SD
 Lab's engine with noise `none` agree at every recorded step within 1e-4 + 1e-7 x the stock's largest

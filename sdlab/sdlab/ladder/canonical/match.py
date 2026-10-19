@@ -16,7 +16,10 @@ each read one stock (or input, or smoothing) linearly, a + b x Y, or through a l
 
 Anything else raises read.Blocked naming the missing feature: a ratio of stocks, a non-integer power,
 a product of two sums, MIN/MAX, IF THEN ELSE, SQRT, EXP/LN, ... (a placeholder that reads only TIME
-never gets here: pysd_import makes it a measured input first).
+never gets here: pysd_import makes it a measured input first). Since queue item 2d (2026-10-19) the
+engine has an expression form, so pysd_import writes such a rate with expr_text (the case format's
+expression syntax) when its feature is one of EXPRESSIBLE; and a rate that goes negative is written
+as it is (two_way=True) on a two-way flow.
 """
 
 from __future__ import annotations
@@ -47,6 +50,15 @@ F_POLY = "a nonlinear polynomial (not a product of linear factors)"
 F_SUMS = "a product of two sums of stocks"
 F_LOOKUP_EXPR = "a lookup of an expression of several stocks"
 F_NEGATIVE = "a two-way flow (a rate goes negative)"
+# what the engine's expression form holds (2d): a rate blocked by one of these is written as an expression
+EXPRESSIBLE = {F_RATIO, F_POWER, F_POLY, F_SUMS, F_LOOKUP_EXPR, "MIN / MAX", "IF THEN ELSE", "SQRT", "EXP / LN / LOG", "ABS",
+               "INTEGER / MODULO / QUANTUM", "XIDZ / ZIDZ (guarded division)", "trigonometry of a stock",
+               "a lookup inside a sum (a sum of effects)"}
+FUNCTION_NAMES = {"F_min": "min", "F_max": "max", "F_abs": "abs", "F_sqrt": "sqrt", "F_exp": "exp", "F_ln": "ln", "F_log": "log",
+                  "F_power": "power", "F_integer": "integer", "F_modulo": "modulo", "F_quantum": "quantum", "F_xidz": "xidz",
+                  "F_zidz": "zidz", "F_if_then_else": "if_then_else", "F_cmp_and": "and", "F_cmp_or": "or", "F_cmp_not": "not",
+                  **{f"F_{n}": n for n in ("sin", "cos", "tan", "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh")}}
+COMPARISONS = {"F_cmp_gt": ">", "F_cmp_ge": ">=", "F_cmp_lt": "<", "F_cmp_le": "<=", "F_cmp_eq": "==", "F_cmp_ne": "!="}
 
 
 def fmt(x) -> str:
@@ -120,7 +132,46 @@ def _linear(e, readers: set):
     return {"c": p.coeff_monomial(1), "k": k}
 
 
-def rate_text(expr, src: str | None, readers: dict, scale_of: dict, lookups: dict) -> str:
+def expr_text(expr, readers: dict, lookups: dict) -> str:
+    """A rate in the case format's expression syntax (2d; sdtruth_expr.py): readers' texts for the
+    symbols, the engine's functions for the placeholders, lookup(x, [[x0, y0], ...]) for a lookup."""
+    def go(e) -> str:
+        if e in readers:
+            return f"({readers[e]})" if "(" in readers[e] else readers[e]
+        if e.is_Number or e in (sp.pi, sp.E):
+            v = float(e)
+            if not math.isfinite(v):
+                raise Blocked("a number that is not finite", str(e)[:60])
+            return fmt(v) if v >= 0 else f"({fmt(v)})"
+        if e.is_Symbol:
+            raise Blocked("an expression that is not a rate", str(e)[:60])
+        if e.is_Add:
+            return "(" + " + ".join(go(a) for a in e.args) + ")"
+        if e.is_Mul:
+            num = [a for a in e.args if not (a.is_Pow and a.exp.is_Number and a.exp < 0)]
+            den = [1 / a for a in e.args if a.is_Pow and a.exp.is_Number and a.exp < 0]
+            top = " * ".join(go(a) for a in num) if num else "1"
+            return f"({top} / ({' * '.join(go(a) for a in den)}))" if den else f"({top})"
+        if e.is_Pow:
+            if e.exp.is_Number and e.exp < 0:
+                return f"(1 / {go(1 / e)})"
+            return f"({go(e.base)} ^ {go(e.exp)})"
+        name = type(e).__name__
+        if name in lookups:
+            xs, ys = lookups[name]
+            pts = ", ".join(f"[{fmt(x)}, {fmt(y)}]" for x, y in sorted(zip(xs, ys)))
+            return f"lookup({go(e.args[0])}, [{pts}])"
+        if name in COMPARISONS:
+            a, b = e.args
+            return f"({go(a)} {COMPARISONS[name]} {go(b)})"
+        if name in FUNCTION_NAMES:
+            return f"{FUNCTION_NAMES[name]}({', '.join(go(a) for a in e.args)})"
+        raise Blocked(feature_of(e) if isinstance(e, sp.Function) else "an expression that cannot be written", str(e)[:80])
+
+    return go(sp.sympify(expr))
+
+
+def rate_text(expr, src: str | None, readers: dict, scale_of: dict, lookups: dict, two_way: bool = False) -> str:
     """The rate in the case format. readers: sympy symbol -> its text (a stock id, an input name, or
     smooth(...)); scale_of: symbol -> the largest level it reaches in the source's run (for effect
     ranges)."""
@@ -184,13 +235,13 @@ def rate_text(expr, src: str | None, readers: dict, scale_of: dict, lookups: dic
         xs, ys = lookups[name]
         pts = sorted(((x - float(a)) / float(b), v) for x, v in zip(xs, ys))
         eff_text.append(f"effect({readers[y]}, table, [{', '.join(f'[{fmt(x)}, {fmt(v)}]' for x, v in pts)}])")
-    base = _rate_base(rate, c, readers)
+    base = _rate_base(rate, c, readers, two_way)
     return " * ".join([base] + eff_text)
 
 
-def _rate_base(rate, c, readers: dict) -> str:
+def _rate_base(rate, c, readers: dict, two_way: bool = False) -> str:
     if rate is None:
-        if c <= 0:
+        if c <= 0 and not (two_way and c < 0):
             raise Blocked(F_NEGATIVE, fmt(c))
         return fmt(c)
     kind, r = rate
@@ -198,7 +249,7 @@ def _rate_base(rate, c, readers: dict) -> str:
         a, b, y = r
         a, b = c * a, c * b
         if a == 0:
-            if b <= 0:
+            if b <= 0 and not (two_way and b < 0):
                 raise Blocked(F_NEGATIVE, f"{fmt(b)} * {readers[y]}")
             return readers[y] if b == 1 else f"{fmt(b)} * {readers[y]}"
         if a > 0 and b < 0:

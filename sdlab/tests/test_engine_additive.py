@@ -57,7 +57,9 @@ def test_every_existing_simulation_gives_the_same_numbers():
 def test_old_cases_keep_their_hashes_and_new_ones_cover_the_new_code():
     recorded = {k.split("/")[1] for k in engine_outputs.recorded() if k.startswith("ladder/")}
     for cid in recorded:
-        assert not cases.uses_added_features(cases.load(cid)["model"]), cid      # hashed with the legacy engine
+        # hashed with the legacy engine, or (a case that uses the 2026-10-18 features, recorded at 05ae898
+        # before queue item 2d's) with the engine of that day: never with the code as it is now
+        assert not cases.uses_2d_features(cases.load(cid)["model"]), cid
     for cid in ("062-tank-fed-by-measured-pump", "063-delay3-supply-line"):
         assert cases.uses_added_features(cases.load(cid)["model"])
     assert cases.uses_added_features(case_model("stocks: {A: 0 max=5}\nflows:\n  outside -> A: 1\n"))
