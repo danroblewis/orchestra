@@ -25,6 +25,7 @@ import inspect
 import json
 import os
 import re
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -249,7 +250,7 @@ def _load_draw(path: str, mtime: float, size: int, i: int) -> dict:
     if known_ is None:
         rejected = [r for r in rejected if r["attempt"] != built["case"]["draw"]["attempt"]]
         memo.parent.mkdir(parents=True, exist_ok=True)
-        tmp = memo.with_suffix(f".{os.getpid()}.tmp")
+        tmp = memo.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")   # threads in one server must not share it
         tmp.write_text(json.dumps({"attempt": built["case"]["draw"]["attempt"], "rejected": rejected, "problems": problems}))
         tmp.replace(memo)
     built["case"]["draw"].update(rejected=rejected, problems=problems)
