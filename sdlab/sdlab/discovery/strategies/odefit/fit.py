@@ -32,7 +32,8 @@ def columns(X: np.ndarray, u: np.ndarray, spec: "Spec") -> np.ndarray:
     """The terms' columns for states X (S x k) and inputs u (m x k): levels, inputs, 1, products."""
     parts = [X, u, np.ones((1, X.shape[1]))]
     if spec.products:
-        parts.append(np.array([X[a] * X[b] for a, b in spec.products]).reshape(len(spec.products), X.shape[1]))
+        with np.errstate(over="ignore", invalid="ignore"):      # a trial's run that blows up is scored, not warned about
+            parts.append(np.array([X[a] * X[b] for a, b in spec.products]).reshape(len(spec.products), X.shape[1]))
     return np.vstack(parts)
 
 
@@ -208,6 +209,12 @@ def simulate_batch(Ws: np.ndarray, Hss: np.ndarray, Z: np.ndarray, spec: Spec, d
     rows = np.array([i for i, _ in spec.hinges], int)
     sg = np.array([g for _, g in spec.hinges], float)
     S, m = d.S, d.m
+    with np.errstate(over="ignore", invalid="ignore"):
+        _batch_steps(X, out, Ws, Hss, spec, d, st, en, rows, sg, K, S, m)
+    return out
+
+
+def _batch_steps(X, out, Ws, Hss, spec, d, st, en, rows, sg, K, S, m):
     for j in range(1, int((en - st).max())):
         idx = st + j
         live = idx < en
@@ -227,7 +234,6 @@ def simulate_batch(Ws: np.ndarray, Hss: np.ndarray, Z: np.ndarray, spec: Spec, d
                 dx[:, i] += amt[:, h]
         X[:, :, live] = x + dx
         out[:, k] = np.transpose(X[:, :, live], (0, 2, 1))
-    return out
 
 
 def fit_starts(spec: Spec, d: Data, seg_len: int, w: np.ndarray, theta: np.ndarray, max_nfev: int = 50) -> np.ndarray:
