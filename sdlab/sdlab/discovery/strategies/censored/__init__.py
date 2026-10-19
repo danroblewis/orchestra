@@ -38,9 +38,9 @@ from ...caps import flow_amounts
 from ...identify import identify as main_line
 from ...matrix import injected
 from ...simulate import Model, behaviour_error
-from . import cap, floor, onestep
+from . import cap, floor, gap, onestep
 
-DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True}
+DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True, "gaps": True}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -200,6 +200,28 @@ def link_candidates(flows, ids, t, prev, dy, i, inp=None):
     return out
 
 
+def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None):
+    """The row's flows to and from outside read instead as a gap to a target (another level or a
+    measured input) closed by an inflow floored at 0, max(0, a x_j - b x_own (+ c)), and a drain of
+    the row (gap.py): the floor binding where the target is below the level separates the gap's own
+    term from the drain, which a straight row adds into one number."""
+    mi, names, X = (inp[0], ids + inp[1], np.vstack([prev, inp[2]])) if inp else (None, ids, prev)
+    split = _flows_of(flows, ids[i])
+    if split is None:
+        return []
+    _, rest = split
+    y = dy[i] - onestep.changes(rest, ids, t, prev, mi)[i]
+    T = len(y)
+    out = []
+    for fit in gap.search(y, X, i, [j for j in range(len(names)) if j != i], floor_rss):
+        gain = T * math.log(max(fit["line_rss"], floor_rss) / max(fit["rss"], floor_rss))
+        if gain < (1 + margin) * math.log(T):
+            continue
+        out.append((rest + gap.as_flows(fit, ids[i], names, inputs=names[len(ids):]),
+                    f"gap {fit['a']:.3g} x {names[fit['j']]} - {-fit['b']:.3g} x {ids[i]} floored, into {ids[i]}"))
+    return out
+
+
 def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, mult=2.0, changes=True, inputs=None):
     split = _flows_of(flows, ids[i])
     if split is None:
@@ -270,6 +292,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["floor_margin"] or o["margin"], o["bend"], o["own_floors"], inp)
             if o["links"]:
                 cands += link_candidates(flows, ids, t, prev, dy, i, inp)
+            if o["gaps"]:
+                cands += gap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], inp)
             if o["caps"] or o["recut"]:
                 cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"], inputs=mi)
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
