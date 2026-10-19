@@ -22,6 +22,9 @@ A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at
 
 from __future__ import annotations
 
+import threading
+import time
+
 from ..discovery.api import jsonable
 from . import cases as casemod
 from . import catalog, data, score, store
@@ -164,17 +167,35 @@ def flatten(row: dict | None) -> dict:
 
 
 _summaries: dict = {}
+_summary_lock = threading.Lock()
+FRESH_FOR = 10.0          # seconds a summary is served before it is checked again
 
 
 def summary(strategy_filter: list[str] | None = None) -> dict:
     """The matrix (see the module docstring), cached in memory until a result is stored, a case or
-    a strategy changes, or the scorer changes."""
-    listing = catalog.listing()
-    key = (store.version(), tuple((s["name"], s["hash"], s["available"]) for s in listing),
-           tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), tuple(strategy_filter or ()), str(store.path()))
-    if _summaries.get("key") != key:
-        _summaries.update(key=key, value=_summary(strategy_filter, listing))
-    return _summaries["value"]
+    a strategy changes, or the scorer changes. While agents store results every second, it is
+    recomputed at most every FRESH_FOR seconds, one request at a time; the others get the last copy."""
+    slot = (tuple(strategy_filter or ()), str(store.path()))
+    have = _summaries.get(slot)
+    if have and time.time() - have["at"] < FRESH_FOR:
+        return have["value"]
+    if have and not _summary_lock.acquire(blocking=False):
+        return have["value"]
+    if not have:
+        _summary_lock.acquire()
+    try:
+        have = _summaries.get(slot)
+        if have and time.time() - have["at"] < FRESH_FOR:
+            return have["value"]
+        listing = catalog.listing()
+        key = (store.version(), tuple((s["name"], s["hash"], s["available"]) for s in listing),
+               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash())
+        if not have or have["key"] != key:
+            have = {"key": key, "value": _summary(strategy_filter, listing)}
+        _summaries[slot] = {**have, "at": time.time()}
+        return have["value"]
+    finally:
+        _summary_lock.release()
 
 
 def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
