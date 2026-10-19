@@ -1,7 +1,7 @@
 title: Three identical stocks, different starts
 level: 3
 tags: [independent, identical, identifiability]
-tests: the same three stocks as 034, started at different levels; the different transients are the only thing that tells them apart
+tests: "the stocks of 034 started at different levels: still not separable without noise (each one's gap to 100 shrinks by the same 20% a step, so the levels stay in a fixed ratio); the simplest answer, no flow between them, is the right one"
 seed: 35
 stocks: {A: 0, B: 50, C: 250}
 flows:
