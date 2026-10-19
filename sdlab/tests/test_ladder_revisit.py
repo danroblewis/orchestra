@@ -2,7 +2,7 @@
 gap_prior (a drain read by another stock written as the goal gap or co-flow it equals, where the
 data cannot tell), lna_loops (loop-closing links kept when the likelihood does not rule them out), lna_pulses
 (pulses found first, lna on what they leave), lna_levels (inflow pieces as a few recurring
-levels) and lna_products (moves scaled by a third stock in
+levels), lna_products and lna_stack (all of them in one model) (moves scaled by a third stock in
 lna's likelihood)."""
 
 from __future__ import annotations
@@ -129,3 +129,15 @@ def test_square_wave_inflow_as_two_levels():
     assert r["levels"] == {"C": 2}
     inflow = next(f for f in r["flows"] if f["from"] is None and f["to"] == "C")
     assert len({p["value"] for p in inflow["inflow"]}) == 2
+
+
+def test_births_not_read_as_a_stepping_inflow():
+    fl = _ends(_run("lna_levels", "009-births-and-deaths", "counts-long"))
+    assert (None, "P", "P") in fl
+
+
+def test_stack_effect_and_square_wave_together():
+    r = _run("lna_stack", "017-linear-effect", "counts-long")
+    move = next(f for f in r["flows"] if f["from"] == "A" and f["to"] == "B")
+    assert [e["stock"] for e in move.get("effects") or []] == ["C"]
+    assert r["levels"] == {"C": 2}

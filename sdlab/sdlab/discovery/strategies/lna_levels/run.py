@@ -1,5 +1,5 @@
 """lna's steps (a copy of lna/run.py's discover, importing lna's modules), then each stock's outside
-inflow pieces offered as a few recurring levels, and a self-growth term beside an inflow offered as
+inflow pieces offered as a few recurring levels, and a self-growth term offered as
 pieces instead (levels.py)."""
 
 from __future__ import annotations

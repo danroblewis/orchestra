@@ -8,9 +8,9 @@ and on long runs each piece is measured from its own steps only. Here a stock's 
 into K levels (1-D k-means on the pieces' numbers, every K below the number of pieces), each level a
 column that is 1 on its pieces' steps (a virtual stock read by a link into s), fitted by lna's
 likelihood: K numbers instead of one per piece, each measured from all its steps. A grouping is kept
-when its BIC beats the pieces'. And where s grows with itself beside an outside inflow, the model
-without the growth, its inflow cut afresh into pieces, is offered; the lower BIC (after regrouping
-both) wins.
+when its BIC beats the pieces'. And where s grows with itself, the model without the growth, with
+an outside inflow into s cut afresh into pieces, is offered: kept when that inflow steps (three
+pieces or more) and, regrouped, beats the growth's BIC.
 """
 
 from __future__ import annotations
@@ -218,16 +218,25 @@ def regroup(cur: Fitted, d: Data, max_levels: int = MAX_LEVELS) -> tuple[Fitted,
 
 
 def without_growth(cur: Fitted, d: Data) -> Fitted:
-    """Where a stock grows with itself beside its outside inflow, the model without the growth and
-    with that inflow cut afresh: kept when, both regrouped into levels, it has the lower BIC."""
-    grow = [i for i, a in enumerate(cur.atoms) if a.kind == "grow" and a.era is None and cur.theta[i] > 0
-            and any(b.kind == "in" and b.dst == a.dst for b in cur.atoms)]
+    """Where a stock grows with itself (outside -> s reading s), the model without the growth, with
+    an outside inflow into s (added if it had none) cut afresh into pieces: kept when that inflow
+    steps (3 pieces or more) and, both regrouped into levels, it has the lower BIC by TIE."""
+    grow = [i for i, a in enumerate(cur.atoms) if a.kind == "grow" and a.era is None and cur.theta[i] > 0]
     if not grow:
         return cur
     rest = [i for i in range(len(cur.atoms)) if i not in grow]
-    g = fit([cur.atoms[i] for i in rest], d, cur.theta[rest], tau=cur.tau)
+    atoms, theta = [cur.atoms[i] for i in rest], list(cur.theta[rest])
+    for i in grow:
+        s = cur.atoms[i].dst
+        if not any(a.kind == "in" and a.dst == s for a in atoms):
+            atoms.append(Atom("in", dst=s))
+            theta.append(max(1e-3, float(cur.theta[i] * np.maximum(d.prev[s], 0).mean())))
+    g = fit(atoms, d, np.array(theta), tau=cur.tau)
     g = search(pieces(g, d, mult=0.5), d)
-    if regroup(g, d)[2] < regroup(cur, d)[2]:
+    # only an inflow that steps back and forth (3 pieces or more) stands in for growth: a single
+    # change of level is what growth towards an equilibrium looks like (births and deaths)
+    stepping = all(sum(1 for a in g.atoms if a.kind == "in" and a.dst == cur.atoms[i].dst and a.span is not None) >= 3 for i in grow)
+    if stepping and regroup(g, d)[2] < regroup(cur, d)[2] - TIE:
         return g
     return cur
 
