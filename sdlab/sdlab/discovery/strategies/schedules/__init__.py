@@ -8,13 +8,17 @@ drain of A 0.15 in the first era, 0 after). A constant on a move is likewise pus
 the move, as a larger inflow into its source and a constant drain of its destination (158). Both
 are the same model one flow longer.
 
-Here the model censored chooses (a copy of censored at aad5c7b, `_vendored/censored`) is the start
-of a greedy search (search.py): drop a flow, one number for all eras, numbers per era, a constant
-on a move (replacing a constant flow at either end), and merging an inflow's adjacent pieces. Each
-candidate's numbers are refitted together (refit.py: one least squares over all rows, a move's
-number shared by its two rows, numbers per era group, the inflow pieces profiled out), and the one-
-step BIC in the engine's form (with a price per flow) decides. The result is kept only if it
-behaves on the data no worse than `judge_slack` times censored's model by the main line's judge.
+Here the model censored chooses (a copy of censored at 2dee420, `_vendored/censored`), a lean copy
+(every pieced inflow one piece) and its flows linear in their numbers start a beam search (search.py):
+drop a flow; one number for all eras or numbers per era; a constant on a move in place of the
+constant flows at its ends (158); a move from a drain and a link; a drain on another level as a
+falling inflow; a new move; a co-flow on a move; outside flows as one-step pulses on a fixed period,
+which may top their stock up to a level (159); inflow pieces merged and cut. Each candidate's numbers
+are refitted together (refit.py: one least squares over all rows, a move's number shared by its
+two rows, numbers per era group, the inflow pieces profiled out, steps where a stock's outflows are
+cut short left out), and the one-step BIC in the engine's form (with a price per flow) decides. The
+result is kept only if it behaves on the data no worse than `judge_slack` times censored's model by
+the main line's judge.
 """
 
 from __future__ import annotations

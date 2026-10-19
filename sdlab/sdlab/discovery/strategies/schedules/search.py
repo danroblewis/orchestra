@@ -1,4 +1,4 @@
-"""A greedy search over the structure of a whole model, every candidate refitted jointly (refit.py)
+"""A beam search over the structure of a whole model, every candidate refitted jointly (refit.py)
 and priced by its one-step BIC in the engine's form.
 
 Steps offered at each round (the best one taken while it lowers the BIC):
@@ -82,14 +82,15 @@ def _constant_outside(f: dict, stock: str) -> bool:
     return (f.get("rate") or {}).get("form") == "constant" and not f.get("byTime")
 
 
-def _reads_only(f: dict) -> str | None:
-    """The one level a proportional or one-term linear rate (no constant) reads, else None."""
+def _reads_only(f: dict, constant: bool = False) -> str | None:
+    """The one level a proportional or one-term linear rate reads (with `constant`, also one with a
+    constant), else None."""
     rates = [g["rate"] for g in f["byTime"]] if f.get("byTime") else [f.get("rate") or {}]
     got = set()
     for r in rates:
         if r.get("form") == "proportional":
             got.add(r.get("stock"))
-        elif r.get("form") == "linear" and len(r.get("terms") or []) == 1 and not float(r.get("c") or 0):
+        elif r.get("form") == "linear" and len(r.get("terms") or []) == 1 and (constant or not float(r.get("c") or 0)):
             got.add(r["terms"][0].get("stock"))
         else:
             return None
@@ -169,7 +170,7 @@ def _fusions(flows: list[dict], ctx: Context, spans):
             continue
         for j, k in enumerate(flows):
             if (k.get("from") is None and k.get("to") in ids and k.get("to") != x and refittable(k) and not k.get("inflow")
-                    and _reads_only(k) == x and not k.get("uses")):
+                    and _reads_only(k, constant=True) == x and not k.get("uses")):
                 rest = [f for q, f in enumerate(flows) if q not in (i, j)]
                 yield rest, _as_move(d, k, spans), f" for a drain of {x} and a link into {k['to']}"
 
@@ -260,6 +261,17 @@ def candidates(flows: list[dict], ctx: Context, spans: list[dict] | None):
                 kept = [h for h in rest if h.get("from") != u]
                 if len(kept) < len(rest):
                     yield f"{f['from']} -> {f['to']} uses {u} ({p_:g} each) for {u}'s outflows{why}", kept + [g], False
+    # a drain of x that reads another level z, beside x's constant inflow: one inflow c - k z
+    # (a goal gap or a falling link the main line wrote as "x drains faster when z is high")
+    for i, d in enumerate(flows):
+        x, z = d.get("from"), _reads_only(d)
+        if x not in ids or d.get("to") is not None or not refittable(d) or d.get("inflow") or d.get("byTime") or z in (None, x) or d.get("uses"):
+            continue
+        for j, h in enumerate(flows):
+            if j != i and h.get("from") is None and h.get("to") == x and (_constant_outside(h, x) or bool(h.get("inflow"))) and refittable(h) and not h.get("byTime"):
+                link = {"from": None, "to": x, "ratio": 1, "rate": {"form": "linear", "c": 0.0, "terms": [{"stock": z, "k": 0.0}]}, "free_c": True}
+                rest = [f for q, f in enumerate(flows) if q not in (i, j)]
+                yield f"an inflow into {x} falling with {z} for its drain on {z}", rest + [link], False
     # a drain of x beside a link into y that reads x: the move x -> y (the same levels, one flow fewer)
     for rest, m, why in _fusions(flows, ctx, spans):
         yield f"move {m['from']} -> {m['to']}{why}", rest + [m], False
@@ -459,7 +471,7 @@ def _key(flows: list[dict]) -> tuple:
     return tuple(sorted(out))
 
 
-def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, width=4):
+def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, width=4, tie=0.25):
     """A beam search: the `width` best models (by BIC) are each offered every step; the best
     `width` of them and their children go on, until a round finds nothing better than the best."""
     score = bic(flows, ctx, floor, flow_price)
@@ -486,7 +498,7 @@ def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, w
                 seen.add(k)
                 c = refit(cand, ctx, scale)
                 sc = bic(c, ctx, floor, flow_price)
-                if sc < sc0 - (margin * log_t if adds else 0.0):
+                if sc < sc0 - (margin * log_t if adds else tie * log_t):
                     children.append((sc, c, st + [{"step": name, "bic": round(sc, 2)}]))
         if not children:
             break
