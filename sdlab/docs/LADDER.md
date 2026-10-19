@@ -1337,6 +1337,26 @@ achievable. The exceptions:
 | gLV and adoption twins: measurement error on a product | 139-noisy-crowding (103 + 2% meas) | 0/4, 96% | 0/4, 96% | 3/4, 99% | 0/4, 96% | 0/4, 93% | 0/4, 96% | 0/4, 96% | meas-long: drain 0.246 x Pop plus 3 pieces, combined and structures alike |
 | **total (80 cells each)** | | 3 (2) | 3 (2) | 19 (2) | 1 (2) | 3 (2) | 0 (3) | 0 (2) | |
 
+**More distilled cases from the realistic triage (152-161, 19 October 2026).** The 33 realistic
+cases were triaged by mechanism (`docs/research/realistic-triage.md`). Each mechanism no case
+covered became one case:
+- 152-move-driven-by-third-stock (sd-fishery, sd-manufacturing);
+- 153-link-from-large-slow-stock (sd-housing, sd-support-tiers);
+- 154-move-into-stepping-fed-stock (sd-population);
+- 155-gap-of-downstream-drives-move (sd-supply);
+- 156-hidden-stage-on-closed-loop (sd-ev-fleet, sd-recycling);
+- 157-two-chained-eras (sd-eras);
+- 158-affine-release (sd-reservoirs, sd-recycling);
+- 159-periodic-pulse-and-top-up (sd-kanban);
+- 160-effect-on-outside-inflow (sd-farm-soil);
+- 161-hidden-stage-exit-coflow (sd-manufacturing, sd-brewery, sd-ci).
+
+effect_hats, censored and matrix make the hard case's mistake on each (the table is in the triage
+document). No cell passes except 157 none-long; 152 and 158 are equivalent in some variants. Two
+candidates did not reproduce and were dropped:
+- a fast queue under a stepping inflow (all three pass it);
+- a co-flow on a gap-restocked stock (recovered as an equivalent drain).
+
 **Already isolated by an existing case** (no new case). In each of these the hard case's mistake
 is the existing case's.
 
