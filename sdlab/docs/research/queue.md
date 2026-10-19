@@ -88,7 +88,6 @@ for `combined` on the test cases).
 
 ## Started
 
-- 2026-10-18 21:00: item 3, strict pass tier.
 
 - 2026-10-18 20:50: item 2c, converter coverage.
 
@@ -98,6 +97,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-18: item 3, strict pass tier (f75a064). Strict = pass, with no extra parts, long-run error and fresh skill within what refits of the truth achieve. combined leads by strict (67.6%); matrix drops 41.4% → 22.9%. Kept current by the hourly cycle (`sdlab-ladder strict`).
 
 - 2026-10-18: item 2, canonical models: cases 100-110 and the PySD converter (3660a5d, 0b3fbb8,
   08ef0d7, 1b14f42). Coverage of SDXorg/test-models: 37 exact, 15 differ, 111 blocked
