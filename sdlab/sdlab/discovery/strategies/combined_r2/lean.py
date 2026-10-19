@@ -15,7 +15,8 @@ flow next to the right ones. This strategy keeps combined's choice and then (pru
 
 The pass runs only where a price on complexity means something: where the model fits the data to
 their noise. With counts that the model does not fit (fitcheck.py, a copy of combined_misfit's: dispersion or
-Ljung-Box whiteness above z = 5, as on every realistic model), the pieces stand in for dynamics no
+Ljung-Box whiteness above z = 5, or the changes spreading clearly less than its counting noise, dispersion below -5;
+as on most realistic models), the pieces stand in for dynamics no
 candidate has, and taking them out moved the refitted drains and cost skill (on the stored
 realistic results); there the model is returned unchanged. Models with unmeasured stocks are
 returned unchanged too (their numbers are not refitted here).
@@ -49,7 +50,8 @@ def leaner(result: dict, stocks: list[dict], run: dict, opts: dict, cfg: dict) -
             fit = goodness(result["flows"], data, starts)
         except Exception as e:                           # noqa: BLE001
             fit = {"error": f"{type(e).__name__}: {e}"[:200]}
-        if "error" in fit or any(v is not None and v > float(cfg["gate"]) for v in fit.values()):
+        z = float(cfg["gate"])          # dispersion both ways (too little spread also means the noise model is wrong), whiteness one way
+        if "error" in fit or (fit["dispersion"] is not None and abs(fit["dispersion"]) > z) or (fit["whiteness"] is not None and fit["whiteness"] > z):
             return {**result, "lean": {"skipped": "does not fit the counts", "fit": fit}}
     try:
         flows, report = lean(result["flows"], data, run, cp=float(cfg["cp"]), fp=float(cfg["fp"]), slack=float(cfg["slack"]),
