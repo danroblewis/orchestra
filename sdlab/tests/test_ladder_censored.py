@@ -105,3 +105,16 @@ def test_cooling_to_a_measured_outside_temperature_is_read_once():
     drain = sum(f["rate"]["k"] for f in r["flows"] if f.get("from") == "T" and (f.get("rate") or {}).get("stock") == "T")
     warm = sum(t["k"] for f in r["flows"] if f.get("to") == "T" for t in (f.get("rate") or {}).get("terms") or [] if t["stock"] == "outside")
     assert drain == pytest.approx(warm, rel=0.05), "one k: the body warms toward the outside as fast as it cools"
+
+
+def test_floored_gap_to_a_measured_target():
+    """125: hiring k x desired - k x R, floored at 0, beside a drain 0.025 R (the floor tells the gap's
+    R term from the drain)."""
+    c = casemod.load("125-floored-gap-to-measured-target")
+    model = casemod.truth_model(c, "none-short")
+    d = data.load(c, "none-short")
+    opts = {"eras": None, "inputs": {k: list(v) for k, v in d["inputs"].items()}}
+    r = censored.identify(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"]}, opts)
+    s = score.equations(c, "none", model, r["flows"], d)
+    assert s["status"] == "pass", s["parts"]
+    assert any(x["rewrite"].startswith("gap") for x in r["censored"])
