@@ -1,6 +1,6 @@
 # A ground-truth model of services on Kubernetes (sd-k8s-platform, sd-k8s-small)
 
-**Status:** done (model, generator, tests, ladder cases); leaders' first results below.
+**Status:** done (model, generator, tests, ladder cases); leaders' results below (kalman_lna on the platform still running).
 **Asked by:** the user (an SRE), 2026-10-18: bring back the "lot of something" test (`k8s-fleet`, 400
 services, stocks only, no truth) as a system dynamics model with a ground truth: services on
 Kubernetes serving HTTP through load balancers, with requests, pods, HPA, resources, OOM kills,
@@ -259,4 +259,36 @@ next, twice as long, recording in the background once a run passes half of one. 
 
 ## Leaders on the two cases
 
-(In progress: filled in from `uv run sdlab-ladder status` once the runs finish.)
+`OMP_NUM_THREADS=1 ... uv run sdlab-ladder run --strategies combined,kalman_lna,structures,effect_hats,censored,matrix
+--cases sd-k8s-small,sd-k8s-platform --jobs 3 --timeout 3600`, 2026-10-19 (the cases' own timeouts apply: 900 s
+small, 1,800 s platform). Read from the store (latest result for the current case hashes). The store
+mixes versions: some cells were filled by the watcher or by these runs at later commits of other
+agents' strategies (c557f15 ... e2139b8); the machine was at load ~100 on 28 cores.
+
+| strategy | small short (7 d) | small long (14 d) | platform short | platform long |
+|---|---|---|---|---|
+| matrix | skill@20 58.2%, @100 67.5%, fresh@20 60.0%; 149 flows; 21 of 106 parts right; 151 s | **87.2%, 97.6%, fresh 86.2%**; 193 flows; 19/106; 473 s | timeout (1,800 s) | timeout |
+| censored | 79.6% @20 but **-25,642% @100** (a runaway), fresh@20 78.8%; 165 flows; **31/106**; 422 s | timeout (900 s) | timeout | timeout |
+| combined | empty model (skill ~0); 240 s | empty; 240 s | empty; 241 s | empty; 241 s |
+| structures | empty; 240 s | empty; 240 s | empty; 241 s | empty; 240 s |
+| kalman_lna | empty; 329 s | empty; 364 s | in progress (past 1,800 s: the alarm did not stop it) | in progress |
+| effect_hats | timeout (900 s) | timeout | timeout | timeout |
+
+No run passes (exact recovery), as expected for 106 (small) and 714 (platform) scored parts.
+
+What they recover (matrix and censored on the small case): the traffic input driving the edge
+(`outside -> ingress [traffic]`), CPU driven by in-flight requests and by ready pods and its 2-minute
+window, the memory baseline and its window, per service; censored also some of the replica and
+memory links. They miss the pod lifecycle (it runs through hidden pending/starting stocks), the HPA
+(it reads a hidden SMOOTH), the effects (throttling, OOM, scheduling tables) and the hidden LB queues.
+
+Findings:
+- **combined, structures and kalman_lna return an empty model** on both cases: combined's internal
+  budget (240 s, each specialist capped at 90 s) runs out on 34 measured stocks x 10,080 steps, so every
+  specialist is dropped; structures and kalman_lna build on it. The ladder's timeout never binds.
+- **matrix is the only one with useful behaviour on the small case** (87% skill@20 on two weeks), and it
+  times out on the platform (227 stocks).
+- **The platform is out of reach for all six** at a 30-minute budget. Its long run's data (every flow's
+  counter, 1,130 x 20,160) takes ~17 GB per worker in memory; dropping unused counters when loading
+  would help every strategy.
+- censored's @100 runaway on the small case is a found model that blows up when run 100 steps ahead.
