@@ -1,0 +1,19 @@
+title: "Closed-loop identification: setpoint steps"
+level: 11
+tags: [control, input, integral, offset, closed-loop-id]
+tests: "closed-loop identification with steps: 213's PI loop with its setpoint stepping between 200 and 260 every 100 steps; each step excites the loop well above the counting noise, so the setpoint's coupling and the loop's numbers are identifiable (Ljung, System Identification, closed-loop identification: external excitation of the reference)"
+seed: 214
+inputs:
+  setpoint: "200 + pulse_train(60, 50.5, 100, 200)"
+stocks:
+  Y: {initial: 150, unit: units}
+  I: {initial: 2000, unit: unit_steps}
+flows:
+  outside -> Y as control: -20 + 0.2 * setpoint - 0.2 * Y + 0.01 * I
+  Y -> outside: 0.05 * Y
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * Y
+    exact: true

@@ -1,0 +1,12 @@
+title: "Tank level under proportional control"
+level: 9
+tags: [control, input, gap, balancing]
+tests: "P control of an integrating plant: a tank H has no drain of its own, only a measured demand drawn out of it; a valve fills it at 10 + 0.25 x (setpoint - H); because the tank integrates, P control reaches a setpoint step with no error, but a change in demand leaves a steady offset (demand - 10) / 0.25 that only integral action would remove (the 'system type' of Nise ch. 7, Ogata's steady-state error); setpoint and demand are measured inputs; the demand is recovered as an outflow read from the input, the valve as k x setpoint - k x H (Ogata, Modern Control Engineering, liquid-level systems; Nise, Control Systems Engineering, steady-state errors)"
+seed: 204
+inputs:
+  setpoint: "300 + pulse_train(60, 80.5, 120, 400)"
+  demand: "10 + pulse_train(4, 180.5, 100, 250) - pulse_train(3, 20.5, 50, 330)"
+stocks: {H: {initial: 260, unit: litres}}
+flows:
+  outside -> H as valve: 10 + 0.25 * setpoint - 0.25 * H
+  H -> outside: 1 * demand

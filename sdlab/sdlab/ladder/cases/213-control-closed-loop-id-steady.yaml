@@ -1,0 +1,19 @@
+title: "Closed-loop identification: a steady setpoint"
+level: 11
+tags: [control, input, integral, offset, closed-loop-id]
+tests: "closed-loop identification with weak excitation: a PI loop (plant Y draining at 0.05, controller 0.2 x (setpoint - Y) + 0.01 x (I - 2000), I the error's running sum) whose setpoint never changes (a measured input fixed at 200): after the start-up transient only the counting noise moves the loop, and the controller cancels most of it, so the data hold little about the loop and nothing about how it answers the setpoint (a constant input is the same column as a constant); the analysis labels such cells data-limited or unidentifiable; the same loop as 214 (setpoint steps) and 215 (a PRBS setpoint) (Ljung, System Identification, closed-loop identification; Soderstrom & Stoica)"
+seed: 213
+inputs:
+  setpoint: "200"
+stocks:
+  Y: {initial: 150, unit: units}
+  I: {initial: 2000, unit: unit_steps}
+flows:
+  outside -> Y as control: -20 + 0.2 * setpoint - 0.2 * Y + 0.01 * I
+  Y -> outside: 0.05 * Y
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * Y
+    exact: true

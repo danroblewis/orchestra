@@ -1,0 +1,11 @@
+title: "Temperature control through a dead time, low gain"
+level: 14
+tags: [control, input, delay, hidden, gap]
+tests: "P control through a dead time: the heater's output reaches the room only after a third-order delay of 6 steps (DELAY3: three hidden stocks, like hot water travelling down a pipe); the controller sees the room now but acts on it 6 steps later; at a modest gain (0.11 x (setpoint - T), loss 0.05 x T) the loop is stable with a modest overshoot (gain margin about 3), at the price of a large steady-state error (T settles at 0.69 x the setpoint); recovered as one hidden path outside -> (delay 6) -> T fed at k x setpoint - k x T (Astrom & Murray, Feedback Systems, sec. 9.3 and 10.3: dead time eats phase margin)"
+seed: 205
+inputs:
+  setpoint: "300 + pulse_train(60, 40.5, 120, 240)"
+stocks: {T: {initial: 120, unit: decidegC}}
+flows:
+  outside -> T as heater: "delay3(0.11 * setpoint - 0.11 * T, 6, initial=10)"
+  T -> outside: 0.05 * T

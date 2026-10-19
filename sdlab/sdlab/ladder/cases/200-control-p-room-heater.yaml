@@ -1,0 +1,14 @@
+# Control-theory case (docs/research/control-cases.md). Temperatures in tenths of a degree C.
+title: "Room heater under proportional control"
+level: 9
+tags: [control, input, gap, floor, balancing]
+tests: "proportional (P) control: a heater pushes in heat at 0.3 x (setpoint - T), the gap between the wanted and the actual temperature (floored at 0: it cannot cool), while the room loses 0.05 x (T - outdoor); P control alone leaves a steady-state error, T settles about 2 degrees short of the setpoint, because some gap is needed to keep the heater on; setpoint and outside temperature are measured inputs; the heater is recovered as k x setpoint - k x T and the loss as a drain with a matching inflow from the outside temperature (Astrom & Murray, Feedback Systems, sec. 1.5)"
+seed: 200
+inputs:
+  setpoint: "200 + pulse_train(40, 50.5, 100, 200) - pulse_train(20, 400.5, 60, 300)"
+  outdoor: "50 + 30 * sin(1, 470)"
+stocks: {T: {initial: 120, unit: decidegC}}
+flows:
+  outside -> T as heater: 0.3 * setpoint - 0.3 * T
+  outside -> T as warming: 0.05 * outdoor
+  T -> outside: 0.05 * T

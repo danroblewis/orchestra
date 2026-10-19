@@ -1,0 +1,21 @@
+title: "Room heater under proportional-integral control"
+level: 11
+tags: [control, input, integral, offset, balancing]
+tests: "proportional-integral (PI) control: 200's room and heater plus an integral term, the controller's running sum of the error (setpoint - T), kept in the stock I (offset 1000 so it stays positive: I gains the setpoint and loses T each step, exact information flows); the heater is -20 + 0.3 x (setpoint - T) + 0.02 x I; the integral keeps pushing until the error is gone, so T settles at the setpoint (no steady-state error) after a small overshoot; the heater reads setpoint, T and I, and I's two flows read the setpoint and T (Astrom & Murray, Feedback Systems, sec. 1.5 and 10.1)"
+seed: 201
+inputs:
+  setpoint: "200 + pulse_train(40, 50.5, 100, 200) - pulse_train(20, 400.5, 60, 300)"
+  outdoor: "50 + 30 * sin(1, 470)"
+stocks:
+  T: {initial: 120, unit: decidegC}
+  I: {initial: 1000, unit: decidegC_min}
+flows:
+  outside -> T as heater: -20 + 0.3 * setpoint - 0.3 * T + 0.02 * I
+  outside -> T as warming: 0.05 * outdoor
+  T -> outside: 0.05 * T
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * T
+    exact: true

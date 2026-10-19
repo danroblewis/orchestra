@@ -1,0 +1,11 @@
+title: "Temperature control through a dead time, high gain"
+level: 14
+tags: [control, input, delay, hidden, gap, oscillation]
+tests: "205's loop at a gain close to instability: P control 0.27 x (setpoint - T) through the same 6-step DELAY3; with a gain margin of about 1.25 every setpoint step sets off a ringing that dies slowly (a little more gain and it would grow without bound: dead time is why high-gain control oscillates); recovered as one hidden path with its delay, and the ringing's period and decay come from the delay and the gain together (Astrom & Murray, Feedback Systems, sec. 9.3; Franklin, Powell & Emami-Naeini, time delay in the frequency response)"
+seed: 206
+inputs:
+  setpoint: "300 + pulse_train(40, 40.5, 150, 300)"
+stocks: {T: {initial: 240, unit: decidegC}}
+flows:
+  outside -> T as heater: "delay3(0.27 * setpoint - 0.27 * T, 6, initial=12)"
+  T -> outside: 0.05 * T

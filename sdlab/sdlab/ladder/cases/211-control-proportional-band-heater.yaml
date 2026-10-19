@@ -1,0 +1,12 @@
+title: "Heater with a proportional band"
+level: 12
+tags: [control, input, effect, effect-table, nonlinear]
+tests: "proportional control with saturation, 210's heater made gentle: full power (12) below 180, none above 220, and in between a straight line (0.3 x (220 - T): the proportional band), a table effect of T; T settles inside the band, at a level that drifts with the outdoor temperature (a measured input), instead of chattering around the setpoint as on/off control does; the steady-state error is the price of not overreacting; recovered as a constant times a table of T that is straight across the band (Astrom & Murray, Feedback Systems, sec. 1.5, eq. 1.2)"
+seed: 211
+inputs:
+  outdoor: "60 + 40 * sin(1, 400) + 15 * sin(1, 97)"
+stocks: {T: {initial: 150, unit: decidegC}}
+flows:
+  outside -> T as heater: "12 * effect(T, table, [[0, 1], [180, 1], [220, 0], [400, 0]])"
+  outside -> T as warming: 0.05 * outdoor
+  T -> outside: 0.05 * T

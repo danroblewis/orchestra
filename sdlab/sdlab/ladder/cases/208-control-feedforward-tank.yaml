@@ -1,0 +1,11 @@
+title: "Tank level with feedforward and feedback"
+level: 11
+tags: [control, input, gap, balancing]
+tests: "feedforward plus feedback: 204's tank (no drain of its own, a measured demand drawn out of it) with a valve that reacts to the demand itself before the level moves (feedforward, 0.8 x demand: a model of the demand cancelling 80% of it) and to the level (feedback, 0.25 x (300 - H)); the stock sees only what feedforward misses (0.2 x demand), so the level barely moves when demand changes; with the demand read both by the valve (+0.8) and by the outflow (-1) only their difference shows in the levels, so without counting noise the split is not identifiable (like births and deaths); with counts, the noise of each flow tells them apart (Astrom & Murray, Feedback Systems, sec. 1.4 and 11.2)"
+seed: 208
+inputs:
+  demand: "20 + pulse_train(10, 50.5, 80, 200) - pulse_train(8, 160.5, 40, 300) + 4 * sin(1, 70)"
+stocks: {H: {initial: 260, unit: litres}}
+flows:
+  outside -> H as valve: 75 - 0.25 * H + 0.8 * demand
+  H -> outside: 1 * demand

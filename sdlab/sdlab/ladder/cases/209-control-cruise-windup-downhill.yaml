@@ -1,0 +1,21 @@
+title: "Cruise control winding up on a long descent"
+level: 13
+tags: [control, input, integral, offset, floor]
+tests: "integrator windup: 203's car and PI cruise controller (the integral's offset 50000) on long descents (slope a measured input; gravity now pushes, 9.8 x downhill); the engine cannot brake, so its thrust is floored at 0 and the car runs fast, while the controller's integral I keeps summing the (negative) error and winds far down; at the foot of the hill the wound-down integral keeps the engine off long after the speed is back, so the speed sags well below the setpoint before recovering (the floor binds for long stretches; the integral is recovered from the stretches where it does not) (Astrom & Murray, Feedback Systems, sec. 10.4 and Example 10.5, here at the lower actuator limit)"
+seed: 209
+inputs:
+  setpoint: "2000 + step(300, 900)"
+  downhill: "pulse_train(3, 80.5, 50, 300) + pulse_train(2.5, 230.5, 30, 420)"
+stocks:
+  V: {initial: 1950, unit: cm_per_s}
+  I: {initial: 50000, unit: cm}
+flows:
+  outside -> V as engine: -1978 + 0.39 * setpoint - 0.39 * V + 0.04 * I
+  outside -> V as gravity: 9.8 * downhill
+  V -> outside as drag: 0.0101 * V
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * V
+    exact: true

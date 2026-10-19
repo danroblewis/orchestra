@@ -1,0 +1,12 @@
+title: "On/off heater (bang-bang control)"
+level: 12
+tags: [control, input, effect, effect-table, nonlinear]
+tests: "on/off control, the household thermostat: the heater gives its full 12 a step whenever the room is below the setpoint (200) and nothing above it, written as a steep table effect of T (full power up to 199, none from 201); the room loses 0.05 x T and gains 0.05 x the outdoor temperature (a measured input); the full push overshoots each time, so T never settles but chatters in a band around the setpoint while the heater's duty cycle follows the weather; recovered as a constant times a falling table of T (Astrom & Murray, Feedback Systems, sec. 1.5, on-off control)"
+seed: 210
+inputs:
+  outdoor: "60 + 40 * sin(1, 400) + 15 * sin(1, 97)"
+stocks: {T: {initial: 150, unit: decidegC}}
+flows:
+  outside -> T as heater: "12 * effect(T, table, [[0, 1], [199, 1], [201, 0], [400, 0]])"
+  outside -> T as warming: 0.05 * outdoor
+  T -> outside: 0.05 * T

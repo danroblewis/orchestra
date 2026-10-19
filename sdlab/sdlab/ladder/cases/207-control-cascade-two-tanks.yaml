@@ -1,0 +1,23 @@
+title: "Cascade control of two tanks"
+level: 13
+tags: [control, input, integral, offset, chain]
+tests: "cascade control, two loops one inside the other: an inner P loop drives the pump to hold the upper tank H1 at a level the outer PI loop asks for, and the outer loop picks that level from the lower tank's error (setpoint - H2) and its running sum I (offset 5000); a measured disturbance (a side stream into H1) is corrected by the fast inner loop before it reaches H2; written out, the pump is 0.5 x (40 + 1.2 x (setpoint - H2) + 0.06 x (I - 5000) - H1) = -130 + 0.6 x setpoint - 0.6 x H2 + 0.03 x I - 0.5 x H1, so it reads both tanks, the setpoint and I (Seborg, Edgar & Mellichamp, Process Dynamics and Control, cascade control; Astrom & Hagglund, PID Controllers)"
+seed: 207
+inputs:
+  setpoint: "150 + pulse_train(40, 60.5, 150, 300)"
+  side: "pulse_train(8, 130.5, 50, 170) + pulse_train(5, 20.5, 30, 230)"
+stocks:
+  H1: {initial: 120, unit: cm}
+  H2: {initial: 110, unit: cm}
+  I: {initial: 5000, unit: cm_min}
+flows:
+  outside -> H1 as pump: -130 + 0.6 * setpoint - 0.6 * H2 + 0.03 * I - 0.5 * H1
+  outside -> H1 as side_in: 1 * side
+  H1 -> H2: 0.1 * H1
+  H2 -> outside: 0.08 * H2
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * H2
+    exact: true

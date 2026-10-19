@@ -1,0 +1,19 @@
+title: "Closed-loop identification: a PRBS setpoint"
+level: 11
+tags: [control, input, integral, offset, closed-loop-id]
+tests: "closed-loop identification with a pseudo-random binary setpoint (PRBS): 213's PI loop with the setpoint switching between 200 and 260 in a 7-bit maximal-length sequence, each bit held 8 steps (1016 steps, then repeating; cases/data/prbs7-hold8.csv); a PRBS excites the loop at many frequencies at once, the identification engineer's standard test signal, so it should identify the loop at least as well as 214's steps (Ljung, System Identification, input design; Soderstrom & Stoica)"
+seed: 215
+inputs:
+  setpoint: {file: data/prbs7-hold8.csv, column: r, repeat: true}
+stocks:
+  Y: {initial: 150, unit: units}
+  I: {initial: 2000, unit: unit_steps}
+flows:
+  outside -> Y as control: -20 + 0.2 * setpoint - 0.2 * Y + 0.01 * I
+  Y -> outside: 0.05 * Y
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * Y
+    exact: true

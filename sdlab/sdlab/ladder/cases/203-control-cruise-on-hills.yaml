@@ -1,0 +1,23 @@
+# Speed in cm/s; the car's numbers per second from Astrom & Murray's linearised car (Example 10.3:
+# a = 0.0101, b = 1.3203 m/s^2 per unit throttle, g = 9.8), PI gains for a slower loop.
+title: "Cruise control on hills"
+level: 12
+tags: [control, input, integral, offset, balancing]
+tests: "PI cruise control rejecting a measured disturbance: the car's speed V (cm/s) gains engine thrust and loses drag 0.0101 x V and gravity 9.8 x slope on a hill (slope in percent, a measured input, hills of 2-5 % every few minutes); the cruise controller sets the throttle from the speed error (setpoint - V, the setpoint a measured input that the driver changes twice) and its running sum I (offset 20000); on each hill the speed sags, then the integral opens the throttle until the speed is back exactly at the setpoint; engine thrust is 22 + 0.39 x (setpoint - V) + 0.04 x (I - 20000) (Astrom & Murray, Feedback Systems, sec. 3.1 and Example 10.3)"
+seed: 203
+inputs:
+  setpoint: "2000 + step(400, 700) - step(250, 1300)"
+  slope: "pulse_train(4, 60.5, 40, 230) + pulse_train(2, 150.5, 60, 310) + pulse_train(1, 30.5, 25, 170)"
+stocks:
+  V: {initial: 1900, unit: cm_per_s}
+  I: {initial: 20000, unit: cm}
+flows:
+  outside -> V as engine: -778 + 0.39 * setpoint - 0.39 * V + 0.04 * I
+  V -> outside as drag: 0.0101 * V
+  V -> outside as hill: 9.8 * slope
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * V
+    exact: true

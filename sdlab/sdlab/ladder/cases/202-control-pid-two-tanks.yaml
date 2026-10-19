@@ -1,0 +1,21 @@
+title: "Two tanks in series under PID control"
+level: 12
+tags: [control, input, integral, offset, chain, oscillation]
+tests: "PID control of a second-order plant: a pump fills tank H1, which drains into H2 at 0.1 x H1, and H2 drains at 0.1 x H2; the controller holds H2 at a measured setpoint with proportional (0.4), integral (0.02 x I, I the error's running sum, offset 2000) and derivative action (0.8 x the fall of H2, i.e. -0.8 x (0.1 H1 - 0.1 H2): the derivative of a level is its net flow, so D action reads the upstream tank H1); the closed loop overshoots each setpoint step and settles, the textbook second-order step response (Astrom & Murray, Feedback Systems, ch. 10; Ogata, Modern Control Engineering, PID chapter)"
+seed: 202
+inputs:
+  setpoint: "200 + pulse_train(60, 50.5, 150, 300)"
+stocks:
+  H1: {initial: 150, unit: cm}
+  H2: {initial: 120, unit: cm}
+  I: {initial: 2000, unit: cm_min}
+flows:
+  outside -> H1 as pump: -40 + 0.4 * setpoint - 0.32 * H2 - 0.08 * H1 + 0.02 * I
+  H1 -> H2: 0.1 * H1
+  H2 -> outside: 0.1 * H2
+  outside -> I as error_in:
+    rate: 1 * setpoint
+    exact: true
+  I -> outside:
+    rate: 1 * H2
+    exact: true
