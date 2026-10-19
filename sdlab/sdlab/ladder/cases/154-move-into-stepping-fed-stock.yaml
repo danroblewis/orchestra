@@ -1,0 +1,18 @@
+title: "A slow move into a stock with its own stepping inflow"
+level: 21
+tags: [distilled, chain, loop, inflow-change, unannounced]
+tests: "children A become adults B at 0.056 x A, adults bear children at 0.022 x B and leave at 0.024 x B, and B also gets immigrants (800, stepping unannounced); from sd-population (the immigration found at 1545 against 1067, absorbing the ageing move, and elderly -> adults reversed): the slow move into B is recovered beside B's own outside inflow, not folded into it"
+seed: 154
+stocks: {A: 20000, B: 60000}
+flows:
+  outside -> A as births: 0.022 * B
+  A -> B as ageing: 0.056 * A
+  A -> outside as child_deaths: 0.01 * A
+  outside -> B as immigrate: 800
+  B -> outside as leave: 0.024 * B
+schedule:
+  every: 400
+  at 1 normal: {immigrate: 800}
+  at 101 wave: {immigrate: 1400}
+  at 181 closed: {immigrate: 300}
+  at 281 normal2: {immigrate: 800}

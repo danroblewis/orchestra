@@ -1,0 +1,20 @@
+title: "A hidden stage whose exit uses a stock"
+level: 21
+tags: [distilled, hidden, delay, coflow, gap, inflow-change, unannounced]
+tests: "A -> H (unmeasured) at 0.45 x A, H -> B at 0.25 x H using one unit of K each, K restocked by its gap (350 - K) / 5; A's inflow steps unannounced; from sd-manufacturing (inspection -> packing -> finished uses cartons), sd-brewery (pitching uses yeast out of the hidden wort) and sd-ci (approve uses minutes out of the hidden review): the hidden stage and the co-flow on its exit, not K drained by links from A or B"
+seed: 161
+stocks: {A: 40, H: 70 hidden, B: 100, K: 300}
+flows:
+  outside -> A as start: 20
+  A -> H as inspect: 0.45 * A
+  H -> B as pack:
+    rate: 0.25 * H
+    uses: [{stock: K, per: 1}]
+  B -> outside as ship: 0.2 * B
+  outside -> K as restock: (350 - K) / 5
+schedule:
+  every: 300
+  at 1 normal: {start: 20}
+  at 81 rush: {start: 30}
+  at 161 slow: {start: 12}
+  at 231 normal2: {start: 20}

@@ -1,0 +1,17 @@
+title: "A fortnightly pulse of work and a fortnightly top-up"
+level: 21
+tags: [distilled, pulse, periodic, coflow, gap, unannounced]
+tests: "every 14 steps the backlog A gets 25 at once (1 a step otherwise) and capacity K is reset to 50 (a gap with time 1 on that step, nothing otherwise); A -> B at 0.15 x A uses one unit of K each; from sd-kanban (planned work and capacity read as a constant inflow with drains following other stocks, or one piece per step replaying the data): the periodic schedule is recovered as such"
+seed: 159
+stocks: {A: 30, B: 10, K: 50}
+flows:
+  outside -> A as plan: 1
+  A -> B as pull:
+    rate: 0.15 * A
+    uses: [{stock: K, per: 1}]
+  B -> outside as done: 0.3 * B
+  outside -> K as reset: 0
+schedule:
+  every: 14
+  at 1 planning: {plan: 25, reset: 50 - K}
+  at 2 sprint: {plan: 1, reset: 0}

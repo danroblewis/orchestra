@@ -1,0 +1,15 @@
+title: "A hidden stage on a closed loop"
+level: 21
+tags: [distilled, hidden, delay, loop, conserved]
+tests: "100 vans circulate: road A -> returning H (unmeasured) at 0.2 x A, H -> depot B at 0.5 x H, B -> A at 0.3 x B, with announced additions to the fleet; from sd-ev-fleet (road -> returning -> queue found as a shortcut road -> ready) and sd-recycling (bales -> rail -> shelves, the loop closing through measured stocks): the hidden stage on a loop whose total is conserved, not a shortcut plus inflow pieces"
+seed: 156
+stocks: {A: 50, H: 20 hidden, B: 30}
+flows:
+  A -> H as return: 0.2 * A
+  H -> B as arrive: 0.5 * H
+  B -> A as dispatch: 0.3 * B
+injections:
+  - {t: 100, stock: B, amount: 40}
+  - {t: 400, stock: B, amount: 40}
+  - {t: 900, stock: B, amount: 40}
+  - {t: 1400, stock: B, amount: 40}

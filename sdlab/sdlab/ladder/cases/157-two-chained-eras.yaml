@@ -1,0 +1,16 @@
+title: "Announced eras on two moves of a chain, and an unannounced inflow step"
+level: 21
+tags: [distilled, eras, announced, inflow-change, unannounced, chain]
+tests: "A -> B halves from 0.3 to 0.15 at an announced era, B -> C halves from 0.4 to 0.2 at another, and A's inflow steps from 10 to 15 unannounced; from sd-eras (counts-long: one constant rate per move, the eras compensated by a spurious loop C -> A and inflow pieces): each move's rate is recovered per era"
+seed: 157
+stocks: {A: 30, B: 25, C: 40}
+flows:
+  outside -> A as deliver: 10
+  A -> B as stage1: 0.3 * A
+  B -> C as stage2: 0.4 * B
+  C -> outside as ship: 0.25 * C
+schedule:
+  at 1 start announced: {stage1: 0.3 * A, stage2: 0.4 * B}
+  at 121 slow1 announced: {stage1: 0.15 * A}
+  at 251 slow2 announced: {stage2: 0.2 * B}
+  at 401 more: {deliver: 15}

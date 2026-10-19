@@ -1,0 +1,16 @@
+title: "A move set by the gap of the stock it fills"
+level: 21
+tags: [distilled, gap, move, inflow-change, unannounced]
+tests: "the warehouse W ships to the shop S at (250 - S) / 3, the shop's gap, not W's level; W is restocked by its own gap (300 - W) / 5 and S sells a constant 40 a step that steps unannounced to 60 and 80; from sd-supply (ship found as a reversed move S -> W, a constant drain of W and inflow pieces into S): a move whose rate is the gap of its destination"
+seed: 155
+stocks: {W: 300, S: 250}
+flows:
+  outside -> W as restock: (300 - W) / 5
+  W -> S as ship: (250 - S) / 3
+  S -> outside as sell: 40
+schedule:
+  every: 300
+  at 1 normal: {sell: 40}
+  at 81 busy: {sell: 60}
+  at 141 peak: {sell: 80}
+  at 201 normal2: {sell: 40}

@@ -1,0 +1,19 @@
+title: "A move driven by a third stock"
+level: 21
+tags: [distilled, link, move, inflow-change, unannounced]
+tests: "the catch moves fish A -> B at 0.004 x S, set by the boats at sea S, not by A or B; S is fed by a stepping schedule and returns at 0.25; from sd-fishery (catch = 4 x at_sea found as links from in_port with the wrong sign) and sd-manufacturing (ship read off backlog): a move whose rate reads a stock it does not join, not a link into A and a drain of B"
+seed: 152
+stocks: {A: 3000, S: 28, B: 50}
+flows:
+  outside -> A as spawn: 300 - 0.08 * A
+  A -> B as catch: 4 * S
+  B -> outside as sold: 0.2 * B
+  outside -> S as launch: 7
+  S -> outside as return: 0.25 * S
+schedule:
+  every: 300
+  at 1 normal: {launch: 7}
+  at 61 season: {launch: 11}
+  at 121 storm: {launch: 3}
+  at 181 normal2: {launch: 7}
+  at 241 season2: {launch: 10}

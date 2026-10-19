@@ -1,0 +1,17 @@
+title: "An effect on an outside inflow"
+level: 21
+tags: [distilled, effect, effect-table, inflow-change, unannounced, coflow, gap]
+tests: "the field A grows by a scheduled base (10, stepping unannounced to 20) times a table effect of nitrogen N (0.3 at 40, 1 at 120); growth uses 0.4 N per unit; N is restocked by its gap (150 - N) / 12; from sd-farm-soil (grow = base x table(nitrogen) found as 510 inflow pieces plus a link from N): the effect is put on the outside inflow"
+seed: 160
+stocks: {A: 100, N: 120}
+flows:
+  outside -> A as grow:
+    rate: 10 * effect(N, table, [[0, 0], [40, 0.3], [80, 0.75], [120, 1], [200, 1.1]])
+    uses: [{stock: N, per: 0.4}]
+  A -> outside as harvest: 0.1 * A
+  outside -> N as fertilise: (150 - N) / 12
+schedule:
+  every: 300
+  at 1 low: {grow: 10}
+  at 91 high: {grow: 20}
+  at 181 low2: {grow: 10}

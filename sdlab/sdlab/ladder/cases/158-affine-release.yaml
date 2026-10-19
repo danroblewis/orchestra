@@ -1,0 +1,16 @@
+title: "A release with a threshold (an affine move)"
+level: 21
+tags: [distilled, move, affine, inflow-change, unannounced]
+tests: "a reservoir A releases into B at -6 + 0.02 x A (nothing below 300) and B drains at 0.012; A's inflow (20) steps unannounced; from sd-reservoirs (releases found as pure proportional rates, the intercepts pushed into the inflow and constant drains) and sd-recycling's sell (-40 + 0.2 x bales): the move's intercept is recovered on the move"
+seed: 158
+stocks: {A: 1300, B: 1500}
+flows:
+  outside -> A as rain: 20
+  A -> B as release: -6 + 0.02 * A
+  B -> outside as draw: 0.012 * B
+schedule:
+  every: 400
+  at 1 normal: {rain: 20}
+  at 101 wet: {rain: 32}
+  at 201 dry: {rain: 10}
+  at 301 normal2: {rain: 20}

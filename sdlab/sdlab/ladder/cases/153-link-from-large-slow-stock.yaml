@@ -1,0 +1,19 @@
+title: "A link from a large, slow stock"
+level: 21
+tags: [distilled, link, inflow-change, unannounced]
+tests: "H's inflow is 32 a step (stepping unannounced) plus 0.001 x O, where O (about 20,000) barely moves, so the link carries about 20 a step that looks like a constant; from sd-housing (hunters: the link absorbed into a constant inflow of 52, which the grader's swap of the true 32 breaks) and sd-support-tiers (links on a gap-pinned stock standing in for an inflow): the link is recovered as a link, and H's outside inflow as the stepping constant"
+seed: 153
+stocks: {O: 20000, H: 1000}
+flows:
+  outside -> O as built: 12
+  O -> outside as demolish: 0.0005 * O
+  outside -> H as arrive: 32
+  outside -> H as relist: 0.001 * O
+  H -> outside as buy: 0.05 * H
+schedule:
+  every: 400
+  at 1 normal: {arrive: 32}
+  at 81 boom: {arrive: 48}
+  at 161 slump: {arrive: 18}
+  at 251 normal2: {arrive: 32}
+  at 321 boom2: {arrive: 44}

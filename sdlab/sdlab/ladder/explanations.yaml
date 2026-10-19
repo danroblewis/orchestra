@@ -250,6 +250,20 @@ strategies:
     status: active
     note: Research document docs/research/effect-hats.md.
 
+  realistic_hats:
+    idea: effect_hats made for the realistic examples - it always answers in time, and adds hidden transit stocks between measured pairs.
+    how: >-
+      A copy of effect_hats (effects as table curves, inflows pooled and re-cut) that keeps its best
+      model so far and stops searching when the time runs short, instead of the whole run timing out
+      (effect_hats timed out on 9 of the 62 realistic runs). Then, on its answer, the hidden_transit
+      method (copied) tries an unmeasured stock between each pair of measured stocks - things leave
+      A, wait, and arrive in B - and keeps one only if it is clearly more likely and the model with it
+      predicts better than the model without it with B's arrivals held at their mean.
+    helps_with: The realistic examples - long runs, and hidden stages between measured stocks (015; distilled 156, 161).
+    builds_on: effect_hats, hidden_transit (copies)
+    status: active
+    note: Research document docs/research/realistic-hats.md; the triage behind it is docs/research/realistic-triage.md.
+
   numopt_fd:
     idea: Refit the main line's numbers by multi-step error with a standard optimiser, gradients by finite differences.
     how: >-
