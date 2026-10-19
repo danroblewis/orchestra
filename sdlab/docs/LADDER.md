@@ -486,7 +486,7 @@ total delay; injections every 100 steps).
 ## Canonical cases (`canonical/`, `pysd_import.py`)
 
 Classic system dynamics models, imported from a modeller's file rather than written as probes: cases
-100-110, tag `canonical`, each with a `source:` naming where it comes from and its licence.
+100-111, tag `canonical`, each with a `source:` naming where it comes from and its licence.
 
 | case | model | source |
 |---|---|---|
@@ -501,12 +501,14 @@ Classic system dynamics models, imported from a modeller's file rather than writ
 | 108-canonical-commodity-cycle | capacity and inventory, table effects, DELAY3 construction | written for SD Lab (Meadows 1970) |
 | 109-canonical-limits-to-growth | population on a logistic renewable resource | written for SD Lab (Meadows et al. 1972) |
 | 110-canonical-world3-pollution | World3-03 persistent pollution below its 1970 level: DELAY3 and assimilation | written for SD Lab from the published equations |
+| 111-canonical-arrayed-switching | five subscripted categories switching through a 5 x 5 matrix, flattened into five stocks | SDXorg/test-models `tests/subscript_switching` (MIT) |
 
 **How a case is made.** The source is a Vensim file in `canonical/models/` (the SDXorg ones copied
 unchanged with their licence, the others written for SD Lab). `pysd_import.py` reads it through PySD's
 parser and writes the case body; `canonical/build.py` adds the recipe (`canonical/recipes.yaml`:
 title, level, tags, tests, source, words such as `hidden` or `final`, and announced injections that
-keep the model moving over 300 and 2000 steps) and writes `cases/1NN-canonical-*.yaml`. The case files
+keep the model moving over 300 and 2000 steps: `pulses` repeated, an amount may be negative, and
+one-off `inject`) and writes `cases/1NN-canonical-*.yaml`. The case files
 are committed, so the ladder never needs PySD. The models written for SD Lab use TIME STEP 1, one Euler
 step per recorded step, so they probe structure. The two SDXorg samples keep their published TIME STEP
 (1/32, 1/8): data recorded once per time unit from a finer Euler run have per-step rates that differ from
@@ -537,11 +539,32 @@ sympy are optional packages, imported only there):
   `IF THEN ELSE(Time > 5, ...)`) is a measured input: a formula when SD Lab's input terms give PySD's
   values at every Euler step, else one value per step (a recorded step is then one TIME STEP);
 - a model with no stocks (most one-function tests) is wrapped: each auxiliary nothing reads gets an
-  accumulator stock, so the function becomes a flow.
+  accumulator stock, so the function becomes a flow;
+- **arrays** (`canonical/arrays.py`): a subscripted variable is flattened into one variable per
+  element, so a subscripted stock is one stock per element, id `<stock>__<element>[__<element>...]`
+  (`Stock_A__Entry_1__Column_2` is `Stock A[Entry 1,Column 2]`, the name of PySD's output column). PySD's
+  `SubscriptManager` reads the ranges (subranges, copies, numeric ranges, mappings `A: a1, a2 -> B`);
+  a reference's subscripts resolve by position (a bound range is its element, a mapped range the
+  element at the same position); `:EXCEPT:`, definitions in parts, numeric and tabbed arrays,
+  `SUM / PROD / VMIN / VMAX` over `x[A!]` (written out element by element) and a range read as a
+  number (its element's position) are taken; VECTOR SELECT and the other vector functions are not;
+- **macros**: each call is inlined, the macro read with its parameters bound to the call's arguments;
+  a stock inside a macro becomes a stock of the model per call, measured through the auxiliary of the
+  model that equals it, else hidden;
+- **external data** (`canonical/external.py`): GET XLS / GET DIRECT CONSTANTS, DATA and LOOKUPS are
+  read through PySD (the model's folder copied, so the data sit beside it): a constant becomes a number,
+  a data series a measured input (PySD's value at each Euler step), an external lookup a table. Data
+  under another licence may be read at ingest time but is not committed; the SDXorg data is MIT;
+- **DELAY N / SMOOTH N** of any whole order n: orders 1 and 3 keep `delay1/3` and `smooth/smooth3`;
+  another order is written out as the format compiles those, n hidden stocks (`<flow>_d1..dn`, a
+  material chain at n / T each; `SM_k_1..n` smoothing stages with exact flows, the rate reading the
+  last). An order or a delay time that changes during the run stays blocked (the engine).
 
 **Acceptance.** A model becomes a case only if PySD's run (Euler at the model's TIME STEP) and SD
 Lab's engine with noise `none` agree at every recorded step within 1e-4 + 1e-7 x the stock's largest
-level (the engine records levels to 4 decimals; the canonical cases agree to 5e-5).
+level (the engine records levels to 4 decimals; the canonical cases agree to 5e-5). Hidden stocks
+(delay and smoothing stages, a macro's stock no auxiliary shows) are not compared; the measured ones
+they feed are.
 `tests/test_ladder_canonical.py` checks that every case file is exactly what the importer writes and
 that each import matches PySD (with pysd installed), and the importer on small models (round trips,
 named blockers); `tests/test_ladder.py` checks each case is sane and its true model passes its own
