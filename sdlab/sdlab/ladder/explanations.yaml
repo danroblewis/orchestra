@@ -26,6 +26,21 @@ strategies:
     builds_on: nothing (it is the base the others extend)
     status: active
 
+  matrix_v2:
+    idea: The main line with the fixes other strategies found for it, each one a switch that can be turned on or off.
+    how: >-
+      The same per-stock regression as matrix, in its own copy, with these switches: no fit is
+      trusted below the data's rounding; noise-free data that fit exactly several ways keep the
+      plainest set of terms; a stock's changing outside inflow is pooled into a few values and
+      re-cut where it really changes; an inflow that falls as another stock rises is written as one
+      floored inflow (a goal gap); a drain from one stock and a link into another at the same level
+      become one move; products of two stocks (an infection, crowding) are offered to a finished row;
+      a drain's tie to what other stocks receive is tested with both rows' uncertainty. Each switch
+      was measured alone on the whole ladder, and the defaults are the ones that helped.
+    helps_with: Spurious inflow pieces and the fast drains they cause, goal gaps, exactly collinear noise-free stocks, products of stocks.
+    builds_on: matrix (a copy), with fixes from earned_pieces, censored, effect_hats, common_cause and structures
+    status: work in progress
+
   change_price:
     idea: The main line, but a stock's outside inflow may change over time only if the change is worth its textbook price.
     how: >-

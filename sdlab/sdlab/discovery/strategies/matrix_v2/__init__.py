@@ -19,8 +19,10 @@ identify() below, from commit aad5c7b) and changes those. With every option off 
   exact           noise-free fits floored at float precision, exact ties walked
                   to the plainest set (032, 034, 035, 038 without noise)       common_cause
 
-Options come from opts, then the SDLAB_MATRIX_V2 environment variable (JSON; for ablations only:
-the ladder's result store keys results by the code, not the environment).
+Options are OPTIONS (the defaults) under the caller's opts. For an ablation, the SDLAB_MATRIX_V2
+environment variable (JSON) starts from every option off and turns on what it names (the ladder's
+result store keys results by the code, not the environment, so ablations run outside it:
+tests/study_matrix_v2.py).
 """
 
 from __future__ import annotations
@@ -31,20 +33,15 @@ import os
 from ...simulate import behaviour_error
 from .matrix import identify_one, known_flows
 
-# (the defaults: the combination chosen by the ablation in docs/research/matrix_v2.md)
-OPTIONS: dict = {
-    "rss_floor": False,
-    "pelt_mult": 1,
-    "white": False,
-    "pool": False,
-    "tie_se": False,
-    "falling_inflow": False,
-    "gap_inflow": False,
-    "pair_moves": False,
-    "products": False,
-    "inputs_judge": False,
-    "exact": False,
-}
+# every option off: the matrix
+OFF: dict = {"rss_floor": False, "pelt_mult": 1, "white": False, "pool": False, "tie_se": False, "falling_inflow": False,
+             "gap_inflow": False, "fold_strict": False, "pair_moves": False, "products": False, "inputs_judge": False, "exact": False}
+
+# the defaults: the combination chosen by the ablation (docs/research/matrix_v2.md): every fix that
+# gained cells without losing more than the data's limits explain; pelt_mult 2, white, gap_inflow and
+# inputs_judge each lost cells the others did not, and are off
+OPTIONS: dict = {**OFF, "rss_floor": True, "pool": True, "tie_se": True, "falling_inflow": True, "fold_strict": True,
+                 "pair_moves": True, "products": "after", "exact": True}
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
 # trusting the receivers or the rows where stocks are seen receiving more than a stock's own row
@@ -69,8 +66,12 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100
 
 
 def options(opts: dict | None) -> dict:
-    env = json.loads(os.environ.get("SDLAB_MATRIX_V2") or "{}")
-    return {**OPTIONS, **(opts or {}), **env}
+    """The defaults and the caller's opts; with SDLAB_MATRIX_V2 set (an ablation), every option starts
+    off (the matrix) and the variable's options are turned on."""
+    env = os.environ.get("SDLAB_MATRIX_V2")
+    if env:
+        return {**OFF, **(opts or {}), **json.loads(env)}
+    return {**OPTIONS, **(opts or {})}
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:

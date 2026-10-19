@@ -13,11 +13,10 @@ import numpy as np
 
 from sdlab.discovery.changes import pelt
 from sdlab.discovery.regression import fit_subset, row_sums
-from sdlab.discovery.strategies.matrix_v2 import OPTIONS
+from sdlab.discovery.strategies.matrix_v2 import OFF
 from sdlab.discovery.strategies.matrix_v2.pieces import pool_recut, white
 from sdlab.ladder import runner
 
-OFF = {**{k: False for k in OPTIONS}, "pelt_mult": 1}
 
 
 def ladder(case_id: str, variant: str, strategy: str, **opts) -> tuple[dict, dict]:
