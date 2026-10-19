@@ -129,10 +129,16 @@ def of_truth(case: dict, variant_name: str) -> dict:
     """The true model's complexity on a variant's run (its schedule laid out over steps 2..N)."""
     key = (case["id"], case["hash"], variant_name)
     if key not in _truths:
-        model = casemod.truth_model(case, variant_name)
-        steps = int(casemod.variant(case, variant_name)["steps"])
-        flows = truth_by_time(model, list(range(2, steps + 1)))[0] if model.get("schedule") else model["flows"]
-        _truths[key] = count(flows, measured(case))
+        from . import complexity_truths                          # kept on disk: a restarted server does not count again
+        got = complexity_truths.get(*key)
+        if got is None:
+            model = casemod.truth_model(case, variant_name)
+            steps = int(casemod.variant(case, variant_name)["steps"])
+            flows = truth_by_time(model, list(range(2, steps + 1)))[0] if model.get("schedule") else model["flows"]
+            got = count(flows, measured(case))
+            if model.get("schedule"):
+                complexity_truths.put(*key, got)
+        _truths[key] = got
     return _truths[key]
 
 

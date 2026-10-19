@@ -146,6 +146,20 @@ def version() -> tuple:
         return (r[0] or 0, r[1])
 
 
+def after(last_id: int) -> list[dict]:
+    """Every result stored after id last_id, oldest first, without found flows (api.summary reads only
+    what is new since it last looked)."""
+    with connect(readonly=True) as con:
+        return [_row(r) for r in con.execute("SELECT * FROM results WHERE id > ? ORDER BY id", (int(last_id),))]
+
+
+def key_of(result_id: int) -> tuple | None:
+    """(case, variant, strategy) of one result, or None if there is none (to tell that a store was replaced)."""
+    with connect(readonly=True) as con:
+        r = con.execute("SELECT case_id, variant, strategy FROM results WHERE id = ?", (int(result_id),)).fetchone()
+        return (r[0], r[1], r[2]) if r else None
+
+
 def get(result_id: int, found: bool = True) -> dict | None:
     """One result by its id (None if there is none)."""
     with connect(readonly=True) as con:

@@ -76,13 +76,37 @@
   }
   document.querySelectorAll(".ltabs [role=tab]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
 
-  async function loadSummary() {
-    try { S.summary = await get("/api/ladder/summary"); } catch (e) { setStatus(String(e.message), true); }
+  // the matrix's cells (/api/ladder/matrix: only what a square shows): every case's for the matrix view,
+  // one case's otherwise; fetched again only when the summary's version has changed
+  async function loadSummary(caseId) {
+    const cid = caseId !== undefined ? caseId : S.view === "matrix" ? null : S.view === "cases" ? S.csel.case : S.sel.case;
+    if (!cid && S.view !== "matrix" && caseId === undefined) return S.summary;      // no case on screen: nothing to show
+    const want = cid || "";
+    try {
+      if (S.summary && S.summary.key === want && (await get("/api/ladder/version")).version === S.summary.version) return S.summary;
+      S.summary = expandCells(await get(`/api/ladder/matrix${cid ? `?case=${encodeURIComponent(cid)}` : ""}`), want);
+    } catch (e) { setStatus(String(e.message), true); }
     return S.summary;
   }
-  const cellOf = (c, v, s) => S.summary && S.summary.cells.find((x) => x.case === c && x.variant === v && x.strategy === s);
+  function expandCells(m, key) {
+    const at = new Map();
+    const cells = m.cells.map((r) => {
+      const x = { case: m.cases[r[0]], variant: m.variants[r[1]], strategy: m.strategies[r[2]].name };
+      m.fields.forEach((f, i) => { x[f] = r[i + 3]; });
+      at.set(`${x.case}|${x.variant}|${x.strategy}`, x);
+      return x;
+    });
+    return { ...m, key, cells, totals: m.totals || {}, by_tag: m.by_tag || {}, covers: (cid) => !key || key === cid, at: (c, v, s) => at.get(`${c}|${v}|${s}`) };
+  }
+  function wantCase(cid) {                                 // a case whose cells are not here yet: fetch them, then draw again
+    if (S.wanting === cid) return;
+    S.wanting = cid;
+    loadSummary(cid).then(() => { S.wanting = null; if (S.view === "now" && S.sel.case === cid) renderPick(); if (S.view === "cases" && S.csel.case === cid) renderCase(); });
+  }
+  const cellOf = (c, v, s) => S.summary && S.summary.at(c, v, s);
   function squares(caseId, strategy, opts = {}) {
     const c = S.byId[caseId];
+    if (S.view !== "matrix" && (!S.summary || !S.summary.covers(caseId))) wantCase(caseId);
     return `<span class="sq4">${c.variants.map((v) => {
       const cell = cellOf(caseId, v.name, strategy) || {}, st = cell.status, stale = st && cell.stale;
       const tipTxt = `<b>${esc(caseId)}</b> · ${esc(v.name)} · ${esc(strategy)}<br>${st ? esc(STATUS_WORD[st]) : "not run"}${stale ? ` (stale: ${esc(cell.stale)})` : ""}${st && cell.recall !== null && cell.recall !== undefined ? `<br>recall ${pct(cell.recall)}, ${cell.right}/${cell.of} parts right${cell.spurious ? `, ${cell.spurious} spurious` : ""}<br>skill@20 ${pct(cell.skill20)}, fresh ${pct(cell.fresh20)}` : ""}${cell.error ? `<br>${esc(String(cell.error).slice(0, 200))}` : ""}${cell.analysis && cell.analysis !== "achievable" ? `<br>the data: ${esc(cell.analysis)}${cell.achievable_p != null ? ` (p ${cell.achievable_p.toFixed(2)})` : ""} (sdlab-ladder analyse)` : ""}`;
@@ -507,7 +531,7 @@
   }
   async function renderCase() {
     const c = S.byId[S.csel.case]; if (!c) { $("cdetail").innerHTML = ""; return; }
-    if (!S.summary) await loadSummary();
+    if (!S.summary || !S.summary.covers(c.id)) await loadSummary(c.id);
     if (!c.variants.some((v) => v.name === S.csel.variant)) S.csel.variant = c.variants[0].name;
     const measured = new Set(c.model.stocks.filter((s) => s.measured !== false).map((s) => s.id));
     const flows = c.model.flows.map((f) => ({ flow: f, eq: L.equation(f, c.model.schedule) }));

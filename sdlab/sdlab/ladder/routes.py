@@ -21,9 +21,9 @@ Nothing takes a path from the client: a case, variant or strategy must be one th
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
-from . import api
+from . import api, compact, explain
 from . import cases as casemod
 
 router = APIRouter(prefix="/api/ladder")
@@ -49,8 +49,8 @@ def _strategy(name: str) -> str:
 
 
 @router.get("/cases")
-def cases() -> list[dict]:
-    return api.cases()
+def cases(request: Request) -> Response:
+    return compact.respond(("cases",), api.cases, request)        # a case that changes changes the summary's version
 
 
 @router.get("/cases/{case_id}")
@@ -60,8 +60,8 @@ def case(case_id: str) -> dict:
 
 
 @router.get("/strategies")
-def strategies() -> list[dict]:
-    return api.strategies()
+def strategies(request: Request) -> Response:
+    return compact.respond(("strategies", explain.PATH.stat().st_mtime), api.strategies, request)   # as does a strategy that changes
 
 
 @router.get("/glossary")
@@ -116,13 +116,14 @@ def timeline(strategy: str) -> list[dict]:
 
 
 @router.get("/board")
-def board(strategy: str | None = None, variant: str | None = None) -> dict:
+def board(request: Request, strategy: str | None = None, variant: str | None = None) -> Response:
     name = _strategy(strategy) if strategy else api.best_strategy()
     if name is None:
         raise HTTPException(404, "no strategy is available")
     if variant and variant != "all":
         _variant(None, variant)
-    return api.board(name, None if not variant or variant == "all" else variant)
+    v = None if not variant or variant == "all" else variant
+    return compact.respond(("board", name, v), lambda: api.board(name, v), request)     # made once per summary version
 
 
 @router.get("/progress")
@@ -131,9 +132,9 @@ def progress(recent: int | None = None) -> dict:
 
 
 @router.get("/summary")
-def summary(strategies: str | None = None) -> dict:
+def summary(request: Request, strategies: str | None = None) -> Response:
     names = [_strategy(n.strip()) for n in strategies.split(",") if n.strip()] if strategies else None
-    return api.summary(names)
+    return compact.summary_response(names, request)          # serialized and gzipped once per summary
 
 
 @router.get("/longrun/{result_id}")

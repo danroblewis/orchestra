@@ -7,9 +7,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
-from . import api, strategy_view
+from . import api, compact, strategy_view
 
 router = APIRouter(prefix="/api/ladder/strategy")
 
@@ -21,8 +21,9 @@ def _name(name: str) -> str:
 
 
 @router.get("/{name}")
-def overview(name: str) -> dict:
-    return strategy_view.overview(_name(name))
+def overview(request: Request, name: str) -> Response:
+    _name(name)
+    return compact.respond(("strategy", name), lambda: strategy_view.overview(name), request)   # serialized once per summary version
 
 
 @router.get("/{name}/details")

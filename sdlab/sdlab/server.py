@@ -29,6 +29,7 @@ from .discovery.strategies import names as strategy_names
 from .discovery_jobs import DiscoveryJobs
 from .ladder.analysis_routes import router as analysis_router
 from .ladder.routes import router as ladder_router
+from .ladder.compact_routes import router as compact_router
 from .ladder.strategy_routes import router as strategy_router
 from .ladder.newest_routes import router as newest_router
 from .ladder import newest as ladder_newest
@@ -492,6 +493,7 @@ def create_app() -> FastAPI:
 
     app.include_router(research_router)
     app.include_router(ladder_router)
+    app.include_router(compact_router)
     app.include_router(analysis_router)
     app.include_router(strategy_router)
     app.include_router(newest_router)

@@ -2269,10 +2269,25 @@ GET /api/ladder/board?strategy=&variant=
 GET /api/ladder/progress?recent=
 GET /api/ladder/summary?strategies=a,b
 GET /api/ladder/longrun/{id}?at=&window=
+GET /api/ladder/version
+GET /api/ladder/leaderboard?variant=&level=&kind=&set=&age=
+GET /api/ladder/matrix?case=
 ```
 
 A case, variant or strategy must be one the listings name, and a result id an integer that is stored;
 anything else is a 404 (422 for an id that is not a number). No path comes from the client.
+
+The summary (every cell, tens of megabytes) is for the CLI and scripts; no page fetches it. It is
+built incrementally (`summary_build.py`: only the results stored since the last build are read, and
+a cell is made again only when its result, hashes, analysis, long-run metrics or strict reference
+changed), equal to a build from scratch. The pages read small responses made from it: the
+leaderboard's rows for one filter (`leaderboard.py`, what the page used to compute over every cell),
+the matrix's cells with only the fields a square shows (one case's for Now and Cases), and
+`version`, a number that changes when the summary does, which the pages poll before fetching again.
+`summary`, `board`, `leaderboard`, `matrix`, `cases`, `strategies` and the strategy page are
+serialized and gzipped once per summary version (`compact.py`), with an ETag, so a browser asking
+again gets a 304; while a newer one is made in the background, the last one (at most a minute old)
+is served.
 
 ## The page
 

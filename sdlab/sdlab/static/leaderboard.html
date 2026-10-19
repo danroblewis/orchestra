@@ -225,89 +225,14 @@ function aboutRow(name) {
     ${a.note ? `<p class="k">${esc(a.note)}</p>` : ""}<p><a href="/ladder/glossary#s-${encodeURIComponent(name)}" style="color:inherit">In the glossary</a></p></div></td></tr>`;
 }
 function pct(v) { return v == null || Number.isNaN(v) ? "–" : (100 * v).toFixed(1) + "%"; }
-const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
-const clip = (v) => (v == null ? null : Math.max(-1, v));
-const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference
-const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE, not an SD model (physics/), or particles
-const isPart = (c) => !!c.particles;                                               // a particle case: particles counted by region (particles/)
-const isData = (c) => !!c.real;                                                     // a real-data case (real/): its own columns, in no set
-const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
-
-// the real-data cases for one strategy (no filter applies: they have their own variants, real and twin)
-function realData(name, rd) {
-  const cs = data.cells.filter((c) => c.strategy === name && rd[c.case]);
-  const real = cs.filter((c) => c.variant === "real" && c.status), twin = cs.filter((c) => c.variant === "twin" && c.status);
-  const g = real.filter((c) => c.heldout != null && c.heldout_published != null);
-  const ag = real.filter((c) => c.agree_recall != null), fl = real.filter((c) => c.flows_of);
-  const nReal = cs.filter((c) => c.variant === "real").length, nTwin = cs.filter((c) => c.variant === "twin").length;
-  const tw = twin.filter((c) => c.status === "pass" || c.status === "equivalent").length, sum = (xs, k) => xs.reduce((a, c) => a + (c[k] || 0), 0);
-  return { dHeld: mean(g.map((c) => clip(c.heldout))), dGraded: g.length, dBeatN: g.filter((c) => c.beats_published).length,
-    dBeat: g.length ? g.filter((c) => c.beats_published).length / g.length : NaN, dAgree: mean(ag.map((c) => c.agree_recall)),
-    dFlowsN: sum(fl, "flows_matched"), dFlowsOf: sum(fl, "flows_of"), dFlows: fl.length ? sum(fl, "flows_matched") / sum(fl, "flows_of") : NaN,
-    dTwin: twin.length ? tw / twin.length : NaN,
-    dTip: real.length ? `${real.length} of ${nReal} real runs done (${real.filter((c) => c.status === "error" || c.status === "timeout").length} error or timeout), ${g.length} graded (a flat held-out part has no skill); ${real.filter((c) => c.found_nothing).length} found nothing (most strategies need 21 samples; many lab series are shorter), which scores as persistence (0); the published model on the same runs: ${pct(mean(g.map((c) => clip(c.heldout_published))))}; 95% interval of the mean ${ciText(g.map((c) => clip(c.heldout)))}` : "not run on the real data yet (or not downloaded: python -m sdlab.ladder.real fetch)",
-    dAgreeTip: ag.length ? `mean recall ${pct(mean(ag.map((c) => c.agree_recall)))}, precision ${pct(mean(ag.map((c) => c.agree_precision)))}; ${real.filter((c) => c.agrees).length} of ${real.length} runs agree exactly with the published structure` : "",
-    dFlowsTip: fl.length ? `${sum(fl, "flows_found")} of ${sum(fl, "flows_of")} measured gross flows found at all; median relative error ${pct(mean(fl.map((c) => c.flows_error)))}` : "",
-    dTwinTip: twin.length ? `${tw} of ${twin.length} twin runs pass or are equivalent (${twin.filter((c) => c.status === "pass").length} pass); ${nTwin} twin cells` : "" };
-}
-
-// the physics cases for one strategy (the variant filter applies): structure against the physics, skill against the reference
-function physicsCols(name, phys, vf) {
-  const pc = data.cells.filter((c) => c.strategy === name && phys[c.case] && (vf === "all" || c.variant.includes(vf)));
-  const pr = pc.filter((c) => c.status), graded = pr.filter((c) => c.ph_of != null);
-  const num = (k) => graded.map((c) => c[k]).filter((v) => v != null && Number.isFinite(v));
-  const passN = pr.filter((c) => c.status === "pass").length, structN = graded.filter((c) => c.ph_structure === 1).length;
-  return { pPass: pc.length ? passN / pc.length : NaN, pPassN: passN, pOf: pc.length, pStruct: pc.length ? structN / pc.length : NaN, pStructN: structN,
-    pCoup: mean(graded.map((c) => c.ph_right / c.ph_of)), pShape: mean(num("ph_shape")), pGap: mean(num("ph_gap20")), pLr: mean(num("ph_lr")),
-    pTip: pc.length ? `${pr.length} of ${pc.length} physics runs done (${pr.length - graded.length} errors or timeouts); ${passN} pass, ${structN} with the physics' coupling graph and signs; ${graded.filter((c) => c.ph_diverges).length} diverge in the long run` : "not run on the physics cases yet",
-    pRefTip: graded.length ? `mean fresh skill@20 ${pct(mean(graded.map((c) => c.fresh20).filter((v) => v != null).map(clip)))} vs the reference's ${pct(mean(num("ref_fresh20")))}` : "",
-    pLrTip: graded.length ? `the reference (best SD model): ${pct(mean(num("ref_lr")))}; ${graded.filter((c) => c.ph_diverges).length} runs diverge` : "" };
-}
-
-// the particle cases for one strategy (the variant filter applies): equations against the mean-field model where scored, skill against it
-function particleCols(name, part, vf) {
-  const pc = data.cells.filter((c) => c.strategy === name && part[c.case] && (vf === "all" || c.variant.includes(vf)));
-  const pr = pc.filter((c) => c.status), graded = pr.filter((c) => c.pt_tier), sc = graded.filter((c) => c.pt_eq);
-  const num = (k) => graded.map((c) => c[k]).filter((v) => v != null && Number.isFinite(v));
-  const eqN = sc.filter((c) => c.pt_eq === "pass").length;
-  return { qEq: sc.length ? eqN / sc.length : NaN, qEqN: eqN, qScored: sc.length, qGap20: mean(num("pt_gap20")), qGap100: mean(num("pt_gap100")), qLr: mean(num("pt_lr")),
-    qTip: pc.length ? `${pr.length} of ${pc.length} particle runs done (${pr.length - graded.length} errors or timeouts); equations scored on ${sc.length}: ${eqN} pass, ${sc.filter((c) => c.pt_eq === "equivalent").length} equivalent; prediction-only runs within 5 points of the mean-field model at @20 and @100: ${graded.filter((c) => !c.pt_eq && c.pt_near).length} of ${graded.filter((c) => !c.pt_eq).length}` : "not run on the particle cases yet",
-    qRefTip: graded.length ? `mean fresh skill@20 ${pct(mean(graded.map((c) => c.fresh20).filter((v) => v != null).map(clip)))} vs the mean-field model's ${pct(mean(num("ref_fresh20")))}; @100 ${pct(mean(graded.map((c) => c.fresh100).filter((v) => v != null).map(clip)))} vs ${pct(mean(num("ref_fresh100")))}` : "",
-    qLrTip: graded.length ? `the mean-field model: ${pct(mean(num("ref_lr")))}; ${graded.filter((c) => c.pt_diverges).length} runs diverge` : "" };
-}
-
-// the realistic examples for one strategy (the variant filter applies; level and kind do not): behaviour is the headline
-function realistic(name, real, vf) {
-  const rc = data.cells.filter((c) => c.strategy === name && real[c.case] && (vf === "all" || c.variant.includes(vf)));
-  const rr = rc.filter((c) => c.status), sk = (k) => rr.map((c) => clip(c[k])).filter((v) => v != null && Number.isFinite(v));
-  const goals = rr.filter((c) => c.goal).length, s20 = sk("skill20"), out = rr.filter((c) => c.status === "timeout").length;
-  const secs = rr.map((c) => c.seconds).filter((v) => v != null);
-  return { rSkill20: mean(s20), rFresh20: mean(sk("fresh20")), rGoals: rc.length ? goals / rc.length : NaN, rGoalsN: goals, rOf: rc.length,
-    rTime: secs.length ? secs.reduce((a, b) => a + b, 0) : NaN,
-    rTip: rc.length ? `${rr.length} of ${rc.length} realistic runs done, ${s20.length} graded (${out} timeouts, ${rr.filter((c) => c.status === "error").length} errors: no skill); ${goals} meet the goal (fresh run: ${rr.filter((c) => c.goal_fresh).length}); 95% interval of the mean skill@20 ${ciText(s20)}` : "not run on the realistic examples yet",
-    rTimeTip: secs.length ? `over ${secs.length} finished runs; slowest ${Math.max(...secs).toFixed(0)} s; ${out} timed out` : "" };
-}
-// 95% bootstrap interval of a mean (as the bench reports it), resampling the runs
-function ciText(v) {
-  if (v.length < 2) return "–";
-  let seed = 1; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const ms = [];
-  for (let b = 0; b < 1000; b++) { let s = 0; for (let i = 0; i < v.length; i++) s += v[Math.floor(rnd() * v.length)]; ms.push(s / v.length); }
-  ms.sort((a, b) => a - b);
-  return `[${(100 * ms[25]).toFixed(1)}, ${(100 * ms[974]).toFixed(1)}]`;
-}
-
+// the rows come from the server (/api/ladder/leaderboard, sdlab/ladder/leaderboard.py: what this page computed
+// over every cell until 2026-10-19, number for number), one per strategy for the filters picked; the page
+// polls /api/ladder/version and fetches them again only when the summary has changed
 // case age (/api/ladder/newest/ages: each case file's first commit): "o6" older than 6 h, "n6" added in the last 6 h
 let AGES = null;
-function ageOk(cid) {
-  const a = document.getElementById("age").value;
-  if (!a || !AGES) return true;
-  const at = AGES.added[cid.split("#")[0]], h = at ? (Date.parse(AGES.now) - Date.parse(at)) / 3.6e6 : Infinity;
-  return a[0] === "o" ? h >= +a.slice(1) : h < +a.slice(1);
-}
 function newBar() {
   if (!AGES) return;
-  const kinds = Object.fromEntries(data.cases.map((c) => [c.id.split("#")[0], kindOf(c)]));
+  const kinds = data.kinds;
   const recent = (hrs) => Object.entries(AGES.added).filter(([id, at]) => kinds[id] === "tests" && at && Date.parse(AGES.now) - Date.parse(at) < hrs * 3.6e6).length;
   const r = AGES.regressions;
   document.getElementById("newbar").innerHTML = `New Tests cases: <b>${recent(6)}</b> added in the last 6 h, <b>${recent(24)}</b> in the last 24 h (use Case age to leave them out). `
@@ -316,87 +241,9 @@ function newBar() {
     + `<a href="/ladder/new" style="color:inherit">Newest cases, and who fails them</a>`;
 }
 
-function rows() {
-  const vf = document.getElementById("variants").value, lv = +document.getElementById("level").value;
+function rows() {                                          // the name filter is the only one applied here
   const f = document.getElementById("filter").value.trim().toLowerCase();
-  const level = Object.fromEntries(data.cases.map((c) => [c.id, c.level]));
-  const kd = document.getElementById("kind").value, drawn = Object.fromEntries(data.cases.map((c) => [c.id, !!c.draw]));
-  const set = document.getElementById("set").value, real = Object.fromEntries(data.cases.map((c) => [c.id, isReal(c)]));
-  const phys = Object.fromEntries(data.cases.map((c) => [c.id, isPhys(c) && !isPart(c)])), part = Object.fromEntries(data.cases.map((c) => [c.id, isPart(c)])), kinds = Object.fromEntries(data.cases.map((c) => [c.id, kindOf(c)]));
-  const rd = Object.fromEntries(data.cases.map((c) => [c.id, isData(c)]));
-  const keep = (c) => !rd[c.case] && (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
-    && (set === "all" || set === kinds[c.case]) && ageOk(c.case);
-  const by = {};
-  for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
-  const of = {};
-  for (const c of data.cells) if (by[c.strategy] && keep(c)) { of[c.strategy] = (of[c.strategy] || 0) + 1; if (c.status) by[c.strategy].push(c); }
-  // rates are over the cells a strategy has run; cells it has not run yet are left out, never counted as fails
-  return Object.entries(by).filter(([, cs]) => cs.length).map(([name, cs]) => {
-    const n = cs.length, k = (s) => cs.filter((c) => c.status === s).length;
-    const num = (key) => cs.map((c) => clip(c[key])).filter((v) => v != null && Number.isFinite(v));
-    return {
-      name, runs: n, of: of[name], cover: n / of[name], p: k("pass"), e: k("equivalent"), fl: k("fail"), o: n - k("pass") - k("equivalent") - k("fail"),
-      pass: k("pass") / n, passeq: (k("pass") + k("equivalent")) / n,
-      recall: mean(num("recall")), precision: mean(num("precision")),
-      skill20: mean(num("skill20")), fresh20: mean(num("fresh20")), skill100: mean(num("skill100")),
-      seconds: cs.reduce((x, c) => x + (c.seconds || 0), 0),
-      ...complexity(cs),
-      ...longRun(name, vf, lv),
-      ...achievable(cs),
-      ...strictPass(cs),
-      ...realistic(name, real, vf),
-      ...physicsCols(name, phys, vf),
-      ...particleCols(name, part, vf),
-      ...realData(name, rd),
-    };
-  });
-}
-
-// pass rate over the cells whose data allow a pass (analysis.py: sdlab-ladder analyse; the label does not change pass/fail)
-function achievable(cs) {
-  const ach = cs.filter((c) => c.analysis === "achievable"), by = (l) => cs.filter((c) => c.analysis === l).length;
-  return { passAch: ach.length ? ach.filter((c) => c.status === "pass").length / ach.length : NaN,
-    achTip: `${ach.length} achievable cells; ${by("data-limited")} data-limited, ${by("unidentifiable")} unidentifiable, ${cs.filter((c) => !c.analysis).length} not analysed` };
-}
-
-// strict pass (strict.py; see the note): over the cells with a strict verdict; a pass whose verdict is not computed yet
-// (sdlab-ladder strict) is left out, never counted as a fail
-function strictPass(cs) {
-  const known = cs.filter((c) => c.strict != null), n = known.filter((c) => c.strict === 1).length;
-  const passes = cs.filter((c) => c.status === "pass"), lost = passes.filter((c) => c.strict === 0);
-  const why = (w) => lost.filter((c) => (c.strict_why || "").split(",").includes(w)).length;
-  return { strict: known.length ? n / known.length : NaN, strictCover: cs.length ? known.length / cs.length : NaN,
-    strictTip: `${n} strict passes of ${known.length} cells with a strict verdict (${cs.length} run; ${passes.filter((c) => c.strict == null).length} passes not computed yet). `
-      + `${lost.length} of ${passes.length} passes fail strict: extra complexity ${why("extra")}, long run ${why("longrun")}, fresh run ${why("fresh")} (a pass can fail on several)` };
-}
-
-// long run (see the note): from the summary's compact aggregate {strategy: {variant: {level: [n, sum err@100k, sum eq err,
-// n eq, sum tau err, n tau, diverging]}}}, over the runs whose long-run metrics have been computed (sdlab-ladder longrun)
-function longRun(name, vf, lv) {
-  const a = [0, 0, 0, 0, 0, 0, 0];
-  for (const [variant, byLevel] of Object.entries((data.longrun || {})[name] || {})) {
-    if (vf !== "all" && !variant.includes(vf)) continue;
-    for (const [level, x] of Object.entries(byLevel)) if (!lv || +level === lv) x.forEach((v, i) => { a[i] += v; });
-  }
-  const [n, far, eq, eqN, tau, tauN, bad] = a;
-  return { lrFar: n ? far / n : NaN, lrEq: eqN ? eq / eqN : NaN, lrTau: tauN ? tau / tauN : NaN, lrBad: n ? bad / n : NaN,
-    lrTip: n ? `${bad} of ${n} runs with long-run metrics diverge` : "long-run metrics not computed yet (sdlab-ladder longrun)" };
-}
-
-// complexity (see the note): mean Occam score over all runs, mean extra and geometric-mean ratio over
-// the runs that found a model, and the mean extra by where it comes from
-const PARTS = ["flows", "terms", "pieces", "other"];
-function complexity(cs) {
-  const withCx = cs.filter((c) => c.cx_extra != null);
-  const ratios = withCx.map((c) => c.cx_ratio).filter((v) => v > 0);
-  const by = PARTS.map((_, i) => mean(withCx.map((c) => c.cx_by[i])));
-  return {
-    occam: mean(cs.map((c) => c.occam || 0)),
-    extra: mean(withCx.map((c) => c.cx_extra)),
-    ratio: ratios.length ? Math.exp(mean(ratios.map(Math.log))) : NaN,
-    extraTip: withCx.length ? `mean true ${mean(withCx.map((c) => c.cx_true)).toFixed(1)}, found ${mean(withCx.map((c) => c.cx_found)).toFixed(1)}; extra by part: `
-      + PARTS.map((p, i) => `${p} ${by[i] > 0 ? "+" : ""}${by[i].toFixed(1)}`).join(", ") + ` (over ${withCx.length} runs)` : "",
-  };
+  return data.rows.filter((r) => !f || r.name.toLowerCase().includes(f));
 }
 
 function render() {
@@ -434,30 +281,39 @@ function render() {
   });
 }
 
+let version = null, asked = null;
 async function load() {
-  const [d, st, gl] = await Promise.all([fetch("/api/ladder/summary").then((r) => r.json()),
+  const [variant, level, kind, set, age] = ["variants", "level", "kind", "set", "age"].map((id) => document.getElementById(id).value);
+  const q = new URLSearchParams({ variant, level: level || "0", kind, set, age }).toString();
+  asked = q;
+  const [d, st, gl] = await Promise.all([fetch(`/api/ladder/leaderboard?${q}`).then((r) => r.json()),
     fetch("/api/ladder/strategies").then((r) => r.json()).catch(() => []),
     Object.keys(gloss).length ? gloss : fetch("/api/ladder/glossary").then((r) => r.json()).catch(() => ({}))]);
-  data = d; gloss = gl;
+  if (asked !== q) return;                                 // the filters changed meanwhile: their rows are on the way
+  for (const r of d.rows) for (const k in r) if (r[k] === null) r[k] = NaN;   // nothing to average: NaN, as before
+  data = d; version = d.version; gloss = gl;
   try { AGES = await fetch("/api/ladder/newest/ages").then((r) => (r.ok ? r.json() : null)); } catch { AGES = null; }
   newBar();
   for (const s of st) if (s.about) about[s.name] = s.about;
   const lv = document.getElementById("level");
-  if (lv.options.length === 1) for (const l of [...new Set(data.cases.map((c) => c.level))].sort((a, b) => a - b))
+  if (lv.options.length === 1) for (const l of data.levels)
     lv.insertAdjacentHTML("beforeend", `<option value="${l}">level ${l}</option>`);
   render();
 }
+async function poll() {                                    // a few bytes; the rows again only when they changed
+  try { const v = (await fetch("/api/ladder/version").then((r) => r.json())).version; if (v !== version) await load(); } catch { /* restarting */ }
+}
 function syncRankBy() { const rb = document.getElementById("rankby"); rb.value = [...rb.options].some((o) => o.value === sortKey) ? sortKey : ""; }
 document.getElementById("rankby").onchange = (e) => { if (!e.target.value) return; sortKey = e.target.value; sortDir = COLS.find((c) => c.key === sortKey).asc ? 1 : -1; render(); };
-for (const id of ["variants", "level", "kind", "age"]) document.getElementById(id).onchange = render;
+for (const id of ["variants", "level", "kind", "age"]) document.getElementById(id).onchange = load;
 {                                                          // the set picked last (tests by default)
   const el = document.getElementById("set");
   try { const v = localStorage.getItem("sdlab.leaderboard.set"); if (v) el.value = v; } catch { /* fine */ }
-  el.onchange = () => { try { localStorage.setItem("sdlab.leaderboard.set", el.value); } catch { /* fine */ } render(); };
+  el.onchange = () => { try { localStorage.setItem("sdlab.leaderboard.set", el.value); } catch { /* fine */ } load(); };
 }
 document.getElementById("filter").oninput = render;
 load();
-setInterval(load, 15000);
+setInterval(poll, 15000);
 </script>
 </body>
 </html>
