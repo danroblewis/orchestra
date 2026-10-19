@@ -390,6 +390,10 @@ def create_app() -> FastAPI:
     def leaderboard_page() -> HTMLResponse:
         return page("leaderboard.html")
 
+    @app.get("/ladder/glossary")
+    def glossary_page() -> HTMLResponse:
+        return page("glossary.html")
+
     @app.get("/ladder/probes")
     def probes_page() -> HTMLResponse:
         return page("probes.html")

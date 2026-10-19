@@ -44,13 +44,24 @@
   .best td { font-weight: 600; }
   tr:hover td { background: color-mix(in srgb, var(--line) 35%, transparent); }
   .wrap { overflow-x: auto; }
-  @media (max-width: 700px) { td.bar { min-width: 140px; } .hide-sm { display: none; } }
+  td.name { white-space: normal; min-width: 200px; max-width: 340px; }
+  .idea { display: block; color: var(--muted); font-size: 12px; line-height: 1.35; margin-top: 2px; }
+  .info { font: inherit; font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; margin-left: 6px; cursor: pointer; }
+  .info[aria-expanded="true"] { color: var(--fg); border-color: var(--muted); }
+  tr.about td { text-align: left; white-space: normal; background: var(--card); color: var(--fg); }
+  tr.about:hover td { background: var(--card); }
+  tr.about .box { position: sticky; left: 8px; max-width: min(760px, calc(100vw - 48px)); }
+  tr.about p { margin: 2px 0 6px; }
+  tr.about .k { color: var(--muted); }
+  th[title] { text-decoration: underline dotted; text-underline-offset: 3px; }
+  @media (max-width: 700px) { td.bar { min-width: 140px; } .hide-sm { display: none; } td.name { min-width: 170px; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Ladder leaderboard</h1>
   <a href="/ladder">Ladder</a>
+  <a href="/ladder/glossary">Glossary</a>
   <a href="/research">Research</a>
   <a href="/">Editor</a>
 </header>
@@ -70,7 +81,8 @@
   diverges counts 100%): <b>err@100k</b> the gap at t = 100,000 as a share of the truth's range; <b>eq err</b> the settled levels'
   error; <b>τ err</b> the slowest time constant's relative error; <b>diverges</b> the share of runs that run away, die out or are
   unstable where the truth is not. Click a strategy's run in the ladder for its line graphs.
-  Click a column to sort.</p>
+  Click a column to sort; hover a column's name for its meaning, and <b>ⓘ</b> beside a strategy for how it works.
+  Every word and strategy in plain language: <a href="/ladder/glossary" style="color:inherit">the glossary</a>.</p>
   <div class="controls">
     <label>Runs <select id="variants">
       <option value="all">all variants</option>
@@ -102,18 +114,18 @@
 const COLS = [
   { key: "rank", label: "#", cls: "rank", sortable: false },
   { key: "name", label: "strategy", cls: "name" },
-  { key: "bar", label: "pass / equivalent / fail", cls: "bar", sortable: false },
-  { key: "pass", label: "pass rate", fmt: pct },
-  { key: "passAch", label: "pass (achievable)", fmt: pct, tip: (r) => r.achTip },
-  { key: "passeq", label: "pass + equivalent", fmt: pct, cls: "hide-sm" },
-  { key: "recall", label: "recall", fmt: pct },
-  { key: "precision", label: "precision", fmt: pct, cls: "hide-sm" },
-  { key: "occam", label: "Occam score", fmt: pct },
-  { key: "extra", label: "extra", fmt: (v) => (Number.isNaN(v) ? "–" : (v > 0 ? "+" : "") + v.toFixed(1)), asc: true, tip: (r) => r.extraTip },
-  { key: "ratio", label: "× truth", fmt: (v) => (Number.isNaN(v) ? "–" : v.toFixed(2) + "×"), asc: true, cls: "hide-sm" },
-  { key: "skill20", label: "skill@20", fmt: pct },
-  { key: "fresh20", label: "fresh skill@20", fmt: pct, cls: "hide-sm" },
-  { key: "skill100", label: "skill@100", fmt: pct, cls: "hide-sm" },
+  { key: "bar", gl: "equivalent", label: "pass / equivalent / fail", cls: "bar", sortable: false },
+  { key: "pass", gl: "pass", label: "pass rate", fmt: pct },
+  { key: "passAch", gl: "achievable", label: "pass (achievable)", fmt: pct, tip: (r) => r.achTip },
+  { key: "passeq", gl: "equivalent", label: "pass + equivalent", fmt: pct, cls: "hide-sm" },
+  { key: "recall", gl: "recall", label: "recall", fmt: pct },
+  { key: "precision", gl: "precision", label: "precision", fmt: pct, cls: "hide-sm" },
+  { key: "occam", gl: "occam", label: "Occam score", fmt: pct },
+  { key: "extra", gl: "complexity", label: "extra", fmt: (v) => (Number.isNaN(v) ? "–" : (v > 0 ? "+" : "") + v.toFixed(1)), asc: true, tip: (r) => r.extraTip },
+  { key: "ratio", gl: "complexity", label: "× truth", fmt: (v) => (Number.isNaN(v) ? "–" : v.toFixed(2) + "×"), asc: true, cls: "hide-sm" },
+  { key: "skill20", gl: "skill20", label: "skill@20", fmt: pct },
+  { key: "fresh20", gl: "fresh_run", label: "fresh skill@20", fmt: pct, cls: "hide-sm" },
+  { key: "skill100", gl: "skill100", label: "skill@100", fmt: pct, cls: "hide-sm" },
   { key: "lrFar", label: "err@100k", fmt: pct, asc: true },
   { key: "lrEq", label: "eq err", fmt: pct, asc: true, cls: "hide-sm" },
   { key: "lrTau", label: "τ err", fmt: pct, asc: true, cls: "hide-sm" },
@@ -122,7 +134,16 @@ const COLS = [
   { key: "cover", label: "ran (of all cells)", fmt: pct },
   { key: "seconds", label: "time (s)", fmt: (v) => v.toFixed(1), cls: "hide-sm" },
 ];
-let data = null, sortKey = "pass", sortDir = -1;
+let data = null, sortKey = "pass", sortDir = -1, about = {}, gloss = {};
+const open = new Set();                                   // strategies whose explanation is expanded
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const thTip = (c) => (c.gl && gloss[c.gl] ? ` title="${esc(gloss[c.gl].term + ": " + gloss[c.gl].text)}"` : "");
+function aboutRow(name) {
+  const a = about[name]; if (!a) return "";
+  return `<tr class="about"><td colspan="${COLS.length}"><div class="box"><p>${esc(a.how)}</p>
+    <p><span class="k">Meant for:</span> ${esc(a.helps_with)} · <span class="k">Builds on:</span> ${esc(a.builds_on)} · <span class="k">Status:</span> ${esc(a.status)}</p>
+    ${a.note ? `<p class="k">${esc(a.note)}</p>` : ""}<p><a href="/ladder/glossary#s-${encodeURIComponent(name)}" style="color:inherit">In the glossary</a></p></div></td></tr>`;
+}
 function pct(v) { return v == null || Number.isNaN(v) ? "–" : (100 * v).toFixed(1) + "%"; }
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const clip = (v) => (v == null ? null : Math.max(-1, v));
@@ -199,11 +220,12 @@ function render() {
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
   document.querySelector("#t thead").innerHTML = "<tr>" + COLS.map((c) =>
-    `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}">${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
+    `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all" style="color:inherit" title="Every test case: the true model beside what ${r.name} found">${r.name}</a></td>`;
+    if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all" style="color:inherit" title="Every test case: the true model beside what ${r.name} found">${r.name}</a>`
+      + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="How it works">ⓘ</button><span class="idea">${esc(about[r.name].idea)}</span>` : "") + `</td>`;
     if (c.key === "bar") {
       const w = (v) => (100 * v / r.runs).toFixed(2) + "%";
       return `<td class="bar"><div class="stack" title="${r.p} pass, ${r.e} equivalent, ${r.fl} fail, ${r.o} other, of ${r.runs}">` +
@@ -211,7 +233,8 @@ function render() {
         `<span style="width:${w(r.fl)};background:var(--fail)"></span><span style="width:${w(r.o)};background:var(--other)"></span></div></td>`;
     }
     return `<td class="num ${c.cls || ""}"${c.tip ? ` title="${c.tip(r)}"` : ""}>${c.fmt(r[c.key])}</td>`;
-  }).join("") + "</tr>").join("");
+  }).join("") + "</tr>" + (open.has(r.name) ? aboutRow(r.name) : "")).join("");
+  document.querySelectorAll("#t [data-about]").forEach((b) => { b.onclick = () => { const n = b.dataset.about; if (open.has(n)) open.delete(n); else open.add(n); render(); }; });
   document.getElementById("count").textContent = `${rs.length} strategies`;
   document.querySelectorAll("#t th[data-key]").forEach((th) => {
     const col = COLS.find((c) => c.key === th.dataset.key);
@@ -221,7 +244,11 @@ function render() {
 }
 
 async function load() {
-  data = await (await fetch("/api/ladder/summary")).json();
+  const [d, st, gl] = await Promise.all([fetch("/api/ladder/summary").then((r) => r.json()),
+    fetch("/api/ladder/strategies").then((r) => r.json()).catch(() => []),
+    Object.keys(gloss).length ? gloss : fetch("/api/ladder/glossary").then((r) => r.json()).catch(() => ({}))]);
+  data = d; gloss = gl;
+  for (const s of st) if (s.about) about[s.name] = s.about;
   const lv = document.getElementById("level");
   if (lv.options.length === 1) for (const l of [...new Set(data.cases.map((c) => c.level))].sort((a, b) => a - b))
     lv.insertAdjacentHTML("beforeend", `<option value="${l}">level ${l}</option>`);

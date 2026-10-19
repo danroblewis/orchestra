@@ -2,7 +2,8 @@
 
     GET /api/ladder/cases                                     every case (metadata, variants, truth model)
     GET /api/ladder/cases/{case}                              one case
-    GET /api/ladder/strategies                                every strategy (name, hash, available, reason)
+    GET /api/ladder/strategies                                every strategy (name, hash, available, reason, about)
+    GET /api/ladder/glossary                                  the ladder's words in plain language
     GET /api/ladder/results?case=&variant=&strategy=          latest result per (case, variant, strategy)
     GET /api/ladder/results/{case}/{variant}/{strategy}       the latest one, with the found flows
     GET /api/ladder/results/{case}/{variant}/{strategy}/history   every result for it, newest first
@@ -61,6 +62,11 @@ def case(case_id: str) -> dict:
 @router.get("/strategies")
 def strategies() -> list[dict]:
     return api.strategies()
+
+
+@router.get("/glossary")
+def glossary() -> dict:
+    return api.glossary()
 
 
 @router.get("/results")

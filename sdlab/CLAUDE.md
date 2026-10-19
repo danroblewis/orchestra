@@ -54,7 +54,8 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     Commit only your own files (`git add <paths>` or `-p`, never `-A`). Never push.
 13. **Every strategy is documented.** `docs/research/<name>.md` gives its status, what it does,
     ladder and bench results, and a verdict, with a row in `docs/research/README.md`.
-    `docs/research/tries.md` summarises all efforts.
+    `docs/research/tries.md` summarises all efforts. A new strategy also adds its entry to
+    `sdlab/ladder/explanations.yaml` (plain language, shown on the ladder pages; a test checks it).
 14. **Nothing is thrown away.** A slow strategy is parked (`sdlab/ladder/parked.yaml`, with a
     reason), not deleted. Parked strategies and earlier ideas are revisited on the ladder. A method
     held back by the judge or the old bench is not dismissed. When out of ideas, an ideation agent

@@ -328,6 +328,14 @@ body.research-page { overflow: hidden; }
 .rcontrols { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; margin-bottom: 10px; }
 .rcontrols label { display: inline-flex; gap: 6px; align-items: center; }
 .rcontrols select { background: var(--canvas); border: 1px solid var(--rule); border-radius: 4px; padding: 3px 6px; max-width: min(640px, 80vw); }
+.rcontrols .babout { flex-basis: 100%; max-width: 820px; font-size: 13px; line-height: 1.45; border-left: 3px solid var(--rule); padding: 2px 0 2px 10px; }
+.babout p { margin: 2px 0; }
+.babout details { display: inline; margin-right: 10px; }
+.babout details[open] { display: block; margin: 2px 0 4px; }
+.babout summary { cursor: pointer; color: var(--muted); display: inline; }
+.babout summary::before { content: "▸ "; }
+.babout details[open] summary::before { content: "▾ "; }
+.babout a { color: inherit; }
 .chartbox { width: 100%; overflow: hidden; }
 .chartbox svg { display: block; }
 .chartbox .grid { stroke: var(--rule); stroke-width: 1; }

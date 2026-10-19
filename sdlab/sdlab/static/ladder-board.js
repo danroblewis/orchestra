@@ -32,6 +32,18 @@
   }
   const save = () => { try { localStorage.setItem("sdlab.ladder.board", JSON.stringify({ strategy: B.strategy, variant: B.variant, status: B.status, level: B.level, tag: B.tag, sort: B.sort })); } catch { /* fine */ } };
   let P = null;                                            // the page's helpers
+  let aboutOpen = false;                                   // the strategy explanation's "how it works" expanded
+
+  // the selected strategy in plain language (explanations.yaml, via /api/ladder/strategies' "about")
+  function aboutHtml(s) {
+    const a = s && s.about;
+    if (!a) return `<div class="babout muted">No explanation of ${esc(B.strategy)} yet. <a href="/ladder/glossary">Glossary</a></div>`;
+    return `<div class="babout"><p><b>${esc(s.name)}</b> <span class="muted">(${esc(a.status)})</span>: ${esc(a.idea)}</p>
+      <details${aboutOpen ? " open" : ""}><summary>How it works</summary><p>${esc(a.how)}</p>
+        <p><span class="muted">Meant for:</span> ${esc(a.helps_with)}</p><p><span class="muted">Builds on:</span> ${esc(a.builds_on)}</p>
+        ${a.note ? `<p class="muted">${esc(a.note)}</p>` : ""}</details>
+      <a href="/ladder/glossary#s-${encodeURIComponent(s.name)}" title="Every strategy and the words the ladder uses, in plain language">Glossary</a></div>`;
+  }
   let observer = null;
 
   async function load(force) {
@@ -62,7 +74,10 @@
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
       <label>Sort <select id="b-sort">${[["level", "by level"], ["status", "worst verdict first"], ["error", "largest error first"]].map(([v, w]) => opt(v, w, B.sort)).join("")}</select></label>
-      <a class="btn" href="/ladder/leaderboard" title="Every strategy ranked by pass rate, recall, precision and skill">&#127942; Leaderboard</a>`;
+      <a class="btn" href="/ladder/leaderboard" title="Every strategy ranked by pass rate, recall, precision and skill">&#127942; Leaderboard</a>
+      ${aboutHtml(strats.find((s) => s.name === B.strategy))}`;
+    const det = $("board-controls").querySelector(".babout details");
+    if (det) det.ontoggle = () => { aboutOpen = det.open; };
     const on = (id, k, reload) => ($(id).onchange = (e) => { B[k] = e.target.value; save(); if (reload) B.tab = {}; render(reload); });
     on("b-strat", "strategy", true); on("b-var", "variant", true); on("b-status", "status"); on("b-level", "level"); on("b-tag", "tag"); on("b-sort", "sort");
   }

@@ -3,7 +3,8 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
 
     cases()                              every case: id, title, level, tags, tests, hash, variants, tolerance, model
     case(case_id)                        one case (None if unknown)
-    strategies()                         every strategy: name, hash, available, reason
+    strategies()                         every strategy: name, hash, available, reason, about (explain.py)
+    glossary()                           the ladder's words in plain language (explain.py)
     results(case, variant, strategy)     the latest result per (case, variant, strategy), filtered by any given
     result(case, variant, strategy)      the latest result for one, with the found flows (None if never run)
     history(case, variant, strategy)     every result for one, newest first (without found flows)
@@ -30,7 +31,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import analysis, catalog, complexity, data, longrun_cache, score, store
+from . import analysis, catalog, complexity, data, explain, longrun_cache, score, store
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -49,7 +50,11 @@ def case(case_id: str) -> dict | None:
 
 
 def strategies() -> list[dict]:
-    return jsonable(catalog.listing())
+    return jsonable([{**s, "about": explain.about(s["name"])} for s in catalog.listing()])
+
+
+def glossary() -> dict:
+    return jsonable(explain.glossary())
 
 
 def strategy_names() -> list[str]:

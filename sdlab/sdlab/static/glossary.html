@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ladder glossary</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e3e1db; --card: #ffffff; --hi: #fff4c2;
+    --active: #2f7d4f; --parked: #9b9892; --wip: #2f6fd6; --retire: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c; --hi: #4a4120;
+      --active: #4fae74; --parked: #77756f; --wip: #6b9cf0; --retire: #e0685a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c; --hi: #4a4120;
+    --active: #4fae74; --parked: #77756f; --wip: #6b9cf0; --retire: #e0685a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  h2 { font-size: 16px; margin: 28px 0 8px; }
+  h3 { font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin: 20px 0 6px; }
+  main { padding: 16px; max-width: 900px; margin: 0 auto; }
+  .note { color: var(--muted); margin: 0 0 14px; }
+  input { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; width: 100%; max-width: 360px; }
+  dl { margin: 0; }
+  .term { padding: 8px 10px; border-bottom: 1px solid var(--line); scroll-margin-top: 12px; }
+  .term dt { font-weight: 600; }
+  .term dd { margin: 2px 0 0; color: var(--fg); }
+  .term:target, .strat:target { background: var(--hi); }
+  .strat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; scroll-margin-top: 12px; }
+  .strat h4 { margin: 0; font-size: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  .strat h4 a { color: inherit; }
+  .strat .idea { margin: 4px 0; }
+  .strat p { margin: 4px 0; }
+  .strat .k { color: var(--muted); }
+  .badge { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 1px 8px; color: #fff; }
+  .s-active { background: var(--active); } .s-parked { background: var(--parked); }
+  .s-wip { background: var(--wip); } .s-retire { background: var(--retire); }
+  code { font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ladder glossary</h1>
+  <a href="/ladder">Ladder</a>
+  <a href="/ladder/leaderboard">Leaderboard</a>
+  <a href="/research">Research</a>
+</header>
+<main>
+  <p class="note">The words the ladder pages use, and what each discovery strategy tries, in plain language. A strategy reads only the
+  measured stock levels (plus announced eras and injections) and tries to recover the true model's flows.</p>
+  <input id="q" type="search" placeholder="Find a word or strategy" aria-label="Find a word or strategy">
+  <h2>Words</h2>
+  <div id="words"><p class="note">Loading…</p></div>
+  <h2>Strategies</h2>
+  <p class="note">Status: <span class="badge s-active">active</span> on the ladder, <span class="badge s-wip">work in progress</span>,
+  <span class="badge s-parked">parked</span> (slow, skipped by default), <span class="badge s-retire">retire-candidate</span> (its research verdict was "reject").</p>
+  <div id="strats"><p class="note">Loading…</p></div>
+</main>
+<script>
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const CLS = { active: "s-active", parked: "s-parked", "work in progress": "s-wip", "retire-candidate": "s-retire" };
+let G = {}, S = [];
+function render() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const hit = (...xs) => !q || xs.some((x) => String(x || "").toLowerCase().includes(q));
+  const groups = {};
+  for (const [k, v] of Object.entries(G)) if (hit(v.term, v.text)) (groups[v.group] || (groups[v.group] = [])).push([k, v]);
+  document.getElementById("words").innerHTML = Object.entries(groups).map(([g, items]) => `<h3>${esc(g)}</h3><dl>` +
+    items.map(([k, v]) => `<div class="term" id="g-${esc(k)}"><dt>${esc(v.term)}</dt><dd>${esc(v.text)}</dd></div>`).join("") + "</dl>").join("")
+    || `<p class="note">No word matches.</p>`;
+  document.getElementById("strats").innerHTML = S.filter((s) => s.about && hit(s.name, s.about.idea, s.about.how, s.about.helps_with)).map((s) => {
+    const a = s.about;
+    return `<article class="strat" id="s-${esc(s.name)}"><h4><a href="/ladder?view=now&strategy=${encodeURIComponent(s.name)}&variant=all"><code>${esc(s.name)}</code></a>
+      <span class="badge ${CLS[a.status] || "s-parked"}">${esc(a.status)}</span></h4>
+      <p class="idea">${esc(a.idea)}</p><p>${esc(a.how)}</p>
+      <p><span class="k">Meant for:</span> ${esc(a.helps_with)}</p>
+      <p><span class="k">Builds on:</span> ${esc(a.builds_on)}</p>
+      ${a.note ? `<p class="k">${esc(a.note)}</p>` : ""}</article>`;
+  }).join("") || `<p class="note">No strategy matches.</p>`;
+}
+async function load() {
+  const [g, s] = await Promise.all([fetch("/api/ladder/glossary").then((r) => r.json()), fetch("/api/ladder/strategies").then((r) => r.json())]);
+  G = g; S = s.sort((a, b) => a.name.localeCompare(b.name));
+  render();
+  if (location.hash) { const el = document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView(); }
+}
+document.getElementById("q").oninput = render;
+load();
+</script>
+</body>
+</html>
