@@ -25,7 +25,7 @@
 
 opts (also SDLAB_COMBINED, JSON): "specialists" (names, in order; default SPECIALISTS), "price"
 (the BIC multiplier, default 1), "per_flow" (numbers a flow costs for being there, default 0: a
-flow is priced by its numbers), "budget" (seconds, default 45), "refit" (refit every candidate's numbers, default on), "trace" (keep every candidate's
+flow is priced by its numbers), "budget" (seconds, default 75), "refit" (refit every candidate's numbers, default on), "trace" (keep every candidate's
 flows in the result).
 """
 
@@ -50,8 +50,8 @@ from .shared import once
 
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
-SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "common_cause", "censored", "hidden_transit", "periodic_inflows", "effect_hats"]
-DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 45.0, "trace": False, "refit": True}
+SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "censored", "hidden_transit", "periodic_inflows", "effect_hats", "common_cause"]
+DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 75.0, "trace": False, "refit": True}
 
 
 def cross_reads(flows: list[dict]) -> int:

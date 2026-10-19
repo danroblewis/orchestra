@@ -187,15 +187,17 @@ def test_a_specialist_that_raises_is_skipped(monkeypatch):
 
 # ---- the judge sanity study (not part of the suite: reads the ladder's result store) ----
 
-SPECIALISTS = ["lna", "common_cause", "censored", "hidden_transit", "effect_hats", "periodic_inflows"]
+SPECIALISTS = combined.SPECIALISTS
 
 
 def sanity(price: float = 1.0) -> list[dict]:
     """For every case and variant in the store: the truth (its numbers fitted by the judge's own
-    likelihood, starting at the truth) against every specialist's latest model that does not pass.
+    likelihood, starting at the truth) against every specialist's latest model that does not pass,
+    its numbers refitted as the strategy refits them.
     A row for each wrong model the judge scores better than the truth."""
     from collections import defaultdict
 
+    from sdlab.discovery.strategies.combined.refit import refit
     from sdlab.ladder import store
     by = defaultdict(dict)
     for s in SPECIALISTS:
@@ -203,7 +205,9 @@ def sanity(price: float = 1.0) -> list[dict]:
             by[(r["case"], r["variant"])][s] = r
     rows = []
     for (case_id, variant), res in sorted(by.items()):
-        if not casemod.known(case_id):
+        try:
+            _, model, d, _, _, D = cell(case_id, variant)
+        except (KeyError, ValueError, FileNotFoundError):
             continue
         _, model, d, _, _, D = cell(case_id, variant)
         tf = fit(truth_flows(model, d), D, hidden_starts(model))
@@ -212,6 +216,10 @@ def sanity(price: float = 1.0) -> list[dict]:
             if r["status"] == "pass" or r.get("found") is None:
                 continue
             w = J.score(r["found"], D, price, 0.0)
+            again = refit(r["found"], D, J.weights(r["found"], D))
+            if again:
+                w2 = J.score(again, D, price, 0.0)
+                w = w2 if w2["nll"] < w["nll"] else w
             if w["bic"] < t["bic"]:
                 rows.append({"case": case_id, "variant": variant, "wrong": s, "status": r["status"], "by": round(t["bic"] - w["bic"], 1),
                              "truth_nll": round(t["nll"], 1), "truth_k": t["k"], "wrong_nll": round(w["nll"], 1), "wrong_k": w["k"]})
