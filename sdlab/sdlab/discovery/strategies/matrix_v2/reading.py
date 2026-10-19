@@ -88,33 +88,59 @@ def _link(f: dict) -> bool:
     return f.get("from") is None and f.get("to") is not None and not f.get("note") and not f.get("input") and f.get("driver") and _single(f) is not None
 
 
+def _move_of(f: dict, a: str, b: str) -> float | None:
+    """k of a plain move a -> b at k x a, else None."""
+    r = f.get("rate") or {}
+    if f.get("from") == a and f.get("to") == b and r.get("form") == "proportional" and r.get("stock") == a and not f.get("effects") and not f.get("byTime"):
+        return float(r["k"])
+    return None
+
+
 def pair_linear(flows: list[dict], unit: dict, slack: float = 0.3) -> list[dict]:
-    """Each "s drains faster when a is high" paired with the closest link into a same-unit b at a."""
-    used: set = set()
+    """Each "s drains faster when a is high" paired with the closest link into a same-unit b at a.
+    b's whole gain from a may be the move's: read_flows first gives a's own drain to b as a move
+    a -> b (a drain of a to outside beside a move s -> b at a: 152), so the link plus that move is
+    also tried, and when it matches better the move a -> b becomes a's drain to outside."""
     out = list(flows)
     for i, d in enumerate(flows):
-        if not _drains_faster(d):
+        if out[i] is None or not _drains_faster(d):
             continue
         a, kd = _single(d)
         best = None
         for j, g in enumerate(flows):
-            if j in used or not _link(g) or g["to"] == d["from"] or unit.get(g["to"]) != unit.get(d["from"]):
+            if out[j] is None or j == i or not _link(g) or g["to"] == d["from"] or unit.get(g["to"]) != unit.get(d["from"]):
                 continue
             b, kl = _single(g)
             if b != a:
                 continue
-            rel = abs(kd - kl) / max(kd, kl)
-            if rel <= slack and (best is None or rel < best[1]):
-                best = (j, rel, kl)
+            opts = [(kl, None)]
+            for m, h in enumerate(flows):
+                km = _move_of(h, a, g["to"]) if out[m] is not None else None
+                if km is not None:
+                    opts.append((kl + km, m))
+            for k_all, m in opts:
+                rel = abs(kd - k_all) / max(kd, k_all)
+                if rel <= slack and (best is None or rel < best[1]):
+                    best = (j, rel, k_all, m)
         if best is None:
             continue
-        j, _, kl = best
-        used |= {i, j}
+        j, _, kl, m = best
         k = _r(0.5 * (kd + kl))
         rate = {"form": "linear", "c": 0, "terms": [{"stock": a, "k": k}]}
         out[i] = {**{x: v for x, v in d.items() if x != "note"}, "to": flows[j]["to"], "rate": rate, "rates": [rate],
                   "perStep": 0.5 * (d.get("perStep", 0) + flows[j].get("perStep", 0)), "driver": a, "note": "a move read off another stock"}
         out[j] = None
+        if m is not None:                                     # a's drain was given to b: it leaves to outside
+            h = flows[m]
+            km = float(h["rate"]["k"])
+            k0 = next((q for q, f in enumerate(out) if f is not None and f.get("from") == a and f.get("to") is None
+                       and (f.get("rate") or {}).get("form") == "proportional" and f["rate"].get("stock") == a and not f.get("effects")), None)
+            if k0 is not None:
+                r0 = {**out[k0]["rate"], "k": _r(float(out[k0]["rate"]["k"]) + km)}
+                out[k0] = {**out[k0], "rate": r0, "rates": [r0], "perStep": out[k0].get("perStep", 0) + h.get("perStep", 0)}
+                out[m] = None
+            else:
+                out[m] = {**h, "to": None}
     return [f for f in out if f is not None]
 
 
