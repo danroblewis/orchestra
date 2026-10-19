@@ -70,6 +70,7 @@
 <header>
   <h1>Ladder leaderboard</h1>
   <a href="/ladder">Ladder</a>
+  <a href="/ladder/new" title="Every case newest first: when and why it was added, what it tests, who passes it; new cases vs regressions">&#127381; Newest cases</a>
   <a href="/ladder/glossary">Glossary</a>
   <a href="/research">Research</a>
   <a href="/">Editor</a>
@@ -151,6 +152,10 @@
       <option value="occam">Occam score (accuracy × parsimony)</option>
       <option value="extra">least extra complexity</option>
     </select></label>
+    <label title="Leave out cases whose file was first committed recently (or keep only those), to tell new cases from regressions (/ladder/new)">Case age <select id="age">
+      <option value="">any age</option><option value="o6">older than 6 h</option><option value="o24">older than 24 h</option><option value="o168">older than 7 days</option>
+      <option value="n6">added in the last 6 h</option><option value="n24">added in the last 24 h</option>
+    </select></label>
     <label>Filter <input id="filter" placeholder="strategy name"></label>
     <span id="count" class="note" style="margin:0"></span>
   </div>
@@ -161,6 +166,7 @@
     <span><i class="sw" style="background:var(--other)"></i>error / timeout</span>
     <span>Rates are over the cells each strategy has run (see "ran"); cells not run yet are left out. Compare strategies with a low "ran" with care.</span>
   </div>
+  <p class="note" id="newbar"></p>
   <div class="wrap"><table id="t"><thead></thead><tbody></tbody></table></div>
 </main>
 <script>
@@ -291,6 +297,25 @@ function ciText(v) {
   return `[${(100 * ms[25]).toFixed(1)}, ${(100 * ms[974]).toFixed(1)}]`;
 }
 
+// case age (/api/ladder/newest/ages: each case file's first commit): "o6" older than 6 h, "n6" added in the last 6 h
+let AGES = null;
+function ageOk(cid) {
+  const a = document.getElementById("age").value;
+  if (!a || !AGES) return true;
+  const at = AGES.added[cid.split("#")[0]], h = at ? (Date.parse(AGES.now) - Date.parse(at)) / 3.6e6 : Infinity;
+  return a[0] === "o" ? h >= +a.slice(1) : h < +a.slice(1);
+}
+function newBar() {
+  if (!AGES) return;
+  const kinds = Object.fromEntries(data.cases.map((c) => [c.id.split("#")[0], kindOf(c)]));
+  const recent = (hrs) => Object.entries(AGES.added).filter(([id, at]) => kinds[id] === "tests" && at && Date.parse(AGES.now) - Date.parse(at) < hrs * 3.6e6).length;
+  const r = AGES.regressions;
+  document.getElementById("newbar").innerHTML = `New Tests cases: <b>${recent(6)}</b> added in the last 6 h, <b>${recent(24)}</b> in the last 24 h (use Case age to leave them out). `
+    + (r == null ? "Regressions: being computed. " : r.n_fail ? `<b style="color:var(--fail)">Regressions: ${r.n_fail} cell${r.n_fail > 1 ? "s" : ""}</b> where a strategy now fails what its previous version passed (${Object.keys(r.by_strategy).join(", ")}). `
+      : "Regressions: none (no strategy fails a cell its previous version passed). ")
+    + `<a href="/ladder/new" style="color:inherit">Newest cases, and who fails them</a>`;
+}
+
 function rows() {
   const vf = document.getElementById("variants").value, lv = +document.getElementById("level").value;
   const f = document.getElementById("filter").value.trim().toLowerCase();
@@ -300,7 +325,7 @@ function rows() {
   const phys = Object.fromEntries(data.cases.map((c) => [c.id, isPhys(c) && !isPart(c)])), part = Object.fromEntries(data.cases.map((c) => [c.id, isPart(c)])), kinds = Object.fromEntries(data.cases.map((c) => [c.id, kindOf(c)]));
   const rd = Object.fromEntries(data.cases.map((c) => [c.id, isData(c)]));
   const keep = (c) => !rd[c.case] && (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
-    && (set === "all" || set === kinds[c.case]);
+    && (set === "all" || set === kinds[c.case]) && ageOk(c.case);
   const by = {};
   for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
   const of = {};
@@ -414,6 +439,8 @@ async function load() {
     fetch("/api/ladder/strategies").then((r) => r.json()).catch(() => []),
     Object.keys(gloss).length ? gloss : fetch("/api/ladder/glossary").then((r) => r.json()).catch(() => ({}))]);
   data = d; gloss = gl;
+  try { AGES = await fetch("/api/ladder/newest/ages").then((r) => (r.ok ? r.json() : null)); } catch { AGES = null; }
+  newBar();
   for (const s of st) if (s.about) about[s.name] = s.about;
   const lv = document.getElementById("level");
   if (lv.options.length === 1) for (const l of [...new Set(data.cases.map((c) => c.level))].sort((a, b) => a - b))
@@ -422,7 +449,7 @@ async function load() {
 }
 function syncRankBy() { const rb = document.getElementById("rankby"); rb.value = [...rb.options].some((o) => o.value === sortKey) ? sortKey : ""; }
 document.getElementById("rankby").onchange = (e) => { if (!e.target.value) return; sortKey = e.target.value; sortDir = COLS.find((c) => c.key === sortKey).asc ? 1 : -1; render(); };
-for (const id of ["variants", "level", "kind"]) document.getElementById(id).onchange = render;
+for (const id of ["variants", "level", "kind", "age"]) document.getElementById(id).onchange = render;
 {                                                          // the set picked last (tests by default)
   const el = document.getElementById("set");
   try { const v = localStorage.getItem("sdlab.leaderboard.set"); if (v) el.value = v; } catch { /* fine */ }

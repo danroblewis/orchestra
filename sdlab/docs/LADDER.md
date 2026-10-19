@@ -1377,6 +1377,58 @@ is the existing case's.
 - **dt < 1 recordings** (100, 104: a drain k reads as 1 - e^-k per step) wait for the scoring
   decision in the journal, "Needs you".
 
+## Newest cases (`/ladder/new`, `newest.py`, `case_dates.py`)
+
+When the Tests pass rate drops, the page `/ladder/new` (🆕 on the ladder and the leaderboard) tells
+new cases from regressions. It lists every case file newest first, grouped by the commit that added
+it:
+
+- **When added:** the file's first commit (date, hash and message). A case rewritten from `.json`
+  to `.yaml`, or renamed, keeps its first date. A file not committed yet shows the time it was
+  last written and is listed first.
+- **Kind:** test, distilled, noisy or canonical (these four make the Tests pass rate), or
+  realistic, physics, particles or real data. Its tags are shown too.
+- **What it tests:** the `tests:` sentence. A distilled case also shows the hard-case failure it
+  came from and the mistake it reproduces, read from the first table under "Distilled cases" above
+  (by the case's number).
+- **Capability:** the motif tags (product, hidden, coflow, effect, floor, short-series, drift,
+  ...), that is, the tags without the kind tags.
+- **Who passes:** the 8 available strategies with the best Tests pass rate (over the cells they
+  ran, among those that ran at least half). Each shows one square per variant, linked to that
+  result on the Now board. Each strategy's name links to its strategy page and to the Now board for
+  the case's set. Below, a count over every strategy: how many pass at least one cell. A case that
+  no strategy passes is flagged "fails for every strategy".
+- **Pass-rate impact:** for the window picked (added in the last 6 h, 24 h, 7 days, or since one
+  of the commits that added cases), each leader's Tests pass rate, the rate without the new cases,
+  the rate on the new cases alone, and the points the new cases take off.
+- **Regressions:** a cell (case x variant) where a strategy's latest result is worse than its
+  previous version's (the newest earlier result with another strategy hash) on the same case
+  (same case hash). Worse means pass -> anything else, or equivalent -> fail, error or timeout.
+  Each one says whether the scorer changed between the two results, and an error or timeout is
+  marked as possibly load. Results of an older case hash are never compared.
+- **Filters:** when added, kind ("in the Tests pass rate" or one kind), failing for every
+  strategy, and a text search.
+
+The leaderboard has a **Case age** picker: leave out cases younger than 6 h, 24 h or 7 days, or
+keep only those. A line above its table counts the new Tests cases and the regressions.
+
+**Speed.** The dates come from one `git log --reverse -M --name-status` over
+`sdlab/ladder/cases/`. They are cached in `$SDLAB_LADDER_CACHE/case-dates.json`, keyed by HEAD.
+The server loads the cache at start and runs git only when HEAD has moved: it reads HEAD from the
+`.git` files at most every 30 s, and refreshes in a background thread.
+`python -m sdlab.ladder.case_dates` refreshes the cache by hand. The view is built from the cached
+summary. Once a copy exists, it is rebuilt in the background and never in a request. The
+regressions read only results newer than the last read, at most once a minute. The response is
+about 300 KB (30 KB gzipped).
+
+```
+GET /api/ladder/newest?strategies=a,b   rows (newest first), leaders, impact (6, 24, 168 h), regressions (first 300)
+GET /api/ladder/newest/ages             {now, added: {file id: when}, regressions: {n, n_fail, n_clean, by_strategy}}
+GET /api/ladder/newest/regressions      every regression
+```
+
+Tests: `tests/test_ladder_newest.py`.
+
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
 The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one
@@ -2202,6 +2254,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Store | `store.py` (`results.sqlite`: results with history, runs and progress) |
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
+| Newest cases | `case_dates.py` (first commit per case file, cached by HEAD), `newest.py` (the view, impact, regressions), `newest_routes.py`; page `sdlab/static/newest.html`, `ladder-newest.js` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`, `noise_analysis.py` (the noisy variants); page `sdlab/static/probes.html` |
 | Real data | `real/` (`sources.py` fetching and the cache, `loaders.py`, `models.py` the published structures, `fit.py`, `build.py` the catalogue, `case.py`, `data.py`, `score.py`, `report.py`), `cases/real/*.yaml`, the BLS snapshot `real/data/bls_cps_flows.csv` |
