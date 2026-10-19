@@ -10,21 +10,21 @@ import numpy as np
 
 from ...identify import VARIANTS
 from ...matrix import identify_one
-from ...onestep import bic
 from .basis import curve, knots
 from .joint import refit
+from .price import bic
 from .screen import fit_curve, placements
 from .translate import translate
 
 
-def best_curve(ids, prev, dy, base, stock, frm, to, choices, also=()) -> dict | None:
+def best_curve(ids, prev, dy, base, stock, frm, to, choices, also=(), xin=None) -> dict | None:
     """The knot count (and weights) with the lowest BIC for this placement (on the rows of its ends
-    and `also`, each row priced by its own noise)."""
+    and `also`, each row priced by its own noise; xin: the measured inputs' rows, columns in each)."""
     n = prev.shape[1]
     best = None
     for k in choices:
         kn = knots(prev[ids.index(stock)], k)
-        fc = fit_curve(ids, prev, dy, base, stock, frm, to, kn, also=also)
+        fc = fit_curve(ids, prev, dy, base, stock, frm, to, kn, also=also, xin=xin)
         if fc is None:
             continue
         b = float(sum(n * math.log(max(r, 1e-12) / n) for r in fc["row_rss"])) + k * math.log(n)
@@ -33,7 +33,7 @@ def best_curve(ids, prev, dy, base, stock, frm, to, choices, also=()) -> dict | 
     return best
 
 
-def halves(ids, prev, dy, c: dict) -> bool:
+def halves(ids, prev, dy, c: dict, xin=None) -> bool:
     """The curve, fitted on each half of the data alone, has the same shape (the part that varies)
     as on the whole, within 70% of that shape's size (a curve fitted to a passing stretch does not)."""
     n = prev.shape[1]
@@ -41,7 +41,7 @@ def halves(ids, prev, dy, c: dict) -> bool:
     kn = np.asarray(c["knots"])
     fits = []
     for sl in (slice(0, h), slice(h, n)):
-        fc = fit_curve(ids, prev[:, sl], dy[:, sl], c["base"], c["stock"], c["frm"], c["to"], kn)
+        fc = fit_curve(ids, prev[:, sl], dy[:, sl], c["base"], c["stock"], c["frm"], c["to"], kn, xin=None if xin is None else xin[:, sl])
         if fc is None:
             return False
         fits.append(fc["weights"])
@@ -54,20 +54,20 @@ def halves(ids, prev, dy, c: dict) -> bool:
     return all(float(np.sqrt(np.mean((shape(curve(x, kn, w)) - full) ** 2))) < 0.7 * size for w in fits)
 
 
-def placement_fits(cand: dict, ids, prev, dy, o: dict) -> list[dict]:
+def placement_fits(cand: dict, ids, prev, dy, o: dict, xin=None) -> list[dict]:
     """The candidate's best placements (lowest BIC first, at most o["per_candidate"]), each with its
     curve; a curve that is not mostly positive (a rate cannot be negative) is dropped."""
     also = tuple(dict.fromkeys([r for r, _ in cand["rows"]] + ([cand["base"]] if cand["base"] else [])))
     fits = []
     for frm, to in placements(cand):
-        c = best_curve(ids, prev, dy, cand["base"], cand["stock"], frm, to, o["knots"], also=also)
+        c = best_curve(ids, prev, dy, cand["base"], cand["stock"], frm, to, o["knots"], also=also, xin=xin)
         if c is None or c["positive"] < 0.9:
             continue
         fits.append({**c, "base": cand["base"], "stock": cand["stock"], "frm": frm, "to": to})
     fits.sort(key=lambda c: c["bic"])
     out = fits[: o["per_candidate"]]
     for c in out:
-        c["halves_ok"] = halves(ids, prev, dy, c) if o["halves"] else True
+        c["halves_ok"] = halves(ids, prev, dy, c, xin) if o["halves"] else True
     return out
 
 
@@ -112,7 +112,7 @@ def trials(effects: list[dict], stocks, run, prev, ids, opts, fit_opts, shapes: 
         shapes.add(sig)
         names = " and ".join(f"{c['base'] or 1} x f({c['stock']}) {c['frm'] or 'outside'}->{c['to'] or 'outside'} ({len(c['knots'])} knots)"
                              for c in effects)
-        out.append({"name": f"effect {names}, {v['name']}", "bic": bic(flows, ids, run["t"], run["levels"]), "flows": flows, "r": r})
+        out.append({"name": f"effect {names}, {v['name']}", "bic": bic(flows, ids, run["t"], run["levels"], opts.get("inputs")), "flows": flows, "r": r})
     return out
 
 

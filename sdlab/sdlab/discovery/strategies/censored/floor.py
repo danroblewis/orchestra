@@ -98,8 +98,9 @@ def _flow(src, dst, rate: dict, **extra) -> dict:
     return {"from": src, "to": dst, "ratio": 1, "rate": rate, "rates": [rate], "nearly": [], "bothWays": False, **extra}
 
 
-def as_flows(fit: dict, ids: list[str], tol: float = 1e-9) -> list[dict]:
-    """A hinge fit read back as flows of the row's stock (ids[i] is the row)."""
+def as_flows(fit: dict, ids: list[str], tol: float = 1e-9, inputs: list[str] = ()) -> list[dict]:
+    """A hinge fit read back as flows of the row's stock (ids[i] is the row; ids may go on past the
+    stocks with the names of measured inputs, `inputs`, whose flows are marked as the matrix marks them)."""
     beta, j, s, th = fit["beta"], fit["j"], fit["s"], fit["theta"]
     i = fit["i"]
     a, own, rest = float(beta[0]), float(beta[1]), [float(b) for b in beta[2:]]
@@ -116,10 +117,11 @@ def as_flows(fit: dict, ids: list[str], tol: float = 1e-9) -> list[dict]:
     elif own > tol:
         out.append(_flow(None, row, {"form": "linear", "c": 0, "terms": [{"stock": row, "k": _r4(own)}]}, driver=row))
     for m, b in zip(fit["others"], rest[: len(fit["others"])]):
+        mark = {"input": ids[m]} if ids[m] in inputs else {}
         if b > tol:
-            out.append(_flow(None, row, {"form": "linear", "c": 0, "terms": [{"stock": ids[m], "k": _r4(b)}]}, driver=ids[m]))
+            out.append(_flow(None, row, {"form": "linear", "c": 0, "terms": [{"stock": ids[m], "k": _r4(b)}]}, driver=ids[m], **mark))
         elif b < -tol:
-            out.append(_flow(row, None, {"form": "linear", "c": 0, "terms": [{"stock": ids[m], "k": _r4(-b)}]}, driver=ids[m]))
+            out.append(_flow(row, None, {"form": "linear", "c": 0, "terms": [{"stock": ids[m], "k": _r4(-b)}]}, driver=ids[m], **mark))
     if fit["constant"]:
         b = rest[-1]
         if b > tol:

@@ -126,7 +126,7 @@ def resegment(flows: list[dict], ids: list[str], run: dict, opts: dict | None = 
         r, sign = int(rows[0]), float(st[rows[0]])
         vals = np.array([float(g["value"]) for g in f["inflow"]])
         lens = np.array([max(1, g["to"] - g["from"] + 1) for g in f["inflow"]], dtype=float)
-        best = (price(cur, ids, run) + lp * (len(_pools(cur[j])) - 1), cur)
+        best = (price(cur, ids, run, opts.get("inputs")) + lp * (len(_pools(cur[j])) - 1), cur)
         for L in range(1, min(most, len(vals)) + 1):
             levels = _kmeans(vals, lens, L)
             trial = cur
@@ -146,7 +146,7 @@ def resegment(flows: list[dict], ids: list[str], run: dict, opts: dict | None = 
                 if len(new) == len(levels) and np.allclose(new, levels, rtol=1e-6, atol=1e-9):
                     break
                 levels = new
-            p = price(trial, ids, run) + lp * (len(_pools(trial[j])) - 1)
+            p = price(trial, ids, run, opts.get("inputs")) + lp * (len(_pools(trial[j])) - 1)
             if p < best[0]:
                 best = (p, trial)
         cur = best[1]

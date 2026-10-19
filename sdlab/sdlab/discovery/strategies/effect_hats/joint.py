@@ -8,6 +8,8 @@ h_j(C), basis.py), each column entering every row the flow touches with the flow
 to: +1, a co-flow's used stock: -per). Outside inflow pieces keep their times and get new values.
 Flows of another kind (era segments, gaps) are held as they are and taken off the changes first.
 Rows are weighted by their own noise (a second pass), so a quiet row is not drowned by a loud one.
+A flow on a measured input (opts "inputs") is refitted with the rest, its column the input's values
+(inputs.py); held flows are stepped with the inputs.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import numpy as np
 from ...matrix import injected
 from ...simulate import Model
 from .basis import hats
+from .inputs import model_inputs, rows as input_rows
 
 
 def r6(v: float) -> float:
@@ -229,14 +232,17 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
         prev, dy = prev + inj, dy - inj
     tt = np.asarray(t, dtype=float)[1:]
     T = prev.shape[1]
+    # the levels a rate may read: the stocks', then the measured inputs' (the same without inputs)
+    in_names, in_rows = input_rows(opts.get("inputs"), ids, T)
+    X, xidx = (np.vstack([prev, in_rows]), {**idx, **{k: S + q for q, k in enumerate(in_names)}}) if in_names else (prev, idx)
     held, owned = [], []
     for f in flows:
-        c = _columns(f, prev, idx, tt)
+        c = _columns(f, X, xidx, tt)
         (held if c is None else owned).append((f, c))
     target = dy.copy()
     if held:
         hf = [f for f, _ in held]
-        target = target - (Model(hf, ids).step(prev, tt) - prev)
+        target = target - (Model(hf, ids, inputs=model_inputs(opts.get("inputs"), ids, t)).step(prev, tt) - prev)
     spans, units, stoich = [], [], []
     P = 0
     for f, (cols, how) in owned:
@@ -277,7 +283,7 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
             out.append(f)
             continue
         a, b, how = spans[oi]
-        g = _write(f, how, theta[a:b], prev, idx)
+        g = _write(f, how, theta[a:b], X, xidx)
         if pers[oi]:
             g = {**g, "uses": [{**u, "per": r6(p)} for u, p in zip(f["uses"], pers[oi])]}
         out.append(g)

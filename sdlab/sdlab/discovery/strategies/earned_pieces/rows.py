@@ -105,7 +105,7 @@ def white(e: np.ndarray, alpha: float = ALPHA) -> bool:
 
 
 def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
-             per_change: float = 2, alpha: float = ALPHA, floor: float = 0.0, levels: str = "both") -> dict:
+             per_change: float = 2, alpha: float = ALPHA, floor: float = 0.0, levels: str = "both", inputs: list[int] = ()) -> dict:
     """The row as the matrix fitted it, or levels chosen again with no outside inflow or a constant
     one. A row with pieces is replaced only by one whose residuals are white (nothing left for
     pieces to explain) and whose BIC, every change priced as a value and a place, is lower; a row
@@ -113,13 +113,16 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
 
     levels: where the levels of a row with pieces are chosen again: "afresh" (without pieces, for
     each form), "beside" (beside the pieces, so that a change in the inflow cannot hide in a level
-    that happens to follow it, then the pieces are dropped) or "both" (each set is tried)."""
+    that happens to follow it, then the pieces are dropped) or "both" (each set is tried).
+
+    inputs: the rows of prev after the stocks' that are measured inputs' values (indices into prev);
+    every row may read them, as the matrix's rows may."""
     T = dy.shape[1]
     y = dy[s]
     group = {x["id"]: x.get("group") for x in stocks}
     final = {x["id"] for x in stocks if x.get("final")}
     allowed = [j for j in range(len(ids)) if not (ids[s] in final and j == s)
-               and (j == s or not group.get(ids[j]) or not group.get(ids[s]) or group[ids[j]] == group[ids[s]])]
+               and (j == s or not group.get(ids[j]) or not group.get(ids[s]) or group[ids[j]] == group[ids[s]])] + list(inputs)
     pieces = bool(row["cuts"]) and len(row["cuts"]) > 2
     best = {"row": row, "bic": _bic(T, row["rss"], len(row["set"]) + inflow_params(row["cuts"], per_change), floor), "name": "matrix"}
     X, col = columns(s, ids, prev, cfg, L, allowed)

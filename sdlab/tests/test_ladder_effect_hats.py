@@ -104,3 +104,37 @@ def test_options_from_the_environment(monkeypatch):
     r, s = run_case("003-chain-2", "none-short")
     assert s["status"] == "pass"
     assert effect_hats.DEFAULTS["pool"] is True
+
+
+# measured inputs (opts "inputs"): a flow on an input is a column of every fit and moves what the
+# input says in every simulation, so its effect is in the model once (before the fix, effect_hats
+# stepped its models without the inputs and counted the pump, or the outside temperature, twice)
+
+def _input_cell(case_id, variant):
+    from sdlab.ladder import runner
+
+    c = casemod.load(case_id)
+    model = casemod.truth_model(c, variant)
+    d = data.load(c, variant)
+    return c, model, d, runner.discover("effect_hats", model, d)
+
+
+@pytest.mark.parametrize("variant", ["none-long", "counts-long"])
+def test_a_measured_pump_is_read_once(variant):
+    c, model, d, r = _input_cell("062-tank-fed-by-measured-pump", variant)
+    s = score.equations(c, casemod.variant(c, variant)["noise"], model, r["flows"], d)
+    assert s["status"] == "pass", r["flows"]
+    pump = [f for f in r["flows"] if f.get("to") == "T" and "pump" in str(f.get("rate"))]
+    assert len(pump) == 1 and pump[0]["rate"]["terms"][0]["k"] == pytest.approx(2.0, rel=0.03)
+    assert not any(f.get("to") == "T" and f.get("inflow") for f in r["flows"]), "no outside pieces beside the pump"
+
+
+def test_cooling_to_a_measured_outside_temperature_is_read_once():
+    from sdlab.ladder import physics
+
+    c, _, d, r = _input_cell("phys-newton-cooling", "none-long")
+    s = physics.score_found(c, "none-long", r["flows"], d, data.load(c, "none-long", fresh=True))
+    assert s["status"] == "pass", r["flows"]
+    drain = sum(f["rate"]["k"] for f in r["flows"] if f.get("from") == "T" and (f.get("rate") or {}).get("stock") == "T")
+    warm = sum(t["k"] for f in r["flows"] if f.get("to") == "T" for t in (f.get("rate") or {}).get("terms") or [] if t["stock"] == "outside")
+    assert drain == pytest.approx(warm, rel=0.05), "one k: the body warms toward the outside as fast as it cools"

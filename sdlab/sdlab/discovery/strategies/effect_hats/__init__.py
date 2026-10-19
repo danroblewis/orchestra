@@ -26,6 +26,9 @@ prior, knots (knot counts tried), most (candidates per round), per_candidate (pl
 (models finished per round), halves, weighted (rows weighted by their noise), prune, pool (re-cut
 inflows), guard (steps next to an inflow change left out of the fit), level_price (extra price of
 an inflow value, in log T), seg_base, seg_margin, rounds.
+
+Measured inputs (opts "inputs", inputs.py) are columns in every fit (the matrix's, the screen's, each
+curve's, the joint refit's) and every model is priced and judged stepped with them.
 """
 
 from __future__ import annotations
@@ -37,10 +40,11 @@ import os
 import numpy as np
 
 from ...addition import addition_test
-from ...identify import judge
 from ...identify import identify as matrix_identify
 from ...matrix import injected
+from ...simulate import behaviour_error
 from . import search
+from .inputs import rows as input_rows
 from .price import price, prune
 from .pieces import resegment
 from .screen import scan
@@ -48,6 +52,16 @@ from .screen import scan
 DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True,
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
             "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True}
+
+
+def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
+          inputs: dict | None = None) -> float:
+    """The main line's judge (identify.judge), with the measured inputs the flows read."""
+    hs = [h for h in horizons if h < len(run["t"]) / 4]
+    if not flows or not hs:
+        return float("inf")
+    ids = [s["id"] for s in stocks]
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections, inputs=inputs) for h in hs) / len(hs)
 
 
 def _arrays(stocks, run, opts):
@@ -69,24 +83,31 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if len(run["t"]) < 60:
         return base
     ids, prev, dy = _arrays(stocks, run, opts)
+    # measured inputs: their rows (columns of the screen and the curves' fits) and the judge's series
+    in_names, in_rows = input_rows(opts.get("inputs"), ids, prev.shape[1])
+    xin = in_rows if in_names else None
+    inputs = opts.get("inputs") or None
+    if inputs:
+        # the matrix's judge steps its candidates without the inputs: its chosen model judged again
+        base_e = judge(base["flows"], stocks, run, injections=opts.get("injections"), inputs=inputs)
     fit_opts = {**opts, "weighted": o["weighted"], "guard": o["guard"], "level_price": o["level_price"], "no_self_links": o["no_self_links"],
                 "pair": o["pair"], "coflows": o["coflows"]}
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
     seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]
-    base_b = price(seg, ids, run)
-    fair_e = judge(seg, stocks, run, injections=opts.get("injections")) if o["pool"] else base_e
+    base_b = price(seg, ids, run, inputs)
+    fair_e = judge(seg, stocks, run, injections=opts.get("injections"), inputs=inputs) if o["pool"] else base_e
     base.update(bic=base_b, judged={"base": base_e, "recut": fair_e}, effects_tried=[])
     log_t = math.log(max(2, len(run["t"]) - 1))
     accepted, best, chosen, cur_b, cur_e = [], None, None, base_b, fair_e
     tried, shapes, skip = [], set(), set()
     for _ in range(o["rounds"]):
-        extra = [search.column(c, run)[0][:-1] for c in accepted]
+        extra = [search.column(c, run)[0][:-1] for c in accepted] + (list(xin) if xin is not None else [])
         cands = scan(stocks, prev, dy, o, extra=extra, skip=skip)
         base["effects_tried"] += [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
         raw = []
         for cand in cands[: o["most"]]:
-            for c in search.placement_fits(cand, ids, prev, dy, o):
+            for c in search.placement_fits(cand, ids, prev, dy, o, xin):
                 raw += [{**t, "fit": c} for t in search.trials(accepted + [c], stocks, run, prev, ids, opts, fit_opts, shapes)]
         # the most promising few are finished: inflows pooled and re-cut, flows the data does not
         # need dropped, then judged
@@ -98,8 +119,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 flows = prune(flows, ids, run, fit_opts)
             if sum(1 for f in flows if f.get("hat")) < len(accepted) + 1:
                 continue
-            done.append({**t, "flows": flows, "error": judge(flows, stocks, run, injections=opts.get("injections")),
-                         "bic": price(flows, ids, run)})
+            done.append({**t, "flows": flows, "error": judge(flows, stocks, run, injections=opts.get("injections"), inputs=inputs),
+                         "bic": price(flows, ids, run, inputs)})
         tried += done
         def rank(t):
             # SD's usual form: a flow's rate is its source's level (or a constant) times the effect
@@ -130,7 +151,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if keep:
         base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in tried)
     if best is None:
-        return _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks)
+        return _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks, inputs)
     out = {**best["r"], "flows": _clean(best["flows"]), "chosen": best["name"], "tried": base["tried"],
            "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b, "judged": base["judged"]}
     if keep:
@@ -145,12 +166,12 @@ def _fair(base: list[dict], cand: list[dict], stocks: list[dict], run: dict) -> 
 
 
 def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, base_e: float, fair_e: float,
-              stocks: list[dict] | None = None) -> dict:
+              stocks: list[dict] | None = None, inputs: dict | None = None) -> dict:
     """The base, or (opts["seg_base"]) the base with its inflows pooled and re-cut when that prices
     better, behaves within `seg_margin` of it, and is no worse with re-measured coarse inflows."""
     if not o["seg_base"] or seg is base["flows"]:
         return base
-    if price(seg, ids, run) < price(base["flows"], ids, run) and fair_e < o["seg_margin"] * base_e \
+    if price(seg, ids, run, inputs) < price(base["flows"], ids, run, inputs) and fair_e < o["seg_margin"] * base_e \
             and (o["harm"] is None or _fair(base["flows"], seg, stocks, run) >= -o["harm"]):
         return {**base, "flows": _clean(seg), "chosen": f"{base.get('chosen')}, inflows re-cut"}
     return base

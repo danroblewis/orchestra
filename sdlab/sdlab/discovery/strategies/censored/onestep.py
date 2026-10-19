@@ -15,17 +15,32 @@ import numpy as np
 from ...simulate import Model
 
 
+def model_inputs(inputs: dict | None, ids: list[str], t: list) -> dict | None:
+    """Measured inputs ({name: value per step aligned with t}) as the simulator takes them; None without."""
+    vals = {k: list(v) for k, v in (inputs or {}).items() if k not in ids}
+    return {"t": list(t), "values": vals} if vals else None
+
+
+def input_rows(inputs: dict | None, ids: list[str], t: list, T: int) -> tuple[list[str], np.ndarray]:
+    """The inputs' names and their values during each step (t[k] to t[k + 1]: the value at t[k + 1],
+    as the matrix and the simulator read them), names x T."""
+    names = [k for k in (inputs or {}) if k not in ids]
+    rows = [np.nan_to_num(np.asarray(inputs[k], dtype=float))[1 : T + 1] for k in names]
+    return names, np.array(rows) if rows else np.zeros((0, T))
+
+
 def levels(stocks: list[dict], run: dict) -> np.ndarray:
     t = run["t"]
     return np.nan_to_num(np.array([np.asarray(run["levels"].get(s["id"], [0] * len(t)), dtype=float) for s in stocks]))
 
 
-def changes(flows: list[dict], ids: list[str], t: list, prev: np.ndarray) -> np.ndarray:
-    """What the flows add to each stock at every step (stocks x steps), from the levels at its start."""
+def changes(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, inputs: dict | None = None) -> np.ndarray:
+    """What the flows add to each stock at every step (stocks x steps), from the levels at its start
+    (and the measured inputs, model_inputs(), that the flows read)."""
     if not flows:
         return np.zeros_like(prev)
     times = np.asarray(t, dtype=float)[1 : prev.shape[1] + 1]
-    return Model(flows, ids).change(prev, times)
+    return Model(flows, ids, inputs=inputs).change(prev, times)
 
 
 def params(flows: list[dict]) -> int:
@@ -41,14 +56,15 @@ def params(flows: list[dict]) -> int:
     return p
 
 
-def row_rss(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray) -> np.ndarray:
-    return ((dy - changes(flows, ids, t, prev)) ** 2).sum(axis=1)
+def row_rss(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, inputs: dict | None = None) -> np.ndarray:
+    return ((dy - changes(flows, ids, t, prev, inputs)) ** 2).sum(axis=1)
 
 
-def outliers(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, share: float = 0.01) -> np.ndarray:
+def outliers(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, share: float = 0.01,
+             inputs: dict | None = None) -> np.ndarray:
     """Per row, the steps (stocks x steps, True = left out) where a model's residual is among the
     largest `share`: one-step bursts (inflow spikes) that a Gaussian BIC would let decide alone."""
-    r = np.abs(dy - changes(flows, ids, t, prev))
+    r = np.abs(dy - changes(flows, ids, t, prev, inputs))
     k = int(share * r.shape[1])
     out = np.zeros_like(r, dtype=bool)
     if k < 1:
@@ -59,11 +75,11 @@ def outliers(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: n
 
 
 def bic(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, floor: np.ndarray,
-        skip: np.ndarray | None = None) -> float:
+        skip: np.ndarray | None = None, inputs: dict | None = None) -> float:
     """Sum over the rows of T log(rss / T), plus log T per number, the rss over the steps not in
     `skip` (stocks x steps). `floor` (one per row) keeps an exact fit from counting as infinitely good."""
     T = prev.shape[1]
-    sq = (dy - changes(flows, ids, t, prev)) ** 2
+    sq = (dy - changes(flows, ids, t, prev, inputs)) ** 2
     if skip is not None:
         sq = np.where(skip, 0.0, sq)
     rss = np.maximum(sq.sum(axis=1), floor)

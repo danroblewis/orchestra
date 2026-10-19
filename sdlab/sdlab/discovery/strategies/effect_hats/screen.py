@@ -100,7 +100,7 @@ def placements(cand: dict) -> list[tuple[str | None, str | None]]:
 
 
 def fit_curve(ids: list[str], prev: np.ndarray, dy: np.ndarray, base: str | None, stock: str, frm: str | None, to: str | None,
-              kn: np.ndarray, pieces: bool = True, also: tuple = ()) -> dict | None:
+              kn: np.ndarray, pieces: bool = True, also: tuple = (), xin: np.ndarray | None = None) -> dict | None:
     """The effect's tent weights fitted jointly in the rows of its ends: the shared group with the
     flow's signs, each row with its own levels (less the base's level where it would make the group
     ambiguous) and its own outside inflow (pieces of what is left). {weights, rss, positive}."""
@@ -125,6 +125,7 @@ def fit_curve(ids: list[str], prev: np.ndarray, dy: np.ndarray, base: str | None
     for r, _ in rows:
         cs = [] if "one" in excl[r] else [np.ones(n)]
         cs += [prev[j] for j in range(S) if ids[j] not in excl[r]]
+        cs += list(xin) if xin is not None else []           # the measured inputs' rows (xin), in every row
         cols_per_row[r] = np.array(cs)
     # first pass without pieces, then each row's pieces from what it leaves
     cuts = {r: [0, n] for r, _ in rows}

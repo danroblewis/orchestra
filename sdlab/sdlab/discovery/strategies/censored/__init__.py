@@ -20,6 +20,12 @@ applies them (onestep.py), improves by more than `margin` x log T. (Option `judg
 the result to behave on the data no worse than that many times the main line's model by the main
 line's judge; off by default, because that judge replays each model's own inflow pieces and so
 prefers the main line's many pieces even where the rewrite is the truth: 013 counts-short, 2.15x.)
+
+Measured inputs (opts "inputs": {name: value per step aligned with t}) are read as the matrix reads
+them: every model is stepped with them (a flow k x input moves what the input says, never 0), a
+rewrite that replaces a row's flow on an input refits the input's number as a column beside the
+hinge or the link, and the cap keeps the row's input flows as they are, counted in what arrived or
+was wanted. An input's effect is thus in the model once.
 """
 
 from __future__ import annotations
@@ -30,9 +36,8 @@ import numpy as np
 
 from ...caps import flow_amounts
 from ...identify import identify as main_line
-from ...identify import judge
 from ...matrix import injected
-from ...simulate import Model
+from ...simulate import Model, behaviour_error
 from . import cap, floor, onestep
 
 DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True}
@@ -70,19 +75,48 @@ def _flows_of(flows, row):
     return mine, [f for f in flows if not _touches_outside(f, row)]
 
 
-def _came_and_wanted(base: list[dict], ids: list[str], t: list, prev: np.ndarray, i: int) -> tuple[np.ndarray, np.ndarray]:
-    """What the kept flows bring into row i (as the model steps them) and what they want out of it."""
+def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
+          inputs: dict | None = None) -> float:
+    """The main line's judge (identify.judge), with the measured inputs the flows read."""
+    hs = [h for h in horizons if h < len(run["t"]) / 4]
+    if not flows or not hs:
+        return float("inf")
+    ids = [s["id"] for s in stocks]
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections, inputs=inputs) for h in hs) / len(hs)
+
+
+def _flow_amounts(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, inputs: dict | None = None):
+    """caps.flow_amounts, with the measured inputs the flows read (model_inputs())."""
+    if inputs is None:
+        return flow_amounts(flows, ids, t, prev)
+    model = Model(flows, ids, inputs=inputs)
+    T = prev.shape[1]
+    times = np.asarray(t, dtype=float)[1 : T + 1]
+    R = model._read(prev, times)
+    zero = np.zeros(T, int)
+    ends, amounts = [], []
+    for src, dst, ratio, segs, rate, vals in model.parts:
+        seg = segs(times) if segs is not None else zero
+        a = vals[seg] if vals is not None else rate(R, seg)
+        ends.append((src, dst, ratio))
+        amounts.append(np.nan_to_num(np.asarray(a, dtype=float)))
+    return ends, np.array(amounts) if amounts else np.zeros((0, T))
+
+
+def _came_and_wanted(base: list[dict], ids: list[str], t: list, prev: np.ndarray, i: int, inputs: dict | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """What the kept flows bring into row i (as the model steps them, with the measured inputs) and
+    what they want out of it."""
     T = prev.shape[1]
     came, wanted = np.zeros(T), np.zeros(T)
     if not base:
         return came, wanted
-    model = Model(base, ids)
+    model = Model(base, ids, inputs=inputs)
     times = np.asarray(t, dtype=float)[1 : T + 1]
     amounts = model._amounts(prev, times)
     for (src, dst, *_), a in zip(model.parts, amounts):
         if dst == i:
             came += a
-    ends, want = flow_amounts(base, ids, t, prev)
+    ends, want = _flow_amounts(base, ids, t, prev, inputs)
     for (src, _, ratio), a in zip(ends, want):
         if src == i:
             wanted += a * ratio
@@ -92,7 +126,10 @@ def _came_and_wanted(base: list[dict], ids: list[str], t: list, prev: np.ndarray
     return came, wanted
 
 
-def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, own=True):
+def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, own=True, inp=None):
+    """inp: the measured inputs, (model_inputs(), names, values names x T) or None; an input a removed
+    flow read is a column of the hinge's fit (prev's rows after the stocks') and read back by name."""
+    mi, names, X = (inp[0], ids + inp[1], np.vstack([prev, inp[2]])) if inp else (None, ids, prev)
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
@@ -103,13 +140,13 @@ def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, 
     for keep_pieces in ([False, True] if pieces else [False]):
         base = rest + (pieces if keep_pieces else [])
         removed = [f for f in mine if not (keep_pieces and f.get("inflow"))]
-        y = dy[i] - onestep.changes(base, ids, t, prev)[i]
-        others = sorted({ids.index(s) for f in removed for s in _reads(f) if s in ids and s != ids[i]})
+        y = dy[i] - onestep.changes(base, ids, t, prev, mi)[i]
+        others = sorted({names.index(s) for f in removed for s in _reads(f) if s in names and s != ids[i]})
         for constant in (False, True):
             if keep_pieces and constant:
                 continue
             T = len(y)
-            for fit in floor.search(y, prev, i, others, constant=constant, readers=readers):
+            for fit in floor.search(y, X, i, others, constant=constant, readers=readers):
                 # a kink only if the hinge beats a straight line through the same columns
                 gain = T * math.log(max(fit["line_rss"], floor_rss) / max(fit["rss"], floor_rss))
                 bend = T * math.log(max(fit["smooth_rss"], floor_rss) / max(fit["rss"], floor_rss))
@@ -118,15 +155,16 @@ def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, 
                 if fit["beta"][1] > 0 and not _grows(flows, ids[i]):
                     continue                    # self-growth the main line did not find (see links)
                 fit["i"] = i
-                out.append((base + floor.as_flows(fit, ids), f"floor on {ids[fit['j']]} into {ids[i]}" + (" (inflow pieces kept)" if keep_pieces else "")))
+                out.append((base + floor.as_flows(fit, names, inputs=names[len(ids):]), f"floor on {ids[fit['j']]} into {ids[i]}" + (" (inflow pieces kept)" if keep_pieces else "")))
     return out
 
 
-def link_candidates(flows, ids, t, prev, dy, i):
+def link_candidates(flows, ids, t, prev, dy, i, inp=None):
     """A row the main line reads as "drains faster when x_j is high" beside an outside inflow, read
     instead as one inflow c + k x_j (k < 0), floored at 0 as the engine floors it, instead of an
     outflow that an emptied stock caps (a goal gap whose goal-seeking term the matrix turns into a
     drain). Same numbers on uncapped steps; the one-step BIC in the engine's form decides."""
+    mi, names, X = (inp[0], ids + inp[1], np.vstack([prev, inp[2]])) if inp else (None, ids, prev)
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
@@ -142,12 +180,12 @@ def link_candidates(flows, ids, t, prev, dy, i):
         vals = np.array([g["value"] for g in f.get("inflow") or []], dtype=float)
         if len(vals) > 1 and vals.std() > 0.05 * abs(vals.mean()):
             return []
-    y = dy[i] - onestep.changes(rest, ids, t, prev)[i]
+    y = dy[i] - onestep.changes(rest, ids, t, prev, mi)[i]
     T = len(y)
-    others = sorted({ids.index(s) for f in mine for s in _reads(f) if s in ids and s != row})
+    others = sorted({names.index(s) for f in mine for s in _reads(f) if s in names and s != row})
     out = []
     for j in sorted({ids.index(s) for f in drains for s in _reads(f) if s in ids}):
-        cols = [np.ones(T), prev[j], prev[i]] + [prev[m] for m in others if m != j]
+        cols = [np.ones(T), prev[j], prev[i]] + [X[m] for m in others if m != j]
         beta = np.linalg.lstsq(np.array(cols).T, y, rcond=None)[0]
         if beta[2] > 0 and not _grows(flows, row):
             # no self-growth the main line did not find: it cancels the drains and runs away
@@ -158,11 +196,11 @@ def link_candidates(flows, ids, t, prev, dy, i):
             continue
         fit = {"i": i, "j": j, "s": -1.0, "theta": c / -k, "beta": np.array([-k, own, *beta[3:]]),
                "others": [m for m in others if m != j], "constant": False}
-        out.append((rest + floor.as_flows(fit, ids), f"link {c:.3g} - {-k:.3g} x {ids[j]} into {row}"))
+        out.append((rest + floor.as_flows(fit, names, inputs=names[len(ids):]), f"link {c:.3g} - {-k:.3g} x {ids[j]} into {row}"))
     return out
 
 
-def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, mult=2.0, changes=True):
+def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, mult=2.0, changes=True, inputs=None):
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
@@ -173,7 +211,8 @@ def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, m
     refit = [f for f in mine if (f.get("from") is None and not _reads(f)) or
              (f.get("from") == row and (not _reads(f) or _reads(f) == [row]) and (f.get("rate") or {}).get("form") in ("constant", "proportional"))]
     base = [f for f in rest] + [f for f in mine if f not in refit]
-    came, wanted = _came_and_wanted(base, ids, t, prev, i)
+    # (a flow on a measured input reads a level, so it is kept: its amount is in came or wanted)
+    came, wanted = _came_and_wanted(base, ids, t, prev, i, inputs)
     fit = cap.search(prev[i], dy[i], came, wanted, _own_drain(refit, row), floor_rss, changes=changes, mult=mult)
     if fit is None:
         return []
@@ -207,14 +246,18 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         inj = injected(opts["injections"], ids, t)[:, 1:]
         prev, dy = prev + inj, dy - inj
     T = prev.shape[1]
+    # measured inputs: the simulator's form, and (as columns) their values during each step
+    mi = onestep.model_inputs(opts.get("inputs"), ids, t)
+    in_names, in_rows = onestep.input_rows(opts.get("inputs"), ids, t, T)
+    inp = (mi, in_names, in_rows) if mi is not None and in_rows.shape[1] == T else None
     # what an exact fit can reach: levels are recorded to 4 decimals (and numbers are rounded when
     # read back as flows), so a row fitted to within ~1e-4 of the data per step is exact
     floor_rss = T * ((1e-4 * dy.std(axis=1)) ** 2 + 1e-8)
     final = {s["id"] for s in stocks if s.get("final")}
     flows = list(r0.get("flows") or [])
     # the main line's largest 1% residuals per row are left out of every comparison (inflow spikes)
-    skip = onestep.outliers(flows, ids, t, prev, dy, o["trim"]) if o["trim"] else None
-    score = onestep.bic(flows, ids, t, prev, dy, floor_rss, skip)
+    skip = onestep.outliers(flows, ids, t, prev, dy, o["trim"], mi) if o["trim"] else None
+    score = onestep.bic(flows, ids, t, prev, dy, floor_rss, skip, mi)
     log_t = math.log(T)
     taken = []
     for _ in range(o["passes"]):
@@ -224,15 +267,15 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 continue
             cands = []
             if o["floors"]:
-                cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["floor_margin"] or o["margin"], o["bend"], o["own_floors"])
+                cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["floor_margin"] or o["margin"], o["bend"], o["own_floors"], inp)
             if o["links"]:
-                cands += link_candidates(flows, ids, t, prev, dy, i)
+                cands += link_candidates(flows, ids, t, prev, dy, i, inp)
             if o["caps"] or o["recut"]:
-                cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"])
+                cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"], inputs=mi)
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
             best = None
             for fl, name in cands:
-                sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip)
+                sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
                 if sc < score - o["margin"] * log_t and (best is None or sc < best[1]):
                     best = (fl, sc, name)
             if best:
@@ -245,8 +288,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return {**r0, "censored": []}
     if not o["judge_slack"]:
         return {**r0, "flows": flows, "censored": taken}
-    e0 = judge(r0.get("flows") or [], stocks, run, injections=opts.get("injections"))
-    e1 = judge(flows, stocks, run, injections=opts.get("injections"))
+    e0 = judge(r0.get("flows") or [], stocks, run, injections=opts.get("injections"), inputs=mi and mi["values"])
+    e1 = judge(flows, stocks, run, injections=opts.get("injections"), inputs=mi and mi["values"])
     if math.isfinite(e0) and e1 > o["judge_slack"] * e0:
         return {**r0, "censored": taken, "censored_rejected": {"judge": e1, "main_line": e0}}
     return {**r0, "flows": flows, "censored": taken, "judge": {"censored": e1, "main_line": e0}}
