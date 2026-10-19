@@ -33,9 +33,10 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
    Extra flows or pieces are a cost, not a free win.
 
 ### Honest reporting
-8. **Every number told to the user comes from a command that can be rerun.** Use the result
-   store (`uv run sdlab-ladder status|show`, `sdlab.ladder.store`), the bench outputs, and git,
-   not memory. Say which command produced it and when.
+8. **Every number told to the user comes from a command that can be rerun, on committed code.**
+   Use the result store (`uv run sdlab-ladder status|show`, `sdlab.ladder.store`), the bench
+   outputs, and git, not memory. Say which command produced it and when. Commit a strategy before
+   quoting its numbers and give the commit, so the number can be reproduced.
 9. **Report failures as plainly as successes.** This covers errors, timeouts, regressions, skipped
    steps, work in progress, and claims that turned out wrong. Correct a wrong claim in the next
    message to the user.
@@ -59,7 +60,12 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     held back by the judge or the old bench is not dismissed. When out of ideas, an ideation agent
     reads the research docs and every idea runs as a parallel experiment.
 15. **The ladder stays current and fast.** Results are keyed by strategy, case and scorer hashes,
-    so a changed one is stale and re-run (`uv run sdlab-ladder sync`). The public UI
+    so a change marks them stale. One supervised watcher re-runs stale results:
+    `nice -n 19 uv run sdlab-ladder watch --every 300 --jobs 3`, logging to
+    `~/.sdlab/ladder-watch.log`; check it with `pgrep -fl "sdlab-ladder watch"`. Agents run only
+    their own strategy (`--strategies <name>`), never a full sync. When the watcher has a backlog,
+    the board mixes versions: say so when quoting it. Leaderboard rates are over the cells a
+    strategy has run, with its coverage shown. The public UI
     (`https://sdlab.dansproject.space/ladder`) must load in about a second. Restart the server after
     Python changes:
     `pkill -f "sdlab --port 8020"; nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &`.
