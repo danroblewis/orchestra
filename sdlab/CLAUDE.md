@@ -25,7 +25,13 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
    model, and never counted in the Tests pass rate. Each case tests one property and
    says which in `tests:`. Parametric cases (draws, sweeps) map where a method breaks. A failing
    draw is frozen into a fixed case so it stays tested.
-4. **A failure is diagnosed before it is fixed.** Is it the method's fault or the data's limit?
+4. **Hard failures become simple tests.** The minimal cases prove the methods work, but they
+   are incomplete. When a model whose true structure is known (realistic, canonical, physics, or
+   a real case's twin) fails, find why. Then write the smallest ladder case that shows that kind
+   of failure (tag `distilled`; its `tests:` names the mechanism and the hard case it came from),
+   and confirm it reproduces the same mistake. Fix the detector against the small case, then
+   check that the fix carries back to the hard case.
+4b. **A failure is diagnosed before it is fixed.** Is it the method's fault or the data's limit?
    That is decided by identifiability and the best achievable accuracy for that case and variant,
    not by guessing.
 5. **Scoring changes are visible.** The scorer's hash re-scores stored results. A change that can
