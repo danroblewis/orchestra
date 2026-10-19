@@ -79,6 +79,73 @@ Writing the canonical cases by hand turned up more limits that the test-models b
   importer takes it (case 105's orders, case 106's hiring). MIN of two rates (capacity-limited
   completion, the Workforce sample) has no form.
 
+## The leaders on the canonical cases
+
+Run on 2026-10-18 with `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+NUMBA_NUM_THREADS=1 uv run sdlab-ladder run --strategies combined,lna_stack,lna,earned_pieces,effect_hats,censored,matrix
+--cases ... --jobs 3 --timeout 300`. Cases 100 and 104 ran on commit 3660a5d and the others on 08ef0d7
+(the dt-1 rebuild; the cases are the same in both commits apart from that). Some strategies ran with
+other agents' uncommitted edits (`code_dirty` in the store). Each cell gives the four variants in the
+order none-short, none-long, counts-short, counts-long (P pass, E equivalent, f fail, X error), then
+the mean fresh-run skill@100 over the variants. The table is from `sdlab.ladder.store.latest`.
+
+| case | combined | lna_stack | lna | earned_pieces | effect_hats | censored | matrix |
+|---|---|---|---|---|---|---|---|
+| 100-canonical-sir | fPff 91% | ffff 97% | ffff 97% | ffff 99% | fPff 99% | ffff 97% | ffff 97% |
+| 101-canonical-seir | ffPf 100% | ffPf 99% | ffff 97% | ffff 94% | ffff 99% | ffff 98% | ffff 99% |
+| 102-canonical-bass | fffP 100% | ffff 95% | ffff 94% | ffff 95% | fffP 98% | ffff 95% | ffff 94% |
+| 103-canonical-logistic | ffff 100% | ffff 100% | ffff 100% | ffff 100% | ffff 100% | ffff 100% | ffff 100% |
+| 104-canonical-teacup | fffE 100% | ffEE 100% | ffEE 100% | fffE 100% | fffE 100% | ffEE 100% | ffEE 100% |
+| 105-canonical-inventory-supply-line | ffff -62% | fffX -63% | ffff -84% | ffff -43% | ffff -90% | ffff -73% | ffff -73% |
+| 106-canonical-workforce | ffff 98% | XXXX nan% | ffff 93% | ffff 97% | ffff -3% | ffff -0% | ffff 97% |
+| 107-canonical-rework | ffff 99% | ffff 100% | ffff 99% | ffff 100% | ffff 99% | ffff 99% | ffff 99% |
+| 108-canonical-commodity-cycle | ffff 97% | ffff 55% | ffff 55% | ffff 35% | ffff 96% | ffff 42% | ffff 42% |
+| 109-canonical-limits-to-growth | ffff 99% | ffff 99% | ffff 98% | ffff 99% | ffff 99% | ffff 99% | ffff 99% |
+| 110-canonical-world3-pollution | ffff 84% | XXfX 88% | ffff 79% | ffff 52% | ffff -40% | ffff 41% | ffff 79% |
+
+**Pass rate:** 6 passes and 11 "equivalent" in 308 cells (7 strategies x 11 cases x 4 variants), 8 errors;
+no strategy passes more than 3 of its 44. combined 3 pass + 1 equivalent of 44; effect_hats 2 + 1; lna_stack 1 + 2 (8 errors); lna, censored and
+matrix 0 + 2; earned_pieces 0 + 1. Behaviour is far better than the equations: fresh skill@100 is 94-100%
+on SIR, SEIR, Bass, logistic, teacup, rework and limits to growth for most leaders.
+
+**What they fail at** (`uv run sdlab-ladder show <case> --strategy combined --variant none-long`):
+
+- **Products of two stocks** (SIR, SEIR, Bass, logistic: rate x effect of another or the same stock).
+  The linear strategies write S x I as links and outside flows (SIR matrix: 7 flows, 521 pieces).
+  combined and effect_hats find the Bass word-of-mouth flow, but as one move with a table effect
+  instead of p x P plus q x P x A / N (recall 100%, the move's number 2% off). No leader finds
+  logistic crowding deaths, (r/K) X x X: they fit a drain k X and an inflow cut into about 88 pieces.
+- **Sub-steps** (teacup, SIR; dt 1/8, 1/32): with no noise the teacup's drain is found as 0.0957
+  against 0.1 (1 - (1 - 0.1/8)^8 = 0.0957), and the constant -7 as a +6.7 inflow. That is
+  "equivalent" under counts noise and a fail without noise. This is the data's limit, not the
+  method's: the per-step truth of sub-step data is not the per-time-unit model the scorer compares
+  against (see "Blocked and open" below).
+- **Hidden structure**: the rework cycle's undiscovered rework (a hidden loop W -> U -> W) is never
+  found; leaders write a link from work done instead. The commodity cycle's construction delay and
+  the World3 transmission delay are not found either.
+- **Gap rules reading two stocks and an input** (workforce): leaders get assimilation and expert
+  quits exactly, but write hiring as about 145 pieces of an outside inflow, not (desired - R - E) / 6.
+- **lna_stack errors** on 105, 106 and 110 (8 cells): `sdlab/discovery/strategies/impulses.py:42`
+  indexes the stocks with a measured input's name (`ValueError: 'customer_demand' is not in list`).
+  It treats an input column as a stock. This is for the owner of `impulses.py` (not changed here).
+
+## Blocked and open
+
+- **Scoring of a delay fed from outside.** In 105 (orders through a DELAY3 into inventory), 108
+  (construction) and 110 (pollution appearance), the delay chain starts outside. The answer key
+  (`parts.py`) reads a DELAYn chain only between two measured stocks, so those inflows are not parts:
+  105 and 110 score one part each. A pass on them checks less than their `tests:` say. Proposed: score
+  an outside-fed chain as a hidden inflow with its delay. A scoring change needs the user's sight
+  (CLAUDE.md rule 5).
+- **Sub-step data.** The scorer compares a dt < 1 case with the model's per-time-unit numbers. The
+  best per-step description differs by O(k^2), up to 10% for k = 0.2. Either the oracle accounts for
+  dt, or discovery fits continuous time. 100 and 104 are the probes; the cases written for SD Lab use
+  dt 1. (A first run with them at dt 0.25-0.5 on 3660a5d showed this confound everywhere; they were
+  rebuilt at dt 1 in 08ef0d7, an hour after they were added.)
+- **World3**: the full persistent pollution sector is blocked by its ratio (Michaelis-Menten
+  assimilation). Case 110 is the sector below its 1970 level. Market growth (Forrester) was not
+  attempted, for the same reason (backlog / capacity).
+
 ## Tables (generated by `coverage.py`)
 
 ### Sample models (12)
