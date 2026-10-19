@@ -82,11 +82,18 @@ def _shared_files() -> list[Path]:
                   and (STRATEGIES not in p.parents or p == STRATEGIES / "__init__.py"))
 
 
-def strategy_hash(name: str) -> str:
+def code_files(name: str) -> list[Path]:
+    """The files a strategy's hash covers: its own (and imported siblings'), then the shared ones."""
+    return sorted(set(_own_files(name))) + _shared_files()
+
+
+def strategy_hash(name: str, contents: dict[Path, bytes] | None = None) -> str:
+    """The hash of a strategy's code: as on disk, or as given in contents (path -> bytes), e.g. the
+    code a process imported earlier (provenance.py)."""
     h = hashlib.sha256()
-    for p in sorted(set(_own_files(name))) + _shared_files():
+    for p in code_files(name):
         rel = p.relative_to(DISCOVERY).as_posix() if DISCOVERY in p.parents else p.name
-        h.update(rel.encode() + b"\n" + p.read_bytes() + b"\n")
+        h.update(rel.encode() + b"\n" + (contents[p] if contents and p in contents else p.read_bytes()) + b"\n")
     return h.hexdigest()[:16]
 
 

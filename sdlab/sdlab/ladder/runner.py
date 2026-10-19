@@ -1,7 +1,9 @@
 """Running strategies on cases: what is stale (plan), and running it in parallel (execute).
 
 Each item runs in a worker process with one numpy thread (the CLI sets OMP/OPENBLAS/VECLIB/MKL/NUMBA
-thread counts to 1 before the pool starts) under a timeout. Discovery is given only what the page
+thread counts to 1 before the pool starts) under a timeout. Each result records the strategy hash
+of the code that actually ran (provenance.py: computed when the worker first imports the strategy,
+not when the run was planned), with the git commit and the hash of any uncommitted patch. Discovery is given only what the page
 would give it: the measured stocks (id, name, unit, final, group), their levels, the announced eras
 and injections. A strategy that raises is recorded as an error, one that runs out of time as a
 timeout; neither stops the run.
@@ -19,7 +21,7 @@ from pathlib import Path
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import catalog, data, score, store
+from . import catalog, data, provenance, score, store
 
 TIMEOUT = 120
 
@@ -133,7 +135,9 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
         if item.get("mode") == "rescore":
             prev = next(iter(store.latest(item["case"], item["variant"], item["strategy"], found=True)), None)
             flows, seconds = (prev or {}).get("found") or [], (prev or {}).get("seconds")
+            row.update({k: (prev or {}).get(k) for k in ("code_commit", "code_dirty")})     # the flows' code
         else:
+            row.update(provenance.loaded(item["strategy"]))      # the code this process runs, not the plan's
             began = time.perf_counter()
             r = discover(item["strategy"], model, d)
             seconds = round(time.perf_counter() - began, 3)
@@ -176,7 +180,8 @@ def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT
             on_done(item, row, len(rows), len(items))
 
     try:
-        if jobs == 1 or len(items) == 1:
+        # one item, or one job, runs here, unless this process holds older code of a strategy in memory
+        if (jobs == 1 or len(items) == 1) and not provenance.stale_in_memory([i["strategy"] for i in items]):
             for it in items:
                 done(it, run_item(it, timeout, run_id))
         else:

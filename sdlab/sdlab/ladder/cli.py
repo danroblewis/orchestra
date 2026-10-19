@@ -193,7 +193,8 @@ def show(a) -> int:
             beh = (s.get("behaviour") or {})
             print(f"\n== {sname}, {v['name']}: {r['status'].upper()}" + (f" ({r['error']})" if r.get("error") else "")
                   + (f"; recall {pct(s.get('recall'))}, precision {pct(s.get('precision'))}, {s.get('right')}/{s.get('of')} parts right" if s else "")
-                  + (f"; discovery {r['seconds']:.2f} s" if r.get("seconds") is not None else "") + f"; {r['at']}")
+                  + (f"; discovery {r['seconds']:.2f} s" if r.get("seconds") is not None else "") + f"; {r['at']}"
+                  + (f"; code {r['code_commit'][:10]}" + (f" + patch {r['code_dirty']}" if r.get("code_dirty") else "") if r.get("code_commit") else ""))
             for where in ("in_sample", "fresh"):
                 b = beh.get(where) or {}
                 if b:

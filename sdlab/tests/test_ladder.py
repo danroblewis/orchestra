@@ -48,7 +48,8 @@ def test_there_is_a_ladder():
     for i in ids:
         c = casemod.load(i)
         assert c["title"] and c["tests"] and c["tags"], i
-        assert {v["name"] for v in c["variants"]} == {"none-short", "none-long", "counts-short", "counts-long"}, i
+        names = [v["name"] for v in c["variants"]]
+        assert names and len(set(names)) == len(names) and {v["noise"] for v in c["variants"]} <= {"none", "counts"}, i
 
 
 @pytest.mark.parametrize("case_id", casemod.case_ids())
@@ -353,7 +354,7 @@ def test_the_page_s_endpoints(client):
     assert light["items"] == [] and light["counts"] == {"pass": 1} and light["queued"] == 0 and light["run"]["done"] == 1
     assert len(client.get("/api/ladder/progress", params={"recent": 5}).json()["items"]) == 1
     tl = client.get("/api/ladder/strategies/matrix/timeline").json()
-    assert len(tl) == 1 and tl[0]["ran"] == 2 and tl[0]["totals"]["pass"] == 1 and tl[0]["of"] == 4 * len(casemod.case_ids())
+    assert len(tl) == 1 and tl[0]["ran"] == 2 and tl[0]["totals"]["pass"] == 1 and tl[0]["of"] == sum(len(casemod.load(i)["variants"]) for i in casemod.case_ids())
 
 
 @pytest.mark.parametrize("url", ["/api/ladder/cases/nope/data/none-short", "/api/ladder/cases/003-chain-2/data/bogus",

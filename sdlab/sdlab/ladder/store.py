@@ -2,7 +2,8 @@
 ~/.cache/sdlab/ladder/results.sqlite).
 
 results: one row per run of a strategy on a case's variant, never deleted. A row records the case's
-hash, the strategy's hash and the scorer's hash it ran with, when, its status (pass, equivalent,
+hash, the strategy's hash and the scorer's hash it ran with, the git commit and uncommitted patch
+hash of the strategy's code (provenance.py), when, its status (pass, equivalent,
 fail, error, timeout), the scores (JSON), the found flows (JSON), how long discovery took and any
 error. The newest row for each (case, variant, strategy) has latest = 1. A pair is stale when it has
 no row, or its latest row ran with another case hash, strategy hash or scorer hash (score_only: only
@@ -31,7 +32,8 @@ CREATE TABLE IF NOT EXISTS results (
     strategy TEXT NOT NULL, strategy_hash TEXT NOT NULL, score_hash TEXT NOT NULL,
     at TEXT NOT NULL, latest INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL, seconds REAL, error TEXT,
-    scores TEXT, found TEXT
+    scores TEXT, found TEXT,
+    code_commit TEXT, code_dirty TEXT
 );
 CREATE INDEX IF NOT EXISTS results_key ON results (case_id, variant, strategy, latest);
 CREATE TABLE IF NOT EXISTS runs (
@@ -66,16 +68,29 @@ def connect(readonly: bool = False):
     con.row_factory = sqlite3.Row
     try:
         con.executescript(SCHEMA)
+        _migrate(con)
         yield con
         con.commit()
     finally:
         con.close()
 
 
+def _migrate(con: sqlite3.Connection) -> None:
+    """Columns added since a store was made: code_commit and code_dirty (where a result's code is)."""
+    have = {r[1] for r in con.execute("PRAGMA table_info(results)")}
+    for col in ("code_commit", "code_dirty"):
+        if col not in have:
+            try:
+                con.execute(f"ALTER TABLE results ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:                   # another process added it first
+                pass
+
+
 def _row(r: sqlite3.Row, found: bool = False) -> dict:
     out = {"id": r["id"], "case": r["case_id"], "case_hash": r["case_hash"], "variant": r["variant"], "strategy": r["strategy"],
            "strategy_hash": r["strategy_hash"], "score_hash": r["score_hash"], "at": r["at"], "latest": bool(r["latest"]),
-           "status": r["status"], "seconds": r["seconds"], "error": r["error"], "scores": json.loads(r["scores"]) if r["scores"] else None}
+           "status": r["status"], "seconds": r["seconds"], "error": r["error"], "scores": json.loads(r["scores"]) if r["scores"] else None,
+           "code_commit": r["code_commit"], "code_dirty": r["code_dirty"]}
     if found:
         out["found"] = json.loads(r["found"]) if r["found"] else None
     return out
@@ -83,17 +98,17 @@ def _row(r: sqlite3.Row, found: bool = False) -> dict:
 
 def record(row: dict) -> int:
     """Store a result (case, variant, strategy, case_hash, strategy_hash, score_hash, status,
-    seconds?, error?, scores?, found?) as the latest for its key."""
+    seconds?, error?, scores?, found?, code_commit?, code_dirty?) as the latest for its key."""
     with connect() as con:
         con.execute("UPDATE results SET latest = 0 WHERE case_id = ? AND variant = ? AND strategy = ? AND latest = 1",
                     (row["case"], row["variant"], row["strategy"]))
         cur = con.execute(
-            "INSERT INTO results (case_id, case_hash, variant, strategy, strategy_hash, score_hash, at, latest, status, seconds, error, scores, found)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)",
+            "INSERT INTO results (case_id, case_hash, variant, strategy, strategy_hash, score_hash, at, latest, status, seconds, error, scores, found,"
+            " code_commit, code_dirty) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
             (row["case"], row["case_hash"], row["variant"], row["strategy"], row["strategy_hash"], row["score_hash"], row.get("at") or now(),
              row["status"], row.get("seconds"), row.get("error"),
              json.dumps(row["scores"]) if row.get("scores") is not None else None,
-             json.dumps(row["found"]) if row.get("found") is not None else None))
+             json.dumps(row["found"]) if row.get("found") is not None else None, row.get("code_commit"), row.get("code_dirty")))
         return int(cur.lastrowid)
 
 

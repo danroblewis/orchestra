@@ -11,8 +11,9 @@ docs/LADDER.md) or NNN-slug.json (the case dict itself), a tiny true model plus 
 
 A case is run in every variant: each noise ("none": the engine's exact flows; "counts": whole things,
 Poisson around the rate) at each length. Its id is the file name without its extension. Its hash
-covers what a run is made from, not how the file is written: the compiled case (canonical JSON), the
-truth model of every variant, the engine (sdlab/sdtruth.py and the equations in sdlab/runner.py) and
+covers what a run is made from, not how the file is written or described: the compiled model,
+variants and tolerance (canonical JSON; not the title, level, tags or tests sentence), the truth
+model of every variant (without its id and name), the engine (sdlab/sdtruth.py and the equations in sdlab/runner.py) and
 the code that turns a truth model into data (data.py). Rewriting a case in the other format, or
 changing this file without changing any truth model, keeps its results current.
 """
@@ -183,11 +184,19 @@ def _build(case_id: str, spec: dict) -> dict:
     case = {"id": case_id, "title": spec.get("title") or case_id, "level": spec.get("level", 0), "tags": list(spec.get("tags") or []),
             "tests": spec.get("tests") or "", "tolerance": dict(spec.get("tolerance") or {}), "variants": variants,
             "model": spec["model"]}
-    h = hashlib.sha256(_canonical(spec))
-    for x in variants:
-        h.update(_canonical(truth_model(case, x["name"])))
+    return {"spec": spec, "case": {**case, "hash": case_hash(case)}}
+
+
+def case_hash(case: dict) -> str:
+    """What a run is made from and scored against: the model, the variants, the tolerance and each
+    variant's truth model (without its id and name), the engine and data.py. Not the id, title,
+    level, tags or tests sentence: rewording a case keeps its results current."""
+    h = hashlib.sha256(_canonical({"model": case["model"], "variants": case["variants"], "tolerance": case["tolerance"]}))
+    for x in case["variants"]:
+        tm = truth_model(case, x["name"])
+        h.update(_canonical({k: v for k, v in tm.items() if k not in ("id", "name")}))
     h.update(engine_hash().encode() + _code_hash().encode())
-    return {"spec": spec, "case": {**case, "hash": h.hexdigest()[:16]}}
+    return h.hexdigest()[:16]
 
 
 @lru_cache(maxsize=None)
