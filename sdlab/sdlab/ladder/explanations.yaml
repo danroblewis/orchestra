@@ -633,6 +633,20 @@ strategies:
     status: active
     note: docs/research/ideas-2026-10-18.md.
 
+  archetypes:
+    idea: For short, noisy series - try the classic SD structures whole (growth, logistic crowding, competition, predator and prey, Bass and infection moves, a hidden epidemic source) and keep the one the small-sample score prefers.
+    how: >-
+      Each candidate structure is fitted to the measured levels its own run reaches from fitted
+      starting levels, so errors in the measurements do not bias the numbers, and it must not grow
+      without limit. The small-sample Akaike criterion (AICc) chooses; a structure stitched together
+      from the whole list of terms pays extra for the choice. Below 20 steps, where the main line
+      returns nothing, this is the answer; on longer runs combined's model is kept unless this one
+      forecasts the run's last quarter better when both are refitted on the rest.
+    helps_with: The real-data cases - Gause's lab cultures and the boarding-school flu (6 to 14 samples), technology adoption (Bass), predator and prey.
+    builds_on: combined (on runs of 20 steps or more)
+    status: work in progress
+    note: docs/research/archetypes.md.
+
 glossary:
 
   # the model's parts

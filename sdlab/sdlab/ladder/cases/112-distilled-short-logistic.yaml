@@ -1,0 +1,12 @@
+title: "Distilled: logistic growth seen for 10 steps"
+level: 12
+tags: [distilled, effect, short]
+tests: "a culture's logistic growth, births 0.8 x P and crowding deaths 0.8 x P x P / 250, seen for only 10 steps (or 20, where the matrix method starts) with a 7% measurement error, as in 24 of Gause's lab cultures (from the real cases' twins, e.g. real-gause-a4-one-pa twin): every strategy built on the matrix method returns nothing below 20 steps, though births and crowding can be read from the curve"
+seed: 112
+stocks: {P: 5}
+flows:
+  outside -> P as births: 0.8 * P
+  P -> outside as crowding: 0.0032 * P * effect(P, linear, normal=1, max=100000)
+variants:
+  noise: [none, counts, {meas: {rel: 0.07, abs: 0}}]
+  lengths: {short: 10, long: 20}
