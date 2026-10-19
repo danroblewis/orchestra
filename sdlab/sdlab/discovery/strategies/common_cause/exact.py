@@ -31,8 +31,8 @@ from ... import matrix as _matrix
 from ... import regression as _regression
 from ...changes import _last_cut
 from ...regression import Fit
-from ..earned_pieces import joint as _joint
-from ..earned_pieces import rows as _rows
+from . import joint as _joint
+from . import rows as _rows
 
 REL = 1e-8           # the floor on a fit's mean square residual, relative to the changes' mean square
 
@@ -142,3 +142,56 @@ def floored(scale: float):
         yield
     finally:
         (_regression.fit_subset, _matrix.fit_subset, _rows.fit_subset, _matrix.pelt, _joint.pelt, _matrix.stepwise) = saved
+
+
+def _key(cols: list[int], col: list[tuple[int, int]], s: int) -> tuple:
+    """How plain an exact row is: fewer columns, then fewer columns reading other stocks, then those
+    nearer the row's own stock in the page's order (related stocks are listed together), then
+    those listed before it (a flow's source is usually listed first)."""
+    cross = [col[q][0] - s for q in cols if col[q][0] != s]
+    return (len(cols), len(cross), sum(abs(d) for d in cross), sum(d > 0 for d in cross))
+
+
+def tiebreak(row: dict, s: int, y: np.ndarray) -> dict:
+    """A row that fits exactly (at the floor) is moved, by exchanges and drops that keep it exact, to
+    the plainest exact set (_key): with collinear levels (identical stocks; stocks whose gaps decay
+    alike) every one of them fits, and the row's own level, then no cross term, is the answer
+    parsimony gives. Rows that do not fit exactly are returned unchanged. Call inside floored()."""
+    fs = _regression.fit_subset
+    floor = getattr(fs, "floor", None)
+    cols, X = list(row.get("set") or []), row.get("X")
+    if floor is None or X is None or not len(X) or not cols:
+        return row
+    from ...regression import row_sums
+    sums = row_sums(y, X, row.get("cuts"))
+    exact = lambda c: fs(sums, c).rss <= REL_TIE * floor(sums)  # noqa: E731
+    if not exact(cols):
+        return row
+    col = row["col"]
+    best = (cols, _key(cols, col, s))
+    improved = True
+    while improved:
+        improved = False
+        cur = best[0]
+        trials = [[q for q in cur if q != j] for j in cur]
+        trials += [[q for q in cur if q != j] + [i] for j in cur for i in range(len(col)) if i not in cur]
+        for t in trials:
+            if not exact(t):
+                continue
+            # drop what the exact fit does not need
+            changed = True
+            while changed:
+                changed = False
+                for j in list(t):
+                    tt = [q for q in t if q != j]
+                    if exact(tt):
+                        t, changed = tt, True
+                        break
+            k = _key(t, col, s)
+            if k < best[1]:
+                best, improved = (t, k), True
+                break
+    if best[0] == cols:
+        return row
+    f = fs(sums, best[0])
+    return {**row, "set": best[0], "rss": f.rss, "beta": f.beta, "p": len(best[0]) + (len(row["cuts"]) - 1 if row.get("cuts") else 0)}

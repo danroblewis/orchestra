@@ -3,15 +3,17 @@
 earned_pieces (the matrix's candidates, rows reselected, conservation decided jointly), with:
 
 - exact.py: noise-free data fitted with a floor at float precision;
-- (to come) cross-links tested against shared change places.
+- places.py: every row offered pieces at the change places other rows earned, priced as values
+  only (a common cause), so a cross-link must explain what they do not.
 """
 
 from __future__ import annotations
 
 from ...identify import VARIANTS, judge
 from ...matrix import identify_one
-from ..earned_pieces import refit
-from .exact import floored, make_scan, scale_of
+from ...changes import pelt as _pelt
+from .exact import floored, make_pelt, make_scan, scale_of
+from .refit import refit
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -29,7 +31,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 continue
             r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True})
             if r.get("flows") is not None and r.get("fit"):
-                r = refit(stocks, r, opts)
+                r = refit(stocks, r, opts, make_pelt(scale) if exact else _pelt)
             e = judge(r["flows"], stocks, run, injections=opts.get("injections"))
             tried.append({"name": v["name"], "error": e})
             if best is None or e < best[1]:
