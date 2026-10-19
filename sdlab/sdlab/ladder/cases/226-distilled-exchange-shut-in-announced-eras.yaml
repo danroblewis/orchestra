@@ -1,0 +1,19 @@
+title: "Two-way exchange through an opening shut in announced eras"
+level: 21
+tags: [distilled, diffusion, two-way, eras, announced, input]
+tests: "distilled from part-stirred-chambers (master_eq 21 of 26 short, 19 of 26 long; the leaders fail it): three chambers in a row, fed into A by a measured input and drained from C (0.12); A <-> B is crossed both ways at 0.02 a step but shut (0) in every second announced era, B <-> C both ways at 0.015 always; recovered as two pairs of opposite moves, the A <-> B pair at 0 in the shut eras, not as one-way net moves or links"
+seed: 226
+inputs:
+  feed: 8 + step(3, 250) - step(5, 700) + step(4, 1100) - step(3, 1550)
+stocks: {A: 400, B: 300, C: 120}
+flows:
+  outside -> A: 1 * feed
+  A -> B as ab: 0.02 * A
+  B -> A as ba: 0.02 * B
+  B -> C as bc: 0.015 * B
+  C -> B as cb: 0.015 * C
+  C -> outside: 0.12 * C
+schedule:
+  every: 400
+  at 1 open announced: {ab: 0.02 * A, ba: 0.02 * B}
+  at 201 shut announced: {ab: 0 * A, ba: 0 * B}
