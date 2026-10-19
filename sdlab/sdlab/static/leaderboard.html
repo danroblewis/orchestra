@@ -140,7 +140,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const thTip = (c) => (c.gl && gloss[c.gl] ? ` title="${esc(gloss[c.gl].term + ": " + gloss[c.gl].text)}"` : "");
 function aboutRow(name) {
   const a = about[name]; if (!a) return "";
-  return `<tr class="about"><td colspan="${COLS.length}"><div class="box"><p>${esc(a.how)}</p>
+  return `<tr class="about"><td colspan="${COLS.length}"><div class="box"><p><b>${esc(a.idea)}</b> ${esc(a.how)}</p>
     <p><span class="k">Meant for:</span> ${esc(a.helps_with)} · <span class="k">Builds on:</span> ${esc(a.builds_on)} · <span class="k">Status:</span> ${esc(a.status)}</p>
     ${a.note ? `<p class="k">${esc(a.note)}</p>` : ""}<p><a href="/ladder/glossary#s-${encodeURIComponent(name)}" style="color:inherit">In the glossary</a></p></div></td></tr>`;
 }
@@ -225,7 +225,7 @@ function render() {
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
     if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all" style="color:inherit" title="Every test case: the true model beside what ${r.name} found">${r.name}</a>`
-      + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="How it works">ⓘ</button><span class="idea">${esc(about[r.name].idea)}</span>` : "") + `</td>`;
+      + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="${esc(about[r.name].idea)}">ⓘ</button>` : "") + `</td>`;
     if (c.key === "bar") {
       const w = (v) => (100 * v / r.runs).toFixed(2) + "%";
       return `<td class="bar"><div class="stack" title="${r.p} pass, ${r.e} equivalent, ${r.fl} fail, ${r.o} other, of ${r.runs}">` +
