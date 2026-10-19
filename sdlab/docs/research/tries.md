@@ -260,3 +260,9 @@ flowchart TD
 **Where we are:** the best single mechanism (symbolic effects) reaches 47.2% mean skill@20 on v2.1; the
 most runs meeting the goal is 17 of 62 (latent eras). None is adopted into the main line yet: the
 combination of the winners, with an acceptance rule they cannot fool, is the next step.
+
+## Ladder strategies (2026-10-18)
+
+| strategy | ladder | examples v2.1 (skill@20 / @100, goal) | generated (100 x 2) | verdict |
+|---|---|---|---|---|
+| [censored](censored.md): floors (hinges), capped demands, inflow re-cut at 2 log n, negative links as floored inflows, on top of the main line | 024 and 025 PPPP (every other strategy FFFF); 442 pass / 134 equivalent of 720 (matrix 345 / 116), 2 cells worse | 39.0 / 46.0, 16 of 62 (matrix 29.6 / 29.3, 12) | +1.3 / -1.3 (neutral) | adopt as a final step; floors cost ~2-3 bench points |
