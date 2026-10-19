@@ -242,8 +242,12 @@ def lean(flows: list[dict], data: J.Data, run: dict, cp: float = 1.5, fp: float 
         if dropped is not cur:
             s1 = strict_score(dropped, data, cp, fp)[0]
             b1 = J.behaviour(dropped, data, run)
-            ok = s1 < s0 and b1 <= slack * b0 + 1e-3
-            report["drop"] = {"score": s1, "behaviour": [b0, b1], "flows": len(dropped), "kept": ok}
+            # the same check with every pieced inflow at its mean: the model's own pieces can
+            # replay the data whatever its flows (sd-population: 0.0080 -> 0.0091 with its pieces,
+            # 0.32 -> 0.70 with them averaged, and skill@20 59% -> -729% once graded)
+            a0, a1 = J.behaviour(J.averaged(cur), data, run), J.behaviour(J.averaged(dropped), data, run)
+            ok = s1 < s0 and b1 <= slack * b0 + 1e-3 and a1 <= slack * a0 + 1e-3
+            report["drop"] = {"score": s1, "behaviour": [b0, b1], "averaged": [a0, a1], "flows": len(dropped), "kept": ok}
             if ok:
                 cur, s0 = dropped, s1
     if merge:
