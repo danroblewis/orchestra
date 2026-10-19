@@ -16,22 +16,6 @@ for `combined` on the test cases).
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
    - lna: `identify(..., base=...)` and a public flow writer `run.written`, so the variants stop recomputing and copying.
 
-2f. **combined, round 2** (from `docs/research/combined.md`, code ded5e80). Start it once the
-   noise-robust (`kalman_lna`) and structures agents have committed.
-   - **A behaviour judge** that does not replay each model's own inflow pieces, e.g. a held-out
-     era or rolling-origin forecasts. In-data error can't tell the lna family's runaway models
-     from effect_hats' sound ones (sd-webshop-stock: 0.239 vs 0.181 in-data, skill −7.6 vs 0.74).
-     Realistic skill@20 is 41.1% for combined against 49.9% for effect_hats. Close that gap
-     without losing test cells.
-   - **New candidates:** add `kalman_lna` (60 cells combined misses, mainly the noisy cases
-     080-087) and `structures` (25 cells, canonical 100-110), with a likelihood that knows about
-     measurement noise.
-   - **Small counts:** a discrete likelihood for small counts (056).
-   - **Speed:** skip common_cause when no two stocks move alike. combined averages 11 s per test
-     cell, against lna's 1.1 s.
-
-   Report tests, strict, realistic and noisy results.
-
 2d. **Engine features for the remaining blockers** (in the HARNESS only: `sdtruth.py`, plus a harness copy of the simulator under `sdlab/ladder/` if scoring needs it. The frozen `sdlab/discovery/simulate.py` is never changed, so no strategy re-runs; no HOLD) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
    - two-way flows (30 SDXorg models) and negative stocks (9), opt-in per stock or flow;
@@ -73,6 +57,8 @@ for `combined` on the test cases).
 
 ## Started
 
+- 2026-10-19: 2f, combined round 2 as a new strategy `combined2` (copies of the new specialists, a behaviour judge that doesn't replay pieces).
+
 - 2026-10-19 03:30: 0c (derivative strategies self-contained), 1a (control-theory cases), 1b (time measurements).
 
 - 2026-10-18 23:20: short series and published-model twins (from the real-data results).
@@ -89,6 +75,11 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-19: 2b, structures (up to 7e0a2bf, doc 0acdab1). Canonical 30/44 against combined's 3; distilled products 17/24; 99 cells better than combined, 6 worse.
+- 2026-10-19: realistic round 1 (realistic_hats 52cd6d1, 06b0062; triage doc; distilled 152-161). Goals met 14 → 15 of 66; timeouts 12 → 1.
+- 2026-10-19: scorer fixes (cb1c69d, f01908d). 179 flips: 178 fail → equivalent, 1 equivalent → fail, none into or out of pass.
+- 2026-10-19: 1b, time measurements (c2a3c25 …); `sdlab-ladder cost`, runs panel.
 
 - 2026-10-19: short series and twins (archetypes; 445aabf … 3c3e009). Real held-out 0.9% → 4.9%, twins −1.3% → 10.0%, 12 twins pass + 20 equivalent.
 - 2026-10-19: fast leaderboard (210afce): incremental summary, server-side rows, cached responses.
