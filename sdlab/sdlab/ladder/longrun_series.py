@@ -29,6 +29,7 @@ MAX_POINTS = 800
 OVERVIEW = 400
 T_LIMIT = 10 ** 12
 _setups: OrderedDict = OrderedDict()
+_found: OrderedDict = OrderedDict()           # (result id, setup): the found model's trajectory
 
 
 def setup(case_id: str, variant: str) -> longrun.Setup:
@@ -57,7 +58,12 @@ def graph(result_id: int, at: list[int] | None = None, window: int | None = None
     if row is None or row.get("found") is None or row["case"] not in casemod.case_ids():
         return None
     s = setup(row["case"], row["variant"])
-    ftraj, fflows, fids = s.found(row["found"])
+    key = (result_id, id(s))
+    if key not in _found:
+        _found[key] = s.found(row["found"])[0]
+        while len(_found) > 64:
+            _found.popitem(last=False)
+    ftraj = _found[key]
     nm = len(s.measured)
     metrics = longrun_cache.of_result(row)
     if not metrics or metrics.get("error"):
