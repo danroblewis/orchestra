@@ -1439,6 +1439,64 @@ kalman_lna pass the noise-free cells (kalman_lna equivalent on 141 none-short, s
 none-long) and fail every meas cell of 141 and 142 and 143 meas-long, the physics' own mistake.
 odefit (output error, docs/research/odefit.md) passes all 12.
 
+## Control cases (200-215, tag `control`)
+
+Feedback loops from the control textbooks (queue item 1a; Åström & Murray's *Feedback Systems*,
+Ogata, Nise, Franklin-Powell, Seborg; full sources, a plain explanation of every case and the
+results in [research/control-cases.md](research/control-cases.md)). A controller measures a level,
+compares it with a **setpoint** and acts on the error through an actuator; in SD Lab's format:
+
+- P control is a gap flow `k x setpoint - k x level`; the integral of PI control is a measured
+  stock that gains the setpoint and loses the level, with `exact: true` flows (information, no
+  counting noise) and an offset so it stays positive (the controller reads `k x (I - offset)`); D
+  action reads the stocks whose flows make up the level's rate of change;
+- an actuator's limit is the floor at 0 (a heater cannot cool, an engine cannot brake), or a table
+  effect for a whole controller curve (on/off, a proportional band, an admission gate);
+- dead time is a DELAY3; setpoints and disturbances are measured inputs; a PRBS setpoint is a
+  `.csv` input (`cases/data/prbs7-hold8.csv`).
+
+| case | control idea |
+|---|---|
+| 200, 201 | a room heater under P control (a steady-state error) and PI control (none) |
+| 202 | PID on two tanks in series (overshoot and settling) |
+| 203 | PI cruise control on hills (Åström & Murray's car, Example 10.3) |
+| 204 | P control of a tank with no drain of its own (no error for a setpoint, an offset for a load) |
+| 205, 206 | P control through a 6-step DELAY3 at low gain (gain margin 3.1) and near instability (1.26) |
+| 207 | cascade: an outer PI loop sets an inner P loop's level |
+| 208 | feedforward from a measured demand plus feedback |
+| 209 | integrator windup on long descents (the engine's floor) |
+| 210, 211 | on/off control against a proportional band (table effects) |
+| 212 | a web-server queue with admission control (A&M Exercise 2.8) |
+| 213, 214, 215 | closed-loop identification: one PI loop with a steady setpoint, steps and a PRBS |
+
+They are ordinary test cases (in the Tests pass rate). Each passes `sdlab-ladder check` and the truth
+passes its own scoring. 123-inflow-shut-by-own-level and phys-thermostat carry the tag too.
+
+**Control metrics** (`sdlab/ladder/control.py`, scorer side, changes no status): `uv run python -m
+sdlab.ladder.control [--truth] [--strategies ...] [--cases ...] [--json]` steps the setpoint (or the
+case's disturbance) from a settled operating point and reports, for the true and each found model:
+overshoot, settling time (2%), steady-state error (the share of a setpoint step not reached, or a
+disturbance's final shift per unit), and from the linear part at the operating point the gain and
+phase margins of the equivalent unity-feedback loop L = T / (1 - T) (T the closed loop from setpoint
+to level), the spectral radius and the damping. A model that does not answer the step, or a limit
+cycle (on/off), is reported as such. Per-case specs (which stock, which input, the step) are in
+`control.SPECS`.
+
+**Results** (19 October 2026, the seven leaders at cd9e8b1, single-threaded, `--jobs 2`): 448 cells,
+14 pass, 91 equivalent, 343 fail, no errors or timeouts; of the 34 achievable cells structures passes
+3, combined, archetypes and effect_hats 1, kalman_lna, odefit and matrix 0. Equivalent models have
+the truth's control metrics to the digit; failed ones predict the wrong controller (on 200 a P-control
+error of 0.40-0.57 of a step for 0.14; with the dead time missed, 206's gain margin of 1.26 is found as
+53). The analysis labels the weak-excitation cells: every cell of 213 (a constant setpoint is the
+constant's column) and the short runs of 203 and 209 (their setpoints first change at steps 700 and
+900) are unidentifiable. Distilled from the failures: 216-218 below.
+
+| case | from | mechanism |
+|---|---|---|
+| 216-distilled-exact-integral-fed-by-stepping-input | 214, 202, 207 | an exact stock among counted ones, fed by a stepping input: its inflow written as pieces or scaled |
+| 217-distilled-input-gated-by-own-level | 212 | a measured input times a falling table of the stock it fills (an admission gate) |
+| 218-distilled-controller-floored-on-few-steps | 203, 209, 200 | a P controller floored on a few steps: least squares across them biases every number |
+
 ## Newest cases (`/ladder/new`, `newest.py`, `case_dates.py`)
 
 When the Tests pass rate drops, the page `/ladder/new` (🆕 on the ladder and the leaderboard) tells

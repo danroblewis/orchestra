@@ -1021,3 +1021,65 @@ glossary:
     term: Replication lag
     group: Kubernetes model
     text: How far a database's read replica is behind its primary, in seconds. It grows when the primary takes writes faster than the replica can apply them, and shrinks when writes slow down.
+
+  # control theory (the control cases, tag control: docs/research/control-cases.md)
+  setpoint:
+    term: Setpoint (reference)
+    group: Control theory
+    text: The value a controller is told to hold, such as 20 degrees on a thermostat or 70 mph on a cruise control. On the ladder it is a measured input. The controller acts on the error, setpoint minus the measured value.
+  p_control:
+    term: P control (proportional)
+    group: Control theory
+    text: The controller pushes in proportion to the error, gain x (setpoint - level). Simple and quick, but it needs some error to keep pushing, so it usually settles a little short of the setpoint (a steady-state error). In SD terms it is a gap flow, k x setpoint - k x level.
+  pi_control:
+    term: PI control (proportional-integral)
+    group: Control theory
+    text: P control plus a term for the running sum of the error (the integral). As long as any error remains the sum keeps growing and the push with it, so the level ends exactly at the setpoint. On the ladder the integral is a stock that gains the setpoint and loses the level each step.
+  pid_control:
+    term: PID control
+    group: Control theory
+    text: PI control plus a derivative term that reacts to how fast the level is changing, damping the swing before it overshoots. A level's rate of change is its net flow, so the derivative reads the stocks that feed it.
+  steady_state_error:
+    term: Steady-state error
+    group: Control theory
+    text: How far the level stays from the setpoint once everything has settled, here as a share of a setpoint step. It is not 0 under P control alone. Integral action (or a plant that integrates by itself, like a tank with no drain) brings it to 0 for a setpoint step.
+  overshoot:
+    term: Overshoot
+    group: Control theory
+    text: How far the level passes its new value after a setpoint step before coming back, as a share of the step. A fast, aggressive loop overshoots; a well-damped one barely does.
+  settling_time:
+    term: Settling time
+    group: Control theory
+    text: How many steps after a setpoint step the level takes to stay within 2% (of the step) of its final value.
+  gain_phase_margin:
+    term: Gain and phase margin
+    group: Control theory
+    text: How far a feedback loop is from oscillating without end. The gain margin is how many times stronger the controller could be before the loop goes unstable; the phase margin is how much extra lag (a delay) it could take. A gain margin near 1 means ringing that dies away slowly.
+  dead_time:
+    term: Dead time (transport delay)
+    group: Control theory
+    text: A wait between the controller acting and the level feeling it, such as hot water travelling down a pipe. The controller keeps pushing on old news, so a strong controller overcorrects and the loop rings; too much gain and it oscillates for ever. On the ladder it is a DELAY3 chain of hidden stocks.
+  windup:
+    term: Integrator windup
+    group: Control theory
+    text: When the actuator hits a limit (a heater full on, an engine that cannot brake), the controller's integral keeps adding up an error it cannot act on. When the limit is released, the swollen integral overcorrects and the level swings far past the setpoint before recovering.
+  on_off_control:
+    term: On/off (bang-bang) control
+    group: Control theory
+    text: The actuator is either full on or off, depending on which side of the setpoint the level is, like a household thermostat. It never settles, it chatters in a band around the setpoint. On the ladder it is a steep table effect.
+  feedforward:
+    term: Feedforward
+    group: Control theory
+    text: Acting on a disturbance as soon as it is measured, before it has moved the level (opening the valve as demand rises), from a model of its effect. Feedback then cleans up what the model got wrong.
+  cascade_control:
+    term: Cascade control
+    group: Control theory
+    text: Two loops one inside the other. The outer loop decides the setpoint of a fast inner loop (the outer tank's controller asks for a level in the upper tank, and the inner controller drives the pump to reach it), so disturbances the inner loop sees are corrected before they reach the outer level.
+  closed_loop_identification:
+    term: Closed-loop identification
+    group: Control theory
+    text: Learning a system's equations from data taken while a controller is running it. The controller fights every movement, so without outside excitation (setpoint changes, a test signal) the data say little, and a constant setpoint cannot show how the loop answers a setpoint. The analysis labels such cells data-limited or unidentifiable.
+  prbs:
+    term: PRBS (pseudo-random binary sequence)
+    group: Control theory
+    text: A test signal that switches between two levels in a fixed pseudo-random pattern, exciting a system at many speeds at once. Identification engineers move a setpoint this way to learn a loop while it runs.
