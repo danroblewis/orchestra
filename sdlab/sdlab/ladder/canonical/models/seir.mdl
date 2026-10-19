@@ -1,0 +1,78 @@
+{UTF-8}
+Susceptible= INTEG (
+	-Infection,
+		990)
+	~	Persons
+	~	People who can catch the disease.
+	|
+Exposed= INTEG (
+	Infection-Onset,
+		0)
+	~	Persons
+	~	Infected, not yet infectious (the latent period).
+	|
+Infectious= INTEG (
+	Onset-Recovery,
+		10)
+	~	Persons
+	~	People who can pass the disease on.
+	|
+Recovered= INTEG (
+	Recovery,
+		0)
+	~	Persons
+	~	Immune; nobody dies in this model.
+	|
+Infection=
+	Contact Rate*Infectivity*Susceptible*Infectious/Total Population
+	~	Persons/Day
+	~		|
+Onset=
+	Exposed/Latent Period
+	~	Persons/Day
+	~		|
+Recovery=
+	Infectious/Infectious Period
+	~	Persons/Day
+	~		|
+Contact Rate=
+	5
+	~	Contacts/Person/Day
+	~		|
+Infectivity=
+	0.1
+	~	Dmnl
+	~		|
+Latent Period=
+	3
+	~	Day
+	~		|
+Infectious Period=
+	5
+	~	Day
+	~		|
+Total Population=
+	1000
+	~	Persons
+	~	Held constant, as in the SIR sample this extends.
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 120
+	~	Day
+	~		|
+INITIAL TIME  = 0
+	~	Day
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Day
+	~		|
+TIME STEP  = 0.25
+	~	Day
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored

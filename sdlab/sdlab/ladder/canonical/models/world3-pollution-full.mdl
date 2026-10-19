@@ -1,0 +1,67 @@
+{UTF-8}
+Persistent Pollution= INTEG (
+	Pollution Appearance-Pollution Assimilation,
+		25)
+	~	Pollution units (millions)
+	~	World3-03's persistent pollution sector with its assimilation half-life multiplier: a ratio SD Lab's format cannot hold (kept to test that the importer says so).
+	|
+Pollution Appearance=
+	DELAY3(Pollution Generation, Transmission Delay)
+	~	Pollution units (millions)/Year
+	~	
+	|
+Pollution Assimilation=
+	Persistent Pollution/(1.4*Assimilation Half Life)
+	~	Pollution units (millions)/Year
+	~	
+	|
+Assimilation Half Life=
+	Assimilation Half Life 1970*Assimilation Half Life Multiplier(Persistent Pollution/Pollution 1970)
+	~	Year
+	~	
+	|
+Assimilation Half Life Multiplier(
+	[(1,0)-(1001,50)],(1,1),(251,11),(501,21),(751,31),(1001,41))
+	~	Dmnl
+	~	AHLM
+	|
+Pollution Generation=
+	30+15*SIN(2*3.14159265358979*Time/80)+10*STEP(1, 60)
+	~	Pollution units (millions)/Year
+	~	
+	|
+Pollution 1970=
+	136
+	~	Pollution units (millions)
+	~	PPOL70
+	|
+Transmission Delay=
+	20
+	~	Year
+	~	
+	|
+Assimilation Half Life 1970=
+	1.5
+	~	Year
+	~	
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 200
+	~	Year
+	~		|
+INITIAL TIME  = 0
+	~	Year
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Year
+	~		|
+TIME STEP  = 0.5
+	~	Year
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored

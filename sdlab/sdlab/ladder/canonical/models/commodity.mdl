@@ -1,0 +1,83 @@
+{UTF-8}
+Inventory= INTEG (
+	Production-Consumption,
+		300)
+	~	Tonnes
+	~	A commodity cycle (after Meadows 1970, Dynamics of Commodity Production Cycles; Sterman 2000 ch. 20), written for SD Lab: price is read from inventory coverage; capacity follows price after a construction delay.
+	|
+Capacity= INTEG (
+	Capacity Completion-Capacity Discard,
+		125)
+	~	Tonnes/Month
+	~	
+	|
+Production=
+	Capacity*Utilization(Inventory)
+	~	Tonnes/Month
+	~	Low inventory, high price: run the plants harder.
+	|
+Consumption=
+	Reference Demand*Demand Response(Inventory)
+	~	Tonnes/Month
+	~	Low inventory, high price: buy less.
+	|
+Capacity Completion=
+	DELAY3(Capacity*Investment Fraction(Inventory), Construction Time)
+	~	Tonnes/Month/Month
+	~	Capacity ordered when prices are high arrives a construction time later.
+	|
+Capacity Discard=
+	Capacity/Capacity Life
+	~	Tonnes/Month/Month
+	~	
+	|
+Utilization(
+	[(0,0)-(2000,1)],(0,1),(400,0.8),(800,0.55),(1200,0.4),(2000,0.3))
+	~	Dmnl
+	~	By inventory (Tonnes).
+	|
+Demand Response(
+	[(0,0)-(2000,2)],(0,0.5),(400,1),(800,1.3),(2000,1.6))
+	~	Dmnl
+	~	
+	|
+Investment Fraction(
+	[(0,0)-(2000,0.2)],(0,0.12),(400,0.05),(800,0.015),(1200,0.005),(2000,0))
+	~	1/Month
+	~	
+	|
+Reference Demand=
+	100
+	~	Tonnes/Month
+	~	
+	|
+Construction Time=
+	18
+	~	Month
+	~	
+	|
+Capacity Life=
+	20
+	~	Month
+	~	
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 240
+	~	Month
+	~		|
+INITIAL TIME  = 0
+	~	Month
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Month
+	~		|
+TIME STEP  = 0.25
+	~	Month
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored

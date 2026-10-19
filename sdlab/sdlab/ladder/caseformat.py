@@ -52,7 +52,7 @@ import yaml
 
 OUTSIDE = "outside"
 TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws",
-            "dt", "inputs"}
+            "dt", "inputs", "source"}
 DELAYS = {"delay1": 1, "delay3": 3}                               # DELAYn(rate, time): n hidden stocks in a chain
 SMOOTHS = {"smooth": 1, "smooth3": 3}                             # SMOOTHn(x, time): n hidden stocks, exact flows
 TESTS = {"step": ("height", "start"), "pulse": ("height", "start", "width"), "ramp": ("slope", "start", "end"),
@@ -693,7 +693,7 @@ def compile_case(text: str, name: str = "<case>") -> dict:
             raise CaseError(f"{name}: a case needs {k}")
     if "draws" in raw:
         raise CaseError(f"{_at(raw, 'draws', name)}: draws is for a case with draw(lo, hi) numbers (draws.py), and this one has none")
-    out = {k: raw[k] for k in ("title", "level", "tags", "tests", "tolerance") if k in raw}
+    out = {k: raw[k] for k in ("title", "level", "tags", "tests", "tolerance", "source") if k in raw}   # source: where a case comes from, and its licence
     v = raw.get("variants")
     if v is not None and v != "default":
         out["variants"] = v

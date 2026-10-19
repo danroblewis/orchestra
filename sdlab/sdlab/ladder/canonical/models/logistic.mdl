@@ -1,0 +1,47 @@
+{UTF-8}
+Population= INTEG (
+	Births-Crowding Deaths,
+		20)
+	~	Animals
+	~	Logistic (Verhulst) growth r X (1 - X/K) written as births r X and crowding deaths (r/K) X^2; written for SD Lab.
+	|
+Births=
+	Growth Rate*Population
+	~	Animals/Week
+	~	
+	|
+Crowding Deaths=
+	Growth Rate*Population*Population/Carrying Capacity
+	~	Animals/Week
+	~	
+	|
+Growth Rate=
+	0.15
+	~	1/Week
+	~	r
+	|
+Carrying Capacity=
+	2000
+	~	Animals
+	~	K
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 100
+	~	Week
+	~		|
+INITIAL TIME  = 0
+	~	Week
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Week
+	~		|
+TIME STEP  = 0.25
+	~	Week
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored

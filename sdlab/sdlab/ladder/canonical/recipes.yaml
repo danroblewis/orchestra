@@ -1,0 +1,107 @@
+# The canonical cases: each is a source model (models/) imported by sdlab/ladder/pysd_import.py, plus
+# what the ladder adds to keep it moving over 300 and 2000 steps (announced injections; or a measured
+# input already in the model). build.py writes cases/<id>.yaml from these; the import itself is checked
+# against PySD's own run of the model (tests/test_ladder_canonical.py).
+#
+# id: the case file's name; model: the source under models/; source: where it comes from and its
+# licence; words: stock id -> hidden | final; pulses: {first, every, add: {stock: amount}} announced
+# injections from step `first` every `every` steps up to the long run; anything else is the case's own.
+
+- id: 100-canonical-sir
+  model: sdxorg-sir.mdl
+  source: "SDXorg/test-models samples/SIR/SIR.mdl (MIT licence, Copyright 2015 The test-models Authors; models/LICENSE-sdxorg-test-models), imported unchanged through PySD"
+  title: "SIR epidemic (SDXorg sample)"
+  level: 13
+  tags: [canonical, effect, chain, injection, dt]
+  tests: "the SIR model (infection 0.3 x S x I / 1000, recovery I / 5, Euler at dt 1/32) is recovered: the infection is a move S -> I whose rate is S times an effect of I, and recovery is I / 5; announced arrivals of 600 susceptible and 20 infectious people every 150 steps start new outbreaks"
+  words: {Recovered: final}
+  pulses: {first: 100, every: 150, add: {Susceptible: 600, Infectious: 20}}
+
+- id: 101-canonical-seir
+  model: seir.mdl
+  source: "written for SD Lab (the SIR sample with a latent stage; Kermack-McKendrick SEIR); MIT, as SD Lab"
+  title: "SEIR epidemic"
+  level: 13
+  tags: [canonical, effect, chain, injection, dt]
+  tests: "an SEIR epidemic (infection 0.5 x S x I / 1000, onset E / 3, recovery I / 5) is recovered: the infection is a move S -> E driven by I, not by E, then two first-order stages; announced arrivals of 600 susceptible and 20 infectious people every 150 steps start new outbreaks"
+  words: {Recovered: final}
+  pulses: {first: 100, every: 150, add: {Susceptible: 600, Infectious: 20}}
+
+- id: 102-canonical-bass
+  model: bass.mdl
+  source: "written for SD Lab after Bass (1969) and Sterman (2000) Business Dynamics ch. 9.3 (Bass diffusion with discontinuance); MIT, as SD Lab"
+  title: "Bass diffusion"
+  level: 13
+  tags: [canonical, effect, coupled, injection, dt]
+  tests: "Bass diffusion is recovered as two moves from potential adopters P to adopters A, one p x P (0.01) and one q x P x A / N (0.4 x P x A / 10000), with adopters discontinuing at A / 50; announced new cohorts of 5000 potential adopters every 150 steps restart the S-curve"
+  pulses: {first: 120, every: 150, add: {Potential_Adopters: 5000}}
+
+- id: 103-canonical-logistic
+  model: logistic.mdl
+  source: "written for SD Lab (Verhulst logistic growth as births r X and crowding deaths r X^2 / K); MIT, as SD Lab"
+  title: "Logistic growth"
+  level: 12
+  tags: [canonical, effect, injection, dt]
+  tests: "logistic growth r X (1 - X / K) (r 0.15, K 2000) is recovered as births 0.15 x X and crowding deaths 0.15 x X x X / 2000 (a drain times an effect of its own stock), not as one net flow or a goal gap; announced restocking of 1500 every 100 steps pushes the stock above K and back"
+  pulses: {first: 100, every: 100, add: {Population: 1500}}
+
+- id: 104-canonical-teacup
+  model: sdxorg-teacup.mdl
+  source: "SDXorg/test-models samples/teacup/teacup.mdl (MIT licence, Copyright 2015 The test-models Authors; models/LICENSE-sdxorg-test-models), imported unchanged through PySD"
+  title: "Teacup cooling (SDXorg sample)"
+  level: 12
+  tags: [canonical, outflow, injection, dt]
+  tests: "Newton cooling (heat loss (T - 70) / 10, Euler at dt 1/8) is recovered as a drain with a negative constant, 0.1 x T - 7, not as a plain proportional drain; announced top-ups of 100 degrees every 60 steps restart the cooling"
+  pulses: {first: 40, every: 60, add: {Teacup_Temperature: 100}}
+
+- id: 105-canonical-inventory-supply-line
+  model: inventory.mdl
+  source: "written for SD Lab after Sterman (2000) Business Dynamics ch. 17-18 (stock management, the supply line ignored); MIT, as SD Lab"
+  title: "Inventory with a third-order supply line"
+  level: 14
+  tags: [canonical, input, delay, hidden, goal]
+  tests: "stock management is recovered: orders (demand + (600 - inventory) / 8, demand a measured input) arrive through a third-order delay of 6 steps (DELAY3: three hidden stocks), and shipments are the demand; the ordering rule ignores the supply line, so inventory overshoots after each step in demand"
+
+- id: 106-canonical-workforce
+  model: workforce.mdl
+  source: "written for SD Lab (a two-stage workforce with gap-closing hiring, after Sterman (2000) ch. 19 and the SDXorg Workforce sample's structure); MIT, as SD Lab"
+  title: "Workforce: hiring, assimilation and quits"
+  level: 13
+  tags: [canonical, input, linear, chain, goal]
+  tests: "hiring that closes the gap to a desired workforce (a measured input) over 6 steps reads both stocks, (desired - rookies - experts) / 6; rookies become experts at 1/20 and both quit at their own rates (1/40, 1/80)"
+
+- id: 107-canonical-rework
+  model: rework.mdl
+  source: "written for SD Lab after the rework cycle of Cooper (1980) and Lyneis and Ford (2007); MIT, as SD Lab"
+  title: "Project with rework"
+  level: 14
+  tags: [canonical, hidden, loop, injection, dt]
+  tests: "the rework cycle is recovered: work to do W is completed at W / 10, 75% into work done and 25% into undiscovered rework U, a hidden stock found and returned to W at U / 15; announced new projects of 1000 tasks every 200 steps"
+  words: {Work_Done: final, Undiscovered_Rework: hidden}
+  pulses: {first: 150, every: 200, add: {Work_to_Do: 1000}}
+
+- id: 108-canonical-commodity-cycle
+  model: commodity.mdl
+  source: "written for SD Lab after Meadows (1970) Dynamics of Commodity Production Cycles and Sterman (2000) ch. 20; MIT, as SD Lab"
+  title: "Commodity cycle"
+  level: 15
+  tags: [canonical, effect, delay, hidden, loop, injection, dt]
+  tests: "a commodity cycle is recovered: production is capacity times a table effect of inventory, consumption a table effect of inventory, and capacity is built at capacity times a table effect of inventory arriving through an 18-step third-order delay, discarded at 1/20; announced imports of 400 every 250 steps"
+  pulses: {first: 200, every: 250, add: {Inventory: 400}}
+
+- id: 109-canonical-limits-to-growth
+  model: limits.mdl
+  source: "written for SD Lab after the limits-to-growth archetype (Meadows et al. 1972; Senge 1990); MIT, as SD Lab"
+  title: "Limits to growth"
+  level: 15
+  tags: [canonical, effect, coupled, loop, injection, dt]
+  tests: "the limits-to-growth archetype is recovered: births 0.12 x P times a table effect of the resource R, deaths P / 12, logistic regrowth 0.3 x R x (1 - R / 1000) and grazing 0.4 x P x R / 1000; announced arrivals of 30 animals every 200 steps"
+  pulses: {first: 150, every: 200, add: {Population: 30}}
+
+- id: 110-canonical-world3-pollution
+  model: world3-pollution.mdl
+  source: "written for SD Lab from World3-03's persistent pollution equations (Meadows, Randers and Meadows 2004; PPAPR = DELAY3(PPGR, 20), PPASR = PPOL / (1.4 x AHL70)), in the regime below the 1970 level where AHLM = 1 (the full sector needs a ratio, models/world3-pollution-full.mdl); MIT, as SD Lab"
+  title: "World3 persistent pollution (linear regime)"
+  level: 14
+  tags: [canonical, input, delay, hidden, outflow]
+  tests: "World3's pollution transmission and assimilation are recovered: generation (a measured input) appears after a 20-step third-order delay (three hidden stocks) and is assimilated at PPOL / (1.4 x 1.5); half steps (dt 0.5) as in World3"

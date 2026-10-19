@@ -1,0 +1,52 @@
+{UTF-8}
+Persistent Pollution= INTEG (
+	Pollution Appearance-Pollution Assimilation,
+		25)
+	~	Pollution units (millions)
+	~	World3-03's persistent pollution sector (Meadows, Randers and Meadows 2004), in its linear regime: below the 1970 level, where World3's assimilation half-life multiplier (AHLM) is 1. Written for SD Lab from the published equations; generation is an outside driver.
+	|
+Pollution Appearance=
+	DELAY3(Pollution Generation, Transmission Delay)
+	~	Pollution units (millions)/Year
+	~	PPAPR = DELAY3(PPGR, PPTD).
+	|
+Pollution Assimilation=
+	Persistent Pollution/(1.4*Assimilation Half Life 1970)
+	~	Pollution units (millions)/Year
+	~	PPASR = PPOL / (1.4 x AHL), AHL = AHL70 x AHLM with AHLM = 1.
+	|
+Pollution Generation=
+	30+15*SIN(2*3.14159265358979*Time/80)+10*STEP(1, 60)
+	~	Pollution units (millions)/Year
+	~	An outside driver standing in for World3's generation (industry and agriculture).
+	|
+Transmission Delay=
+	20
+	~	Year
+	~	PPTD
+	|
+Assimilation Half Life 1970=
+	1.5
+	~	Year
+	~	AHL70
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 200
+	~	Year
+	~		|
+INITIAL TIME  = 0
+	~	Year
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Year
+	~		|
+TIME STEP  = 0.5
+	~	Year
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored

@@ -1,0 +1,62 @@
+{UTF-8}
+Inventory= INTEG (
+	Arrivals-Shipments,
+		600)
+	~	Widgets
+	~	Stock management with a third-order supply line, the ordering rule ignoring what is on order (Sterman 2000 ch. 17-18; written for SD Lab).
+	|
+Shipments=
+	Customer Demand
+	~	Widgets/Week
+	~	Every order is shipped from inventory.
+	|
+Arrivals=
+	DELAY3(Orders, Supply Delay)
+	~	Widgets/Week
+	~	What was ordered arrives after a third-order delay: the supply line.
+	|
+Orders=
+	MAX(0, Customer Demand+(Desired Inventory-Inventory)/Inventory Adjustment Time)
+	~	Widgets/Week
+	~	Replace demand and close the inventory gap; nothing for the supply line.
+	|
+Customer Demand=
+	100+40*PULSE TRAIN(20, 50, 100, 1e+09)
+	~	Widgets/Week
+	~	A square wave: 100, and 140 for 50 weeks in every 100.
+	|
+Desired Inventory=
+	600
+	~	Widgets
+	~	
+	|
+Inventory Adjustment Time=
+	8
+	~	Week
+	~	
+	|
+Supply Delay=
+	6
+	~	Week
+	~	
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 100
+	~	Week
+	~		|
+INITIAL TIME  = 0
+	~	Week
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Week
+	~		|
+TIME STEP  = 0.25
+	~	Week
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored

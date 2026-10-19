@@ -1,0 +1,73 @@
+{UTF-8}
+Potential Adopters= INTEG (
+	-Adoption from Advertising-Adoption from Word of Mouth,
+		10000)
+	~	Persons
+	~	Bass (1969) diffusion, written for SD Lab after Sterman (2000) Business Dynamics ch. 9.3: who has not adopted yet.
+	|
+Adopters= INTEG (
+	Adoption from Advertising+Adoption from Word of Mouth-Discontinuation,
+		0)
+	~	Persons
+	~	Who uses the product now.
+	|
+Adoption from Advertising=
+	Advertising Effectiveness*Potential Adopters
+	~	Persons/Month
+	~	The innovation term p x P.
+	|
+Adoption from Word of Mouth=
+	Contact Rate*Adoption Fraction*Potential Adopters*Adopters/Total Market
+	~	Persons/Month
+	~	The imitation term q x P x A / N.
+	|
+Discontinuation=
+	Adopters/Product Life
+	~	Persons/Month
+	~	Adopters who stop using it (Bass with discontinuance).
+	|
+Advertising Effectiveness=
+	0.01
+	~	1/Month
+	~	p
+	|
+Contact Rate=
+	10
+	~	Contacts/Person/Month
+	~	
+	|
+Adoption Fraction=
+	0.04
+	~	Dmnl
+	~	q = contact rate x adoption fraction = 0.4
+	|
+Total Market=
+	10000
+	~	Persons
+	~	N, held constant
+	|
+Product Life=
+	50
+	~	Month
+	~	
+	|
+********************************************************
+	.Control
+********************************************************~
+		Simulation Control Parameters
+	|
+FINAL TIME  = 60
+	~	Month
+	~		|
+INITIAL TIME  = 0
+	~	Month
+	~		|
+SAVEPER  = 
+        TIME STEP
+	~	Month
+	~		|
+TIME STEP  = 0.25
+	~	Month
+	~		|
+\\\---/// Sketch information - do not modify anything except names
+V300  Do not put anything below this section - it will be ignored
