@@ -275,3 +275,20 @@ def weights(flows: list[dict], data: Data) -> np.ndarray | None:
     _, cov = one_step(flows, data)
     var = np.einsum("tii->it", cov) + data.q ** 2 / 6.0
     return 1.0 / np.sqrt(var)
+
+
+def averaged(flows: list[dict]) -> list[dict]:
+    """The flows with every found outside-inflow series (pieces) replaced by its mean over the run:
+    what the model does when it cannot replay the run's own inflow."""
+    out = []
+    for f in flows or []:
+        segs = f.get("inflow")
+        if not segs:
+            out.append(f)
+            continue
+        w = np.array([max(1.0, float(g["to"]) - float(g["from"]) + 1) for g in segs])
+        v = np.array([float(g["value"]) for g in segs])
+        g = {k: x for k, x in f.items() if k != "inflow"}
+        g["rate"] = {"form": "constant", "value": float((w * v).sum() / w.sum())}
+        out.append(g)
+    return out

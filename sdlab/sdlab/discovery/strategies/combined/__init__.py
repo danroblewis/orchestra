@@ -2,18 +2,20 @@
 (docs/research/combined.md).
 
 1. Candidates. Each specialist is called as a black box through its own `identify()`, so its
-   improvements flow in, in this order: lna (the best single strategy: flows chosen by the
-   counting likelihood), censored (floors that bind, stocks that run empty), effect_hats (effects
-   of a third stock's level; also re-cuts the outside inflows), hidden_transit (an unmeasured
-   stock between two measured ones), periodic_inflows (an inflow that repeats), gap_prior (lna
-   with a drain read off another stock written as the goal gap it equals), lna_pulses (one-step
-   bursts taken out before lna reads the moves), lna_stack (lna with the revisit's stages
-   composed; lna_loops is deliberately not a candidate: its wins are on cells the data cannot
-   decide) and common_cause (independent and identical stocks, noise-free fits, inflow changes the
-   data earns). The specialists that start from the matrix method's model, or from lna's, share
-   one computation of it (shared.py). Each runs under a cap (deadline.py: `cap` seconds, never
-   past the budget); one that raises or runs out of time is left out, and once the budget is spent
-   the rest are skipped. The budget is `budget` seconds or 70% of what the caller's timer leaves.
+   improvements flow in, in this order: censored (floors that bind, stocks that run empty),
+   effect_hats (effects of a third stock's level; also re-cuts the outside inflows), lna (the best
+   single strategy on the test cases: flows chosen by the counting likelihood), hidden_transit (an
+   unmeasured stock between two measured ones), periodic_inflows (an inflow that repeats),
+   gap_prior (lna with a drain read off another stock written as the goal gap it equals),
+   lna_pulses (one-step bursts taken out before lna reads the moves), lna_stack (lna with the
+   revisit's stages composed; lna_loops is deliberately not a candidate: its wins are on cells the
+   data cannot decide) and common_cause (independent and identical stocks, noise-free fits, inflow
+   changes the data earns). censored and effect_hats go first because on the realistic models
+   they are the best candidates and the lna family the slowest. The specialists that start from
+   the matrix method's model, or from lna's, share one computation of it (shared.py). Each runs
+   under a cap (deadline.py: `cap` seconds, never past the budget); one that raises or runs out of
+   time is left out, and once the budget is spent the rest are skipped. The budget is `budget`
+   seconds or 70% of what the caller's timer leaves.
 2. One judge (judge.py): the one-step likelihood of the measured changes under each candidate's
    equations, applied exactly as the simulator applies them (measured inputs, floors, caps,
    effects, co-flows, unmeasured stocks run open loop), with counting noise read through the
@@ -32,12 +34,13 @@
    removes them and never ranks the rest, because this in-data judge replays each model's own
    inflow pieces and so favours many pieces (a tighter guard, 2x, loses about 20 test cells).
 4. The lowest score wins; exact ties go to the model with fewer flows that read a stock other
-   than the ones they join, then to fewer numbers, then to the earlier candidate in the list.
+   than the ones they join, then to fewer numbers, then to the earlier name in PREFERENCE (the
+   lna family first).
 
 opts (also SDLAB_COMBINED, JSON): "specialists" (names, in order; default SPECIALISTS), "price"
 (the BIC multiplier, default 1), "per_flow" (numbers a flow costs for being there, default 0: a
 flow is priced by its numbers), "budget" (seconds, default 240), "cap" (seconds per specialist,
-default 60), "refit" (refit every candidate's numbers, default on), "guard" and "guard_floor"
+default 90), "refit" (refit every candidate's numbers, default on), "guard" and "guard_floor"
 (default 4 and 0.1; guard 0 turns it off), "trace" (keep every candidate's flows in the result).
 """
 
@@ -64,8 +67,10 @@ from .shared import once
 
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "lna_stack": lna_stack, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
-SPECIALISTS = ["lna", "censored", "effect_hats", "hidden_transit", "periodic_inflows", "gap_prior", "lna_pulses", "lna_stack", "common_cause"]
-DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 240.0, "cap": 60.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 0.1}
+SPECIALISTS = ["censored", "effect_hats", "lna", "hidden_transit", "periodic_inflows", "gap_prior", "lna_pulses", "lna_stack", "common_cause"]
+# exact ties go to the earlier name here (whatever order they ran in)
+PREFERENCE = ["lna", "gap_prior", "lna_pulses", "lna_stack", "censored", "effect_hats", "hidden_transit", "periodic_inflows", "common_cause"]
+DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 240.0, "cap": 90.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 0.1}
 
 
 def cross_reads(flows: list[dict]) -> int:
@@ -155,7 +160,11 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
         for _, c, _ in scored:
             c["score"]["ran_away"] = c["score"]["behaviour"] > limit
         scored = kept or scored
-    return min(scored, key=lambda x: (round(x[1]["score"]["bic"], 6), cross_reads(x[1]["result"]["flows"]), x[1]["score"]["k"], x[0]))[1]
+    def rank(x):
+        name = x[1]["name"]
+        return (round(x[1]["score"]["bic"], 6), cross_reads(x[1]["result"]["flows"]), x[1]["score"]["k"],
+                PREFERENCE.index(name) if name in PREFERENCE else len(PREFERENCE), x[0])
+    return min(scored, key=rank)[1]
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
