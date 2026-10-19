@@ -73,3 +73,56 @@ def test_births_and_deaths_apart():
 
 def test_noise_free_left_to_the_matrix():
     assert _run("003-chain-2", "none-short").get("method") != "lna"
+
+
+def _inputs(case: str, variant: str):
+    from sdlab.discovery.identify import identify
+
+    c = casemod.load(case)
+    d = data.load(c, variant)
+    stocks = casemod.page_stocks(casemod.truth_model(c, variant))
+    run = {"t": d["t"], "levels": d["levels"]}
+    opts = {"eras": d["eras"] if len(d.get("eras") or []) > 1 else None}
+    return stocks, run, opts, identify(stocks, run, dict(opts))
+
+
+@pytest.mark.parametrize("case,variant", [("016-coflow", "counts-short"), ("019-announced-era", "counts-long"), ("020-unannounced-step", "counts-short")])
+def test_identity_hooks_change_nothing(case, variant):
+    import json
+
+    from sdlab.discovery.strategies.lna.run import HOOKS, discover
+
+    stocks, run, opts, base = _inputs(case, variant)
+    identity = {
+        "data": lambda prev, dy, ctx: (prev, dy),
+        "atoms": lambda atoms, d, ctx: atoms,
+        "before_search": lambda cur, d, ctx: cur,
+        "after_search": lambda cur, d, ctx: cur,
+        "flows": lambda flows, cur, d, ctx: flows,
+    }
+    assert set(identity) == set(HOOKS)
+    plain = json.dumps(discover(stocks, run, opts, base), sort_keys=True, default=float)
+    hooked = json.dumps(discover(stocks, run, opts, base, hooks=identity), sort_keys=True, default=float)
+    assert plain == hooked
+
+
+def test_hook_extra_column_reaches_the_atoms():
+    from sdlab.discovery.strategies.lna.atoms import Atom
+    from sdlab.discovery.strategies.lna.run import discover
+
+    stocks, run, opts, base = _inputs("007-link", "counts-short")
+    seen = {}
+
+    def data_hook(prev, dy, ctx):
+        ctx["names"] = ctx["ids"] + ["A2"]
+        return np.vstack([prev, prev[0:1] ** 2 / 100]), dy
+
+    def atoms_hook(atoms, d, ctx):
+        return atoms + [Atom("link", dst=1, driver=2)]
+
+    def flows_hook(flows, cur, d, ctx):
+        seen["atoms"] = [a for a in cur.atoms if a.driver == 2]
+        return flows
+
+    r = discover(stocks, run, opts, base, hooks={"data": data_hook, "atoms": atoms_hook, "flows": flows_hook})
+    assert r is not None and "atoms" in seen          # ran through; the column was offered (and may be pruned)

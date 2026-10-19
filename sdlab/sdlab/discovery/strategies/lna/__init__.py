@@ -24,10 +24,11 @@ MISFIT = None        # (tried: 0.3) fall back also when a stock's changes spread
                      # the gains (print-shop, supply) and none of the losses, so it is off
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
+    """hooks: stages a variant adds (run.HOOKS); none for lna itself."""
     opts = dict(opts or {})
     base = _matrix(stocks, run, dict(opts))
-    found = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base)
+    found = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base, hooks)
     if found is None:
         return base
     mine = judge(found["flows"], stocks, run, injections=opts.get("injections"))

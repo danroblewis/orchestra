@@ -55,6 +55,17 @@ def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05) -> li
     return out
 
 
+# The stages a variant may add (discover(..., hooks={name: callable})), in the order they run:
+#   data(prev, dy, ctx) -> (prev, dy)    the data before anything is fitted: e.g. known changes taken
+#                                        out of dy, or extra rows appended to prev (columns that atoms
+#                                        may use as drivers: index >= the stocks'; name them in
+#                                        ctx["names"], the stocks' ids first)
+#   atoms(atoms, d, ctx) -> atoms        the candidate atoms, before the noise check and the first fit
+#   before_search(full, d, ctx) -> Fitted   the fitted superset, before pieces and pruning
+#   after_search(cur, d, ctx) -> Fitted     the chosen atoms (e.g. close loops, offer more and search)
+#   flows(flows, cur, d, ctx) -> flows   the flows written from the atoms (a post-fit rewrite)
+HOOKS = ("data", "atoms", "before_search", "after_search", "flows")
+
 SCRATCH = 4          # up to this many stocks, every atom between them is tried
 
 
@@ -75,7 +86,13 @@ def bic(cur, d: Data) -> float:
     return 2 * cur.nll + numbers(cur.atoms, range(len(cur.atoms))) * math.log(d.dy.shape[1])
 
 
-def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | None:
+def discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict | None = None) -> dict | None:
+    """The found model, or None (too short, or no counting noise to read).
+
+    hooks (optional; see HOOKS): stages a variant adds without copying this function. Each gets
+    `ctx`, a dict with stocks, ids, t, opts, base, unit, final, group, conf, bucket and (once made)
+    d and at, which it may also write to (e.g. ctx["names"]). With no hooks, lna's own behaviour."""
+    hooks = hooks or {}
     ids = [s["id"] for s in stocks]
     S = len(ids)
     t = run["t"]
@@ -90,10 +107,15 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
     bucket = buckets(conf[1], len(conf[0])) if conf else None
     if bucket is not None and max(bucket) < 1:
         conf, bucket = None, None
-    d = Data(prev, dy, np.asarray(bucket)[conf[1]] if conf else None)
     unit = [s.get("unit") or "" for s in stocks]
     final = {k for k, s in enumerate(stocks) if s.get("final")}
     group = [s.get("group") for s in stocks]
+    ctx = {"stocks": stocks, "ids": ids, "t": t, "opts": opts, "base": base, "unit": unit, "final": final,
+           "group": group, "conf": conf, "bucket": bucket}
+    if "data" in hooks:
+        prev, dy = hooks["data"](prev, dy, ctx)
+    d = Data(prev, dy, np.asarray(bucket)[conf[1]] if conf else None)
+    ctx["d"] = d
     if S <= SCRATCH:
         atoms = superset(S, unit, final, group, gaps=False)
     else:
@@ -103,10 +125,12 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
         coef = [{index[j]: k for j, k in (row.get("coef") or {}).items() if j in index and abs(k) > 1e-9} for row in base.get("matrix") or []]
         if len(coef) != S:
             return None
-        for s_, row in enumerate(screen(prev, dy)):
+        for s_, row in enumerate(screen(prev[:S], dy)):
             for j, k in row.items():
                 coef[s_].setdefault(j, k)
         atoms = restricted(S, coef, unit, final)
+    if "atoms" in hooks:
+        atoms = hooks["atoms"](atoms, d, ctx)
     phi = dispersion(atoms, mean_start(atoms, d), d)
     if phi < 0.2:
         return None                    # no counting noise to read: the matrix's reading stands
@@ -115,6 +139,8 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
     cur = fit(atoms, d)
     d.free = extra_variance(cur, d)
     full = fit(atoms, d, cur.theta, tau=cur.tau)
+    if "before_search" in hooks:
+        full = hooks["before_search"](full, d, ctx)
     # changes in the outside inflows first, beside every flow (so that levels do not stand in for
     # them); and, when that found any, the search again without them first (the fine pass can also
     # lock in pieces that a level or a gap would explain): the lower BIC wins
@@ -123,13 +149,18 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
         other = search(full, d)
         if bic(other, d) < bic(cur, d):
             cur = other
+    if "after_search" in hooks:
+        cur = hooks["after_search"](cur, d, ctx)
     # how far the changes' spread exceeds what counting noise gives the chosen flows (each stock's
     # extra variance over its counting variance): near 0 where the atoms describe the system
     Z = features(cur.atoms, d.prev, d.cfg)
     counting = variances(cur.atoms, cur.theta, Z, S).mean(axis=1) + d.delta
     misfit = float(np.max(np.where(d.free, cur.tau, 0.0) / counting))
     at = lambda k: t[k + 1]  # noqa: E731
-    flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
+    ctx["at"] = at
+    flows = to_flows(cur.atoms, cur.theta, ctx.get("names") or ids, d.prev, at, *((conf[0], conf[2], bucket) if conf else ()))
+    if "flows" in hooks:
+        flows = hooks["flows"](flows, cur, d, ctx)
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
             "flows": flows, "method": "lna", "dispersion": phi, "misfit": misfit, "extra_variance": {ids[k]: float(cur.tau[k]) for k in range(S) if d.free[k]}, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}

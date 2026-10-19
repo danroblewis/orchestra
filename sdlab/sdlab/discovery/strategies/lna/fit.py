@@ -41,8 +41,8 @@ class Fitted:
 
 def mean_start(atoms: list[Atom], d: Data) -> np.ndarray:
     """Non-negative least squares on the means, each row weighted by its spread."""
-    V, Z = stoich(atoms, d.prev.shape[0]), features(atoms, d.prev, d.cfg)
     S, T = d.dy.shape
+    V, Z = stoich(atoms, S), features(atoms, d.prev, d.cfg)
     w = 1 / np.sqrt(np.maximum(d.dy.var(axis=1), 1e-9))
     D = (V[:, :, None] * Z[None, :, :]) * w[:, None, None]          # S x F x T
     A = D.transpose(0, 2, 1).reshape(S * T, len(atoms))
