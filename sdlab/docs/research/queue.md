@@ -11,16 +11,6 @@ for `combined` on the test cases).
 
 ## Queued
 
-2b. **Products of stocks and other canonical structure** (from item 2's results). Every leader
-   fails the canonical cases' central structures:
-   - products of two stocks (S·I in SIR/SEIR, Bass word-of-mouth, logistic crowding X²): they
-     come out as links plus hundreds of inflow pieces;
-   - goal-seeking hiring with several stocks in the gap, (target − rookies − experts)/6;
-   - hidden rework and construction delays.
-
-   Build or extend strategies, e.g. lna_products and effect_hats ideas, a bilinear-term search,
-   and hidden-delay detection like hidden_transit for DELAY3 chains. Target cases 100-110.
-   Behaviour (fresh skill@100) is already 94-100%; the target is the structure.
 2c. **Converter coverage** (no engine change): arrays, macros, external data, DELAY N / SMOOTH N
    of other orders in `sdlab/ladder/pysd_import.py`. Re-run the coverage report.
 2d. **Engine features for the remaining blockers** (approved by the user on 2026-10-18 if
@@ -103,6 +93,8 @@ for `combined` on the test cases).
    watcher's backlog is small.
 
 ## Started
+
+- 2026-10-18 21:15: item 2b, products of stocks, multi-stock gaps, hidden delay chains.
 
 - 2026-10-18 20:50: item 0b, noise-robust discovery.
 
