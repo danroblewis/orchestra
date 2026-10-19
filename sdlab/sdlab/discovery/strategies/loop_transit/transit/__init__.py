@@ -204,6 +204,10 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     most = opts.pop("ht_max", 2)
     trace = opts.pop("ht_trace", False)
     turns = opts.pop("ht_turns", 15)
+    # loop_transit: a stage takes a real share of A's loss (kin >= share x kA); a stage with almost
+    # nothing in it is a decaying start level that fits a transient, not a stock (045-random-link#7,
+    # 047-random-goal-gap#2 none-long: kin 0.0002 of 0.35 and 2e-15 of 0.08)
+    min_share = opts.pop("ht_min_share", 0.05)
     injections, inputs = opts.get("injections"), opts.get("inputs")
     flows = r["flows"]
     if r.get("inferred_levels"):
@@ -260,6 +264,8 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
                 # H must turn over many times in the run (a longer delay is a slow drift, which
                 # pieces or a schedule explain as well)
                 if not shortest <= 1 / f["d"] <= len(run["t"]) / turns:
+                    continue
+                if f["kin"] < min_share * f["kA"]:
                     continue
                 if res["gain"] > margin * math.log(2 * (len(run["t"]) - 1)) and (best is None or res["gain"] > best[0]["gain"]):
                     best = (res, a, b)
