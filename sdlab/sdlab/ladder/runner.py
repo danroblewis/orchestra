@@ -40,7 +40,9 @@ def select_cases(spec: str | None) -> list[str]:
     everything when empty."""
     ids = casemod.case_ids()
     if not spec or spec == "all":
-        return ids
+        # a case tagged `heavy` (e.g. sd-k8s-platform: ~15 GB per worker, up to 30 min per run) runs only
+        # when named (its id or `tag:heavy`), never in a default sync or the watcher's pass
+        return [i for i in ids if "heavy" not in (casemod.load(i).get("tags") or [])]
     out: list[str] = []
     for part in (p.strip() for p in spec.split(",") if p.strip()):
         if part.startswith("tag:"):
