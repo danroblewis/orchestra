@@ -75,7 +75,7 @@ for `combined` on the test cases).
 
    Run the leaders and distil failures (invariant 4).
 
-2g. **Runner and lna small fixes** (from the hook port):
+2g. **Runner fix, and lna2** (from the hook port). lna and its variants are frozen (invariant 11), so the lna changes go into a NEW strategy `lna2` (a copy), never into lna:
    - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
    - lna: `identify(..., base=...)` and a public flow writer `run.written`, so the variants stop recomputing and copying.
@@ -96,7 +96,7 @@ for `combined` on the test cases).
 
    Report tests, strict, realistic and noisy results.
 
-2d. **Engine features for the remaining blockers** (HOLD until the watcher's backlog is under ~10k items: a `simulate.py` change re-runs every strategy) (approved by the user on 2026-10-18 if
+2d. **Engine features for the remaining blockers** (in the HARNESS only: `sdtruth.py`, plus a harness copy of the simulator under `sdlab/ladder/` if scoring needs it. The frozen `sdlab/discovery/simulate.py` is never changed, so no strategy re-runs; no HOLD) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
    - two-way flows (30 SDXorg models) and negative stocks (9), opt-in per stock or flow;
    - delays whose time or order changes, pipeline stocks, TREND/FORECAST (3 each);
@@ -112,32 +112,19 @@ for `combined` on the test cases).
 
    Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
 
-6. **Shared fixes to `matrix`** (HOLD until the watcher's backlog is under ~10k items: it re-runs every strategy), proposed by `censored` (`docs/research/censored.md`):
-   - `flows.read_flows` may write a negative cross term as an inflow `c + k·x` (k < 0) when the
-     row has an outside inflow, a goal gap's true form;
-   - price the main line's inflow changes at 2 log n (PELT `mult` 2);
-   - note in `oracle.py` that its linear fit ignores floors and caps.
-
-   Proposed by `effect_hats` (`docs/research/effect-hats.md`):
-   - pooled, re-cut inflows (`pieces.py`) as a matrix option, guarded against seasonal inflows;
-     cutting inflows into many pieces biases drains fast under counting noise (case 027);
-   - in `effects.translate`, pair a drain and a link into a move whatever stock the curve is
-     based on;
-   - effect flows should carry `driver`;
-   - compute the oracle (`oracle.py`) per row, so linear parts in effect cases get SE allowances.
-
-   Also proposed by earned_pieces (`docs/research/earned_pieces.md`,
-   "Proposed shared changes"):
-   - the tie test in `matrix.conserve` should use both rows' SEs, without the extra log T, and
-     not count a negative reading;
-   - keep a constant inflow unless its residuals are not white;
+6. **matrix_v2: the proposed matrix fixes as a NEW strategy** (rewritten on 2026-10-19: the
+   shared discovery library and `matrix` are frozen, CLAUDE.md invariant 11). Copy what is needed
+   from `sdlab/discovery/` (matrix, flows, regression, changes) into `strategies/matrix_v2/` and
+   apply the fixes proposed by censored, effect_hats and earned_pieces there (see their docs):
+   - read a negative cross term as a falling inflow;
+   - price inflow changes at 2 log n;
+   - pool and re-cut inflows;
+   - a conservation tie test with both rows' SEs;
+   - keep a constant inflow unless the residuals aren't white;
    - floor the rss at the data's rounding;
-   - add a flag to skip conservation.
+   - pair drains and links whatever stock an effect is based on.
 
-   One agent owns `sdlab/discovery/matrix.py` and `regression.py` for this. It measures every
-   strategy before and after (the ladder and both benches) and reports cells that flip either
-   way. Since most strategies build on matrix, this re-runs everything: start it when the
-   watcher's backlog is small.
+   No other strategy changes, so nothing else re-runs. No HOLD needed.
 
 ## Started
 

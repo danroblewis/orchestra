@@ -56,12 +56,30 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
 10. **Say "in progress" for what is in progress.** An agent that was started is not a result.
 
 ### How the work is organised
-11. **Strategies are files, not branches.** One package or file per strategy under
-    `sdlab/discovery/strategies/`, exposing `identify(stocks, run, opts)` and runnable alone.
+11. **Strategies are isolated, not a shared codebase** (the user, 2026-10-19). The strategies are a
+    collection of independent options to choose from. A fix for one must never become a
+    regression in another, and must never force re-running others.
+    - **Frozen code:**
+      - the shared discovery library (`sdlab/discovery/*.py`);
+      - every strategy another strategy imports (`tests/frozen.py` lists them).
+
+      `tests/test_frozen.py` pins them by hash and fails if they change.
+    - **To change frozen behaviour, copy it.** Copy the code into a new, separately named
+      strategy (e.g. `effect_hats_v2`, `lna2`, `matrix_v2`) and change the copy. Never edit the
+      original.
+    - **Build on frozen code only.** A new strategy may import frozen code, which never changes
+      under it. It may not import a live (non-frozen) strategy: copy it instead. Once something
+      imports a strategy, the user may approve freezing it (`python tests/frozen.py --write`).
+    - **Leaf strategies may be improved in place;** the ladder keeps every version's history.
+    - **The test harness** (`sdtruth.py`, `sdlab/ladder/`, `skill.py`) is not strategy code.
+      Harness features go into harness modules. Never change the frozen discovery library to
+      serve the harness: copy what the harness needs into `sdlab/ladder/`.
+    - **Shared libraries that never change their interface and very rarely their implementation**
+      are the only acceptable sharing, and changing one needs the user.
+
     Work happens in this checkout on branch `sdlab`; there are no new git branches or worktrees.
-    A strategy is improved in place for a fix, or copied into a new package for a different idea.
 12. **Agents own their files.** A strategy agent adds or edits only its own package, tests and doc.
-    It does not edit shared modules (`sdlab/discovery/*.py`, `sdlab/ladder/`, `sdlab/skill.py`,
+    It does not edit frozen code (invariant 11), the harness (`sdlab/ladder/`, `sdlab/skill.py`,
     `tests/bench/`, the server, static files) or another strategy; it reports the needed fix
     instead. An agent given a shared module owns only that module and edits others surgically.
     Commit only your own changes, never `git add -A`, and never push. Many agents share one
