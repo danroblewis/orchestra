@@ -431,7 +431,12 @@ errors counted beside it.
 **Cost.** Long realistic runs are 3,000-36,000 steps, so an item takes seconds to minutes (matrix:
 up to ~60 s on the bench). Every realistic item has its own timeout, `realistic.TIMEOUT` (300 s; a
 case may set `timeout:`), whatever `--timeout` says, and a sync runs the test items before the
-realistic ones so the tests stay current. Select them with `--cases tag:realistic` (or by id,
+realistic ones so the tests stay current. The timeout (for every case) covers loading the data and
+discovery, not scoring: the scorer's oracle fits one constant per window, and the long run of
+sd-clinic-doses has 1,999 windows (a schedule change every few steps), which takes ~7 minutes of
+least squares per result whatever the strategy (sd-emergency, sd-ev-fleet, sd-hospital and
+sd-moderation have 1,400-2,800 windows too, but their truths have effects or hidden stocks, so the
+linear oracle is not used). Select them with `--cases tag:realistic` (or by id,
 `--cases sd-saas`).
 
 **Separation.** `summary()`'s `totals` (the tests' pass rates, and `best_strategy()`) leave the

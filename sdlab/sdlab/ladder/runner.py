@@ -3,7 +3,7 @@
 Each item runs in a worker process with one numpy thread (the CLI sets OMP/OPENBLAS/VECLIB/MKL/NUMBA
 thread counts to 1 before the pool starts) under a timeout. Each result records the strategy hash
 of the code that actually ran (provenance.py: computed when the worker first imports the strategy,
-not when the run was planned), with the git commit and the hash of any uncommitted patch. Discovery is given only what the page
+not when the run was planned), with the git commit and the hash of any uncommitted patch. The timeout covers loading the data and discovery, not scoring. Discovery is given only what the page
 would give it: the measured stocks (id, name, unit, final, group), their levels, the announced eras
 and injections. A strategy that raises is recorded as an error, one that runs out of time as a
 timeout; neither stops the run.
@@ -153,6 +153,9 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
             seconds = round(time.perf_counter() - began, 3)
             flows = jsonable(r.get("flows") or [])
             inferred = r.get("inferred_levels")
+        if armed:                    # the timeout bounds the strategy, not the scorer (the oracle's fit over
+            signal.setitimer(signal.ITIMER_REAL, 0)     # ~2000 windows of a long realistic run takes minutes)
+            armed = False
         fresh = data.load(c, item["variant"], fresh=True)
         s = score.score(c, noise, model, flows, d, fresh, inferred)
         row.update(status=s["status"], seconds=seconds, scores=jsonable(s), found=flows)
