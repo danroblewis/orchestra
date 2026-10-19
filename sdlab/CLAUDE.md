@@ -86,7 +86,7 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     reads the research docs and every idea runs as a parallel experiment.
 15. **The ladder stays current and fast.** Results are keyed by strategy, case and scorer hashes,
     so a change marks them stale. One supervised watcher re-runs stale results:
-    `nice -n 19 uv run sdlab-ladder watch --strategies everything --every 300 --jobs 4 --timeout 300`
+    `nice -n 19 uv run sdlab-ladder watch --strategies everything --every 300 --jobs 4 --timeout 300 --batch 2000`
     (every strategy, parked ones too; a run that errors or times out counts as not passing), logging to
     `~/.sdlab/ladder-watch.log`; check it with `pgrep -fl "sdlab-ladder watch"`. Agents run only
     their own strategy (`--strategies <name>`), never a full sync. When the watcher has a backlog,
