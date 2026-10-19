@@ -29,10 +29,10 @@ import json
 import os
 import time
 
-from ..combined import identify as combined
-from ..combined import judge as J
-from ..combined.deadline import Overrun, deadline, outer_left
-from ..lna_stack import identify as lna_stack
+from ._vendored.combined import identify as combined
+from ._vendored.combined import judge as J
+from ._vendored.combined.deadline import Overrun, deadline, outer_left
+from ._vendored.lna_stack import identify as lna_stack
 from .discover import discover
 
 DEFAULTS = {"seconds": 60.0, "slack": 0.02, "base": "combined", "alone": False, "chains": True, "products": True}

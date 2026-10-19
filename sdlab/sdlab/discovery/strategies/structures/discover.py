@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 
-from ..combined import judge as J
+from ._vendored.combined import judge as J
 from .fit import OutOfTime, Problem, conventions, fit, search, variance
 from . import rowwise
 from .gaps import gap_stage
