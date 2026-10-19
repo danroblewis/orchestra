@@ -619,6 +619,30 @@ glossary:
     term: Floor
     group: The model's parts
     text: Rates never go below zero, and a stock cannot give more than it holds (a cap). Where a floor or cap binds, the formula stops being a straight line.
+  measured_input:
+    term: Measured input
+    group: The model's parts
+    text: An outside driver given as data, such as customer demand, a pump setting or a hiring target. Discovery is told its values each step, as it is told eras and injections, and may use it in a flow's rate.
+  delay3:
+    term: Third-order delay (DELAY3)
+    group: The model's parts
+    text: Material that leaves one stock and arrives in another after a spread-out wait, like goods on order. It is three hidden stocks in a row; what arrives bunches around the average delay instead of trickling in at once.
+  smoothing:
+    term: Smoothing (SMOOTH)
+    group: The model's parts
+    text: A slowly updated average of a level, such as expected demand. It is a hidden stock that moves part of the way towards the level each step; it carries information, not material.
+  sub_step:
+    term: Sub-step (dt)
+    group: The model's parts
+    text: The truth is simulated in smaller steps than it is measured (dt 0.25 is four steps per measurement), as the published models are. The data then follow the smooth curve more closely than one step per measurement would.
+  two_way_flow:
+    term: Two-way flow
+    group: The model's parts
+    text: A flow that can run backwards (its rate goes negative), as a net flow or a heat exchange can in published models. SD Lab's flows only run one way, so such a model cannot be a case as written.
+  canonical:
+    term: Canonical case
+    group: The model's parts
+    text: A classic system dynamics model (an epidemic, Bass diffusion, a supply line, a project with rework, ...) imported from a modeller's file through PySD, and accepted only when PySD's simulation and SD Lab's give the same numbers. Announced injections or a measured input keep it moving over the ladder's runs.
 
   # the results
   pass:

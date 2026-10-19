@@ -84,7 +84,8 @@ instead. Changing a case's model makes all its results stale; rewriting how it i
 
 **Top level.** `title`, `level`, `tags`, `tests`, `stocks` and `flows`; optional `seed`, `schedule`,
 `injections`, `variants`, `tolerance`, `dt` and `inputs` (the last two: "Inputs, sub-steps, ceilings,
-delays" below). Any other key is an error.
+delays" below), and `source` (where an imported case comes from and its licence; metadata, not in the
+hash). Any other key is an error.
 
 **Stocks** map an id (letters, digits, `_`; not `outside`) to its initial level. Words after the
 level mark it, or give the long form for anything else (`unit`, ...; extra keys are passed through):
@@ -478,6 +479,67 @@ Cases using the engine features of 2026-10-18 (above): 062-tank-fed-by-measured-
 driven by a measured input, `2 x pump`, recovered as k x input rather than as pieces) and
 063-delay3-supply-line (a DELAY3 of 6 steps between two measured stocks, one hidden path with its
 total delay; injections every 100 steps).
+
+## Canonical cases (`canonical/`, `pysd_import.py`)
+
+Classic system dynamics models, imported from a modeller's file rather than written as probes: cases
+100-110, tag `canonical`, each with a `source:` naming where it comes from and its licence.
+
+| case | model | source |
+|---|---|---|
+| 100-canonical-sir | SIR epidemic, dt 1/32 | SDXorg/test-models `samples/SIR` (MIT) |
+| 101-canonical-seir | SEIR epidemic | written for SD Lab |
+| 102-canonical-bass | Bass diffusion with discontinuance | written for SD Lab (Bass 1969; Sterman 2000) |
+| 103-canonical-logistic | logistic growth as births and crowding deaths | written for SD Lab |
+| 104-canonical-teacup | Newton cooling, `0.1 x T - 7` | SDXorg/test-models `samples/teacup` (MIT) |
+| 105-canonical-inventory-supply-line | stock management through a DELAY3 supply line, demand a measured input | written for SD Lab (Sterman 2000 ch. 17-18) |
+| 106-canonical-workforce | hiring to a target (a measured input), assimilation, quits | written for SD Lab |
+| 107-canonical-rework | the rework cycle, undiscovered rework hidden | written for SD Lab (Cooper 1980) |
+| 108-canonical-commodity-cycle | capacity and inventory, table effects, DELAY3 construction | written for SD Lab (Meadows 1970) |
+| 109-canonical-limits-to-growth | population on a logistic renewable resource | written for SD Lab (Meadows et al. 1972) |
+| 110-canonical-world3-pollution | World3-03 persistent pollution below its 1970 level: DELAY3 and assimilation | written for SD Lab from the published equations |
+
+**How a case is made.** The source is a Vensim file in `canonical/models/` (the SDXorg ones copied
+unchanged with their licence, the others written for SD Lab). `pysd_import.py` reads it through PySD's
+parser and writes the case body; `canonical/build.py` adds the recipe (`canonical/recipes.yaml`:
+title, level, tags, tests, source, words such as `hidden` or `final`, and announced injections that
+keep the model moving over 300 and 2000 steps) and writes `cases/1NN-canonical-*.yaml`. The case files
+are committed, so the ladder never needs PySD:
+
+```
+uv run --with pysd --with sympy python -m sdlab.ladder.pysd_import MODEL.mdl        # a model's case body, or what blocks it
+uv run --with pysd --with sympy python -m sdlab.ladder.canonical.build [--check]    # write (or compare) the canonical cases
+uv run --with pysd --with sympy python -m sdlab.ladder.canonical.coverage TEST_MODELS_DIR --markdown out.md
+```
+
+**The importer** (`pysd_import.py`, with `canonical/read.py`, `match.py`, `timefns.py`; pysd and
+sympy are optional packages, imported only there):
+
+- every auxiliary and constant is inlined into the flows; a flow variable subtracted from A and added
+  to B is a move `A -> B` (one used by more stocks becomes several flows with the same rate);
+- a recorded step is one model time unit when TIME STEP is 1/n (the case gets `dt: 1/n`), else one
+  TIME STEP;
+- a rate is matched as a product: a number, at most one factor linear in several stocks (the rate:
+  constant, proportional, gap or linear), and factors that read one stock linearly or through a lookup
+  (effects: `b x Y` a linear effect whose cap never binds, `1 - Y / K` a table to its root, a lookup a
+  table on Y); `MAX(0, x)` as a whole rate is x (every rate is floored);
+- `DELAY1/3(x, T)` as a flow's whole rate is a material delay (merged with the flow that drains x
+  into `A -> B: delay3(...)`); a DELAY anywhere else is information, SMOOTH exactly, and SMOOTH/SMOOTH3
+  of one stock or input is `smooth(Y, T, initial=...)`;
+- every part of a rate that reads only TIME (STEP, PULSE, PULSE TRAIN, RAMP, SIN, a lookup of time,
+  `IF THEN ELSE(Time > 5, ...)`) is a measured input: a formula when SD Lab's input terms give PySD's
+  values at every Euler step, else one value per step (a recorded step is then one TIME STEP);
+- a model with no stocks (most one-function tests) is wrapped: each auxiliary nothing reads gets an
+  accumulator stock, so the function becomes a flow.
+
+**Acceptance.** A model becomes a case only if PySD's run (Euler at the model's TIME STEP) and SD
+Lab's engine with noise `none` agree at every recorded step within 1e-4 + 1e-7 x the stock's largest
+level (the engine records levels to 4 decimals; the canonical cases agree to 5e-5).
+`tests/test_ladder_canonical.py` checks that every case file is exactly what the importer writes and
+that each import matches PySD (with pysd installed), and the importer on small models (round trips,
+named blockers); `tests/test_ladder.py` checks each case is sane and its true model passes its own
+scoring. What the format cannot hold is named, never approximated: the coverage of SDXorg/test-models
+and the missing features, by count, are in [canonical-coverage.md](research/canonical-coverage.md).
 
 ## Realistic cases (`realistic.py`, `cases/realistic/`)
 
@@ -1162,4 +1224,5 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`; page `sdlab/static/probes.html` |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |
+| Canonical | `canonical/` (source models, recipes, `build.py`, `coverage.py`, the importer's `read.py`, `match.py`, `timefns.py`), `pysd_import.py` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |
