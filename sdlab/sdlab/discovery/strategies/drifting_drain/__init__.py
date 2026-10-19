@@ -15,8 +15,10 @@ log T. Rows with announced eras or effects are left as they are, and so are rows
 as steady (no inflow in pieces, and some flow in or out) or fed by a link from another level.
 
 When the levels are whole numbers (counts), the inflow is read from the size of the noise as well
-(segment.py) and models are priced by the counting-noise likelihood instead (counts.py), under
-which a model with no flows is not the cheapest reading of a stock that barely changes.
+(segment.py), and a stock the main line left with no flows at all is priced by the counting-noise
+likelihood instead (counts.py), under which no flows is not the cheapest reading of a stock that
+barely changes. (Priced that way everywhere, it overruled a right main-line model on
+041-random-chain-3#8 counts-long, so elsewhere least squares decides.)
 """
 
 from __future__ import annotations
@@ -54,9 +56,12 @@ def drift_flows(row: str, fit: dict, t: list) -> list[dict]:
     at = lambda k: t[k + 1]  # noqa: E731  (step k runs from t[k] to t[k + 1])
     segs = [{"from": at(a), "to": at(b - 1), "rate": {"form": "proportional", "stock": row, "k": _r(max(0.0, k))}}
             for (a, b), k in zip(fit["spans"], fit["k"])]
-    drain = _flow(row, None, segs[0]["rate"], byTime=segs, drift=True)
-    drain["rates"] = [g["rate"] for g in segs]
-    out = [drain]
+    if len(segs) == 1:
+        out = [_flow(row, None, segs[0]["rate"])] if segs[0]["rate"]["k"] > 0 else []
+    else:
+        drain = _flow(row, None, segs[0]["rate"], byTime=segs, drift=True)
+        drain["rates"] = [g["rate"] for g in segs]
+        out = [drain]
     if fit["c"] > 0:
         out.insert(0, _flow(None, row, {"form": "constant", "value": _r(fit["c"])}))
     return out
@@ -77,7 +82,9 @@ def candidate(flows, ids, t, prev, dy, i, floor_var, o, mi=None):
     fit = segment.search(y, prev[i], floor_var, o["mult"], o["fine"], counting=o["counting"])
     if fit is None or len(fit["spans"]) < 2:
         return None
-    return base + drift_flows(row, fit, t), f"drain on {row} in {len(fit['spans'])} stretches, inflow {fit['c']:.4g}"
+    one = segment.steady(y, prev[i], counting=o["counting"])
+    return (base + drift_flows(row, fit, t), f"drain on {row} in {len(fit['spans'])} stretches, inflow {fit['c']:.4g}",
+            base + drift_flows(row, one, t))
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -101,12 +108,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     flows = list(r0.get("flows") or [])
     skip = onestep.outliers(flows, ids, t, prev, dy, o["trim"], mi) if o["trim"] and flows else None
 
-    def price(fl):
-        if o["counting"]:
+    def price(fl, counting):
+        if counting:
             return counts.bic(fl, ids, t, prev, dy, mi)
         return onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
 
-    score = price(flows)
     log_t = math.log(T)
     taken = []
     for i, row in enumerate(ids):
@@ -115,8 +121,17 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         cand = candidate(flows, ids, t, prev, dy, i, float(floor_rss[i]) / T, o, mi)
         if cand is None:
             continue
-        sc = price(cand[0])
+        # the counting-noise price only where the main line left the stock with no flows at all (a
+        # stock that barely changes reads as empty by least squares); elsewhere least squares, so a
+        # counting model that is not quite the data's noise never overrules the main line's reading
+        empty = o["counting"] and not any(row in (f.get("from"), f.get("to")) for f in flows)
+        sc, score = price(cand[0], empty), price(flows, empty)
+        # the drift must also earn its stretches against one steady drain read the same way (by the
+        # counting-noise price when the levels are counts: a drift that only trades inflow for drain
+        # makes the noise larger than it is)
+        if price(cand[0], o["counting"]) > price(cand[2], o["counting"]) - o["margin"] * log_t:
+            continue
         if sc < score - o["margin"] * log_t:
-            flows, score = cand[0], sc
-            taken.append({"row": row, "rewrite": cand[1], "bic": round(sc, 2)})
+            flows = cand[0]
+            taken.append({"row": row, "rewrite": cand[1], "bic": round(sc, 2), "counting": empty})
     return {**r0, "flows": flows, "drifting_drain": taken}

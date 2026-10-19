@@ -158,3 +158,25 @@ def search(y: np.ndarray, x: np.ndarray, floor_var: float, mult: float = 2.0, fi
         r = y - _design(x, spans) @ np.concatenate([[c], k])
         rss = float(r @ r)
     return {"c": c, "spans": spans, "k": k, "rss": rss, "var": var}
+
+
+def steady(y: np.ndarray, x: np.ndarray, counting: bool = False, rounding: float = 1 / 6) -> dict:
+    """The same reading with one rate throughout (the reference a drift must beat): c and k by least
+    squares, or with counts c from the size of the noise as in search()."""
+    T = len(y)
+    c, k, rss = fit_spans(y, x, [(0, T)])
+    if counting:
+        ok = x > 1e-9
+        w = np.where(ok, x * x, 0.0)
+        xs = np.where(ok, x, 1e-9)
+        for _ in range(20):
+            m = c - k[0] * x
+            c_new = max(0.0, 0.5 * (float(np.mean((y - m) ** 2)) + float(np.mean(m)) - rounding))
+            k = np.array([float((w * (c_new - y) / xs).sum() / max(1e-300, w.sum()))])
+            done = abs(c_new - c) <= 1e-4 * max(1.0, abs(c))
+            c = c_new
+            if done:
+                break
+        r = y - (c - k[0] * x)
+        rss = float(r @ r)
+    return {"c": c, "spans": [(0, T)], "k": k, "rss": rss}
