@@ -64,7 +64,8 @@ def test_counts_are_told_from_exact_levels():
 @pytest.mark.parametrize("case_id,variant", [("133-hidden-supply-line", "none-long"), ("133-hidden-supply-line", "counts-long"),
                                              ("134-delayed-measured-input", "counts-long"), ("135-hidden-rework", "none-short"),
                                              ("135-hidden-rework", "counts-long"), ("107-canonical-rework", "counts-long"),
-                                             ("110-canonical-world3-pollution", "none-short")])
+                                             ("110-canonical-world3-pollution", "none-short"), ("110-canonical-world3-pollution", "counts-long"),
+                                             ("172-third-order-supply-line", "none-long"), ("172-third-order-supply-line", "counts-long")])
 def test_a_hidden_stage_is_found(case_id, variant):
     r, s = found(case_id, variant)
     assert s["status"] == "pass", s["parts"]

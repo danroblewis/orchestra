@@ -1,0 +1,11 @@
+title: "Orders through a third-order supply line, shipped to a measured demand"
+level: 13
+tags: [distilled, hidden, delay, gap, input, loop]
+tests: "a supply line of three hidden stages (DELAY3) ordered by demand plus a gap of the stock it feeds, (40 - 0.1 I) + demand, arriving after 6 steps, while shipments out of I are the measured demand itself; from 105-canonical-inventory-supply-line (and 110's DELAY3 arrivals), found by hidden_transit's stages: a third-order chain with the demand both delayed (in the orders) and at once (in the shipments), not a first-order stage with a direct term standing in for it, nor a drain of I and inflow pieces"
+seed: 172
+inputs:
+  demand: "50 + pulse_train(20, 20.5, 40, 80)"
+stocks: {I: 400}
+flows:
+  outside -> I: delay3(40 - 0.1 * I + demand, 6)
+  I -> outside: demand
