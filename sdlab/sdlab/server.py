@@ -21,7 +21,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import basics, strategy_menu
+from . import basics, known_truth, strategy_menu
 from .basic_live import BasicLiveRuns
 from .basic_live import compare as basic_compare
 from .ladder import api as ladder_api
@@ -277,15 +277,31 @@ def create_app() -> FastAPI:
     def discovery_strategies() -> dict:
         return {"strategies": strategy_names(), "default": "matrix"}
 
-    # A basic model's found flows against its truth (basic_live.compare): on the steps they were found
-    # from, live or recorded. The page shows it only while the truth is shown.
+    # The known truth behind a model (known_truth.py): a basic model's case, or an sd-* example's
+    # realistic case. 404 for a model without one.
+    @app.get("/api/models/{model_id}/truth")
+    def model_truth(model_id: str) -> dict:
+        t = known_truth.truth(model_id)
+        if t is None:
+            raise HTTPException(404, "this model has no known truth")
+        return t
+
+    # A model's found flows against its truth (basic_live.compare, known_truth.compare): on the steps
+    # they were found from, live or recorded. The page shows it only while the truth is shown.
     @app.post("/api/models/{model_id}/truth-compare")
     def truth_compare(model_id: str, body: dict[str, Any]) -> dict:
-        if not basics.is_basic(model_id):
-            raise HTTPException(404, "only a basic model has a truth to compare with")
         flows, steps, variant = body.get("flows"), int(body.get("steps") or 0), body.get("variant")
         if not isinstance(flows, list):
             raise HTTPException(422, "flows: the found flows")
+        if not basics.is_basic(model_id):
+            cid = known_truth.case_of(model_id)
+            if cid is None:
+                raise HTTPException(404, "this model has no known truth to compare with")
+            try:
+                v, d = known_truth.example_data(cid, steps, body.get("last"))
+            except known_truth.Mismatch as e:
+                raise HTTPException(409, str(e))
+            return known_truth.compare(cid, v, flows, d)
         if body.get("live"):
             d = basic_runs.get(model_id, variant).data_until(steps)
         else:

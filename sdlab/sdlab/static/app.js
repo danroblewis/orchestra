@@ -162,6 +162,7 @@
     renderPick(id);
     S.model.stocks ||= []; S.model.flows ||= []; S.model.machines ||= [];
     if (S.model.basic) layoutBasic();
+    S.truth = null; if (!S.model.basic) loadTruth(id);
     S.sel.clear(); S.editMachine = null; S.pending = null; S.recent = []; S.live = null; S.paceLog = null; S.liveItems = null; S.undo = null;
     S.discovery = null; S.discovering = null; S.discToken = (S.discToken || 0) + 1; S.lastAutoN = 0; S.lastAutoAt = 0; S.leverage = null; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.view = null; S.find = "";
     S.simplify = null; S.preview = null; S.previewIdx = null; S.undoSimplify = null; S.showHidden = false; S.undoLayout = null;
@@ -171,6 +172,27 @@
     changed(false);
     renderSaveState();
     syncPolling();
+  }
+  // An example with a known truth (each sd-* example is a realistic ladder case, known_truth.py): its
+  // true flows and the stocks its data hides, drawn while the truth is shown. Without one, or before
+  // the server knows the endpoint, the page is as it was.
+  async function loadTruth(id) {
+    let t = null;
+    try { const r = await fetch(`/api/models/${encodeURIComponent(id)}/truth`); if (r.ok) t = await r.json(); } catch { /* no truth */ }
+    if (!t || !Array.isArray(t.flows) || !Array.isArray(t.stocks) || !S.model || S.model.id !== id || S.model.basic) return;
+    const mine = new Set(S.model.stocks.map((s) => s.id)), placed = [];
+    t.ghostList = t.stocks.filter((s) => !mine.has(s.id));
+    t.big = t.flows.length > TRUTH_DRAW_MAX;
+    t.ghosts = {};
+    if (!t.big) t.ghostList.forEach((s, k) => {        // where the truth puts it, moved down until it covers no stock
+      let q = { x: Number.isFinite(+s.x) ? +s.x : 80 + 300 * (k % 4), y: Number.isFinite(+s.y) ? +s.y : 400 + 140 * Math.floor(k / 4) };
+      const hits = (o) => [...S.model.stocks, ...placed].some((st) => Math.abs(st.x - o.x) < BOX.w + 16 && Math.abs(st.y - o.y) < BOX.h + 12);
+      for (let i = 0; i < 40 && hits(q); i++) q = { x: q.x, y: q.y + BOX.h + 24 };
+      placed.push(q); t.ghosts[s.id] = { ...s, x: q.x, y: q.y };
+    });
+    S.truth = t;
+    renderToolbar(); renderCanvas();
+    if (S.discovery) compareWithTruth(S.discovery, id);
   }
   // A basic model (a ladder case) comes without positions: the ladder page's layout, at the
   // editor's box size. Its run is the case's recorded data in one variant (counting noise, long, by
@@ -197,7 +219,7 @@
   async function setBasicVariant(v) {
     S.basicVariant = v;
     try { localStorage.setItem("sdlab.basicVariant", v); } catch { /* fine */ }
-    S.discovery = null; S.discToken = (S.discToken || 0) + 1; S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.estHist = null; S.live = null;
+    clearEstimate(); S.fitCache = null; S.fitPrev = null; S.fitHist = null; S.estHist = null; S.live = null;
     await refetchLive();
     setStatus(`Recorded data: ${v} (${S.live ? S.live.series.t.length : 0} ${tu()}s)`);
   }
@@ -440,6 +462,7 @@
         text(g, 10, 55, `goal ${fmt(s.target.value)}${by}`, { "font-size": 10.5, fill: "var(--muted)" });
       }
     });
+    drawTruth(gFlows, gStocks);
     drawDiscovered();
     drawMarquee();
     renderLegend();
@@ -447,16 +470,65 @@
   // What the canvas's lines mean, in run mode on a basic model or with an estimate on screen.
   function renderLegend() {
     let box = $("canvas-legend");
-    const want = S.mode === "run" && (S.model.basic || S.discovery);
+    const want = S.mode === "run" && (S.model.basic || S.discovery || truthOn());
     if (!want) { if (box) box.hidden = true; return; }
     if (!box) { box = document.createElement("div"); box.id = "canvas-legend"; svg.parentElement.appendChild(box); }
     box.hidden = false;
     const sw = (stroke, dash, w) => `<svg width="30" height="10" aria-hidden="true"><line x1="1" y1="5" x2="29" y2="5" stroke="${stroke}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ""}/></svg>`;
-    const truth = S.model.basic && !S.hideTruth;
-    const html = `${truth ? `<span>${sw("var(--env)", "7 5", 3)} true flow</span><span>${sw("var(--muted)", "3 4", 1.2)} its rate depends on that stock</span>` : ""}
+    const truth = (S.model.basic && !S.hideTruth) || truthOn();
+    const html = `${truth ? `<span>${sw("var(--env)", "7 5", 3)} true flow</span>${S.model.basic ? `<span>${sw("var(--muted)", "3 4", 1.2)} its rate depends on that stock</span>` : truthLegend()}` : ""}
       ${S.discovery ? `<span>${sw("var(--fit)", "6 4", 2.2)} found flow</span><span>${sw("var(--fit)", "2 4", 1.2)} found rate depends on that stock</span>` : ""}
       <span class="muted">labels: the equation (0.5·A = 0.5 × A per ${esc(tu())}), then ≈ the amount now</span>`;
     if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+  }
+  // ---------- an example's known truth, over the canvas ----------
+  const TRUTH_DRAW_MAX = 250;          // more true flows than this: only those between the stocks on the page are drawn
+  const truthOn = () => !!(S.truth && S.model && !S.model.basic && !S.hideTruth && S.mode === "run");
+  const truthBox = (id) => (!id ? null : stock(id) && shown(id) ? stock(id) : (S.truth.ghosts[id] || null));
+  const truthFlows = () => S.truth.flows.filter((f) => (f.from || f.to) && (!f.from || truthBox(f.from)) && (!f.to || truthBox(f.to)));
+  function truthLegend() {
+    const T = S.truth, n = Object.keys(T.ghosts).length, drawn = truthFlows().length;
+    return `${n ? `<span><svg width="30" height="12" aria-hidden="true"><rect x="1" y="1" width="28" height="10" rx="2" fill="none" stroke="var(--env)" stroke-dasharray="4 3"/></svg> a true stock hidden in the data</span>` : ""}`
+      + (drawn < T.flows.length ? `<span class="muted">${drawn} of the truth's ${T.flows.length} flows drawn: the ${T.flows.length - drawn} through its ${T.ghostList.length} hidden stocks are too many to draw</span>` : "");
+  }
+  function truthEnds(f) {
+    const A = truthBox(f.from), B = truthBox(f.to);
+    const cp = A ? { x: A.x + BOX.w + 90, y: A.y + BOX.h / 2 } : { x: B.x - 90, y: B.y + BOX.h / 2 };
+    const a0 = A ? center(A) : cp, b0 = B ? center(B) : cp;
+    let a = A ? clip(A, b0) : { ...a0 }, b = B ? clip(B, a0) : { ...b0 };
+    if (!A) a = shorten(a, b, 16);
+    if (!B) b = shorten(b, a, 16);
+    if (A && B && S.truth.flows.some((g) => g.from === f.to && g.to === f.from)) {
+      const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1, ox = -dy / L * 9, oy = dx / L * 9;
+      a = { x: a.x + ox, y: a.y + oy }; b = { x: b.x + ox, y: b.y + oy };
+    }
+    return { a, b, cloud: A && B ? null : cp };
+  }
+  function drawTruth(gFlows, gStocks) {
+    const gLabels = gFlows;                     // under the stocks: a true flow's label never hides a stock's name
+    if (!truthOn()) return;
+    const col = "var(--env)", fl = truthFlows(), labels = fl.length <= 80, maxc = Math.floor((BOX.w - 16) / 7);
+    Object.values(S.truth.ghosts).forEach((s) => {
+      const g = el("g", { class: "truth-ghost", transform: `translate(${s.x} ${s.y})` }, gStocks);
+      el("rect", { width: BOX.w, height: BOX.h, rx: 3, fill: "var(--canvas)", stroke: col, "stroke-width": 1.6, "stroke-dasharray": "5 4", opacity: 0.9 }, g);
+      el("title", {}, g).textContent = `${s.name}: a stock of the true model that the data does not show (hidden in the data)`;
+      text(g, 10, 20, s.name.length > maxc ? `${s.name.slice(0, maxc - 1)}…` : s.name, { "font-size": 12.5, "font-weight": 600, fill: "var(--muted)" });
+      text(g, 10, 40, "hidden in the data", { "font-size": 11, "font-style": "italic", fill: col });
+    });
+    fl.forEach((f) => {
+      const { a, b, cloud } = truthEnds(f), g = el("g", { class: "truth-flow" }, gFlows), tip = shorten(b, a, 10);
+      el("path", { d: `M${a.x} ${a.y} L${tip.x} ${tip.y}`, stroke: col, "stroke-width": 3.2, fill: "none", "stroke-dasharray": "7 5", opacity: 0.85 }, g);
+      arrowHead(g, a, b, col, 12);
+      el("title", {}, g).textContent = `True flow: ${f.name}, ${eqText(f.rate)}`;
+      if (cloud) window.SDDiagram.cloud(g, cloud, {});
+      if (!labels) return;
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, vertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
+      const lx = vertical ? mid.x + 14 : mid.x, ly = vertical ? mid.y - 4 : mid.y - 30, anchor = vertical ? "start" : "middle";
+      const line2 = `true: ${eqText(f.rate)}`, w = Math.max(f.name.length * 7, line2.length * 6.4) + 12;
+      el("rect", { x: anchor === "middle" ? lx - w / 2 : lx - 5, y: ly - 13, width: w, height: 32, rx: 4, fill: "var(--canvas)", opacity: 0.88 }, gLabels);
+      text(gLabels, lx, ly, f.name, { "text-anchor": anchor, "font-size": 12.5, "font-weight": 600, fill: "var(--fg)" });
+      text(gLabels, lx, ly + 15, line2, { "text-anchor": anchor, "font-size": 11.5, "font-weight": 700, fill: col });
+    });
   }
   // An equation in a few characters, as the ladder writes it: "0.5·A", "20", "0.1 + 0.2·B".
   function eqText(r) {
@@ -554,6 +626,7 @@
     if (S.view) { svg.setAttribute("viewBox", `${S.view.x} ${S.view.y} ${S.view.w} ${S.view.w * H / W}`); return; }
     const pts = [];
     S.model.stocks.forEach((s) => { pts.push([s.x, s.y], [s.x + BOX.w, s.y + BOX.h]); });
+    if (truthOn()) Object.values(S.truth.ghosts).forEach((s) => { pts.push([s.x, s.y], [s.x + BOX.w, s.y + BOX.h]); });
     S.model.flows.forEach((f) => { if (!f.from || !f.to) { const c = cloudPos(f); pts.push([c.x - 20, c.y - 20], [c.x + 20, c.y + 20]); } });
     if (S.discovery) S.discovery.flows.forEach((f) => {
       const fake = { from: f.from && stock(f.from) ? f.from : null, to: f.to && stock(f.to) ? f.to : null };
@@ -1167,6 +1240,10 @@
         h += ib(`data-truth${S.hideTruth ? "" : ' class="on"'}`, "\ud83d\udc41\ufe0f", S.hideTruth ? "Show the truth: draw the case's true flows again" : "Hide the truth: draw only the stocks (and what Discover finds), to compare");
         h += `<a class="btn icon" href="/ladder?view=cases&case=${encodeURIComponent(b.case)}" target="_blank" rel="noopener" title="This case in the ladder view: what every strategy found" aria-label="Open in the ladder view">\ud83e\ude9c</a>`;
         h += `<span class="tsep"></span>`;
+      } else if (S.truth) {
+        h += ib(`data-truth${S.hideTruth ? "" : ' class="on"'}`, "\ud83d\udc41\ufe0f", S.hideTruth ? `Show the known truth: draw this example's true flows (ladder case ${S.truth.case}), and the stocks its data hides` : "Hide the truth: draw only the stocks (and what Discover finds), to compare");
+        h += `<a class="btn icon" href="/ladder?view=cases&case=${encodeURIComponent(S.truth.case)}" target="_blank" rel="noopener" title="This example's case in the ladder view: its true model and what every strategy found" aria-label="Open in the ladder view">\ud83e\ude9c</a>`;
+        h += `<span class="tsep"></span>`;
       }
       if (runnable()) {
         const L = S.live || {}, n = L.series ? L.series.t.length : 0;
@@ -1255,6 +1332,7 @@
     const sameSel = S.panelSel === [...S.sel].sort().join();
     if (S.discovery && S.foundPick !== null && S.foundPick !== undefined && S.discovery.flows[S.foundPick]) return { type: "found-stock", obj: S.discovery.flows[S.foundPick] };
     if (S.autoDiscover && S.mode === "run" && S.discovery) return { type: "discovery", obj: S.discovery };   // it stays open
+    if (S.mode === "run" && !S.discovery && S.discovering && S.discovering.strategy && !st.length && !fl.length) return { type: "discovering", obj: S.discovering };
     if (S.leverage && sameSel) return { type: "leverage", obj: S.leverage };
     if (S.discovery && sameSel) return { type: "discovery", obj: S.discovery };
     if (S.simplify && sameSel) return { type: "simplify", obj: S.simplify };
@@ -1275,6 +1353,7 @@
     if (it.type === "machine") box.innerHTML = machineForm(it.obj);
     if (it.type === "firing") box.innerHTML = firingView(it.obj);
     if (it.type === "discovery") { box.innerHTML = discoveryView(it.obj); wireDiscovery(box); }
+    if (it.type === "discovering") box.innerHTML = `<h2>Flows found from stock levels</h2><p class="note discrunning" data-disc-pending>⏳ Discovering with <b>${esc(it.obj.strategy)}</b> on ${it.obj.steps} ${esc(tu())}s… Nothing found earlier is shown: the estimate appears here when this strategy has made it.</p>`;
     if (it.type === "found-stock") { box.innerHTML = foundStockView(it.obj); wireFoundStock(box, it.obj); }
     if (it.type === "simplify") { box.innerHTML = simplifyView(it.obj); wireSimplify(box); }
     if (it.type === "leverage") { box.innerHTML = leverageView(it.obj); const c = box.querySelector("[data-lev-close]"); if (c) c.addEventListener("click", () => { S.leverage = null; renderInspector(); }); }
@@ -2023,10 +2102,17 @@
   }
   function setStrategy(name) {
     try { localStorage.setItem("sdlab.strategy", name); } catch { /* fine */ }
-    S.estHist = null;
-    renderToolbar();
-    setStatus(`Discovery strategy: ${name}${S.menu && name === S.menu.best ? " (best on the ladder)" : ""}`);
-    if (hasData() && S.live.series.t.length >= 40 && (S.discovery || S.autoDiscover)) runDiscovery(S.autoDiscover);   // a newer job replaces a running one
+    const again = hasData() && S.live.series.t.length >= 40 && (S.discovery || S.discovering || S.autoDiscover);
+    clearEstimate();                       // what is on screen is only ever the selected strategy's
+    renderToolbar(); renderCanvas();
+    const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top;
+    setStatus(`Discovery strategy: ${name}${S.menu && name === S.menu.best ? " (best on the ladder)" : ""}${again ? `: discovering with ${name}…` : ""}`);
+    if (again) runDiscovery(S.autoDiscover);   // a newer job replaces a running one
+  }
+  // Drop the estimate on screen and any search still running (its result will be ignored): after a
+  // change of strategy or variant nothing found before stays on the page.
+  function clearEstimate() {
+    S.discovery = null; S.discovering = null; S.discToken = (S.discToken || 0) + 1; S.foundPick = null; S.estHist = null; S.lastAutoN = 0; S.lastAutoAt = 0;
   }
   // Which strategy made an estimate, and which version of it: prominent, beside the estimate.
   function strategyBox(r) {
@@ -2113,7 +2199,7 @@
     if (S.discoverFromNothing === undefined) S.discoverFromNothing = false;
     const q = discoveryRequest(), model = S.model.id, token = (S.discToken || 0) + 1, t0 = performance.now();
     S.discToken = token;
-    S.discovering = { auto: !!auto, steps: q.body.run.t.length, since: Date.now() };
+    S.discovering = { auto: !!auto, steps: q.body.run.t.length, since: Date.now(), strategy: q.body.strategy };
     if (!auto) setStatus(`Searching for the simplest flows that explain the stocks (${q.body.run.t.length} ${tu()}s)…`);
     showDiscovering();
     const stale = () => token !== S.discToken || !S.model || S.model.id !== model;
@@ -2137,6 +2223,12 @@
     S.discovering = null;
     if (!hasData()) return;
     const r = st.result;
+    r.strategy = r.strategy || st.strategy || q.body.strategy;
+    if (r.strategy !== q.body.strategy || q.body.strategy !== currentStrategy()) {     // not the strategy selected now: never shown
+      showDiscovering();
+      if (!auto) setStatus(`Ignored a result from ${r.strategy}: ${currentStrategy()} is selected`);
+      return;
+    }
     r.scope = q.pick.length; r.total = q.scopeStocks.length;
     r.steps = q.body.run.t.length; r.eras = q.eras; r.ms = Math.round(performance.now() - t0);
     r.residual = q.useKnown; r.canResidual = q.canResidual;
@@ -2149,7 +2241,7 @@
     r.flows.forEach((f) => { if (f.via && placed.has(`${f.from}>${f.to}<${f.via.echo || ""}`)) f.via.pos = placed.get(`${f.from}>${f.to}<${f.via.echo || ""}`); });
     const pickedKey = S.discovery && S.foundPick != null && S.discovery.flows[S.foundPick] ? `${S.discovery.flows[S.foundPick].from}>${S.discovery.flows[S.foundPick].to}` : null;
     S.foundPick = pickedKey ? (() => { const i = r.flows.findIndex((f) => f.via && `${f.from}>${f.to}` === pickedKey); return i >= 0 ? i : null; })() : null;
-    if (S.model.basic && S.discovery && S.discovery.compare) { r.compare = S.discovery.compare; r.compareStale = true; }
+    if ((S.model.basic || S.truth) && S.discovery && S.discovery.compare && S.discovery.strategy === r.strategy) { r.compare = S.discovery.compare; r.compareStale = true; }
     S.discovery = r; S.leverage = null; S.panelSel = [...S.sel].sort().join();
     if (!auto) { S.editMachine = null; S.firing = null; }
     renderCanvas(); renderToolbar();
@@ -2157,7 +2249,7 @@
     const box = $("inspector"), top = box.scrollTop;
     renderInspector(); box.scrollTop = top;
     if (!auto) setStatus(`Found ${r.flows.length} flow${r.flows.length === 1 ? "" : "s"} in ${r.ms} ms`);
-    if (S.model.basic) compareWithTruth(r, model);
+    if (S.model.basic || S.truth) compareWithTruth(r, model);
   }
   // A basic model's estimate against its truth (the ladder's scorer, on the steps it was found
   // from), and the estimate's history: each true number's estimate as the steps accumulate.
@@ -2165,10 +2257,15 @@
     let c;
     try {
       const res = await fetch(`/api/models/${model}/truth-compare`, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ flows: r.flows, steps: r.steps, variant: S.basicVariant, live: !!S.basicLive }) });
-      if (!res.ok) return;
-      c = await res.json();
-    } catch { return; }
+        body: JSON.stringify(S.model.basic ? { flows: r.flows, steps: r.steps, variant: S.basicVariant, live: !!S.basicLive }
+          : { flows: r.flows, steps: r.steps, last: lastLevels(r.steps) }) });
+      if (!res.ok) c = { error: String(((await res.json().catch(() => ({}))).detail) || res.statusText || res.status) };
+      else c = await res.json();
+    } catch { c = { error: "the server did not answer" }; }
+    if (!c || c.error || !Array.isArray(c.parts)) {
+      if (S.discovery === r) { r.compare = { error: (c && c.error) || "no comparison came back" }; r.compareStale = false; if (inspected().type === "discovery") { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; } }
+      return;
+    }
     if (S.discovery !== r || !S.model || S.model.id !== model) return;
     r.compare = c; r.compareStale = false;
     const key = `${S.basicVariant}|${S.basicLive ? "live" : "rec"}|${r.strategy}`;
@@ -2184,24 +2281,38 @@
     });
     if (inspected().type === "discovery") { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; }
   }
+  // an example's levels at the last step an estimate was found from: the server checks its run is the case's data
+  function lastLevels(n) {
+    const L = S.live && S.live.series;
+    if (!L || !n) return {};
+    return Object.fromEntries(S.model.stocks.filter((x) => L.levels[x.id] && L.levels[x.id].length >= n).map((x) => [x.id, L.levels[x.id][n - 1]]));
+  }
+  // the stocks of the truth that the example's data does not show
+  function truthHiddenHtml() {
+    if (S.model.basic || !S.truth || !S.truth.ghostList.length) return "";
+    const g = S.truth.ghostList, drawn = Object.keys(S.truth.ghosts).length;
+    return `<details class="small" style="margin-top:8px"><summary>The truth has ${g.length} stock${g.length === 1 ? "" : "s"} hidden in the data${drawn ? " (drawn dashed on the canvas)" : " (not drawn: too many)"}</summary>
+      <ul class="found-list">${g.map((s) => `<li><b>${esc(s.name)}</b> <span class="muted">${esc(s.id)}, ${esc(s.unit || "")}</span></li>`).join("")}</ul></details>`;
+  }
   const signedNum = (x) => (x > 0 ? "+" : x < 0 ? "−" : "±") + String(+Math.abs(x).toPrecision(3));
   function truthCompareHtml(r) {
-    if (!S.model.basic) return "";
+    if (!S.model.basic && !S.truth) return "";
     if (S.hideTruth) return `<p class="note">The truth is hidden: show it (\ud83d\udc41\ufe0f) to compare this estimate with the true equations.</p>`;
     const c = r.compare;
     if (!c) return `<p class="note">Comparing with the truth…</p>`;
+    if (c.error) return `<h2 style="margin-top:14px">Against the truth</h2><p class="note">Not compared: ${esc(c.error)}</p>${truthHiddenHtml()}`;
     const L = window.SDLadder, pn = (k) => (L ? L.partName(k) : k), fv = (v) => (L ? L.fmt(v) : fmt(v));
     const num = (v) => (typeof v === "number" ? v : v && typeof v === "object" && typeof v.mean === "number" ? v.mean : null);
     // a number with what it multiplies: "0.5·A" for a part read from A, "20" for a constant
     const term = (key, v) => { const k = L && L.parseKey ? L.parseKey(key) : null; return k && k.kind === "flow" && k.reader && k.reader !== "const" ? `${fv(v)}·${k.reader}` : fv(v); };
-    const rows = c.parts.map((p) => {
+    const rows = (c.parts || []).map((p) => {
       const a = num(p.found_value), b = num(p.true);
       const diff = p.found && a !== null && b !== null ? `${signedNum(a - b)}${b ? ` (${signedNum(100 * (a - b) / Math.abs(b))}%)` : ""}` : "";
       const cls = p.ok ? "ok" : p.found ? "wrong" : "missing";
       return `<tr class="cmp-${cls}"><td>${p.ok ? "✓" : p.found ? "~" : "−"}</td><td>${esc(pn(p.key))}</td><td>${esc(term(p.key, p.true))}</td><td>${p.found ? esc(term(p.key, p.found_value)) : "not found"}</td><td>${esc(diff)}</td></tr>`;
-    }).join("") + c.spurious.map((p) => `<tr class="cmp-spurious"><td>+</td><td>${esc(pn(p.key))}</td><td>–</td><td>${esc(term(p.key, p.value))}</td><td>remove</td></tr>`).join("");
-    const b = S.model.basic, strat = r.strategy || "matrix";
-    const links = `<p class="note">On the ladder: <a href="/ladder/strategy?name=${encodeURIComponent(strat)}" target="_blank" rel="noopener">${esc(strat)}'s cases</a> (find ${esc(b.case.slice(0, 3))}) · <a href="/ladder?view=now&case=${encodeURIComponent(b.case)}&variant=${encodeURIComponent(S.basicVariant)}&strategy=${encodeURIComponent(strat)}" target="_blank" rel="noopener">this case's ladder result, every part</a> (on the recorded data, not this run)</p>`;
+    }).join("") + (c.spurious || []).map((p) => `<tr class="cmp-spurious"><td>+</td><td>${esc(pn(p.key))}</td><td>–</td><td>${esc(term(p.key, p.value))}</td><td>remove</td></tr>`).join("");
+    const b = S.model.basic || { case: S.truth.case }, strat = r.strategy || "matrix", bv = S.model.basic ? S.basicVariant : c.variant || S.truth.variant;
+    const links = `<p class="note">On the ladder: <a href="/ladder/strategy?name=${encodeURIComponent(strat)}" target="_blank" rel="noopener">${esc(strat)}'s cases</a> (find ${esc(S.model.basic ? b.case.slice(0, 3) : b.case)}) · <a href="/ladder?view=now&case=${encodeURIComponent(b.case)}&variant=${encodeURIComponent(bv)}&strategy=${encodeURIComponent(strat)}" target="_blank" rel="noopener">this case's ladder result, every part</a> (on the recorded data, not this run)</p>`;
     const rep = c.repairs;
     const verdict = { pass: "right: every true number within tolerance, nothing extra", equivalent: "equivalent: the same behaviour, read another way", fail: "not right yet" }[c.status] || c.status;
     return `<h2 style="margin-top:14px">Against the truth</h2>
@@ -2209,7 +2320,7 @@
       ${r.compareStale ? `<p class="note">These are the previous estimate's; the newest is being compared.</p>` : ""}
       <table class="kv cmp"><tr><th></th><th>Part</th><th>True</th><th>Found</th><th>Found − true</th></tr>${rows}</table>
       ${rep && rep.items && rep.items.length ? `<ul class="found-list">${rep.items.map((it) => `<li>${esc(it.text)}</li>`).join("")}</ul>` : ""}
-      ${convergenceHtml()}${links}`;
+      ${convergenceHtml()}${truthHiddenHtml()}${links}`;
   }
   // Small multiples: each true number's estimate (line) against its true value (dashed) as the steps grew.
   function convergenceHtml() {
@@ -2242,7 +2353,7 @@
     renderToolbar();
     const note = document.querySelector("#inspector [data-disc-running]");
     if (note) note.hidden = !S.discovering;
-    else if (S.discovering && inspected().type === "discovery") { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; }
+    else if ((S.discovering && ["discovery", "discovering"].includes(inspected().type)) || (!S.discovering && document.querySelector("#inspector [data-disc-pending]"))) { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; }
   }
   // The rate a found flow has now: the configuration in force at the end of the run, or the outside
   // inflow's latest level (a found inflow may change over time; the model's equation is one number).

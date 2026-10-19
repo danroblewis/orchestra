@@ -84,7 +84,7 @@ def test_live_discovery_finds_flows_and_compares_with_the_truth(client):
     c = client.post(f"/api/models/{m}/truth-compare", json={"flows": wrong, "steps": 60, "variant": "none-short", "live": True}).json()
     ab = next(p for p in c["parts"] if p["key"] == "A -> B [A]")
     assert c["status"] == "fail" and not ab["ok"] and ab["found_value"] == pytest.approx(0.4)
-    assert client.post("/api/models/sd-bakery/truth-compare", json={"flows": []}).status_code == 404
+    assert client.post("/api/models/bakery/truth-compare", json={"flows": []}).status_code == 404, "a model without a ladder case has no truth (sd-* examples do: test_known_truth.py)"
 
 
 def test_a_draw_opens_by_its_model_id(client):
