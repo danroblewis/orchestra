@@ -11,6 +11,51 @@ for `combined` on the test cases).
 
 ## Queued
 
+1a. **Control-theory cases** (requested by the user on 2026-10-19: "it might be interesting to
+   make some test examples based on control theory, or some classic control theory book
+   examples"). The user is less familiar with control theory, so each case's doc should explain
+   the control idea in a sentence or two.
+
+   Sources: textbook examples, preferring freely available ones, with citations:
+   - Åström & Murray, *Feedback Systems* (free online): cruise control, the bicycle, the
+     insulin–glucose loop, the predator-prey loop, AFM, the web server queue (a queueing control
+     example that fits the user's SRE interest);
+   - Franklin, Powell & Emami-Naeini;
+   - Ogata;
+   - Nise.
+
+   Write them as ladder cases in SD Lab's format (integrators as stocks, a PI controller's
+   integral as a stock; setpoints and disturbances as measured inputs; signed quantities through
+   offsets or two one-way flows, as the physics cases did). Mainly linear, so the truth is exact.
+   Candidates:
+   - a first-order lag under P control (steady-state error) and PI control (no error);
+   - a second-order plant under PI or PID (overshoot, settling);
+   - cruise control with a hill disturbance;
+   - tank level control;
+   - temperature control with dead time (a DELAY chain) and the instability it causes at high
+     gain;
+   - cascade control;
+   - feedforward plus feedback;
+   - integrator windup at an actuator limit (a ceiling);
+   - bang-bang versus proportional;
+   - a web-server admission-control queue.
+
+   A family of closed-loop identification probes:
+   - the same loop with no setpoint changes (weak excitation);
+   - with steps;
+   - with a PRBS-like setpoint.
+
+   The analysis (`analysis.py`) should label the weak-excitation cells data-limited or
+   unidentifiable. That is the classic closed-loop identification problem, where the
+   controller's input correlates with the noise.
+
+   Scoring: the standard ladder scoring. Also report the control metrics of found against true
+   models: step-response overshoot, settling time, steady-state error, gain/phase margin of the
+   linear part, from `jump.py`'s linear maps. A new tag `control`, in the Tests set unless a
+   case is out-of-format.
+
+   Run the leaders and distil failures (invariant 4).
+
 2g. **Runner and lna small fixes** (from the hook port):
    - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
