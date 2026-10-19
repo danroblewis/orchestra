@@ -66,9 +66,11 @@ for `combined` on the test cases).
 
 ## Started
 
+- 2026-10-18 23:20: short series and published-model twins (from the real-data results).
+
 - 2026-10-18 23:00: fix measured-input handling in censored, effect_hats and earned_pieces (found by the physics cases).
 
-- 2026-10-18 22:35: item 5, real-data cases; rotation c, research to implementation (ideas-2026-10-18.md).
+- 2026-10-18 22:35: rotation c, research to implementation (ideas-2026-10-18.md).
 
 - 2026-10-18 21:40: item 2e, lna_* variants onto lna's hooks.
 
@@ -80,6 +82,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-18: item 5, real-data cases (67b8007, e91a320, 2658c57, 9fe0afd, e6dcb8a): 52 cases (BLS, 29 Gause, flu, 21 Bass adoption). No strategy agrees with a published structure. 29 cases are too short (< 21 samples). Every strategy fails all 52 twins.
 
 - 2026-10-18: item 4, physics cases (2cde024, 382ea4d, 0b7eb5b): 7 ODE systems with their own scoring and view. matrix/lna 13/28, combined 12/28. No leader finds Lotka–Volterra's products or the thermostat's switch; √ outflows have no SD form.
 
