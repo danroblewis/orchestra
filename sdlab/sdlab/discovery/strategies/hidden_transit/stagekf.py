@@ -17,6 +17,8 @@ import numpy as np
 from numba import njit
 from scipy.optimize import minimize
 
+from .stage import is_move
+
 FLOOR = 0.05
 
 
@@ -90,7 +92,7 @@ def refine(fit: dict, y: np.ndarray, X: np.ndarray, cands: dict, direct: dict, g
     Z = np.array([cands[s] for s in terms])
     Wm = np.array([direct[s] for s in dterms]).reshape(len(dterms), len(y))
     drained = fit["kX"] != 0.0
-    move = terms == [x] and fit["terms"][x] > 0 and fit["kX"] - fit["terms"][x] >= -1e-9     # as stage.write reads it
+    move = is_move(fit, x)                                      # X -> H, X's own drain beside it (>= 0)
     y, X, gross = (np.ascontiguousarray(v, dtype=float) for v in (y, X, gross))
 
     def unpack(p):
@@ -111,8 +113,8 @@ def refine(fit: dict, y: np.ndarray, X: np.ndarray, cands: dict, direct: dict, g
         return v if math.isfinite(v) else 1e300
 
     dd = min(0.899, max(1e-4, fit["d"]))
-    own = fit["kX"] - (fit["terms"][x] if move else 0.0)          # with the move, X's drain beside it
-    drained = drained and own > 1e-6
+    own = max(1e-4 * fit["kX"], fit["kX"] - fit["terms"][x]) if move else fit["kX"]
+    drained = drained or move
     x0 = [math.log(dd / (0.9 - dd))] + [fit["terms"][s] for s in terms] + ([math.log(own)] if drained else [])
     x0 += [fit["direct"][s] for s in dterms] + list(fit["start"])
     x0 = np.array(x0, dtype=float)

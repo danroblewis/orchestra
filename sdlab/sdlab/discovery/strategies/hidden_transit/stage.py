@@ -22,8 +22,8 @@ With counts (whole numbers) each step is weighted by 1 / what moved through X in
 variance is its rate), as the found model moves it.
 
 u = a x X alone (nothing else delayed) is the same row as a move X -> H at a with X's drain lowered
-by a: it is written as the move (what leaves X and comes back: rework), when the drain stays
-non-negative.
+by a: it is written as the move (what leaves X and comes back: rework), X's drain never below 0,
+unless X's whole loss is under half of a (then X would gain through H: fed from outside).
 
 The injections are read as the engine applies them: added at the start of the step, before its
 flows (so the step's flows read the level with the injection in it).
@@ -220,6 +220,12 @@ def hidden_levels(fit: dict, cands: dict[str, np.ndarray], m: int) -> np.ndarray
     return H
 
 
+def is_move(fit: dict, x: str) -> bool:
+    """u is a x X alone and X loses at least half of a in all: written as a move X -> H."""
+    a = fit["terms"].get(x, 0.0)
+    return list(fit["terms"]) == [x] and a > 0 and fit["kX"] >= 0.5 * a
+
+
 def write(flows: list[dict], keep: list[int], x: str, fit: dict, tag: str) -> tuple[list[dict], list[str]]:
     """The model with the stage (or chain) in place of x's outside flows, and the hidden stocks' ids."""
     out = [flows[i] for i in keep]
@@ -228,11 +234,10 @@ def write(flows: list[dict], keep: list[int], x: str, fit: dict, tag: str) -> tu
     mark = (lambda s: {"delay": {"id": tag, "stage": s, "of": n, "time": n / d}}) if n > 1 else (lambda s: {})   # noqa: E731
     terms = {s: a for s, a in fit["terms"].items() if s != "1"}
     c = fit["terms"].get("1", 0.0)
-    move = list(terms) == [x] and not c and terms[x] > 0 and fit["kX"] - terms[x] >= -1e-9
-    if move:
+    if is_move(fit, x):
         out.append({"from": x, "to": hidden[0], "ratio": 1, "rate": {"form": "proportional", "stock": x, "k": float(terms[x])},
                     "hidden": hidden[0], **mark(0)})
-        drain = fit["kX"] - terms[x]
+        drain = max(0.0, fit["kX"] - terms[x])
     else:
         rate = ({"form": "linear", "c": float(c), "terms": [{"stock": s, "k": float(a)} for s, a in terms.items()]} if terms
                 else {"form": "constant", "value": float(c)})

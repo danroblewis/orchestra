@@ -56,3 +56,33 @@ def test_counts_are_told_from_exact_levels():
     c = casemod.load("015-hidden-stock")
     assert counts({"levels": data.load(c, "counts-short")["levels"]})
     assert not counts({"levels": data.load(c, "none-short")["levels"]})
+
+
+# Hidden stages on one stock's inflow (stage.py, stagekf.py): the distilled cases 133-135 and the
+# canonical cases they came from.
+
+@pytest.mark.parametrize("case_id,variant", [("133-hidden-supply-line", "none-long"), ("133-hidden-supply-line", "counts-long"),
+                                             ("134-delayed-measured-input", "counts-long"), ("135-hidden-rework", "none-short"),
+                                             ("135-hidden-rework", "counts-long"), ("107-canonical-rework", "counts-long"),
+                                             ("110-canonical-world3-pollution", "none-short")])
+def test_a_hidden_stage_is_found(case_id, variant):
+    r, s = found(case_id, variant)
+    assert s["status"] == "pass", s["parts"]
+    assert any(h.endswith("~stage") or "~stages" in h for h in r["inferred_levels"])
+
+
+def test_rework_is_written_as_a_move_out_and_back():
+    r, _ = found("135-hidden-rework", "none-long")
+    out = [f for f in r["flows"] if f.get("from") == "W" and f.get("hidden")]
+    back = [f for f in r["flows"] if f.get("to") == "W" and f.get("hidden")]
+    assert len(out) == 1 and len(back) == 1
+    assert abs(out[0]["rate"]["k"] - 0.025) < 1e-4 and abs(1 / back[0]["rate"]["k"] - 15) < 0.01
+
+
+def test_a_delayed_input_without_noise_is_the_truth_or_its_mirror():
+    """134 none: an input into H, H into T: T's levels cannot tell the delay from T's drain (the
+    mirror); the stage is one of the two, exactly."""
+    r, _ = found("134-delayed-measured-input", "none-short")
+    drain = next(f["rate"]["k"] for f in r["flows"] if f.get("from") == "T" and f.get("to") is None)
+    delay = 1 / next(f["rate"]["k"] for f in r["flows"] if f.get("to") == "T" and f.get("hidden"))
+    assert (abs(drain - 0.2) < 1e-3 and abs(delay - 8) < 0.01) or (abs(drain - 0.125) < 1e-3 and abs(delay - 5) < 0.01)
