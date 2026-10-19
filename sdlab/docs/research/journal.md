@@ -571,3 +571,29 @@ The physics agent was also given particles 170, 171 and 195. 10 agents are runni
 - an optional inputs parameter on the shared judge;
 - the grader swapping only effect-free constants;
 - retiring dominated strategies.
+
+## 2026-10-19 07:30 (hourly cycle)
+
+**Health**
+- **Load:** 459 on 28 cores (about 4× usual), but the leaderboard was still 0.11 s warm.
+- **Cause:** leftover runs from finished agents were still running: the k8s agent's two leader runs (one worker at 33 GB), the independence agent's common_cause bench (~14 h), and runs of odefit, coflow_hats and censored from agents that had reported. All were stopped with their workers; spawn workers went 57 → 34. sdlab still uses ~20 cores (other projects ~3).
+- **Forks:** one agent (the 156-160 / 216-218 fixer) spawned four `fork` subagents and finished; two are still running and were asked to report and run at `--jobs 1`.
+- **Skipped this hour:** cache refresh and tests, to avoid adding load.
+
+**Finished**
+- **odefit (physics agent):** physics 15/28 → 25/28; fresh skill@20 96.5% against the reference's 97.1%. Distilled 141-143 (oscillators and a chain under measurement error) pass 12/12 with odefit and fail for every other leader. No standard test lost.
+  - Correction: the "27/44" quoted earlier mixed physics with particle cells.
+- **k8s agent correction:** kalman_lna on sd-k8s-platform is untested (its runs were killed), not "in progress".
+
+**Committed this hour, agents still running:** matrix_v2 (options and ablation), combined2 (first version), realistic_flows (realistic round 2), loop_transit, schedules, censored's floored gaps (218, 200, 203).
+
+**Process issues**
+- An agent's commit 6cb271f cut 392 lines from explanations.yaml by mistake; restored in 7cb33fd.
+- Agents leave runs going after they report. From now on, a finishing agent must stop its own runs.
+
+**Needs you**
+- **The thermostat's structure rule** (from the physics agent): the best SD model can't meet it. A closed loop hides the weak T ← outside coupling below the 10% presence threshold. Options: drop that coupling from the expected structure; compare against the reference's structure (recommended); or label it unidentifiable.
+- **Also open:**
+  - an inputs parameter on the shared judge;
+  - the grader swapping only effect-free constants;
+  - retiring dominated strategies.

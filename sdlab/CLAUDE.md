@@ -113,3 +113,7 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     `pkill -f "sdlab --port 8020"; nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &`.
     Check that the old process has gone (use `kill -9` if it hangs).
 16. **Probing a real, live system needs the user's approval.**
+17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
+    browser it started (and their worker processes). The machine is shared: leftover runs from
+    finished agents once pushed the load to 459 on 28 cores. Don't spawn sub-agents unless the
+    coordinator asked for them.
