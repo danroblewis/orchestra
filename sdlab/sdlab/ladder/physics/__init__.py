@@ -37,6 +37,7 @@ import threading
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 from ..caseformat import CaseError
@@ -211,6 +212,42 @@ def long_truth(case: dict) -> dict:
     return d
 
 
+def sampling(case: dict) -> list[list[str]]:
+    """The couplings only the physics' exact one-step map has, not its ODE (structure.py): [[receiver,
+    source]], from the case's long noise-free run (cached per case and scoring code; none for a
+    switching system)."""
+    from ..data import cache_root
+    from . import structure
+    key = ("sampling", case["hash"], _code(SCORE_CODE))
+    if key in _memo:
+        return _memo[key]
+    path = cache_root() / "physics" / f"sampling-{case['id']}-{case['hash']}-{key[2]}.json"
+    if path.exists():
+        try:
+            _memo[key] = json.loads(path.read_text())
+            return _memo[key]
+        except ValueError:
+            pass
+    system = systems.SYSTEMS[case["physics"]["system"]]
+    out: list[list[str]] = []
+    if not system.hybrid:
+        p, seed = case["physics"]["params"], int(case["model"]["seed"])
+        steps = max(v["steps"] for v in case["variants"])
+        d = run(case, seed, steps)
+        lv = systems.levels_for(system, p)
+        x = np.array([d["levels"][k] for k in system.ids], dtype=float)
+        if lv:
+            x = x - lv(np.zeros((len(system.ids), 1)))
+        J, pick = structure.sampled_jacobian(system, p, ode.drive(system, p, seed, steps), x, np.arange(1, steps + 1, dtype=float))
+        names, V, _ = structure.variables(d, system.inputs)
+        declared = {(a, b) for a, b, *_ in system.couplings}
+        out = [[c["receiver"], c["source"]] for c in structure.couplings(system.ids, names, J, V[:, pick])
+               if c["present"] and (c["receiver"], c["source"]) not in declared]
+    _write(path, out)
+    _memo[key] = out
+    return out
+
+
 def reference_grade(case: dict, variant: str, clean: dict, fresh: dict) -> dict:
     """The reference graded on this variant's runs (cached per case, variant and scoring code)."""
     from ..data import cache_root
@@ -225,7 +262,7 @@ def reference_grade(case: dict, variant: str, clean: dict, fresh: dict) -> dict:
             return _memo[key]
         except ValueError:
             pass
-    g = grade(case, case["model"]["flows"], clean, fresh, long_truth(case))
+    g = grade(case, case["model"]["flows"], clean, fresh, long_truth(case), sampling=sampling(case))
     _write(path, g)
     _memo[key] = g
     return g
@@ -237,7 +274,7 @@ def score_found(case: dict, variant: str, flows: list[dict], d: dict, fresh: dic
     from .score import score as _score
     clean, fr = d.get("clean") or d, fresh.get("clean") or fresh
     ref = reference_grade(case, variant, clean, fr)
-    return _score(case, flows, clean, fr, long_truth(case), ref, inferred if d.get("t") == clean.get("t") else None)
+    return _score(case, flows, clean, fr, long_truth(case), ref, inferred if d.get("t") == clean.get("t") else None, sampling(case))
 
 
 def _write(path: Path, x) -> None:
@@ -259,18 +296,21 @@ def cell(row: dict | None) -> dict:
     ref = ph.get("reference") or {}
     rb = ref.get("behaviour") or {}
     sk = lambda b, w, h: ((b.get(w) or {}).get(str(h)) or {}).get("skill")    # noqa: E731
+    r20, gap = sk(rb, "fresh", 20), ph.get("gap20")
+    if gap is not None and r20 is not None:            # the gap of the run's skill clipped at -100%, as every mean of skills is
+        gap = max(-1.0, gap + r20) - r20
     return {"ph_structure": 1 if ph.get("structure_ok") else 0, "ph_right": s.get("right"), "ph_of": s.get("of"),
             "ph_spurious": len(ph.get("spurious") or []), "ph_shape": (ph["shape_right"] / ph["shape_of"]) if ph.get("shape_of") else None,
             "ph_lr": (ph.get("longrun") or {}).get("err"), "ph_lr_mean": (ph.get("longrun") or {}).get("mean_err"),
-            "ph_diverges": bool((ph.get("longrun") or {}).get("diverges")), "ph_gap20": ph.get("gap20"),
-            "ref_fresh20": sk(rb, "fresh", 20), "ref_fresh100": sk(rb, "fresh", 100), "ref_lr": (ref.get("longrun") or {}).get("err")}
+            "ph_diverges": bool((ph.get("longrun") or {}).get("diverges")), "ph_gap20": gap,
+            "ref_fresh20": r20, "ref_fresh100": sk(rb, "fresh", 100), "ref_lr": (ref.get("longrun") or {}).get("err")}
 
 
 def aggregate(cells: list[dict]) -> dict:
     """One strategy over the physics cells: {cells, run, pass, fail, error, timeout, missing, structure
     (runs whose coupling graph and signs agree), couplings (mean share of the physics' couplings right),
     shape (mean share with the physics' shape), fresh20, fresh100 (means, each clipped at -100%),
-    ref_fresh20, gap20 (mean fresh@20 minus the reference's), lr, ref_lr (mean long-run error), diverges, seconds}."""
+    ref_fresh20, gap20 (mean fresh@20, each clipped at -100%, minus the reference's), lr, ref_lr (mean long-run error), diverges, seconds}."""
     out: dict = {"cells": len(cells), **{k: 0 for k in ("pass", "equivalent", "fail", "error", "timeout", "missing")}}
     for c in cells:
         out[c["status"] or "missing"] = out.get(c["status"] or "missing", 0) + 1

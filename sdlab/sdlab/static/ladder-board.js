@@ -36,7 +36,8 @@
     if (!ph) return head;
     const shp = (x) => esc(x || "–");
     const rows = ph.couplings.map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>${esc(x.sign_true)} ${shp(x.shape_true)}</td><td>${x.present ? `${esc(x.sign_found)} ${shp(x.shape_found)}` : "missing"}</td><td>${x.sign_ok ? "✓" : "✗"}${x.present && !x.shape_ok ? " <span class=\"muted\">shape</span>" : ""}</td></tr>`).join("")
-      + ph.spurious.map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>none</td><td>${esc(x.sign)} ${shp(x.shape)} (${pct(x.rel)} of the strongest)</td><td>✗ invented</td></tr>`).join("");
+      + ph.spurious.map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>none</td><td>${esc(x.sign)} ${shp(x.shape)} (${pct(x.rel)} of the strongest)</td><td>✗ invented</td></tr>`).join("")
+      + (ph.sampling || []).map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>sampling only</td><td>${esc(x.sign)} ${shp(x.shape)}</td><td class="muted">allowed: the exact one-step map has it</td></tr>`).join("");
     const rb = (ph.reference || {}).behaviour || {}, sk = (b, h) => (((b || {}).fresh || {})[String(h)] || {}).skill;
     const lr = ph.longrun || {}, rl = (ph.reference || {}).longrun || {};
     return `${head}<table class="small" data-tip="${esc(PHYS)}"><tr><th>coupling</th><th>physics</th><th>found</th><th></th></tr>${rows}</table>
@@ -156,7 +157,7 @@
       </dl>` : "";
     return `<article class="bcard st-${st || "none"}" data-case="${esc(c.id)}">
       <header class="bhead">
-        <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isReal(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
+        <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isReal(c) || isPhys(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
         <span class="stbadge st-${st || "none"}">${st ? esc(st) : "not run"}</span>
         ${isReal(c) && r ? `<span class="stbadge st-${meets(r) ? "pass" : "fail"}" data-tip="${esc(GOAL)}">${meets(r) ? "meets the goal" : "short of the goal"}</span>` : ""}
         ${m && m.errorScore !== null && !isPhys(c) ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
@@ -166,7 +167,7 @@
       ${P.drawHtml(c)}
       ${tabs}
       <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
-      ${r && r.found ? P.diffHtml(c, r) : ""}
+      ${r && r.found && !isPhys(c) ? P.diffHtml(c, r) : ""}
       ${r ? `<p class="bexplain">${esc((isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
       ${meas}
     </article>`;

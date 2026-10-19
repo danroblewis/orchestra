@@ -162,3 +162,22 @@ def test_physics_cases_are_kept_out_of_the_tests_totals(tmp_path, monkeypatch):
     assert ph["cells"] == 4 and ph["pass"] == 2 and ph["fail"] == 2 and ph["structure"] == 2 and ph["gap20"] is not None
     assert next(x for x in sm["cases"] if x["id"] == "phys-newton-cooling")["physics"]["system"] == "newton-cooling"
     assert runner.plan(casemod.case_ids(), [{"name": "matrix", "hash": "m1"}]) == []
+
+
+def test_sampling_couplings_are_allowed_never_required():
+    """The exact one-step map of the sampled oscillator reads P itself and the force (position moves by
+    about half the force over a step): a found model with them is not charged for it; a stock it does
+    not have is still invented."""
+    c = casemod.load("phys-mass-spring-damper")
+    assert sorted(map(tuple, physics.sampling(c))) == [("P", "P"), ("P", "force")]
+    assert all(physics.sampling(casemod.load(i)) == [] for i in IDS if i != "phys-mass-spring-damper")
+    d, fr = data.load(c, "none-long"), data.load(c, "none-long", fresh=True)
+    ref = c["model"]["flows"]
+    extra = [{"id": "x1", "from": None, "to": "P", "rate": {"form": "proportional", "stock": "force", "k": 0.5}},
+             {"id": "x2", "from": "P", "to": None, "rate": {"form": "proportional", "stock": "P", "k": 0.005}}]
+    s = physics.score_found(c, "none-long", ref + extra, d, fr)
+    assert s["physics"]["structure_ok"] and {x["key"] for x in s["physics"]["sampling"]} == {"P <- force", "P <- P"}
+    s = physics.score_found(c, "none-long", ref + [{"id": "x3", "from": "V", "to": None, "rate": {"form": "proportional", "stock": "V", "k": 0.3}}], d, fr)
+    assert s["physics"]["structure_ok"], "V <- V is the physics' own (damping): a stronger one is a number, not a structure"
+    s = physics.score_found(c, "none-long", ref + [{"id": "x4", "from": None, "to": "V", "rate": {"form": "proportional", "stock": "V", "k": 0.3}}], d, fr)
+    assert not s["physics"]["structure_ok"], "V reading itself positively is the wrong sign"

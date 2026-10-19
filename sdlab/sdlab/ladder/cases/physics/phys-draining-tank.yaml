@@ -4,6 +4,6 @@ system: draining-tank
 title: Draining tank (outflow k sqrt(H))
 level: 20
 tags: [physics, sqrt, input]
-tests: "a sqrt outflow and a measured pump: the coupling H <- H is negative and concave (sqrt), the pump enters linearly; the best SD model drains in proportion to H"
+tests: "a sqrt outflow and a measured pump: the coupling H <- H is negative and concave (sqrt), the pump enters linearly; the best SD model drains along a straight line c + k H"
 seed: 1
 meas: {rel: 0.02, abs: 0.05}

@@ -105,12 +105,13 @@ def long_run(flows: list[dict], long: dict) -> dict:
     return {"err": min(1.0, err), "mean_err": min(1.0, mean_err), "diverges": False, "steps": int(T.shape[1])}
 
 
-def grade(case: dict, flows: list[dict], clean: dict, fresh: dict, long: dict, inferred: dict | None = None) -> dict:
-    """Structure, behaviour and long run of one model (found or the reference)."""
+def grade(case: dict, flows: list[dict], clean: dict, fresh: dict, long: dict, inferred: dict | None = None, sampling: list | None = None) -> dict:
+    """Structure, behaviour and long run of one model (found or the reference); `sampling`: the couplings
+    only the physics' exact one-step map has (allowed)."""
     ph = case["physics"]
     names, V, _ = structure.variables(clean, ph["inputs"])
     rec, src, p = structure.found_jacobian(flows, clean, ph["inputs"])
-    cmp = structure.compare([tuple(c) for c in ph["couplings"]], structure.couplings(rec, src, p, V))
+    cmp = structure.compare([tuple(c) for c in ph["couplings"]], structure.couplings(rec, src, p, V), sampling)
     return {"structure": cmp, "behaviour": behaviour(flows, clean, fresh, inferred), "longrun": long_run(flows, long)}
 
 
@@ -118,10 +119,11 @@ def skill(b: dict, where: str, h: int):
     return ((b.get(where) or {}).get(str(h)) or {}).get("skill")
 
 
-def score(case: dict, flows: list[dict], clean: dict, fresh: dict, long: dict, ref: dict, inferred: dict | None = None) -> dict:
+def score(case: dict, flows: list[dict], clean: dict, fresh: dict, long: dict, ref: dict, inferred: dict | None = None,
+          sampling: list | None = None) -> dict:
     """Everything stored for one found model: the ladder's usual keys (status, recall, precision, right,
     of, behaviour) and `physics` (structure, long run, the reference and the gaps to it)."""
-    g = grade(case, flows, clean, fresh, long, inferred)
+    g = grade(case, flows, clean, fresh, long, inferred, sampling)
     st, b = g["structure"], g["behaviour"]
     f20, r20 = skill(b, "fresh", 20), skill(ref["behaviour"], "fresh", 20)
     f100, r100 = skill(b, "fresh", 100), skill(ref["behaviour"], "fresh", 100)
@@ -137,7 +139,8 @@ def score(case: dict, flows: list[dict], clean: dict, fresh: dict, long: dict, r
     return {"status": "pass" if passed else "fail", "pass": passed, "equivalent": False,
             "recall": st["recall"], "precision": st["precision"], "right": st["right"], "of": st["of"],
             "parts": [], "spurious": [], "negligible": [], "windows": 1, "notes": notes,
-            "physics": {"system": ph["system"], "couplings": st["couplings"], "spurious": st["spurious"], "structure_ok": st["ok"],
+            "physics": {"system": ph["system"], "couplings": st["couplings"], "spurious": st["spurious"], "sampling": st["sampling"],
+                        "structure_ok": st["ok"],
                         "shape_right": st["shape_right"], "shape_of": st["shape_of"], "longrun": g["longrun"],
                         "near_reference": near, "gap20": None if f20 is None or r20 is None else f20 - r20,
                         "gap100": None if f100 is None or r100 is None else f100 - r100,

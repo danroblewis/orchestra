@@ -11,10 +11,8 @@ say whatever flows a strategy wrote.
 
 A coupling X <- Y:
   strength  sqrt(mean p^2) x sd(Y): how much X's change moves when Y moves by its typical amount
-  present   strength >= REL (10%) of the strongest coupling into X. The threshold is not 0 because
-            sampling continuous time makes the exact one-step map read stocks the ODE does not, at
-            O(step / time constant) (a damped oscillator's position reads itself at about w^2 / 2);
-            the cases keep their time constants >= 10 steps so those terms stay under it
+  present   strength >= REL (10%) of the strongest coupling into X (a coupling that weak barely
+            moves X's change; a numerical 0 is never present)
   sign      "+" when p > 0 on >= 90% of the states where it is not ~0, "-" likewise, else "±"
   shape     linear      p constant (sd <= 5% of |mean|)
             piecewise   p sits at two levels (>= 90% of states within 5% of its min or max, each
@@ -24,6 +22,15 @@ A coupling X <- Y:
             other       none of these (e.g. numbers that change with time)
 The physics' shapes map to these: linear -> linear, sqrt -> concave, product -> product,
 switch -> piecewise.
+
+**Sampling couplings.** Sampling continuous time makes the exact one-step map read variables the ODE
+does not, at O(step / time constant): over one step an oscillator's position moves by about half the
+force and reads itself at about -w^2 / 2, and a chain's last stock reads the first. A perfect
+discrete-time model has them, so a coupling present in the physics' exact one-step map
+(`sampled_jacobian`, by integrating the ODE over a step from perturbed states, on the case's long
+noise-free run) but not in the ODE is a **sampling coupling**: allowed in a found model, never
+required, and listed apart. (Not computed for the thermostat, whose switching map has no derivative
+at a switch; its time constant is 100 steps.)
 """
 
 from __future__ import annotations
@@ -99,6 +106,39 @@ def physics_jacobian(system, p: dict, drive, x: np.ndarray, t: np.ndarray, modes
     return out
 
 
+def sampled_jacobian(system, p: dict, drive, x: np.ndarray, t: np.ndarray, states: int = 200) -> tuple[np.ndarray, np.ndarray]:
+    """(p[receiver, source, state], the states' indices) of the physics' exact one-step map: d(state one step later - state) /
+    d(variable), by integrating the ODE over (t, t + 1) from perturbed states (an input moved over the
+    whole step), at up to `states` states of the run. What a perfect discrete-time model reads."""
+    from scipy.integrate import solve_ivp
+    n, m = x.shape
+    names = system.ids + list(system.inputs)
+    pick = np.unique(np.linspace(0, m - 2, min(states, m - 1)).astype(int))
+    out = np.zeros((n, len(names), len(pick)))
+
+    def step(x0, t0):
+        sol = solve_ivp(lambda tt, y: system.rhs(tt, y, p, drive, None), (t0, t0 + 1.0), x0, method="LSODA", rtol=1e-10, atol=1e-10)
+        return sol.y[:, -1] - x0
+
+    for col, k in enumerate(pick):
+        for j in range(len(names)):
+            h = 1e-4 * max(1.0, abs(float(x[j, k])) if j < n else 1.0)
+            if j < n:
+                up, dn = x[:, k].copy(), x[:, k].copy()
+                up[j] += h
+                dn[j] -= h
+                out[:, j, col] = (step(up, t[k]) - step(dn, t[k])) / (2 * h)
+            else:
+                base = drive.funcs[names[j]]
+                drive.funcs[names[j]] = lambda tt, b=base: b(tt) + h
+                a = step(x[:, k].copy(), t[k])
+                drive.funcs[names[j]] = lambda tt, b=base: b(tt) - h
+                c = step(x[:, k].copy(), t[k])
+                drive.funcs[names[j]] = base
+                out[:, j, col] = (a - c) / (2 * h)
+    return out, pick
+
+
 def couplings(receivers: list[str], sources: list[str], p: np.ndarray, V: np.ndarray) -> list[dict]:
     """Every coupling X <- Y with its strength, relative strength, sign and shape (module docstring)."""
     sd = np.array([max(float(np.std(V[j])), 1e-12) for j in range(len(sources))])
@@ -150,10 +190,12 @@ def _r2(p: np.ndarray, z: np.ndarray) -> float:
     return c * c if np.isfinite(c) else 0.0
 
 
-def compare(expected: list[tuple[str, str, str, str]], found: list[dict]) -> dict:
+def compare(expected: list[tuple[str, str, str, str]], found: list[dict], sampling: list | None = None) -> dict:
     """The found couplings against the physics': {couplings: one row per expected coupling, spurious:
-    present couplings the physics lacks, ok (graph and signs right, nothing spurious), right (expected
-    couplings present with the right sign), of, shape_right, shape_of, recall, precision}."""
+    present couplings the physics lacks, sampling: present couplings only the exact one-step map has
+    (allowed, never required), ok (graph and signs right, nothing spurious), right (expected couplings
+    present with the right sign), of, shape_right, shape_of, recall, precision}."""
+    allowed = {tuple(x) for x in sampling or []}
     by = {(c["receiver"], c["source"]): c for c in found}
     rows, keys = [], set()
     for x, y, sg, shp in expected:
@@ -165,10 +207,12 @@ def compare(expected: list[tuple[str, str, str, str]], found: list[dict]) -> dic
                      "present": bool(c["present"]), "sign_found": c["sign"] if c["present"] else None,
                      "shape_found": c["shape"] if c["present"] else None, "rel": c["rel"],
                      "sign_ok": sign_ok, "shape_ok": bool(c["present"]) and c["shape"] == want})
-    spurious = [{"receiver": c["receiver"], "source": c["source"], "key": f"{c['receiver']} <- {c['source']}", "sign": c["sign"],
-                 "shape": c["shape"], "rel": c["rel"]} for c in found if c["present"] and (c["receiver"], c["source"]) not in keys]
+    extra = [{"receiver": c["receiver"], "source": c["source"], "key": f"{c['receiver']} <- {c['source']}", "sign": c["sign"],
+              "shape": c["shape"], "rel": c["rel"]} for c in found if c["present"] and (c["receiver"], c["source"]) not in keys]
+    spurious = [e for e in extra if (e["receiver"], e["source"]) not in allowed]
     right = sum(r["sign_ok"] for r in rows)
-    present = sum(1 for c in found if c["present"])
-    return {"couplings": rows, "spurious": spurious, "ok": right == len(rows) and not spurious, "right": right, "of": len(rows),
+    present = sum(1 for c in found if c["present"] and (c["receiver"], c["source"]) not in allowed)
+    return {"couplings": rows, "spurious": spurious, "sampling": [e for e in extra if (e["receiver"], e["source"]) in allowed],
+            "ok": right == len(rows) and not spurious, "right": right, "of": len(rows),
             "shape_right": sum(r["shape_ok"] for r in rows), "shape_of": len(rows),
             "recall": right / len(rows) if rows else 1.0, "precision": right / present if present else (1.0 if not rows else 0.0)}

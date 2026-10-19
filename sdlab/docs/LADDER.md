@@ -753,15 +753,21 @@ state of the run (one-sided at a level of 0, where a rate's floor would halve it
 measured inputs as variables beside the stocks. So the representation does not matter: a move or a
 link with a drain, births and deaths or their difference, give the same couplings. A coupling is
 **present** when its strength sqrt(mean p^2) x sd(Y) is at least 10% of the strongest coupling into
-X: sampling continuous time makes the exact one-step map read stocks the ODE does not, at O(step /
-time constant) (the oscillator's position reads itself at about w^2 / 2), and the cases keep their
-time constants long enough for those terms to stay below it. Its **sign** is + or - when p has that
+X. Its **sign** is + or - when p has that
 sign on >= 90% of the states where it is not ~0, else ±. Its **shape**: linear (p constant within
 5%), piecewise (p at two levels: a switch or a floor that binds), product (p follows another
 variable, R^2 >= 0.5), concave or convex (p follows Y itself, |p| falling or rising: a sqrt is
 concave), or other. The physics' shapes map as linear -> linear, sqrt -> concave, product ->
-product, switch -> piecewise. The structure **agrees** when every physics coupling is present with
-its sign (± accepts any) and no other coupling is present. The shape is reported (per coupling, and
+product, switch -> piecewise. **Sampling couplings.** Sampling continuous time makes the exact one-step
+map read variables the ODE does not, at O(step / time constant): over one step the oscillator's
+position moves by about half the force and reads itself at about -w^2 / 2. A perfect discrete-time
+model has them, so a coupling present in the physics' exact one-step map (`sampled_jacobian`: the
+ODE integrated over one step from perturbed states, at 200 states of the case's long noise-free
+run) but not in the ODE is allowed in a found model, never required, and listed apart. On the
+seven cases there are two, both on the spring: P <- P and P <- force (none for the thermostat,
+whose switching map is not differentiated). The structure **agrees** when every physics coupling
+is present with its sign (± accepts any) and no other coupling, sampling couplings aside, is
+present. The shape is reported (per coupling, and
 the share right), not required: SD Lab's forms cannot write a sqrt or a switch with memory.
 
 **Behaviour.** skill@20 and skill@100 graded as everywhere (`sdlab/skill.py`'s `same_behaviour`,
@@ -808,7 +814,8 @@ better); else **fail**; error and timeout as everywhere.
   flows, the offsets as constant flows.
 - **continuous time**: SD Lab steps Euler at dt = 1, so even exactly linear physics (cooling,
   reaction chain, spring) is written with per-step numbers that are not the ODE's rates (1 - e^-k,
-  not k), and the exact one-step map has small couplings the ODE lacks (below the 10% threshold).
+  not k), and the exact one-step map has couplings the ODE lacks (the spring's P <- P and
+  P <- force, allowed as sampling couplings).
   Products (Lotka-Volterra) are exact in form, but Euler steps of a neutral cycle spiral, so the
   best SD model's long run drifts.
 
