@@ -11,85 +11,6 @@ for `combined` on the test cases).
 
 ## Queued
 
-0c. **Make every derivative strategy self-contained** (the user, 2026-10-19; CLAUDE.md invariant 11).
-   The 18 strategies in `tests/test_isolation.py`'s KNOWN list import other strategies: combined
-   and its variants, the lna_* variants (currently built on lna's hooks), gap_prior,
-   kalman_lna, structures, archetypes, and the `_both`/`_refine`/`_all`/`_no_high`/`_blend`
-   variants. For each, copy the code it imports into its own package, as a private module noting
-   the source strategy and commit, so it no longer imports any other strategy. Remove it from
-   KNOWN.
-   - Behaviour must be identical. Prove it per strategy: run it on a sample of cells before and
-     after with the same inputs, and compare the found flows (byte-identical, or explain).
-   - The strategy hash changes only because its code moved, so the watcher re-runs those
-     strategies once.
-   - Prefer the simplest copy: a vendored module tree under `<strategy>/_vendored/<source>/`.
-   - Running agents still own their packages: kalman_lna, structures and archetypes are
-     converted by their own agents (they were told), or after those agents finish.
-
-1b. **Time measurements in the ladder and its UI** (requested by the user on 2026-10-19). Today
-   each result stores discovery seconds only, and the leaderboard has one "time (s)" column.
-   Add:
-   - **Per result:** scoring seconds beside discovery seconds (scoring can dominate: one
-     realistic case took 417 s to score), and the worker's queue wait if cheap.
-   - **Per strategy:** time per cell by set (tests / noisy / canonical / realistic / physics /
-     real), median and p95, and its trend across versions. Show it as a column group on the
-     leaderboard and a small chart on the strategy page.
-   - **Per run and batch:** record each `sdlab-ladder run` / watch batch (start, end, items,
-     done, errors, timeouts, worker count) in the store.
-   - **A Runs page,** or a panel on the Now page: the watcher's current batch, items done and
-     left, throughput (results per hour), and an ETA for the backlog.
-   - **Cost estimates:** `sdlab-ladder cost --strategies X` / `--cases Y` estimates wall time to
-     re-test from stored per-cell times and the current throughput, so an agent (or the user)
-     can see "this fix costs ~4 min; this shared change costs ~5 h" before making it. Use it in
-     the hourly journal.
-
-   Keep the summary fast: aggregates are cached, out of the request path.
-
-1a. **Control-theory cases** (requested by the user on 2026-10-19: "it might be interesting to
-   make some test examples based on control theory, or some classic control theory book
-   examples"). The user is less familiar with control theory, so each case's doc should explain
-   the control idea in a sentence or two.
-
-   Sources: textbook examples, preferring freely available ones, with citations:
-   - Åström & Murray, *Feedback Systems* (free online): cruise control, the bicycle, the
-     insulin–glucose loop, the predator-prey loop, AFM, the web server queue (a queueing control
-     example that fits the user's SRE interest);
-   - Franklin, Powell & Emami-Naeini;
-   - Ogata;
-   - Nise.
-
-   Write them as ladder cases in SD Lab's format (integrators as stocks, a PI controller's
-   integral as a stock; setpoints and disturbances as measured inputs; signed quantities through
-   offsets or two one-way flows, as the physics cases did). Mainly linear, so the truth is exact.
-   Candidates:
-   - a first-order lag under P control (steady-state error) and PI control (no error);
-   - a second-order plant under PI or PID (overshoot, settling);
-   - cruise control with a hill disturbance;
-   - tank level control;
-   - temperature control with dead time (a DELAY chain) and the instability it causes at high
-     gain;
-   - cascade control;
-   - feedforward plus feedback;
-   - integrator windup at an actuator limit (a ceiling);
-   - bang-bang versus proportional;
-   - a web-server admission-control queue.
-
-   A family of closed-loop identification probes:
-   - the same loop with no setpoint changes (weak excitation);
-   - with steps;
-   - with a PRBS-like setpoint.
-
-   The analysis (`analysis.py`) should label the weak-excitation cells data-limited or
-   unidentifiable. That is the classic closed-loop identification problem, where the
-   controller's input correlates with the noise.
-
-   Scoring: the standard ladder scoring. Also report the control metrics of found against true
-   models: step-response overshoot, settling time, steady-state error, gain/phase margin of the
-   linear part, from `jump.py`'s linear maps. A new tag `control`, in the Tests set unless a
-   case is out-of-format.
-
-   Run the leaders and distil failures (invariant 4).
-
 2g. **Runner fix and lna fixes** (from the hook port). lna may be fixed in place (strategies are not frozen); its derivatives must carry copies first (item 0c), so this waits for 0c:
    - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
@@ -152,6 +73,8 @@ for `combined` on the test cases).
 
 ## Started
 
+- 2026-10-19 03:30: 0c (derivative strategies self-contained), 1a (control-theory cases), 1b (time measurements).
+
 - 2026-10-18 23:20: short series and published-model twins (from the real-data results).
 
 - 2026-10-18 23:00: fix measured-input handling in censored, effect_hats and earned_pieces (found by the physics cases).
@@ -166,6 +89,9 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-19: short series and twins (archetypes; 445aabf … 3c3e009). Real held-out 0.9% → 4.9%, twins −1.3% → 10.0%, 12 twins pass + 20 equivalent.
+- 2026-10-19: fast leaderboard (210afce): incremental summary, server-side rows, cached responses.
 
 - 2026-10-19: item 0b, kalman_lna (28b23cf … 6a93270, doc 00c0038). Noisy achievable cells: 85/97 against combined's 35. It matches combined on the tests; bench skill@20 +7.9 against v2.1. Self-contained (vendored copies).
 
