@@ -137,7 +137,24 @@ def test_a_via_delay_is_an_unmeasured_stock():
     assert J.misfit(via, D) < 0.5
 
 
-def test_exact_ties_go_to_flows_that_read_their_own_source():
+def test_rounded_numbers_are_refitted_to_the_data_s_precision():
+    from sdlab.discovery.strategies.combined.refit import refit
+    _, model, d, _, _, D = cell("012-rework", "none-long")
+    truth = truth_flows(model, d)
+    rounded = copy.deepcopy(truth)
+    for f in rounded:
+        r = f.get("rate") or {}
+        for key in ("k", "value", "c"):
+            if isinstance(r.get(key), (int, float)):
+                r[key] = float(f"{r[key] * 1.01:.3g}")
+        for x in r.get("terms") or []:
+            x["k"] = float(f"{x['k'] * 1.01:.3g}")
+    assert J.misfit(rounded, D) > 1
+    again = refit(rounded, D)
+    assert J.misfit(again, D) < 0.5 and J.nll(again, D) < J.nll(rounded, D)
+
+
+def test_exact_ties_go_to_flows_that_read_their_own_stocks():
     own = [{"from": "B", "to": None, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}]
     other = [{"from": "B", "to": None, "rate": {"form": "linear", "c": 0, "terms": [{"stock": "A", "k": 0.2}]}}]
     assert combined.cross_reads(own) == 0 and combined.cross_reads(other) == 1

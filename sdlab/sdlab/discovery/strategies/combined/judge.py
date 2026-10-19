@@ -225,3 +225,12 @@ def misfit(flows: list[dict], data: Data) -> float:
         phi = float((r.T * z).sum() / (data.T * S))
         return (phi - 1.0) / math.sqrt(2.0 / (data.T * S))
     return float(np.log10(max(1.0, math.sqrt((r ** 2).mean() / eps))))
+
+
+def weights(flows: list[dict], data: Data) -> np.ndarray | None:
+    """Per stock and step, 1 / the candidate's one-step standard deviation (counts only)."""
+    if not data.counts or not flows:
+        return None
+    _, cov = one_step(flows, data)
+    var = np.einsum("tii->it", cov) + data.q ** 2 / 6.0
+    return 1.0 / np.sqrt(var)

@@ -3,6 +3,8 @@
 
 1. Candidates. Each specialist is called as a black box through its own `identify()`, so its
    improvements flow in: lna (the best single strategy: flows chosen by the counting likelihood),
+   gap_prior (lna with a drain read off another stock written as the goal gap it equals),
+   lna_pulses (one-step bursts taken out before lna reads the moves),
    common_cause (independent and identical stocks, noise-free fits, inflow changes the data
    earns), censored (floors that bind, stocks that run empty), hidden_transit (an unmeasured stock
    between two measured ones), effect_hats (effects of a third stock's level; also re-cuts the
@@ -15,13 +17,15 @@
    approximation (each flow a Poisson draw) or, for data that are not counts, each stock's own
    variance floored at the data's rounding; plus a BIC price of 0.5 log T for every number the
    candidate wrote down (params.py: rate numbers, inflow values and change places, effect points,
-   co-flows, unmeasured stocks). The lowest score wins; exact ties go to the model with fewer flows
-   that read a stock other than their own source, then to fewer numbers, then to the earlier
+   co-flows, unmeasured stocks). Before it is judged, every candidate's numbers are refitted on the
+   same terms (refit.py: least squares of the one-step changes, its structure kept), and the
+   refitted numbers are kept when they raise its likelihood. The lowest score wins; exact ties go to the model with fewer flows
+   that read a stock other than the ones they join, then to fewer numbers, then to the earlier
    candidate in the list.
 
 opts (also SDLAB_COMBINED, JSON): "specialists" (names, in order; default SPECIALISTS), "price"
 (the BIC multiplier, default 1), "per_flow" (numbers a flow costs for being there, default 0: a
-flow is priced by its numbers), "budget" (seconds, default 45), "trace" (keep every candidate's
+flow is priced by its numbers), "budget" (seconds, default 45), "refit" (refit every candidate's numbers, default on), "trace" (keep every candidate's
 flows in the result).
 """
 
@@ -34,29 +38,32 @@ import time
 from sdlab.discovery.strategies.censored import identify as censored
 from sdlab.discovery.strategies.common_cause import identify as common_cause
 from sdlab.discovery.strategies.effect_hats import identify as effect_hats
+from sdlab.discovery.strategies.gap_prior import identify as gap_prior
 from sdlab.discovery.strategies.hidden_transit import identify as hidden_transit
 from sdlab.discovery.strategies.lna import identify as lna
+from sdlab.discovery.strategies.lna_pulses import identify as lna_pulses
 from sdlab.discovery.strategies.periodic_inflows import identify as periodic_inflows
 
 from . import judge as J
+from .refit import refit
 from .shared import once
 
-STRATEGIES = {"lna": lna, "common_cause": common_cause, "censored": censored, "hidden_transit": hidden_transit,
-              "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
-SPECIALISTS = ["lna", "common_cause", "censored", "hidden_transit", "periodic_inflows", "effect_hats"]
-DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 45.0, "trace": False}
+STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "common_cause": common_cause, "censored": censored,
+              "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
+SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "common_cause", "censored", "hidden_transit", "periodic_inflows", "effect_hats"]
+DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 45.0, "trace": False, "refit": True}
 
 
 def cross_reads(flows: list[dict]) -> int:
-    """Flows out of a stock whose rate reads some other stock (a drain that follows another level)."""
+    """Flows whose rate reads a stock other than the ones it joins (a drain that follows another
+    level, an inflow that follows another stock): the conventional SD reading of a tie is the one
+    where each flow follows its own stocks."""
     n = 0
     for f in flows or []:
-        if not f.get("from"):
-            continue
         r = f.get("rate") or {}
         reads = {r.get("stock")} | {x.get("stock") for x in r.get("terms") or []}
         reads.discard(None)
-        if reads - {f["from"]}:
+        if reads - {f.get("from"), f.get("to")}:
             n += 1
     return n
 
@@ -79,7 +86,7 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], budg
     return out
 
 
-def choose(cands: list[dict], data: J.Data, price: float, per_flow: float) -> dict | None:
+def choose(cands: list[dict], data: J.Data, price: float, per_flow: float, do_refit: bool = True) -> dict | None:
     best, best_key = None, None
     for i, c in enumerate(cands):
         r = c.get("result")
@@ -91,6 +98,16 @@ def choose(cands: list[dict], data: J.Data, price: float, per_flow: float) -> di
         except Exception as e:                           # noqa: BLE001
             c["judge_error"] = f"{type(e).__name__}: {e}"[:300]
             continue
+        if do_refit:
+            try:
+                flows = refit(r["flows"], data, J.weights(r["flows"], data))
+                s2 = J.score(flows, data, price, per_flow, starts) if flows else None
+            except Exception as e:                       # noqa: BLE001
+                c["refit_error"] = f"{type(e).__name__}: {e}"[:300]
+                s2 = None
+            if s2 is not None and s2["nll"] < s["nll"] - 1e-9:
+                c["result"] = r = {**r, "flows": flows, "refitted": True}
+                s = {**s2, "refitted": True}
         c["score"] = s
         key = (round(s["bic"], 6), cross_reads(r["flows"]), s["k"], i)
         if best_key is None or key < best_key:
@@ -106,7 +123,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     names = list(cfg.get("specialists") or SPECIALISTS)
     cands = candidates(stocks, run, opts, names, float(cfg["budget"]))
     data = J.Data(stocks, run, opts.get("injections"))
-    best = choose(cands, data, float(cfg["price"]), float(cfg["per_flow"]))
+    best = choose(cands, data, float(cfg["price"]), float(cfg["per_flow"]), bool(cfg["refit"]))
     if best is None:
         return {"flows": [], "combined": {"chosen": None, "candidates": _summary(cands, cfg)}}
     r = dict(best["result"])
