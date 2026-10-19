@@ -1,6 +1,10 @@
-"""The matrix method where a stock's outside inflow may change only once the data earns it.
+"""The matrix method where a stock's outside inflow may change only once the data earns it
+(docs/research/earned_pieces.md).
 
-(work in progress)
+Every main-line candidate is fitted by matrix.identify_one, then rebuilt: each row's levels are
+chosen again and its pieces dropped when a constant (or no) inflow leaves white residuals and a
+lower BIC with changes priced honestly (rows.py); conservation is decided for all rows at once on
+the counting likelihood (joint.py). The behaviour judge then chooses among the candidates.
 """
 
 from __future__ import annotations
@@ -63,7 +67,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             continue
         r = identify_one(stocks, run, {**opts, **v, "keep_fit": joint, "keep_rows": joint})
         if joint and r.get("flows") is not None and r.get("fit"):
-            r = refit(stocks, r, opts)
+            try:
+                r = refit(stocks, r, opts)
+            except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+                pass
         e = judge(r["flows"], stocks, run, injections=opts.get("injections"))
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
