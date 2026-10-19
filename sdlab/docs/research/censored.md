@@ -232,3 +232,42 @@ files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the sam
 - **Without floors the strategy is better on both benches** (39.4% examples, -49.1% / -47.3%
   generated). Floors are kept on only because 024 needs them. A combined strategy could offer them
   as a candidate that a likelihood judge weighs (`combined`).
+
+## A floored gap to a target (2026-10-19, commits deb1ffc and 6ca61d5)
+
+**Why every strategy failed 125-floored-gap-to-measured-target** (hiring `(desired - R) / 6`, floored
+at 0 when the measured target drops below R, beside a drain `0.025 R`; distilled from
+106-canonical-workforce). While the gap is open the row is a straight line, `k desired - (k + d) R`,
+and the gap's own-level term and the drain add up to one number. Only the steps where the floor
+binds (the target fell below R, 3-6% of steps) separate them. The main line reads `0.12 desired`
+and a drain `0.14 R` (counts), or a drain and 41-112 inflow pieces (noise-free). The floor rewrite
+(`floor.py`) reads one level at a time, and own-level hinges are off.
+
+**What was added** (`gap.py`, option `gaps`, on). For each row, a gap to a target
+`max(0, a x_j - b x_own - sum b_m x_m (+ c))` beside a drain `e x_own`, fitted by nonlinear least
+squares from the straight line's numbers, the own term split between the gap and the drain at six
+ratios, with and without a constant (BIC), then refitted once with the steps weighted by their noise
+when it grows with what the flows move (counting noise). Targets are the other levels and the
+measured inputs whose number in the straight row is clearly positive (t > 2; the three clearest).
+`x_m` are the other stocks the main line's row read (106's hiring reads Rookies and Experts). It is
+offered when the floor binds on 3-97% of steps, the gap closes (a > 0, b > 0), the drain is not
+negative and the kink beats the straight line by (1 + margin) log T; the whole-model one-step BIC
+decides as for every rewrite.
+
+**Results** (`uv run sdlab-ladder run --strategies censored --jobs 2 --timeout 300`, single-threaded,
+the whole ladder at 6ca61d5, strategy hash a016216a, 1280 cells; before: the stored results of
+the previous code, `uv run sdlab-ladder status --strategies censored`, read before the change):
+
+| case | before (ns nl cs cl) | after |
+|---|---|---|
+| 125-floored-gap-to-measured-target | F F F F | P P E P |
+| 106-canonical-workforce (the hard case) | F F F F | P P F P |
+
+- 125 counts-short is the data's limit: 300 steps leave 6 binding steps; the kink gains 10.7 nats
+  over the line (the bar is 17.1) and, forced, the drain comes out 0.036 (true 0.025).
+- 106 counts-short: the same (short run, few binding steps).
+- No cell that passed before fails now (`cmp.py`: every cell's result at a016216a against the
+  previous stored result). The only errors are the timeouts on sd-k8s-small and sd-k8s-platform
+  counts-long, which timed out before as well (1be97cd5, 08b55003).
+- 124-gap-over-two-stocks (a gap with no floor) is unchanged (FFFF): without the floor binding the
+  rewrite has nothing to read.
