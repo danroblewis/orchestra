@@ -17,6 +17,8 @@ The options (opts; defaults in __init__.OPTIONS):
                 prices better than the pieces and leaves residuals as white as they did
   tie_se        conservation ties a drain to what the receivers take unless the two differ by more
                 than sqrt(log T) standard errors of both (the source's row and the receivers' rows)
+  exact         common_cause's exact-data fix: rss and PELT's noise variance floored at the data's
+                float precision, an exact fit walked along exact ties to the plainest set
   products      columns a x c for every pair of stocks (c may be a, or the row's own stock), joining a
                 row only by product_gain x log T (reading.product_flows)
   pair_moves    a drain of one stock and a link into another at the same level (or product) read as one
@@ -32,11 +34,15 @@ import math
 
 import numpy as np
 
-from ...changes import pelt
+from .changes import pelt
 from .flows import merge_by_label, read_flows
 from .pieces import pool_recut, white
 from .reading import fold_inflows, pair_linear, product_flows
-from .regression import fit_subset, piece_values, row_sums, stepwise
+from .regression import fit_subset, piece_values, stepwise
+from .regression import row_sums as _row_sums
+
+
+REL = 1e-8           # (exact) the floor on a fit's mean square residual, relative to the changes' mean square
 
 
 def resolution(levels: np.ndarray) -> float:
@@ -123,6 +129,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     log_t = math.log(T)
     # (rss_floor) below the data's rounding a row's rss says nothing: each change carries two roundings
     floor = T * resolution(lv) ** 2 / 6 if opts.get("rss_floor") else 0.0
+    # (exact) common_cause's exact-data fix: no fit below the data's float precision (REL x the mean
+    # square of the changes), PELT's noise variance never below 100 x it, exact ties walked to the plainest set
+    ex = REL * float(np.mean(np.diff(lv, axis=1) ** 2)) if opts.get("exact") else 0.0
+    row_sums = lambda y, X, c: _row_sums(y, X, c, ex)  # noqa: E731
     bic = lambda rss, p: T * math.log(max(rss, floor, 1e-12) / T) + p * log_t  # noqa: E731
     add_gain = opts.get("add_gain", log_t)                                # a level joins a row only if clearly nonzero
     min_piece = opts.get("min_piece", 5)
@@ -131,7 +141,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     per_change = {k: opts.get(f"{k}_change_params", 1) for k in ("level", "form")}
     # how changes in the outside inflow are found in a residual series; phase is "fine" (the first
     # pass), "pass" (later passes), "level" (a level tried in place of pieces) or "conserve"
-    scan = lambda r, phase: pelt(r, min_piece, 0.5 if phase == "fine" else mult)  # noqa: E731
+    scan = lambda r, phase: pelt(r, min_piece, 0.5 if phase == "fine" else mult, 1e2 * ex)  # noqa: E731
 
     # (opts "inputs") measured inputs, {name: value per step aligned with t}: each a column after the
     # levels, its value during the step (t[k] to t[k + 1]: the value at t[k + 1]); any row may take one
@@ -158,13 +168,22 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         col = [(j, -1) for j in range(N)]
         allowed = [j for j in range(F) if may_affect(base[j], s) and not (sid in final and base[j] == s)]
         allowed += list(range(I0, P0))
-        allowed += [P0 + q for q, (a, c) in enumerate(pairs) if may_affect(a, s) and may_affect(c, s)
-                    and not (sid in final and s in (a, c))]
+        prods = [P0 + q for q, (a, c) in enumerate(pairs) if may_affect(a, s) and may_affect(c, s)
+                 and not (sid in final and s in (a, c))]
+        late = opts.get("products") == "after"             # products offered only to the finished row
+        if not late:
+            allowed += prods
         own = s in allowed
         Xa = np.array(X)
 
         def step(sums, start):
-            return stepwise(sums, start, allowed, add_gain, 4 * len(X), floor, gain)
+            return stepwise(sums, start, allowed, add_gain, 4 * len(X), floor, gain, key)
+
+        def key(cols):
+            # (exact) how plain an exact row is: fewer columns, then fewer reading other stocks, then
+            # those nearer the row's own stock in the page's order, then those listed before it
+            cross = [col[q][0] - s for q in cols if col[q][0] != s]
+            return (len(cols), len(cross), sum(abs(d) for d in cross), sum(d > 0 for d in cross))
 
         # fine pieces first (so the levels' numbers are not biased by unexplained changes), then the
         # usual price; the pieces are found in what the levels leave unexplained. Start from every
@@ -260,11 +279,21 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 clear = abs(mean) > 0.5 * sd
                 if (pick is constant or clear) and pieces["sc"] < pick["sc"]:
                     pick = pieces
+        if late and prods:
+            # (products "after") the finished row, with its inflow's final form, may take products of
+            # levels (and give up levels for them) where each product pays product_gain x log T: a
+            # product offered beside the fine pieces stands in for levels and pieces (chains lost)
+            sums = row_sums(y, Xa, pick["cuts"])
+            got = stepwise(sums, chosen, allowed + prods, add_gain, 4 * len(X), floor, gain, key)
+            if any(q in prods for q in got):
+                chosen = got
+                f = fit_subset(sums, chosen)
+                pick = {**pick, "f": f}
         beta, rss, se = pick["f"].beta, pick["f"].rss, pick["f"].se
         pcuts, pooled = pick["cuts"], None
         if opts.get("pool") and pcuts and len(pcuts) > 2:
             # (pool) the pieces pooled into a few values and re-cut where the inflow really changes
-            got = pool_recut(y, Xa[chosen], pcuts, floor, int(opts.get("pool_most", 4)), float(opts.get("pool_change", 2)),
+            got = pool_recut(y, Xa[chosen], pcuts, max(floor, ex * T), int(opts.get("pool_most", 4)), float(opts.get("pool_change", 2)),
                              int(opts.get("pool_guard", 2)), float(opts.get("pool_level_price", 2)), float(opts.get("white_alpha", 0.01)))
             if got is not None:
                 beta, rss, se, pcuts, pooled = got["beta"], got["rss"], got["se"], got["cuts"], got
@@ -288,7 +317,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     rows = [fit_row(s) for s in range(S)]
     ctx = {"stocks": stocks, "ids": ids, "t": t, "final": final, "unit": unit, "prev": prev, "dy": dy, "cfg": cfg, "L": L,
            "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T, "at": at,
-           "names": names, "columns": columns, "inputs": [k for k, _ in inputs], "pairs": pairs, "P0": P0}
+           "names": names, "columns": columns, "inputs": [k for k, _ in inputs], "pairs": pairs, "P0": P0, "exact": ex}
     return finish(rows, ctx, opts)
 
 
@@ -297,7 +326,8 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     inflows re-measured where it changed a row, and the structure read off the matrix."""
     stocks, ids, t, prev, dy, cfg, L = ctx["stocks"], ctx["ids"], ctx["t"], ctx["prev"], ctx["dy"], ctx["cfg"], ctx["L"]
     labels, conf, at, names, columns = ctx["labels"], ctx["conf"], ctx["at"], ctx["names"], ctx["columns"]
-    conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts, scan_mult=float(opts.get("pelt_mult", 1)))
+    conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts, scan_mult=float(opts.get("pelt_mult", 1)),
+             exact=ctx.get("exact", 0.0))
 
     # a row whose numbers conservation changed: its outside inflow's pieces are measured again with
     # the numbers it ends with (the pieces were measured beside the row's own, biased, drain)
@@ -337,7 +367,7 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     return out
 
 
-def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, scan_mult: float = 1.0) -> None:
+def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, scan_mult: float = 1.0, exact: float = 0.0) -> None:
     """Conservation unless the data clearly says otherwise: a stock's drain is what same-unit stocks
     are seen to receive from it (measured, often more precisely, in their rows). Per configuration,
     tested together: setting the drain to what the receivers take must cost the row no more than
@@ -391,10 +421,10 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, scan_mu
         idx = list(range(len(Xf)))
         if changing:
             fixed_part = sum((row["beta"][i] * row["X"][q] for q, i in others), np.zeros(len(y2)))
-            cuts2 = pelt(y2 - fixed_part, opts.get("min_piece", 5), scan_mult)
+            cuts2 = pelt(y2 - fixed_part, opts.get("min_piece", 5), scan_mult, 1e2 * exact)
         else:
             cuts2 = row["cuts"]
-        sums = row_sums(y2, Xf, cuts2)
+        sums = _row_sums(y2, Xf, cuts2, exact)
         fixed = fit_subset(sums, idx).rss
         p2 = len(idx) + (len(cuts2) - 1 if cuts2 else 0)
         if bic(fixed, p2) <= bic(row["rss"], row["p"]) + log_t or near:

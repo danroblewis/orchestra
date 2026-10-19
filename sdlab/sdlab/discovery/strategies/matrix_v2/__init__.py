@@ -2,8 +2,8 @@
 (docs/research/matrix_v2.md; queue item 6).
 
 The shared library's matrix method (sdlab/discovery/identify.py, matrix.py, flows.py, regression.py)
-is pinned, so this package carries its own copies (matrix.py, flows.py, regression.py, and identify()
-below, from commit aad5c7b) and changes those. With every option off it is the matrix.
+is pinned, so this package carries its own copies (matrix.py, flows.py, regression.py, changes.py, and
+identify() below, from commit aad5c7b) and changes those. With every option off it is the matrix.
 
   option          fix                                                          proposed by
   rss_floor       every BIC's rss floored at the data's rounding               earned_pieces
@@ -16,6 +16,8 @@ below, from commit aad5c7b) and changes those. With every option off it is the m
   pair_moves      a drain and a link at one level paired into a move           effect_hats
   products        a x c columns, c = a or the destination allowed              structures
   inputs_judge    the judge steps every candidate with the measured inputs     earned_pieces, censored
+  exact           noise-free fits floored at float precision, exact ties walked
+                  to the plainest set (032, 034, 035, 038 without noise)       common_cause
 
 Options come from opts, then the SDLAB_MATRIX_V2 environment variable (JSON; for ablations only:
 the ladder's result store keys results by the code, not the environment).
@@ -41,6 +43,7 @@ OPTIONS: dict = {
     "pair_moves": False,
     "products": False,
     "inputs_judge": False,
+    "exact": False,
 }
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;

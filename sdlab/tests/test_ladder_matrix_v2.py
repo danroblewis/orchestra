@@ -71,3 +71,19 @@ def test_products_find_logistic_crowding_and_a_product_move():
         _, s0 = ladder(case_id, "none-short", "matrix")
         _, s = ladder(case_id, "none-short", "matrix_v2", products=True)
         assert s0["status"] == "fail" and s["status"] == "pass", case_id
+
+
+def test_exact_data_walk_to_the_plainest_exact_set():
+    # common_cause's 032 fault (a shared eigenvalue makes four levels exactly collinear), and 034-038
+    for case_id in ("032-three-chains-of-three", "034-identical-twins", "038-identical-twin-chains"):
+        _, s0 = ladder(case_id, "none-long", "matrix")
+        _, s = ladder(case_id, "none-long", "matrix_v2", exact=True)
+        assert s0["status"] == "fail" and s["status"] == "pass", case_id
+
+
+def test_products_offered_to_the_finished_row_keep_the_chains():
+    for case_id, variant in (("004-chain-3", "none-long"), ("040-random-chain-2#2", "counts-long")):
+        _, s = ladder(case_id, variant, "matrix_v2", products="after")
+        assert s["status"] == "pass", (case_id, variant)
+    _, s = ladder("126-product-move", "none-long", "matrix_v2", products="after")
+    assert s["status"] == "pass"

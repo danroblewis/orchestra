@@ -126,7 +126,7 @@ def table(base_name: str, names: list[str]) -> None:
     print("| run | tests P+E (of) | noisy | canonical | distilled | physics P | realistic skill@20 / goals (err) | better / worse vs " + base_name + " |")
     print("|---|---|---|---|---|---|---|---|")
     for n in [base_name] + names:
-        rows = load(n)
+        rows = {k: r for k, r in load(n).items() if k in base}       # the cells both ran (the ladder grows)
         t = totals(rows)
         b, w = compare(base, rows)
         f = lambda x: f"{x[0]}+{x[1]} ({x[2]})"  # noqa: E731
