@@ -597,3 +597,25 @@ The physics agent was also given particles 170, 171 and 195. 10 agents are runni
   - an inputs parameter on the shared judge;
   - the grader swapping only effect-free constants;
   - retiring dominated strategies.
+
+## 2026-10-19 08:30 (hourly cycle)
+
+**Health**
+- **Server:** leaderboard 0.10 s warm; one listener. Load is down to ~30 after the 07:30 cleanup.
+- **Watcher was down.** A watcher holding pre-2d code crashed on case 113's new `signed` stocks (CaseError). Fixed in cli.py (committed): the watcher now restarts itself when the ladder's code changes, and never dies on a failed pass (it waits, then restarts on fresh code). Restarted; backlog 86,452 stale (new cases 113-117 and 216-218, new strategies, the scorer change re-scores).
+- **Tests and caches:** not run this cycle (startup time); next cycle.
+
+**Finished**
+- **2d, harness engine features** (ea1a8dd): two-way flows and signed stocks, expressions (ratios, MIN/MAX/CEIL, if, sqrt/power, `flow()`), auxiliaries, switches with memory, DELAY FIXED and pipelines, TREND/FORECAST, ceilings that hold. All 3,533 recorded engine outputs are bit-identical. SDXorg exact conversions 90 → 139 of 165. Canonical cases 113-117.
+  - Note: the engine hash used in case hashes is frozen at its 2026-10-18 value (`ENGINE_1018`), so additivity is enforced by the output-fingerprint test, not by hashes.
+- **Research round:** combined_misfit, combined_lean and combined_r2. Strict 618 → 649/936; noisy 26 → 32; realistic skill@20 40.6% → 45.2% for misfit (not significant). Recommended for combined2.
+- **loop_transit:** 156 passes 3/4; 4 better, 1 worse against realistic_hats.
+- **common_cause** (final): 43/44 on 028-038. It explained the 032 noise-free failure (exact collinearity, shared stepwise and pelt), but it runtime-patches shared functions; queued as 2h.
+
+**Started:** a scalable strategy for the k8s models, physics round 2, distilling canonical 113-117 and control failures, and 2h. Running with the earlier ones: realistic round 2, combined2, matrix_v2, 0c, distilled fixes 156-160/216-218, and two forks. About 10 in all.
+
+**Needs you**
+- **The thermostat:** score it against the reference model's structure (recommended)?
+- **The shared judge:** an inputs parameter on `identify.judge`?
+- **The behaviour grader:** swap only effect-free constants? Note: the research round found the merged `c + kx` flow's c gets counted twice by the grader's inflow swap. This is the same issue.
+- **Retiring:** retire dominated strategies?
