@@ -1,0 +1,19 @@
+title: "Diffusion: a 2 x 2 grid of chambers exchanging particles both ways"
+level: 21
+tags: [distilled, diffusion, two-way, loop, input]
+tests: "distilled from part-stirred-chambers (every leader fails it; here matrix fails and lna and combined are only equivalent, dropping the moves back out of the drained chamber D): four chambers in a 2 x 2 grid (a loop of openings), each opening crossed both ways at the same per-step rate (A <-> B 0.016, A <-> C 0.024, B <-> D 0.008, C <-> D 0.016), fed into A by a measured input and drained from D (0.16); each opening is recovered as a pair of opposite moves, not as links reading other chambers' levels"
+seed: 195
+inputs:
+  feed: 6 + step(3, 200) - step(5, 600) + step(4, 1000) - step(3, 1500)
+stocks: {A: 500, B: 300, C: 300, D: 60}
+flows:
+  outside -> A: 1 * feed
+  A -> B: 0.016 * A
+  B -> A as ba: 0.016 * B
+  A -> C: 0.024 * A
+  C -> A as ca: 0.024 * C
+  B -> D: 0.008 * B
+  D -> B as db: 0.008 * D
+  C -> D: 0.016 * C
+  D -> C as dc: 0.016 * D
+  D -> outside: 0.16 * D
