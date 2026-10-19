@@ -34,7 +34,7 @@ def _product_rate(a: int, c: int, theta: float, names: list[str], rows: Rows) ->
     return rate, effect
 
 
-def to_flows(live: list[tuple[Term, float]], names: list[str], rows: Rows, S: int) -> tuple[list[dict], dict]:
+def to_flows(live: list[tuple[Term, float]], names: list[str], rows: Rows, S: int, times: list | None = None) -> tuple[list[dict], dict]:
     """(flows, inferred levels of the hidden stocks)."""
     name = lambda i: None if i is None else names[i]  # noqa: E731
     flows: list[dict] = []
@@ -47,8 +47,9 @@ def to_flows(live: list[tuple[Term, float]], names: list[str], rows: Rows, S: in
             chains.setdefault(t.chain_key(), []).append((t, th))
         elif len(t.x) == 2:
             i, j = t.x
-            if t.kind == "plink":
-                a, c, src, dst = i, j, None, t.dst
+            if t.kind == "plink":                # read as the destination's own rate when it is a factor (births of Y at X x Y)
+                a, c = (t.dst, j if i == t.dst else i) if t.dst in (i, j) else (i, j)
+                src, dst = None, t.dst
             else:
                 a = t.src
                 c = j if i == a else i
@@ -60,7 +61,16 @@ def to_flows(live: list[tuple[Term, float]], names: list[str], rows: Rows, S: in
         elif t.kind == "drain":
             flows.append(_flow(name(t.src), None, {"form": "linear", "c": 0, "terms": [{"stock": names[t.x[0]], "k": r6(th)}]}, driver=names[t.x[0]]))
     for b, items in pools.items():
-        flows.append(_flow(None, names[b], _linear(items, names), note="outside inflow"))
+        pieces = sorted(((t.span, th) for t, th in items if t.span is not None), key=lambda x: x[0])
+        rest = [(t, th) for t, th in items if t.span is None]
+        if pieces:                     # a piecewise constant inflow, as lna writes one (at(k) = t[k + 1])
+            at = (lambda k: times[k + 1]) if times is not None else (lambda k: k + 1)
+            W = sum(sp[1] - sp[0] for sp, _ in pieces)
+            mean = sum(v * (sp[1] - sp[0]) for sp, v in pieces) / max(1, W)
+            inflow = [{"from": at(sp[0]), "to": at(sp[1] - 1), "value": r6(v)} for sp, v in pieces]
+            flows.append(_flow(None, names[b], {"form": "constant", "value": r6(mean)}, inflow=inflow, changes=len(pieces) - 1))
+        if rest:
+            flows.append(_flow(None, names[b], _linear(rest, names), note="outside inflow"))
     inferred: dict[str, list[float]] = {}
     for n_chain, (key, items) in enumerate(chains.items()):
         f, h = _chain(key, items, names, rows, n_chain)

@@ -47,7 +47,32 @@ def _retau(terms: list[Term], tau: float) -> list[Term]:
     return [Term(t.kind, t.src, t.dst, t.x, (t.chain[0], float(tau)), t.stage, t.sign) if t.chain else t for t in terms]
 
 
-def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, chains: bool = True, products: bool = True) -> dict | None:
+def base_pieces(flows: list[dict] | None, ids: list[str], t: list) -> dict[int, list[tuple[int, int]]]:
+    """The places where the base model's outside inflows change ({stock index: [(a, b) steps]}):
+    an unannounced schedule's pieces, which the search does not find on its own. A piece from time
+    F to T covers the steps k whose end t[k + 1] is in [F, T]."""
+    ends = np.asarray(t[1:], dtype=float)
+    out: dict[int, list[tuple[int, int]]] = {}
+    for f in flows or []:
+        if f.get("from") is not None or f.get("to") not in ids or not f.get("inflow"):
+            continue
+        b = ids.index(f["to"])
+        for g in f["inflow"]:
+            ks = np.flatnonzero((ends >= float(g["from"])) & (ends <= float(g["to"])))
+            if len(ks):
+                out.setdefault(b, []).append((int(ks[0]), int(ks[-1]) + 1))
+    return {b: sorted(set(v)) for b, v in out.items() if len(set(v)) > 1}
+
+
+def closed(dy: np.ndarray, q: float) -> bool:
+    """Every step's changes add up to nothing (the injections taken out): nothing enters or leaves,
+    so only moves are offered (a closed market's N + A is constant, which makes a constant, N and A
+    collinear and lets outflows and links stand in for the moves)."""
+    return dy.shape[0] >= 2 and float(np.abs(dy.sum(axis=0)).max()) <= 2 * q * dy.shape[0] + 1e-9
+
+
+def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, chains: bool = True, products: bool = True,
+             base_flows: list[dict] | None = None) -> dict | None:
     began = time.monotonic()
     data, rows, names = prepare(stocks, run, opts)
     S, T = len(data.ids), data.T
@@ -65,16 +90,30 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
     if S * T * len(lib) > CELLS:
         return None
     trace: dict = {}
+    shut = closed(p.dy, data.q)
+    if shut:
+        lib = [t for t in lib if t.kind == "move"]
+        trace["closed"] = True
     try:
         first = rowwise.start(rows, p.dy, p.var, p.counts, p.eps, S, m, unit, final, products)
+        if shut:
+            first = [t for t in first if t.kind == "move"]
         p.check()
         base = search(p, lib, first)
         trace["first_bic"] = base.bic
-        base = gap_stage(p, lib, base, S, m)
+        if not shut:
+            base = gap_stage(p, lib, base, S, m)
+        pieces = {} if shut else base_pieces(base_flows, list(data.ids), list(run["t"]))
+        if pieces:
+            pterms = [Term("in", dst=b, span=sp) for b, sps in pieces.items() for sp in sps]
+            g = search(p, lib + pterms, [t for t in base.terms if not (t.kind == "in" and t.dst in pieces)] + pterms)
+            trace["pieces"] = {"bic": round(g.bic, 3), "without": round(base.bic, 3), "n": len(pterms)}
+            if g.bic < base.bic:
+                base, lib = g, lib + pterms
         base = _refined(p, lib, base)
         best = base
         trace["plain_bic"] = base.bic
-        if chains:
+        if chains and not shut:
             best = _chains(p, lib, base, S, m, unit, final, T, trace)
     except OutOfTime:
         return None
@@ -82,7 +121,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
         best = conventions(p, best, lib)
     except OutOfTime:
         pass
-    flows, inferred = to_flows(best.live(), names, rows, S)
+    flows, inferred = to_flows(best.live(), names, rows, S, list(run["t"]))
     return {"flows": flows, "inferred_levels": inferred, "bic": best.bic, "nll": best.nll, "numbers": best.numbers,
             "terms": [_show(t, th, names) for t, th in best.live()], "trace": trace, "seconds": round(time.monotonic() - began, 2)}
 

@@ -215,6 +215,8 @@ def translate(B: list[dict[int, float]], feats: list[Feature], S: int, unit: lis
                     break
                 if b == a or unit[a] != unit[b] or pos[b] <= 0:
                     continue
+                if len(f.x) == 2 and abs(pos[b] - neg[a]) > 0.05 * max(pos[b], neg[a]):
+                    continue           # at a product only a whole move (fit.conventions; 127's predation and births)
                 out.append(Term("move", src=a, dst=b, x=f.x))
                 q = min(neg[a], pos[b])
                 neg[a] -= q

@@ -16,6 +16,8 @@ constant). Kinds:
                                 chain of mean delay tau (a None: fed from outside, x may be 1, a
                                 stock or an input, sign -1 for a gap)
     init   (hidden) -> b        the chain's stage `stage` holding theta at the start
+    in + span                   one piece of b's outside inflow (steps a..b-1), its places taken
+                                from the base model's pieces (an unannounced schedule)
     goal   outside -> b         theta x (u - sum of stocks x[1:])   (a goal gap closed over 1 / theta
                                 steps, the goal an input u = x[0]: one shared time for every stock)
 
@@ -38,6 +40,7 @@ class Term:
     chain: tuple | None = None         # (n, tau) for chain / init
     stage: int = 0                     # init: the stage that holds theta at the start
     sign: float = 1.0
+    span: tuple | None = None          # in: steps a..b-1 only (a piece of an outside inflow)
 
     @property
     def pooled(self) -> bool:
@@ -108,7 +111,14 @@ class Rows:
         """A pooled term's part of its stock's outside inflow per unit theta."""
         if t.kind == "goal":
             return self.goal(t.x)
+        if t.span is not None:
+            return self.piece(t.span)
         return -self.z(t.x) if t.kind == "gap" else self.z(t.x)
+
+    def piece(self, span: tuple) -> np.ndarray:
+        v = np.zeros(self.T)
+        v[span[0]:span[1]] = 1.0
+        return v
 
     def z(self, x: tuple) -> np.ndarray:
         if x not in self._z:
@@ -127,6 +137,8 @@ class Rows:
             C[t.dst] += init_response(self.T, t.chain[0], t.chain[1], t.stage)
         elif t.kind == "goal":
             C[t.dst] += self.goal(t.x)
+        elif t.span is not None:
+            C[t.dst] += self.piece(t.span)
         else:
             z = self.z(t.x)
             if t.src is not None:

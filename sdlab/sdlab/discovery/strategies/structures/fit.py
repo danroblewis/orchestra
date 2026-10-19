@@ -66,9 +66,9 @@ PRODUCT = 4.0        # numbers a bilinear term costs: its rate and a linear effe
 
 def numbers(terms: list[Term]) -> float:
     """What the terms write down, priced as combined's judge prices the flows they become: one per
-    term, a bilinear term PRODUCT, and a hidden chain its n stage rates (one delay, but n flows)."""
+    term, a bilinear term PRODUCT, an inflow piece 2 (its value and its place), and a hidden chain its n stage rates (one delay, but n flows)."""
     chains = {t.chain_key() for t in terms if t.kind == "chain"}
-    return sum(PRODUCT if len(t.x) == 2 else 1.0 for t in terms) + sum(c[2] for c in chains)
+    return sum(PRODUCT if len(t.x) == 2 else 2.0 if t.span is not None else 1.0 for t in terms) + sum(c[2] for c in chains)
 
 
 def _solve(A: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -196,10 +196,10 @@ def _signs(t: Term) -> dict[int, float]:
 def aliases(t: Term, lib: list[Term]) -> list[Term]:
     """Terms reading the same thing that change one of the same stocks the same way (an outflow and
     a gap, a drain and a gap, a move and an outflow): what a swap may replace t with."""
-    if t.kind == "init":
+    if t.kind == "init" or t.span is not None:
         return []
     st = _signs(t)
-    same_x = [a for a in lib if a != t and a.x == t.x and a.chain == t.chain and any(st.get(s) == v for s, v in _signs(a).items())]
+    same_x = [a for a in lib if a != t and a.span is None and a.x == t.x and a.chain == t.chain and any(st.get(s) == v for s, v in _signs(a).items())]
     # the same flow reading something else: a plain outflow for a bilinear one, and back
     same_ends = [a for a in lib if a != t and a.kind == t.kind and a.src == t.src and a.dst == t.dst and a.chain == t.chain and a.sign == t.sign and a.x != t.x]
     return same_x + same_ends
@@ -314,6 +314,9 @@ def conventions(p: Problem, cur: Fit, lib: list[Term]) -> Fit:
                 mv = Term("move", src=a, dst=t2.dst, x=t2.x)
                 if t1 not in th or mv not in have or mv in th or th[t1] < th[t2] * 0.999:
                     continue
+                if len(t2.x) == 2 and th[t1] > th[t2] * 1.05:
+                    continue           # at a product, only a whole move: predation removing X at one rate
+                                       # and breeding Y at another is two flows, not a move and an outflow (127)
                 g = fit(p, [u for u in cur.terms if u != t2] + [mv])
                 if g.bic <= cur.bic + 1e-6 * max(1.0, abs(cur.bic)):
                     cur, done = g, True

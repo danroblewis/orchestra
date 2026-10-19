@@ -61,7 +61,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     else:
         try:
             with deadline(cap + 1.0):                    # a hard stop besides the search's own checks
-                mine = discover(stocks, run, opts, seconds=cap, chains=cfg["chains"], products=cfg["products"])
+                mine = discover(stocks, run, opts, seconds=cap, chains=cfg["chains"], products=cfg["products"], base_flows=base.get("flows"))
             why = None if mine else "no model in time"
         except Overrun:
             why = "no model in time"
