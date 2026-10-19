@@ -61,3 +61,26 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
 - **Engine features approved:** measured input series, `dt`, and whatever else the sources need. They must be additive: existing numbers stay identical. Recorded in CLAUDE.md invariant 2.
 - **Real-data cases go on the ladder as additional information,** apart from the formal tests (own view; not in the Tests pass rate). Recorded in CLAUDE.md invariant 3.
 - **Downloading unlicensed or GPL data at ingest time is OK.** Don't commit it.
+
+## 2026-10-18 20:15 (note)
+
+- **Finished:**
+  - censored (3a0f24c, 665d991);
+  - effect_hats (d95fb2d, 1baf38e);
+  - revisit (up to cbb87a1, `docs/research/revisit.md`): lna_stack passes 381/472 on 001-048 against lna's 340, with 0 losses;
+  - live runs and the editor strategy picker (90c741d).
+- **Sent on:**
+  - the combined agent was asked to add lna_stack (not lna_loops);
+  - the lna agent was asked for a stage hook, so the lna_* variants stop copying `discover`;
+  - added lna_stack's explanations.yaml entry (the test passes).
+- **Started:** queue item 1, noise variants.
+
+**Needs you**
+- **Retire (park with a reason)?** The revisit found these dominated everywhere on the ladder:
+  - numopt_fd, numopt_fd_profile, numopt_fd_coarse, numopt_lbfgs, gradient, held_out_blend (already parked; would become retired);
+  - mass_balance_all, symbolic, impulses (each dominated by a sibling);
+  - about 20 matrix-plus-one-mechanism variants.
+
+  It recommends keeping shared_noise, mass_balance, periodic_inflows and sindy. latent_eras, starved_coflows and recession should wait until a rung tests their mechanism.
+
+  Parking keeps the code and history but stops the watcher spending time on them. I have not done it.

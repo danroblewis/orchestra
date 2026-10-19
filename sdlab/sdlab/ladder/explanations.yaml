@@ -510,6 +510,20 @@ strategies:
     status: work in progress
     note: From the "revisit" of past ideas; its code is being edited and its document is not written yet.
 
+  lna_stack:
+    idea: lna with the revisit's best additions stacked in one model (pulses, recurring inflow levels, effect products, and SD-style ties on noise-free runs).
+    how: >-
+      It runs lna with several extra stages. One finds pulses first; one reads a stepping outside
+      inflow as a few recurring levels; one allows a move scaled by a third stock's level (a
+      linear effect). On noise-free runs, where the data can't choose, it writes ties the way SD
+      models usually do (a goal gap, a co-flow). Each addition is kept only when the
+      counting-noise likelihood and BIC prefer it, and the stack checks the result still behaves
+      like the data.
+    helps_with: Everything lna does, plus pulses (022), stepping inflows (027, 048), effects with counting noise (017, 018), and noise-free goal gaps and co-flows (011, 016, 047).
+    builds_on: lna, lna_pulses, lna_levels, lna_products, gap_prior
+    status: active
+    note: From the revisit (docs/research/revisit.md). On cases 001-048 it passes 381 of 472 cells against lna's 340, with 0 losses; it takes about 3x lna's time.
+
   lna_pulses:
     idea: Find pulses (one-step arrivals, short bursts) first, then run lna on what they leave.
     how: >-
