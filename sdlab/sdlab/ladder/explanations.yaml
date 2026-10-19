@@ -86,7 +86,7 @@ strategies:
     helps_with: Measurement noise that loses couplings (the spring, the reaction chain), products written as linear links (Lotka-Volterra), and measured inputs driving coupled stocks.
     builds_on: matrix
     status: active
-    note: Physics cases 25 of 28 (best before 15); docs/research/odefit.md.
+    note: Physics cases 25 of 28 (best before 15); standard tests 20 more passes than matrix, none lost; docs/research/odefit.md.
 
   shared_noise:
     idea: Tell moves, links and co-flows apart by which stocks' random wiggles happen together.

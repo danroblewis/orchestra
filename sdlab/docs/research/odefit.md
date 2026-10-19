@@ -1,11 +1,11 @@
 # odefit: per-step models fitted by output error, for smooth measured data
 
-**Status:** done for the physics cases (ladder, commit `8d8e8c6`); standard tests: see "Standard tests" below.
+**Status:** done (physics cases and the standard tests on the ladder; commits `8d8e8c6`, `333f814`).
 **Strategy:** `sdlab/discovery/strategies/odefit/` (`fit.py` the output-error fit, `extend.py`
 products and the runaway check, `compare.py` comparing two models by output error, `run.py` the
 choice, `write.py` the flows). Tests `tests/test_odefit.py` (4). No other strategy is imported; the
 main line comes from the shared library (`sdlab.discovery.identify`).
-**Verdict:** adopt for physics and other smooth measured data. Physics cases **25 of 28** (the best
+**Verdict:** adopt for physics and other smooth measured data. On the standard tests it loses no pass to matrix (one pass becomes equivalent) and gains 20. Physics cases **25 of 28** (the best
 before: 15, earned_pieces and symbolic; matrix and lna 13; combined 12), structure agreeing in 25,
 mean fresh skill@20 96.5% against the reference's 97.1% (gap -0.6 points; matrix -10.5), long-run
 error 8.3% (the reference's 17.0%). Distilled cases 141-143 (from the physics failures): 12 of 12.
@@ -146,9 +146,52 @@ none-long, meas-short, meas-long:
 (E: equivalent.) Every leader makes the physics' mistake on the small cases: right without noise,
 wrong with measurement error, and on 143 only at the long run's large levels.
 
+Re-run at `333f814` (the judge guard below): the same 25 of 28 and 12 of 12.
+
+### Particle distilled cases 170, 171, 195
+
+`sdlab-ladder run --strategies odefit --cases 170,171,195 --jobs 1 --timeout 300` at `333f814`
+(none-short, none-long, counts-short, counts-long):
+- **170** (slow bins under fast cells): P P F F;
+- **171** (A + B -> C): E F F F;
+- **195** (two-way exchange between chambers): P P F F.
+
+The counts cells are the main line's (whole-number levels go to it), so they fail as matrix's do.
+The noise-free passes on 170 and 195 are shared with structures, censored, own_tables,
+hidden_transit and drifting_drain in the store. No stored strategy passes any 171 cell; structures
+is equivalent on all four.
+
 ### Standard tests
 
-See the section below (filled from the store after the run).
+**Commands:** `sdlab-ladder sync --strategies odefit --cases 0,1 --variants none,meas,outliers,bias
+--jobs 2 --timeout 300` at `333f814`, single-threaded (523 items, 8,870 s). The watcher ran the
+counts cells at the same strategy hash.
+
+**Comparison:** paired with matrix's latest stored result in each cell (matrix's results are at
+several older commits; odefit's model on counted levels is matrix's by construction, as
+`tests/test_odefit.py` checks). 821 paired cells:
+
+| matrix -> odefit | cells |
+|---|---|
+| pass -> pass | 279 |
+| fail -> fail | 380 |
+| equivalent -> equivalent | 127 |
+| **fail -> pass** | **20** |
+| fail -> equivalent | 14 |
+| **pass -> equivalent** | **1** (087-noisy-injection outliers-long: output error chosen, the 3 true parts right plus one extra; it has no outlier handling) |
+| pass -> fail | 0 |
+
+The 20 gains:
+- products and crowding: 103 canonical logistic (none-short, none-long), 136 crowding short run
+  (none-short, none-long), 139 noisy crowding (meas-short, meas-long), 112 short logistic none-long;
+- 120 short-series chain: none-short and none-long;
+- noise-free linear sweeps: 043#6 and 043#7 none-long, 049#1 none-short and none-long, 058 none-long;
+- 080 outliers-short;
+- the distilled 141-143 meas cells: 5.
+
+Against the Tests leaders, odefit is matrix wherever levels are counted, so kalman_lna, structures
+and combined stay well ahead on counts and noisy reports. odefit is a physics/smooth-data method
+with the main line as its fallback, not a replacement for them.
 
 ## Lessons
 

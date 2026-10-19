@@ -437,9 +437,14 @@ their numbers (levels, measured inputs, a constant; products of two levels where
 do not run away), fitted by output error with every segment's start state estimated. The main
 line's model is kept where it predicts a held-out 30% better, or, with noise in the dynamics
 (counting noise), where the main line's judge prefers it.
-**Physics 25 of 28** (was 15 at best), gap to the reference -0.6 points (was -10 to -30), long-run
+**Physics 25 of 28** (was 15 at best; same at 333f814), gap to the reference -0.6 points (was -10 to -30), long-run
 error 8.3% (reference 17%). Fails: tanks meas-short (every product family runs away; the linear
 model keeps H2 <- pump) and thermostat long (both noises; skill within 3.3 points, structure only).
+
+**Standard tests** (333f814, paired with matrix's latest results, 821 cells): 20 fail -> pass,
+14 fail -> equivalent, 1 pass -> equivalent (087 outliers-long), 0 pass -> fail. **Particle
+distilled 170/171/195:** noise-free 170 and 195 pass (shared with structures and others), 171
+equivalent/fail; every counts cell fails (main line).
 
 **Distilled** (commit 14da1fe): 141 (a noisy oscillator in offset stocks), 142 (an oscillator
 pushed by a measured force, noisy), 143 (a chain into an ever-growing stock, 2% relative error).
