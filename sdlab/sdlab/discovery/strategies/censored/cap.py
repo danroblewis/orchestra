@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 
 from ...changes import pelt
 
@@ -94,7 +94,11 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
     if low >= low_share:
         for d in sorted({0.0, plain[1]}):
             sweep(Ds[1:], lambda D: (D, d))
-    plain_fit = plain[2]
+    plain_fit = _refine_drain(plain[2], x, y, came, wanted, cuts_of, T, floor)
+    if plain_fit["score"] < plain[0]:
+        plain = (plain_fit["score"], plain_fit["d"], plain_fit)
+        if plain_fit["score"] < best["score"]:
+            best = plain_fit
     if best["D"] <= 0:
         return {**best, "plain": plain[0], "plain_fit": plain_fit}
     plain = plain[0]
@@ -122,6 +126,22 @@ def search(x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, d
         best = {"D": D, "d": d, "cuts": c2, "rss": rss, "score": sc, "capped": capped, "plain": plain}
     best["plain_fit"] = plain_fit
     return best
+
+
+def _refine_drain(fit: dict, x, y, came, wanted, cuts_of, T: int, floor: float) -> dict:
+    """The plain fit's own drain refined continuously with its cuts held, then cut again."""
+    if fit["d"] <= 0:
+        return fit
+    c = fit["cuts"]
+    lo, hi = max(0.0, fit["d"] - 0.05), fit["d"] + 0.05
+    res = minimize_scalar(lambda d: piece_fit(outside_inflow(0.0, d, x, y, came, wanted)[0], c)[1], bounds=(lo, hi), method="bounded",
+                          options={"xatol": 1e-7})
+    d = float(res.x)
+    u, capped = outside_inflow(0.0, d, x, y, came, wanted)
+    c2 = cuts_of(u)
+    _, rss = piece_fit(u, c2)
+    sc = cost(rss, T, len(c2) - 1, 1, floor)
+    return {"D": 0.0, "d": d, "cuts": c2, "rss": rss, "score": sc, "capped": capped} if sc < fit["score"] else fit
 
 
 def as_flows(fit: dict, row: str, x: np.ndarray, y: np.ndarray, came: np.ndarray, wanted: np.ndarray, at) -> list[dict]:

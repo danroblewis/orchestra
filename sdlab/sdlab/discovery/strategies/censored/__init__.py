@@ -35,7 +35,7 @@ from ...matrix import injected
 from ...simulate import Model
 from . import cap, floor, onestep
 
-DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None}
+DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -115,6 +115,36 @@ def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, 
     return out
 
 
+def link_candidates(flows, ids, t, prev, dy, i):
+    """A row the main line reads as "drains faster when x_j is high" beside an outside inflow, read
+    instead as one inflow c + k x_j (k < 0), floored at 0 as the engine floors it, instead of an
+    outflow that an emptied stock caps (a goal gap whose goal-seeking term the matrix turns into a
+    drain). Same numbers on uncapped steps; the one-step BIC in the engine's form decides."""
+    split = _flows_of(flows, ids[i])
+    if split is None:
+        return []
+    mine, rest = split
+    row = ids[i]
+    drains = [f for f in mine if f.get("from") == row and (f.get("rate") or {}).get("form") == "linear"
+              and _reads(f) and row not in _reads(f)]
+    if not drains:
+        return []
+    y = dy[i] - onestep.changes(rest, ids, t, prev)[i]
+    T = len(y)
+    others = sorted({ids.index(s) for f in mine for s in _reads(f) if s in ids and s != row})
+    out = []
+    for j in sorted({ids.index(s) for f in drains for s in _reads(f) if s in ids}):
+        cols = [np.ones(T), prev[j], prev[i]] + [prev[m] for m in others if m != j]
+        beta = np.linalg.lstsq(np.array(cols).T, y, rcond=None)[0]
+        c, k, own = float(beta[0]), float(beta[1]), float(beta[2])
+        if c <= 0 or k >= 0:
+            continue
+        fit = {"i": i, "j": j, "s": -1.0, "theta": c / -k, "beta": np.array([-k, own, *beta[3:]]),
+               "others": [m for m in others if m != j], "constant": False}
+        out.append((rest + floor.as_flows(fit, ids), f"link {c:.3g} - {-k:.3g} x {ids[j]} into {row}"))
+    return out
+
+
 def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, mult=2.0, changes=True):
     split = _flows_of(flows, ids[i])
     if split is None:
@@ -178,6 +208,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             cands = []
             if o["floors"]:
                 cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["floor_margin"] or o["margin"], o["bend"], o["own_floors"])
+            if o["links"]:
+                cands += link_candidates(flows, ids, t, prev, dy, i)
             if o["caps"] or o["recut"]:
                 cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"])
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
