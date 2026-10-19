@@ -412,3 +412,63 @@ At the first distilled run (20 cases), structures had 19/80 and every other stra
 - **The shared library's `identify.judge`, `identify.identify` and `onestep.bic` take no measured inputs**, so the main line judges input-driven flows as zero when choosing among its variants. The input-fix agent worked around it with local copies in its 3 strategies. Proposed fix: an optional `inputs=None` parameter, with existing calls byte-identical (an additive interface change). May the library change?
 - **Behaviour grader:** swap in only the truth's truly exogenous inflows (constants with no effect)? This affects sawmill. Evidence is in `docs/research/realistic-triage.md`.
 - **Still open from before:** retire dominated strategies, or run them less often, to cut the watcher's load.
+
+## 2026-10-19 (note): physics coverage, odefit
+
+**Triage** (every physics cell before this work: the best of the 59 strategies' stored results, from
+`api.summary()`; 15 of 28 was the best single strategy, 21 cells passed by some strategy):
+
+| case | none-short | none-long | meas-short | meas-long |
+|---|---|---|---|---|
+| coupled tanks | fail: spurious H2 <- pump (linear model of a sqrt cascade; skill fine) | pass (33 strategies) | earned_pieces only (gap -5.0, at the line); others lose H2's couplings | fail: spurious H2 <- pump |
+| draining tank | pass | pass (combined fails: pump coupling lost, -198) | pass | pass |
+| Lotka-Volterra | fail: the linearised oscillator (self-couplings missing; skill within 3-4 points) | numopt_fd_profile only | symbolic, sindy | symbolic, numopt_lbfgs |
+| spring | pass | pass | fail: V <- P and V <- force lost (errors in variables; skill -50) | fail: same (-59 to -74) |
+| cooling | pass | pass | pass | pass |
+| chain | pass | pass | earned_pieces, sindy, common_cause | fail: C <- B lost (-20) |
+| thermostat | fail: structure and skill (-26 to -38) | fail: skill -20, long-run 0.87 | fail: structure; skill -3.5 to -114 | fail: structure; skill -7.7 to -50 |
+
+So: the noise cells were method failures (errors in variables). Output error on the true
+structure reaches the reference on all of them. LV was the missing products. The tanks' short runs
+were a linear misfit. The thermostat is part method, part scoring (below).
+
+**Built:** `odefit` (docs/research/odefit.md; commits 3eacd05, 8d8e8c6). Per-step models linear in
+their numbers (levels, measured inputs, a constant; products of two levels where they earn it and
+do not run away), fitted by output error with every segment's start state estimated. The main
+line's model is kept where it predicts a held-out 30% better, or, with noise in the dynamics
+(counting noise), where the main line's judge prefers it.
+**Physics 25 of 28** (was 15 at best), gap to the reference -0.6 points (was -10 to -30), long-run
+error 8.3% (reference 17%). Fails: tanks meas-short (every product family runs away; the linear
+model keeps H2 <- pump) and thermostat long (both noises; skill within 3.3 points, structure only).
+
+**Distilled** (commit 14da1fe): 141 (a noisy oscillator in offset stocks), 142 (an oscillator
+pushed by a measured force, noisy), 143 (a chain into an ever-growing stock, 2% relative error).
+Flows are exact, so only the measurement is noisy. matrix, lna, earned_pieces, symbolic and
+kalman_lna pass the noise-free cells and fail the meas ones (141, 142 both lengths; 143 long), the
+physics' mistake; odefit passes all 12.
+
+**Needs you (physics scoring)**
+1. **The thermostat's structure rule cannot be met by the best SD model.** A coupling is present at
+   10% of the strongest coupling into the stock. In closed loop the controller's coupling (T <- T,
+   T <- setpoint) is strong and the physical T <- outside is weak, so the best predicting model
+   drops it or gives it the wrong sign. The reference itself fails the structure (LADDER.md). odefit's long
+   runs are within 3.3 points of the reference's skill and fail on structure alone. Options:
+   score the thermostat's structure without T <- outside, compare against the reference's own
+   structure, or label the cell's structure unidentifiable. No change made.
+2. **Is the 5-point rule fair?** Yes, on what was measured. The reference is fitted on the 2,000-step
+   noise-free run, yet odefit is within 0.0-1.8 points of it on every short and meas cell of the
+   linear and sqrt cases, and above it on LV and the tanks (products are not in the reference's
+   form). The only cells further than 3.3 points below the reference are the thermostat's short
+   runs (-4.3, inside the line).
+3. **Per-step numbers are compared correctly.** Structure is read from the Jacobian of the found
+   model's one-step map, with the exact one-step map's sampling couplings allowed. Behaviour is
+   graded by stepping the found model against the sampled solution. Neither mixes per-step and
+   continuous rates. The sampling-coupling list is not computed for the thermostat. The chain's
+   exact-map C <- A (k1 k2 / 2, about 4% of C <- B) sits below the presence line, so it can never
+   count against a model.
+4. **The physics tag includes the particle cases** (`--cases tag:physics` ran 44 items for one
+   strategy: the 28 physics cells and 16 particle cells), so "physics passes" quoted from a tag run mix the two. The physics view
+   (`summary()["physics"]`) counts the 28 physics cells only.
+5. **`tests/test_ladder_noise.py::test_existing_cases_keep_their_four_variants` fails on
+   112-distilled-short-logistic** (archetypes, 445aabf). It declares a noise variant without the
+   `noisy` tag. 141-143 are tagged `noisy` and pass the check. For the archetypes agent.

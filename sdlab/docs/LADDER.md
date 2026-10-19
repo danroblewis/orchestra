@@ -915,6 +915,19 @@ What they find against the physics:
   (H <- pump, T <- outside, V <- force). Their own refits do not take the input columns
   (`input_columns`, Inputs above): a fix for those strategies, not for the scorer.
 
+**odefit** (19 October 2026, commit 8d8e8c6: `sdlab-ladder run --strategies odefit --cases
+phys-,141,142,143 --jobs 2 --timeout 300`, single-threaded; `api.summary()["physics"]`;
+docs/research/odefit.md). Per-step models linear in their numbers (levels, measured inputs, a
+constant, and products of two levels where they earn it), fitted by output error with every
+100-step segment's start state estimated, so measurement error does not shrink the couplings.
+**25 of 28** (the best before: 15, earned_pieces and symbolic), structure agreeing in 25, couplings
+97.6% right, fresh skill@20 96.5% (reference 97.1%, gap -0.6 points), long-run error 8.3%
+(reference 17.0%), nothing diverges. Per case, passes of the four variants: tanks 3 (meas-short
+fails: H2 <- pump), draining tank 4, Lotka-Volterra 4 (products, +0.8 to +1.0 points over the
+reference), spring 4, cooling 4, chain 4, thermostat 2 (short runs, a linear controller within
+4.3 points; long runs within 3.3 points but T <- outside missing or of the wrong sign: the closed
+loop, as for the reference). The triage of every cell, before and after, is in odefit.md.
+
 ## Particle cases (`particles/`, `cases/particles/`)
 
 The physics cases above are a handful of ODEs with one to three stocks. The **particle cases** are
@@ -1403,6 +1416,27 @@ is the existing case's.
   are the closest expressible probes.
 - **dt < 1 recordings** (100, 104: a drain k reads as 1 - e^-k per step): the scorer now compares
   per recorded step (2026-10-19), so they need no distilled case of their own.
+
+### Distilled from the physics cases' measurement noise (141-143)
+
+080-088 put measurement error on a counts run, so they mix process and measurement noise. In
+physics nothing moves in whole things, so the physics cases have measurement error on a smooth path
+only, and that is where every leader loses couplings. These three cases have exact flows (`exact:
+true`: no counting noise) and the levels in thousandths, so the counts run underneath is the
+noise-free one, as in the physics. Variants: none and meas, short and long. Commit 14da1fe; `sdlab-ladder check` ok;
+the true models pass their own scoring.
+
+| case | from | mechanism |
+|---|---|---|
+| 141-noisy-offset-oscillator | phys-mass-spring-damper meas | a lightly damped oscillator in offset stocks (P = position + 10000 in mm, V = velocity + 1000 in mm per step; different units, so no move between them), kicked by announced injections into V; V's error (60) is about half its spread: V <- P lost |
+| 142-oscillator-pushed-by-measured-input | phys-mass-spring-damper meas | the same oscillator pushed by a measured force; V <- force (and V <- P) lost |
+| 143-noisy-chain-into-growing-stock | phys-reaction-chain meas | A -> B -> C with C final (batches of A injected), 2% relative error: on the long run C reaches 1,800 and its error dwarfs its change in a step; C <- B lost |
+
+Leaders (`sdlab-ladder run --strategies matrix,lna,earned_pieces,symbolic,kalman_lna,odefit
+--cases 141,142,143`, single-threaded, 19 October 2026): matrix, lna, earned_pieces, symbolic and
+kalman_lna pass the noise-free cells (kalman_lna equivalent on 141 none-short, symbolic fails 142
+none-long) and fail every meas cell of 141 and 142 and 143 meas-long, the physics' own mistake.
+odefit (output error, docs/research/odefit.md) passes all 12.
 
 ## Newest cases (`/ladder/new`, `newest.py`, `case_dates.py`)
 

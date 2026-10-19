@@ -47,3 +47,4 @@ raise `MissingExtra` (`sdlab/discovery/optional.py`).
 | `pieces_gate` | the matrix with the pieces-gate fix (`pieces_gate = "noise"`) | [inflow-attribution](../../../docs/research/inflow-attribution.md) |
 | `mass_balance` | hidden stocks reconstructed from a unit's mass balance (Kalman filter) | [mass-balance-hidden](../../../docs/research/mass-balance-hidden.md) |
 | `mass_balance_all` | `mass_balance` tried on every candidate | [mass-balance-hidden](../../../docs/research/mass-balance-hidden.md) |
+| `odefit` | per-step models fitted by output error (segment starts estimated), products where earned; the main line kept where it predicts better | [odefit](../../../docs/research/odefit.md) |
