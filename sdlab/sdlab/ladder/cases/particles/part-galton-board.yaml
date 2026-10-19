@@ -1,0 +1,9 @@
+# Balls dropped into a 4-row Galton board (10 peg cells) land in 5 bins with holes. Every ball moves
+# independently with fixed per-step probabilities, so the mean-field model is exact in expectation.
+system: galton
+title: Galton board into draining bins (15 regions)
+level: 21
+tags: [physics, particles, exact, input, chain, split]
+tests: "a Galton board measured as ball counts per peg cell and bin: each peg cell splits its balls between the two cells below (pf x q right, pf x (1 - q) left, per step), each bin drains through its hole, the dropper's rate is a measured input with a daily cycle; the mean-field model is exact, so its 26 flows are scored as equations"
+seed: 1
+timeout: 900

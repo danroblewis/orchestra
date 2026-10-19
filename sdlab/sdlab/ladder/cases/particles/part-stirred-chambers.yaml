@@ -1,0 +1,10 @@
+# A 3 x 3 grid of stirred chambers joined by openings of 1-3 cells; two openings into the centre shut
+# for the second half of every 400 steps (announced). Stirring makes every chamber well mixed at the
+# start of each step, so crossing an opening is a move at a fixed per-step probability: exact.
+system: stirred-chambers
+title: Diffusion between stirred chambers (9 regions, openings shut on a schedule)
+level: 21
+tags: [physics, particles, exact, input, diffusion, announced-era]
+tests: "particles crossing between 9 stirred chambers through openings of 1-3 cells: each opening is a pair of opposite moves at w / 25 x 0.2 per step, the drain an outflow, two openings shut in announced eras; the 26 flows are scored as equations"
+seed: 3
+timeout: 900

@@ -1,0 +1,10 @@
+# The chambers without stirring: particles random-walk 10 lattice cells a step through 9 x 9 chambers.
+# Depletion near the openings and quick recrossings make every fixed-rate model wrong (the mean-field
+# model misses the particles' average by several percent, z ~ 6), so only prediction is scored.
+system: chambers
+title: Diffusion between unstirred chambers (9 regions, prediction only)
+level: 22
+tags: [physics, particles, prediction-only, input, diffusion, announced-era]
+tests: "random walkers between 9 chambers joined by openings of 1-2 cells, two openings shut in announced eras: no proportional model is exact, so forecasts are scored against the mean-field model refitted on a separate run"
+seed: 5
+timeout: 1200

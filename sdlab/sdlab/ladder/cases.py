@@ -33,6 +33,7 @@ from pathlib import Path
 from .. import runner as _runner
 from . import draws as _draws
 from . import noise as _noise
+from . import particles as _particles
 from . import physics as _physics
 from . import realistic as _realistic
 from .caseformat import CaseError, compile_case
@@ -114,13 +115,29 @@ def _physics_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
     return _physics.files(Path(folder).parent)
 
 
+def particles_files() -> dict[str, Path]:
+    """The particle cases (cases/particles/part-*.yaml, particles/): particles counted by region."""
+    d = _particles.folder(CASES)
+    return dict(_particles_listing(str(d), d.stat().st_mtime_ns)) if d.is_dir() else {}
+
+
+@lru_cache(maxsize=8)
+def _particles_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
+    return _particles.files(Path(folder).parent)
+
+
 def _all_files() -> dict[str, Path]:
-    return {**case_files(), **realistic_files(), **real_files(), **physics_files()}
+    return {**case_files(), **realistic_files(), **real_files(), **physics_files(), **particles_files()}
 
 
 def is_physics(case_id: str) -> bool:
-    """Is this one of the physics cases (physics/), not a test case?"""
-    return split(case_id)[0] in physics_files()
+    """Is this one of the physics cases (physics/, and the particle cases, particles/), not a test case?"""
+    return split(case_id)[0] in physics_files() or split(case_id)[0] in particles_files()
+
+
+def is_particles(case_id: str) -> bool:
+    """Is this one of the particle cases (particles/)?"""
+    return split(case_id)[0] in particles_files()
 
 
 def is_realistic(case_id: str) -> bool:
@@ -207,7 +224,7 @@ def _safe_count(path: Path) -> int:
 def _draw_count(path: Path) -> int:
     if path.parent.name == "real":
         return 0
-    if path.suffix != ".yaml" or path.parent.name in ("realistic", "physics"):
+    if path.suffix != ".yaml" or path.parent.name in ("realistic", "physics", "particles"):
         return 0
     st = path.stat()
     return _count(str(path), st.st_mtime, st.st_size)
@@ -246,6 +263,8 @@ def read(path: Path) -> dict:
         return _realistic.spec(path)
     if path.parent.name == "physics":
         return _physics.build(path)["spec"]
+    if path.parent.name == "particles":
+        return _particles.build(path)["spec"]
     text = path.read_text()
     if path.suffix == ".yaml":
         if _draws.count(text, path.name):
@@ -365,6 +384,10 @@ def _get(case_id: str) -> dict:
     if p.parent.name == "physics":                               # physics/: its own case dict and hash; its data written for data.py
         built = _physics.build(p)
         _physics.ensure(built["case"])
+        return built
+    if p.parent.name == "particles":                             # particles/: its own case dict and hash; its data written for data.py
+        built = _particles.build(p)
+        _particles.ensure(built["case"])
         return built
     st = p.stat()
     return _load_draw(str(p), st.st_mtime, st.st_size, i) if i else _load(str(p), st.st_mtime, st.st_size)

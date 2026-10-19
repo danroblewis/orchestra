@@ -1,0 +1,9 @@
+# A hopper feeding a queue that drains through a gate passing at most 4 balls a step. When the feed
+# exceeds the gate's capacity the queue grows linearly; when it is short the gate is proportional.
+system: gate
+title: Queue behind a capacity gate (3 regions, prediction only)
+level: 22
+tags: [physics, particles, prediction-only, input, capacity]
+tests: "a queue drained through a gate that passes at most 4 balls a step (E[min(Binomial(Q, 0.35), 4)]): no SD form writes the min, so forecasts are scored against the refitted mean-field model"
+seed: 7
+timeout: 900

@@ -24,7 +24,9 @@
   const cxText = (x) => !x ? "–" : `${x.true} → ${x.found}` + (x.extra ? ` (${x.extra > 0 ? "+" : ""}${x.extra}: ${Object.entries(x.by).filter(([, v]) => v).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k}`).join(", ")})` : " (same)");
   const B = { strategy: null, variant: "counts-long", set: "tests", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
   const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference (realistic.py)
-  const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE solved in continuous time (physics/)
+  const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE solved in continuous time (physics/), or particles (particles/)
+  const isPart = (c) => !!c.particles;                                               // a particle case: particles counted by region (particles/)
+  const partEq = (c) => isPart(c) && !!c.particles.equations;                        // its equations are scored against the mean-field model
   const isData = (c) => !!c.real;                                                     // a real-data case: a measured series beside a published model (real/)
   const stc = (st) => ({ agrees: "pass", differs: "fail" }[st] || st);                 // a real case's verdict, coloured as pass / fail
   const REALD = "Real data: discovery saw the first part of a measured series; the found model runs free over the rest (held-out skill against persistence: 100% exact, 0 no better than holding the last level) beside the published model refitted on the same samples. Agreement: the published structure's parts the found model has (recall) and found parts that are published (precision); agreement, not a pass. The twin variant is the published model simulated at the data's length and noise, scored like a ladder case.";
@@ -48,11 +50,16 @@
   const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
   // a physics case runs none and meas (no counting noise): the counts variant picked reads as its meas variant
   const caseVariants = (c) => (isData(c) ? ["real", "twin"] : isPhys(c) ? (c.variants || []).map((v) => v.name || v) : VARIANTS);
-  const variantOf = (c, v) => (isData(c) && v !== "all" ? "real" : isPhys(c) && v !== "all" ? v.replace(/^counts-/, "meas-") : v);
+  const variantOf = (c, v) => (isData(c) && v !== "all" ? "real" : isPhys(c) && !isPart(c) && v !== "all" ? v.replace(/^counts-/, "meas-") : v);
   const PHYS = "Physics view: the found model's couplings (which stocks and inputs each stock's change reads, with sign and shape, from its Jacobian on the run) against the physics', and its fresh-run skill against the reference, the best model SD Lab's forms can write. Pass: the coupling graph and signs agree and fresh skill@20 is within 5 points of the reference's.";
+  const PART = "Particle case: individual particles moved by explicit rules, measured as counts per region. The mean-field model (each region a stock, each move a proportional flow at its per-step probability, a binding a product) is the truth where it is exact in expectation (tier exact or measured: equations scored as on any case) and the reference otherwise (tier prediction: pass when fresh skill@20 and @100 are each within 5 points of it). The check: 40 particle runs from one start against the mean-field model, z = gap / standard error (1 = within sampling error).";
+  function partHtml(c, r) {
+    const P = c.particles, ch = P.check || {}, pt = r && r.scores && r.scores.particles;
+    return `<p class="small" data-tip="${esc(PART)}"><b>Particles</b>: ${esc(P.regions)} regions, about ${esc(P.particles)} particles; tier <b>${esc(P.tier)}</b> (${P.equations ? "equations scored against the mean-field model" : "prediction only: the mean-field model is the reference"}); mean-field check z rms ${fmt(ch.z_rms)}, ${pct(ch.rel)} off the particles' average over ${esc(ch.runs)} runs of ${esc(ch.steps)} steps.${pt ? ` Equations: <b>${esc(pt.equations || "not scored")}</b>; fresh skill vs the mean-field reference: @20 ${pt.gap20 == null ? "–" : (pt.gap20 >= 0 ? "+" : "") + (100 * pt.gap20).toFixed(1)} points, @100 ${pt.gap100 == null ? "–" : (pt.gap100 >= 0 ? "+" : "") + (100 * pt.gap100).toFixed(1)}.` : ""} <span class="muted">${esc(P.mean_field || "")}</span></p>`;
+  }
   function physHtml(c, r) {
     const Ph = c.physics, ph = r && r.scores && r.scores.physics;
-    const head = `<p class="tests"><b>Physics</b>: ${esc(Ph.about)}${Ph.differs ? ` <span class="muted">SD vs physics: ${esc(Ph.differs)}</span>` : ""}</p>`;
+    const head = `<p class="tests"><b>Physics</b>: ${esc(Ph.about)}${Ph.differs ? ` <span class="muted">${isPart(c) ? "Mean-field vs particles" : "SD vs physics"}: ${esc(Ph.differs)}</span>` : ""}</p>${isPart(c) ? partHtml(c, r) : ""}`;
     if (!ph) return head;
     const shp = (x) => esc(x || "–");
     const rows = ph.couplings.map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>${esc(x.sign_true)} ${shp(x.shape_true)}</td><td>${x.present ? `${esc(x.sign_found)} ${shp(x.shape_found)}` : "missing"}</td><td>${x.sign_ok ? "✓" : "✗"}${x.present && !x.shape_ok ? " <span class=\"muted\">shape</span>" : ""}</td></tr>`).join("")
@@ -181,16 +188,16 @@
         <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isData(c) || isReal(c) || isPhys(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
         <span class="stbadge st-${stc(st) || "none"}">${st ? esc(st) : "not run"}</span>
         ${isReal(c) && r ? `<span class="stbadge st-${meets(r) ? "pass" : "fail"}" data-tip="${esc(GOAL)}">${meets(r) ? "meets the goal" : "short of the goal"}</span>` : ""}
-        ${m && m.errorScore !== null && !isPhys(c) ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
+        ${m && m.errorScore !== null && (!isPhys(c) || partEq(c)) ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
       </header>
       <p class="tests">Tests: ${esc(c.tests)} <span class="muted small">level ${esc(c.level)} · ${esc(c.tags.join(", "))}</span></p>
       ${isPhys(c) ? physHtml(c, r) : ""}
       ${isData(c) ? realHtml(c, r) : ""}
       ${P.drawHtml(c)}
       ${tabs}
-      <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isData(c) ? "Published model (refit on what discovery saw)" : isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
-      ${r && r.found && !isPhys(c) ? P.diffHtml(c, r) : ""}
-      ${r ? `<p class="bexplain">${esc((isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : isData(c) ? realExplain(r) : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
+      <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isData(c) ? "Published model (refit on what discovery saw)" : partEq(c) ? "Mean-field model (the truth)" : isPart(c) ? "Mean-field model (before its refit)" : isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
+      ${r && r.found && (!isPhys(c) || partEq(c)) ? P.diffHtml(c, r) : ""}
+      ${r ? `<p class="bexplain">${esc((partEq(c) && r.scores && r.scores.particles ? `Against the mean-field model: ${L.explain(r.scores)} ` : isPart(c) && r.scores && r.scores.particles ? `Prediction only: fresh skill@20 and @100 are ${r.scores.particles.near_reference ? "each within 5 points of" : "not both within 5 points of"} the mean-field reference's. ` : isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : isData(c) ? realExplain(r) : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
       ${meas}
     </article>`;
   }

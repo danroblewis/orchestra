@@ -743,6 +743,26 @@ glossary:
     term: Long-run error (physics)
     group: Results
     text: The found model run free for 5,000 steps from a fresh start, fed the measured inputs and announced injections, against the physics run as long - the rms gap over the last 1,000 steps as a share of each stock's range (100% at most; a model that runs away counts 100%). A cycle with no driver (predator-prey) drifts out of phase, so there even the reference is far off.
+  particle_case:
+    term: Particle case
+    group: The model's parts
+    text: Individual particles (balls, molecules) moved by explicit rules - bouncing down a Galton board, hopping along a conveyor, random-walking between chambers, falling over shelves into bins, binding when they meet - and measured as the count in each region at every step. The data never come from an SD model, yet the counts have a known SD answer, the mean-field model. Tagged physics and particles, shown in the Physics view with their own columns, never in the tests' pass rate.
+  mean_field_model:
+    term: Mean-field model
+    group: The model's parts
+    text: What the region counts do on average over many particles - each region a stock, each move a proportional flow whose rate is the per-step chance of that move, each arrival stream an inflow, and two kinds meeting (A + B -> C) a product of their counts. When every particle moves on its own with fixed chances it is exact in expectation; otherwise its numbers are transition frequencies measured over a long run, and it is checked against the average of 40 particle runs.
+  particle_tier:
+    term: Tier (particle case)
+    group: The model's parts
+    text: How far a particle case's mean-field model can be trusted. Exact - particles move independently with fixed per-step chances, so the mean-field model is the truth and equations are scored. Measured - close to exact (a stirred reaction); its numbers are measured over a long run and it tracks 40 particle runs within sampling error, so equations are scored too. Prediction - no SD form is exact (a gate that passes at most m balls a step, bins that overflow, unstirred chambers), so only forecasts are scored, against the mean-field model refitted on a separate run.
+  particles_equations:
+    term: Equations (particle case)
+    group: Results
+    text: On an exact or measured particle case, the found flows against the mean-field model with the ladder's own scorer and tolerances for counting noise - pass, equivalent or fail, as on any case. The particles' own randomness is close to the ladder's counting noise (a move of k per step from n particles varies as n k (1 - k), counting noise as n k).
+  particles_reference:
+    term: Vs mean-field (particle case)
+    group: Results
+    text: Fresh-run skill@20 or @100 minus the mean-field model's own, on the same particle runs (0 = as good). On an exact case the mean-field model gives the best forecasts any model can make from the counts, so a gap below 0 is skill lost; on a prediction-only case it is the refitted mean-field model, which a strategy can beat. A prediction-only run passes when both gaps are above -5 points.
   real_case:
     term: Real-data case
     group: The model's parts

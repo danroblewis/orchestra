@@ -1,0 +1,9 @@
+# The stress test: a Galton board, sorting chambers, a gated conveyor and a reaction tank, chained into
+# one plant of 32 regions with two measured inputs.
+system: plant
+title: "Ball plant: Galton board, sorting chambers, gated conveyor, reaction tank (32 regions, prediction only)"
+level: 23
+tags: [physics, particles, prediction-only, input, large, capacity, product]
+tests: "32 regions in one plant (a Galton board into bins, bins into a 2 x 3 grid of sorting chambers, a conveyor with a capacity gate into a tank where A + B -> C): forecasts at 20 and 100 steps against the refitted mean-field model, with its 57 flows as the structure to compare"
+seed: 8
+timeout: 1800

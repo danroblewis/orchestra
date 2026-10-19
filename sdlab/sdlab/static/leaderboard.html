@@ -59,6 +59,8 @@
   tr > .rd:not(.rd + .rd) { border-left: 2px solid var(--line); }
   th.phys, td.phys { background: color-mix(in srgb, var(--pass) 6%, transparent); }
   tr > .phys:not(.phys + .phys) { border-left: 2px solid var(--line); }
+  th.part, td.part { background: color-mix(in srgb, var(--pass) 11%, transparent); }
+  tr > .part:not(.part + .part) { border-left: 2px solid var(--line); }
   tr.groups th { position: static; cursor: default; font-size: 12px; text-align: left; }
   th[title] { text-decoration: underline dotted; text-underline-offset: 3px; }
   @media (max-width: 700px) { td.bar { min-width: 140px; } .hide-sm { display: none; } td.name { min-width: 170px; } }
@@ -113,6 +115,11 @@
   agree; <b>couplings</b>: the mean share of the physics' couplings found with the right sign; <b>shape</b>: the mean share with the
   physics' shape (a sqrt or a switch SD Lab's forms cannot write); <b>vs ref @20</b>: fresh skill@20 minus the reference's (0 = as
   good as the best SD model); <b>long-run err</b>: the found model run free for 5,000 steps against the physics (hover: the reference's).
+  <b>Particles</b> (the last columns, never in the tests' pass rate; in the physics set): individual particles moved by explicit rules
+  (a Galton board, a conveyor, chambers, shelves over overflowing bins, a reaction tank, a capacity gate, a 32-region plant) and
+  counted by region. <b>part eq</b>: on the cases whose mean-field model is exact (or measured and checked), runs whose equations pass
+  against it; <b>vs MF @20</b> and <b>@100</b>: fresh skill minus the mean-field model's own (on exact cases the best possible forecasts;
+  hover for the reference's skill); <b>part long-run</b>: the found model run free for 5,000 steps against the particles.
   The Set picker chooses the cases the other columns are over (default: the tests).
   Click a column to sort; hover a column's name for its meaning, and <b>ⓘ</b> beside a strategy for how it works.
   Every word and strategy in plain language: <a href="/ladder/glossary" style="color:inherit">the glossary</a>.</p>
@@ -196,6 +203,10 @@ const COLS = [
   { key: "pShape", gl: "physics_shape", label: "shape", fmt: pct, cls: "phys hide-sm", group: "phys" },
   { key: "pGap", gl: "physics_reference", label: "vs ref @20", fmt: (v) => (Number.isNaN(v) ? "–" : (v >= 0 ? "+" : "") + (100 * v).toFixed(1)), cls: "phys", group: "phys", tip: (r) => r.pRefTip },
   { key: "pLr", gl: "physics_longrun", label: "long-run err", fmt: pct, cls: "phys", group: "phys", asc: true, tip: (r) => r.pLrTip },
+  { key: "qEq", gl: "particles_equations", label: "part eq", fmt: (v, r) => (r.qScored ? `${r.qEqN}/${r.qScored}` : "–"), cls: "part", group: "part", tip: (r) => r.qTip },
+  { key: "qGap20", gl: "particles_reference", label: "vs MF @20", fmt: (v) => (Number.isNaN(v) ? "–" : (v >= 0 ? "+" : "") + (100 * v).toFixed(1)), cls: "part", group: "part", tip: (r) => r.qRefTip },
+  { key: "qGap100", gl: "particles_reference", label: "@100", fmt: (v) => (Number.isNaN(v) ? "–" : (v >= 0 ? "+" : "") + (100 * v).toFixed(1)), cls: "part hide-sm", group: "part", tip: (r) => r.qRefTip },
+  { key: "qLr", gl: "physics_longrun", label: "part long-run", fmt: pct, cls: "part hide-sm", group: "part", asc: true, tip: (r) => r.qLrTip },
 ];
 let data = null, sortKey = "pass", sortDir = -1, about = {}, gloss = {};
 const open = new Set();                                   // strategies whose explanation is expanded
@@ -211,7 +222,8 @@ function pct(v) { return v == null || Number.isNaN(v) ? "–" : (100 * v).toFixe
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const clip = (v) => (v == null ? null : Math.max(-1, v));
 const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference
-const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE, not an SD model (physics/)
+const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE, not an SD model (physics/), or particles
+const isPart = (c) => !!c.particles;                                               // a particle case: particles counted by region (particles/)
 const isData = (c) => !!c.real;                                                     // a real-data case (real/): its own columns, in no set
 const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
 
@@ -246,6 +258,18 @@ function physicsCols(name, phys, vf) {
     pLrTip: graded.length ? `the reference (best SD model): ${pct(mean(num("ref_lr")))}; ${graded.filter((c) => c.ph_diverges).length} runs diverge` : "" };
 }
 
+// the particle cases for one strategy (the variant filter applies): equations against the mean-field model where scored, skill against it
+function particleCols(name, part, vf) {
+  const pc = data.cells.filter((c) => c.strategy === name && part[c.case] && (vf === "all" || c.variant.includes(vf)));
+  const pr = pc.filter((c) => c.status), graded = pr.filter((c) => c.pt_tier), sc = graded.filter((c) => c.pt_eq);
+  const num = (k) => graded.map((c) => c[k]).filter((v) => v != null && Number.isFinite(v));
+  const eqN = sc.filter((c) => c.pt_eq === "pass").length;
+  return { qEq: sc.length ? eqN / sc.length : NaN, qEqN: eqN, qScored: sc.length, qGap20: mean(num("pt_gap20")), qGap100: mean(num("pt_gap100")), qLr: mean(num("pt_lr")),
+    qTip: pc.length ? `${pr.length} of ${pc.length} particle runs done (${pr.length - graded.length} errors or timeouts); equations scored on ${sc.length}: ${eqN} pass, ${sc.filter((c) => c.pt_eq === "equivalent").length} equivalent; prediction-only runs within 5 points of the mean-field model at @20 and @100: ${graded.filter((c) => !c.pt_eq && c.pt_near).length} of ${graded.filter((c) => !c.pt_eq).length}` : "not run on the particle cases yet",
+    qRefTip: graded.length ? `mean fresh skill@20 ${pct(mean(graded.map((c) => c.fresh20).filter((v) => v != null).map(clip)))} vs the mean-field model's ${pct(mean(num("ref_fresh20")))}; @100 ${pct(mean(graded.map((c) => c.fresh100).filter((v) => v != null).map(clip)))} vs ${pct(mean(num("ref_fresh100")))}` : "",
+    qLrTip: graded.length ? `the mean-field model: ${pct(mean(num("ref_lr")))}; ${graded.filter((c) => c.pt_diverges).length} runs diverge` : "" };
+}
+
 // the realistic examples for one strategy (the variant filter applies; level and kind do not): behaviour is the headline
 function realistic(name, real, vf) {
   const rc = data.cells.filter((c) => c.strategy === name && real[c.case] && (vf === "all" || c.variant.includes(vf)));
@@ -273,7 +297,7 @@ function rows() {
   const level = Object.fromEntries(data.cases.map((c) => [c.id, c.level]));
   const kd = document.getElementById("kind").value, drawn = Object.fromEntries(data.cases.map((c) => [c.id, !!c.draw]));
   const set = document.getElementById("set").value, real = Object.fromEntries(data.cases.map((c) => [c.id, isReal(c)]));
-  const phys = Object.fromEntries(data.cases.map((c) => [c.id, isPhys(c)])), kinds = Object.fromEntries(data.cases.map((c) => [c.id, kindOf(c)]));
+  const phys = Object.fromEntries(data.cases.map((c) => [c.id, isPhys(c) && !isPart(c)])), part = Object.fromEntries(data.cases.map((c) => [c.id, isPart(c)])), kinds = Object.fromEntries(data.cases.map((c) => [c.id, kindOf(c)]));
   const rd = Object.fromEntries(data.cases.map((c) => [c.id, isData(c)]));
   const keep = (c) => !rd[c.case] && (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
     && (set === "all" || set === kinds[c.case]);
@@ -297,6 +321,7 @@ function rows() {
       ...strictPass(cs),
       ...realistic(name, real, vf),
       ...physicsCols(name, phys, vf),
+      ...particleCols(name, part, vf),
       ...realData(name, rd),
     };
   });
@@ -357,9 +382,9 @@ function render() {
     const d = (Number.isNaN(x) ? none : x) - (Number.isNaN(y) ? none : y);
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
-  const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length, nRd = COLS.filter((c) => c.group === "rd").length;
+  const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length, nRd = COLS.filter((c) => c.group === "rd").length, nPart = COLS.filter((c) => c.group === "part").length;
   const setName = { tests: "Tests", realistic: "Realistic examples", physics: "Physics", all: "All cases" }[document.getElementById("set").value];
-  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal - nPhys - nRd}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th></tr>` + "<tr>" + COLS.map((c) =>
+  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal - nPhys - nRd - nPart}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th><th class="part" colspan="${nPart}" title="Particles counted by region: equations against the mean-field model where it is exact, skill against it">Particles</th></tr>` + "<tr>" + COLS.map((c) =>
     `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {

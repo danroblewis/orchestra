@@ -1,0 +1,9 @@
+# A + B -> C in a stirred tank: particles meet in random cells and bind. The expected bindings are
+# kappa x A x B to within the measured numbers' error: discovery must find a product.
+system: reaction
+title: "Sticky particles: A + B -> C in a stirred tank"
+level: 21
+tags: [physics, particles, measured, input, product, effect, coflow]
+tests: "A and B fed at measured rates bind on meeting into C (A -> C at kappa x A x B, using up one B per C), A and B leak, C is drawn off: the product is recovered as a proportional rate times a linear effect with its co-flow; kappa and the leaks are measured over a long run and the mean-field model is checked to track the particles' average"
+seed: 4
+timeout: 900

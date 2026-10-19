@@ -1,0 +1,9 @@
+# Balls falling through a field of tilted shelves into 4 bins of capacity 160 that overflow into the
+# next bin. Fall times are not geometric and a full bin passes its arrivals on: prediction only.
+system: shelves
+title: Gravity cascade over tilted shelves into overflowing bins (13 regions, prediction only)
+level: 22
+tags: [physics, particles, prediction-only, input, ceiling, overflow]
+tests: "balls dropped from two hoppers fall through 9 zones of a field of tilted shelves into 4 bins with holes; a full bin passes its arrivals to the next: forecasts are scored against the mean-field model (zone-to-zone frequencies, refitted)"
+seed: 6
+timeout: 900

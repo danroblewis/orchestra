@@ -1,0 +1,9 @@
+# A vibrating conveyor of 8 segments; segment 5 is a narrow chute (the bottleneck), so a queue builds in
+# front of it. Independent geometric hops: the mean-field model is an exact delay chain.
+system: conveyor
+title: Conveyor of 8 segments with a bottleneck
+level: 21
+tags: [physics, particles, exact, input, chain, injection]
+tests: "balls hopping along 8 segments (0.4 a step, 0.07 through the narrow chute), fed at a measured rate and in announced batches: the delay chain and its slow stage are recovered as proportional moves at the hop probabilities"
+seed: 2
+timeout: 900

@@ -21,7 +21,7 @@ from pathlib import Path
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import catalog, data, physics, provenance, score, store
+from . import catalog, data, particles, physics, provenance, score, store
 from . import realistic as _realistic
 from .real import data as _real_data
 from .real import score as _real_score
@@ -88,7 +88,7 @@ def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None
     items = []
     for cid in case_ids:
         c = casemod.load(cid)
-        shc = physics.score_hash(sh) if physics.is_physics(c) else sh     # a physics case: its scoring code too
+        shc = particles.score_hash(sh) if particles.is_particles(c) else physics.score_hash(sh) if physics.is_physics(c) else sh     # a physics or particle case: its scoring code too
         for v in c["variants"]:
             if variants and v["name"] not in variants and v["noise"] not in variants and v["length"] not in variants:
                 continue
@@ -166,6 +166,8 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
         fresh = _real_data.load(c, item["variant"], full=True) if c.get("real") else data.load(c, item["variant"], fresh=True)
         if c.get("real"):           # real/: held-out prediction, agreement with the published model, measured flows (twin: equations)
             s = _real_score.score(c, item["variant"], model, flows, d, fresh, inferred)
+        elif particles.is_particles(c):    # particles/: equations against the mean-field model (where exact), forecasts against the particles
+            s = particles.score_found(c, item["variant"], model, flows, d, fresh, inferred)
         elif physics.is_physics(c):    # physics/: structure against the physics, behaviour against the ODE, beside the reference
             s = physics.score_found(c, item["variant"], flows, d, fresh, inferred)
         elif d.get("clean"):           # a noise of noise.py: equations on what was reported, behaviour on the run underneath (every step)

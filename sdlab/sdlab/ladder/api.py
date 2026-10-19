@@ -32,7 +32,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import analysis, catalog, complexity, data, explain, longrun_cache, physics, realistic, score, store, strict
+from . import analysis, catalog, complexity, data, explain, longrun_cache, particles, physics, realistic, score, store, strict
 from .real import case as _real_case
 from .real import data as _real_data
 from .real import score as _real_score
@@ -234,9 +234,9 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     refs = strict.references()                                     # read only: what `sdlab-ladder strict` computed
     cs = [casemod.load(i) for i in casemod.case_ids()]
     realdata: dict = {}
-    cells, by_tag, totals, real, phys = [], {}, {}, {}, {}
+    cells, by_tag, totals, real, phys, parts = [], {}, {}, {}, {}, {}
     for c in cs:
-        shc = physics.score_hash(sh) if physics.is_physics(c) else sh       # a physics case: its scoring code too
+        shc = particles.score_hash(sh) if particles.is_particles(c) else physics.score_hash(sh) if physics.is_physics(c) else sh   # its scoring code too
         for v in c["variants"]:
             for s in strats:
                 row = have.get((c["id"], v["name"], s["name"]))
@@ -256,6 +256,10 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                 if c.get("real"):                                 # a real-data case (real/): its own view, never in the tests' totals
                     cell.update(_real_score.cell(row))
                     realdata.setdefault(s["name"], []).append(cell)
+                    continue
+                if particles.is_particles(c):                     # a particle case: the physics view, its own totals, not the tests'
+                    cell.update(particles.cell(row))
+                    parts.setdefault(s["name"], []).append(cell)
                     continue
                 if physics.is_physics(c):                         # a physics case: its own view, not the tests'
                     cell.update(physics.cell(row))
@@ -284,9 +288,12 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     return jsonable({"strategies": strats,
                      "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c)
                                | ({"example": c["example"]} if c.get("example") else {}) | ({"real": _real_case.describe(c)} if c.get("real") else {})
-                               | ({"physics": {k: c["physics"][k] for k in ("system", "differs")}} if c.get("physics") else {}) for c in cs],
+                               | ({"physics": {k: c["physics"][k] for k in ("system", "differs")}} if c.get("physics") else {})
+                               | ({"particles": {**{k: c["particles"][k] for k in ("system", "tier", "equations", "regions", "particles", "mean_field")},
+                                                   "check": {k: c["particles"]["check"][k] for k in ("z_rms", "rel", "runs", "steps")}}} if c.get("particles") else {}) for c in cs],
                      "cells": cells, "by_tag": by_tag, "totals": totals, "realistic": {n: realistic.aggregate(x) for n, x in real.items()},
                      "physics": {n: physics.aggregate(x) for n, x in phys.items()},
+                     "particles": {n: particles.aggregate(x) for n, x in parts.items()},
                      "real": {n: _real_score.aggregate(x) for n, x in realdata.items()}, "score_hash": sh, "parametric": parametric(cs, cells),
                      "longrun": longrun_cache.aggregate(lr_cells)})
 
