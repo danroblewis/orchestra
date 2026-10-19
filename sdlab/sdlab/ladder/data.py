@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from pathlib import Path
 
 from ..sdtruth import Truth
@@ -56,7 +57,7 @@ def load(case: dict, variant_name: str, fresh: bool = False) -> dict:
             pass
     data = simulate(model, seed, v["steps"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")      # unique per thread: a server loads in several
     tmp.write_text(json.dumps(data, separators=(",", ":")))
     tmp.replace(path)
     return data

@@ -411,7 +411,8 @@
       const vertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
       const lx = vertical ? mid.x + 14 : mid.x, ly = vertical ? mid.y - 4 : mid.y - 30;
       const anchor = vertical ? "start" : "middle";
-      const line2 = S.mode === "run" ? `${fmt(rt(f.id))}/${tu()} · ${machineName(f.machine)}` : machineName(f.machine);
+      const line2 = S.mode === "run" && S.model.basic ? `${eqText(f.rate)}  ≈${fmt(rt(f.id))}/${tu()} now`
+        : S.mode === "run" ? `${fmt(rt(f.id))}/${tu()} · ${machineName(f.machine)}` : machineName(f.machine);
       const w = Math.max(f.name.length * 7, line2.length * 6.4) + 12;
       el("rect", { x: anchor === "middle" ? lx - w / 2 : lx - 5, y: ly - 13, width: w, height: 32, rx: 4, fill: "var(--canvas)", opacity: 0.88, "data-flow": f.id, class: "flow" }, gLabels);
       text(gLabels, lx, ly, f.name, { "text-anchor": anchor, "font-size": 12.5, "font-weight": 600, fill: isSel("f:" + f.id) ? "var(--accent)" : "var(--fg)", "data-flow": f.id, class: "flow" });
@@ -441,26 +442,73 @@
     });
     drawDiscovered();
     drawMarquee();
+    renderLegend();
+  }
+  // What the canvas's lines mean, in run mode on a basic model or with an estimate on screen.
+  function renderLegend() {
+    let box = $("canvas-legend");
+    const want = S.mode === "run" && (S.model.basic || S.discovery);
+    if (!want) { if (box) box.hidden = true; return; }
+    if (!box) { box = document.createElement("div"); box.id = "canvas-legend"; svg.parentElement.appendChild(box); }
+    box.hidden = false;
+    const sw = (stroke, dash, w) => `<svg width="30" height="10" aria-hidden="true"><line x1="1" y1="5" x2="29" y2="5" stroke="${stroke}" stroke-width="${w}" ${dash ? `stroke-dasharray="${dash}"` : ""}/></svg>`;
+    const truth = S.model.basic && !S.hideTruth;
+    const html = `${truth ? `<span>${sw("var(--env)", "7 5", 3)} true flow</span><span>${sw("var(--muted)", "3 4", 1.2)} its rate depends on that stock</span>` : ""}
+      ${S.discovery ? `<span>${sw("var(--fit)", "6 4", 2.2)} found flow</span><span>${sw("var(--fit)", "2 4", 1.2)} found rate depends on that stock</span>` : ""}
+      <span class="muted">labels: the equation (0.5·A = 0.5 × A per ${esc(tu())}), then ≈ the amount now</span>`;
+    if (box.dataset.html !== html) { box.dataset.html = html; box.innerHTML = html; }
+  }
+  // An equation in a few characters, as the ladder writes it: "0.5·A", "20", "0.1 + 0.2·B".
+  function eqText(r) {
+    if (!r) return "";
+    if (window.SDLadder && window.SDLadder.rateText) return window.SDLadder.rateText(r);
+    return describeRate(r, (id) => id, tu());
+  }
+  // the stocks a rate reads (a dependency: drawn as a dotted arrow to the flow)
+  function foundReads(r) {
+    r = r || {};
+    if (r.form === "proportional" || r.form === "gap" || r.form === "available") return r.stock ? [r.stock] : [];
+    if (r.form === "linear") return (r.terms || []).map((t) => t.stock).filter(Boolean);
+    return [];
+  }
+  // A found flow to or from outside: the cloud of the model's flow with the same ends (so the two
+  // read as a pair), else one beside its stock, level with it (never above, under the toolbar).
+  function foundCloud(fake) {
+    const twin = S.model.flows.find((g) => (g.from || null) === fake.from && (g.to || null) === fake.to);
+    if (twin) return cloudPos(twin);
+    const st = stock(fake.from || fake.to);
+    return fake.from ? { x: st.x + BOX.w + 90, y: st.y + BOX.h + 30 } : { x: st.x - 90, y: st.y + BOX.h + 30 };
   }
   function drawDiscovered() {
     if (!S.discovery) return;
     const g = el("g", { class: "found" }, svg);
     S.discovery.flows.forEach((f, k) => {
       if (f.via) return drawHiddenFound(g, f);
-      const fake = { id: `found${k}`, from: f.from, to: f.to };
-      if (!f.from || !f.to) {                              // a cloud a little away from its stock
-        const st = stock(f.from || f.to), off = f.from ? 1 : -1;
-        fake.cloud = { x: st.x + BOX.w / 2 + off * (BOX.w / 2 + 70), y: st.y - 40 };
-      }
+      // an end the model does not have (a stock the strategy inferred without proposing it as one) is drawn as outside
+      const fake = { id: `found${k}`, from: f.from && stock(f.from) ? f.from : null, to: f.to && stock(f.to) ? f.to : null };
+      if (!fake.from && !fake.to) return;
+      if (!fake.from || !fake.to) fake.cloud = foundCloud(fake);
       const { a, b } = ends(fake), dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
       const bend = 26 + 8 * (k % 3), mx = (a.x + b.x) / 2 - dy / L * bend, my = (a.y + b.y) / 2 + dx / L * bend;
       const tip = shorten(b, { x: mx, y: my }, 10);
       el("path", { d: `M${a.x} ${a.y} Q${mx} ${my} ${tip.x} ${tip.y}`, fill: "none", stroke: "var(--fit)", "stroke-width": 2.2, "stroke-dasharray": "6 4" }, g);
       arrowHead(g, { x: mx, y: my }, b, "var(--fit)", 10);
-      if (!f.from || !f.to) drawCloud(g, fake);
-      const txt = `${fmt(f.perStep)}/${tu()}${f.ratio !== 1 ? ` \u00b7 ${fmtRatio(f.ratio)}` : ""}`;
-      el("rect", { x: mx - txt.length * 3.3 - 4, y: my - 10, width: txt.length * 6.6 + 8, height: 16, rx: 3, fill: "var(--canvas)", opacity: 0.9 }, g);
-      text(g, mx, my + 2, txt, { "text-anchor": "middle", "font-size": 11, "font-weight": 700, fill: "var(--fit)" });
+      if (!fake.from || !fake.to) drawCloud(g, fake);
+      // labelled by its equation (what was found), with the amount it moves now in smaller print
+      const txt = `${eqText(currentRate(f))}${f.ratio !== 1 ? ` \u00b7 ${fmtRatio(f.ratio)}` : ""}`, sub = `≈${fmt(f.perStep)}/${tu()} now`;
+      const w = Math.max(txt.length * 6.6, sub.length * 5.4) + 8;
+      el("rect", { x: mx - w / 2, y: my - 10, width: w, height: 28, rx: 3, fill: "var(--canvas)", opacity: 0.9 }, g);
+      text(g, mx, my + 2, txt, { "text-anchor": "middle", "font-size": 11.5, "font-weight": 700, fill: "var(--fit)" });
+      text(g, mx, my + 14, sub, { "text-anchor": "middle", "font-size": 9.5, fill: "var(--fit)", opacity: 0.85 });
+      foundReads(currentRate(f)).forEach((sid) => {          // what its rate depends on: a dotted arrow, in the found colour
+        const src = stock(sid); if (!src) return;
+        const m = { x: mx, y: my }, c = center(src), start = clip(src, m);
+        const ddx = m.x - c.x, ddy = m.y - c.y, LL = Math.hypot(ddx, ddy) || 1;
+        const ctl = { x: (start.x + m.x) / 2 + ddy / LL * 40, y: (start.y + m.y) / 2 - ddx / LL * 40 };
+        const end = shorten(m, ctl, 12);
+        el("path", { d: `M${start.x} ${start.y} Q${ctl.x} ${ctl.y} ${end.x} ${end.y}`, fill: "none", stroke: "var(--fit)", "stroke-width": 1.2, "stroke-dasharray": "2 4", opacity: 0.8 }, g);
+        arrowHead(g, ctl, end, "var(--fit)", 6);
+      });
     });
   }
   // Where a stock nobody measures goes: between the stocks it sits between, a little to the side
@@ -507,8 +555,12 @@
     const pts = [];
     S.model.stocks.forEach((s) => { pts.push([s.x, s.y], [s.x + BOX.w, s.y + BOX.h]); });
     S.model.flows.forEach((f) => { if (!f.from || !f.to) { const c = cloudPos(f); pts.push([c.x - 20, c.y - 20], [c.x + 20, c.y + 20]); } });
+    if (S.discovery) S.discovery.flows.forEach((f) => {
+      const fake = { from: f.from && stock(f.from) ? f.from : null, to: f.to && stock(f.to) ? f.to : null };
+      if (!f.via && (fake.from || fake.to) && !(fake.from && fake.to)) { const c = foundCloud(fake); pts.push([c.x - 20, c.y - 20], [c.x + 20, c.y + 30]); }
+    });
     if (!pts.length) { svg.setAttribute("viewBox", `0 0 ${W} ${H}`); return; }
-    const pad = 60, top = 70;
+    const pad = 60, top = S.mode === "run" ? 130 : 70;
     const minX = Math.min(0, ...pts.map((p) => p[0])) - 10, minY = Math.min(0, ...pts.map((p) => p[1])) - 10;
     const maxX = Math.max(...pts.map((p) => p[0])) + pad, maxY = Math.max(...pts.map((p) => p[1])) + pad;
     const scale = Math.min(1, W / (maxX - minX), (H - top) / (maxY - minY + top));
@@ -2097,6 +2149,7 @@
     r.flows.forEach((f) => { if (f.via && placed.has(`${f.from}>${f.to}<${f.via.echo || ""}`)) f.via.pos = placed.get(`${f.from}>${f.to}<${f.via.echo || ""}`); });
     const pickedKey = S.discovery && S.foundPick != null && S.discovery.flows[S.foundPick] ? `${S.discovery.flows[S.foundPick].from}>${S.discovery.flows[S.foundPick].to}` : null;
     S.foundPick = pickedKey ? (() => { const i = r.flows.findIndex((f) => f.via && `${f.from}>${f.to}` === pickedKey); return i >= 0 ? i : null; })() : null;
+    if (S.model.basic && S.discovery && S.discovery.compare) { r.compare = S.discovery.compare; r.compareStale = true; }
     S.discovery = r; S.leverage = null; S.panelSel = [...S.sel].sort().join();
     if (!auto) { S.editMachine = null; S.firing = null; }
     renderCanvas(); renderToolbar();
@@ -2117,21 +2170,21 @@
       c = await res.json();
     } catch { return; }
     if (S.discovery !== r || !S.model || S.model.id !== model) return;
-    r.compare = c;
+    r.compare = c; r.compareStale = false;
     const key = `${S.basicVariant}|${S.basicLive ? "live" : "rec"}|${r.strategy}`;
     if (!S.estHist || S.estHist.key !== key) S.estHist = { key, parts: {} };
     const num = (v) => (typeof v === "number" ? v : v && typeof v === "object" && typeof v.mean === "number" ? v.mean : null);
     c.parts.forEach((p) => {
       const tv = num(p.true); if (tv === null) return;
       const h = S.estHist.parts[p.key] || (S.estHist.parts[p.key] = { truth: tv, pts: [] });
-      h.truth = tv;
+      h.truth = tv; h.windows = !!(p.true && typeof p.true === "object");
       h.pts = h.pts.filter((q) => q[0] < r.steps);                 // a run started again: the old points go
       h.pts.push([r.steps, p.found ? num(p.found_value) : null]);
       if (h.pts.length > 400) h.pts.splice(0, h.pts.length - 400);
     });
     if (inspected().type === "discovery") { const box = $("inspector"), top = box.scrollTop; renderInspector(); box.scrollTop = top; }
   }
-  const signedNum = (x) => (x > 0 ? "+" : x < 0 ? "−" : "±") + fmt(Math.abs(x));
+  const signedNum = (x) => (x > 0 ? "+" : x < 0 ? "−" : "±") + String(+Math.abs(x).toPrecision(3));
   function truthCompareHtml(r) {
     if (!S.model.basic) return "";
     if (S.hideTruth) return `<p class="note">The truth is hidden: show it (\ud83d\udc41\ufe0f) to compare this estimate with the true equations.</p>`;
@@ -2139,19 +2192,24 @@
     if (!c) return `<p class="note">Comparing with the truth…</p>`;
     const L = window.SDLadder, pn = (k) => (L ? L.partName(k) : k), fv = (v) => (L ? L.fmt(v) : fmt(v));
     const num = (v) => (typeof v === "number" ? v : v && typeof v === "object" && typeof v.mean === "number" ? v.mean : null);
+    // a number with what it multiplies: "0.5·A" for a part read from A, "20" for a constant
+    const term = (key, v) => { const k = L && L.parseKey ? L.parseKey(key) : null; return k && k.kind === "flow" && k.reader && k.reader !== "const" ? `${fv(v)}·${k.reader}` : fv(v); };
     const rows = c.parts.map((p) => {
       const a = num(p.found_value), b = num(p.true);
       const diff = p.found && a !== null && b !== null ? `${signedNum(a - b)}${b ? ` (${signedNum(100 * (a - b) / Math.abs(b))}%)` : ""}` : "";
       const cls = p.ok ? "ok" : p.found ? "wrong" : "missing";
-      return `<tr class="cmp-${cls}"><td>${p.ok ? "✓" : p.found ? "~" : "−"}</td><td>${esc(pn(p.key))}</td><td>${esc(fv(p.true))}</td><td>${p.found ? esc(fv(p.found_value)) : "not found"}</td><td>${esc(diff)}</td></tr>`;
-    }).join("") + c.spurious.map((p) => `<tr class="cmp-spurious"><td>+</td><td>${esc(pn(p.key))}</td><td>–</td><td>${esc(fv(p.value))}</td><td>remove</td></tr>`).join("");
+      return `<tr class="cmp-${cls}"><td>${p.ok ? "✓" : p.found ? "~" : "−"}</td><td>${esc(pn(p.key))}</td><td>${esc(term(p.key, p.true))}</td><td>${p.found ? esc(term(p.key, p.found_value)) : "not found"}</td><td>${esc(diff)}</td></tr>`;
+    }).join("") + c.spurious.map((p) => `<tr class="cmp-spurious"><td>+</td><td>${esc(pn(p.key))}</td><td>–</td><td>${esc(term(p.key, p.value))}</td><td>remove</td></tr>`).join("");
+    const b = S.model.basic, strat = r.strategy || "matrix";
+    const links = `<p class="note">On the ladder: <a href="/ladder/strategy?name=${encodeURIComponent(strat)}" target="_blank" rel="noopener">${esc(strat)}'s cases</a> (find ${esc(b.case.slice(0, 3))}) · <a href="/ladder?view=now&case=${encodeURIComponent(b.case)}&variant=${encodeURIComponent(S.basicVariant)}&strategy=${encodeURIComponent(strat)}" target="_blank" rel="noopener">this case's ladder result, every part</a> (on the recorded data, not this run)</p>`;
     const rep = c.repairs;
     const verdict = { pass: "right: every true number within tolerance, nothing extra", equivalent: "equivalent: the same behaviour, read another way", fail: "not right yet" }[c.status] || c.status;
     return `<h2 style="margin-top:14px">Against the truth</h2>
       <p class="note">On the ${c.steps} ${esc(tu())}s it was found from, by the ladder's scorer: <b class="cmp-verdict cmp-${esc(c.status)}">${esc(verdict)}</b>${rep && rep.headline ? ` · ${esc(rep.headline)}` : ""}.</p>
-      <table class="kv cmp"><tr><th></th><th>Part</th><th>True</th><th>Estimate</th><th>Difference</th></tr>${rows}</table>
+      ${r.compareStale ? `<p class="note">These are the previous estimate's; the newest is being compared.</p>` : ""}
+      <table class="kv cmp"><tr><th></th><th>Part</th><th>True</th><th>Found</th><th>Found − true</th></tr>${rows}</table>
       ${rep && rep.items && rep.items.length ? `<ul class="found-list">${rep.items.map((it) => `<li>${esc(it.text)}</li>`).join("")}</ul>` : ""}
-      ${convergenceHtml()}`;
+      ${convergenceHtml()}${links}`;
   }
   // Small multiples: each true number's estimate (line) against its true value (dashed) as the steps grew.
   function convergenceHtml() {
@@ -2168,7 +2226,7 @@
       const line = pts.map((q, i) => `${i ? "L" : "M"}${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join("");
       const last = pts[pts.length - 1];
       const dots = pts.map((q) => `<circle cx="${X(q[0]).toFixed(1)}" cy="${Y(q[1]).toFixed(1)}" r="5" fill="transparent"><title>${esc(tu())} ${q[0]}: ${fmt(q[1])} (true ${fmt(h.truth)})</title></circle>`).join("");
-      return `<figure class="conv"><figcaption>${esc(pn(k))}: true ${fmt(h.truth)}${last ? `, now ${fmt(last[1])}` : ", not found"}</figcaption>
+      return `<figure class="conv"><figcaption>${esc(pn(k))}${h.windows ? " (its mean over the eras)" : ""}: true ${fmt(h.truth)}${last ? `, now ${fmt(last[1])}` : ", not found"}</figcaption>
         <svg viewBox="0 0 ${W} ${Hh}" width="100%" role="img" aria-label="${esc(`Estimate of ${pn(k)} as the steps grew, against its true value ${fmt(h.truth)}`)}">
           <line x1="${P.l}" x2="${W - P.r}" y1="${Y(h.truth).toFixed(1)}" y2="${Y(h.truth).toFixed(1)}" class="conv-truth"/>
           <text x="${P.l - 4}" y="${(Y(hi - pad) + 4).toFixed(1)}" class="conv-ax" text-anchor="end">${fmt(hi - pad)}</text>

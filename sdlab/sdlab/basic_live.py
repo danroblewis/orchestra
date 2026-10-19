@@ -137,27 +137,22 @@ class BasicLiveRun:
 
 
 class BasicLiveRuns:
-    """The live runs of basic models, one per model (switching variant starts a new one)."""
+    """The live runs of basic models, one per model and variant (each variant is its own run)."""
 
     def __init__(self):
-        self.runs: dict[str, BasicLiveRun] = {}
+        self.runs: dict[tuple[str, str], BasicLiveRun] = {}
         self.lock = threading.Lock()
 
     def get(self, model_id: str, variant: str | None) -> BasicLiveRun:
+        v = basics.variant_of(basics.ladder.case(basics.case_id(model_id)), variant)
         with self.lock:
-            r = self.runs.get(model_id)
-            want = None
-            if r is not None and variant is not None:
-                want = basics.variant_of(basics.ladder.case(basics.case_id(model_id)), variant)
-            if r is None or (want is not None and want != r.variant):
-                if r is not None:
-                    r.stop()
-                r = self.runs[model_id] = BasicLiveRun(model_id, variant)
+            r = self.runs.get((model_id, v))
+            if r is None:
+                r = self.runs[(model_id, v)] = BasicLiveRun(model_id, v)
             return r
 
     def running(self, model_id: str) -> BasicLiveRun | None:
-        r = self.runs.get(model_id)
-        return r if r is not None and r.running else None
+        return next((r for (m, _), r in list(self.runs.items()) if m == model_id and r.running), None)
 
     def stop_all(self) -> None:
         for r in list(self.runs.values()):
@@ -167,7 +162,7 @@ class BasicLiveRuns:
 def compare(model_id: str, variant: str | None, flows: list[dict], data: dict) -> dict:
     """A found model against the case's truth on the data it was found from: the ladder scorer's
     equation parts (score.equations: each true number, the found one, whether it is right) and the
-    repairs that would make it right (the strategy page's repairs module when it is there)."""
+    repairs that would make it right (the strategy page's repairs module)."""
     from .ladder import score
 
     case = casemod.load(basics.case_id(model_id))
