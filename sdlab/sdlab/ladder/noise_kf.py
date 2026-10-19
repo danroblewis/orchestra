@@ -458,10 +458,11 @@ class SSM:
             here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl]
             pw, _ = parts(here, set(self.measured), win)
             for k, v in pw.items():
-                if k[0] in ("flow", "uses") and isinstance(v, (int, float)):
+                if k[0] in ("flow", "uses", "via") and isinstance(v, (int, float)):
                     out[(w, k, None)] = float(v)
                 elif k[0] == "hidden" and isinstance(v, dict):
-                    out[(w, k, "k_in")] = float(v["k_in"])
+                    if "k_in" in v:                                       # (a path fed from outside has its inflow as "via" parts)
+                        out[(w, k, "k_in")] = float(v["k_in"])
                     if math.isfinite(v["delay"]):
                         out[(w, k, "delay")] = float(v["delay"])
         return out

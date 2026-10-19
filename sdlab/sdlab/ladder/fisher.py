@@ -14,7 +14,10 @@ has its numbers once per segment, as the scorer compares them per window.
     dy_k = S r_k(theta) + rounding                                             (none: 4 decimals)
 
 with S the stoichiometry (+1 into a stock, -ratio out, -per for a co-flow) and r_k the flows' rates
-on the run's levels (floored at 0, outflows capped at what the stock holds, as the engine does).
+on the run's levels (floored at 0, outflows capped at what the stock holds, as the engine does;
+measured inputs read at their value during the step, as the oracle reads them). A floor that binds
+(a rate at 0 on some steps) is in the information: those steps' changes do not depend on that
+rate's numbers, which is what separates, e.g., a floored gap from a drain (125).
 Taken as Gaussian, dy_k ~ N(mu_k, Sigma_k), mu_k = S r_k, Sigma_k = S diag(r_k) S' (+ 1/12 for
 whole numbers); without noise Sigma_k = sigma^2 I, sigma^2 = 2 (1e-4)^2 / 12 (two rounded levels).
 
@@ -56,6 +59,7 @@ class TruthParams:
         lv_all = data.get("all_levels") or data["levels"]
         self.ids = list(lv_all)
         self.ok = set(self.ids) == set(self.measured) and len(self.t) > 3
+        self.inputs: set = set()
         flows, _ = truth_by_time(truth_model, self.t)
         flows = json.loads(json.dumps(flows))                       # segments that share a rate dict no longer do
         self.flows = flows
@@ -70,6 +74,13 @@ class TruthParams:
                 inj[idx[j["stock"]], tindex[j["t"]]] += float(j["amount"])
         self.prev = lv[:, :-1] + inj[:, 1:]
         self.dy = np.diff(lv, axis=1) - inj[:, 1:]
+        # measured inputs: read as levels are (their value during the step, the oracle's convention);
+        # rows after the stocks in prev, so a rate that reads one is not taken as reading 0 (2026-10-19)
+        ins = {k: v for k, v in (data.get("inputs") or {}).items() if k not in idx}
+        self.inputs = set(ins)
+        for k, v in ins.items():
+            idx[k] = len(idx)
+            self.prev = np.vstack([self.prev, np.asarray(v, dtype=float)[None, 1: len(self.t)]])
         self.steps = np.asarray(self.t[1:])
         self.K = len(self.steps)
         self.idx = idx
@@ -324,7 +335,7 @@ def part_map(tp: TruthParams, theta: np.ndarray | None = None) -> tuple[list[tup
         for w, win in enumerate(tp.wins):
             # the flows as they are in this window (a window lies inside one segment of each flow)
             here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": _segment_at(f, win[0])["rate"]} for f in fl]
-            pw, _ = parts(here, measured, win)
+            pw, _ = parts(here, measured, win, tp.inputs)
             for k, v in pw.items():
                 if k[0] in ("flow", "uses") and isinstance(v, (int, float)):
                     out[(w, k)] = float(v)

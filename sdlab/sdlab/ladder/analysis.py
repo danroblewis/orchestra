@@ -32,7 +32,13 @@ normal) times the chance every true term is detected.
 A truth with a hidden stock uses the hidden oracle's ML standard errors (hidden_oracle.py) in
 place of the bound. Results are cached per case hash and variant in $SDLAB_LADDER_CACHE/analysis.
 A variant with a noise laid on the recorded levels (noise.py: meas, gaps, weekly, lag, outliers,
-bias) is analysed by noise_analysis.py, with a Kalman model of the truth in place of fisher.py.
+bias) is analysed by noise_analysis.py, with a Kalman model of the truth in place of fisher.py; a
+real case's twin by twin_analysis.py (its training samples, its measurement error, no counting
+noise).
+
+Measured inputs are read as levels are, in the design (a column each) and in the bound (fisher.py),
+so a floor that binds on an input-driven rate (125) is seen: the steps where the floored rate is 0
+carry what separates its numbers from the others' (2026-10-19).
 """
 
 from __future__ import annotations
@@ -61,7 +67,7 @@ LABELS = ("achievable", "data-limited", "unidentifiable", "not analysed")
 
 def code_hash() -> str:
     h = hashlib.sha256()
-    for name in ("analysis.py", "fisher.py", "parts.py", "oracle.py", "hidden_oracle.py"):
+    for name in ("analysis.py", "fisher.py", "parts.py", "oracle.py", "hidden_oracle.py", "twin_analysis.py", "substep.py"):
         h.update((HERE / name).read_bytes())
     return h.hexdigest()[:12]
 
@@ -85,12 +91,17 @@ def design(truth_model: dict, d: dict, noise: str, tp: TruthParams | None) -> li
         if j.get("stock") in ids and j["t"] in tindex:
             inj[ids.index(j["stock"]), tindex[j["t"]]] += float(j["amount"])
     prev, dy = lv[:, :-1] + inj[:, 1:], np.diff(lv, axis=1) - inj[:, 1:]
+    # measured inputs: columns as the levels are (their value during the step), 2026-10-19
+    ins = [k for k in (d.get("inputs") or {}) if k not in ids]
+    cols_all = ids + ins
+    if ins:
+        prev = np.vstack([prev] + [np.asarray(d["inputs"][k], dtype=float)[None, 1: len(t)] for k in ins])
     n = dy.shape[1]
     steps = np.asarray(t[1:])
     wins = windows(truth_model, t)
     from ..skill import truth_by_time
     flows, _ = truth_by_time(truth_model, t)
-    systems = [linear_system(flows, ids, w) for w in wins]
+    systems = [linear_system(flows, cols_all, w) for w in wins]
     linear = all(s is not None for s in systems)
     var = None
     if tp is not None and tp.ok:
@@ -110,9 +121,9 @@ def design(truth_model: dict, d: dict, noise: str, tp: TruthParams | None) -> li
         else:
             cols.append("1")
             X.append(np.ones(n))
-        for j in ids:
+        for j in cols_all:
             cols.append(j)
-            X.append(prev[ids.index(j)])
+            X.append(prev[cols_all.index(j)])
         X = np.array(X).T
         y = dy[i]
         if var is not None:
@@ -157,7 +168,7 @@ def design(truth_model: dict, d: dict, noise: str, tp: TruthParams | None) -> li
                     w = next((w for w, (a, b) in enumerate(wins) if c == f"1 [{a}-{b}]"), None)
                     true = u[w] if w is not None else u[0]
                 else:
-                    vals = [Bw[ids.index(c)] for Bw in B]
+                    vals = [Bw[cols_all.index(c)] for Bw in B]
                     true = float(np.mean(vals))
                 if abs(true) < 1e-12:
                     continue
@@ -182,7 +193,9 @@ def _allowances(case: dict, noise: str, truth_model: dict, d: dict) -> dict:
     t = d["t"]
     wins = windows(truth_model, t)
     tflows, _ = truth_by_time(truth_model, t)
-    true_w = [parts(tflows, measured, w)[0] for w in wins]
+    inputs = set(d.get("inputs") or {}) - set(lv)                     # measured inputs: read as stocks are (as score.equations)
+    means.update({k: float(np.mean(v)) if len(v) else 0.0 for k, v in (d.get("inputs") or {}).items() if k in inputs})
+    true_w = [parts(tflows, measured, w, inputs)[0] for w in wins]
     true_keys = list(dict.fromkeys(k for tp in true_w for k in tp))
     weights = np.array([b - a + 1 for a, b in wins], dtype=float)
     weights /= weights.sum()
@@ -197,14 +210,16 @@ def _allowances(case: dict, noise: str, truth_model: dict, d: dict) -> dict:
             if k[0] == "hidden":
                 hse = (hidden.hidden_se(k, w) if hidden else None) or {}
                 lvl = max(1e-9, means.get(k[1], 0.0))
-                allowed[(w, k, "k_in")] = max(tol["rel"] * abs(v["k_in"]), tol["floor"] * scale / lvl, tol["z"] * (hse.get("k_in") or 0.0))
+                if "k_in" in v:                                       # (fed from outside: its inflow's numbers are "via" parts)
+                    allowed[(w, k, "k_in")] = max(tol["rel"] * abs(v["k_in"]), tol["floor"] * scale / lvl, tol["z"] * (hse.get("k_in") or 0.0))
+                    ses[(w, k, "k_in")] = hse.get("k_in")
                 allowed[(w, k, "delay")] = max(tol["rel"] * v["delay"], tol["z"] * (hse.get("delay") or 0.0)) if math.isfinite(v["delay"]) else 0.0
-                ses[(w, k, "k_in")], ses[(w, k, "delay")] = hse.get("k_in"), hse.get("delay")
+                ses[(w, k, "delay")] = hse.get("delay")
                 continue
-            if k[0] not in ("flow", "uses") or not isinstance(v, (int, float)):
+            if k[0] not in ("flow", "uses", "via") or not isinstance(v, (int, float)):
                 continue
             se = oracle.part_se(k, true_keys, w) if oracle.ok else hidden.part_se(k, w) if hidden else None
-            reader = k[3] if k[0] == "flow" else None
+            reader = k[3] if k[0] in ("flow", "via") else None
             level = 1.0 if reader in (None, ONE) else max(1e-9, means.get(reader, 0.0))
             allowed[(w, k)] = max(tol["rel"] * abs(v), tol["floor"] * scale / level, tol["z"] * (se or 0.0))
             ses[(w, k)] = se
@@ -228,6 +243,9 @@ def analyse(case_id: str, variant: str, mc: bool = True) -> dict:
     if v.get("observe"):                     # a noise laid on the recorded levels (noise.py): the Kalman model's analysis
         from .noise_analysis import analyse as noisy
         return noisy(case_id, variant)
+    if case.get("real") and v.get("twin"):   # a real case's twin: its training samples with measurement error (twin_analysis.py)
+        from .twin_analysis import analyse as twin
+        return twin(case_id, variant)
     noise = v["noise"]
     tm = casemod.truth_model(case, variant)
     d = datamod.load(case, variant)

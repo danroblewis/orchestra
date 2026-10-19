@@ -273,6 +273,8 @@ def _num(v) -> str:
         return f"{v['mean']:.4g} (mean)"
     if isinstance(v, dict) and "k_in" in v:
         return f"k {v['k_in']:.3g}, delay {v['delay']:.3g}"
+    if isinstance(v, dict) and "delay" in v:
+        return f"delay {v['delay']:.3g}"
     return str(v)[:30]
 
 

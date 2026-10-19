@@ -255,9 +255,11 @@ it sits at max. A move into a full stock stays in its source; an injection never
 
 A delay's flows carry `"delay": {"id", "stage", "of", "time"}`: the answer key (`Truth.truth()`) and
 the scorer (`parts.py`) read a DELAYn chain between two measured stocks as one hidden part
-`A -> (hidden) -> B` with `k_in` the rate's number and `delay` the DELAY's time; the Kalman
-hidden-stock oracle covers only one hidden stock, so a DELAY3 case is scored with the tolerances
-alone. A rate that reads a smoothing's hidden stock is not scored (it reads an unmeasured stock), so
+`A -> (hidden) -> B` with `k_in` the rate's number and `delay` the DELAY's time; a chain fed from
+outside (a supply line, a delayed input: 105, 108, 110, 133, 134) is the part
+`outside -> (hidden) -> B` with its delay, and its inflow's numbers are parts of their own (Scoring,
+"Hidden paths fed from outside"). The Kalman hidden-stock oracle covers only one hidden stock, so a
+DELAY3 case is scored with the tolerances alone. A rate that reads a smoothing's hidden stock is not scored (it reads an unmeasured stock), so
 SMOOTH is for building realistic models, not yet for a scored case.
 
 **YAML traps.** Inside `{...}` (flow style) a comma ends the value, so a rate with commas
@@ -512,8 +514,10 @@ one-off `inject`) and writes `cases/1NN-canonical-*.yaml`. The case files
 are committed, so the ladder never needs PySD. The models written for SD Lab use TIME STEP 1, one Euler
 step per recorded step, so they probe structure. The two SDXorg samples keep their published TIME STEP
 (1/32, 1/8): data recorded once per time unit from a finer Euler run have per-step rates that differ from
-the model's per-time-unit numbers (a drain k reads as about 1 - exp(-k)), and the scorer compares
-against the model's numbers. So those two also probe sub-step data:
+the model's per-time-unit numbers (a drain k reads as 1 - (1 - k dt)^(1/dt), about 1 - exp(-k)). The
+scorer compares the found numbers with the truth's per-recorded-step equivalents (`substep.py`;
+Scoring, "A truth at a sub-step"), so a found 0.0957 is right for 104's 0.1. Those two also probe
+sub-step data:
 
 ```
 uv run --with pysd --with sympy python -m sdlab.ladder.pysd_import MODEL.mdl        # a model's case body, or what blocks it
@@ -1200,7 +1204,9 @@ run/sync` prints a "skipping" line with the fetch command); its twin still runs.
   months against BLS's gross flow: found at all, relative error of the mean, **matched** within 25%; the
   net flow (A -> B minus B -> A), which levels can show, is compared too.
 - **The twin**: also the ladder's equation scorer against the published model (`score.equations`), so
-  its status is pass / equivalent / fail.
+  its status is pass / equivalent / fail. Its analysis (`twin_analysis.py`) is on the training samples
+  with the twin's measurement error, the published model run without counting noise (Cases as
+  mathematical probes, "Twins").
 
 The real scorer's code is in the real cases' hash (`real/case.py`, CODE), not in the ladder's score
 hash: changing it re-runs only the real cases (they are short), and nothing else is re-scored.
@@ -1289,14 +1295,15 @@ all 20, and the true model passes its own scoring (`tests/test_ladder.py`).
 achievable. The exceptions:
 
 - 122 counts-short is data-limited (p 0.41).
-- 125 is labelled unidentifiable in every variant, but the label is wrong: the analysis ignores
-  floors, and here the floor binds whenever the target drops below R. That binding separates
-  `k x desired - k x R` from a drain.
+- 125 was labelled unidentifiable in every variant, wrongly: the analysis read the measured input
+  as 0, so the floored hiring never moved anyone. With the input read (2026-10-19) the floor binds
+  whenever the target drops below R, and that binding separates `k x desired - k x R` from a drain:
+  125 is achievable in all four variants.
 - 131 and 132 are unidentifiable without noise, by the usual equivalences (link <-> move;
   inflow + drain = gap).
-- 133-135 are unidentifiable without noise: the hidden stock's mirror. Their counts cells are not
-  analysed, because a hidden stock fed from outside or returning to its source is outside the
-  hidden oracle.
+- 133-135 are unidentifiable without noise: the hidden stock's mirror. Since 2026-10-19 the hidden
+  oracle covers a stock fed from outside, so 133 and 134 counts are analysed (achievable); 135's
+  counts cells (a hidden stock returning to its source) are still not.
 - 139's meas cells are not analysed (the noise analysis takes no effects).
 
 **The leaders' results.**
@@ -1374,8 +1381,8 @@ is the existing case's.
   that reads the hidden I. So a correct answer cannot match. This is a scoring gap.
 - **The thermostat's memory and the tanks' sqrt** are engine gaps (queue item 2d). 123 and 122
   are the closest expressible probes.
-- **dt < 1 recordings** (100, 104: a drain k reads as 1 - e^-k per step) wait for the scoring
-  decision in the journal, "Needs you".
+- **dt < 1 recordings** (100, 104: a drain k reads as 1 - e^-k per step): the scorer now compares
+  per recorded step (2026-10-19), so they need no distilled case of their own.
 
 ## Newest cases (`/ladder/new`, `newest.py`, `case_dates.py`)
 
@@ -1546,6 +1553,31 @@ cells that remain short of achievable are data-limited, not unidentifiable: a we
 random three stocks on short runs, the effects cases' per-window inflow constants (017, 018: 10%
 of 3 is the SE of a 100-step window, and there is no oracle allowance for effects), 016 short, and
 022 long.
+
+**Measured inputs and floors** (2026-10-19). The design has a column for each measured input (its
+value during the step), and the bound reads inputs as levels (before, fisher.py read an input as 0,
+so a rate driven by one looked dead). A floor that binds is then in the information: on the steps
+where a floored rate is at 0, the changes do not depend on its numbers, which separates them from
+the others'. 125 (hiring `(desired - R) / 6`, floored, beside a drain 0.025 R) was unidentifiable
+in every variant and is achievable in all four; an alternative structure is listed only if it has
+the same means on the run's own rates, so a binding floor rules it out.
+
+**Twins** (`twin_analysis.py`, 2026-10-19). A real case's twin is the published model run without
+counting noise, cut to the training samples, with Gaussian measurement error (sd = rel x max(level,
+floor)) on each measured stock; a complement stock (adoption's N = 100 - A) is the total minus the
+other's noisy level. It is analysed as an output-error problem: the unknowns are the published
+numbers and every stock's starting level, each training sample is the deterministic run's level plus
+its error, and I = sum_i J_i' R_i^-1 J_i (J_i by central differences of the whole run). A complement
+adds only that the two stocks sum to the total on every sample. A linear effect's normal, min and
+max are left out (`k x level / normal` is one number in the run, and a flow with effects is scored
+as a whole), as is a number the run does not depend on. The bound is mapped to the scorer's parts
+and compared with the scorer's allowance on the twin's training data (noise `counts`, as
+`real/score.py` scores it). Structure: a true term is detected with P(|z| > sqrt(log n)); a
+same-size alternative whose run is the truth's cannot be told apart (no counting noise), and a
+reader that is an exact linear function of other measured stocks on every sample (N = 100 - A,
+to the data's 4 decimals) cannot be told from them: either makes the cell `unidentifiable`. Before,
+the twin was analysed on the noise-free full-length run with fisher.py's counting-noise model, so its
+labels did not describe what discovery saw.
 
 ### Sweeps
 
@@ -1800,10 +1832,35 @@ Here from and to are measured stocks, or outside. The part's **kind** follows fr
 | co-flow | `(uses, from, to, stock) = per` |
 | effect | `(effect, from, to, stock)` |
 | hidden | measured A to unmeasured H to measured B: `(hidden, A, B) = {k_in, delay}` |
+| hidden (fed from outside) | outside to unmeasured H to measured B: `(hidden, None, B) = {delay}` |
+| hidden inflow | what feeds such a path: `(via, None, B, reader) = k` (constant, stocks, inputs), and its effects `(viaeffect, None, B, stock)` |
 
-On the found side, a hidden stock is a flow with `via: {delay}`, or a chain through a stock that is
-not measured, such as an inferred stock. Parts with the same key are summed on each side, because
-two flows that are one number in the data are scored as that one number.
+On the found side, a hidden stock is a flow with `via: {delay}`, or a chain through stocks that are
+not measured, such as inferred stocks: one stage, or several in a row (`H1 -> H2 -> ... -> Hn`, each
+a single flow into the next, which nothing else feeds), whose delay is the mean time through them
+(the sum of 1 / each stage's rate). Parts with the same key are summed on each side, because two
+flows that are one number in the data are scored as that one number.
+
+**Hidden paths fed from outside** (approved by the user, 2026-10-19). A supply line or a delayed
+input (105, 108, 110, 133, 134, and the found models of every case) used to drop out of the
+scoring: the answer key read a hidden path only between two measured stocks, so the truth's path
+and a found model's were "not scored". Now the path is three kinds of part: its delay (within
+`max(rel x delay, z x SE)`, as any hidden part's), the numbers of its inflow (each like a flow's
+number, sized by the mean level it reads), and its release into B (in the delay). An inflow with
+effects (108's capacity orders) is compared as a whole, by its amount on the run's states. A found
+model without the hidden stage misses these parts (and its plain inflow is spurious); a found
+hidden path the truth lacks is spurious. The rate that only reads a hidden stock (a smoothing; the
+flu's infection reading the hidden I) is still not scored.
+
+**A truth at a sub-step** (dt = 1/n < 1: 100, 104; approved 2026-10-19). The data are recorded
+once per step after n Euler sub-steps, so a found model's numbers are per recorded step. The
+scorer's truth is the per-recorded-step equivalent (`substep.py`): each flow's amount over a
+recorded step, from the truth's n sub-steps run from every recorded state (no noise; outflows
+share what a stock holds, as in the engine), with the flow's numbers refitted in its own form by
+least squares on what it reads. A drain k becomes exactly 1 - (1 - k dt)^n (104: 0.1 -> 0.0957,
+-7 -> -6.70); a rate with effects (100's infection) keeps its shape and is scaled (the best
+one-step product). The behaviour grade already compares runs (the truth at its sub-step, the found
+model at dt = 1), so it needed no change.
 
 **Windows.** Each number is compared in every window of the run where the truth's equations hold
 still (between announced eras and unannounced schedule changes). In each window, the found number
@@ -1859,16 +1916,48 @@ long 0.0042 / 1.15 / 0.0042 against 0.0041 / 1.18 / 0.0037, 026 short 0.0101 / 0
 against 0.0134 / 1.14 / 0.0121 (slightly small there: the delay was within 3 SE in 25 of 30), 026
 long 0.0038 / 0.41 / 0.0038 against 0.0038 / 0.51 / 0.0039.
 
+**A hidden stock fed from outside** (2026-10-19): the same oracle for one measured B and an
+unmeasured H fed from outside at a linear rate of B and the measured inputs (floored at 0) and
+released into B (133, 134; announced injections into B are allowed). The inflow's count is seen
+only through H, the release in H's and B's changes. Its SEs apply to the inflow's numbers, the
+delay and B's own flows. A DELAY3 (three hidden stocks: 105, 110) or an inflow with effects (108)
+is not covered and is scored with the tolerances alone. Over 30 fresh seeds (seed + 1000 + i) the
+spread of the truth's own ML fit against the mean SE (`sd / SE`; inflow numbers, release d, B's
+drain, delay):
+
+| case, variant | sd / SE |
+|---|---|
+| 133 counts-short | 0.85, 0.89 (c, k_I); 1.07; 0.76; delay 1.15 |
+| 133 counts-long | 0.63, 0.64 (c, k_I); 0.82; 0.76; delay 0.84 |
+| 134 counts-short | 0.97 (k_pump); 1.29; 0.98; delay 1.25 |
+| 134 counts-long | 0.99 (k_pump); 0.95; 1.08; delay 0.93 |
+
+So the SEs are about right, a little small for the short runs' delay (as for 026 short) and about
+1.6 times too large for 133 long's inflow numbers (their allowance is that much more generous than
+the data need).
+
 **Status.**
 
 - **pass**: every true part is found and right, and no part is spurious. A spurious part is a found
   part the truth lacks that is larger than 5% of the median true part size. With an oracle, it must
   also be larger than 3 SE of that term added to the truth's fit.
 - **equivalent** (not a pass): the found flows make the same linear system as the truth. Every
-  measured stock's change is the same function of the levels and the outside, within the same
-  tolerances, in every window. So the data cannot tell the two apart while no floor binds. Examples:
-  births and deaths seen as their difference, a gap seen as an inflow plus a drain, a link seen as
-  a move. It is reported apart from pass. It is not checked for cases with effects or hidden stocks.
+  measured stock's change is the same function of the levels, the measured inputs and the outside,
+  within the same tolerances, in every window. So the data cannot tell the two apart while no floor
+  binds. Examples: births and deaths seen as their difference, a gap seen as an inflow plus a drain,
+  a link seen as a move, 125's floored gap to a measured target seen as an inflow reading the
+  target and a larger drain. It is reported apart from pass.
+  - **Measured inputs** (2026-10-19) are columns of that system as the levels are; before, a flow
+    reading one made the check give up, so an exact equivalent of 125 or 106 was a fail.
+  - **A truth with effects** (2026-10-19) is equivalent when the found flows compute the same change
+    of every measured stock on the run's states (rate x effects, floored at 0, inputs read):
+    rms(found change - true change) <= rel x rms(the true gross amount through that stock, in and
+    out). So two parametrisations of one function count: a product with its roles swapped (101:
+    `k S x effect(I)` against `k' I x effect(S)`), a move seen as an outflow and an inflow of the
+    same amount, an adoption twin's rates reading A in place of N (N = 100 - A on every sample).
+    One flow alone is held to the same rel as the whole-flow comparison of a flow with effects; no
+    tolerance is wider than before.
+  - Not checked for a truth with hidden stocks.
 - **fail**: anything else. **error** / **timeout**: the strategy raised or ran out of time.
 
 **recall** is the share of true parts whose key the found model has (right kind and ends,

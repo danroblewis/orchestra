@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sdlab.discovery import strategies as strategies_pkg
 from sdlab.ladder import api, catalog, checks, cli, data, noise, runner, score, store
 from sdlab.ladder import cases as casemod
+from sdlab.ladder.substep import per_step
 from sdlab.skill import truth_by_time
 
 
@@ -31,7 +32,9 @@ def scored(case_id, flows_of, variant="counts-short"):
 
 
 def perfect(model, d):
-    return truth_by_time(model, d["t"])[0]
+    """The true model as the data record it: per recorded step (a truth at a sub-step dt < 1 has its
+    numbers in their per-step equivalents, substep.py; unchanged at dt = 1)."""
+    return per_step(truth_by_time(model, d["t"])[0], d, model)[0]
 
 
 def flow(model, fid):

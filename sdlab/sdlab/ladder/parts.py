@@ -72,12 +72,33 @@ def windows(truth_model: dict, t: list[int]) -> list[tuple[int, int]]:
     return [(s, (starts[i + 1] - 1) if i + 1 < len(starts) else t[-1]) for i, s in enumerate(starts)]
 
 
+def _walk(h: str, flows: list[dict], measured: set, used: set) -> tuple[list, list]:
+    """From an unmeasured stock h: the further unmeasured stages h -> h2 -> ... -> hn (each a single flow
+    into the next stock, which nothing else feeds) and hn's flows into measured stocks:
+    ([(index, flow)] of the stages, [(index, flow)] into measured stocks)."""
+    stages, cur, seen = [], h, {h}
+    while True:
+        out_m = [(i, f) for i, f in enumerate(flows) if f.get("from") == cur and f.get("to") in measured]
+        out_u = [(i, f) for i, f in enumerate(flows) if f.get("from") == cur and f.get("to") and f.get("to") not in measured and i not in used]
+        if out_m or len(out_u) != 1:
+            return (stages, out_m) if out_m else ([], [])
+        i, f = out_u[0]
+        nxt = f["to"]
+        if nxt in seen or sum(1 for g in flows if g.get("to") == nxt) != 1:
+            return [], []
+        stages.append((i, f))
+        seen.add(nxt)
+        cur = nxt
+
+
 def _hidden_chains(flows: list[dict], measured: set) -> tuple[dict, set]:
-    """Measured A -> unmeasured H -> measured B: {(A, B): {"in": [flows], "out": [flows], "via": H}},
-    and the indexes of the flows they take."""
+    """A -> unmeasured H (-> H2 ... -> Hn) -> measured B, A measured or outside (None):
+    {(A, B): {"in": [flows], "out": [flows], "via": H, "stages": [flows between H and Hn]}}, and the
+    indexes of the flows they take. A path fed from outside (a supply line, a delayed input) is one
+    too (the user, 2026-10-19: hidden stocks fed from outside are scored)."""
     chains, used = {}, set()
-    # a compiled DELAYn (n > 1, the case format's delay3(): flows marked "delay"): measured A -> H1 ->
-    # ... -> Hn -> measured B is one hidden path whose delay is the DELAY's time ("time")
+    # a compiled DELAYn (n > 1, the case format's delay3(): flows marked "delay"): A -> H1 -> ... -> Hn ->
+    # measured B is one hidden path whose delay is the DELAY's time ("time")
     groups: dict = {}
     for i, f in enumerate(flows):
         if isinstance(f.get("delay"), dict) and f["delay"].get("of", 1) > 1:
@@ -85,41 +106,91 @@ def _hidden_chains(flows: list[dict], measured: set) -> tuple[dict, set]:
     for g in groups.values():
         g.sort(key=lambda x: x[0])
         a, b = g[0][2].get("from"), g[-1][2].get("to")
-        if a in measured and b in measured:
-            c = chains.setdefault((a, b), {"in": [], "out": [], "via": g[0][2]["to"], "time": float(g[0][2]["delay"]["time"])})
+        if (a in measured or a is None) and b in measured:
+            c = chains.setdefault((a, b), {"in": [], "out": [], "via": g[0][2]["to"], "stages": [], "time": float(g[0][2]["delay"]["time"])})
             c["in"].append(g[0][2])
             used.update(i for _, i, _ in g)
     inner = {x for f in flows for x in (f.get("from"), f.get("to")) if x and x not in measured}
-    for h in inner:
-        ins = [(i, f) for i, f in enumerate(flows) if f.get("to") == h and f.get("from") in measured]
-        outs = [(i, f) for i, f in enumerate(flows) if f.get("from") == h and f.get("to") in measured]
+    for h in sorted(inner):
+        ins = [(i, f) for i, f in enumerate(flows) if f.get("to") == h and (f.get("from") in measured or not f.get("from")) and i not in used]
+        if not ins:
+            continue
+        stages, outs = _walk(h, flows, measured, used)
         for i, f in ins:
-            if i in used:                                 # (the first stage of a compiled delay)
-                continue
             for o, g in outs:
-                c = chains.setdefault((f["from"], g["to"]), {"in": [], "out": [], "via": h})
-                c["in"].append(f)
-                c["out"].append(g)
+                c = chains.setdefault((f.get("from") or None, g["to"]), {"in": [], "out": [], "via": h, "stages": [x for _, x in stages]})
+                if f not in c["in"]:
+                    c["in"].append(f)
+                if g not in c["out"]:
+                    c["out"].append(g)
                 used.update((i, o))
+                used.update(x for x, _ in stages)
     return chains, used
+
+
+def _delay(c: dict, window: tuple[int, int]) -> float:
+    """A hidden path's delay: the DELAY's time, else the mean time through its stages (sum of 1 / each
+    stage's rate on its own stock; one stage: 1 / its outflow's rate)."""
+    if "time" in c:
+        return c["time"]
+    total, cur = 0.0, c["via"]
+    for f in c.get("stages") or []:
+        k = (form_over(f, *window) or (0, {}))[1].get(cur, 0.0)
+        if k <= 0:
+            return math.inf
+        total += 1 / k
+        cur = f["to"]
+    k_out = sum((form_over(g, *window) or (0, {}))[1].get(cur, 0.0) for g in c["out"])
+    return total + 1 / k_out if k_out > 0 else math.inf
+
+
+def _inflow_parts(out: dict, notes: list, flows: list[dict], b: str, measured: set, inputs, window: tuple[int, int]) -> None:
+    """The numbers of what feeds a hidden path from outside into b: ("via", None, b, reader), and its
+    effects ("viaeffect", None, b, stock)."""
+    for f in flows:
+        lf = form_over(f, *window)
+        if lf is None:
+            notes.append(f"outside -> (hidden) -> {b}: inflow form {(f.get('rate') or {}).get('form')} is not linear, not scored")
+            continue
+        c, ks = lf
+        if c:
+            out[("via", None, b, ONE)] = out.get(("via", None, b, ONE), 0.0) + c
+        for j, k in ks.items():
+            if j not in measured and j not in inputs:
+                notes.append(f"outside -> (hidden) -> {b} reads unmeasured {j}, not scored")
+                continue
+            out[("via", None, b, j)] = out.get(("via", None, b, j), 0.0) + k
+        for e in f.get("effects") or []:
+            if e.get("stock") in measured or e.get("stock") in inputs:
+                out[("viaeffect", None, b, e["stock"])] = e
 
 
 def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set | frozenset = frozenset()) -> tuple[dict, list[str]]:
     """{key: value} for the flows over a window, and notes on what could not be read. Keys are tuples:
     ("flow", from, to, reader), ("uses", from, to, stock), ("effect", from, to, stock),
-    ("hidden", from, to); from / to None for outside. A reader may be a measured input (inputs: their
-    names), read as a stock is."""
+    ("hidden", from, to); from / to None for outside. A hidden path fed from outside is ("hidden", None,
+    to) = {"delay"} with the numbers of its inflow as ("via", None, to, reader) (and its effects as
+    ("viaeffect", None, to, stock)). A reader may be a measured input (inputs: their names), read as a
+    stock is."""
     out: dict[tuple, object] = {}
     notes: list[str] = []
     chains, used = _hidden_chains(flows, measured)
     for (a, b), c in chains.items():
+        if a is None:                                     # fed from outside: its delay, and the numbers of what feeds it
+            out[("hidden", None, b)] = {"delay": _delay(c, window)}
+            _inflow_parts(out, notes, c["in"], b, measured, inputs, window)
+            continue
         k_in = sum((form_over(f, *window) or (0, {}))[1].get(a, 0.0) for f in c["in"])
-        k_out = sum((form_over(g, *window) or (0, {}))[1].get(c["via"], 0.0) for g in c["out"])
-        out[("hidden", a, b)] = {"k_in": k_in, "delay": c["time"] if "time" in c else 1 / k_out if k_out > 0 else math.inf}
+        out[("hidden", a, b)] = {"k_in": k_in, "delay": _delay(c, window)}
     for i, f in enumerate(flows):
-        if f.get("via"):                                  # a found hidden stock, as one flow from A to B
+        if f.get("via"):                                  # a found hidden stock, as one flow from A (or outside) to B
+            delay = float(f["via"].get("delay") or math.inf)
+            if not f.get("from"):
+                out[("hidden", None, f.get("to"))] = {"delay": delay}
+                _inflow_parts(out, notes, [f], f.get("to"), measured, inputs, window)
+                continue
             lf = form_over(f, *window) or (0, {})
-            out[("hidden", f.get("from"), f.get("to"))] = {"k_in": lf[1].get(f.get("from"), 0.0), "delay": float(f["via"].get("delay") or math.inf)}
+            out[("hidden", f.get("from"), f.get("to"))] = {"k_in": lf[1].get(f.get("from"), 0.0), "delay": delay}
             continue
         if i in used:
             continue
@@ -150,8 +221,8 @@ def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set
 
 
 def kind(key: tuple) -> str:
-    if key[0] in ("uses", "effect", "hidden"):
-        return {"uses": "co-flow", "effect": "effect", "hidden": "hidden"}[key[0]]
+    if key[0] in ("uses", "effect", "hidden", "via", "viaeffect"):
+        return {"uses": "co-flow", "effect": "effect", "hidden": "hidden", "via": "hidden inflow", "viaeffect": "hidden inflow effect"}[key[0]]
     _, a, b, r = key
     if a and b:
         return "move"
@@ -165,7 +236,11 @@ def label(key: tuple) -> str:
     if key[0] == "flow":
         return f"{end(key[1])} -> {end(key[2])} [{'const' if key[3] == ONE else key[3]}]"
     if key[0] == "hidden":
-        return f"{key[1]} -> (hidden) -> {key[2]}"
+        return f"{end(key[1])} -> (hidden) -> {key[2]}"
+    if key[0] == "via":
+        return f"outside -> (hidden) -> {key[2]} [{'const' if key[3] == ONE else key[3]}]"
+    if key[0] == "viaeffect":
+        return f"effect {key[3]} on outside -> (hidden) -> {key[2]}"
     return f"{key[0]} {key[3]} on {end(key[1])} -> {end(key[2])}"
 
 

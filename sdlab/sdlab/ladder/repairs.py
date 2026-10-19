@@ -40,6 +40,8 @@ def fmt(v) -> str:
     if isinstance(v, dict):
         if "k_in" in v:
             return f"k {fmt(v['k_in'])}, delay {fmt(v['delay'])}"
+        if "delay" in v:
+            return f"delay {fmt(v['delay'])}"
         if "mean" in v:
             return fmt(v["mean"])
         if v.get("shape"):
@@ -71,6 +73,12 @@ def signed_pct(r: float) -> str:
 def parse(key: str) -> dict:
     """A part's key (parts.label) as {kind, from, to, reader | stock}; from / to None for outside."""
     end = lambda x: None if x == "outside" else x  # noqa: E731
+    m = re.match(r"^outside -> \(hidden\) -> (.+?) \[(.+)\]$", key)          # what feeds a hidden path from outside
+    if m:
+        return {"kind": "via", "from": None, "to": m[1], "reader": m[2]}
+    m = re.match(r"^effect (\S+) on outside -> \(hidden\) -> (.+)$", key)
+    if m:
+        return {"kind": "viaeffect", "stock": m[1], "from": None, "to": m[2]}
     m = re.match(r"^(.+?) -> \(hidden\) -> (.+)$", key)
     if m:
         return {"kind": "hidden", "from": end(m[1]), "to": end(m[2])}
@@ -85,7 +93,7 @@ def parse(key: str) -> dict:
 
 def ends(k: dict) -> str:
     a, b = k.get("from") or "outside", k.get("to") or "outside"
-    return f"{a} → (hidden) → {b}" if k["kind"] == "hidden" else f"{a} → {b}"
+    return f"{a} → (hidden) → {b}" if k["kind"] in ("hidden", "via", "viaeffect") else f"{a} → {b}"
 
 
 def _num(v):
@@ -98,7 +106,7 @@ def _num(v):
 
 def term(k: dict, v) -> str:
     """One number of a flow in its place: 20, 0.066·C, uses 0.5 R each, the effect of C, a hidden stock."""
-    if k["kind"] == "flow":
+    if k["kind"] in ("flow", "via"):
         return fmt(v) if k["reader"] == "const" else f"{fmt(v)}·{k['reader']}"
     if k["kind"] == "uses":
         return f"uses {fmt(v)} {k['stock']} each"
@@ -130,6 +138,12 @@ def _number(p: dict, k: dict, analysis: dict | None) -> dict:
         item.update(text=f"{ends(k)} (with {term(k, None) if k['kind'] == 'effect' else 'effects'}): its amount is "
                          f"{'' if e is None or not math.isfinite(e) else f'{100 * e:.0f}% '}off (rms over the run)",
                     short=f"{100 * e:.0f}% off" if e is not None and math.isfinite(e) else "off", rel=e)
+        return item
+    if k["kind"] == "hidden" and isinstance(f, dict) and isinstance(t, dict) and "k_in" not in t:     # fed from outside: the delay only
+        dd = f["delay"] - t["delay"]
+        rd = dd / t["delay"] if t["delay"] and math.isfinite(t["delay"]) else 0.0
+        item.update(found=f, true=t, rel=rd, text=f"{ends(k)}: delay {fmt(f['delay'])}, should be {fmt(t['delay'])} ({signed(dd)}, {signed_pct(rd)})",
+                    short=f"delay {signed_pct(rd)}")
         return item
     if k["kind"] == "hidden" and isinstance(f, dict) and isinstance(t, dict):
         dk, dd = f["k_in"] - t["k_in"], f["delay"] - t["delay"]

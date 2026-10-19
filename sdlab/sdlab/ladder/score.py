@@ -7,8 +7,13 @@ measured stock or outside. The kind follows from the key: a **move** (measured t
 **outside inflow** (from outside, reading nothing), a **link** (from outside, reading a stock), an
 **outside outflow** (to outside). A flow's co-flow is a part (uses, from, to, stock) = per; an
 effect is a part (effect, from, to, stock); a hidden stock between measured A and B (A -> H -> B, H
-not measured) is one part (hidden, A, B) = {k_in, delay}. Found and true parts with the same key
+not measured) is one part (hidden, A, B) = {k_in, delay}; a hidden path fed from outside into B is
+(hidden, None, B) = {delay} with its inflow's numbers as (via, None, B, reader) parts (and its
+effects as (viaeffect, None, B, stock), compared as a whole). Found and true parts with the same key
 are summed (two links into one stock from the same driver are one number in the data).
+
+**A truth at a sub-step** (dt < 1) is compared by its per-recorded-step equivalents (substep.py): a
+drain k recorded every 1/dt sub-steps is 1 - (1 - k dt)^(1/dt) per step.
 
 **Windows.** A rate that changes (announced eras, unannounced schedule changes) is compared in
 every window where the truth's equations hold still: the found flow's numbers are averaged over
@@ -30,10 +35,11 @@ flows between the same stocks, as relative rms error within rel. Override per ca
 found parts above the size threshold whose key is true; pass = every true part right and no
 spurious part (a found part the truth lacks, larger than "spurious", 5% of the median true part
 size, and with an oracle, larger than z standard errors of that term added to the truth's fit). **equivalent** (when not pass): the found flows make the same linear system as the truth
-(every stock's change the same function of the levels and the outside, within tolerance), so the
-data cannot tell them apart (births and deaths of one stock seen as their difference, a gap seen as
-an inflow and a drain); it is reported apart from pass. Not checked for cases with effects or
-hidden stocks (nonlinear, or of another size).
+(every stock's change the same function of the levels, the measured inputs and the outside, within
+tolerance), so the data cannot tell them apart (births and deaths of one stock seen as their
+difference, a gap seen as an inflow and a drain); for a truth with effects, the found flows compute
+the same change of every stock on the run's states (_same_function); it is reported apart from pass.
+Not checked for a truth with hidden stocks.
 
 **Behaviour.** skill@20 and skill@100 (sdlab/skill.py) on the run discovery saw and on a fresh run
 (another seed), each with a 95% bootstrap interval over the start moments.
@@ -50,7 +56,8 @@ import numpy as np
 from ..runner import multiplier
 from ..skill import same_behaviour, truth_by_time, truth_runs
 from .noise_oracle import make_hidden_oracle, make_oracle
-from .parts import ONE, form_over, kind, label, linear_system, parts, windows
+from .parts import ONE, _hidden_chains, form_over, kind, label, linear_system, parts, windows
+from .substep import per_step
 
 DEFAULTS = {"rel": 0.10, "rel_exact": 0.02, "floor": 0.01, "floor_exact": 0.002, "spurious": 0.05, "z": 3.0}
 HORIZONS = (20, 100)
@@ -61,7 +68,7 @@ def score_hash() -> str:
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
     for p in (here / "score.py", here / "parts.py", here / "oracle.py", here / "hidden_oracle.py",
-              here / "noise_oracle.py", here / "noise_kf.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
+              here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
 
@@ -77,35 +84,56 @@ def _tolerances(case: dict, noise: str) -> dict:
 def _size(key: tuple, value, means: dict, among: dict) -> float:
     """A part's size: its flow amount per step (|k| x the mean level it reads; a co-flow's per x
     the amount of its flow; an effect counts as large)."""
-    if key[0] == "flow":
+    if key[0] in ("flow", "via"):
         return abs(value) * (1.0 if key[3] == ONE else means.get(key[3], 0.0))
     if key[0] == "hidden":
+        if "k_in" not in value:                              # fed from outside: the amount through it
+            return sum(_size(k, v, means, among) for k, v in among.items() if k[0] == "via" and k[2] == key[2])
         return abs(value["k_in"]) * means.get(key[1], 0.0)
     if key[0] == "uses":
         return abs(value) * sum(_size(k, v, means, among) for k, v in among.items() if k[0] == "flow" and k[1:3] == key[1:3])
     return math.inf
 
 
-def _amounts(flows: list[dict], ends: tuple, measured: set, data: dict) -> np.ndarray | None:
-    """The amount per step of the flows between `ends` on the run's states (rate x effects, floored
-    at 0 as the engine does; no cap)."""
+def _levels_at(data: dict) -> list[dict]:
+    """The state at the start of every step: every stock's level, and each measured input's value
+    during the step (read as a stock is; the oracle's convention)."""
     lv = data.get("all_levels") or data["levels"]
+    n = len(data["t"])
+    ins = {k: v for k, v in (data.get("inputs") or {}).items() if k not in lv}
+    return [{**{s: v[i] for s, v in lv.items()}, **{k: v[i + 1] for k, v in ins.items() if i + 1 < len(v)}} for i in range(n - 1)]
+
+
+def _flow_amounts(flows: list[dict], data: dict, states: list[dict] | None = None) -> np.ndarray | None:
+    """The amount per step of these flows together on the run's states (rate x effects, floored at 0
+    as the engine does; no cap); None when a rate is not linear."""
     t = data["t"]
-    n = len(t)
-    total = np.zeros(n - 1)
+    states = states if states is not None else _levels_at(data)
+    total = np.zeros(len(t) - 1)
     for f in flows:
-        a = f.get("from") if f.get("from") in measured else None
-        b = f.get("to") if f.get("to") in measured else None
-        if (a, b) != ends or f.get("via"):
-            continue
-        for i in range(n - 1):
-            level = {s: v[i] for s, v in lv.items()}
+        for i, level in enumerate(states):
             lf = form_over(f, t[i + 1], t[i + 1])
             if lf is None:
                 return None
             rate = max(0.0, lf[0] + sum(k * level.get(j, 0.0) for j, k in lf[1].items()))
             total[i] += rate * multiplier(f, level)
     return total
+
+
+def _amounts(flows: list[dict], ends: tuple, measured: set, data: dict) -> np.ndarray | None:
+    """The amount per step of the flows between `ends` on the run's states (rate x effects, floored
+    at 0 as the engine does; no cap)."""
+    sel = [f for f in flows if not f.get("via") and ((f.get("from") if f.get("from") in measured else None),
+                                                    (f.get("to") if f.get("to") in measured else None)) == ends]
+    return _flow_amounts(sel, data)
+
+
+def _path_inflow(flows: list[dict], b: str, measured: set) -> list[dict]:
+    """The flows that feed a hidden path from outside into b (a chain's first flow, or a found `via`
+    flow from outside)."""
+    chains, _ = _hidden_chains(flows, measured)
+    out = list((chains.get((None, b)) or {}).get("in") or [])
+    return out + [f for f in flows if f.get("via") and not f.get("from") and f.get("to") == b]
 
 
 def _close(true: float, found: float, reader: str | None, tol: dict, means: dict, scale: float, se: float | None = None) -> tuple[bool, float]:
@@ -130,6 +158,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     t = data["t"]
     wins = windows(truth_model, t)
     truth_flows, _ = truth_by_time(truth_model, t)
+    truth_flows, _ = per_step(truth_flows, data, truth_model)      # a truth at a sub-step: its per-recorded-step numbers (substep.py)
     effect_ends = {(f.get("from") if f.get("from") in measured else None, f.get("to") if f.get("to") in measured else None)
                    for f in truth_model["flows"] if f.get("effects")}
     true_w, found_w, notes = [], [], []
@@ -158,6 +187,15 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             continue
         err = float(np.sqrt(np.mean((got - want) ** 2)) / max(1e-9, np.sqrt(np.mean(want ** 2))))
         function_check[ends] = (err <= tol["rel"], err)
+    # a hidden path fed from outside by a flow with effects: what feeds it compared as a whole
+    for b in {k[2] for k in true_keys if k[0] == "viaeffect"}:
+        want = _flow_amounts(_path_inflow(truth_flows, b, measured), data)
+        got = _flow_amounts(_path_inflow(found_flows, b, measured), data)
+        if want is None or got is None:
+            function_check[("via", b)] = (False, math.inf)
+            continue
+        err = float(np.sqrt(np.mean((got - want) ** 2)) / max(1e-9, np.sqrt(np.mean(want ** 2))))
+        function_check[("via", b)] = (err <= tol["rel"], err)
 
     rows = []
     for k in true_keys:
@@ -166,6 +204,10 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             ok, err = function_check[(k[1], k[2])]
             row.update(true=_show(true_w[0].get(k)), found_value=_show(next((fp[k] for fp in found_w if k in fp), None)),
                        ok=bool(row["found"] and ok), error=err, compared="as a whole flow (effects)")
+        elif k[0] == "viaeffect" or (k[0] == "via" and ("via", k[2]) in function_check):
+            ok, err = function_check[("via", k[2])]
+            row.update(true=_show(true_w[0].get(k)), found_value=_show(next((fp[k] for fp in found_w if k in fp), None)),
+                       ok=bool(row["found"] and ok), error=err, compared="as a whole flow (effects on a hidden path's inflow)")
         elif k[0] == "hidden":
             oks, errs, ses = [], [], []
             for w, (tp, fp) in enumerate(zip(true_w, found_w)):
@@ -176,7 +218,10 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
                 if k not in fp:
                     oks.append(False)
                     continue
-                o1, e1 = _close(tp[k]["k_in"], fp[k]["k_in"], k[1], tol, means, scale, hse.get("k_in"))
+                if "k_in" in tp[k]:
+                    o1, e1 = _close(tp[k]["k_in"], fp[k].get("k_in", 0.0), k[1], tol, means, scale, hse.get("k_in"))
+                else:                                       # fed from outside: its inflow's numbers are parts of their own ("via")
+                    o1, e1 = True, 0.0
                 allowed = max(tol["rel"] * tp[k]["delay"], tol["z"] * (hse.get("delay") or 0.0)) if math.isfinite(tp[k]["delay"]) else -1.0
                 o2 = abs(fp[k]["delay"] - tp[k]["delay"]) <= allowed + 1e-9
                 oks.append(o1 and o2)
@@ -187,7 +232,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             oks, errs, ses = [], [], []
             for w, (tp, fp) in enumerate(zip(true_w, found_w)):
                 se = oracle.part_se(k, true_keys, w) if oracle.ok else hidden.part_se(k, w) if hidden else None
-                ok, err = _close(float(tp.get(k, 0.0)), float(fp.get(k, 0.0)), k[3] if k[0] == "flow" else None, tol, means, scale, se)
+                ok, err = _close(float(tp.get(k, 0.0)), float(fp.get(k, 0.0)), k[3] if k[0] in ("flow", "via") else None, tol, means, scale, se)
                 oks.append(ok)
                 errs.append(err)
                 ses.append(se)
@@ -210,7 +255,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             noise_only = all(s is not None and abs(fp[k]) <= tol["z"] * s for s, fp in zip(ses, [fp for fp in found_w if k in fp]))
         else:
             noise_only = False
-        entry = {"key": label(k), "kind": kind(k), "value": _show(_one([float(fp.get(k, 0.0)) for fp in found_w], weights) if k[0] in ("flow", "uses")
+        entry = {"key": label(k), "kind": kind(k), "value": _show(_one([float(fp.get(k, 0.0)) for fp in found_w], weights) if k[0] in ("flow", "uses", "via")
                                                                    else next(fp[k] for fp in found_w if k in fp)), "size": size}
         (spurious if size > tol["spurious"] * scale and not noise_only else extra).append(entry)
     big_found = [k for k in found_keys if k in true_keys] + [e for e in spurious]
@@ -218,11 +263,14 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     precision = (sum(1 for k in found_keys if k in true_keys) / len(big_found)) if big_found else (1.0 if not rows else 0.0)
     passed = all(r["ok"] for r in rows) and not spurious
     equivalent = False
-    if not passed and not effect_ends and not any(k[0] == "hidden" for k in true_keys):
+    if not passed and effect_ends and not any(k[0] == "hidden" for k in true_keys):
+        equivalent = _same_function(truth_flows, found_flows, ids, data, tol)
+    elif not passed and not effect_ends and not any(k[0] == "hidden" for k in true_keys):
         equivalent = True
+        cols = ids + sorted(inputs)                                # a measured input is a column as a level is
         for w in wins:
-            T, F = linear_system(truth_flows, ids, w), linear_system(found_flows, ids, w)
-            if T is None or F is None or not _same_system(T, F, ids, tol, means, scale, oracle, wins.index(w)):
+            T, F = linear_system(truth_flows, cols, w), linear_system(found_flows, cols, w)
+            if T is None or F is None or not _same_system(T, F, ids, cols, tol, means, scale, oracle, wins.index(w)):
                 equivalent = False
                 break
     status = "pass" if passed else "equivalent" if equivalent else "fail"
@@ -231,12 +279,55 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             "windows": len(wins), "tolerance": tol, "scale": scale, "notes": sorted(set(notes))}
 
 
-def _same_system(T, F, ids, tol, means, scale, oracle, w) -> bool:
+def _changes(flows: list[dict], ids: list[str], data: dict, states: list[dict]) -> tuple[np.ndarray, np.ndarray] | None:
+    """Every measured stock's change per step that these flows make on the run's states, and the gross
+    amount through it (every flow in or out, summed); None when a flow touches a stock that is not
+    measured or a rate is not linear."""
+    idx = {s: i for i, s in enumerate(ids)}
+    change, gross = np.zeros((len(ids), len(states))), np.zeros((len(ids), len(states)))
+    for f in flows:
+        if f.get("via") or (f.get("from") and f["from"] not in idx) or (f.get("to") and f["to"] not in idx):
+            return None
+        q = _flow_amounts([f], data, states)
+        if q is None:
+            return None
+        signs = [(f.get("to"), 1.0), (f.get("from"), -float(f.get("ratio") or 1))]
+        signs += [(u.get("stock"), -float(u.get("per") or 0)) for u in f.get("uses") or [] if u.get("stock") in idx]
+        for st, sign in signs:
+            if st:
+                change[idx[st]] += sign * q
+                gross[idx[st]] += abs(sign) * q
+    return change, gross
+
+
+def _same_function(truth_flows: list[dict], found_flows: list[dict], ids: list[str], data: dict, tol: dict) -> bool:
+    """Equivalence for a truth with effects (the user, 2026-10-19): the found flows compute the same
+    change of every measured stock as the truth's on the run's states (rate x effects, floored at 0;
+    measured inputs read as levels), within the relative tolerance of the amount through that stock:
+    rms(found change - true change) <= rel x rms(the true gross amount in and out). Two
+    parametrisations of one function (a product with its roles swapped, a move seen as an outflow
+    and an inflow of the same amount) are equivalent; one flow alone is held to the same rel as the
+    whole-flow comparison of a flow with effects."""
+    states = _levels_at(data)
+    T, F = _changes(truth_flows, ids, data, states), _changes(found_flows, ids, data, states)
+    if T is None or F is None:
+        return False
+    (ct, gt), (cf, _) = T, F
+    for i in range(len(ids)):
+        g = float(np.sqrt(np.mean(gt[i] ** 2)))
+        if float(np.sqrt(np.mean((cf[i] - ct[i]) ** 2))) > tol["rel"] * g + 1e-12:
+            return False
+    return True
+
+
+def _same_system(T, F, ids, cols, tol, means, scale, oracle, w) -> bool:
+    """Every measured stock's change the same function of the levels, the measured inputs and the
+    outside (rows: the measured stocks; columns: the levels, then the inputs)."""
     (Bt, ut), (Bf, uf) = T, F
     for i, row in enumerate(ids):
         if not _close(ut[i], uf[i], None, tol, means, scale, oracle.se(row, ONE, w))[0]:
             return False
-        for j, s in enumerate(ids):
+        for j, s in enumerate(cols):
             if not _close(Bt[i, j], Bf[i, j], s, tol, means, scale, oracle.se(row, s, w))[0]:
                 return False
     return True

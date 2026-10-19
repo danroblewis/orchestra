@@ -26,6 +26,7 @@
     if (typeof v === "object") {
       if (Array.isArray(v.per_window)) return v.per_window.map(fmt).join(" / ");
       if ("k_in" in v) return `k ${fmt(v.k_in)}, delay ${fmt(v.delay)}`;
+      if ("delay" in v) return `delay ${fmt(v.delay)}`;
       if (v.shape === "linear") return `linear (normal ${fmt(v.normal)}, max ${fmt(v.max)})`;
       if (v.shape === "table") return `table (${(v.points || []).length} points)`;
       if ("mean" in v) return fmt(v.mean);
@@ -35,7 +36,11 @@
 
   function parseKey(key) {
     const end = (x) => (x === OUT ? null : x);
-    let m = /^(.+?) -> \(hidden\) -> (.+)$/.exec(key);
+    let m = /^outside -> \(hidden\) -> (.+?) \[(.+)\]$/.exec(key);              // what feeds a hidden path from outside
+    if (m) return { kind: "via", from: null, to: m[1], reader: m[2] };
+    m = /^effect (\S+) on outside -> \(hidden\) -> (.+)$/.exec(key);
+    if (m) return { kind: "viaeffect", stock: m[1], from: null, to: m[2] };
+    m = /^(.+?) -> \(hidden\) -> (.+)$/.exec(key);
     if (m) return { kind: "hidden", from: end(m[1]), to: end(m[2]) };
     m = /^(uses|effect) (\S+) on (.+?) -> (.+)$/.exec(key);
     if (m) return { kind: m[1], stock: m[2], from: end(m[3]), to: end(m[4]) };
