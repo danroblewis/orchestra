@@ -298,6 +298,22 @@ strategies:
     status: active
     note: Research document docs/research/effect-hats.md.
 
+  inflow_effects:
+    idea: effect_hats, then outside inflows that carry an effect - a base (a measured input, or a schedule nobody announced) times a table of a stock's level.
+    how: >-
+      A copy of effect_hats. On its answer, each stock's inflow is tried as a base times a table curve
+      of a stock's level (its own level too): the base is either a measured input (arrivals let in
+      by a gate that closes as the queue fills) or a schedule of a few values that changes when the
+      data say so (growth of 10 or 20 a step, times a table of nitrogen). The flow may also use up
+      another stock as it arrives, or run from it. The schedule and the curve multiply each other, so
+      they are fitted in turns and then all together; the other flows on those stocks keep their
+      form and are rescaled. A reading replaces the old inflows only if it prices better (one-step
+      BIC) and behaves no worse on the multi-step judge.
+    helps_with: Effects on outside inflows (distilled 160, from sd-farm-soil) and a measured inflow gated by a table of its own stock (distilled 217, from 212).
+    builds_on: effect_hats (copy)
+    status: work in progress
+    note: Research document docs/research/inflow_effects.md.
+
   realistic_flows:
     idea: realistic_hats that also finds co-flows, and keeps a stock's own drain instead of letting its outside inflow stand in for it.
     how: >-
