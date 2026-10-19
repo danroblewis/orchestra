@@ -11,13 +11,6 @@ for `combined` on the test cases).
 
 ## Queued
 
-2h. **common_cause without runtime patching** (from its final report, 880452b). common_cause applies
-   its exact-data fix by temporarily swapping the shared `regression`/`changes` functions during each
-   call. That is runtime patching of the pinned library (it breaks invariant 11 in spirit, and a crash
-   mid-call could leave the swap in place in a worker that combined reuses). Copy the patched
-   functions into `common_cause/`, call the copies, and remove the swap; behaviour must be identical
-   (prove it on 032-038 and a sample). matrix_v2 is adding the same fix as an option.
-
 2g. **Runner fix and lna fixes** (from the hook port). lna may be fixed in place (strategies are not frozen); its derivatives must carry copies first (item 0c), so this waits for 0c:
    - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
@@ -45,6 +38,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-19: 2h, common_cause without runtime patching (3f5f064): private copies of matrix.identify_one/finish/conserve and regression.stepwise take the floored fit; the swap is gone. Found flows byte-identical on 028-038 (44 cells) and 20 other cells.
 
 - 2026-10-19: 1a, control-theory cases 200-215 and distilled 216-218 (cd9e8b1, 34e948c, a319289, docs). Leaders pass 14 of 448 cells; structures passes 3 of 34 achievable cells.
 
