@@ -67,6 +67,15 @@ def do_run(a, force: bool, command: str) -> int:
     if not items:
         print("Nothing to run: every result is current.")
         return 0
+    batch = getattr(a, "batch", 0) or 0
+    if batch and len(items) > batch:
+        # a batch at a time, so cases and strategies added meanwhile are planned within minutes:
+        # never-run pairs first, then cheap re-scores, then re-runs of changed code
+        order = {"new": 0, "score_only": 1}
+        items = sorted(items, key=lambda i: order.get(i["reason"], 2))
+        print(f"{command}: {len(items)} items stale; this batch takes {batch}", file=sys.stderr)
+        a._more = True
+        items = items[:batch]
     runs = sum(i["mode"] == "run" for i in items)
     print(f"{command}: {len(items)} items ({runs} to run, {len(items) - runs} to re-score) on {a.jobs or (os.cpu_count() or 2) - 1} workers", file=sys.stderr)
     began = time.perf_counter()
@@ -282,10 +291,13 @@ def watch(a) -> int:
             except Exception as e:                            # noqa: BLE001  (a case being edited may not parse yet)
                 print(f"waiting: {e}", file=sys.stderr)
                 fp = last
-            if fp != last:
+            a._more = False
+            if fp != last or getattr(a, "_was_more", False):
                 last = fp
                 do_run(a, False, "watch")
-            time.sleep(a.every)
+            a._was_more = a._more                           # a batch left work: plan again at once
+            if not a._more:
+                time.sleep(a.every)
     except KeyboardInterrupt:
         return 0
 
@@ -395,6 +407,7 @@ def main(argv: list[str] | None = None) -> int:
     w = sub.add_parser("watch", help="sync whenever cases or strategies change")
     common(w)
     w.add_argument("--every", type=float, default=3.0)
+    w.add_argument("--batch", type=int, default=0, help="run at most N stale items per pass, then plan again (new pairs first); 0: all")
     ck = sub.add_parser("check", help="check the cases are sane")
     ck.add_argument("--cases")
     nw = sub.add_parser("new", help="write the next case file from a template")
