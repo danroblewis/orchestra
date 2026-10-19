@@ -253,10 +253,33 @@ def convert(path, wrap: bool = True) -> Conversion:
                 for v, py in named:
                     vx = sp.expand(v)
                     vt = sp.Add(*[t for t in sp.Add.make_args(vx) if t.has(TIME)])
-                    r = sp.simplify(et / vt) if vt != 0 else None
+                    if vt == 0 or not _maybe_proportional(et, vt):
+                        continue
+                    r = sp.simplify(et / vt)
                     if r is not None and r.is_number and r != 0:
                         return _drivers(sp.expand(ex - r * vx) + r * as_input(v))
             return _drivers(e)
+
+        def _maybe_proportional(a, b) -> bool:
+            """False when a / b is surely not a constant (their values on a few Euler steps say so):
+            a cheap test before sympy's simplify, which is slow on large models."""
+            n = max(1, math.floor((m.final - m.t0) / m.dt + 1e-9))
+            ratio = None
+            for k in sorted({0, n // 7, n // 3, n // 2, (2 * n) // 3, n}):
+                T = m.t0 + k * m.dt
+                try:
+                    x, y = timefns.evaluate(a, T, m.dt, m.lookups), timefns.evaluate(b, T, m.dt, m.lookups)
+                except Exception:                                               # noqa: BLE001
+                    return True
+                if y == 0:
+                    if x != 0:
+                        return False
+                    continue
+                if ratio is None:
+                    ratio = x / y
+                elif not math.isclose(x / y, ratio, rel_tol=1e-9, abs_tol=1e-12):
+                    return False
+            return True
 
         def _drivers(e):
             if timefns.time_only(e):
