@@ -84,7 +84,7 @@ DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
             "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True, "share": 0.85, "transit": True,
             "inflow_coflows": True, "starved": True, "cycles": True, "extra_most": 4, "cycle_gain": 0.9, "coflow_gain": 2.0, "extras_max_steps": 3000,
-            "drain_coflows": True, "own_drains": True, "own_tol": 1e-6, "readings": 3, "drain_tie": 2.0}
+            "drain_coflows": True, "own_drains": True, "own_tol": 1e-6, "own_gain": 0.95, "readings": 3, "drain_tie": 2.0, "reading_margin": 1.002}
 
 
 def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
@@ -130,7 +130,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                         {**v, "slack": 0.0, "tol": o["own_tol"], "name": f"{v['name']}, own drains"} for v in VARIANTS]})
                 err = lambda r: min((x["error"] for x in r.get("tried") or []), default=float("inf"))  # noqa: E731
                 tried = list(base.get("tried") or []) + list(own.get("tried") or [])
-                if err(own) < err(base):
+                if os.environ.get("SDLAB_RF_TRACE"):
+                    print(f"  own drains: judge {err(own):.6g} ({own.get('chosen')}) vs {err(base):.6g} ({base.get('chosen')})")
+                # it must behave clearly better (`own_gain`): on near ties (sd-hospital short 2%, sd-emergency
+                # long 0.3%) the effect search built on it found effects that behave far worse off the data
+                if err(own) < o["own_gain"] * err(base):
                     base = own
                 base["tried"] = tried
             except Overrun:
@@ -332,7 +336,8 @@ def _prev_tt(stocks, run, opts):
 def _readings(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, stocks, fit_opts, inputs, injections, state: dict):
     """(realistic_flows) Other readings of the answer's flows (moves.py: a move driven by a third stock),
     on runs of any length, each refitted, its inflows re-cut, priced and judged; taken one at a time
-    while one prices better and behaves within `margin` of the model without it. Returns the model and
+    while one prices better and behaves no worse (`reading_margin`, 0.2%, for the judge's rounding) than the model without it (a
+    reading that prices better but behaves worse cost sd-kanban 11 points). Returns the model and
     its price and judged error."""
     tried = []
     for _ in range(o["readings"]):
@@ -346,7 +351,9 @@ def _readings(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, stocks, 
             b = price(fl, ids, run, inputs)
             e = judge(fl, stocks, run, injections=injections, inputs=inputs)
             tried.append({"name": name, "error": e, "bic": b})
-            if b < cur_b + tie and e < o["margin"] * cur_e and (pick is None or b - tie < pick[0] - pick[4]):
+            if os.environ.get("SDLAB_RF_TRACE"):
+                print(f"  reading {name}: bic {b - cur_b:+.1f}, error {e:.6g} vs {cur_e:.6g}")
+            if b < cur_b + tie and e <= o["reading_margin"] * cur_e + 1e-9 and (pick is None or b - tie < pick[0] - pick[4]):
                 pick = (b, e, fl, name, tie)
         if pick is None:
             break
