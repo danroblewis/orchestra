@@ -172,6 +172,40 @@ matrix's candidate there (that run now gives skill@20 19.8%); the generated benc
   variants otherwise choose levels on rounding structure.
 - `finish` takes a flag to skip conservation rather than the trick of passing every stock as final.
 
+## Measured inputs (2026-10-19, commit 89adae4)
+
+**Bug:** the matrix is called with `keep_fit`/`keep_rows`, and without `input_columns` it gives such a
+caller no input columns: the inputs were dropped and the rows explained them with pieces (062
+counts-long: 6.5 in pieces and a drain of 0.062 against 2 x pump and 0.08). The judge also stepped
+candidates without inputs.
+**Fix:** `input_columns: True`; a row's numbers on inputs are read back by the matrix's column names;
+re-selected rows may read the inputs (`rows.reselect`, `inputs`); the joint fit refits them as free
+numbers (an input is never a source to tie); a local judge with inputs chooses among the candidates.
+
+Before -> after on the cases with measured inputs (variants in the order shown; skill@20 on the run
+it saw, none-long):
+
+| case | variants | before | after | skill@20 none-long |
+|---|---|---|---|---|
+| 062-tank-fed-by-measured-pump | counts-long / counts-short / none-long / none-short | F F F F | P P P P | 0.83 -> 1.00 |
+| 105-canonical-inventory-supply-line | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 1.00 -> 1.00 |
+| 106-canonical-workforce | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 0.99 -> 0.96 |
+| 110-canonical-world3-pollution | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 0.00 -> 0.97 |
+| phys-coupled-tanks | meas-long / meas-short / none-long / none-short | F F F F | F P P F | 0.96 -> 0.99 |
+| phys-draining-tank | meas-long / meas-short / none-long / none-short | F F F F | P P P P | 1.00 -> 1.00 |
+| phys-mass-spring-damper | meas-long / meas-short / none-long / none-short | F F F F | F F P P | 1.00 -> 1.00 |
+| phys-newton-cooling | meas-long / meas-short / none-long / none-short | F F F F | P P P P | 1.00 -> 1.00 |
+| phys-thermostat | meas-long / meas-short / none-long / none-short | F F F F | F F F F | 0.98 -> 1.00 |
+
+105, 106 and 110 (canonical models whose input drives hidden delay stocks) fail before and after, as
+for matrix, lna and combined. phys-thermostat fails its structure for every strategy (the closed loop
+all but hides the outside's coupling; its own reference fails), though its skill rose.
+
+**Cells without inputs:** every (case, variant) without a measured input was run before (parent of
+`89adae4`) and after, each from an exported copy of the package that differs only in this strategy's
+files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the same status, the 62 realistic sd-* cells among them; 3 of them (realistic sd-* counts-long) hit the ladder's per-case timeout under load in one run or both and were re-run without a timeout, before and after: identical too
+(script and outputs: the agent's scratchpad `inp/cells.py`, `cmp.py`, `old.jsonl`, `new.jsonl`).
+
 ## Open ideas
 - 027 (no receiver to tie to): a drain for a changing row without demeaning bias, e.g. the bias
   correction from inflow-attribution, or recession steps.

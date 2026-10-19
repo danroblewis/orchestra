@@ -227,6 +227,41 @@ too many look different); not adopted.
    as k x A x lin(C) but is keyed (flow, A, B, C) with an effect of A, so it fails. Fair as a test of
    SD's usual form (rate = source x effect), worth knowing.
 
+## Measured inputs (2026-10-19, commit 89adae4)
+
+**Bug:** the matrix base takes the input as a flow k x input, but the joint refit held that flow and
+stepped it without the inputs, and price, pruning's amounts, the BIC and the judge did the same: the
+input's flow moved nothing, so the drain and the pieces were refitted to carry it (062 none-long:
+drain 0.0003 against 0.08 beside 2 x pump) and the input counted twice.
+**Fix:** `inputs.py`; the inputs are columns of the joint refit (a flow on an input is refitted with
+the rest), of the screen and of every curve's fit; every price, BIC (a local onestep.bic with
+inputs), pruning amount and judge steps the models with them, and the matrix's chosen model is judged
+again with them (identify.judge has no inputs).
+
+Before -> after on the cases with measured inputs (variants in the order shown; skill@20 on the run
+it saw, none-long):
+
+| case | variants | before | after | skill@20 none-long |
+|---|---|---|---|---|
+| 062-tank-fed-by-measured-pump | counts-long / counts-short / none-long / none-short | F F F F | P P P P | -15.70 -> 1.00 |
+| 105-canonical-inventory-supply-line | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 1.00 -> 1.00 |
+| 106-canonical-workforce | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 0.60 -> 0.59 |
+| 110-canonical-world3-pollution | counts-long / counts-short / none-long / none-short | F F F F | F F F F | -15.41 -> 0.97 |
+| phys-coupled-tanks | meas-long / meas-short / none-long / none-short | F F F F | F F P F | 0.40 -> 1.00 |
+| phys-draining-tank | meas-long / meas-short / none-long / none-short | F F F F | P P P P | -67.23 -> 0.98 |
+| phys-mass-spring-damper | meas-long / meas-short / none-long / none-short | F F F F | F F P P | -15.57 -> 1.00 |
+| phys-newton-cooling | meas-long / meas-short / none-long / none-short | F F F F | P P P P | -1.09 -> 1.00 |
+| phys-thermostat | meas-long / meas-short / none-long / none-short | F F F F | F F F F | -20.36 -> 0.98 |
+
+105, 106 and 110 (canonical models whose input drives hidden delay stocks) fail before and after, as
+for matrix, lna and combined. phys-thermostat fails its structure for every strategy (the closed loop
+all but hides the outside's coupling; its own reference fails), though its skill rose.
+
+**Cells without inputs:** every (case, variant) without a measured input was run before (parent of
+`89adae4`) and after, each from an exported copy of the package that differs only in this strategy's
+files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the same status, the 62 realistic sd-* cells among them; 8 of them (realistic sd-* counts-long) hit the ladder's per-case timeout under load in one run or both and were re-run without a timeout, before and after: identical too
+(script and outputs: the agent's scratchpad `inp/cells.py`, `cmp.py`, `old.jsonl`, `new.jsonl`).
+
 ## Open ideas
 - **A second effect.** `rounds` > 1 screens again with the accepted effect's column taken out; it
   finds nothing more on sd-sawmill, whose second effect is a constant inflow switched off by its own

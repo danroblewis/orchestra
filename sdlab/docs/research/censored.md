@@ -172,6 +172,42 @@ Run time: ladder discovery 623 s summed over 720 cells (matrix 296 s). On exampl
 for sd-services long (36,000 steps). The cost is PELT inside the demand profile and the whole-model
 one-step BIC per candidate.
 
+## Measured inputs (2026-10-19, commit 89adae4)
+
+**Bug:** the one-step BIC, the cap's came/wanted and the judge stepped models with `Model(flows, ids)`,
+without `opts["inputs"]`, so the matrix's flow k x input moved nothing there. The rewrites then
+re-explained the input's effect (pieces, a demand, a drain) while the input flow stayed in the
+model: the input counted twice (062 none-long: a 43-per-step demand against 43 in pieces next to
+2 x pump; phys-newton-cooling none-long skill@20 -113% on the run it saw).
+**Fix:** every simulation is stepped with the inputs (`onestep.model_inputs`); a floor or link
+rewrite that replaces a flow on an input refits the input as a column beside the hinge (written back
+marked `input`); the cap keeps a row's input flows and counts them in what arrived or was wanted;
+the judge (`judge_slack`) is a local copy of identify.judge with inputs.
+
+Before -> after on the cases with measured inputs (variants in the order shown; skill@20 on the run
+it saw, none-long):
+
+| case | variants | before | after | skill@20 none-long |
+|---|---|---|---|---|
+| 062-tank-fed-by-measured-pump | counts-long / counts-short / none-long / none-short | F P F F | P P P P | -16.60 -> 1.00 |
+| 105-canonical-inventory-supply-line | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 1.00 -> 1.00 |
+| 106-canonical-workforce | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 1.00 -> 1.00 |
+| 110-canonical-world3-pollution | counts-long / counts-short / none-long / none-short | F F F F | F F F F | 0.97 -> 0.97 |
+| phys-coupled-tanks | meas-long / meas-short / none-long / none-short | F F F F | F F P F | -23.03 -> 0.99 |
+| phys-draining-tank | meas-long / meas-short / none-long / none-short | P P F F | P P F P | -25.86 -> 1.00 |
+| phys-mass-spring-damper | meas-long / meas-short / none-long / none-short | F F F F | F F P P | -4.69 -> 1.00 |
+| phys-newton-cooling | meas-long / meas-short / none-long / none-short | F F F F | P P P P | -1.13 -> 1.00 |
+| phys-thermostat | meas-long / meas-short / none-long / none-short | F F F F | F F F F | -24.89 -> 1.00 |
+
+105, 106 and 110 (canonical models whose input drives hidden delay stocks) fail before and after, as
+for matrix, lna and combined. phys-thermostat fails its structure for every strategy (the closed loop
+all but hides the outside's coupling; its own reference fails), though its skill rose. phys-draining-tank none-long still fails structure (matrix passes it): the cap reads the sqrt drain as a constant demand capped by the level, beside inflow pieces; it predicts better (0.9999 vs 0.98) but has no H <- H coupling. That is the cap's method, not the inputs.
+
+**Cells without inputs:** every (case, variant) without a measured input was run before (parent of
+`89adae4`) and after, each from an exported copy of the package that differs only in this strategy's
+files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the same status, the 62 realistic sd-* cells among them; none timed out
+(script and outputs: the agent's scratchpad `inp/cells.py`, `cmp.py`, `old.jsonl`, `new.jsonl`).
+
 ## Open ideas
 
 - **Floors with inflow pieces.** The floor rewrite either drops the row's pieces or keeps them
