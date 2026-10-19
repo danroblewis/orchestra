@@ -48,3 +48,4 @@ raise `MissingExtra` (`sdlab/discovery/optional.py`).
 | `mass_balance` | hidden stocks reconstructed from a unit's mass balance (Kalman filter) | [mass-balance-hidden](../../../docs/research/mass-balance-hidden.md) |
 | `mass_balance_all` | `mass_balance` tried on every candidate | [mass-balance-hidden](../../../docs/research/mass-balance-hidden.md) |
 | `odefit` | per-step models fitted by output error (segment starts estimated), products where earned; the main line kept where it predicts better | [odefit](../../../docs/research/odefit.md) |
+| `schedules` | censored's model searched again with every number refitted jointly: era-only flows dropped, constants on moves, periodic pulses and top-ups, co-flows | [schedules](../../../docs/research/schedules.md) |

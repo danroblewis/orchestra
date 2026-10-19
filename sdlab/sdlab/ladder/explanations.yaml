@@ -125,6 +125,20 @@ strategies:
     status: active
     note: Research document docs/research/censored.md.
 
+  schedules:
+    idea: Search censored's model again with every number refitted across all stocks at once, so a flow only one era or one pulse needed is dropped and a schedule is written as a schedule.
+    how: >-
+      Starting from censored's model (and from leaner versions of it), a beam search tries
+      dropping a flow, one number for all eras or numbers per era, a constant on a move in place
+      of the constant flows at its ends, a new move, a move that uses up a third stock, and
+      outside flows as pulses on a fixed period (a pulse may top its stock up to a level). Each
+      candidate's numbers are refitted together over every stock's row, and the one-step BIC with
+      a small price per flow decides.
+    helps_with: Announced eras on several moves (157), a release with a threshold (158), periodic pulses and top-ups (159).
+    builds_on: censored (a copy)
+    status: work in progress
+    note: Research document docs/research/schedules.md.
+
   own_tables:
     idea: A stock's flows to and from outside as a lookup table of the stock's own level, where the flow bends with it.
     how: >-
