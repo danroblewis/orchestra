@@ -20,7 +20,7 @@ import pytest
 
 from sdlab.discovery.regression import row_sums, stepwise
 from sdlab.discovery.strategies import load
-from sdlab.discovery.strategies.common_cause.exact import floored
+from sdlab.discovery.strategies.common_cause.exact import ops
 from sdlab.discovery.strategies.common_cause.places import joint_pelt
 from sdlab.ladder import cases as casemod
 from sdlab.ladder import data, score
@@ -52,8 +52,6 @@ def test_exact_collinearity_reproduction():
     """The minimal reproduction of the 032 failure: C2's row on the noise-free long run. The shared
     stepwise (BIC on raw rss) ends with 8 columns, A3 among them; floored, with exchanges along
     exact ties, it ends with the truth, B2 and C2."""
-    from sdlab.discovery import matrix
-
     case = casemod.load("032-three-chains-of-three")
     d = data.load(case, "none-long")
     ids = list(d["levels"])
@@ -64,8 +62,7 @@ def test_exact_collinearity_reproduction():
     sums = row_sums(dy[s], prev, [0, T])
     plain = stepwise(sums, [], list(range(9)), np.log(T), 36)
     assert len(plain) > 2 and ids.index("A3") in plain
-    with floored(float(np.mean(dy * dy))):
-        got = matrix.stepwise(sums, [], list(range(9)), np.log(T), 36)
+    got = ops(float(np.mean(dy * dy))).stepwise(sums, [], list(range(9)), np.log(T), 36)
     assert sorted(ids[j] for j in got) == ["B2", "C2"]
 
 

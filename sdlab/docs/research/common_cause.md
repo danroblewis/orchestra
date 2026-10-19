@@ -14,6 +14,8 @@ Real systems mix unrelated stocks. The independent rungs (028-033) and the ident
 3. **places.py**: shared change places, so a common cause is not read as a cross-link; and honest
    pieces for every changing row.
 
+The floored fit, stepwise and PELT are passed explicitly to private copies of the shared matrix and stepwise (`_vendored/`, from 19fd8f8), so the shared modules are never patched at runtime (queue 2h; found flows byte-identical to before on 028-038 and 20 other cells).
+
 ## Why every strategy failed 032 without noise
 
 032 is three independent chains of three, all stocks from 0, constant inflows. Chain 2's last stock

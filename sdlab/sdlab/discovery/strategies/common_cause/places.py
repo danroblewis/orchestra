@@ -100,7 +100,7 @@ def _shared_price(c):
     return 0 if not c else 1 + (len(c) - 2)
 
 
-def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L) -> dict | None:
+def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L, fs=fit_subset) -> dict | None:
     """Row s with pieces at the given places (a value each), its levels chosen afresh by backward
     elimination from every level it may read, places it does not need dropped (and, with none
     left, the constant too if it does not pay)."""
@@ -108,11 +108,11 @@ def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L)
     X, col = columns(s, ids, prev, cfg, L, _allowed(s, ids, stocks))
     if not len(col):
         return None
-    chosen, _, _ = backward(y, X, cuts, list(range(len(col))), _shared_price(cuts))
+    chosen, _, _ = backward(y, X, cuts, list(range(len(col))), _shared_price(cuts), fs)
     cuts, _ = prune(y, X, chosen, cuts, _shared_price)
-    chosen, rss, b = backward(y, X, cuts, chosen, _shared_price(cuts))
+    chosen, rss, b = backward(y, X, cuts, chosen, _shared_price(cuts), fs)
     if len(cuts) <= 2:
-        c2, r2, b2 = backward(y, X, None, chosen, 0)
+        c2, r2, b2 = backward(y, X, None, chosen, 0, fs)
         if b2 < b:
             chosen, rss, b, cuts = c2, r2, b2, None
     return {**row, "X": X, "col": col, "set": chosen, "cuts": cuts, "rss": rss,
@@ -217,7 +217,8 @@ def _left(rows: list[dict], W: list[int], dy: np.ndarray) -> dict:
 
 
 def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
-          pelt, min_piece: int = 5, per_change: float = 2, trace: bool = False, rounds: int = 3, alpha: float = 0.01, re_cut: bool = True) -> list[dict]:
+          pelt, min_piece: int = 5, per_change: float = 2, trace: bool = False, rounds: int = 3, alpha: float = 0.01, re_cut: bool = True,
+          fs=fit_subset) -> list[dict]:
     """The rows that show changes of their own (in what their own level leaves, at the textbook
     price) are the witnesses. Each row is offered pieces at the places the *other* witnesses show
     jointly (a place paid once by them, a value per witness), at a value each: a place this row
@@ -256,7 +257,7 @@ def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray
             cuts = places_of(others)
             if len(cuts) <= 2:
                 continue
-            c = candidate(row, s, cuts, ids, stocks, prev, dy, cfg, L)
+            c = candidate(row, s, cuts, ids, stocks, prev, dy, cfg, L, fs)
             if c is not None:
                 c["_y"] = dy[s]
             ok = accept(c, row, T, per_change, alpha) and confound(c, row, s, others)

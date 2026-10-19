@@ -47,15 +47,16 @@ def columns(s: int, ids: list[str], prev: np.ndarray, cfg: np.ndarray, L: int, a
     return np.array(X) if X else np.zeros((0, prev.shape[1])), col
 
 
-def backward(y: np.ndarray, X: np.ndarray, cuts: list[int] | None, start: list[int], extra_p: float) -> tuple[list[int], float, float]:
+def backward(y: np.ndarray, X: np.ndarray, cuts: list[int] | None, start: list[int], extra_p: float,
+             fs=fit_subset) -> tuple[list[int], float, float]:
     """Backward elimination by BIC from start (then re-adding any column that pays): the chosen
-    columns, rss and BIC."""
+    columns, rss and BIC (fs: the fit, exact.ops' floored one on exact data)."""
     T = y.shape[0]
     sums = row_sums(y, X, cuts)
     chosen = list(start)
 
     def sc(cols):
-        f = fit_subset(sums, cols)
+        f = fs(sums, cols)
         return _bic(T, f.rss, len(cols) + extra_p), f.rss
 
     cur, rss = sc(chosen)
@@ -86,7 +87,7 @@ def white(e: np.ndarray, alpha: float = ALPHA) -> bool:
 
 
 def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
-             per_change: float = 2, alpha: float = ALPHA) -> dict:
+             per_change: float = 2, alpha: float = ALPHA, fs=fit_subset) -> dict:
     """The row as the matrix fitted it, or the levels chosen afresh with no outside inflow or a
     constant one. A row with pieces is replaced only by one whose residuals are white (nothing left
     for pieces to explain) and whose BIC, every change priced as a value and a place, is lower; a
@@ -104,14 +105,14 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
         return best
     # with pieces, the levels are chosen beside them (so that changes in the inflow cannot hide in
     # levels that happen to follow them), and then the pieces are dropped
-    start = backward(y, X, row["cuts"], list(range(len(col))), inflow_params(row["cuts"], per_change))[0] if pieces else None
+    start = backward(y, X, row["cuts"], list(range(len(col))), inflow_params(row["cuts"], per_change), fs)[0] if pieces else None
     for name, cuts in (("none", None), ("constant", [0, T])):
         if pieces:
             chosen = start
-            f = fit_subset(row_sums(y, X, cuts), chosen)
+            f = fs(row_sums(y, X, cuts), chosen)
             rss, b = f.rss, _bic(T, f.rss, len(chosen) + inflow_params(cuts, per_change))
         else:
-            chosen, rss, b = backward(y, X, cuts, list(range(len(col))), inflow_params(cuts, per_change))
+            chosen, rss, b = backward(y, X, cuts, list(range(len(col))), inflow_params(cuts, per_change), fs)
         if b >= best["bic"] - 1e-9:
             continue
         if pieces:
