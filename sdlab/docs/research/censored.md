@@ -271,3 +271,71 @@ the previous code, `uv run sdlab-ladder status --strategies censored`, read befo
   counts-long, which timed out before as well (1be97cd5, 08b55003).
 - 124-gap-over-two-stocks (a gap with no floor) is unchanged (FFFF): without the floor binding the
   rewrite has nothing to read.
+
+## Controllers: floors on a few steps, second inflows, exact integrals (2026-10-19, commits 2dee420 and a2d5e01)
+
+**Why the leaders failed 218 and 216** (distilled from the control cases, docs/research/control-cases.md).
+- **218** (a P controller `0.3 setpoint - 0.3 T`, floored on 10 of 2,000 steps; from 203, 209, 200).
+  The floor binds on under 3% of steps, so `gap.py` never offered the gap, and the main line wrote a
+  drain of 0.35 and `0.25 setpoint` plus a constant. **200** is the same controller beside a second
+  inflow `0.05 outdoor`. The gap replaced every outside flow of the row, so the warming was lost.
+  **203** has an outflow on an input as well (a hill's pull, `9.8 slope`). **209**'s main line had
+  dropped the integral I from V's row, so the gap could not read it.
+- **216** (a noise-free integral `dI = r - Y` among counted stocks; from 214, 202, 207). I's row
+  is exact, but the main line wrote its inflow as a constant at r's mean, or as 112 pieces that
+  replay the square wave. Under counting noise the controller's straight row also came out biased
+  (214 counts: `0.23 setpoint`, a drain of 0.33 and `0.019 I`, against `0.2 / 0.25 / 0.01`).
+
+**What was added** (options are on by default):
+- `gap_few` (1): a gap is also offered when the floor binds on as few as this many steps. The BIC has
+  to earn it, at `gap_margin` (1.0) x log T: the gap nests the straight row and adds one number.
+  A long run is fitted on every m-th step plus the steps where the floor binds.
+- `gap_side`: the other columns the row's outside flows read (inputs and levels) are fitted as
+  unfloored flows beside the hinge. A positive number is an inflow and a negative one an outflow
+  reading the column.
+- In models of up to `gap_extra_upto` (3) stocks, the gap may also read one other stock that the
+  main line's row did not read. On sd-moderation's 8 stocks these extra fits took 680 s.
+- `gap_lines`: the straight row through the same columns (one inflow, plus the own term as a drain)
+  is offered too, at the normal margin. This covers rows where the floor is not earned but the main
+  line's row is worse than the straight one (214 counts).
+- `exact` (`exact.py`): a row's change, less its moves, is regressed on every level, every input
+  and a constant. If that fit is exact (residual at most 4x the rounding floor), the unneeded
+  columns are dropped one at a time and the row is written as one flow per column, at margin 0
+  (exact to rounding, the fewer numbers win). Exactness is read only from the data.
+
+**Results** (`uv run sdlab-ladder run --strategies censored --jobs 2 --timeout 300`, single-threaded,
+the whole ladder at a2d5e01, strategy hash df1e6882, 1380 cells in 1919 s; before: the stored
+results of the previous code, read from `sdlab.ladder.store.latest(strategy="censored")` just before):
+
+| case (ns nl cs cl) | before | after |
+|---|---|---|
+| 218-distilled-controller-floored-on-few-steps | not run (matrix F F E E) | P P E E |
+| 216-distilled-exact-integral-fed-by-stepping-input | not run (matrix F E F F) | E E E E |
+| 200-control-p-room-heater (218's hard case) | F F E F | P P E P |
+| 203-control-cruise-on-hills (hard case) | F F F F | F P F P |
+| 209-control-cruise-windup-downhill (hard case) | F F F F | F P F P |
+| 214-control-closed-loop-id-steps (216's hard case) | E E F F | E E E E |
+| 202-control-pid-two-tanks | E E F F | E E F E |
+| 207-control-cascade-two-tanks | F F F F | F P F P |
+| 201, 204 | - | 201 none-long, 204 none-short and none-long F -> P |
+
+- **What the data allow** (`sdlab-ladder analyse`): 216 none is unidentifiable, because the
+  controller's `-0.1 Y` and the drain add up without a floor, so equivalent is the best possible
+  answer there. 216 counts-short is data-limited (p 0.14). 203 and 209 none-short are unidentifiable,
+  because the setpoint does not move within 300 steps. On 218 counts the floored steps gain only
+  3.5 nats over the straight row, so the split is not earned and equivalent is the honest answer.
+  The fit there is right (0.278 / -0.273 / 0.052) but is not accepted.
+- **Paired against the stored results** (1362 cells): 33 better, none worse from the code. 59 cells
+  went from equivalent to fail with identical found flows: these are scorer changes made by others
+  between the two runs (score hash 5fbaad97 -> ebf409cc), on 017, 018, 103, 109, 126, 127, 130, 131,
+  136-139, 160, 171, the Gause twins and part-reacting-particles. Two cells changed their flows and
+  went from equivalent to fail: 171 counts-long and part-reacting-particles counts-long. Under the
+  current scorer the old flows fail as well, so they are not losses. The earlier run at 2dee420 timed
+  out sd-moderation, sd-services and sd-bakery counts-long. At a2d5e01 only the timeout that was
+  already there before remains.
+- Beside the control cases, 16 further cells are better (010, 030, 043#6/#7, 045#3, 049#1, 054#1/#3,
+  055#5-#7, 058, 082 bias-short, 087 meas-long). These come mostly from the exact rows and the
+  straight rows.
+
+**What remains:** the short control runs (the setpoint does not move: the data's limit), 201 and 211
+short and counts, 204 counts-long and 106 counts-short.
