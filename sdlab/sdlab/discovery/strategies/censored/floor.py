@@ -37,13 +37,13 @@ def _projector(cols: list[np.ndarray]):
 
 
 def search(y: np.ndarray, prev: np.ndarray, i: int, others: list[int], grid: int = 48, bind: tuple[float, float] = (0.03, 0.97),
-           constant: bool = False) -> list[dict]:
+           constant: bool = False, readers: list[int] | None = None) -> list[dict]:
     """The best hinge per (reader, side): {j, s, theta, beta (hinge, own, others..., const?), rss, binds,
     line_rss, smooth_rss}. Each threshold's rss comes from the hinge column with the other columns
     projected out (all thresholds of a grid at once), so the search costs one QR per reader."""
     S, T = prev.shape
     out = []
-    for j in range(S):
+    for j in range(S) if readers is None else readers:
         x = prev[j]
         if np.ptp(x) <= 0:
             continue

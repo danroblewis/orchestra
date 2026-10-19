@@ -45,9 +45,26 @@ def row_rss(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np
     return ((dy - changes(flows, ids, t, prev)) ** 2).sum(axis=1)
 
 
-def bic(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, floor: np.ndarray) -> float:
-    """Sum over the rows of T log(rss / T), plus log T per number. `floor` (one per row) keeps an
-    exact fit from counting as infinitely good."""
+def outliers(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, share: float = 0.01) -> np.ndarray:
+    """Per row, the steps (stocks x steps, True = left out) where a model's residual is among the
+    largest `share`: one-step bursts (inflow spikes) that a Gaussian BIC would let decide alone."""
+    r = np.abs(dy - changes(flows, ids, t, prev))
+    k = int(share * r.shape[1])
+    out = np.zeros_like(r, dtype=bool)
+    if k < 1:
+        return out
+    idx = np.argpartition(-r, k - 1, axis=1)[:, :k]
+    np.put_along_axis(out, idx, True, axis=1)
+    return out
+
+
+def bic(flows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, floor: np.ndarray,
+        skip: np.ndarray | None = None) -> float:
+    """Sum over the rows of T log(rss / T), plus log T per number, the rss over the steps not in
+    `skip` (stocks x steps). `floor` (one per row) keeps an exact fit from counting as infinitely good."""
     T = prev.shape[1]
-    rss = np.maximum(row_rss(flows, ids, t, prev, dy), floor)
+    sq = (dy - changes(flows, ids, t, prev)) ** 2
+    if skip is not None:
+        sq = np.where(skip, 0.0, sq)
+    rss = np.maximum(sq.sum(axis=1), floor)
     return float(sum(T * math.log(r / T) for r in rss) + params(flows) * math.log(T))

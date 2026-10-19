@@ -35,7 +35,7 @@ from ...matrix import injected
 from ...simulate import Model
 from . import cap, floor, onestep
 
-DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0}
+DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -87,12 +87,13 @@ def _came_and_wanted(base: list[dict], ids: list[str], t: list, prev: np.ndarray
     return came, wanted
 
 
-def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0):
+def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, own=True):
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
     mine, rest = split
     pieces = [f for f in mine if f.get("inflow")]
+    readers = [j for j in range(len(ids)) if own or j != i]
     out = []
     for keep_pieces in ([False, True] if pieces else [False]):
         base = rest + (pieces if keep_pieces else [])
@@ -103,7 +104,7 @@ def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0):
             if keep_pieces and constant:
                 continue
             T = len(y)
-            for fit in floor.search(y, prev, i, others, constant=constant):
+            for fit in floor.search(y, prev, i, others, constant=constant, readers=readers):
                 # a kink only if the hinge beats a straight line through the same columns
                 gain = T * math.log(max(fit["line_rss"], floor_rss) / max(fit["rss"], floor_rss))
                 bend = T * math.log(max(fit["smooth_rss"], floor_rss) / max(fit["rss"], floor_rss))
@@ -132,7 +133,10 @@ def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, m
     at = lambda k: t[k + 1]  # noqa: E731
     out = []
     # (recut) the plain fit: the outside inflow's pieces at an honest price, with the own drain
-    if recut and fit.get("plain_fit"):
+    # the re-cut may lower or keep the main line's own drain, never raise it: on a stock whose level
+    # barely moves, a drain and a larger inflow trade off almost freely, and BIC alone lets the pair grow
+    d0 = _own_drain(refit, row)
+    if recut and fit.get("plain_fit") and fit["plain_fit"]["d"] <= 1.1 * d0 + 1e-9:
         pf = fit["plain_fit"]
         out.append((base + cap.as_flows(pf, row, prev[i], dy[i], came, wanted, at), f"inflow into {row} re-cut ({len(pf['cuts']) - 1} pieces, drain {pf['d']:.3g})"))
     if fit["D"] <= 0 or fit["capped"].sum() < max(5, 0.02 * len(dy[i])):
@@ -161,7 +165,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     floor_rss = T * ((1e-4 * dy.std(axis=1)) ** 2 + 1e-8)
     final = {s["id"] for s in stocks if s.get("final")}
     flows = list(r0.get("flows") or [])
-    score = onestep.bic(flows, ids, t, prev, dy, floor_rss)
+    # the main line's largest 1% residuals per row are left out of every comparison (inflow spikes)
+    skip = onestep.outliers(flows, ids, t, prev, dy, o["trim"]) if o["trim"] else None
+    score = onestep.bic(flows, ids, t, prev, dy, floor_rss, skip)
     log_t = math.log(T)
     taken = []
     for _ in range(o["passes"]):
@@ -171,13 +177,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 continue
             cands = []
             if o["floors"]:
-                cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["bend"])
+                cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["floor_margin"] or o["margin"], o["bend"], o["own_floors"])
             if o["caps"] or o["recut"]:
                 cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"])
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
             best = None
             for fl, name in cands:
-                sc = onestep.bic(fl, ids, t, prev, dy, floor_rss)
+                sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip)
                 if sc < score - o["margin"] * log_t and (best is None or sc < best[1]):
                     best = (fl, sc, name)
             if best:
