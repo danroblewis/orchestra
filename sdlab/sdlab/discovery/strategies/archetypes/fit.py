@@ -123,17 +123,23 @@ def fit(terms: list[Term], D: Data, theta0: np.ndarray, x00: np.ndarray, iters: 
     X = simulate(best)
     nll = nll_of(X, D)
     k = K + n + D.m
-    ok = bounded(best[:K], X[:, -1], src, dst, a, b, D)
+    ok = bounded(best[:K], X, src, dst, a, b, D)
     return Fit(list(terms), best[:K].copy(), best[K:].copy(), nll, k, aicc(nll, k, D.n_obs) if ok else math.inf, X, ok)
 
 
-def bounded(theta, last, src, dst, a, b, D: Data) -> bool:
-    """The SD prior that nothing grows without limit: the free run, continued from where the fit ends
-    for as many steps again (at least 10), keeps every measured stock within GROWTH times its largest
-    measured level (a stock that never rose above 0 within GROWTH times the largest of all)."""
+def bounded(theta, X, src, dst, a, b, D: Data) -> bool:
+    """The SD prior that nothing grows without limit: the free run, continued for as many steps as
+    the run (at least 10) from where the fit ends and from every measured state (the hidden stocks
+    at their fitted levels), keeps every measured stock within GROWTH times its largest measured
+    level (a stock that never rose above 0 within GROWTH times the largest of all). A model fitted
+    on one path that explodes from a state next to it would forecast nothing from a measured level."""
     H = max(10, D.T)
-    inj = np.zeros((H + 1, last.shape[0]))
-    X = run(theta, last.copy(), src, dst, a, b, inj, H, D.cap)
+    inj = np.zeros((H + 1, X.shape[0]))
     top = np.max(np.abs(D.Y), axis=1)
     lim = GROWTH * np.where(top > 0, top, max(1e-9, float(np.max(top))))
-    return bool(np.all(np.isfinite(X)) and np.all(np.max(X[: D.m], axis=1) <= lim))
+    starts = [X[:, -1]] + [np.concatenate([D.Y[:, k], X[D.m:, k]]) for k in range(D.Y.shape[1])]
+    for x in starts:
+        Z = run(theta, x.copy(), src, dst, a, b, inj, H, D.cap)
+        if not (np.all(np.isfinite(Z)) and np.all(np.max(Z[: D.m], axis=1) <= lim)):
+            return False
+    return True

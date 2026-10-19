@@ -50,6 +50,21 @@ def injections(opts: dict, ids: list[str], t: list) -> np.ndarray:
     return out
 
 
+def pulses(Y: np.ndarray, drop: float = 0.2) -> list[int]:
+    """The stocks whose level rises to a peak inside the run and then falls by at least `drop` of it
+    (on a 3-sample running mean): what a source that runs out leaves (an epidemic's later stage). Only
+    these are offered a hidden source; a level that rises and settles is explained by measured flows."""
+    out = []
+    for i, y in enumerate(Y):
+        if len(y) < 5:
+            continue
+        s = np.convolve(y, np.ones(3) / 3, mode="valid")
+        k = int(np.argmax(s))
+        if 0 < k < len(s) - 1 and s[-1] <= (1 - drop) * s[k] and s[k] > s[0]:
+            out.append(i)
+    return out
+
+
 def discover(stocks: list[dict], run: dict, opts: dict, cfg: dict) -> dict | None:
     ids = [s["id"] for s in stocks]
     t = list(run["t"])
@@ -67,7 +82,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, cfg: dict) -> dict | Non
         D = Data(Y, inj, power=float(p))
         fits = [("measured", search(D, per, moves=bool(cfg["moves"]), price=bool(cfg["price"])), None)]
         if hidden:
-            for i in range(m):
+            for i in pulses(Y):
                 h = search_hidden(Y, inj, float(p), i, per, moves=bool(cfg["moves"]), price=bool(cfg["price"]))
                 if h is not None:
                     fits.append((f"hidden source of {ids[i]}", h, i))

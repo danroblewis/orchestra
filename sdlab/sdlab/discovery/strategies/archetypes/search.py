@@ -197,12 +197,13 @@ def search(D: Data, seconds: float, moves: bool = True, price: bool = True) -> F
     named = {frozenset(v): k for k, v in fams.items()}
     found: list[Fit] = [fit_set([], D, cache)]
     for k, v in fams.items():                                 # every archetype, whatever the time: they are few
-        if k == "generalised Lotka-Volterra":
-            g = signed(D, v, cache)
-            named.setdefault(frozenset(g.terms), k)
-            found.append(g)
-        else:
-            found.append(fit_set(v, D, cache))
+        g = signed(D, v, cache) if k == "generalised Lotka-Volterra" else fit_set(v, D, cache)
+        named.setdefault(frozenset(g.terms), k)
+        found.append(g)
+        # an archetype with terms the data do not need is that archetype's simpler form (no search price)
+        h, _ = backward(g, D, cache, math.inf)
+        named.setdefault(frozenset(h.terms), k)
+        found.append(h)
     if D.m == 1:
         for r in range(len(lib) + 1):
             for sub in itertools.combinations(lib, r):
