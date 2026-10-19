@@ -987,8 +987,10 @@ uv run sdlab-ladder run --strategies matrix --cases tag:real
 
 ### Results: the leaders on the real cases
 
-18 October 2026, 23:08, at e91a320: `uv run sdlab-ladder run --strategies combined,lna,effect_hats,censored,earned_pieces,matrix
---cases tag:real --jobs 3 --timeout 300`, single-threaded, every variant downloaded; 624 runs in 15 s, no error or timeout.
+18 October 2026, 23:12, at 9fe0afd (a first run at 23:08, e91a320, gave the same numbers): `uv run sdlab-ladder run --strategies combined,lna,effect_hats,censored,earned_pieces,matrix
+--cases tag:real --jobs 3 --timeout 300`, single-threaded, every variant downloaded; 624 runs in 14 s, no error or timeout.
+censored and combined (which runs censored) ran with another agent's uncommitted change to `censored/onestep.py` (the store
+records it: code_dirty 1f463b64); the watcher re-runs them once it is committed.
 Tables from `python -m sdlab.ladder.real report` (all 52 cases) and `--min-seen 21` (the 23 cases whose training part has at
 least 21 samples). Held-out skill is the mean over the runs graded, each clipped at -100%; "published" is the published
 model refitted on the same samples, on the same runs.
