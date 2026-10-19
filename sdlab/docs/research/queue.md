@@ -11,6 +11,25 @@ for `combined` on the test cases).
 
 ## Queued
 
+1b. **Time measurements in the ladder and its UI** (requested by the user on 2026-10-19). Today
+   each result stores discovery seconds only, and the leaderboard has one "time (s)" column.
+   Add:
+   - **Per result:** scoring seconds beside discovery seconds (scoring can dominate: one
+     realistic case took 417 s to score), and the worker's queue wait if cheap.
+   - **Per strategy:** time per cell by set (tests / noisy / canonical / realistic / physics /
+     real), median and p95, and its trend across versions. Show it as a column group on the
+     leaderboard and a small chart on the strategy page.
+   - **Per run and batch:** record each `sdlab-ladder run` / watch batch (start, end, items,
+     done, errors, timeouts, worker count) in the store.
+   - **A Runs page,** or a panel on the Now page: the watcher's current batch, items done and
+     left, throughput (results per hour), and an ETA for the backlog.
+   - **Cost estimates:** `sdlab-ladder cost --strategies X` / `--cases Y` estimates wall time to
+     re-test from stored per-cell times and the current throughput, so an agent (or the user)
+     can see "this fix costs ~4 min; this shared change costs ~5 h" before making it. Use it in
+     the hourly journal.
+
+   Keep the summary fast: aggregates are cached, out of the request path.
+
 1a. **Control-theory cases** (requested by the user on 2026-10-19: "it might be interesting to
    make some test examples based on control theory, or some classic control theory book
    examples"). The user is less familiar with control theory, so each case's doc should explain
