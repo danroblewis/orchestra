@@ -184,3 +184,50 @@ lna: 72.9% (531/728), realistic 15.1% (62 of 62 scored, no timeouts now).
   - **Hook API** for variants: queued as 2e.
 - **Started: queue item 3,** the strict pass tier.
 - **Pattern:** strategies tuned on the small tests (lna, combined) can do worse on realistic models. The strict tier, with long-run and fresh-run behaviour required, is meant to expose this on the leaderboard.
+
+## 2026-10-18 22:30 (hourly cycle)
+
+**Health**
+- **Server:** summary 1.1-1.4 s warm, over the ~1 s target (the payload is ~22 MB raw, compressed in transit). One listener.
+- **Watcher:** running, still on its 47,564-item pass (42,706 to run).
+- **Caches:** long-run graded 24,218 + 1,367 results; strict references +67 cells.
+- **Tests:** 1,005 passed, 47 skipped, 2 failed. Both are missing explanations.yaml entries for `kalman_lna` and `structures`; their agents are still running.
+
+**Finished since the last entry**
+- **converter coverage** (2c: e83aa25, 2deb86d, 089fbf3): SDXorg exact conversions 37 → 90 of 165;
+- **strict tier** (3: f75a064);
+- **realistic cases** (8a3b339, 4c99470, 5cc36de, c7e9f07): the timeout now covers discovery only, not scoring;
+- **combined** (up to ded5e80 / 087d0fa).
+
+**Started**
+- **2e:** lna_* variants onto lna's hooks.
+- **4:** physics cases.
+- **5:** real-data cases.
+- **Rotation c:** research to implementation (`ideas-2026-10-18.md`).
+- **Running:** kalman_lna (0b) and structures (2b).
+- **Held:** 2d (engine) and 6 (matrix fixes), until the backlog is under 10k.
+- **Waiting:** 2f (combined round 2), until 0b and 2b commit their final versions.
+
+**Leaderboard, Tests** (`sdlab-ladder strict --no-fill` output; rates over cells run, strict over the verdicts known):
+
+| strategy | pass | strict | ran | commit |
+|---|---|---|---|---|
+| kalman_lna | 80.2% | 72.3% | 916 | c124a98, agent still running |
+| structures | 77.0% | 70.5% | 916 | ad4e110, agent still running |
+| combined | 74.3% | 67.6% | 912 | ded5e80 ×771, 130d21b ×202 |
+| gap_prior | 73.6% | 56.6% | 766 | 2bbc025, 1b14f42 |
+| lna_stack | 65.6% | 53.2% | 780 | 7fcf437, 2bbc025 |
+
+By strict, lna_levels (55.1%) is 5th, ahead of lna_stack. Passes fail strict mostly for extra parts (extra pieces).
+
+**Realistic** (mean skill@20, store at 22:03): combined 41.1%, earned_pieces 35.0%, common_cause 33.0% (23 timeouts), matrix 29.6%, lna 17.5%. From the 19:45 cycle: effect_hats 49.9%, censored 41.3%.
+
+**Problems**
+- **The summary payload keeps growing** with cells × strategies, so the warm time is now just over 1 s. If it keeps rising, the leaderboard needs a compact per-strategy endpoint.
+- **The backlog isn't shrinking.** The watcher's single pass blocks new plans for hours.
+
+**Needs you** (still open from earlier entries)
+1. Count "equivalent" as pass on unidentifiable cells?
+2. Retire dominated strategies, or re-run them less often, to cut the backlog?
+3. Should delays fed from outside be scored as parts (105, 108, 110)?
+4. Score dt < 1 cases per step?
