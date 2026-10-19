@@ -1,0 +1,35 @@
+title: "A chain into an ever-growing stock, measured with relative error"
+level: 12
+tags: [distilled, chain, move, injection, noisy]
+tests: "relative measurement error on a chain A -> B -> C whose last stock only grows (batches of A are announced injections; A -> B 0.05 A, B -> C 0.03 B); from phys-reaction-chain meas: C reaches hundreds to thousands, so its 2% error is many times its change in a step, and every leader loses C <- B; the flows are exact, so only the measurement is noisy"
+seed: 143
+stocks: {A: 0, B: 0, C: 0 final}
+flows:
+  A -> B:
+    rate: 0.05 * A
+    exact: true
+  B -> C:
+    rate: 0.03 * B
+    exact: true
+injections:
+  - {t: 1, stock: A, amount: 100}
+  - {t: 111, stock: A, amount: 60}
+  - {t: 221, stock: A, amount: 140}
+  - {t: 331, stock: A, amount: 80}
+  - {t: 441, stock: A, amount: 120}
+  - {t: 551, stock: A, amount: 100}
+  - {t: 661, stock: A, amount: 60}
+  - {t: 771, stock: A, amount: 140}
+  - {t: 881, stock: A, amount: 80}
+  - {t: 991, stock: A, amount: 120}
+  - {t: 1101, stock: A, amount: 100}
+  - {t: 1211, stock: A, amount: 60}
+  - {t: 1321, stock: A, amount: 140}
+  - {t: 1431, stock: A, amount: 80}
+  - {t: 1541, stock: A, amount: 120}
+  - {t: 1651, stock: A, amount: 100}
+  - {t: 1761, stock: A, amount: 60}
+  - {t: 1871, stock: A, amount: 140}
+  - {t: 1981, stock: A, amount: 80}
+variants:
+  noise: [none, {meas: {rel: 0.02, abs: 0.2}}]

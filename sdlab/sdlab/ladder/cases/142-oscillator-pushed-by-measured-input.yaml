@@ -1,0 +1,26 @@
+title: "An oscillator pushed by a measured force, measured with error"
+level: 12
+tags: [distilled, oscillation, input, noisy]
+tests: "a measured input (a force) driving the velocity stock of a lightly damped offset oscillator (141's flows and units, no injections), the levels measured with error; from phys-mass-spring-damper meas: every leader loses V <- force (and V <- P), the input's push 15-45 a step against an error of 50 on V (141's scale); the flows are exact, so only the measurement is noisy"
+seed: 142
+inputs:
+  force: pulse_train(30, 10, 8, 50) + pulse_train(15, 35, 5, 70)
+stocks: {P: {initial: 10000, unit: mm}, V: {initial: 1000, unit: mm_per_step}}
+flows:
+  outside -> P:
+    rate: 1 * V
+    exact: true
+  P -> outside:
+    rate: 1000
+    exact: true
+  outside -> V as v_in:
+    rate: 150
+    exact: true
+  outside -> V as push:
+    rate: 1 * force
+    exact: true
+  V -> outside:
+    rate: 0.01 * P + 0.05 * V
+    exact: true
+variants:
+  noise: [none, {meas: {rel: 0, abs: 50}}]

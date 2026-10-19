@@ -1,0 +1,51 @@
+title: "An oscillator in offset stocks, measured with error"
+level: 12
+tags: [distilled, oscillation, link, noisy]
+tests: "measurement error on a lightly damped oscillator written as two offset stocks (P = position + 10000, V = velocity + 1000, in thousandths (units mm and mm per step: nothing moves between them) so that the levels' rounding to whole numbers is negligible; P gains V and loses 1000 a step, V gains 150 and loses 0.01 P + 0.05 V), kicked by announced injections into V; from phys-mass-spring-damper meas: V's error is about half its swing and seven times its change in a step, and every leader loses V <- P (a one-step fit's errors in variables shrink it); the flows are exact (nothing moves in whole things), so only the measurement is noisy"
+seed: 141
+stocks: {P: {initial: 10000, unit: mm}, V: {initial: 1000, unit: mm_per_step}}
+flows:
+  outside -> P:
+    rate: 1 * V
+    exact: true
+  P -> outside:
+    rate: 1000
+    exact: true
+  outside -> V as v_in:
+    rate: 150
+    exact: true
+  V -> outside:
+    rate: 0.01 * P + 0.05 * V
+    exact: true
+injections:
+  - {t: 30, stock: V, amount: 200}
+  - {t: 100, stock: V, amount: 350}
+  - {t: 170, stock: V, amount: 250}
+  - {t: 240, stock: V, amount: 400}
+  - {t: 310, stock: V, amount: 300}
+  - {t: 380, stock: V, amount: 200}
+  - {t: 450, stock: V, amount: 350}
+  - {t: 520, stock: V, amount: 250}
+  - {t: 590, stock: V, amount: 400}
+  - {t: 660, stock: V, amount: 300}
+  - {t: 730, stock: V, amount: 200}
+  - {t: 800, stock: V, amount: 350}
+  - {t: 870, stock: V, amount: 250}
+  - {t: 940, stock: V, amount: 400}
+  - {t: 1010, stock: V, amount: 300}
+  - {t: 1080, stock: V, amount: 200}
+  - {t: 1150, stock: V, amount: 350}
+  - {t: 1220, stock: V, amount: 250}
+  - {t: 1290, stock: V, amount: 400}
+  - {t: 1360, stock: V, amount: 300}
+  - {t: 1430, stock: V, amount: 200}
+  - {t: 1500, stock: V, amount: 350}
+  - {t: 1570, stock: V, amount: 250}
+  - {t: 1640, stock: V, amount: 400}
+  - {t: 1710, stock: V, amount: 300}
+  - {t: 1780, stock: V, amount: 200}
+  - {t: 1850, stock: V, amount: 350}
+  - {t: 1920, stock: V, amount: 250}
+  - {t: 1990, stock: V, amount: 400}
+variants:
+  noise: [none, {meas: {rel: 0, abs: 60}}]
