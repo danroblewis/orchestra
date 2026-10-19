@@ -56,6 +56,11 @@ def _own_drain(flows: list[dict], row: str) -> float:
                if f.get("from") == row and f.get("to") is None and (f.get("rate") or {}).get("form") == "proportional" and f["rate"].get("stock") == row)
 
 
+def _grows(flows: list[dict], row: str) -> bool:
+    """Whether the main line has the row's stock grow with itself (a link from its own level)."""
+    return any(f.get("from") is None and f.get("to") == row and _reads(f) == [row] for f in flows)
+
+
 def _flows_of(flows, row):
     """The row's flows to and from outside (what a rewrite replaces), and the rest; None if any of
     them follows announced eras (left to the main line)."""
@@ -110,6 +115,8 @@ def floor_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, o_bend=0.0, 
                 bend = T * math.log(max(fit["smooth_rss"], floor_rss) / max(fit["rss"], floor_rss))
                 if gain < (1 + margin) * math.log(T) or bend < o_bend * math.log(T):
                     continue
+                if fit["beta"][1] > 0 and not _grows(flows, ids[i]):
+                    continue                    # self-growth the main line did not find (see links)
                 fit["i"] = i
                 out.append((base + floor.as_flows(fit, ids), f"floor on {ids[fit['j']]} into {ids[i]}" + (" (inflow pieces kept)" if keep_pieces else "")))
     return out
@@ -129,6 +136,12 @@ def link_candidates(flows, ids, t, prev, dy, i):
               and _reads(f) and row not in _reads(f)]
     if not drains:
         return []
+    # the link's constant replaces the row's outside inflow: only one that is really constant (a
+    # changing one is left to its pieces; a level standing in for them is the main line's old trap)
+    for f in mine:
+        vals = np.array([g["value"] for g in f.get("inflow") or []], dtype=float)
+        if len(vals) > 1 and vals.std() > 0.05 * abs(vals.mean()):
+            return []
     y = dy[i] - onestep.changes(rest, ids, t, prev)[i]
     T = len(y)
     others = sorted({ids.index(s) for f in mine for s in _reads(f) if s in ids and s != row})
@@ -136,6 +149,10 @@ def link_candidates(flows, ids, t, prev, dy, i):
     for j in sorted({ids.index(s) for f in drains for s in _reads(f) if s in ids}):
         cols = [np.ones(T), prev[j], prev[i]] + [prev[m] for m in others if m != j]
         beta = np.linalg.lstsq(np.array(cols).T, y, rcond=None)[0]
+        if beta[2] > 0 and not _grows(flows, row):
+            # no self-growth the main line did not find: it cancels the drains and runs away
+            cols[2] = np.zeros(T)
+            beta = np.linalg.lstsq(np.array(cols).T, y, rcond=None)[0]
         c, k, own = float(beta[0]), float(beta[1]), float(beta[2])
         if c <= 0 or k >= 0:
             continue
