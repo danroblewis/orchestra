@@ -169,8 +169,10 @@ injections:
 
 **Variants** default to both noises (`none`, `counts`) at both lengths (`short` 300 and `long` 2000
 steps); `variants: {noise: [counts], lengths: {short: 300}}` overrides that (`variants: default` is
-the same as leaving it out). **Tolerance** overrides the scorer's (Scoring, below), e.g.
-`tolerance: {rel: 0.1}`.
+the same as leaving it out). A case may also ask for the noises real data carry, laid on the
+counts run's recorded levels: `variants: {noise: [counts, meas, gaps, weekly, lag, outliers,
+bias]}`, or with numbers, `{meas: {rel: 0.1, abs: 0}}` (see "Real-world noise", below).
+**Tolerance** overrides the scorer's (Scoring, below), e.g. `tolerance: {rel: 0.1}`.
 
 ### Inputs, sub-steps, ceilings, delays
 
@@ -798,6 +800,144 @@ October 2026, `python -c "from sdlab.ladder import sweep; print('\n'.join(sweep.
   ML is biased by 24-42% there. These methods break where counting noise stops being Gaussian,
   which is a modelling limit; an exact count likelihood would be needed.
 
+## Real-world noise (`noise.py`, `noise_kf.py`, `noise_oracle.py`, `noise_analysis.py`)
+
+`none` and `counts` are the only noises the engine makes. Real data carry more: measurement error,
+missing points, weekly reports, late reports, a few gross errors, a miscounted stock. These are
+laid on the **recorded levels after the engine has run** (the engine is fixed), on top of
+counting noise: the run is the case's `counts` run with the same seed, and what discovery sees is
+that run as it would be reported. Each is deterministic from the seed (the fresh run: seed + 1).
+
+**Opt-in.** A case asks for them in its variants; the default stays `none` and `counts`, so every
+existing case keeps its four variants, its data and its hash (a case is hashed with the noise code
+only if it opts in; `tests/test_ladder_noise.py` checks both):
+
+```yaml
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]          # each at short and long
+  # numbers:  [counts, {meas: {rel: 0.1, abs: 0}}, {lag: {steps: 5}}, {bias: {factor: 0.8, stock: A}}]
+```
+
+| noise | what discovery sees | numbers (default) |
+|---|---|---|
+| `meas` | every level plus Gaussian error, sd = sqrt(abs^2 + (rel x level)^2) | `rel` 0.05, `abs` 1 |
+| `gaps` | each point (not the first or last) missing with probability `missing`: `t` jumps (2, 3, 5 steps) | `missing` 0.3 |
+| `weekly` | one point per `every` steps, stamped at the period's end: its mean (`how: mean`) or its last level (`how: end`) | `every` 7, `how` mean |
+| `lag` | the level of `steps` steps before, stamped now; announced eras and injections keep their true times | `steps` 3 |
+| `outliers` | each level, with probability `rate`, off by +-U(0.5, 1) x the stock's mean level (at least 10), floored at 0 | `rate` 0.01 |
+| `bias` | one stock's levels (default: the last measured one) times `factor` | `factor` 1.2 |
+
+**The page format.** Missing points and weekly reports are carried as they would arrive: `t` with
+uneven steps, levels only at the reported times (every measured stock at the same times). No
+filling in, no nulls. Most strategies assume one step between consecutive points (`matrix`'s rows
+are `np.diff` of the levels), so they read the rates per point, not per step: that is one of the
+failures these variants show.
+
+**The data** (`data.load`): `t`, `levels` (as reported), `all_levels` (every stock's true level at
+the reported times, for grading), `eras`, `injections`, `observation` (what was done: each reported
+point's true time `at`, the `span` it averages, the outliers made, the bias) and `clean` (the
+counts run underneath, every step, with the truth's flows over it). Discovery gets only `t`,
+`levels`, the eras and the injections, as for every variant.
+
+**Scoring.** Pass is unchanged. Equations are scored on what was reported; behaviour (skill@20,
+@100) and the long run on the clean run underneath (the found model's prediction of the real
+system; `inferred_levels` only when the reported times are every step). The tolerance follows the
+standard errors: for noisy data the scorer's oracle (`noise_oracle.py`) gives
+
+    SE = SE_counts(clean run) x SE_kalman(reported data) / SE_kalman(clean run)
+
+the SE the counts variant would allow on the run underneath (the linear oracle, or the hidden
+oracle), times the **cost** of the noise: the Kalman filter's SE of the truth's own structure on
+the data as reported, over its SE on every step of the clean run. The Kalman model
+(`noise_kf.py`) is the truth's linear system over every step with counting noise as process noise
+(held at the true rates), observed the way the variant reports it: a measurement variance (1/12 +
+abs^2 + (rel x level)^2), only the reported steps, a weekly mean through an accumulator beside the
+state, the lag's true times, outliers left out (a robust method can find a few gross errors), and
+the bias as a free number in the means (a biased stock is followed in its reported units; its
+counting noise's size says nothing about the bias). The cost is 1 where nothing is lost (the
+sweep's 0% point is the counts variant), so a tolerance widens by exactly what the noise takes,
+never by a fixed amount. A number the bias multiplies with nothing else to pin it down has no
+finite SE: it gets no allowance (relative tolerance only) and the cell is unidentifiable.
+
+score.py is not edited, so the score hash and every stored result stay as they are: score.py and
+analysis.py build their oracle by name (`Oracle(...)`, `HiddenOracle(...)`), and
+`noise_oracle.install()` (run when `sdlab.ladder` is imported) routes those names to the Kalman
+oracle for data with an `observation`, and to the original classes for everything else. A change
+to the noise code re-runs the noisy cases (it is in their case hash).
+
+**Analysis** (`noise_analysis.py`, through `analysis.get`): the same labels as above, from the
+Kalman model in place of fisher.py. The design puts every measured row's numbers free in one joint
+model (z and the chance to detect each true term, n = the reported points); the alternatives
+(link <-> move, gap <-> inflow + drain, ...) are told apart by the KL divergence of the reported
+data under the two structures (the same means, different counting-noise covariance, both seen
+through the reporting); the bound is the Kalman SE of every part against the scorer's allowance.
+`cost` gives each part's SE on the reported data over its SE on the clean run. Only for a linear
+truth (no effects, co-flows or other forms; otherwise "not analysed"). The bound uses the means
+only (the counting noise's variance is held at the truth), so it is at or above the full
+Cramér-Rao bound. `tests/test_ladder_noise.py` refits the truth's own structure by the Kalman
+likelihood on the noisy data and checks it passes in the cells labelled achievable.
+
+**Cases.** Copies of key cases with new ids (tag `noisy`), each with `counts` and the six noises
+at both lengths: 080 (003 chain of two), 081 (007 link), 082 (008 link loop), 083 (011 goal gap),
+084 (029 two independent chains), 085 (015 hidden stock), 086 (027 stepping inflow), 087 (023
+announced injections: a lag shows them late). 088 is a sweep of relative measurement error (0,
+1, 2, 5, 10, 15, 20%, no absolute part) on 003's chain.
+
+**What the data allow** (`analysis.analyse_all` on 080-088, 18 October 2026; 140 cells). Every
+`lag` and `outliers` cell costs nothing (cost 1.00-1.02: the lag is a shift, the outliers are few
+and findable). `meas` (5% + 1) costs up to 1.24 x the SE, `gaps` (30% missing) 1.01-1.26, and
+`weekly` the most, 1.07-4.9: the chain, the link and the two chains become data-limited on short
+runs (42 points), the link loop on both lengths (terms below the detection threshold). `bias` (20%
+on the last stock) costs up to 2.1 where conservation pins the bias (a move into the biased stock:
+080, 082, 083, 084, 085, 087) and makes the cell **unidentifiable** where nothing does (081: the
+link into B is seen only as bias x k; 086: the only stock's inflow only as bias x inflow). 082's
+short run is data-limited in every variant, counts too (the loop's link, as for 008). The 088
+sweep stays achievable at every point (cost 1.00 at 0% to 1.68 short / 1.88 long at 20%).
+
+**The leaders on them** (`sdlab-ladder run --strategies combined,lna,lna_stack,earned_pieces,common_cause,censored,matrix --cases 080,...,088 --jobs 3`,
+single-threaded, code 10f1d24, 18-19 October 2026; 980 cells, all run, none errored or timed out).
+Passes over the cells the analysis calls achievable, 080-087, both lengths (equivalent in brackets):
+
+| noise | combined | lna | lna_stack | earned_pieces | common_cause | censored | matrix |
+|---|---|---|---|---|---|---|---|
+| counts | 15/15 | 12/15 | 13/15 | 6/15 (4) | 6/15 (4) | 4/15 (2) | 4/15 (1) |
+| lag | 13/15 | 11/15 | 11/15 | 4/15 (4) | 4/15 (4) | 3/15 (2) | 2/15 (1) |
+| meas | 2/15 | 0/15 (3) | 0/15 (2) | 2/15 (1) | 2/15 (1) | 1/15 | 1/15 |
+| outliers | 2/15 | 1/15 | 1/15 | 0/15 | 0/15 | 2/15 | 2/15 |
+| gaps | 2/15 | 2/15 | 2/15 | 0/15 (2) | 0/15 (2) | 0/15 | 0/15 |
+| bias | 1/11 (1) | 1/11 (1) | 1/11 (1) | 1/11 (1) | 1/11 (1) | 0/11 | 0/11 |
+| weekly | 0/11 | 0/11 | 0/11 | 0/11 | 0/11 | 0/11 | 0/11 |
+
+How they break (from `show`; every one is the method's fault, since the cells are achievable):
+
+- **lag** costs the data nothing, and the methods almost nothing (combined 13/15, lna 11/15 against
+  15 and 12 on counts). The few new failures are on 087, where the injections show 3 steps after
+  their announced time and are subtracted at the wrong step: all seven methods fail 087's lag
+  cells, short and long, and pass its counts cells.
+- **meas** (5% + 1) breaks every method. The typical failure is a drain read 50% to several times
+  too fast, with spurious outside inflows and outflows: each step's change is regressed on a
+  level that carries the measurement error, and the error shows up twice with opposite signs (in
+  the level and in the next change). This is the classic errors-in-variables bias, and it pulls the
+  rate on a stock's own level towards -1.
+- **outliers** (1% gross errors) do the same: a handful of points drag the least-squares rows, so
+  drains are read far too fast and spurious flows appear. No method drops gross errors, and the
+  bound says dropping them would cost nothing.
+- **gaps** break every method. Consecutive points are taken as one step, so a rate is read per
+  point (1.4 steps on average), not per step: inflows and drains come out 20-60% off.
+- **weekly** breaks every method on every cell: one point per 7 steps is read as one step, so rates
+  come out several times off (lna, 080 weekly-long: B's drain 0.98 for 0.2) and moves go missing. The data still allow the long runs and some short ones.
+- **bias** (B 20% high): what leaves A arrives in B as 1.2x, and every method explains the excess
+  with a spurious link from A into B. The analysis says conservation pins the bias here, so the
+  move could be read, but only by a method that allows a stock's scale to be off.
+
+**The sweep** (088, `sweep.findings('088', ...)`): the data allow every point, with the bound on
+B's drain growing from 6.2% to 10.1% (short) and from 2.7% to 5.0% (long) of the true number. All
+seven methods pass at 0 and 1%. On long runs every method fails from 2% on; on short runs from
+10% on (lna and lna_stack give the equivalent move at 5%). The failure is B's drain read too fast,
+by 19-22% at 2% error (long), about 100% at 5%, about 200% at 10% and over 300% at 20%. That is far
+outside a bound of a few percent, so the method breaks first, and badly: an errors-in-variables
+bias, not a lack of data.
+
 ## Strategies
 
 Every module in `sdlab/discovery/strategies/` with `identify(stocks, run, opts)` is a strategy. The
@@ -1214,8 +1354,8 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | | |
 |---|---|
 | Cases | `sdlab/sdlab/ladder/cases/*.yaml`; realistic cases (the examples, by reference) in `cases/realistic/*.yaml` and `realistic.py`; the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
-| Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`) |
-| Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors) |
+| Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`); `noise.py` (the noises laid on the recorded levels) |
+| Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors); for noisy variants `noise_oracle.py` (the Kalman-scaled SEs) and `noise_kf.py` (the truth as a state-space model) |
 | Long run | `longrun.py` (free runs, settled / drift read-off, metrics), `jump.py` (affine jump-ahead, equilibria, spectra), `longrun_cache.py` (by result id, the CLI fill, the summary aggregate), `longrun_series.py` (the run page's data), `sdlab/static/ladder-run.html` |
 | Complexity | `complexity.py` (true and found complexity, extra, the Occam score; cached by result id) |
 | Strategies | `catalog.py` (listing, hashes, availability) |
@@ -1223,6 +1363,6 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
-| Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`; page `sdlab/static/probes.html` |
+| Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`, `noise_analysis.py` (the noisy variants); page `sdlab/static/probes.html` |
 | Canonical | `canonical/` (source models, recipes, `build.py`, `coverage.py`, the importer's `read.py`, `match.py`, `timefns.py`), `pysd_import.py` |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |

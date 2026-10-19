@@ -137,13 +137,16 @@ for `combined` on the test cases).
 
 - 2026-10-18 20:30: item 2, canonical system dynamics models.
 
-- 2026-10-18 20:00: item 1, noise variants.
-
 
 - 2026-10-18: realistic examples run (7 leaders × 31 examples × 2 lengths, `~/.sdlab/realistic-run.log`).
 
 
 ## Done
+
+- 2026-10-19: item 1, noise variants: meas, gaps, weekly, lag, outliers, bias (noise.py, opt-in),
+  Kalman-scaled tolerances and labels, cases 080-088, the leaders run (docs/LADDER.md, "Real-world
+  noise"). Every leader breaks on meas from 2% (long runs), on outliers, gaps, weekly and bias;
+  lag costs little except where injections are announced.
 
 - 2026-10-18: item 0, engine features (1baf38e, 9646bf2, cb97c26). Additive: 2,201 output hashes identical. New cases 062 (measured pump) and 063 (DELAY3). Still missing: sqrt/power/exp, MIN/MAX/IF, two-way flows, arrays, observation models, sparse sampling, a real-data scorer, and the editor forwarding inputs.
 
