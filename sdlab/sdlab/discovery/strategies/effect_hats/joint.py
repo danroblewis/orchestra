@@ -75,31 +75,63 @@ def _columns(f: dict, prev: np.ndarray, idx: dict, tt: np.ndarray) -> tuple[list
     return None
 
 
-def _repers(X, owned, spans, theta, res, pers, idx, S, T, use):
-    X = X.copy()
+def _solve(units, stoich, spans, target, w, use, P):
+    """Weighted least squares for the stacked rows, from the normal equations built stock by stock
+    (a flow's columns enter only the rows it touches), columns scaled to unit size before solving."""
+    S, T = target.shape
+    G = np.zeros((P, P))
+    rhs = np.zeros(P)
+    rows = []
+    for s in range(S):
+        ix, parts = [], []
+        for q, (a, b, _) in enumerate(spans):
+            if stoich[q][s] != 0:
+                ix.extend(range(a, b))
+                parts.append(stoich[q][s] * units[q])
+        if not ix:
+            rows.append((ix, None))
+            continue
+        A = np.vstack(parts).T                               # T x len(ix)
+        ww = (w[s] * use)[:, None]
+        Aw = A * ww
+        G[np.ix_(ix, ix)] += Aw.T @ Aw
+        rhs[ix] += Aw.T @ (target[s] * ww[:, 0])
+        rows.append((ix, A))
+    d = np.diag(G)
+    live = d > 1e-12 * max(1e-300, float(d.max()))         # a column with no weight (all its steps left out) stays 0
+    scale = np.sqrt(np.where(live, d, 1.0))
+    theta = np.zeros(P)
+    Gs = (G / scale[:, None] / scale[None, :])[np.ix_(live, live)]
+    theta[live] = np.linalg.lstsq(Gs, rhs[live] / scale[live], rcond=1e-12)[0] / scale[live]
+    res = target.copy()
+    for s, (ix, A) in enumerate(rows):
+        if A is not None:
+            res[s] -= A @ theta[ix]
+    return theta, res
+
+
+def _repers(owned, units, stoich, spans, theta, res, pers, idx, use):
+    """A co-flow's per re-read from the used stock's row (its residual plus the flow's current share
+    there, against the flow's amount); the stoichiometry updated in place."""
     for q, ((f, _), (a, b, _)) in enumerate(zip(owned, spans)):
         if not pers[q]:
             continue
-        cols = X[:, a:b]
-        st = _stoich(f, idx, S)
-        # the flow's amount per step: its columns in a row it enters with a known sign
-        r0 = int(np.flatnonzero((st != 0) & ~np.isin(np.arange(S), [idx[u["stock"]] for u in f["uses"] if u.get("stock") in idx]))[0])
-        amount = (cols.reshape(S, T, -1)[r0] @ theta[a:b]) / st[r0]
+        used = [idx[u["stock"]] for u in f["uses"] if u.get("stock") in idx]
+        st = stoich[q]
+        movers = [r for r in np.flatnonzero(st) if r not in used]
+        if not movers:
+            continue
+        amount = units[q].T @ theta[a:b]                     # the flow's amount per step
+        aa = float((amount * amount * use).sum())
+        if aa <= 1e-12:
+            continue
         for k, u in enumerate(f["uses"]):
             if u.get("stock") not in idx:
                 continue
             j = idx[u["stock"]]
-            aa = float((amount * amount * use) @ np.ones(T))
-            if aa <= 1e-12:
-                continue
-            new = max(0.0, pers[q][k] + float(((-res[j]) * amount * use).sum()) / aa)
-            block = cols.reshape(S, T, -1)
-            unit = block[r0] / st[r0]
-            block[j] = block[j] + (pers[q][k] - new) * unit
+            new = max(0.0, pers[q][k] - float((res[j] * amount * use).sum()) / aa)
+            st[j] += pers[q][k] - new
             pers[q][k] = new
-            X[:, a:b] = block.reshape(S * T, -1)
-            cols = X[:, a:b]
-    return X
 
 
 def _pools(f: dict) -> list[list[int]]:
@@ -182,18 +214,15 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     if held:
         hf = [f for f, _ in held]
         target = target - (Model(hf, ids).step(prev, tt) - prev)
-    blocks, spans = [], []
+    spans, units, stoich = [], [], []
+    P = 0
     for f, (cols, how) in owned:
-        st = _stoich(f, idx, S)
-        start = len(blocks)
-        for c in cols:
-            blocks.append(np.outer(st, c).reshape(-1))      # stocks x steps, stacked by stock
-        spans.append((start, len(blocks), how))
-    if not blocks:
+        units.append(np.array(cols))                         # n_f x T: the flow's columns
+        stoich.append(_stoich(f, idx, S))
+        spans.append((P, P + len(cols), how))
+        P += len(cols)
+    if not P:
         return flows, {"rss": (target ** 2).sum(axis=1), "params": 0, "res": target}
-    X = np.array(blocks).T                                   # (S*T) x P
-    y = target.reshape(-1)
-    w = np.ones(S)
     pers = [[float(u.get("per") or 0) for u in (f.get("uses") or [])] for f, _ in owned]
     # steps left out of the fit (opts["skip"]: a boolean per step), and (opts["guard"]: g) the steps
     # within g of a change in an outside inflow: where a change's step is uncertain by a step or two,
@@ -210,19 +239,20 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     if skip.mean() > 0.5:
         skip[:] = False
     use = (~skip).astype(float)
-    theta = None
+    w = np.ones(S)
+    theta = np.zeros(P)
     coflow = any(pers_f for pers_f in pers) and opts.get("coflow_per", True)
-    for it in range((2 if opts.get("weighted", True) else 1) + (3 if coflow else 0)):
-        W = np.repeat(w, T) * np.tile(use, S)
-        theta = np.linalg.lstsq(X * W[:, None], y * W, rcond=None)[0]
-        res = (y - X @ theta).reshape(S, T)
+    for _ in range((2 if opts.get("weighted", True) else 1) + (3 if coflow else 0)):
+        theta, res = _solve(units, stoich, spans, target, w, use, P)
         sig = np.sqrt((res ** 2 * use).sum(axis=1) / max(1.0, use.sum()))
         floor = max(1e-9, 1e-3 * float(np.median(sig[sig > 0])) if np.any(sig > 0) else 1e-9)
         w = 1.0 / np.maximum(sig, floor)
         if coflow:
             # a co-flow's per (how much of the used stock goes with each unit moved) is a number of
             # the stoichiometry, not of the rate: re-read it from the used stock's row, then refit
-            X = _repers(X, owned, spans, theta, res, pers, idx, S, T, use)
+            _repers(owned, units, stoich, spans, theta, res, pers, idx, use)
+    if coflow:
+        theta, res = _solve(units, stoich, spans, target, w, use, P)
     out = []
     oi = 0
     for f in flows:
@@ -235,8 +265,7 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
             g = {**g, "uses": [{**u, "per": r6(p)} for u, p in zip(f["uses"], pers[oi])]}
         out.append(g)
         oi += 1
-    res = (y - X @ theta).reshape(S, T)
-    return out, {"rss": (res ** 2).sum(axis=1), "params": X.shape[1], "res": res}
+    return out, {"rss": (res ** 2).sum(axis=1), "params": P, "res": res}
 
 
 def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None, score=None) -> list[dict]:

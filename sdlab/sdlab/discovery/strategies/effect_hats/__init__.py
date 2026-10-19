@@ -36,6 +36,7 @@ import os
 
 import numpy as np
 
+from ...addition import addition_test
 from ...identify import judge
 from ...identify import identify as matrix_identify
 from ...matrix import injected
@@ -46,7 +47,7 @@ from .screen import scan
 
 DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True,
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
-            "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1}
+            "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True}
 
 
 def _arrays(stocks, run, opts):
@@ -68,7 +69,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if len(run["t"]) < 60:
         return base
     ids, prev, dy = _arrays(stocks, run, opts)
-    fit_opts = {**opts, "weighted": o["weighted"], "guard": o["guard"], "level_price": o["level_price"]}
+    fit_opts = {**opts, "weighted": o["weighted"], "guard": o["guard"], "level_price": o["level_price"], "no_self_links": o["no_self_links"],
+                "pair": o["pair"], "coflows": o["coflows"]}
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
     seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]
@@ -76,7 +78,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     fair_e = judge(seg, stocks, run, injections=opts.get("injections")) if o["pool"] else base_e
     base.update(bic=base_b, judged={"base": base_e, "recut": fair_e}, effects_tried=[])
     log_t = math.log(max(2, len(run["t"]) - 1))
-    accepted, best, cur_b, cur_e = [], None, base_b, fair_e
+    accepted, best, chosen, cur_b, cur_e = [], None, None, base_b, fair_e
     tried, shapes, skip = [], set(), set()
     for _ in range(o["rounds"]):
         extra = [search.column(c, run)[0][:-1] for c in accepted]
@@ -99,15 +101,28 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             done.append({**t, "flows": flows, "error": judge(flows, stocks, run, injections=opts.get("injections")),
                          "bic": price(flows, ids, run)})
         tried += done
-        ok = [t for t in done if t["fit"]["halves_ok"] and t["bic"] < cur_b and t["error"] < o["margin"] * cur_e]
-        if not ok:
-            break
-
         def rank(t):
             # SD's usual form: a flow's rate is its source's level (or a constant) times the effect
             f = t["fit"]
             return t["bic"] + (0.0 if f["base"] in (f["frm"], None) else o["prior"] * log_t)
-        best = min(ok, key=lambda t: t["error"]) if o["select"] == "judge" else min(ok, key=rank)
+        # the best-priced model is the round's pick, and is then accepted or not: falling back to a
+        # worse-priced one that happens to pass the judge picks wrong structures (a link read as a move)
+        ok = [t for t in done if t["fit"]["halves_ok"] and t["bic"] < cur_b]
+        if o["select"] == "judge":
+            ok = [t for t in ok if t["error"] < o["margin"] * cur_e]
+            best = min(ok, key=lambda t: t["error"]) if ok else None
+        else:
+            best = min(ok, key=rank) if ok else None
+            if best is not None and not best["error"] < o["margin"] * cur_e:
+                best = None
+        # (opts["harm"]) and no worse than the base when each is fed a coarse inflow re-measured under
+        # its own dynamics (addition.py, "refit")
+        if best is not None and o["harm"] is not None and _fair(base["flows"], best["flows"], stocks, run) < -o["harm"]:
+            best = None
+        if best is None:
+            best = chosen
+            break
+        chosen = best
         accepted.append(best["fit"])
         skip.add((best["fit"]["base"], best["fit"]["stock"]))
         cur_b, cur_e = best["bic"], best["error"]
@@ -115,7 +130,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if keep:
         base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in tried)
     if best is None:
-        return _seg_base(base, seg, o, ids, run, base_e, fair_e)
+        return _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks)
     out = {**best["r"], "flows": _clean(best["flows"]), "chosen": best["name"], "tried": base["tried"],
            "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b, "judged": base["judged"]}
     if keep:
@@ -123,12 +138,20 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return out
 
 
-def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, base_e: float, fair_e: float) -> dict:
+def _fair(base: list[dict], cand: list[dict], stocks: list[dict], run: dict) -> float:
+    """The candidate's gain over the base (relative error over 5/20/100 steps), each fed a coarse
+    outside inflow re-measured under its own dynamics."""
+    return float(addition_test(base, cand, stocks, run, inflow="refit")["gain"])
+
+
+def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, base_e: float, fair_e: float,
+              stocks: list[dict] | None = None) -> dict:
     """The base, or (opts["seg_base"]) the base with its inflows pooled and re-cut when that prices
-    better and behaves within the margin."""
+    better, behaves within `seg_margin` of it, and is no worse with re-measured coarse inflows."""
     if not o["seg_base"] or seg is base["flows"]:
         return base
-    if price(seg, ids, run) < price(base["flows"], ids, run) and fair_e < o["seg_margin"] * base_e:
+    if price(seg, ids, run) < price(base["flows"], ids, run) and fair_e < o["seg_margin"] * base_e \
+            and (o["harm"] is None or _fair(base["flows"], seg, stocks, run) >= -o["harm"]):
         return {**base, "flows": _clean(seg), "chosen": f"{base.get('chosen')}, inflows re-cut"}
     return base
 

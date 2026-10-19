@@ -15,7 +15,8 @@ from .joint import _base, _write
 
 def hat_flow(frm, to, base, stock, kn, weights, prev, idx, extra=None) -> dict:
     rate = {"form": "constant", "value": 1.0} if base is None else {"form": "proportional", "stock": base, "k": 1.0}
-    f = {**(extra or {}), "from": frm, "to": to, "ratio": 1, "rate": rate,
+    # driver: what the flow follows (a constant-rate effect flow is not an outside inflow to be replaced)
+    f = {**(extra or {}), "from": frm, "to": to, "ratio": 1, "rate": rate, "driver": base or stock,
          "hat": {"stock": stock, "knots": [float(x) for x in kn], "weights": [float(w) for w in weights]}}
     f.pop("inflow", None)
     f.pop("byTime", None)
@@ -44,7 +45,8 @@ def _split(rate: dict, meta: dict) -> tuple[dict | None, dict[str, float]] | Non
     return rate, {}
 
 
-def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarray, ids: list[str], coflows: bool = True) -> list[dict] | None:
+def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarray, ids: list[str], coflows: bool = True,
+              pair: bool = True) -> list[dict] | None:
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
     idx = {s: i for i, s in enumerate(ids)}
     plain, eff = [], {}                   # eff[v] = [[from, to, k]]
@@ -70,7 +72,7 @@ def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarra
         outs = [x for x in items if x[0] is not None and x[1] is None and x[2] > 0]
         ins = [x for x in items if x[0] is None and x[1] is not None and x[2] > 0]
         moves = [x for x in items if x not in outs and x not in ins]
-        for o in outs:
+        for o in outs if pair else []:
             for i in sorted(ins, key=lambda i: -i[2]):
                 if unit.get(i[1]) == unit.get(o[0]) and o[2] > 0 and i[2] > 0:
                     k = min(o[2], i[2])

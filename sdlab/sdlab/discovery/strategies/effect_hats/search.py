@@ -100,9 +100,11 @@ def trials(effects: list[dict], stocks, run, prev, ids, opts, fit_opts, shapes: 
         if v.get("split_eras") and not has_eras:
             continue
         r = identify_one(vstocks, vrun, {**opts, **v, "only_rows": rows})
-        flows = translate(r.get("flows") or [], meta, stocks, prev, ids)
+        flows = translate(r.get("flows") or [], meta, stocks, prev, ids, coflows=fit_opts.get("coflows", True), pair=fit_opts.get("pair", True))
         if not flows or not any(f.get("hat") for f in flows):
             continue
+        if fit_opts.get("no_self_links", True):
+            flows = [f for f in flows if not _self_link(f)]
         flows, _ = refit(flows, ids, run, fit_opts)
         sig = signature(flows)
         if sig in shapes:
@@ -112,6 +114,19 @@ def trials(effects: list[dict], stocks, run, prev, ids, opts, fit_opts, shapes: 
                              for c in effects)
         out.append({"name": f"effect {names}, {v['name']}", "bic": bic(flows, ids, run["t"], run["levels"]), "flows": flows, "r": r})
     return out
+
+
+def _self_link(f: dict) -> bool:
+    """A flow from outside into X at k x X (k > 0): X feeding itself. Next to an effect it is the
+    curve's misfit in X's row, and it makes the model run away once X's drain slows."""
+    r = f.get("rate") or {}
+    if f.get("from") or not f.get("to") or f.get("effects") or f.get("byTime") or f.get("inflow"):
+        return False
+    terms = [(r.get("stock"), r.get("k")) if r.get("form") == "proportional" else (x.get("stock"), x.get("k")) for x in (r.get("terms") or [])] \
+        if r.get("form") in ("proportional", "linear") else []
+    if r.get("form") == "proportional":
+        terms = [(r.get("stock"), r.get("k"))]
+    return any(st == f["to"] and float(k or 0) > 0 for st, k in terms)
 
 
 def signature(flows: list[dict]) -> str:
