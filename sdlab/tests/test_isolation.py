@@ -12,7 +12,6 @@ KNOWN = {
     "held_out_blend": {"held_out"},
     "inflow_attribution_both": {"inflow_attribution"},
     "inflow_attribution_refine": {"inflow_attribution"},
-    "kalman_lna": {"combined", "lna"},
     "lna_levels": {"lna"},
     "lna_loops": {"lna"},
     "lna_products": {"lna", "lna_levels"},

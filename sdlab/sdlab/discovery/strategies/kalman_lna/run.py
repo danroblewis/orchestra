@@ -9,8 +9,8 @@ import time
 import numpy as np
 
 from ...matrix import configurations
-from ..lna.atoms import Atom, restricted, superset
-from ..lna.flows import to_flows
+from ._vendored.lna.atoms import Atom, restricted, superset
+from ._vendored.lna.flows import to_flows
 from . import search as S
 from .model import Fitted, Layout, OutOfTime, Problem
 from .hidden import hidden

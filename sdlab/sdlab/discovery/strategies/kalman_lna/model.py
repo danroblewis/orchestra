@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.optimize import minimize
 
-from ..lna.atoms import Atom, stoich
+from ._vendored.lna.atoms import Atom, stoich
 from .kf import nll_grad, smooth
 
 EPS = 0.05            # a pooled inflow's variance is never below this (lna's)

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..lna.atoms import Atom
+from ._vendored.lna.atoms import Atom
 from . import search as S
 from .model import Fitted, Problem
 

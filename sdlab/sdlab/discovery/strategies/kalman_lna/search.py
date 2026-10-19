@@ -11,7 +11,7 @@ import numpy as np
 from scipy.optimize import lsq_linear
 
 from ...changes import pelt
-from ..lna.atoms import Atom, stoich
+from ._vendored.lna.atoms import Atom, stoich
 from .model import Fitted, Problem
 
 TRIAL_ITER = 80
@@ -356,7 +356,7 @@ def scales(pr: Problem, cur: Fitted, run_search) -> Fitted:
 
 
 def superset_atoms(S: int, unit: list[str], final: set[int], group: list) -> list[Atom]:
-    from ..lna.atoms import superset
+    from ._vendored.lna.atoms import superset
     return superset(S, unit, final, group, gaps=False)
 
 

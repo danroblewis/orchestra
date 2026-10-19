@@ -21,7 +21,7 @@ Which reading the data need:
 - otherwise the base strategy's answer, unless the filter's search finds a reporting delay
   (injections), or a scale where the base reads a link beside a move into the same stock.
 
-The base is `combined` (opts "kalman_base"). Where the filter is chosen and fails or runs out of
+The base is its own copy of `combined` (as at commit ec2f9e8, in _vendored/). Where the filter is chosen and fails or runs out of
 time, the base's answer is returned. Beyond SMALL stocks, with every step reported, the data go to
 the base unchanged.
 """
@@ -30,14 +30,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from sdlab.discovery.strategies.combined.deadline import outer_left
-
-# lna's atoms and flow writer are used by run.py, search.py and model.py; named here so that the
-# ladder's strategy hash covers them (it follows `from sdlab.discovery.strategies.<name> import`)
-from sdlab.discovery.strategies.combined import identify as combined
-from sdlab.discovery.strategies.lna import atoms as _lna_atoms  # noqa: F401
-from sdlab.discovery.strategies.lna import flows as _lna_flows  # noqa: F401
-
+# combined and lna (and what they reach) as copies, vendored at commit ec2f9e8 (_vendored/): no other
+# strategy is imported (sdlab/CLAUDE.md invariant 11), so changing them never changes this one
+from ._vendored.combined import identify as combined
+from ._vendored.combined.deadline import outer_left
 from .run import BUDGET, FAILURES, Session
 
 CHECK = 30.0          # seconds for the check on data a measurement error may not touch
@@ -46,10 +42,9 @@ BASE = "combined"
 
 
 def _base(name: str):
-    if name == BASE:
-        return combined
-    from .. import load
-    return load(name)
+    if name != BASE:
+        raise ValueError(f"kalman_lna's base is its own copy of {BASE}, not {name!r}")
+    return combined
 
 
 def _levels(stocks: list[dict], run: dict) -> tuple[np.ndarray, np.ndarray]:
