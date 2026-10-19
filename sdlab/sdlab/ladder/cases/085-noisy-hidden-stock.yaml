@@ -1,0 +1,13 @@
+title: "A hidden stock between two measured ones, real-world noise"
+level: 12
+tags: [hidden, delay, noisy]
+tests: "015 (things wait in an unmeasured stock between A and B: an inferred stock with the right delay) under measurement error, gaps, weekly reports, a reporting delay, outliers and a biased count"
+seed: 15
+stocks: {A: 0, H: 0 hidden, B: 0}
+flows:
+  outside -> A: 20
+  A -> H as a_h: 0.2 * A
+  H -> B as h_b: 0.1 * H
+  B -> outside: 0.2 * B
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

@@ -36,7 +36,8 @@ def setup(case_id: str, variant: str) -> longrun.Setup:
     c = casemod.load(case_id)
     key = (case_id, c["hash"], variant)
     if key not in _setups:
-        _setups[key] = longrun.Setup(casemod.truth_model(c, variant), datamod.load(c, variant))
+        d = datamod.load(c, variant)
+        _setups[key] = longrun.Setup(casemod.truth_model(c, variant), d.get("clean") or d)     # noise.py's variants: the run underneath
         while len(_setups) > 32:
             _setups.popitem(last=False)
     _setups.move_to_end(key)

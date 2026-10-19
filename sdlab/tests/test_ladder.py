@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sdlab.discovery import strategies as strategies_pkg
-from sdlab.ladder import api, catalog, checks, cli, data, runner, score, store
+from sdlab.ladder import api, catalog, checks, cli, data, noise, runner, score, store
 from sdlab.ladder import cases as casemod
 from sdlab.skill import truth_by_time
 
@@ -49,7 +49,9 @@ def test_there_is_a_ladder():
         c = casemod.load(i)
         assert c["title"] and c["tests"] and c["tags"], i
         names = [v["name"] for v in c["variants"]]
-        assert names and len(set(names)) == len(names) and {v["noise"] for v in c["variants"]} <= {"none", "counts"}, i
+        # none and counts, and the noises laid on the recorded levels (noise.py) for a case that asks for them
+        assert names and len(set(names)) == len(names) and {v["noise"] for v in c["variants"]} <= {"none", "counts", *noise.KINDS}, i
+        assert all(bool(v.get("observe")) == (v["noise"] in noise.KINDS) for v in c["variants"]), i
 
 
 TESTS = [i for i in casemod.case_ids() if not casemod.is_realistic(i)]     # realistic cases: test_ladder_realistic.py
@@ -63,6 +65,8 @@ def test_every_case_is_sane(case_id):
 @pytest.mark.parametrize("case_id", TESTS)
 @pytest.mark.parametrize("variant", ["none-short", "counts-long"])
 def test_the_true_model_passes_its_own_equation_scoring(case_id, variant):
+    if variant not in {v["name"] for v in casemod.load(case_id)["variants"]}:
+        pytest.skip(f"{case_id} has no {variant} variant")          # the noisy cases (noise.py) run counts and their noises
     s = scored(case_id, perfect, variant)
     assert s["status"] == "pass", [p for p in s["parts"] if not p["ok"]] + s["spurious"]
     assert s["recall"] == 1 and s["precision"] == 1

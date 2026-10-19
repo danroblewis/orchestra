@@ -48,7 +48,21 @@ def simulate(model: dict, seed: int | None = None, steps: int | None = None) -> 
 
 
 def load(case: dict, variant_name: str, fresh: bool = False) -> dict:
-    """The case's data in a variant (cached); fresh: the run with the next seed."""
+    """The case's data in a variant (cached); fresh: the run with the next seed. A variant with a
+    noise of noise.py (meas, gaps, weekly, lag, outliers, bias) is the counts run with that noise laid
+    on its recorded levels (deterministic from the seed; the run underneath is kept as "clean")."""
+    data = _engine_data(case, variant_name, fresh)
+    obs = variant(case, variant_name).get("observe")
+    if obs:
+        from ..skill import truth_by_time
+        from .noise import apply
+        model = truth_model(case, variant_name)
+        return apply(data, obs, int(model["seed"]) + (1 if fresh else 0), truth_by_time(model, data["t"])[0])
+    return data
+
+
+def _engine_data(case: dict, variant_name: str, fresh: bool = False) -> dict:
+    """The engine's run for a variant, cached."""
     v = variant(case, variant_name)
     model = truth_model(case, variant_name)
     seed = int(model["seed"]) + (1 if fresh else 0)

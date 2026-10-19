@@ -1,0 +1,12 @@
+title: "Chain of two, real-world noise"
+level: 2
+tags: [chain, move, noisy]
+tests: "003 (a move between two measured stocks, with the chain's inflow and exit) when the levels are measured with error, have gaps, come weekly, late, with outliers, or with one stock's count biased: are the chain's rates still recovered?"
+seed: 3
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

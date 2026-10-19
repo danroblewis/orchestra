@@ -671,6 +671,34 @@ glossary:
     term: counts (counting noise)
     group: Variants
     text: Whole things move, so each step's flow is a random whole number around its rate (Poisson). The wiggles hide numbers but also carry information.
+  noise_meas:
+    term: meas (measurement error)
+    group: Variants
+    text: Counting noise, and then every reported level is off by a random Gaussian error (by default 5% of the level plus 1 thing). Errors in the levels make the steps' changes look noisier than they are and pull fitted rates toward the wrong values unless a method allows for them. Only on cases that ask for it (tag noisy).
+  noise_gaps:
+    term: gaps (missing points)
+    group: Variants
+    text: Counting noise, and about 30% of the points are simply missing, so the times jump unevenly (2, 3, 5 steps). A method that treats each pair of points as one step reads the rates wrong.
+  noise_weekly:
+    term: weekly (weekly reports)
+    group: Variants
+    text: Counting noise, and only one number per 7 steps is reported, the week's average level. A seventh of the points, each one a blur of a week.
+  noise_lag:
+    term: lag (reporting delay)
+    group: Variants
+    text: Counting noise, and every level is reported 3 steps late, while announced eras and injections keep their true times. The dynamics are unchanged, but announced events show up later in the data than announced.
+  noise_outliers:
+    term: outliers (gross errors)
+    group: Variants
+    text: Counting noise, and about 1% of the reported levels are grossly wrong (off by half to all of the stock's typical level). A few bad points can drag a least-squares fit far off; a robust method can find and drop them.
+  noise_bias:
+    term: bias (a miscounted stock)
+    group: Variants
+    text: Counting noise, and one stock (the last measured one) is always reported 20% too high. What leaves one stock seems to arrive as more in the other. Where the bias multiplies a number nothing else pins down (an inflow into that stock, a link into it), the data cannot tell the true number, and the cell is unidentifiable.
+  noise_cost:
+    term: Noise cost
+    group: Variants
+    text: For the noisy variants, how much larger the best standard error of a true number is on the reported data than on the clean counting-noise run underneath (1 means the noise costs nothing). The scorer's allowance widens by exactly this factor, never by a fixed amount.
   short_long:
     term: short / long
     group: Variants

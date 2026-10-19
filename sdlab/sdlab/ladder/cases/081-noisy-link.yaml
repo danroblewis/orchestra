@@ -1,0 +1,13 @@
+title: "A link, real-world noise"
+level: 5
+tags: [link, noisy]
+tests: "007 (an outside inflow whose rate follows another stock's level is a link, not a move) under measurement error, gaps, weekly reports, a reporting delay, outliers and a biased count"
+seed: 7
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 0.1 * A
+  B -> outside: 0.2 * B
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

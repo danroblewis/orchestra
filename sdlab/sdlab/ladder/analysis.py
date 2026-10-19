@@ -31,6 +31,8 @@ normal) times the chance every true term is detected.
 
 A truth with a hidden stock uses the hidden oracle's ML standard errors (hidden_oracle.py) in
 place of the bound. Results are cached per case hash and variant in $SDLAB_LADDER_CACHE/analysis.
+A variant with a noise laid on the recorded levels (noise.py: meas, gaps, weekly, lag, outliers,
+bias) is analysed by noise_analysis.py, with a Kalman model of the truth in place of fisher.py.
 """
 
 from __future__ import annotations
@@ -224,6 +226,9 @@ def _p_within(allowed: float, se: float | None) -> float:
 def analyse(case_id: str, variant: str, mc: bool = True) -> dict:
     case = casemod.load(case_id)
     v = casemod.variant(case, variant)
+    if v.get("observe"):                     # a noise laid on the recorded levels (noise.py): the Kalman model's analysis
+        from .noise_analysis import analyse as noisy
+        return noisy(case_id, variant)
     noise = v["noise"]
     tm = casemod.truth_model(case, variant)
     d = datamod.load(case, variant)
@@ -612,6 +617,9 @@ def get(case_id: str, variant: str, compute: bool = True) -> dict | None:
     c = casemod.load(case_id)
     p = _path(case_id, variant, c["hash"])
     want = code_hash() + _tolerance_hash()
+    if casemod.variant(c, variant).get("observe"):
+        from .noise_analysis import code_hash as noisy_code
+        want += noisy_code()
     if p.exists():
         try:
             got = json.loads(p.read_text())

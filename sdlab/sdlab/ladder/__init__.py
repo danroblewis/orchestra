@@ -9,6 +9,11 @@ discovery strategy is tested in isolation for whether it recovers the true equat
     runner.py      what is stale, and running it in parallel
     api.py         the read API (the server's /api/ladder endpoints)
     cli.py         sdlab-ladder run | sync | status | show | watch | check | new
+    noise.py       the noises laid on the recorded levels (meas, gaps, weekly, lag, outliers, bias), opt-in per case
 
 See docs/LADDER.md.
 """
+
+from . import noise_oracle as _noise_oracle
+
+_noise_oracle.install()          # score.py and analysis.py get the Kalman oracle for those noises' data (noise_oracle.py)

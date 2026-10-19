@@ -1,0 +1,15 @@
+title: "Two independent chains of two, real-world noise"
+level: 3
+tags: [independent, chain, move, noisy]
+tests: "029 (two unrelated chains, each recovered with no flow between them) under measurement error, gaps, weekly reports, a reporting delay, outliers and a biased count: does noise invent flows between the chains?"
+seed: 29
+stocks: {A1: 0, B1: 0, A2: 0, B2: 0}
+flows:
+  outside -> A1: 20
+  A1 -> B1: 0.5 * A1
+  B1 -> outside: 0.2 * B1
+  outside -> A2: 12
+  A2 -> B2: 0.3 * A2
+  B2 -> outside: 0.1 * B2
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

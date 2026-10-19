@@ -159,7 +159,11 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
             signal.setitimer(signal.ITIMER_REAL, 0)     # ~2000 windows of a long realistic run takes minutes)
             armed = False
         fresh = data.load(c, item["variant"], fresh=True)
-        s = score.score(c, noise, model, flows, d, fresh, inferred)
+        if d.get("clean"):           # a noise of noise.py: equations on what was reported, behaviour on the run underneath (every step)
+            s = {**score.equations(c, noise, model, flows, d),
+                 "behaviour": score.behaviour(model, flows, d["clean"], fresh["clean"], inferred if d["t"] == d["clean"]["t"] else None)}
+        else:
+            s = score.score(c, noise, model, flows, d, fresh, inferred)
         row.update(status=s["status"], seconds=seconds, scores=jsonable(s), found=flows)
     except Timeout as e:
         row.update(status="timeout", error=str(e))

@@ -10,7 +10,8 @@ docs/LADDER.md) or NNN-slug.json (the case dict itself), a tiny true model plus 
                "schedule": {...}, "injections": [...]}}
 
 A case is run in every variant: each noise ("none": the engine's exact flows; "counts": whole things,
-Poisson around the rate) at each length. Its id is the file name without its extension. Its hash
+Poisson around the rate; a case may also ask for the noises of noise.py, laid on the counts run's
+recorded levels: meas, gaps, weekly, lag, outliers, bias) at each length. Its id is the file name without its extension. Its hash
 covers what a run is made from, not how the file is written or described: the compiled model,
 variants and tolerance (canonical JSON; not the title, level, tags or tests sentence), the truth
 model of every variant (without its id and name), the engine (sdlab/sdtruth.py and the equations in sdlab/runner.py) and
@@ -31,6 +32,7 @@ from pathlib import Path
 
 from .. import runner as _runner
 from . import draws as _draws
+from . import noise as _noise
 from . import realistic as _realistic
 from .caseformat import CaseError, compile_case
 
@@ -218,8 +220,13 @@ def _build(case_id: str, spec: dict) -> dict:
         raise CaseError(f"{case_id}: a case needs a model")
     v = spec.get("variants") or {}
     lengths = v.get("lengths") or LENGTHS
-    variants = [{"name": f"{n}-{ln}", "noise": n, "length": ln, "steps": int(steps)}
-                for n in v.get("noise") or list(NOISES) for ln, steps in lengths.items()]
+    try:
+        noises = _noise.entries(v.get("noise") or list(NOISES))
+    except _noise.NoiseError as e:
+        raise CaseError(f"{case_id}: {e}") from None
+    # a noise laid on the recorded levels (noise.py) carries its numbers as "observe"; none and counts carry nothing
+    variants = [{"name": f"{n}-{ln}", "noise": n, "length": ln, "steps": int(steps), **({"observe": obs} if obs else {})}
+                for n, obs in noises for ln, steps in lengths.items()]
     case = {"id": case_id, "title": spec.get("title") or case_id, "level": spec.get("level", 0), "tags": list(spec.get("tags") or []),
             "tests": spec.get("tests") or "", "tolerance": dict(spec.get("tolerance") or {}), "variants": variants,
             "model": spec["model"], **{k: spec[k] for k in ("example", "timeout") if k in spec}}
@@ -238,6 +245,8 @@ def case_hash(case: dict) -> str:
         h.update(engine_hash().encode() + _code_hash().encode())
     else:
         h.update(LEGACY_ENGINE.encode() + LEGACY_DATA.encode())
+    if any(x.get("observe") for x in case["variants"]):          # opted in to noise.py's variants: their code too
+        h.update(_noise.code_hash().encode())
     return h.hexdigest()[:16]
 
 
@@ -335,7 +344,7 @@ def truth_model(case: dict, variant_name: str) -> dict:
     m = case["model"]
     return {"id": case["id"], "name": case["title"], "time_unit": "step", "seed": int(m.get("seed", 1)),
             **{k: m[k] for k in ("schedule", "injections", "dt", "inputs") if m.get(k)},
-            "steps": v["steps"], "noise": dict(NOISES[v["noise"]]),
+            "steps": v["steps"], "noise": dict(NOISES[_noise.engine_noise(v)]),
             "stocks": [{"name": s["id"], "unit": "things", **s} for s in m["stocks"]],
             "flows": [{"name": f["id"], **f} for f in m["flows"]]}
 

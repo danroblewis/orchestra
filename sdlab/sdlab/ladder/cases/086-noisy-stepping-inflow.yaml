@@ -1,0 +1,15 @@
+title: "A stepping inflow and a drain, real-world noise"
+level: 3
+tags: [inflow-change, unannounced, outflow, noisy]
+tests: "027 (an outside inflow stepping between 3 and 7 every 100 steps unannounced, drained at 0.1) under measurement error, gaps, weekly reports, a reporting delay, outliers and a biased count: are the steps found without cutting the noise into pieces?"
+seed: 27
+stocks: {C: 50}
+flows:
+  outside -> C: 3
+  C -> outside: 0.1 * C
+schedule:
+  every: 200
+  at 1 low: {outside -> C: 3}
+  at 101 high: {outside -> C: 7}
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

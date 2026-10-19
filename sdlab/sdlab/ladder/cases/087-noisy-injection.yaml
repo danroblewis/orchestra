@@ -1,0 +1,20 @@
+title: "Announced injections, real-world noise"
+level: 12
+tags: [injection, announced, noisy]
+tests: "023 (announced injections into a chain are taken as given) under measurement error, gaps, weekly reports, a reporting delay, outliers and a biased count: with a delay the injections show later than announced"
+seed: 23
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 10
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+injections:
+  - {t: 50, stock: A, amount: 400}
+  - {t: 150, stock: A, amount: 400}
+  - {t: 250, stock: A, amount: 400}
+  - {t: 650, stock: A, amount: 400}
+  - {t: 1050, stock: A, amount: 400}
+  - {t: 1450, stock: A, amount: 400}
+  - {t: 1850, stock: A, amount: 400}
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

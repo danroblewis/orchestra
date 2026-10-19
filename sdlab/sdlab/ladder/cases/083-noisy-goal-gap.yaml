@@ -1,0 +1,12 @@
+title: "Goal-seeking orders, real-world noise"
+level: 8
+tags: [gap, balancing, loop, noisy]
+tests: "011 (orders follow the gap between a goal and the inventory they feed) under measurement error, gaps, weekly reports, a reporting delay, outliers and a biased count"
+seed: 11
+stocks: {P: 0, I: 0}
+flows:
+  outside -> P as orders: (300 - I) / 5
+  P -> I as arrive: 0.25 * P
+  I -> outside as demand: 0.1 * I
+variants:
+  noise: [counts, meas, gaps, weekly, lag, outliers, bias]

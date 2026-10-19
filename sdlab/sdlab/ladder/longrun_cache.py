@@ -62,7 +62,8 @@ def compute(case_id: str, variant: str, items: list[tuple[int, str]]) -> list[tu
     from . import data, longrun
     try:
         c = casemod.load(case_id)
-        setup = longrun.Setup(casemod.truth_model(c, variant), data.load(c, variant))
+        d = data.load(c, variant)
+        setup = longrun.Setup(casemod.truth_model(c, variant), d.get("clean") or d)     # noise.py's variants: the run underneath
     except Exception as e:  # noqa: BLE001 - a case that cannot be set up is recorded, not retried
         return [(i, {"error": f"{type(e).__name__}: {e}"}) for i, _ in items]
     out = []
