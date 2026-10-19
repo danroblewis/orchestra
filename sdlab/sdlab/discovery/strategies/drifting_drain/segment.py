@@ -97,7 +97,7 @@ def _partition_cost(z: np.ndarray, w: np.ndarray, spans: list[tuple[int, int]]) 
 
 
 def search(y: np.ndarray, x: np.ndarray, floor_var: float, mult: float = 2.0, fine: int = 10, grid: int = 24, rounds: int = 3,
-           counting: bool = False, rounding: float = 1 / 6) -> dict | None:
+           counting: bool = False, rounding: float = 1 / 6, coarse: int = 400) -> dict | None:
     """{c, spans, k, rss, var}; None when the level is not clearly above 0 (a drain's rate is unreadable).
 
     A stock near its moving balance changes little (y ~ 0 while c = k_t x_t), so c is told only by
@@ -117,13 +117,13 @@ def search(y: np.ndarray, x: np.ndarray, floor_var: float, mult: float = 2.0, fi
     if not hi > lo:
         return None
 
-    def price(c):
+    def price(c, blocks=4000):
         z = (c - y) / xs
-        spans = partition(z, w, pen)
+        spans = partition(z, w, pen, most_blocks=blocks)
         return _partition_cost(z, w, spans) + pen * len(spans), spans
 
     cs = np.linspace(lo, hi, grid)
-    prices = [price(c)[0] for c in cs]
+    prices = [price(c, coarse)[0] for c in cs]          # the grid on blocks of steps (cheap)
     j = int(np.argmin(prices))
     a, b = cs[max(0, j - 1)], cs[min(grid - 1, j + 1)]
     for _ in range(12):                                   # golden-section between the neighbours

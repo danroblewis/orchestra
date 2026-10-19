@@ -11,7 +11,8 @@ and a drain k_t x level whose rate changes in stretches (era segments, byTime), 
 segment.py. Flows the main line has between measured stocks, and those reading other levels or
 measured inputs, are kept. The rewrite is kept when the whole model's one-step BIC (onestep.py, a
 copy of censored's that counts every stretch's rate and cut) beats the main line's by `margin` x
-log T. Rows with announced eras or effects are left as they are.
+log T. Rows with announced eras or effects are left as they are, and so are rows the main line read
+as steady (no inflow in pieces, and some flow in or out) or fed by a link from another level.
 
 When the levels are whole numbers (counts), the inflow is read from the size of the noise as well
 (segment.py) and models are priced by the counting-noise likelihood instead (counts.py), under
@@ -65,6 +66,11 @@ def candidate(flows, ids, t, prev, dy, i, floor_var, o, mi=None):
     row = ids[i]
     mine = [f for f in flows if (f.get("from") is None and f.get("to") == row) or (f.get("from") == row and f.get("to") is None)]
     if any(f.get("byTime") or f.get("effects") or f.get("uses") for f in mine):
+        return None
+    # only a row the main line could not read as steady: its inflow in pieces, or nothing in or out
+    if any(f.get("from") is None and f.get("to") == row and not f.get("inflow") and not _replaced(f, row) for f in mine):
+        return None
+    if mine and not any(len(f.get("inflow") or []) > 1 for f in mine):
         return None
     base = [f for f in flows if not _replaced(f, row)]
     y = dy[i] - onestep.changes(base, ids, t, prev, mi)[i]
