@@ -20,7 +20,10 @@ From the controlled stock's response y:
 - `gain`: final change of y / size.
 
 Settled means y's change and every other stock's change per step are constant (a stock that only
-accumulates, like a final counter, drifts). A model that never settles gets `settles: False`; when
+accumulates, like a final counter, drifts). A model whose level ends less than 5% of the step from where it was (`responds: False`: for a
+setpoint step, a model that does not read the setpoint, or reads it only through a pure integrator
+it does not close) gets no overshoot, settling or margins; its `sse` is still given (about 1).
+A model that never settles gets `settles: False`; when
 it stays bounded (on/off control's limit cycle) its `cycle` (y's swing, peak to peak, over the last
 1,000 steps), `mean`, and `gain` (the mean's shift per unit of the step) are given instead.
 
@@ -52,6 +55,7 @@ from ..skill import truth_by_time
 SETTLE_MAX = 20_000
 RESPONSE = 3_000
 BAND = 0.02
+NO_RESPONSE = 0.05          # a final change below 5% of the step: the model does not answer it
 
 # the controlled stock, the input stepped, and the step's size, per control case (by id prefix)
 SPECS = {
@@ -219,9 +223,14 @@ def metrics(flows: list[dict], ids: list[str], x0: np.ndarray, u0: dict, spec: d
     d = yf - y0
     out["gain"] = d / size
     out["sse"] = (1 - d / size) if not spec.get("disturbance") else d / size
-    if abs(d) < 1e-9 * scale:
-        out.update({"overshoot": 0.0, "settling": 0})
+    if abs(d) < NO_RESPONSE * size:
+        # the level barely answers the step in the end: no overshoot or settling to speak of, and
+        # for a setpoint step no loop to take margins of (L = T / (1 - T) with T(1) ~ 0)
+        out["responds"] = False
+        if not spec.get("disturbance"):
+            out.update({"gm": None, "pm": None})
         return out
+    out["responds"] = True
     rel = (y - y0) / d
     out["overshoot"] = float(max(0.0, rel.max() - 1))
     outside = np.nonzero(np.abs(rel - 1) > BAND)[0]
@@ -297,6 +306,8 @@ def _f(v, fmt="{:.3g}") -> str:
 
 
 def line(m: dict) -> str:
+    if m.get("settles") and m.get("responds") is False:
+        return f"does not answer the step (sse {_f(m.get('sse'))})"
     if not m.get("settles"):
         if m.get("cycle") is not None:
             return f"limit cycle: swing {_f(m['cycle'])} around {_f(m['mean'])}, mean shift per unit step {_f(m['gain'])}"
