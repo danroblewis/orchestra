@@ -294,7 +294,8 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         if opts.get("pool") and pcuts and len(pcuts) > 2:
             # (pool) the pieces pooled into a few values and re-cut where the inflow really changes
             got = pool_recut(y, Xa[chosen], pcuts, max(floor, ex * T), int(opts.get("pool_most", 4)), float(opts.get("pool_change", 2)),
-                             int(opts.get("pool_guard", 2)), float(opts.get("pool_level_price", 2)), float(opts.get("white_alpha", 0.01)))
+                             int(opts.get("pool_guard", 2)), float(opts.get("pool_level_price", 2)), float(opts.get("white_alpha", 0.01)),
+                             bool(opts.get("pool_white")))
             if got is not None:
                 beta, rss, se, pcuts, pooled = got["beta"], got["rss"], got["se"], got["cuts"], got
         # each configuration's numbers: the shared one plus the configuration's own

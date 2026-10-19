@@ -14,7 +14,8 @@
   Guarded against seasonal inflows (which a few values cannot follow): the pooled inflow is kept only
   when it prices better than the pieces themselves at the same price (one number per value and per
   change, `level_price` x log T more per value beyond the first), and leaves residuals as white as
-  the pieces did.
+  the pieces did (need_white, opts "pool_white": as white as white noise, whatever the pieces left:
+  an inflow changing every 30 steps, sd-pipeline, pooled into a few values leaves a slow pattern).
 """
 
 from __future__ import annotations
@@ -120,7 +121,7 @@ def _fit(y: np.ndarray, X: np.ndarray, path: np.ndarray, m: int, guard: int):
 
 
 def pool_recut(y: np.ndarray, X: np.ndarray, cuts: list[int], floor: float = 0.0, most: int = 4, change: float = 2.0,
-               guard: int = 2, level_price: float = 2.0, alpha: float = ALPHA) -> dict | None:
+               guard: int = 2, level_price: float = 2.0, alpha: float = ALPHA, need_white: bool = False) -> dict | None:
     """The row y ~ X (the chosen columns) + pieces at `cuts`, with its pieces pooled and re-cut: {beta,
     rss, se, cuts, segments [(a, b, value)], labels (each step's value index)}, or None when the
     pieces themselves price better or the pooled inflow leaves residuals less white."""
@@ -162,7 +163,7 @@ def pool_recut(y: np.ndarray, X: np.ndarray, cuts: list[int], floor: float = 0.0
             best = {"sc": sc, "beta": beta, "se": se, "rss": rss, "labels": path, "levels": levels, "e": e, "segs": segs}
     if best is None or best["sc"] >= p0:
         return None
-    if white(e0, alpha) and not white(best["e"], alpha):
+    if (need_white or white(e0, alpha)) and not white(best["e"], alpha):
         return None
     segs = best["segs"]
     return {"beta": best["beta"], "se": best["se"], "rss": best["rss"], "cuts": [a for a, _ in segs] + [T],

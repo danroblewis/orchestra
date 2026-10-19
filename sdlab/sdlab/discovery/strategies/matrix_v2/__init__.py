@@ -10,6 +10,7 @@ identify() below, from commit aad5c7b) and changes those. With every option off 
   pelt_mult 2     inflow changes priced at 2 log n (PELT), not 1               censored (re-cut)
   white           a constant inflow kept unless its residuals are not white    earned_pieces
   pool            pieces pooled into a few values and re-cut (case 027)        effect_hats
+                  (pool_white: kept only if what it leaves is white: sd-pipeline)
   tie_se          conservation's tie tested with both rows' standard errors    earned_pieces
   falling_inflow  a negative cross reading read as a falling inflow (a gap)    censored (links)
   gap_inflow      a gap over several stocks as one floored linear inflow       structures
@@ -36,13 +37,13 @@ from ...simulate import behaviour_error
 from .matrix import identify_one, known_flows
 
 # every option off: the matrix
-OFF: dict = {"rss_floor": False, "pelt_mult": 1, "white": False, "pool": False, "tie_se": False, "falling_inflow": False,
+OFF: dict = {"rss_floor": False, "pelt_mult": 1, "white": False, "pool": False, "pool_white": False, "tie_se": False, "falling_inflow": False,
              "gap_inflow": False, "fold_strict": False, "pair_moves": False, "products": False, "inputs_judge": False, "exact": False}
 
 # the defaults: the combination chosen by the ablation (docs/research/matrix_v2.md): every fix that
 # gained cells without losing more than the data's limits explain; pelt_mult 2, white, gap_inflow and
 # inputs_judge each lost cells the others did not, and are off
-OPTIONS: dict = {**OFF, "rss_floor": True, "pool": True, "tie_se": True, "falling_inflow": True, "fold_strict": True,
+OPTIONS: dict = {**OFF, "rss_floor": True, "pool": True, "pool_white": True, "tie_se": True, "falling_inflow": True, "fold_strict": True,
                  "pair_moves": True, "products": "after", "exact": True}
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
