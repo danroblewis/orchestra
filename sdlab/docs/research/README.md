@@ -87,3 +87,4 @@ comparison script of exp/symbolic-regression.
 | [Injections as instruments for rows confounded by unannounced inflows](injection-instruments.md) | idea (not started; causal inference) | - |
 | [Invariance across eras and probes: which rows an era changed, and which predictors are real](invariant-rows.md) | idea (not started; causal inference) | - |
 | [Probe design: which stock to inject, when and how much](probe-design.md) | idea (not started; causal inference) | - |
+| [A hidden transit stock, its pair's rows refitted by a Kalman filter](hidden_transit.md) | done (ladder rung 015, benchmark v2.1, 100 generated) | adopt candidate: first to pass 015 (PPFP; new 026 PPPP), no other ladder case changes; examples 31.2%/33.5% (+1.5/+4.2, p=0.012), 13 of 62; generated +1.3/+0.4, no run worse |
