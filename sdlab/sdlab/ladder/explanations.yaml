@@ -598,6 +598,41 @@ strategies:
     builds_on: combined
     status: work in progress
 
+  combined_misfit:
+    idea: combined's choice, unless even the chosen model does not fit the counts to their noise - then the model that tracks the data best over many steps is chosen.
+    how: >-
+      combined's specialists run and its judge picks by the one-step likelihood and a BIC price. With
+      counts, the winner's leftover wiggles are then tested: are they as big as its counting noise
+      says, and do they not repeat in time? If either test fails clearly (more than 5 standard
+      errors), no candidate is right, the one-step score cannot be trusted, and the candidate whose
+      runs over 5, 20 and 100 steps stay closest to the data is chosen instead.
+    helps_with: Realistic models, where no candidate is exactly right and the one-step score picks models that drift off over many steps.
+    builds_on: combined
+    status: active
+    note: docs/research/combined_misfit.md.
+
+  combined_lean:
+    idea: combined's model with the inflow changes and flows the data barely earn taken out.
+    how: >-
+      Each outside inflow written in pieces is cut again on its own change places, each change now
+      costing about one and a half times what BIC charges (the modified BIC used for change points).
+      Then flows are taken out one at a time while the price-adjusted score falls and the model still
+      tracks the data over many steps. It only runs where the model fits the data to their noise.
+    helps_with: The strict tier - passes that carry one or two extra inflow pieces or a weak extra flow.
+    builds_on: combined
+    status: active
+    note: docs/research/combined_lean.md.
+
+  combined_r2:
+    idea: combined_misfit's choice, then combined_lean's leaner pass - the two proposals for combined's next round together.
+    how: >-
+      The judge switches to many-step error where no candidate fits the counts, and the chosen model
+      then loses the inflow changes and flows the data barely earn (only where it fits).
+    helps_with: Realistic models and the strict tier at once.
+    builds_on: combined_misfit, combined_lean
+    status: active
+    note: docs/research/ideas-2026-10-18.md.
+
 glossary:
 
   # the model's parts
