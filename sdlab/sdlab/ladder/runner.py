@@ -71,15 +71,26 @@ def parked() -> dict[str, str]:
     return dict(yaml.safe_load(PARKED.read_text()) or {}) if PARKED.exists() else {}
 
 
+RETIRED = Path(__file__).with_name("retired.yaml")
+
+
+def retired() -> dict[str, str]:
+    """Strategies retired by the user (retired.yaml): kept, but run only when named."""
+    import yaml
+    return dict(yaml.safe_load(RETIRED.read_text()) or {}) if RETIRED.exists() else {}
+
+
 def select_strategies(spec: str | None) -> tuple[list[dict], list[dict]]:
     """(available, skipped) strategy listings for a comma list, "all" (every strategy except the
-    parked ones, parked.yaml) or "everything"."""
+    parked and retired ones) or "everything" (every strategy except the retired ones). A parked or
+    retired strategy still runs when named."""
     every = {s["name"]: s for s in catalog.listing()}
+    gone = retired()
     if not spec or spec == "all":
-        skip = parked()
+        skip = {**parked(), **gone}
         names = [n for n in every if n not in skip]
     elif spec == "everything":
-        names = list(every)
+        names = [n for n in every if n not in gone]
     else:
         names = [n.strip() for n in spec.split(",") if n.strip()]
     unknown = [n for n in names if n not in every]

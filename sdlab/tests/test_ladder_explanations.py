@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sdlab.ladder import catalog, explain, runner
 
 FIELDS = ("idea", "how", "helps_with", "builds_on", "status")
-STATUSES = {"active", "parked", "work in progress", "retire-candidate"}
+STATUSES = {"active", "parked", "work in progress", "retire-candidate", "retired"}
 
 
 def test_every_strategy_has_an_entry():
@@ -26,8 +26,11 @@ def test_every_strategy_has_an_entry():
 
 def test_parked_strategies_say_parked():
     entries = explain.strategies()
+    gone = runner.retired()
     for n in runner.parked():
-        assert entries[n]["status"] == "parked", n
+        assert entries[n]["status"] == ("retired" if n in gone else "parked"), n
+    for n in gone:
+        assert entries[n]["status"] == "retired", n
 
 
 def test_glossary_terms():

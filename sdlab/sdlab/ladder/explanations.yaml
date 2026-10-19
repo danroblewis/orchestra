@@ -65,7 +65,7 @@ strategies:
       the textbook price made the fit spiral on inflows that really do change often.
     helps_with: Stocks whose inflow is really constant but gets cut into spurious pieces.
     builds_on: matrix
-    status: retire-candidate
+    status: retired
     note: Research verdict "reject (a narrower gate is neutral)" (docs/research/change-price.md).
 
   held_out:
@@ -86,7 +86,7 @@ strategies:
       its error on left-out blocks. The lowest blended score wins.
     helps_with: The same as held_out, with less risk of throwing away the in-sample judge's good picks.
     builds_on: held_out
-    status: parked
+    status: retired
     note: Parked as slow and no better than the main line (124 s per ladder, 36% pass; parked.yaml).
 
   output_error:
@@ -98,7 +98,7 @@ strategies:
       whichever version, polished or not, it rates best.
     helps_with: Rates that are slightly off because one-step fits are biased by noise.
     builds_on: matrix
-    status: active
+    status: retired
     note: Research verdict "needs a combination - keep as a final step after structural fixes".
 
   odefit:
@@ -138,7 +138,7 @@ strategies:
       at zero (floors; off by default). Every version is judged like the main line's candidates.
     helps_with: Stocks that run dry and rates that hit zero.
     builds_on: matrix
-    status: active
+    status: retired
     note: Research verdict "needs a combination"; continued by censored.
 
   censored:
@@ -206,7 +206,7 @@ strategies:
       to zero). The judge then picks among those that pass.
     helps_with: Models that fit the data but explode outside it.
     builds_on: matrix
-    status: retire-candidate
+    status: retired
     note: Research verdict "reject for the main line; keep gate.py for flexible strategies" (behaviour-consistency.md).
 
   gated_no_high:
@@ -217,7 +217,7 @@ strategies:
       with one piece removed) to see what that test contributes.
     helps_with: Measuring how much the "high" test helps or hurts gated.
     builds_on: gated
-    status: retire-candidate
+    status: retired
     note: Same research verdict as gated.
 
   gradient:
@@ -228,7 +228,7 @@ strategies:
       adds every possible effect and co-flow and prunes the small ones away.
     helps_with: Polishing numbers, and finding effects and co-flows the main line's form cannot express.
     builds_on: matrix
-    status: parked
+    status: retired
     note: Parked as slow (197 s per ladder) and no better than matrix (35% pass). Needs the optional jax package.
 
   hidden_delays:
@@ -239,7 +239,7 @@ strategies:
       stocks are added one at a time while the model behaves better, with the delay tuned.
     helps_with: A delay or pipeline stock nobody measures.
     builds_on: matrix
-    status: active
+    status: retired
     note: Research verdict "needs a combination"; hidden_transit is the later method for the same case.
 
   hidden_transit:
@@ -277,7 +277,7 @@ strategies:
       The judge picks among all the results.
     helps_with: Cases where the main line's chosen model hides the pair mass_balance needs.
     builds_on: mass_balance
-    status: active
+    status: retired
 
   sindy:
     idea: The off-the-shelf PySINDy method, given system-dynamics-shaped building blocks and conservation rules.
@@ -299,7 +299,7 @@ strategies:
       effects. Every candidate, with or without effects, is judged by how it behaves.
     helps_with: Flows whose rate bends with another stock's level (effects).
     builds_on: matrix
-    status: active
+    status: retired
     note: Research - the best single mechanism on benchmark v2.1; needs a combination.
 
   symbolic_anchor:
@@ -410,7 +410,7 @@ strategies:
       the slope of the error is estimated by nudging each number a little (finite differences).
     helps_with: Numbers biased by one-step fitting; effects and co-flows.
     builds_on: matrix
-    status: parked
+    status: retired
     note: Parked as slow (142 s per ladder, 20% pass).
 
   numopt_fd_coarse:
@@ -420,7 +420,7 @@ strategies:
       blocks with a free, penalised factor per block, fitted with everything else.
     helps_with: Testing whether letting inflows move during the refit helps.
     builds_on: numopt_fd
-    status: parked
+    status: retired
     note: Parked as slow (325 s per ladder, 22% pass).
 
   numopt_fd_profile:
@@ -431,7 +431,7 @@ strategies:
       the old inflows fighting it.
     helps_with: Testing effects that change a stock's balance.
     builds_on: numopt_fd
-    status: parked
+    status: retired
     note: Parked as slow (164 s per ladder, 22% pass).
 
   numopt_lbfgs:
@@ -442,7 +442,7 @@ strategies:
       choice of optimiser matters.
     helps_with: Comparing optimisers (research found the optimiser is not the bottleneck).
     builds_on: numopt_fd
-    status: parked
+    status: retired
     note: Parked as slow (188 s per ladder, 31% pass).
 
   numopt_nm:
@@ -493,7 +493,7 @@ strategies:
       inflows it did not tailor before comparing them.
     helps_with: Candidates that only look good because their inflow pieces copy the data.
     builds_on: matrix
-    status: retire-candidate
+    status: retired
     note: Research verdict "reject as the main judge; keep judges.py" (inflow-conditioned-judge.md).
 
   pieces_gate:
@@ -504,7 +504,7 @@ strategies:
       of the pieces' values. It is an ablation (one change tested alone).
     helps_with: A bug in the main line's pieces test that inflow_attribution uncovered.
     builds_on: matrix
-    status: active
+    status: retired
 
   periodic_inflows:
     idea: Read an outside inflow as one period's profile repeated (a daily or weekly cycle) plus a slow level.
@@ -561,7 +561,7 @@ strategies:
       arrive only in those steps.
     helps_with: Deliveries, batches and shocks (pulse cases).
     builds_on: matrix
-    status: active
+    status: retired
     note: Research verdict "adopt after combining with the judge/gate".
 
   row_crossover:
@@ -572,7 +572,7 @@ strategies:
       couple of sweeps.
     helps_with: Models where no single candidate is right everywhere.
     builds_on: matrix
-    status: active
+    status: retired
     note: Research verdict "needs a combination"; the in-sample judge can be fooled by a flexible row.
 
   paced_moves:
@@ -583,7 +583,7 @@ strategies:
       the distance to a target) one at a time. Everything goes before the same judge.
     helps_with: Moves paced by another stock, and goal-seeking inflows.
     builds_on: matrix
-    status: active
+    status: retired
     note: Research - paced moves rejected as they stand; gap inflows need a combination.
 
   inflow_attribution:
@@ -595,7 +595,7 @@ strategies:
       candidates.
     helps_with: Drains biased by outside-inflow pieces, and which stocks really get outside inflow.
     builds_on: matrix
-    status: active
+    status: retired
     note: Research verdict "needs a combination (not significant alone)"; found the pieces-gate bug.
 
   inflow_attribution_refine:
@@ -605,7 +605,7 @@ strategies:
       rates it better.
     helps_with: A cheaper, safer version of inflow_attribution.
     builds_on: inflow_attribution
-    status: active
+    status: retired
 
   inflow_attribution_both:
     idea: inflow_attribution with the unrepaired candidates kept beside the repaired ones.
@@ -614,7 +614,7 @@ strategies:
       default.
     helps_with: Checking whether repairs ever hurt.
     builds_on: inflow_attribution
-    status: active
+    status: retired
 
   earned_pieces:
     idea: The main line, but a stock's outside inflow may change only once the data earn it.
