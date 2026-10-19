@@ -42,9 +42,9 @@ def flow(model, fid):
 
 def test_there_is_a_ladder():
     ids = casemod.case_ids()
-    assert len(ids) >= 20 and ids == sorted(ids)
+    assert len(ids) >= 20 and len(set(ids)) == len(ids)
     levels = [casemod.load(i)["level"] for i in ids]
-    assert levels == sorted(levels), "simplest first"
+    assert levels == sorted(levels), "listed simplest first (by level, then id), whatever order the files were written in"
     for i in ids:
         c = casemod.load(i)
         assert c["title"] and c["tests"] and c["tags"], i

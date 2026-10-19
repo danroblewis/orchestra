@@ -64,7 +64,17 @@ def case_files() -> dict[str, Path]:
 
 
 def case_ids() -> list[str]:
-    return list(case_files())
+    """Every case, simplest first: by level, then by id. (Ids are stable names in the order the cases
+    were written; a basic case added later still sorts among the basics.)"""
+    files = case_files()
+    return sorted(files, key=lambda i: (_level(files[i]), i))
+
+
+def _level(path: Path) -> int:
+    try:
+        return int(read(path).get("level") or 0)
+    except Exception:                                             # noqa: BLE001  (a broken case sorts last; check reports it)
+        return 10**6
 
 
 def read(path: Path) -> dict:
