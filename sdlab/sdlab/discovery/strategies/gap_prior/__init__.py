@@ -10,7 +10,10 @@ by a stock a that moves things on (a -> b) is, in the averages, a co-flow of tha
 moved uses up per = drain / move of c; lna/coflows.py): where a has such a move, the drain is
 written as the co-flow (checked first: a gap needs no move). With counting noise lna's likelihood
 tells these apart (its gap swaps and co-flow offers) and its reading stands. A rewrite is kept only
-when the judge finds it behaves as the original on the run (it claims the same equations).
+when the judge finds it behaves as the original on the run (it claims the same equations), and
+never between stocks whose levels are copies of each other (identical stocks: there the matrix's
+cross readings are a choice between collinear columns, and a rewrite behaves differently off the
+run).
 
 This is a convention for an unidentifiable choice, not identification; it comes from
 docs/research/identifiability.md and judge-ties.md (ties broken by the simpler, conventional model)
@@ -20,6 +23,8 @@ and is measured in docs/research/revisit.md.
 from __future__ import annotations
 
 import math
+
+import numpy as np
 
 from ...identify import judge
 from ..lna import identify as _lna
@@ -46,7 +51,7 @@ def one_number(pieces: list[dict] | None, rel: float = 1e-4) -> bool:
     return not vals or max(vals) - min(vals) <= rel * max(1e-9, max(abs(v) for v in vals))
 
 
-def as_gaps(flows: list[dict]) -> list[dict]:
+def as_gaps(flows: list[dict], apart=None) -> list[dict]:
     """Each drain of b reading only other stocks, beside b's one constant outside inflow (in one
     piece), folded into that inflow as a goal gap (c - k x a)."""
     out = [dict(f) for f in flows]
@@ -56,6 +61,8 @@ def as_gaps(flows: list[dict]) -> list[dict]:
             continue
         reads = _reads(drain.get("rate") or {})
         if not reads or b in reads or any(k <= 0 for k in reads.values()):
+            continue
+        if apart is not None and not all(apart(b, a) for a in reads):
             continue
         ins = [f for f in out if f.get("from") is None and f.get("to") == b]
         if len(ins) != 1 or (ins[0].get("rate") or {}).get("form") != "constant":
@@ -73,7 +80,7 @@ def as_gaps(flows: list[dict]) -> list[dict]:
     return out
 
 
-def as_coflows(flows: list[dict]) -> list[dict]:
+def as_coflows(flows: list[dict], apart=None) -> list[dict]:
     """Each drain of c reading one other stock a, where a moves things to a measured stock b != c at
     a plain proportional rate, folded into that move as a co-flow using up c."""
     out = [dict(f) for f in flows]
@@ -85,6 +92,8 @@ def as_coflows(flows: list[dict]) -> list[dict]:
         if not reads or len(reads) != 1 or c in reads:
             continue
         (a, k), = reads.items()
+        if apart is not None and not apart(c, a):
+            continue
         moves = [m for m in out if m.get("from") == a and m.get("to") not in (None, c) and _plain(m) and float(m.get("ratio") or 1) == 1
                  and (m.get("rate") or {}).get("form") == "proportional" and m["rate"].get("stock") == a and float(m["rate"].get("k") or 0) > 0]
         if len(moves) != 1 or k <= 0:
@@ -103,10 +112,25 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return conventions(found, stocks, run, opts)
 
 
+def apart(run: dict, tol: float = 1e-6):
+    """apart(x, y): stock x's levels are not an affine copy of y's on the run (R^2 of x on y and a
+    constant below 1 - tol). Where they are (identical stocks), a drain of x read by y is not a
+    reading at all but the matrix's choice between collinear columns, and is left alone."""
+    levels = {k: np.asarray(v, dtype=float) for k, v in run["levels"].items()}
+
+    def f(x: str, y: str) -> bool:
+        a, b = levels.get(x), levels.get(y)
+        if a is None or b is None or a.std() == 0 or b.std() == 0:
+            return True
+        r = np.corrcoef(a, b)[0, 1]
+        return bool(r * r < 1 - tol)
+    return f
+
+
 def conventions(found: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """A noise-free model with its drains read by other stocks written as co-flows and goal gaps,
     when that behaves as the original on the run."""
-    flows = as_gaps(as_coflows(found.get("flows") or []))
+    flows = as_gaps(as_coflows(found.get("flows") or [], apart(run)), apart(run))
     if len(flows) == len(found.get("flows") or []):
         return found
     # the rewrite claims the same equations: it must behave the same on the run (it need not where

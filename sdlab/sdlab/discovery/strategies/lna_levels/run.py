@@ -59,12 +59,13 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
         if bic(other, d) < bic(cur, d):
             cur = other
     lna_bic = bic(cur, d)
+    at = lambda k: t[k + 1]  # noqa: E731
+    lna_flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
     cur = without_growth(cur, d)
     cur, levels, score = regroup(cur, d)
-    at = lambda k: t[k + 1]  # noqa: E731
     flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
     flows = level_flows(flows, levels, ids, at)
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
             "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
-            "levels": {ids[s]: len(g) for s, g in levels.items()}, "bic": {"lna": float(lna_bic), "levels": float(score)},
+            "lna_flows": lna_flows, "levels": {ids[s]: len(g) for s, g in levels.items()}, "bic": {"lna": float(lna_bic), "levels": float(score)},
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}

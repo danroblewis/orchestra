@@ -7,8 +7,8 @@ forward", and effect_hats / symbolic fit effect curves by least squares, which o
 runs of the linear effect (017) read the effect as links and drains. Here the product terms sit in
 lna's likelihood, where the move's draw leaving a and arriving in b is what tells a move scaled by c
 from a drain of a and a link into b. Noise-free runs, and runs with fewer than three stocks, are
-lna's (there is nothing for a third stock to scale). The result goes through lna's guard (the
-matrix's model is kept when this one is judged much worse).
+lna's (there is nothing for a third stock to scale). lna's guard (the matrix's model is kept when
+lna's is judged much worse) is applied to lna's own reading and then to the result.
 """
 
 from __future__ import annotations
@@ -30,9 +30,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return _lna(stocks, run, opts)
     if not found.get("products"):
         return _lna(stocks, run, opts)          # no product kept: lna's own reading
-    mine = judge(found["flows"], stocks, run, injections=opts.get("injections"))
     theirs = judge(base["flows"], stocks, run, injections=opts.get("injections"))
+    for flows in (found.pop("lna_flows"), found["flows"]):     # lna's guard on lna's reading, then on this
+        mine = judge(flows, stocks, run, injections=opts.get("injections"))
+        if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
+            return {**base, "lna": {"judged": {"lna": mine, "matrix": theirs}}}
     found["judged"] = {"lna": mine, "matrix": theirs}
-    if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
-        return {**base, "lna": {k: found[k] for k in ("judged", "nll", "dispersion")}}
     return found

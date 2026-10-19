@@ -50,11 +50,15 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if r is not None and found and not pulses:
         r = discover(stocks, run, rest, base)          # the pulses did not hold up: without them
     if r is not None:
-        flows = r["flows"] + [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])]
-        mine = judge(flows, stocks, run, injections=inj)
+        extra = [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])]
+        flows = r["flows"] + extra
         theirs = judge(base["flows"], stocks, run, injections=inj)
-        if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
-            return {**base, "lna": {"judged": {"lna": mine, "matrix": theirs}}}
+        # lna's guard on lna's own reading (pulses out) first, then on the result: where lna would
+        # keep the matrix's model, so does this
+        for fl in (r.pop("lna_flows") + extra, flows):
+            mine = judge(fl, stocks, run, injections=inj)
+            if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
+                return {**base, "lna": {"judged": {"lna": mine, "matrix": theirs}}}
         r["flows"] = flows
         r["pulses"] = {i: int((a != 0).sum()) for i, a in pulses.items()}
         return r

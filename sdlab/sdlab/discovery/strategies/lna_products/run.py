@@ -81,6 +81,8 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, margin: floa
         other = search(full, d)
         if bic(other, d) < bic(cur, d):
             cur = other
+    at = lambda k: t[k + 1]  # noqa: E731
+    lna_flows = to_flows(cur.atoms, cur.theta, ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs], P, at, *((conf[0], conf[2], bucket) if conf else ()))
     offer = []
     for a, th in zip(cur.atoms, cur.theta):
         if th <= 0 or a.era is not None or a.kind not in ("move", "out") or a.uses:
@@ -94,13 +96,12 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, margin: floa
         if gain > margin * np.log(d.dy.shape[1]):
             cur = g
     names = ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs]
-    at = lambda k: t[k + 1]  # noqa: E731
     flows = to_flows(cur.atoms, cur.theta, names, P, at, *((conf[0], conf[2], bucket) if conf else ()))
     flows = with_effects(flows, ids, pairs, norm, prev)
     if flows is None:
         return None
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
+            "flows": flows, "lna_flows": lna_flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
             "product_gain": gain, "products": [f"{names[a.driver]}" for a, th in zip(cur.atoms, cur.theta) if th > 0 and a.driver is not None and a.driver >= S],
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
 

@@ -73,6 +73,8 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, known: np.nd
         other = search(full, d)
         if bic(other, d) < bic(cur, d):
             cur = other
+    at = lambda k: t[k + 1]  # noqa: E731
+    lna_flows = to_flows(cur.atoms, cur.theta, ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs], P, at, *((conf[0], conf[2], bucket) if conf else ()))
     offer = []
     for a, th in zip(cur.atoms, cur.theta):
         if th > 0 and a.era is None and a.kind in ("move", "out") and not a.uses:
@@ -84,7 +86,6 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, known: np.nd
     cur = without_growth(cur, d)
     cur, levels, _ = regroup(cur, d)
     names = ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs]
-    at = lambda k: t[k + 1]  # noqa: E731
     flows = to_flows(cur.atoms, cur.theta, names, P, at, *((conf[0], conf[2], bucket) if conf else ()))
     if pairs:
         flows = with_effects(flows, ids, pairs, norm, prev)
@@ -92,6 +93,6 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, known: np.nd
             return None
     flows = level_flows(flows, levels, ids, at)
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
+            "flows": flows, "lna_flows": lna_flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
             "levels": {ids[s]: len(g) for s, g in levels.items()},
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
