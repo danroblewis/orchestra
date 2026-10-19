@@ -226,8 +226,9 @@ strategies:
       exactly an SD Lab table effect and is linear in its table values. Pairs (flow, stock) are
       screened on what the rows leave unexplained, the best curves are fitted jointly across rows,
       and a candidate replaces the base model only if it explains both halves of the data and
-      prices better by BIC.
-    helps_with: Effects - linear (017) and with a kink (018) - with counting noise too.
+      prices better by BIC. Every model's outside inflows are also pooled into a few values and
+      re-cut where they really change, since many inflow pieces make a drain look faster than it is.
+    helps_with: Effects - linear (017) and with a kink (018) - and, through the re-cut inflows, drains and chains under counting noise.
     builds_on: matrix
     status: active
     note: Research document docs/research/effect-hats.md.
