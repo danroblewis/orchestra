@@ -8,7 +8,7 @@ the swap is kept when the likelihood prefers it.
 
 from __future__ import annotations
 
-from .fit import Data, Fitted, fit
+from .fit import TRIAL, Data, Fitted, fit, polish
 
 
 def _alternatives(a, atoms):
@@ -33,12 +33,12 @@ def swaps(cur: Fitted, d: Data, rounds: int = 6, margin: float = 2.0) -> Fitted:
                     continue
                 atoms = list(cur.atoms)
                 atoms[i] = b
-                g = fit(atoms, d, cur.theta, maxiter=200, tau=cur.tau)
+                g = fit(atoms, d, cur.theta, maxiter=TRIAL, tau=cur.tau)
                 need = margin if b.kind == "gap" else 1e-6
                 if g.nll < cur.nll - need and (best is None or g.nll < best.nll):
                     best = g
         if best is None:
             return cur
-        cur = best
+        cur = polish(best, d)
     return cur
 

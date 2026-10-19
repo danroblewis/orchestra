@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 
 from .atoms import Atom
-from .fit import Data, Fitted, fit
+from .fit import TRIAL, Data, Fitted, fit, polish
 
 
 PER = (0.01, 100.0)          # the co-flow ratios offered (beyond them, a near-zero move or drain)
@@ -42,7 +42,7 @@ def with_coflows(cur: Fitted, d: Data) -> Fitted:
     return fit(atoms, d, np.append(cur.theta, [th for _, th in extra]), tau=cur.tau)
 
 
-def refine_per(cur: Fitted, d: Data, steps: int = 14) -> Fitted:
+def refine_per(cur: Fitted, d: Data, steps: int = 8) -> Fitted:
     """Each co-flow's per, by golden-section search on its log (the other numbers refitted)."""
     for i in range(len(cur.atoms)):
         a = cur.atoms[i]
@@ -53,9 +53,9 @@ def refine_per(cur: Fitted, d: Data, steps: int = 14) -> Fitted:
         def at(p, cur=cur, i=i, a=a, c=c):
             atoms = list(cur.atoms)
             atoms[i] = a.with_(uses=((c, float(p)),))
-            return fit(atoms, d, cur.theta, maxiter=200, tau=cur.tau)
+            return fit(atoms, d, cur.theta, maxiter=TRIAL, tau=cur.tau)
 
-        lo, hi = np.log(per / 2), np.log(per * 2)
+        lo, hi = np.log(per / 1.6), np.log(per * 1.6)
         g = (np.sqrt(5) - 1) / 2
         x1, x2 = hi - g * (hi - lo), lo + g * (hi - lo)
         f1, f2 = at(np.exp(x1)), at(np.exp(x2))
@@ -68,5 +68,7 @@ def refine_per(cur: Fitted, d: Data, steps: int = 14) -> Fitted:
                 lo, x1, f1 = x1, x2, f2
                 x2 = lo + g * (hi - lo)
                 f2 = at(np.exp(x2))
-        cur = min((cur, f1, f2), key=lambda h: h.nll)
+        best = min((f1, f2), key=lambda h: h.nll)
+        if best.nll < cur.nll:
+            cur = polish(best, d)
     return cur

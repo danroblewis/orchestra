@@ -16,7 +16,7 @@ def _flow(src, dst, rate, per_step, **extra) -> dict:
     return {"from": src, "to": dst, "ratio": 1, "rate": rate, "rates": [rate], "perStep": per_step, "nearly": [], "bothWays": False, **extra}
 
 
-def to_flows(atoms: list[Atom], theta: np.ndarray, ids: list[str], prev: np.ndarray, at, labels: list | None = None, spans: list | None = None) -> list[dict]:
+def to_flows(atoms: list[Atom], theta: np.ndarray, ids: list[str], prev: np.ndarray, at, labels: list | None = None, spans: list | None = None, bucket: list | None = None) -> list[dict]:
     """at(k): the time of step k's end. Inflow atoms over spans of steps become one flow with pieces;
     atoms per era become one flow whose rate follows the era (byTime)."""
     means = prev.mean(axis=1)
@@ -76,7 +76,8 @@ def to_flows(atoms: list[Atom], theta: np.ndarray, ids: list[str], prev: np.ndar
         scale = 1.0 if driver is None else means[driver]
         if labels and len(labels) > 1 and any(e is not None for e in eras):
             shared = sum(th for a, th in items if a.era is None)
-            by_label = [shared + sum(th for a, th in items if a.era == c) for c in range(len(labels))]
+            bucket = bucket or list(range(len(labels)))
+            by_label = [shared + sum(th for a, th in items if a.era == bucket[c]) for c in range(len(labels))]
             rates = [rate(k) for k in by_label]
             by_time = [{"from": sp["from"], "to": sp["to"], "rate": rates[labels.index(sp["label"])]} for sp in spans]
             k = sum(by_label) / len(by_label)

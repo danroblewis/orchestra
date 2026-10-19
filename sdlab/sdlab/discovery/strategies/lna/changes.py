@@ -9,7 +9,10 @@ import numpy as np
 
 from ...changes import pelt
 from .atoms import Atom, features, stoich, variances
-from .fit import Data, Fitted, fit
+from .fit import TRIAL, Data, Fitted, fit, polish
+
+
+SCREEN = 0.25        # the share of the BIC price the pieces' gain before refitting must reach
 
 
 def _moments(cur: Fitted, d: Data) -> tuple[np.ndarray, np.ndarray]:
@@ -42,12 +45,20 @@ def pieces(cur: Fitted, d: Data, min_len: int = 5, mult: float = 1.0, price: flo
             atoms = [cur.atoms[i] for i in keep] + [Atom("in", dst=s, span=None if len(new) == 1 else (a, b)) for a, b, _ in new]
             if sorted(atoms, key=repr) == sorted(cur.atoms, key=repr):
                 continue
-            g = fit(atoms, d, np.append(cur.theta[keep], [v for _, _, v in new]), tau=cur.tau)
+            if len(new) > n_old:
+                # what the pieces would gain at most, in the standardised residual (the inflow as
+                # it stands taken out; a refit moves the other flows too, so the bar is lower than
+                # the price): fit only cuts that could pay for themselves
+                z = (y - own) / sd[s]
+                gain = 0.5 * sum((b - a) * float(z[a:b].mean()) ** 2 for a, b, _ in new)
+                if gain < SCREEN * price * (len(new) - n_old):
+                    continue
+            g = fit(atoms, d, np.append(cur.theta[keep], [v for _, _, v in new]), tau=cur.tau, loose=True)
             gain = cur.nll - g.nll - price * (len(new) - n_old)
             if gain > 0 and (best is None or gain > best[0]):
                 best = (gain, g)
         if best is not None:
-            cur = best[1]
+            cur = polish(best[1], d)
     return cur
 
 
@@ -71,10 +82,10 @@ def merge_eras(cur: Fitted, d: Data) -> Fitted:
                 continue
             rest = [j for j in range(len(cur.atoms)) if j not in split]
             th = float(np.mean([cur.theta[i] for i in split]))
-            g = fit([cur.atoms[j] for j in rest] + [cur.atoms[split[0]].with_(era=None)], d, np.append(cur.theta[rest], th), maxiter=300, tau=cur.tau)
+            g = fit([cur.atoms[j] for j in rest] + [cur.atoms[split[0]].with_(era=None)], d, np.append(cur.theta[rest], th), maxiter=TRIAL, tau=cur.tau)
             cost = (g.nll - cur.nll) / (len(split) - 1)
             if cost < price and (best is None or cost < best[0]):
                 best = (cost, g)
         if best is None:
             return cur
-        cur = best[1]
+        cur = polish(best[1], d)
