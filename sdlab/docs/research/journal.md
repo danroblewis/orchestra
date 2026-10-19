@@ -619,3 +619,22 @@ The physics agent was also given particles 170, 171 and 195. 10 agents are runni
 - **The shared judge:** an inputs parameter on `identify.judge`?
 - **The behaviour grader:** swap only effect-free constants? Note: the research round found the merged `c + kx` flow's c gets counted twice by the grader's inflow swap. This is the same issue.
 - **Retiring:** retire dominated strategies?
+
+## 2026-10-19 09:00 (note: distilling 113-117 and the control cases)
+
+**Finished:** distilled cases 220, 221, 222, 224 and 225 (docs/LADDER.md, "Distilled from the new canonical cases and the control cases"). They cover:
+- 113's one-way reading of two-way flows: 220 (a signed stock) and 221 (an ordinary stock);
+- 114's MIN, read as a linear blend: 222;
+- 114's threshold hiring, read as a move out of the backlog: 224;
+- the thermostat's switch with memory: 225.
+
+All six leaders fail every cell of the five cases (`sdlab-ladder run --strategies combined,structures,kalman_lna,odefit,realistic_hats,matrix --cases 220,...,225`). 115-117's other failures are already isolated by 122, 133, 134, 137 and 172; 200-215 by 216-218. Engine and scoring gaps went to queue item 2k.
+
+**Needs you**
+- **115 can't pass by construction.** Its graduation reads a smoothing of the input, which the scorer leaves unscored. So any drain a strategy finds is spurious: every leader has noise-free skill@20 of 100% and still fails. Options:
+  - score such a rate as a hidden path fed by the input, as a DELAY3 of an input is scored;
+  - or drop the spurious count for flows that touch an unscored truth flow.
+
+  Either one can turn fails into passes (CLAUDE.md invariant 5).
+- **Found models are floored at 0.** Should found models be allowed signed stocks and two-way flows (the pinned `simulate.py`)? The scorer already takes `two_way: true` for the equations. skill@H, though, runs found models floored, so 113 and 220 can't get the truth's behaviour.
+- **A pipe read as an Erlang chain passes.** structures passes 117 noise-free with a 5-stage exponential chain scored as delay 5. Should a DELAY FIXED's shape count (pipe against Erlang), or is the delay time enough?

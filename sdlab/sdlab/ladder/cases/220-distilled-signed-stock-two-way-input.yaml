@@ -1,0 +1,11 @@
+title: "A signed stock filled and emptied by an input that changes sign"
+level: 8
+tags: [distilled, signed, two-way, input]
+tests: "two-way flows of a signed stock: X (no floor) gains a measured input u that swings through 0 (a sine of 10 around 0, then shifted by 3 and -4) and relaxes towards 0 at 0.1 x X, so both the flow and the stock change sign; from 113-canonical-harmonic-oscillator: every leader writes the rates as one-way (floored) flows, so the found model stops moving below 0"
+seed: 220
+inputs:
+  u: "sin(10, 40) + step(3, 400.5) - step(7, 1200.5)"
+stocks:
+  X: 0 signed
+flows:
+  outside <-> X as net: "1 * u - 0.1 * X"

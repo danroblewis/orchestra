@@ -1,0 +1,26 @@
+title: "Hiring that starts when another stock passes a threshold"
+level: 10
+tags: [distilled, effect, effect-table, threshold, injection]
+tests: "an outside inflow that is a table of another stock with a dead zone: R is hired at table(B), 0 while the backlog B is under 375 and rising to 15 at 750 and 25 from 1500 on, and leaves at 0.05 x R; B gains 40 and drains at 0.1 x B (about 400, inside the dead zone), and announced bursts of 800 every 150 steps push it through the table; from 114-canonical-workforce-capacity (hiring = table(task backlog), with the same points): the leaders write hiring as a move out of B (B -> R at 0.018 x B) or a link, and pieces"
+seed: 224
+stocks: {B: 400, R: 5}
+flows:
+  outside -> B: 40
+  B -> outside: 0.1 * B
+  outside -> R as hiring:
+    rate: "1 * effect(B, table, [[0, 0], [375, 0], [500, 2.5], [750, 15], [1000, 20], [1500, 25], [2000, 25]])"
+  R -> outside: 0.05 * R
+injections:
+  - {t: 100, stock: B, amount: 800}
+  - {t: 250, stock: B, amount: 800}
+  - {t: 400, stock: B, amount: 800}
+  - {t: 550, stock: B, amount: 800}
+  - {t: 700, stock: B, amount: 800}
+  - {t: 850, stock: B, amount: 800}
+  - {t: 1000, stock: B, amount: 800}
+  - {t: 1150, stock: B, amount: 800}
+  - {t: 1300, stock: B, amount: 800}
+  - {t: 1450, stock: B, amount: 800}
+  - {t: 1600, stock: B, amount: 800}
+  - {t: 1750, stock: B, amount: 800}
+  - {t: 1900, stock: B, amount: 800}

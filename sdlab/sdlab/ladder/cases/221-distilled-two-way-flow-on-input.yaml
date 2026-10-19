@@ -1,0 +1,11 @@
+title: "A two-way flow on a measured input that changes sign"
+level: 8
+tags: [distilled, two-way, input]
+tests: "a two-way flow of an ordinary (unsigned) stock: X gains u - 0.1 x X in one flow, where the measured input u swings through 0 (4 + a sine of 10, shifted by 3 and -5), so the flow runs out of X whenever u is below 0.1 x X (X stays about 20-80); the one-way form that SD Lab's found models can write is an inflow c + u and a drain c + 0.1 x X with c at least 11; from 113-canonical-harmonic-oscillator (position fills and empties at its speed): the leaders write the rate as an inflow 1 x u, floored at 0 when u is negative"
+seed: 221
+inputs:
+  u: "4 + sin(10, 40) + step(3, 400.5) - step(5, 1200.5)"
+stocks:
+  X: 40
+flows:
+  outside <-> X as net: "1 * u - 0.1 * X"

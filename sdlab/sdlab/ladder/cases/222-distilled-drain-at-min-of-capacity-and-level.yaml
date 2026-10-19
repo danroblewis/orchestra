@@ -1,0 +1,34 @@
+title: "A drain at the lesser of a staff capacity and the backlog"
+level: 10
+tags: [distilled, min, capacity, coupled, injection]
+tests: "a drain that is the MIN of two expressions: backlog X is worked off at min(0.5 x X, 0.2 x Y), half the backlog a step or the staff Y's capacity, whichever is less; Y gains 1 and loses 0.01 x Y (about 100), and announced hires (+80) and departures (-50) every 300 steps keep it between about 50 and 180, so the capacity moves between 10 and 36; X gains 12 a step and announced bursts of 300 every 150 steps push it above the capacity for a stretch; from 114-canonical-workforce-capacity (tasks completed at MIN(4 x experts - 0.67 x rookies, backlog)): the leaders write the MIN as one function of one argument (a constant drain with pieces, a table of X, or a link from Y), never both"
+seed: 222
+stocks:
+  X: 24
+  Y: 100
+flows:
+  outside -> X: 12
+  X -> outside as work: "min(0.5 * X, 0.2 * Y)"
+  outside -> Y: 1
+  Y -> outside: 0.01 * Y
+injections:
+  - {t: 60, stock: X, amount: 300}
+  - {t: 210, stock: X, amount: 300}
+  - {t: 360, stock: X, amount: 300}
+  - {t: 510, stock: X, amount: 300}
+  - {t: 660, stock: X, amount: 300}
+  - {t: 810, stock: X, amount: 300}
+  - {t: 960, stock: X, amount: 300}
+  - {t: 1110, stock: X, amount: 300}
+  - {t: 1260, stock: X, amount: 300}
+  - {t: 1410, stock: X, amount: 300}
+  - {t: 1560, stock: X, amount: 300}
+  - {t: 1710, stock: X, amount: 300}
+  - {t: 1860, stock: X, amount: 300}
+  - {t: 130, stock: Y, amount: 80}
+  - {t: 430, stock: Y, amount: -50}
+  - {t: 730, stock: Y, amount: 80}
+  - {t: 1030, stock: Y, amount: -50}
+  - {t: 1330, stock: Y, amount: 80}
+  - {t: 1630, stock: Y, amount: -50}
+  - {t: 1930, stock: Y, amount: 80}

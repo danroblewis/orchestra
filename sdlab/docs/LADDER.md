@@ -1532,6 +1532,60 @@ kalman_lna pass the noise-free cells (kalman_lna equivalent on 141 none-short, s
 none-long) and fail every meas cell of 141 and 142 and 143 meas-long, the physics' own mistake.
 odefit (output error, docs/research/odefit.md) passes all 12.
 
+### Distilled from the new canonical cases and the control cases (220-225)
+
+The canonical cases 113-117 (ea1a8dd) use the engine features of queue item 2d (two-way flows,
+signed stocks, expressions, switches, pipelines), which no strategy knows. Each leader's failure on
+them, on the control cases 200-215 and on the canonical and twin cases no leader passes was read with
+`sdlab-ladder show`, and each mechanism no case covered became one case.
+
+- **How they were confirmed.** Each candidate was run on the six leaders before it was kept: it
+  had to repeat the hard case's mistake. `sdlab-ladder check` says ok for all five, and the truth
+  given as a found model passes its own equation scoring in all four variants.
+- **The leaders' results.**
+  - Commands: `sdlab-ladder run --strategies combined,structures,kalman_lna,odefit,realistic_hats,matrix --cases 113,...,117 --jobs 2 --timeout 300`
+    (108 runs: 3 pass, 105 fail), then the same on 220-225 (144 runs, no errors or timeouts).
+    222 was then strengthened and re-run: 24 runs, all fail.
+  - When and what code: 19 October 2026, single-threaded, at strategy commits 19fd8f8, ebe9a4f
+    and fad2649. combined ran with another agent's uncommitted patch (3a98acd), as the store records.
+  - Each cell: passes of 4, then the mean fresh skill@20 (each run clipped at -100%).
+- **The gap at 223.** 223 was a candidate (a measured input through a DELAY FIXED of 5) that was
+  dropped: it shows 134's mistake, not 117's.
+
+| hard-case failure (where it came from) | distilled case | combined | structures | kalman_lna | odefit | realistic_hats | matrix | the same mistake on the small case (combined unless named) |
+|---|---|---|---|---|---|---|---|---|
+| 113 harmonic oscillator: position and speed swing through 0; every leader writes one-way flows (`outside -> position = 0.967 speed`, a spurious drain 0.025 position), the found model stops at 0 (skill@20 17%) | 220-distilled-signed-stock-two-way-input | 0/4, 72% | 0/4, 72% | 0/4, 45% | 0/4, 74% | 0/4, 74% | 0/4, 74% | noise-free: exactly the truth's numbers, `outside -> X = 1 x u` and `X -> outside = 0.1 x X`, but written one-way (floored), so the whole flow is 67% off; counts-long: a constant drain in 700 pieces |
+| 113 (the sign change on an ordinary stock): the leaders read a rate that runs both ways as an inflow floored at 0 | 221-distilled-two-way-flow-on-input | 0/4, 100% | 0/4, 100% | 0/4, 97% | 0/4, 97% | 0/4, 96% | 0/4, 95% | `0.91 x u` plus 150 inflow pieces, a constant drain 6.1 and 0.088 x X (truth u - 0.1 X, expressible one-way as 11 + u in and 11 + 0.1 X out); counts-long: 1.12 x u and a drain 0.23 X against a self-inflow 0.095 X |
+| 114 workforce: completion = MIN(4 E - 0.67 R, backlog) found as `-437 + 2.655 R` plus a constant 322.9 (no E term) | 222-distilled-drain-at-min-of-capacity-and-level | 0/4, 60% | 0/4, 60% | 0/4, 60% | 0/4, -100% | 0/4, -100% | 0/4, -100% | counts-long: a constant drain 29.3 plus 0.0215 x Y (matrix and realistic_hats: 0.0294 X + 0.0215 Y, a linear blend of the two arguments); noise-free: a constant 27.9 with 40 inflow pieces |
+| 114 workforce: hiring = table(backlog), 0 below 375, found as a move `Task_Backlog -> Rookies = 0.0184 x backlog` | 224-distilled-inflow-switched-on-by-other-stock | 0/4, 95% | 0/4, 95% | 0/4, 95% | 0/4, 90% | 0/4, 92% | 0/4, 90% | noise-free: the move `B -> R = 0.0276 x B` taken out of B's drain (0.072 + 0.028 = 0.1), with 105 pieces on R's drain, as on 114; counts-long: R's inflow as 1.66 in 41 pieces and a self-inflow 0.0099 R |
+| phys-thermostat (the switch's memory; its found model is linear in the setpoint plus 75 pieces) and 210 on/off (no memory); now expressible (2d `switches:`) | 225-distilled-heater-switch-with-memory | 0/4, 0% | 0/4, 0% | 0/4, 0% | 0/4, 0% | 0/4, 0% | 0/4, 0% | a constant inflow 3.99 in 183 pieces (one per switch) and the right drain 0.02 T; matrix counts-long: 7.7 in 176 pieces and a faster drain 0.0385 (123's mistake) |
+
+The analysis (`sdlab-ladder analyse`) says achievable for 220, 221, 222 and 224 in the variants
+shown (p 0.99-1.00); 225 is not analysed (its truth reads a switch).
+
+**The other hard cases, already isolated by an existing case** (no new case):
+
+| hard-case failure | existing case |
+|---|---|
+| 115 enrolment pipeline: no leader finds the delay | none: a scoring gap, not reduced (below) |
+| 116 World3 pollution: the DELAY3 on the measured input lost (combined: `0.078 x generation` plus 299 pieces, odefit and matrix `0.068 x generation` plus 329; structures finds it, delay 20) | 134-delayed-measured-input |
+| 116: the ratio drain PPOL / (2.1 x AHLM(PPOL / 136)) written as a linear drain (0.42-0.50 x PPOL) | 122-concave-drain. A trial case (0.5 X / m(X / 60), spills of 400) gave 122's `c + k X` noise-free (0.179 X + 9.9 for matrix and combined), and combined passed it on counts-long with a table of X: the same mistake as 122, so it was not added |
+| 117 fixed delay line: no hidden stage (combined, odefit: moves Backlog -> Inventory and pieces); structures passes the noise-free runs (a 5-stage chain scored as delay 5) and loses the stage with counts (links from Backlog and orders) | 133-hidden-supply-line, 172-third-order-supply-line. A pipe read as an Erlang chain is not penalised by the scorer, so "a fixed delay read as exponential" is not a failure on the ladder |
+| 111 arrayed switching: noise-free unidentifiable (link <-> move); the found constants of one piece come from the conserved total (5,000), not from the negative injections | 137-closed-market-bass. A trial case (a closed pair with a 4,999 injection at step 1 and announced transfers) gave the same constants: `outside -> A = 200`, `B -> outside = 200` |
+| 200-215 control cases | 216-218 (a319289), 123 (210's on/off), 063, 105 and 134 (205, 206 dead time), 208 (feedforward: already two flows, its own smallest probe), 216 (the integral stock's exact flows) |
+| 104, 108, 109 and the real-data twins (no leader passes) | the earlier distillation above (122, 123, 103, 120, 126, 127, 136-139) |
+
+**Could not be reduced, and why:**
+
+- **115 enrolment pipeline.** Graduation is `smooth3(enrolment, 4)`, and a rate that reads a
+  smoothing is not scored (queue item 2k). So every drain a strategy finds counts as spurious, and
+  no model can pass. Every leader's noise-free model has skill@20 of 100%: `0.35 x Students` with
+  enrolment scaled 1.41. A smaller case of the same mechanism would hit the same gap, so none was
+  written.
+- **113 itself.** 220 and 221 isolate the leaders' mistake (one-way flows). But a found model is
+  simulated floored at 0 (`sdlab/discovery/simulate.py`, pinned), so even a strategy that writes
+  `two_way: true` (the scorer honours it) gets a floored model's behaviour. This is queue item 2k.
+
 ## Control cases (200-215, tag `control`)
 
 Feedback loops from the control textbooks (queue item 1a; Åström & Murray's *Feedback Systems*,

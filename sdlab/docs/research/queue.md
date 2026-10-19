@@ -16,6 +16,11 @@ for `combined` on the test cases).
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
    - lna: `identify(..., base=...)` and a public flow writer `run.written`, so the variants stop recomputing and copying.
 
+2k. **Engine and scoring gaps found distilling 113-117** (2026-10-19; docs/LADDER.md, "Distilled from the new canonical cases"). Harness items, except the third, which touches the pinned discovery library and needs the user:
+   - `sim.amounts` (sdlab/ladder/sim.py) crashes on a truth flow whose rate is *linear* and reads a switch (`8 * heater`): `_compile.<locals>.<lambda>() takes 1 positional argument but 2 were given`, so the case's truth cannot be scored. 225 writes its heater as the expression `8 * max(0, heater)` to get round it; fix it so the plain form scores too;
+   - a rate that reads a smoothing or a `delayed` stage is not scored (LADDER.md "Not done"): 115's graduation (`smooth3(enrolment, 4)`) has no part, so every drain a strategy finds for it is spurious and 115 cannot pass (noise-free skill@20 100% for every leader, all fail). A smaller case of that mechanism would hit the same gap, so it is not distilled until the scorer reads such a rate (e.g. as a hidden path fed by the input);
+   - found models cannot be signed: the scorer honours `two_way: true` on a found flow (the truth given as found passes 113, 220 and 221), but skill@H runs a found model through `sdlab/discovery/simulate.py`, which floors every rate and level at 0. A strategy that writes 220's or 113's truth exactly still gets the behaviour of a floored model. Needs a signed/two-way option in the found-model simulator (pinned library: user approval) or a scorer-side simulator for found two-way flows.
+
 ## Started
 
 - 2026-10-19 06:30: 2d (harness engine features), 6 (matrix_v2), and distilled fixes for 156-160 and 216-218.

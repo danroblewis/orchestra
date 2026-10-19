@@ -1,0 +1,11 @@
+title: "A heater switched on and off with memory (hysteresis)"
+level: 11
+tags: [distilled, switch, control, hysteresis]
+tests: "an on/off switch with memory: the heater (a hidden 0/1 switch) turns on when T falls below 180 and off when it rises above 220, and between the two keeps its last state; T gains 8 x heater and loses 0.02 x T, so it cycles between about 180 and 220 with a period of about 20 steps, heating and cooling through the same levels; from phys-thermostat (and 210-control-on-off-heater, which has no memory): recovered as a switch of T with its two thresholds, not as a constant inflow with a faster drain (123's mistake), a table of T, or pieces"
+seed: 225
+switches:
+  heater: {of: T, on_below: 180, off_above: 220, initial: 1}
+stocks: {T: {initial: 200, unit: decidegC}}
+flows:
+  outside -> T as heating: "8 * max(0, heater)"
+  T -> outside: 0.02 * T
