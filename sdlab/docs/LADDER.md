@@ -911,6 +911,228 @@ What they find against the physics:
   (H <- pump, T <- outside, V <- force). Their own refits do not take the input columns
   (`input_columns`, Inputs above): a fix for those strategies, not for the scorer.
 
+## Particle cases (`particles/`, `cases/particles/`)
+
+The physics cases above are a handful of ODEs with one to three stocks. The **particle cases** are
+richer physics where almost everything is measured: individual particles (balls, molecules) move
+under explicit rules, and the data are the **count of particles in each region at every step**. The
+data never come from an SD model fed to the SD engine, yet the counts have a known SD answer:
+averaged over many particles they follow the **mean-field (master-equation) model**, each region a
+stock, each move a proportional flow whose rate is its per-step probability, each arrival stream an
+inflow, and a binding A + B -> C a product. So a particle case can be scored on the equations where
+that model is exact, and on prediction everywhere (tags `physics` and `particles`; the physics view,
+with its own aggregate and leaderboard columns; never in the Tests pass rate).
+
+**Why a sibling kind, not the physics kind.** The data plumbing, the physics view, the coupling
+table, the behaviour grading against the system (not an SD truth) and the 5,000-step long run are
+the physics kind's and are reused (a particle case carries `physics: {...}` beside `particles:
+{...}`, and `physics/score.py`'s `grade` does the structure, behaviour and long run). The scoring
+differs enough to need its own module: a physics case has no SD truth (structure against the
+physics' couplings, skill against a fitted best SD model), while a particle case on the exact and
+measured tiers **has** one, the mean-field model, so its status is the ladder's own equation scorer
+(`score.equations`) against it; its noise is the particles' own (no `none` or `meas` variant); and
+its reference is the mean-field model, not a fit. Particle cells have their own aggregate
+(`summary()["particles"]`), so the 7 ODE cases' physics numbers are unchanged.
+
+| case | system | regions | particles (mean) | what moves | tier | flows |
+|---|---|---|---|---|---|---|
+| part-galton-board | Galton board | 15: 10 peg cells, 5 bins | ~800 | balls dropped at a daily-cycling measured rate fall a row with p 0.6 a step, right with q 0.55, into bins with holes (0.015-0.025) | exact | 26 |
+| part-conveyor-bottleneck | conveyor | 8 segments | ~220 | balls hop a segment with p 0.4 a step, 0.07 through the narrow chute (segment 5, a queue builds), fed at a measured rate and in announced batches | exact | 9 |
+| part-stirred-chambers | stirred chambers | 9 chambers (3 x 3, 5 x 5 cells) | ~3,350 | particles anywhere in their chamber at each step's start (a fan) take one lattice step; crossing an opening of width w is w / 25 x 0.2 a step each way; a drain in the last chamber; two openings into the centre shut for the second half of every 400 steps (announced eras) | exact | 26 |
+| part-reacting-particles | stirred reaction | 3: A, B, C | ~300 | A and B fed at measured rates land in random cells of 2,000 and bind on meeting (0.8) into C; A, B leak, C is drawn off | measured | 6 (a product with its co-flow) |
+| part-diffusion-chambers | chambers | 9 chambers (3 x 3, 9 x 9 cells) | ~3,800 | the same chambers without stirring: 10 lattice steps a step, openings of 1-2 cells, shut on the same schedule | prediction | 26 (measured) |
+| part-shelves-overflow | shelves | 13: 9 zones, 4 bins | ~1,250 | balls from two hoppers fall through a field of 6 tilted shelves (fall 0.85 with sideways drift, roll 0.9) into 4 bins of capacity 160 with holes; a ball arriving at a full bin rolls on to the next | prediction | 41 (measured) |
+| part-capacity-gate | gate | 3: hopper, queue, tray | ~170 | the queue drains through a gate passing at most 4 balls a step (each tries with 0.35) | prediction | 4 (measured) |
+| part-ball-plant | plant | 32 | ~880 | the Galton board's bins empty into a 2 x 3 grid of sorting chambers, which feed an 8-segment conveyor whose last segment is a capacity gate (at most 8 a step) into a reaction tank (A + B -> C) | prediction | 56 (measured) |
+
+**The engine** (`engine.py`, `systems.py`). numpy, one row per particle (its region, and a lattice
+position for the spatial systems), deterministic per seed: the initial counts, the drivers (measured
+inputs: the dropper's or feeder's setting, the expected arrivals per step; announced injections;
+the shut openings) and the motion are three streams spawned from the seed, each drawn in order, so a
+short run is the start of the long one and the fresh run (seed + 1) starts from other counts with
+other drivers. A step is the SD engine's Euler step: the step's injections first, then every particle
+decides its move from the state at the start of the step, then the step's arrivals (Poisson around
+the input). Levels are whole particles. 2,000 steps of 3,000-9,000 particles take 0.1-2 s
+(`tests/test_ladder_particles.py`); the unstirred chambers, 10 lattice steps per step, are the
+slowest (~1 s per 300 steps).
+
+**The truth** (`meanfield.py`). For every system the mean-field model is written in SD Lab's forms:
+`A -> B: k x A` for a move at probability k, `outside -> X: share x input`, and a binding as `A -> C:
+(kappa x 100) x A x effect(B, linear, normal=100)` with `uses(B, 1)`. Its numbers come from:
+
+- **exact** tier: the rules' own probabilities (the Galton board's pf q and pf (1 - q), the conveyor's
+  hop probabilities, the stirred chambers' w / 25 x move / 4 and the drain's 4 / 25 x pd). Every
+  particle moves on its own with probabilities that depend only on its region, so E[counts at t + 1 |
+  counts at t] is exactly the mean-field model's step: the model is exact in expectation, and its
+  forecasts are the minimum-mean-squared-error forecasts from the counts.
+- **measured** tier (the reaction): transition frequencies over 20,000 steps of one particle run
+  (seed + 1000): k = moves from i to j / particle-steps in i, kappa = bindings / sum of A x B. Binding needs an A and a B in the
+  same cell, so the expected bindings are close to, not exactly, kappa x A x B (measured kappa
+  3.77e-4 against the rules' 0.8 / 2,000 = 4e-4: two particles cannot both bind one partner). It is
+  scored as equations because it tracks the particles within sampling error (below).
+- **prediction** tier: the same measured frequencies (a move seen fewer than 20 times, or below
+  1e-4 a step, left out), then refitted: no SD form is exact for a capacity gate (the flow is
+  E[min(Binomial(Q, p), m)]), bins that overflow into each other, fall times that are not geometric,
+  or unstirred chambers (particles near an opening are used up faster than the walk brings more, and
+  one that has just crossed often crosses back), so the measured model is only the starting point.
+
+**The check** (`meanfield.check`, stored in the case as `particles.check`). 40 particle runs from the
+case's start with the case's drivers (only the motion differs), 300 steps: z = (their average - the
+mean-field model) / the average's standard error, at every step and region. Within sampling error z
+is a standard normal (z rms ~1, 99.7% within 3). `python -m sdlab.ladder.particles report`:
+
+| case | system | tier | regions | particles (mean) | flows | check z rms | check gap | noise observed / Poisson | per-move binomial / Poisson |
+|---|---|---|---|---|---|---|---|---|---|
+| part-conveyor-bottleneck | conveyor | exact | 8 | 221 | 9 | 1.03 | 3.0% | 0.61 | 0.60 |
+| part-galton-board | galton | exact | 15 | 806 | 26 | 1.05 | 2.0% | 0.57 | 0.71 |
+| part-reacting-particles | reaction | measured | 3 | 305 | 6 | 0.81 | 1.3% | 0.98 | 0.99 |
+| part-stirred-chambers | stirred-chambers | exact | 9 | 3,351 | 26 | 1.08 | 1.3% | 0.97 | 0.98 |
+| part-capacity-gate | gate | prediction | 3 | 169 | 4 | 55.94 | 109.2% | – | – |
+| part-diffusion-chambers | chambers | prediction | 9 | 3,808 | 26 | 6.41 | 9.3% | – | – |
+| part-shelves-overflow | shelves | prediction | 13 | 1,245 | 41 | 101.10 | 33.5% | – | – |
+| part-ball-plant | plant | prediction | 32 | 877 | 56 | 1.67 | 4.3% | – | – |
+
+("check gap": the rms gap between the 40 runs' average and the mean-field model over the mean level;
+the noise columns only where equations are scored.)
+
+Exact and measured cases track within sampling error (z rms 0.8-1.1, the gap 1-3% of the mean level);
+the prediction-only cases do not (z rms 6-56; the plant's 1.7 over its first 300 steps grows when the
+gate saturates). `tests/test_ladder_particles.py` asserts both sides, and that the stirred chambers'
+measured crossing frequencies equal w / 25 x 0.2.
+
+**Noise.** The particles' own randomness is the noise: a move at k a step from n particles is
+Binomial(n, k) (variance n k (1 - k)), the moves out of one region are multinomial (negatively
+correlated), and arrivals are Poisson around the input. The ladder's counting noise draws every flow
+Poisson around its rate (variance n k). So the particles are a little quieter than counting noise,
+by 1 - k per move: on the long runs the one-step residual's variance (each region's count minus the
+mean-field model's one step from the counts before) over the counting-noise variance is the
+"observed / Poisson" column above (median over regions): 0.57-0.61 on the Galton board and the
+conveyor, whose moves are large (0.27-0.4 a step), 0.97-0.98 where they are small (chambers,
+reaction). The per-move binomial beside it takes each move alone; the multinomial's negative
+correlation between the moves out of one region (a ball goes left or right, not both) lowers the
+Galton board's further. The
+scorer's tolerances for counting noise apply unchanged (variant name `counts-short` / `counts-long`,
+noise `counts`).
+
+**Variants and runs.** `counts-short` (300 steps) and `counts-long` (2,000), the run with the case's
+seed; the fresh run (seed + 1: new initial counts, new drivers) grades generalisation; the long run is
+the fresh seed continued for 5,000 steps.
+
+**Scoring** (`particles/score.py`; its code and physics' scoring code are in a particle case's score
+hash, `particles.score_hash`):
+
+- **equations** (exact and measured tiers): `score.equations` against the mean-field model, exactly as
+  on a ladder case with counting noise (10% relative, the oracle's 3 standard errors, spurious parts
+  over 5% of the median true part). The status is its pass / equivalent / fail.
+- **behaviour**: skill@20 and skill@100 against what the particles did next (physics' grading: the
+  found model run H steps from ~150 moments of the counts, fed the inputs and injections), on the run
+  discovery saw and on the fresh run; the long run as for physics (rms over the last 1,000 of 5,000
+  free steps over each region's range).
+- **the reference**: the mean-field model graded the same way (exact and measured tiers: the model as
+  derived; prediction tier: refitted by least squares on its forecasts 20 and 100 steps ahead from
+  150 moments of a separate 3,000-step particle run, `physics/reference.py`'s fit, started from the
+  measured numbers). `gap20` / `gap100` = fresh skill minus the reference's. On the exact tier no model
+  can forecast better on average (a positive gap is luck of the moments graded); on the prediction
+  tier a strategy can beat it.
+- **prediction-only status**: pass when the fresh skill@20 and skill@100 are each within 5 points of
+  the reference's, or better; else fail.
+- **structure** (reported, not part of the status): the found model's coupling graph against the
+  mean-field model's, as on physics cases (a coupling under 10% of the strongest into a region is
+  allowed but not required).
+
+**Where it shows.** `summary()` leaves particle cells out of `totals` and out of `physics`, gives each
+`pt_tier, pt_eq, pt_near, pt_structure, pt_cpl, pt_gap20, pt_gap100, pt_lr, pt_diverges,
+ref_fresh20, ref_fresh100, ref_lr`, gives a particle case in `cases` its `particles: {system, tier,
+equations, regions, particles, mean_field, check}`, and adds `particles: {strategy: {cells, run,
+pass, equivalent, fail, error, timeout, missing, scored, eq_pass, eq_equivalent, near, structure,
+couplings, fresh20, fresh100, ref_fresh20, ref_fresh100, gap20, gap100, lr, ref_lr, diverges, graded,
+seconds}}`. The leaderboard has a **Particles** column group (part eq, vs MF @20, @100, part long-run);
+the Now board's physics set shows particle cards with the tier, the check, the equations' status and
+the gaps, the mean-field model drawn as the truth (or, prediction only, as the model before its
+refit), and the part-by-part comparison where equations are scored.
+
+```
+uv run sdlab-ladder run --strategies matrix --cases tag:particles      # run them
+python -m sdlab.ladder.particles report                                # regions, particles, tier, the check, the noise
+```
+
+### Results: the leaders on the particle cases
+
+19 October 2026, 00:58-01:59, particle code at 5481119 (structures and archetypes were re-vendored by
+their agents during the run; the store records each run's code): `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+VECLIB_MAXIMUM_THREADS=1 NUMBA_NUM_THREADS=1 uv run sdlab-ladder run --strategies
+combined,combined_lean,kalman_lna,structures,lna,effect_hats,matrix --cases tag:particles --jobs 3
+--timeout 1800` (each case's own timeout, 900-1800 s), the machine at load ~110 on 28 cores: 112 runs,
+no error or timeout. Numbers from the store (`particles.cell` and `particles.aggregate` over the latest
+rows; fresh skills and the reference's clipped at -100%). "MF" is the mean-field reference.
+
+| strategy | equations (exact + measured, 8 runs): pass | fresh@20 / MF | gap @20 | gap @100 | long-run err (MF) | prediction only (8 runs): within 5 points of MF | fresh@20 / MF | gap @20 | gap @100 | long-run err (MF) | time (s, 16 runs) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| combined | 1/8 | 13.6% / 75.8% | -62.2 | -65.8 | 26.3% (5.7%) | 2/8 | -39.8% / 16.9% | -56.7 | -46.8 | 49.0% (16.6%) | 1914 |
+| combined_lean | 1/8 | 16.2% / 75.8% | -59.5 | -65.0 | 26.2% (5.7%) | 2/8 | -39.8% / 16.9% | -56.7 | -44.4 | 49.0% (16.6%) | 2065 |
+| kalman_lna | 1/8 | 13.6% / 75.8% | -62.2 | -65.8 | 26.3% (5.7%) | 2/8 | -39.8% / 16.9% | -56.7 | -46.8 | 49.0% (16.6%) | 1929 |
+| structures | 1/8 | 13.6% / 75.8% | -62.2 | -65.8 | 26.3% (5.7%) | 2/8 | -39.8% / 16.9% | -56.7 | -46.8 | 49.0% (16.6%) | 2325 |
+| lna | 2/8 | 1.1% / 75.8% | -74.7 | -65.1 | 35.5% (5.7%) | 2/8 | -55.4% / 16.9% | -72.3 | -26.8 | 49.9% (16.6%) | 384 |
+| effect_hats | 2/8 | 8.3% / 75.8% | -67.5 | -67.5 | 30.7% (5.7%) | 2/8 | -54.0% / 16.9% | -70.9 | -34.3 | 52.0% (16.6%) | 249 |
+| matrix | 2/8 | -29.0% / 75.8% | -104.8 | -79.4 | 39.9% (5.7%) | 2/8 | -67.7% / 16.9% | -84.5 | -36.3 | 51.9% (16.6%) | 57 |
+
+Per run: the equations' status (prediction only: near or far from the MF reference), the fresh gap @20 /
+@100 in points, and the discovery time:
+
+| case | combined | combined_lean | kalman_lna | structures | lna | effect_hats | matrix |
+|---|---|---|---|---|---|---|---|
+| part-conveyor-bottleneck short | fail -112.4/-44.7 (6s) | fail -112.4/-44.7 (6s) | fail -112.4/-44.7 (5s) | fail -112.4/-44.7 (66s) | pass -33.8/-9.2 (1s) | pass -4.6/-1.2 (1s) | pass -33.8/-9.2 (1s) |
+| part-conveyor-bottleneck long | pass -0.3/-0.2 (30s) | pass -0.1/-0.0 (33s) | pass -0.3/-0.2 (58s) | pass -0.3/-0.2 (90s) | pass -4.4/-3.2 (2s) | pass -0.2/-0.1 (2s) | pass -4.4/-3.2 (2s) |
+| part-galton-board short | fail -178.3/-160.1 (136s) | fail -135.5/-135.6 (150s) | fail -178.3/-160.1 (124s) | fail -178.3/-160.1 (188s) | fail -178.3/-158.1 (33s) | fail -178.3/-178.4 (7s) | fail -178.3/-158.1 (3s) |
+| part-galton-board long | fail -104.8/-110.3 (172s) | fail -106.0/-111.7 (200s) | fail -104.8/-110.3 (174s) | fail -104.8/-110.3 (229s) | fail -34.9/-12.7 (45s) | fail -8.8/-4.0 (7s) | fail -34.9/-12.7 (3s) |
+| part-reacting-particles short | fail -15.3/-8.5 (4s) | fail -15.3/-8.5 (4s) | fail -15.3/-8.5 (4s) | fail -15.3/-8.5 (11s) | fail -15.3/-8.5 (2s) | fail -81.5/-81.6 (0s) | fail -164.3/-83.0 (1s) |
+| part-reacting-particles long | fail -7.0/-2.5 (11s) | fail -7.0/-2.5 (12s) | fail -7.0/-2.5 (13s) | fail -7.0/-2.5 (29s) | fail -10.0/-3.4 (4s) | fail -24.9/-25.6 (1s) | fail -101.6/-43.2 (0s) |
+| part-stirred-chambers short | fail -60.2/-185.8 (168s) | fail -71.9/-197.7 (188s) | fail -60.2/-185.8 (162s) | fail -60.2/-185.8 (159s) | fail -179.6/-197.7 (43s) | fail -179.6/-197.7 (6s) | fail -179.6/-197.7 (2s) |
+| part-stirred-chambers long | fail -19.4/-14.3 (219s) | fail -28.2/-19.6 (234s) | fail -19.4/-14.3 (220s) | fail -19.4/-14.3 (223s) | fail -141.0/-128.1 (51s) | fail -62.4/-51.3 (11s) | fail -141.0/-128.1 (5s) |
+| part-capacity-gate short | near +0.0/+119.4 (3s) | near +0.0/+119.4 (2s) | near +0.0/+119.4 (3s) | near +0.0/+119.4 (8s) | near +0.0/+119.4 (1s) | near +0.0/+96.5 (0s) | near +0.0/+96.6 (0s) |
+| part-capacity-gate long | near +153.6/+164.3 (21s) | near +153.6/+164.3 (23s) | near +153.6/+164.3 (26s) | near +153.6/+164.3 (53s) | near +153.6/+164.3 (2s) | near +88.4/+120.5 (2s) | near +55.4/+111.3 (0s) |
+| part-diffusion-chambers short | far -161.7/-192.8 (102s) | far -161.7/-191.4 (107s) | far -161.7/-192.8 (103s) | far -161.7/-192.8 (103s) | far -161.7/-142.5 (42s) | far -161.7/-176.1 (4s) | far -161.7/-142.5 (2s) |
+| part-diffusion-chambers long | far -39.8/-46.1 (199s) | far -39.8/-46.1 (193s) | far -39.8/-46.1 (199s) | far -39.8/-46.1 (198s) | far -46.4/-44.1 (9s) | far -39.8/-46.1 (10s) | far -46.4/-44.1 (8s) |
+| part-shelves-overflow short | far -44.3/-167.3 (97s) | far -44.3/-167.3 (97s) | far -44.3/-167.3 (94s) | far -44.3/-167.3 (156s) | far -84.1/-32.4 (2s) | far -84.1/-32.4 (8s) | far -84.1/-32.4 (2s) |
+| part-shelves-overflow long | far -148.6/-121.4 (242s) | far -148.6/-121.4 (243s) | far -148.6/-121.4 (242s) | far -148.6/-121.4 (302s) | far -148.6/-117.9 (48s) | far -148.6/-86.8 (112s) | far -148.6/-117.9 (5s) |
+| part-ball-plant short | far -168.4/-73.9 (243s) | far -168.4/-56.6 (275s) | far -168.4/-73.9 (244s) | far -168.4/-73.9 (243s) | far -168.4/-95.8 (46s) | far -168.4/-73.9 (23s) | far -168.4/-95.8 (6s) |
+| part-ball-plant long | far -44.3/-56.4 (262s) | far -44.3/-56.4 (297s) | far -44.3/-56.4 (260s) | far -44.3/-56.4 (267s) | far -122.5/-65.6 (55s) | far -53.0/-76.0 (55s) | far -122.5/-65.6 (16s) |
+
+What this shows:
+
+- **Prediction against the best possible.** On the exact and measured cases the mean-field model's own
+  fresh skill@20 averages 75.8% (64-92% per run; the particles' randomness is the rest). Every strategy
+  is 59-105 points below it at @20 on average; only the conveyor's long run comes within a point of it
+  (combined, combined_lean, kalman_lna, structures, effect_hats). Many fresh skills are below -100%: from
+  new initial counts, wrong drains of the large slow bins and chambers run far off within 20 steps.
+- **Equations.** 2 of 8 scored runs pass for lna, effect_hats and matrix (the conveyor at both lengths),
+  1 of 8 for combined, combined_lean, kalman_lna and structures (the conveyor's long run; on the short one
+  they replace the feed input by a constant inflow). No strategy passes the Galton board, the stirred
+  chambers or the reaction at either length, although the mean-field model passes its own scoring on all
+  of them (`tests/test_ladder_particles.py`): the data allow it.
+- **kalman_lna and structures return combined's model on every particle run** (identical found flows),
+  and lna returns matrix's on the Galton board.
+- **Prediction only.** The capacity gate is the only prediction-only case where strategies come near the
+  reference, because the refitted mean-field model is a bad SD model of a gate (its fresh skill@20 is
+  -394% on the long run): strategies beat it by writing the queue's outflow as a rate read from the
+  tray's level, a better SD stand-in for min(Binomial(Q, p), m) than any proportional rate. On the
+  shelves, the unstirred chambers and the plant every strategy is 39-168 points below the refitted
+  mean-field model at @20.
+
+**Where discovery breaks, distilled** (CLAUDE.md invariant 4; tag `distilled`; each confirmed with
+`runner.run_item` on both variants):
+
+| case | from | mechanism | reproduces |
+|---|---|---|---|
+| 170-fast-cells-under-daily-input | part-galton-board | a top cell fed by a daily-cycling measured input splits through fast cells into slow bins: a slow bin's drain is replaced by a constant inflow and a bin-to-bin move (on the board: B0-B3's drains, `outside -> B0 [const]`, `B2 -> B1`) | matrix fails both lengths; lna and combined fail counts-long, pass counts-short |
+| 171-binding-product-fed-by-inputs | part-reacting-particles | A + B -> C (a product with its co-flow) read as linear moves from both A and B into C with mutual co-flows, or the inputs not read | matrix, lna, combined and effect_hats fail both lengths |
+| 195-two-way-exchange-between-chambers | part-stirred-chambers | a 2 x 2 grid of chambers crossed both ways: the moves back out of the drained chamber are folded into its drain | matrix fails; lna and combined equivalent (not a pass), both lengths |
+
+Not distilled yet: on the 15-region Galton board lna's own search returns nothing and matrix's model
+stands, even with a 1,200 s budget (its dispersion estimate there is 5.9e9, against about 1 for
+counting noise); and combined's Galton model drops the drop input and reads the cells below instead.
+Neither shows on the small board.
+
 ## Real-data cases (`real/`, `cases/real/`)
 
 Measured series that someone has published a model for, on the ladder as **additional information**
@@ -1971,7 +2193,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 
 | | |
 |---|---|
-| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; realistic cases (the examples, by reference) in `cases/realistic/*.yaml` and `realistic.py`; physics cases (ODEs) in `cases/physics/*.yaml` and `physics/` (`systems.py`, `ode.py`, `reference.py`, `structure.py`, `score.py`); the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
+| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; realistic cases (the examples, by reference) in `cases/realistic/*.yaml` and `realistic.py`; physics cases (ODEs) in `cases/physics/*.yaml` and `physics/` (`systems.py`, `ode.py`, `reference.py`, `structure.py`, `score.py`); particle cases in `cases/particles/*.yaml` and `particles/` (`engine.py`, `systems.py`, `meanfield.py`, `reference.py`, `score.py`, `__main__.py`); the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`); `noise.py` (the noises laid on the recorded levels) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors); for noisy variants `noise_oracle.py` (the Kalman-scaled SEs) and `noise_kf.py` (the truth as a state-space model) |
 | Long run | `longrun.py` (free runs, settled / drift read-off, metrics), `jump.py` (affine jump-ahead, equilibria, spectra), `longrun_cache.py` (by result id, the CLI fill, the summary aggregate), `longrun_series.py` (the run page's data), `sdlab/static/ladder-run.html` |
@@ -1984,4 +2206,4 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`, `noise_analysis.py` (the noisy variants); page `sdlab/static/probes.html` |
 | Real data | `real/` (`sources.py` fetching and the cache, `loaders.py`, `models.py` the published structures, `fit.py`, `build.py` the catalogue, `case.py`, `data.py`, `score.py`, `report.py`), `cases/real/*.yaml`, the BLS snapshot `real/data/bls_cps_flows.csv` |
 | Canonical | `canonical/` (source models, recipes, `build.py`, `coverage.py`, the importer's `read.py`, `match.py`, `timefns.py`), `pysd_import.py` |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_physics.py`, `tests/test_ladder_real.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_physics.py`, `tests/test_ladder_particles.py`, `tests/test_ladder_real.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |
