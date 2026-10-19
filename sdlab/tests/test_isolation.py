@@ -6,7 +6,6 @@ from isolation import violations
 # Strategies that still import others (2026-10-19). Queue item 0c converts them to copies; this
 # list may only shrink. A new entry is a failure: copy the code you build on instead of importing it.
 KNOWN = {
-    "archetypes": {"combined"},
     "combined": {"censored", "common_cause", "effect_hats", "gap_prior", "hidden_transit", "lna", "lna_pulses", "lna_stack", "periodic_inflows"},
     "combined_lean": {"combined", "combined_misfit"},
     "combined_misfit": {"combined"},
@@ -23,7 +22,6 @@ KNOWN = {
     "lna_pulses": {"impulses", "lna"},
     "lna_stack": {"gap_prior", "impulses", "lna", "lna_levels", "lna_products", "lna_pulses"},
     "mass_balance_all": {"mass_balance"},
-    "structures": {"combined", "lna_stack"},
 }
 
 

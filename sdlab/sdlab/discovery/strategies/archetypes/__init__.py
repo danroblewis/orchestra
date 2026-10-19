@@ -97,7 +97,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if cfg["alone"] or T < SHORT:
         r = discover(stocks, run, opts, cfg)
         return {**(r or {"flows": []}), "method": "archetypes"}
-    from ..combined import identify as combined
+    from ._vendored.combined import identify as combined
     base = combined(stocks, run, opts)
     if len(stocks) > cfg["max_stocks"] or T > cfg["max_steps"] or (opts.get("eras") and len(opts["eras"]) > 1):
         return base
