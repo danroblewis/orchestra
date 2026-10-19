@@ -11,6 +11,11 @@ for `combined` on the test cases).
 
 ## Queued
 
+2g. **Runner and lna small fixes** (from the hook port):
+   - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
+   - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
+   - lna: `identify(..., base=...)` and a public flow writer `run.written`, so the variants stop recomputing and copying.
+
 2f. **combined, round 2** (from `docs/research/combined.md`, code ded5e80). Start it once the
    noise-robust (`kalman_lna`) and structures agents have committed.
    - **A behaviour judge** that does not replay each model's own inflow pieces, e.g. a held-out
@@ -72,7 +77,6 @@ for `combined` on the test cases).
 
 - 2026-10-18 22:35: rotation c, research to implementation (ideas-2026-10-18.md).
 
-- 2026-10-18 21:40: item 2e, lna_* variants onto lna's hooks.
 
 
 
@@ -82,6 +86,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-19: item 2e, the lna_* variants run as hooks on lna (dc73851, 9bd1e2a, 7b82abc). No timeouts or errors; lna_stack's realistic cells all finish. One cell lost (lna_stack 101 counts-short, a fit stopping-rule effect). lna should stop on parameter change, not on likelihood.
 
 - 2026-10-18: item 5, real-data cases (67b8007, e91a320, 2658c57, 9fe0afd, e6dcb8a): 52 cases (BLS, 29 Gause, flu, 21 Bass adoption). No strategy agrees with a published structure. 29 cases are too short (< 21 samples). Every strategy fails all 52 twins.
 
