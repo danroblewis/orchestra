@@ -20,7 +20,8 @@ for `combined` on the test cases).
 
 2d. **Engine features for the remaining blockers** (HOLD until the watcher's backlog is under ~10k items: a `simulate.py` change re-runs every strategy) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
-   - two-way flows and negative stocks, opt-in per stock or flow;
+   - two-way flows (30 SDXorg models) and negative stocks (9), opt-in per stock or flow;
+   - delays whose time or order changes, pipeline stocks, TREND/FORECAST (3 each);
    - DELAY FIXED;
    - MIN/MAX and ratios of stocks in rates;
    - sqrt and power.
@@ -89,7 +90,6 @@ for `combined` on the test cases).
 ## Started
 
 
-- 2026-10-18 20:50: item 2c, converter coverage.
 
 - 2026-10-18 21:15: item 2b, products of stocks, multi-stock gaps, hidden delay chains.
 
@@ -97,6 +97,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-18: item 2c, converter coverage (e83aa25, 2deb86d, 089fbf3): arrays, macros, external data, DELAY N/SMOOTH N; SDXorg exact conversions 37 → 90 of 165. New case 111 (arrayed switching). The remaining engine blockers go to 2d: two-way flows (30), negative stocks (9), DELAY FIXED (3), MIN/MAX (2), variable delay time/order (3), pipeline stocks (3), TREND/FORECAST (3).
 
 - 2026-10-18: item 3, strict pass tier (f75a064). Strict = pass, with no extra parts, long-run error and fresh skill within what refits of the truth achieve. combined leads by strict (67.6%); matrix drops 41.4% → 22.9%. Kept current by the hourly cycle (`sdlab-ladder strict`).
 
