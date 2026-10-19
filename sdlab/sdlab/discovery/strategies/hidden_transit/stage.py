@@ -182,7 +182,7 @@ def fit_stage(y: np.ndarray, X: np.ndarray, cands: dict[str, np.ndarray], direct
     m = len(y)
     yw = y if w is None else y * np.sqrt(w)
     floor = m * 1e-8 + 1e-12 * float(yw @ yw)
-    best, plain, ranked = None, None, []
+    plain, ranked = None, []
     for sub in _subsets(list(cands), most):
         Z = np.array([cands[s] for s in sub])
         if sub == ("1",):          # a constant through a delay is the constant after a transient: no
