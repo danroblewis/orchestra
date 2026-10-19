@@ -4,18 +4,28 @@ found and fitted by least squares (docs/research/effect-hats.md).
 1. The matrix method's model is the base.
 2. Screen (screen.py): every pair (base, C) as a group of tent columns base x h_j(C) (basis.py) on
    what the rows leave unexplained; a pair that clearly explains one or two rows is a candidate.
-3. For each candidate and each way its flow can run between the rows it shows in, the curve's
-   weights are fitted jointly in those rows (the shared group with the flow's signs), with the number
-   of knots chosen by BIC. The curve becomes a virtual stock base x f(C) offered to the matrix method
-   (restricted to those rows), the result is read back into flows with table effects (translate.py),
-   and every number, the curve's included, is refitted jointly across all rows (joint.py).
-4. The candidate the judge (behaviour on the data) likes best replaces the base only if it behaves
-   better by a margin, prices better by BIC, and its curve explains both halves of the data.
+3. Search (search.py): for each candidate and each way its flow can run (between the rows it shows
+   in, or out of its base stock), the curve's weights are fitted jointly in those rows (the shared
+   group with the flow's signs; knot count by BIC), and the placements compared on the same rows.
+   The curve becomes a virtual stock base x f(C) offered to the matrix method in those rows; the
+   result is read back into flows with table effects, a drain on the same curve as a move becoming
+   its co-flow (translate.py), and every number, the curves' included, refitted jointly across all
+   rows (joint.py).
+4. The best few are finished: outside inflows pooled into a few values and re-cut where they change
+   (pieces.py; per-stretch pieces read a drain up to 20% fast under counting noise), flows the joint
+   BIC does not need dropped, and judged.
+5. A candidate replaces the base only if its curve explains both halves of the data, it prices better
+   (one-step BIC, pooled pieces counted once) than the base with its inflows re-cut the same way, and
+   behaves within `margin` of it; among those, the lowest price wins (a flow whose rate is not its
+   source's level pays `prior` x log T). With `rounds` > 1 the screen runs again with the accepted
+   effects' columns taken out. Without an accepted effect, the base with its inflows re-cut is
+   returned when it prices better and behaves within `seg_margin` (seg_base).
 
-opts (also SDLAB_EFFECT_HATS_OPTS, JSON): select ("bic": the lowest BIC among the acceptable; "judge":
-the best behaved), margin (a candidate must behave within this ratio of the base, 1.1), prior (BIC
-price, in log T, of an effect flow whose rate is not its source's level, 2), knots (curve knot counts
-tried, [2, 3, 4, 6, 8]), most (candidates, 3), halves (True), weighted (joint refit weights, True).
+opts (also SDLAB_EFFECT_HATS_OPTS, JSON), defaults in DEFAULTS: margin, select ("bic" or "judge"),
+prior, knots (knot counts tried), most (candidates per round), per_candidate (placements), finish
+(models finished per round), halves, weighted (rows weighted by their noise), prune, pool (re-cut
+inflows), guard (steps next to an inflow change left out of the fit), level_price (extra price of
+an inflow value, in log T), seg_base, seg_margin, rounds.
 """
 
 from __future__ import annotations
@@ -26,17 +36,17 @@ import os
 
 import numpy as np
 
-from ...identify import VARIANTS, judge
+from ...identify import judge
 from ...identify import identify as matrix_identify
-from ...matrix import identify_one, injected
-from ...onestep import bic
-from .basis import curve, knots
-from .joint import price, prune, refit
+from ...matrix import injected
+from . import search
+from .joint import price, prune
 from .pieces import resegment
-from .screen import fit_curve, placements, scan
-from .translate import translate
+from .screen import scan
 
-DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True, "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True, "seg_margin": 3.0, "guard": 2, "level_price": 2.0}
+DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True,
+            "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
+            "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1}
 
 
 def _arrays(stocks, run, opts):
@@ -49,138 +59,65 @@ def _arrays(stocks, run, opts):
     return ids, prev, dy
 
 
-def best_curve(ids, prev, dy, base, stock, frm, to, choices, also=()) -> dict | None:
-    """The knot count (and weights) with the lowest BIC for this placement (on the rows of its ends
-    and `also`, each row priced by its own noise)."""
-    n = prev.shape[1]
-    best = None
-    for k in choices:
-        kn = knots(prev[ids.index(stock)], k)
-        fc = fit_curve(ids, prev, dy, base, stock, frm, to, kn, also=also)
-        if fc is None:
-            continue
-        b = float(sum(n * math.log(max(r, 1e-12) / n) for r in fc["row_rss"])) + k * math.log(n)
-        if best is None or b < best["bic"]:
-            best = {**fc, "knots": kn, "bic": b}
-    return best
-
-
-def _halves(ids, prev, dy, c: dict) -> bool:
-    """The curve, fitted on each half of the data alone, says the same thing on the other half's
-    states as on its own (a curve fitted to a passing stretch does not)."""
-    n = prev.shape[1]
-    h = n // 2
-    kn = np.asarray(c["knots"])
-    fits = []
-    for sl in (slice(0, h), slice(h, n)):
-        fc = fit_curve(ids, prev[:, sl], dy[:, sl], c["base"], c["stock"], c["frm"], c["to"], kn)
-        if fc is None:
-            return False
-        fits.append(fc["weights"])
-    x = prev[ids.index(c["stock"])]
-    full = curve(x, kn, c["weights"])
-    a, b = curve(x, kn, fits[0]), curve(x, kn, fits[1])
-    scale = max(1e-12, float(np.sqrt(np.mean(full ** 2))))
-    # both halves must at least agree with the whole on the curve's shape (the part that varies)
-    def shape(v):
-        return v - v.mean()
-    sv = max(1e-12, float(np.sqrt(np.mean(shape(full) ** 2))))
-    agree = all(float(np.sqrt(np.mean((shape(v) - shape(full)) ** 2))) < 0.7 * sv for v in (a, b))
-    return agree and scale > 0
-
-
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = {**json.loads(os.environ.get("SDLAB_EFFECT_HATS_OPTS") or "{}"), **(opts or {})}
     keep = opts.pop("candidates", False)
     o = {**DEFAULTS, **{k: opts.pop(k) for k in list(opts) if k in DEFAULTS}}
-    ids = [s["id"] for s in stocks]
     base = matrix_identify(stocks, run, {**opts, "candidates": keep})
     base_e = min((x["error"] for x in base.get("tried") or []), default=float("inf"))
     if len(run["t"]) < 60:
         return base
     ids, prev, dy = _arrays(stocks, run, opts)
-    cands = scan(stocks, prev, dy, o)
-    base["effects_tried"] = [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
     fit_opts = {**opts, "weighted": o["weighted"], "guard": o["guard"], "level_price": o["level_price"]}
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
     seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]
     base_b = price(seg, ids, run)
     fair_e = judge(seg, stocks, run, injections=opts.get("injections")) if o["pool"] else base_e
-    base["bic"] = base_b
-    base["judged"] = {"base": base_e, "recut": fair_e}
-    if not cands:
-        return _seg_base(base, seg, o, ids, run, base_e, fair_e)
-    has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
-    group = {s["id"]: s.get("group") for s in stocks}
-    raw, trials = [], []
-    seen, shapes = set(), set()
-    for cand in cands[: o["most"]]:
-        fits = []
-        for frm, to in placements(cand):
-            c = best_curve(ids, prev, dy, cand["base"], cand["stock"], frm, to, o["knots"], also=tuple(dict.fromkeys([r for r, _ in cand["rows"]] + ([cand["base"]] if cand["base"] else []))))
-            if c is None or c["positive"] < 0.9:
-                continue
-            fits.append({**c, "base": cand["base"], "stock": cand["stock"], "frm": frm, "to": to})
-        fits.sort(key=lambda c: c["bic"])
-        for c in fits[: o["per_candidate"]]:
-            key = (c["base"], c["stock"], c["frm"], c["to"])
-            if key in seen:
-                continue
-            seen.add(key)
-            x = prev[ids.index(c["stock"])]
-            ref = float(np.interp(float(np.mean(x)), c["knots"], c["weights"])) or 1.0
-            wn = np.asarray(c["weights"]) / ref
-            meta = {"~0": {"base": c["base"], "stock": c["stock"], "knots": c["knots"], "weights": wn}}
-            lvl = np.nan_to_num(np.asarray(run["levels"][c["stock"]], dtype=float))
-            bl = np.ones_like(lvl) if c["base"] is None else np.nan_to_num(np.asarray(run["levels"][c["base"]], dtype=float))
-            vrun = {**run, "levels": {**run["levels"], "~0": list(bl * curve(lvl, c["knots"], wn))}}
-            vstocks = stocks + [{"id": "~0", "unit": "virtual ~0", "final": True, "group": group.get(c["base"] or c["stock"])}]
-            rows = {"~0": {r for r in (c["frm"], c["to"], c["base"]) if r}}
-            c["halves_ok"] = _halves(ids, prev, dy, c) if o["halves"] else True
-            for v in VARIANTS:
-                if v.get("split_eras") and not has_eras:
-                    continue
-                r = identify_one(vstocks, vrun, {**opts, **v, "only_rows": rows})
-                flows = translate(r.get("flows") or [], meta, stocks, prev, ids)
-                if not flows or not any(f.get("hat") for f in flows):
-                    continue
-                flows, _ = refit(flows, ids, run, fit_opts)
-                sig = _signature(flows)
-                if sig in shapes:
-                    continue
-                shapes.add(sig)
-                name = f"effect {c['base'] or 1} x f({c['stock']}) {c['frm'] or 'outside'}->{c['to'] or 'outside'} ({len(c['knots'])} knots), {v['name']}"
-                raw.append({"name": name, "bic": bic(flows, ids, run["t"], run["levels"]), "flows": flows, "fit": c, "r": r})
-    # the most promising few are finished: inflows pooled and re-cut, flows the data does not need
-    # dropped, then judged
-    raw.sort(key=lambda t: t["bic"])
-    for t in raw[: o["finish"]]:
-        flows = t["flows"]
-        if o["pool"]:
-            flows = resegment(flows, ids, run, fit_opts)
-        if o["prune"]:
-            flows = prune(flows, ids, run, fit_opts)
-        if not any(f.get("hat") for f in flows):
-            continue
-        e = judge(flows, stocks, run, injections=opts.get("injections"))
-        trials.append({**t, "flows": flows, "error": e, "bic": price(flows, ids, run)})
-    base["tried"] = list(base.get("tried") or []) + [{"name": t["name"], "error": t["error"], "bic": t["bic"]} for t in trials]
-    if keep:
-        base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in trials)
-    ok = [t for t in trials if t["fit"]["halves_ok"] and t["bic"] < base_b and t["error"] < o["margin"] * fair_e]
-    if not ok:
-        return _seg_base(base, seg, o, ids, run, base_e, fair_e)
+    base.update(bic=base_b, judged={"base": base_e, "recut": fair_e}, effects_tried=[])
     log_t = math.log(max(2, len(run["t"]) - 1))
+    accepted, best, cur_b, cur_e = [], None, base_b, fair_e
+    tried, shapes, skip = [], set(), set()
+    for _ in range(o["rounds"]):
+        extra = [search.column(c, run)[0][:-1] for c in accepted]
+        cands = scan(stocks, prev, dy, o, extra=extra, skip=skip)
+        base["effects_tried"] += [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
+        raw = []
+        for cand in cands[: o["most"]]:
+            for c in search.placement_fits(cand, ids, prev, dy, o):
+                raw += [{**t, "fit": c} for t in search.trials(accepted + [c], stocks, run, prev, ids, opts, fit_opts, shapes)]
+        # the most promising few are finished: inflows pooled and re-cut, flows the data does not
+        # need dropped, then judged
+        raw.sort(key=lambda t: t["bic"])
+        done = []
+        for t in raw[: o["finish"]]:
+            flows = resegment(t["flows"], ids, run, fit_opts) if o["pool"] else t["flows"]
+            if o["prune"]:
+                flows = prune(flows, ids, run, fit_opts)
+            if sum(1 for f in flows if f.get("hat")) < len(accepted) + 1:
+                continue
+            done.append({**t, "flows": flows, "error": judge(flows, stocks, run, injections=opts.get("injections")),
+                         "bic": price(flows, ids, run)})
+        tried += done
+        ok = [t for t in done if t["fit"]["halves_ok"] and t["bic"] < cur_b and t["error"] < o["margin"] * cur_e]
+        if not ok:
+            break
 
-    def rank(t):
-        # SD's usual form: a flow's rate is its source's level (or a constant) times the effect
-        f = t["fit"]
-        return t["bic"] + (0.0 if f["base"] in (f["frm"], None) else o["prior"] * log_t)
-    best = min(ok, key=lambda t: t["error"]) if o["select"] == "judge" else min(ok, key=rank)
+        def rank(t):
+            # SD's usual form: a flow's rate is its source's level (or a constant) times the effect
+            f = t["fit"]
+            return t["bic"] + (0.0 if f["base"] in (f["frm"], None) else o["prior"] * log_t)
+        best = min(ok, key=lambda t: t["error"]) if o["select"] == "judge" else min(ok, key=rank)
+        accepted.append(best["fit"])
+        skip.add((best["fit"]["base"], best["fit"]["stock"]))
+        cur_b, cur_e = best["bic"], best["error"]
+    base["tried"] = list(base.get("tried") or []) + [{"name": t["name"], "error": t["error"], "bic": t["bic"]} for t in tried]
+    if keep:
+        base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in tried)
+    if best is None:
+        return _seg_base(base, seg, o, ids, run, base_e, fair_e)
     out = {**best["r"], "flows": _clean(best["flows"]), "chosen": best["name"], "tried": base["tried"],
-           "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b,
-           "judged": base["judged"]}
+           "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b, "judged": base["judged"]}
     if keep:
         out["candidates"] = base.get("candidates") or []
     return out
@@ -194,18 +131,6 @@ def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, b
     if price(seg, ids, run) < price(base["flows"], ids, run) and fair_e < o["seg_margin"] * base_e:
         return {**base, "flows": _clean(seg), "chosen": f"{base.get('chosen')}, inflows re-cut"}
     return base
-
-
-def _signature(flows: list[dict]) -> str:
-    def rnd(x):
-        if isinstance(x, float):
-            return float(f"{x:.4g}")
-        if isinstance(x, dict):
-            return {k: rnd(v) for k, v in x.items() if k not in ("rates", "driver", "curve")}
-        if isinstance(x, list):
-            return [rnd(v) for v in x]
-        return x
-    return json.dumps(sorted(json.dumps(rnd(f), sort_keys=True) for f in flows))
 
 
 def _clean(flows: list[dict]) -> list[dict]:

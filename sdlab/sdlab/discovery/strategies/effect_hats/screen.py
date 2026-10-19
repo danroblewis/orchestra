@@ -24,14 +24,17 @@ def _resid(Z: np.ndarray, Q: np.ndarray) -> np.ndarray:
     return Z - (Z @ Q) @ Q.T
 
 
-def scan(stocks: list[dict], prev: np.ndarray, dy: np.ndarray, opts: dict) -> list[dict]:
-    """[{"base", "stock", "rows": [(row, gain)], "score"}] best first, at most opts["most"]."""
+def scan(stocks: list[dict], prev: np.ndarray, dy: np.ndarray, opts: dict, extra: list[np.ndarray] | None = None,
+         skip: set | None = None) -> list[dict]:
+    """[{"base", "stock", "rows": [(row, gain)], "score"}] best first, at most opts["most"]; `extra`:
+    columns (effects already in the model) taken out with the levels; `skip`: (base, stock) pairs
+    not to offer."""
     ids = [s["id"] for s in stocks]
     S, n = prev.shape
     group = {s["id"]: s.get("group") for s in stocks}
     final = {s["id"] for s in stocks if s.get("final")}
     K = opts.get("screen_knots", 4)
-    D = np.vstack([np.ones(n), prev])
+    D = np.vstack([np.ones(n), prev] + [np.asarray(e, dtype=float)[None, :n] for e in extra or []])
     U, sv, _ = np.linalg.svd(D.T, full_matrices=False)
     Q = U[:, sv > 1e-9 * sv[0]]
     R = _resid(dy, Q)
@@ -46,6 +49,8 @@ def scan(stocks: list[dict], prev: np.ndarray, dy: np.ndarray, opts: dict) -> li
         H = hats(prev[c], knots(prev[c], K))
         for a in [None] + list(range(S)):
             if a is not None and group[ids[a]] and group[ids[c]] and group[ids[a]] != group[ids[c]]:
+                continue
+            if skip and (None if a is None else ids[a], ids[c]) in skip:
                 continue
             Z = H if a is None else H * prev[a]
             Zr = _resid(Z, Q)
