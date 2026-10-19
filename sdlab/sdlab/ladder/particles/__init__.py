@@ -274,7 +274,7 @@ def cell(row: dict | None) -> dict:
     sk = lambda b, w, h: ((b.get(w) or {}).get(str(h)) or {}).get("skill")    # noqa: E731
     r20, r100 = sk(rb, "fresh", 20), sk(rb, "fresh", 100)
     f20, f100 = sk(s.get("behaviour") or {}, "fresh", 20), sk(s.get("behaviour") or {}, "fresh", 100)
-    clip = lambda f, r: None if f is None or r is None else max(-1.0, f) - r     # noqa: E731  (a skill clipped at -100%, as every mean is)
+    clip = lambda f, r: None if f is None or r is None else max(-1.0, f) - max(-1.0, r)     # noqa: E731  (skills clipped at -100%, as every mean is)
     return {"pt_tier": pt["tier"], "pt_eq": pt.get("equations"), "pt_near": bool(pt.get("near_reference")),
             "pt_structure": 1 if ph.get("structure_ok") else 0, "pt_cpl": (pt["coupling_right"] / pt["coupling_of"]) if pt.get("coupling_of") else None,
             "pt_gap20": clip(f20, r20), "pt_gap100": clip(f100, r100), "pt_lr": (ph.get("longrun") or {}).get("err"),
@@ -307,8 +307,9 @@ def aggregate(cells: list[dict]) -> dict:
     out["couplings"] = mean([c.get("pt_cpl") for c in ran])
     for k in ("fresh20", "fresh100"):
         out[k] = mean([max(-1.0, c[k]) if c.get(k) is not None else None for c in ran])
-    for k in ("ref_fresh20", "ref_fresh100", "ref_lr"):
-        out[k] = mean([c.get(k) for c in ran])
+    for k in ("ref_fresh20", "ref_fresh100"):
+        out[k] = mean([max(-1.0, c[k]) if c.get(k) is not None else None for c in ran])
+    out["ref_lr"] = mean([c.get("ref_lr") for c in ran])
     out["gap20"] = mean([c.get("pt_gap20") for c in ran])
     out["gap100"] = mean([c.get("pt_gap100") for c in ran])
     out["lr"] = mean([c.get("pt_lr") for c in ran])
