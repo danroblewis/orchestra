@@ -2,7 +2,7 @@ title: "A two-row splitting board under a daily-cycling measured input"
 level: 21
 tags: [distilled, input, split, daily]
 tests: "distilled from part-galton-board (matrix fails both the case and this one the same way, a slow bin's drain replaced by a constant inflow and a bin-to-bin move): a top cell fed by a measured input with a daily cycle (1 x drop) passes 60% of its contents a step to two cells below (0.27 left, 0.33 right), which pass theirs on to three slow bins; the fast cells track the input a step or two behind, so the input and the levels below are nearly collinear: the inflow must be read from the input, not from the cells below"
-seed: 141
+seed: 170
 inputs:
   drop: 14 + 8 * sin(1, 24) + step(5, 700) - step(8, 1400)
 stocks: {P0: 20, L: 10, R: 10, B0: 100, B1: 300, B2: 150}
