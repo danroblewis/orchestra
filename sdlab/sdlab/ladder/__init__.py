@@ -13,7 +13,3 @@ discovery strategy is tested in isolation for whether it recovers the true equat
 
 See docs/LADDER.md.
 """
-
-from . import noise_oracle as _noise_oracle
-
-_noise_oracle.install()          # score.py and analysis.py get the Kalman oracle for those noises' data (noise_oracle.py)

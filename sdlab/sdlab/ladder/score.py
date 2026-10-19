@@ -49,8 +49,7 @@ import numpy as np
 
 from ..runner import multiplier
 from ..skill import same_behaviour, truth_by_time, truth_runs
-from .hidden_oracle import HiddenOracle
-from .oracle import Oracle
+from .noise_oracle import make_hidden_oracle, make_oracle
 from .parts import ONE, form_over, kind, label, linear_system, parts, windows
 
 DEFAULTS = {"rel": 0.10, "rel_exact": 0.02, "floor": 0.01, "floor_exact": 0.002, "spurious": 0.05, "z": 3.0}
@@ -61,7 +60,8 @@ def score_hash() -> str:
     """The scoring code: a change re-scores stored results (without re-running discovery)."""
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for p in (here / "score.py", here / "parts.py", here / "oracle.py", here / "hidden_oracle.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
+    for p in (here / "score.py", here / "parts.py", here / "oracle.py", here / "hidden_oracle.py",
+              here / "noise_oracle.py", here / "noise_kf.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
 
@@ -147,8 +147,8 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     finite = [s for s in sizes if math.isfinite(s) and s > 0]
     scale = float(np.median(finite)) if finite else 1.0
 
-    oracle = Oracle(truth_flows, data, wins)
-    hidden = HiddenOracle(truth_flows, data, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
+    oracle = make_oracle(truth_flows, data, wins)                  # noise_oracle.py: the Kalman-scaled one for noise.py's variants
+    hidden = make_hidden_oracle(truth_flows, data, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
     function_check: dict[tuple, tuple[bool, float]] = {}
     for ends in effect_ends:
         want = _amounts(truth_flows, ends, measured, data)

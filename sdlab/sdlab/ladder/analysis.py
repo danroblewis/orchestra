@@ -50,8 +50,7 @@ from . import cases as casemod
 from . import data as datamod
 from . import score as scoremod
 from .fisher import COUNT_VAR, ROUND_VAR, TruthParams, amounts_jacobian, bound, part_map
-from .hidden_oracle import HiddenOracle
-from .oracle import Oracle
+from .noise_oracle import make_hidden_oracle, make_oracle
 from .parts import ONE, label, linear_system, parts, windows
 
 ACHIEVABLE = 0.5                 # p at or above: achievable
@@ -190,8 +189,8 @@ def _allowances(case: dict, noise: str, truth_model: dict, d: dict) -> dict:
     sizes = [sum(wt * scoremod._size(k, tp[k], means, tp) for wt, tp in zip(weights, true_w) if k in tp) for k in true_keys]
     finite = [s for s in sizes if math.isfinite(s) and s > 0]
     scale = float(np.median(finite)) if finite else 1.0
-    oracle = Oracle(tflows, d, wins)
-    hidden = HiddenOracle(tflows, d, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
+    oracle = make_oracle(tflows, d, wins)
+    hidden = make_hidden_oracle(tflows, d, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
     allowed, ses = {}, {}
     for w, tp in enumerate(true_w):
         for k, v in tp.items():

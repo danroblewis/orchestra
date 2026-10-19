@@ -57,11 +57,9 @@ class NoiseError(ValueError):
 
 
 def code_hash() -> str:
-    """The code that makes and scores these variants (a case that opts in is hashed with it)."""
-    h = hashlib.sha256()
-    for name in ("noise.py", "noise_kf.py", "noise_oracle.py"):
-        h.update((HERE / name).read_bytes())
-    return h.hexdigest()[:16]
+    """The code that makes these variants' data (a case that opts in is hashed with it; the code that
+    scores them, noise_oracle.py and noise_kf.py, is in the score hash)."""
+    return hashlib.sha256((HERE / "noise.py").read_bytes()).hexdigest()[:16]
 
 
 def entries(spec) -> list[tuple[str, dict | None]]:

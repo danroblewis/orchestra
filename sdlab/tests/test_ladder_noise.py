@@ -9,7 +9,7 @@ import pytest
 
 from sdlab.ladder import analysis, data, noise, noise_kf, score
 from sdlab.ladder import cases as casemod
-from sdlab.ladder.noise_oracle import KalmanHidden, KalmanOracle
+from sdlab.ladder.noise_oracle import KalmanHidden, KalmanOracle, make_hidden_oracle, make_oracle
 from sdlab.ladder.oracle import Oracle
 from sdlab.ladder.parts import windows
 from sdlab.skill import truth_by_time
@@ -136,17 +136,22 @@ def test_bias_statistics():
 
 # ---- the scorer: oracle routing, the truth passes ----
 
+def test_scorer_uses_the_kalman_oracle_and_hashes_it():
+    assert score.make_oracle is make_oracle and analysis.make_oracle is make_oracle
+    import inspect
+    assert "noise_oracle.py" in inspect.getsource(score.score_hash) and "noise_kf.py" in inspect.getsource(score.score_hash)
+
+
 def test_noisy_data_get_the_kalman_oracle():
     c, d = _get("080-noisy-chain-2", "meas-short")
     tm = casemod.truth_model(c, "meas-short")
     flows, _ = truth_by_time(tm, d["t"])
-    assert isinstance(score.Oracle(flows, d, windows(tm, d["t"])), KalmanOracle)
-    assert isinstance(analysis.Oracle(flows, d, windows(tm, d["t"])), KalmanOracle)
+    assert isinstance(make_oracle(flows, d, windows(tm, d["t"])), KalmanOracle)
     _, plain = _get("003-chain-2", "counts-short")
-    assert isinstance(score.Oracle(flows, plain, windows(tm, plain["t"])), Oracle)
+    assert type(make_oracle(flows, plain, windows(tm, plain["t"]))) is Oracle
     c, d = _get("085-noisy-hidden-stock", "gaps-short")
     tm = casemod.truth_model(c, "gaps-short")
-    assert isinstance(score.HiddenOracle(truth_by_time(tm, d["t"])[0], d, windows(tm, d["t"]), "gaps"), KalmanHidden)
+    assert isinstance(make_hidden_oracle(truth_by_time(tm, d["t"])[0], d, windows(tm, d["t"]), "gaps"), KalmanHidden)
 
 
 def test_lag_and_outliers_cost_nothing_and_meas_costs_more_with_its_size():

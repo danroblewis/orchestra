@@ -19,11 +19,9 @@ A number the noisy data cannot pin down (the bias makes it a product with someth
 allowance (SE None): it is scored by the relative tolerance alone, and the analysis calls the cell
 unidentifiable.
 
-**How it is reached.** score.py and analysis.py build their oracle as `Oracle(truth_flows, data,
-wins)` and `HiddenOracle(truth_flows, data, wins, noise)`. install() (run when sdlab.ladder is
-imported) replaces those two names in both modules with factories that return the oracle here for
-a noisy variant's data (it has an `observation`) and the original class for everything else, so
-the scorer's code, and with it the score hash of every stored result, is unchanged.
+score.py and analysis.py build their oracles with make_oracle and make_hidden_oracle (below):
+this module for data with an `observation`, oracle.Oracle and hidden_oracle.HiddenOracle for
+everything else. This module and noise_kf.py are in the score hash.
 """
 
 from __future__ import annotations
@@ -180,19 +178,12 @@ def _noisy(data) -> bool:
     return isinstance(data, dict) and bool(data.get("observation"))
 
 
-def install() -> None:
-    """Route score.py's and analysis.py's oracles to the ones here for noisy data (idempotent)."""
-    from . import analysis, score
-    for mod in (score, analysis):
-        if getattr(mod.Oracle, "_noise_router", False):
-            continue
-        base, hidden = mod.Oracle, mod.HiddenOracle
+def make_oracle(truth_flows: list[dict], data: dict, wins: list[tuple[int, int]]):
+    """The scorer's oracle: the Kalman-scaled one for a noisy variant's data, else oracle.Oracle."""
+    return KalmanOracle(truth_flows, data, wins) if _noisy(data) else _Linear(truth_flows, data, wins)
 
-        def oracle(truth_flows, data, wins, _base=base):
-            return KalmanOracle(truth_flows, data, wins) if _noisy(data) else _base(truth_flows, data, wins)
 
-        def hidden_oracle(truth_flows, data, wins, noise, _base=hidden):
-            return KalmanHidden(truth_flows, data, wins, noise) if _noisy(data) else _base(truth_flows, data, wins, noise)
-
-        oracle._noise_router = hidden_oracle._noise_router = True
-        mod.Oracle, mod.HiddenOracle = oracle, hidden_oracle
+def make_hidden_oracle(truth_flows: list[dict], data: dict, wins: list[tuple[int, int]], noise: str):
+    """The scorer's oracle for a hidden stock: the Kalman-scaled one for a noisy variant's data, else
+    hidden_oracle.HiddenOracle."""
+    return KalmanHidden(truth_flows, data, wins, noise) if _noisy(data) else _Hidden(truth_flows, data, wins, noise)
