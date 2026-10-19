@@ -378,8 +378,10 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, scan_mu
     the tie holds unless they differ by more than sqrt(log T) standard errors of their difference
     (the source row's and every receiver row's, z^2 <= log T: a tie saves one number, priced as BIC
     prices it; without the matrix's extra log T). A receiver is a row that gains from the source (a
-    negative reading is a link, never a receiver). A row whose inflow is in pieces is still tied within
-    30%, as by the matrix: the pieces bias its own drain beyond its standard error."""
+    negative reading is a link, never a receiver). Only for a row whose inflow does not change: one in
+    pieces keeps the matrix's test (its refit finds the pieces again beside the tied drain), since the
+    pieces bias its own drain beyond its standard error (040-random-chain-2#3 counts-long: 0.435 +-
+    0.01 against the receiver's 0.353; 042-random-two-chains-of-two#7 counts-long)."""
     for s, row in enumerate(rows):
         a = row["id"]
         if a in final:
@@ -395,16 +397,13 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, scan_mu
             continue
         slack = opts.get("slack", 0.3)
         near = changing and all(abs(drain[c] - moves[c]) / max(drain[c], moves[c]) < slack for c in cand)
-        if opts.get("tie_se"):
+        if opts.get("tie_se") and not changing:
             ok = True
             for c in cand:
                 var = (row["varL"][c].get(a) or 0.0) + sum(r["varL"][c].get(a) or 0.0 for r in recv[c])
                 if (drain[c] - moves[c]) ** 2 > log_t * max(var, 1e-300):
                     ok = False
-            # a row whose inflow is in pieces: its own drain is biased by them beyond its standard
-            # error (040-random-chain-2#3 counts-long: 0.435 +- 0.01 against the receiver's 0.353),
-            # so the matrix's 30% rule still ties it
-            if ok or near:
+            if ok:
                 for c in cand:
                     row["coefL"][c][a] = -moves[c]
                 row["conserved"] = True
