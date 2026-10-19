@@ -497,7 +497,7 @@ strategies:
     helps_with: Feedback loops with weak links.
     builds_on: lna
     status: active
-    note: From the "revisit" of past ideas; its document (revisit.md) is not written yet. Costs extra flows where the truth has none.
+    note: From the revisit (docs/research/revisit.md), whose verdict is do not adopt - its passes are on cells the data cannot decide, and it can make a noisy chain behave much worse. Costs extra flows where the truth has none. A stage on lna's hooks, so lna's measured inputs, stride and time limit apply.
 
   lna_products:
     idea: lna with a move allowed to be scaled by a third stock's level (a linear effect).
@@ -507,8 +507,8 @@ strategies:
       as every other flow. With no noise or fewer than three stocks it is lna.
     helps_with: Linear effects of a third stock (case 017) with counting noise.
     builds_on: lna
-    status: work in progress
-    note: From the "revisit" of past ideas; its code is being edited and its document is not written yet.
+    status: active
+    note: From the revisit (docs/research/revisit.md). On its own it adds no pass over lna; with lna_levels (in lna_stack) it passes 017/018 with counting noise. A stage on lna's hooks, so lna's measured inputs, stride and time limit apply.
 
   lna_stack:
     idea: lna with the revisit's best additions stacked in one model (pulses, recurring inflow levels, effect products, and SD-style ties on noise-free runs).
@@ -522,7 +522,7 @@ strategies:
     helps_with: Everything lna does, plus pulses (022), stepping inflows (027, 048), effects with counting noise (017, 018), and noise-free goal gaps and co-flows (011, 016, 047).
     builds_on: lna, lna_pulses, lna_levels, lna_products, gap_prior
     status: active
-    note: From the revisit (docs/research/revisit.md). On cases 001-048 it passes 381 of 472 cells against lna's 340, with 0 losses; it takes about 3x lna's time.
+    note: From the revisit (docs/research/revisit.md). On cases 001-048 it passed 381 of 472 cells against lna's 340, with 0 losses. Its stages are now hooks on lna, so lna's measured inputs, stride and time limit apply, and it no longer times out on the realistic models.
 
   lna_pulses:
     idea: Find pulses (one-step arrivals, short bursts) first, then run lna on what they leave.
@@ -533,7 +533,7 @@ strategies:
     helps_with: Pulses in noisy data.
     builds_on: lna (with impulses' detector)
     status: active
-    note: From the "revisit" of past ideas; its document is not written yet.
+    note: From the revisit (docs/research/revisit.md). Passes the pulse case 022 in all four variants. A stage on lna's hooks, so lna's measured inputs, stride and time limit apply.
 
   lna_levels:
     idea: lna, with an outside inflow that switches between a few recurring values described by those few values instead of one number per piece.
@@ -545,8 +545,8 @@ strategies:
       lower BIC wins. Noise-free runs are lna's.
     helps_with: Unannounced inflows that switch back and forth between a few values.
     builds_on: lna
-    status: work in progress
-    note: From the "revisit" of past ideas (regime models, inflow innovations); new and uncommitted, its document is not written yet.
+    status: active
+    note: From the revisit of past ideas (regime models, inflow innovations; docs/research/revisit.md). A stage on lna's hooks, so lna's measured inputs, stride and time limit apply.
 
   gap_prior:
     idea: lna, with readings the data cannot tell apart written the way system-dynamics models usually write them.

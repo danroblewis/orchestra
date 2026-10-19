@@ -8,6 +8,10 @@ against lna's 340, with no cell lost, better fresh behaviour and a higher Occam 
 stages into `combined` (lna_levels, lna_pulses, lna_products with levels, the noise-free
 conventions). Do not adopt `lna_loops`. No parked strategy has a win of its own left; 20
 matrix-plus-one-mechanism strategies are dominated on the ladder and can be parked.
+**Update (2026-10-19, queue item 2e):** the five lna variants are now stages on lna's hooks, with no
+copied search code (commit dc73851, final 9bd1e2a); see [Ported onto lna's hooks](#ported-onto-lnas-hooks).
+They gained lna's measured inputs, time budget and stride, and lna_stack no longer times out or
+raises on the realistic models.
 
 Strategies built here: `gap_prior`, `lna_loops`, `lna_pulses`, `lna_products`, `lna_levels`,
 `lna_stack` (`sdlab/sdlab/discovery/strategies/<name>/`); tests `tests/test_ladder_revisit.py`.
@@ -141,9 +145,10 @@ regression, hidden stocks and mass balance. The rest, with the rungs they could 
 
 ## What was built
 
-The five new stages are separate packages on top of lna. Each imports lna's modules and copies
-lna's `discover` (lna/run.py), adding one step. `lna_stack` imports the stages unchanged. A copy can
-drift from lna as lna changes; see Recommendations. All are measured paired with lna (latest
+The five new stages are separate packages on top of lna. As first built (the numbers in this
+section), each imported lna's modules and copied lna's `discover` (lna/run.py), adding one step;
+`lna_stack` imported the stages unchanged. They are now hooks on lna's own `discover` (see
+[Ported onto lna's hooks](#ported-onto-lnas-hooks)). All are measured paired with lna (latest
 results, cases 001-048). Fresh skill@20 is clipped at -100% per cell.
 
 | strategy | pass (lna 340) | wins / losses | Occam (lna 0.861) | extra complexity (lna +1.53) | fresh skill@20 (lna 0.831) | cells with fresh skill@20 >10 points worse | s/cell |
@@ -279,6 +284,81 @@ lna_loops is left out. Every stage is imported unchanged.
   took longer than 120 s once, under a load of about 110; the ladder runner's default timeout is
   120 s.
 
+## Ported onto lna's hooks
+
+**Status:** done (2026-10-19, queue item 2e). Code at commit dc73851 (lna_products and lna_stack
+again at 9bd1e2a, the same source after a tried change was reverted).
+
+Each variant is now its stage written as hooks on `lna.run.discover` (`run.HOOKS`; see
+[lna.md](lna.md)), with no copied search code:
+
+| strategy | hooks | the rest |
+|---|---|---|
+| lna_loops | `after_search`: loop-closing links offered back | `lna.identify` (lna's guard) |
+| lna_levels | `after_search`: growth offered as pieces, pieces regrouped into levels; `flows`: the levels written | `lna.identify`, then lna's guard on lna's own reading too |
+| lna_products | `data`: product columns as rows of prev (after any measured inputs); `after_search`: products offered; `flows`: effects written | as lna_levels |
+| lna_pulses | `data`: the pulses taken out of the changes | its loop (pulses re-measured on lna's model) calls `run.discover`; the searches share one lna budget |
+| lna_stack | the three stages chained (pulses, products, levels) | as before: its loop, guard, noise-free conventions; one shared budget |
+
+What they gained from lna: measured inputs (columns read by atoms, and in lna's judge), the 40 s
+search budget with fallback to the matrix's answer, the stride for runs over 3000 steps, at most 4
+era sets, and the early exit when even every atom leaves the changes far beyond counting noise. A
+stage past the budget leaves lna's reading (it catches `OutOfTime`). lna_levels' level rows now go
+after every row of prev (stocks, inputs, product columns). Product columns are rows of prev only;
+before, they were also zero rows of the changes.
+
+**Ladder** (`uv run sdlab-ladder run --strategies <name> --jobs 3`, single-threaded, load 70-100;
+compared with each variant's stored results from before the port on the cells both have; read with
+a script over `results.sqlite` that keeps only the rows of that run's code, since other processes
+wrote rows from older code meanwhile):
+
+| strategy | cells paired | pass before -> after | errors/timeouts before -> after | summed s/cell, paired | realistic (sd-*, 62 cells) skill@20 | flips |
+|---|---|---|---|---|---|---|
+| lna_loops | 629 | 452 -> 453 | 0 -> 0 | 1.0 -> 0.7 | not run before; 0.211 after | +062 nl (measured input) |
+| lna_levels | 759 | 556 -> 557 | 0 -> 0 | 1.0 -> 0.5 | not run before; 0.250 | +062 nl; 022 cs equivalent -> fail (lna's early exit); 053 #4/#7 cl (the case changed since) |
+| lna_pulses | 731 | 520 -> 522 | 2 -> 0 | 2.1 -> 1.3 | not run before; 0.233 | 062 cl, nl error -> pass (the `'pump' is not in list` error) |
+| lna_products | 759 | 542 -> 543 | 0 -> 0 | 3.0 -> 0.7 | not run before; 0.245 | +062 nl |
+| lna_stack | 836 | 515 -> 519 | 36 -> 0 | 3.5 -> 2.1 (tests), 79 -> 44 (realistic) | 18 timeouts and 8 errors -> none; 0.368 on the 30 cells graded before -> 0.413 on those; 0.304 on all 62 | below |
+
+(lna's own realistic skill@20 over the same 62 cells is 0.175 in the store, from runs of mixed
+versions, some before f3270a8.)
+
+**Every flip explained.**
+
+- **062 (a tank fed by a measured pump):** lna's measured inputs. Before, the copies read the pump
+  as nothing, and lna_pulses and lna_stack raised `ValueError: 'pump' is not in list`.
+- **022 counts-short (lna_levels, equivalent -> fail):** lna's early exit (f3270a8). The full
+  superset leaves the changes more than twice beyond counting noise (the pulses), so lna returns
+  the matrix's answer; lna fails this cell too. With the exit disabled, lna_levels' old model
+  returns. lna_pulses and lna_stack still pass 022, as the pulses are taken out first.
+- **101 counts-short (lna_stack, pass -> fail):** a numerical change in the port. Without the
+  product columns' zero rows in the changes, the likelihood lacks a constant, and L-BFGS's relative
+  stopping rule (`FTOL`) stops some fits elsewhere: the products search kept a spurious growth of
+  Exposed. Putting the zero rows back for the stages after lna's search (c7755cd, dac27e7) gave
+  back this cell's old model exactly, but cost lna_stack 6 cells it passed without them (014,
+  042 #3 and #5, 044 #3 and #8 counts-short pass -> fail; 016 counts-short equivalent -> fail) and
+  raised on 110 (a measured input); for lna_products alone it read an effect into 014. It was
+  reverted (9bd1e2a): the port loses this one cell. The fit's tolerance relative to the
+  likelihood's size is lna's; a stopping rule on the change in numbers (not in the likelihood)
+  would make both versions agree.
+- **106 and 110 (canonical, measured inputs) and 084 meas/outliers-long (lna_stack, error or
+  timeout -> fail):** lna's measured inputs and budget. The numba `SystemError` in `inv_logdet`
+  (084 outliers-long, sd-webshop-stock) was the runner's timeout alarm firing inside a numba call
+  (the `Timeout` raised there surfaces as a `SystemError`); it is not an lna bug. lna itself has no
+  error on those cells, and the ported stack runs 084 outliers-long in 78 s by hand.
+- **The realistic cells (lna_stack, 26 timeouts or errors -> fail):** the budget. All 56 now
+  finish (mean 44 s, slowest 159 s under load 70-100). One realistic pass was lost
+  (sd-pipeline counts-short), but its case changed since that result, so it is not paired.
+- **046 #2/#4/#5, 047 #1-#8 none-long, 053 #4/#7, 033 cl (lna_stack):** their stored results were
+  on an earlier version of the case (the case hash differs), so they are not comparisons. On 046 #4
+  counts-long the code before the port (dc73851~1) and at 10f1d24 gives the same model as the port.
+
+**Nothing failed to fit the hooks.** Two things would make the variants smaller:
+`lna.identify(..., base=...)` (lna_pulses runs lna again after its own matrix when no pulse holds
+up, and lna_stack keeps its own copy of lna's guard to guard lna's reading with the pulses out),
+and the flow writer as a function (`run.written(cur, d, ctx)`: lna_levels copies lna's four lines
+that write atoms as flows, to guard lna's own reading).
+
 ## Recommendations
 
 **Unpark: none.** The parked strategies' only wins of their own on the ladder were 016 noise-free
@@ -326,9 +406,7 @@ specialist: each stage ran on 472 cells with no loss against lna. Otherwise:
    similar, and combined passes 011 and 016 noise-free. Keep the two consistent.
 5. **Not lna_loops.**
 
-**For lna's owner.** Expose a hook in `lna.run.discover` (a `finish(cur, d)` called on the fitted
-atoms before they are written as flows) and the Data it fitted. These stages could then plug in
-without copying `discover`, and would not drift from lna.
+**For lna's owner.** Done: lna exposes hooks (`run.HOOKS`) and the variants use them (below).
 
 **Next ideas.**
 
