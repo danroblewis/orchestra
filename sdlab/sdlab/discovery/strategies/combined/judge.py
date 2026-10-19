@@ -26,7 +26,7 @@ import math
 
 import numpy as np
 
-from ...simulate import Model, levels_array
+from ...simulate import Model, behaviour_error, levels_array
 from .params import numbers
 
 QUANTA = (1.0, 0.1, 0.01, 1e-3, 1e-4, 1e-5, 1e-6)
@@ -140,13 +140,46 @@ def one_step(flows: list[dict], data: Data, starts: dict | None = None) -> tuple
     model = Model(flows, data.ids + hidden)
     if not hidden:
         return _moments(model, data.prev, data)
+    return _best_path(model, data, hidden, starts)[1]
+
+
+def _best_path(model: Model, data: Data, hidden: list[str], starts: dict | None) -> tuple:
+    """(nll, moments, path) for the start of the unmeasured stocks the likelihood likes best."""
     best = None
     for path in hidden_paths(model, data, hidden, starts):
         m = _moments(model, np.vstack([data.prev, path]), data)
         v = _nll(m, data)
         if best is None or v < best[0]:
-            best = (v, m)
-    return best[1]
+            best = (v, m, path)
+    return best
+
+
+def hidden_estimate(flows: list[dict], data: Data, starts: dict | None = None) -> tuple[list[dict], dict]:
+    """The flows (via delays written as stocks) and their unmeasured stocks' levels at every time of
+    the run, run open loop from the best start ({} when there are none)."""
+    flows = expand_via(flows)
+    hidden = sorted({s for f in flows for s in _refs(f)} - set(data.ids))
+    if not hidden:
+        return flows, {}
+    model = Model(flows, data.ids + hidden)
+    path = _best_path(model, data, hidden, starts)[2]
+    last = model.step(np.vstack([data.prev[:, -1:], path[:, -1:]]), data.tt[-1:])[len(data.ids):, 0]
+    return flows, {h: list(path[i]) + [float(last[i])] for i, h in enumerate(hidden)}
+
+
+HORIZONS = (5, 20, 100)
+
+
+def behaviour(flows: list[dict], data: Data, run: dict, starts: dict | None = None) -> float:
+    """The main line's behaviour judge (runs from many moments, 5, 20 and 100 steps, against the
+    data; 1 = no better than nothing changing), with unmeasured stocks started from their open-loop
+    estimate."""
+    hs = [h for h in HORIZONS if h < len(data.t) / 4]
+    if not flows or not hs:
+        return float("inf")
+    flows, inferred = hidden_estimate(flows, data, starts)
+    return sum(behaviour_error(flows, data.ids, run["t"], run["levels"], horizon=h, injections=data.injections,
+                               inferred=inferred or None) for h in hs) / len(hs)
 
 
 def _moments(model: Model, X: np.ndarray, data: Data) -> tuple[np.ndarray, np.ndarray | None]:

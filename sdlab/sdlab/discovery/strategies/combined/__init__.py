@@ -19,13 +19,19 @@
    candidate wrote down (params.py: rate numbers, inflow values and change places, effect points,
    co-flows, unmeasured stocks). Before it is judged, every candidate's numbers are refitted on the
    same terms (refit.py: least squares of the one-step changes, its structure kept), and the
-   refitted numbers are kept when they raise its likelihood. The lowest score wins; exact ties go to the model with fewer flows
+   refitted numbers are kept when they raise its likelihood. A guard first sets aside candidates
+   that run away: one whose multi-step behaviour on the data (the main line's judge: runs from many
+   moments over 5, 20 and 100 steps, unmeasured stocks started from their open-loop estimate) is
+   both worse than "nothing changes" (error above `guard_floor` = 1) and `guard` (4) times worse
+   than the best candidate's. The one-step likelihood cannot see a model that drifts off over many
+   steps; this only removes such models, it never ranks the rest. The lowest score wins; exact ties go to the model with fewer flows
    that read a stock other than the ones they join, then to fewer numbers, then to the earlier
    candidate in the list.
 
 opts (also SDLAB_COMBINED, JSON): "specialists" (names, in order; default SPECIALISTS), "price"
 (the BIC multiplier, default 1), "per_flow" (numbers a flow costs for being there, default 0: a
-flow is priced by its numbers), "budget" (seconds, default 75), "refit" (refit every candidate's numbers, default on), "trace" (keep every candidate's
+flow is priced by its numbers), "budget" (seconds, default 75), "refit" (refit every candidate's numbers, default on), "guard" and "guard_floor" (the
+runaway guard, default 4 and 1; guard 0 turns it off), "trace" (keep every candidate's
 flows in the result).
 """
 
@@ -51,7 +57,7 @@ from .shared import once
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
 SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "censored", "hidden_transit", "periodic_inflows", "effect_hats", "common_cause"]
-DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 75.0, "trace": False, "refit": True}
+DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 75.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 1.0}
 
 
 def cross_reads(flows: list[dict]) -> int:
@@ -86,8 +92,10 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], budg
     return out
 
 
-def choose(cands: list[dict], data: J.Data, price: float, per_flow: float, do_refit: bool = True) -> dict | None:
-    best, best_key = None, None
+def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None:
+    """The candidate with the lowest score among those that do not run away (see the docstring)."""
+    price, per_flow = float(cfg["price"]), float(cfg["per_flow"])
+    scored = []
     for i, c in enumerate(cands):
         r = c.get("result")
         if not r or r.get("flows") is None:
@@ -98,7 +106,7 @@ def choose(cands: list[dict], data: J.Data, price: float, per_flow: float, do_re
         except Exception as e:                           # noqa: BLE001
             c["judge_error"] = f"{type(e).__name__}: {e}"[:300]
             continue
-        if do_refit:
+        if cfg["refit"]:
             try:
                 flows = refit(r["flows"], data, J.weights(r["flows"], data))
                 s2 = J.score(flows, data, price, per_flow, starts) if flows else None
@@ -109,10 +117,26 @@ def choose(cands: list[dict], data: J.Data, price: float, per_flow: float, do_re
                 c["result"] = r = {**r, "flows": flows, "refitted": True}
                 s = {**s2, "refitted": True}
         c["score"] = s
-        key = (round(s["bic"], 6), cross_reads(r["flows"]), s["k"], i)
-        if best_key is None or key < best_key:
-            best, best_key = c, key
-    return best
+        scored.append((i, c, starts))
+    if not scored:
+        return None
+    if cfg["guard"]:
+        seen: dict = {}
+        for _, c, starts in scored:
+            key = json.dumps(c["result"]["flows"], sort_keys=True, default=repr)
+            if key not in seen:
+                try:
+                    seen[key] = J.behaviour(c["result"]["flows"], data, run, starts)
+                except Exception:                        # noqa: BLE001
+                    seen[key] = float("inf")
+            c["score"]["behaviour"] = seen[key]
+        good = min(c["score"]["behaviour"] for _, c, _ in scored)
+        limit = max(float(cfg["guard"]) * good, float(cfg["guard_floor"]))
+        kept = [x for x in scored if x[1]["score"]["behaviour"] <= limit]
+        for _, c, _ in scored:
+            c["score"]["ran_away"] = c["score"]["behaviour"] > limit
+        scored = kept or scored
+    return min(scored, key=lambda x: (round(x[1]["score"]["bic"], 6), cross_reads(x[1]["result"]["flows"]), x[1]["score"]["k"], x[0]))[1]
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -123,7 +147,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     names = list(cfg.get("specialists") or SPECIALISTS)
     cands = candidates(stocks, run, opts, names, float(cfg["budget"]))
     data = J.Data(stocks, run, opts.get("injections"))
-    best = choose(cands, data, float(cfg["price"]), float(cfg["per_flow"]), bool(cfg["refit"]))
+    best = choose(cands, data, run, cfg)
     if best is None:
         return {"flows": [], "combined": {"chosen": None, "candidates": _summary(cands, cfg)}}
     r = dict(best["result"])

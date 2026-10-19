@@ -154,6 +154,21 @@ def test_rounded_numbers_are_refitted_to_the_data_s_precision():
     assert J.misfit(again, D) < 0.5 and J.nll(again, D) < J.nll(rounded, D)
 
 
+def test_behaviour_follows_unmeasured_stocks_from_their_estimate():
+    _, model, d, _, _, D = cell("015-hidden-stock", "none-short")
+    assert J.behaviour(truth_flows(model, d), D, {"t": d["t"], "levels": d["levels"]}) < 0.01
+
+
+def test_a_candidate_that_runs_away_is_set_aside():
+    _, model, d, stocks, run, D = cell("003-chain-2", "counts-long")
+    truth = truth_flows(model, d)
+    runaway = truth + [{"from": None, "to": "A", "rate": {"form": "proportional", "stock": "A", "k": 0.3}}]
+    cands = [{"name": "runaway", "result": {"flows": runaway}}, {"name": "truth", "result": {"flows": truth}}]
+    cfg = {**combined.DEFAULTS, "refit": False}
+    assert combined.choose(cands, D, run, cfg)["name"] == "truth"
+    assert cands[0]["score"]["ran_away"] and not cands[1]["score"]["ran_away"]
+
+
 def test_exact_ties_go_to_flows_that_read_their_own_stocks():
     own = [{"from": "B", "to": None, "rate": {"form": "proportional", "stock": "B", "k": 0.2}}]
     other = [{"from": "B", "to": None, "rate": {"form": "linear", "c": 0, "terms": [{"stock": "A", "k": 0.2}]}}]
@@ -236,8 +251,11 @@ def fit(flows: list[dict], D: J.Data, starts: dict, most: int = 40) -> list[dict
     paths = []
     for i, f in enumerate(flows):
         rates = [(f.get("rate") or {}, [i, "rate"])] if not f.get("byTime") else [(g["rate"], [i, "byTime", j, "rate"]) for j, g in enumerate(f["byTime"])]
-        if f.get("inflow"):
-            paths += [[i, "inflow", j, "value"] for j in range(len(f["inflow"]))]
+        if f.get("inflow"):                                 # equal values stay one number (a repeating schedule)
+            groups: dict = {}
+            for j, g in enumerate(f["inflow"]):
+                groups.setdefault(g["value"], []).append([i, "inflow", j, "value"])
+            paths += list(groups.values())
             rates = []
         for r, base in rates:
             paths += [base + [k] for k in ("value", "k", "c", "goal", "time") if isinstance(r.get(k), (int, float))]
@@ -249,25 +267,29 @@ def fit(flows: list[dict], D: J.Data, starts: dict, most: int = 40) -> list[dict
     if not paths or len(paths) > most:
         return flows
 
+    paths = [p if isinstance(p[0], list) else [p] for p in paths]   # each number: the places it is written
+
     def at(p):
         x = flows
         for k in p[:-1]:
             x = x[k]
         return x
 
-    x0 = np.array([float(at(p)[p[-1]]) for p in paths])
-    sc = np.maximum(np.abs(x0), 1e-3)
+    x0 = np.array([float(at(p[0])[p[0][-1]]) for p in paths])
+    sc = np.where(np.abs(x0) > 1e-3, x0, 1e-3)              # signed: z = 1 is the truth
 
     def nll(z):
-        for p, v in zip(paths, z * sc):
-            at(p)[p[-1]] = float(v)
+        for ps, v in zip(paths, z * sc):
+            for p in ps:
+                at(p)[p[-1]] = float(v)
         v = J.nll(flows, D, starts)
         return v if math.isfinite(v) else 1e12
 
     one = np.ones_like(x0)
     base = nll(one)
     res = minimize(nll, one, method="Powell", options={"maxfev": 200 * len(paths), "xtol": 1e-6, "ftol": 1e-10})
-    nll(res.x if res.fun < base else one)
+    if nll(res.x) > base:                                   # keep the truth's own numbers unless the fit is better
+        nll(one)
     return flows
 
 
