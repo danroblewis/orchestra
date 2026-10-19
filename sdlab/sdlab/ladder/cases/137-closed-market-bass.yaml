@@ -1,0 +1,11 @@
+title: Bass diffusion in a closed market
+level: 13
+tags: [distilled, product, effect, effect-linear, closed, conserved]
+tests: "a closed system: everyone is either N or A (N + A constant, so a constant, N and A are collinear), with innovation 0.01 N and imitation 0.3 N x A / 10000 as moves N -> A and churn A -> N at 0.02; from the real-adoption-* twins (Bass, A = 100 - N): recovered as the moves and the product, not as equal outside pieces on both ends or as A x A"
+seed: 137
+stocks: {N: 9900, A: 100}
+flows:
+  N -> A as innovation: 0.01 * N
+  N -> A as imitation:
+    rate: 0.3 * N * effect(A, linear, normal=10000, max=10)
+  A -> N as churn: 0.02 * A

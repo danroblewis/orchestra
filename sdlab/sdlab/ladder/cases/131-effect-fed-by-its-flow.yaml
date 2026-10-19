@@ -1,0 +1,19 @@
+title: "An effect fed by the flow it speeds up"
+level: 12
+tags: [distilled, effect, effect-table, loop, inflow-change, unannounced]
+tests: "an effect whose stock is fed by the flow it speeds up: B -> W at 0.3 x B times a saturating table of experience E, which is fed by the work done (0.05 x W) and forgets at 0.02; B's inflow steps unannounced; from sd-learning-curve: the move is recovered with its effect, not as drains of B reading E plus a larger inflow into B"
+seed: 131
+stocks: {B: 200, W: 60, E: 400}
+flows:
+  outside -> B: 30
+  B -> W: 0.3 * B * effect(E, table, [[0, 0.2], [200, 0.434], [400, 0.6], [800, 0.8], [1200, 0.9], [2000, 0.975]])
+  W -> outside: 0.3 * W
+  outside -> E: 0.05 * W
+  E -> outside: 0.02 * E
+schedule:
+  every: 500
+  at 1 normal: {outside -> B: 30}
+  at 91 release: {outside -> B: 45}
+  at 161 quiet: {outside -> B: 25}
+  at 231 busy: {outside -> B: 40}
+  at 421 holidays: {outside -> B: 20}

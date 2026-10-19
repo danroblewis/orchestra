@@ -1,0 +1,15 @@
+title: "Infection: a move at the product of two stocks"
+level: 14
+tags: [distilled, product, effect, effect-linear, loop]
+tests: "a move at the product of its source and its target, S -> I at 0.0001 x S x I (a proportional rate times a linear effect), the infection of SIR models in its smallest form; from 100-canonical-sir, 101-canonical-seir, 102-canonical-bass (imitation), 109 and the boarding-school flu: recovered as a product, not as linear links and inflow pieces"
+seed: 126
+stocks: {S: 1500, I: 400}
+flows:
+  outside -> S: 100
+  S -> I:
+    rate: 0.0001 * S * effect(I, linear, normal=1, max=100000)
+  I -> outside: 0.1 * I
+schedule:
+  every: 200
+  at 1 low: {outside -> S: 60}
+  at 101 high: {outside -> S: 140}

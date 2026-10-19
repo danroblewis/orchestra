@@ -1,0 +1,11 @@
+title: "A measured input that arrives through an unmeasured delay"
+level: 13
+tags: [distilled, input, hidden, delay]
+tests: "a measured input that arrives through an unmeasured delay: 062's pump sends 2 x pump into a hidden stock that releases it to T after 8 steps (DELAY1), T drained at 0.2; from 110-canonical-world3-pollution (pollution generated from a measured input reaches the stock through a DELAY3): an inferred delay on the input, not k x input arriving at once plus pieces"
+seed: 134
+inputs:
+  pump: 6 + 3 * sin(1, 45) + step(4, 120) - step(7, 260) + pulse_train(5, 30, 10, 90)
+stocks: {T: 40}
+flows:
+  outside -> T: delay1(2 * pump, 8)
+  T -> outside: 0.2 * T

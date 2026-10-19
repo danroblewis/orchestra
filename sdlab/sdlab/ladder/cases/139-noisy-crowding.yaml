@@ -1,0 +1,33 @@
+title: "Logistic growth under measurement error"
+level: 12
+tags: [distilled, product, crowding, effect, effect-linear, noisy]
+tests: "measurement error on a product: 103's logistic growth (births 0.15 x X, crowding 0.15 x X x X / 2000, restocked every 100 steps) with 2% measurement error on the levels beside its counts variants; from the gLV and adoption twins (published model plus 2-20% measurement error): the crowding product is recovered under measurement noise, not replaced by a linear drain and pieces"
+seed: 139
+stocks:
+  Population: 20
+flows:
+  outside -> Population as births: "0.15 * Population"
+  Population -> outside as crowding_deaths: "0.015 * Population * effect(Population, linear, normal=200, max=1000)"
+injections:
+  - {t: 100, stock: Population, amount: 1500}
+  - {t: 200, stock: Population, amount: 1500}
+  - {t: 300, stock: Population, amount: 1500}
+  - {t: 400, stock: Population, amount: 1500}
+  - {t: 500, stock: Population, amount: 1500}
+  - {t: 600, stock: Population, amount: 1500}
+  - {t: 700, stock: Population, amount: 1500}
+  - {t: 800, stock: Population, amount: 1500}
+  - {t: 900, stock: Population, amount: 1500}
+  - {t: 1000, stock: Population, amount: 1500}
+  - {t: 1100, stock: Population, amount: 1500}
+  - {t: 1200, stock: Population, amount: 1500}
+  - {t: 1300, stock: Population, amount: 1500}
+  - {t: 1400, stock: Population, amount: 1500}
+  - {t: 1500, stock: Population, amount: 1500}
+  - {t: 1600, stock: Population, amount: 1500}
+  - {t: 1700, stock: Population, amount: 1500}
+  - {t: 1800, stock: Population, amount: 1500}
+  - {t: 1900, stock: Population, amount: 1500}
+  - {t: 2000, stock: Population, amount: 1500}
+variants:
+  noise: [counts, {meas: {rel: 0.02, abs: 0}}]

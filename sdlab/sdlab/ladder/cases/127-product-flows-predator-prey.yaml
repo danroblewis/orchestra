@@ -1,0 +1,17 @@
+title: "Predator and prey: two flows at the product of two stocks"
+level: 14
+tags: [distilled, product, predator-prey, effect, effect-linear, loop]
+tests: "two flows at the product of two stocks: predation X -> outside at 0.0002 x X x Y and predator births outside -> Y at 0.0001 x X x Y (each a proportional rate times a linear effect of the other stock); prey immigrate (60/140 a step) instead of growing, as Euler steps of neutral Lotka-Volterra diverge; from phys-lotka-volterra, Gause's mixtures, Huffaker's mites and Isle Royale: recovered as products, not as the linearised links"
+seed: 127
+stocks: {X: 1500, Y: 300}
+flows:
+  outside -> X as immigration: 100
+  X -> outside as predation:
+    rate: 0.0002 * X * effect(Y, linear, normal=1, max=100000)
+  outside -> Y as births:
+    rate: 0.0001 * Y * effect(X, linear, normal=1, max=100000)
+  Y -> outside as deaths: 0.1 * Y
+schedule:
+  every: 200
+  at 1 low: {immigration: 60}
+  at 101 high: {immigration: 140}

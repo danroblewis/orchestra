@@ -1,0 +1,31 @@
+title: "Orders follow the gap to a goal for two stocks together"
+level: 8
+tags: [distilled, gap, balancing, loop, supply-line]
+tests: "orders follow one gap between a goal and the inventory plus the supply line, (400 - I - P) / 5 = 80 - 0.2 I - 0.2 P (stock management with the supply line counted: 105, 106's hiring): the inflow reads both stocks with the same coefficient, not only I with a smaller one or P as a drain; announced arrivals of 150 into I every 100 steps"
+seed: 124
+stocks: {P: 0, I: 100}
+flows:
+  outside -> P as orders: 80 - 0.2 * I - 0.2 * P
+  P -> I as arrive: 0.25 * P
+  I -> outside as demand: 0.1 * I
+injections:
+  - {t: 50, stock: I, amount: 150}
+  - {t: 150, stock: I, amount: 150}
+  - {t: 250, stock: I, amount: 150}
+  - {t: 350, stock: I, amount: 150}
+  - {t: 450, stock: I, amount: 150}
+  - {t: 550, stock: I, amount: 150}
+  - {t: 650, stock: I, amount: 150}
+  - {t: 750, stock: I, amount: 150}
+  - {t: 850, stock: I, amount: 150}
+  - {t: 950, stock: I, amount: 150}
+  - {t: 1050, stock: I, amount: 150}
+  - {t: 1150, stock: I, amount: 150}
+  - {t: 1250, stock: I, amount: 150}
+  - {t: 1350, stock: I, amount: 150}
+  - {t: 1450, stock: I, amount: 150}
+  - {t: 1550, stock: I, amount: 150}
+  - {t: 1650, stock: I, amount: 150}
+  - {t: 1750, stock: I, amount: 150}
+  - {t: 1850, stock: I, amount: 150}
+  - {t: 1950, stock: I, amount: 150}

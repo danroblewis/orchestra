@@ -1,0 +1,41 @@
+title: "A drain whose rate drifts slowly"
+level: 3
+tags: [distilled, drift, outflow, unannounced]
+tests: "a drain whose rate drifts slowly and unannounced, 0.1 + 0.04 sin(2 pi t / 600) in 30 steps of 20, rather than stepping; from the BLS labour flows (transition rates drift with the business cycle): the drain is recovered window by window (or as one drifting rate), not replaced by inflow pieces, and the long noisy run still gives a model"
+seed: 121
+stocks: {A: 200}
+flows:
+  outside -> A: 20
+  A -> outside: 0.1 * A
+schedule:
+  every: 600
+  at 1 d0: {A -> outside: 0.1042 * A}
+  at 21 d1: {A -> outside: 0.1124 * A}
+  at 41 d2: {A -> outside: 0.1200 * A}
+  at 61 d3: {A -> outside: 0.1268 * A}
+  at 81 d4: {A -> outside: 0.1324 * A}
+  at 101 d5: {A -> outside: 0.1365 * A}
+  at 121 d6: {A -> outside: 0.1391 * A}
+  at 141 d7: {A -> outside: 0.1400 * A}
+  at 161 d8: {A -> outside: 0.1391 * A}
+  at 181 d9: {A -> outside: 0.1365 * A}
+  at 201 d10: {A -> outside: 0.1324 * A}
+  at 221 d11: {A -> outside: 0.1268 * A}
+  at 241 d12: {A -> outside: 0.1200 * A}
+  at 261 d13: {A -> outside: 0.1124 * A}
+  at 281 d14: {A -> outside: 0.1042 * A}
+  at 301 d15: {A -> outside: 0.0958 * A}
+  at 321 d16: {A -> outside: 0.0876 * A}
+  at 341 d17: {A -> outside: 0.0800 * A}
+  at 361 d18: {A -> outside: 0.0732 * A}
+  at 381 d19: {A -> outside: 0.0676 * A}
+  at 401 d20: {A -> outside: 0.0635 * A}
+  at 421 d21: {A -> outside: 0.0609 * A}
+  at 441 d22: {A -> outside: 0.0600 * A}
+  at 461 d23: {A -> outside: 0.0609 * A}
+  at 481 d24: {A -> outside: 0.0635 * A}
+  at 501 d25: {A -> outside: 0.0676 * A}
+  at 521 d26: {A -> outside: 0.0732 * A}
+  at 541 d27: {A -> outside: 0.0800 * A}
+  at 561 d28: {A -> outside: 0.0876 * A}
+  at 581 d29: {A -> outside: 0.0958 * A}

@@ -1,0 +1,11 @@
+title: "Hiring to a measured target"
+level: 9
+tags: [distilled, gap, input, floor, balancing]
+tests: "an inflow that closes the gap to a measured target, (desired - R) / 6 = 0.1667 desired - 0.1667 R, floored at 0 when the target drops below R, with a drain 0.025 R; from 106-canonical-workforce (hiring to a target): the inflow is recovered as k x input minus k x R with its floor binding, not as pieces of an unexplained inflow"
+seed: 125
+inputs:
+  desired: "200 + pulse_train(100, 25.5, 100, 200)"
+stocks: {R: 150}
+flows:
+  outside -> R as hiring: 0.16666666666666666 * desired - 0.16666666666666666 * R
+  R -> outside: 0.025 * R

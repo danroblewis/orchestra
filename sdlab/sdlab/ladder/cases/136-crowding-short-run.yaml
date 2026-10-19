@@ -1,0 +1,11 @@
+title: Logistic growth seen for 21 to 30 steps
+level: 12
+tags: [distilled, product, crowding, effect, effect-linear, short-series]
+tests: "crowding found from a short series: logistic growth (births 0.6 X, crowding 0.6 X x X / 500) seen for 21 (short) and 30 (long) samples, the length of most lab and adoption series; from the twins of real-gause-a3-pa/-pc and real-adoption-internet/-cellular-phone: the crowding product is found from about ten rising steps, not written as inflow pieces and a linear drain"
+seed: 136
+stocks: {X: 10}
+flows:
+  outside -> X as births: 0.6 * X
+  X -> outside as crowding:
+    rate: 0.6 * X * effect(X, linear, normal=500, max=10)
+variants: {lengths: {short: 21, long: 30}}

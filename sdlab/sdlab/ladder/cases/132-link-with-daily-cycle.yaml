@@ -1,0 +1,16 @@
+title: A link whose strength follows a daily cycle
+level: 12
+tags: [distilled, link, periodic, inflow-change, unannounced]
+tests: "a link whose strength follows a daily cycle: posts into S follow X (0.03 X at night, 0.1 X by day, switching unannounced on a 24-step cycle) and drain at 0.5, while X grows from 1000 towards 4000; from sd-moderation (posts follow users through the day): the link and its cycle are recovered, not averaged into one coefficient with a slow drain"
+seed: 132
+stocks: {X: 1000, S: 50}
+flows:
+  outside -> X: 20
+  X -> outside: 0.005 * X
+  outside -> S: 0.03 * X
+  S -> outside: 0.5 * S
+schedule:
+  every: 24
+  at 1 night: {s_in: 0.03 * X}
+  at 9 day: {s_in: 0.1 * X}
+  at 23 night: {s_in: 0.03 * X}

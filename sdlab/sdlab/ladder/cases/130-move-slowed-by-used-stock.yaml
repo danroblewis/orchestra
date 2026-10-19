@@ -1,0 +1,22 @@
+title: "Shipping slowed by the shelf it empties"
+level: 12
+tags: [distilled, effect, effect-linear, coflow, inflow-change, unannounced]
+tests: "a move slowed by the stock it uses up: orders B ship at 0.6 x B times a linear effect of the shelf S (S / 300, at most 1), each order shipped taking one item off S, restocked at (550 - S) / 5; B's inflow steps unannounced, so in rushes S runs low and B's drain falls as B rises; from sd-webshop-stock (and sd-sawmill's blades, sd-bakery's flour): the effect and its co-flow are recovered, not a growth of B in proportion to itself (lna's runaway self-growth)"
+seed: 130
+stocks: {B: 100, S: 400}
+flows:
+  outside -> B: 60
+  B -> outside:
+    rate: 0.6 * B * effect(S, linear, normal=300, max=1)
+    uses: [{stock: S, per: 1}]
+  outside -> S: (550 - S) / 5
+schedule:
+  every: 360
+  at 1 normal: {outside -> B: 60}
+  at 46 viral: {outside -> B: 102}
+  at 76 back: {outside -> B: 60}
+  at 121 lull: {outside -> B: 42}
+  at 181 back2: {outside -> B: 60}
+  at 231 rush: {outside -> B: 78}
+  at 261 back3: {outside -> B: 60}
+  at 316 peak: {outside -> B: 120}

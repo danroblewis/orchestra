@@ -1,0 +1,19 @@
+title: "A co-flow on an outside inflow"
+level: 12
+tags: [distilled, coflow, inflow-change, unannounced]
+tests: "a co-flow on an outside inflow: arrivals into V (40 a step, 20 in quiet spells, unannounced) each use one unit of D, which is fed 150 (100 in a cut) and drains at 0.05; from sd-clinic-doses (walk-ins use doses): the co-flow is put on V's inflow, not read as a drain of D following V"
+seed: 128
+stocks: {V: 400, D: 2200}
+flows:
+  outside -> V:
+    rate: 40 uses(D, 1)
+  V -> outside: 0.1 * V
+  outside -> D: 150
+  D -> outside: 0.05 * D
+schedule:
+  every: 300
+  at 1 normal: {in: 40, d_in: 150}
+  at 71 cut: {d_in: 100}
+  at 131 quiet: {in: 20}
+  at 181 restored: {d_in: 150}
+  at 241 busy: {in: 40}

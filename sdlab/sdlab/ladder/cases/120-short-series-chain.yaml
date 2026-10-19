@@ -1,0 +1,11 @@
+title: "A chain of two seen for 15 samples"
+level: 2
+tags: [distilled, short-series, chain, move]
+tests: "very short series: 003's chain of two (inflow 500, move 0.3, drain 0.15) seen for only 15 (short) and 20 (long) samples; from the real-data cases (24 of 29 Gause cultures, the boarding-school flu and 4 adoption series give discovery fewer than 21 samples, and every strategy returns no model): a model is returned and recovered, not refused"
+seed: 120
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 500
+  A -> B: 0.3 * A
+  B -> outside: 0.15 * B
+variants: {lengths: {short: 15, long: 20}}

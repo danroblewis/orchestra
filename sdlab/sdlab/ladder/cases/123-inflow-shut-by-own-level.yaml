@@ -1,0 +1,43 @@
+title: "A heater switched by a steep table of its own stock"
+level: 10
+tags: [distilled, effect, effect-table, inflow, nonlinear, control]
+tests: "an inflow of 5 that shuts off between levels 18 and 22 of the stock it feeds (a steep table of its own level), drained at 0.1; from phys-thermostat (a heater switched by T; its memory is not expressible, so this is the switch without hysteresis), sd-sawmill's sharpening (6 x table(sharpness)) and 108's production: the inflow is recovered as a switch of T, not as a constant inflow and a faster drain or a linear controller; announced heat of 15 every 60 steps"
+seed: 123
+stocks: {T: 20}
+flows:
+  outside -> T: "5 * effect(T, table, [[0, 1], [18, 1], [22, 0], [100, 0]])"
+  T -> outside: 0.1 * T
+injections:
+  - {t: 30, stock: T, amount: 15}
+  - {t: 90, stock: T, amount: 15}
+  - {t: 150, stock: T, amount: 15}
+  - {t: 210, stock: T, amount: 15}
+  - {t: 270, stock: T, amount: 15}
+  - {t: 330, stock: T, amount: 15}
+  - {t: 390, stock: T, amount: 15}
+  - {t: 450, stock: T, amount: 15}
+  - {t: 510, stock: T, amount: 15}
+  - {t: 570, stock: T, amount: 15}
+  - {t: 630, stock: T, amount: 15}
+  - {t: 690, stock: T, amount: 15}
+  - {t: 750, stock: T, amount: 15}
+  - {t: 810, stock: T, amount: 15}
+  - {t: 870, stock: T, amount: 15}
+  - {t: 930, stock: T, amount: 15}
+  - {t: 990, stock: T, amount: 15}
+  - {t: 1050, stock: T, amount: 15}
+  - {t: 1110, stock: T, amount: 15}
+  - {t: 1170, stock: T, amount: 15}
+  - {t: 1230, stock: T, amount: 15}
+  - {t: 1290, stock: T, amount: 15}
+  - {t: 1350, stock: T, amount: 15}
+  - {t: 1410, stock: T, amount: 15}
+  - {t: 1470, stock: T, amount: 15}
+  - {t: 1530, stock: T, amount: 15}
+  - {t: 1590, stock: T, amount: 15}
+  - {t: 1650, stock: T, amount: 15}
+  - {t: 1710, stock: T, amount: 15}
+  - {t: 1770, stock: T, amount: 15}
+  - {t: 1830, stock: T, amount: 15}
+  - {t: 1890, stock: T, amount: 15}
+  - {t: 1950, stock: T, amount: 15}

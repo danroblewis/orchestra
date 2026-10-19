@@ -1,0 +1,29 @@
+title: "A drain that is a concave table of its own level"
+level: 10
+tags: [distilled, effect, effect-table, outflow, nonlinear]
+tests: "a drain that is a concave curve of its own level, sqrt(H) / 2 as a table at 0, 4, 16, 36 and 81 (the closest SD form of a Torricelli outflow k sqrt(H)); from phys-draining-tank and phys-coupled-tanks (sqrt is not expressible) and 108's consumption: the drain bends over the levels the run visits (about 0 to 80) and is recovered as a table of H, not as c + k H; announced top-ups of 80 every 100 steps"
+seed: 122
+stocks: {H: 2}
+flows:
+  H -> outside: "1 * effect(H, table, [[0, 0], [4, 1], [16, 2], [36, 3], [81, 4.5]])"
+injections:
+  - {t: 50, stock: H, amount: 80}
+  - {t: 150, stock: H, amount: 80}
+  - {t: 250, stock: H, amount: 80}
+  - {t: 350, stock: H, amount: 80}
+  - {t: 450, stock: H, amount: 80}
+  - {t: 550, stock: H, amount: 80}
+  - {t: 650, stock: H, amount: 80}
+  - {t: 750, stock: H, amount: 80}
+  - {t: 850, stock: H, amount: 80}
+  - {t: 950, stock: H, amount: 80}
+  - {t: 1050, stock: H, amount: 80}
+  - {t: 1150, stock: H, amount: 80}
+  - {t: 1250, stock: H, amount: 80}
+  - {t: 1350, stock: H, amount: 80}
+  - {t: 1450, stock: H, amount: 80}
+  - {t: 1550, stock: H, amount: 80}
+  - {t: 1650, stock: H, amount: 80}
+  - {t: 1750, stock: H, amount: 80}
+  - {t: 1850, stock: H, amount: 80}
+  - {t: 1950, stock: H, amount: 80}

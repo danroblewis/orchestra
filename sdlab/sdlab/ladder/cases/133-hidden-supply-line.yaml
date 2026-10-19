@@ -1,0 +1,30 @@
+title: "Orders through an unmeasured supply line"
+level: 13
+tags: [distilled, hidden, delay, gap, loop]
+tests: "a hidden stock fed from outside by a gap of the stock it feeds: orders (300 - I) / 5 wait unmeasured for 4 steps (DELAY1) before reaching I, drained at 0.1; from 105-canonical-inventory-supply-line, 108's capacity and 110's DELAY3 arrivals: an inferred supply line with its delay, not a faster drain of I and inflow pieces; announced arrivals of 50 into I every 100 steps"
+seed: 133
+stocks: {I: 0}
+flows:
+  outside -> I: delay1(60 - 0.2 * I, 4)
+  I -> outside: 0.1 * I
+injections:
+  - {t: 50, stock: I, amount: 50}
+  - {t: 150, stock: I, amount: 50}
+  - {t: 250, stock: I, amount: 50}
+  - {t: 350, stock: I, amount: 50}
+  - {t: 450, stock: I, amount: 50}
+  - {t: 550, stock: I, amount: 50}
+  - {t: 650, stock: I, amount: 50}
+  - {t: 750, stock: I, amount: 50}
+  - {t: 850, stock: I, amount: 50}
+  - {t: 950, stock: I, amount: 50}
+  - {t: 1050, stock: I, amount: 50}
+  - {t: 1150, stock: I, amount: 50}
+  - {t: 1250, stock: I, amount: 50}
+  - {t: 1350, stock: I, amount: 50}
+  - {t: 1450, stock: I, amount: 50}
+  - {t: 1550, stock: I, amount: 50}
+  - {t: 1650, stock: I, amount: 50}
+  - {t: 1750, stock: I, amount: 50}
+  - {t: 1850, stock: I, amount: 50}
+  - {t: 1950, stock: I, amount: 50}

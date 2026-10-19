@@ -1,0 +1,20 @@
+title: "A budget that runs out caps the move that spends it"
+level: 12
+tags: [distilled, coflow, empty, inflow-change, unannounced]
+tests: "a co-flow whose used stock runs empty: Q drains at 0.3 x Q spending 2 of R per unit, R is granted 60 a step (40 in a cut) and expires at 0.02, so in Q's busy spells R empties and caps the move; from sd-cloud-credits (credits), sd-print-shop (paper), sd-bakery (flour) and sd-clinic-doses: recovered as a co-flow that starves, not as a constant outflow, a grant growing with R or inflow pieces"
+seed: 129
+stocks: {Q: 70, R: 1000}
+flows:
+  outside -> Q: 20
+  Q -> outside:
+    rate: 0.3 * Q uses(R, 2)
+  outside -> R: 60
+  R -> outside: 0.02 * R
+schedule:
+  every: 720
+  at 1 usual: {in: 20, r_in: 60}
+  at 181 crunch: {in: 40}
+  at 241 quiet: {in: 15}
+  at 401 cut: {r_in: 40}
+  at 481 back: {in: 20}
+  at 601 restored: {in: 15, r_in: 60}

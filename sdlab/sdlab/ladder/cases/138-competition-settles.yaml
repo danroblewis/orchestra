@@ -1,0 +1,17 @@
+title: Two species competing for one food
+level: 13
+tags: [distilled, product, crowding, effect, effect-linear, coupled]
+tests: "products seen only while they settle: two species, each crowded by itself and by the other (four products), approach coexistence with nothing re-exciting them; from real-gause-a3-mixture's twin (gLV competition): the four products are found from the approach, not as links, pieces or a move between the species"
+seed: 138
+stocks: {P: 10, Q: 10}
+flows:
+  outside -> P as p_births: 0.3 * P
+  P -> outside as p_crowding:
+    rate: 0.3 * P * effect(P, linear, normal=1000, max=10)
+  P -> outside as p_competition:
+    rate: 0.15 * P * effect(Q, linear, normal=1000, max=10)
+  outside -> Q as q_births: 0.2 * Q
+  Q -> outside as q_crowding:
+    rate: 0.2 * Q * effect(Q, linear, normal=1000, max=10)
+  Q -> outside as q_competition:
+    rate: 0.1 * Q * effect(P, linear, normal=1000, max=10)

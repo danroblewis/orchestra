@@ -1,0 +1,31 @@
+title: "Rework that waits unmeasured and comes back"
+level: 12
+tags: [distilled, hidden, delay, loop, rework]
+tests: "a hidden stock that returns to the stock it left: W is completed at 0.075 W, and 0.025 W goes into an unmeasured stock U that comes back to W at U / 15; from 107-canonical-rework (undiscovered rework): an inferred stock on a loop from W to itself, not a drain reading another stock or a running total; announced new work of 500 every 100 steps"
+seed: 135
+stocks: {W: 500, U: 0 hidden}
+flows:
+  W -> outside: 0.075 * W
+  W -> U: 0.025 * W
+  U -> W: 0.06666666666666667 * U
+injections:
+  - {t: 100, stock: W, amount: 500}
+  - {t: 200, stock: W, amount: 500}
+  - {t: 300, stock: W, amount: 500}
+  - {t: 400, stock: W, amount: 500}
+  - {t: 500, stock: W, amount: 500}
+  - {t: 600, stock: W, amount: 500}
+  - {t: 700, stock: W, amount: 500}
+  - {t: 800, stock: W, amount: 500}
+  - {t: 900, stock: W, amount: 500}
+  - {t: 1000, stock: W, amount: 500}
+  - {t: 1100, stock: W, amount: 500}
+  - {t: 1200, stock: W, amount: 500}
+  - {t: 1300, stock: W, amount: 500}
+  - {t: 1400, stock: W, amount: 500}
+  - {t: 1500, stock: W, amount: 500}
+  - {t: 1600, stock: W, amount: 500}
+  - {t: 1700, stock: W, amount: 500}
+  - {t: 1800, stock: W, amount: 500}
+  - {t: 1900, stock: W, amount: 500}
+  - {t: 2000, stock: W, amount: 500}
