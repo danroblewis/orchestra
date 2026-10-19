@@ -4,7 +4,7 @@ The stocks are hidden states that move by the flows, with counting noise as the 
 (lna's linear noise approximation: each flow a Poisson draw, a move's draw shared by both ends),
 and the reported levels are observations of them: with a measurement error (absolute and
 relative), at uneven times (each interval spans its steps), as means over a window (weekly
-reports), late (a reporting delay, read where announced injections or eras pin it), with gross
+reports), late (a reporting delay, read where announced injections pin it), with gross
 errors (left out), and with a stock counted at a scale (a bias, read where a move pins it). The
 numbers come from the Kalman filter's likelihood, the flows from lna's atoms chosen by BIC
 (run.py, search.py), unmeasured stocks between two measured ones as one more state (hidden.py).
@@ -13,8 +13,9 @@ Which reading the data need:
 - points at uneven times, or one per window: the filter;
 - every step, up to SMALL stocks (or announced injections): the filter's superset is fitted first
   (gross errors left out, a reporting delay read); a measurement error that gains LR_NOISE BIC
-  prices sends the data to the filter (not where a stock sits at zero: floors are outside the
-  atoms, and a measurement error would stand in for them);
+  prices sends the data to the filter (not where a stock sits at zero, nor where the atoms leave
+  much variance beyond counting noise even with the error read: floors, effects and co-flows are
+  outside the atoms, and a measurement error would stand in for them);
 - gross errors the filter sees (a standardised innovation beyond 10, where counting noise and a
   misfit of the atoms stay below 6): the filter, which leaves them out;
 - otherwise the base strategy's answer, unless the filter's search finds a reporting delay
@@ -80,8 +81,12 @@ LR_NOISE = 4.0        # twice the log-likelihood the measurement error gains, in
 FLOOR = 0.05          # beyond this share of points at zero, no measurement error is read (floors bind)
 
 
+MISFIT = 0.3          # nor where, with the error read, the atoms still leave this share of a stock's
+                      # step variance unexplained (effects, co-flows, caps: an error would stand in)
+
+
 def noisy(ev: dict) -> bool:
-    return ev["lr"] > LR_NOISE * ev["price"] and ev["floor"] <= FLOOR
+    return ev["lr"] > LR_NOISE * ev["price"] and ev["floor"] <= FLOOR and ev["misfit"] <= MISFIT
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -91,9 +96,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     uneven = len(t) > 1 and (bool(np.any(np.diff(t) != 1)) or not np.isfinite(Y).all())
     ses = Session(stocks, run, opts)
     info: dict = {}
-    left = outer_left()
-
     def allow(share, most):
+        left = outer_left()                    # what the caller's timer leaves now
         ses.allow(min(most, share * left) if left else most)
 
     def kalman(why):

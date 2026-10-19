@@ -17,7 +17,7 @@ from .hidden import hidden
 from .robust import FRAC, RATIO, gross_errors
 
 BUDGET = 100.0        # seconds for the whole search (opts "kalman_budget"); past it, None
-MAX_LAG = 8           # reporting delays tried where injections or eras pin one
+MAX_LAG = 8           # reporting delays tried where announced injections pin one
 Z_GROSS = 10.0       # beyond this, a value is a gross error for the base too (it gets its neighbours' mean)
 Z_OUT = 5.0           # a reported value whose standardised innovation passes this is a gross error
 
@@ -165,15 +165,15 @@ class Session:
                 best = (pr, cur)
         pr, cur = best
         self.stage("first fit")
-        # a reporting delay, where announced injections or eras pin it
-        if self.inj or self.conf:
+        # a reporting delay, where announced injections pin it (eras, noise-free, misled it: 019)
+        if self.inj:
             best_lag = (pr, cur)
             for lag in range(1, MAX_LAG + 1):
                 p2 = self.problem(pr.lay.span, lag, pr.lay.mask)
                 p2.refresh(cur)
                 c2 = S.refit(p2, cur.atoms, cur)
                 self.trace.append(f"lag {lag}: nll {c2.nll:.1f}")
-                if c2.nll < best_lag[1].nll - 1e-6:
+                if c2.nll < best_lag[1].nll - S.price(pr):          # a delay is one more number
                     best_lag = (p2, c2)
             if best_lag[0] is not pr:
                 # the atoms were chosen from the superset at lag 0: fitted again from the superset at this lag
@@ -225,12 +225,15 @@ class Session:
         exact = S.refit(pr, cur.atoms, Fitted(cur.atoms, cur.theta, cur.nll, cur.tau, 0.0, 0.0, cur.scale))
         pr.noise = keep
         lr = max(0.0, 2 * (exact.nll - cur.nll))
+        # what the flows leave beyond counting noise once the error is read (a misfit of the atoms:
+        # effects, co-flows, caps), as a share of each stock's step variance
+        misfit = float(np.max(np.where(pr.free_tau[: pr.nm], cur.tau[: pr.nm], 0.0) / pr.step_variance(cur)[: pr.nm]))
         share = float(np.max(pr.meas_variance(cur) / pr.step_variance(cur)[: pr.nm]))
         # a stock at (or next to) zero: where a floor binds, the linear flows misfit at the step's
         # scale, and an error in the levels is the only thing the model has to explain it with
         floor = float(np.mean(np.any(self.seen & (self.Y <= 1.0), axis=1)))
         return {"lr": lr, "price": S.price(pr), "abs": math.sqrt(max(cur.alpha, 0.0)), "rel": math.sqrt(max(cur.rho2, 0.0)),
-                "share": share, "floor": floor}
+                "share": share, "floor": floor, "misfit": misfit, "points": int(pr.lay.mask.any(axis=1).sum())}
 
     def finish(self) -> dict:
         pr, cur = self.pr, self.cur
