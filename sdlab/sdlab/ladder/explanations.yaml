@@ -26,6 +26,21 @@ strategies:
     builds_on: nothing (it is the base the others extend)
     status: active
 
+  blockwise:
+    idea: The main line made to scale to hundreds of measured stocks (a Kubernetes platform), with unseen one-step stages and links in place of moves.
+    how: >-
+      Every stock's regression shares the same columns, so their sums are computed once and each
+      stock is fitted from small matrices (a 230-stock week takes seconds, not hours). Delayed copies
+      of other stocks' levels stand for unmeasured stages in front of a stock (a load balancer's
+      queue between two services), and what one stock does to another is read as a link that takes
+      nothing from it. Floored rates (scale up on a gap, down after it) and ratios of levels (memory
+      per request per pod) are offered to the best candidates. The stocks are split into weakly
+      coupled blocks, each block keeps the candidate that predicts it best, and every model is judged
+      with the measured inputs. Below 15 measured stocks it is the main line itself.
+    helps_with: Large models driven by a measured input (requests through a service graph), hidden one-step queues, links between services.
+    builds_on: matrix (the shared library's row reading, conservation and judge; no strategy imported)
+    status: active
+
   matrix_v2:
     idea: The main line with the fixes other strategies found for it, each one a switch that can be turned on or off.
     how: >-
