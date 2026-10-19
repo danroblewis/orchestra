@@ -123,6 +123,20 @@ strategies:
     status: active
     note: Research document docs/research/own_tables.md.
 
+  drifting_drain:
+    idea: A stock's drain whose rate drifts in time, unannounced, beside a steady inflow, instead of a steady drain and an inflow in many pieces.
+    how: >-
+      Taking the main line's model, each stock's outside inflow and own drain are replaced by a
+      constant inflow and a drain whose rate changes in stretches. The inflow is found by trying
+      each possible value and cutting the drain's rate into stretches (each cut must pay its
+      price); for counted levels the size of the noise also says how much flows in. It is kept
+      only if it scores clearly better than the main line's model (BIC; for counts, the
+      likelihood of counting noise).
+    helps_with: A drain that drifts (case 121), as labour-market transition rates drift with the business cycle.
+    builds_on: matrix (its scoring copied from censored)
+    status: active
+    note: Research document docs/research/drifting_drain.md.
+
   gated:
     idea: Before judging, throw out candidate models that run away when simulated freely.
     how: >-
