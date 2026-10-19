@@ -123,7 +123,10 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     # (opts "inputs") measured inputs, {name: value per step aligned with t}: each a column after the
     # others, its value during the step (t[k] to t[k + 1]: the value at t[k + 1]); any row may take one
     # (a positive number is an inflow k x input, a negative one an outflow), if it pays for itself
-    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids]
+    # (a caller that keeps the raw fit or rows, keep_fit / keep_rows, reads every column as a stock's
+    # level: it gets no input columns until it says it can take them, opts["input_columns"])
+    use = opts.get("input_columns", not (opts.get("keep_fit") or opts.get("keep_rows")))
+    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids] if use else []
     if keep is not None:
         inputs = [(k, v[keep]) for k, v in inputs]
     names = ids + [e["id"] for e in extras] + [e["id"] for e in extra] + [k for k, _ in inputs]

@@ -216,7 +216,9 @@ How a strategy can use them:
 - as an extra regressor column: `matrix` does this when `opts["inputs"]` is given (`matrix.py`, the
   input's value during each step is a column every row may take, kept only if it pays for itself
   under the same BIC; a positive number is a flow `outside -> X: k x input`, a negative one
-  `X -> outside: k x input`, marked `"input": name`);
+  `X -> outside: k x input`, marked `"input": name`). A caller that keeps the raw fit or rows
+  (`keep_fit`, `keep_rows`: earned_pieces, common_cause, row_crossover read every column as a
+  stock's level) gets no input columns unless it passes `input_columns: True` once it can take them;
 - in simulation: `simulate.Model(flows, ids, inputs={"t": t, "values": inputs})` (and
   `behaviour_error(..., inputs=...)`) runs flows whose rates read inputs;
 - strategies that ignore `opts["inputs"]` see an unexplained, changing outside inflow, as before.
