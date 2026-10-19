@@ -151,10 +151,10 @@ def _brief(r: dict, now: float) -> dict:
 
 def make(sm: dict | None = None, now: float | None = None) -> dict:
     """The panel (see the module docstring), made now."""
-    now = now or time.time()
     if sm is None:
         from . import leaderboard
-        sm = leaderboard.summary_now()[0]
+        sm = leaderboard.summary_now()[0]       # first, so `now` is when the runs are read (a cold summary takes a minute)
+    now = now or time.time()
     recent = store.runs(30)
     watch = store.runs(500, "watch")
     batch = _brief(watch[0], now) if watch else None
