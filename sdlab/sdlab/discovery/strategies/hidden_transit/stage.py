@@ -18,6 +18,8 @@ polished by a bounded search. The terms are chosen by BIC over small subsets; th
 the same terms arriving at once (no H) and the main line's own row (its pieces cost their numbers).
 A constant straight into X is not a term: it is u's constant, the starting levels absorbing the
 difference. Exact fits tie at a floor (the levels' rounding), so the fewest numbers win among them.
+Without counts the method has no model of the noise (measurement error makes a smoother of it look
+like a stage), so a stage must then explain the row exactly (noise-free data).
 With counts (whole numbers) each step is weighted by 1 / what moved through X in it (a count's
 variance is its rate), as the found model moves it.
 
@@ -43,6 +45,8 @@ from .pairs import flow_numbers
 
 SINK = "__stage_amount__"
 ORDERS = (1, 3)
+EXACT = 1e-6           # without counts, the stage's residual at most this share of the row's variance
+                       # (or the levels' rounding, whichever is larger)
 
 
 def _plain_rate(f: dict) -> bool:
@@ -102,6 +106,14 @@ def step_amounts(flows: list[dict], ids: list[str], t: list, P: np.ndarray, inpu
                   inputs={"t": list(t), "values": inputs} if inputs else None)
         out[i] = m.step(L.copy(), tt)[len(ids)]
     return out
+
+
+def resolution(x: np.ndarray) -> float:
+    """The levels' rounding step: 10^-k for the fewest decimals k (at most 8) that hold every value."""
+    for k in range(9):
+        if np.allclose(x, np.round(x, k), atol=1e-12, rtol=0):
+            return 10.0 ** -k
+    return 1e-8
 
 
 def _filter(z: np.ndarray, d: float) -> np.ndarray:
@@ -196,6 +208,8 @@ def fit_stage(y: np.ndarray, X: np.ndarray, cands: dict[str, np.ndarray], direct
                     continue
                 rss, d, beta = profile(y, n, Z, X if drained else None, W, lo, hi, w)
                 s = len(sub)
+                if math.log(hi / d) < 0.02 * math.log(hi / lo):
+                    continue                            # the shortest delay allowed: a smoother of noise, not a stage
                 if (drained and beta[s + n] < -1e-6) or np.mean(beta[:s] @ Z < -1e-6 * (1 + np.abs(y).mean())) > 0.05:
                     continue                            # X growing by itself, or a chain fed less than nothing
                 k = len(sub) + n + 1 + drained + len(dsub)
@@ -298,6 +312,10 @@ def try_stock(flows: list[dict], ids: list[str], run: dict, x: str, injections: 
         w = 1.0 / np.maximum(1.0, gross)
     res = fit_stage(y, X, cands, direct, d_lo, d_hi, w=w)
     if res["stage"] is None:
+        return None
+    # without counts the method has no model of the noise: measurement error (or outliers) on the
+    # levels makes a smoother of it look like a stage, so a stage must then explain X's row exactly
+    if not counts and res["stage"]["rss"] > max(EXACT * float(((y - y.mean()) ** 2).sum()), m * resolution(L[i]) ** 2):
         return None
     res["data"] = {"y": y, "X": X, "cands": cands, "direct": direct,
                    "gross": sum((abs(sign[j]) * np.abs(am[j]) for j in keep), np.zeros(m))}
