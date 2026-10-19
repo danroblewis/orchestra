@@ -62,13 +62,31 @@ class System:
         self.S, self.T = len(ids), dy.shape[1]
         # every free number: (row index, column index q in the row's X)
         self.free = [(s, q) for s, r in enumerate(rows) for q in r["set"]]
+        self.recv: dict | None = None     # (source, configuration) -> the receivers' columns (set_receivers)
+
+    def set_receivers(self, fit: dict) -> None:
+        """A source's receivers (in a configuration) are the same-unit rows that gain from its level
+        there (a positive number in the free fit, all its columns that read the level in that
+        configuration together); a negative number is a link (a stock that drains faster when the
+        source is high), not a move."""
+        self.recv = {}
+        for a in range(self.S):
+            for c in range(self.L):
+                self.recv[(a, c)] = [(s, q) for s in self._same_unit(a)
+                                     if sum(fit["beta"][s][self.rows[s]["set"].index(q)] for q in self._reading(s, a, c)) > 0
+                                     for q in self._reading(s, a, c)]
+
+    def receivers(self, a: int, c: int) -> list[tuple[int, int]]:
+        if self.recv is None:
+            return [(s, q) for s in self._same_unit(a) for q in self._reading(s, a, c)]
+        return self.recv[(a, c)]
 
     def configs(self, a: int) -> list[int]:
         """The configurations in which source a can be tied: its own level is in its row and some
         same-unit row gains from it."""
         if self.ids[a] in self.final:
             return []
-        return [c for c in range(self.L) if self._reading(a, a, c) and any(self._reading(s, a, c) for s in self._same_unit(a))]
+        return [c for c in range(self.L) if self._reading(a, a, c) and self.receivers(a, c)]
 
     def ties(self) -> list[int]:
         """The sources a tie can be made for (in every configuration it can be made in at once)."""
@@ -86,12 +104,7 @@ class System:
 
     def gain(self, fit: dict, a: int, c: int) -> float:
         """What a's same-unit receivers gain per unit of a's level in configuration c, in a fit."""
-        total = 0.0
-        for s in self._same_unit(a):
-            r = self.rows[s]
-            for q in self._reading(s, a, c):
-                total += float(fit["beta"][s][r["set"].index(q)])
-        return total
+        return float(sum(fit["beta"][s][self.rows[s]["set"].index(q)] for s, q in self.receivers(a, c)))
 
     def _same_unit(self, a: int) -> list[int]:
         return [s for s in range(self.S) if s != a and self.unit[self.ids[s]] == self.unit[self.ids[a]]]
@@ -117,9 +130,8 @@ class System:
             row = np.zeros(P)
             for q in self._reading(a, a, c):
                 row[index[(a, q)]] += 1.0
-            for s in self._same_unit(a):
-                for q in self._reading(s, a, c):
-                    row[index[(s, q)]] += 1.0
+            for s, q in self.receivers(a, c):
+                row[index[(s, q)]] += 1.0
             A.append(row)
         A = np.array(A) if A else np.zeros((0, P))
         # a tied source whose outside inflow changes cannot tell its drain from the changes (pieces
@@ -214,6 +226,7 @@ def decide(system: System, log_t: float, trace: bool = False) -> dict:
     changing rows' pieces found at the textbook price (System.fit, honest). The model is then
     fitted with the chosen ties and the cheap pieces: a changing row keeps the matrix's pieces when
     free, and gets pieces found with its drain held when tied."""
+    system.set_receivers(system.fit(set()))
     cands = system.ties()
     tied: set = set()
     best = system.fit(tied, honest=True)
