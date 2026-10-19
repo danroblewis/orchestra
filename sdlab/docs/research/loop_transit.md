@@ -2,9 +2,9 @@
 
 **Status:** done for 156 (whole-ladder results below); the hard cases (sd-ev-fleet, sd-recycling) are unchanged  
 **Strategy:** `loop_transit` (`sdlab/sdlab/discovery/strategies/loop_transit/`), a copy of
-`realistic_hats` at 06b0062 (every module, `transit/` included); code commit c3161de  
-**Verdict:** keep as a specialist (156 three of four, nothing lost against realistic_hats; see
-Results). The fixes are inside the pair fit and do not depend on 156's shape: they apply to any
+`realistic_hats` at 06b0062 (every module, `transit/` included); code commits c3161de, 6e4b7b9 (a stage takes at least 5% of its sender's loss)  
+**Verdict:** keep as a specialist (156 three of four; 9 cells better and none worse than realistic_hats
+on the 1,218 paired cells; see Results). The fixes are inside the pair fit and do not depend on 156's shape: they apply to any
 hidden stage beside announced injections or a return move.
 
 ## Why realistic_hats and hidden_transit failed 156
