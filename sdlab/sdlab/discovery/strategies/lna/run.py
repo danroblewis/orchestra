@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import math
+import time
 
 import numpy as np
 
 from ...matrix import configurations, injected
 from .atoms import Atom, features, restricted, stoich, superset, variances
-from .fit import Data, extra_variance, fit, mean_start, numbers, prune
+from .fit import Data, OutOfTime, extra_variance, fit, mean_start, numbers, prune
 from .changes import merge_eras, pieces, split_eras
 from .coflows import refine_per, with_coflows
 from .flows import to_flows
@@ -66,6 +67,8 @@ def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05) -> li
 #   flows(flows, cur, d, ctx) -> flows   the flows written from the atoms (a post-fit rewrite)
 HOOKS = ("data", "atoms", "before_search", "after_search", "flows")
 
+BUDGET = 60.0        # seconds for the search; past it, the matrix's answer is returned (opts "lna_budget")
+
 SCRATCH = 4          # up to this many stocks, every atom between them is tried
 
 
@@ -87,6 +90,13 @@ def bic(cur, d: Data) -> float:
 
 
 def discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict | None = None) -> dict | None:
+    try:
+        return _discover(stocks, run, opts, base, hooks)
+    except OutOfTime:
+        return None                    # past the budget: the matrix's answer stands
+
+
+def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict | None = None) -> dict | None:
     """The found model, or None (too short, or no counting noise to read).
 
     hooks (optional; see HOOKS): stages a variant adds without copying this function. Each gets
@@ -112,9 +122,18 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict 
     group = [s.get("group") for s in stocks]
     ctx = {"stocks": stocks, "ids": ids, "t": t, "opts": opts, "base": base, "unit": unit, "final": final,
            "group": group, "conf": conf, "bucket": bucket}
+    # measured inputs (opts "inputs": {name: value per step aligned with t}): rows after the stocks'
+    # levels, which atoms read as drivers (an inflow k x input, or a drain k x input)
+    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids]
+    inputs = [(k, v) for k, v in inputs if len(v) == prev.shape[1]]
+    if inputs:
+        prev = np.vstack([prev] + [v[None, :] for _, v in inputs])
+        ctx["names"] = ids + [k for k, _ in inputs]
+    ctx["inputs"] = [k for k, _ in inputs]
     if "data" in hooks:
         prev, dy = hooks["data"](prev, dy, ctx)
     d = Data(prev, dy, np.asarray(bucket)[conf[1]] if conf else None)
+    d.deadline = time.monotonic() + float(opts.get("lna_budget", BUDGET))
     ctx["d"] = d
     if S <= SCRATCH:
         atoms = superset(S, unit, final, group, gaps=False)
@@ -129,6 +148,8 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict 
             for j, k in row.items():
                 coef[s_].setdefault(j, k)
         atoms = restricted(S, coef, unit, final)
+    for j in range(S, S + len(inputs)):
+        atoms += [Atom("link", dst=s_, driver=j) for s_ in range(S)] + [Atom("drain", src=s_, driver=j) for s_ in range(S) if s_ not in final]
     if "atoms" in hooks:
         atoms = hooks["atoms"](atoms, d, ctx)
     phi = dispersion(atoms, mean_start(atoms, d), d)
@@ -159,6 +180,9 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict 
     at = lambda k: t[k + 1]  # noqa: E731
     ctx["at"] = at
     flows = to_flows(cur.atoms, cur.theta, ctx.get("names") or ids, d.prev, at, *((conf[0], conf[2], bucket) if conf else ()))
+    for f in flows:
+        if f.get("driver") in ctx["inputs"]:
+            f["input"] = f["driver"]
     if "flows" in hooks:
         flows = hooks["flows"](flows, cur, d, ctx)
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},

@@ -15,13 +15,23 @@ from __future__ import annotations
 import math
 
 from ...identify import identify as _matrix
-from ...identify import judge
+from ...simulate import behaviour_error
 from .run import discover
 
 GUARD = 4.0          # the matrix's model is kept when the likelihood's is judged this much worse
 MISFIT = None        # (tried: 0.3) fall back also when a stock's changes spread this much beyond
                      # counting noise (a share of its counting variance); on the examples it removed
                      # the gains (print-shop, supply) and none of the losses, so it is off
+
+
+def judge(flows: list[dict], stocks: list[dict], run: dict, opts: dict, horizons=(5, 20, 100)) -> float:
+    """The main line's judge (identify.judge), with the measured inputs the flows may read."""
+    hs = [h for h in horizons if h < len(run["t"]) / 4]
+    if not flows or not hs:
+        return float("inf")
+    ids = [s["id"] for s in stocks]
+    kw = {"inputs": opts["inputs"]} if opts.get("inputs") else {}
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=opts.get("injections"), **kw) for h in hs) / len(hs)
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
@@ -31,8 +41,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dic
     found = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base, hooks)
     if found is None:
         return base
-    mine = judge(found["flows"], stocks, run, injections=opts.get("injections"))
-    theirs = judge(base["flows"], stocks, run, injections=opts.get("injections"))
+    mine = judge(found["flows"], stocks, run, opts)
+    theirs = judge(base["flows"], stocks, run, opts)
     found["judged"] = {"lna": mine, "matrix": theirs}
     if (MISFIT is not None and found["misfit"] > MISFIT) or not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
         return {**base, "lna": {k: found[k] for k in ("judged", "nll", "dispersion", "misfit")}}

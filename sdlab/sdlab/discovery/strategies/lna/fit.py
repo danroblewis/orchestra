@@ -4,6 +4,7 @@ stay (backward elimination by BIC)."""
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,6 +26,11 @@ class Data:
     cfg: np.ndarray | None        # the configuration (era) in force at each step
     delta: float = ROUNDING
     free: np.ndarray | None = None   # the stocks whose variance beyond counting noise is fitted (others: 0)
+    deadline: float | None = None    # time.monotonic() past which fitting stops (OutOfTime)
+
+
+class OutOfTime(Exception):
+    """The search ran past its budget."""
 
 
 @dataclass
@@ -54,6 +60,8 @@ def mean_start(atoms: list[Atom], d: Data) -> np.ndarray:
 
 def fit(atoms: list[Atom], d: Data, start: np.ndarray | None = None, maxiter: int = 400, tau: np.ndarray | None = None, loose: bool = False) -> Fitted:
     """The atoms' numbers (>= 0) and each stock's extra variance, by maximum likelihood."""
+    if d.deadline is not None and time.monotonic() > d.deadline:
+        raise OutOfTime()
     S, T = d.dy.shape
     V, Z = stoich(atoms, S), features(atoms, d.prev, d.cfg)
     scale = np.maximum(Z.mean(axis=1), 1e-9) if atoms else np.zeros(0)   # theta x scale: the mean amount per step
@@ -109,9 +117,9 @@ def extra_variance(cur: Fitted, d: Data, price: float | None = None) -> np.ndarr
     for s in np.argsort(cur.tau if cur.tau is not None else np.zeros(S)):
         trial = free.copy()
         trial[s] = False
-        g = fit(cur.atoms, Data(d.prev, d.dy, d.cfg, d.delta, trial), cur.theta, maxiter=TRIAL, tau=cur.tau)
+        g = fit(cur.atoms, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline), cur.theta, maxiter=TRIAL, tau=cur.tau)
         if g.nll - cur.nll < price:
-            free, cur = trial, polish(g, Data(d.prev, d.dy, d.cfg, d.delta, trial))
+            free, cur = trial, polish(g, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline))
     return free
 
 
