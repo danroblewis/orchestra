@@ -22,12 +22,21 @@ The counting noise is used as it is: the data are counts (whole numbers), so eac
 its rate (scale 1), which also pins the rates' sizes where a short run's mean levels cannot. Data
 that are not counts get a concentrated scale.
 
+Then, on the stocks no pair took, hidden stages (stage.py): one measured stock whose inflow arrives
+through an unmeasured stage or a chain of three (DELAY1, DELAY3), fed from outside by a constant,
+the stock's own level, measured inputs or the levels its found flows read (a supply line ordered
+by a gap; an input that arrives late), or by the stock itself (rework that leaves and comes back),
+beside direct terms on measured inputs. Chosen by least squares profiled over the delay and BIC;
+with counts its numbers are refitted by a Kalman filter (stagekf.py).
+
 opts: "ht_margin" (BIC margin in units of log n, n the number of changes: default 4),
 "ht_found_ratio" (the model with H may behave at most this many times worse than the model as found,
 pieces and all; default 1.5), "ht_slack" (the model may behave this much worse than the
 reference on the data, default 0: it must behave better), "ht_max" (hidden stocks at most, default 2), "ht_turns" (H must turn over at least this many
 times in the run: delay <= T / ht_turns, default 15), "ht_min_delay" (a shorter delay is a move;
-default 1.5 steps), "ht_trace".
+default 1.5 steps), "ht_stages" (hidden stages at most, default 2), "ht_stage_margin" (a stage's BIC margin
+over the found row and the plain alternative, in log T: default 2), "ht_stage_found_ratio" (the model
+with a stage may behave at most this many times worse than the model as found: default 2), "ht_trace".
 """
 
 from __future__ import annotations
@@ -41,16 +50,20 @@ from ...simulate import behaviour_error, levels_array
 from .fit import fit_plain, fit_transit, screen
 from .kalman import Pair
 from .pairs import at_means, build, candidate, exogenous, flow_numbers, one_piece, pieces, split
+from .stage import hidden_levels, try_stock, write as write_stage
+from .stagekf import refine
 
 HORIZONS = (5, 20, 100)
 
 
-def judge(flows: list[dict], stocks: list[dict], run: dict, inferred: dict | None = None) -> float:
+def judge(flows: list[dict], stocks: list[dict], run: dict, inferred: dict | None = None, injections: list[dict] | None = None,
+          inputs: dict | None = None) -> float:
     hs = [h for h in HORIZONS if h < len(run["t"]) / 4]
     if not flows or not hs:
         return float("inf")
     ids = [s["id"] for s in stocks]
-    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, inferred=inferred) for h in hs) / len(hs)
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, inferred=inferred, injections=injections,
+                               inputs=inputs) for h in hs) / len(hs)
 
 
 def counts(run: dict) -> bool:
@@ -124,6 +137,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     most = opts.pop("ht_max", 2)
     trace = opts.pop("ht_trace", False)
     turns = opts.pop("ht_turns", 15)
+    opts_stage = {"most": opts.pop("ht_stages", 2), "margin": opts.pop("ht_stage_margin", 2.0),
+                  "found_ratio": opts.pop("ht_stage_found_ratio", 2.0)}
     r = main_line(stocks, run, opts)
     flows = r["flows"]
     ids = [s["id"] for s in stocks]
@@ -179,9 +194,61 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             break
         flows, inferred, base_e = new, inf, e
         used |= {a, b}
+    flows, inferred = stages(flows, stocks, run, opts, inferred, used, final, ids, shortest, turns, margin, found_ratio, slack,
+                             opts_stage, trace)
     r["flows"] = flows
     r["transit"] = tried
     if inferred:
         r["inferred_levels"] = inferred
         r["chosen"] = f"{r.get('chosen')} + {len(inferred)} transit stock(s)"
     return r
+
+
+def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferred: dict, used: set, final: set, ids: list[str],
+           shortest: float, turns: float, margin: float, found_ratio: float, slack: float, cfg: dict, trace: bool) -> tuple[list[dict], dict]:
+    """Hidden stages on single measured stocks' inflows (stage.py), greedily, best gain first, after
+    the pairs: each must beat the plain alternative and the found row by cfg["margin"] log n, and the
+    model with it must behave better on the data than the found model with the stock's outside
+    pieces held at their mean (and at most found_ratio times worse than the model as found)."""
+    injections, inputs = opts.get("injections"), opts.get("inputs")
+    T = len(run["t"]) - 1
+    d_lo, d_hi = max(1e-4, turns / len(run["t"])), min(0.9, 1 / shortest)
+    if d_lo >= d_hi:
+        return flows, inferred
+    done: set[str] = set()
+    is_counts = counts(run)
+    base_e = judge(flows, stocks, run, inferred, injections, inputs)
+    for _ in range(cfg["most"]):
+        best = None
+        for x in ids:
+            if x in used or x in done or x in final:
+                continue
+            res = try_stock(flows, ids, run, x, injections, inputs, d_lo, d_hi, is_counts)
+            if res is None:
+                continue
+            f = res["stage"]
+            if trace:
+                print(f"  stage on {x}: gain {res['gain']:.1f}; order {f['n']}, delay {f['n'] / f['d']:.3f}, u {f['terms']}, kX {f['kX']:.4f}, direct {f['direct']}; "
+                      f"plain {res['plain']['bic']:.1f}, found {res['found']['bic']:.1f} ({res['found']['k']} numbers)")
+            if res["gain"] > cfg["margin"] * math.log(T) and (best is None or res["gain"] > best[0]["gain"]):
+                best = (res, x)
+        if best is None:
+            break
+        res, x = best
+        done.add(x)
+        fit, dat = res["stage"], res["data"]
+        if is_counts:                       # the numbers by the filter's likelihood (the chain's own counts)
+            fit = refine(fit, dat["y"], dat["X"], dat["cands"], dat["direct"], dat["gross"], x)
+            if trace:
+                print(f"  refined: delay {fit['n'] / fit['d']:.3f}, u {fit['terms']}, kX {fit['kX']:.4f}, direct {fit['direct']}")
+        new, hs = write_stage(flows, res["keep"], x, fit, f"{x}~stage")
+        H = hidden_levels(fit, dat["cands"], len(dat["y"]))
+        inf = {**inferred, **{h: np.maximum(0.0, H[i]).tolist() for i, h in enumerate(hs)}}
+        e = judge(new, stocks, run, inf, injections, inputs)
+        ref = judge(at_means(flows, {x}), stocks, run, inferred, injections, inputs)
+        if trace:
+            print(f"  accept the stage on {x}? judge {e:.4f} vs {ref:.4f} (as found {base_e:.4f})")
+        if not (e <= (1 + slack) * ref + 1e-9 and e <= cfg["found_ratio"] * base_e + 1e-9):
+            continue
+        flows, inferred, base_e = new, inf, e
+    return flows, inferred
