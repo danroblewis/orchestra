@@ -1,0 +1,41 @@
+# The service catalogue of sd-k8s-small: the first rung under sd-k8s-platform. Five services behind
+# one edge load balancer, one node pool, no databases or queues; the same mechanisms per service
+# (load-balancer queue, retries, HPA, pods, CPU throttling, memory and OOM kills, the cluster
+# autoscaler) and the same events. build.py turns it into the example. Units as in platform.yaml.
+
+id: sd-k8s-small
+name: "SD: Kubernetes, 5 services"
+seed: 20261019
+days: 7
+long_days: 14
+
+traffic:
+  mean: 12000
+  daily: 0.45
+  half_daily: 0.12
+  peak_hour: 14         # the daily sine's peak; with the 12-hour harmonic the traffic peaks at 12:05
+  weekend: 0.25
+  spike: {day: 4, hour: 19, minutes: 45, height: 0.9}
+
+ingress: {web-frontend: 1.0}
+
+pools:
+  general: {cpu: 3600, mem: 14000, min: 2, max: 20, daemonsets: 6}     # 4 vCPU / 16 GiB nodes
+
+tiers:
+  frontend: {cms: 8, cpu_req: 250, cpu_lim: 1000, mem_req: 384, mem_lim: 768, mem_base: 220, mem_load: 0.3, startup: 1.5, pool: general}
+  api:      {cms: 5, cpu_req: 200, cpu_lim: 800, mem_req: 256, mem_lim: 512, mem_base: 160, mem_load: 0.3, startup: 1.0, pool: general}
+  backend:  {cms: 12, cpu_req: 500, cpu_lim: 2000, mem_req: 768, mem_lim: 1536, mem_base: 420, mem_load: 0.4, startup: 2.0, pool: general}
+
+services:
+  web-frontend: {tier: frontend, calls: {catalog-api: 1.5, cart: 0.4}}
+  catalog-api:  {tier: api, calls: {catalog: 1}}
+  catalog:      {tier: backend, leak: 1.0}
+  cart:         {tier: api, calls: {pricing: 1}}
+  pricing:      {tier: api, cms: 10, cpu_lim: 200, headroom: 0.8}       # limit = request: throttled at its peak
+
+events:
+  deploys:
+    - {day: 2, hour: 14, minutes: 15, services: [catalog-api, catalog]}
+  node_failures:
+    - {day: 3, hour: 11, pool: general, nodes: 1}

@@ -147,9 +147,13 @@ def test_the_simulator_steps_every_true_model_as_the_ground_truth_engine_does(ex
     (tmp_path / "truth.model.json").write_text(json.dumps(m))
     t = Truth(tmp_path / "truth.model.json")
     n = min(t.steps, 400)
-    engine = t.run(steps=n)["levels"]
+    run = t.run(steps=n)
+    engine = run["levels"]
     flows, _ = truth_by_time(m, list(range(1, n + 1)))
-    model, L = Model(flows, t.stock_ids), np.array([[float(s.get("initial") or 0)] for s in m["stocks"]])
+    # measured inputs and ceilings (sd-k8s-*), as the simulator takes them; none in the other examples
+    inputs = {"t": list(range(1, n + 1)), "values": run["inputs"]} if run.get("inputs") else None
+    ceilings = {s["id"]: s["max"] for s in m["stocks"] if s.get("max") is not None} or None
+    model, L = Model(flows, t.stock_ids, inputs=inputs, ceilings=ceilings), np.array([[float(s.get("initial") or 0)] for s in m["stocks"]])
     for k in range(1, n + 1):
         L = model.step(L, np.array([float(k)]))
         for i, s in enumerate(t.stock_ids):

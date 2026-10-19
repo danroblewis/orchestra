@@ -67,7 +67,7 @@ import random
 from copy import deepcopy
 from pathlib import Path
 
-from .runner import desired_rate, multiplier
+from .runner import desired_rate, multiplier  # noqa: F401  (the equations; run() uses a compiled copy, _compile)
 
 
 class Truth:
@@ -128,6 +128,19 @@ class Truth:
         for j in list(self.model.get("injections") or []) + list(injections or []):
             if int(j["t"]) <= steps and j.get("stock") in level:
                 injected.setdefault(int(j["t"]), []).append(j)
+        # added 2026-10-18 for speed on large models (sd-k8s-platform: ~500 stocks, ~1100 flows); the
+        # same arithmetic in the same order, so every number is bit-identical (tests/test_engine_additive.py):
+        # each stock's takers (its outflows, then the co-flows using it) and each ceiling's inflows are
+        # found once, not every sub-step, and each flow's rate x effects is a precompiled function
+        takers = []
+        for s in self.stock_ids:
+            take = {f["id"]: float(f.get("ratio") or 1) for f in flows if f.get("from") == s}
+            for f, per in users.get(s, []):
+                take[f["id"]] = take.get(f["id"], 0.0) + per
+            if take:
+                takers.append((s, list(take.items())))
+        into = [(s, c, [f["id"] for f in flows if f.get("to") == s]) for s, c in cap.items()]
+        speed = {f["id"]: _compile(f) for f in flows}
         applied = []
         levels = {s: [] for s in self.stock_ids}
         counters = {f["id"]: [] for f in flows}
@@ -136,6 +149,7 @@ class Truth:
             for e in changes.get(t, []):
                 for fid, rate in e["set"].items():
                     byid[fid]["rate"] = rate
+                    speed[fid] = _compile(byid[fid])
             for j in injected.get(t, []):
                 before = level[j["stock"]]
                 level[j["stock"]] = max(0.0, before + float(j["amount"]))
@@ -153,7 +167,7 @@ class Truth:
                         mean[k] += v / n_sub
                 amount = {}
                 for f in flows:
-                    q = desired_rate(f.get("rate"), view, f) * multiplier(f, view)
+                    q = speed[f["id"]](view)                  # desired_rate(f["rate"], view, f) * multiplier(f, view)
                     if n_sub > 1:
                         q = q * dt
                     if noise.get("counts") and f["id"] not in exact:
@@ -163,19 +177,14 @@ class Truth:
                     amount[f["id"]] = q
                 # nothing leaves a stock that is not there: outflows share what it holds (with the flows
                 # that use it up as they move, co-flows: each unit they move takes `per` of it)
-                for s in self.stock_ids:
-                    outs = [f for f in flows if f.get("from") == s]
-                    take = {f["id"]: float(f.get("ratio") or 1) for f in outs}
-                    for f, per in users.get(s, []):
-                        take[f["id"]] = take.get(f["id"], 0.0) + per
-                    want = sum(amount[fid] * w for fid, w in take.items())
-                    if want > level[s] > -1:
+                for s, take in takers:
+                    want = sum(amount[fid] * w for fid, w in take)
+                    if want > level[s] > -1 and want > 0:     # (want > 0: a stock a rounding error left at -1e-16 with nothing to give used to divide by zero)
                         k = max(0.0, level[s]) / want
-                        for fid in take:
+                        for fid, _ in take:
                             amount[fid] = math.floor(amount[fid] * k) if noise.get("counts") and fid not in exact else amount[fid] * k
                 # nothing enters a full stock: inflows share the room left under its ceiling
-                for s, c in cap.items():
-                    ins = [f["id"] for f in flows if f.get("to") == s]
+                for s, c, ins in into:
                     want = sum(amount[fid] for fid in ins)
                     room = max(0.0, c - level[s])
                     if want > room:
@@ -280,6 +289,65 @@ class Truth:
                 hidden.append({"from": a, "to": b, "via": via, "via_name": ", ".join(stocks[h].get("name", h) for h in via), "shape": "erlang",
                                "order": fs[0]["delay"]["of"], "delay": float(fs[0]["delay"]["time"]), "what": fs[0].get("name", gid)})
         return {"moves": moves, "outside": outside, "links": links, "hidden": hidden, "echoes": [], **({"coflows": coflows} if coflows else {}), **({"effects": effects} if effects else {})}
+
+
+def _compile(flow: dict):
+    """A flow's desired_rate(rate, level, flow) x multiplier(flow, level) (sdlab/runner.py) as one
+    function of the levels, with the same arithmetic in the same order (so bit-identical), and the
+    work that does not depend on the levels (parsing numbers, sorting a table's points) done once."""
+    rate = flow.get("rate")
+    effects = [_compile_effect(e) for e in flow.get("effects") or []]
+    form = rate.get("form") if rate else None
+    if form == "constant":
+        v = max(0.0, float(rate.get("value") or 0))
+        base = lambda level: v  # noqa: E731
+    elif form == "proportional":
+        k, st = float(rate.get("k") or 0), rate.get("stock")
+        base = lambda level: max(0.0, k * level.get(st, 0))  # noqa: E731
+    elif form == "gap":
+        t, goal, st = max(1e-9, float(rate.get("time") or 1)), float(rate.get("goal") or 0), rate.get("stock")
+        base = lambda level: max(0.0, (goal - level.get(st, 0)) / t)  # noqa: E731
+    elif form == "linear":
+        c = float(rate.get("c") or 0)
+        terms = [(float(x.get("k") or 0), x.get("stock")) for x in rate.get("terms") or []]
+        base = lambda level: max(0.0, c + sum(k * level.get(st, 0) for k, st in terms))  # noqa: E731
+    elif form == "available":
+        src = rate.get("stock") or flow.get("from")
+        r = float(flow.get("ratio") or 1) or 1
+        base = (lambda level: level.get(src, 0) / r) if src else (lambda level: 0.0)
+    else:
+        base = lambda level: 0.0  # noqa: E731
+    if not effects:
+        return lambda level: base(level) * 1.0
+
+    def rate_x_effects(level):
+        m = 1.0
+        for e in effects:
+            m *= e(level)
+        return base(level) * m
+    return rate_x_effects
+
+
+def _compile_effect(e: dict):
+    """runner.effect_value(e, level) as a function of the levels (the same arithmetic)."""
+    st = e.get("stock")
+    if e.get("shape") == "table" and e.get("points"):
+        pts = sorted((float(a), float(b)) for a, b in e["points"])
+        pairs = list(zip(pts, pts[1:]))
+
+        def tab(level):
+            x = level.get(st, 0)
+            if x <= pts[0][0]:
+                return max(0.0, pts[0][1])
+            for (x0, y0), (x1, y1) in pairs:
+                if x <= x1:
+                    return max(0.0, y0 + (y1 - y0) * (x - x0) / max(1e-9, x1 - x0))
+            return max(0.0, pts[-1][1])
+        return tab
+    normal = max(1e-9, float(e.get("normal") or 1))
+    lo = float(e["min"]) if e.get("min") is not None else 0.0
+    hi = float(e["max"]) if e.get("max") is not None else 1.0
+    return lambda level: min(hi, max(lo, level.get(st, 0) / normal))
 
 
 def substeps(model: dict) -> tuple[float, int]:

@@ -45,7 +45,8 @@ def test_every_existing_simulation_gives_the_same_numbers():
     """Every recorded output (ladder data, examples, bench models and answer keys) is bit-identical."""
     old = engine_outputs.recorded()
     ladder = sorted({k.split("/")[1] for k in old if k.startswith("ladder/")})       # the cases recorded (not ones added since)
-    now = engine_outputs.fingerprints([f"ladder|{c}" for c in ladder] + engine_outputs.example_items() + engine_outputs.bench_items())
+    examples = [i for i in engine_outputs.example_items() if f"example/{i.split('|', 1)[1]}/truth" in old]       # the examples recorded
+    now = engine_outputs.fingerprints([f"ladder|{c}" for c in ladder] + examples + engine_outputs.bench_items())
     missing = sorted(k for k in old if k not in now)
     changed = sorted(k for k in old if k in now and now[k] != old[k])
     assert not changed, f"{len(changed)} outputs changed: {changed[:10]}"

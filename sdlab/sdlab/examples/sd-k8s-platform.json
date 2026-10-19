@@ -1,0 +1,2063 @@
+{
+ "id": "sd-k8s-platform",
+ "name": "SD: Kubernetes platform (35 services)",
+ "description": "35 services on Kubernetes serving HTTP requests behind an edge load balancer, measured every minute for 7 days (Monday to Sunday): requests in flight, CPU used, memory working set per pod, desired and ready replicas and OOM restarts for every service; nodes and CPU and memory requested per node pool, connections and replication lag per database, messages waiting per queue. The main input is the traffic at the edge (a measured input: a daily cycle peaking around midday with weekend dips and a Friday-evening spike). Inside, each service has a load-balancer queue, retries, an HPA scaling on CPU (fast up, slow down), pods pending, starting, ready and terminating, CPU throttling at the limit, memory growing with load (and leaking in some), and OOM kills; the cluster autoscaler adds nodes for pending pods and removes underused ones. Events: a rolling update of checkout, catalog-api, search-index (announced); a node failure in pool general (an announced injection). 227 measured stocks, 252 hidden, 1130 flows. The ground truth is in sd-k8s-platform/truth.model.json, built from the service catalogue sdlab/examples/k8s/platform.yaml; docs/research/k8s-model.md maps each stock to its Prometheus metric.",
+ "time_unit": "minute",
+ "horizon": 240,
+ "dt": 1,
+ "stocks": [
+  {
+   "id": "ingress",
+   "name": "Edge load balancer: requests this minute",
+   "unit": "requests",
+   "initial": 26736,
+   "x": 80,
+   "y": 60,
+   "query": "sum(increase(nginx_ingress_controller_requests[1m]))"
+  },
+  {
+   "id": "mq_order_events",
+   "name": "Queue order-events: messages waiting",
+   "unit": "messages",
+   "initial": 1123,
+   "x": 270,
+   "y": 170,
+   "query": "sum(kafka_consumergroup_lag{topic=\"order-events\"})"
+  },
+  {
+   "id": "mq_emails",
+   "name": "Queue emails: messages waiting",
+   "unit": "messages",
+   "initial": 1123,
+   "x": 460,
+   "y": 170,
+   "query": "sum(kafka_consumergroup_lag{topic=\"emails\"})"
+  },
+  {
+   "id": "mq_user_events",
+   "name": "Queue user-events: messages waiting",
+   "unit": "messages",
+   "initial": 20052,
+   "x": 650,
+   "y": 170,
+   "query": "sum(kafka_consumergroup_lag{topic=\"user-events\"})"
+  },
+  {
+   "id": "mq_notify",
+   "name": "Queue notify: messages waiting",
+   "unit": "messages",
+   "initial": 2727,
+   "x": 840,
+   "y": 170,
+   "query": "sum(kafka_consumergroup_lag{topic=\"notify\"})"
+  },
+  {
+   "id": "mq_catalog_changes",
+   "name": "Queue catalog-changes: messages waiting",
+   "unit": "messages",
+   "initial": 1016,
+   "x": 1030,
+   "y": 170,
+   "query": "sum(kafka_consumergroup_lag{topic=\"catalog-changes\"})"
+  },
+  {
+   "id": "web_frontend_inflight",
+   "name": "web-frontend: requests in flight",
+   "unit": "requests",
+   "initial": 16042,
+   "x": 270,
+   "y": 280,
+   "query": "sum(increase(http_server_requests_total{service=\"web-frontend\"}[1m]))"
+  },
+  {
+   "id": "web_frontend_cpu",
+   "name": "web-frontend: CPU used",
+   "unit": "millicores",
+   "initial": 2289,
+   "x": 650,
+   "y": 280,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"web-frontend\"}[2m]))"
+  },
+  {
+   "id": "web_frontend_mem",
+   "name": "web-frontend: memory working set per pod",
+   "unit": "MiB",
+   "initial": 277,
+   "x": 1220,
+   "y": 280,
+   "query": "avg(container_memory_working_set_bytes{container=\"web-frontend\"}) / 2^20"
+  },
+  {
+   "id": "web_frontend_desired",
+   "name": "web-frontend: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 15,
+   "x": 1600,
+   "y": 280,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"web-frontend\"}"
+  },
+  {
+   "id": "web_frontend_ready",
+   "name": "web-frontend: ready replicas",
+   "unit": "pods",
+   "initial": 15,
+   "x": 2170,
+   "y": 280,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"web-frontend\"}"
+  },
+  {
+   "id": "web_frontend_oom",
+   "name": "web-frontend: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 280,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"web-frontend\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "mobile_bff_inflight",
+   "name": "mobile-bff: requests in flight",
+   "unit": "requests",
+   "initial": 8021,
+   "x": 270,
+   "y": 390,
+   "query": "sum(increase(http_server_requests_total{service=\"mobile-bff\"}[1m]))"
+  },
+  {
+   "id": "mobile_bff_cpu",
+   "name": "mobile-bff: CPU used",
+   "unit": "millicores",
+   "initial": 862,
+   "x": 650,
+   "y": 390,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"mobile-bff\"}[2m]))"
+  },
+  {
+   "id": "mobile_bff_mem",
+   "name": "mobile-bff: memory working set per pod",
+   "unit": "MiB",
+   "initial": 273,
+   "x": 1220,
+   "y": 390,
+   "query": "avg(container_memory_working_set_bytes{container=\"mobile-bff\"}) / 2^20"
+  },
+  {
+   "id": "mobile_bff_desired",
+   "name": "mobile-bff: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 6,
+   "x": 1600,
+   "y": 390,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"mobile-bff\"}"
+  },
+  {
+   "id": "mobile_bff_ready",
+   "name": "mobile-bff: ready replicas",
+   "unit": "pods",
+   "initial": 6,
+   "x": 2170,
+   "y": 390,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"mobile-bff\"}"
+  },
+  {
+   "id": "mobile_bff_oom",
+   "name": "mobile-bff: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 390,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"mobile-bff\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "partner_api_inflight",
+   "name": "partner-api: requests in flight",
+   "unit": "requests",
+   "initial": 2674,
+   "x": 270,
+   "y": 500,
+   "query": "sum(increase(http_server_requests_total{service=\"partner-api\"}[1m]))"
+  },
+  {
+   "id": "partner_api_cpu",
+   "name": "partner-api: CPU used",
+   "unit": "millicores",
+   "initial": 476,
+   "x": 650,
+   "y": 500,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"partner-api\"}[2m]))"
+  },
+  {
+   "id": "partner_api_mem",
+   "name": "partner-api: memory working set per pod",
+   "unit": "MiB",
+   "initial": 279,
+   "x": 1220,
+   "y": 500,
+   "query": "avg(container_memory_working_set_bytes{container=\"partner-api\"}) / 2^20"
+  },
+  {
+   "id": "partner_api_desired",
+   "name": "partner-api: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 500,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"partner-api\"}"
+  },
+  {
+   "id": "partner_api_ready",
+   "name": "partner-api: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 500,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"partner-api\"}"
+  },
+  {
+   "id": "partner_api_oom",
+   "name": "partner-api: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 500,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"partner-api\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "auth_inflight",
+   "name": "auth: requests in flight",
+   "unit": "requests",
+   "initial": 26736,
+   "x": 270,
+   "y": 610,
+   "query": "sum(increase(http_server_requests_total{service=\"auth\"}[1m]))"
+  },
+  {
+   "id": "auth_cpu",
+   "name": "auth: CPU used",
+   "unit": "millicores",
+   "initial": 1457,
+   "x": 650,
+   "y": 610,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"auth\"}[2m]))"
+  },
+  {
+   "id": "auth_mem",
+   "name": "auth: memory working set per pod",
+   "unit": "MiB",
+   "initial": 201,
+   "x": 1220,
+   "y": 610,
+   "query": "avg(container_memory_working_set_bytes{container=\"auth\"}) / 2^20"
+  },
+  {
+   "id": "auth_desired",
+   "name": "auth: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 12,
+   "x": 1600,
+   "y": 610,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"auth\"}"
+  },
+  {
+   "id": "auth_ready",
+   "name": "auth: ready replicas",
+   "unit": "pods",
+   "initial": 12,
+   "x": 2170,
+   "y": 610,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"auth\"}"
+  },
+  {
+   "id": "auth_oom",
+   "name": "auth: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 610,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"auth\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "users_inflight",
+   "name": "users: requests in flight",
+   "unit": "requests",
+   "initial": 12352,
+   "x": 270,
+   "y": 720,
+   "query": "sum(increase(http_server_requests_total{service=\"users\"}[1m]))"
+  },
+  {
+   "id": "users_cpu",
+   "name": "users: CPU used",
+   "unit": "millicores",
+   "initial": 1119,
+   "x": 650,
+   "y": 720,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"users\"}[2m]))"
+  },
+  {
+   "id": "users_mem",
+   "name": "users: memory working set per pod",
+   "unit": "MiB",
+   "initial": 202,
+   "x": 1220,
+   "y": 720,
+   "query": "avg(container_memory_working_set_bytes{container=\"users\"}) / 2^20"
+  },
+  {
+   "id": "users_desired",
+   "name": "users: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 9,
+   "x": 1600,
+   "y": 720,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"users\"}"
+  },
+  {
+   "id": "users_ready",
+   "name": "users: ready replicas",
+   "unit": "pods",
+   "initial": 9,
+   "x": 2170,
+   "y": 720,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"users\"}"
+  },
+  {
+   "id": "users_oom",
+   "name": "users: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 720,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"users\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "profile_inflight",
+   "name": "profile: requests in flight",
+   "unit": "requests",
+   "initial": 3208,
+   "x": 270,
+   "y": 830,
+   "query": "sum(increase(http_server_requests_total{service=\"profile\"}[1m]))"
+  },
+  {
+   "id": "profile_cpu",
+   "name": "profile: CPU used",
+   "unit": "millicores",
+   "initial": 297,
+   "x": 650,
+   "y": 830,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"profile\"}[2m]))"
+  },
+  {
+   "id": "profile_mem",
+   "name": "profile: memory working set per pod",
+   "unit": "MiB",
+   "initial": 193,
+   "x": 1220,
+   "y": 830,
+   "query": "avg(container_memory_working_set_bytes{container=\"profile\"}) / 2^20"
+  },
+  {
+   "id": "profile_desired",
+   "name": "profile: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 830,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"profile\"}"
+  },
+  {
+   "id": "profile_ready",
+   "name": "profile: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 830,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"profile\"}"
+  },
+  {
+   "id": "profile_oom",
+   "name": "profile: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 830,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"profile\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "catalog_api_inflight",
+   "name": "catalog-api: requests in flight",
+   "unit": "requests",
+   "initial": 46788,
+   "x": 270,
+   "y": 940,
+   "query": "sum(increase(http_server_requests_total{service=\"catalog-api\"}[1m]))"
+  },
+  {
+   "id": "catalog_api_cpu",
+   "name": "catalog-api: CPU used",
+   "unit": "millicores",
+   "initial": 4229,
+   "x": 650,
+   "y": 940,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"catalog-api\"}[2m]))"
+  },
+  {
+   "id": "catalog_api_mem",
+   "name": "catalog-api: memory working set per pod",
+   "unit": "MiB",
+   "initial": 204,
+   "x": 1220,
+   "y": 940,
+   "query": "avg(container_memory_working_set_bytes{container=\"catalog-api\"}) / 2^20"
+  },
+  {
+   "id": "catalog_api_desired",
+   "name": "catalog-api: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 33,
+   "x": 1600,
+   "y": 940,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"catalog-api\"}"
+  },
+  {
+   "id": "catalog_api_ready",
+   "name": "catalog-api: ready replicas",
+   "unit": "pods",
+   "initial": 33,
+   "x": 2170,
+   "y": 940,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"catalog-api\"}"
+  },
+  {
+   "id": "catalog_api_oom",
+   "name": "catalog-api: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 940,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"catalog-api\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "catalog_inflight",
+   "name": "catalog: requests in flight",
+   "unit": "requests",
+   "initial": 50799,
+   "x": 270,
+   "y": 1050,
+   "query": "sum(increase(http_server_requests_total{service=\"catalog\"}[1m]))"
+  },
+  {
+   "id": "catalog_cpu",
+   "name": "catalog: CPU used",
+   "unit": "millicores",
+   "initial": 5250,
+   "x": 650,
+   "y": 1050,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"catalog\"}[2m]))"
+  },
+  {
+   "id": "catalog_mem",
+   "name": "catalog: memory working set per pod",
+   "unit": "MiB",
+   "initial": 568,
+   "x": 1220,
+   "y": 1050,
+   "query": "avg(container_memory_working_set_bytes{container=\"catalog\"}) / 2^20"
+  },
+  {
+   "id": "catalog_desired",
+   "name": "catalog: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 17,
+   "x": 1600,
+   "y": 1050,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"catalog\"}"
+  },
+  {
+   "id": "catalog_ready",
+   "name": "catalog: ready replicas",
+   "unit": "pods",
+   "initial": 17,
+   "x": 2170,
+   "y": 1050,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"catalog\"}"
+  },
+  {
+   "id": "catalog_oom",
+   "name": "catalog: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1050,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"catalog\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "pricing_inflight",
+   "name": "pricing: requests in flight",
+   "unit": "requests",
+   "initial": 58017,
+   "x": 270,
+   "y": 1160,
+   "query": "sum(increase(http_server_requests_total{service=\"pricing\"}[1m]))"
+  },
+  {
+   "id": "pricing_cpu",
+   "name": "pricing: CPU used",
+   "unit": "millicores",
+   "initial": 4198,
+   "x": 650,
+   "y": 1160,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"pricing\"}[2m]))"
+  },
+  {
+   "id": "pricing_mem",
+   "name": "pricing: memory working set per pod",
+   "unit": "MiB",
+   "initial": 203,
+   "x": 1220,
+   "y": 1160,
+   "query": "avg(container_memory_working_set_bytes{container=\"pricing\"}) / 2^20"
+  },
+  {
+   "id": "pricing_desired",
+   "name": "pricing: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 33,
+   "x": 1600,
+   "y": 1160,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"pricing\"}"
+  },
+  {
+   "id": "pricing_ready",
+   "name": "pricing: ready replicas",
+   "unit": "pods",
+   "initial": 33,
+   "x": 2170,
+   "y": 1160,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"pricing\"}"
+  },
+  {
+   "id": "pricing_oom",
+   "name": "pricing: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1160,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"pricing\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "promotions_inflight",
+   "name": "promotions: requests in flight",
+   "unit": "requests",
+   "initial": 29009,
+   "x": 270,
+   "y": 1270,
+   "query": "sum(increase(http_server_requests_total{service=\"promotions\"}[1m]))"
+  },
+  {
+   "id": "promotions_cpu",
+   "name": "promotions: CPU used",
+   "unit": "millicores",
+   "initial": 2627,
+   "x": 650,
+   "y": 1270,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"promotions\"}[2m]))"
+  },
+  {
+   "id": "promotions_mem",
+   "name": "promotions: memory working set per pod",
+   "unit": "MiB",
+   "initial": 203,
+   "x": 1220,
+   "y": 1270,
+   "query": "avg(container_memory_working_set_bytes{container=\"promotions\"}) / 2^20"
+  },
+  {
+   "id": "promotions_desired",
+   "name": "promotions: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 21,
+   "x": 1600,
+   "y": 1270,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"promotions\"}"
+  },
+  {
+   "id": "promotions_ready",
+   "name": "promotions: ready replicas",
+   "unit": "pods",
+   "initial": 21,
+   "x": 2170,
+   "y": 1270,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"promotions\"}"
+  },
+  {
+   "id": "promotions_oom",
+   "name": "promotions: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1270,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"promotions\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "search_inflight",
+   "name": "search: requests in flight",
+   "unit": "requests",
+   "initial": 6417,
+   "x": 270,
+   "y": 1380,
+   "query": "sum(increase(http_server_requests_total{service=\"search\"}[1m]))"
+  },
+  {
+   "id": "search_cpu",
+   "name": "search: CPU used",
+   "unit": "millicores",
+   "initial": 585,
+   "x": 650,
+   "y": 1380,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"search\"}[2m]))"
+  },
+  {
+   "id": "search_mem",
+   "name": "search: memory working set per pod",
+   "unit": "MiB",
+   "initial": 199,
+   "x": 1220,
+   "y": 1380,
+   "query": "avg(container_memory_working_set_bytes{container=\"search\"}) / 2^20"
+  },
+  {
+   "id": "search_desired",
+   "name": "search: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 5,
+   "x": 1600,
+   "y": 1380,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"search\"}"
+  },
+  {
+   "id": "search_ready",
+   "name": "search: ready replicas",
+   "unit": "pods",
+   "initial": 5,
+   "x": 2170,
+   "y": 1380,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"search\"}"
+  },
+  {
+   "id": "search_oom",
+   "name": "search: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1380,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"search\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "search_index_inflight",
+   "name": "search-index: requests in flight",
+   "unit": "requests",
+   "initial": 9465,
+   "x": 270,
+   "y": 1490,
+   "query": "sum(increase(http_server_requests_total{service=\"search-index\"}[1m]))"
+  },
+  {
+   "id": "search_index_cpu",
+   "name": "search-index: CPU used",
+   "unit": "millicores",
+   "initial": 2446,
+   "x": 650,
+   "y": 1490,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"search-index\"}[2m]))"
+  },
+  {
+   "id": "search_index_mem",
+   "name": "search-index: memory working set per pod",
+   "unit": "MiB",
+   "initial": 944,
+   "x": 1220,
+   "y": 1490,
+   "query": "avg(container_memory_working_set_bytes{container=\"search-index\"}) / 2^20"
+  },
+  {
+   "id": "search_index_desired",
+   "name": "search-index: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 8,
+   "x": 1600,
+   "y": 1490,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"search-index\"}"
+  },
+  {
+   "id": "search_index_ready",
+   "name": "search-index: ready replicas",
+   "unit": "pods",
+   "initial": 8,
+   "x": 2170,
+   "y": 1490,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"search-index\"}"
+  },
+  {
+   "id": "search_index_oom",
+   "name": "search-index: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1490,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"search-index\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "recommendations_inflight",
+   "name": "recommendations: requests in flight",
+   "unit": "requests",
+   "initial": 8021,
+   "x": 270,
+   "y": 1600,
+   "query": "sum(increase(http_server_requests_total{service=\"recommendations\"}[1m]))"
+  },
+  {
+   "id": "recommendations_cpu",
+   "name": "recommendations: CPU used",
+   "unit": "millicores",
+   "initial": 1387,
+   "x": 650,
+   "y": 1600,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"recommendations\"}[2m]))"
+  },
+  {
+   "id": "recommendations_mem",
+   "name": "recommendations: memory working set per pod",
+   "unit": "MiB",
+   "initial": 552,
+   "x": 1220,
+   "y": 1600,
+   "query": "avg(container_memory_working_set_bytes{container=\"recommendations\"}) / 2^20"
+  },
+  {
+   "id": "recommendations_desired",
+   "name": "recommendations: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 5,
+   "x": 1600,
+   "y": 1600,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"recommendations\"}"
+  },
+  {
+   "id": "recommendations_ready",
+   "name": "recommendations: ready replicas",
+   "unit": "pods",
+   "initial": 5,
+   "x": 2170,
+   "y": 1600,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"recommendations\"}"
+  },
+  {
+   "id": "recommendations_oom",
+   "name": "recommendations: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1600,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"recommendations\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "ml_model_server_inflight",
+   "name": "ml-model-server: requests in flight",
+   "unit": "requests",
+   "initial": 9144,
+   "x": 270,
+   "y": 1710,
+   "query": "sum(increase(http_server_requests_total{service=\"ml-model-server\"}[1m]))"
+  },
+  {
+   "id": "ml_model_server_cpu",
+   "name": "ml-model-server: CPU used",
+   "unit": "millicores",
+   "initial": 3880,
+   "x": 650,
+   "y": 1710,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"ml-model-server\"}[2m]))"
+  },
+  {
+   "id": "ml_model_server_mem",
+   "name": "ml-model-server: memory working set per pod",
+   "unit": "MiB",
+   "initial": 1789,
+   "x": 1220,
+   "y": 1710,
+   "query": "avg(container_memory_working_set_bytes{container=\"ml-model-server\"}) / 2^20"
+  },
+  {
+   "id": "ml_model_server_desired",
+   "name": "ml-model-server: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 7,
+   "x": 1600,
+   "y": 1710,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"ml-model-server\"}"
+  },
+  {
+   "id": "ml_model_server_ready",
+   "name": "ml-model-server: ready replicas",
+   "unit": "pods",
+   "initial": 7,
+   "x": 2170,
+   "y": 1710,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"ml-model-server\"}"
+  },
+  {
+   "id": "ml_model_server_oom",
+   "name": "ml-model-server: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1710,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"ml-model-server\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "cart_inflight",
+   "name": "cart: requests in flight",
+   "unit": "requests",
+   "initial": 11229,
+   "x": 270,
+   "y": 1820,
+   "query": "sum(increase(http_server_requests_total{service=\"cart\"}[1m]))"
+  },
+  {
+   "id": "cart_cpu",
+   "name": "cart: CPU used",
+   "unit": "millicores",
+   "initial": 1016,
+   "x": 650,
+   "y": 1820,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"cart\"}[2m]))"
+  },
+  {
+   "id": "cart_mem",
+   "name": "cart: memory working set per pod",
+   "unit": "MiB",
+   "initial": 203,
+   "x": 1220,
+   "y": 1820,
+   "query": "avg(container_memory_working_set_bytes{container=\"cart\"}) / 2^20"
+  },
+  {
+   "id": "cart_desired",
+   "name": "cart: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 8,
+   "x": 1600,
+   "y": 1820,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"cart\"}"
+  },
+  {
+   "id": "cart_ready",
+   "name": "cart: ready replicas",
+   "unit": "pods",
+   "initial": 8,
+   "x": 2170,
+   "y": 1820,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"cart\"}"
+  },
+  {
+   "id": "cart_oom",
+   "name": "cart: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1820,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"cart\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "inventory_inflight",
+   "name": "inventory: requests in flight",
+   "unit": "requests",
+   "initial": 8074,
+   "x": 270,
+   "y": 1930,
+   "query": "sum(increase(http_server_requests_total{service=\"inventory\"}[1m]))"
+  },
+  {
+   "id": "inventory_cpu",
+   "name": "inventory: CPU used",
+   "unit": "millicores",
+   "initial": 733,
+   "x": 650,
+   "y": 1930,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"inventory\"}[2m]))"
+  },
+  {
+   "id": "inventory_mem",
+   "name": "inventory: memory working set per pod",
+   "unit": "MiB",
+   "initial": 201,
+   "x": 1220,
+   "y": 1930,
+   "query": "avg(container_memory_working_set_bytes{container=\"inventory\"}) / 2^20"
+  },
+  {
+   "id": "inventory_desired",
+   "name": "inventory: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 6,
+   "x": 1600,
+   "y": 1930,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"inventory\"}"
+  },
+  {
+   "id": "inventory_ready",
+   "name": "inventory: ready replicas",
+   "unit": "pods",
+   "initial": 6,
+   "x": 2170,
+   "y": 1930,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"inventory\"}"
+  },
+  {
+   "id": "inventory_oom",
+   "name": "inventory: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 1930,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"inventory\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "orders_api_inflight",
+   "name": "orders-api: requests in flight",
+   "unit": "requests",
+   "initial": 3743,
+   "x": 270,
+   "y": 2040,
+   "query": "sum(increase(http_server_requests_total{service=\"orders-api\"}[1m]))"
+  },
+  {
+   "id": "orders_api_cpu",
+   "name": "orders-api: CPU used",
+   "unit": "millicores",
+   "initial": 342,
+   "x": 650,
+   "y": 2040,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"orders-api\"}[2m]))"
+  },
+  {
+   "id": "orders_api_mem",
+   "name": "orders-api: memory working set per pod",
+   "unit": "MiB",
+   "initial": 198,
+   "x": 1220,
+   "y": 2040,
+   "query": "avg(container_memory_working_set_bytes{container=\"orders-api\"}) / 2^20"
+  },
+  {
+   "id": "orders_api_desired",
+   "name": "orders-api: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 2040,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"orders-api\"}"
+  },
+  {
+   "id": "orders_api_ready",
+   "name": "orders-api: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 2040,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"orders-api\"}"
+  },
+  {
+   "id": "orders_api_oom",
+   "name": "orders-api: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2040,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"orders-api\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "checkout_inflight",
+   "name": "checkout: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 2150,
+   "query": "sum(increase(http_server_requests_total{service=\"checkout\"}[1m]))"
+  },
+  {
+   "id": "checkout_cpu",
+   "name": "checkout: CPU used",
+   "unit": "millicores",
+   "initial": 170,
+   "x": 650,
+   "y": 2150,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"checkout\"}[2m]))"
+  },
+  {
+   "id": "checkout_mem",
+   "name": "checkout: memory working set per pod",
+   "unit": "MiB",
+   "initial": 457,
+   "x": 1220,
+   "y": 2150,
+   "query": "avg(container_memory_working_set_bytes{container=\"checkout\"}) / 2^20"
+  },
+  {
+   "id": "checkout_desired",
+   "name": "checkout: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2150,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"checkout\"}"
+  },
+  {
+   "id": "checkout_ready",
+   "name": "checkout: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2150,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"checkout\"}"
+  },
+  {
+   "id": "checkout_oom",
+   "name": "checkout: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2150,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"checkout\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "payments_inflight",
+   "name": "payments: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 2260,
+   "query": "sum(increase(http_server_requests_total{service=\"payments\"}[1m]))"
+  },
+  {
+   "id": "payments_cpu",
+   "name": "payments: CPU used",
+   "unit": "millicores",
+   "initial": 132,
+   "x": 650,
+   "y": 2260,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"payments\"}[2m]))"
+  },
+  {
+   "id": "payments_mem",
+   "name": "payments: memory working set per pod",
+   "unit": "MiB",
+   "initial": 448,
+   "x": 1220,
+   "y": 2260,
+   "query": "avg(container_memory_working_set_bytes{container=\"payments\"}) / 2^20"
+  },
+  {
+   "id": "payments_desired",
+   "name": "payments: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2260,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"payments\"}"
+  },
+  {
+   "id": "payments_ready",
+   "name": "payments: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2260,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"payments\"}"
+  },
+  {
+   "id": "payments_oom",
+   "name": "payments: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2260,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"payments\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "payment_adapter_inflight",
+   "name": "payment-adapter: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 2370,
+   "query": "sum(increase(http_server_requests_total{service=\"payment-adapter\"}[1m]))"
+  },
+  {
+   "id": "payment_adapter_cpu",
+   "name": "payment-adapter: CPU used",
+   "unit": "millicores",
+   "initial": 95,
+   "x": 650,
+   "y": 2370,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"payment-adapter\"}[2m]))"
+  },
+  {
+   "id": "payment_adapter_mem",
+   "name": "payment-adapter: memory working set per pod",
+   "unit": "MiB",
+   "initial": 174,
+   "x": 1220,
+   "y": 2370,
+   "query": "avg(container_memory_working_set_bytes{container=\"payment-adapter\"}) / 2^20"
+  },
+  {
+   "id": "payment_adapter_desired",
+   "name": "payment-adapter: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2370,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"payment-adapter\"}"
+  },
+  {
+   "id": "payment_adapter_ready",
+   "name": "payment-adapter: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2370,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"payment-adapter\"}"
+  },
+  {
+   "id": "payment_adapter_oom",
+   "name": "payment-adapter: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2370,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"payment-adapter\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "fraud_check_inflight",
+   "name": "fraud-check: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 2480,
+   "query": "sum(increase(http_server_requests_total{service=\"fraud-check\"}[1m]))"
+  },
+  {
+   "id": "fraud_check_cpu",
+   "name": "fraud-check: CPU used",
+   "unit": "millicores",
+   "initial": 170,
+   "x": 650,
+   "y": 2480,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"fraud-check\"}[2m]))"
+  },
+  {
+   "id": "fraud_check_mem",
+   "name": "fraud-check: memory working set per pod",
+   "unit": "MiB",
+   "initial": 457,
+   "x": 1220,
+   "y": 2480,
+   "query": "avg(container_memory_working_set_bytes{container=\"fraud-check\"}) / 2^20"
+  },
+  {
+   "id": "fraud_check_desired",
+   "name": "fraud-check: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2480,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"fraud-check\"}"
+  },
+  {
+   "id": "fraud_check_ready",
+   "name": "fraud-check: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2480,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"fraud-check\"}"
+  },
+  {
+   "id": "fraud_check_oom",
+   "name": "fraud-check: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2480,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"fraud-check\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "orders_inflight",
+   "name": "orders: requests in flight",
+   "unit": "requests",
+   "initial": 2246,
+   "x": 270,
+   "y": 2590,
+   "query": "sum(increase(http_server_requests_total{service=\"orders\"}[1m]))"
+  },
+  {
+   "id": "orders_cpu",
+   "name": "orders: CPU used",
+   "unit": "millicores",
+   "initial": 245,
+   "x": 650,
+   "y": 2590,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"orders\"}[2m]))"
+  },
+  {
+   "id": "orders_mem",
+   "name": "orders: memory working set per pod",
+   "unit": "MiB",
+   "initial": 475,
+   "x": 1220,
+   "y": 2590,
+   "query": "avg(container_memory_working_set_bytes{container=\"orders\"}) / 2^20"
+  },
+  {
+   "id": "orders_desired",
+   "name": "orders: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2590,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"orders\"}"
+  },
+  {
+   "id": "orders_ready",
+   "name": "orders: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2590,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"orders\"}"
+  },
+  {
+   "id": "orders_oom",
+   "name": "orders: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2590,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"orders\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "order_history_inflight",
+   "name": "order-history: requests in flight",
+   "unit": "requests",
+   "initial": 2620,
+   "x": 270,
+   "y": 2700,
+   "query": "sum(increase(http_server_requests_total{service=\"order-history\"}[1m]))"
+  },
+  {
+   "id": "order_history_cpu",
+   "name": "order-history: CPU used",
+   "unit": "millicores",
+   "initial": 238,
+   "x": 650,
+   "y": 2700,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"order-history\"}[2m]))"
+  },
+  {
+   "id": "order_history_mem",
+   "name": "order-history: memory working set per pod",
+   "unit": "MiB",
+   "initial": 200,
+   "x": 1220,
+   "y": 2700,
+   "query": "avg(container_memory_working_set_bytes{container=\"order-history\"}) / 2^20"
+  },
+  {
+   "id": "order_history_desired",
+   "name": "order-history: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2700,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"order-history\"}"
+  },
+  {
+   "id": "order_history_ready",
+   "name": "order-history: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2700,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"order-history\"}"
+  },
+  {
+   "id": "order_history_oom",
+   "name": "order-history: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2700,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"order-history\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "notifications_api_inflight",
+   "name": "notifications-api: requests in flight",
+   "unit": "requests",
+   "initial": 2727,
+   "x": 270,
+   "y": 2810,
+   "query": "sum(increase(http_server_requests_total{service=\"notifications-api\"}[1m]))"
+  },
+  {
+   "id": "notifications_api_cpu",
+   "name": "notifications-api: CPU used",
+   "unit": "millicores",
+   "initial": 247,
+   "x": 650,
+   "y": 2810,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"notifications-api\"}[2m]))"
+  },
+  {
+   "id": "notifications_api_mem",
+   "name": "notifications-api: memory working set per pod",
+   "unit": "MiB",
+   "initial": 202,
+   "x": 1220,
+   "y": 2810,
+   "query": "avg(container_memory_working_set_bytes{container=\"notifications-api\"}) / 2^20"
+  },
+  {
+   "id": "notifications_api_desired",
+   "name": "notifications-api: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 2810,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"notifications-api\"}"
+  },
+  {
+   "id": "notifications_api_ready",
+   "name": "notifications-api: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 2810,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"notifications-api\"}"
+  },
+  {
+   "id": "notifications_api_oom",
+   "name": "notifications-api: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2810,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"notifications-api\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "media_inflight",
+   "name": "media: requests in flight",
+   "unit": "requests",
+   "initial": 5615,
+   "x": 270,
+   "y": 2920,
+   "query": "sum(increase(http_server_requests_total{service=\"media\"}[1m]))"
+  },
+  {
+   "id": "media_cpu",
+   "name": "media: CPU used",
+   "unit": "millicores",
+   "initial": 1942,
+   "x": 650,
+   "y": 2920,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"media\"}[2m]))"
+  },
+  {
+   "id": "media_mem",
+   "name": "media: memory working set per pod",
+   "unit": "MiB",
+   "initial": 932,
+   "x": 1220,
+   "y": 2920,
+   "query": "avg(container_memory_working_set_bytes{container=\"media\"}) / 2^20"
+  },
+  {
+   "id": "media_desired",
+   "name": "media: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 7,
+   "x": 1600,
+   "y": 2920,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"media\"}"
+  },
+  {
+   "id": "media_ready",
+   "name": "media: ready replicas",
+   "unit": "pods",
+   "initial": 7,
+   "x": 2170,
+   "y": 2920,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"media\"}"
+  },
+  {
+   "id": "media_oom",
+   "name": "media: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 2920,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"media\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "order_worker_inflight",
+   "name": "order-worker: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 3030,
+   "query": "sum(increase(http_server_requests_total{service=\"order-worker\"}[1m]))"
+  },
+  {
+   "id": "order_worker_cpu",
+   "name": "order-worker: CPU used",
+   "unit": "millicores",
+   "initial": 779,
+   "x": 650,
+   "y": 3030,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"order-worker\"}[2m]))"
+  },
+  {
+   "id": "order_worker_mem",
+   "name": "order-worker: memory working set per pod",
+   "unit": "MiB",
+   "initial": 366,
+   "x": 1220,
+   "y": 3030,
+   "query": "avg(container_memory_working_set_bytes{container=\"order-worker\"}) / 2^20"
+  },
+  {
+   "id": "order_worker_desired",
+   "name": "order-worker: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 3030,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"order-worker\"}"
+  },
+  {
+   "id": "order_worker_ready",
+   "name": "order-worker: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 3030,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"order-worker\"}"
+  },
+  {
+   "id": "order_worker_oom",
+   "name": "order-worker: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3030,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"order-worker\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "email_worker_inflight",
+   "name": "email-worker: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 3140,
+   "query": "sum(increase(http_server_requests_total{service=\"email-worker\"}[1m]))"
+  },
+  {
+   "id": "email_worker_cpu",
+   "name": "email-worker: CPU used",
+   "unit": "millicores",
+   "initial": 779,
+   "x": 650,
+   "y": 3140,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"email-worker\"}[2m]))"
+  },
+  {
+   "id": "email_worker_mem",
+   "name": "email-worker: memory working set per pod",
+   "unit": "MiB",
+   "initial": 366,
+   "x": 1220,
+   "y": 3140,
+   "query": "avg(container_memory_working_set_bytes{container=\"email-worker\"}) / 2^20"
+  },
+  {
+   "id": "email_worker_desired",
+   "name": "email-worker: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 3140,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"email-worker\"}"
+  },
+  {
+   "id": "email_worker_ready",
+   "name": "email-worker: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 3140,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"email-worker\"}"
+  },
+  {
+   "id": "email_worker_oom",
+   "name": "email-worker: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3140,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"email-worker\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "templates_inflight",
+   "name": "templates: requests in flight",
+   "unit": "requests",
+   "initial": 1123,
+   "x": 270,
+   "y": 3250,
+   "query": "sum(increase(http_server_requests_total{service=\"templates\"}[1m]))"
+  },
+  {
+   "id": "templates_cpu",
+   "name": "templates: CPU used",
+   "unit": "millicores",
+   "initial": 132,
+   "x": 650,
+   "y": 3250,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"templates\"}[2m]))"
+  },
+  {
+   "id": "templates_mem",
+   "name": "templates: memory working set per pod",
+   "unit": "MiB",
+   "initial": 181,
+   "x": 1220,
+   "y": 3250,
+   "query": "avg(container_memory_working_set_bytes{container=\"templates\"}) / 2^20"
+  },
+  {
+   "id": "templates_desired",
+   "name": "templates: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 2,
+   "x": 1600,
+   "y": 3250,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"templates\"}"
+  },
+  {
+   "id": "templates_ready",
+   "name": "templates: ready replicas",
+   "unit": "pods",
+   "initial": 2,
+   "x": 2170,
+   "y": 3250,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"templates\"}"
+  },
+  {
+   "id": "templates_oom",
+   "name": "templates: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3250,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"templates\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "event_ingest_inflight",
+   "name": "event-ingest: requests in flight",
+   "unit": "requests",
+   "initial": 20052,
+   "x": 270,
+   "y": 3360,
+   "query": "sum(increase(http_server_requests_total{service=\"event-ingest\"}[1m]))"
+  },
+  {
+   "id": "event_ingest_cpu",
+   "name": "event-ingest: CPU used",
+   "unit": "millicores",
+   "initial": 1043,
+   "x": 650,
+   "y": 3360,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"event-ingest\"}[2m]))"
+  },
+  {
+   "id": "event_ingest_mem",
+   "name": "event-ingest: memory working set per pod",
+   "unit": "MiB",
+   "initial": 366,
+   "x": 1220,
+   "y": 3360,
+   "query": "avg(container_memory_working_set_bytes{container=\"event-ingest\"}) / 2^20"
+  },
+  {
+   "id": "event_ingest_desired",
+   "name": "event-ingest: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 4,
+   "x": 1600,
+   "y": 3360,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"event-ingest\"}"
+  },
+  {
+   "id": "event_ingest_ready",
+   "name": "event-ingest: ready replicas",
+   "unit": "pods",
+   "initial": 4,
+   "x": 2170,
+   "y": 3360,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"event-ingest\"}"
+  },
+  {
+   "id": "event_ingest_oom",
+   "name": "event-ingest: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3360,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"event-ingest\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "analytics_writer_inflight",
+   "name": "analytics-writer: requests in flight",
+   "unit": "requests",
+   "initial": 20052,
+   "x": 270,
+   "y": 3470,
+   "query": "sum(increase(http_server_requests_total{service=\"analytics-writer\"}[1m]))"
+  },
+  {
+   "id": "analytics_writer_cpu",
+   "name": "analytics-writer: CPU used",
+   "unit": "millicores",
+   "initial": 1043,
+   "x": 650,
+   "y": 3470,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"analytics-writer\"}[2m]))"
+  },
+  {
+   "id": "analytics_writer_mem",
+   "name": "analytics-writer: memory working set per pod",
+   "unit": "MiB",
+   "initial": 544,
+   "x": 1220,
+   "y": 3470,
+   "query": "avg(container_memory_working_set_bytes{container=\"analytics-writer\"}) / 2^20"
+  },
+  {
+   "id": "analytics_writer_desired",
+   "name": "analytics-writer: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 4,
+   "x": 1600,
+   "y": 3470,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"analytics-writer\"}"
+  },
+  {
+   "id": "analytics_writer_ready",
+   "name": "analytics-writer: ready replicas",
+   "unit": "pods",
+   "initial": 4,
+   "x": 2170,
+   "y": 3470,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"analytics-writer\"}"
+  },
+  {
+   "id": "analytics_writer_oom",
+   "name": "analytics-writer: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3470,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"analytics-writer\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "notify_worker_inflight",
+   "name": "notify-worker: requests in flight",
+   "unit": "requests",
+   "initial": 2727,
+   "x": 270,
+   "y": 3580,
+   "query": "sum(increase(http_server_requests_total{service=\"notify-worker\"}[1m]))"
+  },
+  {
+   "id": "notify_worker_cpu",
+   "name": "notify-worker: CPU used",
+   "unit": "millicores",
+   "initial": 939,
+   "x": 650,
+   "y": 3580,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"notify-worker\"}[2m]))"
+  },
+  {
+   "id": "notify_worker_mem",
+   "name": "notify-worker: memory working set per pod",
+   "unit": "MiB",
+   "initial": 380,
+   "x": 1220,
+   "y": 3580,
+   "query": "avg(container_memory_working_set_bytes{container=\"notify-worker\"}) / 2^20"
+  },
+  {
+   "id": "notify_worker_desired",
+   "name": "notify-worker: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 3580,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"notify-worker\"}"
+  },
+  {
+   "id": "notify_worker_ready",
+   "name": "notify-worker: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 3580,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"notify-worker\"}"
+  },
+  {
+   "id": "notify_worker_oom",
+   "name": "notify-worker: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3580,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"notify-worker\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "push_gateway_inflight",
+   "name": "push-gateway: requests in flight",
+   "unit": "requests",
+   "initial": 2727,
+   "x": 270,
+   "y": 3690,
+   "query": "sum(increase(http_server_requests_total{service=\"push-gateway\"}[1m]))"
+  },
+  {
+   "id": "push_gateway_cpu",
+   "name": "push-gateway: CPU used",
+   "unit": "millicores",
+   "initial": 303,
+   "x": 650,
+   "y": 3690,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"push-gateway\"}[2m]))"
+  },
+  {
+   "id": "push_gateway_mem",
+   "name": "push-gateway: memory working set per pod",
+   "unit": "MiB",
+   "initial": 194,
+   "x": 1220,
+   "y": 3690,
+   "query": "avg(container_memory_working_set_bytes{container=\"push-gateway\"}) / 2^20"
+  },
+  {
+   "id": "push_gateway_desired",
+   "name": "push-gateway: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 3690,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"push-gateway\"}"
+  },
+  {
+   "id": "push_gateway_ready",
+   "name": "push-gateway: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 3690,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"push-gateway\"}"
+  },
+  {
+   "id": "push_gateway_oom",
+   "name": "push-gateway: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3690,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"push-gateway\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "search_indexer_inflight",
+   "name": "search-indexer: requests in flight",
+   "unit": "requests",
+   "initial": 1016,
+   "x": 270,
+   "y": 3800,
+   "query": "sum(increase(http_server_requests_total{service=\"search-indexer\"}[1m]))"
+  },
+  {
+   "id": "search_indexer_cpu",
+   "name": "search-indexer: CPU used",
+   "unit": "millicores",
+   "initial": 1056,
+   "x": 650,
+   "y": 3800,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"search-indexer\"}[2m]))"
+  },
+  {
+   "id": "search_indexer_mem",
+   "name": "search-indexer: memory working set per pod",
+   "unit": "MiB",
+   "initial": 367,
+   "x": 1220,
+   "y": 3800,
+   "query": "avg(container_memory_working_set_bytes{container=\"search-indexer\"}) / 2^20"
+  },
+  {
+   "id": "search_indexer_desired",
+   "name": "search-indexer: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 4,
+   "x": 1600,
+   "y": 3800,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"search-indexer\"}"
+  },
+  {
+   "id": "search_indexer_ready",
+   "name": "search-indexer: ready replicas",
+   "unit": "pods",
+   "initial": 4,
+   "x": 2170,
+   "y": 3800,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"search-indexer\"}"
+  },
+  {
+   "id": "search_indexer_oom",
+   "name": "search-indexer: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3800,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"search-indexer\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "redis_session_inflight",
+   "name": "redis-session: requests in flight",
+   "unit": "requests",
+   "initial": 65236,
+   "x": 270,
+   "y": 3910,
+   "query": "sum(increase(http_server_requests_total{service=\"redis-session\"}[1m]))"
+  },
+  {
+   "id": "redis_session_cpu",
+   "name": "redis-session: CPU used",
+   "unit": "millicores",
+   "initial": 682,
+   "x": 650,
+   "y": 3910,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"redis-session\"}[2m]))"
+  },
+  {
+   "id": "redis_session_mem",
+   "name": "redis-session: memory working set per pod",
+   "unit": "MiB",
+   "initial": 1692,
+   "x": 1220,
+   "y": 3910,
+   "query": "avg(container_memory_working_set_bytes{container=\"redis-session\"}) / 2^20"
+  },
+  {
+   "id": "redis_session_ready",
+   "name": "redis-session: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 3910,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"redis-session\"}"
+  },
+  {
+   "id": "redis_session_oom",
+   "name": "redis-session: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 3910,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"redis-session\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "redis_cache_inflight",
+   "name": "redis-cache: requests in flight",
+   "unit": "requests",
+   "initial": 151593,
+   "x": 270,
+   "y": 4020,
+   "query": "sum(increase(http_server_requests_total{service=\"redis-cache\"}[1m]))"
+  },
+  {
+   "id": "redis_cache_cpu",
+   "name": "redis-cache: CPU used",
+   "unit": "millicores",
+   "initial": 672,
+   "x": 650,
+   "y": 4020,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"redis-cache\"}[2m]))"
+  },
+  {
+   "id": "redis_cache_mem",
+   "name": "redis-cache: memory working set per pod",
+   "unit": "MiB",
+   "initial": 2186,
+   "x": 1220,
+   "y": 4020,
+   "query": "avg(container_memory_working_set_bytes{container=\"redis-cache\"}) / 2^20"
+  },
+  {
+   "id": "redis_cache_ready",
+   "name": "redis-cache: ready replicas",
+   "unit": "pods",
+   "initial": 4,
+   "x": 2170,
+   "y": 4020,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"redis-cache\"}"
+  },
+  {
+   "id": "redis_cache_oom",
+   "name": "redis-cache: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 4020,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"redis-cache\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "orders_db_conn",
+   "name": "orders-db: connections in use (primary)",
+   "unit": "connections",
+   "initial": 4,
+   "x": 270,
+   "y": 4130,
+   "query": "sum(pg_stat_activity_count{datname=\"orders-db\",state=\"active\"})"
+  },
+  {
+   "id": "orders_db_replica_conn",
+   "name": "orders-db: connections in use (replica)",
+   "unit": "connections",
+   "initial": 11,
+   "x": 460,
+   "y": 4130,
+   "query": "sum(pg_stat_activity_count{datname=\"orders-db\",state=\"active\",instance=~\".*replica.*\"})"
+  },
+  {
+   "id": "orders_db_lag",
+   "name": "orders-db: replication lag",
+   "unit": "seconds",
+   "initial": 27,
+   "x": 650,
+   "y": 4130,
+   "query": "max(pg_replication_lag_seconds{datname=\"orders-db\"})"
+  },
+  {
+   "id": "users_db_conn",
+   "name": "users-db: connections in use (primary)",
+   "unit": "connections",
+   "initial": 2,
+   "x": 270,
+   "y": 4240,
+   "query": "sum(pg_stat_activity_count{datname=\"users-db\",state=\"active\"})"
+  },
+  {
+   "id": "users_db_replica_conn",
+   "name": "users-db: connections in use (replica)",
+   "unit": "connections",
+   "initial": 7,
+   "x": 460,
+   "y": 4240,
+   "query": "sum(pg_stat_activity_count{datname=\"users-db\",state=\"active\",instance=~\".*replica.*\"})"
+  },
+  {
+   "id": "users_db_lag",
+   "name": "users-db: replication lag",
+   "unit": "seconds",
+   "initial": 19,
+   "x": 650,
+   "y": 4240,
+   "query": "max(pg_replication_lag_seconds{datname=\"users-db\"})"
+  },
+  {
+   "id": "catalog_db_conn",
+   "name": "catalog-db: connections in use (primary)",
+   "unit": "connections",
+   "initial": 21,
+   "x": 270,
+   "y": 4350,
+   "query": "sum(pg_stat_activity_count{datname=\"catalog-db\",state=\"active\"})"
+  },
+  {
+   "id": "nodes_general",
+   "name": "Node pool general: ready nodes",
+   "unit": "nodes",
+   "initial": 12,
+   "x": 80,
+   "y": 4460,
+   "query": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\",node=~\".*general.*\"})"
+  },
+  {
+   "id": "cpu_requested_general",
+   "name": "Node pool general: CPU requested",
+   "unit": "% of allocatable",
+   "initial": 67,
+   "x": 270,
+   "y": 4460,
+   "query": "100 * sum(kube_pod_container_resource_requests{resource=\"cpu\",node=~\".*general.*\"}) / sum(kube_node_status_allocatable{resource=\"cpu\",node=~\".*general.*\"})"
+  },
+  {
+   "id": "mem_requested_general",
+   "name": "Node pool general: memory requested",
+   "unit": "% of allocatable",
+   "initial": 30,
+   "x": 460,
+   "y": 4460,
+   "query": "100 * sum(kube_pod_container_resource_requests{resource=\"memory\",node=~\".*general.*\"}) / sum(kube_node_status_allocatable{resource=\"memory\",node=~\".*general.*\"})"
+  },
+  {
+   "id": "nodes_workers",
+   "name": "Node pool workers: ready nodes",
+   "unit": "nodes",
+   "initial": 10,
+   "x": 80,
+   "y": 4570,
+   "query": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\",node=~\".*workers.*\"})"
+  },
+  {
+   "id": "cpu_requested_workers",
+   "name": "Node pool workers: CPU requested",
+   "unit": "% of allocatable",
+   "initial": 66,
+   "x": 270,
+   "y": 4570,
+   "query": "100 * sum(kube_pod_container_resource_requests{resource=\"cpu\",node=~\".*workers.*\"}) / sum(kube_node_status_allocatable{resource=\"cpu\",node=~\".*workers.*\"})"
+  },
+  {
+   "id": "mem_requested_workers",
+   "name": "Node pool workers: memory requested",
+   "unit": "% of allocatable",
+   "initial": 38,
+   "x": 460,
+   "y": 4570,
+   "query": "100 * sum(kube_pod_container_resource_requests{resource=\"memory\",node=~\".*workers.*\"}) / sum(kube_node_status_allocatable{resource=\"memory\",node=~\".*workers.*\"})"
+  }
+ ],
+ "flows": [],
+ "machines": [],
+ "history": {
+  "program": "sd-k8s-platform/history"
+ },
+ "sensors": [
+  {
+   "program": "sd-k8s-platform/live"
+  }
+ ]
+}

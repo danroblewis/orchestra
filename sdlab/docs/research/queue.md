@@ -38,7 +38,13 @@ for `combined` on the test cases).
    - delays whose time or order changes, pipeline stocks, TREND/FORECAST (3 each);
    - DELAY FIXED;
    - MIN/MAX and ratios of stocks in rates;
-   - sqrt and power.
+   - sqrt and power;
+   - from the Kubernetes model (`docs/research/k8s-model.md`, 2026-10-19): auxiliaries (algebraic
+     variables without a stock; today each is a hidden stock re-read every step, a one-step lag),
+     an effect of a ratio of two stocks (today a `1/x` table on the denominator), CEIL/MIN/MAX in
+     rates (the HPA), a flow reading another flow's amount (a restart counter equal to the OOM
+     kills), a ceiling that holds at `max` at dt 1 (today `max / (1 + k)`), and measured inputs in
+     the editor's Discover request (the ladder passes them; the page does not).
 
    Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
 

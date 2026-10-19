@@ -871,3 +871,41 @@ glossary:
     term: Cramér–Rao bound
     group: Methods
     text: The smallest uncertainty any unbiased method can achieve for a number from the given data. If a strategy misses by less than this, the data, not the strategy, are the limit.
+
+  # the Kubernetes examples (sd-k8s-platform, sd-k8s-small; docs/research/k8s-model.md)
+  hpa:
+    term: HPA (Horizontal Pod Autoscaler)
+    group: Kubernetes model
+    text: Kubernetes' controller that sets how many copies (replicas) of a service run, from how busy they are. It aims at a CPU use per pod (say 70% of what each pod asked for), adds pods quickly when load rises, and removes them only after load has stayed low for a few minutes, between a minimum and a maximum.
+  pod_lifecycle:
+    term: Pending, starting, ready and terminating pods
+    group: Kubernetes model
+    text: A new pod waits (pending) until the scheduler finds a node with room, then starts (pulling its image and passing its readiness check, a minute or more), then serves traffic (ready). When it is removed it stops taking traffic and shuts down (terminating).
+  requests_and_limits:
+    term: CPU and memory requests and limits
+    group: Kubernetes model
+    text: Each pod asks for an amount of CPU and memory (its request), which the scheduler reserves on a node, and may use up to a cap (its limit). Above the CPU limit it is slowed down (throttled); above the memory limit it is killed (an OOM kill).
+  cpu_throttling:
+    term: CPU throttling
+    group: Kubernetes model
+    text: When a pod tries to use more CPU than its limit, the kernel makes it wait. Requests take longer, queues build and some requests time out, although the node may have CPU to spare.
+  oom_kill:
+    term: OOM kill
+    group: Kubernetes model
+    text: Out of memory - when a pod's memory reaches its limit, the kernel kills it. The pod restarts, loses the requests it was handling, and has to pass its readiness check again. A memory leak makes it happen every so often; a burst of load can make it happen again and again (a crash loop).
+  cluster_autoscaler:
+    term: Cluster autoscaler
+    group: Kubernetes model
+    text: Adds nodes (machines) to a pool when pods are pending for lack of room, which takes a few minutes to boot, and removes nodes that have been underused for a while (about ten minutes), between a minimum and a maximum.
+  node_occupancy:
+    term: Node occupancy (requested over allocatable)
+    group: Kubernetes model
+    text: How full a node pool is - the CPU or memory the scheduled pods have asked for, as a share of what the nodes can offer. Near 100% new pods cannot be placed and wait as pending until the cluster autoscaler adds a node.
+  retry_loop:
+    term: Retries (a retry loop)
+    group: Kubernetes model
+    text: Clients send a failed or timed-out request again. Under overload the retries add to the load that caused the failures - a reinforcing loop that can keep a service overloaded after the original burst has passed.
+  replication_lag:
+    term: Replication lag
+    group: Kubernetes model
+    text: How far a database's read replica is behind its primary, in seconds. It grows when the primary takes writes faster than the replica can apply them, and shrinks when writes slow down.

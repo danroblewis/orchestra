@@ -1,0 +1,9 @@
+# The example sd-k8s-small (sdlab/examples/sd-k8s-small, built by sdlab/examples/k8s/build.py from small.yaml) on
+# the ladder, by reference: its truth model, seed, lengths, noise and measured input come from the example
+# (realistic.py), never from this file. The first rung under sd-k8s-platform.
+example: sd-k8s-small
+title: "Kubernetes, 5 services"
+level: 20
+tags: [realistic, hidden, effect, schedule, announced-era, injection, input, kubernetes]
+tests: "5 services on Kubernetes, a minute a step for a week: 34 measured stocks and 40 hidden, 168 flows with table effects (HPA, throttling, OOM kills, scheduling), a ceiling, a measured traffic input, an announced rolling update and node failure; behaviour as on the examples' bench"
+timeout: 900

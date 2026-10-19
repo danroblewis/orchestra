@@ -661,6 +661,21 @@ of 18 October. The data are the bench's, discovery gets the same inputs, and bot
 counts-long as a timeout: there the scorer's oracle (1,999 windows) took 417 s after an 11 s
 discovery. The timeout now covers discovery only.
 
+### Kubernetes cases (`sd-k8s-small`, `sd-k8s-platform`)
+
+Two realistic cases of a different size, from SD Lab's Kubernetes ground truth
+([research/k8s-model.md](research/k8s-model.md)): services on Kubernetes behind a load balancer,
+one minute a step for a week (10,080 steps; long 20,160), driven by a measured input (the traffic at
+the edge: a daily cycle with weekend dips and a Friday spike), with HPA scaling, pods pending,
+starting and ready, CPU throttling, memory and OOM kills, the cluster autoscaler, an announced rolling
+update and an announced node failure. `sd-k8s-small` (5 services, 34 measured stocks and 40 hidden,
+168 flows; timeout 900 s) is the first rung; `sd-k8s-platform` (35 services, 3 databases, 5 queues,
+2 node pools; 227 measured and 252 hidden stocks, 1,130 flows; timeout 1,800 s) asks whether
+discovery scales to a fleet at all, as the old `k8s-fleet` stress model did without a truth. Both are
+built from a service catalogue by `sdlab/examples/k8s/build.py`. They are the first realistic cases
+with a measured input (`realistic.py` passes the example's `inputs` and `dt` to the case; discovery
+gets the input as `opts["inputs"]`).
+
 ## Physics cases (`physics/`, `cases/physics/`)
 
 The tests are SD models, and so are the realistic examples: discovery is asked to recover a model

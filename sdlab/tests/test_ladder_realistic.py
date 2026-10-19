@@ -37,13 +37,14 @@ def examples() -> list[str]:
 
 def test_every_example_is_a_realistic_case_and_compiles_to_its_truth():
     ids = [i for i in casemod.case_ids() if casemod.is_realistic(i)]
-    assert ids == examples() and len(ids) == 31, "the 31 examples of the bench, each once"
+    assert ids == examples() and len(ids) == 33, "the 33 examples of the bench (31, and sd-k8s-platform and sd-k8s-small), each once"
     for i in ids:
         c = casemod.load(i)
         truth = json.loads(realistic.truth_path(i).read_text())
         assert c["example"] == i and "realistic" in c["tags"] and c["title"] and c["tests"]
         assert c["model"]["stocks"] == truth["stocks"] and c["model"]["flows"] == truth["flows"] and c["model"]["seed"] == truth["seed"]
         assert c["model"].get("schedule") == truth.get("schedule") and c["model"].get("injections") == truth.get("injections")
+        assert c["model"].get("inputs") == truth.get("inputs") and c["model"].get("dt") == truth.get("dt")
         assert [(v["name"], v["steps"]) for v in c["variants"]] == [("counts-short", truth["steps"]), ("counts-long", truth.get("long_steps", 10 * truth["steps"]))]
         tm = casemod.truth_model(c, "counts-short")
         assert tm["noise"] == truth["noise"] and tm["steps"] == truth["steps"]

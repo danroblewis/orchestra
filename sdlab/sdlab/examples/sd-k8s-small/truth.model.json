@@ -1,0 +1,5785 @@
+{
+ "id": "sd-k8s-small-truth",
+ "name": "SD: Kubernetes, 5 services: the truth",
+ "time_unit": "minute",
+ "seed": 20261019,
+ "steps": 10080,
+ "long_steps": 20160,
+ "noise": {
+  "counts": true
+ },
+ "inputs": {
+  "traffic": {
+   "terms": [
+    {
+     "fn": "constant",
+     "value": 12000.0
+    },
+    {
+     "fn": "sin",
+     "amplitude": 5400.0,
+     "period": 1440,
+     "phase": 480.0
+    },
+    {
+     "fn": "sin",
+     "amplitude": 1440.0,
+     "period": 720.0,
+     "phase": 420
+    },
+    {
+     "fn": "pulse_train",
+     "height": -3000.0,
+     "first": 7201,
+     "width": 2880,
+     "every": 10080
+    },
+    {
+     "fn": "pulse_train",
+     "height": 10800.0,
+     "first": 6901,
+     "width": 45,
+     "every": 10080
+    }
+   ]
+  }
+ },
+ "stocks": [
+  {
+   "id": "ingress",
+   "name": "Edge load balancer: requests this minute",
+   "unit": "requests",
+   "initial": 8021,
+   "x": 80,
+   "y": 60,
+   "query": "sum(increase(nginx_ingress_controller_requests[1m]))"
+  },
+  {
+   "id": "web_frontend_lbq",
+   "name": "web-frontend: queued at its load balancer",
+   "unit": "requests",
+   "initial": 8021,
+   "x": 80,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_inflight",
+   "name": "web-frontend: requests in flight",
+   "unit": "requests",
+   "initial": 8021,
+   "x": 270,
+   "y": 280,
+   "query": "sum(increase(http_server_requests_total{service=\"web-frontend\"}[1m]))"
+  },
+  {
+   "id": "web_frontend_retry",
+   "name": "web-frontend: failed requests waiting to be retried",
+   "unit": "requests",
+   "initial": 0,
+   "x": 460,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_cpu",
+   "name": "web-frontend: CPU used",
+   "unit": "millicores",
+   "initial": 1149,
+   "x": 650,
+   "y": 280,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"web-frontend\"}[2m]))"
+  },
+  {
+   "id": "web_frontend_cpu_pod",
+   "name": "web-frontend: CPU per ready pod",
+   "unit": "millicores",
+   "initial": 144,
+   "x": 840,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_cpu_slow",
+   "name": "web-frontend: CPU over the HPA's stabilisation window",
+   "unit": "millicores",
+   "initial": 1149,
+   "x": 1030,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_mem",
+   "name": "web-frontend: memory working set per pod",
+   "unit": "MiB",
+   "initial": 273,
+   "x": 1220,
+   "y": 280,
+   "query": "avg(container_memory_working_set_bytes{container=\"web-frontend\"}) / 2^20",
+   "max": 1152.0
+  },
+  {
+   "id": "web_frontend_desired",
+   "name": "web-frontend: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 8,
+   "x": 1600,
+   "y": 280,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"web-frontend\"}",
+   "max": 23
+  },
+  {
+   "id": "web_frontend_pending",
+   "name": "web-frontend: pods pending",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1790,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_starting",
+   "name": "web-frontend: pods starting",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1980,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_ready",
+   "name": "web-frontend: ready replicas",
+   "unit": "pods",
+   "initial": 8,
+   "x": 2170,
+   "y": 280,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"web-frontend\"}"
+  },
+  {
+   "id": "web_frontend_terminating",
+   "name": "web-frontend: pods terminating",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2360,
+   "y": 280,
+   "measured": false
+  },
+  {
+   "id": "web_frontend_oom",
+   "name": "web-frontend: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 280,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"web-frontend\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "catalog_api_lbq",
+   "name": "catalog-api: queued at its load balancer",
+   "unit": "requests",
+   "initial": 12031,
+   "x": 80,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_inflight",
+   "name": "catalog-api: requests in flight",
+   "unit": "requests",
+   "initial": 12031,
+   "x": 270,
+   "y": 390,
+   "query": "sum(increase(http_server_requests_total{service=\"catalog-api\"}[1m]))"
+  },
+  {
+   "id": "catalog_api_retry",
+   "name": "catalog-api: failed requests waiting to be retried",
+   "unit": "requests",
+   "initial": 0,
+   "x": 460,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_cpu",
+   "name": "catalog-api: CPU used",
+   "unit": "millicores",
+   "initial": 1093,
+   "x": 650,
+   "y": 390,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"catalog-api\"}[2m]))"
+  },
+  {
+   "id": "catalog_api_cpu_pod",
+   "name": "catalog-api: CPU per ready pod",
+   "unit": "millicores",
+   "initial": 121,
+   "x": 840,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_cpu_slow",
+   "name": "catalog-api: CPU over the HPA's stabilisation window",
+   "unit": "millicores",
+   "initial": 1093,
+   "x": 1030,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_mem",
+   "name": "catalog-api: memory working set per pod",
+   "unit": "MiB",
+   "initial": 201,
+   "x": 1220,
+   "y": 390,
+   "query": "avg(container_memory_working_set_bytes{container=\"catalog-api\"}) / 2^20",
+   "max": 768.0
+  },
+  {
+   "id": "catalog_api_desired",
+   "name": "catalog-api: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 9,
+   "x": 1600,
+   "y": 390,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"catalog-api\"}",
+   "max": 27
+  },
+  {
+   "id": "catalog_api_pending",
+   "name": "catalog-api: pods pending",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1790,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_starting",
+   "name": "catalog-api: pods starting",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1980,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_ready",
+   "name": "catalog-api: ready replicas",
+   "unit": "pods",
+   "initial": 9,
+   "x": 2170,
+   "y": 390,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"catalog-api\"}"
+  },
+  {
+   "id": "catalog_api_terminating",
+   "name": "catalog-api: pods terminating",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2360,
+   "y": 390,
+   "measured": false
+  },
+  {
+   "id": "catalog_api_oom",
+   "name": "catalog-api: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 390,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"catalog-api\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "catalog_lbq",
+   "name": "catalog: queued at its load balancer",
+   "unit": "requests",
+   "initial": 12031,
+   "x": 80,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_inflight",
+   "name": "catalog: requests in flight",
+   "unit": "requests",
+   "initial": 12031,
+   "x": 270,
+   "y": 500,
+   "query": "sum(increase(http_server_requests_total{service=\"catalog\"}[1m]))"
+  },
+  {
+   "id": "catalog_retry",
+   "name": "catalog: failed requests waiting to be retried",
+   "unit": "requests",
+   "initial": 0,
+   "x": 460,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_cpu",
+   "name": "catalog: CPU used",
+   "unit": "millicores",
+   "initial": 2486,
+   "x": 650,
+   "y": 500,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"catalog\"}[2m]))"
+  },
+  {
+   "id": "catalog_cpu_pod",
+   "name": "catalog: CPU per ready pod",
+   "unit": "millicores",
+   "initial": 311,
+   "x": 840,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_cpu_slow",
+   "name": "catalog: CPU over the HPA's stabilisation window",
+   "unit": "millicores",
+   "initial": 2486,
+   "x": 1030,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_mem",
+   "name": "catalog: memory working set per pod",
+   "unit": "MiB",
+   "initial": 569,
+   "x": 1220,
+   "y": 500,
+   "query": "avg(container_memory_working_set_bytes{container=\"catalog\"}) / 2^20",
+   "max": 2304.0
+  },
+  {
+   "id": "catalog_leak",
+   "name": "catalog: memory leaked per pod",
+   "unit": "MiB",
+   "initial": 0,
+   "x": 1410,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_desired",
+   "name": "catalog: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 8,
+   "x": 1600,
+   "y": 500,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"catalog\"}",
+   "max": 25
+  },
+  {
+   "id": "catalog_pending",
+   "name": "catalog: pods pending",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1790,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_starting",
+   "name": "catalog: pods starting",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1980,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_ready",
+   "name": "catalog: ready replicas",
+   "unit": "pods",
+   "initial": 8,
+   "x": 2170,
+   "y": 500,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"catalog\"}"
+  },
+  {
+   "id": "catalog_terminating",
+   "name": "catalog: pods terminating",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2360,
+   "y": 500,
+   "measured": false
+  },
+  {
+   "id": "catalog_oom",
+   "name": "catalog: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 500,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"catalog\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "cart_lbq",
+   "name": "cart: queued at its load balancer",
+   "unit": "requests",
+   "initial": 3208,
+   "x": 80,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_inflight",
+   "name": "cart: requests in flight",
+   "unit": "requests",
+   "initial": 3208,
+   "x": 270,
+   "y": 610,
+   "query": "sum(increase(http_server_requests_total{service=\"cart\"}[1m]))"
+  },
+  {
+   "id": "cart_retry",
+   "name": "cart: failed requests waiting to be retried",
+   "unit": "requests",
+   "initial": 0,
+   "x": 460,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_cpu",
+   "name": "cart: CPU used",
+   "unit": "millicores",
+   "initial": 297,
+   "x": 650,
+   "y": 610,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"cart\"}[2m]))"
+  },
+  {
+   "id": "cart_cpu_pod",
+   "name": "cart: CPU per ready pod",
+   "unit": "millicores",
+   "initial": 99,
+   "x": 840,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_cpu_slow",
+   "name": "cart: CPU over the HPA's stabilisation window",
+   "unit": "millicores",
+   "initial": 297,
+   "x": 1030,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_mem",
+   "name": "cart: memory working set per pod",
+   "unit": "MiB",
+   "initial": 193,
+   "x": 1220,
+   "y": 610,
+   "query": "avg(container_memory_working_set_bytes{container=\"cart\"}) / 2^20",
+   "max": 768.0
+  },
+  {
+   "id": "cart_desired",
+   "name": "cart: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 3,
+   "x": 1600,
+   "y": 610,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"cart\"}",
+   "max": 8
+  },
+  {
+   "id": "cart_pending",
+   "name": "cart: pods pending",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1790,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_starting",
+   "name": "cart: pods starting",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1980,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_ready",
+   "name": "cart: ready replicas",
+   "unit": "pods",
+   "initial": 3,
+   "x": 2170,
+   "y": 610,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"cart\"}"
+  },
+  {
+   "id": "cart_terminating",
+   "name": "cart: pods terminating",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2360,
+   "y": 610,
+   "measured": false
+  },
+  {
+   "id": "cart_oom",
+   "name": "cart: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 610,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"cart\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "pricing_lbq",
+   "name": "pricing: queued at its load balancer",
+   "unit": "requests",
+   "initial": 3208,
+   "x": 80,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_inflight",
+   "name": "pricing: requests in flight",
+   "unit": "requests",
+   "initial": 3208,
+   "x": 270,
+   "y": 720,
+   "query": "sum(increase(http_server_requests_total{service=\"pricing\"}[1m]))"
+  },
+  {
+   "id": "pricing_retry",
+   "name": "pricing: failed requests waiting to be retried",
+   "unit": "requests",
+   "initial": 0,
+   "x": 460,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_cpu",
+   "name": "pricing: CPU used",
+   "unit": "millicores",
+   "initial": 585,
+   "x": 650,
+   "y": 720,
+   "query": "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"pricing\"}[2m]))"
+  },
+  {
+   "id": "pricing_cpu_pod",
+   "name": "pricing: CPU per ready pod",
+   "unit": "millicores",
+   "initial": 117,
+   "x": 840,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_cpu_slow",
+   "name": "pricing: CPU over the HPA's stabilisation window",
+   "unit": "millicores",
+   "initial": 585,
+   "x": 1030,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_mem",
+   "name": "pricing: memory working set per pod",
+   "unit": "MiB",
+   "initial": 199,
+   "x": 1220,
+   "y": 720,
+   "query": "avg(container_memory_working_set_bytes{container=\"pricing\"}) / 2^20",
+   "max": 768.0
+  },
+  {
+   "id": "pricing_desired",
+   "name": "pricing: desired replicas (HPA)",
+   "unit": "pods",
+   "initial": 5,
+   "x": 1600,
+   "y": 720,
+   "query": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"pricing\"}",
+   "max": 8
+  },
+  {
+   "id": "pricing_pending",
+   "name": "pricing: pods pending",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1790,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_starting",
+   "name": "pricing: pods starting",
+   "unit": "pods",
+   "initial": 0,
+   "x": 1980,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_ready",
+   "name": "pricing: ready replicas",
+   "unit": "pods",
+   "initial": 5,
+   "x": 2170,
+   "y": 720,
+   "query": "kube_deployment_status_replicas_ready{deployment=\"pricing\"}"
+  },
+  {
+   "id": "pricing_terminating",
+   "name": "pricing: pods terminating",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2360,
+   "y": 720,
+   "measured": false
+  },
+  {
+   "id": "pricing_oom",
+   "name": "pricing: pods restarting after an OOM kill",
+   "unit": "pods",
+   "initial": 0,
+   "x": 2550,
+   "y": 720,
+   "query": "sum(increase(kube_pod_container_status_restarts_total{container=\"pricing\"}[1m]) and on(pod) kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"})"
+  },
+  {
+   "id": "nodes_general",
+   "name": "Node pool general: ready nodes",
+   "unit": "nodes",
+   "initial": 5,
+   "x": 80,
+   "y": 830,
+   "query": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\",node=~\".*general.*\"})"
+  },
+  {
+   "id": "cpu_requested_general",
+   "name": "Node pool general: CPU requested",
+   "unit": "% of allocatable",
+   "initial": 58,
+   "x": 270,
+   "y": 830,
+   "query": "100 * sum(kube_pod_container_resource_requests{resource=\"cpu\",node=~\".*general.*\"}) / sum(kube_node_status_allocatable{resource=\"cpu\",node=~\".*general.*\"})"
+  },
+  {
+   "id": "mem_requested_general",
+   "name": "Node pool general: memory requested",
+   "unit": "% of allocatable",
+   "initial": 25,
+   "x": 460,
+   "y": 830,
+   "query": "100 * sum(kube_pod_container_resource_requests{resource=\"memory\",node=~\".*general.*\"}) / sum(kube_node_status_allocatable{resource=\"memory\",node=~\".*general.*\"})"
+  },
+  {
+   "id": "cpu_requested_slow_general",
+   "name": "Node pool general: CPU requested over the autoscaler's unneeded time",
+   "unit": "% of allocatable",
+   "initial": 58,
+   "x": 650,
+   "y": 830,
+   "measured": false
+  },
+  {
+   "id": "provisioning_general_1",
+   "name": "Node pool general: nodes provisioning (stage 1 of 3)",
+   "unit": "nodes",
+   "initial": 0,
+   "x": 840,
+   "y": 830,
+   "measured": false
+  },
+  {
+   "id": "provisioning_general_2",
+   "name": "Node pool general: nodes provisioning (stage 2 of 3)",
+   "unit": "nodes",
+   "initial": 0,
+   "x": 1030,
+   "y": 830,
+   "measured": false
+  },
+  {
+   "id": "provisioning_general_3",
+   "name": "Node pool general: nodes provisioning (stage 3 of 3)",
+   "unit": "nodes",
+   "initial": 0,
+   "x": 1220,
+   "y": 830,
+   "measured": false
+  }
+ ],
+ "flows": [
+  {
+   "id": "traffic_in",
+   "name": "Users' requests reach the edge load balancer",
+   "from": null,
+   "to": "ingress",
+   "rate": {
+    "form": "proportional",
+    "stock": "traffic",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "route_web_frontend",
+   "name": "Edge load balancer routes to web-frontend",
+   "from": "ingress",
+   "to": "web_frontend_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "ingress",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_dispatch",
+   "name": "web-frontend's load balancer sends requests to ready pods",
+   "from": "web_frontend_lbq",
+   "to": "web_frontend_inflight",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_ready",
+      "k": 3093.75
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_lb_timeout",
+   "name": "web-frontend: requests time out at its load balancer",
+   "from": "web_frontend_lbq",
+   "to": "web_frontend_retry",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_lbq",
+      "k": 0.5
+     },
+     {
+      "stock": "web_frontend_ready",
+      "k": -1546.88
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_done",
+   "name": "web-frontend completes requests",
+   "from": "web_frontend_inflight",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       850.0,
+       1.0
+      ],
+      [
+       1000.0,
+       0.7
+      ],
+      [
+       1500.0,
+       0.4
+      ],
+      [
+       3000.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_api_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    },
+    {
+     "stock": "cart_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_errors",
+   "name": "web-frontend: requests fail (5xx)",
+   "from": "web_frontend_inflight",
+   "to": "web_frontend_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 0.002
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_timeouts",
+   "name": "web-frontend: requests time out while it is throttled",
+   "from": "web_frontend_inflight",
+   "to": "web_frontend_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       1000.0,
+       0.0
+      ],
+      [
+       1500.0,
+       1.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_oom_lost",
+   "name": "web-frontend: requests lost when a pod is OOM-killed",
+   "from": "web_frontend_inflight",
+   "to": "web_frontend_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_mem",
+     "shape": "table",
+     "points": [
+      [
+       706.56,
+       0.0
+      ],
+      [
+       768.0,
+       0.25
+      ],
+      [
+       844.8,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_retried",
+   "name": "Clients retry web-frontend",
+   "from": "web_frontend_retry",
+   "to": "web_frontend_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_retry",
+    "k": 0.6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_given_up",
+   "name": "Clients give up on web-frontend",
+   "from": "web_frontend_retry",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_retry",
+    "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_calls_catalog_api",
+   "name": "web-frontend calls catalog-api",
+   "from": null,
+   "to": "catalog_api_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 1.5
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       850.0,
+       1.0
+      ],
+      [
+       1000.0,
+       0.7
+      ],
+      [
+       1500.0,
+       0.4
+      ],
+      [
+       3000.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_api_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    },
+    {
+     "stock": "cart_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_calls_cart",
+   "name": "web-frontend calls cart",
+   "from": null,
+   "to": "cart_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 0.4
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       850.0,
+       1.0
+      ],
+      [
+       1000.0,
+       0.7
+      ],
+      [
+       1500.0,
+       0.4
+      ],
+      [
+       3000.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_api_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    },
+    {
+     "stock": "cart_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_cpu_work",
+   "name": "web-frontend: CPU used by requests",
+   "from": null,
+   "to": "web_frontend_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 0.0666667
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       850.0,
+       1.0
+      ],
+      [
+       1000.0,
+       0.7
+      ],
+      [
+       1500.0,
+       0.4
+      ],
+      [
+       3000.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_api_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    },
+    {
+     "stock": "cart_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_cpu_idle",
+   "name": "web-frontend: CPU used by idle pods",
+   "from": null,
+   "to": "web_frontend_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_ready",
+    "k": 5.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_cpu_window",
+   "name": "web-frontend: CPU reading moves on",
+   "from": "web_frontend_cpu",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_cpu",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_cpu_pod_in",
+   "name": "web-frontend: CPU per ready pod (CPU / ready replicas)",
+   "from": null,
+   "to": "web_frontend_cpu_pod",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_cpu",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "web_frontend_cpu_pod_out",
+   "name": "web-frontend: CPU per ready pod is re-read",
+   "from": "web_frontend_cpu_pod",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_cpu_pod",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "web_frontend_mem_base",
+   "name": "web-frontend: memory a pod needs at rest",
+   "from": null,
+   "to": "web_frontend_mem",
+   "rate": {
+    "form": "linear",
+    "c": 110.0,
+    "terms": []
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_mem_load",
+   "name": "web-frontend: memory for the requests a pod holds",
+   "from": null,
+   "to": "web_frontend_mem",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_inflight",
+    "k": 0.0266667
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_mem_freed",
+   "name": "web-frontend: memory freed",
+   "from": "web_frontend_mem",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_mem",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_create",
+   "name": "Deployment creates web-frontend pods",
+   "from": null,
+   "to": "web_frontend_pending",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_desired",
+      "k": 1.0
+     },
+     {
+      "stock": "web_frontend_pending",
+      "k": -1.0
+     },
+     {
+      "stock": "web_frontend_starting",
+      "k": -1.0
+     },
+     {
+      "stock": "web_frontend_ready",
+      "k": -1.0
+     },
+     {
+      "stock": "web_frontend_oom",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "web_frontend_delete_pending",
+   "name": "Deployment deletes pending web-frontend pods",
+   "from": "web_frontend_pending",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "web_frontend_pending",
+      "k": 1.0
+     },
+     {
+      "stock": "web_frontend_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "web_frontend_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "web_frontend_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "web_frontend_delete_ready",
+   "name": "Deployment scales web-frontend down",
+   "from": "web_frontend_ready",
+   "to": "web_frontend_terminating",
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "web_frontend_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "web_frontend_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "web_frontend_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "web_frontend_scheduled",
+   "name": "Scheduler places web-frontend pods on nodes",
+   "from": "web_frontend_pending",
+   "to": "web_frontend_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_pending",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "mem_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_started",
+   "name": "web-frontend pods pass their readiness probe",
+   "from": "web_frontend_starting",
+   "to": "web_frontend_ready",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_starting",
+    "k": 0.666667
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_oom_kill",
+   "name": "web-frontend pods are OOM-killed",
+   "from": "web_frontend_ready",
+   "to": "web_frontend_oom",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_ready",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_mem",
+     "shape": "table",
+     "points": [
+      [
+       706.56,
+       0.0
+      ],
+      [
+       768.0,
+       0.25
+      ],
+      [
+       844.8,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_restart",
+   "name": "OOM-killed web-frontend containers restart",
+   "from": "web_frontend_oom",
+   "to": "web_frontend_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_oom",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_rollout",
+   "name": "Rolling update replaces web-frontend pods",
+   "from": "web_frontend_ready",
+   "to": "web_frontend_terminating",
+   "rate": {
+    "form": "constant",
+    "value": 0.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_starting",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       3.51502,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "web_frontend_gone",
+   "name": "Terminating web-frontend pods are gone",
+   "from": "web_frontend_terminating",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_terminating",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "web_frontend_hpa_up",
+   "name": "HPA scales web-frontend up",
+   "from": null,
+   "to": "web_frontend_desired",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_cpu",
+      "k": 0.00519481
+     },
+     {
+      "stock": "web_frontend_desired",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "web_frontend_hpa_down",
+   "name": "HPA scales web-frontend down",
+   "from": "web_frontend_desired",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_desired",
+      "k": 0.5
+     },
+     {
+      "stock": "web_frontend_cpu_slow",
+      "k": -0.0031746
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "web_frontend_desired",
+     "shape": "table",
+     "points": [
+      [
+       2.0,
+       0.0
+      ],
+      [
+       3.0,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "web_frontend_cpu_slow_in",
+   "name": "web-frontend: the HPA's window takes in the CPU reading",
+   "from": null,
+   "to": "web_frontend_cpu_slow",
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_cpu",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "web_frontend_cpu_slow_out",
+   "name": "web-frontend: the HPA's window lets go of old readings",
+   "from": "web_frontend_cpu_slow",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "web_frontend_cpu_slow",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_dispatch",
+   "name": "catalog-api's load balancer sends requests to ready pods",
+   "from": "catalog_api_lbq",
+   "to": "catalog_api_inflight",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_ready",
+      "k": 3900.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_lb_timeout",
+   "name": "catalog-api: requests time out at its load balancer",
+   "from": "catalog_api_lbq",
+   "to": "catalog_api_retry",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_lbq",
+      "k": 0.5
+     },
+     {
+      "stock": "catalog_api_ready",
+      "k": -1950.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_done",
+   "name": "catalog-api completes requests",
+   "from": "catalog_api_inflight",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       680.0,
+       1.0
+      ],
+      [
+       800.0,
+       0.7
+      ],
+      [
+       1200.0,
+       0.4
+      ],
+      [
+       2400.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_errors",
+   "name": "catalog-api: requests fail (5xx)",
+   "from": "catalog_api_inflight",
+   "to": "catalog_api_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 0.002
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_timeouts",
+   "name": "catalog-api: requests time out while it is throttled",
+   "from": "catalog_api_inflight",
+   "to": "catalog_api_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       800.0,
+       0.0
+      ],
+      [
+       1200.0,
+       1.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_oom_lost",
+   "name": "catalog-api: requests lost when a pod is OOM-killed",
+   "from": "catalog_api_inflight",
+   "to": "catalog_api_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_mem",
+     "shape": "table",
+     "points": [
+      [
+       471.04,
+       0.0
+      ],
+      [
+       512.0,
+       0.25
+      ],
+      [
+       563.2,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_retried",
+   "name": "Clients retry catalog-api",
+   "from": "catalog_api_retry",
+   "to": "catalog_api_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_retry",
+    "k": 0.6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_given_up",
+   "name": "Clients give up on catalog-api",
+   "from": "catalog_api_retry",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_retry",
+    "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_calls_catalog",
+   "name": "catalog-api calls catalog",
+   "from": null,
+   "to": "catalog_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       680.0,
+       1.0
+      ],
+      [
+       800.0,
+       0.7
+      ],
+      [
+       1200.0,
+       0.4
+      ],
+      [
+       2400.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_cpu_work",
+   "name": "catalog-api: CPU used by requests",
+   "from": null,
+   "to": "catalog_api_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 0.0416667
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       680.0,
+       1.0
+      ],
+      [
+       800.0,
+       0.7
+      ],
+      [
+       1200.0,
+       0.4
+      ],
+      [
+       2400.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "catalog_lbq",
+     "shape": "table",
+     "points": [
+      [
+       41758.5,
+       1.0
+      ],
+      [
+       104396.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_cpu_idle",
+   "name": "catalog-api: CPU used by idle pods",
+   "from": null,
+   "to": "catalog_api_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_ready",
+    "k": 5.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_cpu_window",
+   "name": "catalog-api: CPU reading moves on",
+   "from": "catalog_api_cpu",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_cpu",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_cpu_pod_in",
+   "name": "catalog-api: CPU per ready pod (CPU / ready replicas)",
+   "from": null,
+   "to": "catalog_api_cpu_pod",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_cpu",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ],
+      [
+       30.0,
+       0.0333333
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "catalog_api_cpu_pod_out",
+   "name": "catalog-api: CPU per ready pod is re-read",
+   "from": "catalog_api_cpu_pod",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_cpu_pod",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_mem_base",
+   "name": "catalog-api: memory a pod needs at rest",
+   "from": null,
+   "to": "catalog_api_mem",
+   "rate": {
+    "form": "linear",
+    "c": 80.0,
+    "terms": []
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_mem_load",
+   "name": "catalog-api: memory for the requests a pod holds",
+   "from": null,
+   "to": "catalog_api_mem",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_inflight",
+    "k": 0.0153846
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ],
+      [
+       30.0,
+       0.0333333
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_mem_freed",
+   "name": "catalog-api: memory freed",
+   "from": "catalog_api_mem",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_mem",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_create",
+   "name": "Deployment creates catalog-api pods",
+   "from": null,
+   "to": "catalog_api_pending",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_desired",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_api_pending",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_api_starting",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_api_ready",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_api_oom",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_delete_pending",
+   "name": "Deployment deletes pending catalog-api pods",
+   "from": "catalog_api_pending",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_api_pending",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_api_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_api_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_api_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_delete_ready",
+   "name": "Deployment scales catalog-api down",
+   "from": "catalog_api_ready",
+   "to": "catalog_api_terminating",
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_api_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_api_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_api_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_scheduled",
+   "name": "Scheduler places catalog-api pods on nodes",
+   "from": "catalog_api_pending",
+   "to": "catalog_api_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_pending",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "mem_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_started",
+   "name": "catalog-api pods pass their readiness probe",
+   "from": "catalog_api_starting",
+   "to": "catalog_api_ready",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_starting",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_oom_kill",
+   "name": "catalog-api pods are OOM-killed",
+   "from": "catalog_api_ready",
+   "to": "catalog_api_oom",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_ready",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_mem",
+     "shape": "table",
+     "points": [
+      [
+       471.04,
+       0.0
+      ],
+      [
+       512.0,
+       0.25
+      ],
+      [
+       563.2,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_restart",
+   "name": "OOM-killed catalog-api containers restart",
+   "from": "catalog_api_oom",
+   "to": "catalog_api_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_oom",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_rollout",
+   "name": "Rolling update replaces catalog-api pods",
+   "from": "catalog_api_ready",
+   "to": "catalog_api_terminating",
+   "rate": {
+    "form": "constant",
+    "value": 0.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_starting",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       4.18254,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_api_gone",
+   "name": "Terminating catalog-api pods are gone",
+   "from": "catalog_api_terminating",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_terminating",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_api_hpa_up",
+   "name": "HPA scales catalog-api up",
+   "from": null,
+   "to": "catalog_api_desired",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_cpu",
+      "k": 0.00649351
+     },
+     {
+      "stock": "catalog_api_desired",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_hpa_down",
+   "name": "HPA scales catalog-api down",
+   "from": "catalog_api_desired",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_api_desired",
+      "k": 0.5
+     },
+     {
+      "stock": "catalog_api_cpu_slow",
+      "k": -0.00396825
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_api_desired",
+     "shape": "table",
+     "points": [
+      [
+       2.0,
+       0.0
+      ],
+      [
+       3.0,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "catalog_api_cpu_slow_in",
+   "name": "catalog-api: the HPA's window takes in the CPU reading",
+   "from": null,
+   "to": "catalog_api_cpu_slow",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_cpu",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_api_cpu_slow_out",
+   "name": "catalog-api: the HPA's window lets go of old readings",
+   "from": "catalog_api_cpu_slow",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_api_cpu_slow",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_dispatch",
+   "name": "catalog's load balancer sends requests to ready pods",
+   "from": "catalog_lbq",
+   "to": "catalog_inflight",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_ready",
+      "k": 4250.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_lb_timeout",
+   "name": "catalog: requests time out at its load balancer",
+   "from": "catalog_lbq",
+   "to": "catalog_retry",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_lbq",
+      "k": 0.5
+     },
+     {
+      "stock": "catalog_ready",
+      "k": -2125.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_done",
+   "name": "catalog completes requests",
+   "from": "catalog_inflight",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       1700.0,
+       1.0
+      ],
+      [
+       2000.0,
+       0.7
+      ],
+      [
+       3000.0,
+       0.4
+      ],
+      [
+       6000.0,
+       0.2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_errors",
+   "name": "catalog: requests fail (5xx)",
+   "from": "catalog_inflight",
+   "to": "catalog_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_inflight",
+    "k": 0.002
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_timeouts",
+   "name": "catalog: requests time out while it is throttled",
+   "from": "catalog_inflight",
+   "to": "catalog_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_inflight",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       2000.0,
+       0.0
+      ],
+      [
+       3000.0,
+       1.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_oom_lost",
+   "name": "catalog: requests lost when a pod is OOM-killed",
+   "from": "catalog_inflight",
+   "to": "catalog_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_mem",
+     "shape": "table",
+     "points": [
+      [
+       1413.12,
+       0.0
+      ],
+      [
+       1536.0,
+       0.25
+      ],
+      [
+       1689.6,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_retried",
+   "name": "Clients retry catalog",
+   "from": "catalog_retry",
+   "to": "catalog_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_retry",
+    "k": 0.6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_given_up",
+   "name": "Clients give up on catalog",
+   "from": "catalog_retry",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_retry",
+    "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_cpu_work",
+   "name": "catalog: CPU used by requests",
+   "from": null,
+   "to": "catalog_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_inflight",
+    "k": 0.1
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       1700.0,
+       1.0
+      ],
+      [
+       2000.0,
+       0.7
+      ],
+      [
+       3000.0,
+       0.4
+      ],
+      [
+       6000.0,
+       0.2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_cpu_idle",
+   "name": "catalog: CPU used by idle pods",
+   "from": null,
+   "to": "catalog_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_ready",
+    "k": 5.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_cpu_window",
+   "name": "catalog: CPU reading moves on",
+   "from": "catalog_cpu",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_cpu",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_cpu_pod_in",
+   "name": "catalog: CPU per ready pod (CPU / ready replicas)",
+   "from": null,
+   "to": "catalog_cpu_pod",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_cpu",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ],
+      [
+       30.0,
+       0.0333333
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "catalog_cpu_pod_out",
+   "name": "catalog: CPU per ready pod is re-read",
+   "from": "catalog_cpu_pod",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_cpu_pod",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_mem_base",
+   "name": "catalog: memory a pod needs at rest plus what it has leaked",
+   "from": null,
+   "to": "catalog_mem",
+   "rate": {
+    "form": "linear",
+    "c": 210.0,
+    "terms": [
+     {
+      "stock": "catalog_leak",
+      "k": 0.5
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_mem_load",
+   "name": "catalog: memory for the requests a pod holds",
+   "from": null,
+   "to": "catalog_mem",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_inflight",
+    "k": 0.0494118
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ],
+      [
+       30.0,
+       0.0333333
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_mem_freed",
+   "name": "catalog: memory freed",
+   "from": "catalog_mem",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_mem",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_leaks",
+   "name": "catalog leaks memory",
+   "from": null,
+   "to": "catalog_leak",
+   "rate": {
+    "form": "constant",
+    "value": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_leak_oom",
+   "name": "catalog: an OOM-killed pod restarts with no leak",
+   "from": "catalog_leak",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_leak",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_mem",
+     "shape": "table",
+     "points": [
+      [
+       1413.12,
+       0.0
+      ],
+      [
+       1536.0,
+       0.25
+      ],
+      [
+       1689.6,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_leak_new_pods",
+   "name": "catalog: new pods start with no leak",
+   "from": "catalog_leak",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_leak",
+    "k": 0.5
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_starting",
+     "shape": "linear",
+     "normal": 1,
+     "max": 27.0
+    },
+    {
+     "stock": "catalog_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ],
+      [
+       26.0,
+       0.0384615
+      ],
+      [
+       30.0,
+       0.0333333
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_leak_rollout",
+   "name": "catalog: a rolling update replaces leaky pods",
+   "from": "catalog_leak",
+   "to": null,
+   "rate": {
+    "form": "constant",
+    "value": 0.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_starting",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       3.83809,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_create",
+   "name": "Deployment creates catalog pods",
+   "from": null,
+   "to": "catalog_pending",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_desired",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_pending",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_starting",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_ready",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_oom",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_delete_pending",
+   "name": "Deployment deletes pending catalog pods",
+   "from": "catalog_pending",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "catalog_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_pending",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_delete_ready",
+   "name": "Deployment scales catalog down",
+   "from": "catalog_ready",
+   "to": "catalog_terminating",
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "catalog_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "catalog_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "catalog_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_scheduled",
+   "name": "Scheduler places catalog pods on nodes",
+   "from": "catalog_pending",
+   "to": "catalog_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_pending",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "mem_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_started",
+   "name": "catalog pods pass their readiness probe",
+   "from": "catalog_starting",
+   "to": "catalog_ready",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_starting",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_oom_kill",
+   "name": "catalog pods are OOM-killed",
+   "from": "catalog_ready",
+   "to": "catalog_oom",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_ready",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_mem",
+     "shape": "table",
+     "points": [
+      [
+       1413.12,
+       0.0
+      ],
+      [
+       1536.0,
+       0.25
+      ],
+      [
+       1689.6,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_restart",
+   "name": "OOM-killed catalog containers restart",
+   "from": "catalog_oom",
+   "to": "catalog_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_oom",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_rollout",
+   "name": "Rolling update replaces catalog pods",
+   "from": "catalog_ready",
+   "to": "catalog_terminating",
+   "rate": {
+    "form": "constant",
+    "value": 0.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_starting",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       3.83809,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "catalog_gone",
+   "name": "Terminating catalog pods are gone",
+   "from": "catalog_terminating",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_terminating",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "catalog_hpa_up",
+   "name": "HPA scales catalog up",
+   "from": null,
+   "to": "catalog_desired",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_cpu",
+      "k": 0.0025974
+     },
+     {
+      "stock": "catalog_desired",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_hpa_down",
+   "name": "HPA scales catalog down",
+   "from": "catalog_desired",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "catalog_desired",
+      "k": 0.5
+     },
+     {
+      "stock": "catalog_cpu_slow",
+      "k": -0.0015873
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "catalog_desired",
+     "shape": "table",
+     "points": [
+      [
+       2.0,
+       0.0
+      ],
+      [
+       3.0,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "catalog_cpu_slow_in",
+   "name": "catalog: the HPA's window takes in the CPU reading",
+   "from": null,
+   "to": "catalog_cpu_slow",
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_cpu",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "catalog_cpu_slow_out",
+   "name": "catalog: the HPA's window lets go of old readings",
+   "from": "catalog_cpu_slow",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "catalog_cpu_slow",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_dispatch",
+   "name": "cart's load balancer sends requests to ready pods",
+   "from": "cart_lbq",
+   "to": "cart_inflight",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "cart_ready",
+      "k": 3900.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_lb_timeout",
+   "name": "cart: requests time out at its load balancer",
+   "from": "cart_lbq",
+   "to": "cart_retry",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "cart_lbq",
+      "k": 0.5
+     },
+     {
+      "stock": "cart_ready",
+      "k": -1950.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_done",
+   "name": "cart completes requests",
+   "from": "cart_inflight",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       680.0,
+       1.0
+      ],
+      [
+       800.0,
+       0.7
+      ],
+      [
+       1200.0,
+       0.4
+      ],
+      [
+       2400.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "pricing_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_errors",
+   "name": "cart: requests fail (5xx)",
+   "from": "cart_inflight",
+   "to": "cart_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 0.002
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_timeouts",
+   "name": "cart: requests time out while it is throttled",
+   "from": "cart_inflight",
+   "to": "cart_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       800.0,
+       0.0
+      ],
+      [
+       1200.0,
+       1.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_oom_lost",
+   "name": "cart: requests lost when a pod is OOM-killed",
+   "from": "cart_inflight",
+   "to": "cart_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_mem",
+     "shape": "table",
+     "points": [
+      [
+       471.04,
+       0.0
+      ],
+      [
+       512.0,
+       0.25
+      ],
+      [
+       563.2,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_retried",
+   "name": "Clients retry cart",
+   "from": "cart_retry",
+   "to": "cart_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_retry",
+    "k": 0.6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_given_up",
+   "name": "Clients give up on cart",
+   "from": "cart_retry",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_retry",
+    "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_calls_pricing",
+   "name": "cart calls pricing",
+   "from": null,
+   "to": "pricing_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       680.0,
+       1.0
+      ],
+      [
+       800.0,
+       0.7
+      ],
+      [
+       1200.0,
+       0.4
+      ],
+      [
+       2400.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "pricing_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_cpu_work",
+   "name": "cart: CPU used by requests",
+   "from": null,
+   "to": "cart_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 0.0416667
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       680.0,
+       1.0
+      ],
+      [
+       800.0,
+       0.7
+      ],
+      [
+       1200.0,
+       0.4
+      ],
+      [
+       2400.0,
+       0.2
+      ]
+     ]
+    },
+    {
+     "stock": "pricing_lbq",
+     "shape": "table",
+     "points": [
+      [
+       11135.6,
+       1.0
+      ],
+      [
+       27839.0,
+       0.4
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_cpu_idle",
+   "name": "cart: CPU used by idle pods",
+   "from": null,
+   "to": "cart_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_ready",
+    "k": 5.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_cpu_window",
+   "name": "cart: CPU reading moves on",
+   "from": "cart_cpu",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_cpu",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_cpu_pod_in",
+   "name": "cart: CPU per ready pod (CPU / ready replicas)",
+   "from": null,
+   "to": "cart_cpu_pod",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_cpu",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "cart_cpu_pod_out",
+   "name": "cart: CPU per ready pod is re-read",
+   "from": "cart_cpu_pod",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_cpu_pod",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_mem_base",
+   "name": "cart: memory a pod needs at rest",
+   "from": null,
+   "to": "cart_mem",
+   "rate": {
+    "form": "linear",
+    "c": 80.0,
+    "terms": []
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_mem_load",
+   "name": "cart: memory for the requests a pod holds",
+   "from": null,
+   "to": "cart_mem",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_inflight",
+    "k": 0.0153846
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_mem_freed",
+   "name": "cart: memory freed",
+   "from": "cart_mem",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_mem",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_create",
+   "name": "Deployment creates cart pods",
+   "from": null,
+   "to": "cart_pending",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "cart_desired",
+      "k": 1.0
+     },
+     {
+      "stock": "cart_pending",
+      "k": -1.0
+     },
+     {
+      "stock": "cart_starting",
+      "k": -1.0
+     },
+     {
+      "stock": "cart_ready",
+      "k": -1.0
+     },
+     {
+      "stock": "cart_oom",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_delete_pending",
+   "name": "Deployment deletes pending cart pods",
+   "from": "cart_pending",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "cart_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "cart_pending",
+      "k": 1.0
+     },
+     {
+      "stock": "cart_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "cart_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "cart_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_delete_ready",
+   "name": "Deployment scales cart down",
+   "from": "cart_ready",
+   "to": "cart_terminating",
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "cart_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "cart_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "cart_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "cart_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_scheduled",
+   "name": "Scheduler places cart pods on nodes",
+   "from": "cart_pending",
+   "to": "cart_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_pending",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "mem_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_started",
+   "name": "cart pods pass their readiness probe",
+   "from": "cart_starting",
+   "to": "cart_ready",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_starting",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_oom_kill",
+   "name": "cart pods are OOM-killed",
+   "from": "cart_ready",
+   "to": "cart_oom",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_ready",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_mem",
+     "shape": "table",
+     "points": [
+      [
+       471.04,
+       0.0
+      ],
+      [
+       512.0,
+       0.25
+      ],
+      [
+       563.2,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_restart",
+   "name": "OOM-killed cart containers restart",
+   "from": "cart_oom",
+   "to": "cart_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_oom",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_rollout",
+   "name": "Rolling update replaces cart pods",
+   "from": "cart_ready",
+   "to": "cart_terminating",
+   "rate": {
+    "form": "constant",
+    "value": 0.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_starting",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       1.11534,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "cart_gone",
+   "name": "Terminating cart pods are gone",
+   "from": "cart_terminating",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_terminating",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "cart_hpa_up",
+   "name": "HPA scales cart up",
+   "from": null,
+   "to": "cart_desired",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "cart_cpu",
+      "k": 0.00649351
+     },
+     {
+      "stock": "cart_desired",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_hpa_down",
+   "name": "HPA scales cart down",
+   "from": "cart_desired",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "cart_desired",
+      "k": 0.5
+     },
+     {
+      "stock": "cart_cpu_slow",
+      "k": -0.00396825
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cart_desired",
+     "shape": "table",
+     "points": [
+      [
+       2.0,
+       0.0
+      ],
+      [
+       3.0,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "cart_cpu_slow_in",
+   "name": "cart: the HPA's window takes in the CPU reading",
+   "from": null,
+   "to": "cart_cpu_slow",
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_cpu",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "cart_cpu_slow_out",
+   "name": "cart: the HPA's window lets go of old readings",
+   "from": "cart_cpu_slow",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cart_cpu_slow",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_dispatch",
+   "name": "pricing's load balancer sends requests to ready pods",
+   "from": "pricing_lbq",
+   "to": "pricing_inflight",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "pricing_ready",
+      "k": 1950.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_lb_timeout",
+   "name": "pricing: requests time out at its load balancer",
+   "from": "pricing_lbq",
+   "to": "pricing_retry",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "pricing_lbq",
+      "k": 0.5
+     },
+     {
+      "stock": "pricing_ready",
+      "k": -975.0
+     }
+    ]
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_done",
+   "name": "pricing completes requests",
+   "from": "pricing_inflight",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       170.0,
+       1.0
+      ],
+      [
+       200.0,
+       0.7
+      ],
+      [
+       300.0,
+       0.4
+      ],
+      [
+       600.0,
+       0.2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_errors",
+   "name": "pricing: requests fail (5xx)",
+   "from": "pricing_inflight",
+   "to": "pricing_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_inflight",
+    "k": 0.002
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_timeouts",
+   "name": "pricing: requests time out while it is throttled",
+   "from": "pricing_inflight",
+   "to": "pricing_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_inflight",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       200.0,
+       0.0
+      ],
+      [
+       300.0,
+       1.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_oom_lost",
+   "name": "pricing: requests lost when a pod is OOM-killed",
+   "from": "pricing_inflight",
+   "to": "pricing_retry",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_inflight",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_mem",
+     "shape": "table",
+     "points": [
+      [
+       471.04,
+       0.0
+      ],
+      [
+       512.0,
+       0.25
+      ],
+      [
+       563.2,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_retried",
+   "name": "Clients retry pricing",
+   "from": "pricing_retry",
+   "to": "pricing_lbq",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_retry",
+    "k": 0.6
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_given_up",
+   "name": "Clients give up on pricing",
+   "from": "pricing_retry",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_retry",
+    "k": 0.4
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_cpu_work",
+   "name": "pricing: CPU used by requests",
+   "from": null,
+   "to": "pricing_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_inflight",
+    "k": 0.0833333
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_cpu_pod",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       170.0,
+       1.0
+      ],
+      [
+       200.0,
+       0.7
+      ],
+      [
+       300.0,
+       0.4
+      ],
+      [
+       600.0,
+       0.2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_cpu_idle",
+   "name": "pricing: CPU used by idle pods",
+   "from": null,
+   "to": "pricing_cpu",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_ready",
+    "k": 5.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_cpu_window",
+   "name": "pricing: CPU reading moves on",
+   "from": "pricing_cpu",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_cpu",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_cpu_pod_in",
+   "name": "pricing: CPU per ready pod (CPU / ready replicas)",
+   "from": null,
+   "to": "pricing_cpu_pod",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_cpu",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "pricing_cpu_pod_out",
+   "name": "pricing: CPU per ready pod is re-read",
+   "from": "pricing_cpu_pod",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_cpu_pod",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_mem_base",
+   "name": "pricing: memory a pod needs at rest",
+   "from": null,
+   "to": "pricing_mem",
+   "rate": {
+    "form": "linear",
+    "c": 80.0,
+    "terms": []
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_mem_load",
+   "name": "pricing: memory for the requests a pod holds",
+   "from": null,
+   "to": "pricing_mem",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_inflight",
+    "k": 0.0307692
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_ready",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_mem_freed",
+   "name": "pricing: memory freed",
+   "from": "pricing_mem",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_mem",
+    "k": 0.5
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_create",
+   "name": "Deployment creates pricing pods",
+   "from": null,
+   "to": "pricing_pending",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "pricing_desired",
+      "k": 1.0
+     },
+     {
+      "stock": "pricing_pending",
+      "k": -1.0
+     },
+     {
+      "stock": "pricing_starting",
+      "k": -1.0
+     },
+     {
+      "stock": "pricing_ready",
+      "k": -1.0
+     },
+     {
+      "stock": "pricing_oom",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_delete_pending",
+   "name": "Deployment deletes pending pricing pods",
+   "from": "pricing_pending",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "pricing_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "pricing_pending",
+      "k": 1.0
+     },
+     {
+      "stock": "pricing_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "pricing_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "pricing_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_delete_ready",
+   "name": "Deployment scales pricing down",
+   "from": "pricing_ready",
+   "to": "pricing_terminating",
+   "rate": {
+    "form": "linear",
+    "c": -0.0,
+    "terms": [
+     {
+      "stock": "pricing_desired",
+      "k": -1.0
+     },
+     {
+      "stock": "pricing_starting",
+      "k": 1.0
+     },
+     {
+      "stock": "pricing_ready",
+      "k": 1.0
+     },
+     {
+      "stock": "pricing_oom",
+      "k": 1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_scheduled",
+   "name": "Scheduler places pricing pods on nodes",
+   "from": "pricing_pending",
+   "to": "pricing_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_pending",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "mem_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       88.0,
+       1.0
+      ],
+      [
+       97.0,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_started",
+   "name": "pricing pods pass their readiness probe",
+   "from": "pricing_starting",
+   "to": "pricing_ready",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_starting",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_oom_kill",
+   "name": "pricing pods are OOM-killed",
+   "from": "pricing_ready",
+   "to": "pricing_oom",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_ready",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_mem",
+     "shape": "table",
+     "points": [
+      [
+       471.04,
+       0.0
+      ],
+      [
+       512.0,
+       0.25
+      ],
+      [
+       563.2,
+       0.8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_restart",
+   "name": "OOM-killed pricing containers restart",
+   "from": "pricing_oom",
+   "to": "pricing_starting",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_oom",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_rollout",
+   "name": "Rolling update replaces pricing pods",
+   "from": "pricing_ready",
+   "to": "pricing_terminating",
+   "rate": {
+    "form": "constant",
+    "value": 0.0
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_starting",
+     "shape": "table",
+     "points": [
+      [
+       0.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "pricing_gone",
+   "name": "Terminating pricing pods are gone",
+   "from": "pricing_terminating",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_terminating",
+    "k": 1.0
+   },
+   "machine": "environment"
+  },
+  {
+   "id": "pricing_hpa_up",
+   "name": "HPA scales pricing up",
+   "from": null,
+   "to": "pricing_desired",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "pricing_cpu",
+      "k": 0.00649351
+     },
+     {
+      "stock": "pricing_desired",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_hpa_down",
+   "name": "HPA scales pricing down",
+   "from": "pricing_desired",
+   "to": null,
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "pricing_desired",
+      "k": 0.5
+     },
+     {
+      "stock": "pricing_cpu_slow",
+      "k": -0.00396825
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "pricing_desired",
+     "shape": "table",
+     "points": [
+      [
+       2.0,
+       0.0
+      ],
+      [
+       3.0,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "pricing_cpu_slow_in",
+   "name": "pricing: the HPA's window takes in the CPU reading",
+   "from": null,
+   "to": "pricing_cpu_slow",
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_cpu",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "pricing_cpu_slow_out",
+   "name": "pricing: the HPA's window lets go of old readings",
+   "from": "pricing_cpu_slow",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "pricing_cpu_slow",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_cpu_requests",
+   "name": "Pool general: CPU requests of scheduled pods / allocatable",
+   "from": null,
+   "to": "cpu_requested_general",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_starting",
+      "k": 6.94444
+     },
+     {
+      "stock": "web_frontend_ready",
+      "k": 6.94444
+     },
+     {
+      "stock": "web_frontend_oom",
+      "k": 6.94444
+     },
+     {
+      "stock": "catalog_api_starting",
+      "k": 5.55556
+     },
+     {
+      "stock": "catalog_api_ready",
+      "k": 5.55556
+     },
+     {
+      "stock": "catalog_api_oom",
+      "k": 5.55556
+     },
+     {
+      "stock": "catalog_starting",
+      "k": 13.8889
+     },
+     {
+      "stock": "catalog_ready",
+      "k": 13.8889
+     },
+     {
+      "stock": "catalog_oom",
+      "k": 13.8889
+     },
+     {
+      "stock": "cart_starting",
+      "k": 5.55556
+     },
+     {
+      "stock": "cart_ready",
+      "k": 5.55556
+     },
+     {
+      "stock": "cart_oom",
+      "k": 5.55556
+     },
+     {
+      "stock": "pricing_starting",
+      "k": 5.55556
+     },
+     {
+      "stock": "pricing_ready",
+      "k": 5.55556
+     },
+     {
+      "stock": "pricing_oom",
+      "k": 5.55556
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "nodes_general",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "general_cpu_daemonsets",
+   "name": "Pool general: CPU requests of daemonsets",
+   "from": null,
+   "to": "cpu_requested_general",
+   "rate": {
+    "form": "constant",
+    "value": 6.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_cpu_requested_out",
+   "name": "Pool general: CPU requested is re-read",
+   "from": "cpu_requested_general",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cpu_requested_general",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_mem_requests",
+   "name": "Pool general: memory requests of scheduled pods / allocatable",
+   "from": null,
+   "to": "mem_requested_general",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_starting",
+      "k": 2.74286
+     },
+     {
+      "stock": "web_frontend_ready",
+      "k": 2.74286
+     },
+     {
+      "stock": "web_frontend_oom",
+      "k": 2.74286
+     },
+     {
+      "stock": "catalog_api_starting",
+      "k": 1.82857
+     },
+     {
+      "stock": "catalog_api_ready",
+      "k": 1.82857
+     },
+     {
+      "stock": "catalog_api_oom",
+      "k": 1.82857
+     },
+     {
+      "stock": "catalog_starting",
+      "k": 5.48571
+     },
+     {
+      "stock": "catalog_ready",
+      "k": 5.48571
+     },
+     {
+      "stock": "catalog_oom",
+      "k": 5.48571
+     },
+     {
+      "stock": "cart_starting",
+      "k": 1.82857
+     },
+     {
+      "stock": "cart_ready",
+      "k": 1.82857
+     },
+     {
+      "stock": "cart_oom",
+      "k": 1.82857
+     },
+     {
+      "stock": "pricing_starting",
+      "k": 1.82857
+     },
+     {
+      "stock": "pricing_ready",
+      "k": 1.82857
+     },
+     {
+      "stock": "pricing_oom",
+      "k": 1.82857
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "nodes_general",
+     "shape": "table",
+     "points": [
+      [
+       1.0,
+       1.0
+      ],
+      [
+       2.0,
+       0.5
+      ],
+      [
+       3.0,
+       0.333333
+      ],
+      [
+       4.0,
+       0.25
+      ],
+      [
+       5.0,
+       0.2
+      ],
+      [
+       6.0,
+       0.166667
+      ],
+      [
+       7.0,
+       0.142857
+      ],
+      [
+       8.0,
+       0.125
+      ],
+      [
+       9.0,
+       0.111111
+      ],
+      [
+       10.0,
+       0.1
+      ],
+      [
+       12.0,
+       0.0833333
+      ],
+      [
+       14.0,
+       0.0714286
+      ],
+      [
+       16.0,
+       0.0625
+      ],
+      [
+       18.0,
+       0.0555556
+      ],
+      [
+       20.0,
+       0.05
+      ],
+      [
+       23.0,
+       0.0434783
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  },
+  {
+   "id": "general_mem_daemonsets",
+   "name": "Pool general: memory requests of daemonsets",
+   "from": null,
+   "to": "mem_requested_general",
+   "rate": {
+    "form": "constant",
+    "value": 6.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_mem_requested_out",
+   "name": "Pool general: memory requested is re-read",
+   "from": "mem_requested_general",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "mem_requested_general",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_slow_in",
+   "name": "Pool general: the autoscaler's unneeded timer takes in occupancy",
+   "from": null,
+   "to": "cpu_requested_slow_general",
+   "rate": {
+    "form": "proportional",
+    "stock": "cpu_requested_general",
+    "k": 0.1
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_slow_out",
+   "name": "Pool general: the autoscaler's unneeded timer lets go",
+   "from": "cpu_requested_slow_general",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "cpu_requested_slow_general",
+    "k": 0.1
+   },
+   "machine": "environment",
+   "exact": true
+  },
+  {
+   "id": "general_scale_up",
+   "name": "Cluster autoscaler adds general nodes for pending pods",
+   "from": null,
+   "to": "provisioning_general_1",
+   "rate": {
+    "form": "linear",
+    "c": 0.0,
+    "terms": [
+     {
+      "stock": "web_frontend_pending",
+      "k": 0.0694444
+     },
+     {
+      "stock": "catalog_api_pending",
+      "k": 0.0555556
+     },
+     {
+      "stock": "catalog_pending",
+      "k": 0.138889
+     },
+     {
+      "stock": "cart_pending",
+      "k": 0.0555556
+     },
+     {
+      "stock": "pricing_pending",
+      "k": 0.0555556
+     },
+     {
+      "stock": "provisioning_general_1",
+      "k": -1.0
+     },
+     {
+      "stock": "provisioning_general_2",
+      "k": -1.0
+     },
+     {
+      "stock": "provisioning_general_3",
+      "k": -1.0
+     }
+    ]
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       85.0,
+       0.0
+      ],
+      [
+       92.0,
+       1.0
+      ]
+     ]
+    },
+    {
+     "stock": "nodes_general",
+     "shape": "table",
+     "points": [
+      [
+       19.0,
+       1.0
+      ],
+      [
+       20.0,
+       0.0
+      ]
+     ]
+    }
+   ],
+   "exact": true,
+   "delay": {
+    "id": "general_nodes",
+    "stage": 1,
+    "of": 3,
+    "time": 4
+   }
+  },
+  {
+   "id": "general_provision_1",
+   "name": "Pool general: a new node boots (stage 1)",
+   "from": "provisioning_general_1",
+   "to": "provisioning_general_2",
+   "rate": {
+    "form": "proportional",
+    "stock": "provisioning_general_1",
+    "k": 0.75
+   },
+   "machine": "environment",
+   "delay": {
+    "id": "general_nodes",
+    "stage": 2,
+    "of": 3,
+    "time": 4
+   }
+  },
+  {
+   "id": "general_provision_2",
+   "name": "Pool general: a new node boots (stage 2)",
+   "from": "provisioning_general_2",
+   "to": "provisioning_general_3",
+   "rate": {
+    "form": "proportional",
+    "stock": "provisioning_general_2",
+    "k": 0.75
+   },
+   "machine": "environment",
+   "delay": {
+    "id": "general_nodes",
+    "stage": 3,
+    "of": 3,
+    "time": 4
+   }
+  },
+  {
+   "id": "general_provision_3",
+   "name": "Pool general: a new node boots (stage 3)",
+   "from": "provisioning_general_3",
+   "to": "nodes_general",
+   "rate": {
+    "form": "proportional",
+    "stock": "provisioning_general_3",
+    "k": 0.75
+   },
+   "machine": "environment",
+   "delay": {
+    "id": "general_nodes",
+    "stage": 4,
+    "of": 3,
+    "time": 4
+   }
+  },
+  {
+   "id": "general_scale_down",
+   "name": "Cluster autoscaler removes underused general nodes",
+   "from": "nodes_general",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "nodes_general",
+    "k": 0.05
+   },
+   "machine": "environment",
+   "effects": [
+    {
+     "stock": "cpu_requested_slow_general",
+     "shape": "table",
+     "points": [
+      [
+       45.0,
+       1.0
+      ],
+      [
+       55.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "cpu_requested_general",
+     "shape": "table",
+     "points": [
+      [
+       55.0,
+       1.0
+      ],
+      [
+       65.0,
+       0.0
+      ]
+     ]
+    },
+    {
+     "stock": "nodes_general",
+     "shape": "table",
+     "points": [
+      [
+       2.0,
+       0.0
+      ],
+      [
+       3.0,
+       1.0
+      ]
+     ]
+    }
+   ],
+   "exact": true
+  }
+ ],
+ "machines": [],
+ "schedule": {
+  "every": 10080,
+  "changes": [
+   {
+    "t": 3721,
+    "label": "Rolling update of catalog-api, catalog",
+    "set": {
+     "catalog_api_rollout": {
+      "form": "proportional",
+      "stock": "catalog_api_ready",
+      "k": 0.15
+     },
+     "catalog_rollout": {
+      "form": "proportional",
+      "stock": "catalog_ready",
+      "k": 0.15
+     },
+     "catalog_leak_rollout": {
+      "form": "proportional",
+      "stock": "catalog_leak",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 3736,
+    "label": "Rolling update finished",
+    "set": {
+     "catalog_api_rollout": {
+      "form": "constant",
+      "value": 0.0
+     },
+     "catalog_rollout": {
+      "form": "constant",
+      "value": 0.0
+     },
+     "catalog_leak_rollout": {
+      "form": "constant",
+      "value": 0.0
+     }
+    },
+    "announce": true
+   }
+  ]
+ },
+ "injections": [
+  {
+   "t": 4981,
+   "stock": "nodes_general",
+   "amount": -1
+  },
+  {
+   "t": 4981,
+   "stock": "web_frontend_ready",
+   "amount": -3
+  },
+  {
+   "t": 4981,
+   "stock": "web_frontend_pending",
+   "amount": 3
+  },
+  {
+   "t": 4981,
+   "stock": "catalog_api_ready",
+   "amount": -4
+  },
+  {
+   "t": 4981,
+   "stock": "catalog_api_pending",
+   "amount": 4
+  },
+  {
+   "t": 4981,
+   "stock": "catalog_ready",
+   "amount": -3
+  },
+  {
+   "t": 4981,
+   "stock": "catalog_pending",
+   "amount": 3
+  },
+  {
+   "t": 4981,
+   "stock": "cart_ready",
+   "amount": -1
+  },
+  {
+   "t": 4981,
+   "stock": "cart_pending",
+   "amount": 1
+  },
+  {
+   "t": 4981,
+   "stock": "pricing_ready",
+   "amount": -2
+  },
+  {
+   "t": 4981,
+   "stock": "pricing_pending",
+   "amount": 2
+  },
+  {
+   "t": 15061,
+   "stock": "nodes_general",
+   "amount": -1
+  },
+  {
+   "t": 15061,
+   "stock": "web_frontend_ready",
+   "amount": -3
+  },
+  {
+   "t": 15061,
+   "stock": "web_frontend_pending",
+   "amount": 3
+  },
+  {
+   "t": 15061,
+   "stock": "catalog_api_ready",
+   "amount": -4
+  },
+  {
+   "t": 15061,
+   "stock": "catalog_api_pending",
+   "amount": 4
+  },
+  {
+   "t": 15061,
+   "stock": "catalog_ready",
+   "amount": -3
+  },
+  {
+   "t": 15061,
+   "stock": "catalog_pending",
+   "amount": 3
+  },
+  {
+   "t": 15061,
+   "stock": "cart_ready",
+   "amount": -1
+  },
+  {
+   "t": 15061,
+   "stock": "cart_pending",
+   "amount": 1
+  },
+  {
+   "t": 15061,
+   "stock": "pricing_ready",
+   "amount": -2
+  },
+  {
+   "t": 15061,
+   "stock": "pricing_pending",
+   "amount": 2
+  }
+ ]
+}

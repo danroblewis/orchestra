@@ -1,0 +1,9 @@
+# The example sd-k8s-platform (sdlab/examples/sd-k8s-platform, built by sdlab/examples/k8s/build.py from
+# platform.yaml) on the ladder, by reference: its truth model, seed, lengths, noise and measured input come from
+# the example (realistic.py), never from this file. The large-model stress case (sd-k8s-small is its first rung).
+example: sd-k8s-platform
+title: "Kubernetes platform, 35 services"
+level: 20
+tags: [realistic, hidden, effect, schedule, announced-era, injection, input, kubernetes, large]
+tests: "35 services, 3 databases, 5 queues and 2 node pools on Kubernetes, a minute a step for a week: 227 measured stocks and 252 hidden, 1130 flows with table effects, ceilings, a measured traffic input, an announced rolling update and node failure; behaviour as on the examples' bench, and whether discovery scales to it at all"
+timeout: 1800

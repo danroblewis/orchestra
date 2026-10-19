@@ -14,7 +14,8 @@ Nothing of the example is copied. The case's model is the example's truth.model.
 its data come from the same engine with the same seed and length as the examples' bench
 (tests/bench/evaluate.py: `--lengths default,long`, counting noise, the fresh run on seed + 1), and
 its hash is the example's model and the variants, not this file's wording. Hidden stocks, schedules,
-eras, injections, co-flows and effects are the example's own.
+eras, injections, co-flows and effects are the example's own, and so are measured inputs and a sub-step
+(`inputs`, `dt`: the sd-k8s-* examples' traffic), which discovery is given as a page is (runner.py).
 
 For these cases behaviour is the headline: skill@20 and skill@100 as on the bench, and whether a run
 **meets the goal** (docs/DISCOVERY-GOAL.md: skill@20 >= 90% and skill@100 >= 80%; an error or a
@@ -83,7 +84,7 @@ def spec(path: Path) -> dict:
     out = {"title": w.get("title") or model.get("name") or ex, "level": int(w.get("level", 20)), "tags": tags,
            "tests": w.get("tests") or f"the example {ex} as on the examples' bench", "example": ex,
            "variants": {"noise": ["counts"], "lengths": {k: int(v) for k, v in lengths.items()}},
-           "model": {k: model[k] for k in ("seed", "stocks", "flows", "schedule", "injections") if k in model}}
+           "model": {k: model[k] for k in ("seed", "stocks", "flows", "schedule", "injections", "inputs", "dt") if k in model}}   # inputs, dt: sd-k8s-*
     if w.get("timeout") is not None:
         out["timeout"] = float(w["timeout"])
     if w.get("tolerance"):

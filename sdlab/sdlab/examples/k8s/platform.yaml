@@ -1,0 +1,89 @@
+# The service catalogue of sd-k8s-platform: 35 services on Kubernetes behind one edge load balancer,
+# three databases, five message queues and two node pools. build.py turns it into the example's
+# truth model (sdlab/examples/sd-k8s-platform/truth.model.json) and page (sd-k8s-platform.json).
+#
+# Units: requests and messages per minute; CPU in millicores; memory in MiB; node occupancy in
+# percent of allocatable; replication lag in seconds. One step is one minute.
+
+id: sd-k8s-platform
+name: "SD: Kubernetes platform (35 services)"
+seed: 20261018
+days: 7                 # the default run: Monday 00:00 to Sunday 23:59
+long_days: 14
+
+# requests per minute arriving at the edge load balancer (the measured input `traffic`)
+traffic:
+  mean: 40000
+  daily: 0.45           # amplitude of the daily cycle, as a fraction of the mean
+  half_daily: 0.12      # a 12-hour harmonic: the morning ramp is steeper than the evening fall
+  peak_hour: 14         # the daily sine's peak; with the 12-hour harmonic the traffic peaks at 12:05
+  weekend: 0.25         # Saturday and Sunday lose this fraction of the mean
+  spike: {day: 4, hour: 19, minutes: 45, height: 0.9}     # Friday 19:00, a campaign: +90% of the mean
+
+ingress: {web-frontend: 0.6, mobile-bff: 0.3, partner-api: 0.1}
+
+pools:
+  general: {cpu: 7600, mem: 28000, min: 3, max: 40, daemonsets: 5}     # 8 vCPU / 32 GiB nodes
+  workers: {cpu: 3600, mem: 14000, min: 2, max: 20, daemonsets: 6}     # 4 vCPU / 16 GiB nodes
+
+# defaults per tier; a service overrides any of them
+tiers:
+  frontend: {cms: 8, cpu_req: 250, cpu_lim: 1000, mem_req: 384, mem_lim: 768, mem_base: 220, mem_load: 0.3, startup: 1.5, pool: general}
+  api:      {cms: 5, cpu_req: 200, cpu_lim: 800, mem_req: 256, mem_lim: 512, mem_base: 160, mem_load: 0.3, startup: 1.0, pool: general}
+  backend:  {cms: 12, cpu_req: 500, cpu_lim: 2000, mem_req: 768, mem_lim: 1536, mem_base: 420, mem_load: 0.4, startup: 2.0, pool: general}
+  worker:   {cms: 40, cpu_req: 500, cpu_lim: 1000, mem_req: 512, mem_lim: 1024, mem_base: 300, mem_load: 0.3, startup: 1.0, pool: workers}
+  cache:    {cms: 0.6, cpu_req: 500, cpu_lim: 1000, mem_req: 2048, mem_lim: 3072, mem_base: 1500, mem_load: 0.2, startup: 1.0, pool: workers, replicas: 3}
+
+databases:
+  orders-db:  {pool: 50, latency_ms: 12, headroom: 1.25, replica: true, replica_pool: 60, lag_at_peak: 0.98}
+  users-db:   {pool: 40, latency_ms: 8, headroom: 1.6, replica: true, replica_pool: 40, lag_at_peak: 0.7}
+  catalog-db: {pool: 60, latency_ms: 10, headroom: 1.4}
+
+queues: [order-events, emails, user-events, notify, catalog-changes]
+
+# calls: synchronous calls per request handled; db: {database: {q: queries, w: writes, r: replica reads}} per
+# request; produces: messages per request; consumes: the queue a worker pulls from.
+# headroom: maxReplicas over the replicas needed at the weekday peak (default 1.6; below 1 the HPA
+# runs out of room at peak). leak: MiB per minute a pod leaks. min: minReplicas (default from the trough).
+services:
+  web-frontend:      {tier: frontend, calls: {auth: 1, catalog-api: 2, cart: 0.5, search: 0.4, recommendations: 0.5, redis-session: 1, profile: 0.2}, produces: {user-events: 1}}
+  mobile-bff:        {tier: frontend, cms: 6, calls: {auth: 1, catalog-api: 1.5, cart: 0.4, orders-api: 0.3, notifications-api: 0.2, media: 0.5}}
+  partner-api:       {tier: frontend, cms: 10, calls: {auth: 1, catalog-api: 1, orders-api: 0.5, inventory: 0.5}}
+  auth:              {tier: api, cms: 3, calls: {users: 0.3, redis-session: 1}}
+  users:             {tier: api, db: {users-db: {q: 1.5, w: 0.1, r: 1}}}
+  profile:           {tier: api, calls: {users: 1, media: 0.5}}
+  catalog-api:       {tier: api, calls: {catalog: 1, pricing: 1, redis-cache: 2}}
+  catalog:           {tier: backend, cms: 6, db: {catalog-db: {q: 2}}, produces: {catalog-changes: 0.02}}
+  pricing:           {tier: api, cms: 4, calls: {redis-cache: 1, promotions: 0.5}}
+  promotions:        {tier: api, db: {catalog-db: {q: 0.5}}}
+  search:            {tier: api, calls: {search-index: 1}}
+  search-index:      {tier: backend, cms: 15, mem_req: 1024, mem_lim: 2048, mem_base: 700, leak: 1.3, headroom: 1.8}
+  recommendations:   {tier: backend, cms: 10, calls: {catalog: 0.5, ml-model-server: 1}, produces: {user-events: 0.5}, leak: 0.6}
+  ml-model-server:   {tier: backend, cms: 25, cpu_req: 1000, cpu_lim: 1200, mem_req: 2048, mem_lim: 3072, mem_base: 1600, mem_load: 0.15, pool: workers, headroom: 0.7, startup: 4}
+  cart:              {tier: api, calls: {redis-session: 2, pricing: 1, inventory: 0.5}}
+  inventory:         {tier: api, db: {catalog-db: {q: 1}}}
+  orders-api:        {tier: api, calls: {checkout: 0.3, order-history: 0.7}}
+  checkout:          {tier: backend, cms: 8, calls: {payments: 1, inventory: 1, orders: 1, fraud-check: 1}, produces: {order-events: 1}}
+  payments:          {tier: backend, cms: 6, calls: {payment-adapter: 1}, db: {orders-db: {q: 3, w: 2}}}
+  payment-adapter:   {tier: api, cms: 4}
+  fraud-check:       {tier: backend, cms: 8, calls: {ml-model-server: 1, users: 1}}
+  orders:            {tier: backend, cms: 6, db: {orders-db: {q: 4, w: 3}}}
+  order-history:     {tier: api, db: {orders-db: {q: 2, r: 3}}}
+  notifications-api: {tier: api, produces: {notify: 1}}
+  media:             {tier: backend, cms: 20, mem_req: 1024, mem_lim: 1536, mem_base: 500, mem_load: 1.1, headroom: 1.3}
+  order-worker:      {tier: worker, consumes: order-events, calls: {orders: 1, notifications-api: 1}, produces: {emails: 1}, leak: 0.5}
+  email-worker:      {tier: worker, consumes: emails, calls: {templates: 1}}
+  templates:         {tier: api, cms: 6}
+  event-ingest:      {tier: worker, cms: 3, consumes: user-events, calls: {analytics-writer: 1}}
+  analytics-writer:  {tier: backend, cms: 3, pool: workers}
+  notify-worker:     {tier: worker, cms: 20, consumes: notify, calls: {push-gateway: 1}}
+  push-gateway:      {tier: api, cms: 6, pool: workers}
+  search-indexer:    {tier: worker, cms: 60, consumes: catalog-changes, calls: {search-index: 3}}
+  redis-session:     {tier: cache}
+  redis-cache:       {tier: cache, cms: 0.25, replicas: 4, mem_base: 2000, mem_lim: 4096, mem_req: 3072}
+
+events:
+  deploys:
+    - {day: 2, hour: 14, minutes: 15, services: [checkout, catalog-api, search-index]}
+  node_failures:
+    - {day: 3, hour: 11, pool: general, nodes: 1}

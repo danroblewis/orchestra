@@ -20,6 +20,17 @@ def truth(example: str) -> Truth:
     return Truth(EXAMPLES / example / "truth.model.json")
 
 
+# examples too large to run fifty times their length in a test (sd-k8s-*: a week of minutes, hundreds
+# of stocks, ~40 s a week): tests/test_k8s_model.py runs them five weeks with checks that know their
+# event stocks (retries, OOM restarts); here they get longer timeouts
+def is_large(example: str) -> bool:
+    t = truth(example)
+    return t.steps * len(t.model["flows"]) > 2_000_000
+
+
+SMALL = [e for e in SD if not is_large(e)]
+
+
 @functools.lru_cache(maxsize=None)
 def very_long_run(example: str) -> dict:
     """Fifty times the default length (shared by the tests that need it)."""
@@ -46,7 +57,7 @@ def test_the_example_shows_only_the_measured_stocks_and_no_flows(example):
     assert validate({**t.model, "stocks": [{k: v for k, v in s.items() if k != "measured"} for s in t.model["stocks"]]}) == [], "the truth is itself a valid SD Lab model"
 
 
-@pytest.mark.parametrize("example", SD)
+@pytest.mark.parametrize("example", SMALL)
 def test_a_very_long_run_stays_sane(example):
     """Fifty times the default length: every level finite and never negative, the stocks that are
     not final stay within reach of where they were in the first period, and everything that moved
@@ -68,7 +79,7 @@ def test_a_very_long_run_stays_sane(example):
         assert abs(start[s] + net - r["levels"][s][-1]) < 1e-6 * max(1, abs(net)) + 1, s
 
 
-@pytest.mark.parametrize("example", [pytest.param(e, marks=pytest.mark.xfail(strict=True, reason="settles near equilibrium")) if e in LOW_EXCITATION else e for e in SD])
+@pytest.mark.parametrize("example", [pytest.param(e, marks=pytest.mark.xfail(strict=True, reason="settles near equilibrium")) if e in LOW_EXCITATION else e for e in SMALL])
 def test_the_data_keeps_exercising_the_model(example):
     """Discovery can only identify flows the data keeps exercising. Over fifty times the default
     length, every stock that is not final keeps moving as much late in the run as early on (the
@@ -101,7 +112,7 @@ def test_a_longer_run_begins_with_the_shorter_one(example):
 @pytest.mark.parametrize("example", SD)
 def test_history_prints_what_measured_returns(example):
     p = subprocess.run([sys.executable, str(EXAMPLES / example / "machines" / "history.py")], input="",
-                       capture_output=True, text=True, timeout=60, cwd=EXAMPLES / example / "machines")
+                       capture_output=True, text=True, timeout=600 if is_large(example) else 60, cwd=EXAMPLES / example / "machines")
     assert p.returncode == 0, p.stderr
     rows = [json.loads(line) for line in p.stdout.splitlines()]
     m = truth(example).measured()
@@ -113,10 +124,10 @@ def test_history_prints_what_measured_returns(example):
 @pytest.mark.parametrize("example", SD)
 def test_the_live_feed_never_runs_out(example, monkeypatch):
     t = truth(example)
-    far = t.long_steps * 3 + 7
+    far = t.long_steps + 7 if is_large(example) else t.long_steps * 3 + 7      # past the recording either way
     p = subprocess.run([sys.executable, str(EXAMPLES / example / "machines" / "live.py")],
                        input=json.dumps({"t": far, "stocks": [{"id": s} for s in t.measured_ids]}),
-                       capture_output=True, text=True, timeout=120, cwd=EXAMPLES / example / "machines",
+                       capture_output=True, text=True, timeout=900 if is_large(example) else 120, cwd=EXAMPLES / example / "machines",
                        env={**__import__("os").environ, "SDLAB_LIVE_STEPS": ""})
     assert p.returncode == 0, p.stderr
     row = json.loads(p.stdout)

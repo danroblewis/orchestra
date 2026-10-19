@@ -1,0 +1,2028 @@
+{
+ "note": "Derived from truth.model.json, the system dynamics model that generates this example's data.",
+ "seed": 20261019,
+ "steps": 10080,
+ "measured": [
+  "ingress",
+  "web_frontend_inflight",
+  "web_frontend_cpu",
+  "web_frontend_mem",
+  "web_frontend_desired",
+  "web_frontend_ready",
+  "web_frontend_oom",
+  "catalog_api_inflight",
+  "catalog_api_cpu",
+  "catalog_api_mem",
+  "catalog_api_desired",
+  "catalog_api_ready",
+  "catalog_api_oom",
+  "catalog_inflight",
+  "catalog_cpu",
+  "catalog_mem",
+  "catalog_desired",
+  "catalog_ready",
+  "catalog_oom",
+  "cart_inflight",
+  "cart_cpu",
+  "cart_mem",
+  "cart_desired",
+  "cart_ready",
+  "cart_oom",
+  "pricing_inflight",
+  "pricing_cpu",
+  "pricing_mem",
+  "pricing_desired",
+  "pricing_ready",
+  "pricing_oom",
+  "nodes_general",
+  "cpu_requested_general",
+  "mem_requested_general"
+ ],
+ "hidden_stocks": [
+  "web_frontend_lbq",
+  "web_frontend_retry",
+  "web_frontend_cpu_pod",
+  "web_frontend_cpu_slow",
+  "web_frontend_pending",
+  "web_frontend_starting",
+  "web_frontend_terminating",
+  "catalog_api_lbq",
+  "catalog_api_retry",
+  "catalog_api_cpu_pod",
+  "catalog_api_cpu_slow",
+  "catalog_api_pending",
+  "catalog_api_starting",
+  "catalog_api_terminating",
+  "catalog_lbq",
+  "catalog_retry",
+  "catalog_cpu_pod",
+  "catalog_cpu_slow",
+  "catalog_leak",
+  "catalog_pending",
+  "catalog_starting",
+  "catalog_terminating",
+  "cart_lbq",
+  "cart_retry",
+  "cart_cpu_pod",
+  "cart_cpu_slow",
+  "cart_pending",
+  "cart_starting",
+  "cart_terminating",
+  "pricing_lbq",
+  "pricing_retry",
+  "pricing_cpu_pod",
+  "pricing_cpu_slow",
+  "pricing_pending",
+  "pricing_starting",
+  "pricing_terminating",
+  "cpu_requested_slow_general",
+  "provisioning_general_1",
+  "provisioning_general_2",
+  "provisioning_general_3"
+ ],
+ "schedule": {
+  "every": 10080,
+  "changes": [
+   {
+    "t": 3721,
+    "label": "Rolling update of catalog-api, catalog",
+    "set": {
+     "catalog_api_rollout": {
+      "form": "proportional",
+      "stock": "catalog_api_ready",
+      "k": 0.15
+     },
+     "catalog_rollout": {
+      "form": "proportional",
+      "stock": "catalog_ready",
+      "k": 0.15
+     },
+     "catalog_leak_rollout": {
+      "form": "proportional",
+      "stock": "catalog_leak",
+      "k": 0.15
+     }
+    },
+    "announce": true
+   },
+   {
+    "t": 3736,
+    "label": "Rolling update finished",
+    "set": {
+     "catalog_api_rollout": {
+      "form": "constant",
+      "value": 0.0
+     },
+     "catalog_rollout": {
+      "form": "constant",
+      "value": 0.0
+     },
+     "catalog_leak_rollout": {
+      "form": "constant",
+      "value": 0.0
+     }
+    },
+    "announce": true
+   }
+  ]
+ },
+ "sd_structure": {
+  "moves": [
+   {
+    "from": "web_frontend_ready",
+    "to": "web_frontend_oom",
+    "flow": "web_frontend_oom_kill",
+    "what": "web-frontend pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "from": "catalog_api_ready",
+    "to": "catalog_api_oom",
+    "flow": "catalog_api_oom_kill",
+    "what": "catalog-api pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "from": "catalog_ready",
+    "to": "catalog_oom",
+    "flow": "catalog_oom_kill",
+    "what": "catalog pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "from": "cart_ready",
+    "to": "cart_oom",
+    "flow": "cart_oom_kill",
+    "what": "cart pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "from": "pricing_ready",
+    "to": "pricing_oom",
+    "flow": "pricing_oom_kill",
+    "what": "pricing pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_ready",
+     "k": 1.0
+    }
+   }
+  ],
+  "outside": [
+   {
+    "to": "ingress",
+    "flow": "traffic_in",
+    "what": "Users' requests reach the edge load balancer",
+    "rate": {
+     "form": "proportional",
+     "stock": "traffic",
+     "k": 1.0
+    }
+   },
+   {
+    "from": "web_frontend_inflight",
+    "flow": "web_frontend_done",
+    "what": "web-frontend completes requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "to": "web_frontend_cpu",
+    "flow": "web_frontend_cpu_work",
+    "what": "web-frontend: CPU used by requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_inflight",
+     "k": 0.0666667
+    }
+   },
+   {
+    "to": "web_frontend_cpu",
+    "flow": "web_frontend_cpu_idle",
+    "what": "web-frontend: CPU used by idle pods",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_ready",
+     "k": 5.0
+    }
+   },
+   {
+    "from": "web_frontend_cpu",
+    "flow": "web_frontend_cpu_window",
+    "what": "web-frontend: CPU reading moves on",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_cpu",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "web_frontend_mem",
+    "flow": "web_frontend_mem_base",
+    "what": "web-frontend: memory a pod needs at rest",
+    "rate": {
+     "form": "linear",
+     "c": 110.0,
+     "terms": []
+    }
+   },
+   {
+    "to": "web_frontend_mem",
+    "flow": "web_frontend_mem_load",
+    "what": "web-frontend: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_inflight",
+     "k": 0.0266667
+    }
+   },
+   {
+    "from": "web_frontend_mem",
+    "flow": "web_frontend_mem_freed",
+    "what": "web-frontend: memory freed",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_mem",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "web_frontend_desired",
+    "flow": "web_frontend_hpa_up",
+    "what": "HPA scales web-frontend up",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_cpu",
+       "k": 0.00519481
+      },
+      {
+       "stock": "web_frontend_desired",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "from": "web_frontend_desired",
+    "flow": "web_frontend_hpa_down",
+    "what": "HPA scales web-frontend down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "web_frontend_cpu_slow",
+       "k": -0.0031746
+      }
+     ]
+    }
+   },
+   {
+    "from": "catalog_api_inflight",
+    "flow": "catalog_api_done",
+    "what": "catalog-api completes requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "to": "catalog_api_cpu",
+    "flow": "catalog_api_cpu_work",
+    "what": "catalog-api: CPU used by requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_inflight",
+     "k": 0.0416667
+    }
+   },
+   {
+    "to": "catalog_api_cpu",
+    "flow": "catalog_api_cpu_idle",
+    "what": "catalog-api: CPU used by idle pods",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_ready",
+     "k": 5.0
+    }
+   },
+   {
+    "from": "catalog_api_cpu",
+    "flow": "catalog_api_cpu_window",
+    "what": "catalog-api: CPU reading moves on",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_cpu",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "catalog_api_mem",
+    "flow": "catalog_api_mem_base",
+    "what": "catalog-api: memory a pod needs at rest",
+    "rate": {
+     "form": "linear",
+     "c": 80.0,
+     "terms": []
+    }
+   },
+   {
+    "to": "catalog_api_mem",
+    "flow": "catalog_api_mem_load",
+    "what": "catalog-api: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_inflight",
+     "k": 0.0153846
+    }
+   },
+   {
+    "from": "catalog_api_mem",
+    "flow": "catalog_api_mem_freed",
+    "what": "catalog-api: memory freed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_mem",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "catalog_api_desired",
+    "flow": "catalog_api_hpa_up",
+    "what": "HPA scales catalog-api up",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "catalog_api_cpu",
+       "k": 0.00649351
+      },
+      {
+       "stock": "catalog_api_desired",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "from": "catalog_api_desired",
+    "flow": "catalog_api_hpa_down",
+    "what": "HPA scales catalog-api down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "catalog_api_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "catalog_api_cpu_slow",
+       "k": -0.00396825
+      }
+     ]
+    }
+   },
+   {
+    "from": "catalog_inflight",
+    "flow": "catalog_done",
+    "what": "catalog completes requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "to": "catalog_cpu",
+    "flow": "catalog_cpu_work",
+    "what": "catalog: CPU used by requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_inflight",
+     "k": 0.1
+    }
+   },
+   {
+    "to": "catalog_cpu",
+    "flow": "catalog_cpu_idle",
+    "what": "catalog: CPU used by idle pods",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_ready",
+     "k": 5.0
+    }
+   },
+   {
+    "from": "catalog_cpu",
+    "flow": "catalog_cpu_window",
+    "what": "catalog: CPU reading moves on",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_cpu",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "catalog_mem",
+    "flow": "catalog_mem_base",
+    "what": "catalog: memory a pod needs at rest plus what it has leaked",
+    "rate": {
+     "form": "linear",
+     "c": 210.0,
+     "terms": [
+      {
+       "stock": "catalog_leak",
+       "k": 0.5
+      }
+     ]
+    }
+   },
+   {
+    "to": "catalog_mem",
+    "flow": "catalog_mem_load",
+    "what": "catalog: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_inflight",
+     "k": 0.0494118
+    }
+   },
+   {
+    "from": "catalog_mem",
+    "flow": "catalog_mem_freed",
+    "what": "catalog: memory freed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_mem",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "catalog_desired",
+    "flow": "catalog_hpa_up",
+    "what": "HPA scales catalog up",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "catalog_cpu",
+       "k": 0.0025974
+      },
+      {
+       "stock": "catalog_desired",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "from": "catalog_desired",
+    "flow": "catalog_hpa_down",
+    "what": "HPA scales catalog down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "catalog_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "catalog_cpu_slow",
+       "k": -0.0015873
+      }
+     ]
+    }
+   },
+   {
+    "from": "cart_inflight",
+    "flow": "cart_done",
+    "what": "cart completes requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "to": "cart_cpu",
+    "flow": "cart_cpu_work",
+    "what": "cart: CPU used by requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_inflight",
+     "k": 0.0416667
+    }
+   },
+   {
+    "to": "cart_cpu",
+    "flow": "cart_cpu_idle",
+    "what": "cart: CPU used by idle pods",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_ready",
+     "k": 5.0
+    }
+   },
+   {
+    "from": "cart_cpu",
+    "flow": "cart_cpu_window",
+    "what": "cart: CPU reading moves on",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_cpu",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "cart_mem",
+    "flow": "cart_mem_base",
+    "what": "cart: memory a pod needs at rest",
+    "rate": {
+     "form": "linear",
+     "c": 80.0,
+     "terms": []
+    }
+   },
+   {
+    "to": "cart_mem",
+    "flow": "cart_mem_load",
+    "what": "cart: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_inflight",
+     "k": 0.0153846
+    }
+   },
+   {
+    "from": "cart_mem",
+    "flow": "cart_mem_freed",
+    "what": "cart: memory freed",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_mem",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "cart_desired",
+    "flow": "cart_hpa_up",
+    "what": "HPA scales cart up",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "cart_cpu",
+       "k": 0.00649351
+      },
+      {
+       "stock": "cart_desired",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "from": "cart_desired",
+    "flow": "cart_hpa_down",
+    "what": "HPA scales cart down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "cart_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "cart_cpu_slow",
+       "k": -0.00396825
+      }
+     ]
+    }
+   },
+   {
+    "from": "pricing_inflight",
+    "flow": "pricing_done",
+    "what": "pricing completes requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "to": "pricing_cpu",
+    "flow": "pricing_cpu_work",
+    "what": "pricing: CPU used by requests",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_inflight",
+     "k": 0.0833333
+    }
+   },
+   {
+    "to": "pricing_cpu",
+    "flow": "pricing_cpu_idle",
+    "what": "pricing: CPU used by idle pods",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_ready",
+     "k": 5.0
+    }
+   },
+   {
+    "from": "pricing_cpu",
+    "flow": "pricing_cpu_window",
+    "what": "pricing: CPU reading moves on",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_cpu",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "pricing_mem",
+    "flow": "pricing_mem_base",
+    "what": "pricing: memory a pod needs at rest",
+    "rate": {
+     "form": "linear",
+     "c": 80.0,
+     "terms": []
+    }
+   },
+   {
+    "to": "pricing_mem",
+    "flow": "pricing_mem_load",
+    "what": "pricing: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_inflight",
+     "k": 0.0307692
+    }
+   },
+   {
+    "from": "pricing_mem",
+    "flow": "pricing_mem_freed",
+    "what": "pricing: memory freed",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_mem",
+     "k": 0.5
+    }
+   },
+   {
+    "to": "pricing_desired",
+    "flow": "pricing_hpa_up",
+    "what": "HPA scales pricing up",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "pricing_cpu",
+       "k": 0.00649351
+      },
+      {
+       "stock": "pricing_desired",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "from": "pricing_desired",
+    "flow": "pricing_hpa_down",
+    "what": "HPA scales pricing down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "pricing_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "pricing_cpu_slow",
+       "k": -0.00396825
+      }
+     ]
+    }
+   },
+   {
+    "to": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_starting",
+       "k": 6.94444
+      },
+      {
+       "stock": "web_frontend_ready",
+       "k": 6.94444
+      },
+      {
+       "stock": "web_frontend_oom",
+       "k": 6.94444
+      },
+      {
+       "stock": "catalog_api_starting",
+       "k": 5.55556
+      },
+      {
+       "stock": "catalog_api_ready",
+       "k": 5.55556
+      },
+      {
+       "stock": "catalog_api_oom",
+       "k": 5.55556
+      },
+      {
+       "stock": "catalog_starting",
+       "k": 13.8889
+      },
+      {
+       "stock": "catalog_ready",
+       "k": 13.8889
+      },
+      {
+       "stock": "catalog_oom",
+       "k": 13.8889
+      },
+      {
+       "stock": "cart_starting",
+       "k": 5.55556
+      },
+      {
+       "stock": "cart_ready",
+       "k": 5.55556
+      },
+      {
+       "stock": "cart_oom",
+       "k": 5.55556
+      },
+      {
+       "stock": "pricing_starting",
+       "k": 5.55556
+      },
+      {
+       "stock": "pricing_ready",
+       "k": 5.55556
+      },
+      {
+       "stock": "pricing_oom",
+       "k": 5.55556
+      }
+     ]
+    }
+   },
+   {
+    "to": "cpu_requested_general",
+    "flow": "general_cpu_daemonsets",
+    "what": "Pool general: CPU requests of daemonsets",
+    "rate": {
+     "form": "constant",
+     "value": 6.0
+    }
+   },
+   {
+    "from": "cpu_requested_general",
+    "flow": "general_cpu_requested_out",
+    "what": "Pool general: CPU requested is re-read",
+    "rate": {
+     "form": "proportional",
+     "stock": "cpu_requested_general",
+     "k": 1.0
+    }
+   },
+   {
+    "to": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_starting",
+       "k": 2.74286
+      },
+      {
+       "stock": "web_frontend_ready",
+       "k": 2.74286
+      },
+      {
+       "stock": "web_frontend_oom",
+       "k": 2.74286
+      },
+      {
+       "stock": "catalog_api_starting",
+       "k": 1.82857
+      },
+      {
+       "stock": "catalog_api_ready",
+       "k": 1.82857
+      },
+      {
+       "stock": "catalog_api_oom",
+       "k": 1.82857
+      },
+      {
+       "stock": "catalog_starting",
+       "k": 5.48571
+      },
+      {
+       "stock": "catalog_ready",
+       "k": 5.48571
+      },
+      {
+       "stock": "catalog_oom",
+       "k": 5.48571
+      },
+      {
+       "stock": "cart_starting",
+       "k": 1.82857
+      },
+      {
+       "stock": "cart_ready",
+       "k": 1.82857
+      },
+      {
+       "stock": "cart_oom",
+       "k": 1.82857
+      },
+      {
+       "stock": "pricing_starting",
+       "k": 1.82857
+      },
+      {
+       "stock": "pricing_ready",
+       "k": 1.82857
+      },
+      {
+       "stock": "pricing_oom",
+       "k": 1.82857
+      }
+     ]
+    }
+   },
+   {
+    "to": "mem_requested_general",
+    "flow": "general_mem_daemonsets",
+    "what": "Pool general: memory requests of daemonsets",
+    "rate": {
+     "form": "constant",
+     "value": 6.0
+    }
+   },
+   {
+    "from": "mem_requested_general",
+    "flow": "general_mem_requested_out",
+    "what": "Pool general: memory requested is re-read",
+    "rate": {
+     "form": "proportional",
+     "stock": "mem_requested_general",
+     "k": 1.0
+    }
+   },
+   {
+    "from": "nodes_general",
+    "flow": "general_scale_down",
+    "what": "Cluster autoscaler removes underused general nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "nodes_general",
+     "k": 0.05
+    }
+   }
+  ],
+  "links": [
+   {
+    "driver": "web_frontend_inflight",
+    "into": "web_frontend_cpu",
+    "flow": "web_frontend_cpu_work",
+    "what": "web-frontend: CPU used by requests"
+   },
+   {
+    "driver": "web_frontend_ready",
+    "into": "web_frontend_cpu",
+    "flow": "web_frontend_cpu_idle",
+    "what": "web-frontend: CPU used by idle pods"
+   },
+   {
+    "driver": "web_frontend_inflight",
+    "into": "web_frontend_mem",
+    "flow": "web_frontend_mem_load",
+    "what": "web-frontend: memory for the requests a pod holds"
+   },
+   {
+    "driver": "web_frontend_cpu",
+    "into": "web_frontend_desired",
+    "flow": "web_frontend_hpa_up",
+    "what": "HPA scales web-frontend up"
+   },
+   {
+    "driver": "catalog_api_inflight",
+    "into": "catalog_api_cpu",
+    "flow": "catalog_api_cpu_work",
+    "what": "catalog-api: CPU used by requests"
+   },
+   {
+    "driver": "catalog_api_ready",
+    "into": "catalog_api_cpu",
+    "flow": "catalog_api_cpu_idle",
+    "what": "catalog-api: CPU used by idle pods"
+   },
+   {
+    "driver": "catalog_api_inflight",
+    "into": "catalog_api_mem",
+    "flow": "catalog_api_mem_load",
+    "what": "catalog-api: memory for the requests a pod holds"
+   },
+   {
+    "driver": "catalog_api_cpu",
+    "into": "catalog_api_desired",
+    "flow": "catalog_api_hpa_up",
+    "what": "HPA scales catalog-api up"
+   },
+   {
+    "driver": "catalog_inflight",
+    "into": "catalog_cpu",
+    "flow": "catalog_cpu_work",
+    "what": "catalog: CPU used by requests"
+   },
+   {
+    "driver": "catalog_ready",
+    "into": "catalog_cpu",
+    "flow": "catalog_cpu_idle",
+    "what": "catalog: CPU used by idle pods"
+   },
+   {
+    "driver": "catalog_inflight",
+    "into": "catalog_mem",
+    "flow": "catalog_mem_load",
+    "what": "catalog: memory for the requests a pod holds"
+   },
+   {
+    "driver": "catalog_cpu",
+    "into": "catalog_desired",
+    "flow": "catalog_hpa_up",
+    "what": "HPA scales catalog up"
+   },
+   {
+    "driver": "cart_inflight",
+    "into": "cart_cpu",
+    "flow": "cart_cpu_work",
+    "what": "cart: CPU used by requests"
+   },
+   {
+    "driver": "cart_ready",
+    "into": "cart_cpu",
+    "flow": "cart_cpu_idle",
+    "what": "cart: CPU used by idle pods"
+   },
+   {
+    "driver": "cart_inflight",
+    "into": "cart_mem",
+    "flow": "cart_mem_load",
+    "what": "cart: memory for the requests a pod holds"
+   },
+   {
+    "driver": "cart_cpu",
+    "into": "cart_desired",
+    "flow": "cart_hpa_up",
+    "what": "HPA scales cart up"
+   },
+   {
+    "driver": "pricing_inflight",
+    "into": "pricing_cpu",
+    "flow": "pricing_cpu_work",
+    "what": "pricing: CPU used by requests"
+   },
+   {
+    "driver": "pricing_ready",
+    "into": "pricing_cpu",
+    "flow": "pricing_cpu_idle",
+    "what": "pricing: CPU used by idle pods"
+   },
+   {
+    "driver": "pricing_inflight",
+    "into": "pricing_mem",
+    "flow": "pricing_mem_load",
+    "what": "pricing: memory for the requests a pod holds"
+   },
+   {
+    "driver": "pricing_cpu",
+    "into": "pricing_desired",
+    "flow": "pricing_hpa_up",
+    "what": "HPA scales pricing up"
+   },
+   {
+    "driver": "web_frontend_ready",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "web_frontend_oom",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_api_ready",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_api_oom",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_ready",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_oom",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "cart_ready",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "cart_oom",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "pricing_ready",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "pricing_oom",
+    "into": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "web_frontend_ready",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "web_frontend_oom",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_api_ready",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_api_oom",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_ready",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "catalog_oom",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "cart_ready",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "cart_oom",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "pricing_ready",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   },
+   {
+    "driver": "pricing_oom",
+    "into": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable"
+   }
+  ],
+  "hidden": [
+   {
+    "from": "ingress",
+    "to": "web_frontend_inflight",
+    "via": "web_frontend_lbq",
+    "via_name": "web-frontend: queued at its load balancer",
+    "shape": "exp",
+    "delay": null,
+    "what": "Edge load balancer routes to web-frontend, then web-frontend's load balancer sends requests to ready pods"
+   },
+   {
+    "from": "web_frontend_oom",
+    "to": "web_frontend_ready",
+    "via": "web_frontend_starting",
+    "via_name": "web-frontend: pods starting",
+    "shape": "exp",
+    "delay": 1.5,
+    "what": "OOM-killed web-frontend containers restart, then web-frontend pods pass their readiness probe"
+   },
+   {
+    "from": "catalog_api_oom",
+    "to": "catalog_api_ready",
+    "via": "catalog_api_starting",
+    "via_name": "catalog-api: pods starting",
+    "shape": "exp",
+    "delay": 1.0,
+    "what": "OOM-killed catalog-api containers restart, then catalog-api pods pass their readiness probe"
+   },
+   {
+    "from": "catalog_oom",
+    "to": "catalog_ready",
+    "via": "catalog_starting",
+    "via_name": "catalog: pods starting",
+    "shape": "exp",
+    "delay": 2.0,
+    "what": "OOM-killed catalog containers restart, then catalog pods pass their readiness probe"
+   },
+   {
+    "from": "cart_oom",
+    "to": "cart_ready",
+    "via": "cart_starting",
+    "via_name": "cart: pods starting",
+    "shape": "exp",
+    "delay": 1.0,
+    "what": "OOM-killed cart containers restart, then cart pods pass their readiness probe"
+   },
+   {
+    "from": "pricing_oom",
+    "to": "pricing_ready",
+    "via": "pricing_starting",
+    "via_name": "pricing: pods starting",
+    "shape": "exp",
+    "delay": 1.0,
+    "what": "OOM-killed pricing containers restart, then pricing pods pass their readiness probe"
+   }
+  ],
+  "echoes": [],
+  "effects": [
+   {
+    "stock": "web_frontend_mem",
+    "shape": "table",
+    "from": "web_frontend_inflight",
+    "to": null,
+    "flow": "web_frontend_oom_lost",
+    "what": "web-frontend: requests lost when a pod is OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "web_frontend_ready",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "web_frontend_cpu_pod_in",
+    "what": "web-frontend: CPU per ready pod (CPU / ready replicas)",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_cpu",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "web_frontend_ready",
+    "shape": "table",
+    "from": null,
+    "to": "web_frontend_mem",
+    "flow": "web_frontend_mem_load",
+    "what": "web-frontend: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_inflight",
+     "k": 0.0266667
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "web_frontend_scheduled",
+    "what": "Scheduler places web-frontend pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "mem_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "web_frontend_scheduled",
+    "what": "Scheduler places web-frontend pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "web_frontend_mem",
+    "shape": "table",
+    "from": "web_frontend_ready",
+    "to": "web_frontend_oom",
+    "flow": "web_frontend_oom_kill",
+    "what": "web-frontend pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "web_frontend_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "web_frontend_desired",
+    "shape": "table",
+    "from": "web_frontend_desired",
+    "to": null,
+    "flow": "web_frontend_hpa_down",
+    "what": "HPA scales web-frontend down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "web_frontend_cpu_slow",
+       "k": -0.0031746
+      }
+     ]
+    }
+   },
+   {
+    "stock": "catalog_api_mem",
+    "shape": "table",
+    "from": "catalog_api_inflight",
+    "to": null,
+    "flow": "catalog_api_oom_lost",
+    "what": "catalog-api: requests lost when a pod is OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_api_ready",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_api_cpu_pod_in",
+    "what": "catalog-api: CPU per ready pod (CPU / ready replicas)",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_cpu",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_api_ready",
+    "shape": "table",
+    "from": null,
+    "to": "catalog_api_mem",
+    "flow": "catalog_api_mem_load",
+    "what": "catalog-api: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_inflight",
+     "k": 0.0153846
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_api_scheduled",
+    "what": "Scheduler places catalog-api pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "mem_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_api_scheduled",
+    "what": "Scheduler places catalog-api pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_api_mem",
+    "shape": "table",
+    "from": "catalog_api_ready",
+    "to": "catalog_api_oom",
+    "flow": "catalog_api_oom_kill",
+    "what": "catalog-api pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_api_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_api_desired",
+    "shape": "table",
+    "from": "catalog_api_desired",
+    "to": null,
+    "flow": "catalog_api_hpa_down",
+    "what": "HPA scales catalog-api down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "catalog_api_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "catalog_api_cpu_slow",
+       "k": -0.00396825
+      }
+     ]
+    }
+   },
+   {
+    "stock": "catalog_mem",
+    "shape": "table",
+    "from": "catalog_inflight",
+    "to": null,
+    "flow": "catalog_oom_lost",
+    "what": "catalog: requests lost when a pod is OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_ready",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_cpu_pod_in",
+    "what": "catalog: CPU per ready pod (CPU / ready replicas)",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_cpu",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_ready",
+    "shape": "table",
+    "from": null,
+    "to": "catalog_mem",
+    "flow": "catalog_mem_load",
+    "what": "catalog: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_inflight",
+     "k": 0.0494118
+    }
+   },
+   {
+    "stock": "catalog_mem",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_leak_oom",
+    "what": "catalog: an OOM-killed pod restarts with no leak",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_leak",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_ready",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_leak_new_pods",
+    "what": "catalog: new pods start with no leak",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_leak",
+     "k": 0.5
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_scheduled",
+    "what": "Scheduler places catalog pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "mem_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "catalog_scheduled",
+    "what": "Scheduler places catalog pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_mem",
+    "shape": "table",
+    "from": "catalog_ready",
+    "to": "catalog_oom",
+    "flow": "catalog_oom_kill",
+    "what": "catalog pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "catalog_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "catalog_desired",
+    "shape": "table",
+    "from": "catalog_desired",
+    "to": null,
+    "flow": "catalog_hpa_down",
+    "what": "HPA scales catalog down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "catalog_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "catalog_cpu_slow",
+       "k": -0.0015873
+      }
+     ]
+    }
+   },
+   {
+    "stock": "cart_mem",
+    "shape": "table",
+    "from": "cart_inflight",
+    "to": null,
+    "flow": "cart_oom_lost",
+    "what": "cart: requests lost when a pod is OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "cart_ready",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "cart_cpu_pod_in",
+    "what": "cart: CPU per ready pod (CPU / ready replicas)",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_cpu",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "cart_ready",
+    "shape": "table",
+    "from": null,
+    "to": "cart_mem",
+    "flow": "cart_mem_load",
+    "what": "cart: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_inflight",
+     "k": 0.0153846
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "cart_scheduled",
+    "what": "Scheduler places cart pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "mem_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "cart_scheduled",
+    "what": "Scheduler places cart pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "cart_mem",
+    "shape": "table",
+    "from": "cart_ready",
+    "to": "cart_oom",
+    "flow": "cart_oom_kill",
+    "what": "cart pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "cart_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "cart_desired",
+    "shape": "table",
+    "from": "cart_desired",
+    "to": null,
+    "flow": "cart_hpa_down",
+    "what": "HPA scales cart down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "cart_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "cart_cpu_slow",
+       "k": -0.00396825
+      }
+     ]
+    }
+   },
+   {
+    "stock": "pricing_mem",
+    "shape": "table",
+    "from": "pricing_inflight",
+    "to": null,
+    "flow": "pricing_oom_lost",
+    "what": "pricing: requests lost when a pod is OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_inflight",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "pricing_ready",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "pricing_cpu_pod_in",
+    "what": "pricing: CPU per ready pod (CPU / ready replicas)",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_cpu",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "pricing_ready",
+    "shape": "table",
+    "from": null,
+    "to": "pricing_mem",
+    "flow": "pricing_mem_load",
+    "what": "pricing: memory for the requests a pod holds",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_inflight",
+     "k": 0.0307692
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "pricing_scheduled",
+    "what": "Scheduler places pricing pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "mem_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "pricing_scheduled",
+    "what": "Scheduler places pricing pods on nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_pending",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "pricing_mem",
+    "shape": "table",
+    "from": "pricing_ready",
+    "to": "pricing_oom",
+    "flow": "pricing_oom_kill",
+    "what": "pricing pods are OOM-killed",
+    "rate": {
+     "form": "proportional",
+     "stock": "pricing_ready",
+     "k": 1.0
+    }
+   },
+   {
+    "stock": "pricing_desired",
+    "shape": "table",
+    "from": "pricing_desired",
+    "to": null,
+    "flow": "pricing_hpa_down",
+    "what": "HPA scales pricing down",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "pricing_desired",
+       "k": 0.5
+      },
+      {
+       "stock": "pricing_cpu_slow",
+       "k": -0.00396825
+      }
+     ]
+    }
+   },
+   {
+    "stock": "nodes_general",
+    "shape": "table",
+    "from": null,
+    "to": "cpu_requested_general",
+    "flow": "general_cpu_requests",
+    "what": "Pool general: CPU requests of scheduled pods / allocatable",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_starting",
+       "k": 6.94444
+      },
+      {
+       "stock": "web_frontend_ready",
+       "k": 6.94444
+      },
+      {
+       "stock": "web_frontend_oom",
+       "k": 6.94444
+      },
+      {
+       "stock": "catalog_api_starting",
+       "k": 5.55556
+      },
+      {
+       "stock": "catalog_api_ready",
+       "k": 5.55556
+      },
+      {
+       "stock": "catalog_api_oom",
+       "k": 5.55556
+      },
+      {
+       "stock": "catalog_starting",
+       "k": 13.8889
+      },
+      {
+       "stock": "catalog_ready",
+       "k": 13.8889
+      },
+      {
+       "stock": "catalog_oom",
+       "k": 13.8889
+      },
+      {
+       "stock": "cart_starting",
+       "k": 5.55556
+      },
+      {
+       "stock": "cart_ready",
+       "k": 5.55556
+      },
+      {
+       "stock": "cart_oom",
+       "k": 5.55556
+      },
+      {
+       "stock": "pricing_starting",
+       "k": 5.55556
+      },
+      {
+       "stock": "pricing_ready",
+       "k": 5.55556
+      },
+      {
+       "stock": "pricing_oom",
+       "k": 5.55556
+      }
+     ]
+    }
+   },
+   {
+    "stock": "nodes_general",
+    "shape": "table",
+    "from": null,
+    "to": "mem_requested_general",
+    "flow": "general_mem_requests",
+    "what": "Pool general: memory requests of scheduled pods / allocatable",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_starting",
+       "k": 2.74286
+      },
+      {
+       "stock": "web_frontend_ready",
+       "k": 2.74286
+      },
+      {
+       "stock": "web_frontend_oom",
+       "k": 2.74286
+      },
+      {
+       "stock": "catalog_api_starting",
+       "k": 1.82857
+      },
+      {
+       "stock": "catalog_api_ready",
+       "k": 1.82857
+      },
+      {
+       "stock": "catalog_api_oom",
+       "k": 1.82857
+      },
+      {
+       "stock": "catalog_starting",
+       "k": 5.48571
+      },
+      {
+       "stock": "catalog_ready",
+       "k": 5.48571
+      },
+      {
+       "stock": "catalog_oom",
+       "k": 5.48571
+      },
+      {
+       "stock": "cart_starting",
+       "k": 1.82857
+      },
+      {
+       "stock": "cart_ready",
+       "k": 1.82857
+      },
+      {
+       "stock": "cart_oom",
+       "k": 1.82857
+      },
+      {
+       "stock": "pricing_starting",
+       "k": 1.82857
+      },
+      {
+       "stock": "pricing_ready",
+       "k": 1.82857
+      },
+      {
+       "stock": "pricing_oom",
+       "k": 1.82857
+      }
+     ]
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "general_scale_up",
+    "what": "Cluster autoscaler adds general nodes for pending pods",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_pending",
+       "k": 0.0694444
+      },
+      {
+       "stock": "catalog_api_pending",
+       "k": 0.0555556
+      },
+      {
+       "stock": "catalog_pending",
+       "k": 0.138889
+      },
+      {
+       "stock": "cart_pending",
+       "k": 0.0555556
+      },
+      {
+       "stock": "pricing_pending",
+       "k": 0.0555556
+      },
+      {
+       "stock": "provisioning_general_1",
+       "k": -1.0
+      },
+      {
+       "stock": "provisioning_general_2",
+       "k": -1.0
+      },
+      {
+       "stock": "provisioning_general_3",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "stock": "nodes_general",
+    "shape": "table",
+    "from": null,
+    "to": null,
+    "flow": "general_scale_up",
+    "what": "Cluster autoscaler adds general nodes for pending pods",
+    "rate": {
+     "form": "linear",
+     "c": 0.0,
+     "terms": [
+      {
+       "stock": "web_frontend_pending",
+       "k": 0.0694444
+      },
+      {
+       "stock": "catalog_api_pending",
+       "k": 0.0555556
+      },
+      {
+       "stock": "catalog_pending",
+       "k": 0.138889
+      },
+      {
+       "stock": "cart_pending",
+       "k": 0.0555556
+      },
+      {
+       "stock": "pricing_pending",
+       "k": 0.0555556
+      },
+      {
+       "stock": "provisioning_general_1",
+       "k": -1.0
+      },
+      {
+       "stock": "provisioning_general_2",
+       "k": -1.0
+      },
+      {
+       "stock": "provisioning_general_3",
+       "k": -1.0
+      }
+     ]
+    }
+   },
+   {
+    "stock": "cpu_requested_general",
+    "shape": "table",
+    "from": "nodes_general",
+    "to": null,
+    "flow": "general_scale_down",
+    "what": "Cluster autoscaler removes underused general nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "nodes_general",
+     "k": 0.05
+    }
+   },
+   {
+    "stock": "nodes_general",
+    "shape": "table",
+    "from": "nodes_general",
+    "to": null,
+    "flow": "general_scale_down",
+    "what": "Cluster autoscaler removes underused general nodes",
+    "rate": {
+     "form": "proportional",
+     "stock": "nodes_general",
+     "k": 0.05
+    }
+   }
+  ]
+ }
+}
