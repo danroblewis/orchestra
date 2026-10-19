@@ -122,3 +122,20 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
 - **combined does worse than matrix on realistic models,** although it is near the top on tests: its judge favours models that pass tests but behave worse. The combined agent was asked to find out why and to guard against it.
 - **The lna family times out on 10-20-stock models.** The lna agent was asked for a budget with fallback.
 - **Test leaders and realistic leaders differ.** effect_hats and censored lead on realistic, and the lna family leads on tests. Strategies should be judged on both from now on.
+
+## 2026-10-18 21:10 (note)
+
+- **Finished:**
+  - canonical models (queue item 2): cases 100-110 and a PySD converter;
+  - noise variants (queue item 1, 10f1d24); the agent was asked to replace its import-time oracle swap with a visible score.py edit.
+- **Started:** noise-robust discovery (queue item 0b).
+- **Fixed:** impulses (and so lna_stack) raised on cases with measured inputs, treating an input's name as a stock. Fixed in impulses.py; 062 and 105 now run.
+- **Queued from the canonical results:** 2b (products of stocks, hidden delays), 2c (converter coverage), 2d (engine features for blockers: two-way flows, DELAY FIXED, MIN/MAX/ratios, sqrt/power).
+
+**Needs you (scoring)**
+- **Delays fed from outside are not scored as parts.** The answer key reads a DELAY chain only between two measured stocks, so in 105, 108 and 110 those inflows aren't counted, and 105 and 110 score one part each. Making the scorer count them is a scoring change.
+- **Cases with dt < 1** (100 SIR, 104 teacup) record once per time unit from a finer run. A drain k then shows per step as 1 − e^(−k). The truth's k = 0.1 and a found 0.0957 behave identically (100% skill), but this is scored as a fail. Options:
+  - the scorer converts the truth's continuous rates to per-step rates for such cases;
+  - or discovery fits continuous time.
+
+  The first is a scoring change.

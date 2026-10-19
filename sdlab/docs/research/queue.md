@@ -11,6 +11,27 @@ for `combined` on the test cases).
 
 ## Queued
 
+2b. **Products of stocks and other canonical structure** (from item 2's results). Every leader
+   fails the canonical cases' central structures:
+   - products of two stocks (S·I in SIR/SEIR, Bass word-of-mouth, logistic crowding X²): they
+     come out as links plus hundreds of inflow pieces;
+   - goal-seeking hiring with several stocks in the gap, (target − rookies − experts)/6;
+   - hidden rework and construction delays.
+
+   Build or extend strategies, e.g. lna_products and effect_hats ideas, a bilinear-term search,
+   and hidden-delay detection like hidden_transit for DELAY3 chains. Target cases 100-110.
+   Behaviour (fresh skill@100) is already 94-100%; the target is the structure.
+2c. **Converter coverage** (no engine change): arrays, macros, external data, DELAY N / SMOOTH N
+   of other orders in `sdlab/ladder/pysd_import.py`. Re-run the coverage report.
+2d. **Engine features for the remaining blockers** (approved by the user on 2026-10-18 if
+   additive, with existing numbers bit-identical):
+   - two-way flows and negative stocks, opt-in per stock or flow;
+   - DELAY FIXED;
+   - MIN/MAX and ratios of stocks in rates;
+   - sqrt and power.
+
+   Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
+
 3. **Strict pass tier.** Add a second, stricter verdict beside pass/equivalent/fail. Do not
    replace pass, so history stays comparable. Strict pass requires all of:
    - a pass;
@@ -85,9 +106,12 @@ for `combined` on the test cases).
 
 - 2026-10-18 20:50: item 0b, noise-robust discovery.
 
-- 2026-10-18 20:30: item 2, canonical system dynamics models.
 
 ## Done
+
+- 2026-10-18: item 2, canonical models: cases 100-110 and the PySD converter (3660a5d, 0b3fbb8,
+  08ef0d7, 1b14f42). Coverage of SDXorg/test-models: 37 exact, 15 differ, 111 blocked
+  (`docs/research/canonical-coverage.md`). Leaders: combined 3 passes of 44 cells, the others 0-2.
 
 - 2026-10-18: realistic examples run (7 leaders on the 31 sd-* cases; results in the journal's 19:45 entry).
 
