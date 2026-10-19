@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/odefit/compare.py at commit 333f814 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/odefit/compare.py at commit 333f814 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Comparing any two models (SD Lab flows) by output error, as the numbers were fitted.
 

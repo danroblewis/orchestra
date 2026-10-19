@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/gap_prior/__init__.py at commit 2bbc025 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/gap_prior/__init__.py at commit 2bbc025 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """gap_prior: lna, with readings the data cannot tell apart written the way SD models write them.
 

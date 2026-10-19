@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/screen.py at commit af06c28 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/screen.py at commit 9d891b0 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Where an effect might be: a group of tent columns base x h_j(C) that explains what the rows leave.
 

@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/realistic_hats/__init__.py at commit 06b0062 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/realistic_hats/__init__.py at commit 06b0062 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """realistic_hats: effect_hats for the realistic examples (docs/research/realistic-hats.md, triage in
 docs/research/realistic-triage.md).

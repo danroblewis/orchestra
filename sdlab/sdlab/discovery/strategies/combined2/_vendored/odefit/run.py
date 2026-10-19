@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/odefit/run.py at commit 333f814 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/odefit/run.py at commit 333f814 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """identify(): the per-step model by output error: linear terms pruned by BIC, then products and
 hinges where BIC says the data earn them (docs/research/odefit.md)."""

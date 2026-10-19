@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna/coflows.py at commit f3270a8 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna/coflows.py at commit f3270a8 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Co-flows: a move a -> b that uses up `per` of c as it goes.
 

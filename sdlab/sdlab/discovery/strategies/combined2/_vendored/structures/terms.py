@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/structures/terms.py at commit 7e0a2bf (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/structures/terms.py at commit 7e0a2bf (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Terms: the smallest parts a model is built of, each with one number theta >= 0, and the change
 each makes to every measured stock per unit of theta (a column of the regression).

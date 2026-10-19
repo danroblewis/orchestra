@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/archetypes/terms.py at commit 3c3e009 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/archetypes/terms.py at commit 3c3e009 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The term library: every flow a number theta >= 0 times a monomial of the measured levels (degree
 0, 1 or 2), with a route (from, to; None is outside). These are the classic SD forms:

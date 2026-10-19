@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_levels/levels.py at commit dc73851 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_levels/levels.py at commit dc73851 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Outside inflows as a few recurring levels (a regime model of the inflow), and a stock's growth
 with itself offered back as inflow pieces.

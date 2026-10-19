@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/common_cause/joint.py at commit 0419efe (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/common_cause/joint.py at commit 3f5f064 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """(earned_pieces, vendored at a3a5e01) Conservation decided by all the rows at once, with counting noise as evidence.
 
@@ -57,7 +57,8 @@ class System:
     configuration or -1), cuts) and the system they share (ids, units, configurations)."""
 
     def __init__(self, rows: list[dict], ids: list[str], unit: dict, final: set, dy: np.ndarray, cfg: np.ndarray, L: int,
-                 counting: bool = False, min_piece: int = 5, scale: str = "unit"):
+                 counting: bool = False, min_piece: int = 5, scale: str = "unit", pelt=pelt):
+        self.pelt = pelt                  # the change scan (exact.ops' floored one on exact data)
         self.min_piece, self.scale = min_piece, scale     # scale: one phi per unit's rows, or per row
         self.counting = counting          # False: stacked least squares (one variance for a unit's rows)
         self.rows, self.ids, self.unit, self.final, self.dy, self.cfg, self.L = rows, ids, unit, final, dy, cfg, L
@@ -160,7 +161,7 @@ class System:
                 # biased drain, they would favour it), then the row's other numbers refitted
                 for _ in range(2):
                     left = y - sum((theta[index[(a, q)]] * r["X"][q] for q in rest), np.zeros(self.T))
-                    cuts[a] = pelt(left, self.min_piece, mult)
+                    cuts[a] = self.pelt(left, self.min_piece, mult)
                     if not rest:
                         break
                     X = _weighted_demean(r["X"][rest], w[a], cuts[a])
@@ -176,7 +177,7 @@ class System:
                         continue
                     cols = r["set"]
                     left = self.dy[s] - (np.array([theta[index[(s, q)]] for q in cols]) @ r["X"][cols] if cols else 0.0)
-                    cuts[s] = pelt(left, self.min_piece, mult)
+                    cuts[s] = self.pelt(left, self.min_piece, mult)
             out = self._evaluate(theta, index, w, cuts)
             w = [1.0 / g for g in out["gross"]]
         out["P"] = P - len(A) + sum(1 + per_change * (len(c) - 2) if c else 0 for c in cuts)

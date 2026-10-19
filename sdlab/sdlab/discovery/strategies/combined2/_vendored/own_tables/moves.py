@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/own_tables/moves.py at commit 67a604b (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/own_tables/moves.py at commit 67a604b (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A move between two measured stocks as a table of its source's level.
 

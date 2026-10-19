@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/realistic_hats/transit/__init__.py at commit 06b0062 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/realistic_hats/transit/__init__.py at commit 06b0062 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Copied from strategy hidden_transit at commit 376fa34 (its committed __init__, fit, kalman, pairs; imports
 rewritten, `identify` turned into `add`, which works on a given model). Original docstring:

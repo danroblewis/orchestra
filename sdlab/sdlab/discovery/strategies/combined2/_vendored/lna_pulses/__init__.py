@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_pulses/__init__.py at commit dc73851 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_pulses/__init__.py at commit dc73851 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """lna_pulses: pulses (one-step arrivals, short bursts) found first, then lna on what they leave.
 

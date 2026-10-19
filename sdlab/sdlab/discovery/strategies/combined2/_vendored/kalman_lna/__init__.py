@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/__init__.py at commit 6a93270 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/__init__.py at commit 6a93270 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """kalman_lna: discovery for levels that are reported, not known (docs/research/kalman_lna.md).
 

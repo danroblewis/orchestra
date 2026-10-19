@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/hidden_transit/stagekf.py at commit 2b6a827 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/hidden_transit/stagekf.py at commit 2b6a827 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A stage's numbers refitted by a Kalman filter's likelihood, for counts (stage.py chooses its terms).
 

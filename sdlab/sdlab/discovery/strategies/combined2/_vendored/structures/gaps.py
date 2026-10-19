@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/structures/gaps.py at commit 7e0a2bf (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/structures/gaps.py at commit 7e0a2bf (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Goal gaps over several stocks: b's outside inflow (u - X_1 - ... - X_k) / tau, the goal u a
 measured input (or a constant), floored at 0 as a whole.

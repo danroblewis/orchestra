@@ -83,3 +83,25 @@ def plain_exact(flows: list[dict], data, eras: bool) -> bool:
         return J.misfit(flows, data) < EXACT
     except Exception:                                     # noqa: BLE001
         return False
+
+
+MISFIT_COUNTS = 3.0   # standard errors of the counts' mean squared standardised change above 1 that count as a misfit
+
+
+def fits(flows: list[dict], data, eras: bool) -> bool:
+    """The model fits the levels to their noise: with counts, its one-step changes are no more spread
+    than counting noise (judge.misfit within MISFIT_COUNTS standard errors); otherwise exact to the
+    rounding without pieces (plain_exact). A reporting delay or a miscounted stock leaves a misfit
+    (087 lag: 22-26; the bias cells: 2.1-2.3 against a rounding floor of 1), so where the pick fits,
+    kalman's later readings are not tried (on 122/123/196 a delay read near the announced
+    injections replaced own_tables' exact table)."""
+    from ._vendored.combined import judge as J
+
+    if not flows:
+        return False
+    if not data.counts:
+        return plain_exact(flows, data, eras)
+    try:
+        return J.misfit(flows, data) <= MISFIT_COUNTS
+    except Exception:                                     # noqa: BLE001
+        return False

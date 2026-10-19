@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/hidden_transit/__init__.py at commit 2b6a827 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/hidden_transit/__init__.py at commit 2b6a827 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Experiment hidden_transit (docs/research/hidden_transit.md): an unmeasured transit stock between
 two measured ones (A -> H -> B), with the pair's rows refitted as one model by a Kalman filter's

@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna/changes.py at commit f3270a8 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna/changes.py at commit f3270a8 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """What changes over time: outside inflows in pieces (unannounced changes), and numbers per announced
 era. Both are kept only where the likelihood pays for them (BIC)."""

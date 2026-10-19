@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_levels/__init__.py at commit dc73851 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_levels/__init__.py at commit dc73851 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """lna_levels: lna, with each outside inflow's pieces offered as a few recurring levels, and a
 stock's growth with itself beside an inflow offered back as inflow pieces (levels.py).

@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/archetypes/holdout.py at commit 3c3e009 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/archetypes/holdout.py at commit 3c3e009 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Choosing between the search's model and the base's on a series long enough for both: each is
 refitted on the first part of the run (the first 75%, at least 3 samples held out) and runs free

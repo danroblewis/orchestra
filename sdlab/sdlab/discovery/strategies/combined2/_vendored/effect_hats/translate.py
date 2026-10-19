@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/effect_hats/translate.py at commit 89adae4 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/effect_hats/translate.py at commit 89adae4 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Flows read off a matrix that had virtual stocks (level: base x f(C)) -> flows with table effects.
 

@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/structures/fit.py at commit 7e0a2bf (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/structures/fit.py at commit 7e0a2bf (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Fitting terms' numbers (theta >= 0, the outside inflow floored at 0 as the engine floors it) and
 choosing which terms stay, by BIC.

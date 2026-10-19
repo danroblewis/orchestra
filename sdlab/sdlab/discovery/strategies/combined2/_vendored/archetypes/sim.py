@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/archetypes/sim.py at commit 3c3e009 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/archetypes/sim.py at commit 3c3e009 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The free run of a term model, stepped exactly as the engine steps it (sdlab/discovery/simulate.py):
 Euler with dt = 1, every amount theta x monomial (>= 0), a stock's outflows sharing what it holds

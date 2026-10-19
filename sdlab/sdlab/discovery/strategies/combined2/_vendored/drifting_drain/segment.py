@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/drifting_drain/segment.py at commit 453358e (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/drifting_drain/segment.py at commit 453358e (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A drain whose rate moves in time, beside a steady inflow: y_t = c - k_t x_t, k_t piecewise constant.
 

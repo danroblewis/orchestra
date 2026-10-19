@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/effect_hats/joint.py at commit 89adae4 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/effect_hats/joint.py at commit 89adae4 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Every number of a model fitted at once, across all the stocks' rows (stacked least squares).
 

@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna/__init__.py at commit f3270a8 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna/__init__.py at commit f3270a8 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """lna: flows chosen by the likelihood of the per-step changes under counting noise (the linear noise
 approximation), all rows fitted together with each flow a shared column.

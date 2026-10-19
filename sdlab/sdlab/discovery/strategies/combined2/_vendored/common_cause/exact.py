@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/common_cause/exact.py at commit 0419efe (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/common_cause/exact.py at commit 3f5f064 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Noise-free data: least squares that knows where float precision ends.
 
@@ -18,29 +18,25 @@ square of every stock's change (so all exact fits tie, and backward steps drop w
 cannot see), and PELT's noise variance is never below the same scale. With counting noise the
 floor is far below the noise and changes nothing.
 
-`floored(dy)` patches the shared functions in place for the duration of one identify call (each
-ladder and bench item runs in its own process, one at a time), and restores them after.
+`ops(scale)` gives the floored fit, stepwise and PELT, which identify passes explicitly to the
+private copies of the matrix (_vendored/) and to this package's rows, places and joint modules; the
+shared modules are never patched (queue item 2h: until then a context manager swapped them in place
+for the duration of each call).
 """
 
 from __future__ import annotations
 
 import math
-from contextlib import contextmanager
 
 import numpy as np
 
-from sdlab.discovery import matrix as _matrix
-from sdlab.discovery import regression as _regression
 from sdlab.discovery.changes import _last_cut
-from sdlab.discovery.regression import Fit
-from . import joint as _joint
-from . import rows as _rows
+from sdlab.discovery.regression import Fit, row_sums
+from sdlab.discovery.regression import fit_subset as _ORIG
+from sdlab.discovery.strategies.combined2._vendored.common_cause._vendored.matrix import Ops
+from sdlab.discovery.strategies.combined2._vendored.common_cause._vendored.regression import stepwise as _stepwise
 
 REL = 1e-8           # the floor on a fit's mean square residual, relative to the changes' mean square
-
-_ORIG = _regression.fit_subset
-_ORIG_STEPWISE = _regression.stepwise
-
 
 REL_TIE = 1.0 + 1e-9  # a fit within this factor of the floor is exact
 
@@ -108,7 +104,7 @@ def make_stepwise(fit_subset):
         return cols
 
     def stepwise(sums, start, allowed, add_gain, max_steps):
-        chosen = _ORIG_STEPWISE(sums, start, allowed, add_gain, max_steps)
+        chosen = _stepwise(sums, start, allowed, add_gain, max_steps, fit_subset)
         if not chosen or not at_floor(sums, chosen):
             return chosen
         chosen = drops(sums, chosen)
@@ -133,17 +129,10 @@ def make_stepwise(fit_subset):
     return stepwise
 
 
-@contextmanager
-def floored(scale: float):
-    fs, pe = make_fit_subset(scale), make_pelt(scale)
-    saved = (_regression.fit_subset, _matrix.fit_subset, _rows.fit_subset, _matrix.pelt, _joint.pelt, _matrix.stepwise)
-    _regression.fit_subset = _matrix.fit_subset = _rows.fit_subset = fs
-    _matrix.pelt = _joint.pelt = pe
-    _matrix.stepwise = make_stepwise(fs)
-    try:
-        yield
-    finally:
-        (_regression.fit_subset, _matrix.fit_subset, _rows.fit_subset, _matrix.pelt, _joint.pelt, _matrix.stepwise) = saved
+def ops(scale: float) -> Ops:
+    """The floored fit, the stepwise that walks along exact ties with it, and the floored PELT."""
+    fs = make_fit_subset(scale)
+    return Ops(fs, make_stepwise(fs), make_pelt(scale))
 
 
 def _key(cols: list[int], col: list[tuple[int, int]], s: int) -> tuple:
@@ -154,17 +143,16 @@ def _key(cols: list[int], col: list[tuple[int, int]], s: int) -> tuple:
     return (len(cols), len(cross), sum(abs(d) for d in cross), sum(d > 0 for d in cross))
 
 
-def tiebreak(row: dict, s: int, y: np.ndarray) -> dict:
+def tiebreak(row: dict, s: int, y: np.ndarray, fs) -> dict:
     """A row that fits exactly (at the floor) is moved, by exchanges and drops that keep it exact, to
     the plainest exact set (_key): with collinear levels (identical stocks; stocks whose gaps decay
     alike) every one of them fits, and the row's own level, then no cross term, is the answer
-    parsimony gives. Rows that do not fit exactly are returned unchanged. Call inside floored()."""
-    fs = _regression.fit_subset
+    parsimony gives. Rows that do not fit exactly, or a fit without a floor (fs: ops().fit_subset),
+    are returned unchanged."""
     floor = getattr(fs, "floor", None)
     cols, X = list(row.get("set") or []), row.get("X")
     if floor is None or X is None or not len(X) or not cols:
         return row
-    from sdlab.discovery.regression import row_sums
     sums = row_sums(y, X, row.get("cuts"))
     exact = lambda c: fs(sums, c).rss <= REL_TIE * floor(sums)  # noqa: E731
     if not exact(cols):

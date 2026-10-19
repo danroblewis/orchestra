@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/combined/__init__.py at commit beab53e (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/combined/__init__.py at commit beab53e (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """combined: the specialist strategies run side by side, and one judge picks among their models
 (docs/research/combined.md).

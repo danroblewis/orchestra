@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_products/__init__.py at commit 9bd1e2a (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_products/__init__.py at commit 9bd1e2a (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """lna_products: lna with product columns, so a move can be scaled by a linear effect of a third
 stock (rate k x a x c / mean(c)), chosen by the same counting-noise likelihood and BIC as every

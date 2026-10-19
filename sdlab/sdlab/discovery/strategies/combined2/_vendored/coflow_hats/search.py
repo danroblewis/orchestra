@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/search.py at commit af06c28 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/search.py at commit 9d891b0 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """From a screened candidate to fitted models: the curve per placement, then the matrix method with
 virtual stocks (one per effect: base x f(C), the effects already accepted and the new one), read back

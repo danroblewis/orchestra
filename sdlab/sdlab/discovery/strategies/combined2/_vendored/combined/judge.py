@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/combined/judge.py at commit beab53e (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/combined/judge.py at commit beab53e (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """One judge for every candidate: the one-step likelihood of the measured changes, with each
 candidate's equations applied exactly as the simulator (and the engine) applies them (floors, caps,

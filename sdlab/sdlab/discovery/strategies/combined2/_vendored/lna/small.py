@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna/small.py at commit f3270a8 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna/small.py at commit f3270a8 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Many small covariance matrices at once (one per step): inverse, log-determinant and W r, by a
 Cholesky factorisation per step (numba; numpy's batched inverse is slower for these sizes)."""

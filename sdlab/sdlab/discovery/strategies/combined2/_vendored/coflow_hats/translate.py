@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/translate.py at commit af06c28 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/translate.py at commit 9d891b0 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Flows read off a matrix that had virtual stocks (level: base x f(C)) -> flows with table effects.
 
@@ -91,7 +91,10 @@ def translate(flows: list[dict], meta: dict, stocks: list[dict], prev: np.ndarra
             own = [o for o in outs if o[0] == m["base"] and o[2] > 1e-12]
             if own:
                 lead = own[0]
-                rest = [o for o in outs if o is not lead and o[2] > 1e-12 and o[0] != lead[0]]
+                # not a stock the base also feeds (a link or move into it reading the base): the base
+                # cannot both fill it and use it up as it drains
+                fed = {f.get("to") for f in plain if f.get("to") and _base(f.get("rate") or {}) == ("stock", m["base"])}
+                rest = [o for o in outs if o is not lead and o[2] > 1e-12 and o[0] != lead[0] and o[0] not in fed]
                 if rest:
                     outs = [lead] + [o for o in outs if o is not lead and o not in rest]
                     uses[len(moves)] = [{"stock": o[0], "per": float(o[2] / lead[2])} for o in rest]

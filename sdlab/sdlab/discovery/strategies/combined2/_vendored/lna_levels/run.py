@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_levels/run.py at commit dc73851 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_levels/run.py at commit dc73851 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The levels stage as hooks on lna's discover (lna/run.py HOOKS): after lna's search, a self-growth
 term offered back as inflow pieces and each stock's inflow pieces regrouped into recurring levels

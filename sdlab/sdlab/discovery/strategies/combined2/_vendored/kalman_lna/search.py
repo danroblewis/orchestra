@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/search.py at commit 6a93270 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/search.py at commit 6a93270 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Choosing the atoms by the Kalman likelihood: the superset fitted, the variance beyond counting
 noise freed only where it pays, backward elimination by BIC (Wald-screened), drain <-> gap swaps,

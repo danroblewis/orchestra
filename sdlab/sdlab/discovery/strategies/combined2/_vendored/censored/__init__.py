@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/censored/__init__.py at commit 6ca61d5 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/censored/__init__.py at commit a2d5e01 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Censored: floors and caps fitted in the form the engine steps them, on top of the main line.
 
@@ -17,8 +17,17 @@ flows to and from outside (moves between measured stocks are kept):
 - cap.py: a constant demand D (and own drain d) capped by the level, with the outside inflow in
   pieces measured as what arrived, D chosen by profiling the pieces' fit.
 
+- gap.py: a gap to a target floored at 0 beside the row's drain; also when the floor binds on only a
+  few steps (218: a controller floored briefly after a setpoint drop), beside other unfloored flows
+  on the columns the row read (200: warming from the outdoor temperature; 203: a hill's pull), and
+  reading one other stock the main line dropped (209: a PI controller's integral); its straight row
+  through the same columns is offered too, for when the floor is not earned (214 on counts);
+- exact.py: a row the levels and inputs explain exactly (a noise-free integral among counted stocks,
+  216), as one flow per column.
+
 A rewrite is kept only if the whole model's one-step BIC, with floors and caps applied as the engine
-applies them (onestep.py), improves by more than `margin` x log T. (Option `judge_slack`: also ask
+applies them (onestep.py), improves by more than `margin` x log T (`gap_margin` for a floored gap, a nested model with one more
+number; 0 for an exact row, which has no noise to guard against). (Option `judge_slack`: also ask
 the result to behave on the data no worse than that many times the main line's model by the main
 line's judge; off by default, because that judge replays each model's own inflow pieces and so
 prefers the main line's many pieces even where the rewrite is the truth: 013 counts-short, 2.15x.)
@@ -40,9 +49,9 @@ from sdlab.discovery.caps import flow_amounts
 from sdlab.discovery.identify import identify as main_line
 from sdlab.discovery.matrix import injected
 from sdlab.discovery.simulate import Model, behaviour_error
-from . import cap, floor, gap, onestep
+from . import cap, exact, floor, gap, onestep
 
-DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True, "gaps": True}
+DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True, "gaps": True, "gap_few": 1, "gap_side": True, "gap_margin": 1.0, "exact": True, "gap_lines": True, "gap_extra_upto": 3}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -202,7 +211,7 @@ def link_candidates(flows, ids, t, prev, dy, i, inp=None):
     return out
 
 
-def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None):
+def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None, o_few=0, o_side=True, o_lines=True, o_extra_upto=3):
     """The row's flows to and from outside read instead as a gap to a target (another level or a
     measured input) closed by an inflow floored at 0, max(0, a x_j - b x_own (+ c)), and a drain of
     the row (gap.py): the floor binding where the target is below the level separates the gap's own
@@ -217,9 +226,35 @@ def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None):
     # the other stocks the row's flows read (a gap over several stocks: 106's hiring reads both)
     extra = sorted({ids.index(s) for f in mine for s in _reads(f) if s in ids and s != ids[i]})
     out = []
-    fits = gap.search(y, X, i, [j for j in range(len(names)) if j != i], floor_rss)
-    if extra:
-        fits += gap.search(y, X, i, [j for j in range(len(names)) if j != i], floor_rss, extra=extra)
+    readers = [j for j in range(len(names)) if j != i]
+    # the other columns the row's outside flows read (inputs and levels), each a candidate second,
+    # unfloored inflow beside the gap (200: the heater's gap to the setpoint and the warming from outdoors)
+    side = sorted({names.index(s) for f in mine for s in _reads(f) if s in names and s != ids[i]})
+    few = o_few if o_few else 0
+    # the gap may also read one other stock the main line's row did not (a PI controller's integral:
+    # the main line, misled by the floor, can drop it; 209), in a small model (each extra stock
+    # multiplies the nonlinear fits: on sd-moderation's 8 stocks they took 680 s)
+    extras = [[]] + ([extra] if extra else [])
+    if o_side and len(ids) <= o_extra_upto:
+        extras += [[m] for m in range(len(ids)) if m != i and [m] != extra]
+    fits = []
+    for ex in extras:
+        fits += gap.search(y, X, i, readers, floor_rss, extra=ex, few=few)
+        if side and o_side:
+            fits += gap.search(y, X, i, readers, floor_rss, extra=ex, side=side, few=few)
+    if o_lines:
+        # the straight rows through the same columns: the floor not earned (counting noise over a few
+        # floored steps), the main line's row may still be worse than the straight one (214)
+        seen = set()
+        for sd in ([side] if side and o_side else []) + [[]]:
+            for ex in ([extra] if extra else []) + [[]]:
+                for fit in gap.search(y, X, i, readers, floor_rss, extra=ex, side=sd, lines=True):
+                    key = (fit["j"], tuple(fit["extra"]), tuple(fit["side"]))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append((rest + gap.line_flows(fit, ids[i], names, inputs=names[len(ids):]),
+                                f"line {fit['a']:.3g} x {names[fit['j']]} + {fit['own']:.3g} x {ids[i]} into {ids[i]}"))
     for fit in fits:
         gain = T * math.log(max(fit["line_rss"], floor_rss) / max(fit["rss"], floor_rss))
         if gain < (1 + margin) * math.log(T):
@@ -227,6 +262,23 @@ def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None):
         out.append((rest + gap.as_flows(fit, ids[i], names, inputs=names[len(ids):]),
                     f"gap {fit['a']:.3g} x {names[fit['j']]} - {-fit['b']:.3g} x {ids[i]} floored, into {ids[i]}"))
     return out
+
+
+def exact_candidates(flows, ids, t, prev, dy, i, floor_rss, inp=None):
+    """The row's flows to and from outside rewritten as an exact linear row (exact.py): a noise-free
+    stock among counted ones (an integral fed by a measured input and drained at a level)."""
+    mi, names, X = (inp[0], ids + inp[1], np.vstack([prev, inp[2]])) if inp else (None, ids, prev)
+    split = _flows_of(flows, ids[i])
+    if split is None:
+        return []
+    mine, rest = split
+    y = dy[i] - onestep.changes(rest, ids, t, prev, mi)[i]
+    # (a row already exact with pieces replaying an input is rewritten too: the BIC counts the pieces)
+    f = exact.fit(y, X, floor_rss)
+    if f is None:
+        return []
+    terms = " + ".join(f"{k:.3g} x {names[j]}" for j, k in sorted(f["k"].items()))
+    return [(rest + exact.as_flows(f, ids[i], names, inputs=names[len(ids):]), f"exact row {ids[i]} = {terms} + {f['c']:.3g}")]
 
 
 def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, mult=2.0, changes=True, inputs=None):
@@ -299,15 +351,20 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 cands += floor_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["floor_margin"] or o["margin"], o["bend"], o["own_floors"], inp)
             if o["links"]:
                 cands += link_candidates(flows, ids, t, prev, dy, i, inp)
+            if o["exact"]:
+                cands += exact_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), inp)
             if o["gaps"]:
-                cands += gap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], inp)
+                cands += gap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], inp, o["gap_few"], o["gap_side"], o["gap_lines"], o["gap_extra_upto"])
             if o["caps"] or o["recut"]:
                 cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"], inputs=mi)
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
             best = None
             for fl, name in cands:
                 sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
-                if sc < score - o["margin"] * log_t and (best is None or sc < best[1]):
+                m = o["gap_margin"] if name.startswith("gap ") and o["gap_margin"] is not None else o["margin"]
+                if name.startswith("exact row"):
+                    m = 0.0             # exact to the rounding: no noise to guard against, the fewer numbers win
+                if sc < score - m * log_t and (best is None or sc < best[1]):
                     best = (fl, sc, name)
             if best:
                 flows, score = best[0], best[1]

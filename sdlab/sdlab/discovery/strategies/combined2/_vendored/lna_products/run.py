@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_products/run.py at commit 9bd1e2a (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_products/run.py at commit 9bd1e2a (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The products stage as hooks on lna's discover (lna/run.py HOOKS): product columns, a virtual
 row a x c / mean(c) for each pair of measured stocks appended to prev (after the stocks and any

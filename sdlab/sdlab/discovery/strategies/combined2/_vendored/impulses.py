@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/impulses.py at commit 60753ce (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/impulses.py at commit 60753ce (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Pulses as their own kind of input (docs/research/impulse-inputs.md).
 

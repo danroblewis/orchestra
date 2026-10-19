@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/hidden_transit/pairs.py at commit 2b6a827 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/hidden_transit/pairs.py at commit 2b6a827 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A pair's part of a found model: which flows a transit stock A -> H -> B would replace, what the
 others do to A and B at the measured levels, and the model with the transit stock in their place.

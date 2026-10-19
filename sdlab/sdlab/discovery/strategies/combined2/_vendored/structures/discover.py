@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/structures/discover.py at commit 7e0a2bf (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/structures/discover.py at commit 7e0a2bf (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The structure search: plain and bilinear terms first, then hidden Erlang chains of each order and
 delay on a grid, refined; the lowest BIC wins."""

@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/common_cause/places.py at commit 0419efe (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/common_cause/places.py at commit 3f5f064 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Shared change places: a common cause steps several outside inflows at the same moments.
 
@@ -102,7 +102,7 @@ def _shared_price(c):
     return 0 if not c else 1 + (len(c) - 2)
 
 
-def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L) -> dict | None:
+def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L, fs=fit_subset) -> dict | None:
     """Row s with pieces at the given places (a value each), its levels chosen afresh by backward
     elimination from every level it may read, places it does not need dropped (and, with none
     left, the constant too if it does not pay)."""
@@ -110,11 +110,11 @@ def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L)
     X, col = columns(s, ids, prev, cfg, L, _allowed(s, ids, stocks))
     if not len(col):
         return None
-    chosen, _, _ = backward(y, X, cuts, list(range(len(col))), _shared_price(cuts))
+    chosen, _, _ = backward(y, X, cuts, list(range(len(col))), _shared_price(cuts), fs)
     cuts, _ = prune(y, X, chosen, cuts, _shared_price)
-    chosen, rss, b = backward(y, X, cuts, chosen, _shared_price(cuts))
+    chosen, rss, b = backward(y, X, cuts, chosen, _shared_price(cuts), fs)
     if len(cuts) <= 2:
-        c2, r2, b2 = backward(y, X, None, chosen, 0)
+        c2, r2, b2 = backward(y, X, None, chosen, 0, fs)
         if b2 < b:
             chosen, rss, b, cuts = c2, r2, b2, None
     return {**row, "X": X, "col": col, "set": chosen, "cuts": cuts, "rss": rss,
@@ -187,6 +187,21 @@ def accept(c: dict | None, row: dict, T: int, per_change: float, alpha: float) -
     return True
 
 
+def confound(c: dict, row: dict, s: int, witnesses) -> bool:
+    """The common-cause pattern, and nothing else: the shared pieces may only take the place of
+    levels the row read, among them a witness's (a stock that changes at those places). The
+    candidate reads no stock the row did not read (besides its own) and drops a witness's level; with
+    nothing dropped, the row must already have had pieces (the shared places re-cut them)."""
+    stocks = lambda r: {r["col"][q][0] for q in r["set"]}  # noqa: E731
+    mine, theirs = stocks(row), stocks(c)
+    if not theirs <= mine | {s}:
+        return False
+    dropped = mine - theirs - {s}
+    if not dropped:
+        return changing(row)
+    return bool(dropped & set(witnesses))
+
+
 def _resid(r: dict) -> np.ndarray:
     return r["_y"] - (fit_subset(row_sums(r["_y"], r["X"], r["cuts"]), r["set"]).beta @ r["X"][r["set"]] if r["set"] else 0.0)
 
@@ -204,7 +219,8 @@ def _left(rows: list[dict], W: list[int], dy: np.ndarray) -> dict:
 
 
 def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
-          pelt, min_piece: int = 5, per_change: float = 2, trace: bool = False, rounds: int = 3, alpha: float = 0.01) -> list[dict]:
+          pelt, min_piece: int = 5, per_change: float = 2, trace: bool = False, rounds: int = 3, alpha: float = 0.01, re_cut: bool = True,
+          fs=fit_subset) -> list[dict]:
     """The rows that show changes of their own (in what their own level leaves, at the textbook
     price) are the witnesses. Each row is offered pieces at the places the *other* witnesses show
     jointly (a place paid once by them, a value per witness), at a value each: a place this row
@@ -213,7 +229,7 @@ def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray
     T = dy.shape[1]
     log_t = float(np.log(T))
     out = list(rows)
-    for s, row in enumerate(rows):
+    for s, row in enumerate(rows if re_cut else []):
         h = honest(row, dy[s], pelt, min_piece, per_change)
         if h is not None and h["bic"] < own_bic(row, dy.shape[1], per_change) - 1e-9:
             out[s] = rows[s] = h
@@ -243,10 +259,10 @@ def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray
             cuts = places_of(others)
             if len(cuts) <= 2:
                 continue
-            c = candidate(row, s, cuts, ids, stocks, prev, dy, cfg, L)
+            c = candidate(row, s, cuts, ids, stocks, prev, dy, cfg, L, fs)
             if c is not None:
                 c["_y"] = dy[s]
-            ok = accept(c, row, T, per_change, alpha)
+            ok = accept(c, row, T, per_change, alpha) and confound(c, row, s, others)
             if trace and c:
                 print(f"  round {rnd} {ids[s]}: {len(cuts) - 2} places from {[ids[k] for k in others]} -> {len(c['cuts'] or [0, 0]) - 2}, {[ids[c['col'][q][0]] for q in c['set']]}: {c['bic']:.1f} vs own {own_bic(row, T, per_change):.1f} {[ids[row['col'][q][0]] for q in row['set']]}{' taken' if ok else ''}")
             new = c if ok else row

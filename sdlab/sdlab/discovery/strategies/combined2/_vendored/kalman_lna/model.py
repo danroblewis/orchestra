@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/model.py at commit 6a93270 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/model.py at commit 6a93270 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The run laid on a grid of every step, and a set of atoms (lna's flow atoms) fitted to it by the
 Kalman likelihood: the numbers, the variance beyond counting noise, the measurement error and the

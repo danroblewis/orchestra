@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_stack/run.py at commit 9bd1e2a (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_stack/run.py at commit 9bd1e2a (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The revisit stages as hooks on lna's discover (lna/run.py HOOKS), in order: known pulses taken out
 of the changes (lna_pulses), product columns (lna_products), lna's search, products offered on the

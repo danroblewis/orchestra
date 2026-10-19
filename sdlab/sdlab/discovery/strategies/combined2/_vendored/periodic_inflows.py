@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/periodic_inflows.py at commit 1421f81 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/periodic_inflows.py at commit 1421f81 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Outside inflows as a repeating profile (docs/research/periodic-inflows.md).
 

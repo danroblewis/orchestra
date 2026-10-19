@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/inputs.py at commit af06c28 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/coflow_hats/inputs.py at commit 9d891b0 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Measured inputs (opts "inputs": {name: value per step aligned with t}) as this strategy reads them.
 

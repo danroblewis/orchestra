@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/archetypes/hidden.py at commit 3c3e009 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/archetypes/hidden.py at commit 3c3e009 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A hidden source: the SIR / diffusion archetype seen only downstream.
 

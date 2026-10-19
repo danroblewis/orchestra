@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/effect_hats/basis.py at commit 89adae4 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/effect_hats/basis.py at commit 89adae4 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Hat functions: a curve of a stock's level as a weighted sum of tents over a few knots.
 

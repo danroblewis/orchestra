@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/own_tables/split.py at commit 67a604b (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/own_tables/split.py at commit 67a604b (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A row's net curve g(x) of its own level, read back as flows to and from outside.
 

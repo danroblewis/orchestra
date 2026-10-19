@@ -30,7 +30,8 @@ Every specialist is a copy (_vendored/, each with its source commit): no other s
    the chosen model is exact without pieces (screens.plain_exact).
 6. archetypes (stages.archetypes): on up to 3 stocks and 120 steps, its model replaces the chosen
    one when it forecasts the run's last quarter better.
-7. kalman again: a reporting delay or a stock counted at a scale sends the data to the filter.
+7. kalman again: a reporting delay or a stock counted at a scale sends the data to the filter,
+   unless the pick fits the levels to their noise (screens.fits).
 
 opts (also SDLAB_COMBINED2, JSON): combined's ("specialists", "price", "per_flow", "budget", "cap",
 "refit", "guard", "guard_floor", "trace"), plus "tight", "held" and "held_floor" (the held-inflow
@@ -304,6 +305,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if took:
             chosen = name
         r = got
+    if kal is not None and cfg["screens"]:
+        data = J.Data(stocks, run, opts.get("injections"), opts.get("inputs"))
+        if screens.fits(r.get("flows") or [], data, bool(opts.get("eras") and len(opts["eras"]) > 1)):
+            trail.append({"stage": "kalman after", "skipped": "the pick fits the levels to their noise"})
+            kal = None
     if kal is not None:
         try:
             got = kal.after(r)

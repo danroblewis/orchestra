@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/combined/deadline.py at commit beab53e (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/combined/deadline.py at commit beab53e (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A time cap on one specialist, nested inside whatever cap the caller already set.
 

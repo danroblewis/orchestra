@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/robust.py at commit 6a93270 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/robust.py at commit 6a93270 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """Gross errors found before any model: a single reported value far from both its neighbours, in
 the same direction, while the neighbours agree with each other (a level that jumps and stays is a

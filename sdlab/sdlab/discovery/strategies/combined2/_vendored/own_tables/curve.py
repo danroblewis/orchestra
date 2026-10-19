@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/own_tables/curve.py at commit 67a604b (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/own_tables/curve.py at commit 67a604b (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """A row's change as a piecewise-linear curve of the row's own level, with free points.
 

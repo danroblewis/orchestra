@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/combined/shared.py at commit beab53e (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/combined/shared.py at commit beab53e (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The main line's model, and lna's, computed once per run for every specialist that starts from
 them.

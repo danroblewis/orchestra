@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_pulses/run.py at commit dc73851 (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_pulses/run.py at commit dc73851 (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """The pulses stage as a hook on lna's discover (lna/run.py HOOKS): known changes, an array (stocks x
 steps) of pulses found beforehand, taken out of each step's change before anything is fitted, so no

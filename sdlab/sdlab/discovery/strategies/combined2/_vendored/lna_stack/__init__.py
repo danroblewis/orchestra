@@ -1,4 +1,4 @@
-# Vendored for combined2 from sdlab/discovery/strategies/lna_stack/__init__.py at commit 9bd1e2a (HEAD 05ae898); imports
+# Vendored for combined2 from sdlab/discovery/strategies/lna_stack/__init__.py at commit 9bd1e2a (HEAD ebe9a4f); imports
 # rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
 """lna_stack: lna with the stages built when past ideas were revisited on the ladder
 (docs/research/revisit.md) that are recommended, in one model: pulses found first and taken out
