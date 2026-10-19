@@ -16,11 +16,14 @@ Every specialist is a copy (_vendored/, each with its source commit): no other s
    alike, odefit on counts.
 4. The judge (choose()): every candidate's numbers refitted on equal terms (refit.py), the one-step
    likelihood (with a discrete likelihood for small counts, judge.py) plus a BIC price on every
-   number written down. Two behaviour guards set candidates aside first: combined's runaway guard
-   (in-data multi-step error over 4x the best and over 0.1), and the held-inflow guard
-   (forecast.py: rolling-origin forecasts over 5, 20 and 100 steps with every found inflow piece
-   held at its value when the forecast starts; a candidate over `held` x the best's and over
-   `held_floor` is set aside). The lowest BIC among the rest wins; ties as combined.
+   number written down. Candidates are set aside first by combined's runaway guard (in-data
+   multi-step error over `guard` (4) x the best and over 0.1), and by the held-inflow guard: a
+   candidate whose in-data error is over `tight` (2) x the best's AND whose held-inflow forecast
+   error is over `held` (1.25) x the best's (forecast.py: rolling-origin forecasts over 5, 20 and
+   100 steps with every found inflow piece held at its value when the forecast starts). The in-data
+   error alone, tightened, sets aside sound models whose few pieces cannot replay the run (it costs
+   test cells); the held error alone is dominated by inflows that really change; a model worse on
+   both is the runaway kind. The lowest BIC among the rest wins; ties as combined.
 5. structures (stages.structures): the search for products, multi-stock gaps and hidden chains;
    its model replaces the chosen one when the judge prefers it and it behaves as well.
 6. archetypes (stages.archetypes): on up to 3 stocks and 120 steps, its model replaces the chosen
@@ -28,8 +31,8 @@ Every specialist is a copy (_vendored/, each with its source commit): no other s
 7. kalman again: a reporting delay or a stock counted at a scale sends the data to the filter.
 
 opts (also SDLAB_COMBINED2, JSON): combined's ("specialists", "price", "per_flow", "budget", "cap",
-"refit", "guard", "guard_floor", "trace"), plus "held" and "held_floor" (the held-inflow guard; held 0
-turns it off), "discrete" (the small-counts likelihood, default on), "screens" (default on),
+"refit", "guard", "guard_floor", "trace"), plus "tight", "held" and "held_floor" (the held-inflow
+guard; held 0 turns it off), "discrete" (the small-counts likelihood, default on), "screens" (default on),
 "stages" (default ["kalman", "structures", "archetypes"]), "odefit_budget" (seconds, default 60).
 """
 
@@ -77,7 +80,7 @@ SPECIALISTS = ["censored", "realistic_hats", "lna", "hidden_transit", "periodic_
 PREFERENCE = ["lna", "gap_prior", "lna_pulses", "lna_stack", "censored", "realistic_hats", "effect_hats", "coflow_hats", "hidden_transit",
               "periodic_inflows", "own_tables", "drifting_drain", "odefit", "common_cause"]
 DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 240.0, "cap": 90.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 0.1,
-            "held": 2.0, "held_floor": 0.1, "discrete": True, "screens": True, "stages": ["kalman", "structures", "archetypes"],
+            "tight": 2.0, "held": 1.25, "held_floor": 0.1, "discrete": True, "screens": True, "stages": ["kalman", "structures", "archetypes"],
             "odefit_budget": 60.0}
 SHARE = 0.6           # the candidates' budget: at most this share of what the caller's timer leaves (the judge and stages need the rest)
 
@@ -191,15 +194,18 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict, eras: bool = F
             if key not in seen:
                 seen[key] = _behaviours(c["result"]["flows"], data, run, starts, cfg, eras)
             c["score"]["behaviour"], c["score"]["held"] = seen[key]
-        for k, factor, floor in (("behaviour", cfg["guard"], cfg["guard_floor"]), ("held", cfg["held"], cfg["held_floor"])):
-            if not factor:
-                continue
-            good = min(c["score"][k] for _, c, _ in scored)
-            limit = max(float(factor) * good, float(floor))
-            kept = [x for x in scored if x[1]["score"][k] <= limit]
-            for _, c, _ in scored:
-                c["score"]["set_aside" if k == "held" else "ran_away"] = c["score"][k] > limit
-            scored = kept or scored
+        good = min(c["score"]["behaviour"] for _, c, _ in scored)
+        best_held = min(c["score"]["held"] for _, c, _ in scored)
+        floor = float(cfg["guard_floor"])
+
+        def aside(sc: dict) -> bool:
+            if cfg["guard"] and sc["behaviour"] > max(float(cfg["guard"]) * good, floor):
+                return True                              # combined's runaway guard
+            return bool(cfg["held"]) and sc["behaviour"] > max(float(cfg["tight"]) * good, floor) \
+                and sc["held"] > max(float(cfg["held"]) * best_held, float(cfg["held_floor"]))
+        for _, c, _ in scored:
+            c["score"]["set_aside"] = aside(c["score"])
+        scored = [x for x in scored if not x[1]["score"]["set_aside"]] or scored
 
     def rank(x):
         name = x[1]["name"]
@@ -215,7 +221,7 @@ def _behaviours(flows, data, run, starts, cfg, eras) -> tuple[float, float]:
         fl, inferred = J.hidden_estimate(flows, data, starts)
     except Exception:                                    # noqa: BLE001
         return own, hld
-    if cfg["guard"]:
+    if cfg["guard"] or cfg["held"]:
         try:
             own = J.behaviour(flows, data, run, starts)
         except Exception:                                # noqa: BLE001

@@ -139,16 +139,22 @@ def kind(case_id: str, variant: str) -> list[str]:
     return ["tests"] + [t for t in ("noisy", "canonical", "distilled") if t in tags]
 
 
-def pick(cell: dict, pool: list[str], guard=4.0, guard_floor=0.1, held=0.0, held_floor=0.1, bic="bic") -> str | None:
-    """The candidate a rule picks: guards set candidates aside, then the lowest price."""
+def pick(cell: dict, pool: list[str], guard=4.0, guard_floor=0.1, held=0.0, held_floor=0.1, bic="bic", tight=None) -> str | None:
+    """The candidate a rule picks: guards set candidates aside, then the lowest price. With `tight`,
+    combined2's rule: aside when own > guard x best, or own > tight x best AND held > held x best."""
     cs = [(n, c) for n, c in cell["cands"].items() if n in pool and c.get(bic) is not None and c.get("own") is not None]
     if not cs:
         return None
-    for key, f, fl in (("own", guard, guard_floor), ("held", held, held_floor)):
-        if f:
-            good = min(c[key] for _, c in cs)
-            kept = [x for x in cs if x[1][key] <= max(f * good, fl)]
-            cs = kept or cs
+    if tight is not None:
+        bo, bh = min(c["own"] for _, c in cs), min(c["held"] for _, c in cs)
+        out = lambda c: c["own"] > max(guard * bo, guard_floor) or (c["own"] > max(tight * bo, guard_floor) and c["held"] > max(held * bh, held_floor))  # noqa: E731
+        cs = [x for x in cs if not out(x[1])] or cs
+    else:
+        for key, f, fl in (("own", guard, guard_floor), ("held", held, held_floor)):
+            if f:
+                good = min(c[key] for _, c in cs)
+                kept = [x for x in cs if x[1][key] <= max(f * good, fl)]
+                cs = kept or cs
     return min(cs, key=lambda x: (round(x[1][bic], 6), x[1]["k"], PREFERENCE.index(x[0]) if x[0] in PREFERENCE else 99))[0]
 
 
@@ -162,6 +168,7 @@ def analyse(paths: list[str]) -> None:
     for f in (1.25, 1.5, 2.0, 3.0, 4.0):
         rules[f"held {f}x"] = dict(held=f)
         rules[f"held {f}x + discrete"] = dict(held=f, bic="dbic")
+    rules["combined2: own 2x and held 1.25x"] = dict(tight=2.0, held=1.25, bic="dbic")
     rules["held 2x, no own guard"] = dict(held=2.0, guard=0)
     rules["held only 1.5x, no own guard"] = dict(held=1.5, guard=0)
     tab: dict = collections.defaultdict(lambda: collections.defaultdict(list))
