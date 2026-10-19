@@ -1,0 +1,11 @@
+title: Goal-seeking orders, random numbers
+level: 8
+tags: [gap, balancing, loop, parametric]
+tests: 011 with its goal, adjustment time and delays drawn at random (8 draws); the orders' gap is recovered
+seed: 47
+draws: 8
+stocks: {P: 0, I: 0}
+flows:
+  outside -> P as orders: (draw(150, 450) - I) / draw(2, 10)
+  P -> I as arrive: draw(0.1, 0.5, log) * P
+  I -> outside as demand: draw(0.05, 0.2, log) * I

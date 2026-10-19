@@ -6,8 +6,8 @@ tells a move (its draw leaves the source as it arrives) from a link (it does not
 mirrors at the ratio `per`) from an independent drain, births from deaths (the mean is their
 difference, the variance their sum), and a goal gap from an inflow beside a drain. Noise-free data
 has no covariance to read: there the matrix method's reading is returned unchanged. A model the
-likelihood found is kept unless the matrix's behaves clearly better in the judge (a guard for what
-the linear atoms cannot express: effects, hidden stocks, caps).
+likelihood found is kept unless the matrix's model behaves clearly better in the judge (a guard
+against a model that runs away).
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ from ...identify import judge
 from .run import discover
 
 GUARD = 4.0          # the matrix's model is kept when the likelihood's is judged this much worse
+MISFIT = None        # (tried: 0.3) fall back also when a stock's changes spread this much beyond
+                     # counting noise (a share of its counting variance); on the examples it removed
+                     # the gains (print-shop, supply) and none of the losses, so it is off
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -30,6 +33,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     mine = judge(found["flows"], stocks, run, injections=opts.get("injections"))
     theirs = judge(base["flows"], stocks, run, injections=opts.get("injections"))
     found["judged"] = {"lna": mine, "matrix": theirs}
-    if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
-        return {**base, "lna": {k: found[k] for k in ("judged", "nll", "dispersion")}}
+    if (MISFIT is not None and found["misfit"] > MISFIT) or not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
+        return {**base, "lna": {k: found[k] for k in ("judged", "nll", "dispersion", "misfit")}}
     return found

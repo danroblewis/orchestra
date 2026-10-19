@@ -12,6 +12,7 @@
     check  [--cases ...]          every case file compiles, then the case checks (bounded, moving, every flow moves)
     new    SLUG [--title T] [--level N]
                                   write the next case, cases/NNN-SLUG.yaml, from a template to edit
+    freeze CASE#i [--slug S]      write draw i of a parametric case as an ordinary case (the next NNN)
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -103,6 +104,15 @@ def status(a) -> int:
                 print(f"    {c['id']:{width}s} {x['status']:10s} recall {pct(x['recall']):>6s}  {x.get('right') or 0}/{x.get('of') or 0}"
                       f"  skill@20 {with_ci(x['skill20'], x['skill20_ci']):>24s}  fresh {pct(x['fresh20']):>7s}" + ("  stale" if x["stale"] else "")
                       + (f"  {x['error'][:80]}" if x.get("error") else ""))
+    if s.get("parametric"):
+        print("\nParametric cases (draws.py): pass rate over draws x variants; draws passing in every variant")
+        print(f"  {'case':{width}s} " + "  ".join(f"{n:>16s}" for n in strats))
+        for base, g in s["parametric"].items():
+            row = []
+            for n in strats:
+                t = g["strategies"].get(n) or {}
+                row.append((f"{pct(t['rate'])} {t['draws_passing']}/{len(g['draws'])}" if t.get("total") and t["total"] > t["missing"] else "-").rjust(16))
+            print(f"  {base:{width}s} " + "  ".join(row))
     print("\nBy tag (pass + equivalent of total):")
     print(f"  {'tag':16s} " + "  ".join(f"{n:>16s}" for n in strats))
     for tag in sorted(s["by_tag"]):
@@ -144,6 +154,13 @@ def show(a) -> int:
     cid = runner.select_cases(a.case)[0]
     c = casemod.load(cid)
     print(f"{cid}: {c['title']} (level {c['level']}; {', '.join(c['tags'])})\n  tests: {c['tests']}\n")
+    if c.get("draw"):
+        d = c["draw"]
+        print(f"Draw {d['i']} of {d['of']} (seed {d['seed']}, attempt {d['attempt']}"
+              + (f"; {len(d['rejected'])} attempts rejected by the checks" if d["rejected"] else "") + "):")
+        for x in d["values"]:
+            print(f"  {x['label']:40s} {x['value']:<10g} drawn from [{x['lo']:g}, {x['hi']:g}]" + (" log" if x["log"] else "") + (" int" if x["int"] else ""))
+        print(f"  (sdlab-ladder freeze {cid} writes it as a fixed case)\n")
     print("True equations:")
     for f in c["model"]["flows"]:
         print("  " + _eq(f) + ("" if all(s.get("measured", True) for s in c["model"]["stocks"] if s["id"] in (f.get("from"), f.get("to"))) else "   [touches a hidden stock]"))
@@ -224,18 +241,22 @@ def watch(a) -> int:
 
 def check(a) -> int:
     try:
-        files = casemod.case_files()
+        casemod.case_files()                                       # one id written twice is an error
     except casemod.CaseError as e:
         print(e)
         return 1
     bad = 0
-    for cid in runner.select_cases(a.cases) if a.cases else list(files):
+    for cid in runner.select_cases(a.cases) if a.cases else casemod.case_ids():
+        rejected = []
         try:
-            p = checks.problems(casemod.load(cid))
+            c = casemod.load(cid)
+            p = checks.problems(c)
+            rejected = (c.get("draw") or {}).get("rejected") or []
         except casemod.CaseError as e:
             p = [str(e)]
         bad += bool(p)
-        print(f"{cid}: " + ("ok" if not p else "; ".join(p)))
+        print(f"{cid}: " + ("ok" if not p else "; ".join(p))
+              + (f" (drawn again {len(rejected)}x: " + "; ".join(", ".join(r["problems"]) for r in rejected)[:300] + ")" if rejected else ""))
     return 1 if bad else 0
 
 
@@ -260,11 +281,40 @@ def new(a) -> int:
     if not casemod.ID_RE.match(cid):
         print(f"{slug!r} is not a slug (lower-case letters, digits, -)", file=sys.stderr)
         return 2
-    levels = [casemod.load(i)["level"] for i in files]
+    levels = [casemod.load(i)["level"] for i in casemod.case_ids()]
     path = casemod.CASES / f"{cid}.yaml"
     path.write_text(TEMPLATE.format(title=a.title or slug.replace("-", " ").capitalize(), level=a.level if a.level is not None else max(levels, default=1)))
     print(path)
     print(f"Edit it (format: docs/LADDER.md), then: uv run sdlab-ladder check --cases {number:03d}", file=sys.stderr)
+    return 0
+
+
+def freeze(a) -> int:
+    """Write a draw of a parametric case as an ordinary case file: a failing draw kept as a fixed
+    regression case."""
+    from . import draws
+
+    cids = [i for i in runner.select_cases(a.case) if "#" in i]
+    if len(cids) != 1:
+        print(f"freeze takes one draw (NNN#i or NNN-slug#i), not {a.case!r}" + (f" ({len(cids)} match)" if cids else ""), file=sys.stderr)
+        return 2
+    cid = cids[0]
+    base, i = casemod.split(cid)
+    c = casemod.load(cid)
+    path = casemod.case_files()[base]
+    text = draws.frozen(path.read_text(), path.name, i, c["draw"]["attempt"], base, casemod.spec(cid).get("title") or base, c["tests"])
+    number = max(int(x[:3]) for x in casemod.case_files()) + 1
+    out_id = f"{number:03d}-{(a.slug or f'{base[4:]}-draw-{i}').strip().lower()}"
+    if not casemod.ID_RE.match(out_id):
+        print(f"{out_id!r} is not a case id (NNN-lower-case-slug)", file=sys.stderr)
+        return 2
+    if casemod.compile_case(text, out_id)["model"] != casemod.spec(cid)["model"]:
+        print("internal error: the frozen case is not the draw's model", file=sys.stderr)
+        return 1
+    out = casemod.CASES / f"{out_id}.yaml"
+    out.write_text(text)
+    print(out)
+    print(f"{cid} written as {out_id}; check it: uv run sdlab-ladder check --cases {number:03d}", file=sys.stderr)
     return 0
 
 
@@ -300,6 +350,9 @@ def main(argv: list[str] | None = None) -> int:
     nw.add_argument("slug")
     nw.add_argument("--title")
     nw.add_argument("--level", type=int)
+    fz = sub.add_parser("freeze", help="write a draw of a parametric case (NNN#i) as an ordinary case file")
+    fz.add_argument("case")
+    fz.add_argument("--slug", help="the new case's slug (default: the parametric case's, with -draw-i)")
     a = ap.parse_args(argv)
     if a.command == "run":
         return do_run(a, True, "run")
@@ -315,6 +368,8 @@ def main(argv: list[str] | None = None) -> int:
         return check(a)
     if a.command == "new":
         return new(a)
+    if a.command == "freeze":
+        return freeze(a)
     return 2
 
 

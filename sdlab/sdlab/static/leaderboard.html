@@ -76,6 +76,7 @@
       <option value="long">long runs</option>
     </select></label>
     <label>Cases <select id="level"><option value="0">all levels</option></select></label>
+    <label>Kind <select id="kind" title="A parametric case counts as its draws (its numbers drawn at random)"><option value="all">fixed cases and random draws</option><option value="fixed">fixed cases</option><option value="draws">random draws</option></select></label>
     <label>Rank by <select id="rankby">
       <option value="pass">pass rate</option>
       <option value="occam">Occam score (accuracy × parsimony)</option>
@@ -119,7 +120,8 @@ function rows() {
   const vf = document.getElementById("variants").value, lv = +document.getElementById("level").value;
   const f = document.getElementById("filter").value.trim().toLowerCase();
   const level = Object.fromEntries(data.cases.map((c) => [c.id, c.level]));
-  const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv);
+  const kd = document.getElementById("kind").value, drawn = Object.fromEntries(data.cases.map((c) => [c.id, !!c.draw]));
+  const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case]);
   const by = {};
   for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
   for (const c of data.cells) if (by[c.strategy] && keep(c)) by[c.strategy].push(c);
@@ -192,7 +194,7 @@ async function load() {
 }
 function syncRankBy() { const rb = document.getElementById("rankby"); rb.value = [...rb.options].some((o) => o.value === sortKey) ? sortKey : ""; }
 document.getElementById("rankby").onchange = (e) => { if (!e.target.value) return; sortKey = e.target.value; sortDir = COLS.find((c) => c.key === sortKey).asc ? 1 : -1; render(); };
-for (const id of ["variants", "level"]) document.getElementById(id).onchange = render;
+for (const id of ["variants", "level", "kind"]) document.getElementById(id).onchange = render;
 document.getElementById("filter").oninput = render;
 load();
 setInterval(load, 15000);

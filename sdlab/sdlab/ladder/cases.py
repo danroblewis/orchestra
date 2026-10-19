@@ -22,11 +22,13 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import os
 import re
 from functools import lru_cache
 from pathlib import Path
 
 from .. import runner as _runner
+from . import draws as _draws
 from .caseformat import CaseError, compile_case
 
 
@@ -65,22 +67,88 @@ def case_files() -> dict[str, Path]:
 
 def case_ids() -> list[str]:
     """Every case, simplest first: by level, then by id. (Ids are stable names in the order the cases
-    were written; a basic case added later still sorts among the basics.)"""
+    were written; a basic case added later still sorts among the basics.) A parametric case is listed
+    as its draws, NNN-slug#1 .. NNN-slug#N (draws.py)."""
     files = case_files()
-    return sorted(files, key=lambda i: (_level(files[i]), i))
+    out = []
+    for cid, p in files.items():
+        n = _safe_count(p)
+        out += [(_level(p), cid, i, f"{cid}#{i}") for i in range(1, n + 1)] if n else [(_level(p), cid, 0, cid)]
+    return [x[3] for x in sorted(out)]
+
+
+def known(case_id: str) -> bool:
+    """Is this a case id (a case, or a draw of a parametric case)?"""
+    try:
+        base, i = split(case_id)
+        p = case_files().get(base)
+        return p is not None and (1 <= i <= _safe_count(p) if i else not _safe_count(p))
+    except (CaseError, KeyError, ValueError):
+        return False
+
+
+def split(case_id: str) -> tuple[str, int]:
+    """(file id, draw number; 0 for a case that is not a draw)."""
+    if "#" not in case_id:
+        return case_id, 0
+    base, i = case_id.split("#", 1)
+    if not i.isdigit():
+        raise KeyError(case_id)
+    return base, int(i)
+
+
+def parametric() -> dict[str, dict]:
+    """The parametric cases: {file id: {title, level, tags, tests, draws: [draw ids]}} in ladder order."""
+    out: dict[str, dict] = {}
+    for cid in case_ids():
+        base, i = split(cid)
+        if i:
+            c = load(cid)
+            g = out.setdefault(base, {k: c[k] for k in ("title", "level", "tags", "tests")} | {"draws": []})
+            g["draws"].append(cid)
+    return out
+
+
+def _safe_count(path: Path) -> int:
+    """How many draws (0 for an ordinary case, and for a parametric case whose draws do not parse:
+    it is then listed under its file id, and loading it reports the mistake)."""
+    try:
+        return _draw_count(path)
+    except CaseError:
+        return 0
+
+
+def _draw_count(path: Path) -> int:
+    if path.suffix != ".yaml":
+        return 0
+    st = path.stat()
+    return _count(str(path), st.st_mtime, st.st_size)
+
+
+@lru_cache(maxsize=None)
+def _count(path: str, mtime: float, size: int) -> int:
+    p = Path(path)
+    return _draws.count(p.read_text(), p.name)
 
 
 def _level(path: Path) -> int:
     try:
+        if _safe_count(path):
+            text = path.read_text()
+            ss = _draws.sites(text, path.name)
+            return int(compile_case(_draws.resolve(text, ss, [x.lo for x in ss]), path.name).get("level") or 0)
         return int(read(path).get("level") or 0)
     except Exception:                                             # noqa: BLE001  (a broken case sorts last; check reports it)
         return 10**6
 
 
 def read(path: Path) -> dict:
-    """A case file as its case dict (a YAML case compiled; CaseError if it does not compile)."""
+    """A case file as its case dict (a YAML case compiled; CaseError if it does not compile). A
+    parametric case has no single case dict: read a draw with load / spec."""
     text = path.read_text()
     if path.suffix == ".yaml":
+        if _draws.count(text, path.name):
+            raise CaseError(f"{path.name}: a parametric case (draw(...)): its draws are the cases")
         return compile_case(text, path.name)
     try:
         return json.loads(text)
@@ -92,17 +160,14 @@ def _canonical(x) -> bytes:
     return json.dumps(x, sort_keys=True, separators=(",", ":")).encode()
 
 
-@lru_cache(maxsize=None)
-def _load(path: str, mtime: float, size: int) -> dict:
-    p = Path(path)
-    spec = read(p)
+def _build(case_id: str, spec: dict) -> dict:
     if not isinstance(spec, dict) or not isinstance(spec.get("model"), dict):
-        raise CaseError(f"{p.name}: a case needs a model")
+        raise CaseError(f"{case_id}: a case needs a model")
     v = spec.get("variants") or {}
     lengths = v.get("lengths") or LENGTHS
     variants = [{"name": f"{n}-{ln}", "noise": n, "length": ln, "steps": int(steps)}
                 for n in v.get("noise") or list(NOISES) for ln, steps in lengths.items()]
-    case = {"id": p.stem, "title": spec.get("title") or p.stem, "level": spec.get("level", 0), "tags": list(spec.get("tags") or []),
+    case = {"id": case_id, "title": spec.get("title") or case_id, "level": spec.get("level", 0), "tags": list(spec.get("tags") or []),
             "tests": spec.get("tests") or "", "tolerance": dict(spec.get("tolerance") or {}), "variants": variants,
             "model": spec["model"]}
     h = hashlib.sha256(_canonical(spec))
@@ -112,17 +177,77 @@ def _load(path: str, mtime: float, size: int) -> dict:
     return {"spec": spec, "case": {**case, "hash": h.hexdigest()[:16]}}
 
 
+@lru_cache(maxsize=None)
+def _load(path: str, mtime: float, size: int) -> dict:
+    p = Path(path)
+    return _build(p.stem, read(p))
+
+
+@lru_cache(maxsize=None)
+def _load_draw(path: str, mtime: float, size: int, i: int) -> dict:
+    """Draw i of a parametric case: the first attempt whose numbers pass the case checks (the
+    accepted attempt is remembered in $SDLAB_LADDER_CACHE/draws, so checks run once per draw)."""
+    from . import checks
+    from .data import cache_root
+
+    p = Path(path)
+    text = p.read_text()
+    ss = _draws.sites(text, p.name)
+    n = _draws.count(text, p.name)
+    seed = _draws.seed(text)
+    case_id = f"{p.stem}#{i}"
+    key = hashlib.sha256(text.encode() + engine_hash().encode() + _code_hash().encode()
+                         + (Path(__file__).resolve().parent / "checks.py").read_bytes()
+                         + (Path(__file__).resolve().parent / "draws.py").read_bytes()).hexdigest()[:16]
+    memo = cache_root() / "draws" / f"{p.stem}-{i}-{key}.json"
+    known_ = None
+    if memo.exists():
+        try:
+            known_ = json.loads(memo.read_text())
+        except ValueError:
+            known_ = None
+    rejected = list((known_ or {}).get("rejected") or [])
+    attempts = [known_["attempt"]] if known_ and isinstance(known_.get("attempt"), int) else range(_draws.ATTEMPTS)
+    built, problems = None, []
+    for attempt in attempts:
+        vals = _draws.values(ss, seed, i, attempt)
+        built = _build(case_id, compile_case(_draws.resolve(text, ss, vals), p.name))
+        built["case"]["draw"] = {"base": p.stem, "i": i, "of": n, "seed": seed, "attempt": attempt,
+                                 "values": _draws.describe(text, ss, vals)}
+        if known_ is not None:
+            problems = list(known_.get("problems") or [])
+            break
+        try:
+            problems = checks.problems(built["case"])
+        except (ArithmeticError, ValueError) as e:                 # the run blew up (overflow): not bounded
+            problems = [f"the run fails: {type(e).__name__}: {e}"]
+        if not problems:
+            break
+        rejected.append({"attempt": attempt, "values": {d["label"]: d["value"] for d in built["case"]["draw"]["values"]}, "problems": problems})
+    if known_ is None:
+        rejected = [r for r in rejected if r["attempt"] != built["case"]["draw"]["attempt"]]
+        memo.parent.mkdir(parents=True, exist_ok=True)
+        tmp = memo.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"attempt": built["case"]["draw"]["attempt"], "rejected": rejected, "problems": problems}))
+        tmp.replace(memo)
+    built["case"]["draw"].update(rejected=rejected, problems=problems)
+    return built
+
+
 def _get(case_id: str) -> dict:
-    p = case_files().get(case_id)
-    if p is None:
+    base, i = split(case_id)
+    p = case_files().get(base)
+    if p is None or not known(case_id):
         raise KeyError(case_id)
     st = p.stat()
-    return _load(str(p), st.st_mtime, st.st_size)
+    return _load_draw(str(p), st.st_mtime, st.st_size, i) if i else _load(str(p), st.st_mtime, st.st_size)
 
 
 def load(case_id: str) -> dict:
     """A case: {id, title, level, tags, tests, tolerance, variants: [{name, noise, length, steps}],
-    model (the truth model without steps or noise), hash}."""
+    model (the truth model without steps or noise), hash}; a draw also has draw: {base, i, of, seed,
+    attempt, values: [{label, value, lo, hi, log, int, line}], rejected: [{attempt, values, problems}],
+    problems} (problems: what is still wrong when no attempt passed the checks)."""
     return dict(_get(case_id)["case"])
 
 

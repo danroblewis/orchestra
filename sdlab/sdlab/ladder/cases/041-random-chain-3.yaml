@@ -1,0 +1,12 @@
+title: Chain of three, random numbers
+level: 3
+tags: [chain, move, parametric]
+tests: 004 with every number drawn at random (8 draws); two moves in a row are recovered whatever their rates
+seed: 41
+draws: 8
+stocks: {A: 0, B: 0, C: 0}
+flows:
+  outside -> A: draw(5, 40)
+  A -> B: draw(0.05, 0.6, log) * A
+  B -> C: draw(0.05, 0.6, log) * B
+  C -> outside: draw(0.03, 0.5, log) * C

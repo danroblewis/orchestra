@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -176,6 +177,7 @@ def create_app() -> FastAPI:
         jobs.close()
 
     app = FastAPI(title="SD Lab", lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=64 * 1024)      # the ladder's summary is megabytes of JSON
 
     def live(model_id: str) -> LiveRun:
         p = _path(model_id)

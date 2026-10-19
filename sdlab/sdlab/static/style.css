@@ -580,3 +580,6 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
   .bdiag { grid-template-columns: 1fr; }
 }
 @media (max-width: 800px) { .bmeas dd { white-space: normal; } .bmeas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* a draw of a parametric case: its drawn numbers */
+.drawn { margin: 2px 0 8px; line-height: 1.8; }
+.drawn code { margin-right: 6px; padding: 1px 5px; border-radius: 4px; background: var(--panel2, rgba(127, 127, 127, 0.12)); white-space: nowrap; }

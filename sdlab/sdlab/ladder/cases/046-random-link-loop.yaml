@@ -1,0 +1,12 @@
+title: A reinforcing link loop, random numbers
+level: 6
+tags: [loop, link, move, parametric]
+tests: 008 with every number drawn at random (8 draws; the loop's gain stays below B's drain, so it is bounded); the loop is recovered
+seed: 46
+draws: 8
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: draw(5, 30)
+  A -> B: draw(0.1, 0.6, log) * A
+  B -> outside: draw(0.1, 0.4, log) * B
+  outside -> A as births: draw(0.01, 0.09, log) * B

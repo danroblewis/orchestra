@@ -43,7 +43,7 @@ def cases() -> list[dict]:
 
 
 def case(case_id: str) -> dict | None:
-    return jsonable(_case(case_id)) if case_id in casemod.case_files() else None
+    return jsonable(_case(case_id)) if casemod.known(case_id) else None
 
 
 def strategies() -> list[dict]:
@@ -224,5 +224,45 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     g["total"] += 1
                     g[cell["status"] or "missing"] += 1
     return jsonable({"strategies": strats,
-                     "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} for c in cs],
-                     "cells": cells, "by_tag": by_tag, "totals": totals, "score_hash": sh})
+                     "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c) for c in cs],
+                     "cells": cells, "by_tag": by_tag, "totals": totals, "score_hash": sh, "parametric": parametric(cs, cells)})
+
+
+def draw_brief(c: dict) -> dict:
+    """A draw's numbers for a listing: {draw: {base, i, of, lines (its drawn lines), values {label: value}}}
+    ({} for a case that is not a draw)."""
+    d = c.get("draw")
+    if not d:
+        return {}
+    return {"draw": {"base": d["base"], "i": d["i"], "of": d["of"], "lines": list(dict.fromkeys(x["line"] for x in d["values"])),
+                     "values": {x["label"]: x["value"] for x in d["values"]}}}
+
+
+def parametric(cs: list[dict], cells: list[dict]) -> dict:
+    """Each parametric case over its draws: {file id: {title, level, tags, draws: [ids], strategies: {name:
+    {pass, equivalent, fail, error, timeout, missing, total (cells: draws x variants), rate (pass / total),
+    draws_passing (draws that pass in every variant), draws_run (draws run in every variant)}}}}."""
+    out: dict[str, dict] = {}
+    by_case: dict[str, list] = {}
+    for x in cells:
+        by_case.setdefault(x["case"], []).append(x)
+    for c in cs:
+        d = c.get("draw")
+        if not d:
+            continue
+        g = out.setdefault(d["base"], {"title": c["title"], "level": c["level"], "tags": c["tags"], "draws": [], "strategies": {}})
+        g["draws"].append(c["id"])
+        per: dict[str, list] = {}
+        for x in by_case.get(c["id"], []):
+            per.setdefault(x["strategy"], []).append(x)
+        for name, xs in per.items():
+            t = g["strategies"].setdefault(name, {**{k: 0 for k in STATUSES}, "missing": 0, "total": 0, "draws_passing": 0, "draws_run": 0})
+            for x in xs:
+                t["total"] += 1
+                t[x["status"] or "missing"] += 1
+            t["draws_run"] += all(x["status"] for x in xs)
+            t["draws_passing"] += all(x["status"] == "pass" for x in xs)
+    for g in out.values():
+        for t in g["strategies"].values():
+            t["rate"] = t["pass"] / t["total"] if t["total"] else None
+    return out

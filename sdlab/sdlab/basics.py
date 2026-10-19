@@ -30,7 +30,7 @@ def is_basic(model_id: str) -> bool:
 
 def listing() -> list[dict]:
     """Every case as a model row, simplest first: {id, name, case, level, tags, tests}."""
-    cs = sorted(ladder.cases(), key=lambda c: (c["level"], c["id"]))
+    cs = sorted((c for c in ladder.cases() if not c.get("draw")), key=lambda c: (c["level"], c["id"]))   # draws stay on the ladder page
     return [{"id": PREFIX + c["id"], "name": c["title"], "case": c["id"], "level": c["level"], "tags": c["tags"], "tests": c["tests"]} for c in cs]
 
 

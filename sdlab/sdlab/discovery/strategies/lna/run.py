@@ -123,9 +123,14 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
         other = search(full, d)
         if bic(other, d) < bic(cur, d):
             cur = other
+    # how far the changes' spread exceeds what counting noise gives the chosen flows (each stock's
+    # extra variance over its counting variance): near 0 where the atoms describe the system
+    Z = features(cur.atoms, d.prev, d.cfg)
+    counting = variances(cur.atoms, cur.theta, Z, S).mean(axis=1) + d.delta
+    misfit = float(np.max(np.where(d.free, cur.tau, 0.0) / counting))
     at = lambda k: t[k + 1]  # noqa: E731
     flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "extra_variance": {ids[k]: float(cur.tau[k]) for k in range(S) if d.free[k]}, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
+            "flows": flows, "method": "lna", "dispersion": phi, "misfit": misfit, "extra_variance": {ids[k]: float(cur.tau[k]) for k in range(S) if d.free[k]}, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
 

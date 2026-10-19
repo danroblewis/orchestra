@@ -1,0 +1,11 @@
+title: Chain of two, random numbers
+level: 2
+tags: [chain, move, parametric]
+tests: 003 with its inflow, move and exit drawn at random (8 draws); each draw's three numbers are recovered
+seed: 40
+draws: 8
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: draw(5, 40)
+  A -> B: draw(0.05, 0.6, log) * A
+  B -> outside: draw(0.03, 0.5, log) * B

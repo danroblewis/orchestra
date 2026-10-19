@@ -352,7 +352,7 @@
     if (svgDiff) D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
     return { vb, alias, cmp };
   }
-  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml: (c, r) => diffHtml(L.compare(c.model, (r && r.found) || [], r && r.scores)), legend: () => LEGEND, open: (sel) => pick(sel) });
+  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml: (c, r) => diffHtml(L.compare(c.model, (r && r.found) || [], r && r.scores)), legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
 
   const LEGEND = `<span class="d-ok">✓ matched</span> · <span class="d-wrong">~ number off</span> · <span class="d-missed">− missed</span> · <span class="d-spurious">+ invented</span> · <span class="d-equiv">≈ equivalent reading</span>`;
   // the differences as a list, one line per flow
@@ -367,7 +367,7 @@
     $("cmp-head").innerHTML = `<div class="casehead">
         <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
         <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</span>
-        <p class="tests">Tests: ${esc(c.tests)}</p>
+        <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
       </div>
       ${S.focusRunning && S.follow ? `<p class="note discrunning">Running now: ${r ? "showing its previous result until it finishes." : "no earlier result."}</p>` : ""}
       ${err ? `<p class="note error">${esc(err.message)}</p>` : ""}
@@ -588,6 +588,15 @@
     }).join("")}</tbody></table>`;
   }
 
+  // a draw of a parametric case: its drawn numbers, as the lines of the case they went into
+  function drawHtml(c) {
+    const d = c && c.draw; if (!d) return "";
+    const lines = [...new Set((d.values || []).map((v) => v.line))];
+    const tip = (d.values || []).map((v) => `${esc(v.label)}: ${esc(v.value)} (drawn from [${esc(v.lo)}, ${esc(v.hi)}]${v.log ? ", log" : ""}${v.int ? ", whole" : ""})`).join("<br>")
+      + ((d.rejected || []).length ? `<br>${d.rejected.length} earlier attempt(s) failed the case checks and were drawn again` : "");
+    return `<p class="drawn small" data-tip="${esc(tip)}"><b>Draw ${esc(d.i)} of ${esc(d.of)}</b> of ${esc(d.base)}: ${lines.map((l) => `<code>${esc(l)}</code>`).join(" ")} <span class="muted">(sdlab-ladder freeze ${esc(c.id)} makes it a fixed case)</span></p>`;
+  }
+
   // ---------- Cases ----------
   function renderCases() {
     const tags = [...new Set(S.cases.flatMap((c) => c.tags))].sort();
@@ -612,7 +621,7 @@
     const flows = c.model.flows.map((f) => ({ flow: f, eq: L.equation(f, c.model.schedule) }));
     $("cdetail").innerHTML = `<div class="casehead"><h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
         <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")} · hash ${esc(short(c.hash))}</span>
-        <p class="tests">Tests: ${esc(c.tests)}</p></div>
+        <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}</div>
       <div class="cstrats">${S.strategies.map((s) => `<span class="cst"><span class="small">${esc(s.name)}</span> ${squares(c.id, s.name)}</span>`).join("")}</div>
       <figure class="dpanel single"><figcaption>True model</figcaption><svg id="c-diagram" role="img" aria-label="The case's true model"></svg></figure>
       <div class="tablewrap"><table class="rtable"><thead><tr><th>flow</th><th>from → to</th><th>equation</th></tr></thead><tbody>

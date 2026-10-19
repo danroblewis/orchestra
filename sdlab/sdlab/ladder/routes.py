@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/ladder")
 
 
 def _case(case_id: str) -> dict:
-    if case_id not in casemod.case_files():
+    if not casemod.known(case_id):
         raise HTTPException(404, f"no case {case_id!r}")
     return casemod.load(case_id)
 

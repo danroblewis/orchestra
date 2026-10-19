@@ -1,0 +1,14 @@
+title: A stepping inflow and a drain, random numbers
+level: 3
+tags: [inflow-change, unannounced, outflow, parametric]
+tests: 027 with its two inflow levels and drain drawn at random (8 draws); the steps are found without announcement and the drain is not misread
+seed: 48
+draws: 8
+stocks: {C: 50}
+flows:
+  outside -> C: 3
+  C -> outside: draw(0.03, 0.3, log) * C
+schedule:
+  every: 200
+  at 1 low: {outside -> C: draw(1, 10)}
+  at 101 high: {outside -> C: draw(5, 25)}

@@ -25,7 +25,8 @@ TIMEOUT = 120
 
 
 def select_cases(spec: str | None) -> list[str]:
-    """Case ids from a comma list of ids, id prefixes ("003"), tags ("tag:loop") or levels ("level:2");
+    """Case ids from a comma list of ids, id prefixes ("003"; a parametric case's prefix is all its
+    draws), draws ("039#3"), tags ("tag:loop") or levels ("level:2");
     everything when empty."""
     ids = casemod.case_ids()
     if not spec or spec == "all":
@@ -37,7 +38,10 @@ def select_cases(spec: str | None) -> list[str]:
         elif part.startswith("level:"):
             out += [i for i in ids if str(casemod.load(i)["level"]) == part[6:]]
         else:
-            got = [i for i in ids if i == part or i.startswith(part + "-") or i.startswith(part)]
+            got = [part] if part in ids else [i for i in ids if i.startswith(part + "-") or i.startswith(part)]
+            if not got and "#" in part:                        # a draw by number: 039#3
+                base, k = part.split("#", 1)
+                got = [i for i in ids if "#" in i and i.split("#")[0].startswith(base) and i.split("#")[1] == k]
             if not got:
                 raise SystemExit(f"no case matches {part!r}")
             out += got

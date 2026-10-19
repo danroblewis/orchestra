@@ -1,0 +1,12 @@
+title: A link, random numbers
+level: 5
+tags: [link, parametric]
+tests: 007 with every number drawn at random (8 draws); B's inflow follows A's level (a link, not a move) whatever the rates
+seed: 45
+draws: 8
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: draw(5, 40)
+  A -> outside: draw(0.05, 0.5, log) * A
+  outside -> B: draw(0.03, 0.3, log) * A
+  B -> outside: draw(0.03, 0.5, log) * B

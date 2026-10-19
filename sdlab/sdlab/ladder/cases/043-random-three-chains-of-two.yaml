@@ -1,0 +1,17 @@
+title: Three independent chains of two, random numbers
+level: 4
+tags: [independent, chain, move, parametric]
+tests: 031 with every number drawn at random (8 draws; some land close together); each chain is recovered with no flow between any two
+seed: 43
+draws: 8
+stocks: {A1: 0, B1: 0, A2: 0, B2: 0, A3: 0, B3: 0}
+flows:
+  outside -> A1: draw(5, 40)
+  A1 -> B1: draw(0.05, 0.6, log) * A1
+  B1 -> outside: draw(0.03, 0.5, log) * B1
+  outside -> A2: draw(5, 40)
+  A2 -> B2: draw(0.05, 0.6, log) * A2
+  B2 -> outside: draw(0.03, 0.5, log) * B2
+  outside -> A3: draw(5, 40)
+  A3 -> B3: draw(0.05, 0.6, log) * A3
+  B3 -> outside: draw(0.03, 0.5, log) * B3

@@ -30,10 +30,12 @@ uv run sdlab-ladder show 011 --strategy matrix         # true vs found equations
 uv run sdlab-ladder watch                              # sync now, then whenever a case or strategy changes
 uv run sdlab-ladder check                              # every case file compiles, and the cases' sanity checks
 uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
+uv run sdlab-ladder freeze 042#5                       # write draw 5 of parametric case 042 as an ordinary case
 ```
 
 `python -m sdlab.ladder ...` works too. Cases are chosen by id or number prefix (`003`,
-`003-chain-2`), tag (`tag:loop`) or level (`level:6`). Variants are chosen by name (`counts-short`),
+`003-chain-2`), tag (`tag:loop`) or level (`level:6`); a parametric case's prefix (`042`) is all its
+draws, and `042#5` is one. Variants are chosen by name (`counts-short`),
 noise (`none`, `counts`) or length (`short`, `long`). Common options: `--jobs N` (default: CPU cores
 minus 1; each worker uses one numpy thread) and `--timeout S` (per item, default 120 s). A strategy
 that raises is recorded as `error` and one that runs out of time as `timeout`; the run carries on.
@@ -172,6 +174,71 @@ the same as leaving it out). **Tolerance** overrides the scorer's (Scoring, belo
 (`effect(...)`, `max(0, ...)`, `uses(...)`) goes on its own line (block style). A value that starts
 with `- ` or `[` reads as a list: quote it. Strings with `: ` or ` #` (a title,
 a test sentence) need quotes.
+
+### Parametric cases: random numbers
+
+A hand-written case has one set of numbers (three chains with inflows 20, 12 and 6), so a strategy
+can pass it by the luck of those numbers. In a **parametric** case any number may be a range, and
+the case runs on several draws of its numbers (`sdlab/sdlab/ladder/draws.py`). Real use never
+varies a model like this. It is a diagnostic for the analyser: it shows what happens when unrelated
+stocks happen to get similar inflows, or a rate lands small.
+
+```yaml
+title: Two independent chains of two, random numbers
+level: 4
+tags: [independent, chain, move, parametric]
+tests: 029 with every number drawn at random (8 draws); each chain is recovered with no flow between them
+seed: 42
+draws: 8                                  # how many draws (default 8)
+stocks: {A1: draw(0, 300, int), B1: 0, A2: 0, B2: 0}
+flows:
+  outside -> A1: draw(5, 40)              # uniform on [5, 40]
+  A1 -> B1: draw(0.05, 0.6, log) * A1     # log-uniform
+  B1 -> outside: draw(0.03, 0.5, log) * B1
+```
+
+- `draw(lo, hi)` takes `0 <= lo < hi`, then optionally `log` (log-uniform, `lo > 0`) and `int` (a
+  whole number). Other draws are rounded to three significant figures, so a value reads as written.
+  For a negative coefficient, write `- draw(...)`. `{draw: [lo, hi]}` is the same number as
+  `draw(lo, hi)`, written as a YAML mapping.
+- A draw may stand for any number: a rate's numbers (a constant, `k`, a gap's goal and time, a linear
+  rate's terms), an initial level, a schedule's values, or an injection's amount. Draws are replaced in
+  the text before the YAML is read, so the comma trap does not apply to them. A `draw(...)` in a
+  comment is left alone.
+- **Draw i** (1..N) is the case `NNN-slug#i`. It is scored, stored and shown like any case, with its
+  own hash: for every strategy and variant. Its numbers come from a generator seeded by the case's
+  `seed`, `i` and an attempt number. So draws are reproducible, and raising `draws` keeps the first
+  ones. The simulation seed is the case's `seed` for every draw.
+- Each draw must pass the case checks (bounded, moving, every flow moves). A draw that fails them
+  is drawn again with the next attempt, up to 12 attempts. `sdlab-ladder check` and `show` report
+  the rejected attempts and why they were rejected. The accepted attempt is remembered in
+  `$SDLAB_LADDER_CACHE/draws`, so the checks run once per draw.
+- **Reporting.** `status` lists each draw as a row and adds a **Parametric cases** table. Each
+  strategy gets its pass rate over draws x variants, then how many draws pass in every variant
+  (`62.5% 3/8`). `show NNN#i` prints the drawn numbers with their ranges. In the read API, a draw's
+  case has `draw: {base, i, of, seed, attempt, values: [{label, value, lo, hi, log, int, line}],
+  rejected, problems}`. `summary()` adds `draw` (`{base, i, of, lines, values}`) to each draw's case
+  and `parametric: {case: {title, level, tags, draws, strategies: {name: {pass, ..., total, rate,
+  draws_passing, draws_run}}}}`. The Now page and the Cases view show a draw's numbers as the lines
+  they went into. In the leaderboard, a parametric case counts as its draws, and a **Kind** filter
+  separates fixed cases from random draws. The editor does not list draws as basic models.
+- **Freezing.** `sdlab-ladder freeze NNN#i [--slug S]` writes draw i as the next ordinary case:
+  `NNN-slug-draw-i.yaml`, with the drawn numbers in place and comments kept. Its title and `tests`
+  sentence say where it came from, and the `parametric` tag becomes `frozen-draw`. It compiles to
+  exactly the draw's model. This is how a failing draw becomes a fixed regression case.
+
+| case | numbers drawn |
+|---|---|
+| 039-random-inflow-outflow | 002: inflow 5-40, drain 0.03-0.5 (log) |
+| 040-random-chain-2 | 003: inflow, move 0.05-0.6 (log), exit |
+| 041-random-chain-3 | 004: inflow, two moves, exit |
+| 042-random-two-chains-of-two | 029: both chains' inflows, moves and exits |
+| 043-random-three-chains-of-two | 031: all three chains |
+| 044-random-three-stocks | 034-036: three unrelated stocks' inflows, drains and starts (0-300) |
+| 045-random-link | 007: A's inflow and drain, the link 0.03-0.3, B's drain |
+| 046-random-link-loop | 008: inflow 5-30, move 0.1-0.6, drain 0.1-0.4, births 0.01-0.09 (below the drain: bounded) |
+| 047-random-goal-gap | 011: goal 150-450, time 2-10, arrival 0.1-0.5, demand 0.05-0.2 |
+| 048-random-stepping-inflow-drain | 027: the two inflow levels (1-10, 5-25) and the drain 0.03-0.3 |
 
 ### What a case compiles to
 
@@ -462,6 +529,10 @@ seconds, error, scores}`. `scores` holds:
 A result read with its found flows (`result`, `result_by_id`, `board`) also has `complexity: {true,
 found, extra, ratio, by: {flows, terms, pieces, other}}` (None for an error or timeout).
 
+A parametric case's draws (`NNN-slug#i`) are cases like any other here, and a draw's case carries
+`draw` (Parametric cases, above). In a URL the `#` is written `%23`
+(`/api/ladder/cases/042-random-two-chains-of-two%235`).
+
 The server serves these endpoints, read only:
 
 ```
@@ -522,7 +593,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 
 | | |
 |---|---|
-| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; the YAML format in `caseformat.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
+| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors) |
 | Complexity | `complexity.py` (true and found complexity, extra, the Occam score; cached by result id) |

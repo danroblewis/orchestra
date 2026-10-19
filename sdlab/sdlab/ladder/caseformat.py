@@ -21,6 +21,9 @@ same case dict as a JSON case (cases.py). docs/LADDER.md has the reference; in s
       at 101 high announced: {in: 30}
     injections: [{t: 50, stock: A, amount: 400}]
 
+A number anywhere may instead be a range to draw from, draw(lo, hi) (a parametric case; draws.py
+resolves those to numbers before the text is compiled here).
+
 compile_case(text, name) -> the case dict ({title, level, tags, tests, model, ...}); every mistake
 raises CaseError with the file name and line. Rates are parsed by a small recursive-descent parser
 (no eval).
@@ -33,7 +36,7 @@ import re
 import yaml
 
 OUTSIDE = "outside"
-TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance"}
+TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws"}
 FORMS = {"constant", "proportional", "gap", "linear", "available"}
 ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 FLOW_KEY_RE = re.compile(r"^\s*(\S+)\s*->\s*(\S+)\s*(?:\bas\s+(\S+)\s*)?$")
@@ -512,6 +515,8 @@ def compile_case(text: str, name: str = "<case>") -> dict:
     for k in ("stocks", "flows"):
         if k not in raw:
             raise CaseError(f"{name}: a case needs {k}")
+    if "draws" in raw:
+        raise CaseError(f"{_at(raw, 'draws', name)}: draws is for a case with draw(lo, hi) numbers (draws.py), and this one has none")
     out = {k: raw[k] for k in ("title", "level", "tags", "tests", "tolerance") if k in raw}
     v = raw.get("variants")
     if v is not None and v != "default":

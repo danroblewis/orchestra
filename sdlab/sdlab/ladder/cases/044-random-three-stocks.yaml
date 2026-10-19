@@ -1,0 +1,17 @@
+title: Three independent stocks, random numbers and starts
+level: 3
+tags: [independent, inflow, outflow, parametric]
+tests: three unrelated stocks (034-036) with random inflows, drains and starting levels (8 draws; some land close together); each stock's inflow and drain are recovered with no flow between them
+seed: 44
+draws: 8
+stocks:
+  A: draw(0, 300, int)
+  B: draw(0, 300, int)
+  C: draw(0, 300, int)
+flows:
+  outside -> A: draw(5, 40)
+  A -> outside: draw(0.03, 0.5, log) * A
+  outside -> B: draw(5, 40)
+  B -> outside: draw(0.03, 0.5, log) * B
+  outside -> C: draw(5, 40)
+  C -> outside: draw(0.03, 0.5, log) * C

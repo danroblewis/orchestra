@@ -1,0 +1,10 @@
+title: One stock, in and out, random numbers
+level: 1
+tags: [inflow, outflow, parametric]
+tests: 002 with its inflow and drain drawn at random (8 draws); each draw's inflow and drain are recovered
+seed: 39
+draws: 8
+stocks: {A: 0}
+flows:
+  outside -> A: draw(5, 40)
+  A -> outside: draw(0.03, 0.5, log) * A

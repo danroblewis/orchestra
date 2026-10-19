@@ -113,6 +113,7 @@
         ${m && m.errorScore !== null ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
       </header>
       <p class="tests">Tests: ${esc(c.tests)} <span class="muted small">level ${esc(c.level)} · ${esc(c.tags.join(", "))}</span></p>
+      ${P.drawHtml(c)}
       ${tabs}
       <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>True model</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
       ${r && r.found ? P.diffHtml(c, r) : ""}
