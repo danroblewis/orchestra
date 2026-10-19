@@ -572,6 +572,16 @@ def _straightened(flows, ids, prev, tt, mi) -> list[dict] | None:
     return None
 
 
+def _orphans(before: list[dict], after: list[dict]) -> bool:
+    """A stock that had flows and has none left."""
+    def touched(fl):
+        out = set()
+        for f in fl:
+            out |= {f.get("from"), f.get("to")} | {u.get("stock") for u in f.get("uses") or []}
+        return out - {None}
+    return bool(touched(before) - touched(after))
+
+
 def _negative(flows, ids, prev, tt, mi) -> bool:
     """A flow (without effects) that runs backwards on more than 5% of the steps: an outside inflow
     c + d x U that turns negative, a link with a negative number."""
@@ -715,9 +725,13 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
                 if _best_knots(h, o) is None:
                     continue
                 fu = h.flows()
-                if fu is None or _negative(fu, ids, prev, tt, mi):
+                if fu is None or _negative(fu, ids, prev, tt, mi) or _orphans(cur, fu):
                     continue
+                if u is not None and not move and not h.result["p"] > 1e-6:
+                    continue                                        # no co-flow: the U reading is the plain one
                 fu = _prune(fu, ids, A, tt, mi, inj, res)
+                if _orphans(cur, fu):
+                    continue
                 how = (f" from {u}" if move else f" using {u}") if u else ""
                 pf = price(fu, ids, A, tt, mi, inj, res)
                 alt = _straightened(fu, ids, prev, tt, mi)
