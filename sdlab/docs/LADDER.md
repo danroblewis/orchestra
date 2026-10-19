@@ -2006,12 +2006,13 @@ the data need).
     reading one made the check give up, so an exact equivalent of 125 or 106 was a fail.
   - **A truth with effects** (2026-10-19) is equivalent when the found flows compute the same change
     of every measured stock on the run's states (rate x effects, floored at 0, inputs read):
-    rms(found change - true change) <= rel x rms(the true gross amount through that stock, in and
-    out). So two parametrisations of one function count: a product with its roles swapped (101:
+    rms(found change - true change) <= rel x rms(true change of that stock). So two
+    parametrisations of one function count: a product with its roles swapped (101:
     `k S x effect(I)` against `k' I x effect(S)`), a move seen as an outflow and an inflow of the
-    same amount, an adoption twin's rates reading A in place of N (N = 100 - A on every sample).
-    One flow alone is held to the same rel as the whole-flow comparison of a flow with effects; no
-    tolerance is wider than before.
+    same amount, an adoption twin's rates reading A in place of N (N = 100 - A on every sample). The
+    scale is the stock's net change, stricter than a flow's own amount when flows cancel; the gross
+    amount through the stock was tried first and was far too loose (a model with no flows came within
+    10% of a logistic stock whose births and deaths nearly cancel). No tolerance is wider than before.
   - Not checked for a truth with hidden stocks.
 - **fail**: anything else. **error** / **timeout**: the strategy raised or ran out of time.
 
@@ -2025,6 +2026,48 @@ outside inflows. It is reported on the run discovery saw and on the fresh run. E
 **95% bootstrap interval** that resamples the start moments: how much the number depends on which
 moments were graded. It is a diagnostic next to the equations. A pass usually behaves well, but good
 behaviour does not make a pass.
+
+### The scoring changes of 19 October 2026: before and after
+
+Six changes the user approved (journal, 2026-10-19 01:40), committed at cb1c69d (the six fixes)
+and f01908d (fix 4 measured against the net change) on branch `sdlab`. Every stored latest result
+(54k rows; physics cases and real cases' `real` variant are not scored by `score.equations` and are
+left out) was re-scored offline on 19 October 2026 with the scorer before (cb1c69d's parent) and
+after (f01908d), without re-running discovery (`tests/study_rescore.py`: `score.equations` on the
+stored found flows), and compared per (case, variant, strategy) where the stored found flows were
+the same in both runs (52,412 cells; 112 re-run by the watcher in between and 80 whose case was
+renamed or removed, left out). Attribution: each fix's change applied alone, on the cells it can
+touch; every flip on the full store falls under one of them. **179 status flips, all from these
+fixes, none pass -> fail and none to or from pass:**
+
+| fix | fail -> equivalent | equivalent -> fail | other | where |
+|---|---|---|---|---|
+| 1. dt < 1 per recorded step | 78 | 1 | 0 | all 104: the found drain 0.0957 with the gap written as an inflow and a drain now matches the per-step truth (0.0957, -6.70); one model close to the continuous 0.1 no longer does. 100's flows have effects (compared as a whole): no flips |
+| 2. hidden paths fed from outside | 0 | 0 | 0 | 2,913 cells whose truth or found model has an unmeasured stock: every status unchanged (the strategies that passed 105 and 110 found the supply line with its delay; the others already failed on spurious inflow pieces). Parts, recall and precision change |
+| 3. inputs in the equivalence | 38 | 0 | 0 | 125 counts-short (37: `k x desired` and a larger drain of R, the floored gap's linear equivalent), 106 (1) |
+| 4. effects in the equivalence | 62 | 0 | 0 | 131 (12), 127 (10), 101 (5: the product with its roles swapped), 126 (3), 017, 018 (2 each); adoption twins (26: rates reading A for N, or, on the near-flat published fits of automatic transmission, automobile, radio and vacuum, constant pieces that equal the published flow on the training samples) |
+| 5. twins' analysis | - | - | - | analysis labels only (below) |
+| 6. floors in the analysis | - | - | - | analysis labels only (below) |
+
+Fix 4 was first written against each stock's gross throughput; on the effect cases that gave 1,533
+fail -> equivalent, many of them empty or piece-only models (a model with no flows came within 10%
+of a logistic stock), and was replaced by the net change before release (97 on the attribution run,
+62 on the full store).
+
+**Analysis labels** (`analysis.analyse` on every cell of the test and real cases, before and after;
+55 of 1,174 change): 125 unidentifiable -> achievable (4 cells); 106 counts unidentifiable ->
+data-limited (short) and achievable (long); 133, 134 counts not analysed -> achievable (4); 170, 171
+counts-short and 195 achievable -> data-limited (their inputs were read as 0 before); twins: 21
+adoption achievable -> unidentifiable (N = 100 - A on every sample: a rate may read either), bsflu
+not analysed -> data-limited, 16 Gause / Huffaker / Isle Royale achievable -> data-limited and 7
+unidentifiable -> data-limited or achievable (the training samples with measurement error, in
+place of the noise-free full run).
+
+**Declined or left open.** A rate that reads a hidden stock (the flu's infection reading the hidden
+I, a smoothing) is still not scored. The hidden oracle covers one hidden stock fed from outside;
+a DELAY3 supply line (105, 110) or an inflow with effects (108) is scored with the tolerances alone.
+The strict pass references (`strict.py`) still refit dt < 1 truths at dt = 1. A real case's `real`
+variant is still analysed on the published model's noise-free run.
 
 ## Complexity (`sdlab/sdlab/ladder/complexity.py`)
 
