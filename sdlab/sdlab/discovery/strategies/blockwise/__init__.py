@@ -35,7 +35,7 @@ from .links import read_links
 from .ratios import ratio_row, table
 from .rows import fit_row, hinge, scan
 
-DEFAULTS = {"small": 15, "budget": 900.0, "blocks": True, "delays": [1.0, 0.5]}
+DEFAULTS = {"small": 15, "budget": 600.0, "blocks": True, "delays": [1.0, 0.5]}
 
 VARIANTS = [
     {"name": "links, stages, changing inflows", "inflow": "pieces", "read": "links", "add_gain_x": 3.0, "copies": True},
@@ -161,7 +161,7 @@ class Builder:
         return [{"from": t[p["a"] + 1], "to": t[p["b"]], "value": p["v"]} for p in r["pieces"]]
 
     def flows(self, raw: list[dict], read: str = "main") -> tuple[list[dict], dict]:
-        """(flows, inferred levels of the found unmeasured stages)."""
+        """(flows, inferred levels of the found unmeasured stages, as arrays aligned with t)."""
         ids, t, X, names, T = self.ids, self.t, self.X, self.names, self.design.T
         series = {e["id"]: e["series"] for e in self.extra}
         if read == "links":
@@ -176,7 +176,7 @@ class Builder:
                                  "ratios": [(names[a], names[m], k, table(X[m])) for a, m, k in r.get("ratios") or []]})
             means = {n: float(X[j].mean()) for j, n in enumerate(names)}
             flows, stages = read_links(rows, ids, means, set(names[self.I0:]), self.copies, self.unit)
-            inferred = {h: sum(sc * (series[c] if kind == "copy" else self.lag1(c)) for c, kind, sc in parts).tolist() for h, parts in stages.items()}
+            inferred = {h: sum(sc * (series[c] if kind == "copy" else self.lag1(c)) for c, kind, sc in parts) for h, parts in stages.items()}
             return flows, inferred
         lt = math.log(T)
         rows = []
@@ -198,7 +198,7 @@ class Builder:
         for f in out["flows"]:
             inf = f.get("inferred")
             if inf:
-                inferred[inf["id"]] = (inf["scale"] * series[inf["copy"]]).tolist()
+                inferred[inf["id"]] = inf["scale"] * series[inf["copy"]]
         return out["flows"], inferred
 
 
@@ -291,5 +291,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 result.update(flows=flows, inferred_levels=inferred, chosen=joined["name"])
     if not result["inferred_levels"]:
         result.pop("inferred_levels")
+    if result.get("inferred_levels"):                              # (arrays while judging; lists for the page)
+        result["inferred_levels"] = {h: np.asarray(v, dtype=float).tolist() for h, v in result["inferred_levels"].items()}
     result["seconds"] = round(time.perf_counter() - began, 1)
     return result
