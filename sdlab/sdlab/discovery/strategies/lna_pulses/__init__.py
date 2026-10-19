@@ -30,6 +30,7 @@ from .run import discover
 
 
 Z = 6.0          # a pulse is kept when it stands this many robust SDs above what the model leaves
+SIZE = 0.25      # ... and is at least this share of what the stock moves in a typical step
 
 
 def _inflow_of(f: dict, stock: str) -> bool:
@@ -59,8 +60,8 @@ def pooled(r: np.ndarray, hit: np.ndarray, base: np.ndarray, sd: float, counts: 
 def remeasure(flows: list[dict], ids: list[str], run: dict, found: dict[str, np.ndarray], injections=None, z: float = Z) -> tuple[list[dict], dict[str, np.ndarray]]:
     """Each pulsed stock's outside inflow measured again from what the other flows leave, the pulse
     steps left out; the pulses are what the inflow leaves on those steps, kept only where that
-    stands z robust SDs (of what is left on the other steps) clear of 0, and pooled when they are
-    one size."""
+    stands z robust SDs (of what is left on the other steps) clear of 0 and is a burst (SIZE of a
+    typical step's movement), and pooled when they are one size."""
     t = np.asarray(run["t"], dtype=float)
     lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
     prev, dy = lv[:, :-1], np.diff(lv, axis=1)
@@ -73,6 +74,7 @@ def remeasure(flows: list[dict], ids: list[str], run: dict, found: dict[str, np.
         s = ids.index(stock)
         ins = [f for f in out if _inflow_of(f, stock)]
         f = ins[0] if len(ins) == 1 else None
+        saved = dict(f) if f is not None else None
         others = [g for g in out if g is not f]
         u = dy[s] - Model(others, ids).change(prev, t[1:])[s]
         hit = amounts != 0
@@ -95,12 +97,17 @@ def remeasure(flows: list[dict], ids: list[str], run: dict, found: dict[str, np.
         r = u - base
         rest = r[~hit] if (~hit).any() else r
         sd = 1.4826 * float(np.median(np.abs(rest - np.median(rest))))
-        floor = 1e-6 * (1.0 + float(np.mean(np.abs(dy[s]))) + float(np.abs(base).mean()))
+        # and a pulse is a burst: at least a quarter of what the stock moves in a typical step (its
+        # inflow plus its mean change), so a model's small misfit or the data's rounding is not one
+        floor = SIZE * (float(np.mean(np.abs(dy[s]))) + float(np.abs(base).mean())) + 1e-3
         hit = hit & (np.abs(r) > z * max(sd, floor))
         counts = bool(np.all(lv[s] == np.round(lv[s])))
         p = np.where(hit, pooled(r, hit, base, sd, counts), 0.0)
         if p.any():
             pulses[stock] = p
+        elif f is not None:
+            f.clear()
+            f.update(saved)                  # no pulse held up: the inflow stays as it was
     return out, pulses
 
 

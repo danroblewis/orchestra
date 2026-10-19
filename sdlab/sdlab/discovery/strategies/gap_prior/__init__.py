@@ -9,7 +9,8 @@ written as the gap it equals: one flow instead of two, the same behaviour. Likew
 by a stock a that moves things on (a -> b) is, in the averages, a co-flow of that move (each unit
 moved uses up per = drain / move of c; lna/coflows.py): where a has such a move, the drain is
 written as the co-flow (checked first: a gap needs no move). With counting noise lna's likelihood
-tells these apart (its gap swaps and co-flow offers) and its reading stands.
+tells these apart (its gap swaps and co-flow offers) and its reading stands. A rewrite is kept only
+when the judge finds it behaves as the original on the run (it claims the same equations).
 
 This is a convention for an unidentifiable choice, not identification; it comes from
 docs/research/identifiability.md and judge-ties.md (ties broken by the simpler, conventional model)
@@ -18,6 +19,9 @@ and is measured in docs/research/revisit.md.
 
 from __future__ import annotations
 
+import math
+
+from ...identify import judge
 from ..lna import identify as _lna
 
 
@@ -98,5 +102,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return found                    # counting noise: the likelihood chose between them
     flows = as_gaps(as_coflows(found.get("flows") or []))
     if len(flows) == len(found.get("flows") or []):
+        return found
+    # the rewrite claims the same equations: it must behave the same on the run (it need not where
+    # a floor binds differently, or where the matrix's cross readings are not a gap or a co-flow)
+    inj = (opts or {}).get("injections")
+    before, after = judge(found["flows"], stocks, run, injections=inj), judge(flows, stocks, run, injections=inj)
+    if not math.isfinite(after) or after > before * (1 + 1e-3) + 1e-9:
         return found
     return {**found, "flows": flows, "gap_prior": True}
