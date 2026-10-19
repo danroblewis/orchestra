@@ -11,6 +11,13 @@ for `combined` on the test cases).
 
 ## Queued
 
+2h. **common_cause without runtime patching** (from its final report, 880452b). common_cause applies
+   its exact-data fix by temporarily swapping the shared `regression`/`changes` functions during each
+   call. That is runtime patching of the pinned library (it breaks invariant 11 in spirit, and a crash
+   mid-call could leave the swap in place in a worker that combined reuses). Copy the patched
+   functions into `common_cause/`, call the copies, and remove the swap; behaviour must be identical
+   (prove it on 032-038 and a sample). matrix_v2 is adding the same fix as an option.
+
 2g. **Runner fix and lna fixes** (from the hook port). lna may be fixed in place (strategies are not frozen); its derivatives must carry copies first (item 0c), so this waits for 0c:
    - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
@@ -58,6 +65,7 @@ for `combined` on the test cases).
 - 2026-10-18: item 4, physics cases (2cde024, 382ea4d, 0b7eb5b): 7 ODE systems with their own scoring and view. matrix/lna 13/28, combined 12/28. No leader finds Lotka–Volterra's products or the thermostat's switch; √ outflows have no SD form.
 
 - 2026-10-18: item 2c, converter coverage (e83aa25, 2deb86d, 089fbf3): arrays, macros, external data, DELAY N/SMOOTH N; SDXorg exact conversions 37 → 90 of 165. New case 111 (arrayed switching). The remaining engine blockers go to 2d: two-way flows (30), negative stocks (9), DELAY FIXED (3), MIN/MAX (2), variable delay time/order (3), pipeline stocks (3), TREND/FORECAST (3).
+- 2026-10-19: item 2d, engine features (harness only; simulate.py untouched): expressions (ratios, MIN/MAX/CEIL, sqrt/power, lookups, IF THEN ELSE), auxiliaries, switches with memory, signed stocks, two-way flows, flow(id), net ceilings, DELAY FIXED (pipe and delayed()), variable delay time, TREND/FORECAST; every existing case, example and bench model bit-identical. SDXorg exact conversions 90 -> 139 of 165 (samples 3 -> 9). New canonical cases 113-117. Left: delays whose time or order changes in PySD's per-stage way, vector functions, ALLOCATE, SAMPLE IF TRUE, random; scoring of rates that read a smoothing; the editor (sim.js) and checks.py's short-run crash.
 
 - 2026-10-18: item 3, strict pass tier (f75a064). Strict = pass, with no extra parts, long-run error and fresh skill within what refits of the truth achieve. combined leads by strict (67.6%); matrix drops 41.4% → 22.9%. Kept current by the hourly cycle (`sdlab-ladder strict`).
 
