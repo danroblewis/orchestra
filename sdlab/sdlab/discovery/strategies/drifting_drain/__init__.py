@@ -14,11 +14,12 @@ copy of censored's that counts every stretch's rate and cut) beats the main line
 log T. Rows with announced eras or effects are left as they are, and so are rows the main line read
 as steady (no inflow in pieces, and some flow in or out) or fed by a link from another level.
 
-When the levels are whole numbers (counts), the inflow is read from the size of the noise as well
-(segment.py), and a stock the main line left with no flows at all is priced by the counting-noise
-likelihood instead (counts.py), under which no flows is not the cheapest reading of a stock that
-barely changes. (Priced that way everywhere, it overruled a right main-line model on
-041-random-chain-3#8 counts-long, so elsewhere least squares decides.)
+When the levels are whole numbers (counts) and the main line left a stock with no flows at all, the
+inflow is read from the size of the noise as well (segment.py) and models are priced by the
+counting-noise likelihood (counts.py), under which no flows is not the cheapest reading of a stock
+that barely changes. Elsewhere least squares decides: read from the noise everywhere, the inflow
+followed any misfit (041-random-chain-3#8 counts-long, 051-sweep-level-scale#5 counts-short).
+Every drift must beat one steady drain read the same way by `margin` x log T.
 """
 
 from __future__ import annotations
@@ -67,7 +68,7 @@ def drift_flows(row: str, fit: dict, t: list) -> list[dict]:
     return out
 
 
-def candidate(flows, ids, t, prev, dy, i, floor_var, o, mi=None):
+def candidate(flows, ids, t, prev, dy, i, floor_var, o, mi=None, counting=False):
     row = ids[i]
     mine = [f for f in flows if (f.get("from") is None and f.get("to") == row) or (f.get("from") == row and f.get("to") is None)]
     if any(f.get("byTime") or f.get("effects") or f.get("uses") for f in mine):
@@ -79,10 +80,10 @@ def candidate(flows, ids, t, prev, dy, i, floor_var, o, mi=None):
         return None
     base = [f for f in flows if not _replaced(f, row)]
     y = dy[i] - onestep.changes(base, ids, t, prev, mi)[i]
-    fit = segment.search(y, prev[i], floor_var, o["mult"], o["fine"], counting=o["counting"])
+    fit = segment.search(y, prev[i], floor_var, o["mult"], o["fine"], counting=counting)
     if fit is None or len(fit["spans"]) < 2:
         return None
-    one = segment.steady(y, prev[i], counting=o["counting"])
+    one = segment.steady(y, prev[i], counting=counting)
     return (base + drift_flows(row, fit, t), f"drain on {row} in {len(fit['spans'])} stretches, inflow {fit['c']:.4g}",
             base + drift_flows(row, one, t))
 
@@ -118,18 +119,18 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for i, row in enumerate(ids):
         if row in final:
             continue
-        cand = candidate(flows, ids, t, prev, dy, i, float(floor_rss[i]) / T, o, mi)
+        # counting noise only where the main line left the stock with no flows at all (a stock that
+        # barely changes reads as empty by least squares): there the inflow is read from the noise's
+        # size and models are priced by the counting likelihood. Elsewhere least squares throughout:
+        # the noise's size is a fragile reading of the inflow wherever the model misses a little
+        # (051-sweep-level-scale#5 counts-short: a start-up transient read as 50% more inflow)
+        empty = o["counting"] and not any(row in (f.get("from"), f.get("to")) for f in flows)
+        cand = candidate(flows, ids, t, prev, dy, i, float(floor_rss[i]) / T, o, mi, counting=empty)
         if cand is None:
             continue
-        # the counting-noise price only where the main line left the stock with no flows at all (a
-        # stock that barely changes reads as empty by least squares); elsewhere least squares, so a
-        # counting model that is not quite the data's noise never overrules the main line's reading
-        empty = o["counting"] and not any(row in (f.get("from"), f.get("to")) for f in flows)
         sc, score = price(cand[0], empty), price(flows, empty)
-        # the drift must also earn its stretches against one steady drain read the same way (by the
-        # counting-noise price when the levels are counts: a drift that only trades inflow for drain
-        # makes the noise larger than it is)
-        if price(cand[0], o["counting"]) > price(cand[2], o["counting"]) - o["margin"] * log_t:
+        # the drift must also earn its stretches against one steady drain read the same way
+        if sc > price(cand[2], empty) - o["margin"] * log_t:
             continue
         if sc < score - o["margin"] * log_t:
             flows = cand[0]
