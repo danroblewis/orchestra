@@ -1,0 +1,11 @@
+title: "A measured inflow gated by a table of its own stock"
+level: 10
+tags: [distilled, control, input, effect, effect-table, nonlinear]
+tests: "an inflow that is a measured input (arrivals, 6 a step with rushes to 16) times a falling table of the stock it fills (all admitted below Q = 30, none above 40, a straight line between), the stock drained at 0.3 x Q; from 212-control-admission-queue (admission control: requests admitted at arrivals x sat(0.1 x (40 - Q))): every leader writes k x arrivals plus a constant and a faster drain, never the gate; 123 has the gate on a constant inflow, 160 a table of another stock on a scheduled inflow; here the gate multiplies a measured input"
+seed: 217
+inputs:
+  arrivals: "6 + pulse_train(7, 100.5, 60, 250) + pulse_train(3, 30.5, 40, 170)"
+stocks: {Q: {initial: 2, unit: requests}}
+flows:
+  outside -> Q as admitted: "1 * arrivals * effect(Q, table, [[0, 1], [30, 1], [40, 0], [1000, 0]])"
+  Q -> outside: 0.3 * Q

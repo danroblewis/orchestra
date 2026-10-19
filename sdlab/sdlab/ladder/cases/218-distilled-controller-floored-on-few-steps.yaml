@@ -1,0 +1,11 @@
+title: "A proportional controller floored on a few steps"
+level: 9
+tags: [distilled, control, input, gap, floor]
+tests: "a P controller 0.3 x setpoint - 0.3 x T into a stock drained at 0.05 x T, floored at 0 only on the few steps after the setpoint drops (10 of 2000 on the long run, 1 of 300 on the short: the heater cannot cool); from 203-control-cruise-on-hills and 209 (the throttle floored on 15 of 2000 steps when a hill ends) and 200 (25 of 2000): one-step least squares across those few floored steps pulls every number (on the cruise every coefficient came out at about two thirds of its value, with in-sample skill@20 of 96% on noise-free data), and the main line writes a constant inflow and a drain of 0.35 for the controller's -0.3 x T; 125 has its floor binding for long stretches, here it binds briefly"
+seed: 218
+inputs:
+  setpoint: "200 + pulse_train(40, 50.5, 100, 200) - pulse_train(20, 400.5, 60, 300)"
+stocks: {T: {initial: 120, unit: decidegC}}
+flows:
+  outside -> T as heater: 0.3 * setpoint - 0.3 * T
+  T -> outside: 0.05 * T

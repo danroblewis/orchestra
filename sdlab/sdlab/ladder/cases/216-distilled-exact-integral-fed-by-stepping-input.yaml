@@ -1,0 +1,19 @@
+title: "An exact integral stock fed by a stepping measured input"
+level: 9
+tags: [distilled, control, input, integral, offset]
+tests: "a noise-free stock among counted ones, fed exactly by a measured input that steps (a square wave, 200 / 260 every 100 steps) and drained exactly at the level of a counted stock Y, which it feeds back into (Y gains 10 + 0.1 x I - 0.1 x Y and drains 0.5 x Y); from 214-control-closed-loop-id-steps (and 202, 207): a PI controller's integral I = sum of (setpoint - Y) has exact information flows, and on the counts variants every leader writes its inflow as a constant or unannounced pieces (230 = the setpoint's mean) instead of 1 x setpoint; with I's flows counted as well (not exact) the input is found: the exactness of one stock among noisy ones is the trigger"
+seed: 216
+inputs:
+  r: "200 + pulse_train(60, 50.5, 100, 200)"
+stocks:
+  Y: {initial: 150, unit: units}
+  I: {initial: 2000, unit: unit_steps}
+flows:
+  outside -> Y: 10 + 0.1 * I - 0.1 * Y
+  Y -> outside: 0.5 * Y
+  outside -> I:
+    rate: 1 * r
+    exact: true
+  I -> outside:
+    rate: 1 * Y
+    exact: true
