@@ -49,7 +49,7 @@ from ...matrix import injected
 from ...simulate import Model, behaviour_error
 from . import cap, exact, floor, gap, onestep
 
-DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True, "gaps": True, "gap_few": 1, "gap_side": True, "gap_margin": 1.0, "exact": True, "gap_lines": True}
+DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True, "gaps": True, "gap_few": 1, "gap_side": True, "gap_margin": 1.0, "exact": True, "gap_lines": True, "gap_extra_upto": 3}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -209,7 +209,7 @@ def link_candidates(flows, ids, t, prev, dy, i, inp=None):
     return out
 
 
-def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None, o_few=0, o_side=True, o_lines=True):
+def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None, o_few=0, o_side=True, o_lines=True, o_extra_upto=3):
     """The row's flows to and from outside read instead as a gap to a target (another level or a
     measured input) closed by an inflow floored at 0, max(0, a x_j - b x_own (+ c)), and a drain of
     the row (gap.py): the floor binding where the target is below the level separates the gap's own
@@ -230,9 +230,10 @@ def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None, o_fe
     side = sorted({names.index(s) for f in mine for s in _reads(f) if s in names and s != ids[i]})
     few = o_few if o_few else 0
     # the gap may also read one other stock the main line's row did not (a PI controller's integral:
-    # the main line, misled by the floor, can drop it; 209), in a small model
+    # the main line, misled by the floor, can drop it; 209), in a small model (each extra stock
+    # multiplies the nonlinear fits: on sd-moderation's 8 stocks they took 680 s)
     extras = [[]] + ([extra] if extra else [])
-    if o_side and len(ids) <= 8:
+    if o_side and len(ids) <= o_extra_upto:
         extras += [[m] for m in range(len(ids)) if m != i and [m] != extra]
     fits = []
     for ex in extras:
@@ -351,7 +352,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             if o["exact"]:
                 cands += exact_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), inp)
             if o["gaps"]:
-                cands += gap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], inp, o["gap_few"], o["gap_side"], o["gap_lines"])
+                cands += gap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], inp, o["gap_few"], o["gap_side"], o["gap_lines"], o["gap_extra_upto"])
             if o["caps"] or o["recut"]:
                 cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"], inputs=mi)
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
