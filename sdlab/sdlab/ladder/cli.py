@@ -216,10 +216,15 @@ def show(a) -> int:
                     print(f"     {'ok ' if p['ok'] else 'X  '} {p['key']:34s} {p['kind']:16s} true {_num(p.get('true')):>12s}  found {_num(p.get('found_value')):>12s}"
                           + (f"  error {100 * err:.1f}%" if isinstance(err, (int, float)) else ""))
                 for p in s.get("spurious") or []:
-                    print(f"     +   {p['key']:34s} {p['kind']:16s} spurious: {_num(p.get('value'))} (size {p['size']:.3g} per step)")
+                    print(f"     +   {p['key']:34s} {p['kind']:16s} spurious: {_num(p.get('value'))} (size {_size(p.get('size'))} per step)")
                 for n in s.get("notes") or []:
                     print(f"     note: {n}")
     return 0
+
+
+def _size(v) -> str:
+    """A spurious part's size per step (stored as null when it is infinite, e.g. an effect part)."""
+    return f"{v:.3g}" if isinstance(v, (int, float)) else "unbounded"
 
 
 def _longrun_line(lr: dict) -> str:

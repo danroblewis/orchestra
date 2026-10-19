@@ -112,6 +112,14 @@ for `combined` on the test cases).
    - price the main line's inflow changes at 2 log n (PELT `mult` 2);
    - note in `oracle.py` that its linear fit ignores floors and caps.
 
+   Proposed by `effect_hats` (`docs/research/effect-hats.md`):
+   - pooled, re-cut inflows (`pieces.py`) as a matrix option, guarded against seasonal inflows;
+     cutting inflows into many pieces biases drains fast under counting noise (case 027);
+   - in `effects.translate`, pair a drain and a link into a move whatever stock the curve is
+     based on;
+   - effect flows should carry `driver`;
+   - compute the oracle (`oracle.py`) per row, so linear parts in effect cases get SE allowances.
+
    Also proposed by earned_pieces (`docs/research/earned_pieces.md`,
    "Proposed shared changes"):
    - the tie test in `matrix.conserve` should use both rows' SEs, without the extra log T, and
