@@ -1,0 +1,30 @@
+title: "A move that is a concave table of its source"
+level: 10
+tags: [distilled, effect, effect-table, move, nonlinear]
+tests: "a move from one tank into another that is a concave curve of the upper tank's level, sqrt(H1) / 2 as a table at 0, 4, 16, 36 and 81 (122's drain, now into a measured stock), the lower tank draining at 0.1; from phys-coupled-tanks (H1 -> H2 at k1 sqrt(H1), which every strategy writes as c + k H1, and which own_tables, rewriting only flows to and from outside, leaves straight): the move is recovered as one flow H1 -> H2 at a table of H1, not as a straight move plus pieces; announced top-ups of 80 into H1 every 100 steps"
+seed: 196
+stocks: {H1: 2, H2: 5}
+flows:
+  H1 -> H2: "1 * effect(H1, table, [[0, 0], [4, 1], [16, 2], [36, 3], [81, 4.5]])"
+  H2 -> outside: 0.1 * H2
+injections:
+  - {t: 50, stock: H1, amount: 80}
+  - {t: 150, stock: H1, amount: 80}
+  - {t: 250, stock: H1, amount: 80}
+  - {t: 350, stock: H1, amount: 80}
+  - {t: 450, stock: H1, amount: 80}
+  - {t: 550, stock: H1, amount: 80}
+  - {t: 650, stock: H1, amount: 80}
+  - {t: 750, stock: H1, amount: 80}
+  - {t: 850, stock: H1, amount: 80}
+  - {t: 950, stock: H1, amount: 80}
+  - {t: 1050, stock: H1, amount: 80}
+  - {t: 1150, stock: H1, amount: 80}
+  - {t: 1250, stock: H1, amount: 80}
+  - {t: 1350, stock: H1, amount: 80}
+  - {t: 1450, stock: H1, amount: 80}
+  - {t: 1550, stock: H1, amount: 80}
+  - {t: 1650, stock: H1, amount: 80}
+  - {t: 1750, stock: H1, amount: 80}
+  - {t: 1850, stock: H1, amount: 80}
+  - {t: 1950, stock: H1, amount: 80}

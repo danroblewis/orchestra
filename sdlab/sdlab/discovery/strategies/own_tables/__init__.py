@@ -19,7 +19,9 @@ table's values and point positions counted) beats the main line's by `margin` x 
 `halves`, the curve fitted on each half of the run (same points) must also predict the other half
 better than the straight line fitted there.
 
-Rows with era segments or effects already are left as they are. Measured inputs (opts "inputs") are
+First, a move between measured stocks that reads its source may be rewritten as a table of the
+source (moves.py), fitted on the destination's row. Rows with era segments or effects already are
+left as they are. Measured inputs (opts "inputs") are
 columns of the fit when a replaced flow read them, and every model is stepped with them.
 """
 
@@ -31,9 +33,9 @@ import numpy as np
 
 from ...identify import identify as main_line
 from ...matrix import injected
-from . import curve, onestep, split
+from . import curve, moves, onestep, split
 
-DEFAULTS = {"rising": 0.25, "margin": 2.0, "halves": True, "weighted": True, "trim": 0.03, "most": 12}
+DEFAULTS = {"rising": 0.25, "margin": 2.0, "halves": True, "weighted": True, "trim": 0.03, "most": 12, "moves": True}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -214,6 +216,16 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     score = onestep.bic(flows, ids, t, prev, dy, floor_rss, skip, mi)
     log_t = math.log(T)
     taken = []
+    # moves between measured stocks first (moves.py), then each row's flows to and from outside
+    if o["moves"]:
+        best = None
+        for fl, name in moves.candidates(flows, ids, t, prev, dy, floor_rss, o, inp):
+            sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
+            if sc < score - o["margin"] * log_t and (best is None or sc < best[1]):
+                best = (fl, sc, name)
+        if best:
+            flows, score = best[0], best[1]
+            taken.append({"row": None, "rewrite": best[2], "bic": round(score, 2)})
     for i, row in enumerate(ids):
         if row in final:
             continue

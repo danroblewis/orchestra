@@ -40,7 +40,7 @@ def run_case(case_id, variant):
     return r, score.equations(c, casemod.variant(c, variant)["noise"], model, r["flows"], d)
 
 
-@pytest.mark.parametrize("case_id", ["122-concave-drain", "123-inflow-shut-by-own-level"])
+@pytest.mark.parametrize("case_id", ["122-concave-drain", "123-inflow-shut-by-own-level", "196-concave-move-between-tanks"])
 def test_distilled_cases(case_id):
     r, s = run_case(case_id, "none-short")
     assert s["status"] == "pass", s["parts"]
