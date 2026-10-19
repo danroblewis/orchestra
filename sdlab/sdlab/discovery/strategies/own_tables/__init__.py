@@ -33,7 +33,7 @@ from ...identify import identify as main_line
 from ...matrix import injected
 from . import curve, onestep, split
 
-DEFAULTS = {"margin": 2.0, "halves": True, "weighted": True, "trim": 0.01, "most": 12}
+DEFAULTS = {"rising": 0.25, "margin": 2.0, "halves": True, "weighted": True, "trim": 0.01, "most": 12}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -172,6 +172,14 @@ def candidates(flows, ids, t, prev, dy, i, floor_rss, o, inp=None):
     if o["halves"] and not _halves_ok(y, x, cv["knots"], Z, wt):
         return []
     g = cv["values"]
+    # no reinforcing loop the main line did not find: a curve that rises with the stock's own level
+    # (rises > `rising` of its total variation) is a stock feeding itself, which an inflow that steps
+    # with time imitates when the stock follows it (053 counts-long: an inflow table of A in place of
+    # the inflow's pieces); a falling curve (a drain, a shut-off) is balancing
+    d = np.diff(g)
+    grows = any(f.get("from") is None and f.get("to") == row and _reads(f) == [row] for f in mine)
+    if not grows and float(d[d > 0].sum()) > o["rising"] * float(np.abs(d).sum()):
+        return []
     eps = 1e-3 * float(np.max(np.abs(g))) if np.any(g) else 0.0
     out = []
     for rd in split.readings(cv["knots"], g, eps):
