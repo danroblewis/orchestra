@@ -287,11 +287,31 @@ def fingerprint() -> tuple:
             tuple((n, catalog.strategy_hash(n)) for n in catalog.names()), score.score_hash())
 
 
+def _harness_hash() -> str:
+    """The ladder's own code (sdlab/ladder/*.py and the engine): when it changes, a long-running
+    watcher restarts itself, so it never plans or scores with code older than the files."""
+    import hashlib
+    from pathlib import Path
+    root = Path(__file__).resolve().parent
+    h = hashlib.sha256()
+    for p in sorted([*root.glob("*.py"), *root.parent.glob("sdtruth*.py")]):
+        h.update(p.name.encode() + p.read_bytes())
+    return h.hexdigest()
+
+
+def _restart(why: str) -> None:
+    print(f"watch: restarting with the current code ({why})", file=sys.stderr, flush=True)
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
 def watch(a) -> int:
     last = None
+    code = _harness_hash()
     print(f"Watching {casemod.CASES} and {catalog.STRATEGIES.parent} (every {a.every:g} s; ctrl-c to stop)", file=sys.stderr)
     try:
         while True:
+            if _harness_hash() != code:
+                _restart("the ladder's code changed")
             try:
                 fp = fingerprint()
             except Exception as e:                            # noqa: BLE001  (a case being edited may not parse yet)
@@ -300,7 +320,12 @@ def watch(a) -> int:
             a._more = False
             if fp != last or getattr(a, "_was_more", False):
                 last = fp
-                do_run(a, False, "watch")
+                try:
+                    do_run(a, False, "watch")
+                except Exception as e:                        # noqa: BLE001  (never die: wait, then restart on fresh code)
+                    print(f"watch: a pass failed: {e!r}; retrying after {a.every:g} s", file=sys.stderr, flush=True)
+                    time.sleep(a.every)
+                    _restart("a pass failed")
             a._was_more = a._more                           # a batch left work: plan again at once
             if not a._more:
                 time.sleep(a.every)
