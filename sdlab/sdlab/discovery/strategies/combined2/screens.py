@@ -56,3 +56,30 @@ def skip(stocks: list[dict], run: dict, opts: dict) -> dict[str, str]:
     if counts(L):
         out["odefit"] = "counts (odefit is for smooth measured levels)"
     return out
+
+
+EXACT = 1.0           # log10 of the residuals' rms over the data's rounding below which a model is exact
+
+
+def pieced(f: dict, eras: bool) -> bool:
+    """A found inflow in more than one value, or found era segments (byTime without announced eras)."""
+    if len({round(float(g.get("value") or 0), 9) for g in f.get("inflow") or []}) > 1:
+        return True
+    return not eras and len(f.get("byTime") or []) > 1
+
+
+def plain_exact(flows: list[dict], data, eras: bool) -> bool:
+    """A model with no found inflow pieces (and no found eras) that is exact to the levels' rounding
+    on data without counting noise: nothing is left for odefit or the structures search to explain
+    (each of their wins on the ladder is on counts, on a base with pieces, or on a base that misses
+    by over 100x the rounding)."""
+    from ._vendored.combined import judge as J
+
+    if not flows or data.counts:
+        return False
+    if any(pieced(f, eras) for f in flows):
+        return False
+    try:
+        return J.misfit(flows, data) < EXACT
+    except Exception:                                     # noqa: BLE001
+        return False

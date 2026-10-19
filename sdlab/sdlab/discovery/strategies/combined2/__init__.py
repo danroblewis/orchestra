@@ -13,7 +13,8 @@ Every specialist is a copy (_vendored/, each with its source commit): no other s
    main-line computation (shared.py), each under a cap, within a budget, with the main line's model
    as the fallback when none finishes (never an empty model while one is to be had). Specialists
    that cannot matter on these data are skipped (screens.py): common_cause unless two stocks move
-   alike, odefit on counts.
+   alike; odefit on counts, or where the main line's model is exact to the data's rounding without
+   inflow pieces (screens.plain_exact).
 4. The judge (choose()): every candidate's numbers refitted on equal terms (refit.py), the one-step
    likelihood (with a discrete likelihood for small counts, judge.py) plus a BIC price on every
    number written down. Candidates are set aside first by combined's runaway guard (in-data
@@ -25,7 +26,8 @@ Every specialist is a copy (_vendored/, each with its source commit): no other s
    test cells); the held error alone is dominated by inflows that really change; a model worse on
    both is the runaway kind. The lowest BIC among the rest wins; ties as combined.
 5. structures (stages.structures): the search for products, multi-stock gaps and hidden chains;
-   its model replaces the chosen one when the judge prefers it and it behaves as well.
+   its model replaces the chosen one when the judge prefers it and it behaves as well. Skipped when
+   the chosen model is exact without pieces (screens.plain_exact).
 6. archetypes (stages.archetypes): on up to 3 stocks and 120 steps, its model replaces the chosen
    one when it forecasts the run's last quarter better.
 7. kalman again: a reporting delay or a stock counted at a scale sends the data to the filter.
@@ -113,7 +115,13 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg:
     left = outer_left()
     budget = float(cfg["budget"]) if left is None else min(float(cfg["budget"]), SHARE * left)
     skip = screens.skip(stocks, run, opts) if cfg["screens"] else {}
+    data = J.Data(stocks, run, opts.get("injections"), opts.get("inputs"))
+    eras = bool(opts.get("eras") and len(opts["eras"]) > 1)
     for name in names:
+        if name == "odefit" and cfg["screens"] and name not in skip:
+            main = [r for r in (cached.get("main_results") or {}).values() if isinstance(r, dict) and r.get("flows")]
+            if main and screens.plain_exact(main[0]["flows"], data, eras):
+                skip[name] = "the main line's model is exact, without pieces"
         if name in skip:
             out.append({"name": name, "skipped": skip[name]})
             continue
@@ -280,6 +288,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for name, fn in (("structures", stages.structures), ("archetypes", stages.archetypes)):
         if name not in use or not r.get("flows"):
             continue
+        if name == "structures" and cfg["screens"]:
+            data = J.Data(stocks, run, opts.get("injections"), opts.get("inputs"))
+            if screens.plain_exact(r["flows"], data, bool(opts.get("eras") and len(opts["eras"]) > 1)):
+                trail.append({"stage": name, "skipped": "the chosen model is exact, without pieces"})
+                continue
         t0 = time.perf_counter()
         try:
             got = fn(r, stocks, run, opts)
