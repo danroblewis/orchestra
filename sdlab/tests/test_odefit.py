@@ -57,3 +57,22 @@ def test_a_square_that_turns_a_drain_into_growth_runs_away():
     # H' = -0.1 H + pump + 0.002 H^2: a drain that turns into growth past H = 25 + (a pump beyond)
     assert E.runs_away(spec, np.array([-0.1, 1.0, 0.0, 0.002]), d)
     assert not E.runs_away(spec, np.array([-0.1, 1.0, 0.0, 0.0]), d)
+
+
+def test_two_square_root_flows_in_a_cascade_are_fitted_together():
+    """H1' = pump - 0.5 sqrt(H1), H2' = 0.5 sqrt(H1) - 0.4 sqrt(H2): the roots family, both curves at once."""
+    n = 600
+    pump = 1 + 2 * ((np.arange(n) // 75) % 2)
+    X = np.zeros((n, 2))
+    X[0] = [30.0, 5.0]
+    for k in range(1, n):
+        h1, h2 = X[k - 1]
+        X[k] = [h1 + pump[k] - 0.5 * np.sqrt(h1), h2 + 0.5 * np.sqrt(h1) - 0.4 * np.sqrt(h2)]
+    stocks = [{"id": "H1", "unit": "cm"}, {"id": "H2", "unit": "cm"}]
+    run = {"t": list(range(1, n + 1)), "levels": {"H1": list(X[:, 0]), "H2": list(X[:, 1])}}
+    r = output_error(stocks, run, {"inputs": {"pump": [float(p) for p in pump]}})
+    assert r["chosen"] == "roots"
+    W = np.array(r["odefit"]["W"])           # columns H1, H2, pump, 1, sqrt H1, sqrt H2
+    assert np.allclose(W[:, 4:], [[-0.5, 0.0], [0.5, -0.4]], atol=0.01)
+    moves = [f for f in r["flows"] if f["from"] == "H1" and f["to"] == "H2"]
+    assert moves and moves[0]["effects"][0]["shape"] == "table"

@@ -29,11 +29,15 @@ class Data:
 
 
 def columns(X: np.ndarray, u: np.ndarray, spec: "Spec") -> np.ndarray:
-    """The terms' columns for states X (S x k) and inputs u (m x k): levels, inputs, 1, products."""
+    """The terms' columns for states X (S x k) and inputs u (m x k): levels, inputs, 1, products,
+    square roots of levels (floored at 0)."""
     parts = [X, u, np.ones((1, X.shape[1]))]
     if spec.products:
         with np.errstate(over="ignore", invalid="ignore"):      # a trial's run that blows up is scored, not warned about
             parts.append(np.array([X[a] * X[b] for a, b in spec.products]).reshape(len(spec.products), X.shape[1]))
+    if spec.roots:
+        with np.errstate(invalid="ignore"):
+            parts.append(np.sqrt(np.maximum(np.nan_to_num(X[spec.roots], nan=0.0, posinf=1e300), 0.0)))
     return np.vstack(parts)
 
 
@@ -41,20 +45,21 @@ class Spec:
     """Which terms each stock's change reads: mask (S x P) over the columns of `columns`."""
 
     def __init__(self, S: int, m: int, products: list[tuple[int, int]] | None = None, mask: np.ndarray | None = None,
-                 hinges: list[tuple[int, int]] | None = None):
+                 hinges: list[tuple[int, int]] | None = None, roots: list[int] | None = None):
         self.S, self.m = S, m
         self.products = list(products or [])
-        self.P = S + m + 1 + len(self.products)
+        self.roots = list(roots or [])          # stocks whose square root is a column (after the products)
+        self.P = S + m + 1 + len(self.products) + len(self.roots)
         self.mask = np.ones((S, self.P), bool) if mask is None else mask.copy()
         # hinges: (stock, sign): sign x max(0, h . [levels, inputs, 1]) added to the stock's change,
         # h free (S + m + 1 numbers each): a linear rate whose floor at 0 binds
         self.hinges = list(hinges or [])
 
     def copy(self) -> "Spec":
-        return Spec(self.S, self.m, self.products, self.mask, self.hinges)
+        return Spec(self.S, self.m, self.products, self.mask, self.hinges, self.roots)
 
     def linear(self) -> bool:
-        return not self.products and not self.hinges
+        return not self.products and not self.hinges and not self.roots
 
     @property
     def nW(self) -> int:
@@ -226,6 +231,8 @@ def _batch_steps(X, out, Ws, Hss, spec, d, st, en, rows, sg, K, S, m):
         parts = [x, u, np.ones((K, 1, len(k)))]
         if spec.products:
             parts.append(np.stack([x[:, a] * x[:, b] for a, b in spec.products], axis=1))
+        if spec.roots:
+            parts.append(np.sqrt(np.maximum(np.nan_to_num(x[:, spec.roots], nan=0.0, posinf=1e300), 0.0)))
         C = np.concatenate(parts, axis=1)                      # K x P x L
         dx = np.einsum("ksp,kpl->ksl", Ws, C)
         if spec.hinges:

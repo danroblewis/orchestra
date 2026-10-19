@@ -105,7 +105,8 @@ strategies:
     idea: For smooth measured data (physics, sensors), fit each stock's change as a sum of terms by how well whole runs follow the measurements, not one step at a time.
     how: >-
       Each stock's change in a step is a number times each level, each measured input and a
-      constant (later also products of two levels). The numbers are chosen so that the model,
+      constant (later also products of two levels, and square roots of levels: flows through a
+      hole). The numbers are chosen so that the model,
       started from an estimated state at the start of each 100-step stretch, follows the measured
       levels (output error). Measurement error then cannot shrink the numbers as it does in a
       one-step fit. Terms are dropped while BIC improves. Products are kept only if they save BIC,
@@ -117,6 +118,22 @@ strategies:
     builds_on: matrix
     status: active
     note: Physics cases 25 of 28 (best before 15); standard tests 20 more passes than matrix, none lost; docs/research/odefit.md.
+
+  master_eq:
+    idea: For counted things that move one by one (particles, items, people), fit the chance that a unit in each place moves to each other place in a step.
+    how: >-
+      Each stock's count changes by units arriving and leaving. The model is every move between
+      stocks, every drain, a share of every measured input and a constant arrival, each with a
+      per-step probability or rate. The numbers are chosen by the likelihood of the counts, whose
+      noise follows from the same numbers (units leaving one place split between its moves like a
+      dice roll; arrivals are random counts), so even a two-way exchange that cancels in the mean
+      shows up in the noise. Terms are dropped and swapped while BIC improves; then links, binding
+      products (A + B -> C) and per-era numbers are offered. The model is kept when it forecasts a
+      held-out last 30% at least as well as the main line.
+    helps_with: Particle and counting data, where every leader's one-step regression reads slow bins and two-way exchanges wrongly.
+    builds_on: none (the main line for data that are not counts)
+    status: active
+    note: docs/research/master_eq.md.
 
   shared_noise:
     idea: Tell moves, links and co-flows apart by which stocks' random wiggles happen together.

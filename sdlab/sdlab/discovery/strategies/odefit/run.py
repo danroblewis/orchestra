@@ -20,7 +20,7 @@ EARN = 10.0          # BIC a nonlinear extension must save over the linear model
 TRAIN = 0.7          # held-out check: numbers refitted on this first share, judged on the rest
 HELD_SEG = 20        # held-out segments (each with its start state fitted): the skill horizon
 JUDGE_SLACK = 3.0    # the output-error model's judge error may be at most this times the main line's
-OWN_OPTS = ("budget", "seg", "prune", "products", "hinges")
+OWN_OPTS = ("budget", "seg", "prune", "products", "hinges", "roots")
 BETTER = 0.8         # an extension's held-out error must be at most this share of the linear model's
 
 
@@ -250,7 +250,8 @@ def choose(base: dict, own: dict, stocks: list[dict], run: dict, opts: dict, sho
         r = F.fit(spec, cut(d, 0, k), seg, w, theta0=theta, max_nfev=100)
         _, Hs = spec.unpack(r["theta"])
         units = {s["id"]: s.get("unit") or "" for s in stocks}
-        o_tr = to_flows(r["W"], ids, inputs, spec.products, units, d.Y[:k].mean(axis=0), hinges=hinge_flows(spec, Hs, ids, inputs))
+        o_tr = to_flows(r["W"], ids, inputs, spec.products, units, d.Y[:k].mean(axis=0), hinges=hinge_flows(spec, Hs, ids, inputs),
+                        roots=spec.roots, tops=d.Y[:k].max(axis=0))
         eb, eo = C.output_error(b_tr, ids, run_te, opts_te, w), C.output_error(o_tr, ids, run_te, opts_te, w)
         how = "held out"
     else:
@@ -322,6 +323,16 @@ def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
         if sp.mask[:, d.S + d.m + 1:].any():
             sp, rp = prune(sp, d, w, seg, rp, began + 0.75 * budget, trace)
             offer(fam, sp, rp)
+    if opts.get("roots", True) and time.perf_counter() < deadline and (d.Y.min(axis=0) >= 0).all():
+        # square roots of the levels (flows through holes), all stocks at once: two such flows in a
+        # cascade need fitting together (own_tables fits one curve at a time)
+        sp, W2 = E.with_roots(spec, r["W"])
+        rr = F.fit(sp, d, seg, w, theta0=W2[sp.mask], max_nfev=200, starts0=r["starts"])
+        extra = set(range(d.S + d.m + 1, sp.P))
+        sp, rr = prune(sp, d, w, seg, rr, began + 0.8 * budget, trace, only=extra)
+        if sp.mask[:, d.S + d.m + 1:].any():
+            sp, rr = prune(sp, d, w, seg, rr, began + 0.85 * budget, trace)
+            offer("roots", sp, rr)
     if opts.get("hinges", False) and time.perf_counter() < deadline:
         for i in range(d.S):
             for sp, th in E.with_hinge(spec, d, r["W"], i):
@@ -333,7 +344,8 @@ def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     _, spec, r, chosen, _ = best
     units = {s["id"]: s.get("unit") or "" for s in stocks}
     _, Hs = spec.unpack(r["theta"])
-    flows = to_flows(r["W"], ids, inputs, spec.products, units, d.Y.mean(axis=0), hinges=hinge_flows(spec, Hs, ids, inputs))
+    flows = to_flows(r["W"], ids, inputs, spec.products, units, d.Y.mean(axis=0), hinges=hinge_flows(spec, Hs, ids, inputs),
+                     roots=spec.roots, tops=d.Y.max(axis=0))
     return {"flows": flows, "chosen": chosen, "tried": tried, "_fit": (spec, r["theta"], d, seg, inputs),
             "odefit": {"W": r["W"].tolist(), "mask": spec.mask.tolist(), "hinges": Hs.tolist(), "trace": trace,
                        "rss": r["rss"].tolist(), "noise_sd": sd.tolist(), "seconds": time.perf_counter() - began}}

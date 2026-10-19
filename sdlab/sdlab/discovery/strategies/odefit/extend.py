@@ -22,7 +22,18 @@ def with_products(spec: F.Spec, W: np.ndarray, family: str = "products") -> tupl
     S = spec.S
     keep = FAMILIES[family]
     prods = [(a, b) for a in range(S) for b in range(a, S) if keep(a, b)]
-    sp = F.Spec(S, spec.m, prods, hinges=spec.hinges)
+    sp = F.Spec(S, spec.m, prods, hinges=spec.hinges, roots=spec.roots)
+    sp.mask[:, : spec.S + spec.m + 1] = spec.mask[:, : spec.S + spec.m + 1]
+    W2 = np.zeros((S, sp.P))
+    W2[:, : spec.S + spec.m + 1] = W[:, : spec.S + spec.m + 1]
+    return sp, W2
+
+
+def with_roots(spec: F.Spec, W: np.ndarray) -> tuple[F.Spec, np.ndarray]:
+    """spec (linear) with the square root of every level on every row: a flow through a hole (the
+    outflow of a tank, k sqrt(level)) and what it delivers downstream."""
+    S = spec.S
+    sp = F.Spec(S, spec.m, hinges=spec.hinges, roots=list(range(S)))
     sp.mask[:, : spec.S + spec.m + 1] = spec.mask[:, : spec.S + spec.m + 1]
     W2 = np.zeros((S, sp.P))
     W2[:, : spec.S + spec.m + 1] = W[:, : spec.S + spec.m + 1]
