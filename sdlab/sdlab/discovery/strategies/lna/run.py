@@ -67,7 +67,7 @@ def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05) -> li
 #   flows(flows, cur, d, ctx) -> flows   the flows written from the atoms (a post-fit rewrite)
 HOOKS = ("data", "atoms", "before_search", "after_search", "flows")
 
-BUDGET = 60.0        # seconds for the search; past it, the matrix's answer is returned (opts "lna_budget")
+BUDGET = 40.0        # seconds for the search; past it, the matrix's answer is returned (opts "lna_budget")
 
 SCRATCH = 4          # up to this many stocks, every atom between them is tried
 
