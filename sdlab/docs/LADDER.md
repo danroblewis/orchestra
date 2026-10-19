@@ -896,6 +896,140 @@ What they find against the physics:
   (H <- pump, T <- outside, V <- force). Their own refits do not take the input columns
   (`input_columns`, Inputs above): a fix for those strategies, not for the scorer.
 
+## Real-data cases (`real/`, `cases/real/`)
+
+Measured series that someone has published a model for, on the ladder as **additional information**
+beside the formal tests (CLAUDE.md invariant 3): tag `real`, level 30, scored by held-out prediction and
+by agreement with the published model, and **never counted in the Tests pass rate** (nor in any set of
+the leaderboard). They follow [case-study-sources.md](research/case-study-sources.md), "Recommendation"
+2-4. 52 cases:
+
+| source | cases | what discovery sees | published model (`real/models.py`) | licence, how kept |
+|---|---|---|---|---|
+| BLS CPS labour force status flows | `real-bls-labour-flows` (Jan 1990 - Sep 2025, 429 months; the October 2025 survey was not run, so the series stops before it) | E, U, N (16+, seasonally adjusted, thousands); January population-control adjustments as announced injections | three-state Markov model: each gross flow = a transition rate x the stock it leaves; constant inflow and proportional outflow per stock for the 16+ population's own change | US public domain; committed snapshot `real/data/bls_cps_flows.csv` (37 kB) |
+| gauseR (Gause 1934 and others) | 29: Gause's appendix tables A3, A4, A5 (P. aurelia, P. caudatum and Stylonychia, alone and together, each raw culture its own case), figs 22, 30, 32 (Didinium with immigration every third day, as injections of one of each), 39; Huffaker's mites (3b, 4b); Isle Royale moose and wolves | one or two species' counts or volumes | gauseR's generalised Lotka-Volterra, `dX_i = X_i (r_i + sum_j a_ij X_j)`, every term (an inflow or a drain by its sign) | GPL-3 package: downloaded into the cache, never committed |
+| pomp `bsflu` | `real-bsflu-1978` (14 days) | B (in bed), C (convalescent); S and I hidden | S -> I -> B -> C -> out, infection beta S I / 763 | GPL package: downloaded, never committed |
+| Our World in Data, US household technology adoption | 21 `real-adoption-*` (each technology with at least 15 consecutive years, rising by at least 30 points) | A = share of households with it (%), N = 100 - A | Bass with a market potential m: `N -> A` innovation p (m - A) and imitation (q / m)(m - A) A | CC BY 4.0: downloaded, never committed |
+
+Left out, and why: gauseR's yeast tables and figures with irregular or sparse digitised times (no run
+of 8 consecutive samples), the 1936 Paramecium bursaria / yeast experiments (7 days each: too short to
+hold any out), the second digitisation of the same experiments (`science_f01`, `science_f02_03`), OWID
+series that are short, gappy or fall (landline). The mite immigration figures (1936 f3) are left out
+because the amounts are not in the data.
+
+**One sample is one step** (the engine's dt = 1): a month, a day, a week or a year, recorded in the
+case (`real.time.unit`). Rates are per sample, and the continuous-time models are read as their Euler
+step, as the source survey recommended.
+
+**A case file** is written by `python -m sdlab.ladder.real build` (do not edit by hand): the case
+format's title, level, tags, tests, and the published model refitted on the training part as `stocks`,
+`flows` and `injections` (the truth's place, so complexity and the twin have a model), plus a `real:`
+block: `source`, `select` (the loader's selector), `points`, `train`, `time`, `sha256` (of the series
+the case was built from), `measured_flows`, `published` (the family and how it was refitted), `twin`
+(its measurement error), `cite`, `licence`, `url`.
+
+**Variants.** `real`: the measured series; discovery gets its first `train` samples. `twin`: the
+published model simulated by the engine (noise none) at the series' length and sampling, plus Gaussian
+measurement error per measured stock, sd = rel x max(level, 5% of its largest), with rel the smaller of
+two estimates on the training samples (the published model's one-step residuals / sqrt 2, and the
+series' second differences / sqrt 6); adoption's N stays 100 - A. If a method recovers the twin but
+not the real data, the gap is the data or the published model's misfit, not the method (invariant 4).
+
+**The training part** is the first 75% of the samples, or 21 if that still leaves 3 held out (the
+strategies need 21 samples: matrix.py stops at fewer than 20 steps). It is the same for every strategy.
+
+**Data, cache, offline.** `python -m sdlab.ladder.real fetch [bls|gauseR|pomp|owid]` downloads into
+`$SDLAB_REAL_CACHE` (default `~/.cache/sdlab/real/`); the R packages' `.rda` files are converted to JSON
+tables with the optional `rdata` package (`uv run --with rdata python -m sdlab.ladder.real fetch gauseR`).
+Nothing is fetched while a case is loaded or run. A real variant whose data are missing, or whose
+download differs from the case's `sha256`, is **not run** (the planner leaves it out, `sdlab-ladder
+run/sync` prints a "skipping" line with the fetch command); its twin still runs.
+
+### Scoring (`real/score.py`)
+
+- **Held-out prediction** (both variants): from the last sample discovery saw, the found model runs free
+  to the end of the series (announced injections made; its own hidden stocks from its estimate), and so
+  do the published model refitted on the same samples and persistence (the last level held). Error =
+  squared error over the held-out samples, each stock scaled by its spread on the training samples;
+  **skill = 1 - error / persistence's error** (1 exact, 0 no better than persistence, below 0 worse;
+  none when the held-out part does not move). `beats_published`: the found model's error is at most the
+  published model's. Means clip each run at -100%, as on the bench.
+- **Agreement with the published structure** (both variants): the found and published models cut into
+  the scorer's parts (a move, an inflow, a link, an outflow, an effect, a hidden stock; an unmeasured end
+  or reader kept as `hidden`); **recall** = published parts found, **precision** = found parts above 5%
+  of the published parts' median size that are published. The real variant's status is `agrees`
+  (recall and precision 1) or `differs`: agreement, never a pass.
+- **Measured flows** (BLS): the found flows between two states on the measured levels of the training
+  months against BLS's gross flow: found at all, relative error of the mean, **matched** within 25%; the
+  net flow (A -> B minus B -> A), which levels can show, is compared too.
+- **The twin**: also the ladder's equation scorer against the published model (`score.equations`), so
+  its status is pass / equivalent / fail.
+
+The real scorer's code is in the real cases' hash (`real/case.py`, CODE), not in the ladder's score
+hash: changing it re-runs only the real cases (they are short), and nothing else is re-scored.
+
+**Separation.** `summary()["totals"]` and every per-tag count leave the real cells out; each real cell
+carries `heldout`, `heldout_published`, `beats_published`, `agree_recall`, `agree_precision`, `agrees`,
+`found_nothing`, `seen`, and on BLS `flows_matched`, `flows_found`, `flows_of`, `flows_error`;
+`summary()["real"]` gives each strategy's aggregate per variant (`real/score.py`, `aggregate`); a real
+case in `cases` carries `real` (source, points, train, time, measured flows, citation). The leaderboard
+has **Real data** columns (held-out, ≥ published, agreement, BLS flows, twin), in no set; the Now board
+has a **real data** set whose cards show the series, held-out skill beside the published model's, the
+parts matched, missed and extra, and BLS's flows. `tests/test_ladder_real.py` checks the cases, the
+loaders offline, the twin against the engine, the scorer on tiny fixtures and the separation.
+
+```
+python -m sdlab.ladder.real fetch                     # download what the cases need into the cache
+python -m sdlab.ladder.real build [--check]           # (re)write cases/real/ from the cache
+python -m sdlab.ladder.real report [--by source] [--min-seen 21] [--case ID] [--strategies ...]
+uv run sdlab-ladder run --strategies matrix --cases tag:real
+```
+
+### Results: the leaders on the real cases
+
+18 October 2026, 23:08, at e91a320: `uv run sdlab-ladder run --strategies combined,lna,effect_hats,censored,earned_pieces,matrix
+--cases tag:real --jobs 3 --timeout 300`, single-threaded, every variant downloaded; 624 runs in 15 s, no error or timeout.
+Tables from `python -m sdlab.ladder.real report` (all 52 cases) and `--min-seen 21` (the 23 cases whose training part has at
+least 21 samples). Held-out skill is the mean over the runs graded, each clipped at -100%; "published" is the published
+model refitted on the same samples, on the same runs.
+
+| strategy | real: held-out (52 / 23 cases) | published | ≥ published (23 cases) | agreement recall / precision (23 cases) | BLS flows matched | twin: held-out (52) | twin pass + equivalent |
+|---|---|---|---|---|---|---|---|
+| combined | -2.3% / -5.3% | -11.1% / 6.0% | 9/19 | 12.5% / 21.4% | 2/6 (3 found) | -9.2% | 0/52 |
+| lna | -2.5% / -5.9% | | 10/19 | 11.1% / 17.1% | 0/6 (1 found) | -1.3% | 0/52 |
+| effect_hats | -4.3% / -10.4% | | 9/19 | 11.1% / 17.1% | 0/6 (1 found) | -5.6% | 0/52 |
+| censored | -4.4% / -10.6% | | 9/19 | 12.1% / 17.3% | 0/6 (1 found) | -8.1% | 0/52 |
+| earned_pieces | 0.9% / 2.8% | | 11/19 | 10.7% / 20.4% | 0/6 (1 found) | -1.4% | 0/52 |
+| matrix | -2.5% / -5.9% | | 10/19 | 11.1% / 17.1% | 0/6 (1 found) | -2.3% | 0/52 |
+
+(The published model's twin held-out skill is 35.5% over the 52 twins: it is the twin's truth, held back only by the noise.)
+
+What they show:
+
+- **Most lab series are too short for discovery.** 29 of the 52 cases (24 of 29 gauseR, the flu, 4 adoption series) give
+  discovery fewer than 21 samples, and all six strategies return no model ("Too few steps": matrix.py needs 20 steps, and
+  the others build on it). Such a run scores as persistence (skill 0) and is counted under "found nothing". They stay on the
+  ladder as information: a method for short series would be measured there.
+- **No strategy agrees with any published structure**, on the real data or the twins (0 of 52 for each). On the 23 cases long
+  enough, recall of the published parts is 11-12.5%: the gLV crowding terms (`X x effect(X)`), Bass's imitation
+  (`N x effect(A)`) and the hidden SIR are not written by any of them.
+- **The twins fail too** (0 of 52 pass or equivalent for every strategy, held-out skill -9.2% to -1.3% against the published
+  model's 35.5%). Since the twin is the published model with the data's length and noise, these are failures of the methods
+  on short, noisy, nonlinear data, not only a limit of the real data (invariant 4).
+- **BLS.** Only combined forecasts the held-out 2016-2025 months better than persistence (17.5%; the published constant-rate
+  model -80.2%, the other five -131% to -429%, clipped to -100%), with agreement 58% / 70%. It finds E -> U at 1,608 a month
+  (BLS: 1,894) and E -> N at 3,264 (3,700), both within 25%, but N -> E at 6,909 (3,540) and none of U -> E, U -> N, N -> U:
+  the gross flows it finds are one-way, so its net flows are wrong (E <-> U: +1,608 found, -195 measured). The other five find
+  only E -> U, at 555 (71% low). On the BLS twin lna recovers most of the structure (recall 75%, held-out 92.3% against the
+  published model's 94.3%) and matrix, effect_hats and earned_pieces reach 71.7-73.1%: from levels at this noise the moves are
+  identifiable, so the gap on the real data comes from the data (rates that drift with the business cycle, January
+  population controls, the 2020 shock in the held-out years) as much as from the methods.
+- **Adoption.** earned_pieces (12.4%), lna and matrix (10.8%) forecast about as well as the refitted Bass model (12.9%) over the
+  17 graded series (4 are flat at the end: no skill), but on the twins all are negative (-9% to -25%, published 38.6%) and
+  agreement is at most 6%: what forecasts the real tails is persistence-like, not the diffusion.
+- **The boarding-school flu**: the refitted SIR forecasts the last 4 days with 97.2% skill; discovery saw 10 days and found
+  nothing.
+
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
 The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one
@@ -1723,5 +1857,6 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`, `noise_analysis.py` (the noisy variants); page `sdlab/static/probes.html` |
+| Real data | `real/` (`sources.py` fetching and the cache, `loaders.py`, `models.py` the published structures, `fit.py`, `build.py` the catalogue, `case.py`, `data.py`, `score.py`, `report.py`), `cases/real/*.yaml`, the BLS snapshot `real/data/bls_cps_flows.csv` |
 | Canonical | `canonical/` (source models, recipes, `build.py`, `coverage.py`, the importer's `read.py`, `match.py`, `timefns.py`), `pysd_import.py` |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_physics.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_physics.py`, `tests/test_ladder_real.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |

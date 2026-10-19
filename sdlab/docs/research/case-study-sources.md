@@ -1,6 +1,8 @@
 # Case-study sources: real data and published SD models for harder tests
 
 **Status:** done (survey; research only, no code changed)
+**Ingested (18 October 2026):** sources 1 (BLS), 3 (gauseR), 5 (the boarding-school flu) and 6 (OWID adoption) are
+the ladder's real-data cases, scored as section "Scoring real data" below proposes: see [LADDER.md](../LADDER.md), "Real-data cases".
 **Verdict:** few SD studies publish both the equations *and* measured stock levels; the best
 "real" tests come from three places: (1) machine-readable canonical models we simulate ourselves
 (PySD reads them), (2) small classic datasets whose accepted equations are SD-shaped (epidemics,
