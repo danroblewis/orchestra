@@ -11,6 +11,18 @@ for `combined` on the test cases).
 
 ## Queued
 
+0. **Engine features the sources need** (approved by the user on 2026-10-18; started first, since
+   items 2 and 5 depend on it). Additive changes to `sdlab/sdtruth.py`, the case format and the
+   simulator `sdlab/discovery/simulate.py`, plus the page's run input:
+   - measured input series (an outside driver given as data, which discovery sees as known input);
+   - a step `dt` smaller than one recorded step;
+   - stock ceilings;
+   - DELAY1/DELAY3/SMOOTH and PULSE/STEP/RAMP functions. Prefer exact rewrites into existing parts
+     where possible, e.g. DELAY3 as three hidden stocks.
+
+   Every existing case, example and fingerprint must give exactly the same numbers (a test
+   proves it). Discovery may read inputs only as page inputs. Document in MODEL.md / LADDER.md.
+
 1. **Noise variants (harder data).** Today a case has only noise `none` and `counts` (the
    randomness of whole units moving). Add variants for the noise real data carries, each a
    separate variant name, so every case can be run under it:

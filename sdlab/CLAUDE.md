@@ -15,7 +15,14 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
 2. **Simulations are fixed.** `sdlab/sdtruth.py`, the examples, their fingerprints, and what an
    existing ladder case means change only with the user's approval. Add a new case instead of
    changing one.
-3. **Cases are mathematical probes, not a record of outcomes.** Each case tests one property and
+   Approved on 2026-10-18: adding features the engine lacks (measured input series, a smaller
+   step `dt`, stock ceilings, delay and smoothing functions, and others the canonical and
+   real-data sources need). A new feature must be additive: every existing case, example and
+   fingerprint must give exactly the same numbers as before, with a test proving it.
+3. **Cases are mathematical probes, not a record of outcomes.** Real-data cases (tag `real`)
+   are the exception: they live on the ladder as additional information, separate from the formal
+   functional tests. They are scored by held-out prediction and agreement with the published
+   model, and never counted in the Tests pass rate. Each case tests one property and
    says which in `tests:`. Parametric cases (draws, sweeps) map where a method breaks. A failing
    draw is frozen into a fixed case so it stays tested.
 4. **A failure is diagnosed before it is fixed.** Is it the method's fault or the data's limit?

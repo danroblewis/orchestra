@@ -55,3 +55,9 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
 - **Engine:** may the case format and engine gain measured input series and a smaller simulation step (`dt`)? Without them, only the top eight survey sources are usable.
 - **Placement:** should real-data cases go on the ladder, or on a separate board (the survey suggests separate, scored by held-out prediction and agreement)?
 - **Licensing:** several sources have no licence or are GPL. May their data be downloaded at ingest time rather than committed?
+
+## 2026-10-18 19:40 (user decisions)
+
+- **Engine features approved:** measured input series, `dt`, and whatever else the sources need. They must be additive: existing numbers stay identical. Recorded in CLAUDE.md invariant 2.
+- **Real-data cases go on the ladder as additional information,** apart from the formal tests (own view; not in the Tests pass rate). Recorded in CLAUDE.md invariant 3.
+- **Downloading unlicensed or GPL data at ingest time is OK.** Don't commit it.
