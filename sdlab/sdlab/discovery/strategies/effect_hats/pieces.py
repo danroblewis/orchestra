@@ -109,7 +109,7 @@ def resegment(flows: list[dict], ids: list[str], run: dict, opts: dict | None = 
     the row's noise) and the model refitted, alternately for a few rounds; the count of values whose
     model prices best (price(): one number per value and per change, and level_price x log T more per
     value beyond the first: freely placed changes let an extra value fit the noise) is kept."""
-    from .joint import price
+    from .price import price
 
     opts = opts or {}
     lp = float(opts.get("level_price", 2.0) if level_price is None else level_price) * math.log(len(run["t"]) - 1)

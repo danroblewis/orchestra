@@ -41,7 +41,7 @@ from ...identify import judge
 from ...identify import identify as matrix_identify
 from ...matrix import injected
 from . import search
-from .joint import price, prune
+from .price import price, prune
 from .pieces import resegment
 from .screen import scan
 
