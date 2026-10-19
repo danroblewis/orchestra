@@ -754,7 +754,8 @@ as skill@H feeds them, to t = 100,000. Past the recorded run the truth's schedul
 and a found model's own changing rates (byTime segments, outside-inflow pieces it keeps) repeat
 their last period of the run; without a schedule, a found rate's last piece of at least 10 steps
 holds (a one-step piece at the very end of a fit is an end effect: held for ever it would set the
-equilibrium; it did for 34 results on 007-link before the rule).
+equilibrium; before this rule, 34 results on 007-link with skill@100 >= 90% were graded >= 10% off,
+none are now).
 
 **Constant time.** After the run, both models are periodic in time with the schedule's period P (or
 autonomous). They are stepped in chunks (a multiple of P, at least 64 steps), and stepping stops as
@@ -815,15 +816,18 @@ dots), over the whole horizon on a log-time axis, and in windows ending at 10 an
 100k and any `at` (any t when the run settled or drifts: constant time). Inline SVG, no library.
 `GET /api/ladder/longrun/{id}?at=&window=` (`longrun_series.py`) gives its data.
 
-**What it showed** (October 2026, `sdlab-ladder longrun` then the store): of 9,581 results with
-in-sample skill@100 >= 90%, 185 have err@100k or eq err >= 10% or are flagged. The worst are models
-with a nearly neutral mode that skill@100 cannot see: output_error on 034 and 038 (skill@100 100%;
-two stocks draining each other at almost equal rates, rho 1.000004-1.000016: at 1k the gap is 7x the
-truth's range and a stock dies out), effect_hats on 043#2 (rho 1.0147, unstable, eq err 54%),
-earned_pieces on 043#2 none-long (1.8% at 1k, 190% at 100k), sindy on 032 none-long (tau 11,724
-steps vs 9.5); and 055-sweep-loop-gain#7 (a truth with tau 348) where matrix, held_out and
-hidden_transit run away (skill@100 97%, err@100k 191x). Most of the rest settle 10-15% off (gaps
-in equilibrium from noisy rates: 048 draws, 020, 017, 018 effects, 033).
+**What it showed** (18 October 2026, code 63374b0: `sdlab-ladder longrun`, then the latest results
+in the store): of 9,288 graded results with in-sample skill@100 >= 90%, 174 have err@100k or eq err
+>= 10% or are flagged. The worst have a (nearly) neutral mode that skill@100 cannot see:
+055-sweep-loop-gain#7 none-short (a truth with tau = 348 steps), where matrix, held_out,
+hidden_transit and lna_pulses have skill@100 97% but an exactly neutral mode (rho 1.0000000): their
+error is 99% of the truth's range at 1k, 18x at 10k and 191x at 100k (runaway); sindy on 043#2
+none-long (skill@100 100%, rho 1.0000182: 1.2% at 1k, 13% at 10k, 242% at 100k, a stock dies out);
+output_error on 034 none-short (skill@100 100%: 0.007% at 1k, 0.75% at 10k, 58% at 100k, two
+stocks draining each other at almost equal rates, rho 1.0000045, one dies out); sindy on 032
+none-long (slowest tau 11,724 steps vs 9.5: 2% at 1k, 23% at 100k). The rest (167) settle 10-15%
+off: an equilibrium shifted by noisy rates (048 draws #6 and #7 counts-short, where 6 strategies,
+even passing ones, settle 14.5% off; 020, 033), or effects and floors (017, 018, 024).
 
 ## Reading the matrix
 
