@@ -268,7 +268,8 @@ def cell(row: dict | None) -> dict:
 def aggregate(cells: list[dict]) -> dict:
     """One strategy over the real cells: per variant (real, twin) {cells, run, heldout (mean skill, each clipped at -100%),
     heldout_published, beats (runs at least as good as the published model), graded, agree (mean recall, precision; runs
-    agreeing), flows (BLS: matched of), and on the twin: pass, equivalent, fail}; error and timeout counted, never graded."""
+    agreeing), flows (BLS: matched of), found_nothing, and on the twin: pass, equivalent, fail}; error and timeout counted,
+    never graded; beats counts the graded runs only (a held-out part that does not move has no skill)."""
     out = {}
     for v in ("real", "twin"):
         cs = [c for c in cells if c["variant"] == v]
@@ -278,10 +279,11 @@ def aggregate(cells: list[dict]) -> dict:
         rec = [c["agree_recall"] for c in ran if c.get("agree_recall") is not None]
         pre = [c["agree_precision"] for c in ran if c.get("agree_precision") is not None]
         g = {"cells": len(cs), "run": len(ran), "heldout": sum(hs) / len(hs) if hs else None, "heldout_published": sum(hp) / len(hp) if hp else None,
-             "graded": len(hs), "beats": sum(bool(c.get("beats_published")) for c in ran), "agrees": sum(bool(c.get("agrees")) for c in ran),
+             "graded": len(hs), "beats": sum(bool(c.get("beats_published")) for c in ran if c.get("heldout") is not None and c.get("heldout_published") is not None),
              "found_nothing": sum(bool(c.get("found_nothing")) for c in ran),
              "agree_recall": sum(rec) / len(rec) if rec else None, "agree_precision": sum(pre) / len(pre) if pre else None,
              **{k: sum(c.get("status") == k for c in ran) for k in ("pass", "equivalent", "fail", "error", "timeout", "agrees", "differs")}}
+        g["agrees"] = sum(bool(c.get("agrees")) for c in ran)              # agreement with the published structure (either variant)
         fl = [c for c in ran if c.get("flows_of")]
         if fl:
             g["flows_matched"], g["flows_of"], g["flows_found"] = sum(c["flows_matched"] for c in fl), sum(c["flows_of"] for c in fl), sum(c["flows_found"] for c in fl)
