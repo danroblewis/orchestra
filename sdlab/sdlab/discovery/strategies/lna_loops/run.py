@@ -1,67 +1,46 @@
-"""lna's steps (a copy of lna/run.py's discover, importing lna's modules) with one hook: `finish`,
-applied to the fitted atoms after lna's search and before they are written as flows."""
+"""The loop stage as a hook on lna's discover (lna/run.py HOOKS): after lna's search, every
+loop-closing link (outside -> a reading b, where a moves into b) not in the model is offered back,
+fitted by the same likelihood, and kept when its likelihood gain is above `price`. No search code
+is copied: lna's data, budget, stride and measured inputs are lna's own."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from ...matrix import configurations, injected
-from ..lna.atoms import restricted, superset
-from ..lna.changes import split_eras
-from ..lna.fit import Data, extra_variance, fit, mean_start
-from ..lna.flows import to_flows
-from ..lna.run import SCRATCH, bic, buckets, dispersion, screen, search
-from ..lna.changes import pieces
+from ..lna.atoms import Atom
+from ..lna.fit import OutOfTime, fit
+
+PRICE = 0.0
 
 
-def discover(stocks: list[dict], run: dict, opts: dict, base: dict, finish=None) -> dict | None:
-    ids = [s["id"] for s in stocks]
-    S = len(ids)
-    t = run["t"]
-    if len(t) < 30:
-        return None
-    lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
-    prev, dy = lv[:, :-1], np.diff(lv, axis=1)
-    if opts.get("injections"):
-        inj = injected(opts["injections"], ids, t)[:, 1:]
-        prev, dy = prev + inj, dy - inj
-    conf = configurations(opts.get("eras"), t)
-    bucket = buckets(conf[1], len(conf[0])) if conf else None
-    if bucket is not None and max(bucket) < 1:
-        conf, bucket = None, None
-    d = Data(prev, dy, np.asarray(bucket)[conf[1]] if conf else None)
-    unit = [s.get("unit") or "" for s in stocks]
-    final = {k for k, s in enumerate(stocks) if s.get("final")}
-    group = [s.get("group") for s in stocks]
-    if S <= SCRATCH:
-        atoms = superset(S, unit, final, group, gaps=False)
-    else:
-        index = {v: i for i, v in enumerate(ids)}
-        coef = [{index[j]: k for j, k in (row.get("coef") or {}).items() if j in index and abs(k) > 1e-9} for row in base.get("matrix") or []]
-        if len(coef) != S:
-            return None
-        for s_, row in enumerate(screen(prev, dy)):
-            for j, k in row.items():
-                coef[s_].setdefault(j, k)
-        atoms = restricted(S, coef, unit, final)
-    phi = dispersion(atoms, mean_start(atoms, d), d)
-    if phi < 0.2:
-        return None
-    if conf:
-        atoms = split_eras(atoms, max(bucket) + 1)
-    cur = fit(atoms, d)
-    d.free = extra_variance(cur, d)
-    full = fit(atoms, d, cur.theta, tau=cur.tau)
-    cur = search(pieces(full, d, mult=0.5), d)
-    if any(a.span for a in cur.atoms):
-        other = search(full, d)
-        if bic(other, d) < bic(cur, d):
-            cur = other
-    extra = {}
-    if finish is not None:
-        cur, extra = finish(cur, d, unit, final, group)
-    at = lambda k: t[k + 1]  # noqa: E731
-    flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
-    return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1, **extra,
-            "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
+def close_loops(cur, d, price: float = PRICE):
+    """(the model with the loop-closing links that pay `price`, their descriptions)."""
+    live = [(a, th) for a, th in zip(cur.atoms, cur.theta) if th > 0]
+    moves = {(a.src, a.dst) for a, _ in live if a.kind == "move" and a.era is None}
+    have = {(a.dst, a.driver) for a, _ in live if a.kind in ("link", "grow")} | {(a.dst, a.src) for a, _ in live if a.kind == "move"}
+    added = []
+    for src, dst in sorted(moves):
+        if (src, dst) in have:          # a already reads b (a link, or a move back from b)
+            continue
+        cand = Atom("link", dst=src, driver=dst)
+        g = fit(cur.atoms + [cand], d, np.append(cur.theta, 1e-3), tau=cur.tau)
+        if g.theta[-1] > 0 and cur.nll - g.nll > price:
+            cur = g
+            added.append((src, dst))
+    return cur, added
+
+
+def stage(state: dict, price: float = PRICE) -> dict:
+    """{after_search} for the loop stage; `state["loops_closed"]` lists the links kept."""
+
+    def after_search(cur, d, ctx):
+        try:
+            g, added = close_loops(cur, d, price)
+        except OutOfTime:                # past lna's budget: lna's reading stands
+            state["loops_out_of_time"] = True
+            return cur
+        ids = ctx["ids"]
+        state["loops_closed"] = [f"outside -> {ids[s]} reading {ids[t]}" for s, t in added]
+        return g
+
+    return {"after_search": after_search}

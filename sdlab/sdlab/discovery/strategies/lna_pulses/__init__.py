@@ -8,7 +8,8 @@ each step's change before the counting-noise likelihood reads the moves, so a bu
 read as a move, a link or a drain. Without noise (where lna is the matrix's reading) the chosen
 model's outside inflows are re-measured with the pulse steps left out. Either way the pulses are
 returned as outside flows that arrive in those steps only (as `impulses` writes them). With no
-pulse found, the result is lna's.
+pulse found, the result is lna's. The pulses go out through lna's `data` hook (run.py); lna's
+searches here share one lna budget, so lna's data handling, stride and time limit are lna's own.
 """
 
 from __future__ import annotations
@@ -19,14 +20,13 @@ import numpy as np
 from scipy.stats import chi2
 
 from ...identify import identify as _matrix
-from ...identify import judge
 from ...matrix import injected
 from ...simulate import Model
 from ..impulses import _flows as pulse_flows
 from ..impulses import find_pulses
-from ..lna import GUARD
+from ..lna import GUARD, judge
 from ..lna import identify as _lna
-from .run import discover
+from .run import Budget, stage
 
 
 Z = 6.0          # a pulse is kept when it stands this many robust SDs above what the model leaves
@@ -133,27 +133,30 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     ids = [s["id"] for s in stocks]
     T = len(run["t"]) - 1
     base = _matrix(stocks, run, dict(opts))
-    r = None
+    rest = {k: v for k, v in opts.items() if k != "candidates"}
     inj = opts.get("injections")
+    budget = Budget(opts)
+    r, flows, pulses = None, None, {}
     for _ in range(3):                 # lna with the pulses taken out; the pulses measured again on its model
         if not found:
             return _lna(stocks, run, opts)
         known = np.zeros((len(ids), T))
-        for i, a in found.items():
-            known[ids.index(i)] = a
-        r = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base, known=known)
-        if r is None:
+        for k, a in found.items():
+            known[ids.index(k)] = a
+        got = budget.discover(stocks, run, rest, base, stage(known))
+        if got is None:                # no counting noise (the first search), or out of time on a later one: the last kept
             break
+        r = got
         flows, pulses = remeasure(r["flows"], ids, run, found, inj)
-        same = pulses.keys() == found.keys() and all(np.array_equal(pulses[i] != 0, found[i] != 0) for i in pulses)
+        same = pulses.keys() == found.keys() and all(np.array_equal(pulses[k] != 0, found[k] != 0) for k in pulses)
         found = pulses
         if same:
             break
-    if r is not None and not found:
+    if r is not None and not pulses:
         return _lna(stocks, run, opts)
     if r is not None:
-        mine = judge(flows + [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])], stocks, run, injections=opts.get("injections"))
-        theirs = judge(base["flows"], stocks, run, injections=opts.get("injections"))
+        mine = judge(flows + [g for k, a in pulses.items() for g in pulse_flows(k, a, run["t"])], stocks, run, opts)
+        theirs = judge(base["flows"], stocks, run, opts)
         if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
             r = None
     if r is None:                       # no counting noise (or the guard): the matrix's reading, re-measured
@@ -161,6 +164,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if not pulses:
             return _lna(stocks, run, opts)
         r = dict(base)
-    r["flows"] = flows + [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])]
-    r["pulses"] = {i: int((a != 0).sum()) for i, a in pulses.items()}
+    r["flows"] = flows + [g for k, a in pulses.items() for g in pulse_flows(k, a, run["t"])]
+    r["pulses"] = {k: int((a != 0).sum()) for k, a in pulses.items()}
     return r

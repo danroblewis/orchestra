@@ -124,6 +124,7 @@ def segmented(cur: Fitted, d: Data, s: int, idx: list[int], rows: list[np.ndarra
     other flows leave, a switch priced at log T), refitted with lna's likelihood, alternating.
     (score with switches priced, fitted, new rows) of the best K, or None."""
     S, T = d.dy.shape
+    P0 = d.prev.shape[0]                     # level rows go after every row of prev (stocks, inputs, other columns)
     vals = np.array([cur.theta[i] for i in idx])
     lens = np.array([b - a for a, b in (cur.atoms[i].span for i in idx)], dtype=float)
     u, var = _leftover(cur, _aug(d, rows), s, idx)
@@ -140,10 +141,9 @@ def segmented(cur: Fitted, d: Data, s: int, idx: list[int], rows: list[np.ndarra
             path = new
             used = [k for k in range(K) if (path == k).any()]
             new_rows = [(path == k).astype(float) for k in used]
-            base = S + len(rows)
-            atoms = [cur.atoms[i] for i in rest] + [Atom("link", dst=s, driver=base + k) for k in range(len(used))]
+            atoms = [cur.atoms[i] for i in rest] + [Atom("link", dst=s, driver=P0 + len(rows) + k) for k in range(len(used))]
             dg = _aug(d, rows + new_rows)
-            g = fit(atoms, dg, np.concatenate([cur.theta[rest], np.maximum(L[used], 1e-3)]), tau=_tau(cur, base + len(used)))
+            g = fit(atoms, dg, np.concatenate([cur.theta[rest], np.maximum(L[used], 1e-3)]), tau=_tau(cur, S + len(rows) + len(used)))
             L = np.array([g.theta[len(rest) + used.index(k)] if k in used else L[k] for k in range(K)])
             # what the other flows leave, on the refitted model (the level atoms dropped)
             gl = Fitted(g.atoms, g.theta, g.nll, None if g.tau is None else g.tau)
@@ -161,6 +161,7 @@ def regroup(cur: Fitted, d: Data, max_levels: int = MAX_LEVELS) -> tuple[Fitted,
     rows, with every cut or switch priced at log T). Stocks are taken in turn; a grouping (the
     pieces' own cuts, or switches found afresh) stays when it lowers that BIC."""
     S, T = d.dy.shape
+    P0 = d.prev.shape[0]                     # level rows go after every row of prev (stocks, inputs, other columns)
     c1 = None
     rows: list[np.ndarray] = []
     owner: list[int] = []                    # rows[k] belongs to stock owner[k]
@@ -186,8 +187,7 @@ def regroup(cur: Fitted, d: Data, max_levels: int = MAX_LEVELS) -> tuple[Fitted,
                     if g == k:
                         m[a:b] = 1.0
                 new_rows.append(m)
-            base = len(rows) + S
-            atoms = [cur.atoms[i] for i in rest] + [Atom("link", dst=s, driver=base + k) for k in range(K)]
+            atoms = [cur.atoms[i] for i in rest] + [Atom("link", dst=s, driver=P0 + len(rows) + k) for k in range(K)]
             start = np.concatenate([cur.theta[rest], [float(np.average(vals[np.array(lab) == k], weights=lens[np.array(lab) == k])) for k in range(K)]])
             dg = _aug(d, rows + new_rows)
             g = fit(atoms, dg, start, tau=_tau(cur, S + len(rows) + K))
@@ -208,11 +208,11 @@ def regroup(cur: Fitted, d: Data, max_levels: int = MAX_LEVELS) -> tuple[Fitted,
             owner += [s] * len(new_rows)
     if not rows:
         return cur, {}, best_bic
-    keep = [i for i, a in enumerate(cur.atoms) if a.driver is None or a.driver < S]
+    keep = [i for i, a in enumerate(cur.atoms) if a.driver is None or a.driver < P0]
     levels: dict[int, list] = {}
     for i, a in enumerate(cur.atoms):
-        if a.driver is not None and a.driver >= S and cur.theta[i] > 0:
-            levels.setdefault(a.dst, []).append((rows[a.driver - S] > 0, float(cur.theta[i])))
+        if a.driver is not None and a.driver >= P0 and cur.theta[i] > 0:
+            levels.setdefault(a.dst, []).append((rows[a.driver - P0] > 0, float(cur.theta[i])))
     tau = None if cur.tau is None else cur.tau[:S]
     return Fitted([cur.atoms[i] for i in keep], cur.theta[keep], cur.nll, tau), levels, best_bic
 

@@ -1,67 +1,41 @@
-"""lna's steps (a copy of lna/run.py's discover, importing lna's modules) with known changes: an
-array (stocks x steps) taken out of each step's change before anything is fitted (pulses found
-beforehand), so no flow has to absorb them."""
+"""The pulses stage as a hook on lna's discover (lna/run.py HOOKS): known changes, an array (stocks x
+steps) of pulses found beforehand, taken out of each step's change before anything is fitted, so no
+flow has to absorb them. No search code is copied: lna's data, budget, stride and measured inputs
+are lna's own."""
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
-from ...matrix import configurations, injected
-from ..lna.atoms import restricted, superset
-from ..lna.changes import split_eras
-from ..lna.fit import Data, extra_variance, fit, mean_start
-from ..lna.flows import to_flows
-from ..lna.run import SCRATCH, bic, buckets, dispersion, screen, search
-from ..lna.changes import pieces
+from ..lna.run import BUDGET
+from ..lna.run import discover as lna_discover
 
 
-def discover(stocks: list[dict], run: dict, opts: dict, base: dict, known: np.ndarray | None = None) -> dict | None:
-    ids = [s["id"] for s in stocks]
-    S = len(ids)
-    t = run["t"]
-    if len(t) < 30:
-        return None
-    lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
-    prev, dy = lv[:, :-1], np.diff(lv, axis=1)
-    if opts.get("injections"):
-        inj = injected(opts["injections"], ids, t)[:, 1:]
-        prev, dy = prev + inj, dy - inj
-    if known is not None:
-        dy = dy - known
-    conf = configurations(opts.get("eras"), t)
-    bucket = buckets(conf[1], len(conf[0])) if conf else None
-    if bucket is not None and max(bucket) < 1:
-        conf, bucket = None, None
-    d = Data(prev, dy, np.asarray(bucket)[conf[1]] if conf else None)
-    unit = [s.get("unit") or "" for s in stocks]
-    final = {k for k, s in enumerate(stocks) if s.get("final")}
-    group = [s.get("group") for s in stocks]
-    if S <= SCRATCH:
-        atoms = superset(S, unit, final, group, gaps=False)
-    else:
-        index = {v: i for i, v in enumerate(ids)}
-        coef = [{index[j]: k for j, k in (row.get("coef") or {}).items() if j in index and abs(k) > 1e-9} for row in base.get("matrix") or []]
-        if len(coef) != S:
+def stage(known: np.ndarray | None) -> dict:
+    """{data}: the known changes out of dy (before lna's stride, so every step's pulse is taken out)."""
+    if known is None:
+        return {}
+
+    def data(prev, dy, ctx):
+        return prev, dy - known
+
+    return {"data": data}
+
+
+class Budget:
+    """lna's search budget (opts "lna_budget", default lna's BUDGET) shared by every lna search a
+    strategy runs, so that repeated searches stay within one lna's time."""
+
+    def __init__(self, opts: dict):
+        self.end = time.monotonic() + float(opts.get("lna_budget", BUDGET))
+
+    def left(self) -> float:
+        return self.end - time.monotonic()
+
+    def discover(self, stocks, run, opts, base, hooks=None):
+        """lna's discover with what is left of the budget; None past it (as lna's own)."""
+        if self.left() <= 0:
             return None
-        for s_, row in enumerate(screen(prev, dy)):
-            for j, k in row.items():
-                coef[s_].setdefault(j, k)
-        atoms = restricted(S, coef, unit, final)
-    phi = dispersion(atoms, mean_start(atoms, d), d)
-    if phi < 0.2:
-        return None
-    if conf:
-        atoms = split_eras(atoms, max(bucket) + 1)
-    cur = fit(atoms, d)
-    d.free = extra_variance(cur, d)
-    full = fit(atoms, d, cur.theta, tau=cur.tau)
-    cur = search(pieces(full, d, mult=0.5), d)
-    if any(a.span for a in cur.atoms):
-        other = search(full, d)
-        if bic(other, d) < bic(cur, d):
-            cur = other
-    at = lambda k: t[k + 1]  # noqa: E731
-    flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
-    return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
-            "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
+        return lna_discover(stocks, run, {**opts, "lna_budget": self.left()}, base, hooks)

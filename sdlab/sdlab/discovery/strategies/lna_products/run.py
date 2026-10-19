@@ -1,28 +1,29 @@
-"""lna's steps (a copy of lna/run.py's discover, importing lna's modules) with product columns: a
-virtual stock a x c / mean(c) for each pair of measured stocks, so that a move a -> b (or a's
-outflow) can run at k x a x c / mean(c), a rate scaled by a linear effect of c. Virtual stocks have
-no flows of their own and no change (their rows add a constant to the likelihood); only the moves
-and outflows read them."""
+"""The products stage as hooks on lna's discover (lna/run.py HOOKS): product columns, a virtual
+row a x c / mean(c) for each pair of measured stocks appended to prev (after the stocks and any
+measured inputs), so that a move a -> b (or a's outflow) can run at k x a x c / mean(c), a rate
+scaled by a linear effect of c. Virtual rows have no flows of their own and no change; lna's search
+never reads them (its atoms are lna's), so lna's own reading is unchanged. After lna's search each
+kept move and outflow is offered scaled by every other stock, and the search runs again from there:
+kept when the BIC gain is MARGIN x log T. No search code is copied."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from ...matrix import configurations, injected
-from ..lna.atoms import Atom, superset
-from ..lna.changes import pieces, split_eras
-from ..lna.fit import Data, extra_variance, fit, mean_start
-from ..lna.flows import to_flows
-from ..lna.run import SCRATCH, bic, buckets, dispersion, search
+from ..lna.atoms import Atom
+from ..lna.fit import OutOfTime, fit
+from ..lna.run import SCRATCH, bic, search
+from ..lna_levels.run import written
 
 
 MARGIN = 1.0         # a model with products must beat lna's by this many log T in BIC (the price of two numbers: the
                      # products offered are many, so one that pays only its own price is too often noise)
 
 
-def product_atoms(S: int, unit: list[str], final: set[int]) -> tuple[list[Atom], list[tuple[int, int]]]:
-    """(atoms, pairs): pairs[v] = (a, c) is virtual stock S + v; each pair's moves a -> b (b != c,
-    same unit) and a's outflow."""
+def product_atoms(S: int, unit: list[str], final: set[int], base: int | None = None) -> tuple[list[Atom], list[tuple[int, int]]]:
+    """(atoms, pairs): pairs[v] = (a, c) is virtual row base + v (default S); each pair's moves
+    a -> b (b != c, same unit) and a's outflow."""
+    base = S if base is None else base
     pairs, atoms = [], []
     for a in range(S):
         if a in final:
@@ -30,7 +31,7 @@ def product_atoms(S: int, unit: list[str], final: set[int]) -> tuple[list[Atom],
         for c in range(S):
             if c == a:
                 continue
-            v = S + len(pairs)
+            v = base + len(pairs)
             pairs.append((a, c))
             atoms.append(Atom("out", src=a, driver=v))
             for b in range(S):
@@ -39,71 +40,57 @@ def product_atoms(S: int, unit: list[str], final: set[int]) -> tuple[list[Atom],
     return atoms, pairs
 
 
-def discover(stocks: list[dict], run: dict, opts: dict, base: dict, margin: float = MARGIN) -> dict | None:
-    ids = [s["id"] for s in stocks]
-    S = len(ids)
-    t = run["t"]
-    if len(t) < 30 or S < 3 or S > SCRATCH:
-        return None
-    lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
-    prev, dy = lv[:, :-1], np.diff(lv, axis=1)
-    if opts.get("injections"):
-        inj = injected(opts["injections"], ids, t)[:, 1:]
-        prev, dy = prev + inj, dy - inj
-    conf = configurations(opts.get("eras"), t)
-    bucket = buckets(conf[1], len(conf[0])) if conf else None
-    if bucket is not None and max(bucket) < 1:
-        conf, bucket = None, None
-    cfg = np.asarray(bucket)[conf[1]] if conf else None
-    unit = [s.get("unit") or "" for s in stocks]
-    final = {k for k, s in enumerate(stocks) if s.get("final")}
-    group = [s.get("group") for s in stocks]
-    atoms = superset(S, unit, final, group, gaps=False)
-    phi = dispersion(atoms, mean_start(atoms, Data(prev, dy, cfg)), Data(prev, dy, cfg))
-    if phi < 0.2:
-        return None
-    extra, pairs = product_atoms(S, unit, final)
-    norm = [float(max(1e-9, np.maximum(prev[c], 0).mean())) for _, c in pairs]
-    vprev = np.array([np.maximum(prev[a], 0) * np.maximum(prev[c], 0) / n for (a, c), n in zip(pairs, norm)]).reshape(len(pairs), -1)
-    P = np.vstack([prev, vprev])
-    D = np.vstack([dy, np.zeros_like(vprev)])
-    d = Data(P, D, cfg)
-    if conf:
-        atoms = split_eras(atoms, max(bucket) + 1)
-    # lna's own search first (the virtual rows are inert), then each kept move and outflow offered
-    # scaled by every other stock, and the search again from there: the lower BIC wins
-    cur = fit(atoms, d)
-    d.free = extra_variance(cur, d)
-    d.free[S:] = False
-    full = fit(atoms, d, cur.theta, tau=cur.tau)
-    cur = search(pieces(full, d, mult=0.5), d)
-    if any(a.span for a in cur.atoms):
-        other = search(full, d)
-        if bic(other, d) < bic(cur, d):
-            cur = other
-    at = lambda k: t[k + 1]  # noqa: E731
-    lna_flows = to_flows(cur.atoms, cur.theta, ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs], P, at, *((conf[0], conf[2], bucket) if conf else ()))
-    offer = []
-    for a, th in zip(cur.atoms, cur.theta):
-        if th <= 0 or a.era is not None or a.kind not in ("move", "out") or a.uses:
-            continue
-        offer += [x for x in extra if x.kind == a.kind and x.src == a.src and x.dst == a.dst and x not in offer]
-    gain = None
-    if offer:
-        g = fit(cur.atoms + offer, d, np.concatenate([cur.theta, np.full(len(offer), 1e-3)]), tau=cur.tau)
-        g = search(g, d)
-        gain = float(bic(cur, d) - bic(g, d))
-        if gain > margin * np.log(d.dy.shape[1]):
-            cur = g
-    names = ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs]
-    flows = to_flows(cur.atoms, cur.theta, names, P, at, *((conf[0], conf[2], bucket) if conf else ()))
-    flows = with_effects(flows, ids, pairs, norm, prev)
-    if flows is None:
-        return None
-    return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "lna_flows": lna_flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
-            "product_gain": gain, "products": [f"{names[a.driver]}" for a, th in zip(cur.atoms, cur.theta) if th > 0 and a.driver is not None and a.driver >= S],
-            "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
+def stage(state: dict, margin: float = MARGIN) -> dict:
+    """{data, after_search, flows} for the products stage (3 to SCRATCH stocks; otherwise nothing);
+    `state` collects what the strategy reports (lna_cur, lna_flows, pairs, products, product_gain)."""
+
+    def data(prev, dy, ctx):
+        S = len(ctx["ids"])
+        if not 3 <= S <= SCRATCH:
+            return prev, dy
+        extra, pairs = product_atoms(S, ctx["unit"], ctx["final"], base=prev.shape[0])
+        norm = [float(max(1e-9, np.maximum(prev[c], 0).mean())) for _, c in pairs]
+        vprev = np.array([np.maximum(prev[a], 0) * np.maximum(prev[c], 0) / n for (a, c), n in zip(pairs, norm)]).reshape(len(pairs), -1)
+        ids = ctx["ids"]
+        ctx["names"] = (ctx.get("names") or list(ids)) + [f"{ids[a]}*{ids[c]}" for a, c in pairs]
+        state.update(extra=extra, pairs=pairs, norm=norm, first=prev.shape[0])
+        return np.vstack([prev, vprev]), dy
+
+    def after_search(cur, d, ctx):
+        state.setdefault("lna_cur", cur)
+        state.setdefault("base", ctx["base"])
+        extra = state.get("extra")
+        if not extra:
+            return cur
+        offer = []
+        for a, th in zip(cur.atoms, cur.theta):
+            if th <= 0 or a.era is not None or a.kind not in ("move", "out") or a.uses:
+                continue
+            offer += [x for x in extra if x.kind == a.kind and x.src == a.src and x.dst == a.dst and x not in offer]
+        if not offer:
+            return cur
+        try:
+            g = search(fit(cur.atoms + offer, d, np.concatenate([cur.theta, np.full(len(offer), 1e-3)]), tau=cur.tau), d)
+        except OutOfTime:                # past lna's budget: lna's reading stands
+            state["products_out_of_time"] = True
+            return cur
+        state["product_gain"] = gain = float(bic(cur, d) - bic(g, d))
+        return g if gain > margin * np.log(d.dy.shape[1]) else cur
+
+    def flows(flows, cur, d, ctx):
+        state.setdefault("lna_flows", written(state["lna_cur"], d, ctx))
+        pairs = state.get("pairs")
+        if not pairs:
+            return flows
+        S, lo = len(ctx["ids"]), state["first"]
+        state["products"] = [ctx["names"][a.driver] for a, th in zip(cur.atoms, cur.theta) if th > 0 and a.driver is not None and lo <= a.driver < lo + len(pairs)]
+        out = with_effects(flows, ctx["ids"], pairs, state["norm"], d.prev[:S])
+        if out is None:                  # a product in eras or pieces cannot be written: lna's own reading
+            state["products"] = []
+            return list(state["lna_flows"])
+        return out
+
+    return {"data": data, "after_search": after_search, "flows": flows}
 
 
 def with_effects(flows: list[dict], ids: list[str], pairs: list, norm: list[float], prev: np.ndarray) -> list[dict] | None:
