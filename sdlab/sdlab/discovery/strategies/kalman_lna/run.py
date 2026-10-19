@@ -14,7 +14,7 @@ from ..lna.flows import to_flows
 from . import search as S
 from .model import Fitted, Layout, OutOfTime, Problem
 from .hidden import hidden
-from .robust import gross_errors
+from .robust import FRAC, RATIO, gross_errors
 
 BUDGET = 100.0        # seconds for the whole search (opts "kalman_budget"); past it, None
 MAX_LAG = 8           # reporting delays tried where injections or eras pin one
@@ -182,8 +182,25 @@ class Session:
         # gross errors the filter sees (each value's standardised innovation)
         self.gross = np.zeros_like(self.seen)
         for _ in range(3):
-            z = np.nan_to_num(np.abs(pr.smoothed(cur)[2]))
-            self.gross |= self.seen & (z > Z_GROSS)
+            sm = pr.smoothed(cur)
+            z = np.nan_to_num(np.abs(sm[2]))
+            # a gross error is far off in its noise and also large against the level itself (a
+            # model that misfits noise-free data can put a value many standard errors off)
+            fit = pr._report(sm[0]) * (cur.scale if cur.scale is not None else 1.0)
+            far = np.abs(self.Y - fit) > FRAC * (np.abs(fit) + 10.0)
+            # and back straight away: off from both its neighbours, in the same direction, by RATIO
+            # times their own difference (a pulse that decays leaves its neighbours far apart)
+            Y = self.Y
+            back = np.zeros_like(far)
+            a, b = Y[1:-1] - Y[:-2], Y[1:-1] - Y[2:]
+            back[1:-1] = (np.sign(a) == np.sign(b)) & (np.minimum(np.abs(a), np.abs(b)) > RATIO * np.abs(Y[2:] - Y[:-2]))
+            hit = self.seen & (z > Z_GROSS) & far & back
+            # and alone: a run of values off together is a misfit of the model (a transient it does
+            # not follow), not a few independent gross errors
+            nb = np.zeros_like(hit)
+            nb[1:] |= hit[:-1]
+            nb[:-1] |= hit[1:]
+            self.gross |= hit & ~nb
             bad = pr.lay.mask & (z > Z_OUT)
             if not bad.any():
                 break
