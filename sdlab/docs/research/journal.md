@@ -139,3 +139,39 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
   - or discovery fits continuous time.
 
   The first is a scoring change.
+
+## 2026-10-18 20:45 (hourly cycle)
+
+**Health**
+- **Server:** summary 0.75 s warm; one listener.
+- **Watcher:** running. Its latest pass planned 47,564 items (42,706 to run). The backlog keeps growing: the engine change altered every strategy's hash, and new cases keep arriving.
+- **Machine:** 28 cores fully used (~22 by SD Lab), so more watcher workers would not help.
+- **Tests:** 957 passed, 39 skipped, 2 failed. Both failures are missing explanations.yaml entries for in-progress packages: `kalman_lna` (noise-robust agent) and `structures` (products agent). Their agents must add them.
+
+**Finished**
+- **Noise variants, final** (130d21b): the oracle is now chosen in score.py and analysis.py, with no import hook. Re-scoring 8,758 existing results flipped no status.
+- **Canonical models** (queue item 2), reported at 21:10.
+
+**Started**
+- **Queue item 2c,** converter coverage (arrays, macros, external data, DELAY N). Light, and no engine change.
+- **Held: queue item 2d** (engine features). Changing `simulate.py` would re-run every strategy again. Start it when the watcher's backlog is under ~10k.
+
+**Leaderboard, Tests** (728 standard cells; noisy, canonical and realistic counted separately):
+
+| strategy | pass | ran | commits | realistic skill@20 |
+|---|---|---|---|---|
+| combined | 84.9% (618) | 728 of 728 | 696189d ×625, 130d21b ×102 | 32.1% (62 of 62 scored; was 21.9% at the last cycle) |
+| lna_stack | 78.3% (465) | 594 | 2bbc025 ×367, 339737f ×122 | only 3 of 22 scored (timeouts) |
+| gap_prior | 75.9% (548) | 722 | 2bbc025 ×421, pre-provenance ×164 | 16.0% (15 scored) |
+| lna_levels | 74.9% (541) | 722 | 2bbc025 ×357, 339737f ×132 | not run |
+| lna_loops | 74.0% (438) | 592 | 2bbc025 ×309, 90c741d ×112 | not run |
+
+lna: 72.9% (531/728), realistic 15.1% (62 of 62 scored, no timeouts now).
+
+**Realistic**, from the last cycle: effect_hats 49.9%, censored 41.3%, matrix 29.6%.
+
+**Problems**
+- **The watcher can't keep up.** At this rate the backlog takes days, so the board stays a mix of versions.
+
+**Needs you**
+- **Reduce the watcher's load?** Retiring the dominated strategies the revisit listed would cut roughly half the workload (see 20:15). Alternatively, run them less often, e.g. only when their own code changes, not when shared code changes.
