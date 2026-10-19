@@ -9,11 +9,11 @@ from __future__ import annotations
 import numpy as np
 
 from ...matrix import configurations, injected
-from ..lna.atoms import Atom, restricted, superset
+from ..lna.atoms import Atom, superset
 from ..lna.changes import pieces, split_eras
 from ..lna.fit import Data, extra_variance, fit, mean_start
 from ..lna.flows import to_flows
-from ..lna.run import SCRATCH, bic, buckets, dispersion, screen, search
+from ..lna.run import SCRATCH, bic, buckets, dispersion, search
 
 
 MARGIN = 1.0         # a model with products must beat lna's by this many log T in BIC (the price of two numbers: the
@@ -110,7 +110,6 @@ def with_effects(flows: list[dict], ids: list[str], pairs: list, norm: list[floa
     mean(c), up to the highest c seen); beside a plain flow between the same ends, the two are one
     flow with a table effect through the lowest and highest c seen. None: a virtual reading that
     cannot be written (in eras or pieces)."""
-    S = len(ids)
     virt = {f"{ids[a]}*{ids[c]}": (a, c, n) for (a, c), n in zip(pairs, norm)}
     plain, eff = [], []
     for f in flows:
