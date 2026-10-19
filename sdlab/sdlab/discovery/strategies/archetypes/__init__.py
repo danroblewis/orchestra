@@ -32,7 +32,7 @@ import numpy as np
 from .fit import Data
 from .hidden import search_hidden
 from .holdout import cut_run, error, forecast, persistence
-from .search import search
+from .search import conserved, search
 from .write import flows as to_flows
 
 DEFAULTS = {"seconds": 60.0, "powers": [0.0, 0.5, 1.0], "base": "combined", "alone": False, "max_steps": 120, "max_stocks": 3,
@@ -82,7 +82,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, cfg: dict) -> dict | Non
         D = Data(Y, inj, power=float(p))
         fits = [("measured", search(D, per, moves=bool(cfg["moves"]), price=bool(cfg["price"])), None)]
         if hidden:
-            for i in pulses(Y):
+            for i in ([] if conserved(Y) else pulses(Y)):
                 h = search_hidden(Y, inj, float(p), i, per, moves=bool(cfg["moves"]), price=bool(cfg["price"]))
                 if h is not None:
                     fits.append((f"hidden source of {ids[i]}", h, i))

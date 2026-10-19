@@ -182,6 +182,15 @@ def signed(D: Data, terms: list[Term], cache: dict) -> Fit:
     return g
 
 
+def conserved(Y: np.ndarray) -> bool:
+    """The measured stocks' total stays the same at every sample (to the data's rounding): nothing
+    enters or leaves, so every flow is a move between them (shares of one population)."""
+    if Y.shape[0] < 2:
+        return False
+    tot = Y.sum(axis=0)
+    return float(np.ptp(tot)) <= 1e-6 * max(1.0, float(np.mean(np.abs(tot)))) + 1e-3
+
+
 def search(D: Data, seconds: float, moves: bool = True, price: bool = True) -> Fit:
     """The best structure by AICc, a structure the search composed paying `extra` per term (the
     risk-inflation price of choosing among the library's terms, 2 log(library size) - 2 more than
@@ -190,10 +199,15 @@ def search(D: Data, seconds: float, moves: bool = True, price: bool = True) -> F
     deadline = time.perf_counter() + seconds
     cache: dict = {}
     lib = library(D.m, moves=moves)
-    extra = max(0.0, 2 * math.log(len(lib)) - 2) if price else 0.0
     prev, dy = onestep(D)
     glv = glv_start(D)
     fams = families(D.m, dy.mean(axis=1), glv)
+    if conserved(D.Y):                                    # a closed total: only moves between the stocks
+        lib = [t for t in lib if t.kind == "move"]
+        fams = {k: v for k, v in fams.items() if v and all(t.kind == "move" for t in v)}
+        fams["linear moves"] = [t for t in lib if len(t.mono) == 1]
+        glv = []
+    extra = max(0.0, 2 * math.log(len(lib)) - 2) if price else 0.0
     named = {frozenset(v): k for k, v in fams.items()}
     found: list[Fit] = [fit_set([], D, cache)]
     for k, v in fams.items():                                 # every archetype, whatever the time: they are few
