@@ -231,3 +231,38 @@ By strict, lna_levels (55.1%) is 5th, ahead of lna_stack. Passes fail strict mos
 2. Retire dominated strategies, or re-run them less often, to cut the backlog?
 3. Should delays fed from outside be scored as parts (105, 108, 110)?
 4. Score dt < 1 cases per step?
+
+## 2026-10-18 23:30 (hourly cycle)
+
+**Health**
+- **Server:** summary 1.0-1.1 s warm; one listener.
+- **Watcher:** its log still shows the 47,564-item pass, but the store gained 14,520 results in the last hour and 32,534 in the last 3 hours, so the backlog should clear in a few hours.
+- **Caches:** long-run graded 10,692 + 3,975 results.
+- **Tests:** 1,046 passed, 47 skipped, 2 failed. Both are the explanation test: `archetypes` (short-series agent, still running) has no entry.
+
+**Finished:** physics cases (4) and real-data cases (5), both reported earlier.
+
+**Started**
+- short series and published-model twins (from the real-data results);
+- distilled cases from hard-case failures (CLAUDE.md invariant 4, the user's method; now a standing step in the hourly cycle);
+- a Kubernetes platform ground-truth model with at least 30 services (the user's request; brief in the agent prompt; doc to come in `docs/research/k8s-model.md`);
+- the input-handling fix for censored/effect_hats/earned_pieces;
+- 2e, the lna variants onto hooks;
+- the research round (rotation c).
+
+8 agents are running.
+
+**Leaderboard, Tests** (`sdlab-ladder strict --no-fill`; rates over cells run):
+
+| strategy | pass | strict | ran | commits | note |
+|---|---|---|---|---|---|
+| combined_lean | 90.0% | 87.0% | 281 of 916 | 2cde024, e0bc5f5 | research round, still running |
+| combined_r2 | 90.0% | 87.0% | 280 | 2cde024, 382ea4d | research round, still running |
+| combined_misfit | 89.3% | 86.2% | 281 | cd92c79, e0bc5f5 | research round, still running |
+| kalman_lna | 80.2% | 71.3% | 916 | c124a98 | |
+| structures | 77.0% | 70.5% | 916 | ad4e110 | |
+| combined | 74.3% | 67.3% | 912 | ded5e80, 130d21b | |
+
+**The top three have run less than a third of the cells,** which the watcher fills in. Their rates are not comparable with full-coverage strategies yet; the user saw ~91% on the leaderboard.
+
+**Problems:** none new. The summary is about 1 s.
