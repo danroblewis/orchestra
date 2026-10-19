@@ -97,10 +97,12 @@ strategies:
   censored:
     idea: Rewrite a row's outside flows as a rate that stops at zero, or as a demand capped by what the stock holds, where the data say so.
     how: >-
-      Taking the main line's model, each stock is offered two rewrites. A floor is a rate that
+      Taking the main line's model, each stock is offered rewrites. A floor is a rate that
       falls with a stock's level until it hits zero and stays there; a cap is a constant demand
-      that cannot take more than the stock holds. A rewrite is kept only if it scores clearly
-      better (BIC, with floors and caps applied as the simulator applies them).
+      that cannot take more than the stock holds. Its outside inflow is also re-cut into fewer
+      pieces (each change must pay a higher price), and a negative link is read as an inflow
+      that falls with another stock. A rewrite is kept only if it scores clearly better (BIC,
+      with floors and caps applied as the simulator applies them).
     helps_with: Rates that hit zero (case 024) and stocks that run empty (case 025).
     builds_on: matrix (continues floors)
     status: active

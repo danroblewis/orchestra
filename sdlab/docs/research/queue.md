@@ -106,7 +106,13 @@ for `combined` on the test cases).
    3-5 recommended sources as `real` cases. The true equations are only the modeller's, so the
    scoring is held-out prediction plus a structure comparison with the published model. Keep
    it in its own leaderboard view.
-6. **Shared fixes to `matrix` proposed by earned_pieces** (`docs/research/earned_pieces.md`,
+6. **Shared fixes to `matrix`**, proposed by `censored` (`docs/research/censored.md`):
+   - `flows.read_flows` may write a negative cross term as an inflow `c + k·x` (k < 0) when the
+     row has an outside inflow, a goal gap's true form;
+   - price the main line's inflow changes at 2 log n (PELT `mult` 2);
+   - note in `oracle.py` that its linear fit ignores floors and caps.
+
+   Also proposed by earned_pieces (`docs/research/earned_pieces.md`,
    "Proposed shared changes"):
    - the tie test in `matrix.conserve` should use both rows' SEs, without the extra log T, and
      not count a negative reading;
@@ -120,6 +126,8 @@ for `combined` on the test cases).
    watcher's backlog is small.
 
 ## Started
+
+- 2026-10-18 20:00: item 1, noise variants.
 
 - 2026-10-18 19:45: item 0, engine features (inputs, dt, ceilings, delays/smooth/test inputs).
 
