@@ -317,3 +317,15 @@ By strict, lna_levels (55.1%) is 5th, ahead of lna_stack. Passes fail strict mos
      forms count as equivalent?
 7. **The analysis ignores floors,** so 125 is labelled unidentifiable although the floor that
    binds separates its gap from a drain.
+
+## 2026-10-19 01:40 (user decisions on scoring)
+
+The user answered the distilling agent's scoring questions. Approved scorer changes (one agent, with before/after flips reported per fix):
+1. **dt < 1 cases:** "I would hope the issue would fall out after normalization". Compare per-recorded-step equivalents of the truth's continuous rates.
+2. **Hidden stocks fed from outside:** score them as parts.
+3. **Measured inputs:** include them in equivalence and in the linear oracle.
+4. **Effects:** check equivalence for effects by what the flow computes (e.g. a product with its roles swapped).
+5. **Real-data twins:** the analysis uses the twin's measurement noise and the training cut; decide whether the adoption twins' alternative forms are equivalent.
+6. **Floors:** the analysis accounts for binding floors (125).
+
+Still open: the behaviour grader feeding only the truth's constant inflows. The realistic agent is measuring it, and the result goes to the user before any change.
