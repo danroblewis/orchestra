@@ -636,6 +636,31 @@ the run meets the goal, and the summary line counts goals met.
 **Matches the bench.** `matrix` on the realistic cases gives the bench's own numbers (baseline
 v2.1, 29.6% mean skill@20 over the 62 runs, 12 of 62 meeting the goal); see Results below.
 
+**Results** (19 October 2026, `api._summary` over the store, after re-running every timed-out item on
+the runner of 5cc36de; the machine was at load ~100-125 on 28 cores, so times are wall-clock under
+contention, and lna, earned_pieces, common_cause and matrix each have cells from two strategy
+versions, because they changed during the run):
+
+| strategy | tests pass rate | realistic skill@20 [95%] | skill@100 | fresh@20 | goals met | timeouts | time on realistic (s) |
+|---|---|---|---|---|---|---|---|
+| matrix | 41.4% | 29.6% [11.6, 46.4] | 29.3% | 28.9% | 12/62 | 0 | 595 (slowest 98) |
+| lna | 63.4% | 17.5% [-1.1, 34.9] | 15.4% | 17.2% | 10/62 | 0 | 1,958 (166) |
+| earned_pieces | 55.0% | 35.0% [16.5, 52.9] | 34.5% | 34.1% | 15/62 | 1 | 2,017 (275) |
+| common_cause | 60.9% | 33.0% [10.2, 55.3] (39 graded) | 25.4% | 32.1% | 11/62 | 23 (21 long) | 1,821 (229) |
+| combined | 74.3% | 41.1% [24.6, 56.6] | 50.1% | 38.9% | 16/62 | 0 | 9,448 (258; median 210 per run) |
+
+Exact equation recovery: 1 pass in 62 for earned_pieces, common_cause and combined, none for
+matrix and lna. The test ranking and the realistic one disagree: lna, second on the tests, has
+the lowest realistic skill.
+
+**Against the bench.** matrix's 62 realistic runs give the bench's skill@20 and skill@100 to the
+last digit (no run differs by more than 1e-6): 29.64% mean skill@20 and 12 of 62 meeting the goal,
+the same as baseline v2.1 (`~/.cache/sdlab/bench/runs/baseline-v2.1.json`) and the bench's matrix run
+of 18 October. The data are the bench's, discovery gets the same inputs, and both use
+`sdlab/skill.py`, so this is exact, not within noise. A first ladder run had sd-clinic-doses
+counts-long as a timeout: there the scorer's oracle (1,999 windows) took 417 s after an 11 s
+discovery. The timeout now covers discovery only.
+
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
 The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one
