@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..lna.atoms import Atom
-from ..lna.fit import OutOfTime, fit
+from ..lna.fit import Data, Fitted, OutOfTime, fit
 from ..lna.run import SCRATCH, bic, search
 from ..lna_levels.run import written
 
@@ -40,9 +40,22 @@ def product_atoms(S: int, unit: list[str], final: set[int], base: int | None = N
     return atoms, pairs
 
 
-def stage(state: dict, margin: float = MARGIN) -> dict:
+def with_rows(cur: Fitted, d: Data, n: int) -> tuple[Fitted, Data]:
+    """The product columns as rows of the changes too (zero change, no extra variance), as the stage
+    was first built: each adds only a constant to the likelihood, but L-BFGS's stopping rule is
+    relative to the likelihood's size, so without them some fits stop elsewhere (101 counts-short
+    kept a spurious growth)."""
+    S, T = d.dy.shape
+    d2 = Data(d.prev, np.vstack([d.dy, np.zeros((n, T))]), d.cfg, d.delta,
+              None if d.free is None else np.concatenate([d.free, np.zeros(n, bool)]), d.deadline)
+    tau = None if cur.tau is None else np.concatenate([cur.tau, np.zeros(n)])
+    return Fitted(cur.atoms, cur.theta, cur.nll, tau), d2
+
+
+def stage(state: dict, margin: float = MARGIN, then=None) -> dict:
     """{data, after_search, flows} for the products stage (3 to SCRATCH stocks; otherwise nothing);
-    `state` collects what the strategy reports (lna_cur, lna_flows, pairs, products, product_gain)."""
+    `state` collects what the strategy reports (lna_cur, lna_flows, pairs, products, product_gain).
+    then(cur, d, ctx): an after_search stage run next on the same data (lna_stack's levels)."""
 
     def data(prev, dy, ctx):
         S = len(ctx["ids"])
@@ -56,17 +69,12 @@ def stage(state: dict, margin: float = MARGIN) -> dict:
         state.update(extra=extra, pairs=pairs, norm=norm, first=prev.shape[0])
         return np.vstack([prev, vprev]), dy
 
-    def after_search(cur, d, ctx):
-        state.setdefault("lna_cur", cur)
-        state.setdefault("base", ctx["base"])
-        extra = state.get("extra")
-        if not extra:
-            return cur
+    def offered(cur, d):
         offer = []
         for a, th in zip(cur.atoms, cur.theta):
             if th <= 0 or a.era is not None or a.kind not in ("move", "out") or a.uses:
                 continue
-            offer += [x for x in extra if x.kind == a.kind and x.src == a.src and x.dst == a.dst and x not in offer]
+            offer += [x for x in state["extra"] if x.kind == a.kind and x.src == a.src and x.dst == a.dst and x not in offer]
         if not offer:
             return cur
         try:
@@ -76,6 +84,18 @@ def stage(state: dict, margin: float = MARGIN) -> dict:
             return cur
         state["product_gain"] = gain = float(bic(cur, d) - bic(g, d))
         return g if gain > margin * np.log(d.dy.shape[1]) else cur
+
+    def after_search(cur, d, ctx):
+        state.setdefault("lna_cur", cur)
+        state.setdefault("base", ctx["base"])
+        if not state.get("extra"):
+            return then(cur, d, ctx) if then else cur
+        S = d.dy.shape[0]
+        g, d2 = with_rows(cur, d, len(state["pairs"]))
+        g = offered(g, d2)
+        if then:
+            g = then(g, d2, ctx)
+        return Fitted(g.atoms, g.theta, g.nll, None if g.tau is None else g.tau[:S])
 
     def flows(flows, cur, d, ctx):
         state.setdefault("lna_flows", written(state["lna_cur"], d, ctx))
