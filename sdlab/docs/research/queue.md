@@ -11,6 +11,21 @@ for `combined` on the test cases).
 
 ## Queued
 
+0c. **Make every derivative strategy self-contained** (the user, 2026-10-19; CLAUDE.md invariant 11).
+   The 18 strategies in `tests/test_isolation.py`'s KNOWN list import other strategies: combined
+   and its variants, the lna_* variants (currently built on lna's hooks), gap_prior,
+   kalman_lna, structures, archetypes, and the `_both`/`_refine`/`_all`/`_no_high`/`_blend`
+   variants. For each, copy the code it imports into its own package, as a private module noting
+   the source strategy and commit, so it no longer imports any other strategy. Remove it from
+   KNOWN.
+   - Behaviour must be identical. Prove it per strategy: run it on a sample of cells before and
+     after with the same inputs, and compare the found flows (byte-identical, or explain).
+   - The strategy hash changes only because its code moved, so the watcher re-runs those
+     strategies once.
+   - Prefer the simplest copy: a vendored module tree under `<strategy>/_vendored/<source>/`.
+   - Running agents still own their packages: kalman_lna, structures and archetypes are
+     converted by their own agents (they were told), or after those agents finish.
+
 1b. **Time measurements in the ladder and its UI** (requested by the user on 2026-10-19). Today
    each result stores discovery seconds only, and the leaderboard has one "time (s)" column.
    Add:
@@ -75,7 +90,7 @@ for `combined` on the test cases).
 
    Run the leaders and distil failures (invariant 4).
 
-2g. **Runner fix, and lna2** (from the hook port). lna and its variants are frozen (invariant 11), so the lna changes go into a NEW strategy `lna2` (a copy), never into lna:
+2g. **Runner fix and lna fixes** (from the hook port). lna may be fixed in place (strategies are not frozen); its derivatives must carry copies first (item 0c), so this waits for 0c:
    - when the runner's timeout alarm fires inside numba code, the result is recorded as an error (`SystemError` in `inv_logdet`); record it as a timeout;
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
    - lna: `identify(..., base=...)` and a public flow writer `run.written`, so the variants stop recomputing and copying.
@@ -112,8 +127,8 @@ for `combined` on the test cases).
 
    Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
 
-6. **matrix_v2: the proposed matrix fixes as a NEW strategy** (rewritten on 2026-10-19: the
-   shared discovery library and `matrix` are frozen, CLAUDE.md invariant 11). Copy what is needed
+6. **matrix_v2: the proposed matrix fixes as a NEW strategy** (rewritten on 2026-10-19: the shared
+   discovery library is a pinned shared library, CLAUDE.md invariant 11). Copy what is needed
    from `sdlab/discovery/` (matrix, flows, regression, changes) into `strategies/matrix_v2/` and
    apply the fixes proposed by censored, effect_hats and earned_pieces there (see their docs):
    - read a negative cross term as a falling inflow;

@@ -1,12 +1,10 @@
-"""Frozen discovery code: the shared discovery library and every strategy another strategy builds on.
+"""The shared discovery library (`sdlab/discovery/*.py`, outside `strategies/`) is pinned.
 
-Strategies are a collection of isolated options, not a shared codebase (sdlab/CLAUDE.md,
-invariant 11). Code that other strategies import must not change, or a fix for one strategy
-becomes a regression in others. To change frozen behaviour, copy the code into a new, separately
-named strategy (e.g. `effect_hats_v2`) and change the copy.
-
-`python tests/frozen.py --write` records the manifest; only the user may approve adding to or
-re-recording it (a strategy becomes frozen when another strategy starts importing it).
+Strategies use it, so a change to it would change many strategies at once (shared regressions).
+It is a shared library that may change only rarely and only with the user's approval; then
+re-record with `python tests/frozen.py --write`. A strategy that needs different behaviour copies
+the module into its own package. Strategies themselves are not pinned: they are improved freely,
+and derivatives carry copies of them (tests/test_isolation.py).
 """
 
 from __future__ import annotations
@@ -18,13 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] / "sdlab" / "discovery"
 MANIFEST = Path(__file__).with_name("frozen.sha256")
 
-# strategies other strategies import (2026-10-19); a strategy joins when something builds on it
-FROZEN_STRATEGIES = [
-    "censored", "combined", "combined_lean", "combined_misfit", "common_cause", "earned_pieces",
-    "effect_hats", "floors", "gap_prior", "gated", "held_out", "hidden_transit", "impulses",
-    "inflow_attribution", "lna", "lna_levels", "lna_loops", "lna_products", "lna_pulses",
-    "lna_stack", "mass_balance", "matrix", "periodic_inflows", "symbolic",
-]
+FROZEN_STRATEGIES: list[str] = []          # strategies are never frozen: derivatives copy them (CLAUDE.md invariant 11)
 
 
 def files() -> list[Path]:
