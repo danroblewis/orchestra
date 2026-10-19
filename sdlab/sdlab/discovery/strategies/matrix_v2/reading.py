@@ -14,7 +14,8 @@
   stocks and a target, (u - R - E) / tau, one floored linear inflow; structures' gaps), with or
   without a constant. Each fold is kept only if the row's one-step error, with floors and caps as the
   engine applies them, is no worse (the numbers are the same, so where no floor binds the two
-  readings tie, and the gap's form is the one written).
+  readings tie, and the gap's form is the one written). With fold_strict, a fold must improve the
+  row's one-step fit by more than one BIC price (T log(rss ratio) > log T): only where the floor binds.
 """
 
 from __future__ import annotations
@@ -124,7 +125,7 @@ def _row_rss(flows: list[dict], ids: list[str], s: int, prev: np.ndarray, dy: np
 
 
 def fold_inflows(flows: list[dict], ids: list[str], prev: np.ndarray, dy: np.ndarray, t: list, inputs: dict | None,
-                 gap: bool = False, spread: float = 0.05) -> list[dict]:
+                 gap: bool = False, spread: float = 0.05, strict: bool = False) -> list[dict]:
     """Each row's negative readings of other levels folded into its outside inflow (see the module)."""
     tt = np.asarray(t, dtype=float)[1:]
     inp = {"t": t, "values": inputs} if inputs else None
@@ -158,6 +159,8 @@ def fold_inflows(flows: list[dict], ids: list[str], prev: np.ndarray, dy: np.nda
                "note": "outside inflow falling as other levels rise", "driver": next(iter(terms))}
         gone = {id(f) for f in negs + pos + ([const] if const is not None else [])}
         trial = [f for f in flows if id(f) not in gone] + [new]
-        if _row_rss(trial, ids, s, prev, dy, tt, inp) <= _row_rss(flows, ids, s, prev, dy, tt, inp) * (1 + 1e-9) + 1e-12:
+        new_rss, old_rss = _row_rss(trial, ids, s, prev, dy, tt, inp), _row_rss(flows, ids, s, prev, dy, tt, inp)
+        T = len(tt)
+        if (T * np.log(max(old_rss, 1e-300) / max(new_rss, 1e-300)) > np.log(T)) if strict else (new_rss <= old_rss * (1 + 1e-9) + 1e-12):
             flows = trial
     return flows

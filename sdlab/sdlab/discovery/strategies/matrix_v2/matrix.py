@@ -327,7 +327,7 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     if L == 1 and opts.get("pair_moves"):                 # a move read off another stock's level
         flows = pair_linear(flows, ctx["unit"], float(opts.get("pair_slack", 0.3)))
     if L == 1 and (opts.get("falling_inflow") or opts.get("gap_inflow")):     # a goal gap: an inflow falling as levels rise
-        flows = fold_inflows(flows, ids, prev, dy, t, opts.get("inputs") or None, gap=bool(opts.get("gap_inflow")))
+        flows = fold_inflows(flows, ids, prev, dy, t, opts.get("inputs") or None, gap=bool(opts.get("gap_inflow")), strict=bool(opts.get("fold_strict")))
     matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta", "pooled", "varL")} for r in rows]
     for r in matrix:
         r["coef"] = r["coefL"][0]
