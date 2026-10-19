@@ -66,7 +66,9 @@ for `combined` on the test cases).
 
 ## Started
 
-- 2026-10-18 22:35: item 4, physics cases; item 5, real-data cases; rotation c, research to implementation (ideas-2026-10-18.md).
+- 2026-10-18 23:00: fix measured-input handling in censored, effect_hats and earned_pieces (found by the physics cases).
+
+- 2026-10-18 22:35: item 5, real-data cases; rotation c, research to implementation (ideas-2026-10-18.md).
 
 - 2026-10-18 21:40: item 2e, lna_* variants onto lna's hooks.
 
@@ -78,6 +80,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-18: item 4, physics cases (2cde024, 382ea4d, 0b7eb5b): 7 ODE systems with their own scoring and view. matrix/lna 13/28, combined 12/28. No leader finds Lotka–Volterra's products or the thermostat's switch; √ outflows have no SD form.
 
 - 2026-10-18: item 2c, converter coverage (e83aa25, 2deb86d, 089fbf3): arrays, macros, external data, DELAY N/SMOOTH N; SDXorg exact conversions 37 → 90 of 165. New case 111 (arrayed switching). The remaining engine blockers go to 2d: two-way flows (30), negative stocks (9), DELAY FIXED (3), MIN/MAX (2), variable delay time/order (3), pipeline stocks (3), TREND/FORECAST (3).
 
