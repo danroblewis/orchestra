@@ -37,7 +37,7 @@ def table_flow(src, dst, stock: str, knots: np.ndarray, values: np.ndarray) -> d
         return None
     rate = {"form": "constant", "value": _r(top)}
     pts = [[_r(a), _r(b / top)] for a, b in zip(knots, v)]
-    return _flow(src, dst, rate, driver=stock, effects=[{"stock": stock, "shape": "table", "points": pts}])
+    return _flow(src, dst, rate, driver=stock, own_table=True, effects=[{"stock": stock, "shape": "table", "points": pts}])
 
 
 def wmedian_slope(knots: np.ndarray, values: np.ndarray) -> float:
@@ -100,3 +100,32 @@ def flows(row: str, knots: np.ndarray, rd: dict) -> list[dict]:
                 out.append(_flow(row, None, {"form": "constant", "value": _r(v)}))
     f = table_flow(None, row, row, knots, rd["values"]) if rd["table"] > 0 else table_flow(row, None, row, knots, rd["values"])
     return out + ([f] if f else [])
+
+
+def extend(flows: list[dict]) -> list[dict]:
+    """The tables this strategy wrote, continued past the levels the run visited along their end
+    segments' slopes (to 0 below, and one visited range above; values floored at 0). An SD table is
+    flat beyond its points, which for a drain that bends is the worst guess on a run that goes
+    further (phys-draining-tank none-short: the fresh run's skill fell to 88% against 98% for the
+    straight line); the continued slope is the straight line's guess there. The run never sees
+    these points, so the fit is unchanged; they are added after the choice, not priced."""
+    out = []
+    for f in flows:
+        if not f.get("own_table"):
+            out.append(f)
+            continue
+        e = f["effects"][0]
+        pts = [list(p) for p in e["points"]]
+        if len(pts) >= 2:
+            (x0, y0), (x1, y1) = pts[0], pts[1]
+            (xa, ya), (xb, yb) = pts[-2], pts[-1]
+            span = xb - x0
+            if x0 > 0 and x1 > x0:
+                lo = max(0.0, x0 - span)
+                pts.insert(0, [_r(lo), _r(max(0.0, y0 - (y1 - y0) / (x1 - x0) * (x0 - lo)))])
+            if xb > xa and span > 0:
+                pts.append([_r(xb + span), _r(max(0.0, yb + (yb - ya) / (xb - xa) * span))])
+        g = {k: v for k, v in f.items() if k != "own_table"}
+        g["effects"] = [{**e, "points": pts}]
+        out.append(g)
+    return out

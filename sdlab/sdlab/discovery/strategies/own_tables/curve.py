@@ -53,7 +53,7 @@ def search(y: np.ndarray, x: np.ndarray, Z: np.ndarray, floor: float, wt: np.nda
     lo, hi = float(np.min(x)), float(np.max(x))
     if hi - lo <= 1e-9 * max(1.0, abs(hi)):
         return None
-    support = support or max(5, T // 200)
+    support = support or max(10, T // 100)
     M = len(Z)
     g = np.unique(np.concatenate([np.quantile(x, np.linspace(0, 1, grid // 2 + 1)), np.linspace(lo, hi, grid // 2 + 1)]))
     kn = [lo]

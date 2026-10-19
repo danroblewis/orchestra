@@ -33,7 +33,7 @@ from ...identify import identify as main_line
 from ...matrix import injected
 from . import curve, onestep, split
 
-DEFAULTS = {"rising": 0.25, "margin": 2.0, "halves": True, "weighted": True, "trim": 0.01, "most": 12}
+DEFAULTS = {"rising": 0.25, "margin": 2.0, "halves": True, "weighted": True, "trim": 0.03, "most": 12}
 
 
 def _touches_outside(f: dict, row: str) -> bool:
@@ -223,10 +223,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         best = None
         if scored:
             low = min(sc for _, sc, _ in scored)
-            best = next(c for c in scored if c[1] <= low + log_t)
+            best = next(c for c in scored if c[1] <= low + o["margin"] * log_t)
             if not best[1] < score - o["margin"] * log_t:
                 best = None
         if best:
             flows, score = best[0], best[1]
             taken.append({"row": row, "rewrite": best[2], "bic": round(score, 2)})
-    return {**r0, "flows": flows, "own_tables": taken}
+    return {**r0, "flows": split.extend(flows), "own_tables": taken}
