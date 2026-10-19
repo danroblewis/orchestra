@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from ...matrix import configurations, injected
 from .atoms import Atom, features, restricted, stoich, superset, variances
-from .fit import Data, extra_variance, fit, mean_start, prune
+from .fit import Data, extra_variance, fit, mean_start, numbers, prune
 from .changes import merge_eras, pieces, split_eras
 from .coflows import refine_per, with_coflows
 from .flows import to_flows
@@ -56,6 +58,23 @@ def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05) -> li
 SCRATCH = 4          # up to this many stocks, every atom between them is tried
 
 
+def search(cur, d: Data):
+    """From a fitted superset to the chosen atoms: co-flows offered, pruning, pieces re-cut and gap
+    swaps until nothing changes, co-flow ratios refined, era numbers merged."""
+    cur = prune(with_coflows(cur, d), d)
+    for _ in range(3):
+        before = cur.atoms
+        cur = prune(pieces(prune(swaps(cur, d), d), d), d)
+        if cur.atoms == before:
+            break
+    cur = prune(refine_per(cur, d), d)
+    return merge_eras(cur, d)
+
+
+def bic(cur, d: Data) -> float:
+    return 2 * cur.nll + numbers(cur.atoms, range(len(cur.atoms))) * math.log(d.dy.shape[1])
+
+
 def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | None:
     ids = [s["id"] for s in stocks]
     S = len(ids)
@@ -95,17 +114,15 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict) -> dict | No
         atoms = split_eras(atoms, max(bucket) + 1)
     cur = fit(atoms, d)
     d.free = extra_variance(cur, d)
-    cur = fit(atoms, d, cur.theta, tau=cur.tau)
-    # changes in the outside inflows first, beside every flow (so that levels do not stand in for them)
-    cur = pieces(cur, d, mult=0.5)
-    cur = prune(with_coflows(cur, d), d)
-    for _ in range(3):
-        before = cur.atoms
-        cur = prune(swaps(prune(pieces(cur, d), d), d), d)
-        if cur.atoms == before:
-            break
-    cur = prune(refine_per(cur, d), d)
-    cur = merge_eras(cur, d)
+    full = fit(atoms, d, cur.theta, tau=cur.tau)
+    # changes in the outside inflows first, beside every flow (so that levels do not stand in for
+    # them); and, when that found any, the search again without them first (the fine pass can also
+    # lock in pieces that a level or a gap would explain): the lower BIC wins
+    cur = search(pieces(full, d, mult=0.5), d)
+    if any(a.span for a in cur.atoms):
+        other = search(full, d)
+        if bic(other, d) < bic(cur, d):
+            cur = other
     at = lambda k: t[k + 1]  # noqa: E731
     flows = to_flows(cur.atoms, cur.theta, ids, prev, at, *((conf[0], conf[2], bucket) if conf else ()))
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
