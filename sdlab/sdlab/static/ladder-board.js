@@ -22,15 +22,18 @@
     complexity: "Complexity: flows + the numbers needed to write their rates over the run (every piece of a rate that changes, effects' numbers, co-flows, hidden stocks), counted the same way for the true and the found model. Extra = found − true, by where it comes from.",
   };
   const cxText = (x) => !x ? "–" : `${x.true} → ${x.found}` + (x.extra ? ` (${x.extra > 0 ? "+" : ""}${x.extra}: ${Object.entries(x.by).filter(([, v]) => v).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k}`).join(", ")})` : " (same)");
-  const B = { strategy: null, variant: "counts-long", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
+  const B = { strategy: null, variant: "counts-long", set: "tests", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
+  const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference (realistic.py)
+  const GOAL = "Meets the goal (as on the examples' bench): skill@20 at least 90% and skill@100 at least 80%; an error or timeout never does.";
+  const meets = (r) => !!r && r.status !== "error" && r.status !== "timeout" && (() => { const m = L.measures(r.scores); return m.skill20 != null && m.skill100 != null && m.skill20 >= 0.9 && m.skill100 >= 0.8; })();
   try { Object.assign(B, JSON.parse(localStorage.getItem("sdlab.ladder.board") || "{}"), { data: null, tab: {}, loading: null }); } catch { /* defaults */ }
   {                                                        // a link (e.g. from the leaderboard): /ladder?view=now&strategy=S[&variant=V]
     const q = new URLSearchParams(location.search);
     if ((q.get("view") || "now") === "now" && !q.get("case") && q.get("strategy")) {
-      Object.assign(B, { strategy: q.get("strategy"), variant: q.get("variant") || "all", status: "", level: "", tag: "" });
+      Object.assign(B, { strategy: q.get("strategy"), variant: q.get("variant") || "all", set: q.get("set") || "tests", status: "", level: "", tag: "" });
     }
   }
-  const save = () => { try { localStorage.setItem("sdlab.ladder.board", JSON.stringify({ strategy: B.strategy, variant: B.variant, status: B.status, level: B.level, tag: B.tag, sort: B.sort })); } catch { /* fine */ } };
+  const save = () => { try { localStorage.setItem("sdlab.ladder.board", JSON.stringify({ strategy: B.strategy, variant: B.variant, set: B.set, status: B.status, level: B.level, tag: B.tag, sort: B.sort })); } catch { /* fine */ } };
   let P = null;                                            // the page's helpers
   let aboutOpen = false;                                   // the strategy explanation's "how it works" expanded
 
@@ -70,6 +73,7 @@
     $("board-controls").innerHTML = `
       <label>Strategy <select id="b-strat">${strats.map((s) => opt(s.name, s.name === d.best ? `${s.name} (best pass rate)` : s.name, B.strategy)).join("")}</select></label>
       <label>Variant <select id="b-var">${[...VARIANTS.map((v) => [v, v]), ["all", "all four (tabs)"]].map(([v, w]) => opt(v, w, B.variant)).join("")}</select></label>
+      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline.">Set <select id="b-set">${[["tests", "tests"], ["realistic", "realistic examples"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
       <label>Verdict <select id="b-status">${[["", "any"], ["pass", "pass"], ["equivalent", "equivalent"], ["fail", "fail"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => opt(v, w, B.status)).join("")}</select></label>
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
@@ -79,7 +83,7 @@
     const det = $("board-controls").querySelector(".babout details");
     if (det) det.ontoggle = () => { aboutOpen = det.open; };
     const on = (id, k, reload) => ($(id).onchange = (e) => { B[k] = e.target.value; save(); if (reload) B.tab = {}; render(reload); });
-    on("b-strat", "strategy", true); on("b-var", "variant", true); on("b-status", "status"); on("b-level", "level"); on("b-tag", "tag"); on("b-sort", "sort");
+    on("b-strat", "strategy", true); on("b-var", "variant", true); on("b-set", "set"); on("b-status", "status"); on("b-level", "level"); on("b-tag", "tag"); on("b-sort", "sort");
   }
 
   // the result a card shows: its variant, or with all four, the tab picked (default: the worst)
@@ -106,6 +110,7 @@
         <span data-tip="${esc(DEF.rate)}">rate error <b>${pct(mean("rateMean"))}</b></span>
         <span data-tip="${esc(DEF.skill20)} Means clip each run at −100%.">skill@20 <b>${pct(clipMean("skill20"))}</b></span>
         <span data-tip="${esc(DEF.fresh20)}">fresh@20 <b>${pct(clipMean("fresh20"))}</b></span>
+        ${rows.some(({ c }) => isReal(c)) ? `<span data-tip="${esc(GOAL)}">goals met <b>${rows.filter(({ c, r }) => isReal(c) && meets(r)).length}</b> of ${rows.filter(({ c }) => isReal(c)).length}</span>` : ""}
       </div><div class="pbar">${bar}</div>`;
   }
 
@@ -130,8 +135,9 @@
       </dl>` : "";
     return `<article class="bcard st-${st || "none"}" data-case="${esc(c.id)}">
       <header class="bhead">
-        <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
+        <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isReal(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
         <span class="stbadge st-${st || "none"}">${st ? esc(st) : "not run"}</span>
+        ${isReal(c) && r ? `<span class="stbadge st-${meets(r) ? "pass" : "fail"}" data-tip="${esc(GOAL)}">${meets(r) ? "meets the goal" : "short of the goal"}</span>` : ""}
         ${m && m.errorScore !== null ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
       </header>
       <p class="tests">Tests: ${esc(c.tests)} <span class="muted small">level ${esc(c.level)} · ${esc(c.tags.join(", "))}</span></p>
@@ -162,7 +168,7 @@
     }
     controls(d);
     let rows = d.cases.map((c) => ({ c, r: shown(c, d) }));
-    rows = rows.filter(({ c, r }) => (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
+    rows = rows.filter(({ c, r }) => (B.set === "all" || (B.set === "realistic") === isReal(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
       && (!B.status || (B.status === "none" ? !r : B.status === "error" ? r && (r.status === "error" || r.status === "timeout") : r && r.status === B.status)));
     const err = (r) => { const m = r && L.measures(r.scores); return m && m.errorScore !== null ? m.errorScore : -1; };
     if (B.sort === "status") rows.sort((a, b) => (a.r ? RANK[a.r.status] ?? 9 : 10) - (b.r ? RANK[b.r.status] ?? 9 : 10) || a.c.level - b.c.level);

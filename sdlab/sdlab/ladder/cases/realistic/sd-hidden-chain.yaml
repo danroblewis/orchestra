@@ -1,0 +1,7 @@
+# The example sd-hidden-chain (sdlab/examples/sd-hidden-chain) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-hidden-chain
+title: "Hidden two-stage delay"
+level: 20
+tags: [realistic, hidden, schedule]
+tests: "3 measured stocks and 2 hidden, 7 flows with unannounced changes; behaviour as on the examples' bench"

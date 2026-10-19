@@ -1,0 +1,7 @@
+# The example sd-print-shop (sdlab/examples/sd-print-shop) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-print-shop
+title: "A print shop's paper and toner"
+level: 20
+tags: [realistic, coflow, schedule]
+tests: "5 measured stocks, 7 flows with co-flows, unannounced changes; behaviour as on the examples' bench. Tests co-flows that share and combine: mono and colour printing both use paper and toner (two flows using the same stock), and each page printed uses both (one flow using two stocks)."

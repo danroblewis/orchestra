@@ -1,0 +1,7 @@
+# The example sd-saas (sdlab/examples/sd-saas) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-saas
+title: "SaaS growth"
+level: 20
+tags: [realistic, hidden, announced-era, schedule]
+tests: "5 measured stocks and 1 hidden, 11 flows with announced eras, unannounced changes; behaviour as on the examples' bench"

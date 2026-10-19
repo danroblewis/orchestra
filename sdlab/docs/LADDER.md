@@ -388,6 +388,66 @@ their levels, the announced eras and the announced injections.
 | 024-floor-binds | a link with a negative coefficient that stops at zero |
 | 025-runs-empty | a constant demand that empties its stock and is then capped |
 
+## Realistic cases (`realistic.py`, `cases/realistic/`)
+
+The ladder's cases are tiny probes. Beside them, SD Lab's 31 real-world-style examples
+(`sdlab/examples/sd-*`, 3-10 stocks, 4-17 flows, hidden stocks, co-flows, effects, eras and
+unannounced schedules) run as **realistic cases**, so a strategy's performance shows in test terms
+and on realistic models side by side. They are the examples' bench (`tests/bench/evaluate.py`)
+inside the ladder.
+
+**A realistic case references an example; it copies nothing.** One file per example,
+`cases/realistic/<example-id>.yaml`, whose name is the case id:
+
+```yaml
+example: sd-saas                       # must be the file's name
+title: "SaaS growth"
+level: 20                              # after the tests
+tags: [realistic, hidden, announced-era, schedule]     # `realistic` is added if missing
+tests: "5 measured stocks and 1 hidden, 11 flows with announced eras, unannounced changes; behaviour as on the examples' bench"
+# optional: timeout (seconds per item, default 300), lengths ({short, long}), tolerance
+```
+
+The case's model is the example's `truth.model.json` as it is (seed, stocks, flows, schedule,
+injections). Its variants are the bench's: counting noise (the examples' own noise) at `short` = the
+example's `steps` (the bench's `default`) and `long` = its `long_steps` (default 10x), named
+`counts-short` and `counts-long`; the fresh run is seed + 1, as on the bench. So the data are the
+bench's, number for number (`tests/test_ladder_realistic.py` compares them), and discovery gets
+what the bench gave it (the measured stocks, levels, announced eras and injections). The hash is the
+example's model and the variants (`cases.case_hash`), so rewording the wrapper keeps the results;
+the examples are never changed (CLAUDE.md, invariant 2). `sdlab-ladder check` does not re-check an
+example (its five-times-long sanity run would take minutes), and the editor does not list realistic
+cases as basic models (the examples are already there).
+
+**Scoring.** The same scorer as every case: equation recovery (pass / equivalent / fail, recall,
+precision; the oracle where the truth allows one) and behaviour (skill@20 and skill@100 in-sample and
+on the fresh run, with 95% intervals). On a 10-17-flow model an exact pass is rare, and that is
+expected: for realistic cases **behaviour is the headline**: the mean skill@20 over runs (each
+clipped at -100%, as on the bench, with a 95% bootstrap interval over runs) and **goals met**, the
+bench's goal (docs/DISCOVERY-GOAL.md): skill@20 >= 90% and skill@100 >= 80%. An error or a timeout
+gets no skill and never meets the goal; the mean is over the runs graded, with the timeouts and
+errors counted beside it.
+
+**Cost.** Long realistic runs are 3,000-36,000 steps, so an item takes seconds to minutes (matrix:
+up to ~60 s on the bench). Every realistic item has its own timeout, `realistic.TIMEOUT` (300 s; a
+case may set `timeout:`), whatever `--timeout` says, and a sync runs the test items before the
+realistic ones so the tests stay current. Select them with `--cases tag:realistic` (or by id,
+`--cases sd-saas`).
+
+**Separation.** `summary()`'s `totals` (the tests' pass rates, and `best_strategy()`) leave the
+realistic cells out; `summary()["realistic"]` gives each strategy's realistic aggregate: `{cells,
+run, pass, equivalent, fail, error, timeout, missing, skill20, skill100, fresh20, fresh100,
+skill20_ci, fresh20_ci, graded, goals, goals_fresh, recall, seconds, slowest}`, and each realistic
+cell carries `goal` and `goal_fresh`; a realistic case in `cases` carries `example`. The
+leaderboard has a **Set** picker (tests, realistic examples, all; default tests) for its main
+columns, and always shows a **Realistic examples** column group beside them: real skill@20 (hover:
+its interval, timeouts), goals met (n of all realistic runs), real fresh@20 and real time. The Now
+page's all-cases board has the same **Set** picker (default tests); a realistic card says whether
+the run meets the goal, and the summary line counts goals met.
+
+**Matches the bench.** `matrix` on the realistic cases gives the bench's own numbers (baseline
+v2.1, 29.6% mean skill@20 over the 62 runs, 12 of 62 meeting the goal); see Results below.
+
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
 The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one
@@ -872,7 +932,7 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `board(strategy, variant?)` | `{strategy, variant, best, cases, results}`: every case and one strategy's latest results (found flows included) in a variant, or all four |
 | `best_strategy()` | the available strategy with the highest pass rate |
 | `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
-| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other]}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash, longrun (the long-run aggregate, below)}` |
+| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other], goal, goal_fresh (realistic cells only)}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts} (the tests only), realistic: {strategy: aggregate} (Realistic cases), score_hash, longrun (the long-run aggregate, below)}` |
 | `run_graph(id, at?, window?)` | one result's true vs found levels run free, far ahead: `{result, stocks, run, overview, windows, metrics, how}` (Long run, below) |
 
 A result is `{id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status,
@@ -955,7 +1015,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 
 | | |
 |---|---|
-| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
+| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; realistic cases (the examples, by reference) in `cases/realistic/*.yaml` and `realistic.py`; the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors) |
 | Long run | `longrun.py` (free runs, settled / drift read-off, metrics), `jump.py` (affine jump-ahead, equilibria, spectra), `longrun_cache.py` (by result id, the CLI fill, the summary aggregate), `longrun_series.py` (the run page's data), `sdlab/static/ladder-run.html` |
@@ -966,4 +1026,4 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`; page `sdlab/static/probes.html` |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |

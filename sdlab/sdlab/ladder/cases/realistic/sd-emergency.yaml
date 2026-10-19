@@ -1,0 +1,7 @@
+# The example sd-emergency (sdlab/examples/sd-emergency) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-emergency
+title: "An emergency department under pressure"
+level: 20
+tags: [realistic, effect, announced-era, schedule]
+tests: "4 measured stocks, 8 flows with effects, announced eras, unannounced changes; behaviour as on the examples' bench. Tests two effects on one flow, and an effect on a return flow."

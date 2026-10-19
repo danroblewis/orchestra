@@ -22,6 +22,7 @@ from pathlib import Path
 from ..discovery.api import jsonable
 from . import cases as casemod
 from . import catalog, data, provenance, score, store
+from . import realistic as _realistic
 
 TIMEOUT = 120
 
@@ -120,12 +121,21 @@ def discover(strategy: str, model: dict, d: dict) -> dict:
     return load_strategy(strategy)(stocks, {"t": d["t"], "levels": d["levels"]}, opts)
 
 
+def case_timeout(case_id: str, timeout: float) -> float:
+    """The item's timeout: a realistic case's own (realistic.py; slower, so it sets its own), else the run's."""
+    try:
+        c = casemod.load(case_id)
+    except Exception:                                          # noqa: BLE001  (reported when the item runs)
+        return timeout
+    return float(c.get("timeout") or (_realistic.TIMEOUT if c.get("example") else timeout))
+
+
 def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) -> dict:
     """Run (or re-score) one item: the row to store."""
     if run_id is not None:
         store.mark(run_id, item, "running")
     row = {k: item[k] for k in ("case", "variant", "strategy", "case_hash", "strategy_hash", "score_hash")}
-    armed = _alarm(timeout)
+    armed = _alarm(case_timeout(item["case"], timeout))
     try:
         c = casemod.load(item["case"])
         noise = casemod.variant(c, item["variant"])["noise"]
@@ -185,8 +195,9 @@ def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT
             for it in items:
                 done(it, run_item(it, timeout, run_id))
         else:
-            # slow strategies and long variants first, so the pool's tail is short
-            order = sorted(items, key=lambda i: (casemod.variant(casemod.load(i["case"]), i["variant"])["steps"], i["mode"] == "run"), reverse=True)
+            # the test cases before the realistic ones (slow: they must not hold the tests back); within
+            # each, slow strategies and long variants first, so the pool's tail is short
+            order = sorted(items, key=lambda i: (not casemod.is_realistic(i["case"]), casemod.variant(casemod.load(i["case"]), i["variant"])["steps"], i["mode"] == "run"), reverse=True)
             with ProcessPoolExecutor(max_workers=min(jobs, len(items))) as pool:
                 futures = {pool.submit(run_item, it, timeout, run_id): it for it in order}
                 for fut in as_completed(futures):

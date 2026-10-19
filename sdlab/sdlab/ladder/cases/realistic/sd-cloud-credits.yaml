@@ -1,0 +1,7 @@
+# The example sd-cloud-credits (sdlab/examples/sd-cloud-credits) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-cloud-credits
+title: "Cloud batch jobs on a credit budget"
+level: 20
+tags: [realistic, hidden, coflow, schedule]
+tests: "4 measured stocks and 1 hidden, 8 flows with co-flows, unannounced changes; behaviour as on the examples' bench"

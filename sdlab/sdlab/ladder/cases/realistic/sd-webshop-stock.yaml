@@ -1,0 +1,7 @@
+# The example sd-webshop-stock (sdlab/examples/sd-webshop-stock) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-webshop-stock
+title: "A web shop's stock and backlog"
+level: 20
+tags: [realistic, hidden, coflow, effect, schedule]
+tests: "4 measured stocks and 1 hidden, 7 flows with co-flows, effects, unannounced changes; behaviour as on the examples' bench. Tests effects on both sides of the shelf."

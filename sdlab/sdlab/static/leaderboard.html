@@ -53,6 +53,9 @@
   tr.about .box { position: sticky; left: 8px; max-width: min(760px, calc(100vw - 48px)); }
   tr.about p { margin: 2px 0 6px; }
   tr.about .k { color: var(--muted); }
+  th.real, td.real { background: color-mix(in srgb, var(--equiv) 6%, transparent); }
+  th.real:first-of-type, tr > .real:not(.real + .real) { border-left: 2px solid var(--line); }
+  tr.groups th { position: static; cursor: default; font-size: 12px; text-align: left; }
   th[title] { text-decoration: underline dotted; text-underline-offset: 3px; }
   @media (max-width: 700px) { td.bar { min-width: 140px; } .hide-sm { display: none; } td.name { min-width: 170px; } }
 </style>
@@ -81,9 +84,19 @@
   diverges counts 100%): <b>err@100k</b> the gap at t = 100,000 as a share of the truth's range; <b>eq err</b> the settled levels'
   error; <b>τ err</b> the slowest time constant's relative error; <b>diverges</b> the share of runs that run away, die out or are
   unstable where the truth is not. Click a strategy's run in the ladder for its line graphs.
+  <b>Realistic examples</b> (the right-hand columns, whatever set is picked): SD Lab's 31 example models (<code>sdlab/examples/sd-*</code>)
+  at the two lengths and with the data and seeds of the examples' bench; there behaviour is the headline: <b>real skill@20</b> is the mean
+  skill@20 over the runs graded (each clipped at −100%, as on the bench; hover for its 95% interval), <b>goals met</b> the runs with
+  skill@20 ≥ 90% and skill@100 ≥ 80% (an error or timeout never meets it) out of all realistic runs, <b>real time</b> the strategy's own
+  time on them (timeouts at 300 s not included; hover for the slowest run and the timeouts). The Set picker chooses the cases the other columns are over (default: the tests).
   Click a column to sort; hover a column's name for its meaning, and <b>ⓘ</b> beside a strategy for how it works.
   Every word and strategy in plain language: <a href="/ladder/glossary" style="color:inherit">the glossary</a>.</p>
   <div class="controls">
+    <label>Set <select id="set" title="Tests: the ladder's tiny true models (mathematical probes). Realistic: SD Lab's 31 example models (sdlab/examples/sd-*), as on the examples' bench. The realistic columns on the right always show the realistic examples.">
+      <option value="tests">tests</option>
+      <option value="realistic">realistic examples</option>
+      <option value="all">all</option>
+    </select></label>
     <label>Runs <select id="variants">
       <option value="all">all variants</option>
       <option value="none">no noise</option>
@@ -133,6 +146,10 @@ const COLS = [
   { key: "runs", label: "runs", fmt: (v) => v, cls: "hide-sm" },
   { key: "cover", label: "ran (of all cells)", fmt: pct },
   { key: "seconds", label: "time (s)", fmt: (v) => v.toFixed(1), cls: "hide-sm" },
+  { key: "rSkill20", label: "real skill@20", fmt: pct, cls: "real", group: "real", tip: (r) => r.rTip },
+  { key: "rGoals", label: "goals met", fmt: (v, r) => (r.rOf ? `${r.rGoalsN}/${r.rOf}` : "–"), cls: "real", group: "real", tip: (r) => r.rTip },
+  { key: "rFresh20", label: "real fresh@20", fmt: pct, cls: "real hide-sm", group: "real" },
+  { key: "rTime", label: "real time (s)", fmt: (v) => (Number.isNaN(v) ? "–" : v.toFixed(0)), cls: "real hide-sm", group: "real", asc: true, tip: (r) => r.rTimeTip },
 ];
 let data = null, sortKey = "pass", sortDir = -1, about = {}, gloss = {};
 const open = new Set();                                   // strategies whose explanation is expanded
@@ -147,13 +164,37 @@ function aboutRow(name) {
 function pct(v) { return v == null || Number.isNaN(v) ? "–" : (100 * v).toFixed(1) + "%"; }
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const clip = (v) => (v == null ? null : Math.max(-1, v));
+const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference
+
+// the realistic examples for one strategy (the variant filter applies; level and kind do not): behaviour is the headline
+function realistic(name, real, vf) {
+  const rc = data.cells.filter((c) => c.strategy === name && real[c.case] && (vf === "all" || c.variant.includes(vf)));
+  const rr = rc.filter((c) => c.status), sk = (k) => rr.map((c) => clip(c[k])).filter((v) => v != null && Number.isFinite(v));
+  const goals = rr.filter((c) => c.goal).length, s20 = sk("skill20"), out = rr.filter((c) => c.status === "timeout").length;
+  const secs = rr.map((c) => c.seconds).filter((v) => v != null);
+  return { rSkill20: mean(s20), rFresh20: mean(sk("fresh20")), rGoals: rc.length ? goals / rc.length : NaN, rGoalsN: goals, rOf: rc.length,
+    rTime: secs.length ? secs.reduce((a, b) => a + b, 0) : NaN,
+    rTip: rc.length ? `${rr.length} of ${rc.length} realistic runs done, ${s20.length} graded (${out} timeouts, ${rr.filter((c) => c.status === "error").length} errors: no skill); ${goals} meet the goal (fresh run: ${rr.filter((c) => c.goal_fresh).length}); 95% interval of the mean skill@20 ${ciText(s20)}` : "not run on the realistic examples yet",
+    rTimeTip: secs.length ? `over ${secs.length} finished runs; slowest ${Math.max(...secs).toFixed(0)} s; ${out} timed out` : "" };
+}
+// 95% bootstrap interval of a mean (as the bench reports it), resampling the runs
+function ciText(v) {
+  if (v.length < 2) return "–";
+  let seed = 1; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const ms = [];
+  for (let b = 0; b < 1000; b++) { let s = 0; for (let i = 0; i < v.length; i++) s += v[Math.floor(rnd() * v.length)]; ms.push(s / v.length); }
+  ms.sort((a, b) => a - b);
+  return `[${(100 * ms[25]).toFixed(1)}, ${(100 * ms[974]).toFixed(1)}]`;
+}
 
 function rows() {
   const vf = document.getElementById("variants").value, lv = +document.getElementById("level").value;
   const f = document.getElementById("filter").value.trim().toLowerCase();
   const level = Object.fromEntries(data.cases.map((c) => [c.id, c.level]));
   const kd = document.getElementById("kind").value, drawn = Object.fromEntries(data.cases.map((c) => [c.id, !!c.draw]));
-  const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case]);
+  const set = document.getElementById("set").value, real = Object.fromEntries(data.cases.map((c) => [c.id, isReal(c)]));
+  const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
+    && (set === "all" || (set === "realistic") === real[c.case]);
   const by = {};
   for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
   const of = {};
@@ -171,6 +212,7 @@ function rows() {
       ...complexity(cs),
       ...longRun(name, vf, lv),
       ...achievable(cs),
+      ...realistic(name, real, vf),
     };
   });
 }
@@ -219,12 +261,13 @@ function render() {
     const d = (Number.isNaN(x) ? none : x) - (Number.isNaN(y) ? none : y);
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
-  document.querySelector("#t thead").innerHTML = "<tr>" + COLS.map((c) =>
+  const nReal = COLS.filter((c) => c.group === "real").length, setName = { tests: "Tests", realistic: "Realistic examples", all: "All cases" }[document.getElementById("set").value];
+  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th></tr>` + "<tr>" + COLS.map((c) =>
     `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all" style="color:inherit" title="Every test case: the true model beside what ${r.name} found">${r.name}</a>`
+    if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all&set=${document.getElementById("set").value}" style="color:inherit" title="Every case in the set: the true model beside what ${r.name} found">${r.name}</a>`
       + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="${esc(about[r.name].idea)}">ⓘ</button>` : "") + `</td>`;
     if (c.key === "bar") {
       const w = (v) => (100 * v / r.runs).toFixed(2) + "%";
@@ -232,7 +275,7 @@ function render() {
         `<span style="width:${w(r.p)};background:var(--pass)"></span><span style="width:${w(r.e)};background:var(--equiv)"></span>` +
         `<span style="width:${w(r.fl)};background:var(--fail)"></span><span style="width:${w(r.o)};background:var(--other)"></span></div></td>`;
     }
-    return `<td class="num ${c.cls || ""}"${c.tip ? ` title="${c.tip(r)}"` : ""}>${c.fmt(r[c.key])}</td>`;
+    return `<td class="num ${c.cls || ""}"${c.tip ? ` title="${esc(c.tip(r))}"` : ""}>${c.fmt(r[c.key], r)}</td>`;
   }).join("") + "</tr>" + (open.has(r.name) ? aboutRow(r.name) : "")).join("");
   document.querySelectorAll("#t [data-about]").forEach((b) => { b.onclick = () => { const n = b.dataset.about; if (open.has(n)) open.delete(n); else open.add(n); render(); }; });
   document.getElementById("count").textContent = `${rs.length} strategies`;
@@ -257,6 +300,11 @@ async function load() {
 function syncRankBy() { const rb = document.getElementById("rankby"); rb.value = [...rb.options].some((o) => o.value === sortKey) ? sortKey : ""; }
 document.getElementById("rankby").onchange = (e) => { if (!e.target.value) return; sortKey = e.target.value; sortDir = COLS.find((c) => c.key === sortKey).asc ? 1 : -1; render(); };
 for (const id of ["variants", "level", "kind"]) document.getElementById(id).onchange = render;
+{                                                          // the set picked last (tests by default)
+  const el = document.getElementById("set");
+  try { const v = localStorage.getItem("sdlab.leaderboard.set"); if (v) el.value = v; } catch { /* fine */ }
+  el.onchange = () => { try { localStorage.setItem("sdlab.leaderboard.set", el.value); } catch { /* fine */ } render(); };
+}
 document.getElementById("filter").oninput = render;
 load();
 setInterval(load, 15000);

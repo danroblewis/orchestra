@@ -1,0 +1,7 @@
+# The example sd-reservoirs (sdlab/examples/sd-reservoirs) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-reservoirs
+title: "Reservoir cascade"
+level: 20
+tags: [realistic, schedule]
+tests: "3 measured stocks, 6 flows with unannounced changes; behaviour as on the examples' bench"

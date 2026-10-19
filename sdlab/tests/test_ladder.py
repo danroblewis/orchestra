@@ -52,12 +52,15 @@ def test_there_is_a_ladder():
         assert names and len(set(names)) == len(names) and {v["noise"] for v in c["variants"]} <= {"none", "counts"}, i
 
 
-@pytest.mark.parametrize("case_id", casemod.case_ids())
+TESTS = [i for i in casemod.case_ids() if not casemod.is_realistic(i)]     # realistic cases: test_ladder_realistic.py
+
+
+@pytest.mark.parametrize("case_id", TESTS)
 def test_every_case_is_sane(case_id):
     assert checks.problems(casemod.load(case_id)) == []
 
 
-@pytest.mark.parametrize("case_id", casemod.case_ids())
+@pytest.mark.parametrize("case_id", TESTS)
 @pytest.mark.parametrize("variant", ["none-short", "counts-long"])
 def test_the_true_model_passes_its_own_equation_scoring(case_id, variant):
     s = scored(case_id, perfect, variant)

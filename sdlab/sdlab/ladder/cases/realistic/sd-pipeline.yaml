@@ -1,0 +1,7 @@
+# The example sd-pipeline (sdlab/examples/sd-pipeline) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-pipeline
+title: "Work pipeline"
+level: 20
+tags: [realistic, schedule]
+tests: "4 measured stocks, 5 flows with unannounced changes; behaviour as on the examples' bench"

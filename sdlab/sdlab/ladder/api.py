@@ -31,7 +31,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import analysis, catalog, complexity, data, explain, longrun_cache, score, store
+from . import analysis, catalog, complexity, data, explain, longrun_cache, realistic, score, store
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -226,7 +226,7 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     lr = longrun_cache.for_results(list(have.values()))            # read only: what `sdlab-ladder longrun` computed
     lr_cells = []
     cs = [casemod.load(i) for i in casemod.case_ids()]
-    cells, by_tag, totals = [], {}, {}
+    cells, by_tag, totals, real = [], {}, {}, {}
     for c in cs:
         for v in c["variants"]:
             for s in strats:
@@ -236,6 +236,11 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                         **complexity.cell(row, cx.get(row["id"]) if row else None),
                         **analysis.cell(c["id"], v["name"], c["hash"])}
                 cells.append(cell)
+                if c.get("example"):                              # a realistic case: its own totals, not the tests'
+                    cell["goal"] = realistic.meets_goal(cell["status"], cell["skill20"], cell["skill100"]) if row else None
+                    cell["goal_fresh"] = realistic.meets_goal(cell["status"], cell["fresh20"], cell["fresh100"]) if row else None
+                    real.setdefault(s["name"], []).append(cell)
+                    continue
                 if row and lr.get(row["id"]):
                     lr_cells.append((s["name"], v["name"], c["level"], lr[row["id"]]))
                 t = totals.setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "stale": 0, "total": 0, "seconds": 0.0,
@@ -254,8 +259,10 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     g["total"] += 1
                     g[cell["status"] or "missing"] += 1
     return jsonable({"strategies": strats,
-                     "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c) for c in cs],
-                     "cells": cells, "by_tag": by_tag, "totals": totals, "score_hash": sh, "parametric": parametric(cs, cells),
+                     "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c)
+                               | ({"example": c["example"]} if c.get("example") else {}) for c in cs],
+                     "cells": cells, "by_tag": by_tag, "totals": totals, "realistic": {n: realistic.aggregate(x) for n, x in real.items()},
+                     "score_hash": sh, "parametric": parametric(cs, cells),
                      "longrun": longrun_cache.aggregate(lr_cells)})
 
 

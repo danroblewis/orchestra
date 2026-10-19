@@ -1,0 +1,7 @@
+# The example sd-eras (sdlab/examples/sd-eras) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-eras
+title: "Factory line with machine changes"
+level: 20
+tags: [realistic, announced-era, schedule]
+tests: "3 measured stocks, 4 flows with announced eras, unannounced changes; behaviour as on the examples' bench"

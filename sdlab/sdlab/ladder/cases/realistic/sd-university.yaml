@@ -1,0 +1,7 @@
+# The example sd-university (sdlab/examples/sd-university) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-university
+title: "University"
+level: 20
+tags: [realistic, hidden, coflow, announced-era, schedule]
+tests: "7 measured stocks and 1 hidden, 15 flows with co-flows, announced eras, unannounced changes; behaviour as on the examples' bench"

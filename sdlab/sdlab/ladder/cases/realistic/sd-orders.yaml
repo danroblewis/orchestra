@@ -1,0 +1,7 @@
+# The example sd-orders (sdlab/examples/sd-orders) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-orders
+title: "Ordering toward a target"
+level: 20
+tags: [realistic, coflow, schedule]
+tests: "3 measured stocks, 4 flows with co-flows, unannounced changes; behaviour as on the examples' bench"

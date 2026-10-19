@@ -31,6 +31,7 @@ from pathlib import Path
 
 from .. import runner as _runner
 from . import draws as _draws
+from . import realistic as _realistic
 from .caseformat import CaseError, compile_case
 
 
@@ -73,11 +74,32 @@ def _listing(folder: str, mtime_ns: int) -> dict[str, Path]:
     return out
 
 
+def realistic_files() -> dict[str, Path]:
+    """The realistic cases (cases/realistic/sd-*.yaml, realistic.py): the examples, by reference."""
+    d = _realistic.folder(CASES)
+    return dict(_realistic_listing(str(d), d.stat().st_mtime_ns)) if d.is_dir() else {}
+
+
+@lru_cache(maxsize=8)
+def _realistic_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
+    return _realistic.files(Path(folder).parent)
+
+
+def _all_files() -> dict[str, Path]:
+    return {**case_files(), **realistic_files()}
+
+
+def is_realistic(case_id: str) -> bool:
+    """Is this one of the realistic cases (an example by reference), not a test case?"""
+    return split(case_id)[0] in realistic_files()
+
+
 def case_ids() -> list[str]:
     """Every case, simplest first: by level, then by id. (Ids are stable names in the order the cases
     were written; a basic case added later still sorts among the basics.) A parametric case is listed
-    as its draws, NNN-slug#1 .. NNN-slug#N (draws.py)."""
-    files = case_files()
+    as its draws, NNN-slug#1 .. NNN-slug#N (draws.py). The realistic cases (realistic.py) are listed
+    too, by their level (20: after the tests)."""
+    files = _all_files()
     out = []
     for cid, p in files.items():
         n, level = _safe_count(p), _level(p)
@@ -89,7 +111,7 @@ def known(case_id: str) -> bool:
     """Is this a case id (a case, or a draw of a parametric case)?"""
     try:
         base, i = split(case_id)
-        p = case_files().get(base)
+        p = _all_files().get(base)
         return p is not None and (1 <= i <= _safe_count(p) if i else not _safe_count(p))
     except (CaseError, KeyError, ValueError):
         return False
@@ -127,7 +149,7 @@ def _safe_count(path: Path) -> int:
 
 
 def _draw_count(path: Path) -> int:
-    if path.suffix != ".yaml":
+    if path.suffix != ".yaml" or path.parent.name == "realistic":
         return 0
     st = path.stat()
     return _count(str(path), st.st_mtime, st.st_size)
@@ -160,6 +182,8 @@ def _level_of(path_s: str, mtime: float, size: int) -> int:
 def read(path: Path) -> dict:
     """A case file as its case dict (a YAML case compiled; CaseError if it does not compile). A
     parametric case has no single case dict: read a draw with load / spec."""
+    if path.parent.name == "realistic":
+        return _realistic.spec(path)
     text = path.read_text()
     if path.suffix == ".yaml":
         if _draws.count(text, path.name):
@@ -184,7 +208,7 @@ def _build(case_id: str, spec: dict) -> dict:
                 for n in v.get("noise") or list(NOISES) for ln, steps in lengths.items()]
     case = {"id": case_id, "title": spec.get("title") or case_id, "level": spec.get("level", 0), "tags": list(spec.get("tags") or []),
             "tests": spec.get("tests") or "", "tolerance": dict(spec.get("tolerance") or {}), "variants": variants,
-            "model": spec["model"]}
+            "model": spec["model"], **{k: spec[k] for k in ("example", "timeout") if k in spec}}
     return {"spec": spec, "case": {**case, "hash": case_hash(case)}}
 
 
@@ -259,9 +283,11 @@ def _load_draw(path: str, mtime: float, size: int, i: int) -> dict:
 
 def _get(case_id: str) -> dict:
     base, i = split(case_id)
-    p = case_files().get(base)
+    p = _all_files().get(base)
     if p is None or not known(case_id):
         raise KeyError(case_id)
+    if p.parent.name == "realistic":
+        return _load(str(p), *_realistic.stamp(p))
     st = p.stat()
     return _load_draw(str(p), st.st_mtime, st.st_size, i) if i else _load(str(p), st.st_mtime, st.st_size)
 

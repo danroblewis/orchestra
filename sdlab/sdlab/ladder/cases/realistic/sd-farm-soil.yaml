@@ -1,0 +1,7 @@
+# The example sd-farm-soil (sdlab/examples/sd-farm-soil) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-farm-soil
+title: "An arable farm and its soil"
+level: 20
+tags: [realistic, hidden, coflow, effect, announced-era, schedule]
+tests: "3 measured stocks and 1 hidden, 5 flows with co-flows, effects, announced eras, unannounced changes; behaviour as on the examples' bench. Tests an effect closing a balancing loop: soil nitrogen (a stock outside the crop's chain) speeds up crop growth through a diminishing-returns lookup (a table sampled from log(1 + N/40)/log(1 + 200/40): the first kilos of nitrogen matter most)."

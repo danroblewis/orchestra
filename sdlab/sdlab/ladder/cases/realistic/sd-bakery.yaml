@@ -1,0 +1,7 @@
+# The example sd-bakery (sdlab/examples/sd-bakery) on the ladder, by reference: its truth model, seed, lengths
+# and noise come from the example (realistic.py), never from this file.
+example: sd-bakery
+title: "A bakery that runs out of flour"
+level: 20
+tags: [realistic, coflow, schedule]
+tests: "4 measured stocks, 6 flows with co-flows, unannounced changes; behaviour as on the examples' bench. Tests a co-flow: every loaf baked uses half a kilo of flour, so when the flour runs out baking stops and orders pile up."
