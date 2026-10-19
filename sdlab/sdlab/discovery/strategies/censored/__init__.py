@@ -209,11 +209,16 @@ def gap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, inp=None):
     split = _flows_of(flows, ids[i])
     if split is None:
         return []
-    _, rest = split
+    mine, rest = split
     y = dy[i] - onestep.changes(rest, ids, t, prev, mi)[i]
     T = len(y)
+    # the other stocks the row's flows read (a gap over several stocks: 106's hiring reads both)
+    extra = sorted({ids.index(s) for f in mine for s in _reads(f) if s in ids and s != ids[i]})
     out = []
-    for fit in gap.search(y, X, i, [j for j in range(len(names)) if j != i], floor_rss):
+    fits = gap.search(y, X, i, [j for j in range(len(names)) if j != i], floor_rss)
+    if extra:
+        fits += gap.search(y, X, i, [j for j in range(len(names)) if j != i], floor_rss, extra=extra)
+    for fit in fits:
         gain = T * math.log(max(fit["line_rss"], floor_rss) / max(fit["rss"], floor_rss))
         if gain < (1 + margin) * math.log(T):
             continue
