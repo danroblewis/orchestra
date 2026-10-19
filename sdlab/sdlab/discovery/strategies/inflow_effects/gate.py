@@ -32,7 +32,7 @@ from ...changes import pelt
 from .pieces import _kmeans, _segments
 
 DEFAULTS = {"gate": True, "gate_knots": [3, 4, 5, 6], "gate_levels": 4, "gate_change": 2.0, "gate_iter": 40,
-            "gate_top": 8, "gate_rounds": 3, "gate_margin": 1.0, "gate_budget": 60.0, "gate_gain": 10.0}
+            "gate_top": 8, "gate_rounds": 3, "gate_margin": 1.0, "gate_budget": 60.0, "gate_gain": 10.0, "gate_vary": 0.05}
 
 
 def size(flows: list[dict]) -> int:
@@ -62,7 +62,7 @@ def size(flows: list[dict]) -> int:
 
 def onestep_rss(flows, ids, A, tt, mi, injections=None):
     prev = A[:, :-1]
-    if injections:
+    if injections is not None:
         prev = prev + injections
     with np.errstate(all="ignore"):
         nxt = Model(flows, ids, inputs=mi).step(prev, tt)
@@ -70,10 +70,26 @@ def onestep_rss(flows, ids, A, tt, mi, injections=None):
     return ((nxt - A[:, 1:]) ** 2).sum(axis=1)
 
 
-def price(flows, ids, A, tt, mi, injections=None) -> float:
+def resolution(A: np.ndarray) -> np.ndarray:
+    """Each stock's reporting step: the largest 10^-d (d = 0..8) its levels are whole multiples of
+    (0 if none): noise-free levels are rounded, and a fit closer than that is fitting the rounding."""
+    out = np.zeros(A.shape[0])
+    for i, x in enumerate(A):
+        for d in range(9):
+            y = x * 10.0 ** d
+            if np.all(np.abs(y - np.round(y)) < 1e-6 * np.maximum(1.0, np.abs(y)) + 1e-9):
+                out[i] = 10.0 ** -d
+                break
+    return out
+
+
+def price(flows, ids, A, tt, mi, injections=None, res=None) -> float:
+    """One-step BIC; a row's error is never taken below its levels' rounding (res: per stock, a
+    rounded step's change errs by about res^2 / 6)."""
     T = A.shape[1] - 1
     rss = onestep_rss(flows, ids, A, tt, mi, injections)
-    return float(sum(T * math.log(max(r, 1e-9) / T) for r in rss) + size(flows) * math.log(T))
+    floor = np.full(len(rss), 1e-9) if res is None else np.maximum(1e-9, T * np.asarray(res) ** 2 / 6.0)
+    return float(sum(T * math.log(max(r, fl) / T) for r, fl in zip(rss, floor)) + size(flows) * math.log(T))
 
 
 def _carries_effect(f: dict) -> bool:
@@ -473,8 +489,12 @@ class Hypothesis:
         if not np.isfinite(ref) or ref <= 1e-9:
             return None
         wn = w / ref
-        if np.mean(wn @ hats(cl, kn) > -1e-6) < 0.95:
+        fv = wn @ hats(cl, kn)
+        if np.mean(fv > -1e-6) < 0.95:
             return None                                             # a rate cannot be negative
+        lo, hi = np.percentile(fv, [2, 98])
+        if hi - lo < self.o["gate_vary"]:
+            return None                                             # a flat curve is no effect
         eff = {"stock": self.c, "shape": "table", "points": [[float(x), float(max(0.0, y))] for x, y in zip(kn, wn)]}
         new = {"from": None, "to": self.r, "ratio": 1, "driver": self.c, "effects": [eff]}
         if self.kind == "pieces":
@@ -587,6 +607,7 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
     prev = A[:, :-1] + (inj if inj is not None else 0)
     dy = A[:, 1:] - prev
     mi = model_inputs(opts.get("inputs"), ids, run["t"])
+    res = resolution(A)
     from .inputs import rows as input_rows
     xin_names, xin = input_rows(opts.get("inputs"), ids, T)
     final = {s["id"] for s in stocks if s.get("final")}
@@ -602,7 +623,7 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
             return float("inf")
 
     cur = flows
-    cur_p = price(cur, ids, A, tt, mi, inj)
+    cur_p = price(cur, ids, A, tt, mi, inj, res)
     base_e = judge(cur)
     chain: list = []
     log_t = math.log(T)
@@ -660,9 +681,9 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
                 fu = h.flows()
                 if fu is None or _negative(fu, ids, prev, tt, mi):
                     continue
-                fu = _prune(fu, ids, A, tt, mi, inj)
+                fu = _prune(fu, ids, A, tt, mi, inj, res)
                 how = (f" from {u}" if move else f" using {u}") if u else ""
-                cands.append((price(fu, ids, A, tt, mi, inj), fu, how))
+                cands.append((price(fu, ids, A, tt, mi, inj, res), fu, how))
             if os.environ.get("SDLAB_GATE_DEBUG"):
                 for pc, fc, how in cands:
                     print(f"gate: {kind} x f({c}) -> {r}{how}: price {pc:.0f} (base {cur_p:.0f})")
@@ -676,7 +697,7 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
         notes.append(f"{best[2]}: price {best[0]:.0f} vs {cur_p:.0f}, judge {e:.3g} vs {base_e:.3g}")
         # rounds go on by price (one effect may only behave once the next is in); the model returned
         # is the round that behaves best, if no worse than `gate_margin` x the base
-        cur, cur_p = fl, price(fl, ids, A, tt, mi, inj)
+        cur, cur_p = fl, price(fl, ids, A, tt, mi, inj, res)
         chain.append((e, cur))
         done_rows.add(best[3])
     ok = [(e, fl) for e, fl in chain if e <= o["gate_margin"] * base_e]
@@ -771,18 +792,18 @@ def _best_knots(h: Hypothesis, o: dict):
     return h.result
 
 
-def _prune(flows, ids, A, tt, mi, inj):
+def _prune(flows, ids, A, tt, mi, inj, res=None):
     """Flows dropped one at a time while the price falls (numbers not refitted: a flow the new
     inflow made redundant has a small scale)."""
     cur = flows
-    p = price(cur, ids, A, tt, mi, inj)
+    p = price(cur, ids, A, tt, mi, inj, res)
     while len(cur) > 1:
         trial = None
         for i in range(len(cur)):
             if cur[i].get("effects") and cur[i].get("driver"):
                 continue
             fl = cur[:i] + cur[i + 1:]
-            q = price(fl, ids, A, tt, mi, inj)
+            q = price(fl, ids, A, tt, mi, inj, res)
             if q < p and (trial is None or q < trial[0]):
                 trial = (q, fl)
         if trial is None:

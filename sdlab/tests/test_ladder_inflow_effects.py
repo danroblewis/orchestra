@@ -36,6 +36,14 @@ def test_adds_no_effect_to_a_plain_chain():
     assert not any(f.get("effects") for f in r["flows"])
 
 
+@pytest.mark.parametrize("case_id", ["039-random-inflow-outflow#1", "056-sweep-zero-floor#1"])
+def test_no_flat_table_on_a_constant_inflow_without_noise(case_id):
+    # noise-free levels are rounded: a table that only fits the rounding is not an effect
+    r, s = run_case(case_id, "none-long")
+    assert s["status"] == "pass", r["flows"]
+    assert not any(f.get("effects") for f in r["flows"])
+
+
 def test_size_counts_a_tables_points_and_a_schedules_values_and_changes():
     f = {"from": None, "to": "A", "rate": {"form": "constant", "value": 1},
          "inflow": [{"from": 1, "to": 9, "value": 1.0}, {"from": 10, "to": 19, "value": 2.0}, {"from": 20, "to": 30, "value": 1.0}],
