@@ -511,3 +511,26 @@ By strict: combined_lean / combined_r2 66.8%, archetypes 64.9%, structures 64.5%
 - shared `identify.judge` gaining an optional inputs parameter;
 - the behaviour grader swapping only exogenous inflows;
 - retiring dominated strategies.
+
+## 2026-10-19 06:05 (hourly cycle, after a usage-limit pause)
+
+**What happened:** at about 04:45 the session hit its usage limit, and every running agent stopped mid-task. The limit reset at 06:00, and all 11 were resumed from where they stopped: scorer fixes, time measurements, control cases, distilled fixes x2, structures, physics, realistic, research round, 0c vendoring, and one unattributed agent (a9c204d, asked to state its task). No work was lost: agents keep their state.
+
+**Health**
+- **Server:** leaderboard 0.11 s warm; one listener.
+- **Watcher:** running, backlog 69,970 stale (down from 77,394).
+- **Load:** average ~40, lower during the pause.
+- **Tests:** 1,315 passed, 51 skipped, 1 failed: the noise four-variants test, again sent to the physics agent (cases 141-143).
+
+**Finished before the pause**
+- **The Kubernetes models** (47a5fac, 78b69df): sd-k8s-small (74 stocks) and sd-k8s-platform (479 stocks, 1,130 flows). Only matrix gets useful behaviour, on the small model; every leader returns nothing or times out on the platform.
+- **Heavy cases** (this cycle's coordinator change): a platform worker holds ~15 GB and memory was exhausted (0.1 GB free, 94 GB compressed). Cases tagged `heavy` now run only when named. sd-k8s-platform is heavy, and its case hash is unchanged.
+- **Control-theory cases** 200-215 and `control.py` (cd9e8b1); the agent is finishing.
+- **Time measurements** (c2a3c25): `sdlab-ladder cost` exists; the agent is finishing.
+
+**Leaderboard:** as at 03:40. No new full strict run this cycle.
+
+**Needs you:** unchanged.
+- shared `identify.judge` gaining an optional inputs parameter;
+- the behaviour grader swapping only exogenous inflows;
+- retiring dominated strategies.
