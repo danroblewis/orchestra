@@ -1,0 +1,11 @@
+title: Two independent stocks
+level: 2
+tags: [independent, inflow]
+tests: two unrelated stocks are each recovered on their own, with no flow invented between them
+seed: 28
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 8
+  B -> outside: 0.05 * B

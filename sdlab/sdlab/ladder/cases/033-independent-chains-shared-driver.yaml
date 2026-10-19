@@ -1,0 +1,18 @@
+title: Independent chains with the same outside changes
+level: 6
+tags: [independent, chain, move, inflow-change, unannounced, common-cause]
+tests: two unrelated chains whose outside inflows step up and down at the same moments (a common cause) are recovered without inventing flows between the chains
+seed: 33
+stocks: {A1: 0, B1: 0, A2: 0, B2: 0}
+flows:
+  outside -> A1 as in1: 20
+  A1 -> B1: 0.5 * A1
+  B1 -> outside: 0.2 * B1
+  outside -> A2 as in2: 12
+  A2 -> B2: 0.3 * A2
+  B2 -> outside: 0.1 * B2
+schedule:
+  every: 240
+  at 1 normal: {in1: 20, in2: 12}
+  at 80 busy: {in1: 35, in2: 21}
+  at 160 quiet: {in1: 10, in2: 6}

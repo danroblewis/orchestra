@@ -1,0 +1,15 @@
+title: Two independent chains of three
+level: 4
+tags: [independent, chain, move]
+tests: two unrelated three-stock chains are each recovered, with no flow between the chains
+seed: 30
+stocks: {A1: 0, B1: 0, C1: 0, A2: 0, B2: 0, C2: 0}
+flows:
+  outside -> A1: 20
+  A1 -> B1: 0.5 * A1
+  B1 -> C1: 0.25 * B1
+  C1 -> outside: 0.1 * C1
+  outside -> A2: 12
+  A2 -> B2: 0.35 * A2
+  B2 -> C2: 0.15 * B2
+  C2 -> outside: 0.2 * C2
