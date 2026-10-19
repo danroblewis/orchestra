@@ -298,6 +298,21 @@ strategies:
     status: active
     note: Research document docs/research/effect-hats.md.
 
+  realistic_flows:
+    idea: realistic_hats that also finds co-flows, and keeps a stock's own drain instead of letting its outside inflow stand in for it.
+    how: >-
+      A copy of realistic_hats (effects, hidden transit stocks, always answers in time) with
+      coflow_hats' co-flow steps added (copied): flows that use up another stock as they move, also when
+      that stock runs dry. The matrix method is also run a second time with each stock's own numbers
+      kept as fitted - a small rate on a large stock is not rounded away, and a drain is not cut to what
+      other stocks are seen to receive unless the data agree - and the version that predicts the data
+      better is used. Hidden stages are tried on the model with and without the co-flows, and the one
+      that predicts better is kept.
+    helps_with: Outside inflows standing in for a flow (distilled 153, 154), co-flows (128, 129), on the realistic examples.
+    builds_on: realistic_hats, coflow_hats (copies)
+    status: work in progress
+    note: Research document docs/research/realistic-flows.md.
+
   realistic_hats:
     idea: effect_hats made for the realistic examples - it always answers in time, and adds hidden transit stocks between measured pairs.
     how: >-
