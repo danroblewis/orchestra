@@ -1,0 +1,17 @@
+title: "Binding A + B -> C: a product with its co-flow, both fed by measured inputs"
+level: 21
+tags: [distilled, product, effect, effect-linear, coflow, input]
+tests: "distilled from part-reacting-particles (every leader fails it): A -> C at 0.000378 x A x B (a proportional rate times a linear effect of B) using up one B per C, A and B fed by measured inputs that step independently, A, B and C drained: recovered as the product with its co-flow and the two input inflows, not as linear moves between all three"
+seed: 142
+inputs:
+  feedA: 6 + step(3, 150) - step(4, 400) + step(2, 900) - step(3, 1300) + step(2, 1700)
+  feedB: 5 + step(3, 250) - step(5, 600) + step(4, 1100) - step(2, 1500)
+stocks: {A: 120, B: 120, C: 60}
+flows:
+  outside -> A: 1 * feedA
+  outside -> B: 1 * feedB
+  A -> C:
+    rate: 0.0378 * A * effect(B, linear, normal=100, max=1000000) uses(B, 1)
+  A -> outside: 0.0193 * A
+  B -> outside: 0.0287 * B
+  C -> outside: 0.0497 * C
