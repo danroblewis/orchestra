@@ -329,3 +329,86 @@ The user answered the distilling agent's scoring questions. Approved scorer chan
 6. **Floors:** the analysis accounts for binding floors (125).
 
 Still open: the behaviour grader feeding only the truth's constant inflows. The realistic agent is measuring it, and the result goes to the user before any change.
+
+## 2026-10-19 02:30 (hourly cycle)
+
+**Health**
+- **Server:** summary 1.4 s warm, but 113 s on the first request after a restart; the payload is ~39 MB raw. The fast-leaderboard agent is replacing it with compact aggregates.
+- **Watcher:** backlog 75,600 stale. It jumped because strategies changed code (input fixes, vendored copies), the scorer changed (cb1c69d), and new distilled and particle cases arrived.
+- **Tests:** 1,239 passed, 51 skipped, 2 failed:
+  - the noise "existing cases keep four variants" test: likely distilled 141-143; sent to the physics agent;
+  - a realistic test on the uncommitted sd-k8s files; sent to the k8s agent.
+
+**Finished since the last entry**
+- **kalman_lna** (queue 0b; doc 00c0038).
+- **Input handling** in censored, effect_hats and earned_pieces (89adae4, ccd07e2): 1,074/1,074 non-input cells identical; 062 and Newton cooling pass in every variant.
+- **Particle cases** (5481119 … ba68e43): 8 cases; distilled 170, 171, 195.
+- **Newest-tests view** (24930b2, `/ladder/new`): only one clean regression (lna_stack 101 counts-short, the known port loss).
+- **Editor truth and strategy-switch fixes.**
+- **The combined empty-model fix** (beab53e).
+- **The six scorer fixes** (cb1c69d). Strict verdicts are pending until re-scored.
+
+**Running** (10): structures, research round, short series, k8s, distilled fixes, realistic, physics, scorer fixes, fast leaderboard, one more. No new start.
+
+**New strategies seen this hour** (each with an explanations entry; the test passes):
+- realistic_hats, coflow_hats (copies of effect_hats);
+- drifting_drain, own_tables (distilled-fix agent);
+- odefit (physics agent);
+- archetypes (short-series agent).
+
+**Leaderboard, Tests** (`sdlab-ladder strict --no-fill`, rates over cells run; strict pending after the scorer change):
+
+| strategy | pass | ran |
+|---|---|---|
+| realistic_hats | 81.4% | 118 cells only |
+| kalman_lna | 73.6% | 1,006 |
+| archetypes | 73.3% | 930 |
+| structures | 71.7% | 1,006 |
+| combined_lean / combined_r2 | 70.2% | 971 |
+| combined | 68.3% | 1,002 |
+
+Pass rates fell because the Tests set now includes the new distilled cases.
+
+**Realistic** (mean skill@20 over latest results):
+
+| strategy | skill@20 |
+|---|---|
+| realistic_hats | 50.4% (16 runs only) |
+| effect_hats | 49.9% |
+| censored | 41.9% |
+| combined | 40.6% |
+| kalman_lna | 38.6% |
+| structures | 38.7% |
+| matrix | 31.0% |
+
+**Physics** (passes of 44 cells over the 15 physics and particle cases):
+
+| strategy | passes |
+|---|---|
+| odefit | 27 |
+| effect_hats | 17 |
+| matrix | 17 |
+| censored | 16 |
+| combined | 15 |
+| kalman_lna | 15 |
+| archetypes | 12 (of 28) |
+| structures | 11 |
+
+**Distilled** (38 cases; passes over cells run):
+
+| strategy | passes |
+|---|---|
+| structures | 25/90 |
+| coflow_hats | 15/78 |
+| censored | 13/150 |
+| archetypes | 11/58 |
+| combined | 6/90 |
+| effect_hats | 4/130 |
+| matrix | 1/126 |
+
+At the first distilled run (20 cases), structures had 19/80 and every other strategy 0-3/80.
+
+**Needs you**
+- **The shared library's `identify.judge`, `identify.identify` and `onestep.bic` take no measured inputs**, so the main line judges input-driven flows as zero when choosing among its variants. The input-fix agent worked around it with local copies in its 3 strategies. Proposed fix: an optional `inputs=None` parameter, with existing calls byte-identical (an additive interface change). May the library change?
+- **Behaviour grader:** swap in only the truth's truly exogenous inflows (constants with no effect)? This affects sawmill. Evidence is in `docs/research/realistic-triage.md`.
+- **Still open from before:** retire dominated strategies, or run them less often, to cut the watcher's load.
