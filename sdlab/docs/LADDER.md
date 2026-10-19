@@ -900,7 +900,10 @@ short run is data-limited in every variant, counts too (the loop's link, as for 
 sweep stays achievable at every point (cost 1.00 at 0% to 1.68 short / 1.88 long at 20%).
 
 **The leaders on them** (`sdlab-ladder run --strategies combined,lna,lna_stack,earned_pieces,common_cause,censored,matrix --cases 080,...,088 --jobs 3`,
-single-threaded, code 10f1d24, 18-19 October 2026; 980 cells, all run, none errored or timed out).
+single-threaded; re-run at 130d21b after the oracle moved into score.py, with the same table as
+the first run at 10f1d24; 18-19 October 2026; 980 cells. Two did not finish, both lna_stack's on
+084 (meas-long: timeout after 120 s; outliers-long: a numba SystemError in `inv_logdet`), and
+count as not passing.)
 Passes over the cells the analysis calls achievable, 080-087, both lengths (equivalent in brackets):
 
 | noise | combined | lna | lna_stack | earned_pieces | common_cause | censored | matrix |
