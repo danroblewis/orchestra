@@ -127,3 +127,22 @@ def test_a_found_model_that_settles_wrong_is_graded_by_its_equilibrium():
     assert g["flag"] is None
     assert g["eq_err"] == pytest.approx(0.2 * (s.dyn["fixed_point"][0]) / max(s.scale[0], s.dyn["fixed_point"][0]), rel=1e-6)
     assert g["tau_err"] > 0.2
+
+
+def test_a_one_step_piece_at_the_runs_end_does_not_hold_for_ever():
+    f = {"from": None, "to": "B", "rate": {"form": "constant", "value": 7.7},
+         "inflow": [{"from": 2, "to": 1999, "value": 7.7}, {"from": 2000, "to": 2000, "value": 22.6}]}
+    ext = longrun.extend(f, 2000, None, 100_000)
+    assert ext["inflow"][-1] == {"from": 2001, "to": 100_000, "value": 7.7}
+    assert ext["inflow"][1]["value"] == 22.6                         # the run itself is unchanged
+    held = {**f, "inflow": [{"from": 2, "to": 1000, "value": 7.7}, {"from": 1001, "to": 2000, "value": 9.0}]}
+    assert longrun.extend(held, 2000, None, 100_000) is held          # a lasting last piece holds as it is
+
+
+def test_a_mode_too_slow_to_double_within_the_horizon_is_not_unstable():
+    tm, d = _truth("002-inflow-outflow")
+    s = longrun.Setup(tm, d)
+    # A' = A + 1e-7 A: grows by 1% in 100,000 steps
+    found = [{"from": None, "to": "A", "rate": {"form": "proportional", "stock": "A", "k": 1e-7}}]
+    g = longrun.grade(s, found)
+    assert not g["unstable"] and g["rho_found"] > 1

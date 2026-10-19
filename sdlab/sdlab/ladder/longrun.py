@@ -365,7 +365,7 @@ def grade(setup: Setup, found_flows: list[dict]) -> dict:
         flag = "dies"
     # unstable: grows at least 2x within the graded horizon (a mode at 1 + 1e-7, a fitting rounding,
     # doubles only after millions of steps), where the truth does not
-    grows = lambda d: bool(d.get("unstable")) and (d.get("rho") or 0) ** max(s.points.values()) > 2  # noqa: E731
+    grows = lambda d: bool(d.get("unstable")) and math.log(max(1.0, d.get("rho") or 0)) * max(s.points.values()) > math.log(2)  # noqa: E731
     unstable = grows(fdyn) and not grows(s.dyn)
     if flag is None and unstable:
         flag = "unstable"
