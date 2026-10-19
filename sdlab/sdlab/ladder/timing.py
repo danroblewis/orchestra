@@ -197,8 +197,8 @@ def versions(t: Table, name: str, sets: dict[str, str] | None = None, keep: int 
 class Estimator:
     """What re-testing a cell costs, from the stored times (built once per Table state; see estimate)."""
 
-    def __init__(self, t: Table, sets: dict[str, str]):
-        self.t, self.sets = t, sets
+    def __init__(self, t: Table, sets: dict[str, str], timeout: float = WATCH_TIMEOUT):
+        self.t, self.sets, self.timeout, self._limits = t, sets, timeout, {}
         disc_cv: dict[tuple, list] = {}
         disc_ss: dict[tuple, list] = {}
         disc_s: dict[str, list] = {}
@@ -233,23 +233,30 @@ class Estimator:
     def estimate(self, case: str, variant: str, strategy: str, mode: str = "run") -> tuple[float, str]:
         """(seconds, how): how is "measured" (this cell's own stored times), "cell" (other strategies on
         the cell), "strategy" (this strategy's median in the set), "set" (every strategy's median in the
-        set) or "unknown" (nothing to go by: 0). A run costs discovery + scoring; a re-score, scoring."""
+        set) or "unknown" (nothing to go by: 0). A run costs discovery (at most the item's timeout, as the
+        watcher runs it: the case's own, else WATCH_TIMEOUT) + scoring; a re-score, scoring."""
         sc, show = self.scoring(case, variant, strategy)
         if mode == "rescore":
             return sc, show
+        cap = self.limit(case)                  # the watcher stops discovery at the item's timeout
         row = self.t.latest.get((case, variant, strategy))
         if row:
-            _rid, _h, status, secs, _sc, wall = row
+            _rid, _h, status, secs, sc_own, wall = row
             if wall is not None:
-                return float(wall), "measured"
+                return min(float(wall), cap + (sc_own or 0.0)), "measured"
             d = discovery_seconds(case, status, secs, wall)
             if d is not None:
-                return d + sc, "measured"
+                return min(d, cap) + sc, "measured"
         s = self.sets.get(case)
         for how, got in (("cell", self.disc_cv.get((case, variant))), ("strategy", self.disc_ss.get((strategy, s))), ("set", self.disc_s.get(s))):
             if got is not None:
-                return got + sc, how
+                return min(got, cap) + sc, how
         return sc, "unknown"
+
+    def limit(self, case: str) -> float:
+        if case not in self._limits:
+            self._limits[case] = _limit(case) if case in self.sets else self.timeout
+        return self._limits[case]
 
 
 _estimators: dict = {}

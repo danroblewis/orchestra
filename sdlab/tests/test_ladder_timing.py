@@ -132,6 +132,9 @@ def test_a_cell_s_cost_comes_from_the_best_evidence():
     assert est.estimate("e", "none-short", "s1")[1] == "strategy"
     assert est.estimate("e", "none-short", "s9")[1] == "set"
     assert est.estimate("x", "none-short", "s1") == (0.0, "unknown")
+    rec("d", "s1", "v1", 1000.0, score_s=2.0)                # run with a longer timeout: the watcher stops it at 300 s
+    est = timing.Estimator(timing.table(), SETS)
+    assert est.estimate("d", "none-short", "s1") == (timing.WATCH_TIMEOUT + 2.0, "measured")
 
 
 def test_pace_eta_and_backlog():

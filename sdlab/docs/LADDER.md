@@ -2281,8 +2281,9 @@ done in a request.
 **What a cell would cost** (`timing.Estimator`): its own last wall seconds; else its discovery
 seconds plus scoring measured on that cell (under any strategy), else the set's median scoring; a
 cell the strategy never ran takes the cell's median over the strategies that ran it, else the
-strategy's median in the set, else every strategy's median in the set. A re-score costs the scoring
-part only.
+strategy's median in the set, else every strategy's median in the set. Discovery counts at most the
+item's timeout as the watcher runs it (the case's own, else 300 s), so a cell an agent ran with a
+longer timeout is not over-counted. A re-score costs the scoring part only.
 
 **The watcher's pace and ETA** (`runs.py`): results per hour over its watch batches of the last 6 h
 (from the first batch's start to now, planning gaps included), and its efficiency: busy seconds ÷
