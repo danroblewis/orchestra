@@ -3,22 +3,9 @@
 
 from isolation import violations
 
-# Strategies that still import others (2026-10-19). Queue item 0c converts them to copies; this
-# list may only shrink. A new entry is a failure: copy the code you build on instead of importing it.
-KNOWN = {
-    "combined": {"censored", "common_cause", "effect_hats", "gap_prior", "hidden_transit", "lna", "lna_pulses", "lna_stack", "periodic_inflows"},
-    "gap_prior": {"lna"},
-    "gated_no_high": {"gated"},
-    "held_out_blend": {"held_out"},
-    "inflow_attribution_both": {"inflow_attribution"},
-    "inflow_attribution_refine": {"inflow_attribution"},
-    "lna_levels": {"lna"},
-    "lna_loops": {"lna"},
-    "lna_products": {"lna", "lna_levels"},
-    "lna_pulses": {"impulses", "lna"},
-    "lna_stack": {"gap_prior", "impulses", "lna", "lna_levels", "lna_products", "lna_pulses"},
-    "mass_balance_all": {"mass_balance"},
-}
+# Strategies that still import others: none since queue item 0c (2026-10-19). This list may only
+# shrink, so it stays empty. A new entry is a failure: copy the code you build on instead of importing it.
+KNOWN: dict[str, set[str]] = {}
 
 
 def test_no_new_cross_strategy_imports():

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..lna.atoms import Atom
-from ..lna.fit import OutOfTime, fit
+from ._vendored.lna.atoms import Atom
+from ._vendored.lna.fit import OutOfTime, fit
 
 PRICE = 0.0
 

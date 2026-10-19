@@ -9,8 +9,8 @@ import time
 
 import numpy as np
 
-from ..lna.run import BUDGET
-from ..lna.run import discover as lna_discover
+from ._vendored.lna.run import BUDGET
+from ._vendored.lna.run import discover as lna_discover
 
 
 def stage(known: np.ndarray | None) -> dict:

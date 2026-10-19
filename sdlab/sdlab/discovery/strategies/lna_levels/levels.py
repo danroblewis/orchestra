@@ -20,11 +20,11 @@ import math
 
 import numpy as np
 
-from ..lna.atoms import Atom, features, stoich, variances
-from ..lna.changes import pieces
-from ..lna.fit import Data, Fitted, fit
-from ..lna.flows import _flow, r4
-from ..lna.run import bic, search
+from ._vendored.lna.atoms import Atom, features, stoich, variances
+from ._vendored.lna.changes import pieces
+from ._vendored.lna.fit import Data, Fitted, fit
+from ._vendored.lna.flows import _flow, r4
+from ._vendored.lna.run import bic, search
 
 MAX_LEVELS = 4
 TIE = 2.0            # BIC units: a model with more levels must beat one with fewer by more than this

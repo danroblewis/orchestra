@@ -14,8 +14,8 @@ worse) is applied to the result and to lna's own reading.
 
 from __future__ import annotations
 
-from .. import lna
-from ..lna_levels import own_reading_guard
+from ._vendored import lna
+from ._vendored.lna_levels import own_reading_guard
 from .run import stage
 
 

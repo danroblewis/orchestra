@@ -22,10 +22,10 @@ from scipy.stats import chi2
 from ...identify import identify as _matrix
 from ...matrix import injected
 from ...simulate import Model
-from ..impulses import _flows as pulse_flows
-from ..impulses import find_pulses
-from ..lna import GUARD, judge
-from ..lna import identify as _lna
+from ._vendored.impulses import _flows as pulse_flows
+from ._vendored.impulses import find_pulses
+from ._vendored.lna import GUARD, judge
+from ._vendored.lna import identify as _lna
 from .run import Budget, stage
 
 

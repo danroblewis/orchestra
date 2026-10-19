@@ -3,6 +3,7 @@
 **Status:** done (wave 3, benchmark v2.1), branch `exp/behaviour-gate`. Playbook M1.
 **Verdict:** reject on the main line; keep `sdlab/discovery/gate.py` as a building block (the
 acceptance check for strategies that add flexibility: hidden stocks, products, effects).
+**Copies (2026-10-19, queue item 0c):** `gated_no_high` is now a package carrying its own copy of `gated` (`gated_no_high/_vendored/gated.py`, commit 0c7a76b, imports rewritten; CLAUDE.md invariant 11). Found flows byte-identical before and after on 23 cells.
 
 ## What was built
 - `sdlab/discovery/gate.py`: `check(flows, stocks, run, opts)` -> `{"ok", "reasons", "culprit", "rho"}`.

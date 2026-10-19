@@ -3,6 +3,7 @@
 **Status:** done (wave 4, benchmark v2.1)  
 **Verdict:** needs a combination (finds only true hidden stocks, small skill gain; keep as an option
 behind the behaviour gate / piece-proof judge)
+**Copies (2026-10-19, queue item 0c):** `mass_balance_all` is now a package carrying its own copy of `mass_balance` (`mass_balance_all/_vendored/mass_balance.py`, commit 0c7a76b, imports rewritten; CLAUDE.md invariant 11). Found flows byte-identical before and after on 23 cells.
 
 ## Why
 20 of the 31 truths have a hidden stock, mostly a delay between two measured stocks of one unit:

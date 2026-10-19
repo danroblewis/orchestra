@@ -16,12 +16,12 @@ import math
 import numpy as np
 
 from ...identify import identify as _matrix
-from ..gap_prior import conventions
-from ..impulses import _flows as pulse_flows
-from ..impulses import find_pulses
-from ..lna import GUARD, judge
-from ..lna_pulses import _not_injected, remeasure
-from ..lna_pulses.run import Budget
+from ._vendored.gap_prior import conventions
+from ._vendored.impulses import _flows as pulse_flows
+from ._vendored.impulses import find_pulses
+from ._vendored.lna import GUARD, judge
+from ._vendored.lna_pulses import _not_injected, remeasure
+from ._vendored.lna_pulses.run import Budget
 from .run import hooks
 
 

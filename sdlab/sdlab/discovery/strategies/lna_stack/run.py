@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..lna_levels.run import stage as levels
-from ..lna_products.run import stage as products
-from ..lna_pulses.run import stage as pulses
+from ._vendored.lna_levels.run import stage as levels
+from ._vendored.lna_products.run import stage as products
+from ._vendored.lna_pulses.run import stage as pulses
 
 
 def chain(*stages: dict) -> dict:

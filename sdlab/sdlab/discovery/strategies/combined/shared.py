@@ -71,8 +71,9 @@ def _cached(fn, cache: dict):
 
 
 def _module(name: str):
+    """combined's own copy of a specialist (_vendored/; lna_loops has none, so it is skipped)."""
     try:
-        return importlib.import_module(f"{__package__.rsplit('.', 1)[0]}.{name}")
+        return importlib.import_module(f"{__package__}._vendored.{name}")
     except Exception:                                       # noqa: BLE001
         return None
 

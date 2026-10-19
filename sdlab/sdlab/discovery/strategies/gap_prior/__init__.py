@@ -27,7 +27,7 @@ import math
 import numpy as np
 
 from ...identify import judge
-from ..lna import identify as _lna
+from ._vendored.lna import identify as _lna
 
 
 def _reads(rate: dict) -> dict[str, float] | None:

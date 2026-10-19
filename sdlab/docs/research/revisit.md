@@ -15,6 +15,7 @@ raises on the realistic models.
 
 Strategies built here: `gap_prior`, `lna_loops`, `lna_pulses`, `lna_products`, `lna_levels`,
 `lna_stack` (`sdlab/sdlab/discovery/strategies/<name>/`); tests `tests/test_ladder_revisit.py`.
+**Copies (2026-10-19, queue item 0c):** lna_levels, lna_loops, lna_products, lna_pulses, lna_stack and gap_prior no longer import lna or each other: each carries its own copy of what it builds on under `<strategy>/_vendored/` (lna, lna_levels, lna_products, lna_pulses, gap_prior, impulses as each needs), taken unchanged at commit 0c7a76b with only the imports rewritten (CLAUDE.md invariant 11). Found flows byte-identical before and after on 23 cells.
 
 ## Why
 

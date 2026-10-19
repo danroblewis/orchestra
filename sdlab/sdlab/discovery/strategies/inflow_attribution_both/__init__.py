@@ -1,7 +1,7 @@
 """Inflow attribution with the unrepaired candidates kept beside the repaired ones: the judge chooses
 among both (inflow_attribution.py)."""
 
-from .inflow_attribution import identify as _identify
+from ._vendored.inflow_attribution import identify as _identify
 
 
 def identify(stocks, run, opts=None):

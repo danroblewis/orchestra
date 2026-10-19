@@ -3,7 +3,7 @@ judges behaviour far outside anything the data visit (docs/research/behaviour-co
 
 from __future__ import annotations
 
-from .gated import identify as _gated
+from ._vendored.gated import identify as _gated
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:

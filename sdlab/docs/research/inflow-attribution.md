@@ -9,6 +9,7 @@ p = 0.19 at @20, p = 0.06 at @100) and not enough to adopt alone: no run crosses
 counting-noise test is the most useful new diagnostic so far: it flags the rows that send the main
 line's runaways off. Separately, a **matrix form-choice flaw** (the pieces gate) is confirmed. It is
 offered as an option, and it is neutral on the bench.
+**Copies (2026-10-19, queue item 0c):** `inflow_attribution_both` and `inflow_attribution_refine` are now packages, each carrying its own copy of `inflow_attribution` (`<strategy>/_vendored/inflow_attribution.py`, commit 0c7a76b, imports rewritten; CLAUDE.md invariant 11). Found flows byte-identical before and after on 23 cells.
 
 ## Hypothesis
 Most failing runs (44 of 50 "not representable" on v2.1) run away only when the grader feeds the

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 
-from .. import lna
+from ._vendored import lna
 from .run import stage
 
 

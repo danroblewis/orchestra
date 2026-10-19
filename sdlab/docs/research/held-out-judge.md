@@ -2,6 +2,7 @@
 
 **Status:** done (wave 1, benchmark v1)  
 **Verdict:** reject
+**Copies (2026-10-19, queue item 0c):** `held_out_blend` is now a package carrying its own copy of `held_out` (`held_out_blend/_vendored/held_out.py`, commit 0c7a76b, imports rewritten; CLAUDE.md invariant 11). Found flows byte-identical before and after on 23 cells.
 
 ## Question
 identify() keeps the candidate with the lowest multi-step error on the data it was fitted on;

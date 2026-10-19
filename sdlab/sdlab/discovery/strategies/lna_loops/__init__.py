@@ -16,7 +16,7 @@ lna's hooks (run.py): lna's data, search, budget, fallbacks and guard are lna's 
 
 from __future__ import annotations
 
-from .. import lna
+from ._vendored import lna
 from .run import PRICE, close_loops, stage  # noqa: F401  (close_loops: the stage's step, for tests)
 
 

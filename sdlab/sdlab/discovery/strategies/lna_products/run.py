@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..lna.atoms import Atom
-from ..lna.fit import OutOfTime, fit
-from ..lna.run import SCRATCH, bic, search
-from ..lna_levels.run import written
+from ._vendored.lna.atoms import Atom
+from ._vendored.lna.fit import OutOfTime, fit
+from ._vendored.lna.run import SCRATCH, bic, search
+from ._vendored.lna_levels.run import written
 
 
 MARGIN = 1.0         # a model with products must beat lna's by this many log T in BIC (the price of two numbers: the

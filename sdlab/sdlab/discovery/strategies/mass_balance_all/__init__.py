@@ -1,6 +1,6 @@
 """Experiment mass_balance with the balance tried on every candidate of the main line ("mb_all")."""
 
-from .mass_balance import identify as _identify
+from ._vendored.mass_balance import identify as _identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:

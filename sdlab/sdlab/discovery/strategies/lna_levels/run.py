@@ -5,8 +5,8 @@ data, budget, stride and measured inputs are lna's own."""
 
 from __future__ import annotations
 
-from ..lna.fit import OutOfTime
-from ..lna.flows import to_flows
+from ._vendored.lna.fit import OutOfTime
+from ._vendored.lna.flows import to_flows
 from .levels import level_flows, regroup, without_growth
 
 

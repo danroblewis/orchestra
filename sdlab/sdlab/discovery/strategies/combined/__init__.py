@@ -54,15 +54,15 @@ import json
 import os
 import time
 
-from sdlab.discovery.strategies.censored import identify as censored
-from sdlab.discovery.strategies.common_cause import identify as common_cause
-from sdlab.discovery.strategies.effect_hats import identify as effect_hats
-from sdlab.discovery.strategies.gap_prior import identify as gap_prior
-from sdlab.discovery.strategies.hidden_transit import identify as hidden_transit
-from sdlab.discovery.strategies.lna import identify as lna
-from sdlab.discovery.strategies.lna_pulses import identify as lna_pulses
-from sdlab.discovery.strategies.lna_stack import identify as lna_stack
-from sdlab.discovery.strategies.periodic_inflows import identify as periodic_inflows
+from ._vendored.censored import identify as censored
+from ._vendored.common_cause import identify as common_cause
+from ._vendored.effect_hats import identify as effect_hats
+from ._vendored.gap_prior import identify as gap_prior
+from ._vendored.hidden_transit import identify as hidden_transit
+from ._vendored.lna import identify as lna
+from ._vendored.lna_pulses import identify as lna_pulses
+from ._vendored.lna_stack import identify as lna_stack
+from ._vendored.periodic_inflows import identify as periodic_inflows
 
 from ...identify import identify as _main_line
 from . import judge as J

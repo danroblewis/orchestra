@@ -3,7 +3,7 @@ error (10 blocks, horizons 20 and 100; score = log in-sample + 0.1 x log held-ou
 
 from __future__ import annotations
 
-from .held_out import identify as _identify
+from ._vendored.held_out import identify as _identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:

@@ -13,6 +13,7 @@ reaches 41.1% mean skill@20, up from 21.9%, above matrix (31.8%) and level with 
 but still below effect_hats (49.9%).
 
 Strategy: `combined` (`sdlab/discovery/strategies/combined/`), tests `tests/test_ladder_combined.py`.
+**Copies (2026-10-19, queue item 0c):** combined no longer imports its specialists: it carries its own copies of censored, common_cause, effect_hats, gap_prior, hidden_transit (with its stages), lna, lna_levels, lna_products, lna_pulses, lna_stack, impulses and periodic_inflows under `combined/_vendored/`, taken unchanged at commit 0c7a76b with only the imports rewritten, and `shared.once()` caches the main line for those copies (CLAUDE.md invariant 11). Found flows byte-identical before and after on 23 cells.
 
 ## What it does
 
