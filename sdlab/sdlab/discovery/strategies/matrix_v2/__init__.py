@@ -15,6 +15,8 @@ identify() below, from commit aad5c7b) and changes those. With every option off 
   gap_inflow      a gap over several stocks as one floored linear inflow       structures
   pair_moves      a drain and a link at one level paired into a move           effect_hats
   products        a x c columns, c = a or the destination allowed              structures
+                  ("after": offered to the finished row; products_guard: each candidate with
+                  products is judged beside the same candidate without them)
   inputs_judge    the judge steps every candidate with the measured inputs     earned_pieces, censored
   exact           noise-free fits floored at float precision, exact ties walked
                   to the plainest set (032, 034, 035, 038 without noise)       common_cause
@@ -84,13 +86,18 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        r = identify_one(stocks, run, {**opts, **v})
-        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"), inputs=inputs)
-        tried.append({"name": v["name"], "error": e})
-        if keep:
-            candidates.append({"name": v["name"], "error": e, "flows": r["flows"]})
-        if best is None or e < best[1]:
-            best = (r, e, v["name"])
+        runs = [(v["name"], identify_one(stocks, run, {**opts, **v}))]
+        if opts.get("products") and opts.get("products_guard", True) and any(f.get("product") for f in runs[0][1]["flows"]):
+            # (products) the same candidate without products beside it: a product of levels is a
+            # loop that can run away (realistic models: the judge's runs explode), so the judge decides
+            runs.append((v["name"] + ", no products", identify_one(stocks, run, {**opts, **v, "products": False})))
+        for name, r in runs:
+            e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"), inputs=inputs)
+            tried.append({"name": name, "error": e})
+            if keep:
+                candidates.append({"name": name, "error": e, "flows": r["flows"]})
+            if best is None or e < best[1]:
+                best = (r, e, name)
     r = best[0]
     r["chosen"], r["tried"] = best[2], tried
     if keep:
