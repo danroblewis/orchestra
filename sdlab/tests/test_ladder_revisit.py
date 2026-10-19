@@ -1,6 +1,6 @@
 """Strategies built when past ideas were revisited on the ladder (docs/research/revisit.md):
-gap_prior (a drain read by another stock written as the goal gap it equals, where the data cannot
-tell), lna_loops (loop-closing links kept when the likelihood does not rule them out), lna_pulses
+gap_prior (a drain read by another stock written as the goal gap or co-flow it equals, where the
+data cannot tell), lna_loops (loop-closing links kept when the likelihood does not rule them out), lna_pulses
 (pulses found first, lna on what they leave) and lna_products (moves scaled by a third stock in
 lna's likelihood)."""
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from sdlab.discovery.strategies.gap_prior import as_gaps, one_number
+from sdlab.discovery.strategies.gap_prior import as_coflows, as_gaps, one_number
 from sdlab.discovery.strategies.lna_pulses import pooled
 from sdlab.ladder import cases as casemod
 from sdlab.ladder import data
@@ -52,9 +52,23 @@ def test_own_drains_and_real_pieces_are_left_alone():
     assert one_number([{"value": 1.0}, {"value": 1.00000001}]) and not one_number([{"value": 1.0}, {"value": 1.1}])
 
 
+def test_drain_read_by_a_moving_stock_becomes_a_coflow():
+    flows = [{"from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.3}},
+             {"from": "R", "to": None, "rate": {"form": "linear", "c": 0, "terms": [{"stock": "A", "k": 0.15}]}},
+             {"from": None, "to": "R", "rate": {"form": "constant", "value": 8.0}}]
+    out = as_coflows(flows)
+    assert len(out) == 2 and out[0]["uses"] == [{"stock": "R", "per": pytest.approx(0.5)}]
+    assert as_gaps(out) == out                          # the drain went into the co-flow, not a gap
+
+
 def test_gap_prior_on_the_goal_gap_without_noise():
     r = _run("gap_prior", "011-goal-gap", "none-short")
     assert (None, "P", "I") in _ends(r) and ("P", None, "I") not in _ends(r)
+
+
+def test_gap_prior_on_the_coflow_without_noise():
+    move = next(f for f in _run("gap_prior", "016-coflow", "none-short")["flows"] if f["from"] == "A" and f["to"] == "B")
+    assert move["uses"][0]["stock"] == "R" and move["uses"][0]["per"] == pytest.approx(0.5, rel=0.02)
 
 
 def test_gap_prior_leaves_noisy_runs_to_lna():

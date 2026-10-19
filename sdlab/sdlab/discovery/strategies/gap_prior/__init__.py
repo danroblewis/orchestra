@@ -5,8 +5,11 @@ of b that reads another stock a (b loses k x a) are the same equation for b: the
 drain. SD models do not drain a stock by another stock's level alone (an outflow reads its own
 stock); a stock's inflow that falls as another stock rises is a goal gap. So, where the data are
 noise-free (lna returned the matrix's reading), each such drain beside a single constant inflow is
-written as the gap it equals: one flow instead of two, the same behaviour. With counting noise lna's
-likelihood tells the two apart (its gap swaps) and its reading stands.
+written as the gap it equals: one flow instead of two, the same behaviour. Likewise a drain of c read
+by a stock a that moves things on (a -> b) is, in the averages, a co-flow of that move (each unit
+moved uses up per = drain / move of c; lna/coflows.py): where a has such a move, the drain is
+written as the co-flow (checked first: a gap needs no move). With counting noise lna's likelihood
+tells these apart (its gap swaps and co-flow offers) and its reading stands.
 
 This is a convention for an unidentifiable choice, not identification; it comes from
 docs/research/identifiability.md and judge-ties.md (ties broken by the simpler, conventional model)
@@ -66,11 +69,34 @@ def as_gaps(flows: list[dict]) -> list[dict]:
     return out
 
 
+def as_coflows(flows: list[dict]) -> list[dict]:
+    """Each drain of c reading one other stock a, where a moves things to a measured stock b != c at
+    a plain proportional rate, folded into that move as a co-flow using up c."""
+    out = [dict(f) for f in flows]
+    for drain in list(out):
+        c = drain.get("from")
+        if c is None or drain.get("to") is not None or not _plain(drain) or float(drain.get("ratio") or 1) != 1:
+            continue
+        reads = _reads(drain.get("rate") or {})
+        if not reads or len(reads) != 1 or c in reads:
+            continue
+        (a, k), = reads.items()
+        moves = [m for m in out if m.get("from") == a and m.get("to") not in (None, c) and _plain(m) and float(m.get("ratio") or 1) == 1
+                 and (m.get("rate") or {}).get("form") == "proportional" and m["rate"].get("stock") == a and float(m["rate"].get("k") or 0) > 0]
+        if len(moves) != 1 or k <= 0:
+            continue
+        move = moves[0]
+        per = k / float(move["rate"]["k"])
+        out[out.index(move)] = {**move, "uses": [{"stock": c, "per": per}], "note": "co-flow (written as SD writes it)"}
+        out.remove(drain)
+    return out
+
+
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     found = _lna(stocks, run, opts)
     if found.get("method") == "lna":
         return found                    # counting noise: the likelihood chose between them
-    flows = as_gaps(found.get("flows") or [])
+    flows = as_gaps(as_coflows(found.get("flows") or []))
     if len(flows) == len(found.get("flows") or []):
         return found
     return {**found, "flows": flows, "gap_prior": True}
