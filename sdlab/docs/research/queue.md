@@ -11,9 +11,7 @@ for `combined` on the test cases).
 
 ## Queued
 
-2c. **Converter coverage** (no engine change): arrays, macros, external data, DELAY N / SMOOTH N
-   of other orders in `sdlab/ladder/pysd_import.py`. Re-run the coverage report.
-2d. **Engine features for the remaining blockers** (approved by the user on 2026-10-18 if
+2d. **Engine features for the remaining blockers** (HOLD until the watcher's backlog is under ~10k items: a `simulate.py` change re-runs every strategy) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
    - two-way flows and negative stocks, opt-in per stock or flow;
    - DELAY FIXED;
@@ -93,6 +91,8 @@ for `combined` on the test cases).
    watcher's backlog is small.
 
 ## Started
+
+- 2026-10-18 20:50: item 2c, converter coverage.
 
 - 2026-10-18 21:15: item 2b, products of stocks, multi-stock gaps, hidden delay chains.
 
