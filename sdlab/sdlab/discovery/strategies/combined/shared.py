@@ -1,7 +1,8 @@
 """The main line's model, and lna's, computed once per run for every specialist that starts from
 them.
 
-lna, censored, hidden_transit, effect_hats, periodic_inflows, lna_loops and lna_pulses each begin
+lna, censored, hidden_transit, effect_hats, periodic_inflows, lna_loops, lna_pulses and lna_stack each
+begin
 with the matrix method's `identify` on the same data (the most expensive shared step); gap_prior and
 lna_pulses begin with lna's. While `once()` is open, the name each of them imported it under points
 to a cached copy, so it runs once per distinct set of options; each caller gets its own deep copy
@@ -28,6 +29,7 @@ USERS = (
     ("periodic_inflows", "matrix_identify"),
     ("lna_loops", "_matrix"),
     ("lna_pulses", "_matrix"),
+    ("lna_stack", "_matrix"),
 )
 # (module, the name it imported lna's identify under)
 LNA_USERS = (

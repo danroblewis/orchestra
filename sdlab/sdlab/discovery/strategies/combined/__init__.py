@@ -4,7 +4,9 @@
 1. Candidates. Each specialist is called as a black box through its own `identify()`, so its
    improvements flow in: lna (the best single strategy: flows chosen by the counting likelihood),
    gap_prior (lna with a drain read off another stock written as the goal gap it equals),
-   lna_pulses (one-step bursts taken out before lna reads the moves),
+   lna_pulses (one-step bursts taken out before lna reads the moves), lna_stack (lna with the
+   revisit's stages composed: pulses, recurring inflow levels, moves scaled by a third stock,
+   gap_prior's noise-free conventions; lna_loops is deliberately not a candidate),
    common_cause (independent and identical stocks, noise-free fits, inflow changes the data
    earns), censored (floors that bind, stocks that run empty), hidden_transit (an unmeasured stock
    between two measured ones), effect_hats (effects of a third stock's level; also re-cuts the
@@ -48,15 +50,16 @@ from sdlab.discovery.strategies.gap_prior import identify as gap_prior
 from sdlab.discovery.strategies.hidden_transit import identify as hidden_transit
 from sdlab.discovery.strategies.lna import identify as lna
 from sdlab.discovery.strategies.lna_pulses import identify as lna_pulses
+from sdlab.discovery.strategies.lna_stack import identify as lna_stack
 from sdlab.discovery.strategies.periodic_inflows import identify as periodic_inflows
 
 from . import judge as J
 from .refit import refit
 from .shared import once
 
-STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "common_cause": common_cause, "censored": censored,
+STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "lna_stack": lna_stack, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
-SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "censored", "hidden_transit", "periodic_inflows", "effect_hats", "common_cause"]
+SPECIALISTS = ["lna", "gap_prior", "lna_pulses", "lna_stack", "censored", "hidden_transit", "periodic_inflows", "effect_hats", "common_cause"]
 DEFAULTS = {"price": 1.0, "per_flow": 0.0, "budget": 75.0, "trace": False, "refit": True, "guard": 4.0, "guard_floor": 1.0}
 
 
