@@ -24,6 +24,7 @@ from ...simulate import Model
 from ...starvation import fill_gaps, first_mask, remeasure_inflows, stocks_running_dry
 from .joint import refit
 from .pieces import _now, resegment
+from .price import price
 from .search import signature
 
 
@@ -186,20 +187,24 @@ def dry_steps(flows: list[dict], ids: list[str], prev: np.ndarray, c: str, margi
 
 
 def starved_candidates(stocks: list[dict], run: dict, prev: np.ndarray, opts: dict, fit_opts: dict, pool: bool,
-                       models: list[list[dict]] = ()) -> list[list[dict]]:
-    """Co-flows whose used stock runs dry: for each stock C that runs low for a while, the matrix fitted
-    (each of its variants without eras) on the steps where C is above its median (its rows linear there), each drain of C that follows
-    another stock read as a co-flow on that stock's flows (cross_coflow_candidates), then refitted on
-    the steps where C held what its users wanted, the inflows measured again on every step with the
-    model stepped with its cap (starvation.remeasure_inflows), then (twice) the dry steps found again
-    from the model, every number refitted without them and the inflows pooled and re-cut (the left-out
-    steps' residuals from the model stepped with its cap)."""
+                       models: list[list[dict]] = (), most: int = 2) -> list[list[dict]]:
+    """Co-flows whose used stock runs dry. For each stock C that runs low for a while (at most three),
+    the matrix is fitted (its forward variants without eras) on the steps where C is above its median
+    (its rows linear there), and each drain of C that follows another stock is read as a co-flow on
+    that stock's flows (cross_coflow_candidates; also on each of `models`, their structure only). Each
+    candidate's inflows are measured again on every step with the model stepped with its cap
+    (starvation.remeasure_inflows), its numbers refitted without the steps where C held less than its
+    users want, and priced (if its cap still binds); for the `most` best over all such stocks, twice: the dry steps found again
+    from the model and every number refitted without them, the second time with the inflows pooled
+    and re-cut (residuals on the left-out steps from the model stepped with its cap). Kept only where
+    the cap binds on at least 1% of the steps (5 at least)."""
     ids = [s["id"] for s in stocks]
     lv = np.nan_to_num(np.array([np.asarray(run["levels"][i], dtype=float) for i in ids]))
     final = {s["id"] for s in stocks if s.get("final")}
-    out = []
+    out, first = [], []
     T = prev.shape[1]
-    for c in stocks_running_dry(lv, ids, low=opts.get("dry_low", 0.5)):
+    fo = {**fit_opts, "capped_res": True, "max_skip": 0.8}
+    for c in stocks_running_dry(lv, ids, low=opts.get("dry_low", 0.5))[:3]:
         if c in final:
             continue
         m = first_mask(lv, ids, [c], low=1.0)
@@ -207,7 +212,7 @@ def starved_candidates(stocks: list[dict], run: dict, prev: np.ndarray, opts: di
             continue
         tt = np.asarray(run["t"], dtype=float)[1:]
         seen = set()
-        cands = [x for v in VARIANTS if not v.get("split_eras")
+        cands = [x for v in VARIANTS if not v.get("split_eras") and v["name"].startswith("forward")
                  for x in _kept_candidates(stocks, run, {**opts, **v, "keep": np.flatnonzero(~m)}, ids, prev, tt, c)]
         cands += [x for fl in models for x in cross_coflow_candidates(fl, ids, prev, tt, used=c)]
         for cand in cands:
@@ -215,17 +220,29 @@ def starved_candidates(stocks: list[dict], run: dict, prev: np.ndarray, opts: di
             if key in seen:
                 continue
             seen.add(key)
-            fo = {**fit_opts, "capped_res": True, "max_skip": 0.8}
-            # the inflows measured again on every step, the model's co-flows capped (remeasure_inflows)
+            # the inflows measured again on every step, the model's co-flows capped (remeasure_inflows),
+            # and the numbers refitted without the dry steps: priced, so only the best few go on
             cand = remeasure_inflows(cand, stocks, lv, run["t"])
-            for _ in range(2):
-                skip = dry_steps(cand, ids, prev, c)
-                if skip.mean() > 0.5:
-                    break
-                cand = refit(cand, ids, run, {**fo, "skip": skip})[0]
-                if pool:
-                    cand = resegment(cand, ids, run, {**fo, "skip": skip})
-            out.append(cand)
+            skip = dry_steps(cand, ids, prev, c)
+            if skip.mean() > 0.5:
+                continue
+            cand = refit(cand, ids, run, {**fo, "skip": skip})[0]
+            if dry_steps(cand, ids, prev, c).sum() < max(5, 0.01 * T):
+                continue                                    # its cap does not bind: not running dry
+            first.append((price(cand, ids, run, fit_opts.get("inputs")), len(first), c, cand))
+    first.sort(key=lambda x: (x[0], x[1]))
+    for _, _, c, cand in first[:most]:
+        for r in range(2):
+            skip = dry_steps(cand, ids, prev, c)
+            if skip.mean() > 0.5:
+                break
+            cand = refit(cand, ids, run, {**fo, "skip": skip})[0]
+            if pool and r == 1:
+                cand = resegment(cand, ids, run, {**fo, "skip": skip})
+        # a co-flow whose cap never binds is not one that runs dry (cross_coflow_candidates offers it)
+        if dry_steps(cand, ids, prev, c).sum() < max(5, 0.01 * T):
+            continue
+        out.append(cand)
     return out
 
 

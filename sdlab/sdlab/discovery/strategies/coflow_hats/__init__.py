@@ -61,7 +61,7 @@ from .screen import scan
 DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True,
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
             "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True,
-            "inflow_coflows": True, "starved": True, "cycles": True,
+            "inflow_coflows": True, "starved": True, "cycles": True, "extra_most": 4, "cycle_gain": 0.9, "coflow_gain": 2.0, "extras_max_steps": 3000,
             "drain_coflows": True}
 
 
@@ -169,7 +169,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b, "judged": base["judged"]}
         if keep:
             out["candidates"] = base.get("candidates") or []
-    if o["inflow_coflows"]:
+    # the extra stages only on runs of at most `extras_max_steps` steps: on the realistic models' long
+    # runs (7000-14400 steps) effect_hats alone takes most of the item's 300 s
+    if o["inflow_coflows"] and len(run["t"]) <= o["extras_max_steps"]:
         out = _inflow_coflows(out, cur_b, cur_e, o, ids, run, stocks, fit_opts, inputs, opts.get("injections"),
                               starved=(prev, opts, base["flows"]) if o["starved"] else None)
     return {**out, "flows": _clean(out["flows"])}
@@ -194,6 +196,13 @@ def _inflow_coflows(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, st
             pv, tt = _prev_tt(stocks, run, fit_opts)
             cands += [("a link whose strength follows a cycle", c)
                       for c in cycle_candidates(out["flows"], ids, pv, _arrays(stocks, run, fit_opts)[2], tt)]
+        # the candidates refitted (numbers only) and priced; only the best few are re-cut and judged
+        pre = []
+        for name, cand in cands:
+            fl = refit(cand, ids, run, fit_opts)[0]
+            pre.append((price(fl, ids, run, inputs), name, cand))
+        pre.sort(key=lambda x: x[0])
+        cands = [(name, cand) for _, name, cand in pre[: o["extra_most"]]]
         pick = None
         for name, cand in done + cands:
             fl = cand if any(cand is c for _, c in done) else resegment(cand, ids, run, fit_opts) if o["pool"] else refit(cand, ids, run, fit_opts)[0]
@@ -202,10 +211,17 @@ def _inflow_coflows(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, st
             b = price(fl, ids, run, inputs)
             e = judge(fl, stocks, run, injections=injections, inputs=inputs)
             tried.append({"name": name, "error": e, "bic": b})
-            # a cyclic link replaces inflow pieces that follow the cycle step by step, and the judge feeds
-            # each model its own pieces, so it is held to the re-cut base's looser margin (seg_margin)
-            margin = o["seg_margin"] if name.startswith("a link whose strength") else o["margin"]
-            if b < cur_b and e < margin * cur_e and (pick is None or b < pick[0]):
+            # a cyclic link that replaces inflow pieces following the cycle step by step is held to the
+            # re-cut base's looser margin (seg_margin: the judge feeds each model its own pieces); one that
+            # replaces anything else must behave clearly better (cycle_gain), since a profile of phase
+            # values fits noise-free data as exactly as what it replaces
+            margin = o["margin"]
+            if name.startswith("a link whose strength"):
+                cyc = next(f["cycle"] for f in fl if f.get("cycle"))
+                margin = o["seg_margin"] if cyc.get("follows") else o["cycle_gain"]
+            # a drain read as a co-flow has as many numbers as the drain: it must price clearly better
+            need = o["coflow_gain"] * math.log(max(2, len(run["t"]) - 1)) if name.startswith("drain following") else 0.0
+            if b < cur_b - need and e < margin * cur_e and (pick is None or b < pick[0]):
                 pick = (b, e, fl, name)
         if pick is None:
             break

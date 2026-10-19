@@ -88,8 +88,11 @@ def _cyclic_link(flows, ids, prev, dy, tt, s, x, P) -> list[list[dict]]:
             eras.append({"from": int(tt[a]), "to": int(tt[b - 1]), "seg": int(lab[a]),
                          "rate": {"form": "proportional", "stock": xid, "k": float(ks[lab[a]])}})
             a = b
+    # does the model's own outside inflow into S follow the cycle (a piece for every half period or so)?
+    pieces = sum(len(f.get("inflow") or []) for f in flows if f.get("from") is None and f.get("to") == sid)
     link = {"from": None, "to": sid, "ratio": 1, "rate": eras[0]["rate"], "byTime": eras, "driver": xid,
-            "cycle": {"period": P, "stock": xid, "segments": [[int(u), int(v)] for u, v in segs]}}
+            "cycle": {"period": P, "stock": xid, "segments": [[int(u), int(v)] for u, v in segs],
+                      "follows": bool(pieces >= T / (2 * P))}}
     # the row's outside inflow (pieces or a constant) and any link into it give way to the cyclic link
     keep = [f for f in flows if not (f.get("from") is None and f.get("to") == sid)]
     # the row's own drain, if the model has none (started from the regression)
