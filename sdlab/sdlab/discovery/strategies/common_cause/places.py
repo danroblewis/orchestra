@@ -28,7 +28,8 @@ def noise_var(r: np.ndarray) -> float:
 def joint_pelt(R: np.ndarray, min_piece: int, pen: float, var_floor: float = 1e-300) -> list[int]:
     """Cuts 0 < ... < n shared by the series R (rows x n): each segment costs the sum over rows of
     its squared deviations from the row's segment mean, over the row's noise variance; each change
-    costs pen. Optimal partitioning (O(n^2), vectorised over the last cut)."""
+    costs pen. PELT: optimal partitioning with the last cuts that can never win pruned (vectorised
+    over the candidates that remain)."""
     R = np.nan_to_num(np.asarray(R, dtype=float))
     k, n = R.shape
     v = np.array([max(noise_var(r), var_floor) for r in R])
@@ -38,17 +39,21 @@ def joint_pelt(R: np.ndarray, min_piece: int, pen: float, var_floor: float = 1e-
     f = np.full(n + 1, np.inf)
     f[0] = -pen
     last = np.zeros(n + 1, dtype=int)
-    for t in range(min_piece, n + 1):
-        hi = t - min_piece if t < n else t - 1
-        s = np.arange(0, hi + 1)
-        s = s[np.isfinite(f[s])]
-        if not len(s):
-            s = np.array([0])
-        d = (S1[:, t][:, None] - S1[:, s]) ** 2
-        cost = (S2[t] - S2[s]) - d.sum(0) / (t - s)
-        tot = f[s] + cost + pen
+    cand = np.array([0])                 # last cuts still able to win, in increasing order
+    for t in range(1, n + 1):
+        ok = cand[(t - cand >= min_piece) | (t == n)]
+        if not len(ok):
+            ok = cand[:1]
+        d = (S1[:, t][:, None] - S1[:, ok]) ** 2
+        cost = (S2[t] - S2[ok]) - d.sum(0) / (t - ok)
+        tot = f[ok] + cost
         i = int(np.argmin(tot))
-        f[t], last[t] = tot[i], s[i]
+        f[t], last[t] = tot[i] + pen, ok[i]
+        # prune: a cut whose cost to t already exceeds f[t] cannot win later (costs only grow)
+        keep = np.ones(len(cand), bool)
+        pos = np.searchsorted(cand, ok)
+        keep[pos] = tot <= f[t]
+        cand = np.append(cand[keep], t)
     cuts, t = [], n
     while t > 0:
         cuts.append(t)
@@ -58,24 +63,30 @@ def joint_pelt(R: np.ndarray, min_piece: int, pen: float, var_floor: float = 1e-
 
 
 def prune(y: np.ndarray, X: np.ndarray, cols: list[int], cuts: list[int], extra) -> tuple[list[int], float]:
-    """Places dropped one at a time while BIC improves (a value per place)."""
+    """Places dropped while BIC improves (a value per place): neighbouring pieces merged cheapest
+    first with the levels' numbers held (merging pieces of means m1, m2 and lengths n1, n2 adds
+    n1 n2 / (n1 + n2) (m1 - m2)^2 to the rss), then the numbers refitted; twice."""
     T = y.shape[0]
-
-    def score(c):
-        return _bic(T, fit_subset(row_sums(y, X, c), cols).rss, len(cols) + extra(c))
-
-    cur = score(cuts)
-    while len(cuts) > 2:
-        best = None
-        for i in range(1, len(cuts) - 1):
-            c = cuts[:i] + cuts[i + 1:]
-            s = score(c)
-            if s < cur - 1e-9 and (best is None or s < best[1]):
-                best = (c, s)
-        if best is None:
+    log_t = float(np.log(T))
+    for _ in range(2):
+        f = fit_subset(row_sums(y, X, cuts), cols)
+        r = y - (f.beta @ X[cols] if cols else 0.0)
+        rss = max(f.rss, 1e-300)
+        segs = [[a, b, float(r[a:b].sum())] for a, b in zip(cuts[:-1], cuts[1:])]
+        while len(segs) > 1:
+            costs = [((s1[1] - s1[0]) * (s2[1] - s2[0]) / (s2[1] - s1[0])) * (s1[2] / (s1[1] - s1[0]) - s2[2] / (s2[1] - s2[0])) ** 2
+                     for s1, s2 in zip(segs[:-1], segs[1:])]
+            i = int(np.argmin(costs))
+            if T * np.log((rss + costs[i]) / rss) >= log_t:
+                break
+            rss += costs[i]
+            segs[i:i + 2] = [[segs[i][0], segs[i + 1][1], segs[i][2] + segs[i + 1][2]]]
+        new = [sg[0] for sg in segs] + [T]
+        if new == cuts:
             break
-        cuts, cur = best
-    return cuts, cur
+        cuts = new
+    f = fit_subset(row_sums(y, X, cuts), cols)
+    return cuts, _bic(T, f.rss, len(cols) + extra(cuts))
 
 
 def _allowed(s: int, ids: list[str], stocks: list[dict]) -> list[int]:
