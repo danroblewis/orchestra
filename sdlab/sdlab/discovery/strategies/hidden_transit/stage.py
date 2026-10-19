@@ -25,7 +25,9 @@ variance is its rate), as the found model moves it.
 
 u = a x X alone (nothing else delayed) is the same row as a move X -> H at a with X's drain lowered
 by a: it is written as the move (what leaves X and comes back: rework), X's drain never below 0,
-unless X's whole loss is under half of a (then X would gain through H: fed from outside).
+unless X's whole loss is under half of a (then X would gain through H: fed from outside). Likewise
+u = a x A alone, A another measured stock draining to outside at least a / 2, is a move A -> H
+(a DELAY between two measured stocks), A's drain lowered by a.
 
 The injections are read as the engine applies them: added at the start of the step, before its
 flows (so the step's flows read the level with the injection in it).
@@ -248,6 +250,23 @@ def is_move(fit: dict, x: str) -> bool:
     return list(fit["terms"]) == [x] and a > 0 and fit["kX"] >= 0.5 * a
 
 
+def _sender(out: list[dict], fit: dict, x: str) -> tuple[int, str, float] | None:
+    """u is a x A alone, A another measured stock that drains to outside in proportion to itself at
+    k >= a / 2 (as for rework): (that drain's index, A, k), the chain then being fed by a move from A
+    (A's drain lowered by a, never below 0: A's row is unchanged)."""
+    if len(fit["terms"]) != 1:
+        return None
+    (a_id, a), = fit["terms"].items()
+    if a_id in ("1", x) or a <= 0:
+        return None
+    for j, f in enumerate(out):
+        r = f.get("rate") or {}
+        if (f.get("from") == a_id and f.get("to") is None and r.get("form") == "proportional" and r.get("stock") == a_id
+                and not (f.get("effects") or f.get("uses") or f.get("byTime") or f.get("inflow")) and r.get("k", 0) >= 0.5 * a):
+            return j, a_id, float(r["k"]) if r["k"] >= a else float(a)
+    return None
+
+
 def write(flows: list[dict], keep: list[int], x: str, fit: dict, tag: str) -> tuple[list[dict], list[str]]:
     """The model with the stage (or chain) in place of x's outside flows, and the hidden stocks' ids."""
     out = [flows[i] for i in keep]
@@ -256,7 +275,17 @@ def write(flows: list[dict], keep: list[int], x: str, fit: dict, tag: str) -> tu
     mark = (lambda s: {"delay": {"id": tag, "stage": s, "of": n, "time": n / d}}) if n > 1 else (lambda s: {})   # noqa: E731
     terms = {s: a for s, a in fit["terms"].items() if s != "1"}
     c = fit["terms"].get("1", 0.0)
-    if is_move(fit, x):
+    sender = _sender(out, fit, x)
+    if sender is not None:                 # A's drain and the chain's feed a x A are one move A -> chain
+        j, a_id, k = sender
+        a = terms[a_id]
+        out[j] = {**out[j], "rate": {**out[j]["rate"], "k": float(k - a)}}
+        if k - a <= 1e-6 * k:
+            out.pop(j)
+        out.append({"from": a_id, "to": hidden[0], "ratio": 1, "rate": {"form": "proportional", "stock": a_id, "k": float(a)},
+                    "hidden": hidden[0], **mark(0)})
+        drain = fit["kX"]
+    elif is_move(fit, x):
         out.append({"from": x, "to": hidden[0], "ratio": 1, "rate": {"form": "proportional", "stock": x, "k": float(terms[x])},
                     "hidden": hidden[0], **mark(0)})
         drain = max(0.0, fit["kX"] - terms[x])

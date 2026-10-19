@@ -65,7 +65,8 @@ def test_counts_are_told_from_exact_levels():
                                              ("134-delayed-measured-input", "counts-long"), ("135-hidden-rework", "none-short"),
                                              ("135-hidden-rework", "counts-long"), ("107-canonical-rework", "counts-long"),
                                              ("110-canonical-world3-pollution", "none-short"), ("110-canonical-world3-pollution", "counts-long"),
-                                             ("172-third-order-supply-line", "none-long"), ("172-third-order-supply-line", "counts-long")])
+                                             ("172-third-order-supply-line", "none-long"), ("172-third-order-supply-line", "counts-long"),
+                                             ("063-delay3-supply-line", "none-long")])
 def test_a_hidden_stage_is_found(case_id, variant):
     r, s = found(case_id, variant)
     assert s["status"] == "pass", s["parts"]
