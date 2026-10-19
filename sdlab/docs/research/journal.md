@@ -534,3 +534,35 @@ By strict: combined_lean / combined_r2 66.8%, archetypes 64.9%, structures 64.5%
 - shared `identify.judge` gaining an optional inputs parameter;
 - the behaviour grader swapping only exogenous inflows;
 - retiring dominated strategies.
+
+## 2026-10-19 06:30 (hourly cycle)
+
+**Health**
+- **Server:** leaderboard 0.17 s warm; one listener.
+- **Watcher:** running; backlog ~70k (stale) at ~2,000 per batch.
+- **Memory:** 200 orphaned sdlab worker processes (11 GB, 0% CPU, parent gone) were stopped at about 06:15; other projects' orphans were left alone.
+
+**Finished**
+- **structures** (2b): canonical 30/44 against combined's 3.
+- **Realistic round 1** (realistic_hats; distilled 152-161; triage doc): goals met 14 → 15, timeouts 12 → 1.
+- **Scorer fixes** (cb1c69d, f01908d): 179 flips, none into or out of pass.
+- **Time measurements** (1b).
+- **Control-theory cases** (1a): 16 cases plus 216-218. Leaders 14/448 pass.
+- **Shape distilled fixes** (own_tables, drifting_drain, censored's floored gap): 121 PPPP; 122, 123 and 125 3/4 each. They carry back to 106 and phys-draining-tank.
+- **Input fixes** in censored, effect_hats and earned_pieces.
+
+**Started**
+- realistic round 2 (mechanisms B-E);
+- combined2 (combined round 2, with the new specialists and a held-out judge);
+- distilled fixes for 156-160 and 216-218;
+- 2d, engine features (harness only);
+- 6, matrix_v2.
+
+The physics agent was also given particles 170, 171 and 195. 10 agents are running.
+
+**Numbers:** as at 03:40, pending a fresh strict pass.
+
+**Needs you:** unchanged.
+- an optional inputs parameter on the shared judge;
+- the grader swapping only effect-free constants;
+- retiring dominated strategies.

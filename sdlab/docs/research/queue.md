@@ -16,46 +16,9 @@ for `combined` on the test cases).
    - lna: stop the fit on parameter change, not on likelihood (FTOL), so extra zero-impact rows don't shift the stopping point;
    - lna: `identify(..., base=...)` and a public flow writer `run.written`, so the variants stop recomputing and copying.
 
-2d. **Engine features for the remaining blockers** (in the HARNESS only: `sdtruth.py`, plus a harness copy of the simulator under `sdlab/ladder/` if scoring needs it. The frozen `sdlab/discovery/simulate.py` is never changed, so no strategy re-runs; no HOLD) (approved by the user on 2026-10-18 if
-   additive, with existing numbers bit-identical):
-   - two-way flows (30 SDXorg models) and negative stocks (9), opt-in per stock or flow;
-   - delays whose time or order changes, pipeline stocks, TREND/FORECAST (3 each);
-   - DELAY FIXED;
-   - MIN/MAX and ratios of stocks in rates;
-   - sqrt and power;
-   - from the Kubernetes model (`docs/research/k8s-model.md`, 2026-10-19): auxiliaries (algebraic
-     variables without a stock; today each is a hidden stock re-read every step, a one-step lag),
-     an effect of a ratio of two stocks (today a `1/x` table on the denominator), CEIL/MIN/MAX in
-     rates (the HPA), a flow reading another flow's amount (a restart counter equal to the OOM
-     kills), a ceiling that holds at `max` at dt 1 (today `max / (1 + k)`), and measured inputs in
-     the editor's Discover request (the ladder passes them; the page does not).
-   - from the distilled cases (`docs/LADDER.md`, "Distilled cases", 2026-10-19):
-     - a switch with memory (hysteresis: on below one level, off above another, held in
-       between), for the thermostat; 123 is the memoryless probe;
-     - signed states (a stock that may go negative, e.g. a spring's position and velocity), now
-       written through offsets;
-     - sqrt and power (above) for the tanks; 122 is the table probe;
-     - not the engine but the ladder: `checks.py` crashes (`StatisticsError`) on a case whose
-       longest counts run is under 20 steps, so a 12-20-sample probe cannot be written yet (120
-       uses 15 and 20).
-
-   Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
-
-6. **matrix_v2: the proposed matrix fixes as a NEW strategy** (rewritten on 2026-10-19: the shared
-   discovery library is a pinned shared library, CLAUDE.md invariant 11). Copy what is needed
-   from `sdlab/discovery/` (matrix, flows, regression, changes) into `strategies/matrix_v2/` and
-   apply the fixes proposed by censored, effect_hats and earned_pieces there (see their docs):
-   - read a negative cross term as a falling inflow;
-   - price inflow changes at 2 log n;
-   - pool and re-cut inflows;
-   - a conservation tie test with both rows' SEs;
-   - keep a constant inflow unless the residuals aren't white;
-   - floor the rss at the data's rounding;
-   - pair drains and links whatever stock an effect is based on.
-
-   No other strategy changes, so nothing else re-runs. No HOLD needed.
-
 ## Started
+
+- 2026-10-19 06:30: 2d (harness engine features), 6 (matrix_v2), and distilled fixes for 156-160 and 216-218.
 
 - 2026-10-19: 2f, combined round 2 as a new strategy `combined2` (copies of the new specialists, a behaviour judge that doesn't replay pieces).
 
@@ -75,6 +38,8 @@ for `combined` on the test cases).
 
 
 ## Done
+
+- 2026-10-19: 1a, control-theory cases 200-215 and distilled 216-218 (cd9e8b1, 34e948c, a319289, docs). Leaders pass 14 of 448 cells; structures passes 3 of 34 achievable cells.
 
 - 2026-10-19: 2b, structures (up to 7e0a2bf, doc 0acdab1). Canonical 30/44 against combined's 3; distilled products 17/24; 99 cells better than combined, 6 worse.
 - 2026-10-19: realistic round 1 (realistic_hats 52cd6d1, 06b0062; triage doc; distilled 152-161). Goals met 14 → 15 of 66; timeouts 12 → 1.
