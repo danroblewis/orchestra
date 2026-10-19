@@ -1,0 +1,176 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US labour force: employed, unemployed, not in the labour force'
+level: 30
+tags:
+- real
+- bls
+- flows
+tests: 'three measured stocks whose six gross flows are also measured: are the found moves the real ones (BLS gross flows), and does the model forecast the held-out years'
+real:
+  source: bls
+  select:
+    first: 1990-01
+    last: 2025-09
+  points: 429
+  train: 322
+  time:
+    unit: month
+    first: 1990-01
+    last: 2025-09
+    train_last: 2016-10
+  sha256: f4780ff0fd56f05a
+  measured_flows:
+  - E->N
+  - E->U
+  - N->E
+  - N->U
+  - U->E
+  - U->N
+  published:
+    family: markov3
+    refit: transition rates = mean of (BLS gross flow / the stock it leaves) over the first 322 months; outside flows = median of BLS's other flows; January population controls as injections
+  twin:
+    rel:
+      E: 0.00135
+      U: 0.0146
+      N: 0.00245
+    floor:
+      E: 7589.65
+      U: 767.6
+      N: 4735.8
+  cite: BLS, Current Population Survey, labor force status flows (https://www.bls.gov/cps/cps_flows.htm)
+  licence: US public domain (Bureau of Labor Statistics)
+  url: https://api.bls.gov/publicAPI/v2/timeseries/data/
+stocks:
+  E: {initial: 119081, unit: "thousand people"}
+  U: {initial: 6752, unit: "thousand people"}
+  N: {initial: 62580, unit: "thousand people"}
+flows:
+  E -> U as eu:
+    rate: 0.0140473 * E
+  E -> N as en:
+    rate: 0.027271 * E
+  U -> E as ue:
+    rate: 0.250176 * U
+  U -> N as un:
+    rate: 0.219668 * U
+  N -> E as ne:
+    rate: 0.0470235 * N
+  N -> U as nu:
+    rate: 0.0273802 * N
+  outside -> E as e_in:
+    rate: 87
+  outside -> U as u_in:
+    rate: 22
+  outside -> N as n_in:
+    rate: 293
+  E -> outside as e_out:
+    rate: 0.000160465 * E
+  U -> outside as u_out:
+    rate: 0.000170707 * U
+  N -> outside as n_out:
+    rate: 0.00231531 * N
+injections:
+  - {t: 12, stock: E, amount: -1.7}
+  - {t: 12, stock: N, amount: -107.3}
+  - {t: 12, stock: U, amount: 17.7}
+  - {t: 24, stock: E, amount: -25.8}
+  - {t: 24, stock: N, amount: -60.4}
+  - {t: 24, stock: U, amount: 6.9}
+  - {t: 36, stock: E, amount: -30.6}
+  - {t: 36, stock: N, amount: -33.2}
+  - {t: 36, stock: U, amount: 11}
+  - {t: 48, stock: N, amount: -82.8}
+  - {t: 48, stock: U, amount: 8.8}
+  - {t: 60, stock: E, amount: -110.7}
+  - {t: 60, stock: N, amount: -137.9}
+  - {t: 60, stock: U, amount: 6.5}
+  - {t: 72, stock: E, amount: -9.6}
+  - {t: 72, stock: N, amount: -103.1}
+  - {t: 72, stock: U, amount: 9.6}
+  - {t: 84, stock: E, amount: 314.9}
+  - {t: 84, stock: N, amount: 88.8}
+  - {t: 84, stock: U, amount: 16.5}
+  - {t: 96, stock: E, amount: 1.3}
+  - {t: 96, stock: N, amount: -84.3}
+  - {t: 96, stock: U, amount: -3.6}
+  - {t: 108, stock: E, amount: 119.6}
+  - {t: 108, stock: N, amount: 82.3}
+  - {t: 108, stock: U, amount: 23.3}
+  - {t: 120, stock: E, amount: 1545.9}
+  - {t: 120, stock: N, amount: 753.7}
+  - {t: 120, stock: U, amount: 55.2}
+  - {t: 132, stock: N, amount: -59.1}
+  - {t: 132, stock: U, amount: -6.8}
+  - {t: 144, stock: E, amount: -46.8}
+  - {t: 144, stock: N, amount: 29.4}
+  - {t: 144, stock: U, amount: -6.3}
+  - {t: 156, stock: E, amount: 565.3}
+  - {t: 156, stock: N, amount: 321.2}
+  - {t: 156, stock: U, amount: 59.8}
+  - {t: 168, stock: E, amount: -331.4}
+  - {t: 168, stock: N, amount: -197}
+  - {t: 168, stock: U, amount: -24.2}
+  - {t: 180, stock: E, amount: -54.1}
+  - {t: 180, stock: N, amount: 31.9}
+  - {t: 180, stock: U, amount: 15.7}
+  - {t: 192, stock: E, amount: -132.7}
+  - {t: 192, stock: N, amount: 52.7}
+  - {t: 192, stock: U, amount: 6.5}
+  - {t: 204, stock: E, amount: 107.8}
+  - {t: 204, stock: N, amount: 230.7}
+  - {t: 204, stock: U, amount: 3.4}
+  - {t: 216, stock: E, amount: -542.1}
+  - {t: 216, stock: N, amount: -186}
+  - {t: 216, stock: U, amount: -9.4}
+  - {t: 228, stock: E, amount: -351.6}
+  - {t: 228, stock: N, amount: -106.4}
+  - {t: 228, stock: U, amount: -30.6}
+  - {t: 240, stock: E, amount: -212.5}
+  - {t: 240, stock: N, amount: -49.5}
+  - {t: 240, stock: U, amount: -16.8}
+  - {t: 252, stock: E, amount: -258.3}
+  - {t: 252, stock: N, amount: -81.3}
+  - {t: 252, stock: U, amount: -28}
+  - {t: 264, stock: E, amount: 745}
+  - {t: 264, stock: N, amount: 698.8}
+  - {t: 264, stock: U, amount: 61.8}
+  - {t: 276, stock: E, amount: -6.6}
+  - {t: 276, stock: N, amount: 140.7}
+  - {t: 276, stock: U, amount: 5.6}
+  - {t: 288, stock: E, amount: -30.4}
+  - {t: 288, stock: N, amount: 38.3}
+  - {t: 288, stock: U, amount: -6.8}
+  - {t: 300, stock: E, amount: 232.1}
+  - {t: 300, stock: N, amount: 274.9}
+  - {t: 300, stock: U, amount: 24.8}
+  - {t: 312, stock: E, amount: 172.5}
+  - {t: 312, stock: N, amount: 131.6}
+  - {t: 312, stock: U, amount: -3.3}
+  - {t: 324, stock: E, amount: -555.2}
+  - {t: 324, stock: N, amount: -218.7}
+  - {t: 324, stock: U, amount: -44.4}
+  - {t: 336, stock: E, amount: 307.1}
+  - {t: 336, stock: N, amount: 196.5}
+  - {t: 336, stock: U, amount: 9.4}
+  - {t: 348, stock: E, amount: -523.4}
+  - {t: 348, stock: N, amount: -241.3}
+  - {t: 348, stock: U, amount: -40.6}
+  - {t: 360, stock: E, amount: -550.1}
+  - {t: 360, stock: N, amount: -269.7}
+  - {t: 360, stock: U, amount: -17.8}
+  - {t: 372, stock: E, amount: -340.5}
+  - {t: 372, stock: N, amount: -155.2}
+  - {t: 372, stock: U, amount: -28.7}
+  - {t: 384, stock: E, amount: 602.5}
+  - {t: 384, stock: N, amount: 303.9}
+  - {t: 384, stock: U, amount: 11.4}
+  - {t: 396, stock: E, amount: 608}
+  - {t: 396, stock: N, amount: 349.3}
+  - {t: 396, stock: U, amount: 12.2}
+  - {t: 408, stock: E, amount: -465.7}
+  - {t: 408, stock: N, amount: -98}
+  - {t: 408, stock: U, amount: -30.7}
+  - {t: 420, stock: E, amount: 1696.4}
+  - {t: 420, stock: N, amount: 1153.2}
+  - {t: 420, stock: U, amount: 51.5}

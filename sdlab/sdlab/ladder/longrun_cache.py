@@ -62,6 +62,8 @@ def compute(case_id: str, variant: str, items: list[tuple[int, str]]) -> list[tu
     from . import data, longrun
     try:
         c = casemod.load(case_id)
+        if c.get("real"):            # a real-data case: graded by held-out prediction (real/score.py), no truth to run far
+            return [(i, {"error": "real-data case: graded by real/score.py"}) for i, _ in items]
         if c.get("physics"):         # a physics case's long run is against the ODE (physics/score.py), not its reference model
             return [(i, {"error": "physics case: its long run is graded by physics/score.py"}) for i, _ in items]
         d = data.load(c, variant)

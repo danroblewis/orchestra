@@ -1,0 +1,66 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: Stylonychia with P. caudatum, culture 1 (Gause 1934, table A5)
+level: 30
+tags:
+- real
+- gauser
+- mixture
+tests: 'two species competing for one food (Lotka-Volterra competition): each one''s crowding by the other'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_app_t05
+    time: Time
+    step: 1
+    unit: day
+    stocks:
+      S:
+        value: Individuals
+        where:
+          Experiment: 3
+          Culture: '1'
+          Species: Stylonychia pustulata
+      Pc:
+        value: Individuals
+        where:
+          Experiment: 3
+          Culture: '1'
+          Species: Paramecium caudatum
+  points: 18
+  train: 14
+  time:
+    unit: day
+    first: 2.0
+    last: 19.0
+    train_last: 15.0
+  sha256: fcfb7460078f5479
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 14 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      S: 0.24907
+      Pc: 0.16579
+    floor:
+      S: 3.8
+      Pc: 8.7
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  S: {initial: 12, unit: "individuals"}
+  Pc: {initial: 7, unit: "individuals"}
+flows:
+  outside -> S as s_r:
+    rate: 0.95127 * S
+  S -> outside as s_s:
+    rate: 0.00352648 * S * effect(S, linear, normal=1, max=8000)
+  S -> outside as s_pc:
+    rate: 0.0177719 * S * effect(Pc, linear, normal=1, max=20000)
+  outside -> Pc as pc_r:
+    rate: 1.04509 * Pc
+  Pc -> outside as pc_s:
+    rate: 0.00140688 * Pc * effect(S, linear, normal=1, max=8000)
+  Pc -> outside as pc_pc:
+    rate: 0.00809951 * Pc * effect(Pc, linear, normal=1, max=20000)

@@ -23,6 +23,8 @@ from ..discovery.api import jsonable
 from . import cases as casemod
 from . import catalog, data, physics, provenance, score, store
 from . import realistic as _realistic
+from .real import data as _real_data
+from .real import score as _real_score
 
 TIMEOUT = 120
 
@@ -90,6 +92,8 @@ def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None
         for v in c["variants"]:
             if variants and v["name"] not in variants and v["noise"] not in variants and v["length"] not in variants:
                 continue
+            if c.get("real") and _real_data.available(c, v["name"]):     # a real case's download is missing: not run (cli says why)
+                continue
             for s in strategies:
                 why = "forced" if force else store.staleness(have.get((cid, v["name"], s["name"])), c["hash"], s["hash"], shc)
                 if why:
@@ -143,7 +147,7 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
         c = casemod.load(item["case"])
         noise = casemod.variant(c, item["variant"])["noise"]
         model = casemod.truth_model(c, item["variant"])
-        d = data.load(c, item["variant"])
+        d = _real_data.load(c, item["variant"]) if c.get("real") else data.load(c, item["variant"])   # real/: the training part
         inferred = None
         if item.get("mode") == "rescore":
             prev = next(iter(store.latest(item["case"], item["variant"], item["strategy"], found=True)), None)
@@ -159,8 +163,10 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
         if armed:                    # the timeout bounds the strategy, not the scorer (the oracle's fit over
             signal.setitimer(signal.ITIMER_REAL, 0)     # ~2000 windows of a long realistic run takes minutes)
             armed = False
-        fresh = data.load(c, item["variant"], fresh=True)
-        if physics.is_physics(c):    # physics/: structure against the physics, behaviour against the ODE, beside the reference
+        fresh = _real_data.load(c, item["variant"], full=True) if c.get("real") else data.load(c, item["variant"], fresh=True)
+        if c.get("real"):           # real/: held-out prediction, agreement with the published model, measured flows (twin: equations)
+            s = _real_score.score(c, item["variant"], model, flows, d, fresh, inferred)
+        elif physics.is_physics(c):    # physics/: structure against the physics, behaviour against the ODE, beside the reference
             s = physics.score_found(c, item["variant"], flows, d, fresh, inferred)
         elif d.get("clean"):           # a noise of noise.py: equations on what was reported, behaviour on the run underneath (every step)
             s = {**score.equations(c, noise, model, flows, d),

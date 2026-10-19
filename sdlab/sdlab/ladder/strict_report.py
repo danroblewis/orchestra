@@ -29,6 +29,7 @@ def _rows(a) -> list[dict]:
 
 def fill(a) -> None:
     rows = [r for r in _rows(a) if not casemod.is_physics(r["case"])]     # physics cases: graded by physics/, no strict reference
+    rows = [r for r in rows if not casemod.is_real(r["case"])]          # real cases: graded by real/, no strict reference
     cx = complexity.for_results(rows)
     jobs = a.jobs or max(1, (os.cpu_count() or 2) - 1)
     passes = [r for r in rows if r["status"] == "pass" and cx.get(r["id"]) and cx[r["id"]]["extra"] <= 0]
@@ -64,6 +65,8 @@ def table(set_name: str = "tests", variants: str | None = None) -> list[dict]:
     phys = {c["id"] for c in sm["cases"] if c.get("physics")}
     by: dict[str, dict] = {}
     for x in sm["cells"]:
+        if casemod.is_real(x["case"]):
+            continue
         if not x["status"] or x["case"] in phys or (set_name != "all" and (set_name == "realistic") != real.get(x["case"], False)):
             continue
         if variants and not any(v in x["variant"] for v in variants.split(",")):

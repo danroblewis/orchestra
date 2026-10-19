@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: Automatic transmission'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: Automatic transmission
+  points: 34
+  train: 26
+  time:
+    unit: year
+    first: 1951
+    last: 1984
+    train_last: 1976
+  sha256: f17221c3b8b9cbd7
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 26 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.0113
+    floor:
+      A: 4.925
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 64, unit: "% of households"}
+  A: {initial: 36, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: max(0, -0.0998142 + 0.12481 * N)
+  N -> A as imitation:
+    rate: max(0, -0.000000000000000000578765 + 0.000000000000000000723702 * N) * effect(A, linear, normal=1, max=101)

@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: RTGS adoption'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: RTGS adoption
+  points: 36
+  train: 27
+  time:
+    unit: year
+    first: 1970
+    last: 2005
+    train_last: 1996
+  sha256: 7c5143107f9bcf45
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 27 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.12869
+    floor:
+      A: 0.6
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 100, unit: "% of households"}
+  A: {initial: 0, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: 0.000383627 * N
+  N -> A as imitation:
+    rate: 0.00165383 * N * effect(A, linear, normal=1, max=101)

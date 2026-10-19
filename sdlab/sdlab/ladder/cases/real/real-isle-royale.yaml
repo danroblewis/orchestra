@@ -1,0 +1,62 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'Isle Royale: moose and wolves, 1959-1994 (McLaren and Peterson 1994)'
+level: 30
+tags:
+- real
+- gauser
+- predation
+tests: 'predator and prey (Lotka-Volterra): the prey eaten and the predator fed in proportion to both'
+real:
+  source: gauseR
+  select:
+    table: mclaren_1994_f03
+    time: year
+    step: 1
+    unit: year
+    stocks:
+      Moose:
+        value: individuals
+        where:
+          Species: Alces alces
+      Wolves:
+        value: individuals
+        where:
+          Species: Canis lupus
+  points: 36
+  train: 27
+  time:
+    unit: year
+    first: 1959.0
+    last: 1994.0
+    train_last: 1985.0
+  sha256: 023a62817d8a8fd4
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 27 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      Moose: 0.04646
+      Wolves: 0.20924
+    floor:
+      Moose: 70.95
+      Wolves: 2.45
+  cite: McLaren and Peterson (1994) Science 266:1555, via gauseR
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  Moose: {initial: 547, unit: "individuals"}
+  Wolves: {initial: 19, unit: "individuals"}
+flows:
+  outside -> Moose as moose_r:
+    rate: 0.236031 * Moose
+  outside -> Moose as moose_moose:
+    rate: 0.0000086407 * Moose * effect(Moose, linear, normal=1, max=200000)
+  Moose -> outside as moose_wolves:
+    rate: 0.00848998 * Moose * effect(Wolves, linear, normal=1, max=5000)
+  outside -> Wolves as wolves_r:
+    rate: 0.424703 * Wolves
+  outside -> Wolves as wolves_moose:
+    rate: 0.000505874 * Wolves * effect(Moose, linear, normal=1, max=200000)
+  Wolves -> outside as wolves_wolves:
+    rate: 0.0421532 * Wolves * effect(Wolves, linear, normal=1, max=5000)

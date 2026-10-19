@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: Colour TV'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: Colour TV
+  points: 40
+  train: 30
+  time:
+    unit: year
+    first: 1966
+    last: 2005
+    train_last: 1995
+  sha256: 50626a518ee2a622
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 30 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.018
+    floor:
+      A: 4.8
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 90, unit: "% of households"}
+  A: {initial: 10, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: max(0, -0.176317 + 0.0440792 * N)
+  N -> A as imitation:
+    rate: max(0, -0.0063366 + 0.00158415 * N) * effect(A, linear, normal=1, max=101)

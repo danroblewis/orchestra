@@ -1,0 +1,47 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: P. aurelia alone, volume (Gause 1934, fig. 22)
+level: 30
+tags:
+- real
+- gauser
+- mono
+tests: 'one species growing alone (logistic): its growth and its crowding read from its level'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_f22
+    time: Day
+    step: 1
+    unit: day
+    stocks:
+      Pa:
+        value: Volume_Species2
+        where:
+          Treatment: Pa
+  points: 10
+  train: 8
+  time:
+    unit: day
+    first: 5.0
+    last: 14.0
+    train_last: 12.0
+  sha256: 7e03ba153fcf0652
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 8 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      Pa: 0.0302
+    floor:
+      Pa: 11.810884
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  Pa: {initial: 35.6979, unit: "volume units"}
+flows:
+  outside -> Pa as pa_r:
+    rate: 0.709809 * Pa
+  Pa -> outside as pa_pa:
+    rate: 0.0029839 * Pa * effect(Pa, linear, normal=1, max=30000)

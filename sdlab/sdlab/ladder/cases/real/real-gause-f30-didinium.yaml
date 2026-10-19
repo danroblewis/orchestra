@@ -1,0 +1,62 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: Didinium eating Paramecium, Osterhout medium (Gause 1934, fig. 30)
+level: 30
+tags:
+- real
+- gauser
+- predation
+tests: 'predator and prey (Lotka-Volterra): the prey eaten and the predator fed in proportion to both'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_f30
+    time: Time
+    step: 1
+    unit: day
+    stocks:
+      P:
+        value: Individuals
+        where:
+          Species: Paramecium caudatum
+      D:
+        value: Individuals
+        where:
+          Species: Didinium nasutum
+  points: 8
+  train: 6
+  time:
+    unit: day
+    first: 0.0
+    last: 7.0
+    train_last: 5.0
+  sha256: 829f596341e2b218
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 6 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      P: 0.3413
+      D: 1.16632
+    floor:
+      P: 63.225
+      D: 12.225
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  P: {initial: 1264.5, unit: "individuals"}
+  D: {initial: 2.1, unit: "individuals"}
+flows:
+  outside -> P as p_r:
+    rate: 0.104484 * P
+  P -> outside as p_p:
+    rate: 0.0000196429 * P * effect(P, linear, normal=1, max=200000)
+  P -> outside as p_d:
+    rate: 0.0475935 * P * effect(D, linear, normal=1, max=30000)
+  outside -> D as d_r:
+    rate: 0.360012 * D
+  outside -> D as d_p:
+    rate: 0.00665924 * D * effect(P, linear, normal=1, max=200000)
+  D -> outside as d_d:
+    rate: 0.0089207 * D * effect(D, linear, normal=1, max=30000)

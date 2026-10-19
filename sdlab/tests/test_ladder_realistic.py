@@ -47,7 +47,7 @@ def test_every_example_is_a_realistic_case_and_compiles_to_its_truth():
         assert [(v["name"], v["steps"]) for v in c["variants"]] == [("counts-short", truth["steps"]), ("counts-long", truth.get("long_steps", 10 * truth["steps"]))]
         tm = casemod.truth_model(c, "counts-short")
         assert tm["noise"] == truth["noise"] and tm["steps"] == truth["steps"]
-    assert casemod.case_ids()[-len(ids):] == ids, "after the tests (level 20)"
+    assert [i for i in casemod.case_ids() if not casemod.is_real(i)][-len(ids):] == ids, "after the tests (level 20; the real-data cases, level 30, come last)"
 
 
 @pytest.mark.parametrize("example", ["sd-saas", "sd-population", "sd-print-shop"])

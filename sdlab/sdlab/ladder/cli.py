@@ -60,6 +60,9 @@ def do_run(a, force: bool, command: str) -> int:
     for s in skipped:
         print(f"skipping strategy {s['name']}: {s['reason']}", file=sys.stderr)
     variants = [v.strip() for v in (a.variants or "").split(",") if v.strip()] or None
+    from .real.data import missing_notes
+    for note in missing_notes(runner.select_cases(a.cases)):
+        print(f"skipping {note}", file=sys.stderr)                  # real cases whose data are not downloaded: not run
     items = runner.plan(runner.select_cases(a.cases), strategies, variants, force=force)
     if not items:
         print("Nothing to run: every result is current.")
@@ -69,7 +72,7 @@ def do_run(a, force: bool, command: str) -> int:
     began = time.perf_counter()
     rows = runner.execute(items, a.jobs, a.timeout, command, on_done=None if a.quiet else _progress)
     took = time.perf_counter() - began
-    counts = {k: sum(r["status"] == k for r in rows) for k in api.STATUSES}
+    counts = {k: sum(r["status"] == k for r in rows) for k in dict.fromkeys([*api.STATUSES, *(r["status"] for r in rows)])}   # real cases: agrees / differs
     print(f"{command}: {len(rows)} done in {took:.1f} s: " + ", ".join(f"{v} {k}" for k, v in counts.items() if v))
     return 0
 

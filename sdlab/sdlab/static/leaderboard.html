@@ -55,6 +55,8 @@
   tr.about .k { color: var(--muted); }
   th.real, td.real { background: color-mix(in srgb, var(--equiv) 6%, transparent); }
   th.real:first-of-type, tr > .real:not(.real + .real) { border-left: 2px solid var(--line); }
+  th.rd, td.rd { background: color-mix(in srgb, var(--equiv) 10%, transparent); }
+  tr > .rd:not(.rd + .rd) { border-left: 2px solid var(--line); }
   th.phys, td.phys { background: color-mix(in srgb, var(--pass) 6%, transparent); }
   tr > .phys:not(.phys + .phys) { border-left: 2px solid var(--line); }
   tr.groups th { position: static; cursor: default; font-size: 12px; text-align: left; }
@@ -96,6 +98,14 @@
   skill@20 over the runs graded (each clipped at −100%, as on the bench; hover for its 95% interval), <b>goals met</b> the runs with
   skill@20 ≥ 90% and skill@100 ≥ 80% (an error or timeout never meets it) out of all realistic runs, <b>real time</b> the strategy's own
   time on them (timeouts at 300 s not included; hover for the slowest run and the timeouts).
+  <b>Real data</b> (the last columns, in no set and never in a pass rate): measured series with a published model (BLS labour
+  flows, Gause's lab populations, the 1978 boarding-school flu, US technology adoption; tag <code>real</code>). Discovery sees the first
+  75% of each series. <b>held-out</b>: skill against persistence on the rest (the found model run free from the last sample it saw;
+  100% = exact, 0 = no better than holding the last level; each run clipped at −100%; hover for the published model's skill on the
+  same runs); <b>≥ published</b>: runs that forecast at least as well as the published model refitted on the same samples;
+  <b>agreement</b>: the share of the published structure's parts the found model has (hover for precision): agreement, not a pass;
+  <b>BLS flows</b>: of BLS's six measured gross flows, those found within 25%; <b>twin</b>: on the published model simulated at the
+  data's length and noise, the share of runs that pass or are equivalent, which tells a method failure from a data limit.
   <b>Physics</b> (the last columns, whatever set is picked; never in the tests' pass rate): 7 physical systems that are not
   stock-and-flow models (a draining tank, two coupled tanks, Newton cooling, a mass-spring-damper, predator-prey, a reaction chain,
   a thermostat), solved in continuous time and sampled. <b>phys pass</b>: the coupling graph and signs agree with the physics and the
@@ -175,6 +185,11 @@ const COLS = [
   { key: "rGoals", label: "goals met", fmt: (v, r) => (r.rOf ? `${r.rGoalsN}/${r.rOf}` : "–"), cls: "real", group: "real", tip: (r) => r.rTip },
   { key: "rFresh20", label: "real fresh@20", fmt: pct, cls: "real hide-sm", group: "real" },
   { key: "rTime", label: "real time (s)", fmt: (v) => (Number.isNaN(v) ? "–" : v.toFixed(0)), cls: "real hide-sm", group: "real", asc: true, tip: (r) => r.rTimeTip },
+  { key: "dHeld", gl: "heldout_skill", label: "held-out", fmt: pct, cls: "rd", group: "rd", tip: (r) => r.dTip },
+  { key: "dBeat", gl: "heldout_skill", label: "≥ published", fmt: (v, r) => (r.dGraded ? `${r.dBeatN}/${r.dGraded}` : "–"), cls: "rd", group: "rd", tip: (r) => r.dTip },
+  { key: "dAgree", gl: "agreement", label: "agreement", fmt: pct, cls: "rd", group: "rd", tip: (r) => r.dAgreeTip },
+  { key: "dFlows", gl: "measured_flows", label: "BLS flows", fmt: (v, r) => (r.dFlowsOf ? `${r.dFlowsN}/${r.dFlowsOf}` : "–"), cls: "rd hide-sm", group: "rd", tip: (r) => r.dFlowsTip },
+  { key: "dTwin", gl: "twin", label: "twin", fmt: pct, cls: "rd hide-sm", group: "rd", tip: (r) => r.dTwinTip },
   { key: "pPass", gl: "physics_pass", label: "phys pass", fmt: (v, r) => (r.pOf ? `${r.pPassN}/${r.pOf}` : "–"), cls: "phys", group: "phys", tip: (r) => r.pTip },
   { key: "pStruct", gl: "physics_structure", label: "structure", fmt: (v, r) => (r.pOf ? `${r.pStructN}/${r.pOf}` : "–"), cls: "phys", group: "phys", tip: (r) => r.pTip },
   { key: "pCoup", gl: "physics_structure", label: "couplings", fmt: pct, cls: "phys hide-sm", group: "phys" },
@@ -197,7 +212,26 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const clip = (v) => (v == null ? null : Math.max(-1, v));
 const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference
 const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE, not an SD model (physics/)
-const kindOf = (c) => (isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
+const isData = (c) => !!c.real;                                                     // a real-data case (real/): its own columns, in no set
+const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
+
+// the real-data cases for one strategy (no filter applies: they have their own variants, real and twin)
+function realData(name, rd) {
+  const cs = data.cells.filter((c) => c.strategy === name && rd[c.case]);
+  const real = cs.filter((c) => c.variant === "real" && c.status), twin = cs.filter((c) => c.variant === "twin" && c.status);
+  const g = real.filter((c) => c.heldout != null && c.heldout_published != null);
+  const ag = real.filter((c) => c.agree_recall != null), fl = real.filter((c) => c.flows_of);
+  const nReal = cs.filter((c) => c.variant === "real").length, nTwin = cs.filter((c) => c.variant === "twin").length;
+  const tw = twin.filter((c) => c.status === "pass" || c.status === "equivalent").length, sum = (xs, k) => xs.reduce((a, c) => a + (c[k] || 0), 0);
+  return { dHeld: mean(g.map((c) => clip(c.heldout))), dGraded: g.length, dBeatN: g.filter((c) => c.beats_published).length,
+    dBeat: g.length ? g.filter((c) => c.beats_published).length / g.length : NaN, dAgree: mean(ag.map((c) => c.agree_recall)),
+    dFlowsN: sum(fl, "flows_matched"), dFlowsOf: sum(fl, "flows_of"), dFlows: fl.length ? sum(fl, "flows_matched") / sum(fl, "flows_of") : NaN,
+    dTwin: twin.length ? tw / twin.length : NaN,
+    dTip: real.length ? `${real.length} of ${nReal} real runs done (${real.filter((c) => c.status === "error" || c.status === "timeout").length} error or timeout), ${g.length} graded (a flat held-out part has no skill); the published model on the same runs: ${pct(mean(g.map((c) => clip(c.heldout_published))))}; 95% interval of the mean ${ciText(g.map((c) => clip(c.heldout)))}` : "not run on the real data yet (or not downloaded: python -m sdlab.ladder.real fetch)",
+    dAgreeTip: ag.length ? `mean recall ${pct(mean(ag.map((c) => c.agree_recall)))}, precision ${pct(mean(ag.map((c) => c.agree_precision)))}; ${real.filter((c) => c.agrees).length} of ${real.length} runs agree exactly with the published structure` : "",
+    dFlowsTip: fl.length ? `${sum(fl, "flows_found")} of ${sum(fl, "flows_of")} measured gross flows found at all; median relative error ${pct(mean(fl.map((c) => c.flows_error)))}` : "",
+    dTwinTip: twin.length ? `${tw} of ${twin.length} twin runs pass or are equivalent (${twin.filter((c) => c.status === "pass").length} pass); ${nTwin} twin cells` : "" };
+}
 
 // the physics cases for one strategy (the variant filter applies): structure against the physics, skill against the reference
 function physicsCols(name, phys, vf) {
@@ -240,7 +274,8 @@ function rows() {
   const kd = document.getElementById("kind").value, drawn = Object.fromEntries(data.cases.map((c) => [c.id, !!c.draw]));
   const set = document.getElementById("set").value, real = Object.fromEntries(data.cases.map((c) => [c.id, isReal(c)]));
   const phys = Object.fromEntries(data.cases.map((c) => [c.id, isPhys(c)])), kinds = Object.fromEntries(data.cases.map((c) => [c.id, kindOf(c)]));
-  const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
+  const rd = Object.fromEntries(data.cases.map((c) => [c.id, isData(c)]));
+  const keep = (c) => !rd[c.case] && (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
     && (set === "all" || set === kinds[c.case]);
   const by = {};
   for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
@@ -262,6 +297,7 @@ function rows() {
       ...strictPass(cs),
       ...realistic(name, real, vf),
       ...physicsCols(name, phys, vf),
+      ...realData(name, rd),
     };
   });
 }
@@ -321,9 +357,9 @@ function render() {
     const d = (Number.isNaN(x) ? none : x) - (Number.isNaN(y) ? none : y);
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
-  const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length;
+  const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length, nRd = COLS.filter((c) => c.group === "rd").length;
   const setName = { tests: "Tests", realistic: "Realistic examples", physics: "Physics", all: "All cases" }[document.getElementById("set").value];
-  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal - nPhys}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th></tr>` + "<tr>" + COLS.map((c) =>
+  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal - nPhys - nRd}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th></tr>` + "<tr>" + COLS.map((c) =>
     `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {

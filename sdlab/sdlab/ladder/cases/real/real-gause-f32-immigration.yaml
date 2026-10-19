@@ -1,0 +1,77 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: Didinium and Paramecium with immigration every third day (Gause 1934, fig. 32)
+level: 30
+tags:
+- real
+- gauser
+- predation
+tests: 'predator and prey (Lotka-Volterra): the prey eaten and the predator fed in proportion to both; announced immigrations (one of each, Gause 1934 ch. 6) as injections'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_f32
+    time: Day
+    step: 1
+    unit: day
+    stocks:
+      P:
+        value: Individuals_Prey
+        where: {}
+      D:
+        value: Individuals_Predator
+        where: {}
+    injections:
+      flag: Immigration
+      when: y
+      amounts:
+        P: 1
+        D: 1
+  points: 17
+  train: 13
+  time:
+    unit: day
+    first: 1.0
+    last: 17.0
+    train_last: 13.0
+  sha256: 8fec85d5db887683
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 13 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      P: 0.39825
+      D: 0.6284
+    floor:
+      P: 2.77
+      D: 1.55
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  P: {initial: 2.9, unit: "individuals"}
+  D: {initial: 0, unit: "individuals"}
+flows:
+  outside -> P as p_r:
+    rate: 0.79696 * P
+  P -> outside as p_p:
+    rate: 0.034576 * P * effect(P, linear, normal=1, max=6000)
+  P -> outside as p_d:
+    rate: 0.0539861 * P * effect(D, linear, normal=1, max=4000)
+  outside -> D as d_r:
+    rate: 0.353812 * D
+  outside -> D as d_p:
+    rate: 0.0496235 * D * effect(P, linear, normal=1, max=6000)
+  D -> outside as d_d:
+    rate: 0.0970652 * D * effect(D, linear, normal=1, max=4000)
+injections:
+  - {t: 3, stock: P, amount: 1}
+  - {t: 3, stock: D, amount: 1}
+  - {t: 6, stock: P, amount: 1}
+  - {t: 6, stock: D, amount: 1}
+  - {t: 9, stock: P, amount: 1}
+  - {t: 9, stock: D, amount: 1}
+  - {t: 12, stock: P, amount: 1}
+  - {t: 12, stock: D, amount: 1}
+  - {t: 15, stock: P, amount: 1}
+  - {t: 15, stock: D, amount: 1}

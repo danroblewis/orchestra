@@ -1,0 +1,64 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'Huffaker''s mites: predator and prey on oranges, 24 weeks (Huffaker 1958, fig. 4b)'
+level: 30
+tags:
+- real
+- gauser
+- predation
+tests: 'predator and prey (Lotka-Volterra): the prey eaten and the predator fed in proportion to both'
+real:
+  source: gauseR
+  select:
+    table: huffaker_1963
+    time: Weeks
+    step: 1
+    unit: week
+    stocks:
+      Prey:
+        value: Individuals
+        where:
+          Figure: 4b
+          Species: Prey (Eotetranychus sexmaculatus)
+      Pred:
+        value: Individuals
+        where:
+          Figure: 4b
+          Species: Predator (Typhlodromus occidentalis)
+  points: 23
+  train: 17
+  time:
+    unit: week
+    first: 2.0
+    last: 24.0
+    train_last: 18.0
+  sha256: f424180e28bf551d
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 17 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      Prey: 0.28767
+      Pred: 0.6104
+    floor:
+      Prey: 67.9
+      Pred: 1.05125
+  cite: Huffaker (1958) Hilgardia 27:343, via gauseR
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  Prey: {initial: 612, unit: "individuals"}
+  Pred: {initial: 2.725, unit: "individuals"}
+flows:
+  outside -> Prey as prey_r:
+    rate: 0.660319 * Prey
+  Prey -> outside as prey_prey:
+    rate: 0.000495488 * Prey * effect(Prey, linear, normal=1, max=200000)
+  Prey -> outside as prey_pred:
+    rate: 0.119816 * Prey * effect(Pred, linear, normal=1, max=3000)
+  Pred -> outside as pred_r:
+    rate: 0.969546 * Pred
+  outside -> Pred as pred_prey:
+    rate: 0.00279498 * Pred * effect(Prey, linear, normal=1, max=200000)
+  Pred -> outside as pred_pred:
+    rate: 0.467687 * Pred * effect(Pred, linear, normal=1, max=3000)

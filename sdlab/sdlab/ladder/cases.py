@@ -36,6 +36,7 @@ from . import noise as _noise
 from . import physics as _physics
 from . import realistic as _realistic
 from .caseformat import CaseError, compile_case
+from .real import case as _real
 
 
 CASES = Path(__file__).resolve().parent / "cases"
@@ -114,7 +115,7 @@ def _physics_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
 
 
 def _all_files() -> dict[str, Path]:
-    return {**case_files(), **realistic_files(), **physics_files()}
+    return {**case_files(), **realistic_files(), **real_files(), **physics_files()}
 
 
 def is_physics(case_id: str) -> bool:
@@ -125,6 +126,28 @@ def is_physics(case_id: str) -> bool:
 def is_realistic(case_id: str) -> bool:
     """Is this one of the realistic cases (an example by reference), not a test case?"""
     return split(case_id)[0] in realistic_files()
+
+
+def real_files() -> dict[str, Path]:
+    """The real-data cases (cases/real/real-*.yaml, real/): measured series beside a published model, never in the tests' totals."""
+    d = _real.folder(CASES)
+    return dict(_real_listing(str(d), d.stat().st_mtime_ns)) if d.is_dir() else {}
+
+
+@lru_cache(maxsize=8)
+def _real_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
+    return _real.files(Path(folder).parent)
+
+
+def is_real(case_id: str) -> bool:
+    """Is this one of the real-data cases (real/), not a test case?"""
+    return split(case_id)[0] in real_files()
+
+
+@lru_cache(maxsize=None)
+def _load_real(path: str, mtime: float, size: int) -> dict:
+    p = Path(path)
+    return _real.build(p.stem, _real.spec(p))
 
 
 def case_ids() -> list[str]:
@@ -182,6 +205,8 @@ def _safe_count(path: Path) -> int:
 
 
 def _draw_count(path: Path) -> int:
+    if path.parent.name == "real":
+        return 0
     if path.suffix != ".yaml" or path.parent.name in ("realistic", "physics"):
         return 0
     st = path.stat()
@@ -215,6 +240,8 @@ def _level_of(path_s: str, mtime: float, size: int) -> int:
 def read(path: Path) -> dict:
     """A case file as its case dict (a YAML case compiled; CaseError if it does not compile). A
     parametric case has no single case dict: read a draw with load / spec."""
+    if path.parent.name == "real":
+        return _real.spec(path)
     if path.parent.name == "realistic":
         return _realistic.spec(path)
     if path.parent.name == "physics":
@@ -331,6 +358,8 @@ def _get(case_id: str) -> dict:
     p = _all_files().get(base)
     if p is None or not known(case_id):
         raise KeyError(case_id)
+    if p.parent.name == "real":                                  # real/: its own variants (real, twin) and hash
+        return _load_real(str(p), *_real.stamp(p))
     if p.parent.name == "realistic":
         return _load(str(p), *_realistic.stamp(p))
     if p.parent.name == "physics":                               # physics/: its own case dict and hash; its data written for data.py

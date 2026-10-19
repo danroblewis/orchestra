@@ -729,6 +729,26 @@ glossary:
     term: Long-run error (physics)
     group: Results
     text: The found model run free for 5,000 steps from a fresh start, fed the measured inputs and announced injections, against the physics run as long - the rms gap over the last 1,000 steps as a share of each stock's range (100% at most; a model that runs away counts 100%). A cycle with no driver (predator-prey) drifts out of phase, so there even the reference is far off.
+  real_case:
+    term: Real-data case
+    group: The model's parts
+    text: A measured series with a model someone published for it - US labour force levels and their measured flows (BLS), Gause's lab populations, the 1978 boarding-school influenza, US households adopting a technology. There is no true model, so it is scored by how well the found model forecasts the part of the series discovery did not see, and by how far its structure agrees with the published one, in its own Real data columns, never in a pass rate. Each has two variants, real (the data) and twin (the published model simulated like the data).
+  heldout_skill:
+    term: Held-out skill
+    group: Results
+    text: Discovery sees the first 75% of a real series. The found model then runs free from the last sample it saw to the end, and its error is compared with holding that last level (persistence) - 100% is exact, 0 is no better than persistence, below 0 is worse. The published model, refitted on the same samples, gets the same number, so "at least as good as the published model" can be counted. A held-out part that does not move has no skill.
+  agreement:
+    term: Agreement (with the published structure)
+    group: Results
+    text: The parts of the published model (moves, inflows, links, outflows, effects, hidden stocks) that the found model has (recall), and the found model's parts that the published one has (precision). It is called agreement, not a pass - the published structure is a hypothesis that fitted the data, and a simpler model that forecasts as well is not wrong.
+  measured_flows:
+    term: Measured flows (BLS)
+    group: Results
+    text: The US labour force data measure not only the employed, unemployed and not-in-the-labour-force levels but all six gross flows between them each month. Discovery sees only the levels; the found flows between two states, on the measured levels, are compared with the measured ones - found within 25% counts as matched. The net flow between two states, which levels alone can show, is compared too.
+  twin:
+    term: Twin (of a real case)
+    group: Variants
+    text: The published model simulated by SD Lab's engine at the real data's length and sampling, with measurement error as large as the data's, and scored like a ladder case against that model. If a method recovers the twin but not the real data's published structure, the gap is the data (or the published model's misfit), not the method.
 
   # the results
   pass:

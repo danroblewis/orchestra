@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: Cellular phone'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: Cellular phone
+  points: 26
+  train: 20
+  time:
+    unit: year
+    first: 1994
+    last: 2019
+    train_last: 2013
+  sha256: befb9e9a3d0e0be8
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 20 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.07613
+    floor:
+      A: 4.5
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 90, unit: "% of households"}
+  A: {initial: 10, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: max(0, -0.135487 + 0.0392484 * N)
+  N -> A as imitation:
+    rate: max(0, -0.00537197 + 0.00155617 * N) * effect(A, linear, normal=1, max=101)

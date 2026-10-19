@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: Refrigerator'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: Refrigerator
+  points: 52
+  train: 39
+  time:
+    unit: year
+    first: 1925
+    last: 1976
+    train_last: 1963
+  sha256: d8023756bfe6f012
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 39 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.02174
+    floor:
+      A: 4.975
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 99, unit: "% of households"}
+  A: {initial: 1, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: 0.0255811 * N
+  N -> A as imitation:
+    rate: 0.00112841 * N * effect(A, linear, normal=1, max=101)

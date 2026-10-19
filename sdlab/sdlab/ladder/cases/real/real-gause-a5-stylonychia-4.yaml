@@ -1,0 +1,49 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: Stylonychia alone, culture 4 (Gause 1934, table A5)
+level: 30
+tags:
+- real
+- gauser
+- mono
+tests: 'one species growing alone (logistic): its growth and its crowding read from its level'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_app_t05
+    time: Time
+    step: 1
+    unit: day
+    stocks:
+      S:
+        value: Individuals
+        where:
+          Experiment: 1
+          Culture: '4'
+          Species: Stylonychia pustulata
+  points: 18
+  train: 14
+  time:
+    unit: day
+    first: 2.0
+    last: 19.0
+    train_last: 15.0
+  sha256: 9844a5f9fe12c5fc
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 14 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      S: 0.12508
+    floor:
+      S: 4.65
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  S: {initial: 26, unit: "individuals"}
+flows:
+  outside -> S as s_r:
+    rate: 1 * S
+  S -> outside as s_s:
+    rate: 0.0196127 * S * effect(S, linear, normal=1, max=10000)

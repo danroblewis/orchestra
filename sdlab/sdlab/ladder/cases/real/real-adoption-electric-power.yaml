@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: Electric power'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: Electric power
+  points: 98
+  train: 74
+  time:
+    unit: year
+    first: 1908
+    last: 2005
+    train_last: 1981
+  sha256: fb0d90b74e8ec3f0
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 74 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.00908
+    floor:
+      A: 4.95
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 90, unit: "% of households"}
+  A: {initial: 10, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: 0.0101109 * N
+  N -> A as imitation:
+    rate: 0.000838501 * N * effect(A, linear, normal=1, max=101)

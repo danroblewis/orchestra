@@ -25,10 +25,30 @@
   const B = { strategy: null, variant: "counts-long", set: "tests", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
   const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference (realistic.py)
   const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE solved in continuous time (physics/)
-  const kindOf = (c) => (isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
+  const isData = (c) => !!c.real;                                                     // a real-data case: a measured series beside a published model (real/)
+  const stc = (st) => ({ agrees: "pass", differs: "fail" }[st] || st);                 // a real case's verdict, coloured as pass / fail
+  const REALD = "Real data: discovery saw the first part of a measured series; the found model runs free over the rest (held-out skill against persistence: 100% exact, 0 no better than holding the last level) beside the published model refitted on the same samples. Agreement: the published structure's parts the found model has (recall) and found parts that are published (precision); agreement, not a pass. The twin variant is the published model simulated at the data's length and noise, scored like a ladder case.";
+  function realHtml(c, r) {
+    const R = c.real || {}, T = R.time || {}, s = r && r.scores, h = (s && s.heldout) || {}, ag = (s && s.agreement) || {}, fl = s && s.flows;
+    const head = `<p class="tests" data-tip="${esc(REALD)}"><b>Real data</b>: ${esc(R.points)} samples (${esc(T.first)} to ${esc(T.last)}, one per ${esc(T.unit)}); discovery saw the first ${esc(R.train)} (to ${esc(T.train_last)}). <span class="muted">${esc(R.cite)} · ${esc(R.licence)}</span></p>`;
+    if (!s) return head;
+    const list = (xs) => (xs && xs.length ? xs.map((x) => `<span class="mono">${esc(x)}</span>`).join(", ") : "none");
+    const flows = fl ? `<table class="small"><tr><th>measured flow</th><th>measured / month</th><th>found</th><th>net measured</th><th>net found</th><th></th></tr>${Object.entries(fl.rows).map(([k, x]) =>
+      `<tr><td class="mono">${esc(k)}</td><td>${fmt(x.measured_mean)}</td><td>${x.found ? fmt(x.found_mean) : "missing"}</td><td>${fmt(x.net_measured)}</td><td>${fmt(x.net_found)}</td><td>${x.matched ? "✓" : x.found ? `${pct(x.error)} off` : "✗"}</td></tr>`).join("")}</table>` : "";
+    return `${head}<p class="small" data-tip="${esc(REALD)}">held-out skill <b>${pct(h.skill)}</b> over ${esc(h.points)} samples vs the published model's ${pct(h.published)}${h.skill == null ? " <span class=\"muted\">(the held-out part does not move: no skill)</span>" : ""};
+      agreement with the published structure: recall <b>${pct(ag.recall)}</b>, precision <b>${pct(ag.precision)}</b> (${esc(ag.parts_found)} found parts, ${esc(ag.parts_published)} published).</p>
+      <p class="small">Matched: ${list(ag.matched)}. Missed: ${list(ag.missing)}. Extra: ${list(ag.extra)}.</p>${flows}`;
+  }
+  function realExplain(r) {
+    const s = r.scores || {}, h = s.heldout || {};
+    const fc = h.skill == null ? "The held-out part does not move, so there is no held-out skill." : `Forecasting the held-out samples it ${h.beats_published ? "does at least as well as" : "does worse than"} the published model (${pct(h.skill)} against ${pct(h.published)}).`;
+    if (r.variant === "twin") return `On the twin (the published model simulated with the data's length and noise): ${s.status || r.status}. ${fc}`;
+    return `${r.status === "agrees" ? "The found structure is the published one." : "The found structure differs from the published one."} ${fc}`;
+  }
+  const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
   // a physics case runs none and meas (no counting noise): the counts variant picked reads as its meas variant
-  const caseVariants = (c) => (isPhys(c) ? (c.variants || []).map((v) => v.name || v) : VARIANTS);
-  const variantOf = (c, v) => (isPhys(c) && v !== "all" ? v.replace(/^counts-/, "meas-") : v);
+  const caseVariants = (c) => (isData(c) ? ["real", "twin"] : isPhys(c) ? (c.variants || []).map((v) => v.name || v) : VARIANTS);
+  const variantOf = (c, v) => (isData(c) && v !== "all" ? "real" : isPhys(c) && v !== "all" ? v.replace(/^counts-/, "meas-") : v);
   const PHYS = "Physics view: the found model's couplings (which stocks and inputs each stock's change reads, with sign and shape, from its Jacobian on the run) against the physics', and its fresh-run skill against the reference, the best model SD Lab's forms can write. Pass: the coupling graph and signs agree and fresh skill@20 is within 5 points of the reference's.";
   function physHtml(c, r) {
     const Ph = c.physics, ph = r && r.scores && r.scores.physics;
@@ -93,7 +113,7 @@
     $("board-controls").innerHTML = `
       <label>Strategy <select id="b-strat">${strats.map((s) => opt(s.name, s.name === d.best ? `${s.name} (best pass rate)` : s.name, B.strategy)).join("")}</select></label>
       <label>Variant <select id="b-var">${[...VARIANTS.map((v) => [v, v]), ["all", "all four (tabs)"]].map(([v, w]) => opt(v, w, B.variant)).join("")}</select></label>
-      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline. Physics: physical systems solved in continuous time (no SD truth), against their physics and the best SD model; their counts variants read as meas.">Set <select id="b-set">${[["tests", "tests"], ["realistic", "realistic examples"], ["physics", "physics"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
+      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline. Physics: physical systems solved in continuous time (no SD truth), against their physics and the best SD model; their counts variants read as meas. Real data: measured series beside a published model (held-out prediction, agreement), never in a pass rate; shown on their own.">Set <select id="b-set">${[["tests", "tests"], ["realistic", "realistic examples"], ["physics", "physics"], ["real", "real data"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
       <label>Verdict <select id="b-status">${[["", "any"], ["pass", "pass"], ["equivalent", "equivalent"], ["fail", "fail"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => opt(v, w, B.status)).join("")}</select></label>
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
@@ -132,6 +152,7 @@
         <span data-tip="${esc(DEF.skill20)} Means clip each run at −100%.">skill@20 <b>${pct(clipMean("skill20"))}</b></span>
         <span data-tip="${esc(DEF.fresh20)}">fresh@20 <b>${pct(clipMean("fresh20"))}</b></span>
         ${rows.some(({ c }) => isReal(c)) ? `<span data-tip="${esc(GOAL)}">goals met <b>${rows.filter(({ c, r }) => isReal(c) && meets(r)).length}</b> of ${rows.filter(({ c }) => isReal(c)).length}</span>` : ""}
+        ${rows.some(({ c }) => isData(c)) ? `<span data-tip="${esc(REALD)}">agree with the published structure <b>${rows.filter(({ c, r }) => isData(c) && r && r.status === "agrees").length}</b> of ${rows.filter(({ c }) => isData(c)).length}; held-out at least as good as the published model <b>${rows.filter(({ c, r }) => isData(c) && r && r.scores && (r.scores.heldout || {}).beats_published).length}</b></span>` : ""}
         ${rows.some(({ c }) => isPhys(c)) ? `<span data-tip="${esc(PHYS)}">physics structure agrees <b>${rows.filter(({ c, r }) => isPhys(c) && r && r.scores && r.scores.physics && r.scores.physics.structure_ok).length}</b> of ${rows.filter(({ c }) => isPhys(c)).length}</span>` : ""}
       </div><div class="pbar">${bar}</div>`;
   }
@@ -155,20 +176,21 @@
         <div data-tip="${esc(DEF.complexity)}" class="wide"><dt>complexity true → found</dt><dd>${esc(cxText(r.complexity))}</dd></div>
         <div data-tip="The true and found models run free from the start to t = 100,000 (no re-anchoring): line graphs per stock, equilibrium, time constants, divergence." class="wide"><dt>long run</dt><dd><a href="/ladder/run?id=${r.id}" style="color:inherit">&#128200; true vs found, far ahead</a></dd></div>
       </dl>` : "";
-    return `<article class="bcard st-${st || "none"}" data-case="${esc(c.id)}">
+    return `<article class="bcard st-${stc(st) || "none"}" data-case="${esc(c.id)}">
       <header class="bhead">
-        <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isReal(c) || isPhys(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
-        <span class="stbadge st-${st || "none"}">${st ? esc(st) : "not run"}</span>
+        <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isData(c) || isReal(c) || isPhys(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
+        <span class="stbadge st-${stc(st) || "none"}">${st ? esc(st) : "not run"}</span>
         ${isReal(c) && r ? `<span class="stbadge st-${meets(r) ? "pass" : "fail"}" data-tip="${esc(GOAL)}">${meets(r) ? "meets the goal" : "short of the goal"}</span>` : ""}
         ${m && m.errorScore !== null && !isPhys(c) ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
       </header>
       <p class="tests">Tests: ${esc(c.tests)} <span class="muted small">level ${esc(c.level)} · ${esc(c.tags.join(", "))}</span></p>
       ${isPhys(c) ? physHtml(c, r) : ""}
+      ${isData(c) ? realHtml(c, r) : ""}
       ${P.drawHtml(c)}
       ${tabs}
-      <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
+      <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isData(c) ? "Published model (refit on what discovery saw)" : isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
       ${r && r.found && !isPhys(c) ? P.diffHtml(c, r) : ""}
-      ${r ? `<p class="bexplain">${esc((isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
+      ${r ? `<p class="bexplain">${esc((isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : isData(c) ? realExplain(r) : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
       ${meas}
     </article>`;
   }
@@ -191,7 +213,7 @@
     }
     controls(d);
     let rows = d.cases.map((c) => ({ c, r: shown(c, d) }));
-    rows = rows.filter(({ c, r }) => (B.set === "all" || B.set === kindOf(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
+    rows = rows.filter(({ c, r }) => (B.set === "all" ? kindOf(c) !== "real" : B.set === kindOf(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
       && (!B.status || (B.status === "none" ? !r : B.status === "error" ? r && (r.status === "error" || r.status === "timeout") : r && r.status === B.status)));
     const err = (r) => { const m = r && L.measures(r.scores); return m && m.errorScore !== null ? m.errorScore : -1; };
     if (B.sort === "status") rows.sort((a, b) => (a.r ? RANK[a.r.status] ?? 9 : 10) - (b.r ? RANK[b.r.status] ?? 9 : 10) || a.c.level - b.c.level);

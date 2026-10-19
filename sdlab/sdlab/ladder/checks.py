@@ -21,6 +21,8 @@ from .data import load, simulate
 
 
 def problems(case: dict) -> list[str]:
+    if case.get("real"):             # a real-data case (real/): measured data, not an engine run to check
+        return []
     if case.get("example"):          # a realistic case (realistic.py) is an example as it is: never changed for a check
         return []
     out: list[str] = []

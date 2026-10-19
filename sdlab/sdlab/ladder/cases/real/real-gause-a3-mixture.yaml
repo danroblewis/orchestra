@@ -1,0 +1,64 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: P. aurelia and P. caudatum together, mean of three (Gause 1934, table A3)
+level: 30
+tags:
+- real
+- gauser
+- mixture
+tests: 'two species competing for one food (Lotka-Volterra competition): each one''s crowding by the other'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_app_t03
+    time: Time
+    step: 1
+    unit: day
+    stocks:
+      Pa:
+        value: Individuals
+        where:
+          Species: Paramecium aurelia
+          Treatment: Mixture
+      Pc:
+        value: Individuals
+        where:
+          Species: Paramecium caudatum
+          Treatment: Mixture
+  points: 24
+  train: 18
+  time:
+    unit: day
+    first: 2.0
+    last: 25.0
+    train_last: 19.0
+  sha256: 07d3643405e8420f
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 18 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      Pa: 0.1471
+      Pc: 0.17149
+    floor:
+      Pa: 19.35
+      Pc: 6.2
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  Pa: {initial: 10, unit: "individuals"}
+  Pc: {initial: 10, unit: "individuals"}
+flows:
+  outside -> Pa as pa_r:
+    rate: 1.00534 * Pa
+  Pa -> outside as pa_pa:
+    rate: 0.00264504 * Pa * effect(Pa, linear, normal=1, max=40000)
+  Pa -> outside as pa_pc:
+    rate: 0.00204847 * Pa * effect(Pc, linear, normal=1, max=20000)
+  outside -> Pc as pc_r:
+    rate: 0.880097 * Pc
+  Pc -> outside as pc_pa:
+    rate: 0.00212468 * Pc * effect(Pa, linear, normal=1, max=40000)
+  Pc -> outside as pc_pc:
+    rate: 0.00423299 * Pc * effect(Pc, linear, normal=1, max=20000)

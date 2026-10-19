@@ -1,0 +1,44 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'US households with: Microcomputer'
+level: 30
+tags:
+- real
+- owid
+- adoption
+tests: 'technology diffusion (Bass): adoption from innovation and from imitation of those who already have it'
+real:
+  source: owid
+  select:
+    entity: Microcomputer
+  points: 33
+  train: 25
+  time:
+    unit: year
+    first: 1984
+    last: 2016
+    train_last: 2008
+  sha256: aa1068b9402773ee
+  measured_flows: []
+  published:
+    family: bass
+    refit: least squares of the free run on the first 25 years (p, q and the market potential m, at most 100%)
+  twin:
+    rel:
+      A: 0.01923
+    floor:
+      A: 3.6
+    complement:
+      N:
+        of: A
+        total: 100
+  cite: Our World in Data, Technology adoption by households in the United States (Comin and Hobijn 2004, and others)
+  licence: CC BY 4.0 (Our World in Data)
+  url: https://ourworldindata.org/grapher/technology-adoption-by-households-in-the-united-states.csv
+stocks:
+  N: {initial: 91.8, unit: "% of households"}
+  A: {initial: 8.2, unit: "% of households"}
+flows:
+  N -> A as innovation:
+    rate: max(0, -0.0000997631 + 0.00001 * N)
+  N -> A as imitation:
+    rate: max(0, -0.0176852 + 0.00177272 * N) * effect(A, linear, normal=1, max=101)

@@ -1,0 +1,64 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: 'Huffaker''s mites: predator and prey on oranges, 60 weeks (Huffaker 1958, fig. 3b)'
+level: 30
+tags:
+- real
+- gauser
+- predation
+tests: 'predator and prey (Lotka-Volterra): the prey eaten and the predator fed in proportion to both'
+real:
+  source: gauseR
+  select:
+    table: huffaker_1963
+    time: Weeks
+    step: 1
+    unit: week
+    stocks:
+      Prey:
+        value: Individuals
+        where:
+          Figure: 3b
+          Species: Prey (Eotetranychus sexmaculatus)
+      Pred:
+        value: Individuals
+        where:
+          Figure: 3b
+          Species: Predator (Typhlodromus occidentalis)
+  points: 58
+  train: 44
+  time:
+    unit: week
+    first: 3.0
+    last: 60.0
+    train_last: 46.0
+  sha256: 2ba54206e171eea0
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 44 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      Prey: 0.20266
+      Pred: 0.29981
+    floor:
+      Prey: 62.55
+      Pred: 1.00125
+  cite: Huffaker (1958) Hilgardia 27:343, via gauseR
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  Prey: {initial: 210, unit: "individuals"}
+  Pred: {initial: 1.15, unit: "individuals"}
+flows:
+  outside -> Prey as prey_r:
+    rate: 0.0394097 * Prey
+  outside -> Prey as prey_prey:
+    rate: 0.00019022 * Prey * effect(Prey, linear, normal=1, max=200000)
+  Prey -> outside as prey_pred:
+    rate: 0.0207244 * Prey * effect(Pred, linear, normal=1, max=3000)
+  Pred -> outside as pred_r:
+    rate: 0.340831 * Pred
+  outside -> Pred as pred_prey:
+    rate: 0.00143862 * Pred * effect(Prey, linear, normal=1, max=200000)
+  Pred -> outside as pred_pred:
+    rate: 0.0682817 * Pred * effect(Pred, linear, normal=1, max=3000)

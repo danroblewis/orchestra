@@ -1,0 +1,62 @@
+# A real-data case (sdlab/ladder/real): written by `python -m sdlab.ladder.real build`; do not edit by hand.
+title: Paramecium bursaria eating yeast (S. pombe) (Gause 1934, fig. 39)
+level: 30
+tags:
+- real
+- gauser
+- predation
+tests: 'predator and prey (Lotka-Volterra): the prey eaten and the predator fed in proportion to both'
+real:
+  source: gauseR
+  select:
+    table: gause_1934_book_f39.1
+    time: Time
+    step: 1
+    unit: day
+    stocks:
+      Y:
+        value: Individuals
+        where:
+          Species: Schizosaccharomyces pombe
+      B:
+        value: Individuals
+        where:
+          Species: Paramecium bursaria
+  points: 18
+  train: 14
+  time:
+    unit: day
+    first: 0.0
+    last: 17.0
+    train_last: 13.0
+  sha256: ca6f608679389791
+  measured_flows: []
+  published:
+    family: glv
+    refit: least squares of the free run from the first sample on the first 14 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+  twin:
+    rel:
+      Y: 0.28504
+      B: 0.19056
+    floor:
+      Y: 2.03
+      B: 2.785
+  cite: Gause (1934) The Struggle for Existence
+  licence: GPL-3 (the package); the counts are Gause's published observations
+  url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
+stocks:
+  Y: {initial: 40.6, unit: "individuals"}
+  B: {initial: 24, unit: "individuals"}
+flows:
+  outside -> Y as y_r:
+    rate: 0.471632 * Y
+  Y -> outside as y_y:
+    rate: 0.0125878 * Y * effect(Y, linear, normal=1, max=5000)
+  Y -> outside as y_b:
+    rate: 0.0203722 * Y * effect(B, linear, normal=1, max=6000)
+  B -> outside as b_r:
+    rate: 0.536843 * B
+  outside -> B as b_y:
+    rate: 0.0361471 * B * effect(Y, linear, normal=1, max=5000)
+  outside -> B as b_b:
+    rate: 0.000440023 * B * effect(B, linear, normal=1, max=6000)

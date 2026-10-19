@@ -33,6 +33,9 @@ import time
 from ..discovery.api import jsonable
 from . import cases as casemod
 from . import analysis, catalog, complexity, data, explain, longrun_cache, physics, realistic, score, store, strict
+from .real import case as _real_case
+from .real import data as _real_data
+from .real import score as _real_score
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -91,7 +94,7 @@ def case_data(case_id: str, variant: str, fresh: bool = False, flows: bool = Fal
     stock, hidden ones too), for a page to plot; with flows, also every true flow's amount per step
     (`flows`, which discovery never sees)."""
     c = casemod.load(case_id)
-    d = data.load(c, variant, fresh=fresh)
+    d = _real_data.load(c, variant, full=True) if c.get("real") else data.load(c, variant, fresh=fresh)    # real/: the whole series
     measured = [s["id"] for s in c["model"]["stocks"] if s.get("measured", True)]
     out = {"case": case_id, "variant": variant, "fresh": bool(fresh), "t": d["t"], "levels": d["levels"], "all_levels": d["all_levels"],
            "measured": measured, "eras": d.get("eras") or [], "injections": d.get("injections") or []}
@@ -141,7 +144,7 @@ def board(strategy: str, variant: str | None = None) -> dict:
     """Every case with one strategy's latest result in a variant (every variant when None), found
     flows included: what the all-cases view shows. {strategy, variant, best, cases, results}."""
     names = None if variant is None else {variant}
-    rows = [r for r in store.latest(strategy=strategy, found=True) if names is None or r["variant"] in names]
+    rows = [r for r in store.latest(strategy=strategy, found=True) if names is None or r["variant"] in names or r["variant"] in ("real", "twin")]
     known = set(casemod.case_ids())
     return jsonable({"strategy": strategy, "variant": variant, "best": best_strategy(),
                      "cases": [_case(i) for i in casemod.case_ids()],
@@ -230,6 +233,7 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     lr_cells = []
     refs = strict.references()                                     # read only: what `sdlab-ladder strict` computed
     cs = [casemod.load(i) for i in casemod.case_ids()]
+    realdata: dict = {}
     cells, by_tag, totals, real, phys = [], {}, {}, {}, {}
     for c in cs:
         shc = physics.score_hash(sh) if physics.is_physics(c) else sh       # a physics case: its scoring code too
@@ -248,6 +252,10 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     cell["goal"] = realistic.meets_goal(cell["status"], cell["skill20"], cell["skill100"]) if row else None
                     cell["goal_fresh"] = realistic.meets_goal(cell["status"], cell["fresh20"], cell["fresh100"]) if row else None
                     real.setdefault(s["name"], []).append(cell)
+                    continue
+                if c.get("real"):                                 # a real-data case (real/): its own view, never in the tests' totals
+                    cell.update(_real_score.cell(row))
+                    realdata.setdefault(s["name"], []).append(cell)
                     continue
                 if physics.is_physics(c):                         # a physics case: its own view, not the tests'
                     cell.update(physics.cell(row))
@@ -275,11 +283,11 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     g[cell["status"] or "missing"] += 1
     return jsonable({"strategies": strats,
                      "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c)
-                               | ({"example": c["example"]} if c.get("example") else {})
+                               | ({"example": c["example"]} if c.get("example") else {}) | ({"real": _real_case.describe(c)} if c.get("real") else {})
                                | ({"physics": {k: c["physics"][k] for k in ("system", "differs")}} if c.get("physics") else {}) for c in cs],
                      "cells": cells, "by_tag": by_tag, "totals": totals, "realistic": {n: realistic.aggregate(x) for n, x in real.items()},
                      "physics": {n: physics.aggregate(x) for n, x in phys.items()},
-                     "score_hash": sh, "parametric": parametric(cs, cells),
+                     "real": {n: _real_score.aggregate(x) for n, x in realdata.items()}, "score_hash": sh, "parametric": parametric(cs, cells),
                      "longrun": longrun_cache.aggregate(lr_cells)})
 
 
