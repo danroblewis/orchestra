@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy behaviour</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --surface: #ffffff; --canvas: #ffffff; --fg: #1d1d1b; --muted: #6b6a66; --faint: #a9a7a0; --rule: #e3e1db; --grid: #eeece7;
+    --good: #1f7a4d; --bad: #c0392b; --warn: #b45309; --eq: #2a78d6; --st-error: #7e22ce; --add: #1f7a4d;
+    --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #e34948;
+    --mono: ui-monospace, "IBM Plex Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --surface: #1f1e1c; --canvas: #1f1e1c; --fg: #ecebe6; --muted: #a3a19a; --faint: #5f5d58; --rule: #34332f; --grid: #2a2a27;
+      --good: #4fae74; --bad: #e0685a; --warn: #e0a33a; --eq: #6b9cf0; --st-error: #c084fc; --add: #4fae74;
+      --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #2e9e2e; --c7: #9085e9; --c8: #e66767;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --surface: #1f1e1c; --canvas: #1f1e1c; --fg: #ecebe6; --muted: #a3a19a; --faint: #5f5d58; --rule: #34332f; --grid: #2a2a27;
+    --good: #4fae74; --bad: #e0685a; --warn: #e0a33a; --eq: #6b9cf0; --st-error: #c084fc; --add: #4fae74;
+    --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #2e9e2e; --c7: #9085e9; --c8: #e66767;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: inherit; }
+  header.top { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
+  header.top a.nav { text-decoration: none; border: 1px solid var(--rule); border-radius: 6px; padding: 3px 9px; font-size: 13px; }
+  header.top h1 { font-size: 17px; margin: 0 6px 0 0; }
+  select, input, button { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 3px 7px; }
+  button { cursor: pointer; }
+  main { padding: 14px 16px 40px; max-width: 1500px; margin: 0 auto; }
+  .muted { color: var(--muted); } .small { font-size: 12px; } .mono { font-family: var(--mono); }
+  .about { margin: 0 0 10px; max-width: 980px; }
+  .about p { margin: 0 0 4px; }
+  .about details { color: var(--muted); font-size: 13px; }
+  .prov { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; margin: 0 0 14px; }
+  .tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; }
+  .tile b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .tile span { color: var(--muted); font-size: 12px; }
+  .hist { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .panel h2 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+  .panel .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+  .key { display: inline-block; width: 14px; height: 2px; vertical-align: 4px; margin-right: 4px; }
+  .dotk { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
+  svg { display: block; overflow: visible; }
+  svg text { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 8px; position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 6px 0; border-bottom: 1px solid var(--rule); }
+  .controls label { color: var(--muted); font-size: 13px; }
+  .count { font-size: 12px; color: var(--muted); }
+  .note { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; max-width: 1000px; }
+  .lg-add { color: var(--add); } .lg-remove { color: var(--bad); } .lg-num { color: var(--warn); } .lg-eq { color: var(--eq); } .lg-ok { color: var(--faint); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--rule); border-left: 3px solid var(--st, var(--rule)); border-radius: 8px; padding: 7px 9px 8px; min-width: 0; cursor: pointer; min-height: 290px; display: flex; flex-direction: column; gap: 3px; }
+  .card:hover { border-color: var(--muted); border-left-color: var(--st, var(--muted)); }
+  .card:focus-visible { outline: 2px solid var(--eq); outline-offset: 2px; }
+  .chead { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+  .chead .cid { font-family: var(--mono); font-size: 12px; color: var(--muted); flex: none; }
+  .chead .ctitle { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chips { display: flex; gap: 3px; flex-wrap: wrap; }
+  .chip { font: 11px var(--mono); border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; background: none; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+  .chip i { width: 8px; height: 8px; border-radius: 2px; background: var(--st, var(--rule)); display: inline-block; }
+  .chip.on { border-color: var(--fg); color: var(--fg); }
+  .st-pass { --st: var(--good); } .st-equivalent { --st: var(--eq); } .st-fail { --st: var(--bad); } .st-error, .st-timeout { --st: var(--st-error); } .st-none { --st: var(--rule); }
+  .headline { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 12.5px; }
+  .headline b { font-size: 13px; }
+  .badge { font-size: 11px; border-radius: 9px; padding: 0 6px; border: 1px solid currentColor; }
+  .b-pass { color: var(--good); } .b-equivalent { color: var(--eq); } .b-fail { color: var(--bad); } .b-error, .b-timeout { color: var(--st-error); }
+  .b-lim { color: var(--muted); }
+  .dg { min-height: 90px; display: flex; align-items: center; justify-content: center; }
+  .dg svg { width: 100%; height: auto; max-height: 200px; }
+  .reps { list-style: none; margin: 0; padding: 0; font-size: 12px; line-height: 1.35; }
+  .reps li { padding-left: 14px; text-indent: -14px; overflow-wrap: anywhere; }
+  .reps li::before { display: inline-block; width: 14px; text-indent: 0; font-weight: 700; }
+  .r-number::before { content: "~"; color: var(--warn); } .r-add::before { content: "+"; color: var(--add); }
+  .r-remove::before { content: "−"; color: var(--bad); } .r-form::before { content: "⇄"; color: var(--warn); }
+  .reps .lim { font-size: 11px; color: var(--muted); }
+  .reps .lim.method { color: var(--bad); } .reps .lim.data { color: var(--eq); }
+  .spark { margin-top: auto; }
+  .sl { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; color: var(--muted); }
+  .spark svg { width: 100%; height: 44px; }
+  .more { font-size: 11px; color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: flex; justify-content: center; align-items: flex-start; overflow-y: auto; padding: 24px 12px; }
+  .sheet { background: var(--bg); border: 1px solid var(--rule); border-radius: 10px; width: min(1300px, 100%); padding: 14px 16px 24px; position: relative; }
+  .sheet .close { position: sticky; top: 0; float: right; z-index: 2; }
+  .sheet h2 { font-size: 16px; margin: 0 0 4px; }
+  .sheet h3 { font-size: 14px; margin: 16px 0 6px; }
+  .three { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .three figure { margin: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px; min-width: 0; }
+  .three figcaption { font-size: 12px; color: var(--muted); }
+  .three svg { width: 100%; height: auto; max-height: 460px; }
+  .fullreps { font-size: 13px; }
+  .fullreps li { margin-bottom: 3px; }
+  .stockcharts { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15); z-index: 30; max-width: 320px; font-variant-numeric: tabular-nums; }
+  .err { color: var(--bad); }
+  @media (max-width: 900px) { .hist { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } .three { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .controls { position: static; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1 id="title">Strategy</h1>
+  <select id="pick" aria-label="Strategy"></select>
+  <a class="nav" id="nowlink" href="/ladder">Now (live)</a>
+  <a class="nav" href="/ladder/leaderboard">Leaderboard</a>
+  <a class="nav" href="/ladder?view=matrix">Matrix</a>
+  <a class="nav" href="/ladder/glossary">Glossary</a>
+  <button id="theme" title="Light / dark" aria-label="Switch light and dark">◐</button>
+  <span id="status" class="muted small"></span>
+</header>
+<main>
+  <div id="head"><p class="muted">Loading…</p></div>
+  <div class="hist" id="hist" hidden>
+    <div class="panel"><h2>Results per version</h2>
+      <div class="legend"><span><i class="key" style="background:var(--c1)"></i>pass rate (of the cells run)</span><span><i class="key" style="background:var(--c3)"></i>pass + equivalent</span><span><i class="key" style="background:var(--faint)"></i>coverage (cells run of all)</span><span><i class="dotk" style="background:var(--fg)"></i>code changed</span><span><i class="dotk" style="border:1.5px solid var(--muted)"></i>scorer changed</span></div>
+      <div id="h-rate"></div></div>
+    <div class="panel"><h2>Changes over time</h2>
+      <div class="legend"><span><i class="dotk" style="background:var(--c7);border-radius:2px"></i>code changes per day</span><span><i class="dotk" style="background:var(--faint);border-radius:2px"></i>scorer changes</span></div>
+      <div id="h-changes"></div></div>
+  </div>
+  <div class="controls" id="controls" hidden></div>
+  <p class="note" id="legend" hidden>Each card is one case: what would turn the found model into the true one.
+    Diagram: <span class="lg-ok">right parts faint</span>, <span class="lg-remove">− remove (invented)</span>, <span class="lg-add">+ add (missed, dashed)</span>,
+    <span class="lg-num">~ a number off, labelled found − true</span>, <span class="lg-eq">≈ an equivalent reading</span>.
+    Repairs: <span class="lim data">data-limited</span> = the miss is within 3 standard errors of the best estimate the data allow (Cramér–Rao bound, else the scorer's oracle);
+    <span class="lim method">method error</span> = more than that. The line chart: each measured stock's (found − true) ÷ the truth's range, both models run free from t = 0 to 100,000 (log time; the tick is the end of the recorded run).
+    Click a card for the full view.</p>
+  <div class="grid" id="grid"></div>
+</main>
+<div class="overlay" id="overlay" hidden></div>
+<div class="tip" id="tip" hidden></div>
+<script src="/static/diagram.js"></script>
+<script src="/static/ladder-compare.js"></script>
+<script src="/static/ladder-draw.js"></script>
+<script src="/static/ladder-strategy.js"></script>
+</body>
+</html>

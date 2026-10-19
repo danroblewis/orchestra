@@ -1003,6 +1003,46 @@ the extra by part) and **× truth** (the geometric mean of found / true), and ca
 score or by least extra complexity (Rank by, or click a column). The Now page and `sdlab-ladder
 show` give each result's true and found complexity and where the extra comes from.
 
+The **strategy page** (`/ladder/strategy?name=S`; the strategy names on the leaderboard and the
+"Strategy page" button on the Now board link to it; `ladder-strategy.html`, `ladder-strategy.js`,
+drawing with `ladder-draw.js`, which the Now page shares) shows how one strategy behaves from the
+models it produced, where Now stays the live evaluation view:
+
+- a header: its explanation, pass rate and pass rate where achievable (over the cells it has run),
+  coverage (run of all cells), equivalent / fail, Occam score, err@100k, mean repairs per run, the
+  realistic examples run, and the commit and strategy hash of its newest result (with how many of
+  its results came from older code);
+- its history: pass rate, pass + equivalent and coverage per version (strategy hash, scorer hash;
+  filled markers where the code changed, hollow where only the scorer did; hover for hashes, commits,
+  dates and counts), and code changes per day;
+- one compact card per case (four a row on a wide screen, one on a phone), filterable by verdict,
+  variant (default: each case's worst variant), set (tests, fixed cases, random draws, realistic),
+  level and tag, sorted "most wrong" (verdict, then repairs, then err@100k), by repairs, err@100k or
+  level. A card has the variant chips, the **repairs** headline ("2 repairs: 1 remove, 1 number"),
+  a diagram of only what matters (right flows faint; − remove in red; + add dashed in green; ~ a
+  number off labelled found − true; ≈ an equivalent reading in blue), the first repairs, and a line
+  chart of each measured stock's (found − true) ÷ the truth's range over log time from t = 0 to
+  100,000 (both models run free, longrun.py; the tick marks the end of the recorded run), so the
+  stocks that are far off stand out from those near 0. Found flows and the error series are fetched
+  only for the cards on screen. Click a card for the full view: every repair, the repairs diagram
+  beside the true, found and differences diagrams, the error chart large, and each stock's true vs
+  found levels (with a link to `/ladder/run`).
+
+**Repairs** (`repairs.py`) read the scorer's comparison as what would make the found model right:
+`number` (right structure, wrong number: "B → outside: 0.356·B, should be 0.2·B (+0.156, +78%)",
+found first, then the correction, signed found − true and its share of the true number; tagged
+**data-limited** when the miss is within 3 standard errors of the best achievable estimate, the
+Cramér–Rao bound from the analysis or else the scorer's oracle SE, and **method error** otherwise),
+`remove` / `add` (an invented or missed flow, or a term on a flow that is otherwise right), and
+`form` (a missed and an invented part on the same ends: "change form: A → outside: 0.1·B, should
+be 0.2·A"). For an equivalent result it names the analysis' equivalent structure the repairs touch
+and whether the data can tell it from the truth (unidentifiable: they cannot); its items are then
+an "equivalent reading", not errors. Negligible found parts are not repairs. The API
+(`strategy_view.py`, `strategy_routes.py`): `GET /api/ladder/strategy/{name}` (header, totals,
+timeline and one compact cell per case and variant; served from a cache that one background thread
+refreshes), `.../details?ids=` (found flows, parts, repairs and the true models, at most 40 results)
+and `.../errors?ids=` (the error series, at most 24, cached per result).
+
 In the **editor**, every case is also a read-only **basic model** (`ladder-<case>`, listed first in
 the model picker; SPEC.md 4.14): its true model, laid out the same way, playing back the case's
 recorded data in a variant (`counts-long` by default), so Discover can be run on it there and its

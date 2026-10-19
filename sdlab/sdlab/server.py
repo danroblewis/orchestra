@@ -29,6 +29,7 @@ from .discovery.strategies import names as strategy_names
 from .discovery_jobs import DiscoveryJobs
 from .ladder.analysis_routes import router as analysis_router
 from .ladder.routes import router as ladder_router
+from .ladder.strategy_routes import router as strategy_router
 from .research import router as research_router
 from .runner import LiveRun, available_programs, program_path
 
@@ -416,7 +417,7 @@ def create_app() -> FastAPI:
     def page(file: str) -> HTMLResponse:
         # stamp each asset with its modification time so caches (Cloudflare's included) never serve a stale copy
         html = (STATIC / file).read_text()
-        for name in ("app.js", "sim.js", "simplify.js", "research.js", "diagram.js", "ladder.js", "ladder-compare.js", "ladder-board.js", "style.css"):
+        for name in ("app.js", "sim.js", "simplify.js", "research.js", "diagram.js", "ladder.js", "ladder-compare.js", "ladder-board.js", "ladder-draw.js", "ladder-strategy.js", "style.css"):
             html = html.replace(f"/static/{name}", f"/static/{name}?v={int((STATIC / name).stat().st_mtime)}")
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
@@ -436,6 +437,10 @@ def create_app() -> FastAPI:
     def ladder_run_page() -> HTMLResponse:
         return page("ladder-run.html")
 
+    @app.get("/ladder/strategy")
+    def strategy_page() -> HTMLResponse:
+        return page("ladder-strategy.html")
+
     @app.get("/ladder/leaderboard")
     def leaderboard_page() -> HTMLResponse:
         return page("leaderboard.html")
@@ -451,6 +456,7 @@ def create_app() -> FastAPI:
     app.include_router(research_router)
     app.include_router(ladder_router)
     app.include_router(analysis_router)
+    app.include_router(strategy_router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

@@ -267,7 +267,8 @@ function render() {
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all&set=${document.getElementById("set").value}" style="color:inherit" title="Every case in the set: the true model beside what ${r.name} found">${r.name}</a>`
+    if (c.key === "name") return `<td class="name"><a href="/ladder/strategy?name=${encodeURIComponent(r.name)}&kind=${{ tests: "tests", realistic: "realistic", all: "all" }[document.getElementById("set").value]}" style="color:inherit" title="How ${r.name} behaves: its history, and per case what would make its model right">${r.name}</a>`
+      + ` <a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all&set=${document.getElementById("set").value}" class="idea" style="display:inline;color:inherit" title="Every case in the set on the live Now board: the true model beside what ${r.name} found">now</a>`
       + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="${esc(about[r.name].idea)}">ⓘ</button>` : "") + `</td>`;
     if (c.key === "bar") {
       const w = (v) => (100 * v / r.runs).toFixed(2) + "%";

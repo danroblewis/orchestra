@@ -78,6 +78,7 @@
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
       <label>Sort <select id="b-sort">${[["level", "by level"], ["status", "worst verdict first"], ["error", "largest error first"]].map(([v, w]) => opt(v, w, B.sort)).join("")}</select></label>
+      <a class="btn" href="/ladder/strategy?name=${encodeURIComponent(B.strategy || "")}" title="How this strategy behaves: its history, and per case what would make its model right">Strategy page</a>
       <a class="btn" href="/ladder/leaderboard" title="Every strategy ranked by pass rate, recall, precision and skill">&#127942; Leaderboard</a>
       ${aboutHtml(strats.find((s) => s.name === B.strategy))}`;
     const det = $("board-controls").querySelector(".babout details");
