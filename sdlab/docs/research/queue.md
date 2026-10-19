@@ -163,10 +163,11 @@ for `combined` on the test cases).
 
 - 2026-10-18 21:15: item 2b, products of stocks, multi-stock gaps, hidden delay chains.
 
-- 2026-10-18 20:50: item 0b, noise-robust discovery.
 
 
 ## Done
+
+- 2026-10-19: item 0b, kalman_lna (28b23cf … 6a93270, doc 00c0038). Noisy achievable cells: 85/97 against combined's 35. It matches combined on the tests; bench skill@20 +7.9 against v2.1. Self-contained (vendored copies).
 
 - 2026-10-19: item 2e, the lna_* variants run as hooks on lna (dc73851, 9bd1e2a, 7b82abc). No timeouts or errors; lna_stack's realistic cells all finish. One cell lost (lna_stack 101 counts-short, a fit stopping-rule effect). lna should stop on parameter change, not on likelihood.
 
