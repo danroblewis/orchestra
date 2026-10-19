@@ -1,0 +1,22 @@
+title: Three identical stocks, each with its own inflow step
+level: 4
+tags: [independent, identical, identifiability, unannounced]
+tests: the identical stocks of 034, each with its inflow stepping 20 -> 35 -> 20 at its own unannounced moments; the steps tell them apart
+seed: 37
+stocks: {A: 0, B: 0, C: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 20
+  B -> outside: 0.2 * B
+  outside -> C: 20
+  C -> outside: 0.2 * C
+schedule:
+  every: 300
+  at 1 base: {in: 20, b_in: 20, c_in: 20}
+  at 60 a_up: {in: 35}
+  at 110 a_down: {in: 20}
+  at 140 b_up: {b_in: 35}
+  at 190 b_down: {b_in: 20}
+  at 220 c_up: {c_in: 35}
+  at 270 c_down: {c_in: 20}

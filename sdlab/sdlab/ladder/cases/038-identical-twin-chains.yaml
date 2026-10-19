@@ -1,0 +1,13 @@
+title: Two identical unrelated chains
+level: 4
+tags: [independent, identical, identifiability, chain, move]
+tests: "two chains with the same numbers and start: without noise B1's arrivals fit A1 and A2 equally (the data cannot say which feeds it); with counting noise only the true move shares A1's draws"
+seed: 38
+stocks: {A1: 0, B1: 0, A2: 0, B2: 0}
+flows:
+  outside -> A1: 20
+  A1 -> B1: 0.5 * A1
+  B1 -> outside: 0.2 * B1
+  outside -> A2: 20
+  A2 -> B2: 0.5 * A2
+  B2 -> outside: 0.2 * B2

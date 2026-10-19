@@ -1,0 +1,13 @@
+title: Three identical unrelated stocks
+level: 3
+tags: [independent, identical, identifiability]
+tests: "three unrelated stocks with the same numbers and start move identically: without noise nothing tells them apart, so the simplest answer (no flow between them) is the right one"
+seed: 34
+stocks: {A: 0, B: 0, C: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 20
+  B -> outside: 0.2 * B
+  outside -> C: 20
+  C -> outside: 0.2 * C

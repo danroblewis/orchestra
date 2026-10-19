@@ -1,0 +1,13 @@
+title: Three identical stocks, different starts
+level: 3
+tags: [independent, identical, identifiability]
+tests: the same three stocks as 034, started at different levels; the different transients are the only thing that tells them apart
+seed: 35
+stocks: {A: 0, B: 50, C: 250}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 20
+  B -> outside: 0.2 * B
+  outside -> C: 20
+  C -> outside: 0.2 * C

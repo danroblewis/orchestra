@@ -1,0 +1,13 @@
+title: Same inflow, different drains
+level: 3
+tags: [independent, identical, identifiability]
+tests: three unrelated stocks fed the same 20 per step from outside, draining at different rates, are each recovered
+seed: 36
+stocks: {A: 0, B: 0, C: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.1 * A
+  outside -> B: 20
+  B -> outside: 0.2 * B
+  outside -> C: 20
+  C -> outside: 0.4 * C
