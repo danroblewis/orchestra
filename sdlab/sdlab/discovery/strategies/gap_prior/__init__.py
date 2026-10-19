@@ -100,6 +100,12 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     found = _lna(stocks, run, opts)
     if found.get("method") == "lna":
         return found                    # counting noise: the likelihood chose between them
+    return conventions(found, stocks, run, opts)
+
+
+def conventions(found: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """A noise-free model with its drains read by other stocks written as co-flows and goal gaps,
+    when that behaves as the original on the run."""
     flows = as_gaps(as_coflows(found.get("flows") or []))
     if len(flows) == len(found.get("flows") or []):
         return found

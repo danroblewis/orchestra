@@ -1,8 +1,8 @@
 """lna's steps (a copy of lna/run.py's discover, importing lna's modules) with the revisit stages in
 order: known pulses taken out of the changes (lna_pulses), product columns (lna_products), lna's
-search, products offered on the kept moves and outflows (lna_products), loop-closing links kept
-(lna_loops), self-growth offered back as pieces and the pieces regrouped into recurring levels
-(lna_levels); then the flows, with effects and levels written out."""
+search, products offered on the kept moves and outflows (lna_products), self-growth offered back
+as pieces and the pieces regrouped into recurring levels (lna_levels); then the flows, with effects
+and levels written out."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from ..lna.fit import Data, extra_variance, fit, mean_start
 from ..lna.flows import to_flows
 from ..lna.run import SCRATCH, bic, buckets, dispersion, screen, search
 from ..lna_levels.levels import level_flows, regroup, without_growth
-from ..lna_loops import close_loops
 from ..lna_products.run import MARGIN, product_atoms, with_effects
 
 
@@ -82,7 +81,6 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, known: np.nd
         g = search(fit(cur.atoms + offer, d, np.concatenate([cur.theta, np.full(len(offer), 1e-3)]), tau=cur.tau), d)
         if bic(cur, d) - bic(g, d) > MARGIN * np.log(d.dy.shape[1]):
             cur = g
-    cur, closed = close_loops()(cur, d, unit, final, group)
     cur = without_growth(cur, d)
     cur, levels, _ = regroup(cur, d)
     names = ids + [f"{ids[a]}*{ids[c]}" for a, c in pairs]
@@ -94,6 +92,6 @@ def discover(stocks: list[dict], run: dict, opts: dict, base: dict, known: np.nd
             return None
     flows = level_flows(flows, levels, ids, at)
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1, **closed,
+            "flows": flows, "method": "lna", "dispersion": phi, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
             "levels": {ids[s]: len(g) for s, g in levels.items()},
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}

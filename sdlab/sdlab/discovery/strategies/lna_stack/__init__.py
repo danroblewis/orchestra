@@ -1,9 +1,11 @@
-"""lna_stack: lna with every stage built when past ideas were revisited on the ladder
-(docs/research/revisit.md), in one model: pulses found first and taken out (lna_pulses), moves
-scaled by a third stock (lna_products), loop-closing links kept (lna_loops), inflow pieces as
-recurring levels (lna_levels), and, on noise-free runs, ties written the way SD models write them
-(gap_prior: goal gaps and co-flows) and pulses re-measured on the matrix's model. Each stage is
-imported from its own package, unchanged, so this strategy shows whether they compose.
+"""lna_stack: lna with the stages built when past ideas were revisited on the ladder
+(docs/research/revisit.md) that are recommended, in one model: pulses found first and taken out
+(lna_pulses), moves scaled by a third stock (lna_products), inflow pieces as recurring levels
+(lna_levels), and, on noise-free runs, ties written the way SD models write them (gap_prior: goal
+gaps and co-flows, kept when they behave as the original) and pulses re-measured on the matrix's
+model. Each stage is imported from its own package, unchanged, so this strategy shows whether they
+compose. lna_loops is left out: its passes are on cells the data cannot decide, and it can make a
+noisy chain behave much worse (revisit.md).
 """
 
 from __future__ import annotations
@@ -14,17 +16,12 @@ import numpy as np
 
 from ...identify import identify as _matrix
 from ...identify import judge
-from ..gap_prior import as_coflows, as_gaps
+from ..gap_prior import conventions
 from ..impulses import _flows as pulse_flows
 from ..impulses import find_pulses
 from ..lna import GUARD
 from ..lna_pulses import _not_injected, remeasure
 from .run import discover
-
-
-def _conventions(found: dict) -> dict:
-    flows = as_gaps(as_coflows(found.get("flows") or []))
-    return found if len(flows) == len(found.get("flows") or []) else {**found, "flows": flows, "gap_prior": True}
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -68,4 +65,4 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if pulses:
             out["flows"] = flows + [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])]
             out["pulses"] = {i: int((a != 0).sum()) for i, a in pulses.items()}
-    return _conventions(out)
+    return conventions(out, stocks, run, opts)
