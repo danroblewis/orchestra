@@ -108,6 +108,21 @@ strategies:
     status: active
     note: Research document docs/research/censored.md.
 
+  own_tables:
+    idea: A stock's flows to and from outside as a lookup table of the stock's own level, where the flow bends with it.
+    how: >-
+      Taking the main line's model, each stock's change (less the moves kept) is fitted as a
+      bent line of its own level whose corner points are searched for, beside the other levels
+      and inputs its flows read. One sign is one table flow (a drain that bends, like a tank
+      emptying through a hole); a curve that crosses zero is read as a plain drain and an inflow
+      table that is flat where it can be (a heater its own heat shuts off). It is kept only if
+      it scores clearly better than the straight line and the main line's model (BIC), and
+      fits each half of the run from the other.
+    helps_with: A concave drain (case 122) and an inflow shut by its own level (case 123).
+    builds_on: matrix (its scoring copied from censored)
+    status: active
+    note: Research document docs/research/own_tables.md.
+
   gated:
     idea: Before judging, throw out candidate models that run away when simulated freely.
     how: >-
