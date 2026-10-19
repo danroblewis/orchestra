@@ -17,7 +17,10 @@ How a model becomes a case (sdlab/ladder/canonical/: read.py reads, match.py mat
 3. A flow whose whole rate is DELAY1/DELAY3(x, T) fills its stock through a material delay: with
    the flow that drains x from A it becomes `A -> B: delay3(x, T, initial=...)`, else
    `outside -> B: delay3(...)`. A DELAY anywhere else is information: DELAY1 is SMOOTH and DELAY3 is
-   SMOOTH3 exactly; SMOOTH/SMOOTH3 of one stock or input become `smooth(Y, T, initial=...)`.
+   SMOOTH3 exactly; SMOOTH/SMOOTH3 of one stock or input become `smooth(Y, T, initial=...)`. A
+   DELAY N / SMOOTH N of another whole order n is written out as the case format compiles delay3 and
+   smooth3: n hidden stocks (`<flow>_d1..dn` in a material chain at n / T each; `SM_k_1..n` stages
+   with exact flows, the last read by the rate).
 4. Every part of a rate that reads only TIME (STEP, PULSE, PULSE TRAIN, RAMP, SIN, a lookup of
    time, ...) is an outside driver: a measured input (`inputs:`), as a formula when SD Lab's input
    terms give PySD's values at every Euler step, else as one value per recorded step (then a
@@ -30,6 +33,10 @@ noise give the same levels at every recorded step (`equivalent`): within 1e-4 + 
 largest level (the engine records levels rounded to 4 decimals). Where they differ, the reason is named
 when it can be: a stock that goes negative in PySD, or a flow whose rate goes negative (SD Lab floors
 every rate and level at 0).
+
+Arrays, macros and external data are read away by the reader (canonical/read.py): one stock or flow
+per element of a subscripted variable, macros inlined, data read through PySD into numbers, lookups
+and measured inputs.
 
 A model with no stocks (most of SDXorg/test-models' one-function tests) is wrapped: each auxiliary
 nothing else reads gets an accumulator stock `acc_<name> = INTEG(aux)`, so the function under test
@@ -50,6 +57,7 @@ ATOL, RTOL = 1e-4, 1e-7
 F_TWO_WAY = "a two-way flow (a rate goes negative)"
 F_NEG_STOCK = "a stock that goes negative"
 F_EMPTIED = "an outflow larger than the stock within one step (the engine's floor ignores the step's inflows)"
+F_FAST = "a drain faster than one step (k x dt > 1: the engine's floor caps it at the level, Euler overshoots)"
 
 
 @dataclass
@@ -104,14 +112,20 @@ def _flow_id(name: str, taken: set[str]) -> str:
     return out
 
 
-def pysd_run(path: Path, columns: list[str], t0: float, final: float, dt: float) -> dict:
-    """PySD's run (Euler at the model's TIME STEP) at every Euler step: {column: [values]}."""
+def pysd_run(path: Path, columns: list[str], t0: float, final: float, dt: float, folder: bool = False) -> dict:
+    """PySD's run (Euler at the model's TIME STEP) at every Euler step: {column: [values]} (folder: copy
+    the model's whole folder, for a model that reads data files beside it)."""
     import numpy as np
     import pysd
 
+    from .canonical.external import copy_folder
+
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / path.name
-        shutil.copy(path, p)
+        if folder:
+            copy_folder(path, Path(d))
+        else:
+            shutil.copy(path, p)
         model = pysd.read_vensim(str(p)) if path.suffix.lower() == ".mdl" else pysd.read_xmile(str(p))
         n = math.floor((final - t0) / dt + 1e-9)
         times = t0 + dt * np.arange(n + 1)
@@ -150,21 +164,24 @@ def convert(path, wrap: bool = True) -> Conversion:
 
     # PySD's own run, at every Euler step
     try:
-        cols = [s["name"] for s in m.stocks.values() if s.get("py")]
+        cols = [s.get("column", s["name"]) for s in m.stocks.values() if s.get("py") or s.get("column")]
         aux_cols = [m.element_names[s["of"]] for s in m.stocks.values() if s.get("of")]
-        run = pysd_run(path, cols + aux_cols, m.t0, m.final, m.dt)
+        run = pysd_run(path, list(dict.fromkeys(cols + aux_cols)), m.t0, m.final, m.dt, folder=getattr(m, "external", False))
     except Exception as e:                                                        # noqa: BLE001
         conv.blocked.append(("PySD cannot run it", f"{type(e).__name__}: {str(e)[:120]}"))
         return conv
     euler = {}
     for sid, s in m.stocks.items():
+        if s.get("hidden"):
+            conv.notes.append(f"{s['name']}: a stock inside a macro that no variable of the model shows (not compared)")
+            continue
         if s.get("of"):
             vals, acc = run[m.element_names[s["of"]]], [0.0]
             for v in vals[:-1]:
                 acc.append(acc[-1] + m.dt * v)
             euler[sid] = acc
         else:
-            euler[sid] = run[s["name"]]
+            euler[sid] = run[s.get("column", s["name"])]
     sym = {sid: sp.Symbol(sid, real=True) for sid in m.stocks}
     start = {sid: s["initial"] or 0.0 for sid, s in m.stocks.items()}
     scale_of = {sym[sid]: max([abs(x) for x in v] + [abs(start[sid])]) for sid, v in euler.items()}
@@ -176,6 +193,8 @@ def convert(path, wrap: bool = True) -> Conversion:
         blocked, notes = [], []
         inputs: dict = {}                  # expr -> (symbol, name, spec)
         smooths: dict = {}                 # key -> (symbol, text)
+        hidden: list = []                  # (id, initial): the stages of a DELAY N / SMOOTH N written out
+        chains: list = []                  # their flows: (key, text, exact)
         readers = {sym[sid]: sid for sid in m.stocks}
         sc = dict(scale_of)
         needs_values = [False]
@@ -200,7 +219,11 @@ def convert(path, wrap: bool = True) -> Conversion:
             while name in taken_inputs:
                 name += "_2"
             taken_inputs.add(name)
-            terms = timefns.formula(e, grid, m.dt, m.lookups)
+            try:
+                terms = timefns.formula(e, grid, m.dt, m.lookups)
+                timefns.series(e, grid, m.dt, m.lookups)
+            except (ZeroDivisionError, OverflowError, ValueError) as err:
+                raise Blocked("a number that is not finite", f"{str(e)[:60]}: {err}") from None
             if terms is not None:
                 spec = {"formula": terms}
                 vals = [timefns.evaluate(e, T, m.dt, m.lookups) for _, _, T in grid.points()]
@@ -260,8 +283,11 @@ def convert(path, wrap: bool = True) -> Conversion:
                 key = (readers[y], t_sd, v0, int(n))
                 if key not in smooths:
                     s = sp.Symbol(f"SM_{len(smooths) + 1}", real=True)
-                    fn = "smooth" if int(n) == 1 else "smooth3"
-                    smooths[key] = (s, f"{fn}({readers[y]}, {match.fmt(t_sd)}, initial={match.fmt(v0)})")
+                    if int(n) in (1, 3):
+                        fn = "smooth" if int(n) == 1 else "smooth3"
+                        smooths[key] = (s, f"{fn}({readers[y]}, {match.fmt(t_sd)}, initial={match.fmt(v0)})")
+                    else:                  # SMOOTH N: n hidden stages, as smooth/smooth3 compile (exact flows)
+                        smooths[key] = (s, smooth_chain(s.name, readers[y], int(n), t_sd, v0, hidden, chains, taken_ids))
                     readers[s] = smooths[key][1]
                     sc[s] = sc.get(y, 1.0)
                 return coef * smooths[key][0]
@@ -271,6 +297,7 @@ def convert(path, wrap: bool = True) -> Conversion:
         texts = []
         merged: set[str] = set()
         ids: set[str] = set()
+        taken_ids = set(m.stocks) | ids
         for f in flows:
             if f.blocked:
                 continue
@@ -314,18 +341,24 @@ def convert(path, wrap: bool = True) -> Conversion:
             except Blocked as b:
                 blocked.append((b.feature, f"{f.name}: {b.where}" if b.where else f.name))
                 continue
+            fid = _flow_id(f.name, ids)
+            if delay and delay["order"] not in (1, 3):     # DELAY N: n hidden stocks, as delay1/delay3 compile
+                taken_ids.update(ids)
+                out_flows += delay_chain(fid, src, f.dst, text, delay, hidden, taken_ids)
+                ids.update(taken_ids)
+                continue
             if delay:
                 fn = "delay1" if delay["order"] == 1 else "delay3"
                 text = f"{fn}({text}, {match.fmt(delay['time'])}, initial={match.fmt(delay['initial'])})"
-            fid = _flow_id(f.name, ids)
             out_flows.append((f"{src or 'outside'} -> {f.dst or 'outside'} as {fid}", text))
         if blocked:
             return None, blocked, notes, needs_values[0], steps
         parts = {"dt": dt_sd if dt_sd < 1 else None,
                  "stocks": [(sid, s["initial"] or 0) for sid, s in m.stocks.items()],
+                 "hidden": hidden + [(sid, s["initial"] or 0) for sid, s in m.stocks.items() if s.get("hidden")],
                  "inputs": [(name, f"\"{_formula_text(spec['formula'])}\"" if "formula" in spec
                              else f"[{', '.join(match.fmt(v) for v in spec['values'])}]") for _, name, spec in inputs.values()],
-                 "flows": out_flows}
+                 "flows": out_flows + chains}
         return parts, blocked, notes, needs_values[0], steps
 
     drv: set[str] = set()
@@ -354,18 +387,60 @@ def render(parts: dict, words: dict | None = None) -> str:
     """The case body (YAML) from a conversion's parts; words: {stock id: "hidden" | "final" | ...}."""
     from .canonical.match import fmt
 
-    words = words or {}
+    words = dict(words or {})
+    hidden = dict(parts.get("hidden") or [])
+    words.update({sid: "hidden" for sid in hidden if sid not in words})
     lines = [f"dt: {fmt(parts['dt'])}"] if parts.get("dt") else []
     lines.append("stocks:")
-    for sid, v in parts["stocks"]:
+    for sid, v in [x for x in parts["stocks"] if x[0] not in hidden] + list(hidden.items()):
         w = words.get(sid)
         lines.append(f"  {sid}: {fmt(v)}{' ' + w if w else ''}")
     if parts["inputs"]:
         lines.append("inputs:")
         lines += [f"  {name}: {text}" for name, text in parts["inputs"]]
     lines.append("flows:")
-    lines += [f"  {key}: \"{text}\"" for key, text in parts["flows"]]
+    for key, text, *exact in parts["flows"]:
+        lines.append(f"  {key}: {{rate: \"{text}\", exact: true}}" if exact and exact[0] else f"  {key}: \"{text}\"")
     return "\n".join(lines) + "\n"
+
+
+def _fresh(base: str, taken: set[str]) -> str:
+    out, i = base, 2
+    while out in taken:
+        out, i = f"{base}_{i}", i + 1
+    taken.add(out)
+    return out
+
+
+def delay_chain(fid: str, src: str | None, dst: str | None, text: str, delay: dict, hidden: list, taken: set[str]) -> list:
+    """DELAY N(rate, T) from src to dst written out as the case format compiles delay1/delay3: src -> H1
+    at the rate (the flow keeps its id), then H1 -> H2 ... Hn -> dst, each n / T x its hidden stock."""
+    from .canonical.match import fmt
+
+    n, k = delay["order"], delay["order"] / delay["time"]
+    hs = [_fresh(f"{fid}_d{i}", taken) for i in range(1, n + 1)]
+    hidden += [(h, delay["initial"]) for h in hs]
+    out = [(f"{src or 'outside'} -> {hs[0]} as {fid}", text)]
+    for i, h in enumerate(hs, start=1):
+        out.append((f"{h} -> {hs[i] if i < n else (dst or 'outside')} as {_fresh(f'{fid}_{i}', taken)}", f"{fmt(k)} * {h}"))
+    return out
+
+
+def smooth_chain(name: str, of: str, n: int, time: float, initial: float, hidden: list, chains: list, taken: set[str]) -> str:
+    """SMOOTH N(x, T) written out as the case format compiles smooth/smooth3: n hidden stages, stage i
+    filled from outside at n / T x stage i-1 (x for the first) and drained at n / T x its own level,
+    each flow exact (information, not material). The last stage's id (what a rate reads)."""
+    from .canonical.match import fmt
+
+    k = fmt(n / time)
+    prev = of
+    for i in range(1, n + 1):
+        h = _fresh(f"{name}_{i}", taken)
+        hidden.append((h, initial))
+        chains.append((f"outside -> {h} as {_fresh(h + '_in', taken)}", f"{k} * {prev}", True))
+        chains.append((f"{h} -> outside as {_fresh(h + '_out', taken)}", f"{k} * {h}", True))
+        prev = h
+    return prev
 
 
 def _formula_text(terms: list[dict]) -> str:
@@ -415,7 +490,9 @@ def equivalent(conv: Conversion) -> Equivalence:
         return Equivalence(True, err)
     neg = [sid for sid in conv.euler if min(conv.euler[sid]) < -1e-9]
     emptied = [sid for sid in conv.pysd_levels if any(x == 0 for x in run["all_levels"][sid]) and min(conv.pysd_levels[sid]) > 0]
-    reason = F_TWO_WAY if _negative_rate(conv) else F_NEG_STOCK if neg else F_EMPTIED if emptied else "the runs differ"
+    fast = [f["id"] for f in model["flows"] if f.get("from") and f.get("rate", {}).get("form") == "proportional"
+            and f["rate"].get("stock") == f["from"] and f["rate"]["k"] * (model.get("dt") or 1) > 1]
+    reason = F_TWO_WAY if _negative_rate(conv) else F_NEG_STOCK if neg else F_EMPTIED if emptied else F_FAST if fast else "the runs differ"
     return Equivalence(False, err, reason)
 
 

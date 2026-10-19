@@ -133,7 +133,7 @@ def rate_text(expr, src: str | None, readers: dict, scale_of: dict, lookups: dic
     if den.free_symbols:
         raise Blocked("an expression that is not a rate", str(e)[:80])
     coef, factors = sp.factor_list(sp.expand(num))
-    c = sp.Rational(coef) / den if den.is_Rational else coef / den
+    c = sp.Rational(coef) / den if den.is_Rational and coef.is_Rational else coef / den
     linears, ones, effects = [], [], []
     for f, mult in factors:
         if not (f.free_symbols & rs):

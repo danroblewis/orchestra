@@ -5,7 +5,8 @@
 #
 # id: the case file's name; model: the source under models/; source: where it comes from and its
 # licence; words: stock id -> hidden | final; pulses: {first, every, add: {stock: amount}} announced
-# injections from step `first` every `every` steps up to the long run; anything else is the case's own.
+# injections from step `first` every `every` steps up to the long run (an amount may be negative: taken
+# away); inject: [{t, stock, amount}] one-off injections; anything else is the case's own.
 #
 # The models written for SD Lab use TIME STEP 1 (one Euler step per recorded step), so they probe
 # structure. The SDXorg samples keep their published TIME STEP (1/32, 1/8), so they also probe sub-step
@@ -109,3 +110,13 @@
   level: 14
   tags: [canonical, input, delay, hidden, outflow]
   tests: "World3's pollution transmission and assimilation are recovered: generation (a measured input) appears after a 20-step third-order delay (three hidden stocks) and is assimilated at PPOL / (1.4 x 1.5), one step a year (World3 itself uses dt 0.5)"
+
+- id: 111-canonical-arrayed-switching
+  model: sdxorg-subscript-switching.mdl
+  source: "SDXorg/test-models tests/subscript_switching/subscript_switching.mdl (MIT licence, Copyright 2015 The test-models Authors; models/LICENSE-sdxorg-test-models), imported unchanged through PySD, its five subscripted categories flattened into five stocks"
+  title: "Switching between five categories (SDXorg, subscripted)"
+  level: 13
+  tags: [canonical, arrays, linear, coupled, injection]
+  tests: "a subscripted model (Categories[Cats], switching through a 5 x 5 transition matrix with SUM over Cats!) flattens into five stocks, and the switching is recovered as the model writes it: each category drains at 0.1 x its level, and fills from outside at 0.1 x the matrix's column times the other four (e.g. c1 fills at 0.01 c2 + 0.03 c3 + 0.02 c4 + 0.04 c5), so the total is conserved; an announced 4999 into c1 at step 1 (the model starts with a total of 1), then every 100 steps 1000 moved into c1 from the other four (announced injections, 250 out of each), shows the mixing again"
+  inject: [{t: 1, stock: Categories__c1, amount: 4999}]
+  pulses: {first: 100, every: 100, add: {Categories__c1: 1000, Categories__c2: -250, Categories__c3: -250, Categories__c4: -250, Categories__c5: -250}}

@@ -41,8 +41,12 @@ def case_text(r: dict, conv) -> str:
              f"tests: {_q(r['tests'])}", f"source: {_q(r['source'])}", f"seed: {int(r['id'][:3])}"]
     lines.append(render(conv.parts, r.get("words")).rstrip("\n"))
     p = r.get("pulses")
-    if p:
+    once = r.get("inject") or []                   # one-off injections, before the pulses
+    if p or once:
         lines.append("injections:")
+        for j in once:
+            lines.append(f"  - {{t: {j['t']}, stock: {j['stock']}, amount: {j['amount']}}}")
+    if p:
         for t in range(int(p["first"]), LONGEST + 1, int(p["every"])):
             for stock, amount in p["add"].items():
                 lines.append(f"  - {{t: {t}, stock: {stock}, amount: {amount}}}")

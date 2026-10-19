@@ -154,3 +154,96 @@ def test_the_full_world3_pollution_sector_is_blocked_by_its_ratio():
 
     conv = convert(MODELS / "world3-pollution-full.mdl")
     assert conv.text is None and conv.features == ["division by a stock (a ratio)"]
+
+
+# ---- arrays, macros, external data, DELAY N / SMOOTH N (queue item 2c) ----
+
+def _sub(name, elements):
+    return f"{name}:\n\t{elements}\n\t~\t\n\t~\t|\n"
+
+
+def test_a_subscripted_aging_chain_flattens_into_one_stock_per_element(tmp_path):
+    _need_pysd()
+    body = (_sub("Age", "young, adult, old") + _sub("Older", "adult, old") + _sub("Prev", "young, adult -> Older")
+            + "Pop[young]= INTEG (\n\tBirths-Aging[young],\n\t\t100)\n\t~\t\n\t~\t|\n"
+            + "Pop[Older]= INTEG (\n\tAging[Prev]-Aging[Older],\n\t\t50)\n\t~\t\n\t~\t|\n"
+            + _eq("Aging[Age]", "Pop[Age]/Duration[Age]") + _eq("Duration[Age]", "5, 10, 20")
+            + _eq("Births", "0.02*SUM(Pop[Age!])"))
+    conv, eq = _convert(tmp_path, body, dt=1)
+    assert eq is not None and eq.ok, (conv.blocked, eq)
+    assert list(conv.stocks) == ["Pop__young", "Pop__adult", "Pop__old"]
+    assert conv.stocks["Pop__adult"] == "Pop[adult]"                    # PySD's own name of the element
+    assert "Pop__young -> Pop__adult as aging_young: \"0.2 * Pop__young\"" in conv.text
+    assert "Pop__adult -> Pop__old as aging_adult: \"0.1 * Pop__adult\"" in conv.text
+    assert "Pop__old -> outside as aging_old: \"0.05 * Pop__old\"" in conv.text
+    assert "outside -> Pop__young as births: \"0.02 * Pop__adult + 0.02 * Pop__old + 0.02 * Pop__young\"" in conv.text
+
+
+def test_a_vector_function_is_named_not_flattened(tmp_path):
+    _need_pysd()
+    body = (_sub("Dim", "a, b") + _stock("A", "Inflow", 1) + _eq("Inflow", "VECTOR SELECT(Sel[Dim!], V[Dim!], 0, 0, 0)")
+            + _eq("Sel[Dim]", "1, 0") + _eq("V[Dim]", "2, 3"))
+    conv, _ = _convert(tmp_path, body, dt=1)
+    assert conv.text is None and any(f.startswith("vector and matrix functions") for f in conv.features), conv.blocked
+
+
+def _macro(name, params, body):
+    return f":MACRO: {name}({params})\n{body}\t~\t\n\t~\t|\n\n:END OF MACRO:\n"
+
+
+def test_macros_are_inlined_and_a_stock_inside_one_is_a_stock_of_the_model(tmp_path):
+    _need_pysd()
+    body = (_macro("DOUBLE", "x", "DOUBLE = 2 * x\n") + _macro("FILL", "input", "FILL = INTEG(input, 0)\n")
+            + _stock("A", "Inflow-Out", 10) + _eq("Inflow", "DOUBLE(1.5) + 0.01 * Total out") + _eq("Out", "A/5")
+            + _eq("Total out", "FILL(Out)"))
+    conv, eq = _convert(tmp_path, body, dt=1)
+    assert eq is not None and eq.ok, (conv.blocked, eq)
+    (sid,) = [s for s in conv.stocks if s != "A"]
+    assert f"outside -> A as inflow: \"3 + 0.01 * {sid}\"" in conv.text
+    assert "fill" in sid.lower() and f"outside -> {sid}" in conv.text and "\"0.2 * A\"" in conv.text
+    assert conv.model.stocks[sid]["column"] == "Total out"                 # measured through the auxiliary that shows it
+
+
+def test_a_delay_n_of_order_2_is_two_hidden_stocks_as_delay3_writes_three(tmp_path):
+    _need_pysd()
+    body = (_stock("A", "Inflow-Leaving", 50) + _stock("B", "Arriving-Out", 0) + _eq("Inflow", "5")
+            + _eq("Leaving", "A/10") + _eq("Arriving", "DELAY N(Leaving, 6, Leaving, 2)") + _eq("Out", "B/5"))
+    conv, eq = _convert(tmp_path, body, final=60, dt=1)
+    assert eq is not None and eq.ok, (conv.blocked, eq)
+    assert "A -> arriving_d1 as arriving: \"0.1 * A\"" in conv.text
+    assert "arriving_d1 -> arriving_d2 as arriving_1: \"0.3333333333333333 * arriving_d1\"" in conv.text
+    assert "arriving_d2 -> B as arriving_2: \"0.3333333333333333 * arriving_d2\"" in conv.text
+    assert "arriving_d1: 15 hidden" in conv.text and "leaving" not in conv.text
+
+
+def test_a_smooth_n_of_order_4_is_four_hidden_stages_with_exact_flows(tmp_path):
+    _need_pysd()
+    body = _stock("A", "Inflow-Out", 10) + _eq("Inflow", "3") + _eq("Out", "0.1*SMOOTH N(A, 8, A, 4)")
+    conv, eq = _convert(tmp_path, body, final=60, dt=1)
+    assert eq is not None and eq.ok, (conv.blocked, eq)
+    assert "SM_1_4: 10 hidden" in conv.text
+    assert "outside -> SM_1_1 as SM_1_1_in: {rate: \"0.5 * A\", exact: true}" in conv.text
+    assert "A -> outside as out: \"0.1 * SM_1_4\"" in conv.text
+
+
+def test_external_data_becomes_a_measured_input_and_constants_numbers(tmp_path):
+    _need_pysd()
+    (tmp_path / "data.csv").write_text("time,demand\n0,4\n5,6\n10,5\n20,8\n")
+    (tmp_path / "k.csv").write_text("k\n0.25\n")
+    body = (_stock("A", "Inflow-Out", 10) + _eq("Inflow", "Demand") + _eq("Out", "K*A")
+            + "Demand:=\n\tGET DIRECT DATA('data.csv', ',', 'A', 'B2')\n\t~\t\n\t~\t|\n"
+            + "K:=\n\tGET DIRECT CONSTANTS('k.csv', ',', 'A2')\n\t~\t\n\t~\t|\n")
+    conv, eq = _convert(tmp_path, body, final=20, dt=1)
+    assert eq is not None and eq.ok, (conv.blocked, eq)
+    assert "demand: [4, 4.4, 4.8, 5.2, 5.6, 6" in conv.text                # PySD's values, one per step
+    assert "A -> outside as out: \"0.25 * A\"" in conv.text and conv.drivers == ["LOOKUP"]
+
+
+def test_existing_case_text_is_unchanged_by_the_new_features():
+    """Arrays, macros, data and DELAY N only add: every canonical case still rebuilds to its file
+    (the parametrized test above checks each); here the rendering of a delay3 case is unchanged."""
+    _need_pysd()
+    from sdlab.ladder.canonical.build import CASES, build_one
+
+    r = next(r for r in _recipes() if r["id"].startswith("105"))
+    assert build_one(r)[0] == (CASES / f"{r['id']}.yaml").read_text()
