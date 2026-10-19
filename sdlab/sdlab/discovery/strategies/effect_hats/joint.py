@@ -75,6 +75,10 @@ def _columns(f: dict, prev: np.ndarray, idx: dict, tt: np.ndarray) -> tuple[list
     return None
 
 
+class Unfit(ValueError):
+    """The joint fit failed (levels so large or degenerate that least squares does not converge)."""
+
+
 def _solve(units, stoich, spans, target, w, use, P):
     """Weighted least squares for the stacked rows, from the normal equations built stock by stock
     (a flow's columns enter only the rows it touches), columns scaled to unit size before solving."""
@@ -102,7 +106,10 @@ def _solve(units, stoich, spans, target, w, use, P):
     scale = np.sqrt(np.where(live, d, 1.0))
     theta = np.zeros(P)
     Gs = (G / scale[:, None] / scale[None, :])[np.ix_(live, live)]
-    theta[live] = np.linalg.lstsq(Gs, rhs[live] / scale[live], rcond=1e-12)[0] / scale[live]
+    try:
+        theta[live] = np.linalg.lstsq(np.nan_to_num(Gs), np.nan_to_num(rhs[live] / scale[live]), rcond=1e-12)[0] / scale[live]
+    except np.linalg.LinAlgError:
+        raise Unfit("the joint least squares did not converge") from None
     res = target.copy()
     for s, (ix, A) in enumerate(rows):
         if A is not None:
@@ -193,6 +200,22 @@ def _write(f: dict, how: str, theta: np.ndarray, prev: np.ndarray, idx: dict) ->
     return {**f, "rate": rate, "rates": [rate]}
 
 
+def _iterate(units, stoich, spans, target, w, use, P, coflow, owned, pers, idx, opts):
+    """Weighted solves (rows reweighted by their noise), with co-flow pers re-read in between."""
+    for _ in range((2 if opts.get("weighted", True) else 1) + (3 if coflow else 0)):
+        theta, res = _solve(units, stoich, spans, target, w, use, P)
+        sig = np.sqrt((res ** 2 * use).sum(axis=1) / max(1.0, use.sum()))
+        floor = max(1e-9, 1e-3 * float(np.median(sig[sig > 0])) if np.any(sig > 0) else 1e-9)
+        w = 1.0 / np.maximum(sig, floor)
+        if coflow:
+            # a co-flow's per (how much of the used stock goes with each unit moved) is a number of
+            # the stoichiometry, not of the rate: re-read it from the used stock's row, then refit
+            _repers(owned, units, stoich, spans, theta, res, pers, idx, use)
+    if coflow:
+        theta, res = _solve(units, stoich, spans, target, w, use, P)
+    return theta, res, w
+
+
 def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
     """The flows with every number they own refitted jointly; and {rss (per row), sigma, params}."""
     opts = opts or {}
@@ -242,17 +265,11 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     w = np.ones(S)
     theta = np.zeros(P)
     coflow = any(pers_f for pers_f in pers) and opts.get("coflow_per", True)
-    for _ in range((2 if opts.get("weighted", True) else 1) + (3 if coflow else 0)):
-        theta, res = _solve(units, stoich, spans, target, w, use, P)
-        sig = np.sqrt((res ** 2 * use).sum(axis=1) / max(1.0, use.sum()))
-        floor = max(1e-9, 1e-3 * float(np.median(sig[sig > 0])) if np.any(sig > 0) else 1e-9)
-        w = 1.0 / np.maximum(sig, floor)
-        if coflow:
-            # a co-flow's per (how much of the used stock goes with each unit moved) is a number of
-            # the stoichiometry, not of the rate: re-read it from the used stock's row, then refit
-            _repers(owned, units, stoich, spans, theta, res, pers, idx, use)
-    if coflow:
-        theta, res = _solve(units, stoich, spans, target, w, use, P)
+    try:
+        theta, res, w = _iterate(units, stoich, spans, target, w, use, P, coflow, owned, pers, idx, opts)
+    except Unfit:
+        # left as they were, priced as fitting nothing
+        return flows, {"rss": np.full(S, np.inf), "params": P, "res": np.full_like(target, np.inf)}
     out = []
     oi = 0
     for f in flows:

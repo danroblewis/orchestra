@@ -35,7 +35,10 @@ def scan(stocks: list[dict], prev: np.ndarray, dy: np.ndarray, opts: dict, extra
     final = {s["id"] for s in stocks if s.get("final")}
     K = opts.get("screen_knots", 4)
     D = np.vstack([np.ones(n), prev] + [np.asarray(e, dtype=float)[None, :n] for e in extra or []])
-    U, sv, _ = np.linalg.svd(D.T, full_matrices=False)
+    try:
+        U, sv, _ = np.linalg.svd(np.nan_to_num(D.T), full_matrices=False)
+    except np.linalg.LinAlgError:
+        return []
     Q = U[:, sv > 1e-9 * sv[0]]
     R = _resid(dy, Q)
     cuts = [pelt(R[s], 5, 1) if opts.get("pieces", True) else [0, n] for s in range(S)]
@@ -60,7 +63,10 @@ def scan(stocks: list[dict], prev: np.ndarray, dy: np.ndarray, opts: dict, extra
                     gains.append(0.0)
                     continue
                 Zd = demean(Zr, cuts[s])
-                u, sz, _ = np.linalg.svd(Zd.T, full_matrices=False)
+                try:
+                    u, sz, _ = np.linalg.svd(np.nan_to_num(Zd.T), full_matrices=False)
+                except np.linalg.LinAlgError:
+                    sz = np.zeros(0)
                 if not len(sz) or sz[0] <= 1e-12:
                     gains.append(0.0)
                     continue
@@ -137,7 +143,10 @@ def fit_curve(ids: list[str], prev: np.ndarray, dy: np.ndarray, base: str | None
             blocks_X.append(Xr)
             blocks_y.append(dy[idx[r]])
         X, y = np.vstack(blocks_X), np.concatenate(blocks_y)
-        theta = np.linalg.lstsq(X, y, rcond=None)[0]
+        try:
+            theta = np.linalg.lstsq(np.nan_to_num(X), np.nan_to_num(y), rcond=None)[0]
+        except np.linalg.LinAlgError:
+            return None
         res = (y - X @ theta).reshape(len(rows), n)
         if p == 0 and pieces:
             cuts = {r: pelt(res[i], 5, 1) for i, (r, _) in enumerate(rows)}
