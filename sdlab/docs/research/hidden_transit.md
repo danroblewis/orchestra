@@ -145,6 +145,102 @@ delay) -19% -> 93% at @20, 30% -> 97% at @100 (newly meets the goal); gen 34 def
 gen 7 default +1.3 / +2.5. One false transit stock (gen 47 long, 5 -> 4 parts, skill unchanged at
 -100%).
 
+## Stages: a hidden stock on one measured stock's inflow (2026-10-19, distilled cases 133-135)
+
+**Why the pair search missed them.** The pair needs a measured sender A. Three hard-case shapes have
+none: a supply line fed from outside by a gap of the stock it feeds (105's orders, 108's capacity,
+distilled 133: `delay1(60 - 0.2 I, 4)`), a measured input that arrives through a delay (110's
+pollution, distilled 134: `delay1(2 pump, 8)`), and rework that leaves a stock and comes back
+(107, distilled 135: `W -> U = 0.025 W`, `U -> W = U / 15`). The main line reads each as a faster
+drain plus tens to hundreds of inflow pieces.
+
+**What it does** (`stage.py`, `stagekf.py`). After the pairs, for each measured stock X not taken:
+
+- X's flows to and from outside are replaced by: a chain of n = 1 or 3 hidden stages at d each
+  (DELAY1, DELAY3); fed u = sum a_j z_j, z from {1, X, measured inputs, levels the found flows
+  read}; X's own drain (optional); and up to two direct terms on inputs or levels (105's shipments
+  = demand). Moves to other measured stocks are kept.
+- With d given, the chain's output is a filter of each z plus the decay of each stage's starting
+  level, so X's row is linear: least squares profiled over d (a log grid, then a bounded search),
+  with the subsets of terms and the order chosen by BIC. Exact fits tie at a floor (the levels'
+  rounding), so the fewest numbers win.
+- **Injections are read as the engine applies them**: added at the start of the step, before its
+  flows. Without this the noise-free fits were off by 20-50% on 133 and 135.
+- **Not a stage**: a chain fed by a constant alone (a constant through a delay is the constant
+  after a transient, so the starting levels would fit any drift); X growing by itself (a negative
+  drain); a chain fed less than nothing on more than 5% of steps. The first two produced false
+  stages on 040-random-chain-2#6 counts-long during development.
+- With counts, steps are weighted by what moved through X. The best least-squares structure of
+  each order (1 and 3) is then refitted by an n-state Kalman filter, and the filter's BIC picks the
+  order. Least squares let a first-order stage with a negative direct term stand in for 110's
+  DELAY3. The filter's likelihood is not used across other structures: a move and an outside feed
+  share noise differently, so their likelihoods do not compare. The filter treats each flow as a count shared by both its ends. On 134
+  counts-long this took X's drain from 0.226 to 0.196 (true 0.2), and 135 counts-long's delay from
+  16.6 to 16.0 (true 15).
+- `u = a X` alone is written as a move X -> H (rework), X's drain clamped at 0, unless X loses less
+  than half of a in all.
+- **Acceptance**: the stage's BIC beats both the found row (its pieces cost their numbers) and the
+  plain alternative (the same terms at once) by 2 log T. The model with the stage must also behave
+  better on the data than the found model with X's pieces at their mean, and at most 1.5x worse than
+  the model as found, as for pairs (the judge now gets the injections and inputs).
+
+**What the data allow.** 133 and 135 without noise are identified exactly: the injections enter
+the measured stock, not the hidden one, which breaks the mirror. `sdlab-ladder analyse` labels
+them unidentifiable because it ignores injections. 134 without noise is a true mirror: the input
+enters H, so the delay and T's drain swap (8 and 0.2, or 5 and 0.125). Both fit exactly, so
+134's none cells are data-limited. On counts-short, 12 other seeds (`sdlab.ladder.data.simulate`
+at the case seed +100 to +111, scored by `score.equations`, at commit fc7430b) show the edge:
+- 133 counts-short passes 10 of 12 seeds;
+- 134 counts-short passes 8 of 12 (the case's own seed fails: the stage behaves 1.9x worse than the
+  found model's 11 pieces on this run, over the 1.5x allowed);
+- 135 counts-short passes 2 of 12, with the hidden delay typically 10-35% off. This is probably
+  the data's limit for 300 counted steps, but it has not been proved: no bound is computed for
+  hidden stocks fed from outside or returning to their source.
+
+**Ladder results.**
+- **Command:** `uv run sdlab-ladder run --strategies hidden_transit --jobs 2 --timeout 300`,
+  single-threaded.
+- **When and what code:** 19 October 2026, commit 2b6a827. 1352 items: 445 pass, 145 equivalent,
+  705 fail, 5 timeouts (sd-k8s-small, sd-k8s-platform and sd-ev-fleet; their pair search and
+  main line are slow; none of the three had an earlier result), 52 differs (real).
+- **Letters:** none-short, none-long, counts-short, counts-long. "Before" is the latest stored row
+  of each cell before this work (mixed earlier commits). Cells marked "not run" there had none.
+
+| case | before | after (2b6a827) |
+|---|---|---|
+| 133-hidden-supply-line | FFFF | **PPPP** |
+| 134-delayed-measured-input | FFFF | FFF**P** (none: the mirror; counts-short: see above) |
+| 135-hidden-rework | FFFF | **PP**F**P** |
+| 172-third-order-supply-line (new, distilled from 105) | not run | **PP**F**P** |
+| 063-delay3-supply-line | FFFF | **PP**FF (counts: the pair search's own transit, unchanged) |
+| 105-canonical-inventory-supply-line | -F-F | **PP**F**P** (short variants not run before) |
+| 107-canonical-rework | -F-F | **PP**F**P** |
+| 110-canonical-world3-pollution | -F-F | **PPPP** |
+
+- **No cell that passed before fails now.** A paired comparison over every cell with an earlier
+  row was scripted against the store.
+- **Development regressions, fixed before this run.** At e40a984, 087 outliers-long, phys-draining-tank
+  meas-long and meas-short, and phys-newton-cooling meas-long went pass -> fail on false stages
+  (measurement noise read as a stage). They were fixed by the exact-fit rule without counts and the
+  shortest-delay rule.
+- **New passes elsewhere:** 205 and 206, the control cases with dead time, pass with a stage. Their
+  history starts at this run.
+- **False stages on cells that fail anyway.** 34 cells get a stage that is not in the truth, with
+  no change of status:
+  - counts variants of sd-clinic-doses, sd-cloud-credits, sd-emergency, sd-eras, sd-ev-fleet,
+    sd-fishery, sd-manufacturing, sd-sawmill and sd-supply;
+  - 111, 137, 138, 155 and 161;
+  - part-diffusion-chambers;
+  - none variants of 043#7, 054#1, 055#7 and 058;
+  - 040#6 counts-short and 087 lag-long.
+
+  They add complexity, so they cost under invariant 7. Each is a stand-in for a mechanism the main
+  line missed (products, effects, eras), not a stock.
+- **combined.** `combined` imports `hidden_transit` live, an isolation violation on the KNOWN list
+  (queue 0c). It therefore changed with these commits; on 172 it now passes none-long and
+  counts-long through the stages. Vendoring hidden_transit into combined at 376fa34 would undo
+  that. The decision belongs to combined's owner.
+
 ## Verdict
 
 Adopt as a candidate for the main line (behind its own acceptance, which is what keeps it off every

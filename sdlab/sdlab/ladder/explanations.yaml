@@ -205,8 +205,11 @@ strategies:
       likelihood: A -> H -> B through a hidden stock H with a delay, or B getting a share of A's
       loss straight away. A Kalman filter tracks H's unseen level using the random wiggles that
       A and B share. The hidden stock is kept only when it wins clearly (BIC) and behaves better
-      on the data.
-    helps_with: A hidden delay stock between two measured stocks (cases 015 and 026).
+      on the data. Then, for single stocks, a hidden stage (or a chain of three) on the stock's
+      inflow: fed from outside by a constant, the stock's own level or measured inputs (a supply
+      line ordered by a gap, an input that arrives late), or by the stock itself (rework that
+      comes back), its delay found by least squares profiled over the delay.
+    helps_with: A hidden delay stock between two measured stocks (cases 015 and 026); supply lines, delayed inputs and rework (133-135, 172; canonical 105, 107, 110).
     builds_on: matrix
     status: active
     note: Research verdict "adopt candidate" - the first strategy to pass case 015.
