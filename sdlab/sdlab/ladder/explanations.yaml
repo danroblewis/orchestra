@@ -278,6 +278,21 @@ strategies:
     status: active
     note: Research document docs/research/realistic-hats.md; the triage behind it is docs/research/realistic-triage.md.
 
+  coflow_hats:
+    idea: effect_hats, then co-flows and cyclic links found after its model is chosen.
+    how: >-
+      A copy of effect_hats. After its model is chosen, three kinds of candidate are tried, each kept
+      only if it prices better and behaves no worse - a flow that uses up another stock as it moves,
+      on an outside inflow (one stock's inflow steps down whenever another's steps up) or read from
+      a drain that follows another stock; a co-flow whose used stock runs dry, fitted only where that
+      stock held what its users wanted and stepped with the cap elsewhere; and a link whose strength
+      repeats on a cycle (by day and by night), split by phase. Two drains on one effect curve are
+      also offered as the base's drain using the other stock up.
+    helps_with: Co-flows (128 on an outside inflow, 129 running empty) and links that follow a daily cycle (132).
+    builds_on: effect_hats
+    status: active
+    note: Research document docs/research/coflow-hats.md.
+
   numopt_fd:
     idea: Refit the main line's numbers by multi-step error with a standard optimiser, gradients by finite differences.
     how: >-
