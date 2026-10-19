@@ -241,8 +241,6 @@ def analyse(case_id: str, variant: str, mc: bool = True) -> dict:
             structure_p *= term["p_detect"]
             if term["z"] is not None and term["z"] < row["threshold"]:
                 structure_bad.append(f"{row['stock']} <- {term['column']} (z {term['z']:.2g} < {row['threshold']:.2g})")
-            if term["z"] is None or (term["se_full"] is None):
-                pass
         for g in row["collinear"]:
             text = (f"{' ~ '.join(sorted(g['columns']))} are {'exactly ' if g['exact'] else 'nearly '}collinear on this run"
                     f" (each row may read any of them: the data cannot say which)")

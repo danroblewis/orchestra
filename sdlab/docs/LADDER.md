@@ -245,6 +245,71 @@ Failing draws frozen as fixed cases (October 2026, from the first run of the lea
 059-small-inflow-step (048#1), 060-close-slow-drains-at-equilibrium (044#3) and
 061-small-inflow-counts (039#2).
 
+### Parametric cases: random numbers
+
+A hand-written case has one set of numbers (three chains with inflows 20, 12 and 6), so a strategy
+can pass it by the luck of those numbers. In a **parametric** case any number may be a range, and
+the case runs on several draws of its numbers (`sdlab/sdlab/ladder/draws.py`). Real use never
+varies a model like this. It is a diagnostic for the analyser: it shows what happens when unrelated
+stocks happen to get similar inflows, or a rate lands small.
+
+```yaml
+title: Two independent chains of two, random numbers
+level: 4
+tags: [independent, chain, move, parametric]
+tests: 029 with every number drawn at random (8 draws); each chain is recovered with no flow between them
+seed: 42
+draws: 8                                  # how many draws (default 8)
+stocks: {A1: draw(0, 300, int), B1: 0, A2: 0, B2: 0}
+flows:
+  outside -> A1: draw(5, 40)              # uniform on [5, 40]
+  A1 -> B1: draw(0.05, 0.6, log) * A1     # log-uniform
+  B1 -> outside: draw(0.03, 0.5, log) * B1
+```
+
+- `draw(lo, hi)` takes `0 <= lo < hi`, then optionally `log` (log-uniform, `lo > 0`) and `int` (a
+  whole number). Other draws are rounded to three significant figures, so a value reads as written.
+  For a negative coefficient, write `- draw(...)`. `{draw: [lo, hi]}` is the same number as
+  `draw(lo, hi)`, written as a YAML mapping.
+- A draw may stand for any number: a rate's numbers (a constant, `k`, a gap's goal and time, a linear
+  rate's terms), an initial level, a schedule's values, or an injection's amount. Draws are replaced in
+  the text before the YAML is read, so the comma trap does not apply to them. A `draw(...)` in a
+  comment is left alone.
+- **Draw i** (1..N) is the case `NNN-slug#i`. It is scored, stored and shown like any case, with its
+  own hash: for every strategy and variant. Its numbers come from a generator seeded by the case's
+  `seed`, `i` and an attempt number. So draws are reproducible, and raising `draws` keeps the first
+  ones. The simulation seed is the case's `seed` for every draw.
+- Each draw must pass the case checks (bounded, moving, every flow moves). A draw that fails them
+  is drawn again with the next attempt, up to 12 attempts. `sdlab-ladder check` and `show` report
+  the rejected attempts and why they were rejected. The accepted attempt is remembered in
+  `$SDLAB_LADDER_CACHE/draws`, so the checks run once per draw.
+- **Reporting.** `status` lists each draw as a row and adds a **Parametric cases** table. Each
+  strategy gets its pass rate over draws x variants, then how many draws pass in every variant
+  (`62.5% 3/8`). `show NNN#i` prints the drawn numbers with their ranges. In the read API, a draw's
+  case has `draw: {base, i, of, seed, attempt, values: [{label, value, lo, hi, log, int, line}],
+  rejected, problems}`. `summary()` adds `draw` (`{base, i, of, lines, values}`) to each draw's case
+  and `parametric: {case: {title, level, tags, draws, strategies: {name: {pass, ..., total, rate,
+  draws_passing, draws_run}}}}`. The Now page and the Cases view show a draw's numbers as the lines
+  they went into. In the leaderboard, a parametric case counts as its draws, and a **Kind** filter
+  separates fixed cases from random draws. The editor does not list draws as basic models.
+- **Freezing.** `sdlab-ladder freeze NNN#i [--slug S]` writes draw i as the next ordinary case:
+  `NNN-slug-draw-i.yaml`, with the drawn numbers in place and comments kept. Its title and `tests`
+  sentence say where it came from, and the `parametric` tag becomes `frozen-draw`. It compiles to
+  exactly the draw's model. This is how a failing draw becomes a fixed regression case.
+
+| case | numbers drawn |
+|---|---|
+| 039-random-inflow-outflow | 002: inflow 5-40, drain 0.03-0.5 (log) |
+| 040-random-chain-2 | 003: inflow, move 0.05-0.6 (log), exit |
+| 041-random-chain-3 | 004: inflow, two moves, exit |
+| 042-random-two-chains-of-two | 029: both chains' inflows, moves and exits |
+| 043-random-three-chains-of-two | 031: all three chains |
+| 044-random-three-stocks | 034-036: three unrelated stocks' inflows, drains and starts (0-300) |
+| 045-random-link | 007: A's inflow and drain, the link 0.03-0.3, B's drain |
+| 046-random-link-loop | 008: inflow 5-30, move 0.1-0.6, drain 0.1-0.4, births 0.01-0.09 (below the drain: bounded) |
+| 047-random-goal-gap | 011: goal 150-450, time 2-10, arrival 0.1-0.5, demand 0.05-0.2 |
+| 048-random-stepping-inflow-drain | 027: the two inflow levels (1-10, 5-25) and the drain 0.03-0.3 |
+
 ### What a case compiles to
 
 The loader (`cases.py`) compiles a YAML case (`caseformat.py`) to the case dict the ladder has always
@@ -270,10 +335,14 @@ error). `cases.spec(id)` gives the dict:
 }
 ```
 
-**The case hash** (which decides whether a result is stale) covers what a run is made from, not the
-file: the compiled case as canonical JSON, the truth model of every variant, the engine
-(`sdtruth.py` and the equations it uses from `runner.py`) and `data.py`. A comment, a reordered
-term (`A * 0.5` for `0.5 * A`) or moving a case between YAML and JSON leaves its results current.
+**The case hash** (which decides whether a result is stale) covers what a run is made from and
+scored against, not the file: the compiled model, variants and tolerance as canonical JSON, the
+truth model of every variant (without its id and name), the engine (`sdtruth.py` and the equations
+it uses from `runner.py`) and `data.py`. A comment, a reordered term (`A * 0.5` for `0.5 * A`),
+moving a case between YAML and JSON, or rewording its title, level, tags or `tests` sentence leaves
+its results current. (Until 19 October 2026 the hash also covered the title and `tests` sentence;
+the stored results, including those of earlier wordings of 035, were moved to the new hashes
+then.)
 (Until October 2026 the hash covered the case file's bytes and `cases.py`; the results stored then
 were moved to the new hashes when the 25 cases became YAML, and
 `tests/test_ladder_caseformat.py` checks each converted case compiles to exactly the JSON it
@@ -318,6 +387,198 @@ their levels, the announced eras and the announced injections.
 | 023-injection | announced injections into a chain |
 | 024-floor-binds | a link with a negative coefficient that stops at zero |
 | 025-runs-empty | a constant demand that empties its stock and is then capped |
+
+## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
+
+The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one
+probes one mathematical property. For every case and variant we work out from the mathematics what
+the data can and cannot deliver. A failure can then be put down to one of two things: (a) the
+method's fault, where the data allowed a pass, or (b) the data's limit, where it did not. The
+analysis is on the scorer's side. It uses the true model and the run; discovery never sees it.
+
+```
+uv run sdlab-ladder analyse 038 --variant none-short     # one case: label, design, bound, parts, equivalences
+uv run sdlab-ladder analyse --all --jobs 6               # every case and variant into the cache; counts by label
+uv run sdlab-ladder analyse --validate 003 --variant counts-long --seeds 30   # the bound against ML refits
+```
+
+`sdlab-ladder show CASE` prints each variant's label first. The matrix marks every cell's square
+with its label (amber underline: data-limited, grey: unidentifiable) and gives the reason on hover.
+`status` and the leaderboard ("pass (achievable)") give each strategy's **pass rate over the
+achievable cells only**. The labels never change pass or fail: the user decides about scoring.
+
+### What is computed
+
+**1. Is the structure identifiable from levels?** (`design`) Each measured stock's change is
+regressed on everything a method could put in its row: a constant (one per window where the
+truth's constant changes) and every measured level. Each step is weighted by the true variance of
+that change. For each stock the analysis reports:
+
+- the rank and condition number of the column-normalised design;
+- the (near-)collinear columns, as an eigenvector with its relative size;
+- for each true term, its SE in this full regression and z = |true| / SE.
+
+A term with z < sqrt(log n) (the BIC price of a column) cannot be told from the alternatives. Its
+chance of being detected is P(|z_hat| > sqrt(log n)). Without noise, the only noise left is the
+data's rounding to 4 decimals. A true term that falls below the threshold there is collinear to
+the data's precision, which makes the cell *unidentifiable*. Examples are identical stocks (034,
+038), different starts of identical stocks (035: the levels stay in a fixed ratio), and two drawn
+chains that share a rate (043#2).
+
+**2. Same-size alternative structures** (`alternatives`). The levels identify the linear system
+(B, u). They do not identify how it splits into non-negative flows. Each of the following is
+another structure with no more numbers than the truth, built from it, that has the same mean
+change of every stock on the run (checked on the run's own rates, so a floor that binds rules it
+out):
+
+| truth | the same levels | example |
+|---|---|---|
+| a link outside -> i reading j at k, where j drains at d | the move j -> i at min(k, d), the rest as a link, j's drain d - min(k, d) | 007, 008, 045, 054, 055 |
+| a move j -> i at k, where j also drains at d | a link at k and j's drain at d + k | 006, 029-033 |
+| an inflow c - k j (a gap) | the inflow c and an outflow i -> outside reading j at k | 011, 047 |
+| a constant inflow c and an outflow k j of the same stock | one inflow c - k j | 002, 036, 049, 056 |
+| a co-flow using `per` of R | an outflow R -> outside at per x the flow's rate | 016 |
+
+The two structures differ only in the noise's covariance. A move's count leaves one stock and
+arrives in the other; a link's does not. Without noise they cannot be told apart, so the cell is
+unidentifiable. With counting noise, the chance that the likelihood prefers the truth is
+Phi(sqrt(D / 2)), where D is the summed KL divergence between the two Gaussians step by step. It
+enters the cell's p. A move whose source has no drain has an alternative with one number more
+(parsimony picks the move), which is only listed. A hidden stock between A and B has its
+**mirror**: the delay and B's drain swapped, with k_in rescaled. Without noise it gives the same
+measured levels, so 015 and 026 are unidentifiable on their noise-free variants.
+
+**3. The best achievable accuracy** (`fisher.py`). Every number in the true equations becomes a
+parameter. A rate that a schedule changes gets one parameter per segment. Each step's change of
+the measured stocks, given the levels at its start, is then dy = S q with S the stoichiometry and q
+the flows' amounts. q is Poisson around the rates (floored at 0, outflows capped at what the stock
+holds, as in the engine). Taken as Gaussian, dy ~ N(S r, S diag(r) S'). The Fisher information is
+
+    I = sum_k J_k' Sigma_k^-1 J_k  +  1/2 tr(Sigma_k^-1 dSigma_i Sigma_k^-1 dSigma_j)
+
+The first term is the mean (what least squares uses). The second is the variance: counting noise
+grows with the rate, which is what separates births from deaths (009) when the mean cannot. The
+Cramér–Rao bound I^-1 is the best SE any unbiased method can reach on that run. A direction the
+information is blind to is *not identified*: births + deaths without noise, and an effect's
+`max` that the run never reaches (harmless, because a flow with effects is scored as a whole).
+Without noise the bound comes from rounding alone ("exact if identifiable").
+
+The bound is mapped to the scorer's parts per window. For a flow with effects it is mapped to the
+flow's amount over the run. Each part is compared with the scorer's own allowance, max(rel x |true|,
+floor, z x oracle SE). A part is reached within tolerance with p = 2 Phi(allowed / SE) - 1. The
+cell's p is the joint chance from 4000 Monte Carlo draws of the bound's normal, multiplied by the
+chance that every true term and the truth over its alternatives are detected.
+
+**Labels:** `unidentifiable` means only an equivalent model is possible (p is set to 0; a pass
+there comes from a prior such as parsimony or a tiebreak, not from the data). `data-limited` means
+identifiable, but p < 0.5. `achievable` means p >= 0.5. For a hidden stock the SEs are the hidden
+oracle's ML SEs in place of the bound. A cell where a stock is at 2 or below on more than 5% of
+steps is marked `approximate` (see 056 below).
+
+**The bound checked by Monte Carlo.** The true structure was refitted by ML on fresh seeds and the
+spread of the estimates compared with the mean bound (`analyse --validate`, 30 seeds; sd / bound
+per number):
+
+| case, variant | sd / bound |
+|---|---|
+| 003 counts-long | 0.99, 1.02, 0.95 (40 seeds in `tests/test_ladder_analysis.py`: within 25%) |
+| 003 counts-short | 1.29, 1.37, 1.33 (300 steps: the asymptotic bound is about 30% optimistic) |
+| 007 counts-short | 1.06, 1.02, 0.83, 0.79 |
+| 049#1 counts-short | 1.11, 1.16, 1.04, 0.99 |
+| 054#4 counts-long | 0.84, 0.94, 1.16, 1.13, 0.80 |
+| 009 counts-long | 0.89, 0.78, 0.86 |
+| 056#5 counts-long (equilibrium 1) | 1.12, 1.02, but the ML estimates are biased: drain 0.38 for 0.5 |
+| 056#7 counts-long (equilibrium 0.2) | 1.69, 0.72, biased: drain 0.29 for 0.5, inflow 0.036 for 0.1 |
+
+Near the zero floor the Gaussian picture fails. Counts there are 0, 1 and 2, and a drain is cut
+short by an empty stock. A method with Gaussian noise, the truth's own structure included, is then
+biased. An exact count likelihood would not be, so these cells stay "achievable" but are marked
+`approximate`.
+
+**On the ladder** (`sdlab-ladder analyse --all`, 18 October 2026): of the 492 cells of the ladder
+without the sweeps, 353 are achievable, 29 data-limited and 110 unidentifiable. Cells by the
+reason they are unidentifiable (a cell can have several): 62 inflow + drain = one gap inflow, 42
+link <-> move, 12 collinear levels, 10 negative inflow term = outflow, 4 hidden mirror, 2
+births/deaths, 2 co-flow. Almost all of these are noise-free variants. With counting noise, the
+cells that remain short of achievable are data-limited, not unidentifiable: a weak link or loop
+(046, 054, 055 at low gain, 008 and 010 on short runs), 044's
+random three stocks on short runs, the effects cases' per-window inflow constants (017, 018: 10%
+of 3 is the SE of a 100-step window, and there is no oracle allowance for effects), 016 short, and
+022 long.
+
+### Sweeps
+
+A sweep is a parametric case that varies one quantity along a grid instead of at random:
+`grid(v1, ..., vN)` stands for v_i in draw i (draws.py). Several grids in one case move together.
+A `# axis: ...` comment names the axis, and `# axis values: ...` gives its values when the grid's
+numbers are not the axis itself.
+
+| case | axis | grid |
+|---|---|---|
+| 049-sweep-drain-ratio | drain ratio of two unrelated stocks d_B / d_A | 1, 1.02, 1.05, 1.1, 1.2, 1.35, 1.5, 2 |
+| 050-sweep-timescale | fast / slow rate in a chain (A -> B over B's drain) | 1, 2, 5, 10, 20, 50, 100 |
+| 051-sweep-level-scale | signal to noise: inflow (levels scale with it) | 2, 5, 20, 50, 200, 500, 2000 |
+| 052-sweep-run-length | run length (short; long is twice) | 50, 100, 250, 500, 1000, 2500 |
+| 053-sweep-excitation | unannounced inflow steps per 300 steps | 0, 1, 2, 4, 5, 9, 14 |
+| 054-sweep-link-strength | link k over the receiver's drain | 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2 |
+| 055-sweep-loop-gain | loop gain (link over B's drain; unstable at 1) | 0.1, 0.3, 0.5, 0.7, 0.85, 0.95, 0.98 |
+| 056-sweep-zero-floor | equilibrium level near zero | 40, 10, 4, 2, 1, 0.4, 0.2 |
+
+**Phase diagrams** (`/ladder/probes`, `GET /api/ladder/sweeps/{base}/{variant}[.svg]`,
+`sweep.findings`) plot each leading strategy's relative error on every true number against the
+axis. Beside them are the bound (dashed) and the scorer's tolerance (dotted). The background is
+shaded where the cell is data-limited or unidentifiable. Where a method's error leaves the
+tolerance while the bound is still far inside it, the method breaks first; where the band is
+shaded, the data does. Strategies that return the same model draw on top of each other (matrix and
+hidden_transit, earned_pieces and common_cause, on most points). Below: counts-long, then
+counts-short for 049, 054 and 055.
+
+![049](probes/049-counts-short.svg)
+![050](probes/050-counts-short.svg)
+![051](probes/051-counts-long.svg)
+![052](probes/052-counts-short.svg)
+![053](probes/053-counts-long.svg)
+![054](probes/054-counts-long.svg)
+![055](probes/055-counts-long.svg)
+![056](probes/056-counts-long.svg)
+
+Findings (lna, earned_pieces, held_out, common_cause, hidden_transit, matrix; results of 18
+October 2026, `python -c "from sdlab.ladder import sweep; print('\n'.join(sweep.findings('049')))"`):
+
+- **049 drain ratio.** Without noise every point is unidentifiable: the inflow + drain = gap
+  equivalence everywhere, and at r = 1 the levels are identical too. All methods pass for r > 1 by
+  their convention, and only common_cause (its tiebreak) passes r = 1. With counts the data allow
+  every point, even r = 1 (noise separates the stocks, z of each own drain about 6 in 300 steps).
+  lna, earned_pieces, held_out and common_cause pass everywhere. matrix and hidden_transit fail
+  all 8 short points and 4 of 8 long ones, with errors of 40-150% against a bound of about 7%.
+  That is the method's fault, at every ratio.
+- **050 time-scale ratio.** The data allow every point up to 100. Four methods pass everywhere.
+  matrix and hidden_transit fail at r = 2 and at r >= 20 on short runs (a slow B still far from
+  equilibrium) and at r = 2 on long runs. That is the method's fault.
+- **051 level scale.** The data allow every point; the bound shrinks from 2.2% at inflow 2 to 0.9%
+  at 2000. matrix and hidden_transit fail at inflow 2 and 20 on short runs. lna fails at 2000 on the
+  long run with 2 spurious parts. Both are the method's fault.
+- **052 run length.** Achievable from 50 steps (p 0.97) to 5000. All six methods pass every point:
+  nothing breaks on length alone in this range.
+- **053 excitation.** The data allow every point; more steps help the bound. held_out fails as soon
+  as there is one step (without noise from 4 steps per 300). lna fails at 4 and 14 steps on short
+  runs and at 14 on long ones; matrix and hidden_transit fail sporadically. All are the method's
+  fault (finding the pieces).
+- **054 link strength.** Without noise it is unidentifiable everywhere (the link is a move with a
+  smaller drain), and every method gives the best possible answer, equivalent. With counts it is
+  data-limited below k / d = 0.25 (0.5 on short runs) and achievable above, where only the noise's
+  covariance separates link from move. lna passes there (0.25-2 long, 0.25-1 short). earned_pieces,
+  held_out and common_cause return the equivalent move. matrix and hidden_transit fail. The break
+  is the method's: they do not use the covariance.
+- **055 loop gain.** Without noise it is unidentifiable (link <-> move). With counts it is
+  data-limited only at gain 0.1 (p 0.04 short, 0.13 long) and achievable from 0.3 (p 0.56 on short runs) up to 0.98. lna passes 0.1-0.85
+  long and 0.5-0.95 short, and gives the equivalent move at 0.95 and 0.98 long, near instability.
+  The others return equivalent or fail at every gain. That is the method's fault in both places.
+- **056 zero floor.** With counts the bound says achievable at every point (marked approximate
+  below equilibrium 4). earned_pieces, held_out and common_cause pass down to equilibrium 1 and
+  fail at 0.4 and 0.2. lna, matrix and hidden_transit fail from 2 (long). The truth's own Gaussian
+  ML is biased by 24-42% there. These methods break where counting noise stops being Gaussian,
+  which is a modelling limit; an exact count likelihood would be needed.
 
 ## Strategies
 
@@ -611,7 +872,13 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `run_graph(id, at?, window?)` | one result's true vs found levels run free, far ahead: `{result, stocks, run, overview, windows, metrics, how}` (Long run, below) |
 
 A result is `{id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status,
-seconds, error, scores}`. `scores` holds:
+seconds, error, scores, code_commit, code_dirty}`. Its `strategy_hash` is that of the code the
+worker actually imported (`provenance.py`). It is computed when the process first imports the
+strategy, not when the run was planned, so a file edited during a long run cannot put newer code
+under an older hash. `code_commit` is the git commit then. `code_dirty` is empty when the imported
+code is that commit's; otherwise it is the hash of a patch saved as
+`$SDLAB_LADDER_CACHE/code/<code_dirty>.patch`, and `git checkout <commit> && git apply <patch>`
+gives back the exact code. `show` prints both. `scores` holds:
 
 - the equation scores: `status, recall, precision, right, of, parts [{key, kind, found, true, found_value, ok, error, se}], spurious, negligible, windows, tolerance, notes`;
 - `behaviour: {in_sample, fresh: {"20", "100": {skill, ci, moved}}}`.
@@ -694,4 +961,5 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |
+| Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`; page `sdlab/static/probes.html` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |

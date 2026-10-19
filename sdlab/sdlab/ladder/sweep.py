@@ -105,17 +105,17 @@ LABEL_TINT = {"unidentifiable": "u", "data-limited": "d"}
 
 
 def _style() -> str:
-    lt, dk = COLORS["light"], COLORS["dark"]
-    rules = [f".s{i} {{ stroke: {c}; fill: {c}; }} .s{i}.open {{ fill: var(--surface); }}" for i, c in enumerate(lt)]
-    drules = [f".s{i} {{ stroke: {c}; fill: {c}; }}" for i, c in enumerate(dk)]
-    return ("svg { --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --grid: #e4e2dc; --u: #fde2e1; --d: #fdf0d5; }"
-            " @media (prefers-color-scheme: dark) { svg { --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --grid: #34332f;"
-            " --u: #4a2321; --d: #45371a; } " + " ".join(drules) + " }"
-            " .bg { fill: var(--surface); } text { fill: var(--ink2); font: 11px system-ui, sans-serif; } .title { fill: var(--ink); font-weight: 600; font-size: 12px; }"
-            " .grid { stroke: var(--grid); stroke-width: 1; } .u { fill: var(--u); } .d { fill: var(--d); }"
-            " .bound { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 3; fill: none; }"
-            " .tol { stroke: var(--ink2); stroke-width: 1.5; stroke-dasharray: 1 3; fill: none; }"
-            " .line { fill: none; stroke-width: 2; } .dot { stroke-width: 2; } " + " ".join(rules))
+    """Plain colours (no CSS variables, so any SVG renderer draws it), the dark ones under a media query."""
+    def rules(cols, surface, ink, ink2, grid, u, d):
+        out = [f".bg {{ fill: {surface}; }} text {{ fill: {ink2}; font: 11px system-ui, sans-serif; }} .title {{ fill: {ink}; font-weight: 600; font-size: 12px; }}",
+               f".grid {{ stroke: {grid}; stroke-width: 1; }} .u {{ fill: {u}; }} .d {{ fill: {d}; }}",
+               f".bound {{ stroke: {ink}; stroke-width: 2; stroke-dasharray: 5 3; fill: none; }}",
+               f".tol {{ stroke: {ink2}; stroke-width: 1.5; stroke-dasharray: 1 3; fill: none; }}"]
+        out += [f"polyline.s{i}, line.s{i} {{ stroke: {c}; fill: none; stroke-width: 2; }} circle.s{i} {{ stroke: {c}; fill: {c}; stroke-width: 2; }}"
+                f" circle.s{i}.open {{ fill: {surface}; }}" for i, c in enumerate(cols)]
+        return " ".join(out)
+    return (rules(COLORS["light"], "#fcfcfb", "#0b0b0b", "#52514e", "#e4e2dc", "#fde2e1", "#fdf0d5")
+            + " @media (prefers-color-scheme: dark) { " + rules(COLORS["dark"], "#1a1a19", "#f0efec", "#c3c2b7", "#34332f", "#4a2321", "#45371a") + " }")
 
 
 def svg(base: str, variant: str, strategies: list[str] | None = None, width: int = 760) -> str:
@@ -127,35 +127,32 @@ def svg(base: str, variant: str, strategies: list[str] | None = None, width: int
         for s in p["strategies"].values():
             part_names += [k for k in s["parts"] if k not in part_names]
     vals = [p["value"] for p in pts]
-    logx = min(vals) > 0 and max(vals) / min(vals) > 8
     cols = 2 if len(part_names) > 1 else 1
     pw, ph_ = (width - 20) // cols, 190
     rows = max(1, math.ceil(len(part_names) / cols))
-    top = 64
+    top = 104
     H = top + rows * (ph_ + 14) + 10
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {H}" width="{width}" height="{H}" role="img"'
            f' aria-label="{html.escape(ph["title"])}, {variant}">', f"<style>{_style()}</style>",
            f'<rect class="bg" width="{width}" height="{H}"/>',
            f'<text class="title" x="10" y="18">{html.escape(ph["title"])} — {variant}</text>',
-           f'<text x="10" y="34">relative error |found − true| / |true| (log) vs {html.escape(ph["axis"])};'
-           ' dashed: the Cramér–Rao bound (1 SE), dotted: the scorer\'s tolerance; filled: pass, open: fail</text>']
+           f'<text x="10" y="34">relative error |found − true| / |true| (log scale) against {html.escape(ph["axis"])}</text>',
+           '<text x="10" y="49">dashed: the Cramér–Rao bound (1 SE); dotted: the scorer\'s tolerance; filled dot: pass, open: not a pass;'
+           ' top edge: part not found</text>']
     lx = 10
     for i, n in enumerate(names):
-        out.append(f'<line class="line s{i}" x1="{lx}" y1="50" x2="{lx + 16}" y2="50"/><text x="{lx + 20}" y="54">{html.escape(n)}</text>')
+        out.append(f'<line class="line s{i}" x1="{lx}" y1="65" x2="{lx + 16}" y2="65"/><text x="{lx + 20}" y="69">{html.escape(n)}</text>')
         lx += 30 + 7 * len(n)
-    out.append(f'<rect class="u" x="{lx}" y="44" width="12" height="12"/><text x="{lx + 16}" y="54">unidentifiable</text>')
-    out.append(f'<rect class="d" x="{lx + 110}" y="44" width="12" height="12"/><text x="{lx + 126}" y="54">data-limited</text>')
+    out.append('<rect class="u" x="10" y="76" width="12" height="12"/><text x="26" y="86">unidentifiable</text>')
+    out.append('<rect class="d" x="120" y="76" width="12" height="12"/><text x="136" y="86">data-limited</text>')
     ylo, yhi = -4.0, 1.0
     for k, part in enumerate(part_names):
         ox, oy = 10 + (k % cols) * pw, top + (k // cols) * (ph_ + 14)
         L, R, T, B = ox + 44, ox + pw - 12, oy + 16, oy + ph_ - 26
 
-        def X(v):
-            if len(vals) == 1:
-                return (L + R) / 2
-            a, b = (math.log10(min(vals)), math.log10(max(vals))) if logx else (min(vals), max(vals))
-            x = math.log10(v) if logx else v
-            return L + (R - L) * (x - a) / ((b - a) or 1)
+        def X(v):                                                     # the grid's points, evenly spaced
+            i = vals.index(v)
+            return (L + R) / 2 if len(vals) == 1 else L + (R - L) * i / (len(vals) - 1)
 
         def Y(e):
             e = min(max(e, 10 ** ylo), 10 ** yhi)

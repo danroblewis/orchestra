@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 522" width="760" height="522" role="img" aria-label="Sweep: chain of two, excitation (0 to 14 inflow steps per 300 steps), counts-long">
+<style>.bg { fill: #fcfcfb; } text { fill: #52514e; font: 11px system-ui, sans-serif; } .title { fill: #0b0b0b; font-weight: 600; font-size: 12px; } .grid { stroke: #e4e2dc; stroke-width: 1; } .u { fill: #fde2e1; } .d { fill: #fdf0d5; } .bound { stroke: #0b0b0b; stroke-width: 2; stroke-dasharray: 5 3; fill: none; } .tol { stroke: #52514e; stroke-width: 1.5; stroke-dasharray: 1 3; fill: none; } polyline.s0, line.s0 { stroke: #2a78d6; fill: none; stroke-width: 2; } circle.s0 { stroke: #2a78d6; fill: #2a78d6; stroke-width: 2; } circle.s0.open { fill: #fcfcfb; } polyline.s1, line.s1 { stroke: #eb6834; fill: none; stroke-width: 2; } circle.s1 { stroke: #eb6834; fill: #eb6834; stroke-width: 2; } circle.s1.open { fill: #fcfcfb; } polyline.s2, line.s2 { stroke: #1baf7a; fill: none; stroke-width: 2; } circle.s2 { stroke: #1baf7a; fill: #1baf7a; stroke-width: 2; } circle.s2.open { fill: #fcfcfb; } polyline.s3, line.s3 { stroke: #eda100; fill: none; stroke-width: 2; } circle.s3 { stroke: #eda100; fill: #eda100; stroke-width: 2; } circle.s3.open { fill: #fcfcfb; } polyline.s4, line.s4 { stroke: #e87ba4; fill: none; stroke-width: 2; } circle.s4 { stroke: #e87ba4; fill: #e87ba4; stroke-width: 2; } circle.s4.open { fill: #fcfcfb; } polyline.s5, line.s5 { stroke: #008300; fill: none; stroke-width: 2; } circle.s5 { stroke: #008300; fill: #008300; stroke-width: 2; } circle.s5.open { fill: #fcfcfb; } @media (prefers-color-scheme: dark) { .bg { fill: #1a1a19; } text { fill: #c3c2b7; font: 11px system-ui, sans-serif; } .title { fill: #f0efec; font-weight: 600; font-size: 12px; } .grid { stroke: #34332f; stroke-width: 1; } .u { fill: #4a2321; } .d { fill: #45371a; } .bound { stroke: #f0efec; stroke-width: 2; stroke-dasharray: 5 3; fill: none; } .tol { stroke: #c3c2b7; stroke-width: 1.5; stroke-dasharray: 1 3; fill: none; } polyline.s0, line.s0 { stroke: #3987e5; fill: none; stroke-width: 2; } circle.s0 { stroke: #3987e5; fill: #3987e5; stroke-width: 2; } circle.s0.open { fill: #1a1a19; } polyline.s1, line.s1 { stroke: #d95926; fill: none; stroke-width: 2; } circle.s1 { stroke: #d95926; fill: #d95926; stroke-width: 2; } circle.s1.open { fill: #1a1a19; } polyline.s2, line.s2 { stroke: #199e70; fill: none; stroke-width: 2; } circle.s2 { stroke: #199e70; fill: #199e70; stroke-width: 2; } circle.s2.open { fill: #1a1a19; } polyline.s3, line.s3 { stroke: #c98500; fill: none; stroke-width: 2; } circle.s3 { stroke: #c98500; fill: #c98500; stroke-width: 2; } circle.s3.open { fill: #1a1a19; } polyline.s4, line.s4 { stroke: #d55181; fill: none; stroke-width: 2; } circle.s4 { stroke: #d55181; fill: #d55181; stroke-width: 2; } circle.s4.open { fill: #1a1a19; } polyline.s5, line.s5 { stroke: #008300; fill: none; stroke-width: 2; } circle.s5 { stroke: #008300; fill: #008300; stroke-width: 2; } circle.s5.open { fill: #1a1a19; } }</style>
+<rect class="bg" width="760" height="522"/>
+<text class="title" x="10" y="18">Sweep: chain of two, excitation (0 to 14 inflow steps per 300 steps) — counts-long</text>
+<text x="10" y="34">relative error |found − true| / |true| (log scale) against inflow steps per 300 steps</text>
+<text x="10" y="49">dashed: the Cramér–Rao bound (1 SE); dotted: the scorer's tolerance; filled dot: pass, open: not a pass; top edge: part not found</text>
+<line class="line s0" x1="10" y1="65" x2="26" y2="65"/><text x="30" y="69">lna</text>
+<line class="line s1" x1="61" y1="65" x2="77" y2="65"/><text x="81" y="69">earned_pieces</text>
+<line class="line s2" x1="182" y1="65" x2="198" y2="65"/><text x="202" y="69">held_out</text>
+<line class="line s3" x1="268" y1="65" x2="284" y2="65"/><text x="288" y="69">common_cause</text>
+<line class="line s4" x1="382" y1="65" x2="398" y2="65"/><text x="402" y="69">hidden_transit</text>
+<line class="line s5" x1="510" y1="65" x2="526" y2="65"/><text x="530" y="69">matrix</text>
+<rect class="u" x="10" y="76" width="12" height="12"/><text x="26" y="86">unidentifiable</text>
+<rect class="d" x="120" y="76" width="12" height="12"/><text x="136" y="86">data-limited</text>
+<text class="title" x="14" y="114">outside -&gt; A [const]</text>
+<line class="grid" x1="54" x2="368" y1="268.0" y2="268.0"/><text x="48" y="272.0" text-anchor="end">0.01%</text>
+<line class="grid" x1="54" x2="368" y1="238.4" y2="238.4"/><text x="48" y="242.4" text-anchor="end">0.1%</text>
+<line class="grid" x1="54" x2="368" y1="208.8" y2="208.8"/><text x="48" y="212.8" text-anchor="end">1%</text>
+<line class="grid" x1="54" x2="368" y1="179.2" y2="179.2"/><text x="48" y="183.2" text-anchor="end">10%</text>
+<line class="grid" x1="54" x2="368" y1="149.6" y2="149.6"/><text x="48" y="153.6" text-anchor="end">100%</text>
+<line class="grid" x1="54" x2="368" y1="120.0" y2="120.0"/><text x="48" y="124.0" text-anchor="end">1000%</text>
+<text x="54.0" y="282" text-anchor="middle">0</text>
+<text x="106.3" y="282" text-anchor="middle">1</text>
+<text x="158.7" y="282" text-anchor="middle">2</text>
+<text x="211.0" y="282" text-anchor="middle">4</text>
+<text x="263.3" y="282" text-anchor="middle">5</text>
+<text x="315.7" y="282" text-anchor="middle">9</text>
+<text x="368.0" y="282" text-anchor="middle">14</text>
+<polyline class="bound" points="54.0,201.1 106.3,192.6 158.7,190.5 211.0,187.4 263.3,186.2 315.7,180.3 368.0,180.0"/>
+<polyline class="tol" points="54.0,176.9 106.3,177.5 158.7,177.5 211.0,176.9 263.3,176.8 315.7,174.9 368.0,173.4"/>
+<circle class="dot s0" cx="54.0" cy="208.6" r="4"><title>lna at 0: pass, error 1.01%</title></circle>
+<circle class="dot s1" cx="54.0" cy="190.8" r="4"><title>earned_pieces at 0: pass, error 4.04%</title></circle>
+<circle class="dot s2" cx="54.0" cy="188.8" r="4"><title>held_out at 0: pass, error 4.73%</title></circle>
+<circle class="dot s3" cx="54.0" cy="190.8" r="4"><title>common_cause at 0: pass, error 4.04%</title></circle>
+<circle class="dot s4" cx="54.0" cy="188.8" r="4"><title>hidden_transit at 0: pass, error 4.73%</title></circle>
+<circle class="dot s5" cx="54.0" cy="188.8" r="4"><title>matrix at 0: pass, error 4.73%</title></circle>
+<text class="title" x="384" y="114">A -&gt; B [A]</text>
+<line class="grid" x1="424" x2="738" y1="268.0" y2="268.0"/><text x="418" y="272.0" text-anchor="end">0.01%</text>
+<line class="grid" x1="424" x2="738" y1="238.4" y2="238.4"/><text x="418" y="242.4" text-anchor="end">0.1%</text>
+<line class="grid" x1="424" x2="738" y1="208.8" y2="208.8"/><text x="418" y="212.8" text-anchor="end">1%</text>
+<line class="grid" x1="424" x2="738" y1="179.2" y2="179.2"/><text x="418" y="183.2" text-anchor="end">10%</text>
+<line class="grid" x1="424" x2="738" y1="149.6" y2="149.6"/><text x="418" y="153.6" text-anchor="end">100%</text>
+<line class="grid" x1="424" x2="738" y1="120.0" y2="120.0"/><text x="418" y="124.0" text-anchor="end">1000%</text>
+<text x="424.0" y="282" text-anchor="middle">0</text>
+<text x="476.3" y="282" text-anchor="middle">1</text>
+<text x="528.7" y="282" text-anchor="middle">2</text>
+<text x="581.0" y="282" text-anchor="middle">4</text>
+<text x="633.3" y="282" text-anchor="middle">5</text>
+<text x="685.7" y="282" text-anchor="middle">9</text>
+<text x="738.0" y="282" text-anchor="middle">14</text>
+<polyline class="bound" points="424.0,201.3 476.3,202.5 528.7,203.2 581.0,204.0 633.3,204.4 685.7,205.7 738.0,206.4"/>
+<polyline class="tol" points="424.0,174.4 476.3,175.3 528.7,176.2 581.0,177.3 633.3,177.3 685.7,179.2 738.0,179.2"/>
+<polyline class="line s0" opacity="0.8" points="424.0,195.9 476.3,228.0 528.7,198.2 581.0,196.1 633.3,225.1 685.7,189.1 738.0,198.7"/>
+<circle class="dot s0" cx="424.0" cy="195.9" r="4"><title>lna at 0: pass, error 2.74%</title></circle>
+<circle class="dot s0" cx="476.3" cy="228.0" r="4"><title>lna at 1: pass, error 0.22%</title></circle>
+<circle class="dot s0" cx="528.7" cy="198.2" r="4"><title>lna at 2: pass, error 2.29%</title></circle>
+<circle class="dot s0" cx="581.0" cy="196.1" r="4"><title>lna at 4: pass, error 2.68%</title></circle>
+<circle class="dot s0" cx="633.3" cy="225.1" r="4"><title>lna at 5: pass, error 0.28%</title></circle>
+<circle class="dot s0" cx="685.7" cy="189.1" r="4"><title>lna at 9: pass, error 4.64%</title></circle>
+<circle class="dot s0 open" cx="738.0" cy="198.7" r="4"><title>lna at 14: fail, error 2.20%</title></circle>
+<polyline class="line s1" opacity="0.8" points="424.0,186.9 476.3,221.2 528.7,197.0 581.0,197.4 633.3,201.5 685.7,193.2 738.0,203.6"/>
+<circle class="dot s1" cx="424.0" cy="186.9" r="4"><title>earned_pieces at 0: pass, error 5.48%</title></circle>
+<circle class="dot s1" cx="476.3" cy="221.2" r="4"><title>earned_pieces at 1: pass, error 0.38%</title></circle>
+<circle class="dot s1" cx="528.7" cy="197.0" r="4"><title>earned_pieces at 2: pass, error 2.50%</title></circle>
+<circle class="dot s1" cx="581.0" cy="197.4" r="4"><title>earned_pieces at 4: pass, error 2.42%</title></circle>
+<circle class="dot s1" cx="633.3" cy="201.5" r="4"><title>earned_pieces at 5: pass, error 1.76%</title></circle>
+<circle class="dot s1" cx="685.7" cy="193.2" r="4"><title>earned_pieces at 9: pass, error 3.36%</title></circle>
+<circle class="dot s1" cx="738.0" cy="203.6" r="4"><title>earned_pieces at 14: pass, error 1.50%</title></circle>
+<polyline class="line s2" opacity="0.8" points="424.0,185.4 476.3,159.4 528.7,156.1 581.0,153.8 633.3,153.9 685.7,152.0 738.0,151.1"/>
+<circle class="dot s2" cx="424.0" cy="185.4" r="4"><title>held_out at 0: pass, error 6.16%</title></circle>
+<circle class="dot s2 open" cx="476.3" cy="159.4" r="4"><title>held_out at 1: fail, error 46.80%</title></circle>
+<circle class="dot s2 open" cx="528.7" cy="156.1" r="4"><title>held_out at 2: fail, error 60.26%</title></circle>
+<circle class="dot s2 open" cx="581.0" cy="153.8" r="4"><title>held_out at 4: fail, error 72.22%</title></circle>
+<circle class="dot s2 open" cx="633.3" cy="153.9" r="4"><title>held_out at 5: fail, error 71.56%</title></circle>
+<circle class="dot s2 open" cx="685.7" cy="152.0" r="4"><title>held_out at 9: fail, error 82.84%</title></circle>
+<circle class="dot s2 open" cx="738.0" cy="151.1" r="4"><title>held_out at 14: fail, error 89.06%</title></circle>
+<polyline class="line s3" opacity="0.8" points="424.0,186.9 476.3,221.2 528.7,197.0 581.0,197.4 633.3,201.5 685.7,193.2 738.0,203.6"/>
+<circle class="dot s3" cx="424.0" cy="186.9" r="4"><title>common_cause at 0: pass, error 5.48%</title></circle>
+<circle class="dot s3" cx="476.3" cy="221.2" r="4"><title>common_cause at 1: pass, error 0.38%</title></circle>
+<circle class="dot s3" cx="528.7" cy="197.0" r="4"><title>common_cause at 2: pass, error 2.50%</title></circle>
+<circle class="dot s3" cx="581.0" cy="197.4" r="4"><title>common_cause at 4: pass, error 2.42%</title></circle>
+<circle class="dot s3" cx="633.3" cy="201.5" r="4"><title>common_cause at 5: pass, error 1.76%</title></circle>
+<circle class="dot s3" cx="685.7" cy="193.2" r="4"><title>common_cause at 9: pass, error 3.36%</title></circle>
+<circle class="dot s3" cx="738.0" cy="203.6" r="4"><title>common_cause at 14: pass, error 1.50%</title></circle>
+<polyline class="line s4" opacity="0.8" points="424.0,185.4 476.3,205.4 528.7,196.2 581.0,196.1 633.3,234.1 685.7,189.1 738.0,198.7"/>
+<circle class="dot s4" cx="424.0" cy="185.4" r="4"><title>hidden_transit at 0: pass, error 6.16%</title></circle>
+<circle class="dot s4" cx="476.3" cy="205.4" r="4"><title>hidden_transit at 1: pass, error 1.30%</title></circle>
+<circle class="dot s4" cx="528.7" cy="196.2" r="4"><title>hidden_transit at 2: pass, error 2.66%</title></circle>
+<circle class="dot s4" cx="581.0" cy="196.1" r="4"><title>hidden_transit at 4: pass, error 2.68%</title></circle>
+<circle class="dot s4 open" cx="633.3" cy="234.1" r="4"><title>hidden_transit at 5: fail, error 0.14%</title></circle>
+<circle class="dot s4" cx="685.7" cy="189.1" r="4"><title>hidden_transit at 9: pass, error 4.64%</title></circle>
+<circle class="dot s4 open" cx="738.0" cy="198.7" r="4"><title>hidden_transit at 14: fail, error 2.20%</title></circle>
+<polyline class="line s5" opacity="0.8" points="424.0,185.4 476.3,205.4 528.7,196.2 581.0,196.1 633.3,234.1 685.7,189.1 738.0,198.7"/>
+<circle class="dot s5" cx="424.0" cy="185.4" r="4"><title>matrix at 0: pass, error 6.16%</title></circle>
+<circle class="dot s5" cx="476.3" cy="205.4" r="4"><title>matrix at 1: pass, error 1.30%</title></circle>
+<circle class="dot s5" cx="528.7" cy="196.2" r="4"><title>matrix at 2: pass, error 2.66%</title></circle>
+<circle class="dot s5" cx="581.0" cy="196.1" r="4"><title>matrix at 4: pass, error 2.68%</title></circle>
+<circle class="dot s5 open" cx="633.3" cy="234.1" r="4"><title>matrix at 5: fail, error 0.14%</title></circle>
+<circle class="dot s5" cx="685.7" cy="189.1" r="4"><title>matrix at 9: pass, error 4.64%</title></circle>
+<circle class="dot s5 open" cx="738.0" cy="198.7" r="4"><title>matrix at 14: fail, error 2.20%</title></circle>
+<text class="title" x="14" y="318">B -&gt; outside [B]</text>
+<line class="grid" x1="54" x2="368" y1="472.0" y2="472.0"/><text x="48" y="476.0" text-anchor="end">0.01%</text>
+<line class="grid" x1="54" x2="368" y1="442.4" y2="442.4"/><text x="48" y="446.4" text-anchor="end">0.1%</text>
+<line class="grid" x1="54" x2="368" y1="412.8" y2="412.8"/><text x="48" y="416.8" text-anchor="end">1%</text>
+<line class="grid" x1="54" x2="368" y1="383.2" y2="383.2"/><text x="48" y="387.2" text-anchor="end">10%</text>
+<line class="grid" x1="54" x2="368" y1="353.6" y2="353.6"/><text x="48" y="357.6" text-anchor="end">100%</text>
+<line class="grid" x1="54" x2="368" y1="324.0" y2="324.0"/><text x="48" y="328.0" text-anchor="end">1000%</text>
+<text x="54.0" y="486" text-anchor="middle">0</text>
+<text x="106.3" y="486" text-anchor="middle">1</text>
+<text x="158.7" y="486" text-anchor="middle">2</text>
+<text x="211.0" y="486" text-anchor="middle">4</text>
+<text x="263.3" y="486" text-anchor="middle">5</text>
+<text x="315.7" y="486" text-anchor="middle">9</text>
+<text x="368.0" y="486" text-anchor="middle">14</text>
+<polyline class="bound" points="54.0,405.2 106.3,406.5 158.7,407.1 211.0,408.0 263.3,408.2 315.7,409.7 368.0,410.3"/>
+<polyline class="tol" points="54.0,383.2 106.3,383.2 158.7,383.2 211.0,383.2 263.3,383.2 315.7,383.2 368.0,383.2"/>
+<polyline class="line s0" opacity="0.8" points="54.0,402.9 106.3,422.1 158.7,404.1 211.0,396.7 263.3,411.0 315.7,392.5 368.0,392.0"/>
+<circle class="dot s0" cx="54.0" cy="402.9" r="4"><title>lna at 0: pass, error 2.16%</title></circle>
+<circle class="dot s0" cx="106.3" cy="422.1" r="4"><title>lna at 1: pass, error 0.48%</title></circle>
+<circle class="dot s0" cx="158.7" cy="404.1" r="4"><title>lna at 2: pass, error 1.97%</title></circle>
+<circle class="dot s0" cx="211.0" cy="396.7" r="4"><title>lna at 4: pass, error 3.50%</title></circle>
+<circle class="dot s0" cx="263.3" cy="411.0" r="4"><title>lna at 5: pass, error 1.15%</title></circle>
+<circle class="dot s0" cx="315.7" cy="392.5" r="4"><title>lna at 9: pass, error 4.85%</title></circle>
+<circle class="dot s0 open" cx="368.0" cy="392.0" r="4"><title>lna at 14: fail, error 5.05%</title></circle>
+<polyline class="line s1" opacity="0.8" points="54.0,392.2 106.3,418.3 158.7,402.4 211.0,398.1 263.3,420.5 315.7,396.3 368.0,406.8"/>
+<circle class="dot s1" cx="54.0" cy="392.2" r="4"><title>earned_pieces at 0: pass, error 4.95%</title></circle>
+<circle class="dot s1" cx="106.3" cy="418.3" r="4"><title>earned_pieces at 1: pass, error 0.65%</title></circle>
+<circle class="dot s1" cx="158.7" cy="402.4" r="4"><title>earned_pieces at 2: pass, error 2.25%</title></circle>
+<circle class="dot s1" cx="211.0" cy="398.1" r="4"><title>earned_pieces at 4: pass, error 3.15%</title></circle>
+<circle class="dot s1" cx="263.3" cy="420.5" r="4"><title>earned_pieces at 5: pass, error 0.55%</title></circle>
+<circle class="dot s1" cx="315.7" cy="396.3" r="4"><title>earned_pieces at 9: pass, error 3.60%</title></circle>
+<circle class="dot s1" cx="368.0" cy="406.8" r="4"><title>earned_pieces at 14: pass, error 1.60%</title></circle>
+<polyline class="line s2" opacity="0.8" points="54.0,390.5 106.3,363.3 158.7,366.9 211.0,372.9 263.3,376.0 315.7,392.5 368.0,405.2"/>
+<circle class="dot s2" cx="54.0" cy="390.5" r="4"><title>held_out at 0: pass, error 5.65%</title></circle>
+<circle class="dot s2 open" cx="106.3" cy="363.3" r="4"><title>held_out at 1: fail, error 46.95%</title></circle>
+<circle class="dot s2 open" cx="158.7" cy="366.9" r="4"><title>held_out at 2: fail, error 35.55%</title></circle>
+<circle class="dot s2 open" cx="211.0" cy="372.9" r="4"><title>held_out at 4: fail, error 22.25%</title></circle>
+<circle class="dot s2 open" cx="263.3" cy="376.0" r="4"><title>held_out at 5: fail, error 17.55%</title></circle>
+<circle class="dot s2 open" cx="315.7" cy="392.5" r="4"><title>held_out at 9: fail, error 4.85%</title></circle>
+<circle class="dot s2 open" cx="368.0" cy="405.2" r="4"><title>held_out at 14: fail, error 1.80%</title></circle>
+<polyline class="line s3" opacity="0.8" points="54.0,392.2 106.3,418.3 158.7,402.4 211.0,398.1 263.3,420.5 315.7,396.3 368.0,406.8"/>
+<circle class="dot s3" cx="54.0" cy="392.2" r="4"><title>common_cause at 0: pass, error 4.95%</title></circle>
+<circle class="dot s3" cx="106.3" cy="418.3" r="4"><title>common_cause at 1: pass, error 0.65%</title></circle>
+<circle class="dot s3" cx="158.7" cy="402.4" r="4"><title>common_cause at 2: pass, error 2.25%</title></circle>
+<circle class="dot s3" cx="211.0" cy="398.1" r="4"><title>common_cause at 4: pass, error 3.15%</title></circle>
+<circle class="dot s3" cx="263.3" cy="420.5" r="4"><title>common_cause at 5: pass, error 0.55%</title></circle>
+<circle class="dot s3" cx="315.7" cy="396.3" r="4"><title>common_cause at 9: pass, error 3.60%</title></circle>
+<circle class="dot s3" cx="368.0" cy="406.8" r="4"><title>common_cause at 14: pass, error 1.60%</title></circle>
+<polyline class="line s4" opacity="0.8" points="54.0,390.5 106.3,414.9 158.7,398.7 211.0,396.7 263.3,386.5 315.7,392.5 368.0,392.0"/>
+<circle class="dot s4" cx="54.0" cy="390.5" r="4"><title>hidden_transit at 0: pass, error 5.65%</title></circle>
+<circle class="dot s4" cx="106.3" cy="414.9" r="4"><title>hidden_transit at 1: pass, error 0.85%</title></circle>
+<circle class="dot s4" cx="158.7" cy="398.7" r="4"><title>hidden_transit at 2: pass, error 3.00%</title></circle>
+<circle class="dot s4" cx="211.0" cy="396.7" r="4"><title>hidden_transit at 4: pass, error 3.50%</title></circle>
+<circle class="dot s4 open" cx="263.3" cy="386.5" r="4"><title>hidden_transit at 5: fail, error 7.75%</title></circle>
+<circle class="dot s4" cx="315.7" cy="392.5" r="4"><title>hidden_transit at 9: pass, error 4.85%</title></circle>
+<circle class="dot s4 open" cx="368.0" cy="392.0" r="4"><title>hidden_transit at 14: fail, error 5.05%</title></circle>
+<polyline class="line s5" opacity="0.8" points="54.0,390.5 106.3,414.9 158.7,398.7 211.0,396.7 263.3,386.5 315.7,392.5 368.0,392.0"/>
+<circle class="dot s5" cx="54.0" cy="390.5" r="4"><title>matrix at 0: pass, error 5.65%</title></circle>
+<circle class="dot s5" cx="106.3" cy="414.9" r="4"><title>matrix at 1: pass, error 0.85%</title></circle>
+<circle class="dot s5" cx="158.7" cy="398.7" r="4"><title>matrix at 2: pass, error 3.00%</title></circle>
+<circle class="dot s5" cx="211.0" cy="396.7" r="4"><title>matrix at 4: pass, error 3.50%</title></circle>
+<circle class="dot s5 open" cx="263.3" cy="386.5" r="4"><title>matrix at 5: fail, error 7.75%</title></circle>
+<circle class="dot s5" cx="315.7" cy="392.5" r="4"><title>matrix at 9: pass, error 4.85%</title></circle>
+<circle class="dot s5 open" cx="368.0" cy="392.0" r="4"><title>matrix at 14: fail, error 5.05%</title></circle>
+</svg>
