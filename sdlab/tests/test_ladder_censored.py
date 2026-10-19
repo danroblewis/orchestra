@@ -118,3 +118,30 @@ def test_floored_gap_to_a_measured_target():
     s = score.equations(c, "none", model, r["flows"], d)
     assert s["status"] == "pass", s["parts"]
     assert any(x["rewrite"].startswith("gap") for x in r["censored"])
+
+
+def _run_inputs(case_id, variant):
+    c = casemod.load(case_id)
+    model = casemod.truth_model(c, variant)
+    d = data.load(c, variant)
+    opts = {"eras": None, "inputs": {k: list(v) for k, v in d["inputs"].items()}}
+    r = censored.identify(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"]}, opts)
+    return r, score.equations(c, casemod.variant(c, variant)["noise"], model, r["flows"], d)
+
+
+@pytest.mark.parametrize("case_id", ["218-distilled-controller-floored-on-few-steps", "200-control-p-room-heater"])
+def test_a_controller_floored_on_a_few_steps(case_id):
+    """218: floored on 1 step of 300; 200: the same beside a second inflow on the outdoor temperature
+    (a side column of the gap)."""
+    r, s = _run_inputs(case_id, "none-short")
+    assert s["status"] == "pass", s["parts"]
+    assert any(x["rewrite"].startswith("gap") for x in r["censored"])
+
+
+def test_an_exact_integral_among_counted_stocks():
+    """216 counts-long: the integral's change is exactly setpoint - Y; its inflow is 1 x r, not a
+    constant at r's mean with pieces."""
+    r, s = _run_inputs("216-distilled-exact-integral-fed-by-stepping-input", "counts-long")
+    assert any(x["rewrite"].startswith("exact row I") for x in r["censored"])
+    into_i = [f for f in r["flows"] if f.get("to") == "I"]
+    assert len(into_i) == 1 and into_i[0]["rate"]["terms"] == [{"stock": "r", "k": 1.0}]
