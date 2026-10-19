@@ -55,8 +55,8 @@ class System:
     configuration or -1), cuts) and the system they share (ids, units, configurations)."""
 
     def __init__(self, rows: list[dict], ids: list[str], unit: dict, final: set, dy: np.ndarray, cfg: np.ndarray, L: int,
-                 counting: bool = False, min_piece: int = 5):
-        self.min_piece = min_piece
+                 counting: bool = False, min_piece: int = 5, scale: str = "unit"):
+        self.min_piece, self.scale = min_piece, scale     # scale: one phi per unit's rows, or per row
         self.counting = counting          # False: stacked least squares (one variance for a unit's rows)
         self.rows, self.ids, self.unit, self.final, self.dy, self.cfg, self.L = rows, ids, unit, final, dy, cfg, L
         self.S, self.T = len(ids), dy.shape[1]
@@ -101,10 +101,15 @@ class System:
         r = self.rows[s]
         return [q for q in r["set"] if r["col"][q][0] == j and r["col"][q][1] in (-1, c)]
 
-    def fit(self, tied: set, iters: int = 3) -> dict:
+    def fit(self, tied: set, honest: bool = False, iters: int = 3) -> dict:
         """Numbers for every row, by weighted least squares (weights 1 / throughput, iterated), with
         a tied source's own number (in a configuration) minus what its same-unit receivers gain from
-        it; the residuals, throughputs and -2 log L of the counting likelihood."""
+        it; the residuals, throughputs and -2 log L of the counting likelihood.
+
+        honest: every changing row's pieces are found again beside its numbers at the textbook
+        price (2 x log n a change, and 2 parameters each in the count): cheap pieces can stand in
+        for a drain (or co-adapt with a biased one), so they must not decide a tie."""
+        mult, per_change = (2, 2) if honest else (1, 1)
         index = {p: i for i, p in enumerate(self.free)}
         P = len(self.free)
         A = []
@@ -153,7 +158,7 @@ class System:
                 # biased drain, they would favour it), then the row's other numbers refitted
                 for _ in range(2):
                     left = y - sum((theta[index[(a, q)]] * r["X"][q] for q in rest), np.zeros(self.T))
-                    cuts[a] = pelt(left, self.min_piece, 1)
+                    cuts[a] = pelt(left, self.min_piece, mult)
                     if not rest:
                         break
                     X = _weighted_demean(r["X"][rest], w[a], cuts[a])
@@ -163,9 +168,16 @@ class System:
                     sol = np.linalg.lstsq(Gr, Xw @ _weighted_demean(y, w[a], cuts[a]), rcond=None)[0]
                     for q, v in zip(rest, sol):
                         theta[index[(a, q)]] = v
+            if honest:
+                for s, r in enumerate(self.rows):
+                    if s in held or not self.changing(s):
+                        continue
+                    cols = r["set"]
+                    left = self.dy[s] - (np.array([theta[index[(s, q)]] for q in cols]) @ r["X"][cols] if cols else 0.0)
+                    cuts[s] = pelt(left, self.min_piece, mult)
             out = self._evaluate(theta, index, w, cuts)
             w = [1.0 / g for g in out["gross"]]
-        out["P"] = P - len(A) + sum(len(c) - 1 if c else 0 for c in cuts)
+        out["P"] = P - len(A) + sum(1 + per_change * (len(c) - 2) if c else 0 for c in cuts)
         out["cuts"] = cuts
         out["tied"] = set(tied)
         out["theta"] = theta
@@ -184,10 +196,11 @@ class System:
             res.append(e)
             gross.append(np.maximum(FLOOR, g) if self.counting else np.ones(self.T))
             inflow.append(u)
-        # phi per unit, then -2 log L
+        # phi per unit (or per row), then -2 log L
         nll = 0.0
-        for un in set(self.unit[i] for i in self.ids):
-            ss = [s for s in range(self.S) if self.unit[self.ids[s]] == un]
+        groups = [[s] for s in range(self.S)] if self.scale == "row" else \
+            [[s for s in range(self.S) if self.unit[self.ids[s]] == un] for un in dict.fromkeys(self.unit[i] for i in self.ids)]
+        for ss in groups:
             z = np.concatenate([res[s] ** 2 / gross[s] for s in ss])
             lg = sum(float(np.log(gross[s]).sum()) for s in ss)
             phi = max(float(z.mean()), 1e-300)
@@ -197,18 +210,19 @@ class System:
 
 def decide(system: System, log_t: float, trace: bool = False) -> dict:
     """Tie or free each source (in all its configurations at once), one at a time while BIC on the
-    counting likelihood improves, starting from every source free. A source whose outside inflow
-    changes has its pieces found again with its drain held, so that its own (biased) drain is not
-    favoured by pieces chosen beside it."""
+    counting likelihood improves, starting from every source free; every decision is made with
+    changing rows' pieces found at the textbook price (System.fit, honest). The model is then
+    fitted with the chosen ties and the cheap pieces: a changing row keeps the matrix's pieces when
+    free, and gets pieces found with its drain held when tied."""
     cands = system.ties()
     tied: set = set()
-    best = system.fit(tied)
+    best = system.fit(tied, honest=True)
     score = best["nll"] + best["P"] * log_t
     while True:
         step = None
         for t in cands:
             trial = tied ^ {t}
-            f = system.fit(trial)
+            f = system.fit(trial, honest=True)
             sc = f["nll"] + f["P"] * log_t
             if trace:
                 print(f"    tie {system.ids[t]} {'on' if t in trial else 'off'}: {sc:.2f} vs {score:.2f}")
@@ -217,4 +231,4 @@ def decide(system: System, log_t: float, trace: bool = False) -> dict:
         if step is None:
             break
         tied, score, best = step
-    return best
+    return system.fit(tied)
