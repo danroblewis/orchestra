@@ -1,0 +1,131 @@
+# Vendored for combined2 from sdlab/discovery/strategies/kalman_lna/__init__.py at commit 6a93270 (HEAD 05ae898); imports
+# rewritten to these copies, otherwise unchanged (CLAUDE.md invariant 11). Re-vendor rather than edit.
+"""kalman_lna: discovery for levels that are reported, not known (docs/research/kalman_lna.md).
+
+The stocks are hidden states that move by the flows, with counting noise as the process noise
+(lna's linear noise approximation: each flow a Poisson draw, a move's draw shared by both ends),
+and the reported levels are observations of them: with a measurement error (absolute and
+relative), at uneven times (each interval spans its steps), as means over a window (weekly
+reports), late (a reporting delay, read where announced injections pin it), with gross
+errors (left out), and with a stock counted at a scale (a bias, read where a move pins it). The
+numbers come from the Kalman filter's likelihood, the flows from lna's atoms chosen by BIC
+(run.py, search.py), unmeasured stocks between two measured ones as one more state (hidden.py).
+
+Which reading the data need:
+- points at uneven times, or one per window: the filter;
+- every step, up to SMALL stocks (or announced injections): the filter's superset is fitted first
+  (gross errors left out, a reporting delay read); a measurement error that gains LR_NOISE BIC
+  prices sends the data to the filter (not where a stock sits at zero, nor where the atoms leave
+  much variance beyond counting noise even with the error read: floors, effects and co-flows are
+  outside the atoms, and a measurement error would stand in for them);
+- gross errors the filter sees (a standardised innovation beyond 10, where counting noise and a
+  misfit of the atoms stay below 6): the filter, which leaves them out;
+- otherwise the base strategy's answer, unless the filter's search finds a reporting delay
+  (injections), or a scale where the base reads a link beside a move into the same stock.
+
+The base is its own copy of `combined` (as at commit ec2f9e8, in _vendored/). Where the filter is chosen and fails or runs out of
+time, the base's answer is returned. Beyond SMALL stocks, with every step reported, the data go to
+the base unchanged.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+# combined and lna (and what they reach) as copies, vendored at commit ec2f9e8 (_vendored/): no other
+# strategy is imported (sdlab/CLAUDE.md invariant 11), so changing them never changes this one
+from sdlab.discovery.strategies.combined2._vendored.combined import identify as combined
+from sdlab.discovery.strategies.combined2._vendored.combined.deadline import outer_left
+from .run import BUDGET, FAILURES, Session
+
+CHECK = 30.0          # seconds for the check on data a measurement error may not touch
+
+BASE = "combined"
+
+
+def _base(name: str):
+    if name != BASE:
+        raise ValueError(f"kalman_lna's base is its own copy of {BASE}, not {name!r}")
+    return combined
+
+
+def _levels(stocks: list[dict], run: dict) -> tuple[np.ndarray, np.ndarray]:
+    ids = [s["id"] for s in stocks]
+    t = np.asarray(run["t"], dtype=float)
+    Y = np.array([np.asarray(run["levels"].get(i, [np.nan] * len(t)), dtype=float) for i in ids]).T
+    return t, Y
+
+
+def scale_pattern(flows: list[dict]) -> bool:
+    """A link into a stock beside a move into it from the stock the link reads: what a stock
+    counted at a scale looks like to a method that knows the levels exactly."""
+    moves = {(f.get("from"), f.get("to")) for f in flows if f.get("from") and f.get("to")}
+    for f in flows:
+        if f.get("from") is None and f.get("to"):
+            r = f.get("rate") or {}
+            reads = {r.get("stock")} | {x.get("stock") for x in r.get("terms") or []}
+            if any((a, f["to"]) in moves for a in reads if a):
+                return True
+    return False
+
+
+SMALL = 4             # with up to this many stocks, the filter's superset is fitted to test for a
+                      # measurement error (beyond, only uneven reports send the data to the filter)
+LR_NOISE = 4.0        # twice the log-likelihood the measurement error gains, in BIC prices of one number: 4 is
+                      # twice what BIC asks of one number (clean ladder runs reach 2.4 at most)
+
+
+FLOOR = 0.05          # beyond this share of points at zero, no measurement error is read (floors bind)
+
+
+MISFIT = 0.3          # nor where, with the error read, the atoms still leave this share of a stock's
+                      # step variance unexplained (effects, co-flows, caps: an error would stand in)
+
+
+def noisy(ev: dict) -> bool:
+    return ev["lr"] > LR_NOISE * ev["price"] and ev["floor"] <= FLOOR and ev["misfit"] <= MISFIT
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    opts = dict(opts or {})
+    base = _base(opts.get("kalman_base", BASE))
+    t, Y = _levels(stocks, run)
+    uneven = len(t) > 1 and (bool(np.any(np.diff(t) != 1)) or not np.isfinite(Y).all())
+    ses = Session(stocks, run, opts)
+    info: dict = {}
+    def allow(share, most):
+        left = outer_left()                    # what the caller's timer leaves now
+        ses.allow(min(most, share * left) if left else most)
+
+    def kalman(why):
+        allow(0.6, BUDGET)
+        try:
+            got = ses.finish()
+        except FAILURES as e:
+            ses.trace.append(f"failed: {type(e).__name__}: {e}")
+            return None
+        return {**got, "kalman": {"reading": why, **info}}
+
+    prepared = False
+    if uneven or len(stocks) <= SMALL or opts.get("injections"):
+        allow(0.6 if uneven else 0.25, BUDGET if uneven else CHECK)
+        try:
+            prepared = ses.prepare()
+            if prepared and not uneven:
+                info["evidence"] = ses.evidence()
+        except FAILURES as e:
+            ses.trace.append(f"failed: {type(e).__name__}: {e}")
+            prepared = False
+    gross = int(ses.gross.sum()) if prepared else 0
+    if prepared and (uneven or noisy(info["evidence"]) or gross):
+        got = kalman("uneven" if uneven else "meas" if noisy(info["evidence"]) else "outliers")
+        if got is not None:
+            return got
+    r = base(stocks, run, opts)
+    if prepared and not uneven:
+        scaled = scale_pattern(r.get("flows") or [])
+        if ses.lag or scaled:
+            got = kalman("lag" if ses.lag else "scale")
+            if got is not None and (got.get("lag") or got.get("scales")):
+                return got
+    return {**r, "kalman": {"reading": None, **info, "trace": ses.trace}}
