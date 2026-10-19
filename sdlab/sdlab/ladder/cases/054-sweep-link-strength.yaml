@@ -1,0 +1,13 @@
+# axis: link strength k / B's drain
+# axis values: 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2
+title: "Sweep: a link, strength 0.01 to 2 times the receiver's drain"
+level: 5
+tags: [sweep, link, signal-to-noise]
+tests: "B's inflow is 10 + k A (a link from A, nothing leaves A), with k from 0.01 to 2 times B's drain (0.2): a weak link is a small term on top of B's own inflow; where does each method drop it, and where does the data stop showing it?"
+seed: 54
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 10 + grid(0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.4) * A
+  B -> outside: 0.2 * B

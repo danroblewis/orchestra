@@ -13,6 +13,10 @@
     new    SLUG [--title T] [--level N]
                                   write the next case, cases/NNN-SLUG.yaml, from a template to edit
     freeze CASE#i [--slug S]      write draw i of a parametric case as an ordinary case (the next NNN)
+    longrun [--strategies ...] [--cases ...] [--variants ...] [--jobs N]
+                                  long-horizon metrics (longrun.py) of the latest results not yet known
+    analyse CASE [--variant V] [--json] | --all [--cases ...] | --validate CASE --variant V [--seeds N]
+                                  what the data can deliver (identifiability, the Cramér-Rao bound; analysis.py)
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -28,7 +32,7 @@ import argparse  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
 
-from . import api, catalog, checks, runner, score  # noqa: E402
+from . import api, catalog, checks, longrun_cache, runner, score  # noqa: E402
 from . import cases as casemod  # noqa: E402
 
 LETTER = {"pass": "P", "equivalent": "E", "fail": "F", "error": "X", "timeout": "T", None: "."}
@@ -92,6 +96,10 @@ def status(a) -> int:
         t = s["totals"][n]
         print(f"\n{n}: {t['pass']} pass, {t['equivalent']} equivalent, {t['fail']} fail, {t['error']} error, {t['timeout']} timeout,"
               f" {t['missing']} not run, {t['stale']} stale, of {t['total']}; discovery {t['seconds']:.1f} s in all")
+        if t.get("achievable") or t.get("data_limited") or t.get("unidentifiable"):
+            print(f"  over the cells the data allow (sdlab-ladder analyse): {t['achievable_pass']} pass of {t['achievable']} achievable"
+                  f" ({pct(t['achievable_pass'] / t['achievable']) if t['achievable'] else '-'}); {t['data_limited']} data-limited,"
+                  f" {t['unidentifiable']} unidentifiable, {t['total'] - t['achievable'] - t['data_limited'] - t['unidentifiable']} not analysed")
     detail = [v for v in variants if not a.variant or v == a.variant]
     for n in strats if len(strats) == 1 or a.detail else []:
         print(f"\n{n}, per variant: status, recall, right/of, skill@20 [95% CI], fresh skill@20")
@@ -167,6 +175,12 @@ def show(a) -> int:
     if c["model"].get("schedule"):
         print(f"  schedule: every {c['model']['schedule'].get('every')}: " + "; ".join(
             f"t={x['t']} {x.get('label')}{' (announced)' if x.get('announce') else ''}" for x in c["model"]["schedule"]["changes"]))
+    from . import analysis
+    for v in c["variants"]:
+        if not a.variant or v["name"] == a.variant:
+            an = analysis.get(cid, v["name"])
+            print(f"  analysis {v['name']}: {an['label']}" + ("" if an.get("p") is None else f" (p {an['p']:.2f})")
+                  + "".join(f"; {w}" for w in an.get("why") or [])[:200] + f"   (sdlab-ladder analyse {cid})")
     strategies = [a.strategy] if a.strategy else [s["name"] for s in catalog.listing(check=False)]
     for sname in strategies:
         for v in c["variants"]:
@@ -184,6 +198,9 @@ def show(a) -> int:
                 b = beh.get(where) or {}
                 if b:
                     print(f"   {where.replace('_', '-')}: " + ", ".join(f"skill@{h} {with_ci(x.get('skill'), x.get('ci'))}" for h, x in b.items()))
+            lr = longrun_cache.of_result(r, compute_missing=True)
+            if lr and not lr.get("error"):
+                print(f"   {_longrun_line(lr)}\n   graph: /ladder/run?id={r['id']}")
             cx = r.get("complexity")
             if cx:
                 print(f"   complexity: true {cx['true']}, found {cx['found']} (extra {cx['extra']:+d}: "
@@ -201,6 +218,28 @@ def show(a) -> int:
                     print(f"     +   {p['key']:34s} {p['kind']:16s} spurious: {_num(p.get('value'))} (size {p['size']:.3g} per step)")
                 for n in s.get("notes") or []:
                     print(f"     note: {n}")
+    return 0
+
+
+def _longrun_line(lr: dict) -> str:
+    """One result's long-run metrics (longrun.py), on one line."""
+    err = ", ".join(f"@{k} {_num(v)}" for k, v in (lr.get("err") or {}).items())
+    tau = f"tau true {_num(lr.get('tau_true'))}, found {_num(lr.get('tau_found'))}"
+    return (f"long run: error {err}; equilibrium error {_num(lr.get('eq_err'))}; {tau}; rho true {_num(lr.get('rho_true'))}, "
+            f"found {_num(lr.get('rho_found'))}" + (f"; {lr['flag'].upper()}" if lr.get("flag") else ""))
+
+
+def longrun(a) -> int:
+    """Compute the long-run metrics of the latest results that do not have them yet."""
+    from . import store
+    names = set(catalog.names()) if a.strategies in (None, "all") else set(a.strategies.split(","))
+    cids = set(runner.select_cases(a.cases)) if a.cases else None
+    rows = [r for r in store.latest() if r["strategy"] in names and (cids is None or r["case"] in cids)
+            and (not a.variants or any(x in r["variant"] for x in a.variants.split(",")))]
+    t0 = time.time()
+    n = longrun_cache.fill(rows, a.jobs or max(1, (os.cpu_count() or 2) - 1),
+                           None if a.quiet else lambda d, n: print(f"\r{d}/{n} results", end="", flush=True))
+    print(f"\n{n} results graded in {time.time() - t0:.1f} s")
     return 0
 
 
@@ -353,6 +392,16 @@ def main(argv: list[str] | None = None) -> int:
     fz = sub.add_parser("freeze", help="write a draw of a parametric case (NNN#i) as an ordinary case file")
     fz.add_argument("case")
     fz.add_argument("--slug", help="the new case's slug (default: the parametric case's, with -draw-i)")
+    common(sub.add_parser("longrun", help="long-horizon metrics of the latest results (cached by result id)"))
+    an = sub.add_parser("analyse", help="what a case's data can deliver: identifiability and the Cramér-Rao bound")
+    an.add_argument("case", nargs="?")
+    an.add_argument("--variant")
+    an.add_argument("--json", action="store_true")
+    an.add_argument("--all", action="store_true", help="analyse every case (or --cases) into the cache")
+    an.add_argument("--cases")
+    an.add_argument("--jobs", type=int)
+    an.add_argument("--validate", action="store_true", help="the bound against ML refits on fresh seeds (CASE, --variant)")
+    an.add_argument("--seeds", type=int, default=20)
     a = ap.parse_args(argv)
     if a.command == "run":
         return do_run(a, True, "run")
@@ -370,6 +419,18 @@ def main(argv: list[str] | None = None) -> int:
         return new(a)
     if a.command == "freeze":
         return freeze(a)
+    if a.command == "longrun":
+        return longrun(a)
+    if a.command == "analyse":
+        from . import analysis_report
+        if a.all:
+            return analysis_report.run_all(runner.select_cases(a.cases) if a.cases else casemod.case_ids(), a.jobs)
+        if not a.case:
+            print("analyse takes a CASE (or --all)", file=sys.stderr)
+            return 2
+        if a.validate:
+            return analysis_report.validate(runner.select_cases(a.case)[0], a.variant or "counts-long", a.seeds)
+        return analysis_report.run(runner.select_cases(a.case), a.variant, a.json)
     return 2
 
 

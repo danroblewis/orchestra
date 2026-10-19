@@ -1,0 +1,13 @@
+# axis: drain ratio d_B / d_A
+# axis values: 1, 1.02, 1.05, 1.1, 1.2, 1.35, 1.5, 2
+title: "Sweep: two unrelated stocks, drain ratio 1 to 2"
+level: 3
+tags: [sweep, independent, identifiability]
+tests: "two unrelated stocks with the same inflow and start, B's drain d_B = r x A's (r from 1 to 2): at r = 1 they are identical and only noise tells them apart; where along r does each method separate them, and where does the data first allow it?"
+seed: 49
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> outside: 0.2 * A
+  outside -> B: 20
+  B -> outside: grid(0.2, 0.204, 0.21, 0.22, 0.24, 0.27, 0.3, 0.4) * B

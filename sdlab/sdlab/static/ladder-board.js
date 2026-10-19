@@ -24,6 +24,12 @@
   const cxText = (x) => !x ? "–" : `${x.true} → ${x.found}` + (x.extra ? ` (${x.extra > 0 ? "+" : ""}${x.extra}: ${Object.entries(x.by).filter(([, v]) => v).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k}`).join(", ")})` : " (same)");
   const B = { strategy: null, variant: "counts-long", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
   try { Object.assign(B, JSON.parse(localStorage.getItem("sdlab.ladder.board") || "{}"), { data: null, tab: {}, loading: null }); } catch { /* defaults */ }
+  {                                                        // a link (e.g. from the leaderboard): /ladder?view=now&strategy=S[&variant=V]
+    const q = new URLSearchParams(location.search);
+    if ((q.get("view") || "now") === "now" && !q.get("case") && q.get("strategy")) {
+      Object.assign(B, { strategy: q.get("strategy"), variant: q.get("variant") || "all", status: "", level: "", tag: "" });
+    }
+  }
   const save = () => { try { localStorage.setItem("sdlab.ladder.board", JSON.stringify({ strategy: B.strategy, variant: B.variant, status: B.status, level: B.level, tag: B.tag, sort: B.sort })); } catch { /* fine */ } };
   let P = null;                                            // the page's helpers
   let observer = null;
@@ -105,6 +111,7 @@
         <div data-tip="${esc(DEF.skill100)}"><dt>skill@100</dt><dd>${pct(m.skill100)}${ci(m.skill100ci)}</dd></div>
         <div data-tip="${esc(DEF.fresh20)}"><dt>fresh@20</dt><dd>${pct(m.fresh20)}</dd></div>
         <div data-tip="${esc(DEF.complexity)}" class="wide"><dt>complexity true → found</dt><dd>${esc(cxText(r.complexity))}</dd></div>
+        <div data-tip="The true and found models run free from the start to t = 100,000 (no re-anchoring): line graphs per stock, equilibrium, time constants, divergence." class="wide"><dt>long run</dt><dd><a href="/ladder/run?id=${r.id}" style="color:inherit">&#128200; true vs found, far ahead</a></dd></div>
       </dl>` : "";
     return `<article class="bcard st-${st || "none"}" data-case="${esc(c.id)}">
       <header class="bhead">

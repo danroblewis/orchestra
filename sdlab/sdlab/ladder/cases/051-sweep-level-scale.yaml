@@ -1,0 +1,11 @@
+# axis: inflow (level scale)
+title: "Sweep: chain of two, level scale (inflow 2 to 2000)"
+level: 2
+tags: [sweep, chain, move, signal-to-noise]
+tests: "the chain of 003 with its inflow from 2 to 2000 (levels scale with it): counting noise is sqrt(level), relatively smaller at high levels, so the rates' bound shrinks like 1 / sqrt(scale); where does each method stop recovering the chain at low levels?"
+seed: 51
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: grid(2, 5, 20, 50, 200, 500, 2000)
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B

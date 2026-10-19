@@ -17,3 +17,4 @@ orchestra/pi/extension/dist/
 # OS
 .DS_Store
 logs/
+.claude/worktrees

@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Long run</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --surface: #fcfcfb; --fg: #0b0b0b; --muted: #52514e; --faint: #8b8a85; --line: #e3e1db; --grid: #eeece7;
+    --truth: #2a78d6; --found: #eb6834; --gap: rgba(235, 104, 52, 0.16); --data: #9b9892;
+    --bad: #d03b3b; --good: #0ca30c; --warn: #b07a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --surface: #1a1a19; --fg: #f0efec; --muted: #c3c2b7; --faint: #8f8e87; --line: #34332f; --grid: #2a2a27;
+      --truth: #3987e5; --found: #d95926; --gap: rgba(217, 89, 38, 0.22); --data: #77756f;
+      --bad: #e66767; --good: #4fae74; --warn: #e0a800;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --surface: #1a1a19; --fg: #f0efec; --muted: #c3c2b7; --faint: #8f8e87; --line: #34332f; --grid: #2a2a27;
+    --truth: #3987e5; --found: #d95926; --gap: rgba(217, 89, 38, 0.22); --data: #77756f;
+    --bad: #e66767; --good: #4fae74; --warn: #e0a800;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+  .note { color: var(--muted); margin: 0 0 12px; max-width: 900px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 0 0 14px; }
+  .controls label { color: var(--muted); }
+  input, select, button { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  button { cursor: pointer; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .tile b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: 12px; }
+  .flag { font-weight: 600; }
+  .flag.bad { color: var(--bad); } .flag.ok { color: var(--good); }
+  .stock { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 16px; }
+  .stock h2 { font-size: 15px; margin: 0 0 8px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .far { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+  .chart h3 { font-size: 12px; font-weight: 500; color: var(--muted); margin: 0 0 2px; display: flex; justify-content: space-between; gap: 6px; }
+  .chart h3 i { font-style: normal; font-variant-numeric: tabular-nums; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { fill: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .key { display: inline-block; width: 16px; height: 2px; vertical-align: 4px; margin-right: 5px; border-radius: 1px; }
+  .tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+         font-size: 12px; color: var(--fg); box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; z-index: 10; font-variant-numeric: tabular-nums; }
+  .err { color: var(--bad); }
+  @media (max-width: 760px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Long run: true vs found</h1>
+  <a href="/ladder">Ladder</a>
+  <a href="/ladder/leaderboard">Leaderboard</a>
+</header>
+<main>
+  <p class="note">Both models run <b>free</b> from the run's first levels, nothing re-anchored, fed the truth's outside inflows
+  (as skill@H feeds them). The truth's schedule repeats past the recorded run, and so do the found model's own changing rates.
+  Once a model's levels repeat chunk after chunk (settled) or grow by the same amount (drift), any later step is read off in
+  constant time, so t = 100,000 costs no more than t = 1,000. The shaded band is the gap between truth and prediction.
+  Errors are rms of (found − true) ÷ the truth's range (docs/LADDER.md, Long run).</p>
+  <div class="controls">
+    <label>Result id <input id="rid" type="number" min="1" style="width:110px"></label>
+    <label>Jump to t <input id="at" placeholder="e.g. 5000, 250000" style="width:170px"></label>
+    <label>Window <select id="win"><option value="">one chunk (≥200)</option><option>50</option><option>500</option><option>2000</option><option>10000</option></select></label>
+    <button id="go">Show</button>
+    <span id="status" class="note" style="margin:0"></span>
+  </div>
+  <div id="head"></div>
+  <div class="legend">
+    <span><i class="key" style="background:var(--truth)"></i>true model</span>
+    <span><i class="key" style="background:var(--found)"></i>found model</span>
+    <span><i class="key" style="background:var(--gap);height:10px;vertical-align:-1px"></i>gap</span>
+    <span><i class="key" style="background:var(--data);height:4px;width:4px;border-radius:2px;vertical-align:2px"></i>recorded data (with noise)</span>
+  </div>
+  <div id="stocks"></div>
+</main>
+<div class="tip" id="tip"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 3) => (v == null || !Number.isFinite(v) ? "–" : Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-3 && v !== 0) ? v.toExponential(2) : (+v.toPrecision(d)).toString());
+const pct = (v) => (v == null || !Number.isFinite(v) ? "–" : (100 * v).toFixed(v < 0.01 ? 2 : 1) + "%");
+const tnum = (t) => (t >= 1e6 ? (t / 1e6).toPrecision(3) + "M" : t >= 1e4 ? (t / 1e3).toPrecision(3) + "k" : String(t));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// one line chart: x (steps), series [{v: [...], cls}] ; log: log-scaled x; dots: data points
+function chart({ x, truth, found, data, log, h = 150, w = 520 }) {
+  const W = w, H = h, L = 44, R = 8, T = 6, B = 18;
+  const xs = log ? x.map((t) => Math.log10(t)) : x;
+  const all = [...truth, ...found, ...(data || [])].filter((v) => v != null && Number.isFinite(v));
+  let lo = Math.min(0, ...all), hi = Math.max(...all, lo + 1e-9);
+  if (!all.length) { lo = 0; hi = 1; }
+  hi += (hi - lo) * 0.05;
+  const x0 = xs[0], x1 = xs[xs.length - 1] > x0 ? xs[xs.length - 1] : x0 + 1;
+  const px = (v) => L + (v - x0) / (x1 - x0) * (W - L - R), py = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const path = (vs) => { let d = "", pen = false; vs.forEach((v, i) => { if (v == null || !Number.isFinite(v)) { pen = false; return; } d += (pen ? "L" : "M") + px(xs[i]).toFixed(1) + " " + py(Math.min(Math.max(v, lo), hi)).toFixed(1); pen = true; }); return d; };
+  let band = "";
+  const ok = xs.map((_, i) => truth[i] != null && found[i] != null && Number.isFinite(truth[i]) && Number.isFinite(found[i]));
+  let seg = [];
+  const flush = () => { if (seg.length > 1) band += `<path d="M${seg.map((i) => px(xs[i]).toFixed(1) + " " + py(Math.min(hi, truth[i])).toFixed(1)).join("L")}L${seg.slice().reverse().map((i) => px(xs[i]).toFixed(1) + " " + py(Math.min(hi, Math.max(lo, found[i]))).toFixed(1)).join("L")}Z" fill="var(--gap)"/>`; seg = []; };
+  ok.forEach((g, i) => { if (g) seg.push(i); else flush(); }); flush();
+  const ticks = [lo, (lo + hi) / 2, hi].map((v) => `<line x1="${L}" x2="${W - R}" y1="${py(v)}" y2="${py(v)}" stroke="var(--grid)"/><text x="${L - 4}" y="${py(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join("");
+  let xt = "";
+  if (log) { for (let e = Math.ceil(x0); e <= Math.floor(x1); e++) xt += `<line x1="${px(e)}" x2="${px(e)}" y1="${T}" y2="${H - B}" stroke="var(--grid)"/><text x="${px(e)}" y="${H - 5}" text-anchor="middle">${tnum(10 ** e)}</text>`; }
+  else xt = [x0, (x0 + x1) / 2, x1].map((v, i) => `<text x="${px(v)}" y="${H - 5}" text-anchor="${["start", "middle", "end"][i]}">${tnum(Math.round(v))}</text>`).join("");
+  const dots = data ? data.map((v, i) => (v == null ? "" : `<circle cx="${px(xs[i]).toFixed(1)}" cy="${py(v).toFixed(1)}" r="1.4" fill="var(--data)"/>`)).join("") : "";
+  const svg = `<svg viewBox="0 0 ${W} ${H}" role="img">${ticks}${xt}${band}${dots}
+    <path d="${path(truth)}" fill="none" stroke="var(--truth)" stroke-width="2" stroke-linejoin="round"/>
+    <path d="${path(found)}" fill="none" stroke="var(--found)" stroke-width="2" stroke-linejoin="round" stroke-dasharray="${found.some((v) => v == null) ? "" : ""}"/>
+    <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--faint)" stroke-dasharray="2 2" visibility="hidden"/>
+    <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
+  return { svg, hover: (el) => {
+    const s = el.querySelector("svg"), cross = s.querySelector(".cross"), tip = $("tip");
+    s.onpointermove = (e) => {
+      const r = s.getBoundingClientRect(), vx = (e.clientX - r.left) / r.width * W;
+      const target = x0 + (vx - L) / (W - L - R) * (x1 - x0);
+      let i = 0, best = Infinity; xs.forEach((v, j) => { const d = Math.abs(v - target); if (d < best) { best = d; i = j; } });
+      cross.setAttribute("x1", px(xs[i])); cross.setAttribute("x2", px(xs[i])); cross.setAttribute("visibility", "visible");
+      const gap = truth[i] != null && found[i] != null ? found[i] - truth[i] : null;
+      tip.innerHTML = `t = ${x[i].toLocaleString()}<br><span style="color:var(--truth)">■</span> true ${fmt(truth[i], 5)}<br><span style="color:var(--found)">■</span> found ${found[i] == null ? "runaway" : fmt(found[i], 5)}`
+        + (data && data[i] != null ? `<br>data ${fmt(data[i], 5)}` : "") + (gap != null ? `<br>gap ${fmt(gap, 3)}` : "");
+      tip.style.display = "block"; tip.style.left = Math.min(e.clientX + 12, innerWidth - 160) + "px"; tip.style.top = e.clientY + 12 + "px";
+    };
+    s.onpointerleave = () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; };
+  } };
+}
+
+function card(title, sub, c) {
+  const id = "c" + Math.random().toString(36).slice(2);
+  return { html: `<div class="chart" id="${id}"><h3><span>${title}</span><i>${sub}</i></h3>${c.svg}</div>`, id, c };
+}
+
+async function load() {
+  const id = $("rid").value;
+  if (!id) { $("status").textContent = "Pick a result (the Now page and sdlab-ladder show link here)."; return; }
+  const at = $("at").value.split(/[ ,]+/).map((s) => s.replace(/_/g, "")).filter(Boolean).join(",");
+  const win = $("win").value;
+  const q = new URLSearchParams(); if (at) q.set("at", at); if (win) q.set("window", win);
+  history.replaceState(null, "", `/ladder/run?id=${id}` + (at ? `&at=${at}` : "") + (win ? `&window=${win}` : ""));
+  $("status").textContent = "loading…";
+  const t0 = performance.now();
+  const r = await fetch(`/api/ladder/longrun/${id}?${q}`);
+  if (!r.ok) { $("status").textContent = (await r.json()).detail || r.statusText; $("stocks").innerHTML = ""; $("head").innerHTML = ""; return; }
+  const g = await r.json();
+  $("status").textContent = `${Math.round(performance.now() - t0)} ms`;
+  render(g);
+}
+
+function render(g) {
+  const m = g.metrics, res = g.result;
+  const flag = m.flag ? `<span class="flag bad">${esc(m.flag)}</span>` : `<span class="flag ok">bounded</span>`;
+  document.title = `Long run: ${res.case} ${res.strategy}`;
+  const tile = (v, label) => `<div class="tile"><b>${v}</b><span>${label}</span></div>`;
+  $("head").innerHTML = `<p class="note"><b>${esc(res.case)}</b> · ${esc(res.variant)} · strategy <b>${esc(res.strategy)}</b> · ${esc(res.status)} ·
+    <a href="/ladder?view=now&case=${encodeURIComponent(res.case)}&variant=${encodeURIComponent(res.variant)}&strategy=${encodeURIComponent(res.strategy)}" style="color:inherit">equations in the ladder</a></p>
+    <div class="tiles">${tile(flag, "long-run behaviour")}
+    ${Object.entries(m.err || {}).map(([k, v]) => tile(pct(v), "error @ " + k.replace("tau", " τ") + ` (t=${tnum(m.points[k])})`)).join("")}
+    ${tile(pct(m.eq_err), "equilibrium error")}
+    ${tile(fmt(m.tau_true) + " → " + fmt(m.tau_found), "slowest time constant τ, true → found (steps)")}
+    ${tile(fmt(m.rho_true, 5) + " → " + fmt(m.rho_found, 5), "spectral radius per step, true → found")}
+    ${tile(`${g.how.true} / ${g.how.found}`, `future known by (true / found); stepped to ${tnum(g.how.true_until)} / ${tnum(g.how.found_until)}`)}</div>`;
+  const parts = [];
+  const blocks = g.stocks.map((s, k) => {
+    const run = card("Recorded run", `t ${tnum(g.run.t[0])}–${tnum(g.run.t[g.run.t.length - 1])}`, chart({ x: g.run.t, truth: g.run.truth[k], found: g.run.found[k], data: g.run.data[k], h: 170 }));
+    const over = card("Whole horizon (log time)", `to t=${tnum(g.overview.t[g.overview.t.length - 1])}`, chart({ x: g.overview.t, truth: g.overview.truth[k], found: g.overview.found[k], log: true, h: 170 }));
+    const far = g.windows.map((w) => card(`${w.label.replace("tau", " τ")}: t ${tnum(w.t[0])}–${tnum(w.T)}`, w.known ? (w.err != null ? `err ${pct(w.err)}` : "") : "not reached",
+      chart({ x: w.t, truth: w.truth[k], found: w.found[k], h: 140, w: 280 })));
+    parts.push(run, over, ...far);
+    return `<section class="stock"><h2>${esc(s)}</h2><div class="row">${run.html}${over.html}</div><div class="far">${far.map((f) => f.html).join("")}</div></section>`;
+  });
+  $("stocks").innerHTML = blocks.join("");
+  for (const p of parts) p.c.hover(document.getElementById(p.id));
+}
+
+const params = new URLSearchParams(location.search);
+$("rid").value = params.get("id") || "";
+$("at").value = params.get("at") || "";
+if (params.get("window")) $("win").value = params.get("window");
+$("go").onclick = load;
+for (const el of [$("rid"), $("at")]) el.onkeydown = (e) => { if (e.key === "Enter") load(); };
+$("win").onchange = load;
+load();
+</script>
+</body>
+</html>

@@ -64,8 +64,12 @@
   the truth and the found model. <b>Extra</b>: found − true, averaged over runs that found a model (hover for where it comes from);
   <b>× truth</b>: found ÷ true, the geometric mean. <b>Occam score</b>: accuracy discounted by excess complexity, per run
   fit × parsimony, where fit is 1 for a pass or equivalent, else the share of true numbers right, and parsimony = true ÷ found (at most 1);
-  averaged over all runs (not run, error, timeout = 0). Like an information criterion it charges for every number beyond what the truth
+  averaged over the runs it made (error, timeout = 0; not run yet = left out). Like an information criterion it charges for every number beyond what the truth
   needs: a model twice as complicated as the truth keeps half its credit, one 10% over keeps 91%; being simpler than the truth earns nothing.
+  <b>Long run</b> (both models run free from the start, no re-anchoring, to t = 100,000; per run capped at 100%, a run that
+  diverges counts 100%): <b>err@100k</b> the gap at t = 100,000 as a share of the truth's range; <b>eq err</b> the settled levels'
+  error; <b>τ err</b> the slowest time constant's relative error; <b>diverges</b> the share of runs that run away, die out or are
+  unstable where the truth is not. Click a strategy's run in the ladder for its line graphs.
   Click a column to sort.</p>
   <div class="controls">
     <label>Runs <select id="variants">
@@ -89,7 +93,8 @@
     <span><i class="sw" style="background:var(--pass)"></i>pass</span>
     <span><i class="sw" style="background:var(--equiv)"></i>equivalent</span>
     <span><i class="sw" style="background:var(--fail)"></i>fail</span>
-    <span><i class="sw" style="background:var(--other)"></i>error / timeout / not run</span>
+    <span><i class="sw" style="background:var(--other)"></i>error / timeout</span>
+    <span>Rates are over the cells each strategy has run (see "ran"); cells not run yet are left out. Compare strategies with a low "ran" with care.</span>
   </div>
   <div class="wrap"><table id="t"><thead></thead><tbody></tbody></table></div>
 </main>
@@ -99,6 +104,7 @@ const COLS = [
   { key: "name", label: "strategy", cls: "name" },
   { key: "bar", label: "pass / equivalent / fail", cls: "bar", sortable: false },
   { key: "pass", label: "pass rate", fmt: pct },
+  { key: "passAch", label: "pass (achievable)", fmt: pct, tip: (r) => r.achTip },
   { key: "passeq", label: "pass + equivalent", fmt: pct, cls: "hide-sm" },
   { key: "recall", label: "recall", fmt: pct },
   { key: "precision", label: "precision", fmt: pct, cls: "hide-sm" },
@@ -108,7 +114,12 @@ const COLS = [
   { key: "skill20", label: "skill@20", fmt: pct },
   { key: "fresh20", label: "fresh skill@20", fmt: pct, cls: "hide-sm" },
   { key: "skill100", label: "skill@100", fmt: pct, cls: "hide-sm" },
+  { key: "lrFar", label: "err@100k", fmt: pct, asc: true },
+  { key: "lrEq", label: "eq err", fmt: pct, asc: true, cls: "hide-sm" },
+  { key: "lrTau", label: "τ err", fmt: pct, asc: true, cls: "hide-sm" },
+  { key: "lrBad", label: "diverges", fmt: pct, asc: true, tip: (r) => r.lrTip },
   { key: "runs", label: "runs", fmt: (v) => v, cls: "hide-sm" },
+  { key: "cover", label: "ran (of all cells)", fmt: pct },
   { key: "seconds", label: "time (s)", fmt: (v) => v.toFixed(1), cls: "hide-sm" },
 ];
 let data = null, sortKey = "pass", sortDir = -1;
@@ -124,19 +135,43 @@ function rows() {
   const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case]);
   const by = {};
   for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
-  for (const c of data.cells) if (by[c.strategy] && keep(c)) by[c.strategy].push(c);
+  const of = {};
+  for (const c of data.cells) if (by[c.strategy] && keep(c)) { of[c.strategy] = (of[c.strategy] || 0) + 1; if (c.status) by[c.strategy].push(c); }
+  // rates are over the cells a strategy has run; cells it has not run yet are left out, never counted as fails
   return Object.entries(by).filter(([, cs]) => cs.length).map(([name, cs]) => {
     const n = cs.length, k = (s) => cs.filter((c) => c.status === s).length;
     const num = (key) => cs.map((c) => clip(c[key])).filter((v) => v != null && Number.isFinite(v));
     return {
-      name, runs: n, p: k("pass"), e: k("equivalent"), fl: k("fail"), o: n - k("pass") - k("equivalent") - k("fail"),
+      name, runs: n, of: of[name], cover: n / of[name], p: k("pass"), e: k("equivalent"), fl: k("fail"), o: n - k("pass") - k("equivalent") - k("fail"),
       pass: k("pass") / n, passeq: (k("pass") + k("equivalent")) / n,
       recall: mean(num("recall")), precision: mean(num("precision")),
       skill20: mean(num("skill20")), fresh20: mean(num("fresh20")), skill100: mean(num("skill100")),
       seconds: cs.reduce((x, c) => x + (c.seconds || 0), 0),
       ...complexity(cs),
+      ...longRun(name, vf, lv),
+      ...achievable(cs),
     };
   });
+}
+
+// pass rate over the cells whose data allow a pass (analysis.py: sdlab-ladder analyse; the label does not change pass/fail)
+function achievable(cs) {
+  const ach = cs.filter((c) => c.analysis === "achievable"), by = (l) => cs.filter((c) => c.analysis === l).length;
+  return { passAch: ach.length ? ach.filter((c) => c.status === "pass").length / ach.length : NaN,
+    achTip: `${ach.length} achievable cells; ${by("data-limited")} data-limited, ${by("unidentifiable")} unidentifiable, ${cs.filter((c) => !c.analysis).length} not analysed` };
+}
+
+// long run (see the note): from the summary's compact aggregate {strategy: {variant: {level: [n, sum err@100k, sum eq err,
+// n eq, sum tau err, n tau, diverging]}}}, over the runs whose long-run metrics have been computed (sdlab-ladder longrun)
+function longRun(name, vf, lv) {
+  const a = [0, 0, 0, 0, 0, 0, 0];
+  for (const [variant, byLevel] of Object.entries((data.longrun || {})[name] || {})) {
+    if (vf !== "all" && !variant.includes(vf)) continue;
+    for (const [level, x] of Object.entries(byLevel)) if (!lv || +level === lv) x.forEach((v, i) => { a[i] += v; });
+  }
+  const [n, far, eq, eqN, tau, tauN, bad] = a;
+  return { lrFar: n ? far / n : NaN, lrEq: eqN ? eq / eqN : NaN, lrTau: tauN ? tau / tauN : NaN, lrBad: n ? bad / n : NaN,
+    lrTip: n ? `${bad} of ${n} runs with long-run metrics diverge` : "long-run metrics not computed yet (sdlab-ladder longrun)" };
 }
 
 // complexity (see the note): mean Occam score over all runs, mean extra and geometric-mean ratio over
@@ -168,7 +203,7 @@ function render() {
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder?view=history&strategy=${encodeURIComponent(r.name)}" style="color:inherit" title="Its results over time in the ladder view">${r.name}</a></td>`;
+    if (c.key === "name") return `<td class="name"><a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all" style="color:inherit" title="Every test case: the true model beside what ${r.name} found">${r.name}</a></td>`;
     if (c.key === "bar") {
       const w = (v) => (100 * v / r.runs).toFixed(2) + "%";
       return `<td class="bar"><div class="stack" title="${r.p} pass, ${r.e} equivalent, ${r.fl} fail, ${r.o} other, of ${r.runs}">` +

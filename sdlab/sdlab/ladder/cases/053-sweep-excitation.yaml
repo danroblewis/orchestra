@@ -1,0 +1,16 @@
+# axis: inflow steps per 300 steps
+# axis values: 0, 1, 2, 4, 5, 9, 14
+title: "Sweep: chain of two, excitation (0 to 14 inflow steps per 300 steps)"
+level: 4
+tags: [sweep, chain, move, excitation, unannounced]
+tests: "the chain of 003 whose inflow steps between 10 and 30 unannounced, from never to 14 times per 300 steps: each step moves the levels away from equilibrium (excitation, which pins the rates down) but adds a piece to find; where does the bound fall, and where does each method lose the pieces?"
+seed: 53
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 10
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+schedule:
+  every: grid(300, 300, 200, 120, 100, 60, 40)
+  at 1 low: {in: 10}
+  at grid(151, 151, 101, 61, 51, 31, 21) high: {in: grid(10, 30, 30, 30, 30, 30, 30)}

@@ -1,0 +1,11 @@
+# axis: equilibrium level (inflow / drain)
+# axis values: 40, 10, 4, 2, 1, 0.4, 0.2
+title: "Sweep: one stock near the zero floor (equilibrium 40 to 0.2)"
+level: 1
+tags: [sweep, inflow, outflow, floor, empty]
+tests: "one stock with inflow c and drain 0.5 (equilibrium 2c from 40 down to 0.2): near zero the counts are mostly 0 and 1 and the drain is cut short when the stock is empty, so a model of Gaussian noise around the rate is biased; where does each method break, against the bound?"
+seed: 56
+stocks: {A: 0}
+flows:
+  outside -> A: grid(20, 5, 2, 1, 0.5, 0.2, 0.1)
+  A -> outside: 0.5 * A

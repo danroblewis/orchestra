@@ -268,16 +268,35 @@ def refit(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     return out, {"rss": (res ** 2).sum(axis=1), "params": P, "res": res}
 
 
-def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None, score=None) -> list[dict]:
-    """Flows dropped one at a time, refitting the rest jointly, while the model's price falls
-    (score(flows), lower is better: by default the one-step BIC over every row). An effect flow and
-    a stock's only outside inflow are dropped like any other flow."""
+def amounts(flows: list[dict], ids: list[str], run: dict) -> np.ndarray:
+    """Each flow's mean amount per step on the run's states (what it moves into or out of a stock)."""
+    from ...simulate import levels_array
+
+    A = levels_array(run["levels"], ids)
+    tt = np.asarray(run["t"], dtype=float)[1:]
+    out = []
+    for f in flows:
+        with np.errstate(all="ignore"):
+            d = Model([f], ids).step(A[:, :-1], tt) - A[:, :-1]
+        out.append(float(np.nan_to_num(np.abs(d).max(axis=0)).mean()))
+    return np.array(out)
+
+
+def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None, score=None, small: float = 0.25) -> list[dict]:
+    """Small flows dropped one at a time, refitting the rest jointly, while the model's price falls
+    (score(flows), lower is better: by default price()). Only a flow moving less than `small` x the
+    model's median flow amount may go: a large term the price would drop (a gap's feedback, say) is
+    left, since inflow values would take over its work and the model would not behave."""
     score = score or (lambda fl: price(fl, ids, run))
     cur = flows
     best = score(cur)
     while len(cur) > 1:
+        size = amounts(cur, ids, run)
+        cutoff = small * float(np.median(size)) if len(size) else 0.0
         trial = None
         for i in range(len(cur)):
+            if size[i] >= cutoff:
+                continue
             fl, _ = refit(cur[:i] + cur[i + 1:], ids, run, opts)
             s = score(fl)
             if s < best and (trial is None or s < trial[0]):
@@ -286,7 +305,6 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
             break
         best, cur = trial
     return cur
-
 
 def size(flows: list[dict]) -> int:
     """onestep.size, with an outside inflow priced by its values (pooled pieces share one) and its changes."""

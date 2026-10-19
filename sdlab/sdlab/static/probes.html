@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ladder probes</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e3e1db; --card: #ffffff;
+    --pass: #2f7d4f; --equiv: #2f6fd6; --fail: #c0392b; --other: #9b9892; --u: #fde2e1; --d: #fdf0d5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c;
+      --pass: #4fae74; --equiv: #6b9cf0; --fail: #e0685a; --other: #77756f; --u: #4a2321; --d: #45371a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c;
+    --pass: #4fae74; --equiv: #6b9cf0; --fail: #e0685a; --other: #77756f; --u: #4a2321; --d: #45371a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 14px; }
+  .controls label { color: var(--muted); }
+  select { font: inherit; color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; max-width: 100%; }
+  .note { color: var(--muted); margin: 0 0 14px; max-width: 900px; }
+  .chart { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px; margin-bottom: 16px; }
+  .chart svg { display: block; max-width: 100%; height: auto; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; }
+  th, td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.name, th.name { text-align: left; }
+  td.u { background: var(--u); } td.d { background: var(--d); }
+  .P { color: var(--pass); font-weight: 600; } .E { color: var(--equiv); font-weight: 600; } .F, .X, .T { color: var(--fail); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ladder probes</h1>
+  <a href="/ladder">&#129692; Ladder</a>
+  <a href="/ladder/leaderboard">&#127942; Leaderboard</a>
+</header>
+<main>
+  <p class="note">Each sweep varies one mathematical quantity along a grid, everything else fixed. For each point:
+    every leading strategy's relative error on each true number, against the Cramér–Rao bound (the best standard
+    error any unbiased method can reach on that run) and the scorer's tolerance. Shaded points are where the data
+    cannot deliver a pass (red: unidentifiable, amber: data-limited). A method that fails where the bound is far
+    inside the tolerance is at fault; one that fails where the band is shaded is not. (<code>sdlab-ladder analyse</code>,
+    docs/LADDER.md "Cases as mathematical probes".)</p>
+  <div class="controls">
+    <label>Sweep <select id="sweep"></select></label>
+    <label>Variant <select id="variant"></select></label>
+  </div>
+  <p class="note" id="tests"></p>
+  <div class="chart" id="chart" role="figure"></div>
+  <div class="wrap"><table id="table"></table></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const LET = { pass: "P", equivalent: "E", fail: "F", error: "X", timeout: "T" };
+let sweeps = [];
+const remember = (k, v) => { try { localStorage.setItem("probes." + k, v); } catch (e) { /* storage blocked */ } };
+const recall = (k) => { try { return localStorage.getItem("probes." + k); } catch (e) { return null; } };
+
+async function load() {
+  sweeps = await (await fetch("/api/ladder/sweeps")).json();
+  $("sweep").innerHTML = sweeps.map((s) => `<option value="${esc(s.base)}">${esc(s.base)}: ${esc(s.title)}</option>`).join("");
+  const want = recall("sweep");
+  if (want && sweeps.some((s) => s.base === want)) $("sweep").value = want;
+  pickSweep();
+}
+function pickSweep() {
+  const s = sweeps.find((x) => x.base === $("sweep").value);
+  if (!s) return;
+  remember("sweep", s.base);
+  const keep = $("variant").value;
+  $("variant").innerHTML = s.variants.map((v) => `<option>${esc(v)}</option>`).join("");
+  if (s.variants.includes(keep)) $("variant").value = keep;
+  else if (s.variants.includes("counts-long")) $("variant").value = "counts-long";
+  $("tests").textContent = s.tests;
+  draw();
+}
+async function draw() {
+  const base = $("sweep").value, v = $("variant").value;
+  $("chart").innerHTML = '<p class="note">Loading…</p>';
+  const [svg, ph] = await Promise.all([
+    fetch(`/api/ladder/sweeps/${encodeURIComponent(base)}/${encodeURIComponent(v)}.svg`).then((r) => r.text()),
+    fetch(`/api/ladder/sweeps/${encodeURIComponent(base)}/${encodeURIComponent(v)}`).then((r) => r.json()),
+  ]);
+  $("chart").innerHTML = svg;
+  const pts = ph.points;
+  const cls = (l) => (l === "unidentifiable" ? "u" : l === "data-limited" ? "d" : "");
+  $("table").innerHTML = `<thead><tr><th class="name">${esc(ph.axis)}</th>${pts.map((p) => `<th>${p.value}</th>`).join("")}</tr></thead><tbody>`
+    + `<tr><td class="name">the data</td>${pts.map((p) => `<td class="${cls(p.label)}" title="${esc((p.why || []).join("; "))}">${esc(p.label || "–")}${p.p != null ? `<br><small>p ${p.p.toFixed(2)}</small>` : ""}</td>`).join("")}</tr>`
+    + ph.strategies.map((n) => `<tr><td class="name">${esc(n)}</td>${pts.map((p) => {
+      const s = p.strategies[n] || {}, l = LET[s.status] || "·";
+      return `<td class="${cls(p.label)}"><a href="/ladder?case=${encodeURIComponent(p.case)}&variant=${encodeURIComponent(v)}&strategy=${encodeURIComponent(n)}" class="${l}" style="text-decoration:none">${l}</a></td>`;
+    }).join("")}</tr>`).join("") + "</tbody>";
+}
+$("sweep").onchange = pickSweep;
+$("variant").onchange = draw;
+load();
+</script>
+</body>
+</html>

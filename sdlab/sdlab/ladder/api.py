@@ -13,12 +13,14 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
     progress(recent?)                    the current or last run: {run, items}; with recent, a light copy for polling
     board(strategy, variant?)            every case with one strategy's latest results (found flows included)
     best_strategy()                      the available strategy with the highest pass rate
+    run_graph(id, at?, window?)          one result's true vs found levels run free from the start, far ahead (longrun_series.py)
     summary()                            the matrix: strategies, cases, cells (one per case x variant x
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
 
 A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status
 ("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}; one read
-with its found flows also has complexity (complexity.py: true vs found), and summary cells carry it.
+with its found flows also has complexity (complexity.py: true vs found) and longrun (longrun.py: long-horizon
+metrics, computed once per result id by longrun_cache.py), and summary cells carry both.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import catalog, complexity, data, score, store
+from . import analysis, catalog, complexity, data, longrun_cache, score, store
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -60,7 +62,7 @@ def results(case: str | None = None, variant: str | None = None, strategy: str |
 
 def result(case: str, variant: str, strategy: str) -> dict | None:
     rows = store.latest(case, variant, strategy, found=True)
-    return jsonable(complexity.attach(rows[0])) if rows else None
+    return jsonable(longrun_cache.attach(complexity.attach(rows[0]))) if rows else None
 
 
 def history(case: str, variant: str, strategy: str) -> list[dict]:
@@ -69,7 +71,13 @@ def history(case: str, variant: str, strategy: str) -> list[dict]:
 
 def result_by_id(result_id: int) -> dict | None:
     r = store.get(result_id, found=True)
-    return jsonable(complexity.attach(r)) if r else None
+    return jsonable(longrun_cache.attach(complexity.attach(r))) if r else None
+
+
+def run_graph(result_id: int, at: list[int] | None = None, window: int | None = None) -> dict | None:
+    """What the run page plots for one result (longrun_series.graph), or None if it found nothing."""
+    from . import longrun_series
+    return jsonable(longrun_series.graph(result_id, at, window))
 
 
 def case_data(case_id: str, variant: str, fresh: bool = False, flows: bool = False) -> dict:
@@ -174,29 +182,35 @@ FRESH_FOR = 10.0          # seconds a summary is served before it is checked aga
 
 def summary(strategy_filter: list[str] | None = None) -> dict:
     """The matrix (see the module docstring), cached in memory until a result is stored, a case or
-    a strategy changes, or the scorer changes. While agents store results every second, it is
-    recomputed at most every FRESH_FOR seconds, one request at a time; the others get the last copy."""
+    a strategy changes, or the scorer changes. A request never waits for a recomputation once a copy
+    exists: a stale copy (older than FRESH_FOR seconds) is served while one background thread
+    refreshes it. Only the very first request computes it in line."""
     slot = (tuple(strategy_filter or ()), str(store.path()))
     have = _summaries.get(slot)
-    if have and time.time() - have["at"] < FRESH_FOR:
+    if have:
+        if time.time() - have["at"] >= FRESH_FOR and _summary_lock.acquire(blocking=False):
+            threading.Thread(target=_refresh, args=(slot, strategy_filter, True), daemon=True).start()
         return have["value"]
-    if have and not _summary_lock.acquire(blocking=False):
-        return have["value"]
-    if not have:
-        _summary_lock.acquire()
+    with _summary_lock:
+        if slot not in _summaries:
+            _refresh(slot, strategy_filter, False)
+    return _summaries[slot]["value"]
+
+
+def _refresh(slot: tuple, strategy_filter: list[str] | None, release: bool) -> None:
+    """Recompute one summary slot if anything it depends on changed (the caller holds the lock;
+    release=True: this thread releases it)."""
     try:
         have = _summaries.get(slot)
-        if have and time.time() - have["at"] < FRESH_FOR:
-            return have["value"]
         listing = catalog.listing()
         key = (store.version(), tuple((s["name"], s["hash"], s["available"]) for s in listing),
-               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash())
+               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), longrun_cache.version(), analysis.version())
         if not have or have["key"] != key:
             have = {"key": key, "value": _summary(strategy_filter, listing)}
         _summaries[slot] = {**have, "at": time.time()}
-        return have["value"]
     finally:
-        _summary_lock.release()
+        if release:
+            _summary_lock.release()
 
 
 def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
@@ -204,6 +218,8 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     sh = score.score_hash()
     have = {(r["case"], r["variant"], r["strategy"]): r for r in store.latest()}
     cx = complexity.for_results(list(have.values()))
+    lr = longrun_cache.for_results(list(have.values()))            # read only: what `sdlab-ladder longrun` computed
+    lr_cells = []
     cs = [casemod.load(i) for i in casemod.case_ids()]
     cells, by_tag, totals = [], {}, {}
     for c in cs:
@@ -212,10 +228,19 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                 row = have.get((c["id"], v["name"], s["name"]))
                 stale = store.staleness(row, c["hash"], s["hash"], sh) if s["available"] else None
                 cell = {"case": c["id"], "variant": v["name"], "strategy": s["name"], "stale": stale, **flatten(row),
-                        **complexity.cell(row, cx.get(row["id"]) if row else None)}
+                        **complexity.cell(row, cx.get(row["id"]) if row else None),
+                        **analysis.cell(c["id"], v["name"], c["hash"])}
                 cells.append(cell)
-                t = totals.setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "stale": 0, "total": 0, "seconds": 0.0})
+                if row and lr.get(row["id"]):
+                    lr_cells.append((s["name"], v["name"], c["level"], lr[row["id"]]))
+                t = totals.setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "stale": 0, "total": 0, "seconds": 0.0,
+                                                  "achievable": 0, "achievable_pass": 0, "data_limited": 0, "unidentifiable": 0})
                 t["total"] += 1
+                lab = cell.get("analysis")                        # analysis.py: what the data can deliver in this cell
+                t["achievable"] += lab == "achievable"
+                t["achievable_pass"] += lab == "achievable" and cell["status"] == "pass"
+                t["data_limited"] += lab == "data-limited"
+                t["unidentifiable"] += lab == "unidentifiable"
                 t[cell["status"] or "missing"] += 1
                 t["stale"] += bool(stale and row)
                 t["seconds"] += cell.get("seconds") or 0.0
@@ -225,7 +250,8 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     g[cell["status"] or "missing"] += 1
     return jsonable({"strategies": strats,
                      "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c) for c in cs],
-                     "cells": cells, "by_tag": by_tag, "totals": totals, "score_hash": sh, "parametric": parametric(cs, cells)})
+                     "cells": cells, "by_tag": by_tag, "totals": totals, "score_hash": sh, "parametric": parametric(cs, cells),
+                     "longrun": longrun_cache.aggregate(lr_cells)})
 
 
 def draw_brief(c: dict) -> dict:

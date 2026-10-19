@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from . import basics
 from .discovery.strategies import names as strategy_names
 from .discovery_jobs import DiscoveryJobs
+from .ladder.analysis_routes import router as analysis_router
 from .ladder.routes import router as ladder_router
 from .research import router as research_router
 from .runner import LiveRun, available_programs, program_path
@@ -381,12 +382,21 @@ def create_app() -> FastAPI:
     def ladder_page() -> HTMLResponse:
         return page("ladder.html")
 
+    @app.get("/ladder/run")
+    def ladder_run_page() -> HTMLResponse:
+        return page("ladder-run.html")
+
     @app.get("/ladder/leaderboard")
     def leaderboard_page() -> HTMLResponse:
         return page("leaderboard.html")
 
+    @app.get("/ladder/probes")
+    def probes_page() -> HTMLResponse:
+        return page("probes.html")
+
     app.include_router(research_router)
     app.include_router(ladder_router)
+    app.include_router(analysis_router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

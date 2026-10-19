@@ -1,0 +1,12 @@
+# axis: time-scale ratio (A -> B rate / B's drain)
+# axis values: 1, 2, 5, 10, 20, 50, 100
+title: "Sweep: chain of two, fast/slow rate ratio 1 to 100"
+level: 2
+tags: [sweep, chain, move, timescale]
+tests: "a chain A -> B -> outside whose move (0.5) is r times B's drain (r from 1 to 100): a slow B is far from equilibrium on a short run and its drain is a small number on a large level; where does each method lose the slow drain, and is it where the bound says?"
+seed: 50
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> outside: grid(0.5, 0.25, 0.1, 0.05, 0.025, 0.01, 0.005) * B

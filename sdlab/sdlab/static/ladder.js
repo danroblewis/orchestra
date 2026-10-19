@@ -88,9 +88,9 @@
     const c = S.byId[caseId];
     return `<span class="sq4">${c.variants.map((v) => {
       const cell = cellOf(caseId, v.name, strategy) || {}, st = cell.status, stale = st && cell.stale;
-      const tipTxt = `<b>${esc(caseId)}</b> · ${esc(v.name)} · ${esc(strategy)}<br>${st ? esc(STATUS_WORD[st]) : "not run"}${stale ? ` (stale: ${esc(cell.stale)})` : ""}${st && cell.recall !== null && cell.recall !== undefined ? `<br>recall ${pct(cell.recall)}, ${cell.right}/${cell.of} parts right${cell.spurious ? `, ${cell.spurious} spurious` : ""}<br>skill@20 ${pct(cell.skill20)}, fresh ${pct(cell.fresh20)}` : ""}${cell.error ? `<br>${esc(String(cell.error).slice(0, 200))}` : ""}`;
+      const tipTxt = `<b>${esc(caseId)}</b> · ${esc(v.name)} · ${esc(strategy)}<br>${st ? esc(STATUS_WORD[st]) : "not run"}${stale ? ` (stale: ${esc(cell.stale)})` : ""}${st && cell.recall !== null && cell.recall !== undefined ? `<br>recall ${pct(cell.recall)}, ${cell.right}/${cell.of} parts right${cell.spurious ? `, ${cell.spurious} spurious` : ""}<br>skill@20 ${pct(cell.skill20)}, fresh ${pct(cell.fresh20)}` : ""}${cell.error ? `<br>${esc(String(cell.error).slice(0, 200))}` : ""}${cell.analysis && cell.analysis !== "achievable" ? `<br>the data: ${esc(cell.analysis)}${cell.achievable_p != null ? ` (p ${cell.achievable_p.toFixed(2)})` : ""} (sdlab-ladder analyse)` : ""}`;
       const on = opts.current === v.name ? " on" : "";
-      return `<button class="sq st-${st || "none"}${stale ? " stale" : ""}${on}" data-case="${esc(caseId)}" data-variant="${esc(v.name)}" data-strategy="${esc(strategy)}" data-tip="${esc(tipTxt)}" aria-label="${esc(`${caseId} ${v.name} ${strategy}: ${st || "not run"}${stale ? ", stale" : ""}`)}">${st ? STATUS_LETTER[st] : "·"}</button>`;
+      return `<button class="sq st-${st || "none"}${stale ? " stale" : ""}${cell.analysis ? ` an-${cell.analysis.replace(" ", "-")}` : ""}${on}" data-case="${esc(caseId)}" data-variant="${esc(v.name)}" data-strategy="${esc(strategy)}" data-tip="${esc(tipTxt)}" aria-label="${esc(`${caseId} ${v.name} ${strategy}: ${st || "not run"}${stale ? ", stale" : ""}`)}">${st ? STATUS_LETTER[st] : "·"}</button>`;
     }).join("")}</span>`;
   }
 
@@ -411,7 +411,9 @@
     renderMatrixControls(sm, strats);
     $("matrix-note").innerHTML = `Each cell has one square per variant, in the order ${S.cases[0] ? S.cases[0].variants.map((v) => `<code>${esc(v.name)}</code>`).join(", ") : ""}. Click a square (or a cell) to open it in <a href="#" data-goto="now">Now</a>. Hover a case for what it tests.`;
     $("mlegend").innerHTML = [["pass", "P pass"], ["equivalent", "E equivalent"], ["fail", "F fail"], ["error", "X error"], ["timeout", "T timeout"], ["none", "· not run"]].map(([k, w]) => `<span><span class="sq st-${k} demo">${w[0]}</span>${esc(w.slice(2))}</span>`).join("")
-      + `<span><span class="sq st-pass stale demo">P</span>stale (a sync would run it again)</span>`;
+      + `<span><span class="sq st-pass stale demo">P</span>stale (a sync would run it again)</span>`
+      + `<span><span class="sq st-fail an-data-limited demo">F</span>data-limited (even the best method rarely meets the tolerance)</span>`
+      + `<span><span class="sq st-fail an-unidentifiable demo">F</span>unidentifiable (only an equivalent model is possible)</span>`;
     let lvl = null, body = "";
     S.cases.forEach((c) => {
       if (c.level !== lvl) { lvl = c.level; body += `<tr class="lvl"><th colspan="${strats.length + 1}">Level ${esc(lvl)}</th></tr>`; }

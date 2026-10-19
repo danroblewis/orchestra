@@ -1,0 +1,13 @@
+# axis: loop gain (births per B / B's drain)
+# axis values: 0.1, 0.3, 0.5, 0.7, 0.85, 0.95, 0.98
+title: "Sweep: a reinforcing link loop, gain 0.1 to 0.98"
+level: 6
+tags: [sweep, loop, link, move, stability]
+tests: "the loop of 008 (A -> B, B's level drives A's inflow) with its gain g = link / B's drain from 0.1 to 0.98 (unstable at 1): near 1 the loop is slow and the levels large; where does each method lose the loop as it nears instability?"
+seed: 55
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 10
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
+  outside -> A as births: grid(0.02, 0.06, 0.1, 0.14, 0.17, 0.19, 0.196) * B

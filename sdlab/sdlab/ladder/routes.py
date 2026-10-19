@@ -12,6 +12,7 @@
     GET /api/ladder/board?strategy=&variant=                  every case with one strategy's latest results (default: the best strategy; variant all)
     GET /api/ladder/progress?recent=                          the current or last run (recent: only running + the n latest done)
     GET /api/ladder/summary?strategies=a,b                    the matrix (cells, per-tag and per-strategy totals)
+    GET /api/ladder/longrun/{id}?at=5000,20000&window=        one result's true vs found levels run free, far ahead
 
 Nothing takes a path from the client: a case, variant or strategy must be one the listings name
 (404 otherwise).
@@ -127,3 +128,15 @@ def progress(recent: int | None = None) -> dict:
 def summary(strategies: str | None = None) -> dict:
     names = [_strategy(n.strip()) for n in strategies.split(",") if n.strip()] if strategies else None
     return api.summary(names)
+
+
+@router.get("/longrun/{result_id}")
+def run_graph(result_id: int, at: str | None = None, window: int | None = None) -> dict:
+    try:
+        ts = [int(float(x)) for x in at.split(",") if x.strip()][:8] if at else None
+    except ValueError:
+        raise HTTPException(422, "at: comma-separated steps") from None
+    r = api.run_graph(result_id, ts, window)
+    if r is None:
+        raise HTTPException(404, "no such result, or it found nothing")
+    return r

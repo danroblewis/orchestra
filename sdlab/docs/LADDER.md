@@ -480,6 +480,90 @@ Complexity is computed from the stored found flows when they are read (no re-run
 hash does not change): the summary counts each stored result once and keeps the count by result
 id, so only new results are counted when it is recomputed.
 
+## Long run: far horizons and constant-time jumps (`longrun.py`, `jump.py`)
+
+skill@20 and skill@100 re-anchor both models on the true levels at ~150 moments and run them H
+steps: they grade short and medium-horizon dynamics, and a model can score 100% there and still
+break down after 10,000 steps (a mode that grows by 0.001% a step is invisible at H = 100 and
+dominant at t = 100,000). The long run grades what is left.
+
+**Free run.** The true and the found model start from the run's first levels (a found model's own
+unmeasured stocks from 0) and run with nothing re-anchored, fed the truth's outside inflows exactly
+as skill@H feeds them, to t = 100,000. Past the recorded run the truth's schedule repeats (`every`),
+and a found model's own changing rates (byTime segments, outside-inflow pieces it keeps) repeat
+their last period of the run; without a schedule, a found rate's last piece of at least 10 steps
+holds (a one-step piece at the very end of a fit is an end effect: held for ever it would set the
+equilibrium; it did for 34 results on 007-link before the rule).
+
+**Constant time.** After the run, both models are periodic in time with the schedule's period P (or
+autonomous). They are stepped in chunks (a multiple of P, at least 64 steps), and stepping stops as
+soon as the future is known:
+
+- **settled**: the last chunk equals the one before (to 1e-9 of the scale): every later step is read
+  off that chunk, any t in O(1);
+- **drift**: every chunk adds the same amount, only to stocks that no flow reads, drains or uses up
+  (a final stock that only accumulates): exact for any model, linear or not, so x(t) = chunk + k x drift;
+- **jump**: an affine model still moving after 20,000 steps (a very slow or marginal mode) whose last
+  chunk agrees with its linear jump-ahead (below) is jumped;
+- otherwise it is stepped to the end, and a run that passes 1e12 x the truth's scale stops (runaway).
+
+The whole ladder (14,000 results) takes ~5 minutes of CPU: almost every model settles within a few
+hundred steps of the end of the run.
+
+**The jump-ahead** (`jump.py`). When every rate is a linear form (constant, proportional, gap,
+linear) with no effects, co-flows or hidden delays, a step is affine, x(t+1) = M_t x(t) + b_t with
+M_t = I + B_t. Composing the P steps of one period gives (M_P, b_P), and k periods are the power of
+the augmented matrix [[M_P, b_P], [0, 1]] by squaring, in O(log k): x(t0 + kP) = M_P^k (x(t0) - x*)
++ x*, x* = (I - M_P)^-1 b_P (the augmented power also covers a stock that only grows, where I - M_P
+is singular). **It is exact only while no floor binds**: every rate stays >= 0, no stock is asked for
+more than it holds (the engine shares a stock among its outflows), no level goes below 0. A stable
+model whose rates stay positive near its fixed point (chains, links, loops) is exact to float
+precision; a floor that binds (024, 025), effects or co-flows (017, 018, 016), or a found model that
+runs away or empties a stock are not covered, and there stepping (with the settled/drift read-off,
+exact for any model) is the reference. `tests/test_ladder_longrun.py` checks the jump against
+stepping on linear cases (with a periodic schedule, eras and injections), the read-off against
+stepping to t = 8,000 on a nonlinear and a floor-binding case, and the true equilibria against the
+analytic ones (002: A* = c / k; 003: A* = in / k_ab, B* = k_ab A* / k_b).
+
+**Metrics**, per result (per measured stock normalised by the truth's scale: its range over the
+recorded run, or its largest level in the graded window if larger; rms over stocks):
+
+| | |
+|---|---|
+| `err` | at t = 1k, 10k, 100k and at 10 and 100 x the truth's slowest time constant: rms of (found - true) / scale over one chunk ending there |
+| `far` | `err` at 100k, the headline |
+| `eq_err` | the settled behaviour: mean level over the settled chunk, found vs true (a stock that only accumulates: its drift per step, relative); none when the found model never settles or grows where the truth settles |
+| `tau_true`, `tau_found`, `tau_err` | slowest time constant, tau = -1 / ln\|lambda\| steps per mode, from the period map's eigenvalues (exact, the linear part) for an affine model, else from the Jacobian of the chunk map at the settled levels (finite differences); `tau_err` = \|tau_found / tau_true - 1\| |
+| `rho_true`, `rho_found`, `unstable` | spectral radius per step; unstable: the found model's is above 1 by enough to grow 2x within the graded horizon (rho^100,000 > 2, i.e. rho > 1 + 6.9e-6), where the truth's is not (a mode at 1 + 1e-7 is a fitting rounding that doubles only after millions of steps) |
+| `flag` | `runaway` (grows without bound, or 100x the truth's scale), `dies` (a stock goes to ~0 where the truth stays above 1% of its scale), `unstable`, or none; `hard_fail`: runaway or unstable |
+
+They are computed from the stored found flows, once per result id, by `sdlab-ladder longrun
+[--strategies ...] [--cases ...] [--jobs N]` (worker processes, niced) into
+`$SDLAB_LADDER_CACHE/longrun.sqlite` under the long-run code's hash (`longrun_cache.py`). The server
+never computes them for the summary: it reads the file (new rows only, at most every 10 s), and a
+result not graded yet is "not computed yet". The summary carries them as one compact aggregate,
+`longrun: {strategy: {variant: {level: [n, sum err@100k, sum eq err, n eq, sum tau err, n tau,
+diverging]}}}` (each error capped at 1; a run that runs away or is unstable counts 1), which the
+leaderboard turns into the columns **err@100k**, **eq err**, **tau err** and **diverges**.
+`sdlab-ladder show` prints a result's long-run line (computing it if missing) and its graph link.
+
+**The run page** (`/ladder/run?id=<result id>&at=250000&window=500`, linked from every case card on
+the Now page and from `show`): per measured stock, the true model (blue) vs the found model's
+prediction (orange) with the gap shaded, over the recorded run (with the recorded, noisy data as
+dots), over the whole horizon on a log-time axis, and in windows ending at 10 and 100 tau, 1k, 10k,
+100k and any `at` (any t when the run settled or drifts: constant time). Inline SVG, no library.
+`GET /api/ladder/longrun/{id}?at=&window=` (`longrun_series.py`) gives its data.
+
+**What it showed** (October 2026, `sdlab-ladder longrun` then the store): of 9,581 results with
+in-sample skill@100 >= 90%, 185 have err@100k or eq err >= 10% or are flagged. The worst are models
+with a nearly neutral mode that skill@100 cannot see: output_error on 034 and 038 (skill@100 100%;
+two stocks draining each other at almost equal rates, rho 1.000004-1.000016: at 1k the gap is 7x the
+truth's range and a stock dies out), effect_hats on 043#2 (rho 1.0147, unstable, eq err 54%),
+earned_pieces on 043#2 none-long (1.8% at 1k, 190% at 100k), sindy on 032 none-long (tau 11,724
+steps vs 9.5); and 055-sweep-loop-gain#7 (a truth with tau 348) where matrix, held_out and
+hidden_transit run away (skill@100 97%, err@100k 191x). Most of the rest settle 10-15% off (gaps
+in equilibrium from noisy rates: 048 draws, 020, 017, 018 effects, 033).
+
 ## Reading the matrix
 
 ```
@@ -523,7 +607,8 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `board(strategy, variant?)` | `{strategy, variant, best, cases, results}`: every case and one strategy's latest results (found flows included) in a variant, or all four |
 | `best_strategy()` | the available strategy with the highest pass rate |
 | `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
-| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other]}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash}` |
+| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other]}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash, longrun (the long-run aggregate, below)}` |
+| `run_graph(id, at?, window?)` | one result's true vs found levels run free, far ahead: `{result, stocks, run, overview, windows, metrics, how}` (Long run, below) |
 
 A result is `{id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status,
 seconds, error, scores}`. `scores` holds:
@@ -553,6 +638,7 @@ GET /api/ladder/strategies/{strategy}/timeline
 GET /api/ladder/board?strategy=&variant=
 GET /api/ladder/progress?recent=
 GET /api/ladder/summary?strategies=a,b
+GET /api/ladder/longrun/{id}?at=&window=
 ```
 
 A case, variant or strategy must be one the listings name, and a result id an integer that is stored;
@@ -601,10 +687,11 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Cases | `sdlab/sdlab/ladder/cases/*.yaml`; the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors) |
+| Long run | `longrun.py` (free runs, settled / drift read-off, metrics), `jump.py` (affine jump-ahead, equilibria, spectra), `longrun_cache.py` (by result id, the CLI fill, the summary aggregate), `longrun_series.py` (the run page's data), `sdlab/static/ladder-run.html` |
 | Complexity | `complexity.py` (true and found complexity, extra, the Occam score; cached by result id) |
 | Strategies | `catalog.py` (listing, hashes, availability) |
 | Store | `store.py` (`results.sqlite`: results with history, runs and progress) |
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/ladder_compare.test.mjs` |

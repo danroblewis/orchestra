@@ -56,8 +56,14 @@ def case_files() -> dict[str, Path]:
     """Every case file by id, in ladder order (by file name): NNN-slug.yaml or NNN-slug.json."""
     if not CASES.is_dir():
         return {}
+    return dict(_listing(str(CASES), CASES.stat().st_mtime_ns))
+
+
+@lru_cache(maxsize=8)
+def _listing(folder: str, mtime_ns: int) -> dict[str, Path]:
+    """The folder's case files (a file added, removed or renamed changes the folder's mtime)."""
     out: dict[str, Path] = {}
-    for p in sorted(CASES.iterdir()):
+    for p in sorted(Path(folder).iterdir()):
         if p.suffix in SUFFIXES and ID_RE.match(p.stem):
             if p.stem in out:
                 raise CaseError(f"case {p.stem} is written twice: {out[p.stem].name} and {p.name}")
@@ -72,8 +78,8 @@ def case_ids() -> list[str]:
     files = case_files()
     out = []
     for cid, p in files.items():
-        n = _safe_count(p)
-        out += [(_level(p), cid, i, f"{cid}#{i}") for i in range(1, n + 1)] if n else [(_level(p), cid, 0, cid)]
+        n, level = _safe_count(p), _level(p)
+        out += [(level, cid, i, f"{cid}#{i}") for i in range(1, n + 1)] if n else [(level, cid, 0, cid)]
     return [x[3] for x in sorted(out)]
 
 
@@ -132,6 +138,13 @@ def _count(path: str, mtime: float, size: int) -> int:
 
 
 def _level(path: Path) -> int:
+    st = path.stat()
+    return _level_of(str(path), st.st_mtime, st.st_size)
+
+
+@lru_cache(maxsize=None)
+def _level_of(path_s: str, mtime: float, size: int) -> int:
+    path = Path(path_s)
     try:
         if _safe_count(path):
             text = path.read_text()

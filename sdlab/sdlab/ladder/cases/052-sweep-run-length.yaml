@@ -1,0 +1,13 @@
+# axis: run length of the short variant (steps; the long variant is twice as long)
+# axis values: 50, 100, 250, 500, 1000, 2500
+title: "Sweep: chain of two, run length 50 to 5000"
+level: 2
+tags: [sweep, chain, move, run-length]
+tests: "the chain of 003 on runs of 50 to 2500 steps (short) and twice that (long): with counting noise the bound on every number shrinks like 1 / sqrt(steps); does each method's error follow it, and how short a run does it need?"
+seed: 52
+variants: {lengths: {short: grid(50, 100, 250, 500, 1000, 2500), long: grid(100, 200, 500, 1000, 2000, 5000)}}
+stocks: {A: 0, B: 0}
+flows:
+  outside -> A: 20
+  A -> B: 0.5 * A
+  B -> outside: 0.2 * B
