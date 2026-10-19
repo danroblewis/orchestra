@@ -327,4 +327,4 @@ Not distilled: the drain/controller merge (an equivalence, labelled by the analy
 - cd9e8b1: cases 200-215, `cases/data/prbs7-hold8.csv`, `sdlab/ladder/control.py`, its tests.
 - 34e948c: control.py, a model that barely answers a step gets no overshoot or margins.
 - a319289: distilled cases 216-218.
-- (this document, the LADDER.md section and the glossary: the docs commit after them.)
+- b485026: this document, the LADDER.md section, the glossary entries and the README row (1ddc548 restores a README row it dropped).
