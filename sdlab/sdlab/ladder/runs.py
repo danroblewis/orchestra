@@ -94,17 +94,20 @@ def pace(window: float = WINDOW, now: float | None = None, runs: list[dict] | No
 
 
 def backlog(sm: dict, est: timing.Estimator | None = None) -> dict:
-    """See the module docstring. A real case's cell whose download is missing is not counted (the planner
-    skips it too)."""
+    """See the module docstring. A real case's cell whose download is missing, and a case tagged heavy, are
+    not counted (the watcher's planner skips them too)."""
     from . import cases as casemod
     from .real import data as _real_data
     est = est or timing.estimator()
     real = {c["id"] for c in sm["cases"] if c.get("real")}
+    heavy = {c["id"] for c in sm["cases"] if "heavy" in (c.get("tags") or [])}     # run only when named: never by the watcher
     missing: dict = {}
     out = {"items": 0, "run": 0, "rescore": 0, "seconds": 0.0, "by_set": {}, "how": {}}
     for c in sm["cells"]:
         why = c.get("stale")
         if not why:
+            continue
+        if c["case"] in heavy:
             continue
         if c["case"] in real:
             k = (c["case"], c["variant"])

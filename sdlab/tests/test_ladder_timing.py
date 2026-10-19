@@ -152,10 +152,11 @@ def test_pace_eta_and_backlog():
     assert e["by_pace"] == 2.0 and e["by_cost"] == pytest.approx(1.0, abs=0.01) and e["ideal"] == 0.5 and e["at"]
 
     rec("a", "s1", "v1", 2.0, wall=3.0)
-    sm = {"cases": [{"id": "a"}, {"id": "b"}],
+    sm = {"cases": [{"id": "a"}, {"id": "b"}, {"id": "h", "tags": ["heavy"]}],
           "cells": [{"case": "a", "variant": "none-short", "strategy": "s1", "stale": "strategy changed"},
                     {"case": "b", "variant": "none-short", "strategy": "s1", "stale": None},
-                    {"case": "a", "variant": "none-short", "strategy": "s2", "stale": "new"}]}
+                    {"case": "a", "variant": "none-short", "strategy": "s2", "stale": "new"},
+                    {"case": "h", "variant": "none-short", "strategy": "s1", "stale": "new"}]}
     got = runs.backlog(sm, timing.Estimator(timing.table(), SETS))
     assert (got["items"], got["run"], got["rescore"]) == (2, 2, 0) and got["seconds"] == pytest.approx(3.0 + 2.0) and got["by_set"]["tests"][0] == 2
 

@@ -2331,8 +2331,8 @@ longer timeout is not over-counted. A re-score costs the scoring part only.
 **The watcher's pace and ETA** (`runs.py`): results per hour over its watch batches of the last 6 h
 (from the first batch's start to now, planning gaps included), and its efficiency: busy seconds ÷
 (elapsed × workers), how much of its workers' time went to items (it runs at nice 19 beside the
-agents' runs). The backlog is every stale cell of the summary (a real case whose download is missing
-is left out, as the planner does), with its estimated cost. ETA: by pace (stale items ÷ results per
+agents' runs). The backlog is every stale cell of the summary (a real case whose download is missing,
+and a case tagged `heavy`, are left out, as the watcher's planner does), with its estimated cost. ETA: by pace (stale items ÷ results per
 hour) and by stored cost (busy seconds ÷ (workers × efficiency); until a batch has recorded its busy
 seconds, the ideal with every worker busy is shown instead).
 
