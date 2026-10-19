@@ -2,11 +2,10 @@
 # canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).
 title: "SEIR epidemic"
 level: 13
-tags: [canonical, effect, chain, injection, dt]
+tags: [canonical, effect, chain, injection]
 tests: "an SEIR epidemic (infection 0.5 x S x I / 1000, onset E / 3, recovery I / 5) is recovered: the infection is a move S -> E driven by I, not by E, then two first-order stages; announced arrivals of 600 susceptible and 20 infectious people every 150 steps start new outbreaks"
 source: "written for SD Lab (the SIR sample with a latent stage; Kermack-McKendrick SEIR); MIT, as SD Lab"
 seed: 101
-dt: 0.25
 stocks:
   Susceptible: 990
   Exposed: 0

@@ -55,7 +55,7 @@ SAVEPER  =
         TIME STEP
 	~	Week
 	~		|
-TIME STEP  = 0.25
+TIME STEP  = 1
 	~	Week
 	~		|
 \\\---/// Sketch information - do not modify anything except names

@@ -6,6 +6,10 @@
 # id: the case file's name; model: the source under models/; source: where it comes from and its
 # licence; words: stock id -> hidden | final; pulses: {first, every, add: {stock: amount}} announced
 # injections from step `first` every `every` steps up to the long run; anything else is the case's own.
+#
+# The models written for SD Lab use TIME STEP 1 (one Euler step per recorded step), so they probe
+# structure. The SDXorg samples keep their published TIME STEP (1/32, 1/8), so they also probe sub-step
+# data, whose per-step rates differ from the per-time-unit ones (a drain k reads as about 1 - exp(-k)).
 
 - id: 100-canonical-sir
   model: sdxorg-sir.mdl
@@ -22,7 +26,7 @@
   source: "written for SD Lab (the SIR sample with a latent stage; Kermack-McKendrick SEIR); MIT, as SD Lab"
   title: "SEIR epidemic"
   level: 13
-  tags: [canonical, effect, chain, injection, dt]
+  tags: [canonical, effect, chain, injection]
   tests: "an SEIR epidemic (infection 0.5 x S x I / 1000, onset E / 3, recovery I / 5) is recovered: the infection is a move S -> E driven by I, not by E, then two first-order stages; announced arrivals of 600 susceptible and 20 infectious people every 150 steps start new outbreaks"
   words: {Recovered: final}
   pulses: {first: 100, every: 150, add: {Susceptible: 600, Infectious: 20}}
@@ -32,7 +36,7 @@
   source: "written for SD Lab after Bass (1969) and Sterman (2000) Business Dynamics ch. 9.3 (Bass diffusion with discontinuance); MIT, as SD Lab"
   title: "Bass diffusion"
   level: 13
-  tags: [canonical, effect, coupled, injection, dt]
+  tags: [canonical, effect, coupled, injection]
   tests: "Bass diffusion is recovered as two moves from potential adopters P to adopters A, one p x P (0.01) and one q x P x A / N (0.4 x P x A / 10000), with adopters discontinuing at A / 50; announced new cohorts of 5000 potential adopters every 150 steps restart the S-curve"
   pulses: {first: 120, every: 150, add: {Potential_Adopters: 5000}}
 
@@ -41,7 +45,7 @@
   source: "written for SD Lab (Verhulst logistic growth as births r X and crowding deaths r X^2 / K); MIT, as SD Lab"
   title: "Logistic growth"
   level: 12
-  tags: [canonical, effect, injection, dt]
+  tags: [canonical, effect, injection]
   tests: "logistic growth r X (1 - X / K) (r 0.15, K 2000) is recovered as births 0.15 x X and crowding deaths 0.15 x X x X / 2000 (a drain times an effect of its own stock), not as one net flow or a goal gap; announced restocking of 1500 every 100 steps pushes the stock above K and back"
   pulses: {first: 100, every: 100, add: {Population: 1500}}
 
@@ -75,7 +79,7 @@
   source: "written for SD Lab after the rework cycle of Cooper (1980) and Lyneis and Ford (2007); MIT, as SD Lab"
   title: "Project with rework"
   level: 14
-  tags: [canonical, hidden, loop, injection, dt]
+  tags: [canonical, hidden, loop, injection]
   tests: "the rework cycle is recovered: work to do W is completed at W / 10, 75% into work done and 25% into undiscovered rework U, a hidden stock found and returned to W at U / 15; announced new projects of 1000 tasks every 200 steps"
   words: {Work_Done: final, Undiscovered_Rework: hidden}
   pulses: {first: 150, every: 200, add: {Work_to_Do: 1000}}
@@ -85,7 +89,7 @@
   source: "written for SD Lab after Meadows (1970) Dynamics of Commodity Production Cycles and Sterman (2000) ch. 20; MIT, as SD Lab"
   title: "Commodity cycle"
   level: 15
-  tags: [canonical, effect, delay, hidden, loop, injection, dt]
+  tags: [canonical, effect, delay, hidden, loop, injection]
   tests: "a commodity cycle is recovered: production is capacity times a table effect of inventory, consumption a table effect of inventory, and capacity is built at capacity times a table effect of inventory arriving through an 18-step third-order delay, discarded at 1/20; announced imports of 400 every 250 steps"
   pulses: {first: 200, every: 250, add: {Inventory: 400}}
 
@@ -94,7 +98,7 @@
   source: "written for SD Lab after the limits-to-growth archetype (Meadows et al. 1972; Senge 1990); MIT, as SD Lab"
   title: "Limits to growth"
   level: 15
-  tags: [canonical, effect, coupled, loop, injection, dt]
+  tags: [canonical, effect, coupled, loop, injection]
   tests: "the limits-to-growth archetype is recovered: births 0.12 x P times a table effect of the resource R, deaths P / 12, logistic regrowth 0.3 x R x (1 - R / 1000) and grazing 0.4 x P x R / 1000; announced arrivals of 30 animals every 200 steps"
   pulses: {first: 150, every: 200, add: {Population: 30}}
 
@@ -104,4 +108,4 @@
   title: "World3 persistent pollution (linear regime)"
   level: 14
   tags: [canonical, input, delay, hidden, outflow]
-  tests: "World3's pollution transmission and assimilation are recovered: generation (a measured input) appears after a 20-step third-order delay (three hidden stocks) and is assimilated at PPOL / (1.4 x 1.5); half steps (dt 0.5) as in World3"
+  tests: "World3's pollution transmission and assimilation are recovered: generation (a measured input) appears after a 20-step third-order delay (three hidden stocks) and is assimilated at PPOL / (1.4 x 1.5), one step a year (World3 itself uses dt 0.5)"

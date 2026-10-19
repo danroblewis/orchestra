@@ -2,11 +2,10 @@
 # canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).
 title: "Bass diffusion"
 level: 13
-tags: [canonical, effect, coupled, injection, dt]
+tags: [canonical, effect, coupled, injection]
 tests: "Bass diffusion is recovered as two moves from potential adopters P to adopters A, one p x P (0.01) and one q x P x A / N (0.4 x P x A / 10000), with adopters discontinuing at A / 50; announced new cohorts of 5000 potential adopters every 150 steps restart the S-curve"
 source: "written for SD Lab after Bass (1969) and Sterman (2000) Business Dynamics ch. 9.3 (Bass diffusion with discontinuance); MIT, as SD Lab"
 seed: 102
-dt: 0.25
 stocks:
   Potential_Adopters: 10000
   Adopters: 0

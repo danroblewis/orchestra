@@ -6,11 +6,10 @@ tags: [canonical, input, delay, hidden, goal]
 tests: "stock management is recovered: orders (demand + (600 - inventory) / 8, demand a measured input) arrive through a third-order delay of 6 steps (DELAY3: three hidden stocks), and shipments are the demand; the ordering rule ignores the supply line, so inventory overshoots after each step in demand"
 source: "written for SD Lab after Sterman (2000) Business Dynamics ch. 17-18 (stock management, the supply line ignored); MIT, as SD Lab"
 seed: 105
-dt: 0.25
 stocks:
   Inventory: 600
 inputs:
-  customer_demand: "100 + pulse_train(40, 20.875, 50, 100)"
+  customer_demand: "100 + pulse_train(40, 20.5, 50, 100)"
 flows:
   outside -> Inventory as arrivals: "delay3(75 - 0.125 * Inventory + customer_demand, 6, initial=200)"
   Inventory -> outside as shipments: "customer_demand"

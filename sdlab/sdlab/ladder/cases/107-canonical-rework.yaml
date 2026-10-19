@@ -2,11 +2,10 @@
 # canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).
 title: "Project with rework"
 level: 14
-tags: [canonical, hidden, loop, injection, dt]
+tags: [canonical, hidden, loop, injection]
 tests: "the rework cycle is recovered: work to do W is completed at W / 10, 75% into work done and 25% into undiscovered rework U, a hidden stock found and returned to W at U / 15; announced new projects of 1000 tasks every 200 steps"
 source: "written for SD Lab after the rework cycle of Cooper (1980) and Lyneis and Ford (2007); MIT, as SD Lab"
 seed: 107
-dt: 0.25
 stocks:
   Work_to_Do: 1000
   Work_Done: 0 final

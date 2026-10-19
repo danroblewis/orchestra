@@ -506,7 +506,11 @@ unchanged with their licence, the others written for SD Lab). `pysd_import.py` r
 parser and writes the case body; `canonical/build.py` adds the recipe (`canonical/recipes.yaml`:
 title, level, tags, tests, source, words such as `hidden` or `final`, and announced injections that
 keep the model moving over 300 and 2000 steps) and writes `cases/1NN-canonical-*.yaml`. The case files
-are committed, so the ladder never needs PySD:
+are committed, so the ladder never needs PySD. The models written for SD Lab use TIME STEP 1, one Euler
+step per recorded step, so they probe structure. The two SDXorg samples keep their published TIME STEP
+(1/32, 1/8): data recorded once per time unit from a finer Euler run have per-step rates that differ from
+the model's per-time-unit numbers (a drain k reads as about 1 - exp(-k)), and the scorer compares
+against the model's numbers. So those two also probe sub-step data:
 
 ```
 uv run --with pysd --with sympy python -m sdlab.ladder.pysd_import MODEL.mdl        # a model's case body, or what blocks it
@@ -859,11 +863,12 @@ sweep's 0% point is the counts variant), so a tolerance widens by exactly what t
 never by a fixed amount. A number the bias multiplies with nothing else to pin it down has no
 finite SE: it gets no allowance (relative tolerance only) and the cell is unidentifiable.
 
-score.py is not edited, so the score hash and every stored result stay as they are: score.py and
-analysis.py build their oracle by name (`Oracle(...)`, `HiddenOracle(...)`), and
-`noise_oracle.install()` (run when `sdlab.ladder` is imported) routes those names to the Kalman
-oracle for data with an `observation`, and to the original classes for everything else. A change
-to the noise code re-runs the noisy cases (it is in their case hash).
+score.py and analysis.py build their oracles with `noise_oracle.make_oracle` and
+`make_hidden_oracle`: the Kalman-scaled oracle for data with an `observation`, the linear and
+hidden oracles for everything else. `noise_oracle.py` and `noise_kf.py` are in the score hash, so
+a change to them re-scores stored results; `noise.py`, which makes the data, is in the case hash
+of the cases that opt in. (Adding this re-scored the store once, 19 October 2026: no existing
+cell changed status.)
 
 **Analysis** (`noise_analysis.py`, through `analysis.get`): the same labels as above, from the
 Kalman model in place of fisher.py. The design puts every measured row's numbers free in one joint

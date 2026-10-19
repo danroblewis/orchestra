@@ -3,14 +3,13 @@
 title: "World3 persistent pollution (linear regime)"
 level: 14
 tags: [canonical, input, delay, hidden, outflow]
-tests: "World3's pollution transmission and assimilation are recovered: generation (a measured input) appears after a 20-step third-order delay (three hidden stocks) and is assimilated at PPOL / (1.4 x 1.5); half steps (dt 0.5) as in World3"
+tests: "World3's pollution transmission and assimilation are recovered: generation (a measured input) appears after a 20-step third-order delay (three hidden stocks) and is assimilated at PPOL / (1.4 x 1.5), one step a year (World3 itself uses dt 0.5)"
 source: "written for SD Lab from World3-03's persistent pollution equations (Meadows, Randers and Meadows 2004; PPAPR = DELAY3(PPGR, 20), PPASR = PPOL / (1.4 x AHL70)), in the regime below the 1970 level where AHLM = 1 (the full sector needs a ratio, models/world3-pollution-full.mdl); MIT, as SD Lab"
 seed: 110
-dt: 0.5
 stocks:
   Persistent_Pollution: 25
 inputs:
-  pollution_generation: "30 + step(10, 60.75) + sin(15, 80.00000000000009, 1)"
+  pollution_generation: "30 + step(10, 60.5) + sin(15, 80.00000000000009, 1)"
 flows:
   outside -> Persistent_Pollution as pollution_appearance: "delay3(pollution_generation, 20, initial=200)"
   Persistent_Pollution -> outside as pollution_assimilation: "0.47619047619047616 * Persistent_Pollution"

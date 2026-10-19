@@ -2,11 +2,10 @@
 # canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).
 title: "Logistic growth"
 level: 12
-tags: [canonical, effect, injection, dt]
+tags: [canonical, effect, injection]
 tests: "logistic growth r X (1 - X / K) (r 0.15, K 2000) is recovered as births 0.15 x X and crowding deaths 0.15 x X x X / 2000 (a drain times an effect of its own stock), not as one net flow or a goal gap; announced restocking of 1500 every 100 steps pushes the stock above K and back"
 source: "written for SD Lab (Verhulst logistic growth as births r X and crowding deaths r X^2 / K); MIT, as SD Lab"
 seed: 103
-dt: 0.25
 stocks:
   Population: 20
 flows:

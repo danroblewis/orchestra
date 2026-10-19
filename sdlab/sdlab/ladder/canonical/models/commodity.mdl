@@ -76,7 +76,7 @@ SAVEPER  =
         TIME STEP
 	~	Month
 	~		|
-TIME STEP  = 0.25
+TIME STEP  = 1
 	~	Month
 	~		|
 \\\---/// Sketch information - do not modify anything except names

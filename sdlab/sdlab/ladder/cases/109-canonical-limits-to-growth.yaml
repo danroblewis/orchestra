@@ -2,11 +2,10 @@
 # canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).
 title: "Limits to growth"
 level: 15
-tags: [canonical, effect, coupled, loop, injection, dt]
+tags: [canonical, effect, coupled, loop, injection]
 tests: "the limits-to-growth archetype is recovered: births 0.12 x P times a table effect of the resource R, deaths P / 12, logistic regrowth 0.3 x R x (1 - R / 1000) and grazing 0.4 x P x R / 1000; announced arrivals of 30 animals every 200 steps"
 source: "written for SD Lab after the limits-to-growth archetype (Meadows et al. 1972; Senge 1990); MIT, as SD Lab"
 seed: 109
-dt: 0.25
 stocks:
   Population: 50
   Resource: 1000

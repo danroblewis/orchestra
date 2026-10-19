@@ -2,11 +2,10 @@
 # canonical/recipes.yaml; do not edit by hand (edit the recipe or the model and rebuild).
 title: "Commodity cycle"
 level: 15
-tags: [canonical, effect, delay, hidden, loop, injection, dt]
+tags: [canonical, effect, delay, hidden, loop, injection]
 tests: "a commodity cycle is recovered: production is capacity times a table effect of inventory, consumption a table effect of inventory, and capacity is built at capacity times a table effect of inventory arriving through an 18-step third-order delay, discarded at 1/20; announced imports of 400 every 250 steps"
 source: "written for SD Lab after Meadows (1970) Dynamics of Commodity Production Cycles and Sterman (2000) ch. 20; MIT, as SD Lab"
 seed: 108
-dt: 0.25
 stocks:
   Inventory: 300
   Capacity: 125
