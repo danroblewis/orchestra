@@ -27,10 +27,11 @@ from ..identify import identify as identify_main
 from ..matrix import configurations, identify_one
 
 
-def _residuals(rows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, eras) -> np.ndarray:
-    """dy less what each fitted row's levels explain (its numbers per configuration): its outside
-    inflow, noise and pulses."""
+def _residuals(rows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: np.ndarray, eras, inputs: dict | None = None) -> np.ndarray:
+    """dy less what each fitted row's levels (and measured inputs, aligned as matrix aligns them)
+    explain (its numbers per configuration): its outside inflow, noise and pulses."""
     T = dy.shape[1]
+    cols = {k: np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)] for k, v in (inputs or {}).items() if k not in ids}
     conf = configurations(eras, t)
     out = dy.copy()
     for s, row in enumerate(rows):
@@ -39,7 +40,10 @@ def _residuals(rows: list[dict], ids: list[str], t: list, prev: np.ndarray, dy: 
         for c, coef in enumerate(coefL):
             m = cfg == c
             for j, k in coef.items():
-                out[s, m] -= k * prev[ids.index(j)][m]
+                if j in ids:
+                    out[s, m] -= k * prev[ids.index(j)][m]
+                elif j in cols and len(cols[j]) == T:            # a measured input's column
+                    out[s, m] -= k * cols[j][m]
     return out
 
 
@@ -107,12 +111,14 @@ def find_pulses(stocks: list[dict], run: dict, opts: dict) -> dict[str, np.ndarr
             break
         if o.get("trace"):
             print("  round:", {r["id"]: {j: round(k, 4) for j, k in r["coef"].items()} for r in r1["matrix"] if r["id"] == o["trace"]}, int((amounts != 0).sum()))
-        u = _residuals(r1["matrix"], ids, t, prev, dy, opts.get("eras") if fit.get("split_eras") else None)
+        u = _residuals(r1["matrix"], ids, t, prev, dy, opts.get("eras") if fit.get("split_eras") else None, opts.get("inputs"))
         new = np.zeros_like(dy)
         for s, row in enumerate(r1["matrix"]):
             through = float(np.mean(np.abs(dy[s] - u[s])) + abs(np.median(u[s])))
             coef = row.get("coef") or {}
-            X = np.array([prev[ids.index(j)] for j in coef]).reshape(len(coef), T)
+            ins = {k: np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)] for k, v in (opts.get("inputs") or {}).items() if k not in ids}
+            coef = {j: k for j, k in coef.items() if j in ids or (j in ins and len(ins[j]) == T)}
+            X = np.array([prev[ids.index(j)] if j in ids else ins[j] for j in coef]).reshape(len(coef), T)
             beta = np.array(list(coef.values()), dtype=float)
             new[s] = P.joint(dy[s], X, beta, opts.get("min_piece", 5), floor=floor(s, through), **kw)
         if np.array_equal(new != 0, amounts != 0) and np.allclose(new, amounts):
