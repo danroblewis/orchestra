@@ -1,12 +1,15 @@
 # realistic_hats: effect_hats that answers in time, with hidden transit stocks
 
-**Status:** done (first version, commit 52cd6d1; realistic cases and 462 hand-written test cells run
-19 Oct 2026).
-**Verdict:** keep as the realistic leader's successor. It loses no test cell against effect_hats and
-gains 11 (015, 026, 085: hidden stocks). It answers on 10 of effect_hats' 12 realistic timeouts.
-On the 54 runs both graded, behaviour is unchanged (mean -0.1 points: sd-webshop-stock +9/+11,
-sd-brewery long -30). It is not the large realistic gain the user wants: most realistic failures
-are mechanisms neither strategy has yet (docs/research/realistic-triage.md).
+**Status:** done. First version at commit 52cd6d1; current version at 06b0062, which allows transit
+on closed loops and never takes a used stock as a stage. Both were run on the realistic cases and on
+462 hand-written test cells, 19 Oct 2026.
+**Verdict:** keep as the realistic leader's successor.
+- It loses no test cell against effect_hats and gains 11 (015, 026, 085: hidden stocks).
+- It answers on 11 of effect_hats' 12 realistic timeouts.
+- On the 54 runs both graded, mean skill@20 is +0.4 points. Two runs are better (sd-webshop-stock
+  +9/+11) and none worse.
+- It is not the large realistic gain the user wants. Most realistic failures are mechanisms neither
+  strategy has yet (docs/research/realistic-triage.md).
 
 ## Why
 
@@ -52,40 +55,59 @@ are from 52cd6d1.
 | | runs graded | timeouts | mean skill@20 (graded) | mean over all 66, timeout = -100% | timeout = 0 | fresh@20 | goals met | equation passes | recall |
 |---|---|---|---|---|---|---|---|---|---|
 | effect_hats | 54 | 12 | 49.9% | 22.6% | 40.8% | 48.7% | 14 | 0 | 0.555 |
-| realistic_hats | 64 | 2 | 47.0% | 42.6% | 45.6% | 45.9% | 15 | 0 | 0.569 |
+| realistic_hats 52cd6d1 | 64 | 2 | 47.0% | 42.6% | 45.6% | 45.9% | 15 | 0 | 0.569 |
+| realistic_hats 06b0062 | 65 | 1 | 44.5% | 42.3% | 43.8% | 43.8% | 15 | 0 | 0.566 |
 
-Strict passes: 0 for both (strict needs a pass first).
+Strict passes: 0 for all three (strict needs a pass first).
 
-- **Paired on the 54 runs both graded:** mean -0.1 points. Better: sd-webshop-stock long 85.8% ->
-  94.5% (it now meets the goal) and short 74.4% -> 85.9%, both from a hidden in-transit stock.
-  Worse: sd-brewery long 29.8% -> 0.2%. There a transit water -> H -> fermenting was accepted, but
-  water is a used stock, not a stage; skill@100 went 40% -> 60%.
-- **The 10 runs that now have a model:** sd-ci long 85.7%, sd-clinic-doses long -86.6%, sd-eras
-  long 49.6%, sd-ev-fleet long 18.3%, sd-hospital long 83.0%, sd-k8s-small long 87.2%, short
-  58.2%, sd-moderation long -100%, sd-restaurant long 64.7%, sd-services long 64.8%. They are the
-  hard runs, so the mean over the graded runs falls (49.9% -> 47.0%) while the mean over all runs
-  rises. sd-k8s-platform still times out in both variants.
+- **Paired on the 54 runs both graded (06b0062):** mean +0.4 points, 2 better, 0 worse.
+  - Better: sd-webshop-stock long 85.8% -> 94.5% (it now meets the goal) and short 74.4% -> 85.9%,
+    both from a hidden in-transit stock.
+  - At 52cd6d1, sd-brewery long fell 29.8% -> 0.2%: a transit water -> H -> fermenting was accepted,
+    but water is a used stock, not a stage. 06b0062 skips a source whose loss mostly follows other
+    stocks, and sd-brewery is back to 29.8%.
+- **The 11 runs that now have a model (06b0062):**
 
-**Test cells (462 hand-written cells, the same rescoring):** effect_hats 125 pass / 53 equivalent,
-realistic_hats 140 / 53. 0 cells worse, 15 better:
+  | run | skill@20 |
+  |---|---|
+  | sd-ci long | 85.7% |
+  | sd-clinic-doses long | -86.6% |
+  | sd-eras long | 49.6% |
+  | sd-ev-fleet long | -28.6% |
+  | sd-hospital long | 83.0% |
+  | sd-k8s-small long | 87.2% |
+  | sd-k8s-small short | 58.2% |
+  | sd-moderation long | -100% |
+  | sd-restaurant long | 64.7% |
+  | sd-services long | 64.8% |
+  | sd-k8s-platform short | -100% |
+
+  These are the hard runs, so the mean over the graded runs falls while the mean over all runs rises.
+  sd-k8s-platform long still times out. sd-ev-fleet long varies between runs (18.3% at 52cd6d1, with
+  no transit in either version), because where the time cap stops the search depends on the
+  machine's load.
+
+**Test cells (462 hand-written cells, the same rescoring; identical for 52cd6d1 and 06b0062):**
+effect_hats 125 pass / 53 equivalent, realistic_hats 140 / 53. 0 cells worse, 15 better:
 - 015-hidden-stock (4 of 4), 026-hidden-stock-driven (3) and 085-noisy-hidden-stock (4) come from
   the transit step;
 - 062-tank-fed-by-measured-pump (4) comes from effect_hats' own measured-input fix (89adae4),
   which postdates its stored results.
 
-On the new distilled cases: 156 and 161 still fail. 161 accepts a transit A -> H -> B, but its
-numbers are off: the co-flow on H's exit is not modelled. 156 is never tried, because hidden_transit
-skips a pair with a move B -> A.
+On the new distilled cases, 156 and 161 still fail.
+- 161 accepts a transit A -> H -> B, but its numbers are off: the co-flow on H's exit is not
+  modelled.
+- 156 counts (06b0062) now finds the hidden stage on the loop. Recall is 1.0, fresh skill@20 is
+  92% / 88% (was 42% / 8%), but the numbers are outside tolerance. 52cd6d1 never tried it, because
+  hidden_transit skips a pair with a move B -> A.
 
 ## Next
 
-- **Transit on closed loops.** hidden_transit's rule against a pair with a move B -> A ("a loop's
-  echo") blocks 156, sd-ev-fleet and sd-recycling. A probe without the rule (not committed, in
-  progress at the time of writing) accepted the transit on 156's counts variants: recall 1.0, fresh
-  skill@20 0.92 / 0.88 against 0.42 / 0.08. It found no transit on 008, 009, 010, 011, 012, 016,
-  105, 106 or 135.
-- **Don't take a used stock for a stage** (sd-brewery). Skip a pair where A's loss follows another
-  stock's flow, so the stage is not just a co-flow's mirror.
-- **Mechanisms B, C, D, E** of the triage (an inflow standing in for a flow; co-flows; destination
-  gaps; flows driven by a third stock) are where most realistic skill is lost. Each now has a
-  distilled case (152-155, 161).
+- **Transit numbers on loops and co-flowed exits** (156, 161): a hidden stage is now found there, but
+  its numbers are off.
+- **Mechanisms B, C, D and E** of the triage are where most realistic skill is lost: an inflow
+  standing in for a flow, co-flows, destination gaps, and flows driven by a third stock. Each now
+  has a distilled case (152-155, 161).
+- **Time on long runs.** On the long realistic runs the cap, not convergence, ends the search, so
+  results depend on the machine's load. A cheaper effect screen on long runs (a window, or the
+  short run's candidates) would make them repeatable.
