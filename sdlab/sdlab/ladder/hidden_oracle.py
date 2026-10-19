@@ -191,7 +191,7 @@ def _fit(truth_flows: list[dict], data: dict, wins: list[tuple[int, int]]) -> di
     free = [i for i, (lo, hi) in enumerate(bounds) if not ((lo is not None and y[i] - lo < 1e-6) or (hi is not None and hi - y[i] < 1e-6))]
     k = len(free)
     H = np.zeros((k, k))
-    hstep = 1e-4
+    hstep = 1e-2                 # 1e-4 measured the kink at the variance floor, not the curvature (docs/research/review-hidden-oracle.md)
 
     def at(i, si, j=None, sj=0.0):
         z = y.copy()
