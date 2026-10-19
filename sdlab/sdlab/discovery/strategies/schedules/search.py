@@ -133,6 +133,16 @@ def best_period(r: np.ndarray, most: int = 60) -> tuple[int, int, float] | None:
         ph = int(np.argmax(gain))
         if best is None or gain[ph] > best[2] * (1 + 1e-9):
             best = (P, ph, float(gain[ph]))
+    if best is None:
+        return None
+    # the pulses must stand out of the rest's spread on most of them, not on a few outliers:
+    # their median beyond the rest's median by 5 robust spreads (a planning pulse: 24 against ~1)
+    P, ph, _ = best
+    on = idx % P == ph
+    rest = r[~on]
+    spread = 1.4826 * float(np.median(np.abs(rest - np.median(rest)))) + 1e-12
+    if abs(float(np.median(r[on])) - float(np.median(rest))) < 5 * spread:
+        return None
     return best
 
 
@@ -283,7 +293,9 @@ def candidates(flows: list[dict], ctx: Context, spans: list[dict] | None):
             if j != i and h.get("from") is None and h.get("to") == x and (_constant_outside(h, x) or bool(h.get("inflow"))) and refittable(h) and not h.get("byTime"):
                 link = {"from": None, "to": x, "ratio": 1, "rate": {"form": "linear", "c": 0.0, "terms": [{"stock": z, "k": 0.0}]}, "free_c": True}
                 rest = [f for q, f in enumerate(flows) if q not in (i, j)]
-                yield f"an inflow into {x} falling with {z} for its drain on {z}", rest + [link], False
+                # the same levels while no floor binds: it must fit clearly better (a floor binding),
+                # not win on its one flow fewer (141: the drain on P is the truth)
+                yield f"an inflow into {x} falling with {z} for its drain on {z}", rest + [link], True
     # a drain of x and a link into y reading x beside the move x -> y: the pair dropped (the move
     # takes their share)
     for i, d in enumerate(flows):
