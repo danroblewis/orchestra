@@ -37,39 +37,7 @@ for `combined` on the test cases).
 
    Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
 
-4. **Physics-generated cases (out-of-class data).** Generate data from physical systems that
-   are not stock-and-flow models, simulated in continuous time with a proper ODE solver and
-   sampled:
-   - a draining tank (outflow proportional to √level);
-   - two coupled tanks;
-   - Newton cooling;
-   - a mass-spring-damper (position and velocity as stocks);
-   - Lotka–Volterra predator–prey;
-   - a chemical reaction chain A→B→C;
-   - a thermostat with on/off control.
-
-   Scoring needs its own design:
-   - the expected structure from the physics, i.e. which stocks couple and the sign and shape
-     of each coupling;
-   - held-out prediction (skill on a fresh run, long-run error);
-   - a note when the best SD approximation differs from the physics (e.g. √ outflow vs a
-     proportional drain).
-
-   Tag `physics`; keep it out of the Tests pass rate (its own leaderboard view, like Realistic).
-   Mass-spring and control loops cover the automotive/aerospace idea.
-5. **Real data with professional models.** `case-study-sources.md` has landed (a8ccdc8). Start with
-   its recommended steps:
-   - a PySD converter for SDXorg/test-models (shared with item 2);
-   - a BLS labour-force loader, which has measured flows to score against;
-   - gauseR and the boarding-school flu as real cases;
-   - technology adoption as a family of Bass cases.
-
-   Steps needing an engine change (measured input series, `dt`, stock ceilings) wait for the
-   user's answer (journal, "Needs you"). Originally: ingest its top
-   3-5 recommended sources as `real` cases. The true equations are only the modeller's, so the
-   scoring is held-out prediction plus a structure comparison with the published model. Keep
-   it in its own leaderboard view.
-6. **Shared fixes to `matrix`**, proposed by `censored` (`docs/research/censored.md`):
+6. **Shared fixes to `matrix`** (HOLD until the watcher's backlog is under ~10k items: it re-runs every strategy), proposed by `censored` (`docs/research/censored.md`):
    - `flows.read_flows` may write a negative cross term as an inflow `c + k·x` (k < 0) when the
      row has an outside inflow, a goal gap's true form;
    - price the main line's inflow changes at 2 log n (PELT `mult` 2);
@@ -97,6 +65,8 @@ for `combined` on the test cases).
    watcher's backlog is small.
 
 ## Started
+
+- 2026-10-18 22:35: item 4, physics cases; item 5, real-data cases; rotation c, research to implementation (ideas-2026-10-18.md).
 
 - 2026-10-18 21:40: item 2e, lna_* variants onto lna's hooks.
 
