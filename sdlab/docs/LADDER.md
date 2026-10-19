@@ -240,6 +240,11 @@ flows:
 | 047-random-goal-gap | 011: goal 150-450, time 2-10, arrival 0.1-0.5, demand 0.05-0.2 |
 | 048-random-stepping-inflow-drain | 027: the two inflow levels (1-10, 5-25) and the drain 0.03-0.3 |
 
+Failing draws frozen as fixed cases (October 2026, from the first run of the leading strategies):
+057-three-chains-equal-moves (043#2), 058-move-equals-other-chains-drain (043#7),
+059-small-inflow-step (048#1), 060-close-slow-drains-at-equilibrium (044#3) and
+061-small-inflow-counts (039#2).
+
 ### What a case compiles to
 
 The loader (`cases.py`) compiles a YAML case (`caseformat.py`) to the case dict the ladder has always

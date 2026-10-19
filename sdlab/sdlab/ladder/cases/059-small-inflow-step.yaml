@@ -1,0 +1,14 @@
+# Frozen from 048-random-stepping-inflow-drain#1 (attempt 0) by sdlab-ladder freeze.
+title: "A small unannounced inflow step and a drain"
+level: 3
+tags: [inflow-change, unannounced, outflow, frozen-draw]
+tests: "an outside inflow stepping only 1.8x (6.75 to 12.2) without announcement, drained at 0.162 (frozen 048#1): the steps are found, not read as a constant inflow and a slower drain"
+seed: 48
+stocks: {C: 50}
+flows:
+  outside -> C: 3
+  C -> outside: 0.162 * C
+schedule:
+  every: 200
+  at 1 low: {outside -> C: 6.75}
+  at 101 high: {outside -> C: 12.2}

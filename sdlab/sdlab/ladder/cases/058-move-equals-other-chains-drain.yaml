@@ -1,0 +1,17 @@
+# Frozen from 043-random-three-chains-of-two#7 (attempt 0) by sdlab-ladder freeze.
+title: "Three chains, a move rate equal to another chain's drain"
+level: 4
+tags: [independent, chain, move, frozen-draw]
+tests: "three unrelated chains where chain 1's move (0.158) is within 1% of chain 2's drain (0.159; frozen 043#7): the chains are recovered with no flow between them"
+seed: 43
+stocks: {A1: 0, B1: 0, A2: 0, B2: 0, A3: 0, B3: 0}
+flows:
+  outside -> A1: 5.38
+  A1 -> B1: 0.158 * A1
+  B1 -> outside: 0.087 * B1
+  outside -> A2: 12.1
+  A2 -> B2: 0.491 * A2
+  B2 -> outside: 0.159 * B2
+  outside -> A3: 14
+  A3 -> B3: 0.231 * A3
+  B3 -> outside: 0.0705 * B3

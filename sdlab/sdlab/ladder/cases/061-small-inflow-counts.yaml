@@ -1,0 +1,10 @@
+# Frozen from 039-random-inflow-outflow#2 (attempt 0) by sdlab-ladder freeze.
+title: "One stock with a small inflow, in and out"
+level: 1
+tags: [inflow, outflow, frozen-draw]
+tests: "002 with a small inflow (7.04) and drain 0.168 (frozen 039#2): with counting noise the inflow and drain are not both overestimated"
+seed: 39
+stocks: {A: 0}
+flows:
+  outside -> A: 7.04
+  A -> outside: 0.168 * A

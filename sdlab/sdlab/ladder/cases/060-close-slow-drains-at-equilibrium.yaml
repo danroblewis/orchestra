@@ -1,0 +1,17 @@
+# Frozen from 044-random-three-stocks#3 (attempt 0) by sdlab-ladder freeze.
+title: "Three stocks, two slow drains 4% apart, one near equilibrium"
+level: 3
+tags: [independent, inflow, outflow, frozen-draw]
+tests: "three unrelated stocks, two with slow drains 4% apart (0.039, 0.0374) and C started near its equilibrium (281; frozen 044#3): each stock's inflow and drain are recovered, C's from its noise alone"
+seed: 44
+stocks:
+  A: 223
+  B: 281
+  C: 275
+flows:
+  outside -> A: 38.2
+  A -> outside: 0.153 * A
+  outside -> B: 21.8
+  B -> outside: 0.039 * B
+  outside -> C: 10.5
+  C -> outside: 0.0374 * C

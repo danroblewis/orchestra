@@ -1,0 +1,17 @@
+# Frozen from 043-random-three-chains-of-two#2 (attempt 0) by sdlab-ladder freeze.
+title: "Three chains, two with the same move rate"
+level: 4
+tags: [independent, chain, move, frozen-draw]
+tests: "three unrelated chains where two chains' moves have the same rate (0.153; frozen 043#2): those two A stocks rise in exact proportion, so without noise either one explains either B; the simplest answer (no flow between chains) is the right one"
+seed: 43
+stocks: {A1: 0, B1: 0, A2: 0, B2: 0, A3: 0, B3: 0}
+flows:
+  outside -> A1: 33.3
+  A1 -> B1: 0.153 * A1
+  B1 -> outside: 0.204 * B1
+  outside -> A2: 31.5
+  A2 -> B2: 0.462 * A2
+  B2 -> outside: 0.0898 * B2
+  outside -> A3: 39.7
+  A3 -> B3: 0.153 * A3
+  B3 -> outside: 0.0735 * B3
