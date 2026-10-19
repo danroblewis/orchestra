@@ -1,7 +1,10 @@
 # Co-flows and cyclic links after effect_hats (strategy `coflow_hats`)
 
-**Status:** in progress (distilled cases 128-132; whole-ladder run pending)
-**Verdict:** pending
+**Status:** done for this round (distilled cases 128-132; whole ladder run at `9d891b0`), code at `9d891b0`
+**Verdict:** keep as a co-flow and cycle specialist: 128 and 132 pass in every variant (no strategy passed
+either before), 129 passes none-short and counts-long; 130 and 131 still fail; on the whole ladder 558
+pass / 213 equivalent against effect_hats's 547 / 210, 5 cells worse than effect_hats (053 #4-#6
+none-long, 131 none-short), 16 better. The realistic hard cases are unchanged.
 
 ## Question
 The distilled co-flow and effect cases (128-132, from sd-clinic-doses, sd-cloud-credits, sd-print-shop,
@@ -50,8 +53,66 @@ and one for its period (`price.size`); the joint fit's "column has no weight" ba
 largest column (was 1e-12: on noise-free data a quiet row's weight times a large level fell below
 it, and live inflow pieces were zeroed), and its share of left-out steps may be raised (`max_skip`).
 
+Gates added after the first whole-ladder run (`af06c28`) lost 16 cells to effect_hats on a fresh
+paired rerun (cyclic links accepted on noise-free ties, e.g. 020 none-long; a drain read as a co-flow on
+price ties, 041 #6; a starved co-flow whose cap never bound; SIR read as a drain using its own
+receiver), all in `9d891b0`: a cyclic link must behave 10% better (`cycle_gain`) unless the row's own
+pieces follow the cycle (a piece per half period: then `seg_margin`); a drain read as a co-flow must
+price `coflow_gain` x log T (2) better; a starved co-flow is kept only where its cap binds on at least
+1% of steps; two drains on one curve are not read as a co-flow on a stock the base also feeds.
+Speed: the candidates are refitted and priced, and only the best `extra_most` (4) are re-cut and
+judged (starved: the best 2 over all dry stocks); the extra stages run only on runs of at most
+`extras_max_steps` (3000) steps, since the realistic models' long runs (7000-14400 steps) time out
+otherwise (effect_hats alone takes ~250 s of the 300 s there). The first run timed out on 24
+realistic cells; the second on 9.
+
 Tests: `tests/test_ladder_coflow_hats.py` (per from opposite jumps; 128, 129, 132 none-short pass; a
 chain gets no co-flow or cycle).
 
 ## Results
-Pending: the whole-ladder run of the committed code.
+`uv run sdlab-ladder status --strategies effect_hats,coflow_hats` after `uv run sdlab-ladder run
+--strategies coflow_hats --jobs 2 --timeout 300` (and a `sync` of the same strategy to finish it) on
+`9d891b0`, 2026-10-19; both strategies' rows are marked stale since (other agents changed shared code
+afterwards), and effect_hats's rows are older runs. Letters: none-short, none-long, counts-short,
+counts-long.
+
+| case | effect_hats | coflow_hats |
+|---|---|---|
+| 128-coflow-on-outside-inflow | EEFF | **PPPP** |
+| 129-coflow-runs-empty | FFFF | **P**FF**P** |
+| 130-move-slowed-by-used-stock | FFFF | FFFF |
+| 131-effect-fed-by-its-flow | EEFF | FEFF |
+| 132-link-with-daily-cycle | FFFF | **PPPP** |
+
+Whole ladder (every cell either ran): coflow_hats 558 P / 213 E / 498 F / 9 T; effect_hats 547 / 210 /
+479 / 12 (30 not run). Worse than effect_hats: 053-sweep-excitation #4, #5, #6 none-long and #6
+none-short (P -> E), 131 none-short (E -> F). Better: 128 (4), 129 (2), 132 (4), 043 #3 counts-short
+(F -> P), 055 #7 counts-long and 154 counts-long (F -> E). In the fresh paired rerun of the
+differing cases at `af06c28` (both strategies, same day), 016-coflow went E -> P in three variants;
+the `coflow_gain` gate of `9d891b0` gave that up (its co-flow and drain readings price within 3 of
+each other).
+
+Hard cases (realistic, two variants each): sd-clinic-doses, sd-cloud-credits, sd-print-shop, sd-bakery,
+sd-webshop-stock, sd-learning-curve, sd-moderation: the same letters (all F, sd-moderation's long run
+a timeout) and the same recall as effect_hats. The long runs skip the extra stages; on the short runs
+no co-flow or cycle candidate was accepted. The fixes have not carried back yet.
+
+## What remains, and why
+- **129 none-long, counts-short.** none-long: the matrix fitted on the steps where R is above its median
+  reads Q's row backwards (Q growing with itself, a constant draining it in pieces: near its balance
+  any such pair fits); the drain offered in its place starts at the cross term's k with per 1, the
+  inflows re-measured from that biased split are cut wrong (15 and 20 pooled), and the refit drifts
+  (k 0.44 -> 0.22). counts-short: the co-flow is found (Q's drain 0.28, per 2.10) but R's own drain is
+  lost.
+- **130.** The case writes R's restocking as one inflow (550 - S) / 5; any strategy reading it as an
+  inflow of 110 and a drain of 0.2 x S (the same equation, apart from a floor that never binds) fails
+  the link part, and with an effect in the case the scorer does not test equivalence. So 130 cannot
+  pass unless that reading is chosen, which nothing in the data supports: a scorer question (reported,
+  not changed). Besides, without noise the effect is found with the co-flow as a second drain on the
+  same curve; reading them as one co-flow (`drain_coflows`) fits the two rows with one curve and prices
+  worse than two free curves, so the separate reading is kept.
+- **131.** Without noise the curve of E is straight over the range E covers (200-400, one piece of
+  the table), so E x f(B) plus a plain k x B fits as exactly as B x f(E) and prices better (fewer
+  knots); the W -> E move / link is unidentifiable without noise (`analyse`). With counting noise the
+  screen finds no effect at all (best row gain -11 against a bar of +15; the curve's modulation is
+  about 10% of the flow).
