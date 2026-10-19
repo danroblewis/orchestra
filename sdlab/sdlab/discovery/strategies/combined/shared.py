@@ -80,10 +80,13 @@ def _module(name: str):
 @contextmanager
 def once():
     """Within it, the main line and lna run once per run and set of options; yields the cached
-    stand-ins by strategy name (lna), for the caller's own calls."""
+    stand-ins by strategy name (lna), for the caller's own calls, plus the main line's cached stand-in
+    ("main_line") and its results so far ("main_results": options key -> result or the exception it
+    raised), which combined falls back on when no specialist finished."""
     lna = _module("lna")
     lna_fn = getattr(lna, "identify", None)
-    swaps = [(USERS, _main_line, _cached(_main_line, {}))]
+    main_cache: dict = {}
+    swaps = [(USERS, _main_line, _cached(_main_line, main_cache))]
     if lna_fn is not None:
         swaps.append((LNA_USERS, lna_fn, _cached(lna_fn, {})))
     patched = []
@@ -94,7 +97,7 @@ def once():
                 setattr(m, name, cached)
                 patched.append((m, name, real))
     try:
-        yield {"lna": swaps[1][2]} if lna_fn is not None else {}
+        yield {**({"lna": swaps[1][2]} if lna_fn is not None else {}), "main_line": swaps[0][2], "main_results": main_cache}
     finally:
         for m, name, real in patched:
             setattr(m, name, real)
