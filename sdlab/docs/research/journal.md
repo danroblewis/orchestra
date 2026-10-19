@@ -472,3 +472,42 @@ physics' mistake; odefit passes all 12.
 5. **`tests/test_ladder_noise.py::test_existing_cases_keep_their_four_variants` fails on
    112-distilled-short-logistic** (archetypes, 445aabf). It declares a noise variant without the
    `noisy` tag. 141-143 are tagged `noisy` and pass the check. For the archetypes agent.
+
+## 2026-10-19 03:40 (hourly cycle)
+
+**Health**
+- **Server:** leaderboard rows 0.13 s warm (the compact endpoint, 210afce); one listener.
+- **Watcher:** backlog 75,600 stale, at about 2,000 per 26 min (about 16 h).
+- **Tests:** 1,315 passed, 51 skipped, 1 failed. The noise test "existing cases keep four variants" still fails, likely distilled 141-143; sent to the physics agent last cycle. The realistic test now passes.
+
+**Finished**
+- **archetypes** (short series and twins): real held-out 0.9% → 4.9%; twins −1.3% → 10.0%, with 12 pass and 20 equivalent.
+- **The fast leaderboard** (210afce).
+
+**Started**
+- 0c: the remaining 12 derivative strategies self-contained, starting from KNOWN;
+- 1a: control-theory cases (the user's request);
+- 1b: time measurements, run history, backlog ETA, cost (the user's request).
+
+11 agents are running.
+
+**Leaderboard, Tests** (`sdlab-ladder strict --no-fill`; strict re-graded after the scorer fixes cb1c69d):
+
+| strategy | pass | strict | ran |
+|---|---|---|---|
+| kalman_lna | 71.3% | 63.7% | 1,046 |
+| archetypes | 71.2% | 64.9% | 957 |
+| structures | 70.9% | 64.5% | 1,033 |
+| combined_lean | 70.2% | 66.8% | 971 |
+| combined_r2 | 70.2% | 66.8% | 971 |
+| combined_misfit | 69.8% | 63.5% | 971 |
+| combined | 66.6% | 60.4% | 1,030 |
+
+By strict: combined_lean / combined_r2 66.8%, archetypes 64.9%, structures 64.5%, kalman_lna 63.7%.
+
+**Realistic, physics and distilled:** as at the 02:30 entry. Effect_hats leads realistic (49.9% skill@20). odefit leads physics (27/44). structures leads distilled (25/90), then coflow_hats (15/78).
+
+**Needs you:** unchanged from 02:30.
+- shared `identify.judge` gaining an optional inputs parameter;
+- the behaviour grader swapping only exogenous inflows;
+- retiring dominated strategies.
