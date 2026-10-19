@@ -11,13 +11,6 @@ for `combined` on the test cases).
 
 ## Queued
 
-2e. **Move the lna_* variants onto lna's hooks** (lna f3270a8: `lna.identify(stocks, run, opts,
-   hooks=...)`. The hooks are `data`, `atoms`, `before_search`, `after_search` and `flows`;
-   see `run.HOOKS` and `docs/research/lna.md`). lna_stack, lna_levels, lna_pulses, lna_products
-   and lna_loops each copy `lna.run.discover` today. Rewrite each one as hooks. Their ladder
-   results must be identical, or explain any difference. They then inherit lna's inputs, time
-   budget and stride, which fixes lna_stack's realistic timeouts.
-
 2d. **Engine features for the remaining blockers** (HOLD until the watcher's backlog is under ~10k items: a `simulate.py` change re-runs every strategy) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
    - two-way flows (30 SDXorg models) and negative stocks (9), opt-in per stock or flow;
@@ -88,6 +81,8 @@ for `combined` on the test cases).
    watcher's backlog is small.
 
 ## Started
+
+- 2026-10-18 21:40: item 2e, lna_* variants onto lna's hooks.
 
 
 
