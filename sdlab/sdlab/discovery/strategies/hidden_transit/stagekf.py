@@ -114,6 +114,8 @@ def refine(fit: dict, y: np.ndarray, X: np.ndarray, cands: dict, direct: dict, g
 
     dd = min(0.899, max(1e-4, fit["d"]))
     own = max(1e-4 * fit["kX"], fit["kX"] - fit["terms"][x]) if move else fit["kX"]
+    if own < 0 or (move and own <= 0):         # X grows by itself: not a drain the filter's form takes
+        return fit
     drained = drained or move
     x0 = [math.log(dd / (0.9 - dd))] + [fit["terms"][s] for s in terms] + ([math.log(own)] if drained else [])
     x0 += [fit["direct"][s] for s in dterms] + list(fit["start"])
@@ -123,8 +125,8 @@ def refine(fit: dict, y: np.ndarray, X: np.ndarray, cands: dict, direct: dict, g
     o2 = minimize(cost, o.x, method="L-BFGS-B", options={"maxiter": 300})
     best = o2 if o2.fun < o.fun else o
     if not best.fun < c0:
-        return fit
+        return {**fit, "nll": c0}
     d, a, kX, b, h0 = unpack(best.x)
     terms_out = dict(zip(terms, a.tolist()))
-    return {**fit, "d": d, "terms": terms_out, "kX": kX + (terms_out[x] if move else 0.0), "direct": dict(zip(dterms, b.tolist())),
+    return {**fit, "d": d, "terms": terms_out, "kX": kX + (terms_out[x] if move else 0.0), "direct": dict(zip(dterms, b.tolist())), "nll": float(best.fun),
             "start": h0.tolist(), "kf": True}

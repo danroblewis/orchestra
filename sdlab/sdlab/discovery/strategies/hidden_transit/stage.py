@@ -175,14 +175,18 @@ def _subsets(names: list[str], most: int, least: int = 1):
 
 def fit_stage(y: np.ndarray, X: np.ndarray, cands: dict[str, np.ndarray], direct: dict[str, np.ndarray], d_lo: float, d_hi: float,
               most: int = 3, w: np.ndarray | None = None) -> dict:
-    """The best stage (by BIC) over the chain's order, subsets of u's terms and of the direct terms;
-    and the best plain alternative (every term arriving at once)."""
+    """The best stage (by BIC) over the chain's order, subsets of u's terms and of the direct terms,
+    and the best of each order (for counts, the filter's likelihood chooses the order: least squares
+    lets a first-order stage with a direct term stand in for a DELAY3); and the best plain
+    alternative (every term arriving at once)."""
     m = len(y)
     yw = y if w is None else y * np.sqrt(w)
     floor = m * 1e-8 + 1e-12 * float(yw @ yw)
-    best, plain = None, None
+    best, plain, ranked = None, None, []
     for sub in _subsets(list(cands), most):
         Z = np.array([cands[s] for s in sub])
+        if sub == ("1",):          # a constant through a delay is the constant after a transient: no
+            continue               # evidence of a stage (the starting levels would fit any drift)
         for dsub in _subsets(list(direct), 2, 0):
             W = np.array([direct[s] for s in dsub]).reshape(len(dsub), m)
             for n, drained in itertools.product(ORDERS, (True, False)):
@@ -191,19 +195,22 @@ def fit_stage(y: np.ndarray, X: np.ndarray, cands: dict[str, np.ndarray], direct
                 if lo >= hi:
                     continue
                 rss, d, beta = profile(y, n, Z, X if drained else None, W, lo, hi, w)
+                s = len(sub)
+                if (drained and beta[s + n] < -1e-6) or np.mean(beta[:s] @ Z < -1e-6 * (1 + np.abs(y).mean())) > 0.05:
+                    continue                            # X growing by itself, or a chain fed less than nothing
                 k = len(sub) + n + 1 + drained + len(dsub)
                 bic = _bic(rss, m, k, floor)
-                if best is None or bic < best["bic"]:
-                    s = len(sub)
-                    best = {"terms": dict(zip(sub, beta[:s].tolist())), "n": n, "d": d, "start": beta[s : s + n].tolist(),
-                            "kX": float(beta[s + n]) if drained else 0.0, "direct": dict(zip(dsub, beta[s + n + drained :].tolist())),
-                            "rss": rss, "k": k, "bic": bic}
+                ranked.append({"terms": dict(zip(sub, beta[:s].tolist())), "n": n, "d": d, "start": beta[s : s + n].tolist(),
+                               "kX": float(beta[s + n]) if drained else 0.0, "direct": dict(zip(dsub, beta[s + n + drained :].tolist())),
+                               "rss": rss, "k": k, "bic": bic})
         A = np.column_stack([cands[s] for s in sub] + [-X] + [direct[s] for s in direct if s not in sub])  # (at once, a term is in once)
         rss, beta = _ls(y, A, w)
         bic = _bic(rss, m, A.shape[1], floor)
         if plain is None or bic < plain["bic"]:
             plain = {"terms": dict(zip(sub, beta[: len(sub)].tolist())), "rss": rss, "bic": bic}
-    return {"stage": best, "plain": plain, "floor": floor}
+    ranked.sort(key=lambda f: f["bic"])
+    per_order = [next(f for f in ranked if f["n"] == n) for n in ORDERS if any(f["n"] == n for f in ranked)]
+    return {"stage": ranked[0] if ranked else None, "ranked": per_order, "plain": plain, "floor": floor}   # (stage None: no valid one)
 
 
 def hidden_levels(fit: dict, cands: dict[str, np.ndarray], m: int) -> np.ndarray:
@@ -290,6 +297,8 @@ def try_stock(flows: list[dict], ids: list[str], run: dict, x: str, injections: 
         gross = sum((abs(sign[j]) * np.abs(am[j]) for j in range(len(flows))), np.zeros(m))
         w = 1.0 / np.maximum(1.0, gross)
     res = fit_stage(y, X, cands, direct, d_lo, d_hi, w=w)
+    if res["stage"] is None:
+        return None
     res["data"] = {"y": y, "X": X, "cands": cands, "direct": direct,
                    "gross": sum((abs(sign[j]) * np.abs(am[j]) for j in keep), np.zeros(m))}
     r = (y - found) * (np.sqrt(w) if w is not None else 1.0)

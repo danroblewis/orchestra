@@ -36,7 +36,7 @@ reference on the data, default 0: it must behave better), "ht_max" (hidden stock
 times in the run: delay <= T / ht_turns, default 15), "ht_min_delay" (a shorter delay is a move;
 default 1.5 steps), "ht_stages" (hidden stages at most, default 2), "ht_stage_margin" (a stage's BIC margin
 over the found row and the plain alternative, in log T: default 2), "ht_stage_found_ratio" (the model
-with a stage may behave at most this many times worse than the model as found: default 2), "ht_trace".
+with a stage may behave at most this many times worse than the model as found: default 1.5), "ht_trace".
 """
 
 from __future__ import annotations
@@ -138,7 +138,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     trace = opts.pop("ht_trace", False)
     turns = opts.pop("ht_turns", 15)
     opts_stage = {"most": opts.pop("ht_stages", 2), "margin": opts.pop("ht_stage_margin", 2.0),
-                  "found_ratio": opts.pop("ht_stage_found_ratio", 2.0)}
+                  "found_ratio": opts.pop("ht_stage_found_ratio", 1.5)}
     r = main_line(stocks, run, opts)
     flows = r["flows"]
     ids = [s["id"] for s in stocks]
@@ -237,8 +237,11 @@ def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferre
         res, x = best
         done.add(x)
         fit, dat = res["stage"], res["data"]
-        if is_counts:                       # the numbers by the filter's likelihood (the chain's own counts)
-            fit = refine(fit, dat["y"], dat["X"], dat["cands"], dat["direct"], dat["gross"], x)
+        if is_counts:                       # the numbers by the filter's likelihood (the chain's own counts),
+            m = len(dat["y"])               # which also chooses the chain's order
+            fits = [refine(g, dat["y"], dat["X"], dat["cands"], dat["direct"], dat["gross"], x) for g in res["ranked"]]
+            fits = [g for g in fits if "nll" in g] or [fit]
+            fit = min(fits, key=lambda g: g.get("nll", 0.0) + g["k"] * math.log(m))
             if trace:
                 print(f"  refined: delay {fit['n'] / fit['d']:.3f}, u {fit['terms']}, kX {fit['kX']:.4f}, direct {fit['direct']}")
         new, hs = write_stage(flows, res["keep"], x, fit, f"{x}~stage")
