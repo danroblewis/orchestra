@@ -1,7 +1,7 @@
 # Combined: the specialists side by side, one judge
 
-**Status:** done for the ladder's test cases 001-048 and the realistic examples (commit ded5e80);
-the generated-model bench was still running when this was written (see Results). Work left: the
+**Status:** done for the ladder's test cases 001-048, the realistic examples (commit ded5e80), the
+examples bench and 100 generated models (commit 696189d). Work left: the
 noisy-measurement cases (080-087) and the canonical models (100-110), whose specialists
 (`kalman_lna`, `structures`) are not candidates yet.
 **Verdict:** adopt as the ladder's combination. On 001-048 it passes 415 of 472 cells (87.9%)
@@ -173,10 +173,12 @@ held-out era, or inflows from a shared re-estimate), not a tighter factor.
   696189d): mean skill@20 31.4% (+1.7 against v2.1), skill@100 41.6% (+12.3), 13 of 62 runs meet
   the goal. Paired against v2.1: 32 better and 18 worse at @20 (sign p = 0.065). Against lna's
   default-length run (31 runs): +27.5 points @20 (Wilcoxon p = 0.004) and +39.1 @100 (p = 0.004).
-- **Generated models** (`--generated 100 --jobs 3`): lna's reference is -51.8% mean skill@20, with
-  6 of 200 runs meeting the goal. combined was still running when this was written (commit
-  696189d, 100 of 200 runs done). Its result is in
-  `~/.cache/sdlab/bench/runs/generated/*combined-696189d*`.
+- **Generated models** (`--generated 100 --jobs 3`, commit 696189d, 200 runs): mean skill@20
+  -6.7% and skill@100 -11.3%, with 39 of 200 runs meeting the goal. lna's reference run on the
+  same models gave -51.8% / -50.1% and 6 of 200. Paired: 97 better and 21 worse at @20, +45.1
+  points (Wilcoxon p = 3e-13); +38.8 points at @100 (p = 1e-10). Fresh runs: +44.7 / +38.3. Runs
+  saved under `~/.cache/sdlab/bench/runs/generated/` (`*lna-reference-for-combined*`,
+  `*combined-696189d*`). The run took 2 h 21 min at `--jobs 3` on the loaded machine.
 
 ### Time
 
@@ -193,30 +195,30 @@ same 472 cells. That is over the "few minutes" goal on a loaded machine; see Spe
 the store, the true model against every specialist's failing model. The truth's numbers are fitted
 by the judge's own likelihood, starting at the truth, with schedule values kept tied. Each wrong
 model is refitted as the strategy refits it. A row means the judge scores a wrong model better than
-the truth. The run on 001-048 at commit ded5e80 is in progress; the results below come from the
-first run on 001-048 (31 cells, earlier truth fit).
+the truth.
 
-- **Truly unidentifiable or data-limited cells** (gap at most 4 nats, about the price of 1-2
-  numbers):
-  - 009 births and deaths, none: only the net rate is identifiable.
-  - 045 link and 054 link-strength sweeps: a weak link.
-  - 046 and 055 link loops, and 010 loop-branch counts-short: a small loop-closing link within
-    its standard error.
-  - 016 coflow counts-short.
-- **Judge bugs** (gap far above a few numbers):
-  - **024-floor-binds counts-long:** fixed. It was a bug in the sanity fit (the truth's signs were
-    lost) and has been fixed.
-  - **017-linear-effect counts-long** (62 nats; the truth's effect needs 51 numbers against
-    effect_hats' 36). The table points of a linear effect written as `linear` cost 3, but the
-    truth's schedule pieces dominate the price. This is a pricing artefact of inflow pieces, not of
-    the effect.
-  - **048-random-stepping-inflow-drain #8 counts-long** (24 nats). The truth's inflow steps
-    (42 numbers in all) cost more than they gain in fit over lna's 6-number model. The BIC price per inflow change (value plus
-    place, 0.5 log T each) is high when the steps are small relative to the counting noise.
-  - **056 sweep-zero-floor counts** (12-31 nats in the offline study; the truth, unfitted, loses to
-    lna). Near zero, the counts are 0 and 1 and the drain
-    is cut short by the empty stock, so the Gaussian approximation is biased. A discrete (Poisson
-    or Skellam) likelihood for small counts would fix it.
+**On 001-048 at commit ded5e80** (`... test_ladder_combined.py 1 48`) there are 16 such cells, out of
+472. In every one the gap is at most 3.8 nats, about the price of one or two numbers, and the wrong
+model is (or is next to) one the scorer calls equivalent:
+
+| cells | gap (nats) | what the data cannot decide |
+|---|---|---|
+| 009 births and deaths, none (2) | 2.9-3.8 | only the net rate (the ladder's best answer is "equivalent") |
+| 046 link loops, counts (10 of 16 draw-variants) | 1.0-3.8 | the loop-closing link, a number within ~1 SE of zero; the truth's own fit is no better than the loop without it |
+| 045 #7 counts-short, #8 none-short | 0.4-2.3 | a weak link against a move |
+| 010 loop-branch counts-short, 016 coflow counts-short | 1.6-2.5 | a short noisy run |
+
+None of these is a judge bug in the sense of a wrong model clearly preferred. They are the cells the
+scorer marks equivalent, and BIC breaks the tie towards the simpler model, as the user wants. An
+earlier run with a buggy truth fit (it lost the sign of negative numbers) also listed 017
+counts-long, 024 counts-long and 048 #8 counts-long. Once the truth's numbers are fitted properly
+and the candidates refitted, those rows are gone.
+
+**Outside 001-048** (offline study on stored results, truth unfitted), one real judge weakness:
+
+- **056 sweep-zero-floor counts** (12-31 nats). Near zero, the counts are 0 and 1 and the drain is
+  cut short when the stock empties, so the Gaussian (LNA) approximation is biased and prefers a
+  wrong drain. A discrete (Poisson or Skellam) likelihood for small counts would fix it.
 
 ## What would close the remaining gap
 
@@ -227,8 +229,7 @@ first run on 001-048 (31 cells, earlier truth fit).
    combined does not) and `structures` (canonical models 100-110: 25 such cells). The judge also needs a likelihood
    for measurement noise (a Kalman filter on the levels). The one-step likelihood here assumes the
    levels are measured exactly.
-3. **A discrete likelihood for small counts** (056), and a lower price for small inflow steps,
-   which the change_price research suggests (048 #8).
+3. **A discrete likelihood for small counts** (056).
 4. **Speed.** common_cause and effect_hats dominate on noise-free long runs, and the lna family on
    realistic ones. A screen that skips common_cause when no two stocks move alike would save most
    of its time.
