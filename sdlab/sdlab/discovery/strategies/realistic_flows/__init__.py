@@ -75,7 +75,7 @@ from .inputs import rows as input_rows
 from .coflows import cross_coflow_candidates, inflow_coflow_candidates, starved_candidates
 from .cycles import cycle_candidates
 from .joint import refit
-from .moves import third_stock_moves
+from .moves import drains_into_moves, third_stock_moves
 from .price import price, prune
 from .pieces import resegment
 from .screen import scan
@@ -84,7 +84,7 @@ DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
             "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True, "share": 0.85, "transit": True,
             "inflow_coflows": True, "starved": True, "cycles": True, "extra_most": 4, "cycle_gain": 0.9, "coflow_gain": 2.0, "extras_max_steps": 3000,
-            "drain_coflows": True, "own_drains": True, "own_tol": 1e-6, "readings": 3}
+            "drain_coflows": True, "own_drains": True, "own_tol": 1e-6, "readings": 3, "drain_tie": 2.0}
 
 
 def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
@@ -337,17 +337,21 @@ def _readings(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, stocks, 
     tried = []
     for _ in range(o["readings"]):
         pick = None
-        for cand in third_stock_moves(out["flows"], stocks):
+        cands = [("a move driven by a third stock", c, 0.0) for c in third_stock_moves(out["flows"], stocks)]
+        # a drain moved onto a move has the same number of numbers and steps the same: it is kept unless
+        # it prices clearly worse (`drain_tie`), as the model with one outside flow fewer
+        cands += [("a constant drain read as part of a move", c, o["drain_tie"]) for c in drains_into_moves(out["flows"], stocks)]
+        for name, cand, tie in cands:
             fl = resegment(cand, ids, run, fit_opts) if o["pool"] else refit(cand, ids, run, fit_opts)[0]
             b = price(fl, ids, run, inputs)
             e = judge(fl, stocks, run, injections=injections, inputs=inputs)
-            tried.append({"name": "a move driven by a third stock", "error": e, "bic": b})
-            if b < cur_b and e < o["margin"] * cur_e and (pick is None or b < pick[0]):
-                pick = (b, e, fl)
+            tried.append({"name": name, "error": e, "bic": b})
+            if b < cur_b + tie and e < o["margin"] * cur_e and (pick is None or b - tie < pick[0] - pick[4]):
+                pick = (b, e, fl, name, tie)
         if pick is None:
             break
         cur_b, cur_e = pick[0], pick[1]
-        out = {**out, "flows": pick[2], "chosen": f"{out.get('chosen')}, a move driven by a third stock", "bic": cur_b}
+        out = {**out, "flows": pick[2], "chosen": f"{out.get('chosen')}, {pick[3]}", "bic": cur_b}
         state["answer"] = {**out, "flows": _clean(out["flows"])}
     return {**out, "tried": list(out.get("tried") or []) + tried}, cur_b, cur_e
 

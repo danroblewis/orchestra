@@ -71,3 +71,62 @@ def third_stock_moves(flows: list[dict], stocks: list[dict]) -> list[list[dict]]
                     new.append({"from": s, "to": None, "ratio": 1, "rate": rate, "rates": [rate], "nearly": [], "bothWays": False})
             out.append(new)
     return out
+
+
+def _inflow_of(flows: list[dict], x: str) -> dict | None:
+    return next((f for f in flows if f.get("from") is None and f.get("to") == x and f.get("inflow") is not None
+                 and (f.get("rate") or {}).get("form") == "constant"), None)
+
+
+def drains_into_moves(flows: list[dict], stocks: list[dict]) -> list[list[dict]]:
+    """2. A constant drain of Y read as a constant part of the move X -> Y (mechanism B; distilled 131,
+    from sd-learning-curve, sd-print-shop, sd-moderation). A move whose rate is k x X - c (an effect
+    linearised, a release above a threshold, 158) is read by the matrix as k x X with c twice: in
+    X's outside inflow (c more than X gets from outside) and as a constant drain of Y. Both readings
+    step the same; the one with the constant on the move has one outside flow fewer, and keeps X's
+    outside inflow as what arrives from outside. Candidates: Y's constant drain (one value, no
+    pieces) moved onto each move X -> Y whose source has an outside inflow, as far as the smallest of
+    X's inflow values allows."""
+    unit = {s["id"]: s.get("unit") or "" for s in stocks}
+    out = []
+    for i, d in enumerate(flows):
+        y = d.get("from")
+        if y not in unit or d.get("to") is not None or (d.get("rate") or {}).get("form") != "constant":
+            continue
+        pieces = d.get("inflow") or []
+        if len({round(float(g.get("value") or 0.0), 9) for g in pieces}) > 1:
+            continue
+        c = float(d["rate"].get("value") or 0.0)
+        if c <= 0:
+            continue
+        for j, m in enumerate(flows):
+            x = m.get("from")
+            if m.get("to") != y or x not in unit or unit[x] != unit[y] or m.get("uses") or m.get("effects") or m.get("byTime") or m.get("hat"):
+                continue
+            r = m.get("rate") or {}
+            if r.get("form") != "proportional" or r.get("stock") != x:
+                continue
+            fin = _inflow_of(flows, x)
+            if fin is None:
+                continue
+            vals = [float(g.get("value") or 0.0) for g in fin["inflow"]]
+            move_c = min(c, min(vals) if vals else 0.0)
+            if move_c <= 0:
+                continue
+            rate = {"form": "linear", "c": -move_c, "terms": [{"stock": x, "k": float(r["k"])}]}
+            new = []
+            for q, f in enumerate(flows):
+                if q == i:
+                    if c - move_c > 1e-9 * c:
+                        left = {"form": "constant", "value": c - move_c}
+                        new.append({**f, "rate": left, "rates": [left], "inflow": [{**g, "value": c - move_c} for g in pieces]})
+                elif q == j:
+                    new.append({**f, "rate": rate, "rates": [rate]})
+                elif f is fin:
+                    ins = [{**g, "value": float(g.get("value") or 0.0) - move_c} for g in f["inflow"]]
+                    v = {"form": "constant", "value": float(f["rate"]["value"]) - move_c}
+                    new.append({**f, "rate": v, "rates": [v], "inflow": ins})
+                else:
+                    new.append(f)
+            out.append(new)
+    return out
