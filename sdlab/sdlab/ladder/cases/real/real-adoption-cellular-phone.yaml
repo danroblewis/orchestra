@@ -11,22 +11,22 @@ real:
   select:
     entity: Cellular phone
   points: 26
-  train: 20
+  train: 21
   time:
     unit: year
     first: 1994
     last: 2019
-    train_last: 2013
+    train_last: 2014
   sha256: befb9e9a3d0e0be8
   measured_flows: []
   published:
     family: bass
-    refit: least squares of the free run on the first 20 years (p, q and the market potential m, at most 100%)
+    refit: least squares of the free run on the first 21 years (p, q and the market potential m, at most 100%)
   twin:
     rel:
-      A: 0.07613
+      A: 0.07421
     floor:
-      A: 4.5
+      A: 4.55
     complement:
       N:
         of: A
@@ -39,6 +39,6 @@ stocks:
   A: {initial: 10, unit: "% of households"}
 flows:
   N -> A as innovation:
-    rate: max(0, -0.135487 + 0.0392484 * N)
+    rate: max(0, -0.134774 + 0.0392625 * N)
   N -> A as imitation:
-    rate: max(0, -0.00537197 + 0.00155617 * N) * effect(A, linear, normal=1, max=101)
+    rate: max(0, -0.0053364 + 0.00155461 * N) * effect(A, linear, normal=1, max=101)

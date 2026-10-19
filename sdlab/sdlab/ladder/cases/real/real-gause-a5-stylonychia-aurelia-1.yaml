@@ -27,21 +27,21 @@ real:
           Culture: '1'
           Species: Paramecium aurelia
   points: 18
-  train: 14
+  train: 15
   time:
     unit: day
     first: 2.0
     last: 19.0
-    train_last: 15.0
+    train_last: 16.0
   sha256: 9aee13ea5bdbcde1
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 14 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 15 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      S: 0.475
-      Pa: 0.26478
+      S: 0.50271
+      Pa: 0.25479
     floor:
       S: 2.55
       Pa: 27.5
@@ -53,14 +53,14 @@ stocks:
   Pa: {initial: 9, unit: "individuals"}
 flows:
   outside -> S as s_r:
-    rate: 0.933837 * S
+    rate: 0.917733 * S
   S -> outside as s_s:
-    rate: 0.000000000170179 * S * effect(S, linear, normal=1, max=6000)
+    rate: 0.00047365 * S * effect(S, linear, normal=1, max=6000)
   S -> outside as s_pa:
-    rate: 0.00273452 * S * effect(Pa, linear, normal=1, max=60000)
+    rate: 0.00229698 * S * effect(Pa, linear, normal=1, max=60000)
   outside -> Pa as pa_r:
-    rate: 0.879686 * Pa
+    rate: 0.933033 * Pa
   outside -> Pa as pa_s:
-    rate: 0.00398016 * Pa * effect(S, linear, normal=1, max=6000)
+    rate: 0.00221994 * Pa * effect(S, linear, normal=1, max=6000)
   Pa -> outside as pa_pa:
-    rate: 0.00198597 * Pa * effect(Pa, linear, normal=1, max=60000)
+    rate: 0.00198023 * Pa * effect(Pa, linear, normal=1, max=60000)

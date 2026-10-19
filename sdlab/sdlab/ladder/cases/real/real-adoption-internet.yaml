@@ -11,22 +11,22 @@ real:
   select:
     entity: Internet
   points: 24
-  train: 18
+  train: 21
   time:
     unit: year
     first: 1993
     last: 2016
-    train_last: 2010
+    train_last: 2013
   sha256: 55510b48e667cc8b
   measured_flows: []
   published:
     family: bass
-    refit: least squares of the free run on the first 18 years (p, q and the market potential m, at most 100%)
+    refit: least squares of the free run on the first 21 years (p, q and the market potential m, at most 100%)
   twin:
     rel:
-      A: 0.02644
+      A: 0.0251
     floor:
-      A: 3.7
+      A: 4.1
     complement:
       N:
         of: A
@@ -39,6 +39,6 @@ stocks:
   A: {initial: 10, unit: "% of households"}
 flows:
   N -> A as innovation:
-    rate: max(0, -0.00026 + 0.00001 * N)
+    rate: max(0, -0.276383 + 0.0159084 * N)
   N -> A as imitation:
-    rate: max(0, -0.103261 + 0.00397157 * N) * effect(A, linear, normal=1, max=101)
+    rate: max(0, -0.0432495 + 0.00248941 * N) * effect(A, linear, normal=1, max=101)

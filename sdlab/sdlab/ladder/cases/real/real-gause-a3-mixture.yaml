@@ -25,21 +25,21 @@ real:
           Species: Paramecium caudatum
           Treatment: Mixture
   points: 24
-  train: 18
+  train: 21
   time:
     unit: day
     first: 2.0
     last: 25.0
-    train_last: 19.0
+    train_last: 22.0
   sha256: 07d3643405e8420f
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 18 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 21 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      Pa: 0.1471
-      Pc: 0.17149
+      Pa: 0.13727
+      Pc: 0.20416
     floor:
       Pa: 19.35
       Pc: 6.2
@@ -51,14 +51,14 @@ stocks:
   Pc: {initial: 10, unit: "individuals"}
 flows:
   outside -> Pa as pa_r:
-    rate: 1.00534 * Pa
+    rate: 0.974919 * Pa
   Pa -> outside as pa_pa:
-    rate: 0.00264504 * Pa * effect(Pa, linear, normal=1, max=40000)
-  Pa -> outside as pa_pc:
-    rate: 0.00204847 * Pa * effect(Pc, linear, normal=1, max=20000)
+    rate: 0.0037861 * Pa * effect(Pa, linear, normal=1, max=40000)
+  outside -> Pa as pa_pc:
+    rate: 0.000723929 * Pa * effect(Pc, linear, normal=1, max=20000)
   outside -> Pc as pc_r:
-    rate: 0.880097 * Pc
+    rate: 0.88074 * Pc
   Pc -> outside as pc_pa:
-    rate: 0.00212468 * Pc * effect(Pa, linear, normal=1, max=40000)
+    rate: 0.00224382 * Pc * effect(Pa, linear, normal=1, max=40000)
   Pc -> outside as pc_pc:
-    rate: 0.00423299 * Pc * effect(Pc, linear, normal=1, max=20000)
+    rate: 0.00383968 * Pc * effect(Pc, linear, normal=1, max=20000)

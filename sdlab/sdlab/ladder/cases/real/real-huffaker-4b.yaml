@@ -25,21 +25,21 @@ real:
           Figure: 4b
           Species: Predator (Typhlodromus occidentalis)
   points: 23
-  train: 17
+  train: 20
   time:
     unit: week
     first: 2.0
     last: 24.0
-    train_last: 18.0
+    train_last: 21.0
   sha256: f424180e28bf551d
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 17 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 20 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      Prey: 0.28767
-      Pred: 0.6104
+      Prey: 0.20423
+      Pred: 0.57451
     floor:
       Prey: 67.9
       Pred: 1.05125
@@ -51,14 +51,14 @@ stocks:
   Pred: {initial: 2.725, unit: "individuals"}
 flows:
   outside -> Prey as prey_r:
-    rate: 0.660319 * Prey
+    rate: 0.506632 * Prey
   Prey -> outside as prey_prey:
-    rate: 0.000495488 * Prey * effect(Prey, linear, normal=1, max=200000)
+    rate: 0.0000832506 * Prey * effect(Prey, linear, normal=1, max=200000)
   Prey -> outside as prey_pred:
-    rate: 0.119816 * Prey * effect(Pred, linear, normal=1, max=3000)
+    rate: 0.120909 * Prey * effect(Pred, linear, normal=1, max=3000)
   Pred -> outside as pred_r:
-    rate: 0.969546 * Pred
+    rate: 0.375361 * Pred
   outside -> Pred as pred_prey:
-    rate: 0.00279498 * Pred * effect(Prey, linear, normal=1, max=200000)
+    rate: 0.00222826 * Pred * effect(Prey, linear, normal=1, max=200000)
   Pred -> outside as pred_pred:
-    rate: 0.467687 * Pred * effect(Pred, linear, normal=1, max=3000)
+    rate: 0.150113 * Pred * effect(Pred, linear, normal=1, max=3000)

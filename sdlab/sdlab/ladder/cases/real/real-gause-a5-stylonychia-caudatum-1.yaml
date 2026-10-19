@@ -27,24 +27,24 @@ real:
           Culture: '1'
           Species: Paramecium caudatum
   points: 18
-  train: 14
+  train: 15
   time:
     unit: day
     first: 2.0
     last: 19.0
-    train_last: 15.0
+    train_last: 16.0
   sha256: fcfb7460078f5479
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 14 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 15 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      S: 0.24907
-      Pc: 0.16579
+      S: 0.2459
+      Pc: 0.14976
     floor:
       S: 3.8
-      Pc: 8.7
+      Pc: 10.0
   cite: Gause (1934) The Struggle for Existence
   licence: GPL-3 (the package); the counts are Gause's published observations
   url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
@@ -53,14 +53,14 @@ stocks:
   Pc: {initial: 7, unit: "individuals"}
 flows:
   outside -> S as s_r:
-    rate: 0.95127 * S
+    rate: 0.94959 * S
   S -> outside as s_s:
-    rate: 0.00352648 * S * effect(S, linear, normal=1, max=8000)
+    rate: 0.000301215 * S * effect(S, linear, normal=1, max=8000)
   S -> outside as s_pc:
-    rate: 0.0177719 * S * effect(Pc, linear, normal=1, max=20000)
+    rate: 0.0230226 * S * effect(Pc, linear, normal=1, max=20000)
   outside -> Pc as pc_r:
-    rate: 1.04509 * Pc
+    rate: 1.04926 * Pc
   Pc -> outside as pc_s:
-    rate: 0.00140688 * Pc * effect(S, linear, normal=1, max=8000)
+    rate: 0.00539052 * Pc * effect(S, linear, normal=1, max=8000)
   Pc -> outside as pc_pc:
-    rate: 0.00809951 * Pc * effect(Pc, linear, normal=1, max=20000)
+    rate: 0.00623983 * Pc * effect(Pc, linear, normal=1, max=20000)

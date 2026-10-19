@@ -11,22 +11,22 @@ real:
   select:
     entity: Nox pollution controls (boilers)
   points: 16
-  train: 12
+  train: 13
   time:
     unit: year
     first: 1990
     last: 2005
-    train_last: 2001
+    train_last: 2002
   sha256: bf49824a0ebc40d4
   measured_flows: []
   published:
     family: bass
-    refit: least squares of the free run on the first 12 years (p, q and the market potential m, at most 100%)
+    refit: least squares of the free run on the first 13 years (p, q and the market potential m, at most 100%)
   twin:
     rel:
-      A: 0.04523
+      A: 0.04343
     floor:
-      A: 3.6
+      A: 3.85
     complement:
       N:
         of: A
@@ -39,6 +39,6 @@ stocks:
   A: {initial: 16, unit: "% of households"}
 flows:
   N -> A as innovation:
-    rate: max(0, -0.185984 + 0.0158191 * N)
+    rate: 0.0206233 * N
   N -> A as imitation:
-    rate: max(0, -0.0293096 + 0.00249297 * N) * effect(A, linear, normal=1, max=101)
+    rate: 0.00177328 * N * effect(A, linear, normal=1, max=101)

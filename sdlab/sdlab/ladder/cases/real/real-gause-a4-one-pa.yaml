@@ -20,22 +20,22 @@ real:
           Species: Paramecium aurelia
           Treatment: one loop
   points: 17
-  train: 13
+  train: 14
   time:
     unit: day
     first: 0.0
     last: 16.0
-    train_last: 12.0
+    train_last: 13.0
   sha256: 630982756e98db79
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 13 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 14 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      Pa: 0.14113
+      Pa: 0.13362
     floor:
-      Pa: 22.7
+      Pa: 24.6
   cite: Gause (1934) The Struggle for Existence
   licence: GPL-3 (the package); the counts are Gause's published observations
   url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
@@ -43,6 +43,6 @@ stocks:
   Pa: {initial: 2, unit: "individuals"}
 flows:
   outside -> Pa as pa_r:
-    rate: 1.11412 * Pa
+    rate: 1.08862 * Pa
   Pa -> outside as pa_pa:
-    rate: 0.00292554 * Pa * effect(Pa, linear, normal=1, max=50000)
+    rate: 0.00280519 * Pa * effect(Pa, linear, normal=1, max=50000)

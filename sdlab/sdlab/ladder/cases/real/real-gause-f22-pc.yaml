@@ -19,20 +19,20 @@ real:
         where:
           Treatment: Pc
   points: 23
-  train: 17
+  train: 20
   time:
     unit: day
     first: 2.0
     last: 24.0
-    train_last: 18.0
+    train_last: 21.0
   sha256: 5a6b0a4e50938be2
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 17 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 20 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      Pc: 0.1497
+      Pc: 0.13755
     floor:
       Pc: 10.787781
   cite: Gause (1934) The Struggle for Existence
@@ -42,6 +42,6 @@ stocks:
   Pc: {initial: 6.51104, unit: "volume units"}
 flows:
   outside -> Pc as pc_r:
-    rate: 0.8248 * Pc
+    rate: 0.822204 * Pc
   Pc -> outside as pc_pc:
-    rate: 0.00416887 * Pc * effect(Pc, linear, normal=1, max=30000)
+    rate: 0.00412877 * Pc * effect(Pc, linear, normal=1, max=30000)

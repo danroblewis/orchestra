@@ -20,22 +20,22 @@ real:
           Species: Paramecium caudatum
           Treatment: Monoculture
   points: 24
-  train: 18
+  train: 21
   time:
     unit: day
     first: 2.0
     last: 25.0
-    train_last: 19.0
+    train_last: 22.0
   sha256: 1f9c0319871912ae
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 18 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 21 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      Pc: 0.15449
+      Pc: 0.14093
     floor:
-      Pc: 10.85
+      Pc: 11.7
   cite: Gause (1934) The Struggle for Existence
   licence: GPL-3 (the package); the counts are Gause's published observations
   url: https://cran.r-project.org/src/contrib/gauseR_1.3.tar.gz
@@ -43,6 +43,6 @@ stocks:
   Pc: {initial: 10, unit: "individuals"}
 flows:
   outside -> Pc as pc_r:
-    rate: 0.707212 * Pc
+    rate: 0.702486 * Pc
   Pc -> outside as pc_pc:
-    rate: 0.00356394 * Pc * effect(Pc, linear, normal=1, max=30000)
+    rate: 0.00349665 * Pc * effect(Pc, linear, normal=1, max=30000)

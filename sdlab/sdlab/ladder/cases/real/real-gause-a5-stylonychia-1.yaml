@@ -21,20 +21,20 @@ real:
           Culture: '1'
           Species: Stylonychia pustulata
   points: 15
-  train: 11
+  train: 12
   time:
     unit: day
     first: 2.0
     last: 16.0
-    train_last: 12.0
+    train_last: 13.0
   sha256: b5ae8c0a92bdb764
   measured_flows: []
   published:
     family: glv
-    refit: least squares of the free run from the first sample on the first 11 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
+    refit: least squares of the free run from the first sample on the first 12 samples (gauseR's generalised Lotka-Volterra, every r_i and a_ij)
   twin:
     rel:
-      S: 0.16926
+      S: 0.16163
     floor:
       S: 3.7
   cite: Gause (1934) The Struggle for Existence
@@ -44,6 +44,6 @@ stocks:
   S: {initial: 7, unit: "individuals"}
 flows:
   outside -> S as s_r:
-    rate: 1.00039 * S
+    rate: 1 * S
   S -> outside as s_s:
-    rate: 0.0164138 * S * effect(S, linear, normal=1, max=8000)
+    rate: 0.0166499 * S * effect(S, linear, normal=1, max=8000)

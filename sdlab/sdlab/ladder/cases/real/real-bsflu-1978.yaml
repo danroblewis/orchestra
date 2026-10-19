@@ -10,21 +10,21 @@ real:
   source: pomp
   select: {}
   points: 14
-  train: 10
+  train: 11
   time:
     unit: day
     first: 1
     last: 14
-    train_last: 10
+    train_last: 11
   sha256: 4fa1a0f49d776aeb
   measured_flows: []
   published:
     family: sir_bc
-    refit: least squares of the free run on the first 10 days (N = 763 boys; S and I start from the fitted I0)
+    refit: least squares of the free run on the first 11 days (N = 763 boys; S and I start from the fitted I0)
   twin:
     rel:
-      B: 0.17882
-      C: 0.68677
+      B: 0.27389
+      C: 0.64749
     floor:
       B: 14.65
       C: 8.65
@@ -32,16 +32,16 @@ real:
   licence: GPL (the package); the counts are from Anonymous (1978), BMJ 1(6112):587
   url: https://cran.r-project.org/src/contrib/pomp_6.4.tar.gz
 stocks:
-  S: {initial: 755.467, unit: "boys", hidden: true}
-  I: {initial: 6.53262, unit: "boys", hidden: true}
+  S: {initial: 742.16, unit: "boys", hidden: true}
+  I: {initial: 19.8396, unit: "boys", hidden: true}
   B: {initial: 1, unit: "boys"}
   C: {initial: 0, unit: "boys"}
 flows:
   S -> I as si:
-    rate: 4.36095 * S * effect(I, linear, normal=763, max=1)
+    rate: 1.87909 * S * effect(I, linear, normal=763, max=1)
   I -> B as ib:
-    rate: 0.237097 * I
+    rate: 1 * I
   B -> C as bc:
-    rate: 0.363745 * B
+    rate: 0.373379 * B
   C -> outside as c_out:
-    rate: 0.51379 * C
+    rate: 0.540267 * C

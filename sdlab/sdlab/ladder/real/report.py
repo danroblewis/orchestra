@@ -20,14 +20,17 @@ def pct(v) -> str:
     return "–" if v is None else f"{100 * v:.1f}%"
 
 
-def _rows(sm: dict, strategies: list[str] | None, source: str | None = None) -> list[dict]:
+def _rows(sm: dict, strategies: list[str] | None, source: str | None = None, min_seen: int = 0) -> list[dict]:
+    """The real cells (of a source; of cases whose training part has at least min_seen samples)."""
     src = {c["id"]: (c.get("real") or {}).get("source") for c in sm["cases"] if c.get("real")}
-    return [c for c in sm["cells"] if c["case"] in src and (not strategies or c["strategy"] in strategies) and (source is None or src[c["case"]] == source)]
+    seen = {c["id"]: (c.get("real") or {}).get("train") or 0 for c in sm["cases"] if c.get("real")}
+    return [c for c in sm["cells"] if c["case"] in src and (not strategies or c["strategy"] in strategies) and (source is None or src[c["case"]] == source)
+            and seen[c["case"]] >= min_seen]
 
 
 def table(cells: list[dict], names: list[str]) -> list[str]:
-    out = ["| strategy | variant | run | held-out skill | published (same runs) | ≥ published | agreement recall / precision | agree | flows matched (BLS) | twin pass / equiv / fail |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| strategy | variant | run | found nothing | held-out skill | published (same runs) | ≥ published | agreement recall / precision | agree | flows matched (BLS) | twin pass / equiv / fail |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         for v in ("real", "twin"):
             cs = [c for c in cells if c["strategy"] == n and c["variant"] == v]
@@ -40,7 +43,7 @@ def table(cells: list[dict], names: list[str]) -> list[str]:
             flows = f"{sum(c['flows_matched'] for c in fl)}/{sum(c['flows_of'] for c in fl)} (found {sum(c['flows_found'] for c in fl)})" if fl else "–"
             twin = "/".join(str(sum(c["status"] == k for c in ran)) for k in ("pass", "equivalent", "fail")) if v == "twin" else "–"
             bad = sum(c["status"] in ("error", "timeout") for c in ran)
-            out.append(f"| {n} | {v} | {len(ran)}/{len(cs)}{f' ({bad} error/timeout)' if bad else ''} | {pct(hs)} ({len(g)} graded) | {pct(hp)} | "
+            out.append(f"| {n} | {v} | {len(ran)}/{len(cs)}{f' ({bad} error/timeout)' if bad else ''} | {sum(bool(c.get('found_nothing')) for c in ran)} | {pct(hs)} ({len(g)} graded) | {pct(hp)} | "
                        f"{sum(bool(c.get('beats_published')) for c in g)}/{len(g)} | {pct(rec)} / {pct(pre)} | {sum(bool(c.get('agrees')) for c in ran)} | {flows} | {twin} |")
     return out
 
@@ -71,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strategies", default="combined,lna,effect_hats,censored,earned_pieces,matrix")
     ap.add_argument("--by", choices=("all", "source"), default="all")
     ap.add_argument("--case")
+    ap.add_argument("--min-seen", type=int, default=0, help="only cases whose training part has at least this many samples")
     a = ap.parse_args(argv)
     names = [x.strip() for x in a.strategies.split(",") if x.strip()]
     if a.case:
@@ -78,9 +82,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     sm = api.summary()
     if a.by == "all":
-        print("\n".join(table(_rows(sm, names), names)))
+        print("\n".join(table(_rows(sm, names, None, a.min_seen), names)))
     else:
         for src in ("bls", "gauseR", "pomp", "owid"):
             print(f"\n{src}\n")
-            print("\n".join(table(_rows(sm, names, src), names)))
+            print("\n".join(table(_rows(sm, names, src, a.min_seen), names)))
     return 0

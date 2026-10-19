@@ -25,12 +25,13 @@ from . import fit, loaders, models, sources
 from .loaders import series_sha
 
 CASES = Path(__file__).resolve().parents[1] / "cases" / "real"
-SPLIT = 0.75                     # the training part: the first 75% of the samples (at least 5, at most n - 2)
+SPLIT = 0.75                     # the training part: the first 75% of the samples (at least 5, at most n - 2) ...
+MIN_SEEN = 21                    # ... or 21 if that still leaves 3 held out: the strategies need 21 samples (matrix.py: 20 steps)
 LEVEL = 30                       # after the tests (1-19) and the realistic examples (20)
 
 
 def n_train(n: int, split: float = SPLIT) -> int:
-    return max(5, min(n - 2, int(round(split * n))))
+    return max(5, min(n - 2, max(int(round(split * n)), min(MIN_SEEN, n - 3))))
 
 
 # ---- the catalogue ----

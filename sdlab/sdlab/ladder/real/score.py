@@ -46,7 +46,7 @@ MATCH = 0.25
 
 
 def score(case: dict, variant: str, model: dict, flows: list[dict], d: dict, full: dict, inferred: dict | None = None) -> dict:
-    out = {"kind": variant, "train": len(d["t"]), "points": len(full["t"]),
+    out = {"kind": variant, "train": len(d["t"]), "points": len(full["t"]), "found_nothing": not flows,
            "heldout": heldout(model, flows, d, full, inferred), "agreement": agreement(model, flows, d)}
     ag = out["agreement"]
     if variant == "twin":
@@ -258,7 +258,8 @@ def cell(row: dict | None) -> dict:
     h, ag, fl = s.get("heldout") or {}, s.get("agreement") or {}, s.get("flows") or {}
     out = {"heldout": h.get("skill"), "heldout_published": h.get("published"), "beats_published": h.get("beats_published"),
            "heldout_points": h.get("points"), "agree_recall": ag.get("recall"), "agree_precision": ag.get("precision"), "agrees": ag.get("agrees"),
-           "parts_found": ag.get("parts_found"), "parts_published": ag.get("parts_published")}
+           "parts_found": ag.get("parts_found"), "parts_published": ag.get("parts_published"), "found_nothing": s.get("found_nothing"),
+           "seen": s.get("train")}
     if fl:
         out.update(flows_matched=fl.get("matched"), flows_found=fl.get("found"), flows_of=fl.get("of"), flows_error=fl.get("median_error"))
     return out
@@ -278,6 +279,7 @@ def aggregate(cells: list[dict]) -> dict:
         pre = [c["agree_precision"] for c in ran if c.get("agree_precision") is not None]
         g = {"cells": len(cs), "run": len(ran), "heldout": sum(hs) / len(hs) if hs else None, "heldout_published": sum(hp) / len(hp) if hp else None,
              "graded": len(hs), "beats": sum(bool(c.get("beats_published")) for c in ran), "agrees": sum(bool(c.get("agrees")) for c in ran),
+             "found_nothing": sum(bool(c.get("found_nothing")) for c in ran),
              "agree_recall": sum(rec) / len(rec) if rec else None, "agree_precision": sum(pre) / len(pre) if pre else None,
              **{k: sum(c.get("status") == k for c in ran) for k in ("pass", "equivalent", "fail", "error", "timeout", "agrees", "differs")}}
         fl = [c for c in ran if c.get("flows_of")]

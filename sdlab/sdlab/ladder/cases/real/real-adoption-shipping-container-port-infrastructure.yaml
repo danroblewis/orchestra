@@ -11,22 +11,22 @@ real:
   select:
     entity: Shipping container port infrastructure
   points: 23
-  train: 17
+  train: 20
   time:
     unit: year
     first: 1964
     last: 1986
-    train_last: 1980
+    train_last: 1983
   sha256: d7392b8b7612bcdb
   measured_flows: []
   published:
     family: bass
-    refit: least squares of the free run on the first 17 years (p, q and the market potential m, at most 100%)
+    refit: least squares of the free run on the first 20 years (p, q and the market potential m, at most 100%)
   twin:
     rel:
-      A: 0.07791
+      A: 0.06641
     floor:
-      A: 3.8
+      A: 4.55
     complement:
       N:
         of: A
@@ -39,6 +39,6 @@ stocks:
   A: {initial: 1, unit: "% of households"}
 flows:
   N -> A as innovation:
-    rate: 0.0160595 * N
+    rate: 0.0119079 * N
   N -> A as imitation:
-    rate: 0.00207505 * N * effect(A, linear, normal=1, max=101)
+    rate: 0.00251954 * N * effect(A, linear, normal=1, max=101)
