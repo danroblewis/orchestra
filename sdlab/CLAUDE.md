@@ -68,7 +68,8 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     GIT_INDEX_FILE="$IDX" git commit -m "..."
     rm -f "$IDX"; git reset -q -- <your paths>          # sync the shared index for your paths
     ```
-    Check `git show --stat HEAD` afterwards: it must list only your changes.
+    Check `git show --stat HEAD` afterwards: it must list only your changes. Delete only your own
+    index file (`rm -f "$IDX"`), never a glob of `.git/index.*`: other agents' indexes live there.
 13. **Every strategy is documented.** `docs/research/<name>.md` gives its status, what it does,
     ladder and bench results, and a verdict, with a row in `docs/research/README.md`.
     `docs/research/tries.md` summarises all efforts. A new strategy also adds its entry to

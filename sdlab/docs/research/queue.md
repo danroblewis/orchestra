@@ -11,6 +11,21 @@ for `combined` on the test cases).
 
 ## Queued
 
+0b. **Noise-robust discovery** (added 2026-10-18 from the noise-variant results, commit 10f1d24).
+   Every strategy breaks under measurement error (from 2% on long runs), outliers, gaps, weekly
+   reporting and bias. The analysis says the data allow passes there, so it's the methods' fault.
+   Build strategies, or shared helpers offered as options, that:
+   - treat levels as noisy observations of the true stocks (errors-in-variables; a Kalman filter
+     or smoother on the stock-flow state-space model, e.g. reuse `noise_kf.py`'s model or the
+     lna likelihood with observation noise);
+   - handle uneven times: rates per step, with gaps scaled by elapsed time; weekly data as the
+     mean over the window;
+   - drop gross outliers with robust losses;
+   - read a biased stock as a scale factor where conservation pins it, not as a spurious link.
+
+   Target cases 080-088 (tag `noisy`) and the measurement-error sweep 088. Report where each
+   method breaks against the bound. Keep test and realistic results at least as good.
+
 0. **Engine features the sources need** (approved by the user on 2026-10-18; started first, since
    items 2 and 5 depend on it). Additive changes to `sdlab/sdtruth.py`, the case format and the
    simulator `sdlab/discovery/simulate.py`, plus the page's run input:
