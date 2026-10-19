@@ -1,7 +1,8 @@
 """Strategies built when past ideas were revisited on the ladder (docs/research/revisit.md):
 gap_prior (a drain read by another stock written as the goal gap or co-flow it equals, where the
 data cannot tell), lna_loops (loop-closing links kept when the likelihood does not rule them out), lna_pulses
-(pulses found first, lna on what they leave) and lna_products (moves scaled by a third stock in
+(pulses found first, lna on what they leave), lna_levels (inflow pieces as a few recurring
+levels) and lna_products (moves scaled by a third stock in
 lna's likelihood)."""
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import numpy as np
 import pytest
 
 from sdlab.discovery.strategies.gap_prior import as_coflows, as_gaps, one_number
+from sdlab.discovery.strategies.lna_levels.levels import kmeans_1d, viterbi
 from sdlab.discovery.strategies.lna_pulses import pooled
 from sdlab.ladder import cases as casemod
 from sdlab.ladder import data
@@ -111,3 +113,19 @@ def test_linear_effect_found_with_counting_noise():
 def test_no_effect_where_there_is_none():
     r = _run("lna_products", "014-split", "counts-short")
     assert not any(f.get("effects") for f in r["flows"])
+
+
+def test_kmeans_1d_and_viterbi():
+    assert kmeans_1d(np.array([4.0, 19.0, 4.2, 18.5, 3.9]), np.ones(5), 2) in ([0, 1, 0, 1, 0], [1, 0, 1, 0, 1])
+    rng = np.random.default_rng(1)
+    truth = np.repeat([0, 1, 0, 1], 100)
+    u = np.where(truth == 1, 19.0, 4.0) + rng.normal(0, 2.0, 400)
+    path = viterbi(u, np.full(400, 0.1), np.array([4.0, 19.0]), np.log(400))
+    assert (path != truth).sum() <= 4
+
+
+def test_square_wave_inflow_as_two_levels():
+    r = _run("lna_levels", "048-random-stepping-inflow-drain#1", "counts-short")
+    assert r["levels"] == {"C": 2}
+    inflow = next(f for f in r["flows"] if f["from"] is None and f["to"] == "C")
+    assert len({p["value"] for p in inflow["inflow"]}) == 2
