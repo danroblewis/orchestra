@@ -309,9 +309,39 @@ allowance keeps a strategy from failing for what the data cannot say. Without no
 SE is about 0, so 2% is all that is allowed. The oracle applies only when the truth is a linear
 system of the measured stocks (no effects, no hidden stocks). A flow with effects is compared as a
 whole: its amount on the run's states (rate x effects) against the found flows between the same
-stocks, by relative rms error within `rel`. Hidden stocks are compared by `k_in` and delay, each
-within `rel`. Per-case overrides go in `"tolerance": {"rel", "rel_exact", "floor", "floor_exact",
-"spurious", "z"}`.
+stocks, by relative rms error within `rel`. Hidden stocks are compared by `k_in` and delay: `k_in`
+like any number, the delay within `max(rel x delay, z x SE)`. Per-case overrides go in
+`"tolerance": {"rel", "rel_exact", "floor", "floor_exact", "spurious", "z"}`.
+
+The **hidden-stock oracle** (`hidden_oracle.py`) does the same for a truth with one unmeasured
+stock H between measured A and B (A -> H reading A, H -> B reading H; the other flows linear, A's
+reading only A and B's only B; 015, 026). It fits the truth's own structure by maximum likelihood
+on the measured data only: H is followed by a one-state Kalman filter with the counts' shared noise
+(the filter of `strategies/hidden_transit/kalman.py`, copied so the scorer does not move with a
+strategy), H's start is a free number, A's (and B's) outside constant gets one number per window
+when it changes, and the fit starts at the truth's numbers (the mirror, delay and B's drain
+swapped, is another optimum and is not wanted). The SEs come from the inverse Hessian of
+-log L; the delay's is d's by the delta method (SE(d) / d^2). They apply to the outside inflow,
+B's drain, `k_in` and the delay, only on noisy variants (whole-number data are counts, scale 1;
+without noise there is no oracle). Spurious parts get no allowance from it, and `equivalent` is
+still not checked. A fit takes about 0.01-0.2 s and is cached per truth and data. Why: the delay
+is carried only by the counting noise at equilibrium, so its SE is about one step (10%) at any
+length; on 40 fresh seeds of 015 counts the truth's own ML fit had all four numbers within a bare
+10% in only 47.5% (300 steps) and 60% (2000 steps) of runs
+([research/hidden_transit.md](research/hidden_transit.md)). The SEs on the ladder's runs:
+
+| case, variant | outside -> A | k_in | delay (steps) | B -> outside |
+|---|---|---|---|---|
+| 015 counts-short | 1.12 | 0.0113 | 1.25 | 0.0116 |
+| 015 counts-long | 0.42 | 0.0042 | 1.05 | 0.0043 |
+| 026 counts-short | 0.61 / 1.65 (low / high) | 0.0105 | 1.04 | 0.0106 |
+| 026 counts-long | 0.42 / 0.88 (low / high) | 0.0039 | 0.42 | 0.0039 |
+
+They are honest: over 30 fresh seeds per variant, the mean SE against the spread of the truth's own
+fit (k_in, delay, drain) was 015 short 0.0107 / 1.31 / 0.0108 against 0.0099 / 1.52 / 0.0089, 015
+long 0.0042 / 1.15 / 0.0042 against 0.0041 / 1.18 / 0.0037, 026 short 0.0101 / 0.94 / 0.0102
+against 0.0134 / 1.14 / 0.0121 (slightly small there: the delay was within 3 SE in 25 of 30), 026
+long 0.0038 / 0.41 / 0.0038 against 0.0038 / 0.51 / 0.0039.
 
 **Status.**
 

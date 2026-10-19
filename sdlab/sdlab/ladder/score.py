@@ -18,7 +18,10 @@ the window (its byTime segments or outside inflow pieces), and a part must be ri
 what it reads, z x its standard error), with rel 10% (2% without noise), floor 1% (0.2% without
 noise) of the median size of the true parts (size: |k| x the mean level it reads, a flow amount per
 step), and z = 3 standard errors of the oracle (oracle.py: the truth's own structure fitted by least
-squares on the run, so a short noisy run is not asked for more than it can tell). A flow with
+squares on the run, so a short noisy run is not asked for more than it can tell; for a truth with a
+hidden stock, hidden_oracle.py: its structure fitted by the Kalman filter's likelihood on the
+measured data, which also gives the delay's SE; a hidden part's delay is right within
+max(rel x delay, z x SE)). A flow with
 effects is compared as a whole: its amount on the run's states (rate x effects) against the found
 flows between the same stocks, as relative rms error within rel. Override per case: "tolerance":
 {"rel", "rel_exact", "floor", "floor_exact", "spurious", "z"}.
@@ -46,6 +49,7 @@ import numpy as np
 
 from ..runner import multiplier
 from ..skill import same_behaviour, truth_by_time, truth_runs
+from .hidden_oracle import HiddenOracle
 from .oracle import Oracle
 from .parts import ONE, form_over, kind, label, linear_system, parts, windows
 
@@ -57,7 +61,7 @@ def score_hash() -> str:
     """The scoring code: a change re-scores stored results (without re-running discovery)."""
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for p in (here / "score.py", here / "parts.py", here / "oracle.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
+    for p in (here / "score.py", here / "parts.py", here / "oracle.py", here / "hidden_oracle.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
 
@@ -142,6 +146,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     scale = float(np.median(finite)) if finite else 1.0
 
     oracle = Oracle(truth_flows, data, wins)
+    hidden = HiddenOracle(truth_flows, data, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
     function_check: dict[tuple, tuple[bool, float]] = {}
     for ends in effect_ends:
         want = _amounts(truth_flows, ends, measured, data)
@@ -160,23 +165,26 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             row.update(true=_show(true_w[0].get(k)), found_value=_show(next((fp[k] for fp in found_w if k in fp), None)),
                        ok=bool(row["found"] and ok), error=err, compared="as a whole flow (effects)")
         elif k[0] == "hidden":
-            oks, errs = [], []
-            for tp, fp in zip(true_w, found_w):
+            oks, errs, ses = [], [], []
+            for w, (tp, fp) in enumerate(zip(true_w, found_w)):
                 if k not in tp:
                     continue
+                hse = (hidden.hidden_se(k, w) if hidden else None) or {}
+                ses.append(hse or None)
                 if k not in fp:
                     oks.append(False)
                     continue
-                o1, e1 = _close(tp[k]["k_in"], fp[k]["k_in"], k[1], tol, means, scale)
-                o2 = abs(fp[k]["delay"] - tp[k]["delay"]) <= tol["rel"] * tp[k]["delay"] + 1e-9 if math.isfinite(tp[k]["delay"]) else False
+                o1, e1 = _close(tp[k]["k_in"], fp[k]["k_in"], k[1], tol, means, scale, hse.get("k_in"))
+                allowed = max(tol["rel"] * tp[k]["delay"], tol["z"] * (hse.get("delay") or 0.0)) if math.isfinite(tp[k]["delay"]) else -1.0
+                o2 = abs(fp[k]["delay"] - tp[k]["delay"]) <= allowed + 1e-9
                 oks.append(o1 and o2)
                 errs.append(max(e1, abs(fp[k]["delay"] - tp[k]["delay"]) / max(1e-9, tp[k]["delay"])))
             row.update(true=true_w[0].get(k), found_value=next((fp[k] for fp in found_w if k in fp), None), ok=bool(oks) and all(oks),
-                       error=max(errs) if errs else None)
+                       error=max(errs) if errs else None, se_hidden=ses[0] if hidden and hidden.ok and ses else None)
         else:
             oks, errs, ses = [], [], []
             for w, (tp, fp) in enumerate(zip(true_w, found_w)):
-                se = oracle.part_se(k, true_keys, w)
+                se = oracle.part_se(k, true_keys, w) if oracle.ok else hidden.part_se(k, w) if hidden else None
                 ok, err = _close(float(tp.get(k, 0.0)), float(fp.get(k, 0.0)), k[3] if k[0] == "flow" else None, tol, means, scale, se)
                 oks.append(ok)
                 errs.append(err)
@@ -185,7 +193,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             fv = [float(fp.get(k, 0.0)) for fp in found_w]
             row.update(true=_one(tv, weights), found_value=_one(fv, weights) if row["found"] else None,
                        ok=bool(row["found"] and all(oks)), error=max(errs), windows=len(wins) if len(wins) > 1 else None,
-                       se=_one([x if x is not None else math.nan for x in ses], weights) if oracle.ok else None)
+                       se=_one([x if x is not None else math.nan for x in ses], weights) if oracle.ok or (hidden and hidden.ok) else None)
         rows.append(row)
 
     spurious, extra = [], []
