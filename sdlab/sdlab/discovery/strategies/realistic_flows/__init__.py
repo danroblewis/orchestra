@@ -75,6 +75,7 @@ from .inputs import rows as input_rows
 from .coflows import cross_coflow_candidates, inflow_coflow_candidates, starved_candidates
 from .cycles import cycle_candidates
 from .joint import refit
+from .moves import third_stock_moves
 from .price import price, prune
 from .pieces import resegment
 from .screen import scan
@@ -83,7 +84,7 @@ DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
             "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True, "share": 0.85, "transit": True,
             "inflow_coflows": True, "starved": True, "cycles": True, "extra_most": 4, "cycle_gain": 0.9, "coflow_gain": 2.0, "extras_max_steps": 3000,
-            "drain_coflows": True, "own_drains": True, "own_tol": 1e-6}
+            "drain_coflows": True, "own_drains": True, "own_tol": 1e-6, "readings": 3}
 
 
 def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
@@ -253,6 +254,10 @@ def _search(stocks: list[dict], run: dict, opts: dict, o: dict, keep, base: dict
         if keep:
             out["candidates"] = base.get("candidates") or []
     state["answer"] = {**out, "flows": _clean(out["flows"])}
+    # (realistic_flows) other readings of the flows (a move driven by a third stock), before the
+    # co-flow stage reads the same drains as co-flows
+    if o["readings"]:
+        out, cur_b, cur_e = _readings(out, cur_b, cur_e, o, ids, run, stocks, fit_opts, inputs, opts.get("injections"), state)
     pre = state["answer"]
     # (coflow_hats) the co-flow stages, only on runs of at most `extras_max_steps` steps; each accepted
     # co-flow becomes the answer so far
@@ -322,6 +327,29 @@ def _inflow_coflows(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, st
 def _prev_tt(stocks, run, opts):
     """The levels at the start of each step (injections added) and the steps' end times."""
     return _arrays(stocks, run, opts)[1], np.asarray(run["t"], dtype=float)[1:]
+
+
+def _readings(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, stocks, fit_opts, inputs, injections, state: dict):
+    """(realistic_flows) Other readings of the answer's flows (moves.py: a move driven by a third stock),
+    on runs of any length, each refitted, its inflows re-cut, priced and judged; taken one at a time
+    while one prices better and behaves within `margin` of the model without it. Returns the model and
+    its price and judged error."""
+    tried = []
+    for _ in range(o["readings"]):
+        pick = None
+        for cand in third_stock_moves(out["flows"], stocks):
+            fl = resegment(cand, ids, run, fit_opts) if o["pool"] else refit(cand, ids, run, fit_opts)[0]
+            b = price(fl, ids, run, inputs)
+            e = judge(fl, stocks, run, injections=injections, inputs=inputs)
+            tried.append({"name": "a move driven by a third stock", "error": e, "bic": b})
+            if b < cur_b and e < o["margin"] * cur_e and (pick is None or b < pick[0]):
+                pick = (b, e, fl)
+        if pick is None:
+            break
+        cur_b, cur_e = pick[0], pick[1]
+        out = {**out, "flows": pick[2], "chosen": f"{out.get('chosen')}, a move driven by a third stock", "bic": cur_b}
+        state["answer"] = {**out, "flows": _clean(out["flows"])}
+    return {**out, "tried": list(out.get("tried") or []) + tried}, cur_b, cur_e
 
 
 def _fair(base: list[dict], cand: list[dict], stocks: list[dict], run: dict) -> float:
