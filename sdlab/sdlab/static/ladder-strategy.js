@@ -66,6 +66,7 @@
         ${t.stale ? ` · ${t.stale} to re-run or re-score` : ""}</p>
       <div class="tiles">
         ${tile(pct(t.pass_rate), `pass rate · ${t.pass} of ${t.ran} run`, "Tests (fixed cases and random draws): passes over the cells this strategy has run.")}
+        ${tile(pct(t.strict_rate), `strict pass · ${t.strict} of ${t.strict_known} known`, `${STRICT_TIP} Over the cells with a strict verdict (${t.strict_known} of ${t.ran} run); a pass not computed yet is left out, never a fail.`)}
         ${tile(pct(t.achievable_rate), `pass where achievable · ${t.achievable_pass}/${t.achievable}`, "Passes over the cells whose data allow a pass (analysis.py: achievable).")}
         ${tile(`${t.ran}/${t.of}`, `coverage (${pct(t.of ? t.ran / t.of : null, 0)})`, "Cells run out of all test cells (cases × variants).")}
         ${tile(`${t.equivalent} / ${t.fail}`, "equivalent / fail")}
@@ -179,15 +180,27 @@
     return out;
   }
 
+  // strict pass (strict.py), shown on a pass: strict, not strict (why), or not computed yet
+  const STRICT_WHY = { extra: "more complexity than the truth", longrun: "long-run error above what the refitted truth reaches (or it diverges)", fresh: "fresh-run skill@100 below what the refitted truth reaches" };
+  const STRICT_TIP = "Strict pass: a pass with no more complexity than the truth, whose long-run error (10 × the truth's slowest time constant) and fresh-run skill@100 are as good as the truth's own structure refitted on the same kind of data achieves (strict.py).";
+  function strictChip(x) {
+    if (!x || x.status !== "pass") return "";
+    const why = x.strict_why || "";
+    if (x.strict === 1) return `<span class="badge b-pass" data-tip="${esc(STRICT_TIP + (why ? ` Not applied here (${why}).` : ""))}">strict</span>`;
+    if (x.strict === 0) return `<span class="badge b-fail" data-tip="${esc(`${STRICT_TIP} Fails: ${why.split(",").map((w) => STRICT_WHY[w] || w).join("; ")}.`)}">not strict: ${esc(why.replace(/,/g, ", "))}</span>`;
+    return `<span class="badge b-lim" data-tip="${esc(`${STRICT_TIP} Not computed yet (${why.replace("pending: ", "") || "pending"}): sdlab-ladder strict.`)}">strict: not computed</span>`;
+  }
+
   function cardHtml(c, x) {
     const st = x && x.status ? x.status : "none";
     const chips = c.variants.map((v) => { const y = cellOf(c.id, v), on = x && x.variant === v; return `<button class="chip st-${y && y.status ? y.status : "none"}${on ? " on" : ""}" data-v="${esc(v)}" title="${esc(v)}: ${esc(y && y.status ? `${y.status}, ${headline(y)}` : "not run")}"><i></i>${esc(v.replace("counts-", "c-").replace("none-", "n-"))}</button>`; }).join("");
     const lab = x && x.analysis && x.analysis !== "achievable" ? `<span class="badge b-lim" data-tip="${esc(`analysis.py: ${x.analysis}. Achievable = the data allow a pass with p ≥ 0.5; data-limited = even the best estimator usually misses; unidentifiable = only an equivalent model is possible.`)}">${esc(x.analysis)}</span>` : "";
+    const strict = strictChip(x);
     const far = x && x.far != null ? `<span class="muted small" data-tip="Both models run free to t = 100,000: the gap as a share of the truth's range (capped at 100%)">err@100k ${pct(x.far, 0)}${x.flag ? ` · <span class="err">${esc(x.flag)}</span>` : ""}</span>` : "";
     return `<article class="card st-${st}" data-case="${esc(c.id)}" tabindex="0" aria-label="${esc(c.id)} ${esc(c.title)}">
       <div class="chead"><span class="cid">${esc(c.kind === "realistic" ? "" : c.id.slice(0, 3))}${c.kind === "draw" ? esc(c.id.slice(3)) : ""}</span><span class="ctitle" title="${esc(c.id)}: ${esc(c.tests)}">${esc(c.title)}</span></div>
       <div class="chips">${chips}</div>
-      <div class="headline"><span class="badge b-${st}">${esc(st === "none" ? "not run" : st)}</span><b>${esc(headline(x))}</b>${lab}${far}</div>
+      <div class="headline"><span class="badge b-${st}">${esc(st === "none" ? "not run" : st)}</span><b>${esc(headline(x))}</b>${strict}${lab}${far}</div>
       <div class="dg"><svg role="img" aria-label="What would make it right"></svg></div>
       <ul class="reps"></ul>
       <div class="spark"></div>

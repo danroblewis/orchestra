@@ -697,6 +697,14 @@ glossary:
     term: Pass (achievable)
     group: Results
     text: The pass rate over only the runs whose data allow a pass at all, by the identifiability and best-achievable-accuracy analysis.
+  strict_pass:
+    term: Strict pass
+    group: Results
+    text: A second, stricter verdict beside pass (pass itself is unchanged). A run strict-passes when it passes, its model is no more complicated than the truth (no extra parts, however small), and it behaves as well as the truth's own structure refitted on the same kind of data - its long-run error at 10 times the truth's slowest time constant and its fresh-run skill@100 within 3 standard deviations of the refits' (never stricter than the truth with every number 2% off). A pass whose long run or reference is not computed yet has no verdict, and is not counted as a fail.
+  strict_reference:
+    term: Strict reference
+    group: Results
+    text: What the truth's own structure achieves in one case and variant - its numbers fitted on the run discovery saw and on 6 more runs of the same kind, each graded as a found model is (fresh skill@100, long-run error). It sets that cell's strict thresholds. Where even the refits run away, or the run is too short for skill@100, that criterion is data-limited and not applied.
 
   # the variants
   noise_none:

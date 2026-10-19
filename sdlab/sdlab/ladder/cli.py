@@ -17,6 +17,9 @@
                                   long-horizon metrics (longrun.py) of the latest results not yet known
     analyse CASE [--variant V] [--json] | --all [--cases ...] | --validate CASE --variant V [--seeds N]
                                   what the data can deliver (identifiability, the Cramér-Rao bound; analysis.py)
+    strict [--strategies ...] [--cases ...] [--all] [--no-fill] [--set tests|realistic|all] [--top N]
+                                  fill strict pass's long-run metrics and per-cell references (strict.py), then
+                                  pass against strict pass per strategy (strict_report.py)
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -399,6 +402,12 @@ def main(argv: list[str] | None = None) -> int:
     fz.add_argument("case")
     fz.add_argument("--slug", help="the new case's slug (default: the parametric case's, with -draw-i)")
     common(sub.add_parser("longrun", help="long-horizon metrics of the latest results (cached by result id)"))
+    sp = sub.add_parser("strict", help="strict pass: fill its caches (strict.py), then pass against strict pass")
+    common(sp)
+    sp.add_argument("--all", action="store_true", help="references for every cell of the cases picked, not only those a pass needs")
+    sp.add_argument("--no-fill", action="store_true", help="only the report")
+    sp.add_argument("--set", default="tests", choices=("tests", "realistic", "all"))
+    sp.add_argument("--top", type=int, default=10)
     an = sub.add_parser("analyse", help="what a case's data can deliver: identifiability and the Cramér-Rao bound")
     an.add_argument("case", nargs="?")
     an.add_argument("--variant")
@@ -427,6 +436,9 @@ def main(argv: list[str] | None = None) -> int:
         return freeze(a)
     if a.command == "longrun":
         return longrun(a)
+    if a.command == "strict":
+        from . import strict_report
+        return strict_report.main(a)
     if a.command == "analyse":
         from . import analysis_report
         if a.all:

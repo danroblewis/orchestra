@@ -9,7 +9,8 @@ series) only for the cards on screen.
 
 A cell: one (case, variant) with the strategy's latest result: id, status, the analysis label, the repairs'
 count by type (repairs.py), err@100k and the long-run flag (longrun_cache.py, as computed by
-`sdlab-ladder longrun`), complexity and Occam (complexity.py, from the summary). Totals are over the cells
+`sdlab-ladder longrun`), complexity and Occam (complexity.py, from the summary), and the strict verdict (strict.py, from the
+summary: 1, 0 or None when not computed, with strict_why). Totals are over the cells
 the strategy has run (coverage = ran / of), as on the leaderboard. The timeline is one point per version
 (strategy hash and scorer hash) with the totals over the tests just after it and the git commit it ran from.
 """
@@ -88,7 +89,9 @@ def _totals(cells: list[dict]) -> dict:
                occam=_mean([c.get("occam") or 0.0 for c in ran]) if ran else None,
                far=_mean([c.get("far") for c in ran]), far_n=sum(c.get("far") is not None for c in ran),
                skill20=_mean([max(-1.0, c["skill20"]) if c.get("skill20") is not None else None for c in ran]),
-               repairs=_mean([c.get("n") for c in ran]), stale=sum(bool(c.get("stale")) for c in ran))
+               repairs=_mean([c.get("n") for c in ran]), stale=sum(bool(c.get("stale")) for c in ran),
+               strict=sum(c.get("strict") == 1 for c in ran), strict_known=sum(c.get("strict") is not None for c in ran))
+    out["strict_rate"] = out["strict"] / out["strict_known"] if out["strict_known"] else None
     return out
 
 
@@ -168,7 +171,7 @@ def _overview(name: str, sm: dict) -> dict:
         r = by.get((cid, v))
         cell = {"case": cid, "variant": v, "status": c.get("status"), "stale": c.get("stale") if r else None,
                 "analysis": c.get("analysis"), "occam": _round(c.get("occam")), "cx": [c.get("cx_true"), c.get("cx_found")],
-                "skill20": _round(c.get("skill20"))}
+                "skill20": _round(c.get("skill20")), "strict": c.get("strict"), "strict_why": c.get("strict_why")}
         if r:
             rp = repairs(r.get("scores"), _analysis(cid, v, hashes.get(cid))) if r["status"] not in ("error", "timeout") else None
             m = lr.get(r["id"])

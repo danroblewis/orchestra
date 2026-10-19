@@ -21,7 +21,8 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
 A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status
 ("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}; one read
 with its found flows also has complexity (complexity.py: true vs found) and longrun (longrun.py: long-horizon
-metrics, computed once per result id by longrun_cache.py), and summary cells carry both.
+metrics, computed once per result id by longrun_cache.py), and summary cells carry both, and strict (strict.py: 1, 0,
+or None when not computed yet) with strict_why (the reasons a pass fails strict, or what is pending).
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import analysis, catalog, complexity, data, explain, longrun_cache, realistic, score, store
+from . import analysis, catalog, complexity, data, explain, longrun_cache, realistic, score, store, strict
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -211,7 +212,7 @@ def _refresh(slot: tuple, strategy_filter: list[str] | None, release: bool) -> N
         have = _summaries.get(slot)
         listing = catalog.listing()
         key = (store.version(), tuple((s["name"], s["hash"], s["available"]) for s in listing),
-               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), longrun_cache.version(), analysis.version())
+               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), longrun_cache.version(), analysis.version(), strict.version())
         if not have or have["key"] != key:
             have = {"key": key, "value": _summary(strategy_filter, listing)}
         _summaries[slot] = {**have, "at": time.time()}
@@ -227,6 +228,7 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     cx = complexity.for_results(list(have.values()))
     lr = longrun_cache.for_results(list(have.values()))            # read only: what `sdlab-ladder longrun` computed
     lr_cells = []
+    refs = strict.references()                                     # read only: what `sdlab-ladder strict` computed
     cs = [casemod.load(i) for i in casemod.case_ids()]
     cells, by_tag, totals, real = [], {}, {}, {}
     for c in cs:
@@ -237,6 +239,9 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                 cell = {"case": c["id"], "variant": v["name"], "strategy": s["name"], "stale": stale, **flatten(row),
                         **complexity.cell(row, cx.get(row["id"]) if row else None),
                         **analysis.cell(c["id"], v["name"], c["hash"])}
+                if row:                                           # strict.py: a pass that also behaves (not computed: None)
+                    cell.update(strict.cell(strict.verdict(row["status"], cell.get("fresh100"), cx.get(row["id"]), lr.get(row["id"]),
+                                                           refs.get((c["id"], c["hash"], v["name"])))))
                 cells.append(cell)
                 if c.get("example"):                              # a realistic case: its own totals, not the tests'
                     cell["goal"] = realistic.meets_goal(cell["status"], cell["skill20"], cell["skill100"]) if row else None
@@ -246,7 +251,8 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                 if row and lr.get(row["id"]):
                     lr_cells.append((s["name"], v["name"], c["level"], lr[row["id"]]))
                 t = totals.setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "stale": 0, "total": 0, "seconds": 0.0,
-                                                  "achievable": 0, "achievable_pass": 0, "data_limited": 0, "unidentifiable": 0})
+                                                  "achievable": 0, "achievable_pass": 0, "data_limited": 0, "unidentifiable": 0,
+                                                  "strict": 0, "strict_known": 0})
                 t["total"] += 1
                 lab = cell.get("analysis")                        # analysis.py: what the data can deliver in this cell
                 t["achievable"] += lab == "achievable"
@@ -254,6 +260,8 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                 t["data_limited"] += lab == "data-limited"
                 t["unidentifiable"] += lab == "unidentifiable"
                 t[cell["status"] or "missing"] += 1
+                t["strict"] += cell.get("strict") == 1
+                t["strict_known"] += cell.get("strict") is not None
                 t["stale"] += bool(stale and row)
                 t["seconds"] += cell.get("seconds") or 0.0
                 for tag in c["tags"]:

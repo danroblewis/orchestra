@@ -31,6 +31,7 @@ uv run sdlab-ladder watch                              # sync now, then whenever
 uv run sdlab-ladder check                              # every case file compiles, and the cases' sanity checks
 uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
 uv run sdlab-ladder freeze 042#5                       # write draw 5 of parametric case 042 as an ordinary case
+uv run sdlab-ladder strict                             # fill strict pass's caches, then pass vs strict pass per strategy
 ```
 
 `python -m sdlab.ladder ...` works too. Cases are chosen by id or number prefix (`003`,
@@ -1194,6 +1195,73 @@ stocks draining each other at almost equal rates, rho 1.0000045, one dies out); 
 none-long (slowest tau 11,724 steps vs 9.5: 2% at 1k, 23% at 100k). The rest (167) settle 10-15%
 off: an equilibrium shifted by noisy rates (048 draws #6 and #7 counts-short, where 6 strategies,
 even passing ones, settle 14.5% off; 020, 033), or effects and floors (017, 018, 024).
+
+## Strict pass (`strict.py`, `strict_report.py`)
+
+A second, stricter verdict **beside** pass / equivalent / fail. Pass is unchanged (score.py and its
+hash are untouched, so history stays comparable); strict asks more of a pass. A result
+**strict-passes** when all of these hold:
+
+1. it is a **pass**;
+2. its **complexity is no greater than the truth's** (complexity.py: found total <= true total; a
+   negligible extra part the scorer forgives still counts here);
+3. its **long-run error** (longrun.py) at 10 x the truth's slowest time constant (`err.10tau`;
+   `err.100k` for a truth without one) is at most the cell's long-run threshold, and it does not
+   run away or turn unstable (`hard_fail`);
+4. its **fresh-run skill@100** (the scorer's, on the fresh run, seed + 1) is at least the cell's
+   fresh threshold.
+
+**Thresholds per cell** (case x variant) come from what the truth's own structure achieves on the same
+kind of data:
+
+- **Refits.** The truth's structure, its numbers fitted on the run discovery saw and on 6 more runs of
+  the same case and variant (seeds model seed + 1000..1005, the variant's noise laid on each as
+  data.py does): maximum likelihood (`fisher.TruthParams.ml_fit`) when every stock is measured; the
+  Kalman refit (`noise_kf.SSM.refit`) for a noisy variant (noise.py) or a linear truth with a hidden
+  stock. Noise-free variants: the data pin every number to their 4 decimals, so the refit is the
+  truth itself (one refit, spread 0). Truths no refit covers (a hidden stock with effects, co-flows
+  or delay functions: 063, the realistic examples) have **no reference**.
+- **Edges.** 4 copies of the truth with every rate number (constant, k, goal, time, linear c and
+  k's, in every schedule change) and co-flow `per` moved by ±2% (score.py's `rel_exact`, the
+  scorer's tolerance for exact data) with random signs fixed per cell. They keep a threshold from
+  being stricter than "every number right to the exact-data tolerance" (which matters where the
+  refits' spread is 0).
+- Each refit and edge is graded exactly as a found model is (fresh skill@100 on the case's fresh
+  run; long-run error on the same `longrun.Setup`). Then
+  **fresh threshold** = min(mean − 3 sd of the refits' skill, the worst edge's skill) and
+  **long-run threshold** = max(mean + 3 sd of the refits' error, the worst edge's error); 3 is the
+  scorer's z.
+- **Data-limited**: a criterion the truth's own refits cannot meet is not applied in that cell (and
+  the cell says so: `strict_why` "data-limited: longrun"): the long run when a refit runs away or
+  turns unstable, fresh skill when the run is too short for skill@100 (under 110 steps).
+
+So strict asks a passing model's numbers to be about as good as the data allow (a few standard
+errors), where pass allows max(10%, 3 SE) per number: on 003-chain-2 counts-long a model with B's
+drain 7% off passes but fails strict on its fresh-run skill, and 10% off also on its long run
+(tests/test_ladder_strict.py).
+
+**Not computed is never a fail.** A verdict that is already decided needs nothing more (not a pass;
+extra complexity; a run that diverges). A pass with no extra complexity waits for its long-run
+metrics and its cell's reference; until both are cached its strict is None ("strict: not
+computed"), left out of strict rates and shown as coverage ("strict known").
+
+**Computed offline, read fast.** `uv run sdlab-ladder strict [--strategies ...] [--cases ...]
+[--all] [--jobs N]` grades the long run of every pass with no extra complexity (longrun_cache) and
+computes the reference of every cell such a pass is in (`--all`: every cell of the cases picked),
+~1-5 s a cell, into `$SDLAB_LADDER_CACHE/strict.sqlite` keyed by (case, case hash, variant, code
+hash: strict.py's reference part, longrun, fisher, noise_kf, noise, score, skill, simulate). Then it
+prints the top strategies by pass rate and by strict pass rate, with why their passes fail strict
+(`--no-fill` only prints; `--set tests|realistic|all`, `--variants`, `--top N`). The server only
+reads the cache (at most every 10 s), and each result's verdict is a few comparisons on what the
+summary already holds, so no discovery re-runs and the summary stays fast.
+
+**Where it shows.** Summary cells carry `strict` (1, 0, null) and `strict_why` (the reasons a pass
+fails: `extra`, `longrun`, `fresh`; or `pending: ...`; or `data-limited: ...`); totals carry
+`strict` and `strict_known`. The leaderboard has **strict pass** (strict passes over cells with a
+verdict) and **strict known** (verdicts over cells run) columns, and "Rank by: strict pass rate";
+its Set and Runs pickers give the realistic, canonical (in the tests), noisy and per-variant views.
+The strategy page has a strict tile and a chip on each passing card (strict / not strict: why /
+strict: not computed).
 
 ## Reading the matrix
 

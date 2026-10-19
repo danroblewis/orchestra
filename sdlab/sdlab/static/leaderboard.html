@@ -84,6 +84,11 @@
   diverges counts 100%): <b>err@100k</b> the gap at t = 100,000 as a share of the truth's range; <b>eq err</b> the settled levels'
   error; <b>τ err</b> the slowest time constant's relative error; <b>diverges</b> the share of runs that run away, die out or are
   unstable where the truth is not. Click a strategy's run in the ladder for its line graphs.
+  <b>Strict pass</b> (beside pass, never replacing it): a pass that also has no more complexity than the truth, and a long-run error at
+  10 × the truth's slowest time constant and a fresh-run skill@100 as good as the truth's own structure refitted on the same kind of
+  data achieves (mean over 7 refits ± 3 standard deviations; never stricter than the truth with every number 2% off).
+  <b>strict pass</b> is over the cells with a verdict; <b>strict known</b> is the share of the runs with one (a pass whose
+  long run or reference is not computed yet has none, and is not counted as a fail). Hover for why passes fail strict.
   <b>Realistic examples</b> (the right-hand columns, whatever set is picked): SD Lab's 31 example models (<code>sdlab/examples/sd-*</code>)
   at the two lengths and with the data and seeds of the examples' bench; there behaviour is the headline: <b>real skill@20</b> is the mean
   skill@20 over the runs graded (each clipped at −100%, as on the bench; hover for its 95% interval), <b>goals met</b> the runs with
@@ -114,6 +119,7 @@
     <label>Kind <select id="kind" title="A parametric case counts as its draws (its numbers drawn at random)"><option value="all">fixed cases and random draws</option><option value="fixed">fixed cases</option><option value="draws">random draws</option></select></label>
     <label>Rank by <select id="rankby">
       <option value="pass">pass rate</option>
+      <option value="strict">strict pass rate</option>
       <option value="occam">Occam score (accuracy × parsimony)</option>
       <option value="extra">least extra complexity</option>
     </select></label>
@@ -135,6 +141,8 @@ const COLS = [
   { key: "name", label: "strategy", cls: "name" },
   { key: "bar", gl: "equivalent", label: "pass / equivalent / fail", cls: "bar", sortable: false },
   { key: "pass", gl: "pass", label: "pass rate", fmt: pct },
+  { key: "strict", gl: "strict_pass", label: "strict pass", fmt: pct, tip: (r) => r.strictTip },
+  { key: "strictCover", gl: "strict_pass", label: "strict known", fmt: pct, cls: "hide-sm", tip: (r) => r.strictTip },
   { key: "passAch", gl: "achievable", label: "pass (achievable)", fmt: pct, tip: (r) => r.achTip },
   { key: "passeq", gl: "equivalent", label: "pass + equivalent", fmt: pct, cls: "hide-sm" },
   { key: "recall", gl: "recall", label: "recall", fmt: pct },
@@ -218,6 +226,7 @@ function rows() {
       ...complexity(cs),
       ...longRun(name, vf, lv),
       ...achievable(cs),
+      ...strictPass(cs),
       ...realistic(name, real, vf),
     };
   });
@@ -228,6 +237,17 @@ function achievable(cs) {
   const ach = cs.filter((c) => c.analysis === "achievable"), by = (l) => cs.filter((c) => c.analysis === l).length;
   return { passAch: ach.length ? ach.filter((c) => c.status === "pass").length / ach.length : NaN,
     achTip: `${ach.length} achievable cells; ${by("data-limited")} data-limited, ${by("unidentifiable")} unidentifiable, ${cs.filter((c) => !c.analysis).length} not analysed` };
+}
+
+// strict pass (strict.py; see the note): over the cells with a strict verdict; a pass whose verdict is not computed yet
+// (sdlab-ladder strict) is left out, never counted as a fail
+function strictPass(cs) {
+  const known = cs.filter((c) => c.strict != null), n = known.filter((c) => c.strict === 1).length;
+  const passes = cs.filter((c) => c.status === "pass"), lost = passes.filter((c) => c.strict === 0);
+  const why = (w) => lost.filter((c) => (c.strict_why || "").split(",").includes(w)).length;
+  return { strict: known.length ? n / known.length : NaN, strictCover: cs.length ? known.length / cs.length : NaN,
+    strictTip: `${n} strict passes of ${known.length} cells with a strict verdict (${cs.length} run; ${passes.filter((c) => c.strict == null).length} passes not computed yet). `
+      + `${lost.length} of ${passes.length} passes fail strict: extra complexity ${why("extra")}, long run ${why("longrun")}, fresh run ${why("fresh")} (a pass can fail on several)` };
 }
 
 // long run (see the note): from the summary's compact aggregate {strategy: {variant: {level: [n, sum err@100k, sum eq err,
