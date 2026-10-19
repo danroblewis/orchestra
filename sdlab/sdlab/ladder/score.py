@@ -303,18 +303,18 @@ def _changes(flows: list[dict], ids: list[str], data: dict, states: list[dict]) 
 def _same_function(truth_flows: list[dict], found_flows: list[dict], ids: list[str], data: dict, tol: dict) -> bool:
     """Equivalence for a truth with effects (the user, 2026-10-19): the found flows compute the same
     change of every measured stock as the truth's on the run's states (rate x effects, floored at 0;
-    measured inputs read as levels), within the relative tolerance of the amount through that stock:
-    rms(found change - true change) <= rel x rms(the true gross amount in and out). Two
-    parametrisations of one function (a product with its roles swapped, a move seen as an outflow
-    and an inflow of the same amount) are equivalent; one flow alone is held to the same rel as the
-    whole-flow comparison of a flow with effects."""
+    measured inputs read as levels), within the relative tolerance of that stock's change:
+    rms(found change - true change) <= rel x rms(true change). Two parametrisations of one function
+    (a product with its roles swapped, a move seen as an outflow and an inflow of the same amount)
+    are equivalent. (Measured against the gross amount through a stock instead, a model with no flows
+    at all came within 10% of a logistic stock whose births and deaths nearly cancel: too loose.)"""
     states = _levels_at(data)
     T, F = _changes(truth_flows, ids, data, states), _changes(found_flows, ids, data, states)
     if T is None or F is None:
         return False
-    (ct, gt), (cf, _) = T, F
+    (ct, _), (cf, _) = T, F
     for i in range(len(ids)):
-        g = float(np.sqrt(np.mean(gt[i] ** 2)))
+        g = float(np.sqrt(np.mean(ct[i] ** 2)))
         if float(np.sqrt(np.mean((cf[i] - ct[i]) ** 2))) > tol["rel"] * g + 1e-12:
             return False
     return True
