@@ -32,7 +32,9 @@ from .ladder.routes import router as ladder_router
 from .ladder.compact_routes import router as compact_router
 from .ladder.strategy_routes import router as strategy_router
 from .ladder.newest_routes import router as newest_router
+from .ladder.timing_routes import router as timing_router
 from .ladder import newest as ladder_newest
+from .ladder import runs as ladder_runs
 from .research import router as research_router
 from .runner import LiveRun, available_programs, program_path
 
@@ -196,6 +198,7 @@ def create_app() -> FastAPI:
     async def lifespan(_app: FastAPI):
         strategy_menu.menu()                   # start working out the strategy picker's numbers now
         ladder_newest.warm()                   # the case files' first commits (cached; one git log if HEAD moved) and regressions
+        ladder_runs.warm()                     # the runs panel and the results' times (timing.py), in the background
         yield
         for r in runs.values():
             r.stop()
@@ -497,6 +500,7 @@ def create_app() -> FastAPI:
     app.include_router(analysis_router)
     app.include_router(strategy_router)
     app.include_router(newest_router)
+    app.include_router(timing_router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

@@ -1,7 +1,8 @@
 // The strategy page (/ladder/strategy?name=S): how one strategy behaves, from the models it produced.
 // Read only, over /api/ladder/strategy/{name} (strategy_view.py):
 //   header     its explanation, pass rate, coverage, Occam, err@100k, the commit of its latest result
-//   history    pass rate / coverage per version (code changes marked), and code changes per day
+//   history    pass rate / coverage per version (code changes marked), and code changes per day; time per
+//              cell per version and set (/api/ladder/timing/{name}, timing.py)
 //   cards      one per case, many on screen: variant chips, the repairs that would make it right
 //              (repairs.py), a diagram of only what matters, and each stock's normalised long-run error;
 //              found flows and error series are fetched only for the cards on screen
@@ -127,6 +128,47 @@
     const code = tl.filter((v, i) => v.code_changed || i === 0).length;
     box.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="code changes per day">${grid}${xt}${bars}</svg>
       <div class="muted small">${code} code version${code === 1 ? "" : "s"}, ${tl.length - code} scorer change${tl.length - code === 1 ? "" : "s"}, over ${all.length} day${all.length === 1 ? "" : "s"}</div>`;
+  }
+
+  // ---------- time per cell per version (/api/ladder/timing/{name}) ----------
+  const TSETS = ["tests", "noisy", "canonical", "realistic", "physics", "real"];
+  const secs = (v) => (v == null ? "–" : v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0));
+  async function loadTime() {
+    let t;
+    try { t = await get(`/api/ladder/timing/${enc(S.name)}`); } catch (e) { $("h-time").innerHTML = `<p class="err small">${esc(e.message)}</p>`; return; }
+    if (t.pending) { setTimeout(loadTime, 3000); return; }
+    S.time = t; timeChart(t);
+  }
+  function timeChart(t) {
+    const box = $("h-time"), vs = (t.versions || []).filter((v) => v.all), st = t.stats || { sets: {}, score: {} };
+    const now = TSETS.filter((s) => st.sets[s]).map((s) => `${s} ${secs(st.sets[s][0])} s (p95 ${secs(st.sets[s][1])}, ${st.sets[s][2]} cells${st.score[s] ? `; scoring ${secs(st.score[s][0])} s` : ""})`).join(" · ");
+    const tr = st.trend ? `latest version ×${st.trend.ratio.toFixed(2)} the one before over the ${st.trend.n} cells both ran` : "";
+    $("h-time-legend").innerHTML = TSETS.map((s, k) => `<span><i class="key" style="background:var(--c${k + 1})"></i>${s}</span>`).join("");
+    if (!vs.length) { box.innerHTML = `<p class="muted small">No timed results yet.</p>`; return; }
+    const W = Math.max(300, box.clientWidth || 600), H = 150, m = { l: 40, r: 8, t: 8, b: 20 }, n = vs.length;
+    const vals = vs.flatMap((v) => TSETS.map((s) => v.sets[s] && v.sets[s][0]).filter((x) => x != null)).map((x) => Math.max(x, 0.001));
+    const lo = Math.floor(Math.log10(Math.min(...vals))), hi = Math.max(lo + 1, Math.ceil(Math.log10(Math.max(...vals))));
+    const X = (i) => m.l + (n === 1 ? (W - m.l - m.r) / 2 : i / (n - 1) * (W - m.l - m.r)), Y = (x) => m.t + (hi - Math.log10(Math.max(x, 0.001))) / (hi - lo) * (H - m.t - m.b);
+    const grid = Array.from({ length: hi - lo + 1 }, (_, k) => lo + k).map((e) => `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(10 ** e)}" y2="${Y(10 ** e)}" stroke="var(--grid)"/><text x="${m.l - 4}" y="${Y(10 ** e) + 3}" text-anchor="end">${secs(10 ** e)}s</text>`).join("");
+    const lines = TSETS.map((s, k) => {
+      const pts = vs.map((v, i) => (v.sets[s] ? [i, v.sets[s][0]] : null)).filter(Boolean);
+      if (!pts.length) return "";
+      return `<path d="${pts.map(([i, x], j) => `${j ? "L" : "M"}${X(i).toFixed(1)} ${Y(x).toFixed(1)}`).join("")}" fill="none" stroke="var(--c${k + 1})" stroke-width="1.6" stroke-linejoin="round"/>`
+        + pts.map(([i, x]) => `<circle cx="${X(i)}" cy="${Y(x)}" r="2.4" fill="var(--c${k + 1})"/>`).join("");
+    }).join("");
+    const xt = [0, n - 1].filter((i, k, a) => a.indexOf(i) === k).map((i, k) => `<text x="${X(i)}" y="${H - 5}" text-anchor="${k ? "end" : "start"}">${esc(day(vs[i].at).slice(5))}</text>`).join("");
+    box.innerHTML = `<svg width="100%" viewBox="0 0 ${W} ${H}" data-hover role="img" aria-label="time per cell per version">${grid}${xt}${lines}
+      <line class="cross" y1="${m.t}" y2="${H - m.b}" stroke="var(--muted)" stroke-dasharray="2 2" visibility="hidden"/><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent"/></svg>
+      <div class="muted small">Now: ${esc(now) || "–"}${tr ? ` · ${esc(tr)}` : ""}. What re-testing costs: <span class="mono">uv run sdlab-ladder cost --strategies ${esc(S.name)}</span></div>`;
+    const svg = box.querySelector("svg"), cross = svg.querySelector(".cross");
+    svg.onpointermove = (e) => {
+      const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W;
+      const i = Math.max(0, Math.min(n - 1, Math.round(n === 1 ? 0 : (x - m.l) / (W - m.l - m.r) * (n - 1)))), v = vs[i];
+      cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("visibility", "visible");
+      showTip(`<b>version ${i + 1} of ${n}</b> <span class="mono">${esc(v.hash)}</span><br>from ${esc(when(v.at))}, ${v.n} cells<br>`
+        + TSETS.filter((s) => v.sets[s]).map((s) => `${s}: median ${secs(v.sets[s][0])} s, p95 ${secs(v.sets[s][1])} s (${v.sets[s][2]})`).join("<br>"), e);
+    };
+    svg.onpointerleave = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
   }
 
   // ---------- filters and the grid ----------
@@ -409,10 +451,11 @@
     controls(d);
     grid();
     rateChart(d.timeline); changesChart(d.timeline);
+    loadTime();
     $("status").textContent = `${Math.round(performance.now() - t0)} ms`;
   }
   start();
   strategies();
   let rw = innerWidth;
-  addEventListener("resize", () => { if (Math.abs(innerWidth - rw) > 60 && S.data) { rw = innerWidth; rateChart(S.data.timeline); changesChart(S.data.timeline); } });
+  addEventListener("resize", () => { if (Math.abs(innerWidth - rw) > 60 && S.data) { rw = innerWidth; rateChart(S.data.timeline); changesChart(S.data.timeline); if (S.time) timeChart(S.time); } });
 })();

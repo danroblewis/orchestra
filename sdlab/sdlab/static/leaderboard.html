@@ -60,6 +60,9 @@
   th.phys, td.phys { background: color-mix(in srgb, var(--pass) 6%, transparent); }
   tr > .phys:not(.phys + .phys) { border-left: 2px solid var(--line); }
   th.part, td.part { background: color-mix(in srgb, var(--pass) 11%, transparent); }
+  th.time, td.time { background: color-mix(in srgb, var(--other) 9%, transparent); }
+  tr > .time:not(.time + .time) { border-left: 2px solid var(--line); }
+  td.time small { color: var(--muted); }
   tr > .part:not(.part + .part) { border-left: 2px solid var(--line); }
   tr.groups th { position: static; cursor: default; font-size: 12px; text-align: left; }
   th[title] { text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -121,6 +124,10 @@
   counted by region. <b>part eq</b>: on the cases whose mean-field model is exact (or measured and checked), runs whose equations pass
   against it; <b>vs MF @20</b> and <b>@100</b>: fresh skill minus the mean-field model's own (on exact cases the best possible forecasts;
   hover for the reference's skill); <b>part long-run</b>: the found model run free for 5,000 steps against the particles.
+  <b>Time per cell</b> (whatever filters are picked): discovery seconds per cell on each set (tests, noisy, canonical, realistic,
+  physics, real), the median and then the 95th percentile, over the strategy's latest results (a timeout counts as its limit; hover
+  for scoring's time, recorded since 2026-10-19); <b>trend</b>: the latest version against the one before over the cells both ran
+  (×2 = twice as slow). What re-testing costs: <code>uv run sdlab-ladder cost --strategies NAME</code>.
   The Set picker chooses the cases the other columns are over (default: the tests).
   Click a column to sort; hover a column's name for its meaning, and <b>ⓘ</b> beside a strategy for how it works.
   Every word and strategy in plain language: <a href="/ladder/glossary" style="color:inherit">the glossary</a>.</p>
@@ -194,6 +201,13 @@ const COLS = [
   { key: "runs", label: "runs", fmt: (v) => v, cls: "hide-sm" },
   { key: "cover", label: "ran (of all cells)", fmt: pct },
   { key: "seconds", label: "time (s)", fmt: (v) => v.toFixed(1), cls: "hide-sm" },
+  ...["tests", "noisy", "canonical", "realistic", "physics", "real"].map((s) => ({ key: `t_${s}`, label: s, cls: `time${["noisy", "canonical", "real"].includes(s) ? " hide-sm" : ""}`, group: "time", asc: true,
+    title: `Discovery seconds per cell on the ${s} cases: the median, then (small) the 95th percentile, over the strategy's latest results (a timeout counts as its limit), whatever filters are picked`,
+    fmt: (v, r) => { const x = (r.time && r.time.sets[s]) || null; return x ? `${secs(x[0])} <small>${secs(x[1])}</small>` : "–"; }, tip: (r) => timeTip(r, s) })),
+  { key: "tTrend", label: "trend", cls: "time", group: "time", asc: true,
+    title: "Discovery time of the strategy's latest version against the version before it, over the cells both ran: the median of the paired ratios (×2 = twice as slow)",
+    fmt: (v, r) => (r.time && r.time.trend ? `×${r.time.trend.ratio.toFixed(2)}` : "–"),
+    tip: (r) => (r.time && r.time.trend ? `version ${r.time.trend.hash} against ${r.time.trend.prev}, over the ${r.time.trend.n} cells both ran` : "one version, or too few cells in common with the one before") },
   { key: "rSkill20", label: "real skill@20", fmt: pct, cls: "real", group: "real", tip: (r) => r.rTip },
   { key: "rGoals", label: "goals met", fmt: (v, r) => (r.rOf ? `${r.rGoalsN}/${r.rOf}` : "–"), cls: "real", group: "real", tip: (r) => r.rTip },
   { key: "rFresh20", label: "real fresh@20", fmt: pct, cls: "real hide-sm", group: "real" },
@@ -217,7 +231,27 @@ const COLS = [
 let data = null, sortKey = "pass", sortDir = -1, about = {}, gloss = {};
 const open = new Set();                                   // strategies whose explanation is expanded
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const thTip = (c) => (c.gl && gloss[c.gl] ? ` title="${esc(gloss[c.gl].term + ": " + gloss[c.gl].text)}"` : "");
+const thTip = (c) => (c.gl && gloss[c.gl] ? ` title="${esc(gloss[c.gl].term + ": " + gloss[c.gl].text)}"` : c.title ? ` title="${esc(c.title)}"` : "");
+// time per cell (/api/ladder/timing, sdlab/ladder/timing.py): {strategies: {name: {sets: {set: [median, p95, n]}, score: {set: [median, n]}, trend}}}
+let TIMES = null;
+const secs = (v) => (v == null ? "–" : v < 1 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0));
+function timeTip(r, s) {
+  const x = r.time && r.time.sets[s], sc = r.time && r.time.score[s];
+  if (!x) return `not run on the ${s} cases`;
+  return `${s}: median ${secs(x[0])} s, 95th percentile ${secs(x[1])} s of discovery per cell, over ${x[2]} cells`
+    + (sc ? `; scoring ${secs(sc[0])} s per cell (median over the ${sc[1]} results with scoring measured)` : "; scoring not measured yet (results since 2026-10-19 record it)");
+}
+function addTimes() {                                      // time per cell into the rows (a column group; not filtered)
+  if (!data) return;
+  for (const r of data.rows) {
+    r.time = TIMES && TIMES.strategies ? TIMES.strategies[r.name] || null : null;
+    for (const s of ["tests", "noisy", "canonical", "realistic", "physics", "real"]) { const x = r.time && r.time.sets[s]; r[`t_${s}`] = x ? x[0] : NaN; }
+    r.tTrend = r.time && r.time.trend ? r.time.trend.ratio : NaN;
+  }
+}
+async function loadTimes() {
+  try { const t = await fetch("/api/ladder/timing").then((r) => r.json()); if (t.pending) { setTimeout(loadTimes, 3000); return; } TIMES = t; addTimes(); if (data) render(); } catch { /* the next poll */ }
+}
 function aboutRow(name) {
   const a = about[name]; if (!a) return "";
   return `<tr class="about"><td colspan="${COLS.length}"><div class="box"><p><b>${esc(a.idea)}</b> ${esc(a.how)}</p>
@@ -254,9 +288,10 @@ function render() {
     const d = (Number.isNaN(x) ? none : x) - (Number.isNaN(y) ? none : y);
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
+  const nTime = COLS.filter((c) => c.group === "time").length;
   const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length, nRd = COLS.filter((c) => c.group === "rd").length, nPart = COLS.filter((c) => c.group === "part").length;
   const setName = { tests: "Tests", realistic: "Realistic examples", physics: "Physics", all: "All cases" }[document.getElementById("set").value];
-  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal - nPhys - nRd - nPart}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th><th class="part" colspan="${nPart}" title="Particles counted by region: equations against the mean-field model where it is exact, skill against it">Particles</th></tr>` + "<tr>" + COLS.map((c) =>
+  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nTime - nReal - nPhys - nRd - nPart}">${setName}</th><th class="time" colspan="${nTime}" title="Discovery seconds per cell by set: median, then the 95th percentile (small), over each strategy's latest results; trend: its latest version against the one before">Time per cell (s)</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th><th class="part" colspan="${nPart}" title="Particles counted by region: equations against the mean-field model where it is exact, skill against it">Particles</th></tr>` + "<tr>" + COLS.map((c) =>
     `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
@@ -292,6 +327,7 @@ async function load() {
   if (asked !== q) return;                                 // the filters changed meanwhile: their rows are on the way
   for (const r of d.rows) for (const k in r) if (r[k] === null) r[k] = NaN;   // nothing to average: NaN, as before
   data = d; version = d.version; gloss = gl;
+  addTimes();
   try { AGES = await fetch("/api/ladder/newest/ages").then((r) => (r.ok ? r.json() : null)); } catch { AGES = null; }
   newBar();
   for (const s of st) if (s.about) about[s.name] = s.about;
@@ -301,7 +337,7 @@ async function load() {
   render();
 }
 async function poll() {                                    // a few bytes; the rows again only when they changed
-  try { const v = (await fetch("/api/ladder/version").then((r) => r.json())).version; if (v !== version) await load(); } catch { /* restarting */ }
+  try { const v = (await fetch("/api/ladder/version").then((r) => r.json())).version; if (v !== version) { await load(); loadTimes(); } } catch { /* restarting */ }
 }
 function syncRankBy() { const rb = document.getElementById("rankby"); rb.value = [...rb.options].some((o) => o.value === sortKey) ? sortKey : ""; }
 document.getElementById("rankby").onchange = (e) => { if (!e.target.value) return; sortKey = e.target.value; sortDir = COLS.find((c) => c.key === sortKey).asc ? 1 : -1; render(); };
@@ -313,6 +349,7 @@ for (const id of ["variants", "level", "kind", "age"]) document.getElementById(i
 }
 document.getElementById("filter").oninput = render;
 load();
+loadTimes();
 setInterval(poll, 15000);
 </script>
 </body>

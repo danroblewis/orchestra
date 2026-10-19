@@ -32,6 +32,7 @@ uv run sdlab-ladder check                              # every case file compile
 uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
 uv run sdlab-ladder freeze 042#5                       # write draw 5 of parametric case 042 as an ordinary case
 uv run sdlab-ladder strict                             # fill strict pass's caches, then pass vs strict pass per strategy
+uv run sdlab-ladder cost --strategies lna              # the wall time re-testing lna would take (Time and runs, below)
 ```
 
 `python -m sdlab.ladder ...` works too. Cases are chosen by id or number prefix (`003`,
@@ -2247,6 +2248,84 @@ Then come the **per-tag** counts (pass + equivalent of total) across strategies,
 motifs a strategy handles. `show CASE` prints the true equations, the found ones, and every part
 with its true and found numbers, error and verdict, plus the spurious parts.
 
+## Time and runs (`timing.py`, `runs.py`, `cost.py`)
+
+Since 2026-10-19 (queue item 1b) the ladder records what its work costs, so an agent can see "this
+fix costs ~4 min; this shared change costs ~5 h" before making it. None of it is in a hash: recording
+it changed no result's staleness.
+
+**Per result** (`runner.py`, columns of `results`): `seconds` (discovery, as before; a re-score keeps
+the stored one), `score_seconds` (loading the fresh data and scoring: on a realistic case it can
+dominate, one took 417 s), `wall_seconds` (the whole item in its worker, errors and timeouts
+included: what re-testing it costs), `wait_seconds` (from the run's start until a worker took the
+item) and `run_id`. Older results have only `seconds`.
+
+**Per run** (`runs` table; every `sdlab-ladder run`, `sync` and each watch batch, never deleted):
+command, started, finished, items, worker count, process id, `backlog` (the stale items there were
+when it was planned; a watch batch takes at most `--batch` of them), and running counts of the items
+done, errors, timeouts and `busy` (their wall seconds). Runs made before 2026-10-19 have only command,
+times and items. `store.runs(limit, command?)` reads them.
+
+**Time per cell** (`timing.py`): discovery seconds per (case, variant) over each strategy's latest
+results, by set: `tests`, `noisy` (tag noisy), `canonical` (tag canonical), `realistic`, `physics`
+(particle cases included) and `real`; the median and the 95th percentile (nearest rank). A timeout
+counts as its limit (its wall seconds, else the case's own timeout, else the watcher's 300 s); an
+error with no time is left out. Scoring seconds per set where measured. Per version (strategy
+hash): the same per set over the cells that version ran (its last result per cell, so a re-score is
+not counted twice). **Trend**: the latest version against the newest earlier version that shares at
+least 5 cells with it, as the median of the paired ratios new / old over those cells (each read as at
+least 0.01 s), so a change in which cells ran does not read as a speed change. The results' light
+columns are read once (seconds on a large store) and topped up with what is stored since; it is never
+done in a request.
+
+**What a cell would cost** (`timing.Estimator`): its own last wall seconds; else its discovery
+seconds plus scoring measured on that cell (under any strategy), else the set's median scoring; a
+cell the strategy never ran takes the cell's median over the strategies that ran it, else the
+strategy's median in the set, else every strategy's median in the set. A re-score costs the scoring
+part only.
+
+**The watcher's pace and ETA** (`runs.py`): results per hour over its watch batches of the last 6 h
+(from the first batch's start to now, planning gaps included), and its efficiency: busy seconds ÷
+(elapsed × workers), how much of its workers' time went to items (it runs at nice 19 beside the
+agents' runs). The backlog is every stale cell of the summary (a real case whose download is missing
+is left out, as the planner does), with its estimated cost. ETA: by pace (stale items ÷ results per
+hour) and by stored cost (busy seconds ÷ (workers × efficiency); until a batch has recorded its busy
+seconds, the ideal with every worker busy is shown instead).
+
+**`sdlab-ladder cost`** (`cost.py`):
+
+```
+uv run sdlab-ladder cost --strategies lna                   # lna's every cell run again (its code changed)
+uv run sdlab-ladder cost --cases tag:realistic              # every strategy on those cases
+uv run sdlab-ladder cost --strategies everything --rescore  # everything re-scored (a scorer change)
+uv run sdlab-ladder cost --strategies lna --stale           # only what is stale now, each as it is stale
+```
+
+It prints the items, their busy time, the wall time at the watcher's workers (ideal, and at its
+measured efficiency), the time at the watcher's pace, when the watcher would be done with these
+behind its backlog (read from the server's runs panel, `--server`, default
+`http://127.0.0.1:8020`), the cost by set and by strategy, where each item's estimate came from, and
+the slowest cells. Use it in the hourly journal, and before a change to shared code. It reads the
+store's light columns, so it takes some seconds on a large store.
+
+**Where it is shown.** The leaderboard has a column group **Time per cell (s)**: one column per set
+(the median, then the 95th percentile in small type; hover for the cell count and the scoring time)
+and **trend**; it does not follow the page's filters. The strategy page has a chart **Time per cell
+per version** (median per set, log scale; hover for the 95th percentile). The Now page has a
+**runs panel** under the live strip: the watcher's batch (done and left, errors, timeouts, workers,
+results per hour), the backlog (to run, to re-score, its estimated work by set), the pace and the ETA,
+and a table of the recent runs. Endpoints, each made in a background thread and served from memory
+(`{pending: true}` until the first is made, then at most 20 s old):
+
+```
+GET /api/ladder/timing            {sets, strategies: {name: {sets: {set: [median, p95, n]}, score: {set: [median, n]}, trend}}}
+GET /api/ladder/timing/{name}     {strategy, sets, stats, versions: [{hash, at, n, all, sets}]}
+GET /api/ladder/runs              {now, watcher: {batch, alive, pace, backlog, eta}, runs}
+```
+
+The watcher records batches from its restart on 2026-10-19; a batch started before has no counts, and
+reads as having done nothing until it finishes.
+
 ## The read API (for a page)
 
 `sdlab/sdlab/ladder/api.py`. Every function is read only and returns JSON-safe values:
@@ -2306,6 +2385,9 @@ GET /api/ladder/longrun/{id}?at=&window=
 GET /api/ladder/version
 GET /api/ladder/leaderboard?variant=&level=&kind=&set=&age=
 GET /api/ladder/matrix?case=
+GET /api/ladder/timing
+GET /api/ladder/timing/{name}
+GET /api/ladder/runs
 ```
 
 A case, variant or strategy must be one the listings name, and a result id an integer that is stored;

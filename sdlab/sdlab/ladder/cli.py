@@ -17,6 +17,9 @@
                                   long-horizon metrics (longrun.py) of the latest results not yet known
     analyse CASE [--variant V] [--json] | --all [--cases ...] | --validate CASE --variant V [--seeds N]
                                   what the data can deliver (identifiability, the Cramér-Rao bound; analysis.py)
+    cost   [--strategies ...] [--cases ...] [--variants ...] [--rescore] [--stale] [--jobs N]
+                                  the wall time re-testing them would take, from stored per-cell times and the
+                                  watcher's pace (cost.py)
     strict [--strategies ...] [--cases ...] [--all] [--no-fill] [--set tests|realistic|all] [--top N]
                                   fill strict pass's long-run metrics and per-cell references (strict.py), then
                                   pass against strict pass per strategy (strict_report.py)
@@ -67,6 +70,7 @@ def do_run(a, force: bool, command: str) -> int:
     if not items:
         print("Nothing to run: every result is current.")
         return 0
+    backlog = len(items)
     batch = getattr(a, "batch", 0) or 0
     if batch and len(items) > batch:
         # a batch at a time, so cases and strategies added meanwhile are planned within minutes:
@@ -79,7 +83,7 @@ def do_run(a, force: bool, command: str) -> int:
     runs = sum(i["mode"] == "run" for i in items)
     print(f"{command}: {len(items)} items ({runs} to run, {len(items) - runs} to re-score) on {a.jobs or (os.cpu_count() or 2) - 1} workers", file=sys.stderr)
     began = time.perf_counter()
-    rows = runner.execute(items, a.jobs, a.timeout, command, on_done=None if a.quiet else _progress)
+    rows = runner.execute(items, a.jobs, a.timeout, command, on_done=None if a.quiet else _progress, backlog=backlog)
     took = time.perf_counter() - began
     counts = {k: sum(r["status"] == k for r in rows) for k in dict.fromkeys([*api.STATUSES, *(r["status"] for r in rows)])}   # real cases: agrees / differs
     print(f"{command}: {len(rows)} done in {took:.1f} s: " + ", ".join(f"{v} {k}" for k, v in counts.items() if v))
@@ -426,6 +430,14 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--no-fill", action="store_true", help="only the report")
     sp.add_argument("--set", default="tests", choices=("tests", "realistic", "all"))
     sp.add_argument("--top", type=int, default=10)
+    co = sub.add_parser("cost", help="the wall time to re-test strategies or cases, from stored per-cell times (cost.py)")
+    co.add_argument("--strategies", default="all")
+    co.add_argument("--cases")
+    co.add_argument("--variants")
+    co.add_argument("--jobs", type=int, help="workers (default: the watcher's)")
+    co.add_argument("--rescore", action="store_true", help="the cost of re-scoring them (a scorer change), not of running them")
+    co.add_argument("--stale", action="store_true", help="only what is stale now, each run or re-scored as it is stale")
+    co.add_argument("--server", default="http://127.0.0.1:8020", help="where the runs panel (the watcher's backlog) is read")
     an = sub.add_parser("analyse", help="what a case's data can deliver: identifiability and the Cramér-Rao bound")
     an.add_argument("case", nargs="?")
     an.add_argument("--variant")
@@ -454,6 +466,9 @@ def main(argv: list[str] | None = None) -> int:
         return freeze(a)
     if a.command == "longrun":
         return longrun(a)
+    if a.command == "cost":
+        from . import cost
+        return cost.main(a)
     if a.command == "strict":
         from . import strict_report
         return strict_report.main(a)

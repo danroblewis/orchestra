@@ -7,6 +7,11 @@ not when the run was planned), with the git commit and the hash of any uncommitt
 would give it: the measured stocks (id, name, unit, final, group), their levels, the announced eras
 and injections. A strategy that raises is recorded as an error, one that runs out of time as a
 timeout; neither stops the run.
+
+Each row also records its times (none of them is in a hash, so recording them changes no result's
+staleness): seconds (discovery; a re-score keeps the stored one), score_seconds (loading the fresh data
+and scoring), wall_seconds (the whole item in its worker, errors and timeouts included: what re-testing
+it costs) and wait_seconds (from the run's start until a worker took the item), with the run's id.
 """
 
 from __future__ import annotations
@@ -137,11 +142,16 @@ def case_timeout(case_id: str, timeout: float) -> float:
     return float(c.get("timeout") or (_realistic.TIMEOUT if c.get("example") else timeout))
 
 
-def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) -> dict:
-    """Run (or re-score) one item: the row to store."""
+def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None, queued: float | None = None) -> dict:
+    """Run (or re-score) one item: the row to store (queued: when the run started, time.time())."""
+    took = time.perf_counter()
     if run_id is not None:
         store.mark(run_id, item, "running")
     row = {k: item[k] for k in ("case", "variant", "strategy", "case_hash", "strategy_hash", "score_hash")}
+    if run_id is not None:
+        row["run_id"] = run_id
+    if queued is not None:
+        row["wait_seconds"] = round(max(0.0, time.time() - queued), 3)
     armed = _alarm(case_timeout(item["case"], timeout))
     try:
         c = casemod.load(item["case"])
@@ -163,6 +173,7 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
         if armed:                    # the timeout bounds the strategy, not the scorer (the oracle's fit over
             signal.setitimer(signal.ITIMER_REAL, 0)     # ~2000 windows of a long realistic run takes minutes)
             armed = False
+        scoring = time.perf_counter()
         fresh = _real_data.load(c, item["variant"], full=True) if c.get("real") else data.load(c, item["variant"], fresh=True)
         if c.get("real"):           # real/: held-out prediction, agreement with the published model, measured flows (twin: equations)
             s = _real_score.score(c, item["variant"], model, flows, d, fresh, inferred)
@@ -175,7 +186,7 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
                  "behaviour": score.behaviour(model, flows, d["clean"], fresh["clean"], inferred if d["t"] == d["clean"]["t"] else None)}
         else:
             s = score.score(c, noise, model, flows, d, fresh, inferred)
-        row.update(status=s["status"], seconds=seconds, scores=jsonable(s), found=flows)
+        row.update(status=s["status"], seconds=seconds, score_seconds=round(time.perf_counter() - scoring, 3), scores=jsonable(s), found=flows)
     except Timeout as e:
         row.update(status="timeout", error=str(e))
     except Exception:                                          # noqa: BLE001
@@ -183,15 +194,19 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
     finally:
         if armed:
             signal.setitimer(signal.ITIMER_REAL, 0)
+    row["wall_seconds"] = round(time.perf_counter() - took, 3)
     return row
 
 
-def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT, command: str = "", on_done=None) -> list[dict]:
-    """Run the items (in a process pool unless jobs == 1), storing each result as it finishes."""
+def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT, command: str = "", on_done=None,
+            backlog: int | None = None) -> list[dict]:
+    """Run the items (in a process pool unless jobs == 1), storing each result as it finishes (backlog: the
+    stale items there were when they were planned, recorded with the run)."""
     if not items:
         return []
     jobs = jobs or max(1, (os.cpu_count() or 2) - 1)
-    run_id = store.start_run(command, items)
+    run_id = store.start_run(command, items, min(jobs, len(items)), len(items) if backlog is None else backlog)
+    began = time.time()
     rows = []
     # a terminated run (SIGTERM, SIGHUP) still marks itself finished in the store, through the finally below
     old = {}
@@ -203,8 +218,9 @@ def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT
                 old[sig] = signal.signal(sig, stop)
 
     def done(item, row):
+        row.setdefault("run_id", run_id)
         store.record(row)
-        store.mark(run_id, item, "done", row["status"])
+        store.mark(run_id, item, "done", row["status"], row.get("wall_seconds"))
         rows.append(row)
         if on_done:
             on_done(item, row, len(rows), len(items))
@@ -213,13 +229,13 @@ def execute(items: list[dict], jobs: int | None = None, timeout: float = TIMEOUT
         # one item, or one job, runs here, unless this process holds older code of a strategy in memory
         if (jobs == 1 or len(items) == 1) and not provenance.stale_in_memory([i["strategy"] for i in items]):
             for it in items:
-                done(it, run_item(it, timeout, run_id))
+                done(it, run_item(it, timeout, run_id, began))
         else:
             # the test cases before the realistic ones (slow: they must not hold the tests back); within
             # each, slow strategies and long variants first, so the pool's tail is short
             order = sorted(items, key=lambda i: (not casemod.is_realistic(i["case"]), casemod.variant(casemod.load(i["case"]), i["variant"])["steps"], i["mode"] == "run"), reverse=True)
             with ProcessPoolExecutor(max_workers=min(jobs, len(items))) as pool:
-                futures = {pool.submit(run_item, it, timeout, run_id): it for it in order}
+                futures = {pool.submit(run_item, it, timeout, run_id, began): it for it in order}
                 for fut in as_completed(futures):
                     it = futures[fut]
                     try:

@@ -147,6 +147,40 @@
     $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; if (S.follow) { S.nowMode = "one"; followTick(true); } remember(); });
     box.querySelectorAll(".chip[data-case]").forEach((b) => b.addEventListener("click", () => pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy })));
   }
+  // the runs panel (/api/ladder/runs, runs.py): the watcher's batch, pace, backlog and ETA, and the newest runs
+  const hrs = (h) => (h == null ? "–" : h * 60 < 90 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`);
+  const num = (x) => (x == null ? "–" : Number(x).toLocaleString());
+  let runsOpen = false;
+  function renderRuns(p) {
+    const box = $("runs-panel");
+    if (!p || p.pending) { box.hidden = false; box.innerHTML = `<p class="muted">Runs: being worked out…</p>`; return; }
+    const w = p.watcher || {}, b = w.batch, pc = w.pace || {}, bl = w.backlog || {}, eta = w.eta || {};
+    const left = b && b.done != null ? b.total - b.done : null;
+    const batch = b ? `Watcher batch <b>#${b.id}</b> ${b.state === "running" ? `running since ${esc(when(b.started))}` : `${esc(b.state)} ${esc(when(b.finished || b.started))}`}`
+      + (b.done != null ? `: <b>${num(b.done)}</b> of ${num(b.total)} done, ${num(left)} left${b.errors ? `, ${b.errors} errors` : ""}${b.timeouts ? `, ${b.timeouts} timeouts` : ""}` : ` (${num(b.total)} items; started before batches were counted)`)
+      + (b.jobs ? ` on ${b.jobs} workers` : "") + (b.per_hour ? ` · ${num(Math.round(b.per_hour))} results/h` : "") + (w.alive === false ? ` · <span class="error">its process is gone</span>` : "")
+      : "No watch batch recorded yet.";
+    const how = Object.entries(bl.how || {}).map(([k, n]) => `${num(n)} ${k}`).join(", ");
+    const sets = Object.entries(bl.by_set || {}).sort((a, c) => c[1][1] - a[1][1]).map(([k, [n, sec]]) => `${k} ${num(n)} (${hrs(sec / 3600)})`).join(", ");
+    const etaText = eta.by_cost != null || eta.by_pace != null
+      ? `ETA for the backlog: <b>${hrs(eta.by_cost != null ? eta.by_cost : eta.by_pace)}</b>${eta.at ? ` (${esc(when(eta.at))})` : ""}`
+        + ` <span class="muted">· by pace ${hrs(eta.by_pace)}, by stored cost ${eta.by_cost != null ? hrs(eta.by_cost) : `– (efficiency not measured yet; ${hrs(eta.ideal)} if every worker is busy)`}</span>` : "ETA: –";
+    const rows = (p.runs || []).map((r) => `<tr><td>#${r.id}</td><td class="l"><code>${esc(r.command)}</code></td><td class="l">${esc(when(r.started))}</td><td>${r.seconds != null ? hrs(r.seconds / 3600) : "–"}</td>`
+      + `<td>${num(r.done)}/${num(r.total)}</td><td>${r.errors ?? "–"}</td><td>${r.timeouts ?? "–"}</td><td>${r.jobs ?? "–"}</td><td>${r.busy != null ? hrs(r.busy / 3600) : "–"}</td><td class="l">${esc(r.state)}</td></tr>`).join("");
+    box.hidden = false;
+    box.innerHTML = `<p>${batch}</p>
+      <p>Backlog: <b>${num(bl.items)}</b> stale (${num(bl.run)} to run, ${num(bl.rescore)} to re-score), about ${hrs((bl.seconds || 0) / 3600)} of work <span class="muted" title="each item's cost from: ${esc(how)}">· ${esc(sets)}</span></p>
+      <p>Pace: <b>${num(pc.per_hour != null ? Math.round(pc.per_hour) : null)}</b> results/h over the last ${pc.hours ?? "–"} h (${pc.batches || 0} batches)${pc.efficiency != null ? `, ${Math.round(100 * pc.efficiency)}% of the workers' time on items` : ""} · ${etaText}</p>
+      <details${runsOpen ? " open" : ""}><summary>Recent runs (every <code>sdlab-ladder run</code>, sync and watch batch)</summary><div class="tablewrap"><table><thead><tr><th>run</th><th class="l">command</th><th class="l">started</th><th>took</th><th>done</th><th>errors</th><th>timeouts</th><th>workers</th><th>busy</th><th class="l">state</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
+    box.querySelector("details").addEventListener("toggle", (e) => { runsOpen = e.target.open; });
+  }
+  let runsAt = 0;
+  async function pollRuns(force) {
+    if (!force && (S.view !== "now" || Date.now() - runsAt < 15000)) return;
+    runsAt = Date.now();
+    try { const p = await get("/api/ladder/runs"); renderRuns(p); if (p.pending) runsAt = Date.now() - 12000; } catch { /* the next poll */ }
+  }
+
   let casesAt = 0;
   async function refreshCases() {
     if (Date.now() - casesAt < 10000) return;
@@ -616,6 +650,7 @@
       S.progress = await get("/api/ladder/progress?recent=20");
       active = !!(S.progress.run && !S.progress.run.finished);
       if (S.view === "now") renderLive();
+      pollRuns(false);
       followTick(false);
       const done = S.progress.run ? `${S.progress.run.id}:${S.progress.run.done}` : null;
       if (done !== lastDone) {
@@ -667,6 +702,7 @@
     if (S.follow) followTick(true);
     setView(view);
     renderLive();
+    pollRuns(true);
     lastDone = S.progress && S.progress.run ? `${S.progress.run.id}:${S.progress.run.done}` : null;
     setTimeout(poll, 1000);
   })();

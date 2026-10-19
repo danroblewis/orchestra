@@ -439,6 +439,12 @@ body.research-page { overflow: hidden; }
 .pbar .seg.running { background: var(--fit); opacity: .6; }
 .pbar .seg.queued { background: transparent; }
 .running-now { align-items: center; }
+.runs-panel { font-size: 13px; margin: 0 0 10px; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 6px; }
+.runs-panel p { margin: 2px 0; }
+.runs-panel summary { cursor: pointer; color: var(--muted); }
+.runs-panel table { font-size: 12px; margin-top: 4px; }
+.runs-panel td, .runs-panel th { padding: 2px 8px 2px 0; text-align: right; white-space: nowrap; }
+.runs-panel td:first-child, .runs-panel th:first-child, .runs-panel td.l { text-align: left; }
 .casehead { margin: 6px 0 4px; }
 .ladder-page h2.ctitle2 { font-size: 18px; margin: 0 0 2px; font-family: var(--mono); font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--fg); }
 .ctitle2 span { font-family: var(--sans); font-weight: 500; }
