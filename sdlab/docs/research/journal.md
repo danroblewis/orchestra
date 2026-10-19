@@ -175,3 +175,12 @@ lna: 72.9% (531/728), realistic 15.1% (62 of 62 scored, no timeouts now).
 
 **Needs you**
 - **Reduce the watcher's load?** Retiring the dominated strategies the revisit listed would cut roughly half the workload (see 20:15). Alternatively, run them less often, e.g. only when their own code changes, not when shared code changes.
+
+## 2026-10-18 21:00 (note)
+
+- **Finished: lna** (f3270a8, `docs/research/lna.md`).
+  - **Ladder:** best on equations, 578 pass / 123 equivalent of 912.
+  - **Behaviour:** worse. Examples skill@20 is 15.8% against matrix's 29.6% (paired −13.8, p = 0.13), the generated bench is about even, and realistic is 21.3% against 29.6%.
+  - **Hook API** for variants: queued as 2e.
+- **Started: queue item 3,** the strict pass tier.
+- **Pattern:** strategies tuned on the small tests (lna, combined) can do worse on realistic models. The strict tier, with long-run and fresh-run behaviour required, is meant to expose this on the leaderboard.

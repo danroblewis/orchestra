@@ -11,6 +11,13 @@ for `combined` on the test cases).
 
 ## Queued
 
+2e. **Move the lna_* variants onto lna's hooks** (lna f3270a8: `lna.identify(stocks, run, opts,
+   hooks=...)`. The hooks are `data`, `atoms`, `before_search`, `after_search` and `flows`;
+   see `run.HOOKS` and `docs/research/lna.md`). lna_stack, lna_levels, lna_pulses, lna_products
+   and lna_loops each copy `lna.run.discover` today. Rewrite each one as hooks. Their ladder
+   results must be identical, or explain any difference. They then inherit lna's inputs, time
+   budget and stride, which fixes lna_stack's realistic timeouts.
+
 2d. **Engine features for the remaining blockers** (HOLD until the watcher's backlog is under ~10k items: a `simulate.py` change re-runs every strategy) (approved by the user on 2026-10-18 if
    additive, with existing numbers bit-identical):
    - two-way flows and negative stocks, opt-in per stock or flow;
@@ -20,17 +27,6 @@ for `combined` on the test cases).
 
    Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
 
-3. **Strict pass tier.** Add a second, stricter verdict beside pass/equivalent/fail. Do not
-   replace pass, so history stays comparable. Strict pass requires all of:
-   - a pass;
-   - found complexity no greater than the truth's (no extra parts);
-   - long-run error (`longrun.py`) under a threshold at 10× the truth's slowest time constant;
-   - good fresh-run prediction (skill@100 fresh above a threshold).
-
-   Thresholds come from what the true model itself achieves on the same data (the true
-   structure refitted), not from arbitrary numbers. Show strict pass rate as a leaderboard
-   column and a ranking option. The definition of "pass" itself is unchanged: changing it
-   needs the user.
 4. **Physics-generated cases (out-of-class data).** Generate data from physical systems that
    are not stock-and-flow models, simulated in continuous time with a proper ODE solver and
    sampled:
@@ -91,6 +87,8 @@ for `combined` on the test cases).
    watcher's backlog is small.
 
 ## Started
+
+- 2026-10-18 21:00: item 3, strict pass tier.
 
 - 2026-10-18 20:50: item 2c, converter coverage.
 
