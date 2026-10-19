@@ -34,4 +34,4 @@ def hooks(state: dict, known: np.ndarray | None) -> dict:
     lv = levels(state)
     # levels run inside the products stage's after_search, on the same data (the product columns as
     # rows of the changes too, as when the stack was first built)
-    return chain(pulses(known), products(state, then=lv["after_search"]), {"flows": lv["flows"]})
+    return chain(pulses(known), products(state, then=lv["after_search"], rows=True), {"flows": lv["flows"]})

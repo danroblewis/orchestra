@@ -43,8 +43,7 @@ def product_atoms(S: int, unit: list[str], final: set[int], base: int | None = N
 def with_rows(cur: Fitted, d: Data, n: int) -> tuple[Fitted, Data]:
     """The product columns as rows of the changes too (zero change, no extra variance), as the stage
     was first built: each adds only a constant to the likelihood, but L-BFGS's stopping rule is
-    relative to the likelihood's size, so without them some fits stop elsewhere (101 counts-short
-    kept a spurious growth)."""
+    relative to the likelihood's size, so with or without them some fits stop elsewhere."""
     S, T = d.dy.shape
     d2 = Data(d.prev, np.vstack([d.dy, np.zeros((n, T))]), d.cfg, d.delta,
               None if d.free is None else np.concatenate([d.free, np.zeros(n, bool)]), d.deadline)
@@ -52,10 +51,13 @@ def with_rows(cur: Fitted, d: Data, n: int) -> tuple[Fitted, Data]:
     return Fitted(cur.atoms, cur.theta, cur.nll, tau), d2
 
 
-def stage(state: dict, margin: float = MARGIN, then=None) -> dict:
+def stage(state: dict, margin: float = MARGIN, then=None, rows: bool = False) -> dict:
     """{data, after_search, flows} for the products stage (3 to SCRATCH stocks; otherwise nothing);
     `state` collects what the strategy reports (lna_cur, lna_flows, pairs, products, product_gain).
-    then(cur, d, ctx): an after_search stage run next on the same data (lna_stack's levels)."""
+    then(cur, d, ctx): an after_search stage run next on the same data (lna_stack's levels). rows:
+    the product columns also as zero rows of the changes there (with_rows; lna_stack, as it was
+    first built: without them it lost 101 counts-short; lna_products alone lost nothing without
+    them, and with them reads an effect into 014 counts-short)."""
 
     def data(prev, dy, ctx):
         S = len(ctx["ids"])
@@ -91,7 +93,7 @@ def stage(state: dict, margin: float = MARGIN, then=None) -> dict:
         if not state.get("extra"):
             return then(cur, d, ctx) if then else cur
         S = d.dy.shape[0]
-        g, d2 = with_rows(cur, d, len(state["pairs"]))
+        g, d2 = with_rows(cur, d, len(state["pairs"])) if rows else (cur, d)
         g = offered(g, d2)
         if then:
             g = then(g, d2, ctx)
