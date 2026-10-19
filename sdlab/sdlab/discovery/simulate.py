@@ -8,6 +8,15 @@ levels, as SD Lab's effect_value); and a flow may use up another stock as it mov
 `per` of it for each unit moved). A stock's outflows and the flows using it share what it holds, as in
 the ground-truth engine (nothing leaves a stock that is not there). A segment holds for times from..to; a time no segment covers takes the
 last segment. Levels are floored at 0 after every step.
+
+Mirroring the engine's additive features (2026-10-18; each off by default, so a model without them
+steps exactly as before):
+  inputs    measured inputs, {"t": [...], "values": {name: [value per step]}}: a rate or effect reads
+            an input by name as it reads a stock (the value of the step at or before the time)
+  dt        sub-steps: each step is 1/dt sub-steps moving rate x dt (the same times, inputs and
+            segments over the step)
+  ceilings  {stock: max}: a stock's inflows share the room left under its ceiling, as its outflows
+            share what it holds
 """
 
 from __future__ import annotations
@@ -113,11 +122,23 @@ class _Segments:
 
 
 class Model:
-    """A list of flows, compiled for stepping the stocks `ids` (any other stock reads as 0)."""
+    """A list of flows, compiled for stepping the stocks `ids` (any other stock reads as 0); with
+    inputs, dt and ceilings as the module says."""
 
-    def __init__(self, flows: list[dict], ids: list[str]):
+    def __init__(self, flows: list[dict], ids: list[str], inputs: dict | None = None, dt: float = 1.0, ceilings: dict | None = None):
         self.ids = ids
         index = {s: i for i, s in enumerate(ids)}
+        self.n_sub = max(1, round(1 / float(dt))) if dt and float(dt) < 1 else 1
+        self.dt = 1.0 / self.n_sub
+        self.inputs = None
+        if inputs and inputs.get("values"):
+            names = [k for k in inputs["values"] if k not in index]
+            self.input_t = np.asarray(inputs["t"], dtype=float)
+            self.inputs = np.nan_to_num(np.array([np.asarray(inputs["values"][k], dtype=float) for k in names])) if names else None
+            for j, k in enumerate(names):
+                index[k] = len(ids) + j
+        self.ceilings = [(index[s], float(c)) for s, c in (ceilings or {}).items() if s in index and index[s] < len(ids) and c is not None]
+        self.into = {c: [i for i, f in enumerate(flows) if index.get(f.get("to")) == c] for c, _ in self.ceilings}
         self.parts = []
         # co-flows: (flow, used stock, per)
         self.uses = [(i, index[u["stock"]], float(u["per"])) for i, f in enumerate(flows) for u in f.get("uses") or []
@@ -141,8 +162,17 @@ class Model:
             else:
                 self.parts.append((src, dst, ratio, None, _Rate([f.get("rate") or {}], index), None))
 
+    def _read(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """The levels with the inputs' values at times t below them (rows in index order)."""
+        if self.inputs is None:
+            return L
+        i = np.clip(np.searchsorted(self.input_t, np.asarray(t, dtype=float), side="right") - 1, 0, self.inputs.shape[1] - 1)
+        return np.vstack([L, self.inputs[:, i]])
+
     def _amounts(self, L: np.ndarray, t: np.ndarray) -> list:
         """Each flow's amount in one step from levels L (stocks x states) at times t (one per state)."""
+        if self.inputs is not None or self.n_sub > 1 or self.ceilings:
+            return self._amounts_added(L, t)
         m = L.shape[1]
         zero = np.zeros(m, int)
         amounts = []
@@ -158,9 +188,57 @@ class Model:
                 amounts[i] = amounts[i] * k
         return amounts
 
+    def _amounts_added(self, L: np.ndarray, t: np.ndarray) -> list:
+        """_amounts with inputs, a sub-step (amounts x dt) and ceilings."""
+        S = L.shape[0]
+        R = self._read(L, t)
+        m = L.shape[1]
+        zero = np.zeros(m, int)
+        amounts = []
+        for src, dst, ratio, segs, rate, vals in self.parts:
+            seg = segs(t) if segs is not None else zero
+            amounts.append(vals[seg] if vals is not None else rate(R, seg))
+        for i, effect in self.effects:
+            amounts[i] = amounts[i] * effect(R)
+        if self.n_sub > 1:
+            amounts = [a * self.dt for a in amounts]
+        for c, takers in self.takers.items():
+            want = sum(amounts[i] * w for i, w in takers)
+            k = np.where((want > L[c]) & (L[c] > -1), np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
+            for i, _ in takers:
+                amounts[i] = amounts[i] * k
+        for c, cap in self.ceilings:                          # nothing enters a full stock
+            ins = self.into.get(c) or []
+            if not ins or c >= S:
+                continue
+            want = sum(amounts[i] for i in ins)
+            room = np.maximum(0.0, cap - L[c])
+            k = np.where(want > room, room / np.where(want > 0, want, 1), 1.0)
+            for i in ins:
+                amounts[i] = amounts[i] * k
+        return amounts
+
+    def _substeps(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        """Levels after one step of 1/dt sub-steps (floored at 0 after each)."""
+        for _ in range(self.n_sub):
+            amounts = self._amounts(L, t)
+            nxt = L.copy()
+            for (src, dst, ratio, *_), a in zip(self.parts, amounts):
+                if src is not None:
+                    nxt[src] -= a * ratio
+                if dst is not None:
+                    nxt[dst] += a
+            for i, c, per in self.uses:
+                nxt[c] -= amounts[i] * per
+            L = np.where(nxt >= 0, nxt, 0.0)
+        return L
+
     def change(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
         """What the flows add to each stock in one step from levels L (stocks x states) at times t
-        (one per state), before levels are floored at 0."""
+        (one per state), before levels are floored at 0 (with sub-steps: the change over the step's
+        sub-steps, each floored at 0)."""
+        if self.n_sub > 1:
+            return self._substeps(L, t) - L
         amounts = self._amounts(L, t)
         d = np.zeros_like(L, dtype=float)
         for (src, dst, ratio, *_), a in zip(self.parts, amounts):
@@ -174,6 +252,8 @@ class Model:
 
     def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
         """One step from levels L (stocks x states) at times t (one per state)."""
+        if self.n_sub > 1:
+            return self._substeps(L, t)
         amounts = self._amounts(L, t)
         nxt = L.copy()
         for (src, dst, ratio, *_), a in zip(self.parts, amounts):
@@ -198,6 +278,9 @@ class Model:
                     hit = t == tj
                     if hit.any():
                         L[i, hit] = np.maximum(0.0, L[i, hit] + amount)
+                        for c, cap in self.ceilings:
+                            if c == i:
+                                L[i, hit] = np.minimum(cap, L[i, hit])
             L = self.step(L, t)
         return L
 
@@ -212,13 +295,15 @@ def levels_array(levels: dict, ids: list[str]) -> np.ndarray:
 
 
 def behaviour_error(flows: list[dict], ids: list[str], t: list, levels: dict, horizon: int = 20, starts: int = 80,
-                    injections: list[dict] | None = None, inferred: dict | None = None) -> float:
+                    injections: list[dict] | None = None, inferred: dict | None = None, inputs: dict | None = None) -> float:
     """How far the model's runs from ~`starts` moments in the data end up from what was measured
     `horizon` steps later (its own estimated outside inflows feed it), relative to how far the data
     moved: 0 = perfect, 1 = no better than assuming nothing changes.
 
     inferred (optional): the model's own unmeasured stocks, {id: estimated level aligned with t};
-    each run starts them from that estimate, and only the measured stocks are compared."""
+    each run starts them from that estimate, and only the measured stocks are compared.
+
+    inputs (optional): measured inputs, {name: value per step aligned with t}, that the flows may read."""
     inferred = inferred or {}
     S = len(ids)
     A = levels_array({**levels, **inferred}, ids + list(inferred))
@@ -229,7 +314,7 @@ def behaviour_error(flows: list[dict], ids: list[str], t: list, levels: dict, ho
     sd = A[:S].std(axis=1)
     sd[sd == 0] = 1
     tt = np.asarray(t, dtype=float)
-    end = Model(flows, ids + list(inferred)).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]], injections)[:S]
+    end = Model(flows, ids + list(inferred), inputs={"t": t, "values": inputs} if inputs else None).run(A[:, s0 - 1], tt[s0[None, :] + np.arange(horizon)[:, None]], injections)[:S]
     obs = A[:S, s0 + horizon - 1]
     e = ((end - obs) / sd[:, None]) ** 2
     e[~np.isfinite(e)] = 1e6

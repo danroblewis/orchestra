@@ -125,6 +125,8 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     ids = list(data["levels"])
     lv = data.get("all_levels") or data["levels"]
     means = {s: float(np.mean(v)) if len(v) else 0.0 for s, v in lv.items()}
+    inputs = set(data.get("inputs") or {}) - set(lv)          # measured inputs: read as stocks are
+    means.update({k: float(np.mean(v)) if len(v) else 0.0 for k, v in (data.get("inputs") or {}).items() if k in inputs})
     t = data["t"]
     wins = windows(truth_model, t)
     truth_flows, _ = truth_by_time(truth_model, t)
@@ -132,8 +134,8 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
                    for f in truth_model["flows"] if f.get("effects")}
     true_w, found_w, notes = [], [], []
     for w in wins:
-        tp, tn = parts(truth_flows, measured, w)
-        fp, fn = parts(found_flows, measured, w)
+        tp, tn = parts(truth_flows, measured, w, inputs)
+        fp, fn = parts(found_flows, measured, w, inputs)
         true_w.append(tp)
         found_w.append(fp)
         notes += [f"truth: {x}" for x in tn] + [f"found: {x}" for x in fn]

@@ -7,8 +7,9 @@ makes new data and old files are never read again. Writes are atomic, so workers
 file at once do no harm.
 
 A run's data: {"t", "levels" (measured stocks), "all_levels" (every stock, hidden ones too, for
-grading), "eras" (announced: [{start, label}]), "injections"? (announced), "counters" (every flow's
-amount per step, for the case checks)}. The fresh run is the same model with seed + 1: the grade of a
+grading), "eras" (announced: [{start, label}]), "injections"? (announced), "inputs"? (measured inputs,
+{name: value per step}: announced, like injections), "counters" (every flow's amount per step, for the
+case checks)}. The fresh run is the same model with seed + 1: the grade of a
 found model on a run it was not fitted on (the same as the run itself without noise).
 """
 
@@ -41,6 +42,8 @@ def simulate(model: dict, seed: int | None = None, steps: int | None = None) -> 
     out = {"t": measured["t"], "levels": measured["levels"], "all_levels": run["levels"], "eras": measured["eras"], "counters": run["counters"]}
     if measured.get("injections"):
         out["injections"] = measured["injections"]
+    if measured.get("inputs"):
+        out["inputs"] = measured["inputs"]           # measured inputs (each one's mean over each step): a page input
     return out
 
 

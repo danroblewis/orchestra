@@ -94,6 +94,8 @@ def case_data(case_id: str, variant: str, fresh: bool = False, flows: bool = Fal
     measured = [s["id"] for s in c["model"]["stocks"] if s.get("measured", True)]
     out = {"case": case_id, "variant": variant, "fresh": bool(fresh), "t": d["t"], "levels": d["levels"], "all_levels": d["all_levels"],
            "measured": measured, "eras": d.get("eras") or [], "injections": d.get("injections") or []}
+    if d.get("inputs"):
+        out["inputs"] = d["inputs"]                         # measured inputs: {name: value per step}, a page input
     if flows:
         out["flows"] = d.get("counters") or {}
     return jsonable(out)

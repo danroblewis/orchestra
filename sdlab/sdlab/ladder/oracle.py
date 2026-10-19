@@ -10,7 +10,8 @@ number that changes between windows (eras, schedule changes) gets one column per
 not in the truth (a found extra term) is tested by adding its column to the stock's regression.
 
 Only for a truth that is a linear system of the measured stocks (no effects, no hidden stocks);
-otherwise there is no oracle and the tolerances alone apply.
+otherwise there is no oracle and the tolerances alone apply. Measured inputs (data["inputs"]) are
+columns as the levels are: a number on an input is regressed on the input's value in the step.
 """
 
 from __future__ import annotations
@@ -23,7 +24,9 @@ from .parts import ONE, linear_system
 class Oracle:
     def __init__(self, truth_flows: list[dict], data: dict, wins: list[tuple[int, int]]):
         self.ids = list(data["levels"])
-        self.systems = [linear_system(truth_flows, self.ids, w) for w in wins]
+        inputs = {k: v for k, v in (data.get("inputs") or {}).items() if k not in self.ids}
+        self.cols = self.ids + list(inputs)                    # the readers: the levels, then the inputs
+        self.systems = [linear_system(truth_flows, self.cols, w) for w in wins]
         self.ok = len(data["t"]) > 3 and all(s is not None for s in self.systems)
         self.cache: dict[tuple, dict] = {}
         if not self.ok:
@@ -36,6 +39,8 @@ class Oracle:
             if j.get("stock") in self.ids and j["t"] in index:
                 inj[self.ids.index(j["stock"]), index[j["t"]]] += float(j["amount"])
         self.prev = lv[:, :-1] + inj[:, 1:]
+        if inputs:                                             # an input's value during the step (at its end time)
+            self.prev = np.vstack([self.prev] + [np.asarray(v, dtype=float)[None, 1: len(t)] for v in inputs.values()])
         self.dy = np.diff(lv, axis=1) - inj[:, 1:]
         steps = np.asarray(t[1:])
         self.win = np.zeros(len(steps), dtype=int)
@@ -44,7 +49,7 @@ class Oracle:
         self.W = len(wins)
 
     def _entry(self, i: int, col: str) -> list[float]:
-        j = None if col == ONE else self.ids.index(col)
+        j = None if col == ONE else self.cols.index(col)
         return [float(u[i]) if j is None else float(B[i, j]) for B, u in self.systems]
 
     def _fit(self, i: int, extra: tuple) -> dict:
@@ -52,9 +57,9 @@ class Oracle:
         if key in self.cache:
             return self.cache[key]
         cols, X = [], []
-        base = [c for c in [ONE, *self.ids] if any(abs(v) > 0 for v in self._entry(i, c))]
+        base = [c for c in [ONE, *self.cols] if any(abs(v) > 0 for v in self._entry(i, c))]
         for c in list(dict.fromkeys(base + list(extra))):
-            x = np.ones(self.dy.shape[1]) if c == ONE else self.prev[self.ids.index(c)]
+            x = np.ones(self.dy.shape[1]) if c == ONE else self.prev[self.cols.index(c)]
             vals = self._entry(i, c)
             if c in base and any(abs(v - vals[0]) > 1e-12 for v in vals):
                 for w in range(self.W):
@@ -85,7 +90,7 @@ class Oracle:
     def se(self, stock: str, col: str, window: int) -> float | None:
         """Standard error of the number for `col` (a stock id or "1") in `stock`'s change, in a window;
         None without an oracle."""
-        if not self.ok or stock not in self.ids or (col != ONE and col not in self.ids):
+        if not self.ok or stock not in self.ids or (col != ONE and col not in self.cols):
             return None
         i = self.ids.index(stock)
         fit = self._fit(i, ())

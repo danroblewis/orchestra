@@ -43,6 +43,20 @@ LENGTHS = {"short": 300, "long": 2000}
 SUFFIXES = (".json", ".yaml")
 
 
+# The engine and data.py as they were before the features added on 2026-10-18 (measured inputs,
+# sub-steps, ceilings, exact flows, compiled delays). A case that uses none of them is hashed with
+# these, so its results stay current: tests/test_engine_additive.py proves that the engine still gives
+# every such case bit-identical data (tests/engine_outputs.sha256, recorded before the change). A case
+# that uses one is hashed with the code as it is now.
+LEGACY_ENGINE, LEGACY_DATA = "d9f38a8c64cdac28", "39b9a5b7cf6a49b6"
+
+
+def uses_added_features(model: dict) -> bool:
+    """Does a case's model use any engine feature added on 2026-10-18?"""
+    return (model.get("dt") is not None or bool(model.get("inputs")) or any(s.get("max") is not None for s in model.get("stocks") or [])
+            or any(f.get("exact") or f.get("delay") for f in model.get("flows") or []))
+
+
 def engine_hash() -> str:
     """The ground-truth engine: sdtruth.py and the equation functions it uses from runner.py."""
     h = hashlib.sha256((SDLAB / "sdtruth.py").read_bytes())
@@ -220,7 +234,10 @@ def case_hash(case: dict) -> str:
     for x in case["variants"]:
         tm = truth_model(case, x["name"])
         h.update(_canonical({k: v for k, v in tm.items() if k not in ("id", "name")}))
-    h.update(engine_hash().encode() + _code_hash().encode())
+    if uses_added_features(case["model"]):
+        h.update(engine_hash().encode() + _code_hash().encode())
+    else:
+        h.update(LEGACY_ENGINE.encode() + LEGACY_DATA.encode())
     return h.hexdigest()[:16]
 
 
@@ -317,7 +334,7 @@ def truth_model(case: dict, variant_name: str) -> dict:
     v = variant(case, variant_name)
     m = case["model"]
     return {"id": case["id"], "name": case["title"], "time_unit": "step", "seed": int(m.get("seed", 1)),
-            **{k: m[k] for k in ("schedule", "injections") if m.get(k)},
+            **{k: m[k] for k in ("schedule", "injections", "dt", "inputs") if m.get(k)},
             "steps": v["steps"], "noise": dict(NOISES[v["noise"]]),
             "stocks": [{"name": s["id"], "unit": "things", **s} for s in m["stocks"]],
             "flows": [{"name": f["id"], **f} for f in m["flows"]]}

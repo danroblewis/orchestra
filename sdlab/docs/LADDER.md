@@ -83,7 +83,8 @@ instead. Changing a case's model makes all its results stale; rewriting how it i
 ### The format
 
 **Top level.** `title`, `level`, `tags`, `tests`, `stocks` and `flows`; optional `seed`, `schedule`,
-`injections`, `variants` and `tolerance`. Any other key is an error.
+`injections`, `variants`, `tolerance`, `dt` and `inputs` (the last two: "Inputs, sub-steps, ceilings,
+delays" below). Any other key is an error.
 
 **Stocks** map an id (letters, digits, `_`; not `outside`) to its initial level. Words after the
 level mark it, or give the long form for anything else (`unit`, ...; extra keys are passed through):
@@ -93,7 +94,7 @@ stocks: {A: 0, H: 0 hidden, Done: 0 final, R: {initial: 60, unit: cups, hidden: 
 ```
 
 `hidden` is an unmeasured stock (`"measured": false`: discovery never sees it); `final` is a stock
-nothing ever leaves.
+nothing ever leaves; `max=N` (long form `max: N`) is a ceiling (below).
 
 **Flows** map `FROM -> TO` to a rate; either end may be `outside`. The flow's id comes from its ends:
 
@@ -169,6 +170,89 @@ injections:
 steps); `variants: {noise: [counts], lengths: {short: 300}}` overrides that (`variants: default` is
 the same as leaving it out). **Tolerance** overrides the scorer's (Scoring, below), e.g.
 `tolerance: {rel: 0.1}`.
+
+### Inputs, sub-steps, ceilings, delays
+
+Added on 2026-10-18 with the user's approval of engine features (CLAUDE.md rule 2), all **additive**:
+a case that uses none of them runs exactly as before. `tests/test_engine_additive.py` proves it
+against `tests/engine_outputs.sha256`, recorded before the change: every case's data in every variant
+on both seeds, every example's runs and answer key, and 40 generated bench models, bit for bit. Such
+a case also keeps its hash (`cases.py` hashes it with the engine and `data.py` as they were,
+`LEGACY_ENGINE`/`LEGACY_DATA`), so its stored results stay current; a case that uses a feature is
+hashed with the code as it is.
+
+**Measured inputs** are outside drivers given as data (a pump setting, rainfall, demand). A rate or
+an effect reads one by name, exactly as it reads a stock (`input(pump)` is the same as `pump`):
+
+```yaml
+inputs:
+  pump: [3, 3, 5, 5, 4, 6]                                    # one value per step; after the end, the last value
+  rain: 2 + step(3, 100) + 1.5 * sin(1, 50)                    # a formula (below)
+  demand: {file: data/demand.csv, column: demand, repeat: true}   # a column of a .csv (or a .json list) under cases/
+  load: {values: [1, 2, 3], repeat: true, formula: 4 + ramp(0.1, 10, 50)}   # a series plus a formula
+stocks: {T: 40}
+flows:
+  outside -> T: 2 * pump
+  T -> outside: 0.08 * T * effect(rain, linear, normal=5, max=2)
+```
+
+A formula adds numbers and these terms (each optionally times a number; `t` is the step):
+
+| term | value |
+|---|---|
+| `step(h, start)` | h from step `start` on |
+| `pulse(h, start, width=1)` | h for `width` steps from `start` |
+| `ramp(slope, start, end=never)` | slope x (t - start) after `start`, held after `end` |
+| `pulse_train(h, first, width, every, last=never)` | h for `width` steps every `every` steps from `first` to `last` |
+| `sin(amplitude, period, phase=0)` | amplitude x sin(2 pi (t - phase) / period) |
+
+The engine model holds `"inputs": {name: {"values"?, "repeat"?, "terms"?: [{"fn": "step", "height", "start"}, ...]}}`
+(a file is read when the case compiles, so the values are in the model and its hash). The data has
+`inputs: {name: value per step}` (the step's mean over its sub-steps). **Discovery receives inputs as
+a page input, never as truth**: the runner passes `opts["inputs"]` (as it passes eras and
+injections), the page API takes `"inputs"` in a discovery request, and `case_data` returns them.
+How a strategy can use them:
+
+- as an extra regressor column: `matrix` does this when `opts["inputs"]` is given (`matrix.py`, the
+  input's value during each step is a column every row may take, kept only if it pays for itself
+  under the same BIC; a positive number is a flow `outside -> X: k x input`, a negative one
+  `X -> outside: k x input`, marked `"input": name`);
+- in simulation: `simulate.Model(flows, ids, inputs={"t": t, "values": inputs})` (and
+  `behaviour_error(..., inputs=...)`) runs flows whose rates read inputs;
+- strategies that ignore `opts["inputs"]` see an unexplained, changing outside inflow, as before.
+
+The scorer reads an input as a reader: a part `outside -> T [pump]` is a link from the input, sized
+by the input's mean; the linear oracle regresses on the inputs as on the levels, so its standard
+errors cover input parts.
+
+**A sub-step** `dt: 0.25` (1/n for a whole number n) makes each recorded step n engine steps: every
+rate moves rate x dt per sub-step, counting noise is drawn per sub-step (Poisson(rate x dt), so a
+recorded step's amount keeps its variance for the same rates), levels and counters are recorded once
+per step (counters sum their sub-steps), and schedule changes and injections happen at the start of
+a recorded step. It refines the Euler solution towards the ODE's (first order in dt).
+
+**A ceiling** `T: 0 max=500` caps the flows into a stock: they share the room left (max - level),
+as outflows share what a stock holds (the floor). Like the floor, the room is taken before the step's
+outflows, so at dt = 1 a stock drained at k per step sits at max / (1 + k dt) when full; at a small dt
+it sits at max. A move into a full stock stays in its source; an injection never fills past max.
+
+**Delays and smoothing** compile to existing parts (exact rewrites, documented in MODEL.md too):
+
+| written | compiles to |
+|---|---|
+| `A -> B: delay1(0.5 * A, 4)` | `A -> ab_d1` at the rate, then `ab_d1 -> B: 0.25 * ab_d1` (one hidden stock) |
+| `A -> B: delay3(0.5 * A, 6, initial=0)` | `A -> ab_d1`, then `ab_d1 -> ab_d2 -> ab_d3 -> B`, each `3/6 x` its hidden stock (Vensim's DELAY3: three first-order stages, an Erlang-3 delay with mean 6); the flows are ids `ab`, `ab_1`, `ab_2`, `ab_3` |
+| `0.2 * smooth(A, 5, initial=0)` in a rate | a hidden stock `smooth_A_5` with `outside -> smooth_A_5: A / 5` (it reads A, it does not drain it) and `smooth_A_5 -> outside: smooth_A_5 / 5`, both `"exact": true` (no counting noise: information, not material); it starts at A's initial level unless `initial=` |
+| `smooth3(A, 6)` | three such stages at 3/6, the rate reading the last (`smooth3_A_6`) |
+| `10 + step(5, 100)`, `pulse`, `ramp`, `pulse_train` in a rate | unannounced schedule changes: at every step where the terms' sum changes, the flow's rate becomes its own plus the sum (a constant's value, a linear rate's c, a gap's goal + c x time), written out to the case's longest run; not with a periodic `schedule` (`every`) or with schedule changes to the same flow |
+| a PULSE of material that is announced | an `injections:` entry |
+
+A delay's flows carry `"delay": {"id", "stage", "of", "time"}`: the answer key (`Truth.truth()`) and
+the scorer (`parts.py`) read a DELAYn chain between two measured stocks as one hidden part
+`A -> (hidden) -> B` with `k_in` the rate's number and `delay` the DELAY's time; the Kalman
+hidden-stock oracle covers only one hidden stock, so a DELAY3 case is scored with the tolerances
+alone. A rate that reads a smoothing's hidden stock is not scored (it reads an unmeasured stock), so
+SMOOTH is for building realistic models, not yet for a scored case.
 
 **YAML traps.** Inside `{...}` (flow style) a comma ends the value, so a rate with commas
 (`effect(...)`, `max(0, ...)`, `uses(...)`) goes on its own line (block style). A value that starts
@@ -351,12 +435,12 @@ replaced.)
 Every case runs in each **variant**: `none` (the engine's exact flows, where the equations should be
 recovered essentially exactly) and `counts` (whole things moved, drawn Poisson around the rate), each
 at `short` (300 steps) and `long` (2000 steps). The data comes from the ground-truth engine
-(`sdlab/sdtruth.py`, which is never edited; the case's model is simply handed to it). Data is cached
+(`sdlab/sdtruth.py`, edited only additively with the user's approval; the case's model is simply handed to it). Data is cached
 under the case's hash. Each variant also has a **fresh run** (the next seed), used to grade
 generalisation; without noise it is the same run.
 
 Discovery gets only what the page would give it: the measured stocks (id, name, unit, final, group),
-their levels, the announced eras and the announced injections.
+their levels, the announced eras, the announced injections and the measured inputs (`opts["inputs"]`).
 
 ### The first ladder
 
@@ -387,6 +471,11 @@ their levels, the announced eras and the announced injections.
 | 023-injection | announced injections into a chain |
 | 024-floor-binds | a link with a negative coefficient that stops at zero |
 | 025-runs-empty | a constant demand that empties its stock and is then capped |
+
+Cases using the engine features of 2026-10-18 (above): 062-tank-fed-by-measured-pump (an inflow
+driven by a measured input, `2 x pump`, recovered as k x input rather than as pieces) and
+063-delay3-supply-line (a DELAY3 of 6 steps between two measured stocks, one hidden path with its
+total delay; injections every 100 steps).
 
 ## Realistic cases (`realistic.py`, `cases/realistic/`)
 

@@ -18,6 +18,13 @@
 //            stops when that stock runs out ("each part wears 0.01 bits").
 //   a machine's capacity can be per unit of a stock (`capacity_stock`): capacity x level.
 //
+// Added 2026-10-18 (MODEL.md; the ground-truth engine's features, so a ladder case's model runs here):
+//   inputs   model.inputs {name: {values?, repeat?, terms?}}: measured inputs a rate or effect reads by
+//            name as it reads a stock (series value per time unit, plus step/pulse/ramp/pulse_train/
+//            sin/constant terms), at time unit floor(t) + 1 (the engine's step numbering)
+//   max      a stock's ceiling: its inflows share the room left (max - level), as outflows share
+//            what a stock holds
+//
 // fit() takes a live run (measured levels and rates each time unit) and, for every flow, tries
 // each equation form against what happened, one step at a time, from the measured levels.
 // leverage() speeds up each flow by 10% in turn and ranks which ones move the goals most.
@@ -69,6 +76,42 @@
       }
       default: return 0;
     }
+  }
+
+  // A measured input's value at simulation time t (time unit k = floor(t) + 1, as the engine numbers
+  // its steps; the terms at k + the fraction of the unit), as sdlab/sdtruth.py's input_value.
+  function inputValue(spec, t) {
+    if (Array.isArray(spec)) spec = { values: spec };
+    spec = spec || {};
+    const k = Math.floor(t) + 1, tau = t + 1;
+    let v = 0;
+    const vals = spec.values || [];
+    if (vals.length) v = +(spec.repeat ? vals[(k - 1) % vals.length] : vals[Math.min(Math.max(k - 1, 0), vals.length - 1)]) || 0;
+    (spec.terms || []).forEach((x) => {
+      const n = (key, d) => (x[key] === undefined || x[key] === null ? d : +x[key]);
+      switch (x.fn) {
+        case "constant": v += n("value", 0); break;
+        case "step": v += tau >= n("start", 0) ? n("height", 0) : 0; break;
+        case "pulse": v += tau >= n("start", 0) && tau < n("start", 0) + n("width", 1) ? n("height", 0) : 0; break;
+        case "ramp": v += tau > n("start", 0) ? n("slope", 0) * (Math.min(tau, n("end", Infinity)) - n("start", 0)) : 0; break;
+        case "pulse_train": {
+          const first = n("first", 0), every = Math.max(1e-9, n("every", 1));
+          v += tau >= first && tau <= n("last", Infinity) && ((tau - first) % every) < n("width", 1) ? n("height", 0) : 0;
+          break;
+        }
+        case "sin": v += n("amplitude", 0) * Math.sin(2 * Math.PI * (tau - n("phase", 0)) / Math.max(1e-9, n("period", 1))); break;
+        default: break;
+      }
+    });
+    return v;
+  }
+  // The levels a rate reads: the stocks' levels and, when the model has inputs, their values at t.
+  function readable(model, level, t) {
+    const inputs = model.inputs;
+    if (!inputs || !Object.keys(inputs).length) return level;
+    const out = Object.assign({}, level);
+    Object.keys(inputs).forEach((k) => { if (!(k in level)) out[k] = inputValue(inputs[k], t || 0); });
+    return out;
   }
 
   function describeRate(rate, stockName, timeUnit) {
@@ -147,6 +190,12 @@
       const take = all.reduce((x, f) => x + rate[f.id] * per(f) * dt, 0);
       if (take > avail[s.id] && take > 0) all.forEach((f) => { rate[f.id] *= avail[s.id] / take; });
     });
+    stocks.forEach((s) => {                           // a ceiling: inflows share the room left under it
+      if (s.max === undefined || s.max === null || s.max === "") return;
+      const ins = flows.filter((f) => f.to === s.id);
+      const give = ins.reduce((x, f) => x + rate[f.id] * dt, 0), room = Math.max(0, +s.max - (level[s.id] || 0));
+      if (give > room && give > 0) ins.forEach((f) => { rate[f.id] *= room / give; });
+    });
     return { rate, asked, busy };
   }
 
@@ -187,7 +236,7 @@
 
     const P = prep(model);
     for (let step = 0; step <= steps; step++) {
-      const { rate, asked, busy } = flowRates(model, level, dt, undefined, P);
+      const { rate, asked, busy } = model.inputs ? flowRates(model, readable(model, level, t0 + step * dt), dt, level, P) : flowRates(model, level, dt, undefined, P);
       if (step % every === 0) {
         out.t.push(+(t0 + step * dt).toFixed(6));
         stocks.forEach((s) => out.levels[s.id].push(level[s.id]));
@@ -424,7 +473,7 @@
     return { goals, rows, horizon: base.t[last] };
   }
 
-  const api = { simulate, flowRates, desiredRate, describeRate, fit, fmt, FORMS, effectValue, multiplier, machineCapacity, leverage };
+  const api = { simulate, flowRates, desiredRate, describeRate, fit, fmt, FORMS, effectValue, multiplier, machineCapacity, leverage, inputValue };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.SDSim = api;
 })(typeof window !== "undefined" ? window : globalThis);

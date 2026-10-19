@@ -120,12 +120,20 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     # (hidden_delays) extra regressors after them (opts["extra"]: {"id", "series" aligned with t,
     # "source", "rows"}), e.g. a delayed copy of a stock's level standing for an unmeasured stock
     extra = opts.get("extra") or []
-    names = ids + [e["id"] for e in extras] + [e["id"] for e in extra]
-    base = list(range(S)) + [ids.index(e["base"]) for e in extras] + [ids.index(e["source"]) for e in extra]
+    # (opts "inputs") measured inputs, {name: value per step aligned with t}: each a column after the
+    # others, its value during the step (t[k] to t[k + 1]: the value at t[k + 1]); any row may take one
+    # (a positive number is an inflow k x input, a negative one an outflow), if it pays for itself
+    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids]
+    if keep is not None:
+        inputs = [(k, v[keep]) for k, v in inputs]
+    names = ids + [e["id"] for e in extras] + [e["id"] for e in extra] + [k for k, _ in inputs]
+    base = list(range(S)) + [ids.index(e["base"]) for e in extras] + [ids.index(e["source"]) for e in extra] + [0] * len(inputs)
     columns = (np.vstack([prev] + [np.asarray(e["x"], dtype=float)[None, :] for e in extras]
-                         + [np.asarray(e["series"], dtype=float)[None, :-1] for e in extra]) if extras or extra else prev)
+                         + [np.asarray(e["series"], dtype=float)[None, :-1] for e in extra]
+                         + [v[None, :] for _, v in inputs]) if extras or extra or inputs else prev)
     N = len(names)
     F = S + len(extras)                                                   # the delayed copies start here
+    I0 = F + len(extra)                                                   # the inputs start here
 
     def may_affect(j, s):
         if ids[j] in only_rows and ids[s] not in only_rows[ids[j]]:
@@ -143,7 +151,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # in for its source's level in this row ("replaces"): not both
         allowed += [F + e for e, x in enumerate(extra) if sid in x["rows"]]
         gone = {ids.index(x["source"]) for x in extra if sid in x["rows"] and x.get("replaces")}
-        allowed = [j for j in allowed if j not in gone]
+        allowed = [j for j in allowed if j not in gone] + list(range(I0, N))
         own = s in allowed
         Xa = np.array(X)
 
@@ -282,7 +290,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     rows = [fit_row(s) for s in range(S)]
     ctx = {"stocks": stocks, "ids": ids, "t": t, "final": final, "unit": unit, "prev": prev, "dy": dy, "cfg": cfg, "L": L,
            "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T, "at": at,
-           "extras": extras, "names": names, "columns": columns}
+           "extras": extras, "names": names, "columns": columns, "inputs": [k for k, _ in inputs]}
     # opts["keep_rows"]: the rows as fitted, before conservation, with what finish() needs to assemble
     # a model from them (the row_crossover strategy mixes rows of several candidates)
     kept = [raw_row(r) for r in rows] if opts.get("keep_rows") else None
@@ -334,6 +342,8 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
                                 **({"extra": extra, "prevx": columns} if extra else {})) for c in range(L)]
     if noise and opts.get("coflows", True):
         per_label = [coflows(f, noise) for f in per_label]
+    for c, fl in enumerate(per_label):                    # (opts "inputs") a row's number on a measured input
+        fl += input_flows(rows, c, ctx.get("inputs") or [], columns, names)
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
     matrix = [{k: v for k, v in r.items() if k not in ("X", "col", "set", "beta", "trust_receivers")} for r in rows]
     for r in matrix:
@@ -400,6 +410,22 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
             for c in cand:
                 row["coefL"][c][a] = -moves[c]
             row["conserved"] = True
+
+
+def input_flows(rows: list[dict], c: int, inputs: list[str], columns: np.ndarray, names: list[str]) -> list[dict]:
+    """Flows reading measured inputs, from the rows' numbers on them in configuration c: k > 0 an
+    inflow from outside at k x input, k < 0 an outflow to outside at -k x input."""
+    out = []
+    for r in rows:
+        for name in inputs:
+            k = r["coefL"][c].get(name) or 0.0
+            if not k:
+                continue
+            rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": round(abs(k), 6)}]}
+            ends = {"from": None, "to": r["id"]} if k > 0 else {"from": r["id"], "to": None}
+            out.append({**ends, "ratio": 1, "rate": rate, "rates": [rate], "perStep": abs(k) * float(columns[names.index(name)].mean()),
+                        "nearly": [], "bothWays": False, "input": name})
+    return out
 
 
 def injected(injections: list[dict], ids: list[str], t: list) -> np.ndarray:

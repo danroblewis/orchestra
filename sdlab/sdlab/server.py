@@ -111,6 +111,20 @@ def validate(model: dict[str, Any]) -> list[str]:
             ids.add(i)
     stock_ids = {s.get("id") for s in stocks}
     machine_ids = {m.get("id") for m in machines}
+    # measured inputs (MODEL.md): read by name in rates and effects, as stocks are
+    inputs = model.get("inputs") or {}
+    if not isinstance(inputs, dict):
+        errs.append("inputs is a mapping of input name to {values, repeat, terms}")
+        inputs = {}
+    for k, spec in inputs.items():
+        if k in ids:
+            errs.append(f"input {k!r}: its name is a stock's, flow's or machine's id")
+        if not isinstance(spec, (dict, list)):
+            errs.append(f"input {k!r}: give values, terms or both")
+    readable = stock_ids | set(inputs)
+    for st in stocks:
+        if st.get("max") is not None and (isinstance(st["max"], bool) or not isinstance(st["max"], (int, float)) or st["max"] <= 0):
+            errs.append(f"stock {st.get('id')!r}: its ceiling (max) is a number above 0")
     for m in machines:
         if m.get("kind") not in MACHINE_KINDS:
             errs.append(f"machine {m.get('id')!r}: kind must be one of {sorted(MACHINE_KINDS)}")
@@ -125,7 +139,7 @@ def validate(model: dict[str, Any]) -> list[str]:
         rate = f.get("rate") or {}
         if rate.get("form") not in RATE_FORMS:
             errs.append(f"flow {fid!r}: rate form must be one of {sorted(RATE_FORMS)}")
-        if rate.get("form") in ("proportional", "gap") and rate.get("stock") not in stock_ids:
+        if rate.get("form") in ("proportional", "gap") and rate.get("stock") not in readable:
             errs.append(f"flow {fid!r}: its equation reads no stock")
         mach = f.get("machine")
         if mach not in (None, "environment") and mach not in machine_ids:
@@ -149,7 +163,7 @@ def validate(model: dict[str, Any]) -> list[str]:
             errs.append(f"flow {fid!r}: no program {f['program']!r}")
     for f in flows:
         for e in f.get("effects") or []:
-            if e.get("stock") not in stock_ids:
+            if e.get("stock") not in readable:
                 errs.append(f"flow {f.get('id')!r}: an effect reads no stock ({e.get('stock')!r})")
             if e.get("shape", "linear") not in ("linear", "table"):
                 errs.append(f"flow {f.get('id')!r}: an effect's shape is linear or table")

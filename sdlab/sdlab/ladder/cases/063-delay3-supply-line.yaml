@@ -1,0 +1,31 @@
+title: "A third-order delay (DELAY3) between two measured stocks"
+level: 3
+tags: [hidden, delay, chain, injection]
+tests: "what leaves A (0.1 x A) reaches B through a third-order material delay of 6 steps (DELAY3: three hidden stocks, each drained at 3/6): one hidden path from A to B with its total delay of 6, not a direct move or a first-order delay of another length; announced injections into A every 100 steps show the delay's shape"
+seed: 63
+stocks: {A: 100, B: 120}
+flows:
+  outside -> A: 10
+  A -> B: delay3(0.1 * A, 6)
+  B -> outside: 0.08 * B
+injections:
+  - {t: 50, stock: A, amount: 300}
+  - {t: 150, stock: A, amount: 300}
+  - {t: 250, stock: A, amount: 300}
+  - {t: 350, stock: A, amount: 300}
+  - {t: 450, stock: A, amount: 300}
+  - {t: 550, stock: A, amount: 300}
+  - {t: 650, stock: A, amount: 300}
+  - {t: 750, stock: A, amount: 300}
+  - {t: 850, stock: A, amount: 300}
+  - {t: 950, stock: A, amount: 300}
+  - {t: 1050, stock: A, amount: 300}
+  - {t: 1150, stock: A, amount: 300}
+  - {t: 1250, stock: A, amount: 300}
+  - {t: 1350, stock: A, amount: 300}
+  - {t: 1450, stock: A, amount: 300}
+  - {t: 1550, stock: A, amount: 300}
+  - {t: 1650, stock: A, amount: 300}
+  - {t: 1750, stock: A, amount: 300}
+  - {t: 1850, stock: A, amount: 300}
+  - {t: 1950, stock: A, amount: 300}

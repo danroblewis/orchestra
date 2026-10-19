@@ -1,7 +1,7 @@
 """Discovery as the page asks for it: one request in, one JSON-safe result out.
 
     discover({"stocks": [...], "run": {"t": [...], "levels": {...}}, "eras": [{start, label}],
-              "known": {stock: [change per step]}, "strategy": "matrix"})
+              "known": {stock: [change per step]}, "inputs"?: {name: [value per step]}, "strategy": "matrix"})
 
 `known` is what the page already knows about each step (its measured flows, and what the model's own
 equations predict): the strategy explains the rest. The result is the strategy's, plus `unexplained`
@@ -41,7 +41,7 @@ def jsonable(x):
     return x
 
 
-def unexplained(flows: list[dict], stocks: list[dict], run: dict) -> dict:
+def unexplained(flows: list[dict], stocks: list[dict], run: dict, inputs: dict | None = None) -> dict:
     """Per stock, what one step of the flows leaves unexplained: its mean (drift) and spread
     (wobble), and whether the drift is clearly more than the scatter (persistent)."""
     ids = [s["id"] for s in stocks]
@@ -50,7 +50,7 @@ def unexplained(flows: list[dict], stocks: list[dict], run: dict) -> dict:
     if n < 3 or not ids:
         return {}
     t = np.asarray(run["t"], dtype=float)
-    pred = Model(flows, ids).step(A[:, :-1], t[1:])
+    pred = Model(flows, ids, inputs={"t": run["t"], "values": inputs} if inputs else None).step(A[:, :-1], t[1:])
     res = A[:, 1:] - pred
     out = {}
     for k, i in enumerate(ids):
@@ -69,6 +69,11 @@ def discover(request: dict) -> dict:
     known = {k: v for k, v in (request.get("known") or {}).items() if v is not None}
     if known:
         opts["known"] = known
+    # measured inputs (outside drivers given as data, e.g. a pump setting): {name: [value per step]}
+    # aligned with run.t; a strategy may read them like levels, never as the truth
+    inputs = {k: list(v) for k, v in (request.get("inputs") or {}).items() if v is not None}
+    if inputs:
+        opts["inputs"] = inputs
     strategy = request.get("strategy") or DEFAULT_STRATEGY
     r = load(strategy)(stocks, run, opts)
     flows = r.get("flows") or []
@@ -76,6 +81,6 @@ def discover(request: dict) -> dict:
     out = {k: v for k, v in r.items() if k not in ("matrix", "eras")}
     if r.get("eras"):
         out["labels"] = r["eras"]                    # the configurations (era labels) the rates follow
-    out.update(flows=flows, strategy=strategy, unexplained=unexplained(flows + extra, stocks, run),
+    out.update(flows=flows, strategy=strategy, unexplained=unexplained(flows + extra, stocks, run, inputs or None),
                hidden=r.get("hidden") or [], computeMs=round(1000 * (time.perf_counter() - began)))
     return jsonable(out)

@@ -59,7 +59,7 @@ def model(model_id: str) -> dict:
     c = ladder.case(case_id(model_id))
     m = c["model"]
     stocks = [{"id": s["id"], "name": s.get("name") or s["id"], "unit": s.get("unit") or "things", "initial": s.get("initial", 0),
-               **({"measured": False} if s.get("measured") is False else {})} for s in m["stocks"]]
+               **({"measured": False} if s.get("measured") is False else {}), **({"max": s["max"]} if s.get("max") is not None else {})} for s in m["stocks"]]
     flows = []
     for f in m["flows"]:
         g = {"id": f["id"], "name": f.get("name") or f["id"], "from": f.get("from"), "to": f.get("to"), "rate": f["rate"], "machine": "environment"}
@@ -69,6 +69,7 @@ def model(model_id: str) -> dict:
         flows.append(g)
     return {"id": model_id, "name": f"{c['id'][:3]} {c['title']}{' #' + c['id'].split('#')[1] if '#' in c['id'] else ''}", "description": f"Ladder case {c['id']}: {c['tests']}", "time_unit": "step",
             "stocks": stocks, "flows": flows, "machines": [], "recorded": True,
+            **{k: m[k] for k in ("inputs", "dt") if m.get(k)},           # measured inputs, sub-step (MODEL.md)
             "basic": {"case": c["id"], "level": c["level"], "tags": c["tags"], "tests": c["tests"], "variants": [v["name"] for v in c["variants"]],
                       "variant": variant_of(c, None), **({"schedule": m["schedule"]} if m.get("schedule") else {})}}
 

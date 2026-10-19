@@ -118,6 +118,8 @@ def discover(strategy: str, model: dict, d: dict) -> dict:
     opts: dict = {"eras": d["eras"] if len(d.get("eras") or []) > 1 else None}
     if d.get("injections"):
         opts["injections"] = [{"t": j["t"], "stock": j["stock"], "amount": j["amount"]} for j in d["injections"]]
+    if d.get("inputs"):                                        # measured inputs: {name: value per step}, a page input
+        opts["inputs"] = {k: list(v) for k, v in d["inputs"].items()}
     return load_strategy(strategy)(stocks, {"t": d["t"], "levels": d["levels"]}, opts)
 
 

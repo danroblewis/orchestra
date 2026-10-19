@@ -76,11 +76,26 @@ def _hidden_chains(flows: list[dict], measured: set) -> tuple[dict, set]:
     """Measured A -> unmeasured H -> measured B: {(A, B): {"in": [flows], "out": [flows], "via": H}},
     and the indexes of the flows they take."""
     chains, used = {}, set()
+    # a compiled DELAYn (n > 1, the case format's delay3(): flows marked "delay"): measured A -> H1 ->
+    # ... -> Hn -> measured B is one hidden path whose delay is the DELAY's time ("time")
+    groups: dict = {}
+    for i, f in enumerate(flows):
+        if isinstance(f.get("delay"), dict) and f["delay"].get("of", 1) > 1:
+            groups.setdefault(f["delay"]["id"], []).append((f["delay"]["stage"], i, f))
+    for g in groups.values():
+        g.sort(key=lambda x: x[0])
+        a, b = g[0][2].get("from"), g[-1][2].get("to")
+        if a in measured and b in measured:
+            c = chains.setdefault((a, b), {"in": [], "out": [], "via": g[0][2]["to"], "time": float(g[0][2]["delay"]["time"])})
+            c["in"].append(g[0][2])
+            used.update(i for _, i, _ in g)
     inner = {x for f in flows for x in (f.get("from"), f.get("to")) if x and x not in measured}
     for h in inner:
         ins = [(i, f) for i, f in enumerate(flows) if f.get("to") == h and f.get("from") in measured]
         outs = [(i, f) for i, f in enumerate(flows) if f.get("from") == h and f.get("to") in measured]
         for i, f in ins:
+            if i in used:                                 # (the first stage of a compiled delay)
+                continue
             for o, g in outs:
                 c = chains.setdefault((f["from"], g["to"]), {"in": [], "out": [], "via": h})
                 c["in"].append(f)
@@ -89,17 +104,18 @@ def _hidden_chains(flows: list[dict], measured: set) -> tuple[dict, set]:
     return chains, used
 
 
-def parts(flows: list[dict], measured: set, window: tuple[int, int]) -> tuple[dict, list[str]]:
+def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set | frozenset = frozenset()) -> tuple[dict, list[str]]:
     """{key: value} for the flows over a window, and notes on what could not be read. Keys are tuples:
     ("flow", from, to, reader), ("uses", from, to, stock), ("effect", from, to, stock),
-    ("hidden", from, to); from / to None for outside."""
+    ("hidden", from, to); from / to None for outside. A reader may be a measured input (inputs: their
+    names), read as a stock is."""
     out: dict[tuple, object] = {}
     notes: list[str] = []
     chains, used = _hidden_chains(flows, measured)
     for (a, b), c in chains.items():
         k_in = sum((form_over(f, *window) or (0, {}))[1].get(a, 0.0) for f in c["in"])
         k_out = sum((form_over(g, *window) or (0, {}))[1].get(c["via"], 0.0) for g in c["out"])
-        out[("hidden", a, b)] = {"k_in": k_in, "delay": 1 / k_out if k_out > 0 else math.inf}
+        out[("hidden", a, b)] = {"k_in": k_in, "delay": c["time"] if "time" in c else 1 / k_out if k_out > 0 else math.inf}
     for i, f in enumerate(flows):
         if f.get("via"):                                  # a found hidden stock, as one flow from A to B
             lf = form_over(f, *window) or (0, {})
@@ -120,7 +136,7 @@ def parts(flows: list[dict], measured: set, window: tuple[int, int]) -> tuple[di
         if c:
             out[("flow", a, b, ONE)] = out.get(("flow", a, b, ONE), 0.0) + c
         for j, k in ks.items():
-            if j not in measured:
+            if j not in measured and j not in inputs:
                 notes.append(f"{a}->{b} reads unmeasured {j}, not scored")
                 continue
             out[("flow", a, b, j)] = out.get(("flow", a, b, j), 0.0) + k

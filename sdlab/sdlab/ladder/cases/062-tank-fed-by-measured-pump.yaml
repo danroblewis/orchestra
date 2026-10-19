@@ -1,0 +1,11 @@
+title: "A tank filled by a measured pump"
+level: 2
+tags: [input, inflow, outflow]
+tests: "an outside inflow driven by a measured input (the pump setting, given to discovery as data, not as truth) is recovered as k x input (2 x pump), with the tank's drain (0.08), not as pieces of an unexplained inflow"
+seed: 62
+inputs:
+  pump: 6 + 3 * sin(1, 45) + step(4, 120) - step(7, 260) + pulse_train(5, 30, 10, 90)
+stocks: {T: 40}
+flows:
+  outside -> T: 2 * pump
+  T -> outside: 0.08 * T

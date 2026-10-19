@@ -17,6 +17,7 @@ A model is one JSON file. Examples live in `sdlab/examples/<id>.json`, with thei
      "final": true,                                 // optional: nothing ever leaves it (discovery never proposes a flow out of it)
      "inferred": {"shape": "exp", "delay": 5},       // optional: found by discovery from timing, never measured; its level is what its flows imply
      "group": "orders/checkout",                    // optional: discovery only proposes flows between stocks of the same group
+     "max": 500,                                    // optional: a ceiling; flows into it share the room left (see below)
      "hide": true,                                  // optional: not drawn on the canvas (still in the model and the simulation)
      "keep": true,                                  // optional: Simplify never suggests hiding it (flows can have "keep" too)
      "query": "sum(kafka_consumergroup_lag{topic=\"orders\"})"}   // optional: how a sensor measures it (PromQL for prometheus/promql)
@@ -40,6 +41,8 @@ A model is one JSON file. Examples live in `sdlab/examples/<id>.json`, with thei
                  {"stock": "fatigue", "shape": "table", "points": [[0, 1], [5, 0.6], [10, 0.2]]}],
      "uses": [{"stock": "bits", "per": 0.01}],      // co-flow: each unit moved uses up 0.01 of `bits`
      "hidden": true,                                // runs in live runs, never reaches the page
+     "exact": true,                                 // ground truth only: no counting noise (an information flow, e.g. a SMOOTH)
+     "delay": {"id": "ab", "stage": 1, "of": 3, "time": 6},   // ground truth only: one stage of a compiled DELAY3
      "query": "sum(rate(x_total[5m]))"              // optional: its measured rate per second (PromQL), for prometheus/promql
     }
   ],
@@ -52,6 +55,8 @@ A model is one JSON file. Examples live in `sdlab/examples/<id>.json`, with thei
      "prompt": "…", "timeout": 180}                 // AI agents (program "agents/llm"): what to do; how long to wait
   ],
 
+  "inputs": {"pump": {"values": [3, 3, 5], "repeat": false,          // optional: measured inputs (see below)
+                      "terms": [{"fn": "step", "height": 2, "start": 100}]}},
   "sensors": [{"program": "factory/tickets", "args": []}],   // optional: measured stocks (prints {"stock": level})
   "history": {"program": "factory/history", "args": []}      // optional: prints past levels, one {"t": n, "levels": {…}} per line
 }
@@ -66,6 +71,37 @@ A model is one JSON file. Examples live in `sdlab/examples/<id>.json`, with thei
 | `gap` | (`goal` − level of `stock`) / `time`, never below 0 |
 | `available` | everything in the source (the machine sets the pace) |
 | `linear` | `c` + Σ `k` × level of `stock` over `terms` |
+
+A rate (`stock` of proportional, gap or a linear term) and an effect may read a **measured input**
+by its name instead of a stock.
+
+## Measured inputs, sub-steps, ceilings, delays
+
+Added on 2026-10-18 for ground-truth models (`sdlab/sdtruth.py`) and the ladder's cases
+(`docs/LADDER.md`, "Inputs, sub-steps, ceilings, delays"); the editor (`static/sim.js`) runs them
+too. Each is additive: a model without it runs exactly as before.
+
+- **`inputs`**: outside drivers given as data. `values` is one value per time unit (step t uses
+  `values[t - 1]`, held over the step; after the end the last value, or the series again with
+  `repeat`), plus `terms` evaluated at time t + j x dt in sub-step j of step t: `constant {value}`,
+  `step {height, start}`, `pulse {height, start, width = 1}`, `ramp {slope, start, end?}`,
+  `pulse_train {height, first, width, every, last?}`, `sin {amplitude, period, phase = 0}`. A
+  ground-truth run reports each input's mean per step (`"inputs"`), which discovery may be given
+  (`"inputs"` in a discovery request) as it is given eras: data, never the truth.
+- **`dt`** in a ground-truth model: each recorded step is 1/dt sub-steps (1/dt a whole number); a
+  rate moves rate x dt per sub-step, counting noise is Poisson(rate x dt) per sub-step (the same
+  variance per recorded step), levels and counters are recorded once per step. (In the editor, `dt`
+  has always been its simulation step.)
+- **`max`** on a stock: a ceiling. The flows into the stock share the room left (max - level) as its
+  outflows share what it holds; the room is taken before the step's outflows (as the floor ignores
+  the step's inflows), so at dt = 1 a full stock drained at k sits at max / (1 + k dt).
+- **Delays and smoothing** are not new equation forms: they are written as stocks and flows.
+  DELAY1(rate, T) is one hidden stock drained at 1/T; DELAY3(rate, T) is three hidden stocks in a
+  chain, each drained at 3/T (marked `"delay"` so the answer key reads the chain as one hidden path
+  of delay T); SMOOTH(X, T) is a hidden stock filled at X/T from outside (reading X, not draining it)
+  and drained at its own level/T, with `"exact"` flows; SMOOTH3 is three such stages at 3/T. STEP,
+  PULSE, RAMP and PULSE TRAIN in a rate are schedule changes (unannounced); an announced PULSE of
+  material is an injection; as data an outside driver is an input (above).
 
 ## Programs
 

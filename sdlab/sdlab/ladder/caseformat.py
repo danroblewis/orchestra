@@ -21,6 +21,21 @@ same case dict as a JSON case (cases.py). docs/LADDER.md has the reference; in s
       at 101 high announced: {in: 30}
     injections: [{t: 50, stock: A, amount: 400}]
 
+Added on 2026-10-18 (engine features, additive; docs/LADDER.md "Inputs, sub-steps, ceilings, delays"):
+
+    dt: 0.25                                 # sub-steps: each recorded step is 1/dt engine steps
+    inputs:                                  # measured inputs (outside drivers given as data)
+      pump: [3, 3, 5, 5, 4]                  #   a series, one value per step (the last holds)
+      rain: 2 + step(3, 100) + sin(1.5, 50)  #   a formula: constant, step, pulse, ramp, pulse_train, sin
+      demand: {file: data/demand.csv, column: demand, repeat: true}   # a column of a file in cases/
+    stocks: {T: 0 max=500, A: {initial: 0, max: 80}}                 # a ceiling
+    flows:
+      outside -> T: 0.8 * pump               # a rate reads an input as it reads a stock (or input(pump))
+      A -> B: delay3(0.5 * A, 6)             # a material delay: three hidden stocks at 3/6 each
+      A -> B as d1: delay1(0.5 * A, 4)       # one hidden stock at 1/4
+      outside -> C: 0.2 * smooth(A, 5)       # SMOOTH (smooth3 too): a hidden stock, exact flows
+      outside -> D: 10 + step(5, 100) + pulse(20, 300, 2)   # test inputs: unannounced schedule changes
+
 A number anywhere may instead be a range to draw from, draw(lo, hi) (a parametric case; draws.py
 resolves those to numbers before the text is compiled here).
 
@@ -36,7 +51,16 @@ import re
 import yaml
 
 OUTSIDE = "outside"
-TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws"}
+TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws",
+            "dt", "inputs"}
+DELAYS = {"delay1": 1, "delay3": 3}                               # DELAYn(rate, time): n hidden stocks in a chain
+SMOOTHS = {"smooth": 1, "smooth3": 3}                             # SMOOTHn(x, time): n hidden stocks, exact flows
+TESTS = {"step": ("height", "start"), "pulse": ("height", "start", "width"), "ramp": ("slope", "start", "end"),
+         "pulse_train": ("height", "first", "width", "every", "last")}
+INPUT_FNS = {**TESTS, "sin": ("amplitude", "period", "phase")}
+REQUIRED = {"step": 2, "pulse": 2, "ramp": 2, "pulse_train": 4, "sin": 2}
+INPUT_REF_RE = re.compile(r"\binput\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)")
+CASES_DIR = __import__("pathlib").Path(__file__).resolve().parent / "cases"
 FORMS = {"constant", "proportional", "gap", "linear", "available"}
 ID_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 FLOW_KEY_RE = re.compile(r"^\s*(\S+)\s*->\s*(\S+)\s*(?:\bas\s+(\S+)\s*)?$")
@@ -282,12 +306,78 @@ def _effect(node, ex: _Expr, stocks: set[str]) -> dict:
     return e
 
 
+def _fn_term(node, ex: _Expr, fns: dict, scale: float = 1.0) -> dict:
+    """step(height, start), pulse(height, start, width=1), ramp(slope, start, end=never),
+    pulse_train(height, first, width, every, last=never), sin(amplitude, period, phase=0): the engine's
+    input term (sdtruth.input_value), its first number times scale."""
+    name, pos, kw = node[1], node[2], node[3]
+    keys = fns[name]
+    if len(pos) > len(keys) or set(kw) - set(keys):
+        raise ex.err(f"{name} takes ({', '.join(keys)})")
+    vals = {k: _num_value(v, ex, k) for k, v in zip(keys, pos)}
+    vals.update({k: _num_value(v, ex, k) for k, v in kw.items()})
+    if any(k not in vals for k in keys[: REQUIRED[name]]):
+        raise ex.err(f"{name} needs ({', '.join(keys[: REQUIRED[name]])})")
+    vals[keys[0]] = vals[keys[0]] * scale
+    return {"fn": name, **vals}
+
+
+def _lift_tests(node, ex: _Expr) -> tuple:
+    """The test inputs (step, pulse, ramp, pulse_train; optionally times a number) among a rate's
+    top-level terms, taken out: (the rest of the rate or None, [input terms])."""
+    terms = node[1] if node[0] == "sum" else [("+", node)]
+    rest, tests = [], []
+    for sign, n in terms:
+        k = -1.0 if sign == "-" else 1.0
+        if n[0] == "product" and len(n[1]) == 2 and n[1][0][1][0] == "num" and n[1][1][0] == "*" and n[1][1][1][0] == "call" and n[1][1][1][1] in TESTS:
+            k, n = k * n[1][0][1][1], n[1][1][1]
+        if n[0] == "call" and n[1] in TESTS:
+            tests.append(_fn_term(n, ex, TESTS, k))
+        else:
+            rest.append((sign, n))
+    if not tests:
+        return node, []
+    if not rest:
+        return None, tests
+    return (rest[0][1] if len(rest) == 1 and rest[0][0] == "+" else ("sum", rest)), tests
+
+
+def _lift_smooths(node, ex: _Expr, names: set[str], out: dict):
+    """smooth(x, time[, initial=]) and smooth3(...) replaced by the hidden stock that holds the smoothed
+    value (its id added to names; out: {id: {"of", "time", "order", "initial"?}})."""
+    if not isinstance(node, tuple):
+        return node
+    if node[0] == "call" and node[1] in SMOOTHS:
+        pos, kw = node[2], node[3]
+        if len(pos) != 2 or set(kw) - {"initial"}:
+            raise ex.err(f"{node[1]} takes (stock or input, time, initial=level)")
+        of = _stock(pos[0], ex, names, "a stock or an input")
+        tau = _num_value(pos[1], ex, "a smoothing time")
+        if tau <= 0:
+            raise ex.err("a smoothing time is more than 0")
+        sid = f"{node[1]}_{of}_{str(tau).replace('.', 'p').replace('-', 'm')}"
+        out[sid] = {"of": of, "time": tau, "order": SMOOTHS[node[1]], **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
+        names.add(sid)
+        return ("name", sid)
+    if node[0] in ("sum", "product"):
+        return (node[0], [(op, _lift_smooths(n, ex, names, out)) for op, n in node[1]])
+    if node[0] == "group":
+        return ("group", _lift_smooths(node[1], ex, names, out))
+    if node[0] == "call":
+        return ("call", node[1], [_lift_smooths(n, ex, names, out) for n in node[2]], {k: _lift_smooths(v, ex, names, out) for k, v in node[3].items()})
+    return node
+
+
 def flow_body(text, stocks: set[str]) -> dict:
-    """A flow's rate expression, effects and co-flows: {"rate": {...}, "effects"?: [...], "uses"?: [...]}."""
+    """A flow's rate expression, effects and co-flows: {"rate": {...}, "effects"?: [...], "uses"?: [...]}.
+    A rate may also be wrapped in delay1/delay3 ("_delay": {order, time, initial?}), read smooth/smooth3
+    ("_smooths": {hidden id: {of, time, order, initial?}}) and add test inputs ("_tests": [input terms]);
+    _flows compiles those into hidden stocks, flows and schedule changes."""
     if isinstance(text, bool) or not isinstance(text, (int, float, str)):
         raise CaseError(f"a rate is a number or an expression, not {text!r}")
     if not isinstance(text, str):
         return {"rate": {"form": "constant", "value": text}}
+    text = INPUT_REF_RE.sub(r"\1", text)                           # input(pump) is pump
     ex = _Expr(text)
     if ex.done():
         raise CaseError("empty rate")
@@ -301,6 +391,28 @@ def flow_body(text, stocks: set[str]) -> dict:
         if len(pos) != 2 or kw:
             raise ex.err("uses takes (stock, per)")
         uses.append({"stock": _stock(pos[0], ex, stocks), "per": _num_value(pos[1], ex, "a co-flow's per")})
+    extra: dict = {}
+    if node[0] == "call" and node[1] in DELAYS:                    # delay3(rate, time, initial=level)
+        pos, kw = node[2], node[3]
+        if len(pos) != 2 or set(kw) - {"initial"}:
+            raise ex.err(f"{node[1]} takes (rate, time, initial=level of each hidden stock)")
+        time = _num_value(pos[1], ex, "a delay's time")
+        if time <= 0:
+            raise ex.err("a delay's time is more than 0")
+        extra["_delay"] = {"order": DELAYS[node[1]], "time": time, **({"initial": _num_value(kw["initial"], ex, "initial")} if "initial" in kw else {})}
+        node = pos[0]
+    smooths: dict = {}
+    if any(f"{k}(" in text.replace(" ", "") for k in SMOOTHS):
+        stocks = set(stocks)
+        node = _lift_smooths(node, ex, stocks, smooths)
+    if smooths:
+        extra["_smooths"] = smooths
+    if any(f"{k}(" in text.replace(" ", "") for k in TESTS):
+        node, tests = _lift_tests(node, ex)
+        if tests:
+            extra["_tests"] = tests
+        if node is None:
+            node = ("num", 0)
     effects = []
     if node[0] == "product":                                       # rate * effect(...) * effect(...)
         keep = [p for p in node[1] if not (p[1][0] == "call" and p[1][1] == "effect")]
@@ -320,6 +432,7 @@ def flow_body(text, stocks: set[str]) -> dict:
         out["effects"] = effects
     if uses:
         out["uses"] = uses
+    out.update(extra)
     return out
 
 
@@ -359,12 +472,19 @@ def _stocks(raw, name: str) -> list[dict]:
                     s["measured"] = False
                 elif w == "final":
                     s["final"] = True
+                elif w.startswith("max="):
+                    try:
+                        s["max"] = _number(w[4:])
+                    except ValueError:
+                        raise CaseError(f"{where}: stock {sid}: {w!r}: a ceiling is max=<number>") from None
                 else:
-                    raise CaseError(f"{where}: stock {sid}: unknown word {w!r} (hidden, final)")
+                    raise CaseError(f"{where}: stock {sid}: unknown word {w!r} (hidden, final, max=N)")
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
             s["initial"] = v
         else:
             raise CaseError(f"{where}: stock {sid}: {v!r} is not an initial level")
+        if "max" in s and (isinstance(s["max"], bool) or not isinstance(s["max"], (int, float)) or s["max"] <= 0):
+            raise CaseError(f"{where}: stock {sid}: a ceiling (max) is a number above 0")
         out.append(s)
     return out
 
@@ -394,8 +514,12 @@ def _flow_items(raw, name: str) -> list[tuple[str, object, str]]:
     raise CaseError(f"{name}: flows is a mapping of 'A -> B: rate'")
 
 
-def _flows(raw, stocks: set[str], name: str) -> list[dict]:
+def _flows(raw, stocks: set[str], name: str, inputs: set[str] = frozenset(), hidden: list | None = None) -> list[dict]:
+    """The flows; a delay's or a smoothing's hidden stocks are appended to `hidden` (and their flows
+    to the flows); a flow's test inputs are left on it as "_tests" for compile_case."""
     out, ids, inflow_seen = [], {}, False
+    readable = set(stocks) | set(inputs)
+    smoothed: dict = {}
     for key, v, where in _flow_items(raw, name):
         m = FLOW_KEY_RE.match(str(key))
         if not m:
@@ -424,15 +548,67 @@ def _flows(raw, stocks: set[str], name: str) -> list[dict]:
                 raise CaseError(f"{where}: flow {fid} needs a rate")
             v = extra.pop("rate")
         try:
-            body = {"rate": dict(v)} if isinstance(v, dict) else flow_body(v, stocks)
+            body = {"rate": dict(v)} if isinstance(v, dict) else flow_body(v, readable)
         except CaseError as e:
             raise CaseError(f"{where}: flow {key}: {e}") from None
+        for u in body.get("uses") or []:
+            if u["stock"] not in stocks:
+                raise CaseError(f"{where}: flow {key}: uses({u['stock']}, ...) names an input, not a stock")
         for k in ("effects", "uses"):
             if k in body and k in extra:
                 raise CaseError(f"{where}: flow {fid} has {k} in its rate and as a key")
+        delay = body.pop("_delay", None)
+        smoothed.update(body.pop("_smooths", None) or {})
         f.update(body)
         f.update(extra)
-        out.append(f)
+        if delay is None:
+            out.append(f)
+            continue
+        if hidden is None:
+            raise CaseError(f"{where}: a delay is not allowed here")
+        out += _delay_chain(f, delay, stocks, hidden, where)
+    for sid, sm in smoothed.items():
+        if hidden is None:
+            raise CaseError(f"{name}: a smoothing is not allowed here")
+        out += _smoothing(sid, sm, stocks, hidden)
+    return out
+
+
+def _delay_chain(f: dict, delay: dict, stocks: set[str], hidden: list, where: str) -> list[dict]:
+    """DELAYn(rate, time) from A to B: A -> H1 at the rate (the flow keeps its id), then H1 -> H2 ...
+    Hn -> B, each n / time x its hidden stock (an Erlang-n delay with mean `time`, exact as Vensim's
+    DELAY3 is a chain of three first-order stages). Hidden stocks are <id>_d1 .. <id>_dn, starting
+    at `initial` (default 0)."""
+    n, time = delay["order"], delay["time"]
+    hs = [f"{f['id']}_d{i}" for i in range(1, n + 1)]
+    for h in hs:
+        if h in stocks or any(x["id"] == h for x in hidden):
+            raise CaseError(f"{where}: the delay's hidden stock {h} clashes with a stock")
+        hidden.append({"id": h, "initial": delay.get("initial", 0), "measured": False})
+    tag = lambda i: {"id": f["id"], "stage": i, "of": n, "time": time}  # noqa: E731
+    out = [{**f, "to": hs[0], "delay": tag(0)}]
+    for i, h in enumerate(hs, start=1):
+        out.append({"id": f"{f['id']}_{i}", "from": h, "to": hs[i] if i < n else f["to"],
+                    "rate": {"form": "proportional", "stock": h, "k": n / time}, "delay": tag(i)})
+    return out
+
+
+def _smoothing(sid: str, sm: dict, stocks: set[str], hidden: list) -> list[dict]:
+    """SMOOTHn(x, time): n hidden stocks in a row, the last (sid) holding the smoothed value; stage i
+    fills at x_(i-1) x n / time from outside (it reads x, it does not drain it) and drains at its own
+    level x n / time. Its flows are exact (no counting noise: information, not material). Each stage
+    starts at `initial` (default: x's initial level when x is a stock, else 0)."""
+    n, k = sm["order"], sm["order"] / sm["time"]
+    start = sm.get("initial", {"initial of": sm["of"]})             # compile_case reads x's initial level
+    names = [f"{sid}_{i}" for i in range(1, n)] + [sid]
+    out, prev = [], sm["of"]
+    for h in names:
+        if h in stocks or any(x["id"] == h for x in hidden):
+            continue                                              # the same smoothing used twice
+        hidden.append({"id": h, "initial": start, "measured": False})
+        out.append({"id": f"{h}_in", "from": None, "to": h, "rate": {"form": "proportional", "stock": prev, "k": k}, "exact": True})
+        out.append({"id": f"{h}_out", "from": h, "to": None, "rate": {"form": "proportional", "stock": h, "k": k}, "exact": True})
+        prev = h
     return out
 
 
@@ -523,10 +699,23 @@ def compile_case(text: str, name: str = "<case>") -> dict:
         out["variants"] = v
     stocks = _stocks(raw["stocks"], name)
     ids = {s["id"] for s in stocks}
-    flows = _flows(raw["flows"], ids, name)
+    inputs = _inputs(raw["inputs"], ids, _at(raw, "inputs", name)) if raw.get("inputs") else {}
+    hidden: list[dict] = []
+    flows = _flows(raw["flows"], ids, name, set(inputs), hidden)
+    first = {s["id"]: s["initial"] for s in stocks}
+    for h in hidden:                                               # a smoothing starts at what it smooths
+        if isinstance(h["initial"], dict):
+            h["initial"] = first.get(h["initial"]["initial of"], 0)
+    stocks = stocks + hidden
     model = {**({"seed": raw["seed"]} if "seed" in raw else {}), "stocks": stocks, "flows": flows}
+    if "dt" in raw:
+        model["dt"] = _dt(raw["dt"], _at(raw, "dt", name))
+    if inputs:
+        model["inputs"] = inputs
     if raw.get("schedule"):
-        model["schedule"] = _schedule(raw["schedule"], flows, ids, name)
+        model["schedule"] = _schedule(raw["schedule"], flows, ids | set(inputs), name)
+    if any(f.get("_tests") for f in flows):
+        _test_changes(model, raw, _at(raw, "flows", name))
     if raw.get("injections"):
         inj = raw["injections"]
         if not isinstance(inj, list) or not all(isinstance(j, dict) and {"t", "stock", "amount"} <= set(j) for j in inj):
@@ -537,6 +726,156 @@ def compile_case(text: str, name: str = "<case>") -> dict:
         model["injections"] = inj
     out["model"] = model
     return _plain(out)
+
+
+def _dt(v, where: str) -> float:
+    from ..sdtruth import substeps
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise CaseError(f"{where}: dt is a number, 1/n for a whole number n (0.5, 0.25, 0.1)")
+    try:
+        substeps({"dt": v})
+    except ValueError as e:
+        raise CaseError(f"{where}: {e}") from None
+    return v
+
+
+def _input_formula(text, where: str) -> list[dict]:
+    """A formula: a sum of numbers and step/pulse/ramp/pulse_train/sin terms (each optionally times
+    a number) as the engine's input terms."""
+    if isinstance(text, (int, float)) and not isinstance(text, bool):
+        return [{"fn": "constant", "value": text}]
+    ex = _Expr(str(text))
+    if ex.done():
+        raise CaseError(f"{where}: an empty formula")
+    try:
+        node = ex.sum()
+        if not ex.done():
+            raise ex.err("expected '+' or '-'")
+        out = []
+        for sign, n in (node[1] if node[0] == "sum" else [("+", node)]):
+            k = -1 if sign == "-" else 1
+            if n[0] == "num":
+                out.append({"fn": "constant", "value": k * n[1]})
+                continue
+            if n[0] == "product" and len(n[1]) == 2 and n[1][0][1][0] == "num" and n[1][1][0] == "*":
+                k, n = k * n[1][0][1][1], n[1][1][1]
+            if n[0] != "call" or n[1] not in INPUT_FNS:
+                raise ex.err(f"an input formula adds numbers and {', '.join(INPUT_FNS)}")
+            out.append(_fn_term(n, ex, INPUT_FNS, k))
+        return out
+    except CaseError as e:
+        raise CaseError(f"{where}: {e}") from None
+
+
+def _read_series(spec: dict, where: str) -> list[float]:
+    """A column of a .csv file (by name, or the only column) or a .json list, in sdlab/ladder/cases/."""
+    rel = str(spec["file"])
+    path = (CASES_DIR / rel).resolve()
+    if CASES_DIR not in path.parents or not path.is_file():
+        raise CaseError(f"{where}: no file {rel!r} under sdlab/ladder/cases/")
+    if path.suffix == ".json":
+        vals = __import__("json").loads(path.read_text())
+    elif path.suffix == ".csv":
+        import csv
+        rows = list(csv.reader(path.read_text().splitlines()))
+        head, body = rows[0], [r for r in rows[1:] if r]
+        col = spec.get("column")
+        if col is None and len(head) != 1:
+            raise CaseError(f"{where}: {rel} has columns {head}: say which (column: <name>)")
+        i = 0 if col is None else (head.index(col) if col in head else -1)
+        if i < 0:
+            raise CaseError(f"{where}: {rel} has no column {col!r} (columns: {head})")
+        vals = [r[i] for r in body]
+    else:
+        raise CaseError(f"{where}: an input file is .csv or .json")
+    try:
+        return [float(x) for x in vals]
+    except (TypeError, ValueError):
+        raise CaseError(f"{where}: {rel}: every value must be a number") from None
+
+
+def _inputs(raw, stocks: set[str], where: str) -> dict:
+    """inputs: {name: series | formula | {values?, file?, column?, formula?, repeat?}} as the engine's
+    {name: {"values"?, "repeat"?, "terms"?}}."""
+    if not isinstance(raw, dict):
+        raise CaseError(f"{where}: inputs is a mapping of input name to its series, formula or file")
+    out = {}
+    for k, v in raw.items():
+        at = _at(raw, k, where.split(":")[0])
+        if not isinstance(k, str) or not ID_RE.match(k) or k == OUTSIDE or k in stocks:
+            raise CaseError(f"{at}: {k!r} is not an input name (letters, digits, _; not a stock's id)")
+        spec: dict = {}
+        if isinstance(v, list):
+            v = {"values": v}
+        elif not isinstance(v, dict):
+            v = {"formula": v}
+        unknown = set(v) - {"values", "file", "column", "formula", "repeat"}
+        if unknown:
+            raise CaseError(f"{at}: input {k}: unknown key {sorted(unknown)[0]!r} (values, file, column, formula, repeat)")
+        if "values" in v and "file" in v:
+            raise CaseError(f"{at}: input {k}: values or file, not both")
+        if "values" in v:
+            if not v["values"] or not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v["values"]):
+                raise CaseError(f"{at}: input {k}: values is a list of numbers")
+            spec["values"] = list(v["values"])
+        if "file" in v:
+            spec["values"] = _read_series(v, at)
+        if v.get("repeat"):
+            spec["repeat"] = True
+        if "formula" in v:
+            spec["terms"] = _input_formula(v["formula"], at)
+        if not spec.get("values") and not spec.get("terms"):
+            raise CaseError(f"{at}: input {k} needs values, a file or a formula")
+        out[k] = spec
+    return out
+
+
+def _with_constant(rate: dict, c: float) -> dict:
+    """A rate with c added (before its floor at 0): constant + c, k X + c, c + terms, and a gap
+    (goal - X) / time + c = (goal + c time - X) / time."""
+    form = rate.get("form")
+    if c == 0:
+        return dict(rate)
+    if form == "constant":
+        return {**rate, "value": rate.get("value", 0) + c}
+    if form == "proportional":
+        return {"form": "linear", "c": c, "terms": [{"stock": rate["stock"], "k": rate["k"]}]}
+    if form == "linear":
+        return {**rate, "c": rate.get("c", 0) + c}
+    if form == "gap":
+        return {**rate, "goal": rate["goal"] + c * rate["time"]}
+    raise CaseError(f"a test input cannot be added to a rate of form {form}")
+
+
+def _test_changes(model: dict, raw: dict, where: str) -> None:
+    """A flow's test inputs (step, pulse, ramp, pulse_train) as unannounced schedule changes: at every
+    step where their sum differs from the step before, the flow's rate becomes its own plus the sum
+    (the rate at step 1 includes it). Written out up to the case's longest run (pulse trains and ramps
+    hold their last value after it)."""
+    from ..sdtruth import input_value
+    sch = model.setdefault("schedule", {"changes": []})
+    if sch.get("every"):
+        raise CaseError(f"{where}: test inputs (step, pulse, ...) cannot be combined with a periodic schedule (every)")
+    lengths = ((raw.get("variants") or {}) if isinstance(raw.get("variants"), dict) else {}).get("lengths") or {"long": 2000}
+    horizon = max(int(x) for x in lengths.values())
+    changes: dict[int, dict] = {}
+    for f in model["flows"]:
+        tests = f.pop("_tests", None)
+        if not tests:
+            continue
+        if any(f["id"] in (c.get("set") or {}) for c in sch["changes"]):
+            raise CaseError(f"{where}: flow {f['id']} has test inputs and schedule changes: write one or the other")
+        base, spec = f["rate"], {"terms": tests}
+        f["rate"] = _with_constant(base, input_value(spec, 1, 1))
+        last = input_value(spec, 1, 1)
+        for t in range(2, horizon + 1):
+            v = input_value(spec, t, t)
+            if v != last:
+                changes.setdefault(t, {"t": t, "label": "test input", "set": {}})["set"][f["id"]] = _with_constant(base, v)
+                last = v
+    sch["changes"] = sch["changes"] + [changes[t] for t in sorted(changes)]
+    if not sch["changes"]:
+        del model["schedule"]
 
 
 def _plain(x):

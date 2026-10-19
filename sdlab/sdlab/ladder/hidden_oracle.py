@@ -82,6 +82,8 @@ def _structure(truth_flows: list[dict], ids: list[str], wins: list[tuple[int, in
     if len(chains) != 1:
         return None
     (a, b), chain = next(iter(chains.items()))
+    if "time" in chain:                                   # a compiled DELAYn chain: not this shape
+        return None
     h = chain["via"]
     if any(f.get("effects") or f.get("uses") or float(f.get("ratio") or 1) != 1 for f in chain["in"] + chain["out"]):
         return None

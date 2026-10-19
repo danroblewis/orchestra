@@ -72,9 +72,12 @@ def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 1
     s0 = starts_for(A.shape[1], horizon, starts)
     times = np.asarray(t, dtype=float)[s0[None, :] + np.arange(horizon)[:, None]]
     injections = data.get("injections")                     # announced interventions, made in both models
-    truth_end = Model(truth, ids).run(A[:, s0 - 1], times, injections)
+    # measured inputs (both models read them), and the truth's own sub-step and ceilings (2026-10-18)
+    inputs = {"t": t, "values": data["inputs"]} if data.get("inputs") else None
+    ceilings = {s["id"]: s["max"] for s in truth_model.get("stocks") or [] if s.get("max") is not None}
+    truth_end = Model(truth, ids, inputs=inputs, dt=float(truth_model.get("dt") or 1), ceilings=ceilings).run(A[:, s0 - 1], times, injections)
     return {"horizon": horizon, "flows": truth, "ids": ids, "fed": fed, "exo": exo, "A": A, "s0": s0, "times": times, "truth_end": truth_end,
-            "injections": injections}
+            "injections": injections, "inputs": inputs}
 
 
 def _renamed(x, names: dict):
@@ -109,9 +112,10 @@ def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 2
             est = {**observe(own, measured, data["t"], data["levels"], hidden, first), **est}
         names = {x: f"found:{x}" for x in hidden}
         A_found = np.vstack([A] + [np.nan_to_num(np.asarray(est[x], dtype=float))[None, :] for x in hidden])
-        found_end = Model(_renamed(own, names) + exo, ids + list(names.values())).run(A_found[:, s0 - 1], times, tr.get("injections"))[: len(ids)]
+        found_end = Model(_renamed(own, names) + exo, ids + list(names.values()), inputs=tr.get("inputs"),
+                          ceilings=result.get("ceilings")).run(A_found[:, s0 - 1], times, tr.get("injections"))[: len(ids)]
     else:
-        found_end = Model(own + exo, ids).run(A[:, s0 - 1], times, tr.get("injections"))
+        found_end = Model(own + exo, ids, inputs=tr.get("inputs"), ceilings=result.get("ceilings")).run(A[:, s0 - 1], times, tr.get("injections"))
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())
