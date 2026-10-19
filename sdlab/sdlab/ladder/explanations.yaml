@@ -71,6 +71,23 @@ strategies:
     status: active
     note: Research verdict "needs a combination - keep as a final step after structural fixes".
 
+  odefit:
+    idea: For smooth measured data (physics, sensors), fit each stock's change as a sum of terms by how well whole runs follow the measurements, not one step at a time.
+    how: >-
+      Each stock's change in a step is a number times each level, each measured input and a
+      constant (later also products of two levels). The numbers are chosen so that the model,
+      started from an estimated state at the start of each 100-step stretch, follows the measured
+      levels (output error). Measurement error then cannot shrink the numbers as it does in a
+      one-step fit. Terms are dropped while BIC improves. Products are kept only if they save BIC,
+      predict a held-out last 30% clearly better, and do not make the model run away when the inputs
+      go beyond what was seen. The main line runs too, and the model that follows the data better
+      (each stretch's start fitted) is kept. Counted data (whole numbers), uneven times and
+      announced eras go to the main line.
+    helps_with: Measurement noise that loses couplings (the spring, the reaction chain), products written as linear links (Lotka-Volterra), and measured inputs driving coupled stocks.
+    builds_on: matrix
+    status: active
+    note: Physics cases 25 of 28 (best before 15); docs/research/odefit.md.
+
   shared_noise:
     idea: Tell moves, links and co-flows apart by which stocks' random wiggles happen together.
     how: >-
