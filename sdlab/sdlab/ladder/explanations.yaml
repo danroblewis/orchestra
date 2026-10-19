@@ -572,6 +572,18 @@ strategies:
     status: work in progress
     note: Its research document (combined.md) is not written yet.
 
+  structures:
+    idea: combined's model, replaced by one built from the classic SD structures when the data clearly prefer it.
+    how: >-
+      A search fits flows that are products of two stocks (an infection S x I, word of mouth P x A,
+      crowding X x X), a hiring gap over several stocks (target - R - E) / 6, and one hidden delay
+      chain of 1 to 4 stages (a supply line, a construction or transmission delay, hidden rework),
+      choosing terms by BIC. Its model replaces combined's only when combined's own judge scores it
+      better and it behaves at least as well over many steps.
+    helps_with: The canonical cases (SIR, SEIR, Bass, logistic, workforce, supply line, rework, World3 pollution).
+    builds_on: combined
+    status: work in progress
+
 glossary:
 
   # the model's parts

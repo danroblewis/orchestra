@@ -1,0 +1,92 @@
+"""structures: combined's model, replaced by one built from the classic SD structures when the data
+prefer it (docs/research/structures.md).
+
+1. The search (discover.py), under its own time cap: each stock's change regressed on its own
+   (rowwise.py) and read as terms, then a stepwise BIC search over plain terms (constants, drains,
+   moves, links, goal gaps), bilinear terms (a flow proportional to one stock times a linear effect
+   of another or the same: S x I, P x A, crowding X x X), multi-stock goal gaps closed at one shared
+   time (gaps.py), and one hidden Erlang chain of order 1-4 whose delay is profiled (a supply line,
+   a construction or transmission delay, a hidden rework stock). Outside inflows are floored at 0 as
+   the engine floors them.
+2. combined (unchanged, through its identify()): the base answer.
+3. The search's model replaces the base only when combined's own judge prefers it (its one-step
+   likelihood with a BIC price on every number, judge.py) AND it behaves at least as well over many
+   steps on the run (combined's behaviour judge, within `slack`). Otherwise combined's model is
+   returned as it is.
+
+opts (also SDLAB_STRUCTURES, JSON): "seconds" (the search's cap, default 60, never more than a
+third of what the caller's timer leaves), "slack" (relative, default 0.02), "base" ("combined" or
+"lna_stack"), "alone" (return the search's model, for diagnosis), "chains", "products".
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import time
+
+from ..combined import identify as combined
+from ..combined import judge as J
+from ..combined.deadline import outer_left
+from ..lna_stack import identify as lna_stack
+from .discover import discover
+
+DEFAULTS = {"seconds": 60.0, "slack": 0.02, "base": "combined", "alone": False, "chains": True, "products": True}
+BASES = {"combined": combined, "lna_stack": lna_stack}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    opts = dict(opts or {})
+    env = json.loads(os.environ.get("SDLAB_STRUCTURES") or "{}")
+    own = {k: opts.pop(k) for k in list(opts) if k in DEFAULTS}
+    cfg = {**DEFAULTS, **own, **env}
+    left = outer_left()
+    cap = float(cfg["seconds"]) if left is None else min(float(cfg["seconds"]), left / 3)
+    began = time.perf_counter()
+    mine, why = None, None
+    if opts.get("eras") and len(opts["eras"]) > 1:
+        why = "announced eras (the search fits one set of numbers)"
+    else:
+        try:
+            mine = discover(stocks, run, opts, seconds=cap, chains=cfg["chains"], products=cfg["products"])
+            why = None if mine else "no model in time"
+        except Exception as e:                           # noqa: BLE001
+            why = f"{type(e).__name__}: {e}"[:300]
+    spent = round(time.perf_counter() - began, 2)
+    if cfg["alone"]:
+        r = mine or {"flows": []}
+        return {**r, "canon": {k: r.get(k) for k in ("terms", "trace", "bic", "seconds")}}
+    base = BASES[cfg["base"]](stocks, run, opts)
+    info = {"search_seconds": spent, "why": why}
+    if mine and mine.get("flows"):
+        try:
+            info.update(_compare(mine, base, stocks, run, opts, float(cfg["slack"])))
+        except Exception as e:                           # noqa: BLE001
+            info["judge_error"] = f"{type(e).__name__}: {e}"[:300]
+        info["terms"] = mine.get("terms")
+        info["trace"] = mine.get("trace")
+    if info.get("chosen") == "structures":
+        out = {k: v for k, v in mine.items() if k in ("flows", "inferred_levels")}
+        out["method"] = "structures"
+        out["structures"] = info
+        return out
+    info["chosen"] = info.get("chosen") or cfg["base"]
+    return {**base, "structures": info}
+
+
+def _compare(mine: dict, base: dict, stocks: list[dict], run: dict, opts: dict, slack: float) -> dict:
+    """combined's judge on both models: the search's wins on a lower BIC and behaviour no worse."""
+    data = J.Data(stocks, run, opts.get("injections"), opts.get("inputs"))
+    starts_m = {h: v[0] for h, v in (mine.get("inferred_levels") or {}).items() if v}
+    starts_b = {h: v[0] for h, v in (base.get("inferred_levels") or {}).items() if v}
+    sm = J.score(mine["flows"], data, 1.0, 0.0, starts_m)
+    sb = J.score(base.get("flows") or [], data, 1.0, 0.0, starts_b)
+    out = {"bic": {"structures": round(sm["bic"], 3), "base": round(sb["bic"], 3)}, "numbers": {"structures": sm["k"], "base": sb["k"]}}
+    if not sm["bic"] < sb["bic"]:
+        return out
+    bm = J.behaviour(mine["flows"], data, run, starts_m)
+    bb = J.behaviour(base.get("flows") or [], data, run, starts_b) if base.get("flows") else float("inf")
+    out["behaviour"] = {"structures": round(bm, 6), "base": round(bb, 6)}
+    if bm <= bb * (1 + slack) + 1e-9:
+        out["chosen"] = "structures"
+    return out
