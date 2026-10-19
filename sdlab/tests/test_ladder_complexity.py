@@ -75,12 +75,13 @@ def test_extra_flows_terms_and_hidden_stocks_count():
 
 
 def test_occam_score():
-    cx = {"true": 10, "found": 15, "extra": 5}
-    assert complexity.occam("pass", 4, 4, cx) == pytest.approx(0.5)
-    assert complexity.occam("equivalent", 2, 4, {**cx, "extra": -2}) == 1.0     # simpler than the truth: no penalty
-    assert complexity.occam("fail", 3, 4, cx) == pytest.approx(0.25)
-    assert complexity.occam("fail", 1, 4, {**cx, "extra": 30}) == 0.0
+    cx = {"true": 10, "found": 20, "extra": 10}
+    assert complexity.occam("pass", 4, 4, cx) == pytest.approx(0.5)               # twice the truth: half the fit
+    assert complexity.occam("equivalent", 2, 4, {"true": 10, "found": 8, "extra": -2}) == 1.0   # simpler: no reward, no penalty
+    assert complexity.occam("fail", 3, 4, cx) == pytest.approx(0.375)
+    assert complexity.occam("fail", 3, 4, {"true": 10, "found": 10, "extra": 0}) == pytest.approx(0.75)
     assert complexity.occam("error", None, None, None) == 0.0
+    assert complexity.occam("pass", 1, 1, None) is None                            # not counted
     assert complexity.occam(None, None, None, None) is None
 
 

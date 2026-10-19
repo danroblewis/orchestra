@@ -24,10 +24,11 @@ true equations therefore counts exactly as much as the truth (extra 0).
 
 Per result: **extra** = found - true (by part: flows, terms, pieces, other), and **ratio** =
 found / true. The **Occam score** of a result trades accuracy against excess complexity:
-fit - max(0, extra) / true, floored at 0, where fit is 1 for a pass or an equivalent model, else
-the share of true numbers right (right / of), and 0 for an error or timeout. Every number a model
-adds beyond the truth costs as much, relative to the truth's size, as a true number it gets wrong:
-a model twice as complicated as the truth scores 0 however right it is.
+fit x parsimony, where fit is 1 for a pass or an equivalent model, else the share of true numbers
+right (right / of), and 0 for an error or timeout; and parsimony = true / found, at most 1 (the
+share of the found model's complexity the truth needs). A model twice as complicated as the truth
+keeps half its fit, one 10% over keeps 91%; a model simpler than the truth is not rewarded (its fit
+already pays for what it misses).
 
 Counting needs the found flows, which are large; `for_results` counts each stored result once and
 keeps the count by result id (a stored result never changes), so the summary stays fast.
@@ -172,24 +173,30 @@ def for_results(rows: list[dict]) -> dict[int, dict | None]:
     todo = [r for r in rows if (where, r["id"]) not in _by_id]
     if todo:
         found = store.found_flows([r["id"] for r in todo])
-        known = casemod.case_files()
-        cs = {c: casemod.load(c) for c in {r["case"] for r in todo} if c in known}
+        cs = {}
+        for c in {r["case"] for r in todo}:
+            try:
+                cs[c] = casemod.load(c)
+            except Exception:                 # a case that is gone (or does not load now): not counted, tried again next time
+                pass
         for r in todo:
             raw = found.get(r["id"])
-            ok = raw and r["case"] in cs
-            _by_id[(where, r["id"])] = of_result(r, json.loads(raw), cs[r["case"]]) if ok else None
-    return {r["id"]: _by_id[(where, r["id"])] for r in rows}
+            if r["case"] in cs:
+                _by_id[(where, r["id"])] = of_result(r, json.loads(raw), cs[r["case"]]) if raw else None
+    return {r["id"]: _by_id.get((where, r["id"])) for r in rows}
 
 
 def occam(status: str | None, right, of, cx: dict | None) -> float | None:
-    """The Occam score of a result (see the module docstring); None when it was never run."""
+    """The Occam score of a result (see the module docstring); None when it was never run, or its
+    found model could not be counted."""
     if status is None:
         return None
-    if status in ("error", "timeout") or cx is None:
+    if status in ("error", "timeout"):
         return 0.0
+    if cx is None:
+        return None
     fit = 1.0 if status in ("pass", "equivalent") else (right / of if of else 0.0)
-    penalty = max(0, cx["extra"]) / cx["true"] if cx["true"] else 0.0
-    return max(0.0, fit - penalty)
+    return fit * min(1.0, cx["true"] / cx["found"]) if cx["found"] else fit
 
 
 def cell(row: dict | None, cx: dict | None) -> dict:

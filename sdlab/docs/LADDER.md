@@ -362,15 +362,17 @@ two) 6, 011 (goal gap) 7, 015 (hidden stock) 9, 016 (co-flow) 11, 017 (linear ef
 Per result: **extra** = found - true, broken out by part (flows, terms, pieces, other), and
 **ratio** = found / true. Not counted for an error or timeout (nothing found).
 
-The **Occam score** of a result trades accuracy against excess complexity, the way an information
+The **Occam score** of a result discounts accuracy by excess complexity, the way an information
 criterion charges for parameters:
 
-    occam = max(0, fit - max(0, extra) / true)
+    occam = fit x parsimony,    parsimony = min(1, true / found)
 
 where fit is 1 for a pass or an equivalent model, else the share of true numbers right (right / of),
-and 0 for an error or timeout. Every number beyond the truth costs as much, relative to the truth's
-size, as a true number got wrong; a model simpler than the truth is not rewarded for it (its fit
-already pays); a model twice as complicated as the truth scores 0 however right it is.
+and 0 for an error or timeout. Parsimony is the share of the found model's complexity that the truth
+needs: a model twice as complicated as the truth keeps half its fit, one 10% over keeps 91%. A model
+simpler than the truth is not rewarded for it (its fit already pays for what it misses). Multiplying
+rather than subtracting keeps the score between 0 and 1 and does not zero a right model of a tiny
+case for one extra piece.
 
 Complexity is computed from the stored found flows when they are read (no re-run, and the scorer's
 hash does not change): the summary counts each stored result once and keeps the count by result

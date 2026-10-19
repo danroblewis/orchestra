@@ -62,10 +62,10 @@
   a fresh run. <b>Complexity</b> of a model = flows + the numbers needed to write its rates over the run (each piece of a rate that
   changes counts, so an inflow in 9 pieces is 9 numbers; plus effects' numbers, co-flows and hidden stocks), counted the same way for
   the truth and the found model. <b>Extra</b>: found − true, averaged over runs that found a model (hover for where it comes from);
-  <b>× truth</b>: found ÷ true, the geometric mean. <b>Occam score</b>: accuracy minus excess complexity, per run
-  fit − max(0, extra) ÷ true, at least 0, where fit is 1 for a pass or equivalent, else the share of true numbers right; averaged over all
-  runs (not run, error, timeout = 0). Every number added beyond the truth costs as much, relative to the truth's size, as a true number
-  got wrong, the way an information criterion charges for parameters: a model twice as complicated as the truth scores 0.
+  <b>× truth</b>: found ÷ true, the geometric mean. <b>Occam score</b>: accuracy discounted by excess complexity, per run
+  fit × parsimony, where fit is 1 for a pass or equivalent, else the share of true numbers right, and parsimony = true ÷ found (at most 1);
+  averaged over all runs (not run, error, timeout = 0). Like an information criterion it charges for every number beyond what the truth
+  needs: a model twice as complicated as the truth keeps half its credit, one 10% over keeps 91%; being simpler than the truth earns nothing.
   Click a column to sort.</p>
   <div class="controls">
     <label>Runs <select id="variants">
@@ -78,7 +78,7 @@
     <label>Cases <select id="level"><option value="0">all levels</option></select></label>
     <label>Rank by <select id="rankby">
       <option value="pass">pass rate</option>
-      <option value="occam">Occam score (accuracy − excess complexity)</option>
+      <option value="occam">Occam score (accuracy × parsimony)</option>
       <option value="extra">least extra complexity</option>
     </select></label>
     <label>Filter <input id="filter" placeholder="strategy name"></label>
