@@ -121,6 +121,8 @@ for `combined` on the test cases).
 
 ## Started
 
+- 2026-10-18 19:45: item 0, engine features (inputs, dt, ceilings, delays/smooth/test inputs).
+
 - 2026-10-18: realistic examples run (7 leaders × 31 examples × 2 lengths, `~/.sdlab/realistic-run.log`).
 
 
