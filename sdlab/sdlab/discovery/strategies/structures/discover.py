@@ -17,6 +17,9 @@ from .write import to_flows
 
 ORDERS = (1, 2, 3, 4)
 CELLS = 3e7              # stocks x steps x terms the screening may hold (about 240 MB)
+MIN_DELAY = 3.0          # a shorter chain is not offered: with measurement noise (or a lag) on the levels, the changes'
+                         # serial correlation is fitted by a chain of 1-2 steps (082 and 087 meas: chains of 1.2-2 steps
+                         # beat combined by a hair on the judge and replaced right models)
 STEP = 0.02              # the delay grid's spacing (log): a chain that fits exactly does so only within a few %
 
 
@@ -101,6 +104,18 @@ def _golden(f, a: float, b: float, iters: int = 40) -> float:
     return (a + b) / 2
 
 
+def doubled(terms: list[Term]) -> bool:
+    """A's loss passing through a chain into B while B also gets A's level at once (a move or a
+    link from A): one transfer read twice, the instant share and the delayed one (measurement
+    noise on the levels makes this fit; 087 meas)."""
+    for t in terms:
+        if t.kind == "chain" and t.src is not None:
+            a, b = t.src, t.dst
+            if any(u.dst == b and u.x == (a,) and u.kind in ("move", "link") for u in terms):
+                return True
+    return False
+
+
 def _sharp(p: Problem, f) -> float:
     """The fit's likelihood without the noise-free floor (where a chain fits to the data's rounding,
     the floor would flatten the delay's optimum)."""
@@ -112,11 +127,11 @@ def _sharp(p: Problem, f) -> float:
 def _chains(p: Problem, lib: list[Term], base, S, m, unit, final, T, trace):
     """The best model with one hidden chain. For each order, the delay is chosen by the rows' own
     regressions on every feature with the chain's (rowwise.profile: cheap and smooth), on a log
-    grid from 1.5 steps to T / 10 and then by golden section around the best;
+    grid from MIN_DELAY steps to T / 10 and then by golden section around the best;
     at that delay the joint search runs from the rows' reading and from the plain model, and the
     delay is refined again with the terms kept. Models are compared under the plain model's
     variance."""
-    lo_t, hi_t = math.log(1.5), math.log(max(3.0, T / 10))
+    lo_t, hi_t = math.log(MIN_DELAY), math.log(max(2 * MIN_DELAY, T / 10))
     taus = np.exp(np.linspace(lo_t, hi_t, max(12, min(250, int((hi_t - lo_t) / STEP)))))
     var0 = p.var.copy()
     best, where = base, None
@@ -130,7 +145,7 @@ def _chains(p: Problem, lib: list[Term], base, S, m, unit, final, T, trace):
         if not grid:
             continue
         k = int(np.argmin([g[0] for g in grid]))
-        lo = math.log(max(n, grid[max(0, k - 1)][1]))
+        lo = math.log(max(n, MIN_DELAY, grid[max(0, k - 1)][1]))
         hi = math.log(grid[min(len(grid) - 1, k + 1)][1])
         tau = math.exp(_golden(crit, lo, hi)) if hi > lo else grid[k][1]
         prof[n] = round(tau, 4)
@@ -147,7 +162,7 @@ def _chains(p: Problem, lib: list[Term], base, S, m, unit, final, T, trace):
     terms = list(best.terms)
     width = 1.3
     for _ in range(3):                 # the delay with the terms kept, then the terms at that delay
-        lt = _golden(lambda x: _sharp(p, fit(p, _retau(terms, math.exp(x)))), math.log(max(n, tau / width)), math.log(tau * width))
+        lt = _golden(lambda x: _sharp(p, fit(p, _retau(terms, math.exp(x)))), math.log(max(n, MIN_DELAY, tau / width)), math.log(tau * width))
         tau = math.exp(lt)
         ext = lib + chain_terms(S, m, n, tau, unit, final)
         cur = into_chain(p, search(p, ext, _retau(terms, tau)))
@@ -155,7 +170,7 @@ def _chains(p: Problem, lib: list[Term], base, S, m, unit, final, T, trace):
             break
         terms, width = list(cur.terms), 1.05
     trace["chain"] = {"order": n, "delay": round(tau, 4)}
-    if cur.bic >= base.bic:
+    if cur.bic >= base.bic or doubled(cur.terms):
         return base
     return _refined(p, ext, cur)
 

@@ -13,8 +13,10 @@ prefer it (docs/research/structures.md).
    the time the caller's timer leaves after it.
 3. The search's model replaces the base only when combined's own judge prefers it (its one-step
    likelihood with a BIC price on every number, judge.py) AND it behaves at least as well over many
-   steps on the run (combined's behaviour judge, within `slack`). Otherwise combined's model is
-   returned as it is.
+   steps on the run (combined's behaviour judge, within `slack`) with no more numbers than the
+   base's, or clearly better (CLEARLY x the base's error) with more. Otherwise combined's model is
+   returned as it is. Chains under MIN_DELAY (3) steps, and a chain from A to B beside a move or
+   link from A to B, are never offered (measurement noise makes them fit).
 
 opts (also SDLAB_STRUCTURES, JSON): "seconds" (the search's cap, default 60, never more than a
 third of what the caller's timer leaves after combined), "slack" (relative, default 0.02), "base" ("combined" or
@@ -34,6 +36,7 @@ from ..lna_stack import identify as lna_stack
 from .discover import discover
 
 DEFAULTS = {"seconds": 60.0, "slack": 0.02, "base": "combined", "alone": False, "chains": True, "products": True}
+CLEARLY = 0.8        # a search model with more numbers than the base must behave this much better
 BASES = {"combined": combined, "lna_stack": lna_stack}
 
 
@@ -95,6 +98,8 @@ def _compare(mine: dict, base: dict, stocks: list[dict], run: dict, opts: dict, 
     bm = J.behaviour(mine["flows"], data, run, starts_m)
     bb = J.behaviour(base.get("flows") or [], data, run, starts_b) if base.get("flows") else float("inf")
     out["behaviour"] = {"structures": round(bm, 6), "base": round(bb, 6)}
-    if bm <= bb * (1 + slack) + 1e-9:
+    # no more numbers than the base and behaving as well; or, with more numbers, behaving clearly better
+    # (measurement noise on the levels lets bigger models win the one-step judge by a hair: 082, 087 meas)
+    if (sm["k"] <= sb["k"] and bm <= bb * (1 + slack) + 1e-9) or bm <= CLEARLY * bb:
         out["chosen"] = "structures"
     return out
