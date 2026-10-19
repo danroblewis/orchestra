@@ -19,6 +19,7 @@ SEG = 100            # steps per segment: each segment's start state is estimate
 EARN = 10.0          # BIC a nonlinear extension must save over the linear model to be kept
 TRAIN = 0.7          # held-out check: numbers refitted on this first share, judged on the rest
 HELD_SEG = 20        # held-out segments (each with its start state fitted): the skill horizon
+JUDGE_SLACK = 3.0    # the output-error model's judge error may be at most this times the main line's
 OWN_OPTS = ("budget", "seg", "prune", "products", "hinges")
 BETTER = 0.8         # an extension's held-out error must be at most this share of the linear model's
 
@@ -191,7 +192,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if not own.get("flows"):
         return {**base, "chosen_by": "output error found nothing"}
     spec, theta, d, seg, _ = own["_fit"]
-    own["noise"] = noise_kind(spec, theta, d, 1.0 / np.maximum(np.asarray(own["odefit"]["noise_sd"]), 1e-9), seg)
+    w = 1.0 / np.maximum(np.asarray(own["odefit"]["noise_sd"]), 1e-9)
+    own["noise"] = noise_kind(spec, theta, d, w, seg)
+    own["noise"]["r2"] = (1.0 - np.asarray(own["odefit"]["rss"]) / np.maximum(d.n * (d.Y.std(axis=0) * w) ** 2, 1e-300)).tolist()
     if E.runs_away(spec, theta, d):
         return {**base, "chosen_by": "the output error model runs away: the main line"}
     shocks = dynamics_noise(own["noise"])
@@ -199,7 +202,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     own.pop("_fit", None)
     if choice["pick"] == "output error":
         return {**own, "judged": choice, "chosen_by": f"output error model predicts better ({choice['how']})"}
-    return {**base, "judged": choice, "chosen_by": f"the main line predicts better ({choice['how']})"}
+    return {**base, "judged": choice, "noise": own.get("noise"), "chosen_by": f"the main line predicts better ({choice['how']})"}
 
 
 def _slice(run: dict, opts: dict, a: int, b: int) -> tuple[dict, dict]:
@@ -255,7 +258,17 @@ def choose(base: dict, own: dict, stocks: list[dict], run: dict, opts: dict, sho
         how = "output error"
     if not (np.isfinite(eb) or np.isfinite(eo)) or np.isnan(eb) or np.isnan(eo):
         eb, eo, how = judge(base.get("flows") or [], stocks, run, opts), judge(own["flows"], stocks, run, opts), "judge"
-    return {"how": how, "main line": eb, "output error": eo, "pick": "output error" if eo <= eb else "main line"}
+        return {"how": how, "main line": eb, "output error": eo, "pick": "output error" if eo <= eb else "main line"}
+    out = {"how": how, "main line": eb, "output error": eo, "pick": "output error" if eo <= eb else "main line"}
+    if out["pick"] == "output error":
+        # and the main line's own judge must not rate it far worse: the held-out segments restart
+        # from fitted states, which lets a model that cannot follow unannounced inflow steps look
+        # good (053 none-long: the main line exact, judge 4e-12, the output-error model 0.81)
+        jb, jo = judge(base.get("flows") or [], stocks, run, opts), judge(own["flows"], stocks, run, opts)
+        out.update(judge_main=jb, judge_output_error=jo)
+        if jo > JUDGE_SLACK * jb:
+            out.update(pick="main line", how=how + "; the main line's judge rates the output-error model far worse")
+    return out
 
 
 def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
