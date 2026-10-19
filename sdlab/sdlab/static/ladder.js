@@ -247,6 +247,7 @@
       <span data-tip="The same, 100 steps ahead">skill@100 <b>${pct(sk("in_sample", 100).skill)}</b>${ci(sk("in_sample", 100).ci)}</span>
       <span data-tip="Skill on a fresh run (the next seed), which discovery did not see">fresh@20 <b>${pct(sk("fresh", 20).skill)}</b>${ci(sk("fresh", 20).ci)}</span>
       <span>fresh@100 <b>${pct(sk("fresh", 100).skill)}</b>${ci(sk("fresh", 100).ci)}</span>` : ""}
+      ${r && r.complexity ? `<span data-tip="Complexity: flows + the numbers needed to write their rates over the run, the same count for the truth and the found model (extra by part: ${esc(Object.entries(r.complexity.by).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v}`).join(", "))})">complexity <b>${r.complexity.true} → ${r.complexity.found}</b>${r.complexity.extra ? ` <span class="muted">(${r.complexity.extra > 0 ? "+" : ""}${r.complexity.extra})</span>` : ""}</span>` : ""}
       ${r ? `<span class="muted small">${r.seconds !== null && r.seconds !== undefined ? `${fmt(r.seconds)} s · ` : ""}${esc(when(r.at))} · strategy ${esc(short(r.strategy_hash))} · scorer ${esc(short(r.score_hash))}</span>` : ""}
     </div>`;
   }

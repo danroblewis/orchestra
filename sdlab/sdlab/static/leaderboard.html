@@ -59,7 +59,14 @@
   recovered with the right kind and a rate within tolerance, and nothing spurious. <b>Equivalent</b>: the same linear system with a
   different structure. <b>Recall / precision</b>: true flows found / found flows that are true. <b>Skill@20</b>: the share of the true
   model's movement over 20 steps the found model predicts (100% = same as the truth; each run clipped at -100%), on the run it saw and on
-  a fresh run. Click a column to sort.</p>
+  a fresh run. <b>Complexity</b> of a model = flows + the numbers needed to write its rates over the run (each piece of a rate that
+  changes counts, so an inflow in 9 pieces is 9 numbers; plus effects' numbers, co-flows and hidden stocks), counted the same way for
+  the truth and the found model. <b>Extra</b>: found − true, averaged over runs that found a model (hover for where it comes from);
+  <b>× truth</b>: found ÷ true, the geometric mean. <b>Occam score</b>: accuracy minus excess complexity, per run
+  fit − max(0, extra) ÷ true, at least 0, where fit is 1 for a pass or equivalent, else the share of true numbers right; averaged over all
+  runs (not run, error, timeout = 0). Every number added beyond the truth costs as much, relative to the truth's size, as a true number
+  got wrong, the way an information criterion charges for parameters: a model twice as complicated as the truth scores 0.
+  Click a column to sort.</p>
   <div class="controls">
     <label>Runs <select id="variants">
       <option value="all">all variants</option>
@@ -69,6 +76,11 @@
       <option value="long">long runs</option>
     </select></label>
     <label>Cases <select id="level"><option value="0">all levels</option></select></label>
+    <label>Rank by <select id="rankby">
+      <option value="pass">pass rate</option>
+      <option value="occam">Occam score (accuracy − excess complexity)</option>
+      <option value="extra">least extra complexity</option>
+    </select></label>
     <label>Filter <input id="filter" placeholder="strategy name"></label>
     <span id="count" class="note" style="margin:0"></span>
   </div>
@@ -89,6 +101,9 @@ const COLS = [
   { key: "passeq", label: "pass + equivalent", fmt: pct, cls: "hide-sm" },
   { key: "recall", label: "recall", fmt: pct },
   { key: "precision", label: "precision", fmt: pct, cls: "hide-sm" },
+  { key: "occam", label: "Occam score", fmt: pct },
+  { key: "extra", label: "extra", fmt: (v) => (Number.isNaN(v) ? "–" : (v > 0 ? "+" : "") + v.toFixed(1)), asc: true, tip: (r) => r.extraTip },
+  { key: "ratio", label: "× truth", fmt: (v) => (Number.isNaN(v) ? "–" : v.toFixed(2) + "×"), asc: true, cls: "hide-sm" },
   { key: "skill20", label: "skill@20", fmt: pct },
   { key: "fresh20", label: "fresh skill@20", fmt: pct, cls: "hide-sm" },
   { key: "skill100", label: "skill@100", fmt: pct, cls: "hide-sm" },
@@ -117,15 +132,33 @@ function rows() {
       recall: mean(num("recall")), precision: mean(num("precision")),
       skill20: mean(num("skill20")), fresh20: mean(num("fresh20")), skill100: mean(num("skill100")),
       seconds: cs.reduce((x, c) => x + (c.seconds || 0), 0),
+      ...complexity(cs),
     };
   });
+}
+
+// complexity (see the note): mean Occam score over all runs, mean extra and geometric-mean ratio over
+// the runs that found a model, and the mean extra by where it comes from
+const PARTS = ["flows", "terms", "pieces", "other"];
+function complexity(cs) {
+  const withCx = cs.filter((c) => c.cx_extra != null);
+  const ratios = withCx.map((c) => c.cx_ratio).filter((v) => v > 0);
+  const by = PARTS.map((_, i) => mean(withCx.map((c) => c.cx_by[i])));
+  return {
+    occam: mean(cs.map((c) => c.occam || 0)),
+    extra: mean(withCx.map((c) => c.cx_extra)),
+    ratio: ratios.length ? Math.exp(mean(ratios.map(Math.log))) : NaN,
+    extraTip: withCx.length ? `mean true ${mean(withCx.map((c) => c.cx_true)).toFixed(1)}, found ${mean(withCx.map((c) => c.cx_found)).toFixed(1)}; extra by part: `
+      + PARTS.map((p, i) => `${p} ${by[i] > 0 ? "+" : ""}${by[i].toFixed(1)}`).join(", ") + ` (over ${withCx.length} runs)` : "",
+  };
 }
 
 function render() {
   const rs = rows().sort((a, b) => {
     const x = a[sortKey], y = b[sortKey];
     if (typeof x === "string") return sortDir * x.localeCompare(y);
-    const d = (Number.isNaN(x) ? -Infinity : x) - (Number.isNaN(y) ? -Infinity : y);
+    const asc = (COLS.find((c) => c.key === sortKey) || {}).asc, none = asc ? sortDir * Infinity : -Infinity;
+    const d = (Number.isNaN(x) ? none : x) - (Number.isNaN(y) ? none : y);
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
   document.querySelector("#t thead").innerHTML = "<tr>" + COLS.map((c) =>
@@ -140,13 +173,13 @@ function render() {
         `<span style="width:${w(r.p)};background:var(--pass)"></span><span style="width:${w(r.e)};background:var(--equiv)"></span>` +
         `<span style="width:${w(r.fl)};background:var(--fail)"></span><span style="width:${w(r.o)};background:var(--other)"></span></div></td>`;
     }
-    return `<td class="num ${c.cls || ""}">${c.fmt(r[c.key])}</td>`;
+    return `<td class="num ${c.cls || ""}"${c.tip ? ` title="${c.tip(r)}"` : ""}>${c.fmt(r[c.key])}</td>`;
   }).join("") + "</tr>").join("");
   document.getElementById("count").textContent = `${rs.length} strategies`;
   document.querySelectorAll("#t th[data-key]").forEach((th) => {
     const col = COLS.find((c) => c.key === th.dataset.key);
     if (col.sortable === false) return;
-    th.onclick = () => { if (sortKey === col.key) sortDir = -sortDir; else { sortKey = col.key; sortDir = col.key === "name" ? 1 : -1; } render(); };
+    th.onclick = () => { if (sortKey === col.key) sortDir = -sortDir; else { sortKey = col.key; sortDir = col.key === "name" || col.asc ? 1 : -1; } syncRankBy(); render(); };
   });
 }
 
@@ -157,6 +190,8 @@ async function load() {
     lv.insertAdjacentHTML("beforeend", `<option value="${l}">level ${l}</option>`);
   render();
 }
+function syncRankBy() { const rb = document.getElementById("rankby"); rb.value = [...rb.options].some((o) => o.value === sortKey) ? sortKey : ""; }
+document.getElementById("rankby").onchange = (e) => { if (!e.target.value) return; sortKey = e.target.value; sortDir = COLS.find((c) => c.key === sortKey).asc ? 1 : -1; render(); };
 for (const id of ["variants", "level"]) document.getElementById(id).onchange = render;
 document.getElementById("filter").oninput = render;
 load();

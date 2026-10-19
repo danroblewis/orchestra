@@ -19,7 +19,9 @@
     skill20: "Skill@20: how much of the true model's movement 20 steps ahead the found model predicts, from about 150 starting moments on the run it saw (100% = as good as the truth), with its 95% bootstrap interval.",
     skill100: "Skill@100: the same, 100 steps ahead.",
     fresh20: "Fresh skill@20: skill@20 on a fresh run (the next seed), which discovery never saw.",
+    complexity: "Complexity: flows + the numbers needed to write their rates over the run (every piece of a rate that changes, effects' numbers, co-flows, hidden stocks), counted the same way for the true and the found model. Extra = found − true, by where it comes from.",
   };
+  const cxText = (x) => !x ? "–" : `${x.true} → ${x.found}` + (x.extra ? ` (${x.extra > 0 ? "+" : ""}${x.extra}: ${Object.entries(x.by).filter(([, v]) => v).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k}`).join(", ")})` : " (same)");
   const B = { strategy: null, variant: "counts-long", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
   try { Object.assign(B, JSON.parse(localStorage.getItem("sdlab.ladder.board") || "{}"), { data: null, tab: {}, loading: null }); } catch { /* defaults */ }
   const save = () => { try { localStorage.setItem("sdlab.ladder.board", JSON.stringify({ strategy: B.strategy, variant: B.variant, status: B.status, level: B.level, tag: B.tag, sort: B.sort })); } catch { /* fine */ } };
@@ -102,6 +104,7 @@
         <div data-tip="${esc(DEF.skill20)}"><dt>skill@20</dt><dd>${pct(m.skill20)}${ci(m.skill20ci)}</dd></div>
         <div data-tip="${esc(DEF.skill100)}"><dt>skill@100</dt><dd>${pct(m.skill100)}${ci(m.skill100ci)}</dd></div>
         <div data-tip="${esc(DEF.fresh20)}"><dt>fresh@20</dt><dd>${pct(m.fresh20)}</dd></div>
+        <div data-tip="${esc(DEF.complexity)}" class="wide"><dt>complexity true → found</dt><dd>${esc(cxText(r.complexity))}</dd></div>
       </dl>` : "";
     return `<article class="bcard st-${st || "none"}" data-case="${esc(c.id)}">
       <header class="bhead">

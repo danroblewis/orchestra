@@ -113,6 +113,17 @@ def history(case: str, variant: str, strategy: str, found: bool = False) -> list
         return [_row(r, found) for r in rows]
 
 
+def found_flows(ids: list[int]) -> dict[int, str | None]:
+    """{result id: its found flows as stored (JSON text, not parsed)} for the given ids."""
+    out: dict[int, str | None] = {}
+    with connect(readonly=True) as con:
+        for i in range(0, len(ids), 500):
+            chunk = [int(x) for x in ids[i:i + 500]]
+            q = f"SELECT id, found FROM results WHERE id IN ({','.join('?' * len(chunk))})"
+            out.update({r["id"]: r["found"] for r in con.execute(q, chunk)})
+    return out
+
+
 def version() -> tuple:
     """Changes whenever a result is stored: (newest id, how many)."""
     with connect(readonly=True) as con:

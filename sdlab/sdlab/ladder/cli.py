@@ -167,6 +167,10 @@ def show(a) -> int:
                 b = beh.get(where) or {}
                 if b:
                     print(f"   {where.replace('_', '-')}: " + ", ".join(f"skill@{h} {with_ci(x.get('skill'), x.get('ci'))}" for h, x in b.items()))
+            cx = r.get("complexity")
+            if cx:
+                print(f"   complexity: true {cx['true']}, found {cx['found']} (extra {cx['extra']:+d}: "
+                      + ", ".join(f"{k} {v:+d}" for k, v in cx["by"].items()) + f"; {cx['ratio']:.2f}x the truth)")
             print("   Found equations:")
             for f in r.get("found") or []:
                 print("     " + _eq(f))

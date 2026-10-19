@@ -17,7 +17,8 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
 
 A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status
-("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}.
+("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}; one read
+with its found flows also has complexity (complexity.py: true vs found), and summary cells carry it.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import catalog, data, score, store
+from . import catalog, complexity, data, score, store
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -59,7 +60,7 @@ def results(case: str | None = None, variant: str | None = None, strategy: str |
 
 def result(case: str, variant: str, strategy: str) -> dict | None:
     rows = store.latest(case, variant, strategy, found=True)
-    return jsonable(rows[0]) if rows else None
+    return jsonable(complexity.attach(rows[0])) if rows else None
 
 
 def history(case: str, variant: str, strategy: str) -> list[dict]:
@@ -68,7 +69,7 @@ def history(case: str, variant: str, strategy: str) -> list[dict]:
 
 def result_by_id(result_id: int) -> dict | None:
     r = store.get(result_id, found=True)
-    return jsonable(r) if r else None
+    return jsonable(complexity.attach(r)) if r else None
 
 
 def case_data(case_id: str, variant: str, fresh: bool = False, flows: bool = False) -> dict:
@@ -128,7 +129,7 @@ def board(strategy: str, variant: str | None = None) -> dict:
     known = set(casemod.case_ids())
     return jsonable({"strategy": strategy, "variant": variant, "best": best_strategy(),
                      "cases": [_case(i) for i in casemod.case_ids()],
-                     "results": [r for r in rows if r["case"] in known]})
+                     "results": [complexity.attach(r) for r in rows if r["case"] in known]})
 
 
 def progress(recent: int | None = None) -> dict:
@@ -202,6 +203,7 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     strats = [s for s in listing if not strategy_filter or s["name"] in strategy_filter]
     sh = score.score_hash()
     have = {(r["case"], r["variant"], r["strategy"]): r for r in store.latest()}
+    cx = complexity.for_results(list(have.values()))
     cs = [casemod.load(i) for i in casemod.case_ids()]
     cells, by_tag, totals = [], {}, {}
     for c in cs:
@@ -209,7 +211,8 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
             for s in strats:
                 row = have.get((c["id"], v["name"], s["name"]))
                 stale = store.staleness(row, c["hash"], s["hash"], sh) if s["available"] else None
-                cell = {"case": c["id"], "variant": v["name"], "strategy": s["name"], "stale": stale, **flatten(row)}
+                cell = {"case": c["id"], "variant": v["name"], "strategy": s["name"], "stale": stale, **flatten(row),
+                        **complexity.cell(row, cx.get(row["id"]) if row else None)}
                 cells.append(cell)
                 t = totals.setdefault(s["name"], {**{k: 0 for k in STATUSES}, "missing": 0, "stale": 0, "total": 0, "seconds": 0.0})
                 t["total"] += 1

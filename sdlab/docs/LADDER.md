@@ -336,6 +336,46 @@ outside inflows. It is reported on the run discovery saw and on the fresh run. E
 moments were graded. It is a diagnostic next to the equations. A pass usually behaves well, but good
 behaviour does not make a pass.
 
+## Complexity (`sdlab/sdlab/ladder/complexity.py`)
+
+How much more complicated a found model is than the truth. A noisy strategy can add flows, pieces
+and terms that the scorer lets through (too small to be spurious, or in a run that fails anyway); a
+simpler, slightly less correct model may be preferable. One count, applied identically to the true
+model and to the found one:
+
+**complexity = flows + numbers**, where the numbers are what it takes to write each flow's rate over
+the run:
+
+| part | counts |
+|---|---|
+| flows | 1 per flow (a found hidden stock written as one `via` flow is 2: into it and out of it) |
+| terms | the rate's numbers in its first piece: constant 1, proportional 1, gap 2 (goal, time), linear 1 per stock read + 1 for a non-zero constant (zero terms are not written), available 0; a `via` delay 1 |
+| pieces | for a rate that changes over the run (a found flow's outside inflow pieces or `byTime` segments; the truth's schedule), the numbers of every piece after the first; consecutive equal pieces are one. A found inflow in 9 pieces is 9 numbers |
+| other | effects (linear 3: normal, min, max; table 2 per point), 1 per co-flow use, 1 for a ratio other than 1, 1 per stock that is not measured (hidden or inferred) |
+
+The truth is counted **on the run** (its schedule laid out over steps 2..N, where found pieces
+start), as a found model would have to write it: a found model that writes the true equations
+counts exactly as much (extra 0). So a schedule counts once per change in the run: 020 is 8 on the
+short runs and 25 on the long ones, and the daily cycle (021) 43 and 255. Examples: 003 (chain of
+two) 6, 011 (goal gap) 7, 015 (hidden stock) 9, 016 (co-flow) 11, 017 (linear effect) 15.
+
+Per result: **extra** = found - true, broken out by part (flows, terms, pieces, other), and
+**ratio** = found / true. Not counted for an error or timeout (nothing found).
+
+The **Occam score** of a result trades accuracy against excess complexity, the way an information
+criterion charges for parameters:
+
+    occam = max(0, fit - max(0, extra) / true)
+
+where fit is 1 for a pass or an equivalent model, else the share of true numbers right (right / of),
+and 0 for an error or timeout. Every number beyond the truth costs as much, relative to the truth's
+size, as a true number got wrong; a model simpler than the truth is not rewarded for it (its fit
+already pays); a model twice as complicated as the truth scores 0 however right it is.
+
+Complexity is computed from the stored found flows when they are read (no re-run, and the scorer's
+hash does not change): the summary counts each stored result once and keeps the count by result
+id, so only new results are counted when it is recomputed.
+
 ## Reading the matrix
 
 ```
@@ -379,13 +419,16 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `board(strategy, variant?)` | `{strategy, variant, best, cases, results}`: every case and one strategy's latest results (found flows included) in a variant, or all four |
 | `best_strategy()` | the available strategy with the highest pass rate |
 | `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
-| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash}` |
+| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other]}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts}, score_hash}` |
 
 A result is `{id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status,
 seconds, error, scores}`. `scores` holds:
 
 - the equation scores: `status, recall, precision, right, of, parts [{key, kind, found, true, found_value, ok, error, se}], spurious, negligible, windows, tolerance, notes`;
 - `behaviour: {in_sample, fresh: {"20", "100": {skill, ci, moved}}}`.
+
+A result read with its found flows (`result`, `result_by_id`, `board`) also has `complexity: {true,
+found, extra, ratio, by: {flows, terms, pieces, other}}` (None for an error or timeout).
 
 The server serves these endpoints, read only:
 
@@ -428,7 +471,12 @@ anything else is a 404 (422 for an id that is not a number). No path comes from 
   data in any variant.
 
 The **leaderboard** (`/ladder/leaderboard`, 🏆 from the ladder and research pages) ranks every
-strategy by pass rate, recall, precision and skill, sortable, with variant and level filters.
+strategy by pass rate, recall, precision and skill, sortable, with variant and level filters. It
+also shows each strategy's **Occam score** (mean over all runs; not run, error and timeout count 0),
+mean **extra** complexity (over the runs that found a model; hover for the mean true and found and
+the extra by part) and **× truth** (the geometric mean of found / true), and can rank by the Occam
+score or by least extra complexity (Rank by, or click a column). The Now page and `sdlab-ladder
+show` give each result's true and found complexity and where the extra comes from.
 
 In the **editor**, every case is also a read-only **basic model** (`ladder-<case>`, listed first in
 the model picker; SPEC.md 4.14): its true model, laid out the same way, playing back the case's
@@ -445,9 +493,10 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Cases | `sdlab/sdlab/ladder/cases/*.yaml`; the YAML format in `caseformat.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors) |
+| Complexity | `complexity.py` (true and found complexity, extra, the Occam score; cached by result id) |
 | Strategies | `catalog.py` (listing, hashes, availability) |
 | Store | `store.py` (`results.sqlite`: results with history, runs and progress) |
 | Running | `runner.py` (what is stale, the process pool, timeouts), `cli.py` |
 | Read API | `api.py`, endpoints in `routes.py` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_caseformat.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/ladder_compare.test.mjs` |
