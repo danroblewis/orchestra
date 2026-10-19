@@ -83,4 +83,4 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
 
   It recommends keeping shared_noise, mass_balance, periodic_inflows and sindy. latent_eras, starved_coflows and recession should wait until a rung tests their mechanism.
 
-  Parking keeps the code and history but stops the watcher spending time on them. I have not done it.
+  Parking alone saves no time: the watcher runs `everything`, parked included, per your rule that untested means failed. Retiring would mean a separate `retired` list the watcher skips, with code and history kept. I have not done it.
