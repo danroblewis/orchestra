@@ -161,6 +161,13 @@ def _periodic(f: dict, ctx: Context, P: int, phase: int, own: bool) -> dict:
     return g
 
 
+def _number(f: dict) -> float:
+    """The mean number on the one level a flow reads (over its eras)."""
+    rates = [g["rate"] for g in f["byTime"]] if f.get("byTime") else [f.get("rate") or {}]
+    ks = [float(r.get("k") or 0) if r.get("form") == "proportional" else float((r.get("terms") or [{}])[0].get("k") or 0) for r in rates]
+    return float(np.mean(ks)) if ks else 0.0
+
+
 def _fusions(flows: list[dict], ctx: Context, spans):
     """(the other flows, the move, why) for each drain of x beside a link into y that reads x."""
     ids = set(ctx.ids)
@@ -171,7 +178,12 @@ def _fusions(flows: list[dict], ctx: Context, spans):
         for j, k in enumerate(flows):
             if (k.get("from") is None and k.get("to") in ids and k.get("to") != x and refittable(k) and not k.get("inflow")
                     and _reads_only(k, constant=True) == x and not k.get("uses")):
+                kd, kl = _number(d), _number(k)
+                if not (kd > 0 and kl > 0 and 1 / 1.5 <= kd / kl <= 1.5):
+                    continue                     # a move moves what it takes: the two numbers agree
                 rest = [f for q, f in enumerate(flows) if q not in (i, j)]
+                if any(f.get("from") == x and f.get("to") == k["to"] for f in rest):
+                    continue                     # beside the move itself: dropped as a pair instead
                 yield rest, _as_move(d, k, spans), f" for a drain of {x} and a link into {k['to']}"
 
 
@@ -272,6 +284,16 @@ def candidates(flows: list[dict], ctx: Context, spans: list[dict] | None):
                 link = {"from": None, "to": x, "ratio": 1, "rate": {"form": "linear", "c": 0.0, "terms": [{"stock": z, "k": 0.0}]}, "free_c": True}
                 rest = [f for q, f in enumerate(flows) if q not in (i, j)]
                 yield f"an inflow into {x} falling with {z} for its drain on {z}", rest + [link], False
+    # a drain of x and a link into y reading x beside the move x -> y: the pair dropped (the move
+    # takes their share)
+    for i, d in enumerate(flows):
+        x = d.get("from")
+        if x not in ids or d.get("to") is not None or not refittable(d) or d.get("inflow") or _reads_only(d) != x:
+            continue
+        for j, k in enumerate(flows):
+            if (j != i and k.get("from") is None and k.get("to") in ids and _reads_only(k, constant=True) == x and refittable(k)
+                    and any(f.get("from") == x and f.get("to") == k["to"] for f in flows)):
+                yield f"drop the drain of {x} and the link into {k['to']} beside the move", [f for q, f in enumerate(flows) if q not in (i, j)], False
     # a drain of x beside a link into y that reads x: the move x -> y (the same levels, one flow fewer)
     for rest, m, why in _fusions(flows, ctx, spans):
         yield f"move {m['from']} -> {m['to']}{why}", rest + [m], False
@@ -305,7 +327,7 @@ def candidates(flows: list[dict], ctx: Context, spans: list[dict] | None):
                 continue
             yield f"a constant on {label}", rest[:i] + [g] + rest[i:], True
             for j, h in enumerate(flows):
-                if j != i and (_constant_outside(h, f["from"]) or _constant_outside(h, f["to"])):
+                if j != i and h.get("to") is None and (_constant_outside(h, f["from"]) or _constant_outside(h, f["to"])):
                     others = [x for k, x in enumerate(flows) if k not in (i, j)]
                     yield f"a constant on {label} for {h.get('from') or 'outside'} -> {h.get('to') or 'outside'}", others + [g], False
 
@@ -433,7 +455,7 @@ def split_pieces(flows: list[dict], ctx: Context, floor: np.ndarray, flow_price:
             if path[-1][0] > stop + 30 * log_t:        # far past the best point: no way back down
                 break
         # the best point on the path (each cut priced 2 log T, and `margin` x log T more beyond the start)
-        top = min(path, key=lambda x: x[0] + (margin * log_t * (len(x[1]) - n0) / 2 if len(x[1]) > n0 else 0))
+        top = min(path, key=lambda x: x[0] + (margin * log_t * (len(x[1]) - n0) if len(x[1]) > n0 else 0))
         pieces = top[1]
         if len(pieces) > n0:
             out[i] = {**f, "inflow": [{"from": a, "to": b, "value": float(r[ix].mean()) if len(ix) else 0.0} for a, b, ix in pieces]}
@@ -478,7 +500,7 @@ def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, w
     first = refit(flows, ctx, scale)
     s1 = bic(first, ctx, floor, flow_price)
     steps = list(taken)
-    if s1 < score:
+    if s1 < score - tie * math.log(ctx.T):
         flows, score = first, s1
         steps.append({"step": "numbers refitted jointly", "bic": round(score, 2)})
     flows, score = _pieces(flows, ctx, floor, flow_price, score, margin, scale, steps)
