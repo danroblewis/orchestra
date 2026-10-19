@@ -22,6 +22,7 @@ KNOWN = {
     "lna_pulses": {"impulses", "lna"},
     "lna_stack": {"gap_prior", "impulses", "lna", "lna_levels", "lna_products", "lna_pulses"},
     "mass_balance_all": {"mass_balance"},
+    "structures": {"combined", "lna_stack"},
 }
 
 
