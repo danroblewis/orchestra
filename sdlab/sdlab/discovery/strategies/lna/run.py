@@ -47,11 +47,23 @@ def screen(prev: np.ndarray, dy: np.ndarray, z: float = 2.5) -> list[dict[int, f
     return out
 
 
-def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05) -> list[int]:
+def misfit_of(cur, d: Data) -> float:
+    """The largest share, over the stocks, of variance beyond counting noise in the counting variance
+    the flows give (0 where the atoms describe the system)."""
+    Z = features(cur.atoms, d.prev, d.cfg)
+    counting = variances(cur.atoms, cur.theta, Z, d.dy.shape[0]).mean(axis=1) + d.delta
+    return float(np.max(np.where(d.free, cur.tau, 0.0) / counting))
+
+
+def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05, most: int = 4) -> list[int]:
     """Each era label's own numbers only if it holds long enough to measure them; the short ones
-    share one set (a label held for a few steps would let any reading fit those steps)."""
+    share one set (a label held for a few steps would let any reading fit those steps). At most
+    `most` sets in all (the longest-held labels keep their own; every atom is split per set, so
+    many sets make the search slow)."""
     n = np.bincount(cfg, minlength=L)
     long = [c for c in range(L) if n[c] >= max(least, share * len(cfg))]
+    if len(long) > most:
+        long = sorted(sorted(long, key=lambda c: -n[c])[: most - 1])
     out = [long.index(c) if c in long else len(long) for c in range(L)]
     return out
 
@@ -67,6 +79,8 @@ def buckets(cfg: np.ndarray, L: int, least: int = 50, share: float = 0.05) -> li
 #   flows(flows, cur, d, ctx) -> flows   the flows written from the atoms (a post-fit rewrite)
 HOOKS = ("data", "atoms", "before_search", "after_search", "flows")
 
+MAX_MISFIT = 2.0     # past it (with every atom fitted), the matrix's answer is returned
+MAX_STEPS = 3000     # longer runs are read at a stride (the ladder's runs are at most 2000 steps)
 BUDGET = 40.0        # seconds for the search; past it, the matrix's answer is returned (opts "lna_budget")
 
 SCRATCH = 4          # up to this many stocks, every atom between them is tried
@@ -132,7 +146,15 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
     ctx["inputs"] = [k for k, _ in inputs]
     if "data" in hooks:
         prev, dy = hooks["data"](prev, dy, ctx)
-    d = Data(prev, dy, np.asarray(bucket)[conf[1]] if conf else None)
+    cfg = np.asarray(bucket)[conf[1]] if conf else None
+    # a long run: every k-th step only (each step's change given the levels at its start is its own
+    # observation, so a stride keeps the whole span and every era), to stay within the budget
+    keep = np.arange(prev.shape[1])
+    if prev.shape[1] > MAX_STEPS:
+        keep = keep[:: math.ceil(prev.shape[1] / MAX_STEPS)]
+        prev, dy, cfg = prev[:, keep], dy[:, keep], (cfg[keep] if cfg is not None else None)
+    ctx["keep"] = keep
+    d = Data(prev, dy, cfg)
     d.deadline = time.monotonic() + float(opts.get("lna_budget", BUDGET))
     ctx["d"] = d
     if S <= SCRATCH:
@@ -160,6 +182,11 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
     cur = fit(atoms, d)
     d.free = extra_variance(cur, d)
     full = fit(atoms, d, cur.theta, tau=cur.tau)
+    # even every atom leaves the changes spreading far beyond counting noise: the system has what
+    # the atoms cannot express (effects, caps, hidden stocks, bursts), and the likelihood would buy
+    # it with pieces and spurious flows; the matrix's answer stands
+    if misfit_of(full, d) > MAX_MISFIT:
+        return None
     if "before_search" in hooks:
         full = hooks["before_search"](full, d, ctx)
     # changes in the outside inflows first, beside every flow (so that levels do not stand in for
@@ -174,10 +201,8 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
         cur = hooks["after_search"](cur, d, ctx)
     # how far the changes' spread exceeds what counting noise gives the chosen flows (each stock's
     # extra variance over its counting variance): near 0 where the atoms describe the system
-    Z = features(cur.atoms, d.prev, d.cfg)
-    counting = variances(cur.atoms, cur.theta, Z, S).mean(axis=1) + d.delta
-    misfit = float(np.max(np.where(d.free, cur.tau, 0.0) / counting))
-    at = lambda k: t[k + 1]  # noqa: E731
+    misfit = misfit_of(cur, d)
+    at = lambda k: t[keep[k] + 1]  # noqa: E731
     ctx["at"] = at
     flows = to_flows(cur.atoms, cur.theta, ctx.get("names") or ids, d.prev, at, *((conf[0], conf[2], bucket) if conf else ()))
     for f in flows:
@@ -186,6 +211,6 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
     if "flows" in hooks:
         flows = hooks["flows"](flows, cur, d, ctx)
     return {**{k: base[k] for k in ("candidates", "tried", "chosen") if k in base},
-            "flows": flows, "method": "lna", "dispersion": phi, "misfit": misfit, "extra_variance": {ids[k]: float(cur.tau[k]) for k in range(S) if d.free[k]}, "nll": cur.nll, "windows": len(t) - 1, "window": 1,
+            "flows": flows, "method": "lna", "dispersion": phi, "misfit": misfit, "extra_variance": {ids[k]: float(cur.tau[k]) for k in range(S) if d.free[k]}, "nll": cur.nll, "windows": len(t) - 1, "stride": int(keep[1] - keep[0]) if len(keep) > 1 else 1, "window": 1,
             "atoms": [{"kind": a.kind, "src": a.src, "dst": a.dst, "driver": a.driver, "uses": list(a.uses), "theta": float(th)} for a, th in zip(cur.atoms, cur.theta)]}
 
