@@ -84,3 +84,41 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
   It recommends keeping shared_noise, mass_balance, periodic_inflows and sindy. latent_eras, starved_coflows and recession should wait until a rung tests their mechanism.
 
   Parking alone saves no time: the watcher runs `everything`, parked included, per your rule that untested means failed. Retiring would mean a separate `retired` list the watcher skips, with code and history kept. I have not done it.
+
+## 2026-10-18 19:45 (hourly cycle)
+
+**Health**
+- **Server:** summary 0.8 s warm; one listener on :8020.
+- **Watcher:** running; its latest pass planned 35,198 items (17,072 to run, 18,126 to re-score), after the engine change altered every strategy's hash.
+- **Tests:** `tests/test_ladder*.py` 910 passed, 15 skipped. Load average about 90.
+
+**Finished since the last entry**
+- **Engine features** (1baf38e, 9646bf2, cb97c26), queue item 0. They are additive: 2,201 output hashes are identical.
+
+**Started**
+- **Queue item 2:** canonical models, plus a PySD converter and a coverage report.
+- **Running agents:** links/lna, combined, realistic, noise variants and canonical. The effects and independence agents are only waiting on their benches. No new start, at 7 agents.
+
+**Leaderboard, Tests** (868 cells, which now include the new cases; pass over the cells each strategy ran):
+
+| strategy | pass | ran | commits |
+|---|---|---|---|
+| lna_stack | 78.5% (463) | 590 of 868 | 2bbc025 ×418, 339737f ×172 |
+| combined | 77.5% (673) | 868 of 868 | 444ee50 ×633, 147874e ×194 |
+| gap_prior | 76.0% (547) | 720 | 2bbc025 ×472, pre-provenance ×164 |
+| lna_levels | 75.0% (540) | 720 | 2bbc025 ×408, 339737f ×182 |
+| lna_loops | 74.1% (437) | 590 | 2bbc025 ×350, 90c741d ×122 |
+
+**Realistic** (31 sd-* examples × 2 lengths = 62 runs; mean in-sample skill@20, each run clipped at -100%)
+- effect_hats 49.9% (54 scored, 8 timeouts).
+- censored 41.3% (61 scored).
+- matrix 29.6% (62 scored), the same as the old bench's v2.1. This confirms the realistic cases reproduce the bench.
+- combined 21.9% (62 scored).
+- lna 21.7% (10 scored, 6 timeouts).
+- earned_pieces 27.6% (15 scored).
+- lna_stack, gap_prior and common_cause mostly time out at 600 s.
+
+**Problems**
+- **combined does worse than matrix on realistic models,** although it is near the top on tests: its judge favours models that pass tests but behave worse. The combined agent was asked to find out why and to guard against it.
+- **The lna family times out on 10-20-stock models.** The lna agent was asked for a budget with fallback.
+- **Test leaders and realistic leaders differ.** effect_hats and censored lead on realistic, and the lna family leads on tests. Strategies should be judged on both from now on.
