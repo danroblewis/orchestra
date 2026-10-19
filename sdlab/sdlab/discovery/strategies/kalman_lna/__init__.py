@@ -15,9 +15,10 @@ Which reading the data need:
   (gross errors left out, a reporting delay read); a measurement error that gains LR_NOISE BIC
   prices sends the data to the filter (not where a stock sits at zero: floors are outside the
   atoms, and a measurement error would stand in for them);
-- otherwise the base strategy, on the levels with the values the filter left out as gross errors
-  replaced by their neighbours' mean; its answer stands unless the filter's search finds a
-  reporting delay, or a scale where the base reads a link beside a move into the same stock.
+- gross errors the filter sees (a standardised innovation beyond 10, where counting noise and a
+  misfit of the atoms stay below 6): the filter, which leaves them out;
+- otherwise the base strategy's answer, unless the filter's search finds a reporting delay
+  (injections), or a scale where the base reads a link beside a move into the same stock.
 
 The base is `combined` (opts "kalman_base"). Where the filter is chosen and fails or runs out of
 time, the base's answer is returned. Beyond SMALL stocks, with every step reported, the data go to
@@ -55,21 +56,6 @@ def _levels(stocks: list[dict], run: dict) -> tuple[np.ndarray, np.ndarray]:
     t = np.asarray(run["t"], dtype=float)
     Y = np.array([np.asarray(run["levels"].get(i, [np.nan] * len(t)), dtype=float) for i in ids]).T
     return t, Y
-
-
-def cleaned(stocks: list[dict], run: dict, opts: dict, mask: np.ndarray) -> tuple[dict, int]:
-    """The run with each value the filter left out as a gross error (mask False) replaced by the
-    mean of its neighbours, and how many."""
-    t, Y = _levels(stocks, run)
-    bad = np.isfinite(Y) & ~mask
-    bad[0] = bad[-1] = False
-    if not bad.any():
-        return run, 0
-    Y2 = Y.copy()
-    for i, s in zip(*np.nonzero(bad)):
-        Y2[i, s] = 0.5 * (Y[i - 1, s] + Y[i + 1, s])
-    ids = [s["id"] for s in stocks]
-    return {**run, "levels": {i: Y2[:, k].tolist() for k, i in enumerate(ids)}}, int(bad.sum())
 
 
 def scale_pattern(flows: list[dict]) -> bool:
@@ -129,15 +115,12 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         except FAILURES as e:
             ses.trace.append(f"failed: {type(e).__name__}: {e}")
             prepared = False
-    if prepared and (uneven or noisy(info["evidence"])):
-        got = kalman("uneven" if uneven else "meas")
+    gross = int(ses.gross.sum()) if prepared else 0
+    if prepared and (uneven or noisy(info["evidence"]) or gross):
+        got = kalman("uneven" if uneven else "meas" if noisy(info["evidence"]) else "outliers")
         if got is not None:
             return got
-    # gross errors replaced only where the filter has read the run (beyond SMALL stocks the data go to
-    # the base as they are)
-    clean, replaced = cleaned(stocks, run, opts, ses.pr.lay.mask) if prepared and not uneven else (run, 0)
-    r = base(stocks, clean, opts)
-    info.update(replaced=replaced)
+    r = base(stocks, run, opts)
     if prepared and not uneven:
         scaled = scale_pattern(r.get("flows") or [])
         if ses.lag or scaled:

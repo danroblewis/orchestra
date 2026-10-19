@@ -18,6 +18,7 @@ from .robust import gross_errors
 
 BUDGET = 100.0        # seconds for the whole search (opts "kalman_budget"); past it, None
 MAX_LAG = 8           # reporting delays tried where injections or eras pin one
+Z_GROSS = 10.0       # beyond this, a value is a gross error for the base too (it gets its neighbours' mean)
 Z_OUT = 5.0           # a reported value whose standardised innovation passes this is a gross error
 
 
@@ -179,9 +180,11 @@ class Session:
                 pr = best_lag[0]
                 cur = self.first_fit(pr)
         # gross errors the filter sees (each value's standardised innovation)
+        self.gross = np.zeros_like(self.seen)
         for _ in range(3):
-            z = pr.smoothed(cur)[2]
-            bad = np.nan_to_num(np.abs(z)) > Z_OUT
+            z = np.nan_to_num(np.abs(pr.smoothed(cur)[2]))
+            self.gross |= self.seen & (z > Z_GROSS)
+            bad = pr.lay.mask & (z > Z_OUT)
             if not bad.any():
                 break
             pr.lay.mask &= ~bad

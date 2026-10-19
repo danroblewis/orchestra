@@ -471,7 +471,7 @@ def nll_grad(theta, tau, alpha, rho2, scale, V, drv, pool, sign, act, zref, inj,
 def smooth(theta, tau, alpha, rho2, scale, V, drv, pool, sign, act, zref, inj, eps,
            obs_at, Y, mask, meas, span, reset, yref2, m0rep, P0rep):
     """The smoothed state (stocks only, true units) at every grid time, its variance, the
-    standardised innovation of every reported value (nan where masked), and the smoothed mean of
+    standardised innovation of every reported value (a value left out is not used, but is scored), and the smoothed mean of
     each step's process noise w_k with its smoothed variance (stocks x grid)."""
     K = obs_at.shape[0]
     F, n = V.shape
@@ -544,6 +544,14 @@ def smooth(theta, tau, alpha, rho2, scale, V, drv, pool, sign, act, zref, inj, e
         Pp[k] = Pm
         i_obs = obs_at[k]
         if i_obs >= 0:
+            # every reported value's standardised innovation, those left out too (not used to update)
+            for r in range(nm):
+                j = meas[r]
+                hcol = n + j if aug else j
+                hval = scale[r] / span if aug else scale[r]
+                var = hval * hval * Pm[hcol, hcol] + 1.0 / 12.0 + alpha + rho2 * yref2[i_obs, r]
+                if var > 0.0:
+                    z[i_obs, r] = (Y[i_obs, r] - hval * m[hcol]) / math.sqrt(var)
             rows = np.zeros(nm, np.int64)
             mo = 0
             for r in range(nm):
@@ -569,8 +577,6 @@ def smooth(theta, tau, alpha, rho2, scale, V, drv, pool, sign, act, zref, inj, e
                     Sk[a_, a_] += 1.0 / 12.0 + alpha + rho2 * yref2[i_obs, r]
                 W, ld = _inv_sym(Sk, mo)
                 if math.isfinite(ld):
-                    for a_ in range(mo):
-                        z[i_obs, rows[a_]] = e[a_] / math.sqrt(Sk[a_, a_])
                     Kg = PH @ W
                     m = m + Kg @ e
                     Pm = Pm - Kg @ Sk @ Kg.T
