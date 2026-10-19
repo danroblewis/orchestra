@@ -82,7 +82,15 @@ for `combined` on the test cases).
 
    Tag `physics`; keep it out of the Tests pass rate (its own leaderboard view, like Realistic).
    Mass-spring and control loops cover the automotive/aerospace idea.
-5. **Real data with professional models.** After `case-study-sources.md` lands, ingest its top
+5. **Real data with professional models.** `case-study-sources.md` has landed (a8ccdc8). Start with
+   its recommended steps:
+   - a PySD converter for SDXorg/test-models (shared with item 2);
+   - a BLS labour-force loader, which has measured flows to score against;
+   - gauseR and the boarding-school flu as real cases;
+   - technology adoption as a family of Bass cases.
+
+   Steps needing an engine change (measured input series, `dt`, stock ceilings) wait for the
+   user's answer (journal, "Needs you"). Originally: ingest its top
    3-5 recommended sources as `real` cases. The true equations are only the modeller's, so the
    scoring is held-out prediction plus a structure comparison with the published model. Keep
    it in its own leaderboard view.
@@ -102,6 +110,8 @@ for `combined` on the test cases).
 ## Started
 
 - 2026-10-18: realistic examples run (7 leaders × 31 examples × 2 lengths, `~/.sdlab/realistic-run.log`).
-- 2026-10-18: survey of case studies with data (`docs/research/case-study-sources.md`).
+
 
 ## Done
+
+- 2026-10-18: survey of case studies with data (`docs/research/case-study-sources.md`, a8ccdc8).

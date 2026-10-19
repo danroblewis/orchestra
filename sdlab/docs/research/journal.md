@@ -45,3 +45,13 @@ For reference: lna 73.2% (527/720), mostly from before provenance.
 **Needs you**
 - **Should "equivalent" count as a pass** on cells the analysis marks unidentifiable (170 cells, mostly noise-free link↔move and constant+drain↔gap)? It is currently shown separately and not counted.
 - **Retire candidates:** explanations.yaml marks change_price, held_out, gated, gated_no_high, piece_proof and sindy as "retire-candidate" from their old-bench verdicts. held_out is strong on the ladder, and you asked not to dismiss sindy. Wait for revisit.md before retiring anything.
+
+## 2026-10-18 19:30 (note)
+
+- **Finished:** the strategy behaviour page (6f98957, e37f84a) at `/ladder/strategy?name=<strategy>`, and the case-study survey (a8ccdc8).
+- **Fixed on the editor:** the user found the live estimate misleading. The server's estimate on 003 was correct (in 19.6, 0.49·A, 0.199·B). The canvas labelled found flows with per-step amounts and drew found outside flows under the toolbar. The live-runs agent was asked to fix the labels, the placement, a legend, and a per-flow diff.
+
+**Needs you (from the survey)**
+- **Engine:** may the case format and engine gain measured input series and a smaller simulation step (`dt`)? Without them, only the top eight survey sources are usable.
+- **Placement:** should real-data cases go on the ladder, or on a separate board (the survey suggests separate, scored by held-out prediction and agreement)?
+- **Licensing:** several sources have no licence or are GPL. May their data be downloaded at ingest time rather than committed?
