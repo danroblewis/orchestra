@@ -9,8 +9,8 @@ prefer it (docs/research/structures.md).
    a construction or transmission delay, a hidden rework stock). Outside inflows are floored at 0 as
    the engine floors them.
 2. combined (unchanged, through its identify()): the base answer.
-   combined runs first, so it runs exactly as it does alone; the search gets at most a third of
-   the time the caller's timer leaves after it.
+   combined runs first, so it runs exactly as it does alone; the search gets at most 60% of
+   the time the caller's timer leaves after it, less 10 s.
 3. The search's model replaces the base only when combined's own judge prefers it (its one-step
    likelihood with a BIC price on every number, judge.py) AND it behaves at least as well over many
    steps on the run (combined's behaviour judge, within `slack`) with no more numbers than the
@@ -18,8 +18,8 @@ prefer it (docs/research/structures.md).
    returned as it is. Chains under MIN_DELAY (3) steps, and a chain from A to B beside a move or
    link from A to B, are never offered (measurement noise makes them fit).
 
-opts (also SDLAB_STRUCTURES, JSON): "seconds" (the search's cap, default 60, never more than a
-third of what the caller's timer leaves after combined), "slack" (relative, default 0.02), "base" ("combined" or
+opts (also SDLAB_STRUCTURES, JSON): "seconds" (the search's cap, default 90, never more than
+60% of what the caller's timer leaves after combined, less 10 s for the judge), "slack" (relative, default 0.02), "base" ("combined" or
 "lna_stack"), "alone" (return the search's model, for diagnosis), "chains", "products".
 """
 
@@ -35,7 +35,7 @@ from ._vendored.combined.deadline import Overrun, deadline, outer_left
 from ._vendored.lna_stack import identify as lna_stack
 from .discover import discover
 
-DEFAULTS = {"seconds": 60.0, "slack": 0.02, "base": "combined", "alone": False, "chains": True, "products": True}
+DEFAULTS = {"seconds": 90.0, "slack": 0.02, "base": "combined", "alone": False, "chains": True, "products": True}
 CLEARLY = 0.8        # a search model with more numbers than the base must behave this much better
 BASES = {"combined": combined, "lna_stack": lna_stack}
 
@@ -51,7 +51,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return {**r, "canon": {k: r.get(k) for k in ("terms", "trace", "bic", "seconds")}}
     base = BASES[cfg["base"]](stocks, run, opts)          # first, so the base runs exactly as it does alone
     left = outer_left()
-    cap = float(cfg["seconds"]) if left is None else min(float(cfg["seconds"]), left / 3)
+    cap = float(cfg["seconds"]) if left is None else min(float(cfg["seconds"]), 0.6 * left - 10)
     began = time.perf_counter()
     mine, why = None, None
     if opts.get("eras") and len(opts["eras"]) > 1:

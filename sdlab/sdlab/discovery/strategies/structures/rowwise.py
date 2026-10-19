@@ -178,7 +178,17 @@ def start(rows: Rows, dy: np.ndarray, var: np.ndarray, counts: bool, eps: float,
     return translate(B, feats, S, unit, final)
 
 
-def translate(B: list[dict[int, float]], feats: list[Feature], S: int, unit: list[str], final: set[int]) -> list[Term]:
+def starts(rows: Rows, dy: np.ndarray, var: np.ndarray, counts: bool, eps: float, S: int, m: int, unit: list[str], final: set[int],
+           products: bool = True) -> list[list[Term]]:
+    """The rows read twice: a product's loss and gain paired into a move only when they match (a
+    predator's catch and its births differ), and paired at the smaller whatever they are (noise
+    makes a true move's two rows differ). The search runs from both."""
+    feats, B, _ = regress(rows, dy, var, counts, eps, S, m, products, None, final)
+    a, b = translate(B, feats, S, unit, final), translate(B, feats, S, unit, final, whole=False)
+    return [a] if a == b else [a, b]
+
+
+def translate(B: list[dict[int, float]], feats: list[Feature], S: int, unit: list[str], final: set[int], whole: bool = True) -> list[Term]:
     """The rows' numbers read as terms (see the module's docstring)."""
     out: list[Term] = []
     pooled = {s for s in range(S) for k, v in B[s].items() if v > 0 and not feats[k].chain and (not feats[k].x or feats[k].x[0] >= S) and len(feats[k].x) < 2}
@@ -215,7 +225,7 @@ def translate(B: list[dict[int, float]], feats: list[Feature], S: int, unit: lis
                     break
                 if b == a or unit[a] != unit[b] or pos[b] <= 0:
                     continue
-                if len(f.x) == 2 and abs(pos[b] - neg[a]) > 0.05 * max(pos[b], neg[a]):
+                if whole and len(f.x) == 2 and abs(pos[b] - neg[a]) > 0.05 * max(pos[b], neg[a]):
                     continue           # at a product only a whole move (fit.conventions; 127's predation and births)
                 out.append(Term("move", src=a, dst=b, x=f.x))
                 q = min(neg[a], pos[b])

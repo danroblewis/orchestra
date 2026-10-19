@@ -254,7 +254,7 @@ def search(p: Problem, lib: list[Term], start: list[Term] | None = None, steps: 
                 best = g
         if best is None or best.bic >= cur.bic - 1e-9:
             best = None
-            for t in [u for u in cur.terms if u.kind != "init"]:
+            for t in [u for u in cur.terms if u.kind != "init" and u.span is None]:
                 for a in aliases(t, lib):
                     if a in cur.terms:
                         continue

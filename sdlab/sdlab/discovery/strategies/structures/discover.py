@@ -16,6 +16,8 @@ from .terms import Rows, Term, chain_terms, library
 from .write import to_flows
 
 ORDERS = (1, 2, 3, 4)
+MAX_PIECES = 30          # the base's inflow pieces are offered only up to this many (more: the base fits pieces to
+                         # what it misses, and each costs a fit in every backward pass: 145-161 pieces timed out)
 CELLS = 3e7              # stocks x steps x terms the screening may hold (about 240 MB)
 MIN_DELAY = 3.0          # a shorter chain is not offered: with measurement noise (or a lag) on the levels, the changes'
                          # serial correlation is fitted by a chain of 1-2 steps (082 and 087 meas: chains of 1.2-2 steps
@@ -95,16 +97,19 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
         lib = [t for t in lib if t.kind == "move"]
         trace["closed"] = True
     try:
-        first = rowwise.start(rows, p.dy, p.var, p.counts, p.eps, S, m, unit, final, products)
-        if shut:
-            first = [t for t in first if t.kind == "move"]
-        p.check()
-        base = search(p, lib, first)
+        base = None
+        for first in rowwise.starts(rows, p.dy, p.var, p.counts, p.eps, S, m, unit, final, products):
+            if shut:
+                first = [t for t in first if t.kind == "move"]
+            p.check()
+            g = search(p, lib, first)
+            if base is None or g.bic < base.bic:
+                base = g
         trace["first_bic"] = base.bic
         if not shut:
             base = gap_stage(p, lib, base, S, m)
         pieces = {} if shut else base_pieces(base_flows, list(data.ids), list(run["t"]))
-        if pieces:
+        if pieces and sum(len(v) for v in pieces.values()) <= MAX_PIECES:
             pterms = [Term("in", dst=b, span=sp) for b, sps in pieces.items() for sp in sps]
             g = search(p, lib + pterms, [t for t in base.terms if not (t.kind == "in" and t.dst in pieces)] + pterms)
             trace["pieces"] = {"bic": round(g.bic, 3), "without": round(base.bic, 3), "n": len(pterms)}
@@ -223,7 +228,7 @@ def into_chain(p: Problem, cur):
         chains = {t.chain_key(): t for t in cur.terms if t.kind == "chain" and t.src is None}
         done = False
         for t in cur.terms:
-            if not t.pooled or t.kind == "goal":
+            if not t.pooled or t.kind == "goal" or t.span is not None:
                 continue
             ch = next((c for k, c in chains.items() if k[1] == t.dst), None)
             if ch is None:
