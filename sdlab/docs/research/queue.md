@@ -124,6 +124,15 @@ for `combined` on the test cases).
      rates (the HPA), a flow reading another flow's amount (a restart counter equal to the OOM
      kills), a ceiling that holds at `max` at dt 1 (today `max / (1 + k)`), and measured inputs in
      the editor's Discover request (the ladder passes them; the page does not).
+   - from the distilled cases (`docs/LADDER.md`, "Distilled cases", 2026-10-19):
+     - a switch with memory (hysteresis: on below one level, off above another, held in
+       between), for the thermostat; 123 is the memoryless probe;
+     - signed states (a stock that may go negative, e.g. a spring's position and velocity), now
+       written through offsets;
+     - sqrt and power (above) for the tanks; 122 is the table probe;
+     - not the engine but the ladder: `checks.py` crashes (`StatisticsError`) on a case whose
+       longest counts run is under 20 steps, so a 12-20-sample probe cannot be written yet (120
+       uses 15 and 20).
 
    Prove additivity as item 0 did, with `tests/engine_outputs.sha256`.
 

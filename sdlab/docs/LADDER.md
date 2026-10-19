@@ -1047,6 +1047,114 @@ What they show:
 - **The boarding-school flu**: the refitted SIR forecasts the last 4 days with 97.2% skill; discovery saw 10 days and found
   nothing.
 
+## Distilled cases (120-139, tag `distilled`)
+
+The realistic, physics, canonical and real-data cases fail a lot. Those failures sat in reports,
+and the strategies had no fast, isolated test for them. Under CLAUDE.md invariant 4, each
+failure on a model whose true structure is known was traced to a mechanism, and that mechanism
+was written as the smallest standard ladder case that makes a strategy make the same mistake: one
+property per case, the four standard variants (139 has counts and meas; 120 and 136 are short by
+design). `tests:` names the mechanism and the hard case it came from. They are ordinary test
+cases, so they count in the Tests pass rate.
+
+**How they were found.** Each hard case's failing models were read with `sdlab-ladder show` and
+the store. Rows and flows of the found models were swapped for the truth's or the winner's to
+see which one costs the behaviour. Each candidate case was then run on the leaders, and kept only
+if it repeated the hard case's mistake. Cases added at 717c9d7. `sdlab-ladder check` says ok for
+all 20, and the true model passes its own scoring (`tests/test_ladder.py`).
+
+**What the data allow** (`sdlab-ladder analyse`, 19 October 2026). Most counts cells are
+achievable. The exceptions:
+
+- 122 counts-short is data-limited (p 0.41).
+- 125 is labelled unidentifiable in every variant, but the label is wrong: the analysis ignores
+  floors, and here the floor binds whenever the target drops below R. That binding separates
+  `k x desired - k x R` from a drain.
+- 131 and 132 are unidentifiable without noise, by the usual equivalences (link <-> move;
+  inflow + drain = gap).
+- 133-135 are unidentifiable without noise: the hidden stock's mirror. Their counts cells are not
+  analysed, because a hidden stock fed from outside or returning to its source is outside the
+  hidden oracle.
+- 139's meas cells are not analysed (the noise analysis takes no effects).
+
+**The leaders' results.**
+- **Command:** `sdlab-ladder run --strategies combined,kalman_lna,structures,lna,effect_hats,censored,matrix --cases 120,...,139 --jobs 3 --timeout 300`, single-threaded.
+- **When and what code:** 19 October 2026. Results are recorded at strategy commits 0b5e959,
+  a9fd1c3 and c557f15, with no uncommitted strategy code. 560 runs, no errors or timeouts.
+- **Each cell:** passes of 4, then equivalents in brackets, then the mean fresh skill@20 (each run
+  clipped at -100%).
+
+| hard-case failure (where it came from) | distilled case | combined | kalman_lna | structures | lna | effect_hats | censored | matrix | the same mistake on the small case (combined, counts-long unless named) |
+|---|---|---|---|---|---|---|---|---|---|
+| 29 real series (24 Gause cultures, the flu, 4 adoption series) under 21 samples: every strategy returns no model | 120-short-series-chain (003 at 15 and 20 samples) | 0/4 | 0/4 | 0/4 | 0/4 | 0/4 | 0/4 | 0/4 | no model at all, in every cell |
+| BLS labour flows: transition rates drift with the business cycle | 121-drifting-drain | 1/4, -70% | 1/4, -70% | 1/4, -70% | 1/4, -81% | 1/4, -100% | 0/4, -100% | 0/4, -100% | counts-long: no model from any of the seven (matrix's every fit gives error inf); noise-free: a constant drain plus 13-92 inflow pieces; the counts-short passes are a constant drain inside the per-window oracle's allowance |
+| tanks: k sqrt(H) outflow (not expressible); 108's consumption | 122-concave-drain (a sqrt-shaped table of H on its own drain) | 0/4, 99% | 0/4, 94% | 0/4, 99% | 0/4, 99% | 0/4, 99% | 0/4, 99% | 0/4, 99% | `0.069 H` plus a constant drain in 29 pieces: c + k H, as on the tanks |
+| thermostat (switch, its memory not expressible); sd-sawmill's sharpening `6 x table(sharpness)`; 108's production | 123-inflow-shut-by-own-level | 0/4, -15% | 0/4, -58% | 0/4, -15% | 0/4, 46% | 0/4, 9% | 0/4, -100% | 0/4, -38% | a constant inflow 3.8 and a faster drain 0.189 (true 0.1), sharpness' mistake |
+| 105/106 stock management: the gap reads inventory and supply line | 124-gap-over-two-stocks | 0/4, 100% | 0/4, 100% | 2/4, 100% | 0/4, 99% | 0/4, 97% | 0/4, 99% | 0/4, 96% | `50.9 - 0.13 I` with no P term (true 80 - 0.2 I - 0.2 P); structures the same on counts |
+| 106 hiring to a measured target, floored | 125-floored-gap-to-measured-target | 0/4, 99% | 0/4, 99% | 3/4, 100% | 0/4, 99% | 0/4, 99% | 0/4, 99% | 0/4, 99% | `0.12 x desired` and a drain 0.14 R: the gap's R term read as a drain |
+| SIR/SEIR infection (100, 101), Bass imitation (102), the flu | 126-product-move (S -> I at S x I) | 2/4, 50% | 2/4, 50% | 2/4, 50% | 0/4, -100% | 2/4, 50% | 0/4, -100% | 0/4, -100% | passes counts-long and none-short; counts-short and none-long fail with linear links and pieces (lna, censored, matrix fail all four, linearised) |
+| phys-lotka-volterra, Gause mixtures, Huffaker, Isle Royale: products written as linear links | 127-product-flows-predator-prey | 0/4, 77% | 0/4, 77% | 0/4, 77% | 0/4, -44% | 0/4, 84% | 0/4, -66% | 0/4, -66% | the two products merged into a move X -> Y and an outflow, both at X x table(Y), plus 20 inflow pieces |
+| sd-clinic-doses: walk-ins use doses (a co-flow on an outside inflow) | 128-coflow-on-outside-inflow | 0 (2)/4, 0% | 0 (2)/4, 0% | 0 (2)/4, 0% | 0 (2)/4, 82% | 0 (2)/4, 0% | 0 (3)/4, 49% | 0 (2)/4, 49% | the co-flow as a drain of D reading V (0.097 V), as on the clinic |
+| sd-cloud-credits, sd-print-shop, sd-bakery, sd-clinic-doses: the used stock runs out and caps the move | 129-coflow-runs-empty | 0/4, -56% | 0/4, -56% | 0/4, -56% | 0/4, -100% | 0/4, -32% | 0/4, -33% | 0/4, -33% | the cap as table(Q) effects on Q's drain and an R drain reading Q, with pieces on both inflows |
+| sd-webshop-stock (lna's runaway self-growth), sd-sawmill's blades, sd-bakery's flour | 130-move-slowed-by-used-stock | 0/4, -25% | 0/4, -25% | 0/4, -25% | 0/4, -59% | 0/4, -17% | 0/4, -35% | 0/4, -66% | B's drain as a constant 69.3 and 27 inflow pieces; S's restock reading B |
+| sd-learning-curve: the effect's stock is fed by the flow it speeds | 131-effect-fed-by-its-flow | 0/4, 97% | 0/4, 97% | 0/4, 97% | 0/4, -57% | 0/4, 9% | 0/4, -100% | 0/4, -100% | combined finds the table(E) effect but at 0.149 (true 0.3), with 20 pieces on B's inflow; matrix and censored link from E (the hard case's mistake) |
+| sd-moderation: posts follow users through a daily cycle | 132-link-with-daily-cycle | 0/4, 73% | 0/4, 73% | 0/4, 40% | 0/4, 71% | 0/4, 69% | 0/4, 71% | 0/4, 71% | the link from X lost; S's inflow as 167 pieces |
+| 105, 108, 110: a supply line (DELAY) fed from outside, unmeasured | 133-hidden-supply-line | 0/4, 98% | 0/4, 98% | 0/4, 99% | 0/4, 96% | 0/4, 99% | 0/4, 99% | 0/4, 96% | no hidden stock: drain 0.130 (true 0.1) and 3 inflow pieces |
+| 110 (World3): a measured input through an unmeasured delay | 134-delayed-measured-input | 0/4, 97% | 0/4, 97% | 1/4, 91% | 0/4, 93% | 0/4, 94% | 0/4, 91% | 0/4, 91% | no input term and no delay: drain 0.16 and 119 pieces; structures finds the hidden stage but with a spurious T term |
+| 107: undiscovered rework, hidden, returning to its source | 135-hidden-rework | 0/4, 100% | 0/4, 100% | 3/4, 100% | 0/4, 100% | 0/4, 100% | 0/4, 100% | 0/4, 100% | W's self-growth 0.028 W against a drain 0.108 W; structures finds the hidden loop |
+| Gause and adoption twins: 21-30 training samples, crowding | 136-crowding-short-run (logistic at 21 and 30 samples) | 0/4, 100% | 0/4, 100% | 0/4, 100% | 0/4, 100% | 0/4, 100% | 0/4, 100% | 0/4, 100% | the twins' answer: a linear drain 0.13 X and 3 inflow pieces |
+| real-adoption-* twins: N + A constant | 137-closed-market-bass | 0/4, 100% | 0/4, 100% | 2/4, 100% | 0/4, 99% | 0/4, 99% | 0/4, 100% | 0/4, 99% | the twins' answer: equal outside pieces on both ends (546.2 out of N, 546.2 into A) |
+| real-gause-a3-mixture twin: competition that settles | 138-competition-settles | 0/4, 68% | 0/4, 68% | 2/4, 96% | 0/4, 96% | 0/4, 97% | 0/4, 97% | 0/4, 96% | linear cross-drains (P out reading Q) and pieces; structures the same on counts |
+| gLV and adoption twins: measurement error on a product | 139-noisy-crowding (103 + 2% meas) | 0/4, 96% | 0/4, 96% | 3/4, 99% | 0/4, 96% | 0/4, 93% | 0/4, 96% | 0/4, 96% | meas-long: drain 0.246 x Pop plus 3 pieces, combined and structures alike |
+| **total (80 cells each)** | | 3 (2) | 3 (2) | 19 (2) | 1 (2) | 3 (2) | 0 (3) | 0 (2) | |
+
+**Already isolated by an existing case** (no new case). In each of these the hard case's mistake
+is the existing case's.
+
+| hard-case failure | existing case |
+|---|---|
+| crowding X x X written as a linear drain (103, 109, gLV) | 103-canonical-logistic (structures passes, the others fail) |
+| measurement error loses couplings (spring V <- P, V <- force; reaction chain C <- B) | 080, 083, 088 (only kalman_lna passes the meas cells; it has not been run on the physics cases) |
+| a measured input counted twice (cooling, censored and effect_hats) | 062 (fixed in those strategies at 89adae4) |
+| lna's self-growth `outside -> X = g X` in place of a changing inflow (sd-hidden-chain, sd-webshop, sd-bakery) | 027, 059 counts-long (130 adds the trigger seen on the webshop) |
+| a reinforcing loop near neutral | 055-sweep-loop-gain |
+
+**Could not be reduced to a basic case, and why:**
+
+- **sd-population** (lna -100). The error is spread over the whole system, and no single row swap
+  fixes it. A two-stock loop of the same gain (0.91), slow and with the same stepping migration,
+  does not reproduce it (lna 96.6 on the long run). On short runs a least-squares fit of the true
+  structure fails too, so it is probably the data's limit. Its loop gain is 055's axis.
+- **sd-housing long** (combined -2, effect_hats 94).
+  - The inflow is 32 + 0.001 x occupied, but occupied barely moves, so the link is in effect a
+    constant: a data limit.
+  - The behaviour grader then swaps in only the truth's constant part, which makes the found
+    model look broken. This is a scoring question (below).
+- **sd-services long** (combined -100). combined returned an empty model after effect_hats timed
+  out. That is a code fault in combined, not a mechanism. censored's model on the same run scores
+  97.
+- **sd-support-tiers short.** A large, quiet stock at equilibrium has both gross flows shrunk to
+  the net.
+  - A slow drain and a stepping inflow alone pass for everyone.
+  - The failure needs that stock read by a link into a stock whose inflow cycles: two properties.
+  - One stock alone shows only the scoring side: equations pass, but skill is -470% because the
+    truth barely moves in 20 steps.
+- **sd-emergency long.** The closest probe, an effect stock that cycles with the inflow, is
+  data-limited (p 0 on counts: the per-window inflow constants of a 24-step cycle), and on it
+  effect_hats does not win as it does on the hard case. Not added.
+- **sd-fishery.** Boats are conserved (in_port + at_sea = 40), and fuel is a fast-refilled
+  co-flow stock. The fuel half is 129. The conservation half was not distilled.
+- **BLS two-way gross flows.** A three-state Markov probe is data-limited on short runs
+  (p 0.004), and without injections it is unidentifiable, as the BLS twin is: the twin's failure
+  is mostly the data's limit.
+- **The flu's hidden infected stock.** A probe with S measured, I hidden and R measured fails for
+  every leader, but the scorer reduces the truth to `S -> (hidden) -> R` and drops the effect
+  that reads the hidden I. So a correct answer cannot match. This is a scoring gap.
+- **The thermostat's memory and the tanks' sqrt** are engine gaps (queue item 2d). 123 and 122
+  are the closest expressible probes.
+- **dt < 1 recordings** (100, 104: a drain k reads as 1 - e^-k per step) wait for the scoring
+  decision in the journal, "Needs you".
+
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
 The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one

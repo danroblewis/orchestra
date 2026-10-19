@@ -266,3 +266,54 @@ By strict, lna_levels (55.1%) is 5th, ahead of lna_stack. Passes fail strict mos
 **The top three have run less than a third of the cells,** which the watcher fills in. Their rates are not comparable with full-coverage strategies yet; the user saw ~91% on the leaderboard.
 
 **Problems:** none new. The summary is about 1 s.
+
+## 2026-10-19 (note): distilled cases
+
+- **Finished:** 20 distilled cases, 120-139 (717c9d7). Each is the smallest case that repeats
+  one mistake made on a realistic, physics, canonical or real-data case. The mapping and the
+  leaders' results are in `docs/LADDER.md`, "Distilled cases".
+- **The leaders on them** (560 runs, no errors or timeouts; passes of 80 cells, equivalents in
+  brackets): structures 19 (2); combined, kalman_lna and effect_hats 3 (2); lna 1 (2);
+  censored 0 (3); matrix 0 (2).
+- **Mechanisms no leader passes in any cell:**
+  - short series (120);
+  - a concave drain (122);
+  - an inflow shut off by its own level (123);
+  - co-flows: on an outside inflow (128), running empty (129), slowing their own move (130);
+  - an effect fed by its own flow (131);
+  - a link with a daily cycle (132);
+  - a hidden supply line fed from outside (133);
+  - predator-prey products (127);
+  - crowding from 21-30 samples (136).
+- **Not reduced:** sd-population, sd-housing, sd-services (a combined fault: an empty model after
+  a specialist timed out), sd-support-tiers, sd-emergency, sd-fishery's conservation, BLS's
+  two-way flows (a data limit), and the flu's hidden infected stock (a scoring gap). The reasons
+  are in LADDER.md.
+- **Engine gaps** added to queue item 2d: hysteresis, signed states, and the checks' crash under
+  20 steps.
+
+**Needs you (scoring, from the distilled cases)**
+1. **dt < 1 cases** (100, 104; still open from 21:10). The scorer grades against the model's
+   per-time-unit numbers, but the data show per-step ones: 104's drain is found at 0.0957
+   against 0.1, a 4.3% error with identical behaviour. Should the scorer grade against the exact
+   one-step map, as the physics scorer does? Until you decide, no dt case is distilled.
+2. **Hidden stocks fed from outside are not scored** (105, 108, 110, and the new 133, 134). A
+   found `k x input` link even counts as spurious there. The flu-like probe (a hidden stock read
+   by an effect) cannot be scored at all, because the truth is reduced to a plain hidden path.
+3. **Equivalence ignores flows that read a measured input** (`parts.linear_system`), so an exact
+   equivalent of 125 or 106 is scored fail.
+4. **Effect cases are never checked for equivalence.** A product with its roles swapped fails
+   even when the flow matches: 101 combined counts-long is within 0.7%.
+5. **The behaviour grader swaps in only the truth's constant inflows.** Where a found model's
+   inflow constant absorbs a nearly constant link or a constant outflow, the swap breaks a model
+   that predicts well with its own inflows. sd-sawmill, sd-support-tiers, sd-print-shop and
+   sd-cloud-credits score -16% to -561% as graded, but 76-97% with their own inflows. sd-housing
+   loses in the same way. (These numbers come from a scratch re-scoring of the stored models, not
+   from a committed command.) This changes what skill@20 means on realistic cases.
+6. **Real twins:**
+   - Their analysis uses the noise-free full-length run, not the training samples with
+     measurement error, so their "achievable" labels are not meaningful.
+   - The adoption twins' N = 100 - A makes several forms give the same levels. Should those
+     forms count as equivalent?
+7. **The analysis ignores floors,** so 125 is labelled unidentifiable although the floor that
+   binds separates its gap from a drain.
