@@ -135,13 +135,16 @@ for `combined` on the test cases).
 
 ## Started
 
+- 2026-10-18 20:30: item 2, canonical system dynamics models.
+
 - 2026-10-18 20:00: item 1, noise variants.
 
-- 2026-10-18 19:45: item 0, engine features (inputs, dt, ceilings, delays/smooth/test inputs).
 
 - 2026-10-18: realistic examples run (7 leaders × 31 examples × 2 lengths, `~/.sdlab/realistic-run.log`).
 
 
 ## Done
+
+- 2026-10-18: item 0, engine features (1baf38e, 9646bf2, cb97c26). Additive: 2,201 output hashes identical. New cases 062 (measured pump) and 063 (DELAY3). Still missing: sqrt/power/exp, MIN/MAX/IF, two-way flows, arrays, observation models, sparse sampling, a real-data scorer, and the editor forwarding inputs.
 
 - 2026-10-18: survey of case studies with data (`docs/research/case-study-sources.md`, a8ccdc8).

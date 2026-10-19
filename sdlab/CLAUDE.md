@@ -58,7 +58,17 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     It does not edit shared modules (`sdlab/discovery/*.py`, `sdlab/ladder/`, `sdlab/skill.py`,
     `tests/bench/`, the server, static files) or another strategy; it reports the needed fix
     instead. An agent given a shared module owns only that module and edits others surgically.
-    Commit only your own files (`git add <paths>` or `-p`, never `-A`). Never push.
+    Commit only your own changes, never `git add -A`, and never push. Many agents share one
+    checkout and one git index, so commit through a private index, which can't sweep up what
+    others staged:
+    ```sh
+    IDX="$(git rev-parse --git-dir)/index.$RANDOM"
+    GIT_INDEX_FILE="$IDX" git read-tree HEAD
+    GIT_INDEX_FILE="$IDX" git add <your paths>          # or: git apply --cached <your hunks>.patch
+    GIT_INDEX_FILE="$IDX" git commit -m "..."
+    rm -f "$IDX"; git reset -q -- <your paths>          # sync the shared index for your paths
+    ```
+    Check `git show --stat HEAD` afterwards: it must list only your changes.
 13. **Every strategy is documented.** `docs/research/<name>.md` gives its status, what it does,
     ladder and bench results, and a verdict, with a row in `docs/research/README.md`.
     `docs/research/tries.md` summarises all efforts. A new strategy also adds its entry to
