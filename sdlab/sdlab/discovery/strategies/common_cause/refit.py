@@ -26,7 +26,7 @@ def refit(stocks: list[dict], r: dict, opts: dict, pelt) -> dict:
     if opts.get("reselect", True):
         rows = [reselect(row, s, ids, stocks, fit["prev"], fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", ALPHA))["row"] for s, row in enumerate(rows)]
     if opts.get("shared_places", True):
-        rows = offer(rows, ids, stocks, fit["prev"], fit["dy"], fit["cfg"], L, pelt, mp, opts.get("change_params", 2), opts.get("trace_places", False), alpha=opts.get("alpha", ALPHA))
+        rows = offer(rows, ids, stocks, fit["prev"], fit["dy"], fit["cfg"], L, pelt, mp, opts.get("change_params", 2), opts.get("trace_places", False), alpha=opts.get("alpha", ALPHA), re_cut=opts.get("honest", True))
     if opts.get("tiebreak", True):
         rows = [tiebreak(row, s, fit["dy"][s]) for s, row in enumerate(rows)]
     system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", True), mp, opts.get("scale", "unit"))

@@ -1,9 +1,9 @@
 # Independent systems under a common cause
 
-**Status:** ladder done (strategy at commit 19de233); benchmark v2.1 and 100 generated models in progress  
+**Status:** stopped (ladder at commit 19de233; speed fix 0419efe; confound guard in the commit that adds this line). Bench not completed: stopped twice under machine load (see Bench results); generated models not run  
 **Strategy:** `common_cause` (`sdlab/sdlab/discovery/strategies/common_cause/`), tests in
 `tests/test_ladder_common_cause.py`  
-**Verdict:** pending the bench; on the ladder, the best strategy on the independent and identical rungs (028-038: 43 of 44 pass) with no case lost against earned_pieces' committed version
+**Verdict:** needs work before adoption: slow (realistic ladder runs mostly time out), and on the 31 example runs that finished it behaves worse than earned_pieces. On the ladder, the best strategy on the independent and identical rungs (028-038: 43 of 44 pass) with no case lost against earned_pieces' committed version
 
 Real systems mix unrelated stocks. The independent rungs (028-033) and the identical-numbers rungs
 (034-038) ask discovery to recover each part and invent nothing between them. `common_cause` is
@@ -146,7 +146,34 @@ Robustness on other seeds (10 seeds each, counts-short / counts-long passes): 03
 
 ## Bench results
 
-In progress (examples bench v2.1 and `--generated 100`, started on commit 19de233).
+**Not completed.** The examples bench (`tests/bench/evaluate.py --strategy common_cause --baseline v2.1
+--jobs 3`) was run twice and stopped both times (exit 144) while the machine's load was 100-500:
+first on 19de233 (single examples took hours: sd-ci long 26,600 s, sd-farm-soil long 11,800 s), then
+on 0419efe (`--label "common_cause 0419efe"`, stopped by the coordinator at 07:28 on 2026-10-19 after
+47 of 62 runs; no result file is written for a partial run). `--generated 100` was not run.
+
+Partial, from the second run's log (0419efe), paired on the 31 runs that match earned_pieces'
+`earned_pieces v5 counting` run (the version vendored here): mean skill@20 **25.6%** against
+earned_pieces' 34.3% (matrix reference 38.4% on the same runs); 6 runs better by more than 2 points,
+11 worse; parts right 174 against 171 (matrix 166) of 292. Large losses: sd-fishery long (-77 at
+skill@20), sd-bakery long (-7.2), sd-housing long (-4.6), sd-eras long (0.17 against 0.99), sd-orders
+long, sd-ev-fleet. Gains: sd-cloud-credits long, sd-emergency (both lengths), sd-clinic-doses long,
+sd-learning-curve long.
+
+Diagnosis so far: switching the shared places off (`shared_places: false`) gives back earned_pieces'
+behaviour on sd-ev-fleet default (0.51 against -0.31) and sd-fishery default (0.40 against -0.32):
+in a real model nearly every row has pieces, so every row is a witness and the cheap shared pieces
+replace real structure. A guard was added after the bench (`places.confound`): a shared candidate
+may read no stock the row did not read, and must drop at least one witness's level (the common-cause
+pattern) or re-cut a row that already had pieces. With it: sd-ev-fleet default 0.58, sd-fishery
+default 0.13 (still below 0.40); 028-038 unchanged except 033 (PPPP) and 037 (PPPF) as before. The
+whole ladder and the bench were not re-run on it.
+
+Speed: discovery is about 3x earned_pieces' (sd-clinic-doses long 99 s against 31 s), most of it in
+the vendored joint decision's PELT calls on many-piece rows; 0419efe made the joint PELT prune and
+the place pruning merge neighbours (a single sd-clinic-doses variant 29 s -> 9 s). On the current
+ladder (1228 items, many realistic cases) the run on 19de233 recorded 12 timeouts and 4 errors; the
+realistic runs mostly time out.
 
 ## What does not work yet
 
@@ -156,7 +183,8 @@ In progress (examples bench v2.1 and `--generated 100`, started on commit 19de23
   drain; the behaviour judge should, but every candidate makes the same choice.
 - **033 counts-short, one seed in ten**: a mild Ljung-Box rejection (p = 0.001) keeps the matrix's
   pieces on B1 beside a split move/link.
-- Discovery time is about twice earned_pieces' (joint scans for 8 candidates).
+- Speed (above), and the examples' losses: the shared places should be offered only to rows in an
+  independent subsystem, or judged by behaviour (run each candidate with and without them).
 
 ## Open ideas
 
