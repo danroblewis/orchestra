@@ -572,6 +572,20 @@ strategies:
     status: work in progress
     note: Its research document (combined.md) is not written yet.
 
+  kalman_lna:
+    idea: Treat the measured levels as noisy reports of the true stocks, and choose the flows by how likely the reports are through a Kalman filter.
+    how: >-
+      The true stocks are hidden and move by the flows, each flow a random count (as in lna). The
+      reports are what a filter sees of them - with a measurement error, at missing or uneven
+      times, as weekly means, a few steps late, with a few gross errors, or with one stock counted
+      at the wrong scale - and the filter's likelihood fits the rates, the error's size, the delay
+      and the scale together, while the flows are chosen by BIC. Data that look clean (every step,
+      no measurement error) are left to combined.
+    helps_with: Real-world reporting - measurement error, gaps, weekly reports, reporting delays, outliers and a miscounted stock.
+    builds_on: lna, combined
+    status: active
+    note: docs/research/kalman_lna.md.
+
   structures:
     idea: combined's model, replaced by one built from the classic SD structures when the data clearly prefer it.
     how: >-
