@@ -25,8 +25,8 @@ from __future__ import annotations
 import json
 import os
 
-from .. import combined as C
-from ..combined import judge as J
+from ._vendored import combined as C
+from ._vendored.combined import judge as J
 from .fitcheck import goodness
 
 DEFAULTS = {"z": 5.0, "switch": True}

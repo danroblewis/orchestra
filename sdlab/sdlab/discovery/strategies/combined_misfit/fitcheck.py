@@ -21,7 +21,7 @@ import math
 
 import numpy as np
 
-from ..combined import judge as J
+from ._vendored.combined import judge as J
 
 LAGS = 10
 

@@ -6,7 +6,7 @@ import copy
 import numpy as np
 import pytest
 
-from sdlab.discovery.strategies.combined import judge as J
+from sdlab.discovery.strategies.combined_lean._vendored.combined import judge as J
 from sdlab.discovery.strategies.combined_lean.prune import _segment, change_places, drop_flows, lean, resegment
 from sdlab.ladder import cases as casemod
 from sdlab.ladder import data

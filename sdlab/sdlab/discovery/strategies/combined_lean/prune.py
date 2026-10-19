@@ -28,9 +28,9 @@ import time
 import numpy as np
 
 from ...simulate import _Segments
-from ..combined import judge as J
-from ..combined.params import numbers
-from ..combined.refit import refit
+from ._vendored.combined import judge as J
+from ._vendored.combined.params import numbers
+from ._vendored.combined.refit import refit
 
 
 def _sorted(segs: list[dict]) -> list[dict]:

@@ -14,7 +14,7 @@ flow next to the right ones. This strategy keeps combined's choice and then (pru
 3. keeps the result only if its score is lower than combined's model's under the same prices.
 
 The pass runs only where a price on complexity means something: where the model fits the data to
-their noise. With counts that the model does not fit (combined_misfit/fitcheck.py: dispersion or
+their noise. With counts that the model does not fit (fitcheck.py, a copy of combined_misfit's: dispersion or
 Ljung-Box whiteness above z = 5, as on every realistic model), the pieces stand in for dynamics no
 candidate has, and taking them out moved the refitted drains and cost skill (on the stored
 realistic results); there the model is returned unchanged. Models with unmeasured stocks are
@@ -30,9 +30,9 @@ from __future__ import annotations
 import json
 import os
 
-from .. import combined as C
-from ..combined import judge as J
-from ..combined_misfit.fitcheck import goodness
+from ._vendored import combined as C
+from ._vendored.combined import judge as J
+from .fitcheck import goodness
 from .prune import lean
 
 DEFAULTS = {"cp": 1.5, "fp": 1.0, "slack": 1.1, "flows": True, "gate": 5.0, "lean": True}

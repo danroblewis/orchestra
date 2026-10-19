@@ -7,9 +7,6 @@ from isolation import violations
 # list may only shrink. A new entry is a failure: copy the code you build on instead of importing it.
 KNOWN = {
     "combined": {"censored", "common_cause", "effect_hats", "gap_prior", "hidden_transit", "lna", "lna_pulses", "lna_stack", "periodic_inflows"},
-    "combined_lean": {"combined", "combined_misfit"},
-    "combined_misfit": {"combined"},
-    "combined_r2": {"combined_lean", "combined_misfit"},
     "gap_prior": {"lna"},
     "gated_no_high": {"gated"},
     "held_out_blend": {"held_out"},

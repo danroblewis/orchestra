@@ -4,9 +4,9 @@ noise, and multi-step error picks where it does not."""
 
 import pytest
 
-from sdlab.discovery.strategies import combined as C
 from sdlab.discovery.strategies import combined_misfit as M
-from sdlab.discovery.strategies.combined import judge as J
+from sdlab.discovery.strategies.combined_misfit._vendored import combined as C
+from sdlab.discovery.strategies.combined_misfit._vendored.combined import judge as J
 from sdlab.discovery.strategies.combined_misfit.fitcheck import goodness
 from sdlab.ladder import cases as casemod
 from sdlab.ladder import data
