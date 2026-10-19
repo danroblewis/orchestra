@@ -536,6 +536,42 @@ class Hypothesis:
         return out
 
 
+def _straightened(flows, ids, prev, tt, mi) -> list[dict] | None:
+    """The model with its new effect flow (one value, or a measured base) written as a straight line
+    in the curve's stock C instead: k x C if the flow leaves C, else c + k x C, times the measured
+    base if there is one; None if there is no such flow."""
+    idx = {s: i for i, s in enumerate(ids)}
+    for j, f in enumerate(flows):
+        effs = f.get("effects") or []
+        if not f.get("driver") or len(effs) != 1 or effs[0].get("shape") != "table" or effs[0].get("stock") not in idx:
+            continue
+        if f.get("inflow") and len({round(float(g["value"]), 9) for g in f["inflow"]}) > 1:
+            continue
+        c = effs[0]["stock"]
+        row = f.get("to") if f.get("to") is not None else f.get("from")
+        amt = deltas(f, ids, prev, tt, mi)[idx[row]]
+        if f.get("to") is None:
+            amt = -amt
+        x = prev[idx[c]]
+        g = {k: v for k, v in f.items() if k not in ("effects", "inflow", "driver", "rate", "rates")}
+        if f.get("input"):
+            if not mi or f["input"] not in mi["values"]:
+                continue
+            u = np.nan_to_num(np.asarray(mi["values"][f["input"]], dtype=float))[1: len(x) + 1]
+            a, k = np.linalg.lstsq(np.vstack([u, u * x]).T, amt, rcond=None)[0]
+            r1 = {"form": "linear", "c": 0, "terms": [{"stock": f["input"], "k": float(a)}]}
+            r2 = {"form": "linear", "c": 0, "terms": [{"stock": f["input"], "k": float(k)}]}
+            lin = {"stock": c, "shape": "linear", "normal": 1.0, "min": -1e12, "max": 1e12}
+            return flows[:j] + [{**g, "rate": r1, "rates": [r1]}, {**g, "rate": r2, "rates": [r2], "effects": [lin]}] + flows[j + 1:]
+        if f.get("from") == c:
+            rate = {"form": "proportional", "stock": c, "k": float(np.linalg.lstsq(x[:, None], amt, rcond=None)[0][0])}
+        else:
+            c0, k = np.linalg.lstsq(np.vstack([np.ones_like(x), x]).T, amt, rcond=None)[0]
+            rate = {"form": "linear", "c": float(c0), "terms": [{"stock": c, "k": float(k)}]}
+        return flows[:j] + [{**g, "rate": rate, "rates": [rate]}] + flows[j + 1:]
+    return None
+
+
 def _negative(flows, ids, prev, tt, mi) -> bool:
     """A flow (without effects) that runs backwards on more than 5% of the steps: an outside inflow
     c + d x U that turns negative, a link with a negative number."""
@@ -683,7 +719,13 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
                     continue
                 fu = _prune(fu, ids, A, tt, mi, inj, res)
                 how = (f" from {u}" if move else f" using {u}") if u else ""
-                cands.append((price(fu, ids, A, tt, mi, inj, res), fu, how))
+                pf = price(fu, ids, A, tt, mi, inj, res)
+                alt = _straightened(fu, ids, prev, tt, mi)
+                # a curve a straight line would do (a move k x U read as a constant x a rising table
+                # of U) must beat the straight line by the same margin as the base
+                if alt is not None and not pf < price(alt, ids, A, tt, mi, inj, res) - o["gate_gain"] * log_t:
+                    continue
+                cands.append((pf, fu, how))
             if os.environ.get("SDLAB_GATE_DEBUG"):
                 for pc, fc, how in cands:
                     print(f"gate: {kind} x f({c}) -> {r}{how}: price {pc:.0f} (base {cur_p:.0f})")
