@@ -28,7 +28,7 @@ def _rows(a) -> list[dict]:
 
 
 def fill(a) -> None:
-    rows = _rows(a)
+    rows = [r for r in _rows(a) if not casemod.is_physics(r["case"])]     # physics cases: graded by physics/, no strict reference
     cx = complexity.for_results(rows)
     jobs = a.jobs or max(1, (os.cpu_count() or 2) - 1)
     passes = [r for r in rows if r["status"] == "pass" and cx.get(r["id"]) and cx[r["id"]]["extra"] <= 0]
@@ -37,7 +37,7 @@ def fill(a) -> None:
     print(f"\nlong run: {n} results graded in {time.time() - t0:.1f} s")
     if a.all:
         keys = []
-        for cid in sorted({r["case"] for r in rows} if a.cases or a.strategies not in (None, "all") else casemod.case_ids()):
+        for cid in sorted({r["case"] for r in rows} if a.cases or a.strategies not in (None, "all") else [i for i in casemod.case_ids() if not casemod.is_physics(i)]):
             c = casemod.load(cid)
             keys += [(cid, c["hash"], v["name"]) for v in c["variants"] if not a.variants or any(x in v["name"] for x in a.variants.split(","))]
     else:
@@ -61,9 +61,10 @@ def table(set_name: str = "tests", variants: str | None = None) -> list[dict]:
     fail strict."""
     sm = api.summary()
     real = {c["id"]: _is_real(c) for c in sm["cases"]}
+    phys = {c["id"] for c in sm["cases"] if c.get("physics")}
     by: dict[str, dict] = {}
     for x in sm["cells"]:
-        if not x["status"] or (set_name != "all" and (set_name == "realistic") != real.get(x["case"], False)):
+        if not x["status"] or x["case"] in phys or (set_name != "all" and (set_name == "realistic") != real.get(x["case"], False)):
             continue
         if variants and not any(v in x["variant"] for v in variants.split(",")):
             continue

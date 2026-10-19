@@ -661,6 +661,171 @@ of 18 October. The data are the bench's, discovery gets the same inputs, and bot
 counts-long as a timeout: there the scorer's oracle (1,999 windows) took 417 s after an 11 s
 discovery. The timeout now covers discovery only.
 
+## Physics cases (`physics/`, `cases/physics/`)
+
+The tests are SD models, and so are the realistic examples: discovery is asked to recover a model
+written in its own forms. The **physics cases** ask what it does with data from physical systems
+that are *not* stock-and-flow models, solved in continuous time by a proper ODE solver and sampled
+once per step (queue item 4). There is no true SD model to recover, so they are scored against the
+physics' structure and against the best SD model of the physics, in their own view (tag `physics`),
+never in the Tests pass rate.
+
+| case | system | stocks (measured) | driver | the physics | SD can write it? |
+|---|---|---|---|---|---|
+| phys-draining-tank | Torricelli tank | H | pump (input) | H' = pump - k sqrt(H) | no: sqrt |
+| phys-coupled-tanks | two tanks in cascade | H1, H2 | pump (input) | H1' = pump - k1 sqrt(H1), H2' = k1 sqrt(H1) - k2 sqrt(H2) | no: sqrt |
+| phys-newton-cooling | Newton cooling | T | outside temperature (input: daily cycle + weather) | T' = -k (T - outside) | yes (linear) |
+| phys-mass-spring-damper | damped oscillator, period ~63, zeta 0.25 | P = x + 10, V = v + 1 | force (input: pushes) | x'' = -w^2 x - 2 zeta w x' + force | yes, through offsets |
+| phys-lotka-volterra | predator-prey, period ~70 | X, Y | none | X' = aX - bXY, Y' = dXY - gY | yes (products as effects) |
+| phys-reaction-chain | A -> B -> C, first order | A, B, C (final) | batches of A (announced injections) | A' = -k1 A, B' = k1 A - k2 B, C' = k2 B | yes (linear) |
+| phys-thermostat | on/off heater with hysteresis | T | outside, setpoint (inputs) | T' = -k (T - outside) + power x [heater on] | no: a switch with memory |
+
+**Data** (`ode.py`). scipy `solve_ivp` (LSODA, rtol = atol = 1e-10), restarted at every jump of a
+driver and every injection; the thermostat stops at each switch (an event) and goes on in the other
+mode. The solution is sampled at t = 1..N and handed to discovery exactly as the engine's data are
+(`data.py`'s format): measured levels per step (4 decimals), the announced injections, and the
+measured inputs as each step's mean over (t - 1, t] (16-point midpoint rule). Within 1e-3 of a
+fine RK4 (`tests/test_ladder_physics.py`). The **case's seed** draws any parameter given as a range
+(`params: {k: [0.4, 0.6]}`); the **run's seed** (the case's; + 1 for the fresh run) draws the
+initial state and the drivers, each from its own stream and in order, so a short run is the start
+of the long one and the fresh run starts elsewhere with other drivers.
+
+**Variants**: `none` (the sampled solution) and `meas` (noise.py's measurement error, Gaussian with
+sd = sqrt(abs^2 + (rel x level)^2), numbers per case: `meas: {rel, abs}`), at short (300) and long
+(2000) steps. **Counting noise does not apply**: nothing in these systems moves in whole things, so
+there is no `counts` variant. On the Now board, a physics case picked in a counts variant shows
+its meas variant.
+
+**Keeping things positive.** SD Lab's levels and rates are floored at 0. Tanks, temperatures (degC,
+kept above 0 by the drivers), populations and amounts are positive as they are. The spring's
+position and velocity are signed, so they are measured from a datum: P = x + X0 and V = v + V0
+(X0 = 10, V0 = 1, several amplitudes away), the cleanest representation that keeps every stock and
+every flow positive: each signed term becomes two one-way flows (P: inflow V, outflow the constant
+V0; V: inflow w^2 X0 + 2 zeta w V0 + force, outflow w^2 P + 2 zeta w V), and the offsets show as
+constant flows. The other option, velocity as two stocks (up and down), would need a switch between
+them that SD Lab's forms do not have.
+
+**How a case is written** (`cases/physics/phys-<slug>.yaml`; `physics/__init__.py`):
+
+```yaml
+system: draining-tank          # physics/systems.py
+title: Draining tank (outflow k sqrt(H))
+level: 20
+tags: [physics, sqrt, input]   # physics is added if missing
+tests: "..."
+seed: 1
+params: {k: 0.5}               # optional: override; [lo, hi] is drawn from the seed
+meas: {rel: 0.02, abs: 0.05}   # the meas variant's numbers
+lengths: {short: 300, long: 2000}   # optional
+```
+
+The case dict is the ladder's, with `physics: {system, title, about, params, inputs, couplings,
+differs, reference}` beside it; its `model` is the **reference** (below), so the pages draw it as the
+model the found one is compared with. Loading a case writes its runs where `data.py` reads them
+(its cache, named by case, variant, seed and hash), so `data.load` gives every reader the physics'
+data, and noise.py lays the meas noise on them as for any case. The hash covers the case's content,
+`systems.py`, `ode.py`, `reference.py` and `noise.py`. The scoring code (`physics/score.py`,
+`structure.py`) is added to the scorer's hash for physics cases only (`physics.score_hash`, used by
+`runner.plan` and the summary), so a change there re-scores physics results and nothing else.
+
+### Scoring the physics (`physics/score.py`, `structure.py`, `reference.py`)
+
+**Expected structure.** Each system declares its couplings: for each stock X, which stocks and
+inputs Y its change reads, the sign of dX'/dY and its shape (linear, sqrt, product, switch).
+`tests/test_ladder_physics.py` checks the declaration against the ODE's own Jacobian on every run
+the case grades (both lengths, its seed and the fresh one), with every coupling at least 1.5 x the
+presence threshold. The thermostat's control coupling cannot be checked that way: the heater has
+memory (hysteresis), so the instantaneous Jacobian does not see it, and it is declared.
+
+| case | couplings X <- Y (sign, shape) |
+|---|---|
+| draining tank | H <- H (-, sqrt), H <- pump (+, linear) |
+| coupled tanks | H1 <- H1 (-, sqrt), H1 <- pump (+, linear), H2 <- H1 (+, sqrt), H2 <- H2 (-, sqrt) |
+| Newton cooling | T <- T (-, linear), T <- outside (+, linear) |
+| mass-spring-damper | P <- V (+), V <- P (-), V <- V (-), V <- force (+), all linear |
+| Lotka-Volterra | X <- X (±, product), X <- Y (-, product), Y <- X (+, product), Y <- Y (±, product) |
+| reaction chain | A <- A (-), B <- A (+), B <- B (-), C <- B (+), all linear |
+| thermostat | T <- T (-, switch), T <- outside (+, linear), T <- setpoint (+, switch) |
+
+**Structure agreement.** The found model's coupling X <- Y is read from its Jacobian: p_XY = d(one
+step's change of X) / d(level of Y), by central differences of `simulate.Model.change` at every
+state of the run (one-sided at a level of 0, where a rate's floor would halve it), with the
+measured inputs as variables beside the stocks. So the representation does not matter: a move or a
+link with a drain, births and deaths or their difference, give the same couplings. A coupling is
+**present** when its strength sqrt(mean p^2) x sd(Y) is at least 10% of the strongest coupling into
+X: sampling continuous time makes the exact one-step map read stocks the ODE does not, at O(step /
+time constant) (the oscillator's position reads itself at about w^2 / 2), and the cases keep their
+time constants long enough for those terms to stay below it. Its **sign** is + or - when p has that
+sign on >= 90% of the states where it is not ~0, else ±. Its **shape**: linear (p constant within
+5%), piecewise (p at two levels: a switch or a floor that binds), product (p follows another
+variable, R^2 >= 0.5), concave or convex (p follows Y itself, |p| falling or rising: a sqrt is
+concave), or other. The physics' shapes map as linear -> linear, sqrt -> concave, product ->
+product, switch -> piecewise. The structure **agrees** when every physics coupling is present with
+its sign (± accepts any) and no other coupling is present. The shape is reported (per coupling, and
+the share right), not required: SD Lab's forms cannot write a sqrt or a switch with memory.
+
+**Behaviour.** skill@20 and skill@100 graded as everywhere (`sdlab/skill.py`'s `same_behaviour`,
+~150 starts, 95% bootstrap interval), but the truth's side is what the physics did next: the found
+model runs H steps from the true levels, fed the measured inputs and the announced injections,
+against the sampled solution H steps on. On the run discovery saw and on the fresh run (new initial
+state and drivers, seed + 1). With measurement noise, behaviour is graded on the clean run
+underneath, as for noise.py's variants.
+
+**Long run.** The found model runs free (nothing re-anchored) for 5,000 steps from the fresh run's
+first levels (with hidden stocks of its own: from step 200, those estimated from the measured levels
+before), fed the inputs and injections of the physics continued as long: `err` is the rms over
+stocks of (found - true) / the truth's range over the last 1,000 steps, `mean_err` the same for the
+mean levels there; each capped at 1, and a run that leaves 100 x the truth's range counts 1
+(`diverges`). (The ladder's `longrun.py` is not used for physics cases: it runs the found model
+against the case's SD model, which here is only the reference.)
+
+**The reference: the best SD model** (`reference.py`). Each system gives the SD Lab flows it is best
+written with, one free number per physical term: a sqrt flow as a straight line c + k x level (the
+linear form, floored at 0), a product as a proportional rate times a linear effect of the other
+stock (exact), the on/off heater as a proportional controller max(0, c + ks x setpoint - kc x T),
+the spring with its offsets as above, the inputs read as k x input. The numbers start from the
+physics (the oracle knows it) and are fitted on the case's long noise-free run by least squares on
+its predictions 20 and 100 steps ahead from 150 moments (scipy `least_squares`, each stock's error
+over its spread): one reference per case, graded on every variant exactly as a found model is. It
+answers "what is the best any SD model can do here", so a strategy's fresh skill is compared with
+it (`gap20` = fresh skill@20 - the reference's).
+
+**Verdict** (the physics view's, beside the ladder's statuses, never in the tests' totals):
+**pass** when the structure agrees and the fresh skill@20 is within 5 points of the reference's (or
+better); else **fail**; error and timeout as everywhere.
+
+**Where SD Lab's format cannot express the physics** (each case's `differs`, shown on its card):
+
+- **sqrt outflows** (both tanks): no form for sqrt(level). The best SD model writes c + k x level,
+  right near the levels the run visits and wrong far from them; a lookup-table effect could bend
+  it, at the price of its points, and no strategy fits tables to an outflow of a stock's own level.
+- **on/off control with hysteresis** (thermostat): no switch with memory. The best SD model is a
+  proportional controller floored at 0. Under control the outside temperature barely moves T (the
+  heater's duty cycle absorbs it), so the best *predicting* SD model all but drops T <- outside
+  (6% of the strongest coupling, under the 10% threshold): the reference itself fails the
+  structure there. That is the closed-loop identifiability problem, not a fault of the reference.
+- **signed states** (spring): exact only through offsets, each signed term split into two one-way
+  flows, the offsets as constant flows.
+- **continuous time**: SD Lab steps Euler at dt = 1, so even exactly linear physics (cooling,
+  reaction chain, spring) is written with per-step numbers that are not the ODE's rates (1 - e^-k,
+  not k), and the exact one-step map has small couplings the ODE lacks (below the 10% threshold).
+  Products (Lotka-Volterra) are exact in form, but Euler steps of a neutral cycle spiral, so the
+  best SD model's long run drifts.
+
+**Where it shows.** `summary()` leaves physics cells out of `totals` (and so out of
+`best_strategy()`), gives each one `ph_structure, ph_right, ph_of, ph_spurious, ph_shape, ph_lr,
+ph_lr_mean, ph_diverges, ph_gap20, ref_fresh20, ref_fresh100, ref_lr`, gives a physics case in
+`cases` its `physics: {system, differs}`, and adds `physics: {strategy: {cells, run, pass, fail,
+error, timeout, missing, structure, couplings, shape, fresh20, fresh100, ref_fresh20, gap20, lr,
+ref_lr, diverges, graded, seconds}}`. The **leaderboard** has `physics` in its Set picker and a
+**Physics** column group (phys pass, structure, couplings, shape, vs ref @20, long-run err; hover
+for the reference's numbers). The **Now board** has `physics` in its Set picker; a physics card
+shows the physics, where SD differs, a table of the couplings (physics vs found, sign and shape;
+invented ones too), fresh skill@20 and @100 and the long-run error beside the reference's, and draws
+the reference as "Best SD model (reference)". The strategy page has a physics filter, and its
+tests totals leave physics out. `sdlab-ladder strict` and `longrun` skip physics cases, and the
+editor does not list them as basic models (there is no SD truth to play back).
+
 ## Cases as mathematical probes (`analysis.py`, `fisher.py`, `sweep.py`)
 
 The cases are not meant to reproduce real-world outcomes. They are for debugging methods: each one
@@ -1354,7 +1519,7 @@ with its true and found numbers, error and verdict, plus the spurious parts.
 | `board(strategy, variant?)` | `{strategy, variant, best, cases, results}`: every case and one strategy's latest results (found flows included) in a variant, or all four |
 | `best_strategy()` | the available strategy with the highest pass rate |
 | `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
-| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other], goal, goal_fresh (realistic cells only)}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts} (the tests only), realistic: {strategy: aggregate} (Realistic cases), score_hash, longrun (the long-run aggregate, below)}` |
+| `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other], goal, goal_fresh (realistic cells only)}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts} (the tests only), realistic: {strategy: aggregate} (Realistic cases), physics: {strategy: aggregate} (Physics cases), score_hash, longrun (the long-run aggregate, below)}` |
 | `run_graph(id, at?, window?)` | one result's true vs found levels run free, far ahead: `{result, stocks, run, overview, windows, metrics, how}` (Long run, below) |
 
 A result is `{id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status,
@@ -1477,7 +1642,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 
 | | |
 |---|---|
-| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; realistic cases (the examples, by reference) in `cases/realistic/*.yaml` and `realistic.py`; the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
+| Cases | `sdlab/sdlab/ladder/cases/*.yaml`; realistic cases (the examples, by reference) in `cases/realistic/*.yaml` and `realistic.py`; physics cases (ODEs) in `cases/physics/*.yaml` and `physics/` (`systems.py`, `ode.py`, `reference.py`, `structure.py`, `score.py`); the YAML format in `caseformat.py`; parametric cases (draws) in `draws.py`; loading, variants and hashes in `cases.py`; checks in `checks.py` |
 | Data | `data.py` (engine runs, cached in `$SDLAB_LADDER_CACHE/data`); `noise.py` (the noises laid on the recorded levels) |
 | Scoring | `score.py` (equations and behaviour), `parts.py` (equations as numbers), `oracle.py` (standard errors); for noisy variants `noise_oracle.py` (the Kalman-scaled SEs) and `noise_kf.py` (the truth as a state-space model) |
 | Long run | `longrun.py` (free runs, settled / drift read-off, metrics), `jump.py` (affine jump-ahead, equilibria, spectra), `longrun_cache.py` (by result id, the CLI fill, the summary aggregate), `longrun_series.py` (the run page's data), `sdlab/static/ladder-run.html` |
@@ -1489,4 +1654,4 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`, `noise_analysis.py` (the noisy variants); page `sdlab/static/probes.html` |
 | Canonical | `canonical/` (source models, recipes, `build.py`, `coverage.py`, the importer's `read.py`, `match.py`, `timefns.py`), `pysd_import.py` |
-| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |
+| Tests | `tests/test_ladder.py`, `tests/test_ladder_canonical.py`, `tests/test_ladder_realistic.py`, `tests/test_ladder_physics.py`, `tests/test_ladder_analysis.py`, `tests/test_ladder_caseformat.py`, `tests/test_ladder_complexity.py`, `tests/test_ladder_longrun.py`, `tests/test_ladder_noise.py`, `tests/ladder_compare.test.mjs` |

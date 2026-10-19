@@ -1,0 +1,9 @@
+# A room heated by an on/off heater with hysteresis (band +-1 degC around a day/night setpoint,
+# both measured inputs, as is the outside temperature); whether the heater is on is not measured.
+system: thermostat
+title: Thermostat with on/off control
+level: 20
+tags: [physics, control, switch, input]
+tests: "an on/off control loop with memory: T reads itself (negative, a switch) and the setpoint (positive, a switch) through the heater, and the outside linearly; SD can write at best a proportional controller"
+seed: 7
+meas: {rel: 0.0, abs: 0.1}

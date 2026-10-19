@@ -1,0 +1,9 @@
+# Predator-prey cycles (period about 70 steps), no driver: prey grow at a X and are eaten at b X Y,
+# predators are born at d X Y and die at g Y.
+system: lotka-volterra
+title: Lotka-Volterra predator-prey
+level: 20
+tags: [physics, product, oscillation, loop]
+tests: "products of two stocks in continuous time: X <- Y negative and Y <- X positive, both products; each stock's self-coupling changes sign around the cycle"
+seed: 5
+meas: {rel: 0.02, abs: 0.5}

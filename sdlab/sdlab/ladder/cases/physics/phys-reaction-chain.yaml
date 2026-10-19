@@ -1,0 +1,9 @@
+# First-order reactions A -> B -> C in a batch reactor recharged with A at announced times
+# (injections). Exactly linear; the sampled continuous-time rates are not the per-step ones.
+system: reaction-chain
+title: Reaction chain A -> B -> C, recharged in batches
+level: 20
+tags: [physics, linear, chain, injection]
+tests: "a first-order reaction chain solved in continuous time and sampled: B reads A (+), C reads B (+), A and B drain themselves; batches of A are announced injections"
+seed: 6
+meas: {rel: 0.02, abs: 0.2}

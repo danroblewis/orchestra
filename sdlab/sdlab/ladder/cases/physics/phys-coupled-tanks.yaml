@@ -1,0 +1,9 @@
+# Two tanks in cascade: the pump fills the upper one, which drains into the lower one at k1 sqrt(H1);
+# the lower one drains out at k2 sqrt(H2).
+system: coupled-tanks
+title: Two coupled tanks (sqrt flows in cascade)
+level: 20
+tags: [physics, sqrt, input, chain]
+tests: "a cascade of two sqrt flows driven by a measured pump: H2 reads H1 (positive, sqrt) and each tank drains itself; nothing reads H2 back"
+seed: 2
+meas: {rel: 0.02, abs: 0.05}

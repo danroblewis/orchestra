@@ -29,7 +29,7 @@ def _get(cid, variant, fresh=False):
 def test_existing_cases_keep_their_four_variants():
     for cid in casemod.case_ids():
         c = casemod.load(cid)
-        if "noisy" in c["tags"] or casemod.is_realistic(cid):
+        if "noisy" in c["tags"] or casemod.is_realistic(cid) or casemod.is_physics(cid):
             continue
         assert not any(v.get("observe") for v in c["variants"]), cid
         assert {v["noise"] for v in c["variants"]} <= {"none", "counts"}, cid

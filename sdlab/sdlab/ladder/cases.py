@@ -33,6 +33,7 @@ from pathlib import Path
 from .. import runner as _runner
 from . import draws as _draws
 from . import noise as _noise
+from . import physics as _physics
 from . import realistic as _realistic
 from .caseformat import CaseError, compile_case
 
@@ -101,8 +102,24 @@ def _realistic_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
     return _realistic.files(Path(folder).parent)
 
 
+def physics_files() -> dict[str, Path]:
+    """The physics cases (cases/physics/phys-*.yaml, physics/): ODE systems solved in continuous time."""
+    d = _physics.folder(CASES)
+    return dict(_physics_listing(str(d), d.stat().st_mtime_ns)) if d.is_dir() else {}
+
+
+@lru_cache(maxsize=8)
+def _physics_listing(folder: str, mtime_ns: int) -> dict[str, Path]:
+    return _physics.files(Path(folder).parent)
+
+
 def _all_files() -> dict[str, Path]:
-    return {**case_files(), **realistic_files()}
+    return {**case_files(), **realistic_files(), **physics_files()}
+
+
+def is_physics(case_id: str) -> bool:
+    """Is this one of the physics cases (physics/), not a test case?"""
+    return split(case_id)[0] in physics_files()
 
 
 def is_realistic(case_id: str) -> bool:
@@ -165,7 +182,7 @@ def _safe_count(path: Path) -> int:
 
 
 def _draw_count(path: Path) -> int:
-    if path.suffix != ".yaml" or path.parent.name == "realistic":
+    if path.suffix != ".yaml" or path.parent.name in ("realistic", "physics"):
         return 0
     st = path.stat()
     return _count(str(path), st.st_mtime, st.st_size)
@@ -200,6 +217,8 @@ def read(path: Path) -> dict:
     parametric case has no single case dict: read a draw with load / spec."""
     if path.parent.name == "realistic":
         return _realistic.spec(path)
+    if path.parent.name == "physics":
+        return _physics.build(path)["spec"]
     text = path.read_text()
     if path.suffix == ".yaml":
         if _draws.count(text, path.name):
@@ -314,6 +333,10 @@ def _get(case_id: str) -> dict:
         raise KeyError(case_id)
     if p.parent.name == "realistic":
         return _load(str(p), *_realistic.stamp(p))
+    if p.parent.name == "physics":                               # physics/: its own case dict and hash; its data written for data.py
+        built = _physics.build(p)
+        _physics.ensure(built["case"])
+        return built
     st = p.stat()
     return _load_draw(str(p), st.st_mtime, st.st_size, i) if i else _load(str(p), st.st_mtime, st.st_size)
 

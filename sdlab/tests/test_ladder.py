@@ -54,7 +54,7 @@ def test_there_is_a_ladder():
         assert all(bool(v.get("observe")) == (v["noise"] in noise.KINDS) for v in c["variants"]), i
 
 
-TESTS = [i for i in casemod.case_ids() if not casemod.is_realistic(i)]     # realistic cases: test_ladder_realistic.py
+TESTS = [i for i in casemod.case_ids() if not casemod.is_realistic(i) and not casemod.is_physics(i)]     # realistic cases: test_ladder_realistic.py; physics: test_ladder_physics.py
 
 
 @pytest.mark.parametrize("case_id", TESTS)

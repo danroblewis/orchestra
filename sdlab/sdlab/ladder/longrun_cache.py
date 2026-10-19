@@ -62,6 +62,8 @@ def compute(case_id: str, variant: str, items: list[tuple[int, str]]) -> list[tu
     from . import data, longrun
     try:
         c = casemod.load(case_id)
+        if c.get("physics"):         # a physics case's long run is against the ODE (physics/score.py), not its reference model
+            return [(i, {"error": "physics case: its long run is graded by physics/score.py"}) for i, _ in items]
         d = data.load(c, variant)
         setup = longrun.Setup(casemod.truth_model(c, variant), d.get("clean") or d)     # noise.py's variants: the run underneath
     except Exception as e:  # noqa: BLE001 - a case that cannot be set up is recorded, not retried

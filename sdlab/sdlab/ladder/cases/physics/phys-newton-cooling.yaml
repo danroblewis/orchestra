@@ -1,0 +1,9 @@
+# A hot body cooling towards a measured outside temperature (a daily cycle and the weather):
+# dT/dt = -k (T - outside). Exactly linear: SD writes it as k x outside in and k x T out.
+system: newton-cooling
+title: Newton cooling to a measured outside temperature
+level: 20
+tags: [physics, linear, input, goal-gap]
+tests: "Newton cooling towards a measured outside temperature, solved in continuous time: T reads itself (negative) and the outside (positive), both linear, with one k"
+seed: 3
+meas: {rel: 0.0, abs: 0.2}

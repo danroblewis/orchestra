@@ -151,7 +151,7 @@
     $("controls").innerHTML = `
       <label>Verdict <select data-f="status">${[["", "any"], ["fail", "fail"], ["equivalent", "equivalent"], ["pass", "pass"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => o(v, w, f.status)).join("")}</select></label>
       <label>Variant <select data-f="variant">${o("", "worst of four", f.variant)}${VARIANTS.map((v) => o(v, v, f.variant)).join("")}</select></label>
-      <label>Cases <select data-f="kind">${[["tests", "tests (fixed + draws)"], ["test", "fixed cases"], ["draw", "random draws"], ["realistic", "realistic"], ["all", "all"]].map(([v, w]) => o(v, w, f.kind)).join("")}</select></label>
+      <label>Cases <select data-f="kind">${[["tests", "tests (fixed + draws)"], ["test", "fixed cases"], ["draw", "random draws"], ["realistic", "realistic"], ["physics", "physics"], ["all", "all"]].map(([v, w]) => o(v, w, f.kind)).join("")}</select></label>
       <label>Level <select data-f="level">${o("", "any", f.level)}${levels.map((l) => o(l, `level ${l}`, f.level)).join("")}</select></label>
       <label>Tag <select data-f="tag">${o("", "any", f.tag)}${tags.map((t) => o(t, t, f.tag)).join("")}</select></label>
       <label>Sort <select data-f="sort">${[["wrong", "most wrong (verdict, repairs, err@100k)"], ["repairs", "most repairs"], ["far", "worst err@100k"], ["level", "by level"]].map(([v, w]) => o(v, w, f.sort)).join("")}</select></label>
@@ -168,7 +168,7 @@
 
   function rows() {
     const f = S.f, txt = f.text.trim().toLowerCase();
-    let out = S.data.cases.filter((c) => (f.kind === "all" || (f.kind === "tests" ? c.kind !== "realistic" : c.kind === f.kind))
+    let out = S.data.cases.filter((c) => (f.kind === "all" || (f.kind === "tests" ? c.kind !== "realistic" && c.kind !== "physics" : c.kind === f.kind))
       && (!f.level || String(c.level) === f.level) && (!f.tag || c.tags.includes(f.tag)) && (!txt || c.id.toLowerCase().includes(txt) || c.title.toLowerCase().includes(txt)))
       .map((c) => ({ c, x: shown(c) }))
       .filter(({ x }) => !f.status || (f.status === "none" ? !x || !x.status : f.status === "error" ? x && (x.status === "error" || x.status === "timeout") : x && x.status === f.status));

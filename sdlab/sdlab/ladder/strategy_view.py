@@ -41,6 +41,8 @@ _refreshing: set = set()
 def _kind(c: dict) -> str:
     if c.get("example") or "realistic" in (c.get("tags") or []):
         return "realistic"
+    if c.get("physics"):
+        return "physics"
     return "draw" if c.get("draw") else "test"
 
 
@@ -178,14 +180,15 @@ def _overview(name: str, sm: dict) -> dict:
             cell.update(id=r["id"], n=rp["count"] if rp else None, by=rp["by"] if rp else {}, far=_round(_far(m)), flag=(m or {}).get("flag"))
         cells.append(cell)
     newest = max(rows, key=lambda r: r["id"]) if rows else None
-    live_tests = {(c["case"], c["variant"]) for c in cells if kinds.get(c["case"]) != "realistic"}
+    live_tests = {(c["case"], c["variant"]) for c in cells if kinds.get(c["case"]) not in ("realistic", "physics")}
     return jsonable({
         "strategy": {"name": name, "hash": s.get("hash"), "available": s.get("available"), "reason": s.get("reason"), "about": explain.about(name)},
         "latest": {k: newest[k] for k in ("id", "at", "strategy_hash", "code_commit", "code_dirty")} if newest else None,
         "current_hash": s.get("hash"),
         "behind": sum(1 for r in rows if s.get("hash") and r["strategy_hash"] != s.get("hash")),
-        "totals": {"tests": _totals([c for c in cells if kinds.get(c["case"]) != "realistic"]),
-                   "realistic": _totals([c for c in cells if kinds.get(c["case"]) == "realistic"])},
+        "totals": {"tests": _totals([c for c in cells if kinds.get(c["case"]) not in ("realistic", "physics")]),
+                   "realistic": _totals([c for c in cells if kinds.get(c["case"]) == "realistic"]),
+                   "physics": _totals([c for c in cells if kinds.get(c["case"]) == "physics"])},
         "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "variants")} | {"kind": kinds[c["id"]]} for c in sm["cases"]],
         "cells": cells,
         "timeline": _timeline(name, live_tests),

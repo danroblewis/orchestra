@@ -55,6 +55,8 @@
   tr.about .k { color: var(--muted); }
   th.real, td.real { background: color-mix(in srgb, var(--equiv) 6%, transparent); }
   th.real:first-of-type, tr > .real:not(.real + .real) { border-left: 2px solid var(--line); }
+  th.phys, td.phys { background: color-mix(in srgb, var(--pass) 6%, transparent); }
+  tr > .phys:not(.phys + .phys) { border-left: 2px solid var(--line); }
   tr.groups th { position: static; cursor: default; font-size: 12px; text-align: left; }
   th[title] { text-decoration: underline dotted; text-underline-offset: 3px; }
   @media (max-width: 700px) { td.bar { min-width: 140px; } .hide-sm { display: none; } td.name { min-width: 170px; } }
@@ -93,13 +95,22 @@
   at the two lengths and with the data and seeds of the examples' bench; there behaviour is the headline: <b>real skill@20</b> is the mean
   skill@20 over the runs graded (each clipped at −100%, as on the bench; hover for its 95% interval), <b>goals met</b> the runs with
   skill@20 ≥ 90% and skill@100 ≥ 80% (an error or timeout never meets it) out of all realistic runs, <b>real time</b> the strategy's own
-  time on them (timeouts at 300 s not included; hover for the slowest run and the timeouts). The Set picker chooses the cases the other columns are over (default: the tests).
+  time on them (timeouts at 300 s not included; hover for the slowest run and the timeouts).
+  <b>Physics</b> (the last columns, whatever set is picked; never in the tests' pass rate): 7 physical systems that are not
+  stock-and-flow models (a draining tank, two coupled tanks, Newton cooling, a mass-spring-damper, predator-prey, a reaction chain,
+  a thermostat), solved in continuous time and sampled. <b>phys pass</b>: the coupling graph and signs agree with the physics and the
+  fresh-run skill@20 is within 5 points of the best SD model's (the reference); <b>structure</b>: runs whose coupling graph and signs
+  agree; <b>couplings</b>: the mean share of the physics' couplings found with the right sign; <b>shape</b>: the mean share with the
+  physics' shape (a sqrt or a switch SD Lab's forms cannot write); <b>vs ref @20</b>: fresh skill@20 minus the reference's (0 = as
+  good as the best SD model); <b>long-run err</b>: the found model run free for 5,000 steps against the physics (hover: the reference's).
+  The Set picker chooses the cases the other columns are over (default: the tests).
   Click a column to sort; hover a column's name for its meaning, and <b>ⓘ</b> beside a strategy for how it works.
   Every word and strategy in plain language: <a href="/ladder/glossary" style="color:inherit">the glossary</a>.</p>
   <div class="controls">
     <label>Set <select id="set" title="Tests: the ladder's tiny true models (mathematical probes). Realistic: SD Lab's 31 example models (sdlab/examples/sd-*), as on the examples' bench. The realistic columns on the right always show the realistic examples.">
       <option value="tests">tests</option>
       <option value="realistic">realistic examples</option>
+      <option value="physics" title="Physical systems (ODEs) solved in continuous time: not stock-and-flow models">physics</option>
       <option value="all">all</option>
     </select></label>
     <label>Runs <select id="variants">
@@ -164,6 +175,12 @@ const COLS = [
   { key: "rGoals", label: "goals met", fmt: (v, r) => (r.rOf ? `${r.rGoalsN}/${r.rOf}` : "–"), cls: "real", group: "real", tip: (r) => r.rTip },
   { key: "rFresh20", label: "real fresh@20", fmt: pct, cls: "real hide-sm", group: "real" },
   { key: "rTime", label: "real time (s)", fmt: (v) => (Number.isNaN(v) ? "–" : v.toFixed(0)), cls: "real hide-sm", group: "real", asc: true, tip: (r) => r.rTimeTip },
+  { key: "pPass", gl: "physics_pass", label: "phys pass", fmt: (v, r) => (r.pOf ? `${r.pPassN}/${r.pOf}` : "–"), cls: "phys", group: "phys", tip: (r) => r.pTip },
+  { key: "pStruct", gl: "physics_structure", label: "structure", fmt: (v, r) => (r.pOf ? `${r.pStructN}/${r.pOf}` : "–"), cls: "phys", group: "phys", tip: (r) => r.pTip },
+  { key: "pCoup", gl: "physics_structure", label: "couplings", fmt: pct, cls: "phys hide-sm", group: "phys" },
+  { key: "pShape", gl: "physics_shape", label: "shape", fmt: pct, cls: "phys hide-sm", group: "phys" },
+  { key: "pGap", gl: "physics_reference", label: "vs ref @20", fmt: (v) => (Number.isNaN(v) ? "–" : (v >= 0 ? "+" : "") + (100 * v).toFixed(1)), cls: "phys", group: "phys", tip: (r) => r.pRefTip },
+  { key: "pLr", gl: "physics_longrun", label: "long-run err", fmt: pct, cls: "phys", group: "phys", asc: true, tip: (r) => r.pLrTip },
 ];
 let data = null, sortKey = "pass", sortDir = -1, about = {}, gloss = {};
 const open = new Set();                                   // strategies whose explanation is expanded
@@ -179,6 +196,21 @@ function pct(v) { return v == null || Number.isNaN(v) ? "–" : (100 * v).toFixe
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const clip = (v) => (v == null ? null : Math.max(-1, v));
 const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference
+const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE, not an SD model (physics/)
+const kindOf = (c) => (isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
+
+// the physics cases for one strategy (the variant filter applies): structure against the physics, skill against the reference
+function physicsCols(name, phys, vf) {
+  const pc = data.cells.filter((c) => c.strategy === name && phys[c.case] && (vf === "all" || c.variant.includes(vf)));
+  const pr = pc.filter((c) => c.status), graded = pr.filter((c) => c.ph_of != null);
+  const num = (k) => graded.map((c) => c[k]).filter((v) => v != null && Number.isFinite(v));
+  const passN = pr.filter((c) => c.status === "pass").length, structN = graded.filter((c) => c.ph_structure === 1).length;
+  return { pPass: pc.length ? passN / pc.length : NaN, pPassN: passN, pOf: pc.length, pStruct: pc.length ? structN / pc.length : NaN, pStructN: structN,
+    pCoup: mean(graded.map((c) => c.ph_right / c.ph_of)), pShape: mean(num("ph_shape")), pGap: mean(num("ph_gap20")), pLr: mean(num("ph_lr")),
+    pTip: pc.length ? `${pr.length} of ${pc.length} physics runs done (${pr.length - graded.length} errors or timeouts); ${passN} pass, ${structN} with the physics' coupling graph and signs; ${graded.filter((c) => c.ph_diverges).length} diverge in the long run` : "not run on the physics cases yet",
+    pRefTip: graded.length ? `mean fresh skill@20 ${pct(mean(graded.map((c) => c.fresh20).filter((v) => v != null).map(clip)))} vs the reference's ${pct(mean(num("ref_fresh20")))}` : "",
+    pLrTip: graded.length ? `the reference (best SD model): ${pct(mean(num("ref_lr")))}; ${graded.filter((c) => c.ph_diverges).length} runs diverge` : "" };
+}
 
 // the realistic examples for one strategy (the variant filter applies; level and kind do not): behaviour is the headline
 function realistic(name, real, vf) {
@@ -207,8 +239,9 @@ function rows() {
   const level = Object.fromEntries(data.cases.map((c) => [c.id, c.level]));
   const kd = document.getElementById("kind").value, drawn = Object.fromEntries(data.cases.map((c) => [c.id, !!c.draw]));
   const set = document.getElementById("set").value, real = Object.fromEntries(data.cases.map((c) => [c.id, isReal(c)]));
+  const phys = Object.fromEntries(data.cases.map((c) => [c.id, isPhys(c)])), kinds = Object.fromEntries(data.cases.map((c) => [c.id, kindOf(c)]));
   const keep = (c) => (vf === "all" || c.variant.includes(vf)) && (!lv || level[c.case] === lv) && (kd === "all" || (kd === "draws") === drawn[c.case])
-    && (set === "all" || (set === "realistic") === real[c.case]);
+    && (set === "all" || set === kinds[c.case]);
   const by = {};
   for (const s of data.strategies) if (!f || s.name.toLowerCase().includes(f)) by[s.name] = [];
   const of = {};
@@ -228,6 +261,7 @@ function rows() {
       ...achievable(cs),
       ...strictPass(cs),
       ...realistic(name, real, vf),
+      ...physicsCols(name, phys, vf),
     };
   });
 }
@@ -287,13 +321,14 @@ function render() {
     const d = (Number.isNaN(x) ? none : x) - (Number.isNaN(y) ? none : y);
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
-  const nReal = COLS.filter((c) => c.group === "real").length, setName = { tests: "Tests", realistic: "Realistic examples", all: "All cases" }[document.getElementById("set").value];
-  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th></tr>` + "<tr>" + COLS.map((c) =>
+  const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length;
+  const setName = { tests: "Tests", realistic: "Realistic examples", physics: "Physics", all: "All cases" }[document.getElementById("set").value];
+  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nReal - nPhys}">${setName}</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th></tr>` + "<tr>" + COLS.map((c) =>
     `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder/strategy?name=${encodeURIComponent(r.name)}&kind=${{ tests: "tests", realistic: "realistic", all: "all" }[document.getElementById("set").value]}" style="color:inherit" title="How ${r.name} behaves: its history, and per case what would make its model right">${r.name}</a>`
+    if (c.key === "name") return `<td class="name"><a href="/ladder/strategy?name=${encodeURIComponent(r.name)}&kind=${{ tests: "tests", realistic: "realistic", physics: "physics", all: "all" }[document.getElementById("set").value]}" style="color:inherit" title="How ${r.name} behaves: its history, and per case what would make its model right">${r.name}</a>`
       + ` <a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all&set=${document.getElementById("set").value}" class="idea" style="display:inline;color:inherit" title="Every case in the set on the live Now board: the true model beside what ${r.name} found">now</a>`
       + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="${esc(about[r.name].idea)}">ⓘ</button>` : "") + `</td>`;
     if (c.key === "bar") {

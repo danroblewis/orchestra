@@ -705,6 +705,31 @@ glossary:
     group: The model's parts
     text: A classic system dynamics model (an epidemic, Bass diffusion, a supply line, a project with rework, ...) imported from a modeller's file through PySD, and accepted only when PySD's simulation and SD Lab's give the same numbers. Announced injections or a measured input keep it moving over the ladder's runs.
 
+  physics_case:
+    term: Physics case
+    group: The model's parts
+    text: Data from a physical system that is not a stock-and-flow model (a tank draining through a hole, two coupled tanks, Newton cooling, a mass-spring-damper, predator-prey, a reaction chain, a thermostat), solved in continuous time by an ODE solver and sampled once per step. There is no true SD model to recover, so it is scored against the physics' structure and the best SD model, in its own Physics view, never in the tests' pass rate. Variants are none and meas (measurement error); counting noise does not apply, since nothing moves in whole things.
+  physics_structure:
+    term: Structure agreement (physics)
+    group: Results
+    text: Which stocks and measured inputs each stock's change reads, and with what sign, compared with the physics. It is read from the found model's derivatives over the run's states, so a move and a link, or births and deaths, count the same. A coupling counts when it is at least 10% of the strongest one into that stock (sampling continuous time adds small terms the equations do not have).
+  physics_shape:
+    term: Shape (physics)
+    group: Results
+    text: How a coupling bends - linear, a square root (concave, like a tank's outflow), a product of two stocks (predation), or a switch (an on/off heater). SD Lab's forms write lines and products, not square roots or switches with memory, so the shape is reported but not required for a pass.
+  physics_reference:
+    term: Reference (best SD model)
+    group: Results
+    text: The best model SD Lab's forms can write for a physics case, with one number per physical term (a square-root outflow as a straight line, a product as a rate times a linear effect, an on/off heater as a proportional controller), fitted by an oracle that knows the physics on the long noise-free run. Its skill is the yardstick a strategy's skill is compared with; the Now board draws it as the model the found one is compared with.
+  physics_pass:
+    term: Physics pass
+    group: Results
+    text: On a physics case, the found model's coupling graph and signs agree with the physics (nothing missing, nothing invented) and its fresh-run skill@20 is within 5 points of the reference's, or better. It is counted in the Physics view only.
+  physics_longrun:
+    term: Long-run error (physics)
+    group: Results
+    text: The found model run free for 5,000 steps from a fresh start, fed the measured inputs and announced injections, against the physics run as long - the rms gap over the last 1,000 steps as a share of each stock's range (100% at most; a model that runs away counts 100%). A cycle with no driver (predator-prey) drifts out of phase, so there even the reference is far off.
+
   # the results
   pass:
     term: Pass

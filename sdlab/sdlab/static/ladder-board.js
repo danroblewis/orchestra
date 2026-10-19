@@ -24,6 +24,25 @@
   const cxText = (x) => !x ? "–" : `${x.true} → ${x.found}` + (x.extra ? ` (${x.extra > 0 ? "+" : ""}${x.extra}: ${Object.entries(x.by).filter(([, v]) => v).map(([k, v]) => `${v > 0 ? "+" : ""}${v} ${k}`).join(", ")})` : " (same)");
   const B = { strategy: null, variant: "counts-long", set: "tests", status: "", level: "", tag: "", sort: "level", data: null, tab: {}, loading: null };
   const isReal = (c) => !!(c.example || (c.tags || []).includes("realistic"));   // a realistic case: an example by reference (realistic.py)
+  const isPhys = (c) => !!c.physics;                                                 // a physics case: an ODE solved in continuous time (physics/)
+  const kindOf = (c) => (isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
+  // a physics case runs none and meas (no counting noise): the counts variant picked reads as its meas variant
+  const caseVariants = (c) => (isPhys(c) ? (c.variants || []).map((v) => v.name || v) : VARIANTS);
+  const variantOf = (c, v) => (isPhys(c) && v !== "all" ? v.replace(/^counts-/, "meas-") : v);
+  const PHYS = "Physics view: the found model's couplings (which stocks and inputs each stock's change reads, with sign and shape, from its Jacobian on the run) against the physics', and its fresh-run skill against the reference, the best model SD Lab's forms can write. Pass: the coupling graph and signs agree and fresh skill@20 is within 5 points of the reference's.";
+  function physHtml(c, r) {
+    const Ph = c.physics, ph = r && r.scores && r.scores.physics;
+    const head = `<p class="tests"><b>Physics</b>: ${esc(Ph.about)}${Ph.differs ? ` <span class="muted">SD vs physics: ${esc(Ph.differs)}</span>` : ""}</p>`;
+    if (!ph) return head;
+    const shp = (x) => esc(x || "–");
+    const rows = ph.couplings.map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>${esc(x.sign_true)} ${shp(x.shape_true)}</td><td>${x.present ? `${esc(x.sign_found)} ${shp(x.shape_found)}` : "missing"}</td><td>${x.sign_ok ? "✓" : "✗"}${x.present && !x.shape_ok ? " <span class=\"muted\">shape</span>" : ""}</td></tr>`).join("")
+      + ph.spurious.map((x) => `<tr><td class="mono">${esc(x.key)}</td><td>none</td><td>${esc(x.sign)} ${shp(x.shape)} (${pct(x.rel)} of the strongest)</td><td>✗ invented</td></tr>`).join("");
+    const rb = (ph.reference || {}).behaviour || {}, sk = (b, h) => (((b || {}).fresh || {})[String(h)] || {}).skill;
+    const lr = ph.longrun || {}, rl = (ph.reference || {}).longrun || {};
+    return `${head}<table class="small" data-tip="${esc(PHYS)}"><tr><th>coupling</th><th>physics</th><th>found</th><th></th></tr>${rows}</table>
+      <p class="small">fresh skill@20 <b>${pct(sk(r.scores.behaviour, 20))}</b> vs the reference's ${pct(sk(rb, 20))}; @100 <b>${pct(sk(r.scores.behaviour, 100))}</b> vs ${pct(sk(rb, 100))};
+      long-run error (5,000 steps free) <b>${lr.diverges ? "diverges" : pct(lr.err)}</b> vs ${pct(rl.err)} <span class="muted">· reference: ${esc((ph.reference || {}).how || "")}</span></p>`;
+  }
   const GOAL = "Meets the goal (as on the examples' bench): skill@20 at least 90% and skill@100 at least 80%; an error or timeout never does.";
   const meets = (r) => !!r && r.status !== "error" && r.status !== "timeout" && (() => { const m = L.measures(r.scores); return m.skill20 != null && m.skill100 != null && m.skill20 >= 0.9 && m.skill100 >= 0.8; })();
   try { Object.assign(B, JSON.parse(localStorage.getItem("sdlab.ladder.board") || "{}"), { data: null, tab: {}, loading: null }); } catch { /* defaults */ }
@@ -73,7 +92,7 @@
     $("board-controls").innerHTML = `
       <label>Strategy <select id="b-strat">${strats.map((s) => opt(s.name, s.name === d.best ? `${s.name} (best pass rate)` : s.name, B.strategy)).join("")}</select></label>
       <label>Variant <select id="b-var">${[...VARIANTS.map((v) => [v, v]), ["all", "all four (tabs)"]].map(([v, w]) => opt(v, w, B.variant)).join("")}</select></label>
-      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline.">Set <select id="b-set">${[["tests", "tests"], ["realistic", "realistic examples"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
+      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline. Physics: physical systems solved in continuous time (no SD truth), against their physics and the best SD model; their counts variants read as meas.">Set <select id="b-set">${[["tests", "tests"], ["realistic", "realistic examples"], ["physics", "physics"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
       <label>Verdict <select id="b-status">${[["", "any"], ["pass", "pass"], ["equivalent", "equivalent"], ["fail", "fail"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => opt(v, w, B.status)).join("")}</select></label>
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
@@ -90,8 +109,8 @@
   // the result a card shows: its variant, or with all four, the tab picked (default: the worst)
   function shown(c, d) {
     const rs = d.by[c.id] || {};
-    if (B.variant !== "all") return rs[B.variant] || null;
-    const pickV = B.tab[c.id] || [...VARIANTS].filter((v) => rs[v]).sort((a, b) => (RANK[rs[a].status] ?? 9) - (RANK[rs[b].status] ?? 9))[0];
+    if (B.variant !== "all") return rs[variantOf(c, B.variant)] || null;
+    const pickV = B.tab[c.id] || [...caseVariants(c)].filter((v) => rs[v]).sort((a, b) => (RANK[rs[a].status] ?? 9) - (RANK[rs[b].status] ?? 9))[0];
     return pickV ? rs[pickV] : null;
   }
 
@@ -112,13 +131,14 @@
         <span data-tip="${esc(DEF.skill20)} Means clip each run at −100%.">skill@20 <b>${pct(clipMean("skill20"))}</b></span>
         <span data-tip="${esc(DEF.fresh20)}">fresh@20 <b>${pct(clipMean("fresh20"))}</b></span>
         ${rows.some(({ c }) => isReal(c)) ? `<span data-tip="${esc(GOAL)}">goals met <b>${rows.filter(({ c, r }) => isReal(c) && meets(r)).length}</b> of ${rows.filter(({ c }) => isReal(c)).length}</span>` : ""}
+        ${rows.some(({ c }) => isPhys(c)) ? `<span data-tip="${esc(PHYS)}">physics structure agrees <b>${rows.filter(({ c, r }) => isPhys(c) && r && r.scores && r.scores.physics && r.scores.physics.structure_ok).length}</b> of ${rows.filter(({ c }) => isPhys(c)).length}</span>` : ""}
       </div><div class="pbar">${bar}</div>`;
   }
 
   function cardHtml(c, r, d) {
     const m = r ? L.measures(r.scores) : null, st = r ? r.status : null;
     const rs = d.by[c.id] || {};
-    const tabs = B.variant === "all" ? `<span class="btabs" role="tablist" aria-label="Variant">${VARIANTS.map((v) => {
+    const tabs = B.variant === "all" ? `<span class="btabs" role="tablist" aria-label="Variant">${caseVariants(c).map((v) => {
       const x = rs[v], on = r && r.variant === v;
       return `<button role="tab" aria-selected="${on}" class="btab${on ? " on" : ""}" data-tab="${esc(v)}"><span class="sq st-${x ? x.status : "none"}">${x ? x.status[0].toUpperCase() : "·"}</span>${esc(v)}</button>`;
     }).join("")}</span>` : "";
@@ -139,14 +159,15 @@
         <button class="btitle" data-open title="Open the full comparison: every part, the equations side by side"><span class="mono">${esc(isReal(c) ? c.id : c.id.slice(0, 3))}</span> ${esc(c.title)}</button>
         <span class="stbadge st-${st || "none"}">${st ? esc(st) : "not run"}</span>
         ${isReal(c) && r ? `<span class="stbadge st-${meets(r) ? "pass" : "fail"}" data-tip="${esc(GOAL)}">${meets(r) ? "meets the goal" : "short of the goal"}</span>` : ""}
-        ${m && m.errorScore !== null ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
+        ${m && m.errorScore !== null && !isPhys(c) ? `<span class="berr" data-tip="${esc(DEF.error)}"><b>${pct(m.errorScore)}</b><small>equation error${m.of ? ` · ${m.missing + m.off + m.spurious} of ${m.of}` : ""}</small></span>` : ""}
       </header>
       <p class="tests">Tests: ${esc(c.tests)} <span class="muted small">level ${esc(c.level)} · ${esc(c.tags.join(", "))}</span></p>
+      ${isPhys(c) ? physHtml(c, r) : ""}
       ${P.drawHtml(c)}
       ${tabs}
-      <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>True model</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
+      <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
       ${r && r.found ? P.diffHtml(c, r) : ""}
-      ${r ? `<p class="bexplain">${esc(L.explain(r.scores) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
+      ${r ? `<p class="bexplain">${esc((isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
       ${meas}
     </article>`;
   }
@@ -169,7 +190,7 @@
     }
     controls(d);
     let rows = d.cases.map((c) => ({ c, r: shown(c, d) }));
-    rows = rows.filter(({ c, r }) => (B.set === "all" || (B.set === "realistic") === isReal(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
+    rows = rows.filter(({ c, r }) => (B.set === "all" || B.set === kindOf(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
       && (!B.status || (B.status === "none" ? !r : B.status === "error" ? r && (r.status === "error" || r.status === "timeout") : r && r.status === B.status)));
     const err = (r) => { const m = r && L.measures(r.scores); return m && m.errorScore !== null ? m.errorScore : -1; };
     if (B.sort === "status") rows.sort((a, b) => (a.r ? RANK[a.r.status] ?? 9 : 10) - (b.r ? RANK[b.r.status] ?? 9 : 10) || a.c.level - b.c.level);

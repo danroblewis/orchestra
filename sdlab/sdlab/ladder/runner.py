@@ -21,7 +21,7 @@ from pathlib import Path
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import catalog, data, provenance, score, store
+from . import catalog, data, physics, provenance, score, store
 from . import realistic as _realistic
 
 TIMEOUT = 120
@@ -86,14 +86,15 @@ def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None
     items = []
     for cid in case_ids:
         c = casemod.load(cid)
+        shc = physics.score_hash(sh) if physics.is_physics(c) else sh     # a physics case: its scoring code too
         for v in c["variants"]:
             if variants and v["name"] not in variants and v["noise"] not in variants and v["length"] not in variants:
                 continue
             for s in strategies:
-                why = "forced" if force else store.staleness(have.get((cid, v["name"], s["name"])), c["hash"], s["hash"], sh)
+                why = "forced" if force else store.staleness(have.get((cid, v["name"], s["name"])), c["hash"], s["hash"], shc)
                 if why:
                     items.append({"case": cid, "variant": v["name"], "strategy": s["name"], "case_hash": c["hash"],
-                                  "strategy_hash": s["hash"], "score_hash": sh, "reason": why,
+                                  "strategy_hash": s["hash"], "score_hash": shc, "reason": why,
                                   "mode": "rescore" if why == "score_only" else "run"})
     return items
 
@@ -159,7 +160,9 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None) ->
             signal.setitimer(signal.ITIMER_REAL, 0)     # ~2000 windows of a long realistic run takes minutes)
             armed = False
         fresh = data.load(c, item["variant"], fresh=True)
-        if d.get("clean"):           # a noise of noise.py: equations on what was reported, behaviour on the run underneath (every step)
+        if physics.is_physics(c):    # physics/: structure against the physics, behaviour against the ODE, beside the reference
+            s = physics.score_found(c, item["variant"], flows, d, fresh, inferred)
+        elif d.get("clean"):           # a noise of noise.py: equations on what was reported, behaviour on the run underneath (every step)
             s = {**score.equations(c, noise, model, flows, d),
                  "behaviour": score.behaviour(model, flows, d["clean"], fresh["clean"], inferred if d["t"] == d["clean"]["t"] else None)}
         else:

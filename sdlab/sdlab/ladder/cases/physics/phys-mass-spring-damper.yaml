@@ -1,0 +1,10 @@
+# A damped oscillator (period about 63 steps, damping ratio 0.1) pushed by a measured force. Position
+# and velocity are signed, so they are measured from a datum (P = x + 10, V = v + 1): the cleanest
+# SD representation that keeps every stock and flow positive.
+system: mass-spring-damper
+title: Mass-spring-damper (position and velocity, offset)
+level: 20
+tags: [physics, linear, oscillation, input]
+tests: "a damped oscillator from continuous time: P reads V (+), V reads P (-) and itself (-) and the measured force (+); the offsets show as constant flows"
+seed: 4
+meas: {rel: 0.0, abs: 0.02}

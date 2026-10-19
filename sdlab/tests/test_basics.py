@@ -19,8 +19,8 @@ def client(monkeypatch, tmp_path):
 def test_every_case_is_listed_first_simplest_first(client):
     r = client.get("/api/models").json()
     basics = r["basics"]
-    assert [b["case"] for b in basics] == [c["id"] for c in sorted(ladder.cases(), key=lambda c: (c["level"], c["id"])) if not c.get("draw") and not c.get("example")], \
-        "every case but a parametric case's draws and the realistic cases (the sd-* examples, listed as examples)"
+    assert [b["case"] for b in basics] == [c["id"] for c in sorted(ladder.cases(), key=lambda c: (c["level"], c["id"])) if not c.get("draw") and not c.get("example") and not c.get("physics")], \
+        "every case but a parametric case's draws, the realistic cases (the sd-* examples, listed as examples) and the physics cases"
     assert not any(b["case"].startswith("sd-") for b in basics)
     assert all(b["id"] == "ladder-" + b["case"] and b["tests"] and b["name"] for b in basics)
     assert r["examples"], "the older models are still listed (the page hides them)"

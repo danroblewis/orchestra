@@ -32,7 +32,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import analysis, catalog, complexity, data, explain, longrun_cache, realistic, score, store, strict
+from . import analysis, catalog, complexity, data, explain, longrun_cache, physics, realistic, score, store, strict
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 
@@ -230,12 +230,13 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     lr_cells = []
     refs = strict.references()                                     # read only: what `sdlab-ladder strict` computed
     cs = [casemod.load(i) for i in casemod.case_ids()]
-    cells, by_tag, totals, real = [], {}, {}, {}
+    cells, by_tag, totals, real, phys = [], {}, {}, {}, {}
     for c in cs:
+        shc = physics.score_hash(sh) if physics.is_physics(c) else sh       # a physics case: its scoring code too
         for v in c["variants"]:
             for s in strats:
                 row = have.get((c["id"], v["name"], s["name"]))
-                stale = store.staleness(row, c["hash"], s["hash"], sh) if s["available"] else None
+                stale = store.staleness(row, c["hash"], s["hash"], shc) if s["available"] else None
                 cell = {"case": c["id"], "variant": v["name"], "strategy": s["name"], "stale": stale, **flatten(row),
                         **complexity.cell(row, cx.get(row["id"]) if row else None),
                         **analysis.cell(c["id"], v["name"], c["hash"])}
@@ -247,6 +248,10 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     cell["goal"] = realistic.meets_goal(cell["status"], cell["skill20"], cell["skill100"]) if row else None
                     cell["goal_fresh"] = realistic.meets_goal(cell["status"], cell["fresh20"], cell["fresh100"]) if row else None
                     real.setdefault(s["name"], []).append(cell)
+                    continue
+                if physics.is_physics(c):                         # a physics case: its own view, not the tests'
+                    cell.update(physics.cell(row))
+                    phys.setdefault(s["name"], []).append(cell)
                     continue
                 if row and lr.get(row["id"]):
                     lr_cells.append((s["name"], v["name"], c["level"], lr[row["id"]]))
@@ -270,8 +275,10 @@ def _summary(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                     g[cell["status"] or "missing"] += 1
     return jsonable({"strategies": strats,
                      "cases": [{k: c[k] for k in ("id", "title", "level", "tags", "tests", "hash")} | {"variants": [v["name"] for v in c["variants"]]} | draw_brief(c)
-                               | ({"example": c["example"]} if c.get("example") else {}) for c in cs],
+                               | ({"example": c["example"]} if c.get("example") else {})
+                               | ({"physics": {k: c["physics"][k] for k in ("system", "differs")}} if c.get("physics") else {}) for c in cs],
                      "cells": cells, "by_tag": by_tag, "totals": totals, "realistic": {n: realistic.aggregate(x) for n, x in real.items()},
+                     "physics": {n: physics.aggregate(x) for n, x in phys.items()},
                      "score_hash": sh, "parametric": parametric(cs, cells),
                      "longrun": longrun_cache.aggregate(lr_cells)})
 
