@@ -638,3 +638,22 @@ All six leaders fail every cell of the five cases (`sdlab-ladder run --strategie
   Either one can turn fails into passes (CLAUDE.md invariant 5).
 - **Found models are floored at 0.** Should found models be allowed signed stocks and two-way flows (the pinned `simulate.py`)? The scorer already takes `two_way: true` for the equations. skill@H, though, runs found models floored, so 113 and 220 can't get the truth's behaviour.
 - **A pipe read as an Erlang chain passes.** structures passes 117 noise-free with a 5-stage exponential chain scored as delay 5. Should a DELAY FIXED's shape count (pipe against Erlang), or is the delay time enough?
+
+## 2026-10-20 09:30 (note: Kubernetes rungs 1-2, cases 300 and 301)
+
+**Finished:** [k8s-300-301.md](k8s-300-301.md). Every one of the 49 active strategies now passes every variant of 300 and 301. Store at 09:23Z, scorer ec821eb6, 0 stale:
+- **300:** before, 1 of 48 strategies passed every variant (cells 202 pass / 115 fail / 11 error of 288); now 294/294 pass.
+- **301:** before, 162 / 24 / 6 of 192; now 196/196 pass.
+
+**Why:**
+- **Errors in variables.** One-step least squares on levels with 5% measurement error came out 22-27% off on 300's meas variants. A Kalman bound showed the data could do better. Fixed by the eiv refit in 47 strategies (e8edf28, 5a31020, 4006a72).
+- **Measured input.** The noise oracle ignored it (401a1e3, 0 flips). Some strategies ignored it or crashed on it: numopt f6643bf, common_cause/sindy f5537cf, shared_noise 42edc32, periodic_inflows/recession 1545e0f.
+- **shared_noise move/link.** It read moves as links on noise-free data (2212020).
+
+**Regression:** 087 outliers-long went pass -> equivalent for shared_noise and numopt_cma. The cause is eiv.py's acceptance on outliers, shared by every copy. Not fixed.
+
+**Retirements:** none. shared_noise was considered and kept: the fault was fixable, and its move/link/co-flow test is unique.
+
+**Needs you**
+- **The Mac watcher excludes `tag:kubernetes`.** Should it now include it? Parked strategies' kubernetes cells are re-scored only by hand.
+- **part-* cells error in the harness**, at physics/score.py:133.
