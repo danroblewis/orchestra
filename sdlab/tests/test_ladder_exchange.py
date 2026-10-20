@@ -152,3 +152,34 @@ def test_cli_export_and_import(two, tmp_path, capsys):
     two("mac")
     assert cli.main(["import", path]) == 0 and "1 added" in capsys.readouterr().out
     assert cli.main(["import", "--high-water", "node2"]) == 0 and capsys.readouterr().out.strip() == "1"
+
+
+# ---- backups ----
+
+def test_a_backup_restores_to_the_same_rows_and_rotation_keeps_the_schedule(two, tmp_path, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from sdlab.ladder import backup
+    two("mac")
+    for i in range(5):
+        store.record(row(case=f"00{i}-x"))
+    got = backup.snapshot(tmp_path / "bk")
+    assert got["rows"]["results"] == 5 and got["bytes"] > 0
+    out = backup.restore(got["file"], tmp_path / "back.sqlite")
+    assert out["checked"] and out["rows"] == got["rows"]
+    with sqlite3.connect(tmp_path / "back.sqlite") as con:
+        assert con.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 5
+    with pytest.raises(SystemExit):
+        backup.restore(got["file"], store.path())                            # never over the live store by accident
+    # rotation: hourly for a day, daily for 14 days, weekly for 8 weeks
+    now = datetime(2026, 10, 19, 12, 0, 0)
+    d = tmp_path / "rot"
+    d.mkdir()
+    for h in range(0, 24 * 70, 6):
+        (d / f"results-{(now - timedelta(hours=h)).strftime('%Y%m%d-%H%M%S')}.sqlite.zst").write_bytes(b"x")
+    backup.rotate(d, now)
+    left = [backup._when(p) for p in backup.snapshots(d)]
+    assert sum(now - w <= timedelta(hours=24) for w in left) == 5
+    days = [w for w in left if timedelta(hours=24) < now - w <= timedelta(days=14)]
+    assert len(days) == len({w.date() for w in days}) == 14
+    assert all(now - w <= timedelta(weeks=8) for w in left)

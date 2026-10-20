@@ -29,6 +29,10 @@
     export [--since-id N] [--out FILE]
                                   the results made here since id N (default: since the last export) to a
                                   gzipped JSONL file, with the code patches they refer to (exchange.py)
+    backup [--dir D]              a consistent snapshot of the store (SQLite's backup API), compressed, rotated
+                                  (24 h hourly, 14 days daily, 8 weeks weekly; backup.py)
+    restore [FILE] [--to PATH] [--replace]
+                                  a backup decompressed and its row counts checked against when it was taken
     import FILE... | --high-water MACHINE
                                   add exported results to this store (new ids, skipped when already here; latest:
                                   the newest `at` per cell); --high-water: the newest id imported from MACHINE
@@ -447,6 +451,13 @@ def main(argv: list[str] | None = None) -> int:
     im = sub.add_parser("import", help="add another machine's exported results to this store (exchange.py); idempotent")
     im.add_argument("files", nargs="*")
     im.add_argument("--high-water", metavar="MACHINE", help="print the newest remote id imported from MACHINE (0: none) and stop")
+    bk = sub.add_parser("backup", help="a consistent, compressed snapshot of the result store, then rotation (backup.py)")
+    bk.add_argument("--dir", help="where (default $SDLAB_BACKUPS or ~/.sdlab/backups)")
+    rs = sub.add_parser("restore", help="decompress a backup to a file and check its row counts (backup.py)")
+    rs.add_argument("file", nargs="?", help="a backup file (default: the newest)")
+    rs.add_argument("--dir", help="where the backups are")
+    rs.add_argument("--to", help="the store file to write (default: next to the backup, .restored.sqlite)")
+    rs.add_argument("--replace", action="store_true", help="overwrite --to even if it exists (the live store only with the watcher and server stopped)")
     st = sub.add_parser("status", help="the strategy x case matrix")
     st.add_argument("--strategies", default="all")
     st.add_argument("--variant")
@@ -515,6 +526,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"import {f}: from {got['machine']}: {got['added']} added ({got['latest']} now latest), {got['skipped']} already here,"
                   f" {got['patches']} patches")
         return 0
+    if a.command in ("backup", "restore"):
+        from . import backup
+        return backup.main(a)
     if a.command == "status":
         return status(a)
     if a.command == "show":
