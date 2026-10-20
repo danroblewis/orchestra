@@ -1,4 +1,5 @@
-# A copy of earned_pieces/rows.py at 66086e7 (strategies are isolated: copied, never imported), with one
+# A copy of matrix/earned_rows.py at 49e4ca7 (itself earned_pieces/rows.py at 66086e7; strategies are isolated:
+# copied, never imported), with one more change marked "(this copy)" in backward(); and with one
 # addition marked "(this copy)": the pieces found again at the textbook price compete on BIC; see earned.py.
 """Each row's levels and outside-inflow form chosen together, every change paying its full price.
 
@@ -87,7 +88,9 @@ def backward(y: np.ndarray, X: np.ndarray, cuts: list[int] | None, start: list[i
         for j in range(X.shape[0]):
             trial = [q for q in chosen if q != j] if j in chosen else chosen + [j]
             s, r = sc(trial)
-            if s < cur - 1e-9 and (best is None or s < best[1]):
+            # (this copy) equal BICs (every rss below the floor: exact data) broken by the lower rss, not
+            # by the column's index (dropping the first of six collinear columns lost 058's move)
+            if s < cur - 1e-9 and (best is None or s < best[1] - 1e-9 or (s < best[1] + 1e-9 and r < best[2])):
                 best = (trial, s, r)
         if best is None:
             return chosen, rss, cur
