@@ -408,7 +408,8 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         # taken, 0.0141 left as a link beside inflight -> errors_total, read as a move at cost 49.5)
         recv = [r["id"] for r in rows if r["id"] != a and any((r["coefL"][c].get(a) or 0) > 0 for c in range(L)) and unit[r["id"]] == unit[a]]
         noisy_moves = bool(recv) and all(kinds.get((a, b)) == "move" for b in recv)
-        cand = [c for c in range(L) if moves[c] > 0 and ((up and moves[c] > drain[c] and (trust or row.get("conserved") or noisy_moves)) or drain[c] > moves[c])]
+        follow = opts.get("conserve_follow", True) and (row.get("conserved") or noisy_moves)    # (off: as before)
+        cand = [c for c in range(L) if moves[c] > 0 and ((up and moves[c] > drain[c] and (trust or follow)) or drain[c] > moves[c])]
         if not cand:
             continue
         in_cand = np.zeros(L, bool)
