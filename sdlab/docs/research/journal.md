@@ -710,3 +710,31 @@ The gains were much larger: 184 fail -> pass on round 1's sample 1, 48 on cause 
 - The per-stock oracle's tolerances are about 30x the joint bound on all counts/meas cells. Narrowing them changes what a pass means.
 - realistic_hats' net -2 sample (099e99d).
 - odefit meas-long.
+
+## 2026-10-20 (note: Kubernetes rung 5, case 304)
+
+**Finished:** [k8s-304.md](k8s-304.md), the first rung run as an elimination competition. Case
+304-k8s-timeouts-and-errors (303 plus a 0.08 x queue timeout and 3% of inflight into errors_total) went
+from 185/188 cells passing to 188/188 over the 47 roster strategies, and is 184/184 over the 46 left:
+`store.latest(case='304-k8s-timeouts-and-errors')` over `select_strategies('roster:kubernetes')`, after
+`sdlab-ladder sync --strategies roster:kubernetes --cases 304` printed "Nothing to run". 300-302 pass every
+cell; 303 is unchanged (odefit meas-long).
+
+**Why:** the new timeout drain was folded into the move or the traffic gain on counts-short (effect_hats,
+inflow_effects, shared_noise; 3 equivalent). The new 5xx counter is found by everyone.
+
+**Fixes (7b6d7f4):** effect_hats and inflow_effects' prune tries one proportional drain in place of a set
+of outflow pieces; shared_noise's conserve prices the forced fit at one log T. 300-304 72/72 for the three;
+paired samples +4, -0.
+
+**Refuted:** that the ~2x high timeout reading is a bias (seed 304's draw; k8s-304-s2.md); that blockwise
+is a duplicate of matrix (it runs its own method at 15+ measured stocks, so on 317, and differs on stored
+particle cells).
+
+**Eliminated:** unified, duplicate of matrix (same code path, 0 differences on 1148 shared cells). 46
+survivors.
+
+**Needs you:**
+- On 13 of 20 fresh counts-short seeds the matrix line drops the timeout (lna 5/20); seed 304 hides it. A
+  proper fix rewrites the matrix line with a counting-variance likelihood. 305's retries feed off timeouts.
+- The scorer's tolerances are still about 30x the bound on counts cells.

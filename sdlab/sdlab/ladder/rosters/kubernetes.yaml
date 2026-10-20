@@ -17,3 +17,13 @@ eliminated:
     rung: "302"
     kind: not-entered
     reason: parked on 2026-10-20 (7x kalman_lna's cost, no better; docs/research/kalman_bayes.md)
+  unified:
+    rung: "304"
+    kind: duplicate
+    of: matrix
+    reason: >-
+      same status and found model (3 s.f.) as matrix on every shared cell (438 current-hash cells
+      incl. all 24 of 300-304, plus 710 re-run in process on current code; 0 differ). identify() is
+      eiv.apply(main_line(...)) with main_line byte-identical to matrix's and eiv.py equal to matrix's
+      inline _eiv_; unified's own search is unbuilt ("WORK IN PROGRESS"). Comes back if it is built.
+      Package kept (objective_test.py imports it). docs/research/k8s-304.md
