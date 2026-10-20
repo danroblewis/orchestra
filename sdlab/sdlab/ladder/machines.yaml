@@ -4,4 +4,4 @@
 node2:
   ssh: ubuntu@10.198.1.109
   repo: ~/sdlab
-  cases: tag:realistic,tag:physics,tag:particles,tag:heavy,tag:real,tag:canonical,tag:kubernetes
+  cases: tag:realistic,tag:physics,tag:particles,tag:heavy,tag:real,tag:canonical
