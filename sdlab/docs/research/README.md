@@ -56,6 +56,7 @@ comparison script of exp/symbolic-regression.
 | [XMILE export and interoperability](xmile-export.md) | idea (not started) | - |
 | [A complexity budget the analyst states](complexity-budget.md) | idea (not started) | - |
 | [Bench instrumentation: coverage, selection, failure classes, ablation](bench-instrumentation.md) | done (I1; infra/bench-instrumentation) | on v2.1: 44 of 50 failing runs not representable, 1 not chosen, 5 not supported; judge picked the best candidate in 33 of 62 |
+| [Making ladder tests faster: a lower time limit, shared first fits](test-speed.md) | measured (2026-10-20; nothing changed) | limit 240 s saves 2.3 h of 67.6 h with 0 passes lost; per-set limits (realistic 60 s, physics 180 s, rest 240 s) 8.6 h (12.8%), 0 lost; 120 s 8.1 h but 112 lost. Caching main-line fits by (code closure, inputs): 9.8-11.5% of run time, mostly in cheap strategies; master_eq's copy differs. changes.pelt repeats are 6-39% of the four costliest strategies |
 | [Behaviour-consistency gate against runaway models](behaviour-consistency.md) | done (wave 3, benchmark v2.1) | reject for the main line (25.3% with the 5x test; no change without); keep gate.py for flexible strategies |
 | [Effects as basis-expanded flow columns in the regression](effect-columns.md) | idea (not started) | - |
 | [A diagnose-and-expand loop driven by residual signatures](residual-diagnostics.md) | idea (not started) | - |
