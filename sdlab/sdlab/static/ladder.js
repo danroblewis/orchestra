@@ -46,6 +46,7 @@
     if (S.view === "history") ["case", "strategy"].forEach((k) => S.hsel[k] && p.set(k, S.hsel[k]));
     if (S.view === "cases") {                       // the list's filters, so a refresh keeps them
       if (S.csel.case) p.set("case", S.csel.case);
+      if (S.csel.run) p.set("run", `${S.csel.run.strategy}:${S.csel.run.variant}`);
       if (S.cfilter) p.set("q", S.cfilter);
       if ((S.ctags || []).length) p.set("tags", S.ctags.join(","));
       if (S.cstatus && S.cstatus !== "all") p.set("status", S.cstatus);
@@ -343,7 +344,7 @@
     $("cmp-body").innerHTML = equationsHtml(c, cmp, r);
   }
 
-  function equationsHtml(c, cmp, r) {
+  function equationsHtml(c, cmp, r, sel = S.sel) {
     const s = (r && r.scores) || {};
     const rows = cmp.rows.map((row) => `<tr class="cls-${row.cls}">
       <td class="mono">${esc(row.ends)}</td>
@@ -364,7 +365,7 @@
         <div class="tablewrap"><table class="rtable"><thead><tr><th>part</th><th>kind</th><th class="num">true</th><th class="num">found</th><th class="num">error</th><th class="num">oracle SE</th><th>verdict</th></tr></thead><tbody>${parts}${spur}</tbody></table></div>
         ${(s.notes || []).length ? `<p class="note">${s.notes.map(esc).join("<br>")}</p>` : ""}
         ${r.error ? `<pre class="err">${esc(r.error)}</pre>` : ""}
-      </details>` : `<p class="note">${esc(S.sel.strategy || "This strategy")} has not run on ${esc(c.id)} ${esc(S.sel.variant)} yet: <code>uv run sdlab-ladder run --strategies ${esc(S.sel.strategy || "")} --cases ${esc(c.id.slice(0, 3))} --variants ${esc(S.sel.variant)}</code></p>`}`;
+      </details>` : `<p class="note">${esc(sel.strategy || "This strategy")} has not run on ${esc(c.id)} ${esc(sel.variant)} yet: <code>uv run sdlab-ladder run --strategies ${esc(sel.strategy || "")} --cases ${esc(c.id.slice(0, 3))} --variants ${esc(sel.variant)}</code></p>`}`;
   }
 
   // ---------- Matrix ----------
@@ -649,7 +650,7 @@
         <span class="ctitle">${esc(c.id)} <span class="muted">· level ${esc(c.level)}</span></span><span class="cverdict">${esc(c.title)}</span>${caseSummary(x)}<span class="cstatus">${esc(c.tags.join(", "))}</span></button>`;
     }).join("") || '<p class="empty">No case matches.</p>';
     $("ccards").querySelectorAll("[data-case]").forEach((b) => (b.onclick = () => {
-      S.csel.case = b.dataset.case; remember();
+      S.csel.case = b.dataset.case; S.csel.run = null; remember();
       $("ccards").querySelectorAll(".ccard.on").forEach((o) => o.classList.remove("on")); b.classList.add("on");
       renderCase();
     }));
@@ -686,7 +687,8 @@
   function caseStrategies(c) {
     const k8s = c.tags.includes("kubernetes");
     const out = (s) => k8s && s.eliminated && s.eliminated.kubernetes;
-    const cell = (s, note) => `<span class="cst"${note ? ` data-tip="${esc(note)}"` : ""}><span class="small">${esc(s.name)}</span> ${squares(c.id, s.name)}</span>`;
+    const run = S.csel.run;
+    const cell = (s, note) => `<span class="cst${run && run.strategy === s.name ? " on" : ""}"${note ? ` data-tip="${esc(note)}"` : ""}><span class="small">${esc(s.name)}</span> ${squares(c.id, s.name, run && run.strategy === s.name ? { current: run.variant } : {})}</span>`;
     const live = S.strategies.filter((s) => s.standing !== "retired" && !out(s));
     const elim = S.strategies.filter((s) => s.standing !== "retired" && out(s));
     const gone = S.strategies.filter((s) => s.standing === "retired");
@@ -694,6 +696,34 @@
     return `<div class="cstrats">${live.map((s) => cell(s, s.standing === "parked" ? `parked: ${s.why}` : "")).join("")}</div>`
       + fold(elim, "eliminated from the kubernetes competition (not run on later rungs)", (s) => { const e = s.eliminated.kubernetes; return `eliminated at rung ${e.rung} (${e.kind}): ${e.reason}`; })
       + fold(gone, "retired strategies (not run on new cases)", (s) => `retired: ${s.why}`);
+  }
+  // one run of the open case (a square clicked): true, found and differences, its scores and equations
+  function caseRunHtml() {
+    const run = S.csel.run; if (!run) return "";
+    return `<section class="crun" id="c-run" aria-label="The chosen run">
+      <div class="crunhead"><h3>${esc(run.strategy)} <span class="muted">· ${esc(run.variant)}</span></h3>
+        <span><button class="btn" id="c-run-now" title="Open this run on the Now page">Open in Now</button> <button class="btn" id="c-run-close" aria-label="Close the run">✕ Close</button></span></div>
+      <div id="c-run-scores"><p class="note">Loading the result…</p></div>
+      <div class="dpair three" id="c-dpair">
+        <figure class="dpanel"><figcaption>True model</figcaption><svg id="c-true" role="img" aria-label="The true model"></svg></figure>
+        <figure class="dpanel"><figcaption>Found by ${esc(run.strategy)}</figcaption><svg id="c-found" role="img" aria-label="The found model"></svg></figure>
+        <figure class="dpanel"><figcaption>Differences</figcaption><svg id="c-diff" role="img" aria-label="The differences"></svg><p class="dcap" id="c-dlegend"></p></figure>
+      </div>
+      <div id="c-dlist"></div><div id="c-eq"></div></section>`;
+  }
+  async function showCaseRun(c) {
+    const run = S.csel.run; if (!run || !$("c-run")) return;
+    const my = (S.crtoken = (S.crtoken || 0) + 1);
+    let r = null, err = null;
+    try { r = await get(`/api/ladder/results/${enc(c.id)}/${enc(run.variant)}/${enc(run.strategy)}`); } catch (e) { if (e.status !== 404) err = e; }
+    if (my !== S.crtoken || !$("c-run")) return;
+    const cmp = L.compare(c.model, (r && r.found) || [], r && r.scores);
+    $("c-run-scores").innerHTML = `${err ? `<p class="note error">${esc(err.message)}</p>` : ""}${scoreTable(r)}`;
+    const { alias } = drawPair(c, r, $("c-true"), $("c-found"), cmp, innerWidth >= 900 ? 2 : null, $("c-diff"));
+    $("c-dpair").classList.toggle("stack", innerWidth < 900);
+    $("c-dlegend").innerHTML = LEGEND + Object.entries(alias).filter(([id, n]) => id !== n).map(([id, n]) => ` · <span class="mono">${esc(n)} = ${esc(id)}</span>`).join("");
+    $("c-dlist").innerHTML = r ? `${diffHtml(cmp)}<p class="bexplain">${esc(L.explain(r.scores))}</p>` : "";
+    $("c-eq").innerHTML = equationsHtml(c, cmp, r, run);
   }
   async function renderCase() {
     const c = S.byId[S.csel.case]; if (!c) { $("cdetail").innerHTML = ""; return; }
@@ -706,7 +736,8 @@
         <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
         <div class="cdsum cs-${caseClass(S.cstats && S.cstats.by[c.id])}">${caseSummary(S.cstats && S.cstats.by[c.id])}</div></div>
       ${caseStrategies(c)}
-      <figure class="dpanel single"><figcaption>True model</figcaption><svg id="c-diagram" role="img" aria-label="The case's true model"></svg></figure>
+      ${caseRunHtml()}
+      <figure class="dpanel single"${S.csel.run ? " hidden" : ""}><figcaption>True model</figcaption><svg id="c-diagram" role="img" aria-label="The case's true model"></svg></figure>
       <div class="tablewrap"><table class="rtable"><thead><tr><th>flow</th><th>from → to</th><th>equation</th></tr></thead><tbody>
         ${flows.map((x) => `<tr><td><b>${esc(x.flow.id)}</b></td><td class="mono">${esc(x.flow.from || "outside")} → ${esc(x.flow.to || "outside")}</td><td class="mono">${esc(x.eq)}</td></tr>`).join("")}
       </tbody></table></div>
@@ -724,7 +755,14 @@
         reads: [...L.readers(f)].filter((x) => x !== "const" && x !== f.from).map((stock) => ({ stock }))
           .concat((f.effects || []).map((e) => ({ stock: e.stock, label: "effect", dash: "5 4", cls: "plain" })), (f.uses || []).map((u) => ({ stock: u.stock, label: `uses ${fmt(+u.per)}`, dash: "1 3", cls: "plain" }))) })),
     }, pos, { box: BOX, color: (k) => CLS_COLOR[k] || "var(--fg)", maxScale: 1.3 });
-    $("cdetail").querySelectorAll(".sq[data-case]").forEach((b) => (b.onclick = () => pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy })));
+    $("cdetail").querySelectorAll(".sq[data-case]").forEach((b) => (b.onclick = () => {
+      S.csel.run = { strategy: b.dataset.strategy, variant: b.dataset.variant };
+      S.csel.variant = b.dataset.variant;                                     // the data below: the run's variant
+      remember(); renderCase().then(() => { const x = $("c-run"); if (x) x.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    }));
+    if ($("c-run-close")) $("c-run-close").onclick = () => { S.csel.run = null; remember(); renderCase(); };
+    if ($("c-run-now")) $("c-run-now").onclick = () => pick({ case: c.id, ...S.csel.run });
+    showCaseRun(c);
     $("cdetail").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => { S.csel.variant = b.dataset.v; renderCase(); }));
     $("c-fresh").onchange = (e) => { S.csel.fresh = e.target.checked; renderCase(); };
     const my = (S.ctoken = (S.ctoken || 0) + 1);
@@ -831,6 +869,8 @@
     if (view === "history") S.hsel = { case: S.byId[p.get("case")] ? p.get("case") : null, strategy: p.get("strategy") };
     if (view === "cases") {
       if (S.byId[p.get("case")]) S.csel.case = p.get("case");
+      const [rs, rv] = (p.get("run") || "").split(":");
+      if (rs && rv && S.csel.case && S.byId[S.csel.case].variants.some((v) => v.name === rv)) { S.csel.run = { strategy: rs, variant: rv }; S.csel.variant = rv; }
       const pick = (k, opts) => (opts.some(([v]) => v === p.get(k)) ? p.get(k) : undefined);
       S.cfilter = p.get("q") || "";
       S.ctags = (p.get("tags") || "").split(",").filter(Boolean);
