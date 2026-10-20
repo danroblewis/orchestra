@@ -34,6 +34,19 @@ horizon, it runs no further from the data than the found one by more than GUARD 
 faster-draining model forgets sooner, still favours the biased numbers. Failing that, the last stage
 before it is tried, and failing all, the refit above as before.
 Flows that read a stock nobody measures are left as they are.
+
+Moves (docs/research/k8s-303-c1.md). Where the data show measurement error, a stock whose error grows
+with its level (a counter that reaches 10^5 with 5% error) has step changes whose noise buries what
+flows in, so the one-step fit leaves its row empty and the flow that feeds it goes to outside. Its
+level still holds what came in. After the refit, each drain to outside (X -> outside) is tried as a
+move into each other measured stock R, on R's row in level space: R's measured level less what R's
+flows (and announced injections) have added since the start, a free starting level, and noise of
+variance a + b x level^2 (feasible GLS from the residuals, on the measured level; a squared residual is
+counted at most TRIM^2 variances). Where R also takes an inflow from outside that reads X, the move
+replacing it is tried too. The best one is made when its -2 log-likelihood on R's row, plus Bayes' log n
+for each number it adds (one for choosing the receiver, less one for each number it replaces), is
+lower than before by more than log n; repeat while one is. A move that duplicates a proportional move
+already there is joined to it.
 """
 
 from __future__ import annotations
@@ -308,9 +321,150 @@ def _prune(flows: list[dict], ids: list[str], t: np.ndarray, A: np.ndarray, inpu
     return None
 
 
+def _carried(flows: list[dict], ids: list[str], t: np.ndarray, L: np.ndarray, inputs: dict | None) -> np.ndarray:
+    """What each flow carries in each step from levels L at times t (flows x steps; what its receiver
+    gets), each flow on its own."""
+    out = np.zeros((len(flows), L.shape[1]))
+    for i, f in enumerate(flows):
+        if f.get("from") in ids:
+            out[i] = -Model([{**f, "to": None}], ids, inputs=inputs).change(L, t)[ids.index(f["from"])] / float(f.get("ratio") or 1)
+        elif f.get("to") in ids:
+            out[i] = Model([f], ids, inputs=inputs).change(L, t)[ids.index(f["to"])]
+    return out
+
+
+def _level_ll(y: np.ndarray, level: np.ndarray) -> float:
+    """-2 log-likelihood of a level-space residual y = R0 + e with var(e) = a + b x level^2 (feasible GLS:
+    R0 and a, b fitted from the residuals in turn; each squared residual counted at most TRIM^2 variances)."""
+    V = np.column_stack([np.ones_like(level), level ** 2])
+    v = np.ones_like(y)
+    for it in range(4):
+        w = 1 / v
+        r = y - float((w * y).sum() / w.sum())
+        z = r ** 2 if it == 0 else np.minimum(r ** 2, TRIM ** 2 * v)
+        ab = np.linalg.lstsq(V * w[:, None], z * w, rcond=None)[0]
+        v = np.maximum(max(ab[0], 0.0) + max(ab[1], 0.0) * level ** 2, 1e-9 * max(float(np.mean(z)), 1e-12))
+    w = 1 / v
+    r = y - float((w * y).sum() / w.sum())
+    return float(np.sum(np.log(v) + np.minimum(r ** 2 / v, TRIM ** 2)))
+
+
+def _set_rate(f: dict, rate: dict) -> None:
+    f["rate"] = rate
+    if f.get("rates"):
+        f["rates"] = [rate]
+
+
+def _moves(flows: list[dict], fi: int, R: str) -> list[tuple[list[dict], int, int | None, dict | None]]:
+    """The drain flows[fi] made a move into R, and, for each inflow from outside into R that reads the
+    drain's stock, the move replacing that reading; each as (flows, how many numbers it removes, the
+    replaced inflow's index in flows, what is left of that inflow or None). The moved flow is marked
+    "_moved"."""
+    X = flows[fi]["from"]
+    a = copy.deepcopy(flows)
+    a[fi]["to"], a[fi]["_moved"] = R, True
+    out: list = [(a, 0, None, None)]
+    for gi, g in enumerate(flows):
+        r = g.get("rate") or {}
+        if g.get("from") is not None or g.get("to") != R or g.get("byTime") or g.get("inflow"):
+            continue
+        if r.get("form") == "proportional" and r.get("stock") == X:
+            rest = None
+        elif r.get("form") == "linear" and any(x.get("stock") == X and x.get("k") is not None for x in r.get("terms") or []):
+            terms = [x for x in r["terms"] if x.get("stock") != X]
+            rest = None
+            if terms or r.get("c"):
+                rest = copy.deepcopy(g)
+                _set_rate(rest, {**r, "terms": terms} if terms else {"form": "constant", "value": r["c"]})
+        else:
+            continue
+        b = [h for hi, h in enumerate(a) if hi != gi] if rest is None else [rest if hi == gi else h for hi, h in enumerate(a)]
+        out.append((b, len(slots([g])) - (len(slots([rest])) if rest else 0), gi, rest))
+    return out
+
+
+def _joined(flows: list[dict]) -> list[dict]:
+    """The moved flow (marked "_moved", the mark removed) joined to a proportional flow on the same stock
+    between the same stocks, if there is one."""
+    fi = next(i for i, g in enumerate(flows) if g.get("_moved"))
+    f = flows[fi]
+    del f["_moved"]
+    r = f.get("rate") or {}
+    if f.get("byTime") or r.get("form") != "proportional":
+        return flows
+    for gi, g in enumerate(flows):
+        q = g.get("rate") or {}
+        if (gi != fi and g.get("from") == f["from"] and g.get("to") == f["to"] and not g.get("byTime")
+                and q.get("form") == "proportional" and q.get("stock") == r.get("stock")
+                and float(g.get("ratio") or 1) == float(f.get("ratio") or 1)):
+            _set_rate(g, {**q, "k": float(q["k"]) + float(r["k"])})
+            return [h for hi, h in enumerate(flows) if hi != fi]
+    return flows
+
+
+def merge(flows: list[dict], ids: list[str], run: dict, opts: dict) -> tuple[list[dict], list[str]]:
+    """The flows with drains to outside made moves where a measured stock's level shows it receives
+    them (the module's Moves), and the moves made."""
+    t = np.asarray(run["t"], dtype=float)
+    A = levels_array(run["levels"], ids)
+    n = A.shape[1]
+    inputs = {"t": list(run["t"]), "values": opts["inputs"]} if opts.get("inputs") else None
+    J = np.zeros((len(ids), n - 1))                     # announced injections, added before their step's flows
+    for j in opts.get("injections") or []:
+        if j.get("stock") in ids:
+            J[ids.index(j["stock"]), np.nonzero(t[1:] == float(j["t"]))[0]] += float(j["amount"])
+    L, tt, price = A[:, :-1] + J, t[1:], float(np.log(n))
+    done: list[str] = []
+    for _ in range(len(flows)):
+        c = _carried(flows, ids, tt, L, inputs)
+        net = np.zeros((len(ids), n - 1))               # what the flows add to each stock in each step
+        for i, f in enumerate(flows):
+            if f.get("to") in ids:
+                net[ids.index(f["to"])] += c[i]
+            if f.get("from") in ids:
+                net[ids.index(f["from"])] -= c[i] * float(f.get("ratio") or 1)
+        y = A[:, 1:] - np.cumsum(J + net, axis=1)       # each stock's level less what its flows added
+        now: dict[int, float] = {}
+        best = None
+        for fi, f in enumerate(flows):
+            if f.get("to") is not None or f.get("from") not in ids or f.get("inflow"):
+                continue
+            for r, R in enumerate(ids):
+                if R == f["from"]:
+                    continue
+                if r not in now:
+                    now[r] = _level_ll(y[r], A[r, 1:])
+                for cand, fewer, gi, rest in _moves(flows, fi, R):
+                    extra = c[fi].copy()
+                    if gi is not None:
+                        extra -= c[gi]
+                        if rest is not None:
+                            extra += _carried([rest], ids, tt, L, inputs)[0]
+                    gain = now[r] - _level_ll(y[r] - np.cumsum(extra), A[r, 1:]) - price * (1 - fewer)
+                    if gain > price and (best is None or gain > best[0]):
+                        best = (gain, cand, f"{f['from']} -> {R}" + (" (replacing an inflow)" if gi is not None else ""))
+        if best is None:
+            break
+        flows = _joined(best[1])
+        done.append(best[2])
+    return flows, done
+
+
 def refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
-    """The flows with their numbers refitted by instrumental variables where the module says, and
-    what was found ({} where nothing could be tested)."""
+    """The flows with their numbers refitted by instrumental variables where the module says, drains
+    made moves where a level shows its receiver (Moves), and what was found ({} where nothing could be
+    tested)."""
+    out, info = _refit(flows, stocks, run, opts)
+    if not info.pop("error", False):
+        return out, info
+    moved, done = merge(out, [s["id"] for s in stocks], run, opts or {})
+    if not done:
+        return out, info
+    return moved, {**info, "moved": done, "used": True}
+
+
+def _refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
+    """refit's numbers and pruning; info["error"] where the data show measurement error."""
     opts = opts or {}
     ids = [s["id"] for s in stocks]
     inputs = opts.get("inputs") or {}
@@ -345,6 +499,7 @@ def refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = 
         fit.set(theta0)
         return flows, info
     fit.set(theta0)
+    info["error"] = True
     pruned = _prune(flows, ids, t, A, {"t": list(run["t"]), "values": inputs} if inputs else None, rows, w, run, opts)
     if pruned:
         return pruned[0], {**info, **pruned[1], "used": True}

@@ -60,3 +60,28 @@ def test_copies_are_identical():
     copies = sorted(STRATEGIES.glob("*/eiv.py"))
     assert len(copies) >= 30
     assert len({p.read_text() for p in copies}) == 1
+
+
+def _counter_run(noise: str, n: int = 2000, seed: int = 4):
+    """x as in _run, its drain counted by c (a counter: nothing leaves it), both measured with 5% error."""
+    rng = np.random.default_rng(seed)
+    run, opts = _run("none", n, seed)
+    x = np.array(run["levels"]["x"])
+    c = np.r_[0.0, np.cumsum(0.5 * x[:-1])]
+    if noise == "meas":
+        x = x + rng.normal(0, np.sqrt(1 + (0.05 * x) ** 2))
+        c = c + rng.normal(0, np.sqrt(1 + (0.05 * c) ** 2))
+    return {"t": run["t"], "levels": {"x": list(x), "c": list(c)}}, opts
+
+
+def test_a_drain_the_counters_level_shows_becomes_a_move():
+    run, opts = _counter_run("meas")
+    flows, info = eiv.refit(_flows(1.0, 0.5), [{"id": "x"}, {"id": "c"}], run, opts)
+    assert info["used"] and info["moved"] == ["x -> c"]
+    assert [(f["from"], f["to"]) for f in flows if f["from"] == "x"] == [("x", "c")]
+
+
+def test_without_measurement_error_the_drain_stays():
+    run, opts = _counter_run("none")
+    flows, info = eiv.refit(_flows(1.0, 0.5), [{"id": "x"}, {"id": "c"}], run, opts)
+    assert "moved" not in info and flows[0]["to"] is None

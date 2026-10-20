@@ -288,9 +288,150 @@ def _eiv_prune(flows: list[dict], ids: list[str], t: _eiv_np.ndarray, A: _eiv_np
     return None
 
 
+def _eiv_carried(flows: list[dict], ids: list[str], t: _eiv_np.ndarray, L: _eiv_np.ndarray, inputs: dict | None) -> _eiv_np.ndarray:
+    """What each flow carries in each step from levels L at times t (flows x steps; what its receiver
+    gets), each flow on its own."""
+    out = _eiv_np.zeros((len(flows), L.shape[1]))
+    for i, f in enumerate(flows):
+        if f.get("from") in ids:
+            out[i] = -_EivModel([{**f, "to": None}], ids, inputs=inputs).change(L, t)[ids.index(f["from"])] / float(f.get("ratio") or 1)
+        elif f.get("to") in ids:
+            out[i] = _EivModel([f], ids, inputs=inputs).change(L, t)[ids.index(f["to"])]
+    return out
+
+
+def _eiv_level_ll(y: _eiv_np.ndarray, level: _eiv_np.ndarray) -> float:
+    """-2 log-likelihood of a level-space residual y = R0 + e with var(e) = a + b x level^2 (feasible GLS:
+    R0 and a, b fitted from the residuals in turn; each squared residual counted at most TRIM^2 variances)."""
+    V = _eiv_np.column_stack([_eiv_np.ones_like(level), level ** 2])
+    v = _eiv_np.ones_like(y)
+    for it in range(4):
+        w = 1 / v
+        r = y - float((w * y).sum() / w.sum())
+        z = r ** 2 if it == 0 else _eiv_np.minimum(r ** 2, _EIV_TRIM ** 2 * v)
+        ab = _eiv_np.linalg.lstsq(V * w[:, None], z * w, rcond=None)[0]
+        v = _eiv_np.maximum(max(ab[0], 0.0) + max(ab[1], 0.0) * level ** 2, 1e-9 * max(float(_eiv_np.mean(z)), 1e-12))
+    w = 1 / v
+    r = y - float((w * y).sum() / w.sum())
+    return float(_eiv_np.sum(_eiv_np.log(v) + _eiv_np.minimum(r ** 2 / v, _EIV_TRIM ** 2)))
+
+
+def _eiv_set_rate(f: dict, rate: dict) -> None:
+    f["rate"] = rate
+    if f.get("rates"):
+        f["rates"] = [rate]
+
+
+def _eiv_moves(flows: list[dict], fi: int, R: str) -> list[tuple[list[dict], int, int | None, dict | None]]:
+    """The drain flows[fi] made a move into R, and, for each inflow from outside into R that reads the
+    drain's stock, the move replacing that reading; each as (flows, how many numbers it removes, the
+    replaced inflow's index in flows, what is left of that inflow or None). The moved flow is marked
+    "_moved"."""
+    X = flows[fi]["from"]
+    a = _eiv_copy.deepcopy(flows)
+    a[fi]["to"], a[fi]["_moved"] = R, True
+    out: list = [(a, 0, None, None)]
+    for gi, g in enumerate(flows):
+        r = g.get("rate") or {}
+        if g.get("from") is not None or g.get("to") != R or g.get("byTime") or g.get("inflow"):
+            continue
+        if r.get("form") == "proportional" and r.get("stock") == X:
+            rest = None
+        elif r.get("form") == "linear" and any(x.get("stock") == X and x.get("k") is not None for x in r.get("terms") or []):
+            terms = [x for x in r["terms"] if x.get("stock") != X]
+            rest = None
+            if terms or r.get("c"):
+                rest = _eiv_copy.deepcopy(g)
+                _eiv_set_rate(rest, {**r, "terms": terms} if terms else {"form": "constant", "value": r["c"]})
+        else:
+            continue
+        b = [h for hi, h in enumerate(a) if hi != gi] if rest is None else [rest if hi == gi else h for hi, h in enumerate(a)]
+        out.append((b, len(_eiv_slots([g])) - (len(_eiv_slots([rest])) if rest else 0), gi, rest))
+    return out
+
+
+def _eiv_joined(flows: list[dict]) -> list[dict]:
+    """The moved flow (marked "_moved", the mark removed) joined to a proportional flow on the same stock
+    between the same stocks, if there is one."""
+    fi = next(i for i, g in enumerate(flows) if g.get("_moved"))
+    f = flows[fi]
+    del f["_moved"]
+    r = f.get("rate") or {}
+    if f.get("byTime") or r.get("form") != "proportional":
+        return flows
+    for gi, g in enumerate(flows):
+        q = g.get("rate") or {}
+        if (gi != fi and g.get("from") == f["from"] and g.get("to") == f["to"] and not g.get("byTime")
+                and q.get("form") == "proportional" and q.get("stock") == r.get("stock")
+                and float(g.get("ratio") or 1) == float(f.get("ratio") or 1)):
+            _eiv_set_rate(g, {**q, "k": float(q["k"]) + float(r["k"])})
+            return [h for hi, h in enumerate(flows) if hi != fi]
+    return flows
+
+
+def _eiv_merge(flows: list[dict], ids: list[str], run: dict, opts: dict) -> tuple[list[dict], list[str]]:
+    """The flows with drains to outside made moves where a measured stock's level shows it receives
+    them (the module's Moves), and the moves made."""
+    t = _eiv_np.asarray(run["t"], dtype=float)
+    A = _eiv_levels_array(run["levels"], ids)
+    n = A.shape[1]
+    inputs = {"t": list(run["t"]), "values": opts["inputs"]} if opts.get("inputs") else None
+    J = _eiv_np.zeros((len(ids), n - 1))                     # announced injections, added before their step's flows
+    for j in opts.get("injections") or []:
+        if j.get("stock") in ids:
+            J[ids.index(j["stock"]), _eiv_np.nonzero(t[1:] == float(j["t"]))[0]] += float(j["amount"])
+    L, tt, price = A[:, :-1] + J, t[1:], float(_eiv_np.log(n))
+    done: list[str] = []
+    for _ in range(len(flows)):
+        c = _eiv_carried(flows, ids, tt, L, inputs)
+        net = _eiv_np.zeros((len(ids), n - 1))               # what the flows add to each stock in each step
+        for i, f in enumerate(flows):
+            if f.get("to") in ids:
+                net[ids.index(f["to"])] += c[i]
+            if f.get("from") in ids:
+                net[ids.index(f["from"])] -= c[i] * float(f.get("ratio") or 1)
+        y = A[:, 1:] - _eiv_np.cumsum(J + net, axis=1)       # each stock's level less what its flows added
+        now: dict[int, float] = {}
+        best = None
+        for fi, f in enumerate(flows):
+            if f.get("to") is not None or f.get("from") not in ids or f.get("inflow"):
+                continue
+            for r, R in enumerate(ids):
+                if R == f["from"]:
+                    continue
+                if r not in now:
+                    now[r] = _eiv_level_ll(y[r], A[r, 1:])
+                for cand, fewer, gi, rest in _eiv_moves(flows, fi, R):
+                    extra = c[fi].copy()
+                    if gi is not None:
+                        extra -= c[gi]
+                        if rest is not None:
+                            extra += _eiv_carried([rest], ids, tt, L, inputs)[0]
+                    gain = now[r] - _eiv_level_ll(y[r] - _eiv_np.cumsum(extra), A[r, 1:]) - price * (1 - fewer)
+                    if gain > price and (best is None or gain > best[0]):
+                        best = (gain, cand, f"{f['from']} -> {R}" + (" (replacing an inflow)" if gi is not None else ""))
+        if best is None:
+            break
+        flows = _eiv_joined(best[1])
+        done.append(best[2])
+    return flows, done
+
+
 def _eiv_refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
-    """The flows with their numbers refitted by instrumental variables where the module says, and
-    what was found ({} where nothing could be tested)."""
+    """The flows with their numbers refitted by instrumental variables where the module says, drains
+    made moves where a level shows its receiver (Moves), and what was found ({} where nothing could be
+    tested)."""
+    out, info = _eiv_refit(flows, stocks, run, opts)
+    if not info.pop("error", False):
+        return out, info
+    moved, done = _eiv_merge(out, [s["id"] for s in stocks], run, opts or {})
+    if not done:
+        return out, info
+    return moved, {**info, "moved": done, "used": True}
+
+
+def _eiv_refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
+    """refit's numbers and pruning; info["error"] where the data show measurement error."""
     opts = opts or {}
     ids = [s["id"] for s in stocks]
     inputs = opts.get("inputs") or {}
@@ -325,6 +466,7 @@ def _eiv_refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | No
         fit.set(theta0)
         return flows, info
     fit.set(theta0)
+    info["error"] = True
     pruned = _eiv_prune(flows, ids, t, A, {"t": list(run["t"]), "values": inputs} if inputs else None, rows, w, run, opts)
     if pruned:
         return pruned[0], {**info, **pruned[1], "used": True}
