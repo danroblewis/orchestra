@@ -114,6 +114,12 @@ def respond(key: tuple, make, request: Request | None = None) -> Response:
     return _response(_made_for((str(store.path()), *key), leaderboard.summary_now()[1], make), request)   # another store: its own
 
 
+def respond_at(key: tuple, version, make, request: Request | None = None) -> Response:
+    """make() as JSON, made once per version of its own (not the summary's): for a response that does not
+    read the results, so a request never waits for the summary to be rebuilt."""
+    return _response(_made_for(key, version, make), request)
+
+
 def summary_response(names: list[str] | None, request: Request | None = None) -> Response:
     """The whole summary (api.summary) for /api/ladder/summary, serialized and gzipped once per value."""
     from . import api

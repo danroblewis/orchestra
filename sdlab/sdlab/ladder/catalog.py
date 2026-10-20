@@ -30,7 +30,12 @@ NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 SIBLING = re.compile(r"from\s+\.(\w+)\s+import|from\s+sdlab\.discovery\.strategies\.(\w+)\s+import|from\s+\.\s+import\s+(\w+)")
 
 
+_memo: dict = {}           # within one listing(): the names and the shared files, worked out once
+
+
 def names() -> list[str]:
+    if "names" in _memo:
+        return list(_memo["names"])
     return [n for n in _strategies.names() if NAME_RE.match(n)]
 
 
@@ -43,6 +48,38 @@ def _key() -> tuple:
         st = p.stat()
         out.append((p.as_posix(), st.st_size, st.st_mtime_ns))
     return tuple(out)
+
+
+_read: dict = {}           # path -> ((size, mtime), bytes): a file is read again only when it changes
+_parsed: dict = {}         # path -> ((size, mtime), (required packages, defines identify) or a SyntaxError's text)
+
+
+def _bytes(p: Path) -> bytes:
+    st = p.stat()
+    k = (st.st_size, st.st_mtime_ns)
+    got = _read.get(p)
+    if got is None or got[0] != k:
+        got = _read[p] = (k, p.read_bytes())
+    return got[1]
+
+
+def _info(p: Path):
+    """(packages p imports at module level, whether it defines identify), or a SyntaxError's text."""
+    st = p.stat()
+    k = (st.st_size, st.st_mtime_ns)
+    got = _parsed.get(p)
+    if got is None or got[0] != k:
+        try:
+            tree = ast.parse(_bytes(p).decode(errors="replace"))
+            got = (_required(tree), any(
+                (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "identify")
+                or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "identify" for t in n.targets))
+                or (isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == "identify" for a in n.names))
+                for n in tree.body))
+        except SyntaxError as e:
+            got = f"import failed: SyntaxError: {e}"
+        _parsed[p] = got = (k, got)
+    return got[1]
 
 
 def _files(path: Path) -> list[Path]:
@@ -70,7 +107,7 @@ def _own_files(name: str, seen: set | None = None) -> list[Path]:
     seen.add(name)
     files = _files(_module_path(name))
     for p in list(files):
-        for m in SIBLING.finditer(p.read_text(errors="replace")):
+        for m in SIBLING.finditer(_bytes(p).decode(errors="replace")):
             other = next(g for g in m.groups() if g)
             if other in names() and other != name:
                 files += _own_files(other, seen)
@@ -78,6 +115,8 @@ def _own_files(name: str, seen: set | None = None) -> list[Path]:
 
 
 def _shared_files() -> list[Path]:
+    if "shared" in _memo:
+        return list(_memo["shared"])
     return sorted(p for p in DISCOVERY.rglob("*.py") if "__pycache__" not in p.parts
                   and (STRATEGIES not in p.parents or p == STRATEGIES / "__init__.py"))
 
@@ -93,7 +132,7 @@ def strategy_hash(name: str, contents: dict[Path, bytes] | None = None) -> str:
     h = hashlib.sha256()
     for p in code_files(name):
         rel = p.relative_to(DISCOVERY).as_posix() if DISCOVERY in p.parents else p.name
-        h.update(rel.encode() + b"\n" + (contents[p] if contents and p in contents else p.read_bytes()) + b"\n")
+        h.update(rel.encode() + b"\n" + (contents[p] if contents and p in contents else _bytes(p)) + b"\n")
     return h.hexdigest()[:16]
 
 
@@ -119,22 +158,17 @@ def availability(name: str) -> tuple[bool, str | None]:
     else (False, why). Nothing is imported."""
     mod = _module_path(name)
     main = mod / "__init__.py" if mod.is_dir() else mod
-    try:
-        trees = {p: ast.parse(p.read_text(errors="replace")) for p in _own_files(name)}
-    except SyntaxError as e:
-        return False, f"import failed: SyntaxError: {e}"
-    for tree in trees.values():
-        for pkg in sorted(_required(tree)):
+    infos = {p: _info(p) for p in _own_files(name)}
+    for info in infos.values():
+        if isinstance(info, str):
+            return False, info
+    for req, _defines in infos.values():
+        for pkg in sorted(req):
             if pkg in ("sdlab", "__future__") or pkg in sys.stdlib_module_names:
                 continue
             if importlib.util.find_spec(pkg) is None:
                 return False, f"missing package: {pkg}"
-    tree = trees.get(main)
-    defined = tree is not None and any(
-        (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "identify")
-        or (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "identify" for t in n.targets))
-        or (isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == "identify" for a in n.names))
-        for n in tree.body)
+    defined = main in infos and infos[main][1]
     return (True, None) if defined else (False, "no identify(stocks, run, opts)")
 
 
@@ -145,9 +179,14 @@ def listing(check: bool = True) -> list[dict]:
     """[{name, hash, available, reason}] for every strategy module (cached until a file changes)."""
     key = (_key(), tuple(names()), tuple(map(str, _strategies.__path__)), check)
     if _cache.get("key") != key:
-        out = []
-        for n in names():
-            ok, why = availability(n) if check else (True, None)
-            out.append({"name": n, "hash": strategy_hash(n), "available": ok, "reason": why})
+        _memo.clear()
+        _memo["names"], _memo["shared"] = names(), _shared_files()   # the tree cannot change within the key
+        try:
+            out = []
+            for n in names():
+                ok, why = availability(n) if check else (True, None)
+                out.append({"name": n, "hash": strategy_hash(n), "available": ok, "reason": why})
+        finally:
+            _memo.clear()
         _cache.update(key=key, value=out)
     return [dict(x) for x in _cache["value"]]

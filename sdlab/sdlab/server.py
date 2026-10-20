@@ -7,6 +7,8 @@ models live in ``$SDLAB_HOME/models/<id>.json`` (default ``~/.sdlab``); a copy o
 
 from __future__ import annotations
 
+import threading
+
 import argparse
 import json
 import os
@@ -28,6 +30,7 @@ from .ladder import api as ladder_api
 from .discovery.strategies import names as strategy_names
 from .discovery_jobs import DiscoveryJobs
 from .ladder.analysis_routes import router as analysis_router
+from .ladder import routes as ladder_routes
 from .ladder.routes import router as ladder_router
 from .ladder.compact_routes import router as compact_router
 from .ladder.strategy_routes import router as strategy_router
@@ -199,6 +202,7 @@ def create_app() -> FastAPI:
         strategy_menu.menu()                   # start working out the strategy picker's numbers now
         ladder_newest.warm()                   # the case files' first commits (cached; one git log if HEAD moved) and regressions
         ladder_runs.warm()                     # the runs panel and the results' times (timing.py), in the background
+        threading.Thread(target=ladder_routes.strategies, args=(None,), daemon=True, name="strategies").start()   # hash every strategy now, not on the first request
         yield
         for r in runs.values():
             r.stop()

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from . import api, compact, explain
+from . import api, catalog, compact, explain
 from . import cases as casemod
 
 router = APIRouter(prefix="/api/ladder")
@@ -63,8 +63,9 @@ def case(case_id: str) -> dict:
 def strategies(request: Request) -> Response:
     from . import runner
 
-    marks = [p.stat().st_mtime for p in (runner.RETIRED, runner.PARKED, *runner.ROSTERS.glob("*.yaml")) if p.exists()]
-    return compact.respond(("strategies", explain.PATH.stat().st_mtime, *marks), api.strategies, request)   # as does a strategy that changes
+    marks = [p.stat().st_mtime for p in (explain.PATH, runner.RETIRED, runner.PARKED, *runner.ROSTERS.glob("*.yaml")) if p.exists()]
+    version = hash((*marks, *(s["hash"] for s in catalog.listing())))       # the listing, its notes and standings: not the results
+    return compact.respond_at(("strategies",), version, api.strategies, request)   # as does a strategy that changes
 
 
 @router.get("/glossary")
