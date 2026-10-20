@@ -23,7 +23,7 @@ while true; do
     echo "$(date '+%F %T') server down: starting it"
     nohup uv run --directory "$PWD" sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &
   fi
-  if ! ps aux | grep -v grep | grep -q "bin/sdlab-ladder watch"; then
+  if [ ! -e ~/.sdlab/watch.paused ] && ! ps aux | grep -v grep | grep -q "bin/sdlab-ladder watch"; then   # touch ~/.sdlab/watch.paused to pause it
     echo "$(date '+%F %T') watcher down: starting it"
     nohup nice -n 19 uv run --directory "$PWD" sdlab-ladder watch --strategies all --exclude-cases machine:node2,tag:kubernetes --every 300 \
       --jobs 4 --timeout 300 --batch 2000 --quiet >> ~/.sdlab/ladder-watch.log 2>&1 &
