@@ -47,7 +47,8 @@
     if (r.variant === "twin") return `On the twin (the published model simulated with the data's length and noise): ${s.status || r.status}. ${fc}`;
     return `${r.status === "agrees" ? "The found structure is the published one." : "The found structure differs from the published one."} ${fc}`;
   }
-  const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : "tests");
+  const isK8s = (c) => (c.tags || []).includes("kubernetes");    // the kubernetes set: its rungs and the k8s examples
+  const kindOf = (c) => (isData(c) ? "real" : isReal(c) ? "realistic" : isPhys(c) ? "physics" : isK8s(c) ? "kubernetes" : "tests");
   // a physics case runs none and meas (no counting noise): the counts variant picked reads as its meas variant
   const caseVariants = (c) => (isData(c) ? ["real", "twin"] : isPhys(c) ? (c.variants || []).map((v) => v.name || v) : VARIANTS);
   const variantOf = (c, v) => (isData(c) && v !== "all" ? "real" : isPhys(c) && !isPart(c) && v !== "all" ? v.replace(/^counts-/, "meas-") : v);
@@ -120,7 +121,7 @@
     $("board-controls").innerHTML = `
       <label>Strategy <select id="b-strat">${strats.map((s) => opt(s.name, s.name === d.best ? `${s.name} (best pass rate)` : s.name, B.strategy)).join("")}</select></label>
       <label>Variant <select id="b-var">${[...VARIANTS.map((v) => [v, v]), ["all", "all four (tabs)"]].map(([v, w]) => opt(v, w, B.variant)).join("")}</select></label>
-      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline. Physics: physical systems solved in continuous time (no SD truth), against their physics and the best SD model; their counts variants read as meas. Real data: measured series beside a published model (held-out prediction, agreement), never in a pass rate; shown on their own.">Set <select id="b-set">${[["tests", "tests"], ["realistic", "realistic examples"], ["physics", "physics"], ["real", "real data"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
+      <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline. Physics: physical systems solved in continuous time (no SD truth), against their physics and the best SD model; their counts variants read as meas. Real data: measured series beside a published model (held-out prediction, agreement), never in a pass rate; shown on their own. Kubernetes: a web service on Kubernetes grown one feature a rung (tag kubernetes, docs/research/kubernetes-ladder.md), with sd-k8s-small and sd-k8s-platform as its top rungs; not in the tests' pass rate.">Set <select id="b-set">${[["tests", "tests"], ["kubernetes", "kubernetes"], ["realistic", "realistic examples"], ["physics", "physics"], ["real", "real data"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
       <label>Verdict <select id="b-status">${[["", "any"], ["pass", "pass"], ["equivalent", "equivalent"], ["fail", "fail"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => opt(v, w, B.status)).join("")}</select></label>
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
@@ -220,7 +221,7 @@
     }
     controls(d);
     let rows = d.cases.map((c) => ({ c, r: shown(c, d) }));
-    rows = rows.filter(({ c, r }) => (B.set === "all" ? kindOf(c) !== "real" : B.set === kindOf(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
+    rows = rows.filter(({ c, r }) => (B.set === "all" ? kindOf(c) !== "real" : B.set === "kubernetes" ? isK8s(c) : B.set === kindOf(c)) && (!B.level || String(c.level) === String(B.level)) && (!B.tag || c.tags.includes(B.tag))
       && (!B.status || (B.status === "none" ? !r : B.status === "error" ? r && (r.status === "error" || r.status === "timeout") : r && r.status === B.status)));
     const err = (r) => { const m = r && L.measures(r.scores); return m && m.errorScore !== null ? m.errorScore : -1; };
     if (B.sort === "status") rows.sort((a, b) => (a.r ? RANK[a.r.status] ?? 9 : 10) - (b.r ? RANK[b.r.status] ?? 9 : 10) || a.c.level - b.c.level);

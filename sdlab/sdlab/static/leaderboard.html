@@ -57,6 +57,8 @@
   th.real:first-of-type, tr > .real:not(.real + .real) { border-left: 2px solid var(--line); }
   th.rd, td.rd { background: color-mix(in srgb, var(--equiv) 10%, transparent); }
   tr > .rd:not(.rd + .rd) { border-left: 2px solid var(--line); }
+  th.k8s, td.k8s { background: color-mix(in srgb, var(--fail) 5%, transparent); }
+  tr > .k8s:not(.k8s + .k8s) { border-left: 2px solid var(--line); }
   th.phys, td.phys { background: color-mix(in srgb, var(--pass) 6%, transparent); }
   tr > .phys:not(.phys + .phys) { border-left: 2px solid var(--line); }
   th.part, td.part { background: color-mix(in srgb, var(--pass) 11%, transparent); }
@@ -134,6 +136,7 @@
   <div class="controls">
     <label>Set <select id="set" title="Tests: the ladder's tiny true models (mathematical probes). Realistic: SD Lab's 31 example models (sdlab/examples/sd-*), as on the examples' bench. The realistic columns on the right always show the realistic examples.">
       <option value="tests">tests</option>
+      <option value="kubernetes" title="A web service on Kubernetes grown one feature a rung (tag kubernetes, rungs 300-317), with sd-k8s-small and sd-k8s-platform as its top rungs; not in the tests">kubernetes</option>
       <option value="realistic">realistic examples</option>
       <option value="physics" title="Physical systems (ODEs) solved in continuous time: not stock-and-flow models">physics</option>
       <option value="all">all</option>
@@ -209,6 +212,10 @@ const COLS = [
     title: "Discovery time of the strategy's latest version against the version before it, over the cells both ran: the median of the paired ratios (×2 = twice as slow)",
     fmt: (v, r) => (r.time && r.time.trend ? `×${r.time.trend.ratio.toFixed(2)}` : "–"),
     tip: (r) => (r.time && r.time.trend ? `version ${r.time.trend.hash} against ${r.time.trend.prev}, over the ${r.time.trend.n} cells both ran` : "one version, or too few cells in common with the one before") },
+  { key: "kPass", label: "k8s pass", fmt: (v, r) => (r.kRun ? `${r.kPassN}/${r.kRun}` : "–"), cls: "k8s", group: "k8s", tip: (r) => r.kTip },
+  { key: "kPassEq", label: "k8s pass+eq", fmt: pct, cls: "k8s hide-sm", group: "k8s", tip: (r) => r.kTip },
+  { key: "kSkill20", label: "k8s skill@20", fmt: pct, cls: "k8s", group: "k8s", tip: (r) => r.kTip },
+  { key: "kBreak", label: "first fail", fmt: (v) => (v ? String(v).replace(/^(\d+)-k8s-.*/, "$1") : "–"), cls: "k8s hide-sm", group: "k8s", tip: (r) => r.kTip },
   { key: "rSkill20", label: "real skill@20", fmt: pct, cls: "real", group: "real", tip: (r) => r.rTip },
   { key: "rGoals", label: "goals met", fmt: (v, r) => (r.rOf ? `${r.rGoalsN}/${r.rOf}` : "–"), cls: "real", group: "real", tip: (r) => r.rTip },
   { key: "rFresh20", label: "real fresh@20", fmt: pct, cls: "real hide-sm", group: "real" },
@@ -290,14 +297,14 @@ function render() {
     return d ? sortDir * d : b.pass - a.pass || b.recall - a.recall;
   });
   const nTime = COLS.filter((c) => c.group === "time").length;
-  const nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length, nRd = COLS.filter((c) => c.group === "rd").length, nPart = COLS.filter((c) => c.group === "part").length;
-  const setName = { tests: "Tests", realistic: "Realistic examples", physics: "Physics", all: "All cases" }[document.getElementById("set").value];
-  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nTime - nReal - nPhys - nRd - nPart}">${setName}</th><th class="time" colspan="${nTime}" title="Discovery seconds per cell by set: median, then the 95th percentile (small), over each strategy's latest results; trend: its latest version against the one before">Time per cell (s)</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th><th class="part" colspan="${nPart}" title="Particles counted by region: equations against the mean-field model where it is exact, skill against it">Particles</th></tr>` + "<tr>" + COLS.map((c) =>
+  const nK8s = COLS.filter((c) => c.group === "k8s").length, nReal = COLS.filter((c) => c.group === "real").length, nPhys = COLS.filter((c) => c.group === "phys").length, nRd = COLS.filter((c) => c.group === "rd").length, nPart = COLS.filter((c) => c.group === "part").length;
+  const setName = { tests: "Tests", kubernetes: "Kubernetes", realistic: "Realistic examples", physics: "Physics", all: "All cases" }[document.getElementById("set").value];
+  document.querySelector("#t thead").innerHTML = `<tr class="groups"><th class="name" colspan="${COLS.length - nTime - nK8s - nReal - nPhys - nRd - nPart}">${setName}</th><th class="time" colspan="${nTime}" title="Discovery seconds per cell by set: median, then the 95th percentile (small), over each strategy's latest results; trend: its latest version against the one before">Time per cell (s)</th><th class="k8s" colspan="${nK8s}" title="The kubernetes set (tag kubernetes): a web service grown one feature a rung, sd-k8s-small and sd-k8s-platform on top; pass rate over the runs done, mean skill@20, the first rung not passed">Kubernetes</th><th class="real" colspan="${nReal}" title="SD Lab's example models, as on the examples' bench">Realistic examples</th><th class="rd" colspan="${nRd}" title="Measured series with a published model (tag real): held-out prediction, agreement with the published structure, measured flows; never in a pass rate">Real data</th><th class="phys" colspan="${nPhys}" title="Physical systems solved in continuous time: structure against the physics, skill against the best SD model">Physics</th><th class="part" colspan="${nPart}" title="Particles counted by region: equations against the mean-field model where it is exact, skill against it">Particles</th></tr>` + "<tr>" + COLS.map((c) =>
     `<th class="${c.cls || ""} ${c.key === sortKey ? "sorted" : ""}" data-key="${c.key}"${thTip(c)}>${c.label}${c.key === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
   const best = rs.length ? Math.max(...rs.map((r) => r.pass)) : 0;
   document.querySelector("#t tbody").innerHTML = rs.map((r, i) => "<tr class=\"" + (r.pass === best ? "best" : "") + "\">" + COLS.map((c) => {
     if (c.key === "rank") return `<td class="rank">${i + 1}</td>`;
-    if (c.key === "name") return `<td class="name"><a href="/ladder/strategy?name=${encodeURIComponent(r.name)}&kind=${{ tests: "tests", realistic: "realistic", physics: "physics", all: "all" }[document.getElementById("set").value]}" style="color:inherit" title="How ${r.name} behaves: its history, and per case what would make its model right">${r.name}</a>`
+    if (c.key === "name") return `<td class="name"><a href="/ladder/strategy?name=${encodeURIComponent(r.name)}&kind=${{ tests: "tests", kubernetes: "all", realistic: "realistic", physics: "physics", all: "all" }[document.getElementById("set").value]}" style="color:inherit" title="How ${r.name} behaves: its history, and per case what would make its model right">${r.name}</a>`
       + ` <a href="/ladder?view=now&strategy=${encodeURIComponent(r.name)}&variant=all&set=${document.getElementById("set").value}" class="idea" style="display:inline;color:inherit" title="Every case in the set on the live Now board: the true model beside what ${r.name} found">now</a>`
       + (about[r.name] ? `<button class="info" data-about="${esc(r.name)}" aria-expanded="${open.has(r.name)}" title="${esc(about[r.name].idea)}">ⓘ</button>` : "") + `</td>`;
     if (c.key === "bar") {

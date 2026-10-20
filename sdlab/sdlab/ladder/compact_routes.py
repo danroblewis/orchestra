@@ -22,8 +22,8 @@ def version() -> dict:
 
 @router.get("/leaderboard")
 def board_rows(request: Request, variant: str = "all", level: int = 0, kind: str = "all", set: str = "all", age: str = "") -> Response:   # noqa: A002
-    if kind not in ("all", "draws", "fixed") or set not in ("all", "tests", "realistic", "physics", "real") or len(variant) > 64 or len(age) > 8:
-        raise HTTPException(422, "variant, level, kind (all, draws, fixed), set (all, tests, realistic, physics), age (o<h>, n<h>)")
+    if kind not in ("all", "draws", "fixed") or set not in ("all", "tests", "kubernetes", "realistic", "physics", "real") or len(variant) > 64 or len(age) > 8:
+        raise HTTPException(422, "variant, level, kind (all, draws, fixed), set (all, tests, kubernetes, realistic, physics), age (o<h>, n<h>)")
     return compact.respond(("leaderboard", variant, level, kind, set, age), lambda: leaderboard.view(variant, level, kind, set, age), request)
 
 

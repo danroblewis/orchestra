@@ -6,7 +6,7 @@ so the page fetches a few kilobytes instead of every cell.
 
 A port of what leaderboard.html computed in the browser until 2026-10-19, number for number: the same
 filters (variant: "all" or a substring of the variant's name; level: 0 for every level; kind: all,
-draws or fixed; set: all, tests, realistic or physics; age: "", "o<hours>" older than, "n<hours>"
+draws or fixed; set: all, tests, kubernetes (tag kubernetes; out of tests), realistic or physics; age: "", "o<hours>" older than, "n<hours>"
 added in the last), the same sums in the same order, JavaScript's toFixed for the tooltips' numbers
 and the same seeded bootstrap for the 95% intervals. A number the browser showed as NaN (nothing to
 average) is null here; the page reads null as NaN. tests/test_ladder_leaderboard.py checks the rows
@@ -118,8 +118,14 @@ def is_real(c: dict) -> bool:
     return bool(c.get("example") or "realistic" in (c.get("tags") or []))
 
 
+def is_k8s(c: dict) -> bool:
+    """In the kubernetes set (tag kubernetes): its rungs (300-317) and the k8s examples (sd-k8s-small, -platform)."""
+    return "kubernetes" in (c.get("tags") or [])
+
+
 def kind_of(c: dict) -> str:
-    return "real" if c.get("real") else "realistic" if is_real(c) else "physics" if c.get("physics") else "tests"
+    return ("real" if c.get("real") else "realistic" if is_real(c) else "physics" if c.get("physics")
+            else "kubernetes" if is_k8s(c) else "tests")
 
 
 def _age_ok(age: str, ages: dict | None):
@@ -211,6 +217,23 @@ def _realistic(mine: list, meta: dict, vf: str) -> dict:
             "rTimeTip": f"over {len(secs)} finished runs; slowest {fixed(max(secs), 0)} s; {out} timed out" if secs else ""}
 
 
+def _kubernetes(mine: list, meta: dict, vf: str) -> dict:
+    """The kubernetes set's columns: pass rate (and pass or equivalent) over its runs, mean skill@20 (clipped at -100%),
+    and the first rung (lowest level) with a run that is neither pass nor equivalent."""
+    kc = [c for c in mine if meta[c["case"]]["k8s"] and (vf == "all" or vf in c["variant"])]
+    kr = [c for c in kc if c["status"]]
+    p = sum(1 for c in kr if c["status"] == "pass")
+    pe = p + sum(1 for c in kr if c["status"] == "equivalent")
+    s20 = [v for v in (_clip(c.get("skill20")) for c in kr) if _finite(v)]
+    bad = sorted((meta[c["case"]]["level"], c["case"]) for c in kr if c["status"] not in ("pass", "equivalent"))
+    return {"kPass": p / len(kr) if kr else NAN, "kPassN": p, "kRun": len(kr), "kOf": len(kc), "kPassEq": pe / len(kr) if kr else NAN,
+            "kSkill20": _mean(s20), "kBreak": bad[0][1] if bad else None,
+            "kTip": (f"{len(kr)} of {len(kc)} kubernetes runs done; {p} pass, {pe - p} equivalent, "
+                     f"{sum(1 for c in kr if c['status'] == 'timeout')} timeouts, {sum(1 for c in kr if c['status'] == 'error')} errors; "
+                     f"95% interval of the mean skill@20 {ci_text(s20)}; first rung not passed: {bad[0][1] if bad else 'none'}")
+            if kc else "not run on the kubernetes set yet"}
+
+
 def _nums(cs: list, k: str) -> list:
     return [c[k] for c in cs if _finite(c.get(k))]
 
@@ -289,7 +312,8 @@ def _real_data(mine: list, meta: dict) -> dict:
 def index(sm: dict) -> dict:
     """What every filter needs of a summary, worked out once: each strategy's cells and each case's kind."""
     meta = {c["id"]: {"level": c["level"], "drawn": bool(c.get("draw")), "kind": kind_of(c), "real": is_real(c),
-                      "phys": bool(c.get("physics")) and not c.get("particles"), "part": bool(c.get("particles")), "rd": bool(c.get("real"))}
+                      "phys": bool(c.get("physics")) and not c.get("particles"), "part": bool(c.get("particles")), "rd": bool(c.get("real")),
+                      "k8s": is_k8s(c)}
             for c in sm["cases"]}
     by: dict[str, list] = {s["name"]: [] for s in sm["strategies"]}
     for c in sm["cells"]:
@@ -313,7 +337,7 @@ def rows(sm: dict, ix: dict, variant: str = "all", level: int = 0, kind: str = "
     def keep(c):
         m = meta[c["case"]]
         return (not m["rd"] and (vf == "all" or vf in c["variant"]) and (not lv or m["level"] == lv)
-                and (kind == "all" or (kind == "draws") == m["drawn"]) and (set_ == "all" or set_ == m["kind"])
+                and (kind == "all" or (kind == "draws") == m["drawn"]) and (set_ == "all" or (m["k8s"] if set_ == "kubernetes" else set_ == m["kind"]))
                 and (age_ok is None or age_ok(c["case"])))
     out = []
     for s in sm["strategies"]:
@@ -352,7 +376,7 @@ def _row(name: str, mine: list, kept: list, sm: dict, meta: dict, vf: str, lv: i
             "pass": p / n, "passeq": (p + e) / n, "recall": _mean(num("recall")), "precision": _mean(num("precision")),
             "skill20": _mean(num("skill20")), "fresh20": _mean(num("fresh20")), "skill100": _mean(num("skill100")), "seconds": secs,
             **_complexity(cs), **_long_run(sm.get("longrun") or {}, name, vf, lv), **_achievable(cs), **_strict(cs),
-            **_realistic(mine, meta, vf), **_physics(mine, meta, vf), **_particles(mine, meta, vf), **_real_data(mine, meta)}
+            **_realistic(mine, meta, vf), **_physics(mine, meta, vf), **_particles(mine, meta, vf), **_real_data(mine, meta), **_kubernetes(mine, meta, vf)}
 
 
 _cache: dict = {"sm": None, "ix": None, "views": {}, "version": 0}

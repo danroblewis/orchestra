@@ -7,7 +7,7 @@ but a rebuild redoes only what changed since the last one.
   the scorer's hash, the cell's analysis, long-run metrics and strict reference). A cell is made
   again only when one of those changed; the analysis of a (case, variant) is read once, not once per
   strategy.
-- A strategy's totals (tests, per tag, realistic, physics, particles, real data, long run) are added
+- A strategy's totals (tests, per tag, realistic, physics, particles, real data, kubernetes, long run) are added
   up again only when one of its cells changed.
 
 The cells go out JSON-safe (jsonable) once, when they are made; the aggregates are made from the raw
@@ -99,8 +99,12 @@ def _aggregate(name: str, items: list[tuple]) -> dict:
     from .api import STATUSES
     t = None
     tags: dict = {}
-    real, phys, parts, realdata, lr_cells, lr_first = [], [], [], [], [], None
+    real, phys, parts, realdata, k8s, lr_cells, lr_first = [], [], [], [], [], [], None
     for c, group, cell, stale, row, lr, at in items:
+        if "kubernetes" in c["tags"]:                        # the kubernetes set (tag): its own totals, never in the tests'
+            k8s.append(cell)
+            if group == "tests":
+                continue
         if group == "realistic":
             real.append(cell)
             continue
@@ -138,6 +142,7 @@ def _aggregate(name: str, items: list[tuple]) -> dict:
     return {"totals": t, "by_tag": tags,
             "realistic": realistic.aggregate(real) if real else None, "physics": physics.aggregate(phys) if phys else None,
             "particles": particles.aggregate(parts) if parts else None, "real": _real_score.aggregate(realdata) if realdata else None,
+            "kubernetes": realistic.aggregate(k8s) if k8s else None,
             "longrun": longrun_cache.aggregate(lr_cells).get(name), "lr_first": lr_first}
 
 
@@ -217,6 +222,6 @@ def _build(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                                                    "check": {k: c["particles"]["check"][k] for k in ("z_rms", "rel", "runs", "steps")}}} if c.get("particles") else {})
                                for c in cs]),
             "cells": out_cells, "by_tag": by_tag, "totals": pick("totals"), "realistic": pick("realistic"),
-            "physics": pick("physics"), "particles": pick("particles"), "real": pick("real"), "score_hash": sh,
+            "physics": pick("physics"), "particles": pick("particles"), "real": pick("real"), "kubernetes": pick("kubernetes"), "score_hash": sh,
             "parametric": jsonable(parametric(cs, draw_cells)),
             "longrun": {n: b["longrun"] for n, b in sorted(blocks.items(), key=lambda x: x[1]["lr_first"] or 0) if b["longrun"] is not None}}
