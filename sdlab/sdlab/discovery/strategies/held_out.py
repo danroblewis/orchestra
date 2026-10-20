@@ -1,7 +1,7 @@
 """Candidates chosen on data they were not fitted on (experiment: held-out judge).
 
 The same candidate ways of estimating the matrix as the main line (identify.VARIANTS), but each is
-judged by blocked cross-validation (holdout.py): the run is cut into contiguous blocks, the
+judged by blocked cross-validation (holdout.py, copied below with the measured inputs): the run is cut into contiguous blocks, the
 candidate is fitted on all but one, and run forward inside the held-out block, its outside inflows
 there taken from what the fit knows (the piece in force before the block). The candidate with the
 lowest held-out error is then fitted on all the data.
@@ -11,13 +11,39 @@ from __future__ import annotations
 
 import math
 
-from ..holdout import held_out_errors
+import numpy as np
+
+from ..holdout import blocks, fill_gaps
 from ..identify import VARIANTS, judge
 from ..matrix import identify_one
+from ..simulate import behaviour_error
 
 FOLDS = 5
 HORIZONS = (5, 20, 100)
 CAP = 1e3          # one block where a candidate runs away counts as badly as any other runaway
+
+
+def held_out_errors(stocks: list[dict], run: dict, opts: dict, folds: int = 5, horizons=(5, 20, 100), fill: str = "last") -> list[dict]:
+    """holdout.held_out_errors (a copy, from 66086e7) with the measured inputs (opts["inputs"]): each
+    held-out block's runs read the inputs over that block, as the fit on the other steps did. Per
+    held-out block: {"block": (a, b), "errors": {horizon: error}} (behaviour_error, run on the block's
+    own levels; a horizon is used only when it is under half the block)."""
+    t = run["t"]
+    T = len(t) - 1
+    ids = [s["id"] for s in stocks]
+    inputs = opts.get("inputs") or None
+    out = []
+    for a, b in blocks(T, folds):
+        mask = np.ones(T, bool)
+        mask[a:b] = False
+        r = identify_one(stocks, run, {**opts, "steps": mask})
+        flows = fill_gaps(r["flows"], fill)
+        tb = t[a:b + 1]
+        lb = {i: list(run["levels"][i][a:b + 1]) for i in run["levels"]}
+        ib = {k: list(v[a:b + 1]) for k, v in inputs.items()} if inputs else None
+        errs = {h: behaviour_error(flows, ids, tb, lb, horizon=h, inputs=ib) if flows else float("inf") for h in horizons if h < (b - a) / 2}
+        out.append({"block": (a, b), "errors": errs})
+    return out
 
 
 def score(blocks: list[dict]) -> float:
@@ -45,7 +71,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         full = None
         if blend:
             full = identify_one(stocks, run, {**opts, **v})
-            e = math.log(max(1e-9, judge(full["flows"], stocks, run))) + blend * math.log(max(1e-9, e))
+            e = math.log(max(1e-9, judge(full["flows"], stocks, run, inputs=opts.get("inputs") or None))) + blend * math.log(max(1e-9, e))
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
             best = (v, e, full)

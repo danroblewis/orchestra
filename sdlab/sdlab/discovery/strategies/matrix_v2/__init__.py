@@ -42,9 +42,11 @@ OFF: dict = {"rss_floor": False, "pelt_mult": 1, "white": False, "pool": False, 
 
 # the defaults: the combination chosen by the ablation (docs/research/matrix_v2.md): every fix that
 # gained cells without losing more than the data's limits explain; pelt_mult 2, white, gap_inflow and
-# inputs_judge each lost cells the others did not, and are off
+# inputs_judge each lost cells the others did not, and are off. inputs_judge is on since the measured-input
+# cases (300-317): a judge blind to the inputs ranks every candidate that reads one as a runaway (302
+# counts-short: 18.7 against 0.05) and picks a degenerate one
 OPTIONS: dict = {**OFF, "rss_floor": True, "pool": True, "pool_white": True, "tie_se": True, "falling_inflow": True, "fold_strict": True,
-                 "pair_moves": True, "products": "after", "exact": True}
+                 "pair_moves": True, "products": "after", "exact": True, "inputs_judge": True}
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
 # trusting the receivers or the rows where stocks are seen receiving more than a stock's own row

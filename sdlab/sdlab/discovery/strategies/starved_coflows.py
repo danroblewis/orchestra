@@ -77,7 +77,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     tried, starved = [], []
 
     def consider(r, name, dry=False):
-        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run)
+        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, inputs=opts.get("inputs") or None)
         tried.append({"name": name, "error": e})
         if best[dry] is None or e < best[dry][1]:
             best[dry] = (r, e, name)

@@ -42,7 +42,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             cands = cands[:0] if opts.get("recession_replace") else cands
             cands.append((q, v["name"] + ", recession drains"))
         for c, name in cands:
-            e = judge(c["flows"] + extra if c["flows"] else [], stocks, run)
+            e = judge(c["flows"] + extra if c["flows"] else [], stocks, run, inputs=opts.get("inputs") or None)
             tried.append({"name": name, "error": e})
             if best is None or e < best[1]:
                 best = (c, e, name)
