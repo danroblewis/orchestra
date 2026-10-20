@@ -351,6 +351,65 @@ two-way flow on an unsigned stock (221) still stops at its floor.
 with `- ` or `[` reads as a list: quote it. Strings with `: ` or ` #` (a title,
 a test sentence) need quotes.
 
+### The boundary: declared outside flows (2026-10-20)
+
+Outside ("environment") flows are a modelling decision, not something discovery may invent (the
+user, 2026-10-20). Across failing results, 65% of the invented parts were outside flows (41% outside
+outflows, 24% inflows), and strategies often wrote `A -> outside` plus `outside -> B` instead of the
+move `A -> B`. So a case may declare its boundary, Sterman's model-boundary chart: per measured stock,
+its outside inflows and outflows, one kind per flow, `measured` (driven by a measured input series the
+case already gives) or `estimate` (it exists; its form and rate are to be estimated). Stocks not
+listed have none. Only the stock and the kind are declared, never a form or a rate.
+
+```yaml
+boundary:
+  A: {in: estimate}                 # one outside inflow into A, to estimate
+  B: {in: measured, out: [estimate, estimate]}   # an inflow driven by an input; two outflows
+```
+
+`boundary: {}` declares that no stock has an outside flow. No `boundary` key: undeclared, as every
+case was before (outside flows are allowed, as "boundary claims" a strategy should price heavily).
+
+- **Checked against the truth** (`caseformat.boundary_problems`, at load): every outside flow of the
+  true model, reaching a measured stock directly or through hidden stocks (a delay fed from outside,
+  `B -> H -> outside`), is declared on that stock and side; nothing declared is missing from the
+  model; only measured stocks are named (naming a hidden one would leak it); `measured` needs
+  `inputs:`. An information smoothing (filled from and drained to outside, reaching no measured
+  stock) is not a boundary flow.
+- **Announced to discovery**, like eras and measured inputs, and nothing else about the truth:
+  `cases.announced(case)` gives `{"boundary": {stock: {"in": [kinds], "out": [kinds]}},
+  "boundary_declared": True}` and `runner.discover` puts both keys in the run a strategy gets
+  (`identify(stocks, run, opts)`; an undeclared case's run is `{t, levels}` as before). Strategies
+  create outside flows only where declared; everything else is a flow between stocks or a hidden
+  stock (priced as high as anything else), and unexplained wiggle is noise. An outflow from A and an
+  inflow to B that track each other are tried as the move A -> B.
+- **Hashed:** a declared boundary is in the case hash (it changes what discovery is told); an
+  undeclared case's hash is unchanged.
+- **Scored** (score.py, "The boundary"): a found outside part (an outside inflow, a link, an outside
+  outflow, a hidden path fed from outside, their co-flows and effects) on a stock and side the
+  boundary does not have, of any non-zero size, is a spurious part of kind `invented boundary`, and so
+  is an outside flow that reaches a measured stock through the found model's own unmeasured stocks.
+  The result fails with the note `invented boundary: an outside outflow from A, which the case's
+  boundary does not have`, and is never `equivalent` (the split move is the same linear system as the
+  move, which is why it must not count). Declared outside flows are scored as before; an undeclared
+  case is scored exactly as before. The scores of a declared case carry `boundary_declared` and
+  `invented_boundary` (how many stock-sides were invented).
+- **Shown** on the Cases page beside the true model.
+
+**Before and after** (2026-10-20, `tests/study_rescore_boundary.py`: every latest stored row that is
+not an error or timeout, 93,318 rows, graded offline by the scorer at d8cfaf0 and by the new one, as
+runner.run_item grades it, behaviour left out): **0 flips**. Same status on tests 82,520 / 82,520,
+real 4,888, physics 1,840, kubernetes 1,829, realistic 1,526. The 715 particle rows could not be
+graded on either side: `physics/score.expected_structure` raises `KeyError` on the particle systems
+(`plant`, `conveyor`, `chambers`, ...), a fault that predates this change, so when the watcher
+re-scores them (the score hash changed) they will be stored as errors until it is fixed. No case
+declares a boundary yet, so nothing is announced and the new rule never runs
+(tests/test_ladder_boundary.py checks every case).
+
+The real-data cases and the few probes with no boundary stay undeclared. The NO-TRUTH evidence views
+(notruth_run.py, objective_test.py) are built from `{stocks, t, levels, eras, injections, inputs}` and
+do not carry the boundary yet.
+
 ### Parametric cases: random numbers
 
 A hand-written case has one set of numbers (three chains with inflows 20, 12 and 6), so a strategy

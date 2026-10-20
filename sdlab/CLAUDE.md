@@ -19,6 +19,12 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
    step `dt`, stock ceilings, delay and smoothing functions, and others the canonical and
    real-data sources need). A new feature must be additive: every existing case, example and
    fingerprint must give exactly the same numbers as before, with a test proving it.
+   Approved on 2026-10-20: cases declare their boundary (`boundary:`, Sterman's model-boundary chart:
+   per measured stock, its outside inflows and outflows, each `measured` or `estimate`; never a form
+   or rate). It is announced to discovery (`run["boundary"]`, `run["boundary_declared"]`), and an
+   outside flow a declared boundary does not have fails the result as an "invented boundary". This
+   changes what cases announce, not their data or simulations (engine fingerprints identical). An
+   undeclared case is unchanged (outside flows there are boundary claims). docs/LADDER.md, "The boundary".
 3. **Cases are mathematical probes, not a record of outcomes.** Real-data cases (tag `real`)
    are the exception: they live on the ladder as additional information, separate from the formal
    functional tests. They are scored by held-out prediction and agreement with the published

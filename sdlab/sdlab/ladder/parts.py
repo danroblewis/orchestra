@@ -305,6 +305,55 @@ def kind(key: tuple) -> str:
     return "outside outflow"
 
 
+def outside_ends(flows: list[dict], measured: set[str]) -> set[tuple[str, str]]:
+    """The measured stocks a model's outside flows reach, as (stock, "in" | "out"): a flow from outside
+    into a measured stock, or into an unmeasured one whose flows lead on (through unmeasured stocks) to
+    a measured one; and the same for flows to outside. An information smoothing (filled from and drained
+    to outside, reaching no measured stock) is none."""
+    down: dict = {}
+    up: dict = {}
+    for f in flows:
+        if f.get("from") and f.get("to"):
+            down.setdefault(f["from"], set()).add(f["to"])
+            up.setdefault(f["to"], set()).add(f["from"])
+
+    def reach(start: str, edges: dict) -> set[str]:
+        seen, todo, hit = set(), [start], set()
+        while todo:
+            x = todo.pop()
+            if x in seen:
+                continue
+            seen.add(x)
+            if x in measured:
+                hit.add(x)
+                continue
+            todo += list(edges.get(x) or ())
+        return hit
+
+    out: set[tuple[str, str]] = set()
+    for f in flows:
+        a, b = f.get("from"), f.get("to")
+        if not a and b:
+            out |= {(s, "in") for s in reach(b, down)}
+        if a and not b:
+            out |= {(s, "out") for s in reach(a, up)}
+    return out
+
+
+def outside_end(key: tuple) -> tuple[str, str] | None:
+    """The measured stock and side ("in" | "out") of a part on a flow with one end outside (an outside
+    inflow, a link, an outside outflow, a hidden path fed from outside, and the co-flows, effects and
+    smoothings of such a flow); None for a part between two stocks (2026-10-20: the declared boundary)."""
+    if key[0] not in ("flow", "uses", "effect", "whole", "smooth", "hidden", "via", "viaeffect"):
+        return None
+    a, b = key[1], key[2]
+    if a is None and b:
+        return (b, "in")
+    if b is None and a:
+        return (a, "out")
+    return None
+
+
 def label(key: tuple) -> str:
     end = lambda x: x or "outside"  # noqa: E731
     if key[0] == "flow":

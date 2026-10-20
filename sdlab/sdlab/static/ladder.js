@@ -725,6 +725,21 @@
     $("c-dlist").innerHTML = r ? `${diffHtml(cmp)}<p class="bexplain">${esc(L.explain(r.scores))}</p>` : "";
     $("c-eq").innerHTML = equationsHtml(c, cmp, r, run);
   }
+  // The case's declared boundary (2026-10-20): per measured stock, its outside inflows and outflows and
+  // their kinds, as announced to discovery; undeclared: outside flows are allowed as boundary claims.
+  function boundaryHtml(c, measured) {
+    const b = c.boundary;
+    if (b === undefined || b === null) return `<p class="note boundary"><b>Boundary:</b> not declared <span class="muted small">(outside flows are allowed, as boundary claims)</span></p>`;
+    const kinds = (xs) => xs.map((k) => (k === "measured" ? "measured input" : "to estimate")).join(", ");
+    const side = (xs, word) => (xs && xs.length ? `${xs.length} outside ${word}${xs.length > 1 ? "s" : ""} (${esc(kinds(xs))})` : "");
+    const rows = [...measured].map((id) => {
+      const e = b[id] || {};
+      const parts = [side(e.in, "inflow"), side(e.out, "outflow")].filter(Boolean);
+      return `<li><b>${esc(id)}</b>: ${parts.length ? parts.join("; ") : `<span class="muted">none</span>`}</li>`;
+    });
+    return `<div class="note boundary"><b>Boundary</b> <span class="muted small">declared, announced to discovery: an outside flow anywhere else fails as an invented boundary</span>
+      <ul class="boundary-list" style="margin:4px 0 0;padding-left:18px">${rows.join("")}</ul></div>`;
+  }
   async function renderCase() {
     const c = S.byId[S.csel.case]; if (!c) { $("cdetail").innerHTML = ""; return; }
     if (!S.summary || !S.summary.covers(c.id)) await loadSummary(c.id);
@@ -738,6 +753,7 @@
       ${caseStrategies(c)}
       ${caseRunHtml()}
       <figure class="dpanel single"${S.csel.run ? " hidden" : ""}><figcaption>True model</figcaption><svg id="c-diagram" role="img" aria-label="The case's true model"></svg></figure>
+      ${boundaryHtml(c, measured)}
       <div class="tablewrap"><table class="rtable"><thead><tr><th>flow</th><th>from → to</th><th>equation</th></tr></thead><tbody>
         ${flows.map((x) => `<tr><td><b>${esc(x.flow.id)}</b></td><td class="mono">${esc(x.flow.from || "outside")} → ${esc(x.flow.to || "outside")}</td><td class="mono">${esc(x.eq)}</td></tr>`).join("")}
       </tbody></table></div>

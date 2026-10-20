@@ -197,7 +197,10 @@ def discover(strategy: str, model: dict, d: dict) -> dict:
         opts["injections"] = [{"t": j["t"], "stock": j["stock"], "amount": j["amount"]} for j in d["injections"]]
     if d.get("inputs"):                                        # measured inputs: {name: value per step}, a page input
         opts["inputs"] = {k: list(v) for k, v in d["inputs"].items()}
-    return load_strategy(strategy)(stocks, {"t": d["t"], "levels": d["levels"]}, opts)
+    run = {"t": d["t"], "levels": d["levels"]}
+    if d.get("boundary_declared"):                              # the case's declared boundary (cases.announced, 2026-10-20)
+        run.update(boundary=d["boundary"], boundary_declared=True)
+    return load_strategy(strategy)(stocks, run, opts)
 
 
 def case_timeout(case_id: str, timeout: float) -> float:
@@ -225,6 +228,7 @@ def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None, qu
         noise = casemod.variant(c, item["variant"])["noise"]
         model = casemod.truth_model(c, item["variant"])
         d = _real_data.load(c, item["variant"]) if c.get("real") else data.load(c, item["variant"])   # real/: the training part
+        d = {**d, **casemod.announced(c)}                        # a declared boundary: announced to discovery
         inferred = None
         if item.get("mode") == "rescore":
             prev = next(iter(store.latest(item["case"], item["variant"], item["strategy"], found=True)), None)

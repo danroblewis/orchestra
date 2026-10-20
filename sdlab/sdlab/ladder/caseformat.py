@@ -53,6 +53,14 @@ two-way flows, switches, fixed delays"):
       A -> C: delay3(0.5 * A, 2 + B / 10)    # a delay whose time changes (stages at 3 / time, an expression)
       outside -> D: 2 * trend(A, 5, 0)       # TREND(x, time, initial trend) and FORECAST(x, time, horizon[, initial trend])
 
+Added on 2026-10-20 (the user: outside flows are a modelling decision; docs/LADDER.md "The boundary"):
+
+    boundary:                                # the model boundary, announced to discovery: per measured stock
+      A: {in: measured, out: estimate}       #   its outside inflows and outflows, each "measured" (driven by a
+      B: {out: [estimate, estimate]}         #   measured input) or "estimate" (form and rate to estimate)
+                                             # stocks not listed have none; `boundary: {}` declares none at all;
+                                             # no boundary key: undeclared (outside flows are boundary claims)
+
 A number anywhere may instead be a range to draw from, draw(lo, hi) (a parametric case; draws.py
 resolves those to numbers before the text is compiled here).
 
@@ -69,7 +77,7 @@ import yaml
 
 OUTSIDE = "outside"
 TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws",
-            "dt", "inputs", "source", "auxiliaries", "switches"}
+            "dt", "inputs", "source", "auxiliaries", "switches", "boundary"}
 DELAYS = {"delay1": 1, "delay3": 3}                               # DELAYn(rate, time): n hidden stocks in a chain
 TRENDS = ("trend", "forecast")                                     # TREND / FORECAST: a smoothing and an expression (2d)
 SMOOTHS = {"smooth": 1, "smooth3": 3}                             # SMOOTHn(x, time): n hidden stocks, exact flows
@@ -913,6 +921,8 @@ def compile_case(text: str, name: str = "<case>") -> dict:
     if "draws" in raw:
         raise CaseError(f"{_at(raw, 'draws', name)}: draws is for a case with draw(lo, hi) numbers (draws.py), and this one has none")
     out = {k: raw[k] for k in ("title", "level", "tags", "tests", "tolerance", "source") if k in raw}   # source: where a case comes from, and its licence
+    if "boundary" in raw:                                           # declared (even empty); checked against the model in cases.py
+        out["boundary"] = boundary_spec(raw["boundary"], _at(raw, "boundary", name))
     v = raw.get("variants")
     if v is not None and v != "default":
         out["variants"] = v
@@ -961,6 +971,60 @@ def compile_case(text: str, name: str = "<case>") -> dict:
             raise CaseError(f"{name}: {e}") from None
     out["model"] = model
     return _plain(out)
+
+
+BOUNDARY_KINDS = ("measured", "estimate")       # driven by a measured input series / exists, form and rate to estimate
+
+
+def boundary_spec(raw, where: str = "boundary") -> dict:
+    """A case's declared boundary as {stock: {"in": [kinds], "out": [kinds]}} (kinds: BOUNDARY_KINDS; one
+    per outside flow; a stock not listed has none). `{}`, `none` or null: declared, no outside flows at all.
+    Only the stock and the kind: never a form or a rate. The stocks are checked against the model in
+    cases.py (boundary_problems)."""
+    if raw is None or raw == "none":
+        return {}
+    if not isinstance(raw, dict):
+        raise CaseError(f"{where}: boundary is a mapping of stock to {{in: kinds, out: kinds}} (kinds: measured, estimate), or {{}} for none")
+    out = {}
+    for stock, v in raw.items():
+        at = f"{where.split(':')[0]}:{raw.lines.get(stock)}" if isinstance(raw, _Map) and raw.lines.get(stock) else where
+        if not isinstance(stock, str) or not ID_RE.match(stock):
+            raise CaseError(f"{at}: boundary: {stock!r} is not a stock id")
+        if v is None or v == "none":
+            v = {}
+        if not isinstance(v, dict) or set(v) - {"in", "out"}:
+            raise CaseError(f"{at}: boundary of {stock}: {{in: kinds, out: kinds}} (kinds: measured, estimate)")
+        entry = {}
+        for side in ("in", "out"):
+            kinds = v.get(side) or []
+            kinds = [kinds] if isinstance(kinds, str) else kinds
+            if not isinstance(kinds, list) or any(k not in BOUNDARY_KINDS for k in kinds):
+                raise CaseError(f"{at}: boundary of {stock}: {side} is a kind or a list of kinds (measured, estimate), not {v.get(side)!r}")
+            entry[side] = list(kinds)
+        if entry["in"] or entry["out"]:
+            out[stock] = entry
+    return out
+
+
+def boundary_problems(boundary: dict, model: dict) -> list[str]:
+    """What a declared boundary gets wrong about the case's true model: a stock that is not measured
+    (announcing it would leak a hidden stock), an outside flow of the truth on a stock and side the
+    boundary does not declare, a declared side the truth has no outside flow on, a "measured" kind in a
+    case with no measured inputs."""
+    from .parts import outside_ends                                 # the scorer's reading of where outside flows reach
+    measured = {s["id"] for s in model.get("stocks") or [] if s.get("measured", True)}     # the page's stocks
+    problems = [f"boundary: {s} is not a measured stock" for s in boundary if s not in measured]
+    truth = outside_ends(model.get("flows") or [], measured)
+    for s, side in sorted(truth):
+        if not (boundary.get(s) or {}).get(side):
+            problems.append(f"boundary: the model has an outside {'inflow to' if side == 'in' else 'outflow from'} {s}, not declared")
+    for s, e in boundary.items():
+        for side in ("in", "out"):
+            if e.get(side) and (s, side) not in truth and s in measured:
+                problems.append(f"boundary: {s} declares an outside {'inflow' if side == 'in' else 'outflow'} the model does not have")
+    if any("measured" in e.get(side, []) for e in boundary.values() for side in ("in", "out")) and not model.get("inputs"):
+        problems.append("boundary: a 'measured' outside flow needs a measured input (inputs:)")
+    return problems
 
 
 def _check_names(text, readable: set[str], where: str) -> str:

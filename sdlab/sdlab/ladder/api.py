@@ -1,7 +1,8 @@
 """The ladder's read API: what a page (or anything else) needs to show the ladder. Read only, every
 value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see docs/LADDER.md.
 
-    cases()                              every case: id, title, level, tags, tests, hash, variants, tolerance, model
+    cases()                              every case: id, title, level, tags, tests, hash, variants, tolerance, model,
+                                         and boundary ({stock: {in, out}}) when the case declares one (2026-10-20)
     case(case_id)                        one case (None if unknown)
     strategies()                         every strategy: name, hash, available, reason, about (explain.py)
     glossary()                           the ladder's words in plain language (explain.py)

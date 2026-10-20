@@ -44,6 +44,16 @@ difference, a gap seen as an inflow and a drain); for a truth with effects, the 
 the same change of every stock on the run's states (_same_function); it is reported apart from pass.
 Not checked for a truth with hidden stocks.
 
+**The boundary** (the user, 2026-10-20). A case that declares its boundary (caseformat.boundary_spec;
+per measured stock, its outside inflows and outflows) is told it, and outside flows are a modelling
+decision, not something discovery may invent: a found part with an outside end (an outside inflow, a
+link, an outside outflow, a hidden path fed from outside, their co-flows and effects) on a stock and
+side the boundary does not have is a spurious part of kind "invented boundary", whatever its size
+(only an exactly zero one is not), and so is an outside flow that reaches a measured stock through the
+found model's own unmeasured stocks. The result fails (never equivalent: "A -> outside" plus
+"outside -> B" is not the move A -> B) with the note "invented boundary: ...". Declared outside flows
+are scored as before; a case with no boundary is scored exactly as before.
+
 **Behaviour.** skill@20 and skill@100 (sdlab/skill.py) on the run discovery saw and on a fresh run
 (another seed), each with a 95% bootstrap interval over the start moments. Only the truth's truly
 exogenous inflows are swapped in (skill.exogenous); a found model with a two-way flow or a signed
@@ -61,7 +71,7 @@ import numpy as np
 from ..runner import multiplier
 from ..skill import same_behaviour, truth_by_time, truth_runs
 from .noise_oracle import make_hidden_oracle, make_oracle
-from .parts import ONE, _hidden_chains, form_over, kind, label, linear_system, parts, windows
+from .parts import ONE, _hidden_chains, form_over, kind, label, linear_system, outside_end, outside_ends, parts, windows
 from .substep import per_step
 from . import sim as _sim
 
@@ -286,6 +296,9 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
         rows.append(row)
 
     spurious, extra = [], []
+    boundary = case.get("boundary")                                # declared (2026-10-20): outside flows only where it has them
+    declared = None if boundary is None else {(st, side) for st, e in boundary.items() for side in ("in", "out") if e.get(side)}
+    invented: set[tuple[str, str]] = set()
     for k in found_keys:
         if k in true_keys or (k[0] in ("flow", "uses", "effect") and (k[1], k[2]) in loose):
             continue
@@ -299,7 +312,20 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             noise_only = False
         entry = {"key": label(k), "kind": kind(k), "value": _show(_one([float(fp.get(k, 0.0)) for fp in found_w], weights) if k[0] in ("flow", "uses", "via")
                                                                    else next(fp[k] for fp in found_w if k in fp)), "size": size}
+        end = outside_end(k) if declared is not None else None
+        if end and end not in declared and size != 0:              # an outside flow the case's boundary does not have: any size
+            invented.add(end)
+            spurious.append({**entry, "kind": "invented boundary"})
+            continue
         (spurious if size > tol["spurious"] * scale and not noise_only else extra).append(entry)
+    if declared is not None:                                       # outside flows reaching a measured stock through the found model's own unmeasured stocks
+        direct = lambda f: (not f.get("from") and f.get("to") in measured) or (not f.get("to") and f.get("from") in measured)  # noqa: E731
+        for end in sorted(outside_ends([f for f in found_flows if not direct(f)], measured) - declared - invented):
+            invented.add(end)
+            spurious.append({"key": f"outside -> (unmeasured) -> {end[0]}" if end[1] == "in" else f"{end[0]} -> (unmeasured) -> outside",
+                             "kind": "invented boundary", "value": None, "size": None})
+        notes += [f"invented boundary: an outside {'inflow to' if side == 'in' else 'outflow from'} {st}, which the case's boundary does not have"
+                  for st, side in sorted(invented)]
     big_found = [k for k in found_keys if k in true_keys] + [e for e in spurious]
     recall = sum(r["found"] for r in rows) / len(rows) if rows else 1.0
     precision = (sum(1 for k in found_keys if k in true_keys) / len(big_found)) if big_found else (1.0 if not rows else 0.0)
@@ -315,10 +341,15 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             if T is None or F is None or not _same_system(T, F, ids, cols, tol, means, scale, oracle, wins.index(w)):
                 equivalent = False
                 break
+    if invented:                                                   # never equivalent: "A -> outside" + "outside -> B" is not the move A -> B
+        equivalent = False
     status = "pass" if passed else "equivalent" if equivalent else "fail"
-    return {"status": status, "pass": passed, "equivalent": equivalent, "recall": recall, "precision": precision,
-            "right": sum(r["ok"] for r in rows), "of": len(rows), "parts": rows, "spurious": spurious, "negligible": extra,
-            "windows": len(wins), "tolerance": tol, "scale": scale, "notes": sorted(set(notes))}
+    out = {"status": status, "pass": passed, "equivalent": equivalent, "recall": recall, "precision": precision,
+           "right": sum(r["ok"] for r in rows), "of": len(rows), "parts": rows, "spurious": spurious, "negligible": extra,
+           "windows": len(wins), "tolerance": tol, "scale": scale, "notes": sorted(set(notes))}
+    if declared is not None:                                       # an undeclared case's scores are as before
+        out.update(boundary_declared=True, invented_boundary=len(invented))
+    return out
 
 
 def _changes(flows: list[dict], ids: list[str], data: dict, states: list[dict]) -> tuple[np.ndarray, np.ndarray] | None:

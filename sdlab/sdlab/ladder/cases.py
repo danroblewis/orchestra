@@ -7,7 +7,8 @@ docs/LADDER.md) or NNN-slug.json (the case dict itself), a tiny true model plus 
      "variants": {"noise": ["none", "counts"], "lengths": {"short": 300, "long": 2000}},   # optional
      "model": {"seed": 7, "stocks": [{"id": "A", "initial": 0}],    # the truth.model.json format
                "flows": [{"id": "in", "from": null, "to": "A", "rate": {"form": "constant", "value": 20}}],
-               "schedule": {...}, "injections": [...]}}
+               "schedule": {...}, "injections": [...]},
+     "boundary": {"A": {"in": ["estimate"], "out": []}}}            # optional (2026-10-20): the declared boundary
 
 A case is run in every variant: each noise ("none": the engine's exact flows; "counts": whole things,
 Poisson around the rate; a case may also ask for the noises of noise.py, laid on the counts run's
@@ -16,7 +17,9 @@ covers what a run is made from, not how the file is written or described: the co
 variants and tolerance (canonical JSON; not the title, level, tags or tests sentence), the truth
 model of every variant (without its id and name), the engine (sdlab/sdtruth.py and the equations in sdlab/runner.py) and
 the code that turns a truth model into data (data.py). Rewriting a case in the other format, or
-changing this file without changing any truth model, keeps its results current.
+changing this file without changing any truth model, keeps its results current. A declared boundary
+(caseformat.boundary_spec; checked against the model, boundary_problems) is announced to discovery
+(announced) and so is in the hash too; a case without one hashes as before.
 """
 
 from __future__ import annotations
@@ -36,7 +39,7 @@ from . import noise as _noise
 from . import particles as _particles
 from . import physics as _physics
 from . import realistic as _realistic
-from .caseformat import CaseError, compile_case
+from .caseformat import CaseError, boundary_problems, boundary_spec, compile_case
 from .real import case as _real
 
 
@@ -317,6 +320,11 @@ def _build(case_id: str, spec: dict) -> dict:
     case = {"id": case_id, "title": spec.get("title") or case_id, "level": spec.get("level", 0), "tags": list(spec.get("tags") or []),
             "tests": spec.get("tests") or "", "tolerance": dict(spec.get("tolerance") or {}), "variants": variants,
             "model": spec["model"], **{k: spec[k] for k in ("example", "timeout") if k in spec}}
+    if "boundary" in spec:                                       # declared (2026-10-20): announced to discovery, scored (score.py)
+        case["boundary"] = boundary_spec(spec["boundary"], f"{case_id}: boundary")
+        bad = boundary_problems(case["boundary"], spec["model"])
+        if bad:
+            raise CaseError(f"{case_id}: " + "; ".join(bad))
     return {"spec": spec, "case": {**case, "hash": case_hash(case)}}
 
 
@@ -336,6 +344,8 @@ def case_hash(case: dict) -> str:
         h.update(LEGACY_ENGINE.encode() + LEGACY_DATA.encode())
     if any(x.get("observe") for x in case["variants"]):          # opted in to noise.py's variants: their code too
         h.update(_noise.code_hash().encode())
+    if "boundary" in case:                                       # what discovery is told (2026-10-20); an undeclared case's hash is as before
+        h.update(b"boundary" + _canonical(case["boundary"]))
     return h.hexdigest()[:16]
 
 
@@ -421,7 +431,8 @@ def load(case_id: str) -> dict:
     """A case: {id, title, level, tags, tests, tolerance, variants: [{name, noise, length, steps}],
     model (the truth model without steps or noise), hash}; a draw also has draw: {base, i, of, seed,
     attempt, values: [{label, value, lo, hi, log, int, line}], rejected: [{attempt, values, problems}],
-    problems} (problems: what is still wrong when no attempt passed the checks)."""
+    problems} (problems: what is still wrong when no attempt passed the checks); a case that declares its
+    boundary also has boundary: {stock: {in: [kinds], out: [kinds]}}."""
     return dict(_get(case_id)["case"])
 
 
@@ -446,6 +457,17 @@ def truth_model(case: dict, variant_name: str) -> dict:
             "steps": v["steps"], "noise": dict(NOISES[_noise.engine_noise(v)]),
             "stocks": [{"name": s["id"], "unit": "things", **s} for s in m["stocks"]],
             "flows": [{"name": f["id"], **f} for f in m["flows"]]}
+
+
+def announced(case: dict) -> dict:
+    """What a case announces to discovery beyond the data (2026-10-20, the user): its declared boundary,
+    {"boundary": {stock: {"in": [kinds], "out": [kinds]}}, "boundary_declared": True}, only the stocks
+    and kinds (never a form or rate); {} for a case that declares none (outside flows are then boundary
+    claims). runner.discover puts these keys in the run a strategy gets."""
+    if case.get("boundary") is None:
+        return {}
+    return {"boundary": {s: {"in": list(e.get("in") or []), "out": list(e.get("out") or [])} for s, e in case["boundary"].items()},
+            "boundary_declared": True}
 
 
 def page_stocks(model: dict) -> list[dict]:
