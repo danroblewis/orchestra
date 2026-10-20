@@ -14,8 +14,28 @@ import numpy as np
 from numba import njit
 
 
-@njit(cache=True)
+_KMEMO: OrderedDict = OrderedDict()    # (series digest, shape, min_len, pen) -> last-cut array; per process
+_KMEMO_SIZE = 4096
+
+
 def _last_cut(r: np.ndarray, min_len: int, pen: float) -> np.ndarray:
+    """The search's core (_last_cut_kernel), remembered: strategies and their copies of this module call it
+    directly, many times on the same residuals (the user approved the memo, 2026-10-20). Returns a fresh
+    array each time, so a caller may change it."""
+    r = np.ascontiguousarray(r, dtype=float)
+    key = (hashlib.blake2b(r.tobytes(), digest_size=16).digest(), r.shape, int(min_len), float(pen))
+    got = _KMEMO.get(key)
+    if got is None:
+        got = _KMEMO[key] = _last_cut_kernel(r, int(min_len), float(pen))
+        if len(_KMEMO) > _KMEMO_SIZE:
+            _KMEMO.popitem(last=False)
+    else:
+        _KMEMO.move_to_end(key)
+    return got.copy()
+
+
+@njit(cache=True)
+def _last_cut_kernel(r: np.ndarray, min_len: int, pen: float) -> np.ndarray:
     n = r.shape[0]
     pre = np.zeros(n + 1)
     pre2 = np.zeros(n + 1)

@@ -25,3 +25,17 @@ def test_memo_is_bounded():
     for i in range(changes._MEMO_SIZE + 50):
         changes.pelt(np.arange(10.0) + i, 2, 1.0)
     assert len(changes._MEMO) <= changes._MEMO_SIZE
+
+
+def test_kernel_memo_matches_the_kernel_and_hands_out_copies():
+    rng = np.random.default_rng(1)
+    for _ in range(100):
+        n = int(rng.integers(3, 300))
+        r = rng.normal(size=n)
+        min_len, pen = int(rng.integers(1, 6)), float(rng.uniform(0.1, 20))
+        want = changes._last_cut_kernel(np.ascontiguousarray(r), min_len, pen)
+        a = changes._last_cut(r, min_len, pen)
+        b = changes._last_cut(r.copy(), min_len, pen)       # from memory
+        assert np.array_equal(a, want) and np.array_equal(b, want)
+        a[:] = -7                                           # a caller changing its array does not change the memo
+        assert np.array_equal(changes._last_cut(r, min_len, pen), want)
