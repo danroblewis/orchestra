@@ -110,3 +110,16 @@ Paired check, same code and scorer, base (`_identify`) vs refitted, in one proce
   0.486, 10.11 -> 9.72). The module does the same for matrix (one of the 40; its stored 087
   outliers-long result predates e8edf28, so the board does not show it yet). A fix belongs in eiv.py
   for every copy (e.g. a robust or margin-gated acceptance), not in these seven alone.
+
+## Round 3: pruning on the instrumented fit (def0acb)
+
+Kubernetes rung 4 (case 303, smooth daily traffic) showed the structure itself was chosen on the biased
+one-step fit: an exact, smooth input stood in for a noisy level (a spurious traffic link into inflight,
+an inflated drain, a split queue drain, chance pieces), and the refit could not change structure. The
+module now first drops the parts the instrumented fit cannot tell from nothing (Wald on the instrumented
+numbers, Akaike's price, outlier rows left out) and keeps the pruned model when, at the judge's longest
+horizon, it loses to the found one by no more than 2 paired standard errors. It also corrects the claim
+above: the multi-step judge *is* biased by measurement error at its short horizons (each run starts from
+a level with the error in it; a faster-draining model forgets it sooner), which is why the old guard
+kept the biased numbers on 303. Details, flips and the two losses: [k8s-303-c2.md](k8s-303-c2.md).
+
