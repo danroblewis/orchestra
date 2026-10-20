@@ -78,7 +78,7 @@ import time
 import numpy as np
 
 from ...addition import addition_test
-from ...identify import identify as matrix_identify
+from .earned import main_line as matrix_identify   # identify.identify with each candidate's pieces earned (earned.py)
 from ...matrix import injected
 from ...simulate import behaviour_error
 from . import search, transit
