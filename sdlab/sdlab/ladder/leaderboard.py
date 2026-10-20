@@ -344,7 +344,11 @@ def _row(name: str, mine: list, kept: list, sm: dict, meta: dict, vf: str, lv: i
     for c in cs:
         secs = secs + (c.get("seconds") or 0)
     p, e, fl = k("pass"), k("equivalent"), k("fail")
-    return {"name": name, "runs": n, "of": len(kept), "cover": n / len(kept), "p": p, "e": e, "fl": fl, "o": n - p - e - fl,
+    elsewhere: dict = {}
+    for c in cs:
+        if c.get("machine"):                                # a cell run on another machine (api.flatten)
+            elsewhere[c["machine"]] = elsewhere.get(c["machine"], 0) + 1
+    return {"name": name, "runs": n, "machines": elsewhere, "of": len(kept), "cover": n / len(kept), "p": p, "e": e, "fl": fl, "o": n - p - e - fl,
             "pass": p / n, "passeq": (p + e) / n, "recall": _mean(num("recall")), "precision": _mean(num("precision")),
             "skill20": _mean(num("skill20")), "fresh20": _mean(num("fresh20")), "skill100": _mean(num("skill100")), "seconds": secs,
             **_complexity(cs), **_long_run(sm.get("longrun") or {}, name, vf, lv), **_achievable(cs), **_strict(cs),

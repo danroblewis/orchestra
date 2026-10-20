@@ -93,21 +93,26 @@ def pace(window: float = WINDOW, now: float | None = None, runs: list[dict] | No
     return out
 
 
-def backlog(sm: dict, est: timing.Estimator | None = None) -> dict:
+def backlog(sm: dict, est: timing.Estimator | None = None, machine: str | None = None) -> dict:
     """See the module docstring. A real case's cell whose download is missing, and a case tagged heavy, are
-    not counted (the watcher's planner skips them too)."""
+    not counted (the watcher's planner skips them too). machine: only the cases another machine runs
+    (machines.yaml; heavy ones counted: it names them), or with None only this machine's."""
     from . import cases as casemod
     from .real import data as _real_data
     est = est or timing.estimator()
     real = {c["id"] for c in sm["cases"] if c.get("real")}
     heavy = {c["id"] for c in sm["cases"] if "heavy" in (c.get("tags") or [])}     # run only when named: never by the watcher
+    from .machines import owner
+    whose = {c["id"]: owner(c.get("tags")) for c in sm["cases"]}
+    if machine is not None:
+        heavy = set()
     missing: dict = {}
     out = {"items": 0, "run": 0, "rescore": 0, "seconds": 0.0, "by_set": {}, "how": {}}
     for c in sm["cells"]:
         why = c.get("stale")
         if not why:
             continue
-        if c["case"] in heavy:
+        if c["case"] in heavy or whose.get(c["case"]) != machine:
             continue
         if c["case"] in real:
             k = (c["case"], c["variant"])
@@ -149,7 +154,7 @@ def _brief(r: dict, now: float) -> dict:
     return {"id": r["id"], "command": r["command"], "started": r["started"], "finished": r.get("finished"), "state": state_of(r, now),
             "total": r["total"], "done": done_of(r), "errors": r.get("errors"), "timeouts": r.get("timeouts"), "jobs": r.get("jobs"),
             "backlog": r.get("backlog"), "busy": None if r.get("busy") is None else round(r["busy"], 1),
-            "seconds": None if st is None or end is None else round(end - st, 1)}
+            "seconds": None if st is None or end is None else round(end - st, 1), "pid": r.get("pid")}
 
 
 def make(sm: dict | None = None, now: float | None = None) -> dict:
@@ -165,9 +170,31 @@ def make(sm: dict | None = None, now: float | None = None) -> dict:
         batch["per_hour"] = round(batch["done"] / max(batch["seconds"], 1.0) * 3600, 1)
     pc = pace(WINDOW, now, watch)
     bl = backlog(sm)
-    return {"now": _iso(now), "watcher": {"batch": batch, "alive": alive(watch[0].get("pid")) if watch else None,
-                                          "pace": pc, "backlog": bl, "eta": eta(bl, pc, now)},
-            "runs": [_brief(r, now) for r in recent]}
+    from .machines import here
+    return {"now": _iso(now), "machine": here(), "watcher": {"batch": batch, "alive": alive(watch[0].get("pid")) if watch else None,
+                                                              "pace": pc, "backlog": bl, "eta": eta(bl, pc, now)},
+            "runs": [_brief(r, now) for r in recent], "machines": remote(sm)}
+
+
+def remote(sm: dict) -> list[dict]:
+    """The other machines (machines.yaml), as of their last export (exchange.py): when it was imported, how
+    many results came from there, their watchers' newest batches (from the export's runs) and what is stale
+    in their share here (the backlog as this store sees it, after the import)."""
+    from . import exchange
+    from .machines import config
+    got = {m["name"]: m for m in exchange.remotes()}
+    out = []
+    for name in config():
+        m = got.get(name) or {}
+        h = m.get("header") or {}
+        rs = h.get("runs") or []
+        watches = {}
+        for r in rs:                                           # the newest batch of each watcher there (by its process)
+            if r.get("command") == "watch" and r.get("pid") not in watches:
+                watches[r.get("pid")] = r
+        out.append({"name": name, "imported_at": m.get("imported_at"), "exported_at": h.get("exported_at"), "head": h.get("head"),
+                    "results": m.get("results", 0), "batches": list(watches.values()), "runs": rs, "backlog": backlog(sm, machine=name)})
+    return out
 
 
 _panel: dict = {}

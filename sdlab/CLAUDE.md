@@ -102,9 +102,15 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     reads the research docs and every idea runs as a parallel experiment.
 15. **The ladder stays current and fast.** Results are keyed by strategy, case and scorer hashes,
     so a change marks them stale. One supervised watcher re-runs stale results:
-    `nice -n 19 uv run sdlab-ladder watch --strategies everything --every 300 --jobs 4 --timeout 300 --batch 2000`
+    `nice -n 19 uv run sdlab-ladder watch --strategies everything --exclude-cases machine:node2 --every 300 --jobs 4 --timeout 300 --batch 2000`
     (every strategy, parked ones too; a run that errors or times out counts as not passing), logging to
-    `~/.sdlab/ladder-watch.log`; check it with `pgrep -fl "sdlab-ladder watch"`. Agents run only
+    `~/.sdlab/ladder-watch.log`; check it with `pgrep -fl "sdlab-ladder watch"`. A second machine, node2,
+    runs the realistic, physics, particle, heavy, real-data and canonical cases (`--cases machine:node2`,
+    `sdlab/ladder/machines.yaml`) into its own store. `scripts/sdlab-sync.sh` imports its results here every
+    10 minutes (`sdlab-ladder export`/`import`; each result records its `machine`). It also pushes committed
+    code there and keeps its watchers up. The store here is the source of truth, backed up hourly to
+    `~/.sdlab/backups/` (`scripts/sdlab-backup.sh`, `sdlab-ladder restore`). See docs/LADDER.md, "Two
+    machines and backups". Agents run only
     their own strategy (`--strategies <name>`), never a full sync. When the watcher has a backlog,
     the board mixes versions: say so when quoting it. Leaderboard rates are over the cells a
     strategy has run, with its coverage shown. The public UI
@@ -113,8 +119,8 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     `pkill -f "sdlab --port 8020"; nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &`.
     Check that the old process has gone (use `kill -9` if it hangs).
     With no agent running, `scripts/sdlab-daemon.sh` keeps all of this going without tokens: it
-    restarts the server and the watcher if they stop, and refreshes the long-run and strict verdicts
-    hourly. Start it with `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &`.
+    restarts the server and the watcher if they stop, syncs node2 every 10 minutes, backs up the store
+    hourly, and refreshes the long-run and strict verdicts hourly. Start it with `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &`.
 16. **Probing a real, live system needs the user's approval.**
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from

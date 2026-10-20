@@ -2636,6 +2636,75 @@ GET /api/ladder/runs              {now, watcher: {batch, alive, pace, backlog, e
 The watcher records batches from its restart on 2026-10-19; a batch started before has no counts, and
 reads as having done nothing until it finishes.
 
+## Two machines and backups (`machines.py`, `exchange.py`, `backup.py`)
+
+Since 19 October 2026 the ladder runs on two machines. The Mac ("mac") keeps the source-of-truth result
+store (`~/.cache/sdlab/ladder/results.sqlite`); node2 (`ubuntu@10.198.1.109`, 24 cores, 62 GB) runs part
+of the ladder into its own store, and its results are imported into the Mac's.
+
+**The split** is defined once, in `sdlab/ladder/machines.yaml`: node2 runs
+`tag:realistic,tag:physics,tag:particles,tag:heavy,tag:real,tag:canonical`, and `--cases machine:node2`
+expands to that list. `run`, `sync` and `watch` take `--exclude-cases SPEC` (the `--cases` syntax), so the
+Mac runs everything else:
+
+    # mac (scripts/sdlab-daemon.sh keeps it running)
+    nice -n 19 uv run sdlab-ladder watch --strategies everything --exclude-cases machine:node2 --every 300 --jobs 4 --timeout 300 --batch 2000
+    # node2, in ~/sdlab/sdlab: two watchers, split by memory (scripts/sdlab-sync.sh restarts them if they stop)
+    nice -n 10 uv run sdlab-ladder watch --strategies everything --cases tag:realistic,tag:physics,tag:particles,tag:real,tag:canonical --every 300 --jobs 20 --timeout 300 --batch 2000   # ~/.sdlab/watch-main.log
+    nice -n 10 uv run sdlab-ladder watch --strategies everything --cases tag:heavy --every 300 --jobs 2 --timeout 1800 --batch 200   # ~/.sdlab/watch-heavy.log
+
+The default-heavy rule still holds: a selection without `tag:heavy` (or the heavy case's id) leaves
+sd-k8s-platform out, whatever is excluded.
+
+**Machines on results.** Every result records the machine that made it (`machine`: `$SDLAB_MACHINE`, else
+`~/.sdlab/machine`, else the short hostname; the Mac is "mac", node2 "node2"). Rows stored before then have
+none and read as this machine. An imported row also keeps its id on its machine (`remote_id`); a unique
+index on (machine, remote_id) stops it from being stored twice.
+
+**Export and import.**
+
+    uv run sdlab-ladder export [--since-id N] [--out FILE]   # on node2: prints the file
+    uv run sdlab-ladder import FILE...                       # on the mac
+    uv run sdlab-ladder import --high-water node2            # the newest node2 id imported here
+
+`export` writes the results the machine made itself with id > N (by default, since its last export,
+recorded in its `exports` table) to a gzipped JSONL file. The file holds a header (machine, time, id range,
+git HEAD and the newest runs, so the Mac can show node2's watchers), every result column (scores, found
+flows, hashes, code commit and patch, times), the code patches the results refer to, and an end line. A
+file cut short is refused. `import` adds each row under a new local id. It skips a row already there by
+(machine, remote id) or one this machine made, so a second import adds nothing. A row becomes its cell's
+`latest` only if its `at` is newer than the current latest (on a tie the row already there stays). Import
+never deletes; the only change to existing rows is the `latest` flag of a superseded one. Results made with
+older code need nothing special: their hashes differ, so they are stale like any other.
+
+**Sync** (`scripts/sdlab-sync.sh`, run by the daemon every 10 minutes, log `~/.sdlab/sync.log`, no tokens):
+1. If node2 is not at this checkout's `sdlab` commit (`~/.sdlab/synced-head` there), push the branch to the
+   bare repository `~/sdlab.git` (git remote `node2`), `git fetch && git reset --hard origin/sdlab` in
+   `~/sdlab`, and `uv sync`. The watchers there restart themselves on the code change. Only committed code
+   travels.
+2. Start either of node2's watchers if it is down.
+3. Export on node2 from the Mac's high-water mark (so a lost file is sent again), copy the file to
+   `~/.sdlab/imports/`, and import it.
+
+The runs panel shows node2: results imported, last sync, its watchers' newest batches with their backlogs
+(from the export), and what is stale in its share as the Mac's store sees it. The Mac's own backlog leaves
+node2's share out. The leaderboard's "ran" tooltip says how many cells ran on node2.
+
+**Backups** (`scripts/sdlab-backup.sh`, run by the daemon hourly, log `~/.sdlab/backup.log`):
+`sdlab-ladder backup` copies the store with SQLite's online backup API. The copy is consistent while the
+watcher writes. It is compressed with zstd -10 to `~/.sdlab/backups/results-YYYYmmdd-HHMMSS.sqlite.zst`,
+with row counts, sizes and times in a `.json` beside it, and the code patches are copied to
+`~/.sdlab/backups/code/`. Rotation keeps every backup from the last 24 hours, the newest of each day for 14
+days, and the newest of each week for 8 weeks. Neither restic nor borg is installed, so these are whole
+compressed snapshots. On 19 October 2026 the 1,367 MB store (249,104 results) compressed to 85 MB in
+3.5 s (snapshot 2.7 s, zstd 0.8 s). Kept in full, that is about 46 snapshots, roughly 4 GB.
+
+    uv run sdlab-ladder restore [FILE] --to PATH    # default: the newest; checks the row counts against the backup's
+    # to put one back as the live store: stop the daemon, the watcher and the server, then
+    uv run sdlab-ladder restore FILE --to ~/.cache/sdlab/ladder/results.sqlite --replace
+
+Generated case data (about 1.6 GB) is not backed up, because it is regenerated deterministically.
+
 ## The read API (for a page)
 
 `sdlab/sdlab/ladder/api.py`. Every function is read only and returns JSON-safe values:

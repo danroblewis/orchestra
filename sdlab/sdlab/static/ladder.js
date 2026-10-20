@@ -167,10 +167,18 @@
         + ` <span class="muted">· by pace ${hrs(eta.by_pace)}, by stored cost ${eta.by_cost != null ? hrs(eta.by_cost) : `– (efficiency not measured yet; ${hrs(eta.ideal)} if every worker is busy)`}</span>` : "ETA: –";
     const rows = (p.runs || []).map((r) => `<tr><td>#${r.id}</td><td class="l"><code>${esc(r.command)}</code></td><td class="l">${esc(when(r.started))}</td><td>${r.seconds != null ? hrs(r.seconds / 3600) : "–"}</td>`
       + `<td>${num(r.done)}/${num(r.total)}</td><td>${r.errors ?? "–"}</td><td>${r.timeouts ?? "–"}</td><td>${r.jobs ?? "–"}</td><td>${r.busy != null ? hrs(r.busy / 3600) : "–"}</td><td class="l">${esc(r.state)}</td></tr>`).join("");
+    // the other machines (runs.remote: machines.yaml, as of their last export imported here)
+    const others = (p.machines || []).map((m) => {
+      const mb = m.backlog || {};
+      const bs = (m.batches || []).map((r) => `batch #${r.id} ${esc(r.state)}${r.done != null ? ` ${num(r.done)}/${num(r.total)}` : ""}${r.backlog != null ? ` of a backlog of ${num(r.backlog)}` : ""}${r.jobs ? ` on ${r.jobs} workers` : ""}${r.errors ? `, ${r.errors} errors` : ""}${r.timeouts ? `, ${r.timeouts} timeouts` : ""}`).join("; ");
+      return `<p><b>${esc(m.name)}</b>: ${m.imported_at ? `${num(m.results)} results imported, last sync ${esc(when(m.imported_at))}` : "never synced"}`
+        + `${bs ? ` · its watchers: ${bs}` : ""} · stale in its share here: <b>${num(mb.items)}</b> (${num(mb.run)} to run, ${num(mb.rescore)} to re-score), about ${hrs((mb.seconds || 0) / 3600)} of work</p>`;
+    }).join("");
+    const me = p.machine && (p.machines || []).length ? ` on <b>${esc(p.machine)}</b>` : "";
     box.hidden = false;
-    box.innerHTML = `<p>${batch}</p>
-      <p>Backlog: <b>${num(bl.items)}</b> stale (${num(bl.run)} to run, ${num(bl.rescore)} to re-score), about ${hrs((bl.seconds || 0) / 3600)} of work <span class="muted" title="each item's cost from: ${esc(how)}">· ${esc(sets)}</span></p>
-      <p>Pace: <b>${num(pc.per_hour != null ? Math.round(pc.per_hour) : null)}</b> results/h over the last ${pc.hours ?? "–"} h (${pc.batches || 0} batches)${pc.efficiency != null ? `, ${Math.round(100 * pc.efficiency)}% of the workers' time on items` : ""} · ${etaText}</p>
+    box.innerHTML = `<p>${batch}${me}</p>
+      <p>Backlog${me}: <b>${num(bl.items)}</b> stale (${num(bl.run)} to run, ${num(bl.rescore)} to re-score), about ${hrs((bl.seconds || 0) / 3600)} of work <span class="muted" title="each item's cost from: ${esc(how)}">· ${esc(sets)}</span></p>
+      <p>Pace: <b>${num(pc.per_hour != null ? Math.round(pc.per_hour) : null)}</b> results/h over the last ${pc.hours ?? "–"} h (${pc.batches || 0} batches)${pc.efficiency != null ? `, ${Math.round(100 * pc.efficiency)}% of the workers' time on items` : ""} · ${etaText}</p>${others}
       <details${runsOpen ? " open" : ""}><summary>Recent runs (every <code>sdlab-ladder run</code>, sync and watch batch)</summary><div class="tablewrap"><table><thead><tr><th>run</th><th class="l">command</th><th class="l">started</th><th>took</th><th>done</th><th>errors</th><th>timeouts</th><th>workers</th><th>busy</th><th class="l">state</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
     box.querySelector("details").addEventListener("toggle", (e) => { runsOpen = e.target.open; });
   }
