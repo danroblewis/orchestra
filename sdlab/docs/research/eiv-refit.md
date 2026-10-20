@@ -123,3 +123,13 @@ above: the multi-step judge *is* biased by measurement error at its short horizo
 a level with the error in it; a faster-draining model forgets it sooner), which is why the old guard
 kept the biased numbers on 303. Details, flips and the two losses: [k8s-303-c2.md](k8s-303-c2.md).
 
+
+## Round 4: drains made moves where a level shows the receiver (9956255, b9fe1d6)
+
+Kubernetes rung 4 (case 303) meas: the counter's 5% error on a level of 10^5 buries what flows into it
+in change space, so its row was empty and inflight's drain went outside. Where the white test shows
+measurement error, after the refit each drain `X -> outside` is now tried as a move into each other
+measured stock on that stock's row in level space (feasible GLS with variance a + b x level^2 on the
+measured level, outliers capped, injections included), also replacing an outside inflow that reads X; made
+when the -2 log-likelihood drop beats Bayes' price plus log n. 303 meas 95/98 fail -> pass, 143 meas-long
+34 fail -> pass, no pass lost on 300-303 or 2,940 paired cells. Details: [k8s-303-c1.md](k8s-303-c1.md).
