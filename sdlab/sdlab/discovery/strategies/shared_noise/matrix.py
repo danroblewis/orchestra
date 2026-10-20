@@ -399,16 +399,20 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         # stock beside the move (kubernetes 305: queue -> retries 0.0396 + outside -> retries
         # 0.0425 x queue, the queue's row draining 0.656 against 0.6167 + 0.0822 received)
         up = changing or opts.get("conserve_up", True)
-        # (a row conserved in an earlier pass follows what its receivers take after their own refit,
-        # trusted or not: kubernetes 305 counts-long seed 1003, queue lowered to 0.6642 before
-        # inflight's refit raised its gain from queue to 0.5994, leaving 0.0158 as a link)
-        # (and where the shared noise reads every receiver's gain as a move, the noise is the
-        # evidence the receivers are trusted on, in a configuration that trusts rows too: the excess
-        # it would leave as a link is a move's draw; seed 1003, inflight 0.5168 against 0.5308
-        # taken, 0.0141 left as a link beside inflight -> errors_total, read as a move at cost 49.5)
+        # (opts "conserve_follow", off by default: in a configuration that trusts rows, raise the drain
+        # where the shared noise reads every receiver's gain as a move (True), or ("conserved", and
+        # True) for a row conserved in an earlier pass whose receivers' refit then took more (305
+        # counts-long seed 1003: queue lowered to 0.6642 before inflight's refit raised its gain
+        # from queue to 0.5994, leaving 0.0158 as a link). On kubernetes 305 fresh seeds True clears the
+        # leftover links, counts-long 8/12 -> 12/12 and counts-short 3/12 -> 7/12 (seed 1003: inflight
+        # 0.5168 against 0.5308 taken, 0.0141 left as a link beside inflight -> errors_total), but
+        # breaks 301 counts-short: inflight's gain from queue, 0.6838, is biased by a spurious
+        # traffic outflow in its own row, and the queue's traffic gain refits to 1.133;
+        # docs/research/k8s-305-r2.md)
         recv = [r["id"] for r in rows if r["id"] != a and any((r["coefL"][c].get(a) or 0) > 0 for c in range(L)) and unit[r["id"]] == unit[a]]
         noisy_moves = bool(recv) and all(kinds.get((a, b)) == "move" for b in recv)
-        follow = opts.get("conserve_follow", True) and (row.get("conserved") or noisy_moves)    # (off: as before)
+        fo = opts.get("conserve_follow", False)
+        follow = bool(fo) and (row.get("conserved") or (noisy_moves and fo != "conserved"))    # (off: as before)
         cand = [c for c in range(L) if moves[c] > 0 and ((up and moves[c] > drain[c] and (trust or follow)) or drain[c] > moves[c])]
         if not cand:
             continue
