@@ -34,7 +34,11 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     """Small flows dropped one at a time, refitting the rest jointly, while the model's price falls
     (score(flows), lower is better: by default price()). Only a flow moving less than `small` x the
     model's median flow amount may go: a large term the price would drop (a gap's feedback, say) is
-    left, since inflow values would take over its work and the model would not behave."""
+    left, since inflow values would take over its work and the model would not behave.
+    An outflow to outside carried by pieces on a stock X with no drain k x X is also offered as that
+    drain in their place, refitted jointly with the rest (kubernetes 304 counts-short: the matrix's
+    conservation folds a real outside drain into the move and leaves the excess to 7 constant pieces,
+    which a plain drop hands to the input's gain; the drain prices better)."""
     inputs = (opts or {}).get("inputs")
     score = score or (lambda fl: price(fl, ids, run, inputs))
     cur = flows
@@ -44,6 +48,11 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
         cutoff = small * float(np.median(size)) if len(size) else 0.0
         trial = None
         for i in range(len(cur)):
+            for alt in _drain_for(cur, i, ids):
+                fl, _ = refit(cur[:i] + cur[i + 1:] + [alt], ids, run, opts)
+                s = score(fl)
+                if s < best and (trial is None or s < trial[0]):
+                    trial = (s, fl)
             if size[i] >= cutoff:
                 continue
             fl, _ = refit(cur[:i] + cur[i + 1:], ids, run, opts)
@@ -54,6 +63,20 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
             break
         best, cur = trial
     return cur
+
+def _drain_for(flows: list[dict], i: int, ids: list[str]) -> list[dict]:
+    """[X -> outside = k x X] when flow i is an outflow to outside in pieces from a stock X that has no
+    such drain yet; [] otherwise (k starts at 0, the joint refit sets it)."""
+    f = flows[i]
+    x = f.get("from")
+    if not f.get("inflow") or f.get("to") or x not in ids:
+        return []
+    if any(g.get("from") == x and not g.get("to") and not g.get("inflow") and (g.get("rate") or {}).get("form") == "proportional"
+           and (g.get("rate") or {}).get("stock") == x for g in flows):
+        return []
+    rate = {"form": "proportional", "stock": x, "k": 0.0}
+    return [{"from": x, "to": None, "ratio": 1, "rate": rate, "rates": [rate]}]
+
 
 def size(flows: list[dict]) -> int:
     """onestep.size, with an outside inflow priced by its values (pooled pieces share one) and its changes."""

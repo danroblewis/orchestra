@@ -410,7 +410,11 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         fixed = fit_subset(sums, idx).rss
         p2 = len(idx) + (len(cuts2) - 1 if cuts2 else 0)
         slack = opts.get("slack", 0.3)
-        if bic(fixed, p2) <= bic(row["rss"], row["p"]) + log_t or (changing and all(abs(drain[c] - moves[c]) / max(drain[c], moves[c]) < slack and not (linked and drain[c] > moves[c]) for c in cand)):
+        # priced at one log T: the forced fit already has one number fewer (the drain), so the
+        # shared module's extra log T let it cost up to two (about z 3.4) and folded a real outside
+        # drain into the move (kubernetes 304 counts-short: queue 0.7784 -> 0.6145, the timeout gone,
+        # dBIC +3.3 at log T 5.7). opts "conserve_allow" (in log T) restores the old allowance (1).
+        if bic(fixed, p2) <= bic(row["rss"], row["p"]) + opts.get("conserve_allow", 0.0) * log_t or (changing and all(abs(drain[c] - moves[c]) / max(drain[c], moves[c]) < slack and not (linked and drain[c] > moves[c]) for c in cand)):
             for c in cand:
                 row["coefL"][c][a] = -moves[c]
             row["conserved"] = True
