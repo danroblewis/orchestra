@@ -44,7 +44,14 @@
       if (S.sel.id) p.set("result", S.sel.id);
     }
     if (S.view === "history") ["case", "strategy"].forEach((k) => S.hsel[k] && p.set(k, S.hsel[k]));
-    if (S.view === "cases" && S.csel.case) p.set("case", S.csel.case);
+    if (S.view === "cases") {                       // the list's filters, so a refresh keeps them
+      if (S.csel.case) p.set("case", S.csel.case);
+      if (S.cfilter) p.set("q", S.cfilter);
+      if ((S.ctags || []).length) p.set("tags", S.ctags.join(","));
+      if (S.cstatus && S.cstatus !== "all") p.set("status", S.cstatus);
+      if (S.cset && S.cset !== "all") p.set("set", S.cset);
+      if (S.csort && S.csort !== "ladder") p.set("sort", S.csort);
+    }
     history.replaceState(null, "", u);
   }
 
@@ -629,6 +636,7 @@
   function renderCaseCards() {
     if (!$("ccards")) return;
     const { list, counts } = caseList(), by = (S.cstats && S.cstats.by) || {};
+    if (S.view === "cases") remember();
     const head = document.querySelector("#cdetail .cdsum");               // the open case's line, once the numbers are here
     if (head && S.csel.case) { head.className = `cdsum cs-${caseClass(by[S.csel.case])}`; head.innerHTML = caseSummary(by[S.csel.case]); }
     $("cstatus").innerHTML = CSTATUS.map(([k, w]) => `<button class="chip${(S.cstatus || "all") === k ? " on" : ""}" data-cst="${k}" aria-pressed="${(S.cstatus || "all") === k}">${k !== "all" ? `<i class="cs-${k}"></i>` : ""}${w} <span class="muted">${counts[k]}</span></button>`).join("");
@@ -807,7 +815,13 @@
       S.sel = { case: p.get("case"), variant: p.get("variant"), strategy: p.get("strategy"), id: p.get("result") ? +p.get("result") : null };
     }
     if (view === "history") S.hsel = { case: S.byId[p.get("case")] ? p.get("case") : null, strategy: p.get("strategy") };
-    if (view === "cases" && S.byId[p.get("case")]) S.csel.case = p.get("case");
+    if (view === "cases") {
+      if (S.byId[p.get("case")]) S.csel.case = p.get("case");
+      const pick = (k, opts) => (opts.some(([v]) => v === p.get(k)) ? p.get(k) : undefined);
+      S.cfilter = p.get("q") || "";
+      S.ctags = (p.get("tags") || "").split(",").filter(Boolean);
+      S.cstatus = pick("status", CSTATUS); S.cset = pick("set", CSETS); S.csort = pick("sort", CSORTS);
+    }
     try { S.progress = await get("/api/ladder/progress?recent=20"); } catch { S.progress = null; }
     // the matrix's numbers come in the background: the comparison does not wait for them
     if (view !== "matrix") loadSummary().then(() => { if (S.view === "now") renderPick(); });
