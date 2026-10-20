@@ -1,0 +1,7 @@
+# The other machines that run part of the ladder (machines.py). The machine named here runs the cases
+# its `cases` select (`sdlab-ladder watch --cases machine:node2`); this machine (mac) runs everything
+# else (`--exclude-cases machine:node2`). Tag specs only, so the runs panel can tell whose a case is.
+node2:
+  ssh: ubuntu@10.198.1.109
+  repo: ~/sdlab
+  cases: tag:realistic,tag:physics,tag:particles,tag:heavy,tag:real,tag:canonical

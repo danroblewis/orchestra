@@ -41,12 +41,16 @@ def _state() -> dict:
 
 def latest_rows() -> dict[tuple, dict]:
     """{(case, variant, strategy): the latest result} (without found flows), read incrementally: only
-    the results stored since the last read (results are never changed or deleted, only added)."""
+    the results stored since the last read (results are never changed or deleted, only added). A new row
+    is the cell's latest unless it was imported from another machine with an older `at` than the latest
+    here (exchange.py stores it with latest = 0); a row superseded by the time it is read is followed by
+    the row that superseded it."""
     st = _state()
     if st["rows"] is not None and (not st["last"] or store.key_of(st["last"]) == st["last_key"]):
         for r in store.after(st["last"]):
             key = (r["case"], r["variant"], r["strategy"])
-            st["rows"][key] = r
+            if r["latest"]:                                 # an imported row older than the cell's latest (exchange.py) is not
+                st["rows"][key] = r
             st["last"], st["last_key"] = r["id"], key
         return st["rows"]
     rows = store.latest()                                   # the first read, or the store was replaced

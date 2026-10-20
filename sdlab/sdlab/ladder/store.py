@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS results (
     status TEXT NOT NULL, seconds REAL, error TEXT,
     scores TEXT, found TEXT,
     code_commit TEXT, code_dirty TEXT,
-    score_seconds REAL, wall_seconds REAL, wait_seconds REAL, run_id INTEGER
+    score_seconds REAL, wall_seconds REAL, wait_seconds REAL, run_id INTEGER, machine TEXT, remote_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS results_key ON results (case_id, variant, strategy, latest);
 CREATE TABLE IF NOT EXISTS runs (
@@ -84,16 +84,20 @@ def connect(readonly: bool = False):
 
 
 RESULT_COLUMNS = (("code_commit", "TEXT"), ("code_dirty", "TEXT"), ("score_seconds", "REAL"), ("wall_seconds", "REAL"),
-                  ("wait_seconds", "REAL"), ("run_id", "INTEGER"))
+                  ("wait_seconds", "REAL"), ("run_id", "INTEGER"), ("machine", "TEXT"), ("remote_id", "INTEGER"))
 RUN_COLUMNS = (("jobs", "INTEGER"), ("pid", "INTEGER"), ("backlog", "INTEGER"), ("done", "INTEGER"), ("errors", "INTEGER"),
                ("timeouts", "INTEGER"), ("busy", "REAL"))
 _migrated: set = set()
+REMOTE_INDEX = "CREATE UNIQUE INDEX IF NOT EXISTS results_remote ON results (machine, remote_id) WHERE remote_id IS NOT NULL"
 
 
 def _migrate(con: sqlite3.Connection) -> None:
     """Columns added since a store was made: code_commit and code_dirty (where a result's code is); the
-    result's times and run (2026-10-19); a run's workers, backlog and counts (2026-10-19)."""
+    result's times and run (2026-10-19); a run's workers, backlog and counts (2026-10-19); the machine that
+    made a result and its id there (remote_id: set only on imported rows, exchange.py; 2026-10-19), with
+    the index that keeps an import from storing one remote row twice."""
     if str(path()) in _migrated:
+        con.execute(REMOTE_INDEX)                             # a store made again at the same path (tests)
         return
     for table, cols in (("results", RESULT_COLUMNS), ("runs", RUN_COLUMNS)):
         have = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
@@ -103,6 +107,7 @@ def _migrate(con: sqlite3.Connection) -> None:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
                 except sqlite3.OperationalError:               # another process added it first
                     pass
+    con.execute(REMOTE_INDEX)
     _migrated.add(str(path()))
 
 
@@ -112,6 +117,8 @@ def _row(r: sqlite3.Row, found: bool = False) -> dict:
            "status": r["status"], "seconds": r["seconds"], "error": r["error"], "scores": json.loads(r["scores"]) if r["scores"] else None,
            "code_commit": r["code_commit"], "code_dirty": r["code_dirty"]}
     keys = r.keys()
+    if "machine" in keys:
+        out["machine"] = r["machine"] or _here()             # rows stored before 2026-10-19 have none: made here
     for k in ("score_seconds", "wall_seconds", "wait_seconds", "run_id"):
         if k in keys and r[k] is not None:                  # older rows have none: left out, so they read as before
             out[k] = r[k]
@@ -120,21 +127,26 @@ def _row(r: sqlite3.Row, found: bool = False) -> dict:
     return out
 
 
+def _here() -> str:
+    from .machines import here
+    return here()
+
+
 def record(row: dict) -> int:
     """Store a result (case, variant, strategy, case_hash, strategy_hash, score_hash, status,
     seconds?, error?, scores?, found?, code_commit?, code_dirty?, score_seconds?, wall_seconds?, wait_seconds?,
-    run_id?) as the latest for its key."""
+    run_id?) as the latest for its key, made on this machine (machines.here())."""
     with connect() as con:
         con.execute("UPDATE results SET latest = 0 WHERE case_id = ? AND variant = ? AND strategy = ? AND latest = 1",
                     (row["case"], row["variant"], row["strategy"]))
         cur = con.execute(
             "INSERT INTO results (case_id, case_hash, variant, strategy, strategy_hash, score_hash, at, latest, status, seconds, error, scores, found,"
-            " code_commit, code_dirty, score_seconds, wall_seconds, wait_seconds, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " code_commit, code_dirty, score_seconds, wall_seconds, wait_seconds, run_id, machine) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (row["case"], row["case_hash"], row["variant"], row["strategy"], row["strategy_hash"], row["score_hash"], row.get("at") or now(),
              row["status"], row.get("seconds"), row.get("error"),
              json.dumps(row["scores"]) if row.get("scores") is not None else None,
              json.dumps(row["found"]) if row.get("found") is not None else None, row.get("code_commit"), row.get("code_dirty"),
-             row.get("score_seconds"), row.get("wall_seconds"), row.get("wait_seconds"), row.get("run_id")))
+             row.get("score_seconds"), row.get("wall_seconds"), row.get("wait_seconds"), row.get("run_id"), _here()))
         return int(cur.lastrowid)
 
 

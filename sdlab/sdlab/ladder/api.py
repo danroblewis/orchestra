@@ -165,6 +165,11 @@ def progress(recent: int | None = None) -> dict:
                      "queued": sum(i["state"] == "queued" for i in items)})
 
 
+def _here() -> str:
+    from .machines import here
+    return here()
+
+
 def flatten(row: dict | None) -> dict:
     """The numbers a matrix cell shows, from a result."""
     if row is None:
@@ -178,6 +183,8 @@ def flatten(row: dict | None) -> dict:
 
     out = {"status": row["status"], "recall": s.get("recall"), "precision": s.get("precision"), "right": s.get("right"), "of": s.get("of"),
            "spurious": len(s.get("spurious") or []), "seconds": row.get("seconds"), "at": row.get("at"), "error": row.get("error")}
+    if row.get("machine") and row["machine"] != _here():
+        out["machine"] = row["machine"]                       # run on another machine (exchange.py); this one's: left out
     for where, tag in (("in_sample", "skill"), ("fresh", "fresh")):
         for h in score.HORIZONS:
             out[f"{tag}{h}"], out[f"{tag}{h}_ci"] = sk(where, h)

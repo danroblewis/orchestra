@@ -35,11 +35,24 @@ from .real import score as _real_score
 TIMEOUT = 120
 
 
-def select_cases(spec: str | None) -> list[str]:
+def select_cases(spec: str | None, exclude: str | None = None) -> list[str]:
     """Case ids from a comma list of ids, id prefixes ("003"; a parametric case's prefix is all its
-    draws), draws ("039#3"), tags ("tag:loop") or levels ("level:2");
-    everything when empty."""
+    draws), draws ("039#3"), tags ("tag:loop"), levels ("level:2") or another machine's share
+    ("machine:node2", machines.yaml); everything when empty. exclude (the same syntax) takes cases out
+    of that selection: the default-heavy rule still applies to the selection itself, so
+    `--exclude-cases tag:realistic` alone still leaves the heavy cases out."""
+    ids = _select(spec)
+    if exclude:
+        drop = set(_select(exclude))
+        ids = [i for i in ids if i not in drop]
+    return ids
+
+
+def _select(spec: str | None) -> list[str]:
     ids = casemod.case_ids()
+    if spec and "machine:" in spec:
+        from . import machines
+        spec = ",".join(machines.cases_of(p.strip()[8:]) if p.strip().startswith("machine:") else p for p in spec.split(","))
     if not spec or spec == "all":
         # a case tagged `heavy` (e.g. sd-k8s-platform: ~15 GB per worker, up to 30 min per run) runs only
         # when named (its id or `tag:heavy`), never in a default sync or the watcher's pass

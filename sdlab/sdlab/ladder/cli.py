@@ -1,7 +1,8 @@
 """The ladder's command line: uv run sdlab-ladder <command> (or python -m sdlab.ladder).
 
-    run    [--strategies a,b|all] [--cases ids|tag:x|level:n] [--variants none,long,counts-short]
-                                  run those now, current or not (a new row in the history)
+    run    [--strategies a,b|all] [--cases ids|tag:x|level:n|machine:m] [--exclude-cases SPEC] [--variants none,long,counts-short]
+                                  run those now, current or not (a new row in the history); --exclude-cases (the
+                                  --cases syntax) leaves cases out, also for sync and watch
     sync   [--strategies ...]     run every stale (case, variant, strategy): new or changed cases, new or
                                   changed strategies or discovery code; a scorer change re-scores stored flows
     status [--strategies ...] [--variant V]
@@ -25,6 +26,12 @@
                                   pass against strict pass per strategy (strict_report.py)
     prune  [--dry-run]            latest results whose case or variant no longer exists: list them (--dry-run)
                                   or archive them (latest = 0, listed in the archived table; prune.py)
+    export [--since-id N] [--out FILE]
+                                  the results made here since id N (default: since the last export) to a
+                                  gzipped JSONL file, with the code patches they refer to (exchange.py)
+    import FILE... | --high-water MACHINE
+                                  add exported results to this store (new ids, skipped when already here; latest:
+                                  the newest `at` per cell); --high-water: the newest id imported from MACHINE
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -66,9 +73,10 @@ def do_run(a, force: bool, command: str) -> int:
         print(f"skipping strategy {s['name']}: {s['reason']}", file=sys.stderr)
     variants = [v.strip() for v in (a.variants or "").split(",") if v.strip()] or None
     from .real.data import missing_notes
-    for note in missing_notes(runner.select_cases(a.cases)):
+    cids = runner.select_cases(a.cases, getattr(a, "exclude_cases", None))
+    for note in missing_notes(cids):
         print(f"skipping {note}", file=sys.stderr)                  # real cases whose data are not downloaded: not run
-    items = runner.plan(runner.select_cases(a.cases), strategies, variants, force=force)
+    items = runner.plan(cids, strategies, variants, force=force)
     if not items:
         print("Nothing to run: every result is current.")
         return 0
@@ -296,7 +304,7 @@ def _harness_hash() -> str:
     from pathlib import Path
     root = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for p in sorted([*root.glob("*.py"), *root.parent.glob("sdtruth*.py")]):
+    for p in sorted([*root.glob("*.py"), *root.parent.glob("sdtruth*.py"), root / "machines.yaml"]):
         h.update(p.name.encode() + p.read_bytes())
     return h.hexdigest()
 
@@ -427,8 +435,18 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--timeout", type=float, default=runner.TIMEOUT)
         p.add_argument("--quiet", action="store_true")
 
-    common(sub.add_parser("run", help="run strategies on cases, current or not"))
-    common(sub.add_parser("sync", help="run everything stale (optionally only some strategies, cases, variants)"))
+    def exclude(p):
+        p.add_argument("--exclude-cases", help="cases to leave out (the --cases syntax), e.g. machine:node2: what another machine runs")
+        return p
+
+    common(exclude(sub.add_parser("run", help="run strategies on cases, current or not")))
+    common(exclude(sub.add_parser("sync", help="run everything stale (optionally only some strategies, cases, variants)")))
+    ex = sub.add_parser("export", help="results made here since an id (or the last export) to a gzipped JSONL file (exchange.py)")
+    ex.add_argument("--since-id", type=int, help="export results with a larger id (default: since the last export)")
+    ex.add_argument("--out", help="the file (default $SDLAB_LADDER_CACHE/exports/<machine>-<since>-<upto>.jsonl.gz)")
+    im = sub.add_parser("import", help="add another machine's exported results to this store (exchange.py); idempotent")
+    im.add_argument("files", nargs="*")
+    im.add_argument("--high-water", metavar="MACHINE", help="print the newest remote id imported from MACHINE (0: none) and stop")
     st = sub.add_parser("status", help="the strategy x case matrix")
     st.add_argument("--strategies", default="all")
     st.add_argument("--variant")
@@ -438,7 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     sh.add_argument("--strategy")
     sh.add_argument("--variant")
     w = sub.add_parser("watch", help="sync whenever cases or strategies change")
-    common(w)
+    common(exclude(w))
     w.add_argument("--every", type=float, default=3.0)
     w.add_argument("--batch", type=int, default=0, help="run at most N stale items per pass, then plan again (new pairs first); 0: all")
     ck = sub.add_parser("check", help="check the cases are sane")
@@ -481,6 +499,22 @@ def main(argv: list[str] | None = None) -> int:
         return do_run(a, True, "run")
     if a.command == "sync":
         return do_run(a, False, "sync")
+    if a.command == "export":
+        from . import exchange
+        got = exchange.export(a.since_id, a.out)
+        print(f"export: {got['count']} results (ids {got['since_id']}..{got['upto_id']}], {got['patches']} patches", file=sys.stderr)
+        print(got["path"])
+        return 0
+    if a.command == "import":
+        from . import exchange
+        if a.high_water:
+            print(exchange.high_water(a.high_water))
+            return 0
+        for f in a.files:
+            got = exchange.import_file(f)
+            print(f"import {f}: from {got['machine']}: {got['added']} added ({got['latest']} now latest), {got['skipped']} already here,"
+                  f" {got['patches']} patches")
+        return 0
     if a.command == "status":
         return status(a)
     if a.command == "show":
