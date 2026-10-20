@@ -43,6 +43,7 @@ def clean_view(data: dict) -> dict:
     n = len(c["t"])
     return {"t": c["t"], "levels": c["levels"], "all_levels": c.get("all_levels") or c["levels"],
             **({"injections": c["injections"]} if c.get("injections") else {}),
+            **({"inputs": c["inputs"]} if c.get("inputs") else {}),
             "observation": {"kind": "clean", "at": list(range(n)), "span": 1, "outliers": [], "bias": {}}, "clean": c}
 
 
@@ -105,7 +106,8 @@ class _Base:
         c = data["clean"]
         self.flows = c["flows"]
         self.cdata = {"t": c["t"], "levels": c["levels"], "all_levels": c.get("all_levels") or c["levels"],
-                      **({"injections": c["injections"]} if c.get("injections") else {})}
+                      **({"injections": c["injections"]} if c.get("injections") else {}),
+                      **({"inputs": c["inputs"]} if c.get("inputs") else {})}     # measured inputs: columns as the levels are
 
     def _ratio(self, which: str, key) -> float | None | bool:
         """SE_kalman(reported) / SE_kalman(clean); None: the reported data do not pin it down;
@@ -131,12 +133,13 @@ class KalmanOracle(_Base):
     def __init__(self, truth_flows: list[dict], data: dict, wins: list[tuple[int, int]]):
         super().__init__(data, wins)
         self.ids = list(data["levels"])
+        self.cols = self.ids + [k for k in (data["clean"].get("inputs") or {}) if k not in self.ids]
         self.W = len(wins)
         self.linear = _Linear(self.flows, self.cdata, wins)
         self.ok = self.noisy.m is not None and not self.noisy.m.hidden and self.linear.ok and len(data["t"]) > 3
 
     def se(self, stock: str, col: str, window: int) -> float | None:
-        if not self.ok or stock not in self.ids or (col != ONE and col not in self.ids):
+        if not self.ok or stock not in self.ids or (col != ONE and col not in self.cols):
             return None
         r = self._ratio("entries", (window, stock, col))
         if r is False:

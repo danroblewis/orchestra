@@ -65,7 +65,7 @@ def design(m: noise_kf.SSM, n_points: int) -> list[dict]:
         else:
             extras.append(({r: 1.0}, ONE, None))
             where.append((r, "1", us[0]))
-        for c in m.measured:
+        for c in m.measured + m.inputs:                  # measured inputs: columns as the levels are
             extras.append(({r: 1.0}, c, None))
             where.append((r, c, float(np.mean([truth.get((w, r, c), 0.0) for w in range(W)]))))
     fi = m.fisher(extras, leaves=[])                 # the rows as reported (a bias is part of its row's numbers here)

@@ -6,10 +6,12 @@ noise_analysis.py); discovery never sees it.
 **The model.** Every stock, hidden ones too, steps as the truth's linear system (the window's B and
 u, injections added at the start of their step) plus counting noise:
 
-    x_t = (I + B_t)(x_(t-1) + inj_t) + u_t + w_t,      w_t ~ N(0, S diag(r_t) S')
+    x_t = (I + B_t)(x_(t-1) + inj_t) + B_in,t v_t + u_t + w_t,      w_t ~ N(0, S diag(r_t) S')
 
-with S the stoichiometry and r_t every flow's true rate at the true levels (held at the truth: the
-information in the noise's variance is not used, as the linear oracle does not use it). A reported
+with S the stoichiometry and r_t every flow's true rate at the true levels and inputs (held at the
+truth: the information in the noise's variance is not used, as the linear oracle does not use it).
+v_t are the measured inputs (data["inputs"]), known exogenous columns read at their value during the
+step (the linear oracle's convention); B_in their block of the linear system. A reported
 point is
 
     y_i = b * x_(at_i) + v_i             (point)        or    y_i = b * mean(x over span_i steps) + v_i   (weekly means)
@@ -26,8 +28,9 @@ I = sum_i J_i' S_i^-1 J_i (J_i = d e_i / d theta by central differences, S_i the
 covariance at the truth). The SE of a scorer's part (or a number the truth does not have, added as
 one more free number) follows from I^-1, by the parts' Jacobian (fisher.part_map's way).
 
-Only for a truth that is linear (constant, proportional, gap and linear rates; no effects, co-flows
-or other forms): otherwise `ok` is False and the tolerances alone apply.
+Only for a truth that is linear in the stocks and the measured inputs (constant, proportional, gap and
+linear rates; no effects, co-flows or other forms): otherwise `model` gives None and the tolerances
+alone apply.
 """
 
 from __future__ import annotations
@@ -229,6 +232,11 @@ class SSM:
         self.t = [int(x) for x in clean["t"]]
         N, n = len(self.t), len(self.ids)
         self.X = np.array([np.asarray(lv[s], dtype=float) for s in self.ids])     # true levels, n x N
+        # measured inputs: known exogenous columns after the stocks (each one's value during the step)
+        ins = clean.get("inputs") or {}
+        self.inputs = [k for k in ins if k not in self.idx]
+        self.cols = self.ids + self.inputs
+        self.U = np.array([np.asarray(ins[k], dtype=float) for k in self.inputs]).reshape(len(self.inputs), N)
         # the numbers
         self.leaves, self.labels, theta = [], [], []
         for fi, f in enumerate(self.flows):
@@ -300,6 +308,7 @@ class SSM:
         self.P0 = np.diag(1e4 * (np.abs(x0) + 10.0) ** 2)                # diffuse: the start is not known (nor its units)
         self._J: dict = {}
         self._S0i = None
+        self.system(self.theta0)                                          # a truth not linear in its readers: no model
 
     # ---- theta -> the system ----
     def flows_at(self, theta: np.ndarray) -> list[dict]:
@@ -313,6 +322,8 @@ class SSM:
         """Each step's counting-noise covariance (steps x stocks x stocks) at the true levels."""
         N, n = self.X.shape[1], len(self.ids)
         pre = np.concatenate([self.X[:, :1], self.X[:, :-1]], axis=1) + self.inj.T     # the level a step starts from
+        pre = np.vstack([pre, self.U])                                    # and the inputs during the step
+        idx = {s: i for i, s in enumerate(self.cols)}
         Q = np.zeros((N, n, n))
         for f in flows:
             r = np.zeros(N)
@@ -320,7 +331,7 @@ class SSM:
             for gi, g in enumerate(f["byTime"]):
                 m = np.flatnonzero(segs == gi)
                 if len(m):
-                    r[m] = _rate(g["rate"], pre[:, m], self.idx, f)
+                    r[m] = _rate(g["rate"], pre[:, m], idx, f)
             s = np.zeros(n)
             if f.get("to") in self.idx:
                 s[self.idx[f["to"]]] += 1.0
@@ -330,25 +341,38 @@ class SSM:
         Q[0] = 0.0
         return Q * np.outer(self.D0, self.D0)[None] + 1e-9 * np.eye(n)[None]
 
+    def _linear(self, flows: list[dict], window: tuple[int, int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """The stocks' linear system over the stocks and the measured inputs: (B on the stocks, B on the
+        inputs, u). ValueError when a rate is not linear in them (the model is then not built)."""
+        sys_ = linear_system(flows, self.cols, window)
+        if sys_ is None:
+            raise ValueError("a rate is not linear in the stocks and measured inputs")
+        n = len(self.ids)
+        return sys_[0][:n, :n].copy(), sys_[0][:n, n:].copy(), sys_[1][:n].copy()
+
     def system(self, theta: np.ndarray, extras: list[tuple] = (), values: np.ndarray | None = None):
         """(A per configuration, d per step, the bias per measured stock)."""
         flows = self.flows_at(theta)
-        n = len(self.ids)
+        n, k_in = len(self.ids), len(self.inputs)
         C = len(self.cfg_t)
         A = np.zeros((C, n, n))
+        Bin = np.zeros((C, n, k_in))
         u = np.zeros((C, n))
         for c, tt in enumerate(self.cfg_t):
             here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, tt)]["rate"]} for f in flows]
-            B, uu = linear_system(here, self.ids, (tt, tt))
+            B, Bi, uu = self._linear(here, (tt, tt))
             for (rows, col, w), val in zip(extras, values if values is not None else np.zeros(len(extras))):
                 if w is not None and w != self.cfg_w[c]:
                     continue
                 for s, sign in rows.items():
                     if col == ONE:
                         uu[self.idx[s]] += sign * val
-                    else:
+                    elif col in self.idx:
                         B[self.idx[s], self.idx[col]] += sign * val
+                    else:
+                        Bi[self.idx[s], self.inputs.index(col)] += sign * val
             A[c] = np.eye(n) + B
+            Bin[c] = Bi
             u[c] = uu
         # a biased stock is followed in its reported units (x' = b x): the bias enters the means only, not
         # the counting noise's size (held at the truth's), so what it confounds stays unidentified
@@ -358,6 +382,8 @@ class SSM:
                 Dv[self.idx[s]] = v
         A = Dv[None, :, None] * A / Dv[None, None, :]
         d = np.einsum("kij,kj->ki", A[self.cfg], self.inj * Dv) + (u * Dv)[self.cfg]
+        if k_in:
+            d = d + Dv * np.einsum("kij,jk->ki", Bin[self.cfg], self.U)
         return A, d, np.ones(len(self.measured))
 
     def innovations(self, theta: np.ndarray, extras: list[tuple] = (), values=None, want_S: bool = False):
@@ -385,7 +411,8 @@ class SSM:
         else:
             rows, col, w = key
             ex = [(dict(rows), col, w)]
-            scale = max(1e-6, 1e-4 * (1.0 if col == ONE else 1.0 / max(1.0, float(np.mean(np.abs(self.X[self.idx[col]]))))))
+            lvl = self.X[self.idx[col]] if col in self.idx else self.U[self.inputs.index(col)] if col != ONE else None
+            scale = max(1e-6, 1e-4 * (1.0 if col == ONE else 1.0 / max(1.0, float(np.mean(np.abs(lvl))))))
             J = (self.innovations(self.theta0, ex, np.array([scale]))[0] - self.innovations(self.theta0, ex, np.array([-scale]))[0]) / (2 * scale)
         self._J[key] = J
         return J
@@ -403,7 +430,7 @@ class SSM:
         counting noise's covariance differs. None when the means differ."""
         for c, tt in enumerate(self.cfg_t):
             here = lambda fl: [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, tt)]["rate"]} for f in fl]  # noqa: E731
-            a, b = linear_system(here(self.flows), self.ids, (tt, tt)), linear_system(here(flows), self.ids, (tt, tt))
+            a, b = linear_system(here(self.flows), self.cols, (tt, tt)), linear_system(here(flows), self.cols, (tt, tt))
             if a is None or b is None or np.abs(a[0] - b[0]).max() > 1e-9 or np.abs(a[1] - b[1]).max() > 1e-9 * max(1.0, np.abs(a[1]).max()):
                 return None
         A, _, h = self.system(self.theta0)
@@ -456,7 +483,7 @@ class SSM:
         out = {}
         for w, win in enumerate(self.wins):
             here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl]
-            pw, _ = parts(here, set(self.measured), win)
+            pw, _ = parts(here, set(self.measured), win, set(self.inputs))
             for k, v in pw.items():
                 if k[0] in ("flow", "uses", "via") and isinstance(v, (int, float)):
                     out[(w, k, None)] = float(v)
@@ -468,18 +495,20 @@ class SSM:
         return out
 
     def entry_values(self, theta: np.ndarray) -> dict:
-        """{(window, row, col): value}: the measured stocks' linear system per window (no hidden stock)."""
+        """{(window, row, col): value}: the measured stocks' linear system per window (no hidden stock),
+        its columns the measured stocks and the measured inputs."""
         fl = self.flows_at(theta)
         out = {}
+        cols = self.measured + self.inputs
         for w, win in enumerate(self.wins):
             here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl]
-            sys_ = linear_system(here, self.measured, win)
+            sys_ = linear_system(here, cols, win)
             if sys_ is None:
                 return {}
             B, u = sys_
             for i, r in enumerate(self.measured):
                 out[(w, r, ONE)] = float(u[i])
-                for j, c in enumerate(self.measured):
+                for j, c in enumerate(cols):
                     out[(w, r, c)] = float(B[i, j])
         return out
 
@@ -517,6 +546,8 @@ def model(data: dict, wins: list[tuple[int, int]]) -> SSM | None:
         h.update(np.asarray(data["levels"][s], dtype=float).tobytes())
     for s in sorted(data["clean"]["all_levels"]):
         h.update(np.asarray(data["clean"]["all_levels"][s], dtype=float).tobytes())
+    for s in sorted(data["clean"].get("inputs") or {}):
+        h.update(s.encode() + np.asarray(data["clean"]["inputs"][s], dtype=float).tobytes())
     key = h.hexdigest()
     if key not in _CACHE:
         if len(_CACHE) > 64:
