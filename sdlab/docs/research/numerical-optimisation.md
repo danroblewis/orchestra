@@ -46,3 +46,16 @@ sd-hospital long 92.8% -> 10.5% (a rate-only refit the judge passed).
 - Offer "outflow to outside becomes a move" with the target's inflow re-measured.
 - A co-flow's ratio is only identifiable relative to the used stock's inflow unless it sometimes runs empty.
 
+
+## Measured inputs (2026-10-20)
+The shared `numopt.py`/`outerror.py` ran every model and judged the searched model with the run's
+measured inputs missing (`Model(flows, ids)` with no `inputs=`; `judge(...)` without `opts["inputs"]`).
+On kubernetes 300 none-long the matrix base was exact (judge 0 with inputs), the search drove the drain
+to 0 and traffic to 1.5, and the blind judge preferred it (1.0 vs 17.0 blind; 5775 with inputs).
+`numopt_bo`, `numopt_cma`, `numopt_nm` and `numopt_powell` are now packages with their own copies of both
+modules (from aac65a0) that pass the inputs to the objective, the flow probes, the profiled inflows and
+the judge (commit f6643bf; `tests/test_strategy_numopt_inputs.py`). `numopt_fd`, `numopt_fd_coarse`,
+`numopt_fd_profile` and `numopt_lbfgs` still use the shared copies and keep the bug.
+Ladder (each of the four, same seeds, before vs after): 300/301 0/10 -> 9/10 passing (300 meas-short
+still fails: errors-in-variables bias 27%, the matrix base has it too); 96 other paired cells with an
+unchanged scorer: fail -> pass 10-12 (062, 302-305), pass -> fail 0.
