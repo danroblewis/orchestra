@@ -369,9 +369,11 @@ strategies:
       that stock runs dry. The matrix method is also run a second time with each stock's own numbers
       kept as fitted - a small rate on a large stock is not rounded away, and a drain is not cut to what
       other stocks are seen to receive unless the data agree - and the version that predicts the data
-      better is used. Hidden stages are tried on the model with and without the co-flows, and the one
-      that predicts better is kept.
-    helps_with: Outside inflows standing in for a flow (distilled 153, 154), co-flows (128, 129), on the realistic examples.
+      clearly better is used. Two other readings of split flows are tried: a stock's drain and another's
+      gain that both follow a third stock become one move driven by it, and a constant drain together
+      with the same extra in the inflow upstream becomes a move with a threshold. Hidden stages are
+      tried on the model with and without the co-flows, and the one that predicts better is kept.
+    helps_with: Outside inflows standing in for a flow (distilled 153, 154, 131, 158), co-flows (128, 129), on the realistic examples.
     builds_on: realistic_hats, coflow_hats (copies)
     status: work in progress
     note: Research document docs/research/realistic-flows.md.
