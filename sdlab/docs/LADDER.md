@@ -2665,27 +2665,32 @@ Every latest stored found model (`store.latest(found=True)`, errors, timeouts an
 grouped by structure (numbers stripped, piece places kept); a group is refitted from its first two
 members' numbers and from the lean start, keeping the lowest J (W*). A stored status from an older scorer
 is re-scored. `analysis.alternatives()` adds the hard negatives (the same mean change with no more
-numbers), graded by `score.equations`. A group whose members all pass or are equivalent is **right**; else
-it is **wrong**, and gets the first label that applies, by delta = J(W*) - J(T*):
+numbers), graded by `score.equations`. Groups are keyed by a signature that names hidden stocks by their
+place, not their name. A group is **right** when it has the truth's own structure, or when its members all
+pass or are equivalent and its refit (the numbers J chose) does not re-score as a fail; else it is
+**wrong**, and gets the first label that applies, by delta = J(W*) - J(T*):
 
 | label | condition |
 | --- | --- |
 | OK | delta > eps (0.5 nat) |
 | X | its refitted numbers re-score as pass or equivalent |
 | TIE-known / TIE-unexplained | \|delta\| <= eps; known when it is an alternative or the cell is unidentifiable |
-| F | delta < -eps and T* did not converge or its restarts disagree by more than eps |
 | L | delta < -eps on a data-limited or unidentifiable cell (`analysis.get`, not recomputed) |
+| F | delta < -eps and T* is not at its optimum: it did not converge, its restarts disagree by more than eps, a copy of its numbers scaled by 0.7-1.3 scores better, or T0 does |
 | E / E-price | everything else: an objective failure (E-price: the data code D favours the truth, the price decides), with its D, P_num and P_struct parts and what the winner has that the truth lacks |
 
 A cell takes the worst label of its wrong groups (E > P > F > S > L > TIE > OK); **S** is a failed sanity
 block on T (J(T*) <= J(T0); T* beats its numbers scaled by 0.7, 0.9, 1.1 and 1.3; the fitted noise
-character plausible for the variant; innovations' dispersion and Ljung-Box z <= 3). **C** (the class
+character plausible for the variant: phi < 0.05 and every variance at its floor when the engine ran
+without noise, else phi in [0.7, 1.4] and, for `meas`, the fitted error variance alpha + rho2 E[x^2] within
+a factor 2 of abs^2 + rel^2 E[x^2], otherwise tau near 0; innovations' dispersion and Ljung-Box z <= 3). **C** (the class
 cannot hold the truth yet) is counted apart: physics, particle and real cases (no proxy truth yet), the
 `lag`, `weekly` and `bias` variants (observation choices are not built), and truths that use the 2d engine
 features. **P** (the particle-filter referee) is not built and is never given. The same labels under plain
-one-step BIC (D + 1/2 k ln N, the A-bic arm, on the same fits) are reported beside them.
+one-step BIC (D + 1/2 k ln N, the A-bic arm, on the same fits; X groups left out) are reported beside them.
 
-**Per set** (tests, canonical, distilled, control): the share of achievable, non-C cells labelled OK or
+**Per set** (canonical, control, realistic, physics, particles, real, noisy, distilled, else tests; the
+first tag that matches): the share of achievable, non-C cells labelled OK or
 TIE-known, the count per label, min delta, the truth's rank, and |J(R) - J(T)| for right groups; then
 every E with its parts and mechanism.
 
@@ -2693,7 +2698,18 @@ every E with its parts and mechanism.
 the harness>/<case>__<variant>.json`, one file per cell, never the result store. A change to the
 evaluator or the harness starts a new folder, so numbers from different code never mix. The evaluator's
 hash covers its own modules only (`frontend`, `engine`, `kalman`, `price`, `objective`), not the rest
-of the `unified` package, so work on the strategy does not move the folder.
+of the `unified` package, so work on the strategy does not move the folder. The labels are computed by
+`objective_labels.py`, which is outside the key: after a labelling fix,
+
+```sh
+uv run sdlab-ladder objective-test --relabel v1-f6443f802e,v1-8d4dffc289,v1-e02ff355d9 --jobs 3
+```
+
+re-labels every done cell of those folders (later wins) into the current folder without refitting:
+write-back of the fitted numbers is redone (re-scoring a group only when its refit flows change), groups
+are merged by the current signature, the sanity block's noise check and every label are recomputed. Each
+cell keeps `label_before`, `outcome_before` and `fitted_in` (the folder its fits came from), and the
+command prints the per-set label and outcome counts before -> after and every cell that changed.
 
 **Cost.** A short (300-step) cell with 10-20 distinct structures takes 1-10 minutes. JAX's CPU runtime
 uses about two cores per worker during gradients despite the single-thread settings, so keep `--jobs` low.

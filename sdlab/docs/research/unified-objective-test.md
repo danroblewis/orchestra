@@ -171,7 +171,7 @@ In order of cells recovered:
 
 Each of these is a new code-table version, re-run on every set, decided once for all cases; none is a gate.
 
-Harness fixes needed before the next run (labels, not the objective):
+Harness fixes needed before the next run (labels, not the objective; status after `c0b9c85` in section 5):
 `frontend.write_back` writes a shared schedule slot only to the first tied segment; `g['right']` comes
 from stored statuses even when the refit fails; `signature()` keys hidden stocks by name; F is checked
 before L; `beats_scaled = False` should give F, not E; eta restarts inherit the first start's eta;
@@ -198,3 +198,69 @@ keeps a stale `timeout` flag.
 
 The go/no-go of the design stands: build the search only when no E or F remains on achievable P0-P2
 cells, or each that remains has a written cause.
+
+## 5. Labelling fixes and the re-labelled baseline (c0b9c85, 20 October 2026)
+
+**Fixed** (`sdlab/ladder/objective_labels.py`, outside the cache key; tests in `tests/test_objective_labels.py`):
+
+- `frontend.write_back` now writes a schedule slot to every segment that shares it. Before, only the first
+  tied segment got the fitted number; the others kept their written numbers, and a tied segment's other
+  readers were dropped. This was common (most stored piecewise models repeat a value), but it changed
+  the refit's score in only a handful of groups (e.g. 019, sd-eras fail -> pass; 082 outliers, 104 none
+  fail -> equivalent).
+- `signature()` names hidden stocks by their place, not their name (groups that only rename a hidden
+  stock merge: 105, 107, 110, 205, 206 none or counts).
+- A group is right when it has the truth's structure, or when its stored members pass and its refit
+  does not re-score as a fail. Before, stored statuses alone decided, so a refit that J moved to failing
+  numbers still counted as right.
+- L is checked before F; a failed `beats_scaled` or `refit_no_worse` makes T*'s fit bad (F, not E).
+- Eta plausibility: the process check follows the engine noise (every observation kind sits on counts);
+  `meas` compares the combined error variance alpha + rho2 E[x^2] with abs^2 + rel^2 E[x^2] within a
+  factor 2 (not alpha and rho2 one by one), and `abs = rel = 0` no longer passes any alpha.
+- X groups are left out of the A-bic comparison (they were counted as TIE or E there); a resumed cell
+  drops its stale `timeout` flag.
+
+**Not fixed here:** eta restarts inheriting the first start's eta (a change to the fit, so it needs
+refitting, not re-labelling); physics and particle rows with their own scorer (the committed harness still
+labels them C); the tau threshold (the user's open decision).
+
+**Command** (code at `c0b9c85`; reads the three run folders, writes `objective_test/v1-74e6892a11`, no refit):
+
+```sh
+uv run sdlab-ladder objective-test --relabel v1-f6443f802e,v1-8d4dffc289,v1-e02ff355d9 --jobs 3
+```
+
+Sets here are the report's tag sets (first match of canonical, control, realistic, physics, real, noisy,
+distilled, else tests; one cell per case and variant, the later folder winning). They are not the hand-made
+sample sets of section 1, whose counts (171 of 233) this command does not reproduce: section 1 is not
+rerunnable as written. "Before" is the label stored by the run; outcomes as defined in section 1.
+
+| set | cells | judged | truth best | equivalent winner | wrong winner | label changes (before -> after) |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| tests | 81 | 63 -> 63 | 58 -> **56** | 2 -> 3 | 3 -> 4 | OK 32 -> 31, E-price 3 -> 4 (305), others equal (C 9, E 2, S 26, none 9) |
+| distilled | 39 | 35 | 26 | 2 | 7 | F 3 -> 2, S 10 -> 11 (153); E 1, E-price 3, L 1, OK 16, TIE-u 1, C 3, none 1 unchanged |
+| noisy | 47 | 45 -> 46 | 32 -> **33** | 3 | 10 | E 9 -> 8, OK 13 -> 15, S 19 -> 18, L 0 -> 1, none 2 -> 1; F 4 |
+| canonical | 28 | 28 | 20 | 0 | 8 | F 3 -> 2, L 1 -> 2 (111); E-price 4, OK 5, S 14, TIE-u 1 |
+| control | 45 | 40 | 32 | 0 | 8 | F 5 -> 0, S 29 -> 34; E-price 1, OK 4, TIE-u 1, C 5 |
+| realistic | 17 | 15 | 15 | 0 | 0 | none |
+| physics, real | 92 | 0 | | | | all C |
+| **all** | 349 | 226 -> 227 | 183 -> **182** | 7 -> 8 | 36 -> 37 | |
+
+A-bic: X groups out turns 9 noisy and 3 tests TIEs (and one E, 050#1) into OK.
+
+Cells whose label or outcome changed (14):
+
+- F -> S (6; data-limited, now L before F, the cell keeps its failed sanity block): 153 counts, 201
+  counts, 203 counts, 209 counts and none, 213 none. F -> L: 082 outliers, 111 counts.
+- E -> F: 083 outliers (T* is beaten by its own numbers scaled, `beats_scaled` false).
+- S -> OK: 083 meas, 087 meas (the combined measurement-error variance is within x2; alpha and rho2 had
+  traded against each other).
+- none -> S: 088#1 meas (abs = rel = 0, the truth fits alpha 1.29 on B; it now counts as truth best).
+- 305-k8s-retries counts: OK -> E-price, truth best -> wrong winner. A group of common_cause/sindy models
+  scored equivalent in the store, but its J-refit re-scores as a fail and beats T* by 7.7 nats with D in
+  the truth's favour: J prefers failing numbers on an equivalent structure.
+- 060 counts: truth best -> equivalent winner (an alternative structure, stored equivalent, refit fail,
+  beats T* by 4.3 on a data-limited cell, L; the J-best is a right group).
+
+The corrected baseline: truth best in 182 of 227 judged committed cells (tests 56/63, distilled 26/35,
+noisy 33/46, canonical 20/28, control 32/40, realistic 15/15).
