@@ -6,7 +6,9 @@ own copies, from commit 7b9dd2f (last changed in 04d2896): identify.py, matrix.p
 shared_noise.py). Changed in the copies: the noise analysis reads a row's numbers off every column
 the row may take, the stocks' levels and then the measured inputs (a number on an input is an outside
 inflow of that row's stock); the shared module looked every reader up among the stocks only and
-crashed (KeyError) on any case with a measured input."""
+crashed (KeyError) on any case with a measured input. And residuals far below counting noise of the
+flows' sizes (noise-free data: the fitted dispersion under its plausible floor, 0.25) decide no move
+or link; the empty covariances had been read as "link" and split noise-free moves in two."""
 
 from __future__ import annotations
 

@@ -77,11 +77,16 @@ class _Budget:
         return P
 
 
+def raw_dispersion(obs: np.ndarray, w: np.ndarray, pred: np.ndarray) -> float:
+    """The dispersion that fits the observed covariances best, unclipped."""
+    return float((w * obs * pred).sum() / max(1e-12, (w * pred * pred).sum()))
+
+
 def _cost(obs: np.ndarray, w: np.ndarray, pred: np.ndarray, one_sided: bool = False) -> tuple[float, float]:
     """Weighted squared error with the dispersion fitted (clipped to a plausible range). One-sided:
     a stock's variance may exceed what the reading predicts (misfit and unmodelled flows only add
     to it), but not fall short of it."""
-    phi = float(np.clip((w * obs * pred).sum() / max(1e-12, (w * pred * pred).sum()), 0.25, 4.0))
+    phi = float(np.clip(raw_dispersion(obs, w, pred), 0.25, 4.0))
     err = obs - phi * pred
     if one_sided:
         d = np.diag_indices(len(obs))
@@ -90,10 +95,11 @@ def _cost(obs: np.ndarray, w: np.ndarray, pred: np.ndarray, one_sided: bool = Fa
 
 
 def analyse(rows: list[dict], ids: list[str], dy: np.ndarray, prev: np.ndarray, unit: dict, final: set, z: float = 3.0, tol: float = 0.003, misfit: bool = False, swap: bool = False, one_sided: bool = False,
-            columns: np.ndarray | None = None, names: list[str] | None = None) -> Noise:
+            columns: np.ndarray | None = None, names: list[str] | None = None, no_draws: bool = True) -> Noise:
     """columns, names (optional): every series a row's numbers may read, named; the stocks' levels
     first (as prev, ids), then any measured inputs. A number on an input is an outside inflow of
-    its row's stock: its draws land in that stock alone, never a move or a link between stocks."""
+    its row's stock: its draws land in that stock alone, never a move or a link between stocks.
+    no_draws: residuals far below counting noise (noise-free data) decide nothing."""
     S = len(ids)
     res = residuals(rows, dy)
     means = prev.mean(axis=1)
@@ -152,6 +158,12 @@ def analyse(rows: list[dict], ids: list[str], dy: np.ndarray, prev: np.ndarray, 
             best = (m, c)
     m, c = best
     noise.dispersion = cost(m)[1]
+    # residuals far smaller than counting noise of the flows' sizes (below the plausible range's
+    # floor): the rows' changes carry no draws (noise-free or near-exact data), so the covariances
+    # say nothing about moves and links, and nothing is decided
+    if no_draws and raw_dispersion(obs, w, tri(budget.predict(m))) < 0.25:
+        noise.tests = {(ids[a], ids[s]): {"move": None, "cost": 0.0, "scale": 1.0, "no_draws": True} for a, s, _mu in cands}
+        return noise
     # the best reading's own misfit per covariance entry (1 when the residuals are only counting
     # noise): a flip must cost more than chance at that scale
     scale = max(1.0, c / (S * (S + 1) / 2)) if misfit else 1.0

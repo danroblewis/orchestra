@@ -141,3 +141,19 @@ def test_a_true_co_flow_from_the_ground_truth_engine():
     ab = next(f for f in r["flows"] if f["from"] == "a" and f["to"] == "b")
     assert abs(ab["uses"][0]["per"] - 0.5) < 0.08
     assert skill(r, d) > 0.97
+
+
+def test_noise_free_data_decides_nothing_and_keeps_the_move():
+    # a chain outside -> a -> b -> outside with no counting noise: the residuals are rounding only,
+    # far below counting noise of the flows' sizes, so they say nothing about moves and links; the
+    # averages' move a -> b stays (before, the empty covariances read as "link": a -> outside plus
+    # outside -> b at 0.6 x a, kubernetes 301 none-*)
+    d = generate(stocks=[{"id": "a", "initial": 300}, {"id": "b", "initial": 100}],
+                 flows=[{"id": "in", "from": None, "to": "a", "rate": const(200)},
+                        {"id": "ab", "from": "a", "to": "b", "rate": prop("a", 0.6)},
+                        {"id": "bout", "from": "b", "to": None, "rate": prop("b", 0.5)}],
+                 schedule={"every": 400, "changes": [{"t": 1, "set": {"in": const(200)}}, {"t": 101, "set": {"in": const(350)}},
+                                                     {"t": 201, "set": {"in": const(120)}}, {"t": 301, "set": {"in": const(260)}}]},
+                 steps=400, noise={})
+    r = shared_noise(d["stocks"], d["run"], {})
+    assert kind(r, "a", "b") == "move"

@@ -39,3 +39,15 @@ From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
 - Craciun, Pantea (2008). Identifiability of chemical reaction networks. J. Math. Chem. 44(1):244-259 (a move and an independent outflow plus inflow give the same mean equations).
 - Martinelli et al. (2022). Reactmine. arXiv:2209.03185 (reactions found by changes co-varying at fixed ratios).
 - Callaham, Loiseau, Rigas, Brunton (2021). Nonlinear stochastic modelling with Langevin regression. Proc. R. Soc. A 477:20210092.
+
+## 2026-10-20: noise-free data decides nothing (kubernetes 301)
+Diagnosis: on 301 none-short/none-long (identifiable: `sdlab-ladder analyse` says achievable, p 1.00)
+the rows' residuals are rounding only (std 3e-5), the fitted dispersion hits its floor 0.25, and every
+reading's predicted covariance is weighed against zeros with weights ~1/se^2: the reading predicting
+the least covariance ("link") wins with a flip cost of 2e18. So the move queue -> inflight became
+queue -> outside plus outside -> inflight (EQUIVALENT). A method fault: no draws is no evidence.
+Change (`noise.py`): when the best reading's unclipped dispersion is below 0.25, nothing is decided
+(`noise_no_draws`, default on). Paired in-process check (same cells, gate off vs on, runner.run_item):
+300 (6) and 301 (4) variants plus 40 sampled cells (seed 20261020, 20 none-*, 20 noisy): 7 flips, all
+equivalent -> pass, all noise-free (301 none-short, none-long, 041#1 none-long, 050#1 none-short,
+050#5 none-long, 040#7 none-long, 042#2 none-long); no regressions; noisy cells unchanged.

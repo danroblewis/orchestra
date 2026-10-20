@@ -320,7 +320,7 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     extras, names, columns = ctx.get("extras") or [], ctx.get("names") or ids, ctx.get("columns", prev)   # (opts "extra_columns")
     # shared noise (opt-in): which gains are moves and which links, read off the rows' residuals
     noise = analyse(rows, ids, dy, prev, ctx["unit"], ctx["final"], opts.get("noise_z", 3.0), opts.get("tol", 0.003), opts.get("noise_misfit", False), opts.get("noise_swap", False), opts.get("noise_one_sided", False),
-                     columns=columns, names=names) if opts.get("shared_noise") else None
+                     columns=columns, names=names, no_draws=opts.get("noise_no_draws", True)) if opts.get("shared_noise") else None
     kinds = noise.kinds if noise else None
     conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts, kinds)
 
