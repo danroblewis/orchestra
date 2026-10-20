@@ -488,6 +488,11 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--no-fill", action="store_true", help="only the report")
     sp.add_argument("--set", default="tests", choices=("tests", "realistic", "all"))
     sp.add_argument("--top", type=int, default=10)
+    ev = sub.add_parser("evidence", help="evidence beside the pass per latest result, and a confidence score from NO-TRUTH checks (evidence.py)")
+    common(ev)
+    ev.add_argument("--reference", type=int, default=3, help="the push test's refits of the truth's own structure per cell")
+    ev.add_argument("--no-fill", action="store_true", help="only the report, from the cache")
+    ev.add_argument("--out", help="write every report and the confidence model's report as JSON")
     co = sub.add_parser("cost", help="the wall time to re-test strategies or cases, from stored per-cell times (cost.py)")
     co.add_argument("--strategies", default="all")
     co.add_argument("--cases")
@@ -562,6 +567,9 @@ def main(argv: list[str] | None = None) -> int:
         return freeze(a)
     if a.command == "longrun":
         return longrun(a)
+    if a.command == "evidence":
+        from . import evidence
+        return evidence.main(a)
     if a.command == "cost":
         from . import cost
         return cost.main(a)
