@@ -35,10 +35,23 @@ def ladder(case_id: str, variant: str, strategy: str, **opts) -> tuple[dict, dic
 
 
 def test_every_option_off_is_the_matrix():
+    # the pinned main line (identify.identify), before either's errors-in-variables refit: the matrix
+    # strategy refits each candidate since 8c507a8 (docs/research/k8s-302.md), so it is no longer it
+    from sdlab.discovery.identify import identify as main_line
+    from sdlab.discovery.strategies.matrix_v2 import _identify
+    from sdlab.ladder import cases as casemod, data
+
     for case_id, variant in (("002-inflow-outflow", "counts-long"), ("019-announced-era", "counts-short"), ("062-tank-fed-by-measured-pump", "counts-long")):
-        a, _ = ladder(case_id, variant, "matrix")
-        b, _ = ladder(case_id, variant, "matrix_v2", **OFF)
-        assert json.dumps(a["flows"], sort_keys=True) == json.dumps(b["flows"], sort_keys=True), (case_id, variant)
+        c = casemod.load(case_id)
+        d = data.load(c, variant)
+        stocks = casemod.page_stocks(casemod.truth_model(c, variant))
+        opts = {"eras": d["eras"] if len(d.get("eras") or []) > 1 else None}
+        if d.get("inputs"):
+            opts["inputs"] = {k: list(v) for k, v in d["inputs"].items()}
+        run = {"t": d["t"], "levels": d["levels"]}
+        a = main_line(stocks, run, dict(opts))
+        b = _identify(stocks, run, {**OFF, **opts, "inputs_judge": bool(opts.get("inputs"))})
+        assert json.dumps(a["flows"], sort_keys=True, default=float) == json.dumps(b["flows"], sort_keys=True, default=float), (case_id, variant)
 
 
 def test_white_residuals():

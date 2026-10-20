@@ -7,6 +7,11 @@ and the inflow measured with them fixed. The judge chooses among all of them, as
 The shared recession.py is pinned, so this package carries its own copy (drains.py, from bcb7192),
 which looks a row's readers up among the levels and the measured inputs (the shared one crashed on
 any case with a measured input).
+
+Each main-line candidate is refitted before its recession drains are tried and before the judge
+(earned.refit, a copy of earned_pieces' refit from matrix/ at 8c507a8): its rows chosen again,
+outside-inflow pieces kept only where earned, conservation decided jointly. Without it, chance pieces
+on a stock with no outside inflow won the judge (302 counts-short; docs/research/k8s-302.md).
 """
 
 from __future__ import annotations
@@ -14,9 +19,12 @@ from __future__ import annotations
 import json
 import os
 
+import numpy as np
+
 from ...identify import VARIANTS, judge
 from ...matrix import identify_one, known_flows
 from .drains import apply
+from .earned import refit
 
 
 # the recession options (recession.py); SDLAB_RECESSION (JSON) overrides them for bench ablations
@@ -31,7 +39,14 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        r = identify_one(stocks, run, {**opts, **v})
+        r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True})
+        if r.get("flows") is not None and r.get("fit"):
+            try:
+                r = refit(stocks, r, opts)
+            except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+                pass
+        for k in ("fit", "ctx", "raw_rows"):
+            r.pop(k, None)
         cands = [(r, v["name"])]
         # with announced eras, a candidate whose numbers are shared across eras has pieces standing in
         # for the eras' changes, and its "quiet" steps would come from one era: split-era candidates only

@@ -319,7 +319,13 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     ctx = {"stocks": stocks, "ids": ids, "t": t, "final": final, "unit": unit, "prev": prev, "dy": dy, "cfg": cfg, "L": L,
            "labels": labels, "conf": conf, "bic": bic, "log_t": log_t, "T": T, "at": at,
            "names": names, "columns": columns, "inputs": [k for k, _ in inputs], "pairs": pairs, "P0": P0, "exact": ex}
-    return finish(rows, ctx, opts)
+    out = finish(rows, ctx, opts)
+    if opts.get("keep_fit"):
+        # (earned) the rows as fitted and what finish() needs, for earned.refit (as the pinned
+        # matrix.py keeps them with keep_fit / keep_rows; this copy always has its input columns)
+        out["fit"] = {"rows": rows, "ids": ids, "prev": prev, "dy": dy, "cfg": cfg, "labels": labels, "at": [at(k) for k in range(T)]}
+        out["ctx"] = ctx
+    return out
 
 
 def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:

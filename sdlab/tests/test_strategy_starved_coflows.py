@@ -105,8 +105,10 @@ def test_control_a_flour_that_never_runs_dry_gives_the_main_line():
     mine = starved_coflows(d["stocks"], d["run"], {})
     main = matrix(d["stocks"], d["run"], {})
     assert not any(f.get("uses") for f in mine["flows"])
-    assert mine["chosen"] == main["chosen"]
-    assert abs(skill(mine, d) - skill(main, d)) < 0.01
+    assert " dry on " not in mine["chosen"]                  # one of the main line's candidates
+    # its main line refits each candidate (earned.py, docs/research/k8s-302.md), so it is not the pinned
+    # main line's answer flow for flow; it must do no worse (here -1.54 against the pinned -21.7)
+    assert skill(mine, d) > skill(main, d) - 0.01
 
 
 def test_control_an_outflow_of_flour_driven_by_orders_that_does_not_cap_the_bake_gets_no_uses():

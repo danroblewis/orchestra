@@ -21,6 +21,8 @@ identify() below, from commit aad5c7b) and changes those. With every option off 
   inputs_judge    the judge steps every candidate with the measured inputs     earned_pieces, censored
   exact           noise-free fits floored at float precision, exact ties walked
                   to the plainest set (032, 034, 035, 038 without noise)       common_cause
+  earned          each candidate's rows refitted before the judge: pieces kept    earned_pieces (via
+                  only where earned, conservation decided jointly (earned.py)   matrix, 8c507a8)
 
 Options are OPTIONS (the defaults) under the caller's opts. For an ablation, the SDLAB_MATRIX_V2
 environment variable (JSON) starts from every option off and turns on what it names (the ladder's
@@ -33,20 +35,26 @@ from __future__ import annotations
 import json
 import os
 
+import numpy as np
+
 from ...simulate import behaviour_error
+from .earned import refit
 from .matrix import identify_one, known_flows
 
 # every option off: the matrix
 OFF: dict = {"rss_floor": False, "pelt_mult": 1, "white": False, "pool": False, "pool_white": False, "tie_se": False, "falling_inflow": False,
-             "gap_inflow": False, "fold_strict": False, "pair_moves": False, "products": False, "inputs_judge": False, "exact": False}
+             "gap_inflow": False, "fold_strict": False, "pair_moves": False, "products": False, "inputs_judge": False, "exact": False,
+             "earned": False}
 
 # the defaults: the combination chosen by the ablation (docs/research/matrix_v2.md): every fix that
 # gained cells without losing more than the data's limits explain; pelt_mult 2, white, gap_inflow and
 # inputs_judge each lost cells the others did not, and are off. inputs_judge is on since the measured-input
 # cases (300-317): a judge blind to the inputs ranks every candidate that reads one as a runaway (302
-# counts-short: 18.7 against 0.05) and picks a degenerate one
+# counts-short: 18.7 against 0.05) and picks a degenerate one. earned is on since 302 counts-short
+# (docs/research/k8s-302-round2.md): chance pieces on inflight, pooled into one, won the judge without it
 OPTIONS: dict = {**OFF, "rss_floor": True, "pool": True, "pool_white": True, "tie_se": True, "falling_inflow": True, "fold_strict": True,
-                 "pair_moves": True, "products": "after", "exact": True, "inputs_judge": True}
+                 "pair_moves": True, "products": "after", "exact": True, "inputs_judge": True,
+                 "earned": True}
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
 # trusting the receivers or the rows where stocks are seen receiving more than a stock's own row
@@ -79,6 +87,21 @@ def options(opts: dict | None) -> dict:
     return {**OPTIONS, **(opts or {})}
 
 
+def one(stocks: list[dict], run: dict, opts: dict) -> dict:
+    """identify_one; with the option earned, the candidate's rows refitted (earned.refit)."""
+    if not opts.get("earned"):
+        return identify_one(stocks, run, opts)
+    r = identify_one(stocks, run, {**opts, "keep_fit": True})
+    if r.get("flows") is not None and r.get("fit"):
+        try:
+            r = refit(stocks, r, opts)
+        except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+            pass
+    for k in ("fit", "ctx"):
+        r.pop(k, None)
+    return r
+
+
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = options(opts)
     keep = opts.pop("candidates", False)                 # the bench grades every candidate
@@ -89,11 +112,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        runs = [(v["name"], identify_one(stocks, run, {**opts, **v}))]
+        runs = [(v["name"], one(stocks, run, {**opts, **v}))]
         if opts.get("products") and opts.get("products_guard", True) and any(f.get("product") for f in runs[0][1]["flows"]):
             # (products) the same candidate without products beside it: a product of levels is a
             # loop that can run away (realistic models: the judge's runs explode), so the judge decides
-            runs.append((v["name"] + ", no products", identify_one(stocks, run, {**opts, **v, "products": False})))
+            runs.append((v["name"] + ", no products", one(stocks, run, {**opts, **v, "products": False})))
         for name, r in runs:
             e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"), inputs=inputs)
             tried.append({"name": name, "error": e})

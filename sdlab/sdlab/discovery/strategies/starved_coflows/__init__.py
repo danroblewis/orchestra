@@ -10,15 +10,22 @@ Options (defaults are the benched version): dry_low 0.5 (a candidate C is below 
 (A's residual on C's dry steps), moves_only True, same_unit False (C of another unit than A),
 per_from "cross" ("dry": per from what the flow moved where the cap bound), remeasure_dry True,
 prefer_coflows False (True: take the best co-flow candidate over the judge), starved_only False.
+
+Each main-line candidate (all steps) is refitted before the judge (earned.refit, a copy of
+earned_pieces' refit from matrix/ at 8c507a8): its rows chosen again, outside-inflow pieces kept only
+where earned, conservation decided jointly. Without it, chance pieces on a stock with no outside
+inflow won the judge (302 counts-short; docs/research/k8s-302.md). The co-flow candidates (steps left
+out) are fitted as before.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from ..identify import VARIANTS, judge
-from ..matrix import identify_one, known_flows
-from ..starvation import as_coflows, fill_gaps, first_mask, remeasure_inflows, starved_steps, stocks_running_dry
+from ...identify import VARIANTS, judge
+from ...matrix import identify_one, known_flows
+from ...starvation import as_coflows, fill_gaps, first_mask, remeasure_inflows, starved_steps, stocks_running_dry
+from .earned import refit
 
 REFINE = {"name": "forward, changing inflows, trust receivers"}
 
@@ -85,7 +92,15 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for v in variants if not opts.get("starved_only") else []:
         if v.get("split_eras") and not has_eras:
             continue
-        consider(identify_one(stocks, run, {**opts, **v}), v["name"])
+        r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True})
+        if r.get("flows") is not None and r.get("fit"):
+            try:
+                r = refit(stocks, r, opts)
+            except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+                pass
+        for k in ("fit", "ctx", "raw_rows"):
+            r.pop(k, None)
+        consider(r, v["name"])
     for used, m in masks(stocks, run, opts):
         if not m.any() or (~m).sum() < 20:
             continue
@@ -131,7 +146,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is
