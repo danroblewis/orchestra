@@ -2691,7 +2691,9 @@ every E with its parts and mechanism.
 
 **Where the results are.** `$SDLAB_LADDER_CACHE/objective_test/<code table>-<hash of the evaluator and
 the harness>/<case>__<variant>.json`, one file per cell, never the result store. A change to the
-evaluator or the harness starts a new folder, so numbers from different code never mix.
+evaluator or the harness starts a new folder, so numbers from different code never mix. The evaluator's
+hash covers its own modules only (`frontend`, `engine`, `kalman`, `price`, `objective`), not the rest
+of the `unified` package, so work on the strategy does not move the folder.
 
 **Cost.** A short (300-step) cell with 10-20 distinct structures takes 1-10 minutes. JAX's CPU runtime
 uses about two cores per worker during gradients despite the single-thread settings, so keep `--jobs` low.

@@ -49,6 +49,9 @@ from . import cases as casemod
 from .data import cache_root
 
 EVALUATOR = Path(__file__).resolve().parent.parent / "discovery" / "strategies" / "unified"
+# the evaluator's own modules (what objective.py imports); not the rest of the strategy package, so work
+# on the strategy (its search, its identify) does not move the cache and break resuming
+EVALUATOR_MODULES = ("frontend.py", "engine.py", "kalman.py", "price.py", "objective.py")
 ORDER = ["E", "P", "F", "S", "L", "TIE", "OK"]
 OBSERVE_GAPS = ("lag", "weekly", "bias")     # observation choices (lag, span, scale) are not built in v1
 SETS = {
@@ -65,8 +68,8 @@ P0_VARIANTS = {"056": "counts-long", "sd-eras": "counts-long", "080": "bias-shor
 
 def evaluator_hash() -> str:
     h = hashlib.sha256()
-    for p in sorted(EVALUATOR.glob("*.py")):
-        h.update(p.read_bytes())
+    for name in EVALUATOR_MODULES:
+        h.update((EVALUATOR / name).read_bytes())
     h.update(Path(__file__).read_bytes())
     return h.hexdigest()[:10]
 
