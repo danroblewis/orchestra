@@ -1,7 +1,8 @@
 """Effects as tent columns: a flow's rate multiplied by a piecewise-linear curve of a stock's level,
 found and fitted by least squares (docs/research/effect-hats.md).
 
-1. The matrix method's model is the base.
+1. The matrix method's model is the base, each of its candidates' outside-inflow pieces kept only where
+   the data earn them (earned.py, a copy of matrix's earned refit; docs/research/k8s-303-hats-odefit.md).
 2. Screen (screen.py): every pair (base, C) as a group of tent columns base x h_j(C) (basis.py) on
    what the rows leave unexplained; a pair that clearly explains one or two rows is a candidate.
 3. Search (search.py): for each candidate and each way its flow can run (between the rows it shows
@@ -40,10 +41,10 @@ import os
 import numpy as np
 
 from ...addition import addition_test
-from ...identify import identify as matrix_identify
 from ...matrix import injected
 from ...simulate import behaviour_error
 from . import search
+from .earned import main_line as matrix_identify
 from .inputs import rows as input_rows
 from .price import price, prune
 from .pieces import resegment

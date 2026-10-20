@@ -19,10 +19,15 @@ ITER = 6
 
 def output_error(flows: list[dict], ids: list[str], run: dict, opts: dict, w: np.ndarray, seg: int = SEG) -> float:
     """Weighted squared output error over consecutive `seg`-step segments, each from its fitted start."""
+    return float(np.sum(segment_errors(flows, ids, run, opts, w, seg)))
+
+
+def segment_errors(flows: list[dict], ids: list[str], run: dict, opts: dict, w: np.ndarray, seg: int = SEG) -> np.ndarray:
+    """output_error's terms, one per segment (inf or nan as a single entry when not comparable)."""
     if not flows:
-        return float("inf")
+        return np.array([np.inf])
     if any(s not in ids for f in flows for s in (f.get("from"), f.get("to")) if s):
-        return float("nan")                                   # a hidden stock of the model's own: not comparable here
+        return np.array([np.nan])                             # a hidden stock of the model's own: not comparable here
     t = np.asarray(run["t"], dtype=float)
     Y = np.nan_to_num(np.array([np.asarray(run["levels"][i], dtype=float) for i in ids]))     # S x n
     S, n = Y.shape
@@ -74,5 +79,5 @@ def output_error(flows: list[dict], ids: list[str], run: dict, opts: dict, w: np
         Z = np.maximum(0.0, Z + step.T)
     T = trajectories(Z)
     r = np.where(valid, (obs - T) * w[:, None, None], 0.0)
-    e = float((r ** 2).sum())
-    return e if np.isfinite(e) else float("inf")
+    e = (r ** 2).sum(axis=(0, 1))                                # per segment
+    return e if np.all(np.isfinite(e)) else np.array([np.inf])

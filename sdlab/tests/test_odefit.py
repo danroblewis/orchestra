@@ -4,10 +4,10 @@ run away; counted data go to the main line."""
 
 import numpy as np
 
-from sdlab.discovery.identify import identify as mainline
 from sdlab.discovery.strategies.odefit import extend as E
 from sdlab.discovery.strategies.odefit import fit as F
-from sdlab.discovery.strategies.odefit.run import identify, output_error
+from sdlab.discovery.strategies.odefit import eiv
+from sdlab.discovery.strategies.odefit.run import identify, mainline, output_error
 
 
 def oscillator(n=300, noise=0.0, seed=0):
@@ -45,7 +45,8 @@ def test_counted_levels_go_to_the_main_line():
     run = {"t": run["t"], "levels": {k: [round(100 * x) for x in v] for k, v in run["levels"].items()}}
     r = identify(stocks, run, opts)
     assert r["chosen_by"].startswith("counted")
-    assert r["flows"] == mainline(stocks, run, dict(opts))["flows"]
+    # odefit's main line: its earned refit (earned.py), its numbers refitted under measurement error (eiv.py)
+    assert r["flows"] == eiv.apply(mainline(stocks, run, dict(opts)), stocks, run, opts)["flows"]
 
 
 def test_a_square_that_turns_a_drain_into_growth_runs_away():

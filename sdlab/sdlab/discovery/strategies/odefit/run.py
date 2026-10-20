@@ -254,15 +254,20 @@ def choose(base: dict, own: dict, stocks: list[dict], run: dict, opts: dict, sho
         units = {s["id"]: s.get("unit") or "" for s in stocks}
         o_tr = to_flows(r["W"], ids, inputs, spec.products, units, d.Y[:k].mean(axis=0), hinges=hinge_flows(spec, Hs, ids, inputs),
                         roots=spec.roots, tops=d.Y[:k].max(axis=0))
-        eb, eo = C.output_error(b_tr, ids, run_te, opts_te, w), C.output_error(o_tr, ids, run_te, opts_te, w)
+        sb, so = C.segment_errors(b_tr, ids, run_te, opts_te, w), C.segment_errors(o_tr, ids, run_te, opts_te, w)
         how = "held out"
     else:
-        eb, eo = C.output_error(base.get("flows") or [], ids, run, opts, w), C.output_error(own["flows"], ids, run, opts, w)
+        sb, so = C.segment_errors(base.get("flows") or [], ids, run, opts, w), C.segment_errors(own["flows"], ids, run, opts, w)
         how = "output error"
+    eb, eo = float(np.sum(sb)), float(np.sum(so))
     if not (np.isfinite(eb) or np.isfinite(eo)) or np.isnan(eb) or np.isnan(eo):
         eb, eo, how = judge(base.get("flows") or [], stocks, run, opts), judge(own["flows"], stocks, run, opts), "judge"
         return {"how": how, "main line": eb, "output error": eo, "pick": "output error" if eo <= eb else "main line"}
-    out = {"how": how, "main line": eb, "output error": eo, "pick": "output error" if eo <= eb else "main line"}
+    gain, se = paired_gain(sb, so)
+    out = {"how": how, "main line": eb, "output error": eo, "gain_se": se,
+           "pick": "output error" if gain > CLEAR * se else "main line"}
+    if out["pick"] == "main line" and eo < eb:
+        out["how"] = how + f"; the output-error model's edge ({gain:.4g}) is within {CLEAR:g} paired SE (SE {se:.4g})"
     if out["pick"] == "output error":
         # and the main line's own judge must not rate it far worse: the held-out segments restart
         # from fitted states, which lets a model that cannot follow unannounced inflow steps look
@@ -272,6 +277,19 @@ def choose(base: dict, own: dict, stocks: list[dict], run: dict, opts: dict, sho
         if jo > JUDGE_SLACK * jb:
             out.update(pick="main line", how=how + "; the main line's judge rates the output-error model far worse")
     return out
+
+
+CLEAR = 2.0               # paired standard errors by which the output-error model must predict better than the main line
+
+
+def paired_gain(sb: np.ndarray, so: np.ndarray) -> tuple[float, float]:
+    """The main line's summed segment error less the output-error model's, and that difference's
+    standard error from the per-segment differences (inf against a model that cannot be run: no
+    standard error, the sums decide)."""
+    if sb.shape != so.shape or not (np.all(np.isfinite(sb)) and np.all(np.isfinite(so))):
+        return float(np.sum(sb) - np.sum(so)), 0.0
+    dlt = sb - so
+    return float(dlt.sum()), float(np.sqrt(len(dlt)) * dlt.std(ddof=1)) if len(dlt) > 1 else 0.0
 
 
 def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
