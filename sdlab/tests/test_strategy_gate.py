@@ -21,6 +21,7 @@ from sdlab.discovery.flows import read_flows
 from sdlab.discovery.gate import check, choose, jacobian
 from sdlab.discovery.identify import judge
 from sdlab.discovery.simulate import Model
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 from sdlab.discovery.strategies.gated import refit
 from synth import generate, skill
@@ -52,7 +53,7 @@ def shifting():
 
 def test_a_replaying_loop_wins_the_judge_but_not_the_gate(shifting):
     d = shifting
-    right = load("matrix")(d["stocks"], d["run"], {})
+    right = main_line(d["stocks"], d["run"], {})
     trap = replaying_trap(d["run"], 0.02)
     # the in-sample judge prefers the trap (it replays the run), though it behaves far worse
     assert judge(trap, d["stocks"], d["run"]) < 0.5 * judge(right["flows"], d["stocks"], d["run"])
@@ -104,6 +105,6 @@ def test_an_unstable_linear_part_held_by_floors_and_caps_passes():
     schedule = {"every": 0, "changes": [{"t": t, "set": {"demand": {"form": "constant", "value": v}}} for t, v in ((200, 30), (400, 12), (600, 25))]}
     d = generate(stocks, flows, steps=1000, schedule=schedule)
     assert check(flows, d["stocks"], d["run"])["ok"]                  # floors and caps hold it
-    plain, gated = load("matrix")(d["stocks"], d["run"], {}), load("gated")(d["stocks"], d["run"], {})
+    plain, gated = main_line(d["stocks"], d["run"], {}), load("gated")(d["stocks"], d["run"], {})
     assert gated["chosen"] == plain["chosen"]
     assert skill(gated, d) == pytest.approx(skill(plain, d))

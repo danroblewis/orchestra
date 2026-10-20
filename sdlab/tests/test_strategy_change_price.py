@@ -19,6 +19,7 @@ import pytest
 from synth import generate
 
 from sdlab.discovery.pricing import noise_variance, prune, scan
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 
 P = lambda a, b, k: {"id": f"{a}_{b}", "from": a, "to": b, "rate": {"form": "proportional", "stock": a, "k": k}}  # noqa: E731
@@ -38,7 +39,7 @@ def row(r, sid):
 
 
 def test_an_internal_stock_gets_no_pieces_and_the_real_intake_keeps_its_own(chain):
-    base = load("matrix")(chain["stocks"], chain["run"], {"eras": chain["eras"]})
+    base = main_line(chain["stocks"], chain["run"], {"eras": chain["eras"]})
     r = load("change_price")(chain["stocks"], chain["run"], {"eras": chain["eras"]})
     # matrix: chance pieces in the internal stock, which pull its numbers off
     assert len(row(base, "c")["inflow"]) > 1

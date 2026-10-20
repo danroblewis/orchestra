@@ -26,7 +26,7 @@ import time
 import numpy as np
 
 from ...hidden import delayed
-from ...identify import identify as matrix_identify
+from .earned import main_line as matrix_identify
 from ...matrix import finish, injected
 from .blocks import blocks_of, pick_rows
 from .gram import Design

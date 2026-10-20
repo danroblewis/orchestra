@@ -18,6 +18,7 @@ import random
 import pytest
 from synth import generate, skill
 
+from sdlab.discovery.identify import identify as main_line
 from sdlab.discovery.strategies import load
 
 
@@ -49,7 +50,9 @@ def find(r, src, dst, driver=None):
 @pytest.fixture(scope="module")
 def daily():
     d = chain(random_times=False)
-    return d, load("matrix")(d["stocks"], d["run"], {}), load("periodic_inflows")(d["stocks"], d["run"], {})
+    # the pinned main line (the matrix strategy's own now earns its pieces, docs/research/k8s-302.md,
+    # and no longer runs away here: skill@20 0.88)
+    return d, main_line(d["stocks"], d["run"], {}), load("periodic_inflows")(d["stocks"], d["run"], {})
 
 
 def test_the_main_line_reads_a_daily_intake_as_dynamics_and_runs_away(daily):

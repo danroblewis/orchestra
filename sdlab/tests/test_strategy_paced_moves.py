@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from synth import generate, skill
 
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 
 # agents turn over fast (10 hired a step, half leave each step: about 20, 10 to 30 from step to
@@ -33,7 +34,7 @@ def paced(by: str, k: float) -> dict:
 
 def run(d):
     opts = {"eras": None}
-    return load("matrix")(d["stocks"], d["run"], opts), load("paced_moves")(d["stocks"], d["run"], opts)
+    return main_line(d["stocks"], d["run"], opts), load("paced_moves")(d["stocks"], d["run"], opts)
 
 
 def term(f, stock):

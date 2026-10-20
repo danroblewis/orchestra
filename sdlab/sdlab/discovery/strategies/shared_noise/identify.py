@@ -9,7 +9,9 @@ bench to grade each one (tests/bench/candidates.py); nothing else changes.
 
 from __future__ import annotations
 
-from .matrix import identify_one, known_flows
+from .earned_rows import reselect, rss_floor
+from .matrix import finish, identify_one, known_flows
+from ...regression import fit_subset, piece_values, row_sums
 from ...simulate import behaviour_error
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
@@ -33,6 +35,45 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100
     return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections, inputs=inputs) for h in hs) / len(hs)
 
 
+def earn(stocks: list[dict], r: dict, opts: dict) -> dict:
+    """The candidate with each row's pieces earned (earned_rows.reselect, a copy of earned_pieces'
+    rows.py): a row's outside-inflow pieces are dropped, its levels chosen again beside them, when a
+    constant (or no) inflow leaves white residuals and a lower BIC with every change priced as a value
+    and a place; then the model is read off again by finish (the shared noise's move-or-link test and
+    conservation, as before). Without it, chance pieces on a stock with no outside inflow could win the
+    in-sample judge (302 counts-short, docs/research/k8s-302.md)."""
+    rows, ctx = r.get("raw_rows"), r.get("ctx")
+    if not rows or not ctx:
+        return r
+    ids, prev, dy, cfg, L = ctx["ids"], ctx["prev"], ctx["dy"], ctx["cfg"], ctx["L"]
+    names, columns = ctx.get("names") or ids, ctx.get("columns", prev)
+    if ctx.get("extras") or len(names) != columns.shape[0]:
+        return r
+    inputs = list(range(len(ids), len(names))) if ctx.get("inputs") else []
+    floor = rss_floor(prev, dy.shape[1])
+    changed, new = False, []
+    for s, row in enumerate(rows):
+        b = reselect(row, s, ids, stocks, columns if inputs else prev, dy, cfg, L, 2, 0.01, floor, "beside", inputs)
+        if b["name"] == "matrix":
+            new.append(row)
+            continue
+        changed = True
+        nr = b["row"]
+        X, chosen, cuts = nr["X"], nr["set"], nr["cuts"]
+        f = fit_subset(row_sums(dy[s], X, cuts), chosen)
+        coef_l: list[dict] = [{} for _ in range(L)]
+        for q, v in zip(chosen, f.beta):
+            j, lab = nr["col"][q]
+            for c in range(L):
+                if lab < 0 or lab == c:
+                    coef_l[c][names[j]] = coef_l[c].get(names[j], 0.0) + float(v)
+        inflow = [{"from": ctx["at"](p["a"]), "to": ctx["at"](p["b"] - 1), "value": p["v"]} for p in piece_values(dy[s], X, chosen, f.beta, cuts)] if cuts else []
+        new.append({**nr, "coefL": coef_l, "beta": f.beta, "inflow": inflow, "rss": f.rss})
+    if not changed:
+        return r
+    return finish(new, ctx, opts)
+
+
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     keep = opts.pop("candidates", False)                 # the bench grades every candidate
@@ -44,7 +85,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        r = identify_one(stocks, run, {**opts, **v})
+        r = identify_one(stocks, run, {**opts, **v, "keep_rows": True, "input_columns": True})
+        r = earn(stocks, r, {**opts, **v})
+        for k in ("raw_rows", "ctx"):
+            r.pop(k, None)
         e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"),
                   inputs=opts.get("inputs"))
         tried.append({"name": v["name"], "error": e})

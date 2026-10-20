@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 from synth import generate
 
+from sdlab.discovery.identify import identify as main_line
 from sdlab.discovery.strategies import load
 from sdlab.discovery.strategies.earned_pieces.rows import white
 from sdlab.ladder import cases as casemod
@@ -25,7 +26,10 @@ def ladder(case_id: str, variant: str, strategy: str) -> tuple[dict, dict]:
     model = casemod.truth_model(case, variant)
     d = data.load(case, variant)
     opts = {"eras": d["eras"] if len(d.get("eras") or []) > 1 else None}
-    r = load(strategy)(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"]}, opts)
+    # "main_line": the pinned main line (the matrix strategy's own earns its pieces since
+    # docs/research/k8s-302.md, a copy of this strategy's refit)
+    fn = main_line if strategy == "main_line" else load(strategy)
+    r = fn(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"]}, opts)
     return r, score.equations(case, casemod.variant(case, variant)["noise"], model, r["flows"], d)
 
 
@@ -34,7 +38,7 @@ def row(r: dict, sid: str) -> dict:
 
 
 def test_a_stock_with_no_outside_inflow_gets_no_pieces():
-    base, s0 = ladder("004-chain-3", "counts-short", "matrix")
+    base, s0 = ladder("004-chain-3", "counts-short", "main_line")
     assert s0["status"] == "fail" and len(row(base, "C")["inflow"]) > 1
     r, s = ladder("004-chain-3", "counts-short", "earned_pieces")
     assert s["status"] == "pass"
@@ -50,7 +54,7 @@ def test_a_constant_inflow_keeps_one_piece_and_its_drain():
 
 
 def test_an_exit_beside_a_move_is_kept_when_the_rows_together_say_so():
-    _, s0 = ladder("006-chain-exit-middle", "counts-short", "matrix")
+    _, s0 = ladder("006-chain-exit-middle", "counts-short", "main_line")
     assert s0["status"] == "fail"
     r, s = ladder("006-chain-exit-middle", "counts-short", "earned_pieces")
     assert s["status"] == "pass" and any(f["from"] == "A" and f["to"] is None for f in r["flows"])

@@ -20,6 +20,7 @@ import pytest
 from synth import generate, skill
 
 from sdlab.discovery.refine import refine
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 
 
@@ -66,7 +67,7 @@ def _population(seed):
 def test_a_spurious_reinforcing_loop_from_a_one_step_fit_is_shrunk(seed):
     d = _population(seed)
     constant = {"variants": [{"name": "constant inflows", "changes": False}]}
-    m = load("matrix")(d["stocks"], d["run"], constant)
+    m = main_line(d["stocks"], d["run"], constant)
     o = load("output_error")(d["stocks"], d["run"], constant)
     assert o["chosen"].endswith("refined")
     loop_m, loop_o = _k(m["flows"], None, "adults", "adults"), _k(o["flows"], None, "adults", "adults")

@@ -8,7 +8,7 @@ with a note, so its ladder rows are the main line's and say nothing about this d
 
 from __future__ import annotations
 
-from ...identify import identify as _main_line
+from .earned import main_line as _main_line
 
 
 def _identify(stocks, run, opts=None):

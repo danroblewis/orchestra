@@ -28,7 +28,7 @@ import math
 
 import numpy as np
 
-from ...identify import identify as main_line
+from .earned import main_line
 from ...matrix import injected
 from . import counts, onestep, segment
 

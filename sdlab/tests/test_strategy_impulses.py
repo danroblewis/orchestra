@@ -20,6 +20,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from synth import generate, skill  # noqa: E402
 
+from sdlab.discovery.identify import identify as main_line  # noqa: E402  (the pinned main line: the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load  # noqa: E402
 from sdlab.discovery.strategies.impulses import find_pulses  # noqa: E402
 
@@ -49,7 +50,7 @@ def drain(result: dict, stock: str) -> float:
 
 
 def test_main_line_lets_the_drain_absorb_the_deliveries(data):
-    r = load("matrix")(data["stocks"], data["run"], {})
+    r = main_line(data["stocks"], data["run"], {})
     assert drain(r, "doses") > 0.2
     assert skill(r, data) < 0
 
@@ -86,4 +87,4 @@ def test_a_level_shift_is_a_piece_not_pulses():
     assert find_pulses(d["stocks"], d["run"], {}) == {}
     r = load("impulses")(d["stocks"], d["run"], {})
     assert any(f.get("changes") for f in r["flows"])      # the change is in the outside inflow's pieces
-    assert r["flows"] == load("matrix")(d["stocks"], d["run"], {})["flows"]   # no pulses: the main line's model
+    assert r["flows"] == main_line(d["stocks"], d["run"], {})["flows"]   # no pulses: the main line's model

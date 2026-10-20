@@ -142,6 +142,7 @@ def test_an_exact_integral_among_counted_stocks():
     """216 counts-long: the integral's change is exactly setpoint - Y; its inflow is 1 x r, not a
     constant at r's mean with pieces."""
     r, s = _run_inputs("216-distilled-exact-integral-fed-by-stepping-input", "counts-long")
-    assert any(x["rewrite"].startswith("exact row I") for x in r["censored"])
+    # the exact-row rewrite fires only when the main line missed it; since the main line earns its
+    # pieces (earned.py, docs/research/k8s-302.md) it finds 1 x r itself and the rewrite has nothing to do
     into_i = [f for f in r["flows"] if f.get("to") == "I"]
     assert len(into_i) == 1 and into_i[0]["rate"]["terms"] == [{"stock": "r", "k": 1.0}]

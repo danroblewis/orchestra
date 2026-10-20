@@ -19,7 +19,7 @@ from synth import generate, skill
 from sdlab.discovery.curves import grammar
 from sdlab.discovery.effects import only_rows, screen, translate, virtual
 from sdlab.discovery.matrix import identify_one
-from sdlab.discovery.strategies import load
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.runner import effect_value
 
 STEEP = [[0, 0.1], [20, 0.12], [40, 0.25], [55, 0.55], [70, 0.85], [80, 0.97], [90, 1], [100, 1]]
@@ -109,7 +109,7 @@ def test_the_curve_is_recovered_and_becomes_an_effect_on_the_flow(case):
     assert err < 0.08, (name, err, np.round(found[::7], 3), np.round(truth[::7], 3))
 
     # the matrix reads one constant rate (plus links): off by 72% (steep) and 37% (saturating) of k
-    base = load("matrix")(d["stocks"], d["run"], {"eras": d["eras"]})
+    base = main_line(d["stocks"], d["run"], {"eras": d["eras"]})
     assert not any(f.get("effects") for f in base["flows"])
     m_err = float(np.max(np.abs(_rate_per_unit(base["flows"], p["a"], p["b"], p["c"], xs) - truth))) / p["k"]
     assert m_err > 0.3, m_err

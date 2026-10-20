@@ -15,6 +15,7 @@ import pytest
 from synth import generate, skill
 
 from sdlab.discovery.strategies.recession.drains import quiet_steps
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 
 
@@ -39,7 +40,7 @@ def drain(r: dict, stock: str) -> float:
 @pytest.mark.parametrize("seed", [1, 2])
 def test_the_drain_is_read_off_the_quiet_steps_where_the_main_line_is_biased(seed):
     d = bursts(seed)
-    base = load("matrix")(d["stocks"], d["run"], {})
+    base = main_line(d["stocks"], d["run"], {})
     r = load("recession")(d["stocks"], d["run"], {})
     # the main line: the inbox drains 0.33-0.37 (truth 0.1), and runs off
     assert drain(base, "inbox") > 0.3
@@ -53,7 +54,7 @@ def test_the_drain_is_read_off_the_quiet_steps_where_the_main_line_is_biased(see
 def test_an_intake_that_never_stops_gives_the_main_line_result():
     # 20 steps at 9, 6 or 12, then 20 at 4: the main line gets this right (drain 0.3 within 0.01)
     d = bursts(on=(9, 6, 12), on_len=20, off_len=20, off=4, k=0.3)
-    base = load("matrix")(d["stocks"], d["run"], {})
+    base = main_line(d["stocks"], d["run"], {})
     r = load("recession")(d["stocks"], d["run"], {})
     assert abs(drain(base, "inbox") - 0.3) <= 0.01
     assert r["flows"] == base["flows"] or skill(r, d) >= skill(base, d) - 0.005

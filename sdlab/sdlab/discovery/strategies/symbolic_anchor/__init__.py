@@ -1,52 +1,110 @@
-"""Unannounced eras found as recurring regimes in the rows' coefficients (discovery/regimes.py), then
-fitted as announced eras are: the main line's candidates, plus its "numbers per era" candidates run
-again with the regimes merged into the eras; the judge picks among them all.
+"""Symbolic effects accepted only when inflow pieces cannot have faked them (experiment
+symbolic-addition-judge, docs/research/symbolic-addition-judge.md).
 
-Options (opts): "era_levels" ("allowed": any level may take a number per configuration; default
-"chosen", as the main line), "coefficient_regimes" (False: a regime that changes only the constant
-is kept too), "max_regimes", "min_spells", "max_processes", "share", "judge_margin" (a candidate with
-regimes must beat the main line's judge error by this share: regimes add numbers, and a tie is
-not evidence), "coef_within_pieces" (the coefficient test with the row's inflow pieces taken out).
+The main line's model is the base. The effect search of strategy "symbolic" (effects.py: curves of a
+stock's level screened on what the rows leave unexplained, fitted as virtual stocks, translated into
+SD Lab effects) proposes additions; every variant is fitted with them, and a candidate is accepted
+only if addition.addition_test says that, with an outside inflow neither model tailored (by default
+a coarse inflow re-measured under each model's own dynamics frozen, into the stocks the base feeds),
+it predicts better over 5/20/100 steps than the base by more than the judge's own noise, AND that it
+also does better with its own pieces than the base with the base's (it must not need its pieces to
+look good, nor look good only once pieces are taken away). Measured: the base's own pieces
+("anchor") count a true effect twice and refuse every one; refit alone lets a candidate of another
+variant (constant inflows) win once everyone's inflow is coarse, with disastrous long runs.
+
+opts (or SDLAB_ANCHOR_OPTS, JSON, for the bench's ablations):
+  inflow     "refit" (default): a coarse inflow re-measured for each model, dynamics frozen, into the
+             stocks the base feeds; "anchor": the base's own pieces for both; "remeasure": the base's
+             piece times with values re-measured under each model's dynamics; "own": each its own
+             (plain symbolic's judge, with the noise margin)
+  also       inflows under which the addition must also gain (more than nothing): default ["own"]
+  mode       "set" (default): the screen's effects together; "each": one at a time, greedily, each
+             judged against the model with the ones already accepted
+  search     "all" (default): every variant with the effects; "same": the base's variant only
+  pick       "test" (default): every candidate tested, the largest gain that passes; "judge": the
+             main judge picks one candidate, which is tested
+  z, floor   the margin: the gain must exceed z bootstrap spreads (default 2) and floor (default 0.02)
+  refit_len  the shortest piece of the refitted inflow (default: a fiftieth of the run, at least 20)
+  pieces     also require the addition's pieces to vary no more than the base's (default False)
 """
 
 from __future__ import annotations
 
-from ..identify import VARIANTS, identify as main_line, judge
-from ..matrix import identify_one, known_flows
-from ..regimes import eras_with, find
+import json
+import os
 
-DEFAULTS = {"era_levels": "allowed"}
+from ...addition import addition_test
+from ...effects import only_rows, screen, translate, virtual
+from ...identify import VARIANTS, judge
+from .earned import main_line as matrix_identify
+from ...matrix import identify_one, known_flows
+
+DEFAULTS = {"inflow": "refit", "mode": "set", "search": "all", "pick": "test", "z": 2.0, "floor": 0.02, "pieces": False, "also": ["own"], "refit_len": None}
+
+
+def _label(cols: list[dict]) -> str:
+    return " + ".join(f"{c['base'] or 1} x {c['curve'].name}({c['stock']})" for c in cols)
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    opts = {**DEFAULTS, **(opts or {})}
-    base_opts = {k: v for k, v in opts.items() if k not in ("era_levels",)}
-    base = main_line(stocks, run, dict(base_opts))
-    base_err = min(x["error"] for x in base["tried"])
-    if not base.get("matrix"):
+    opts = {**DEFAULTS, **json.loads(os.environ.get("SDLAB_ANCHOR_OPTS") or "{}"), **(opts or {})}
+    keep = opts.pop("candidates", False)                  # the bench grades every candidate
+    ids = [s["id"] for s in stocks]
+    extra = known_flows(opts["known"], ids, run["t"]) if opts.get("known") else []
+    fit_opts = {k: v for k, v in opts.items() if k not in DEFAULTS}
+    base = matrix_identify(stocks, run, {**fit_opts, "candidates": keep})
+    cols = screen(stocks, run, fit_opts)
+    base["effects_tried"] = [f"{c['base'] or 1} x {c['curve'].name}({c['stock']}) {c['score']:.0f}" for c in cols]
+    base["additions"] = []
+    if not cols or not base["flows"]:
         return base
-    processes = find(stocks, run, base["matrix"], opts)
-    base["regimes"] = [{"rows": p["rows"], "K": p["K"], "switches": int((p["z"][1:] != p["z"][:-1]).sum()), "gain": round(p["gain"], 1), "coef_gain": round(p["coef_gain"], 1)} for p in processes]
-    if not processes:
+    has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
+    if opts["search"] == "all":
+        variants = [v for v in VARIANTS if has_eras or not v.get("split_eras")]
+    else:
+        variants = [v for v in VARIANTS if v["name"] == base["chosen"]]
+
+    def fit(group: list[dict]) -> list[tuple[str, list[dict], float]]:
+        """Every candidate with these effects: (name, flows, main judge's error)."""
+        vstocks, vrun, meta = virtual(stocks, run, group)
+        out = []
+        for plain in (True, False):
+            rows = only_rows(meta, ids, plain=plain)
+            for v in variants:
+                r = identify_one(vstocks, vrun, {**fit_opts, **v, "only_rows": rows})
+                flows = translate(r["flows"], meta, stocks)
+                name = f"effects {_label(group)}{'' if plain else ' (curved level only)'}, {v['name']}"
+                e = judge(flows + extra if flows else [], stocks, run)
+                out.append((name, flows, e))
+                base["tried"].append({"name": name, "error": e})
+                if keep:
+                    base.setdefault("candidates", []).append({"name": name, "error": e, "flows": flows})
+        return out
+
+    current, chosen, accepted = base["flows"], base["chosen"], []
+    groups = [cols] if opts["mode"] == "set" else [[c] for c in cols]
+    for g in groups:
+        cands = [c for c in fit(accepted + g) if c[1]]
+        if not cands:
+            continue
+        if opts["pick"] == "judge":                       # the main judge picks one; the test decides
+            cands = [min(cands, key=lambda c: c[2])]
+        tests = []
+        for name, flows, _ in cands:                      # else each is tested; the largest gain that passes
+            test = addition_test(current, flows, stocks, run, inflow=opts["inflow"], z=opts["z"], floor=opts["floor"],
+                                 pieces=opts["pieces"], extra=extra, refit_len=opts["refit_len"])
+            for other in opts["also"] if test["accept"] else []:
+                gain = addition_test(current, flows, stocks, run, inflow=other, extra=extra, refit_len=opts["refit_len"])["gain"]
+                test[f"gain {other}"] = gain
+                test["accept"] = test["accept"] and gain > 0
+            tests.append((test, name, flows))
+        test, name, flows = max(tests, key=lambda x: (x[0]["accept"], x[0]["gain"]))
+        base["additions"].append({"effects": _label(g), "candidate": name, **test})
+        if test["accept"]:
+            current, chosen, accepted = flows, name, accepted + g
+    if not accepted:
         return base
-    extra = known_flows(opts["known"], [s["id"] for s in stocks], run["t"]) if opts.get("known") else []
-    best, best_err, tried = base, base_err, list(base["tried"])
-    # each process of regimes on its own, and all of them together
-    sets = [[p] for p in processes] + ([processes] if len(processes) > 1 and opts.get("combine", True) else [])
-    for ps in sets:
-        eras = eras_with(ps, opts.get("eras"), run["t"])
-        tag = "+".join(",".join(p["rows"]) for p in ps)
-        for v in VARIANTS:
-            if not v.get("split_eras"):
-                continue
-            r = identify_one(stocks, run, {**opts, **v, "eras": eras})
-            e = judge(r["flows"] + extra if r["flows"] else [], stocks, run)
-            name = v["name"].replace("numbers per era", f"numbers per era and regime ({tag})")
-            tried.append({"name": name, "error": e})
-            if e < best_err and e < base_err * (1 - opts.get("judge_margin", 0.1)):
-                best, best_err = {**r, "chosen": name, "regimes": base["regimes"]}, e
-    best["tried"] = tried
-    return best
+    return {**base, "flows": current, "chosen": chosen}
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -64,7 +122,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is

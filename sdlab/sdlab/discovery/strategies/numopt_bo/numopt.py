@@ -271,7 +271,8 @@ def search(stocks: list[dict], run: dict, base: list[dict], method: str, opts: d
 def identify_with(method: str, stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """identify() (the matrix method, candidates chosen by behaviour), then search() from its
     model; the searched model is kept only if identify()'s judge prefers it."""
-    from ...identify import identify, judge
+    from ...identify import judge
+    from .earned import main_line as identify
 
     opts = dict(opts or {})
     nopts = {**(opts.pop("numopt", None) or {})}

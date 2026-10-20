@@ -1,152 +1,160 @@
-"""Experiment mass_balance (docs/research/mass-balance-hidden.md): hidden stocks reconstructed from a
-unit's mass balance (sdlab/discovery/balance.py), on top of the main line.
+"""Outside inflows as a repeating profile (docs/research/periodic-inflows.md).
 
-The main line's model is found as usual. Then, while one helps: every pair (A loses to outside, B of
-A's unit gets things from outside) is turned into A -> H -> B with H's level reconstructed from the
-balance; a pair that does not balance (H drifts, goes negative, or A would send more than it loses)
-is rejected before it is judged. A proposal is accepted when the model with it behaves better on the
-data than the model it came from with B's arrivals held at their mean (with its pieces, fitted to
-this run, the old model always looks better on the run). The found model's unmeasured stocks carry
-their own estimated levels (result["inferred_levels"]): what the model itself gives from the
-measured levels (sdlab/discovery/observer.py).
-
-opts: "mb_margin" (accept only below margin x the reference's error; default 1.0), "mb_against"
-("means": B's arrivals at their mean, the default; "found": the model as found), "mb_max" (hidden
-stocks at most; default 3), "mb_rest" (also try keeping what A loses beyond
-what H takes as a loss to outside; default False: conservation first, A loses only what H takes, as
-the main line reads a drain off what receivers take), "mb_tol" (with mb_rest, the rest is kept only
-if that behaves better by more than this share; default 0.05), "mb_all" (try every candidate of the main
-line, not only the chosen one; default False), "mb_trace" (print every proposal).
+The main line first. Then each stock whose outside inflow is better told, by BIC, as one period's
+profile repeated plus a slow level (discovery/periodic.py) has that inflow taken out as known, and the
+main line runs again on the rest: its rows' levels are fitted beside the profile instead of beside
+pieces that could follow anything, and whatever the profile leaves is still free to become pieces.
+The profile is written into the result as an ordinary outside inflow in segments (with the pieces the
+second pass found added in), so the simulator and the page are unchanged. Without a period that pays,
+the result is the main line's.
 """
 
 from __future__ import annotations
 
-from ..balance import arrivals, pairs, propose
-from ..identify import VARIANTS
-from ..identify import identify as main_line
-from ..identify import judge as main_judge
-from ..matrix import identify_one
-from ..observer import observe
-from ..simulate import behaviour_error
+import numpy as np
 
-HORIZONS = (5, 20, 100)
+from .earned import main_line as matrix_identify
+from ...identify import VARIANTS, judge
+from ...matrix import configurations, identify_one, known_changes, known_flows
+from ...periodic import find, refit
 
 
-def judge(flows: list[dict], stocks: list[dict], run: dict, inferred: dict | None = None) -> float:
-    hs = [h for h in HORIZONS if h < len(run["t"]) / 4]
-    if not flows or not hs:
-        return float("inf")
-    ids = [s["id"] for s in stocks]
-    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, inferred=inferred) for h in hs) / len(hs)
-
-
-def at_means(flows: list[dict], idx: list[int]) -> list[dict]:
-    """The flows with the arrivals in idx (pieces) held at their mean."""
-    out = []
-    for i, f in enumerate(flows):
-        if i in idx and f.get("inflow"):
-            w = [g["to"] - g["from"] + 1 for g in f["inflow"]]
-            m = sum(g["value"] * n for g, n in zip(f["inflow"], w)) / max(1, sum(w))
-            f = {k: v for k, v in f.items() if k not in ("inflow", "changes")}
-            f["rate"] = {"form": "constant", "value": m}
-        out.append(f)
+def _series(flow: dict, times: np.ndarray) -> np.ndarray:
+    segs = flow["inflow"]
+    out = np.full(times.shape[0], float(segs[-1]["value"]))
+    for g in reversed(segs):
+        m = (times >= g["from"]) & (times <= g["to"])
+        out[m] = float(g["value"])
     return out
 
 
-def augment(flows: list[dict], stocks: list[dict], run: dict, opts: dict, tried: list) -> tuple[list[dict], dict, list[str]]:
-    """The flows with every hidden stock the balance supports (accepted one at a time, best first),
-    their estimated levels, and the receivers whose arrivals they replaced."""
+def _segments(times: np.ndarray, v: np.ndarray) -> list[dict]:
+    v = np.round(v, 4)
+    out = []
+    for k in range(v.shape[0]):
+        if out and out[-1]["value"] == v[k]:
+            out[-1]["to"] = float(times[k])
+        else:
+            out.append({"from": float(times[k]), "to": float(times[k]), "value": float(v[k])})
+    return out
+
+
+def with_profiles(flows: list[dict], profiles: dict, t: list) -> list[dict]:
+    """flows with each profiled stock's outside inflow = its profile + the pieces found beside it."""
+    times = np.asarray(t[1:], dtype=float)
+    out = []
+    total = {s: fp["series"].copy() for s, fp in profiles.items()}
+    for f in flows:
+        if f.get("inflow") and not f.get("from") and f.get("to") in total:
+            total[f["to"]] += _series(f, times)
+            continue
+        if f.get("inflow") and f.get("from") in total and not f.get("to"):
+            total[f["from"]] -= _series(f, times)
+            continue
+        out.append(f)
+    for s, v in total.items():
+        mean = float(v.mean())
+        segs = _segments(times, v)
+        if mean >= 0:
+            out.append({"from": None, "to": s, "ratio": 1, "rate": {"form": "constant", "value": round(mean, 4)}, "rates": [{"form": "constant", "value": round(mean, 4)}],
+                        "perStep": mean, "nearly": [], "bothWays": False, "inflow": segs, "changes": len(segs) - 1, "period": profiles[s]["P"]})
+        else:
+            neg = [{**g, "value": -g["value"]} for g in segs]
+            out.append({"from": s, "to": None, "ratio": 1, "rate": {"form": "constant", "value": round(-mean, 4)}, "rates": [{"form": "constant", "value": round(-mean, 4)}],
+                        "perStep": -mean, "nearly": [], "bothWays": False, "inflow": neg, "changes": len(neg) - 1, "period": profiles[s]["P"]})
+    return out
+
+
+def reader_columns(prev: np.ndarray, ids: list[str], t: list, opts: dict) -> tuple[np.ndarray, list[str]]:
+    """Every series a row's numbers may read, and their names: the stocks' levels at the start of each
+    step, then the measured inputs (opts "inputs") during it (the value at the step's end), as the
+    matrix method builds them. An input is a known regressor of the row, never a stock."""
+    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids]
+    if not inputs:
+        return prev, list(ids)
+    return np.vstack([prev] + [v[None, :] for _, v in inputs]), list(ids) + [k for k, _ in inputs]
+
+
+def remeasure(r: dict, profiles: dict, stocks: list[dict], run: dict, opts: dict) -> None:
+    """Each profile measured again beside the numbers its row ends with (conservation may have
+    changed its drain after the profile was measured), with the pieces found beside it kept."""
     ids = [s["id"] for s in stocks]
-    levels, receivers = {}, []
-    trace = opts.get("mb_trace")
-    margin = opts.get("mb_margin", 1.0)
-    tol = opts.get("mb_tol", 0.05)
-    for _ in range(opts.get("mb_max", 3)):
-        base = judge(flows, stocks, run, levels)
-        best = None
-        for a, b in pairs(flows, stocks):
-            p = propose(flows, stocks, run, a, b, opts)
-            if p is None:
-                continue
-            rec = p.get("rec") or {}
-            if p["flows"] is None:
-                tried.append({"pair": f"{a}>{b}", "why": p["why"]})
-                if trace:
-                    print(f"  {a} -> ? -> {b}: rejected ({p['why']})")
-                continue
-            h = p["hidden"]
-            ref = base if opts.get("mb_against") == "found" else judge(at_means(flows, arrivals(flows, a, b)), stocks, run, levels)
-            pick = None
-            variants = [("all to H", p.get("alt") or p["flows"])]
-            if opts.get("mb_rest") and p.get("alt"):
-                variants.append(("rest to outside", p["flows"]))
-            for name, fl in variants:
-                est = observe(fl, ids, run["t"], run["levels"], [h], {h: p["level"][0]})
-                inferred = {**levels, **est}
-                e = judge(fl, stocks, run, inferred)
-                tried.append({"pair": f"{a}>{b}", "variant": name, "error": e, "against": ref, "alpha": rec.get("alpha"), "d": rec.get("d")})
-                if trace:
-                    print(f"  {a} -> H -> {b} ({name}): alpha {rec['alpha']:.3f}, d {rec['d']:.4f}, H0 {rec['h0']:.1f}; error {e:.4f} vs {ref:.4f} (found {base:.4f})")
-                # conservation first: A loses only what H takes unless the data clearly says otherwise
-                if pick is None or (1 + tol) * e < pick[0]:
-                    pick = (e, fl, inferred, b)
-            if pick and pick[0] < margin * ref and (best is None or pick[0] < best[0]):
-                best = pick
-        if best is None:
-            break
-        flows, levels = best[1], best[2]
-        receivers.append(best[3])
-    return flows, levels, receivers
+    t = run["t"]
+    T = len(t) - 1
+    times = np.asarray(t[1:], dtype=float)
+    lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
+    prev, dy = lv[:, :-1], np.diff(lv, axis=1)
+    columns, names = reader_columns(prev, ids, t, opts)
+    if opts.get("known"):
+        dy = dy - known_changes(opts["known"], ids, len(t))[:, 1:]
+    conf = configurations(opts.get("eras"), t) if r.get("eras") else None
+    cfg = conf[1] if conf else np.zeros(T, dtype=int)
+    rows = {m["id"]: m for m in r.get("matrix") or []}
+    for s, fp in profiles.items():
+        row = rows.get(s)
+        if row is None:
+            continue
+        k = ids.index(s)
+        res = dy[k].copy()
+        for c, coef in enumerate(row["coefL"]):
+            m = cfg == c
+            for j, b in coef.items():
+                res[m] -= b * columns[names.index(j)][m]
+        for f in r["flows"]:
+            if f.get("inflow") and not f.get("from") and f.get("to") == s:
+                res -= _series(f, times)
+            elif f.get("inflow") and f.get("from") == s and not f.get("to"):
+                res += _series(f, times)
+        fp["series"] = refit(res, fp)
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
-    tried: list = []
-    if not opts.get("mb_all"):
-        r = main_line(stocks, run, opts)
-        flows, levels, _ = augment(r["flows"], stocks, run, opts, tried)
-    else:
-        r, flows, levels = every_candidate(stocks, run, opts, tried)
-    r["flows"] = flows
-    if levels:
-        r["inferred_levels"] = levels
-        r["chosen"] = f"{r.get('chosen')} + {len(levels)} hidden from the balance"
-    r["balance"] = tried
-    return r
-
-
-def every_candidate(stocks: list[dict], run: dict, opts: dict, tried: list):
-    """The balance tried on every candidate of the main line (a constant-inflow candidate may have
-    nothing to pair where a changing-inflow one does). The chosen candidate (as the main line chooses)
-    is kept unless another candidate with hidden stocks behaves better than it does with the arrivals
-    those stocks replaced held at their mean."""
+    profiles = find(stocks, run, opts)
+    if not profiles:
+        r = matrix_identify(stocks, run, opts)
+        r["periods"] = {}
+        return r
+    n = len(run["t"])
+    ids = [s["id"] for s in stocks]
+    known = {k: list(np.nan_to_num(np.asarray(v, dtype=float))[:n]) + [0.0] * max(0, n - len(v)) for k, v in (opts.get("known") or {}).items()}
+    for s, fp in profiles.items():
+        base = np.asarray(known.get(s) or [0.0] * n, dtype=float)
+        base[1:] += fp["series"]
+        known[s] = list(base)
+    # the main line's candidates, each with the profiles taken out as known; a profiled row's inflow
+    # varies, so conservation may set its drain from its receivers, as for a row with pieces. Each
+    # candidate's profiles are measured again beside its numbers before it is judged.
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
-    cands = []
-    for v in VARIANTS:
+    extra = known_flows(opts["known"], ids, run["t"]) if opts.get("known") else []
+    variants = opts.pop("variants", None) or VARIANTS
+    best, tried = None, []
+    for v in variants:
         if v.get("split_eras") and not has_eras:
             continue
-        c = identify_one(stocks, run, {**opts, **v})
-        cands.append((main_judge(c["flows"], stocks, run) if c["flows"] else float("inf"), v["name"], c))
-    e0, name0, r = min(cands, key=lambda x: x[0])
-    r["chosen"], r["tried"] = name0, [{"name": n, "error": e} for e, n, _ in cands]
-    flows, levels, _ = augment(r["flows"], stocks, run, opts, tried)
-    best = (judge(flows, stocks, run, levels), flows, levels, name0) if levels else None
-    for e, name, c in cands:
-        if name == name0 or not c["flows"]:
-            continue
-        f2, l2, recv = augment(c["flows"], stocks, run, opts, [])
-        if not l2:
-            continue
-        e2 = judge(f2, stocks, run, l2)
-        ref = judge(at_means(r["flows"], [i for i, f in enumerate(r["flows"]) if f.get("to") in recv and f.get("from") is None and not f.get("driver")]), stocks, run)
-        if opts.get("mb_trace"):
-            print(f"  candidate {name}: {len(l2)} hidden, error {e2:.4f} vs chosen at means {ref:.4f}")
-        if e2 < ref and (best is None or e2 < best[0]):
-            best = (e2, f2, l2, name)
-    if best is None:
-        return r, r["flows"], {}
-    r["chosen"] = best[3]
-    return r, best[1], best[2]
+        r = identify_one(stocks, run, {**opts, **v, "known": known, "varying_inflow": set(profiles)})
+        own = {s: dict(fp) for s, fp in profiles.items()}
+        remeasure(r, own, stocks, run, opts)
+        r["flows"] = with_profiles(r["flows"], own, run["t"])
+        e = judge(r["flows"] + extra, stocks, run)
+        tried.append({"name": v["name"], "error": e})
+        if best is None or e < best[1]:
+            best = (r, e, v["name"])
+    r = best[0]
+    r["chosen"], r["tried"] = best[2], tried
+    if opts.get("against_main_line", True):
+        # the main line's own choice competes on the same terms: a profile that takes an internal
+        # flow (a rate that repeats, times a level) makes the model run away, and the judge sees it
+        m = matrix_identify(stocks, run, {**opts, "variants": variants})
+        e = min(x["error"] for x in m["tried"])
+        if e < best[1]:
+            m["tried"] = tried + [{"name": "main line: " + x["name"], "error": x["error"]} for x in m["tried"]]
+            m["periods"] = {}
+            m["rejected_periods"] = {s: fp["P"] for s, fp in profiles.items()}
+            return m
+        r["tried"] = tried + [{"name": "main line: " + x["name"], "error": x["error"]} for x in m["tried"]]
+    r["periods"] = {s: {"period": fp["P"], "segments": len(fp["segments"]), "slow": len(fp["slow"]) - 1} for s, fp in profiles.items()}
+    return r
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -164,7 +172,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is

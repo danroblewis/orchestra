@@ -44,7 +44,7 @@ import math
 import numpy as np
 
 from ...caps import flow_amounts
-from ...identify import identify as main_line
+from .earned import main_line
 from ...matrix import injected
 from ...simulate import Model, behaviour_error
 from . import cap, exact, floor, gap, onestep

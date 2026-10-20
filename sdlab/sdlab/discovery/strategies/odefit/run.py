@@ -8,7 +8,7 @@ import time
 
 import numpy as np
 
-from ...identify import identify as mainline
+from .earned import main_line as mainline
 from ...simulate import behaviour_error
 from . import compare as C
 from . import extend as E

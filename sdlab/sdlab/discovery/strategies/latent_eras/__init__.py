@@ -1,160 +1,53 @@
-"""Outside inflows as a repeating profile (docs/research/periodic-inflows.md).
+"""Unannounced eras found as recurring regimes in the rows' coefficients (discovery/regimes.py), then
+fitted as announced eras are: the main line's candidates, plus its "numbers per era" candidates run
+again with the regimes merged into the eras; the judge picks among them all.
 
-The main line first. Then each stock whose outside inflow is better told, by BIC, as one period's
-profile repeated plus a slow level (discovery/periodic.py) has that inflow taken out as known, and the
-main line runs again on the rest: its rows' levels are fitted beside the profile instead of beside
-pieces that could follow anything, and whatever the profile leaves is still free to become pieces.
-The profile is written into the result as an ordinary outside inflow in segments (with the pieces the
-second pass found added in), so the simulator and the page are unchanged. Without a period that pays,
-the result is the main line's.
+Options (opts): "era_levels" ("allowed": any level may take a number per configuration; default
+"chosen", as the main line), "coefficient_regimes" (False: a regime that changes only the constant
+is kept too), "max_regimes", "min_spells", "max_processes", "share", "judge_margin" (a candidate with
+regimes must beat the main line's judge error by this share: regimes add numbers, and a tie is
+not evidence), "coef_within_pieces" (the coefficient test with the row's inflow pieces taken out).
 """
 
 from __future__ import annotations
 
-import numpy as np
+from ...identify import VARIANTS, judge
+from .earned import main_line
+from ...matrix import identify_one, known_flows
+from ...regimes import eras_with, find
 
-from ..identify import identify as matrix_identify
-from ..identify import VARIANTS, judge
-from ..matrix import configurations, identify_one, known_changes, known_flows
-from ..periodic import find, refit
-
-
-def _series(flow: dict, times: np.ndarray) -> np.ndarray:
-    segs = flow["inflow"]
-    out = np.full(times.shape[0], float(segs[-1]["value"]))
-    for g in reversed(segs):
-        m = (times >= g["from"]) & (times <= g["to"])
-        out[m] = float(g["value"])
-    return out
-
-
-def _segments(times: np.ndarray, v: np.ndarray) -> list[dict]:
-    v = np.round(v, 4)
-    out = []
-    for k in range(v.shape[0]):
-        if out and out[-1]["value"] == v[k]:
-            out[-1]["to"] = float(times[k])
-        else:
-            out.append({"from": float(times[k]), "to": float(times[k]), "value": float(v[k])})
-    return out
-
-
-def with_profiles(flows: list[dict], profiles: dict, t: list) -> list[dict]:
-    """flows with each profiled stock's outside inflow = its profile + the pieces found beside it."""
-    times = np.asarray(t[1:], dtype=float)
-    out = []
-    total = {s: fp["series"].copy() for s, fp in profiles.items()}
-    for f in flows:
-        if f.get("inflow") and not f.get("from") and f.get("to") in total:
-            total[f["to"]] += _series(f, times)
-            continue
-        if f.get("inflow") and f.get("from") in total and not f.get("to"):
-            total[f["from"]] -= _series(f, times)
-            continue
-        out.append(f)
-    for s, v in total.items():
-        mean = float(v.mean())
-        segs = _segments(times, v)
-        if mean >= 0:
-            out.append({"from": None, "to": s, "ratio": 1, "rate": {"form": "constant", "value": round(mean, 4)}, "rates": [{"form": "constant", "value": round(mean, 4)}],
-                        "perStep": mean, "nearly": [], "bothWays": False, "inflow": segs, "changes": len(segs) - 1, "period": profiles[s]["P"]})
-        else:
-            neg = [{**g, "value": -g["value"]} for g in segs]
-            out.append({"from": s, "to": None, "ratio": 1, "rate": {"form": "constant", "value": round(-mean, 4)}, "rates": [{"form": "constant", "value": round(-mean, 4)}],
-                        "perStep": -mean, "nearly": [], "bothWays": False, "inflow": neg, "changes": len(neg) - 1, "period": profiles[s]["P"]})
-    return out
-
-
-def reader_columns(prev: np.ndarray, ids: list[str], t: list, opts: dict) -> tuple[np.ndarray, list[str]]:
-    """Every series a row's numbers may read, and their names: the stocks' levels at the start of each
-    step, then the measured inputs (opts "inputs") during it (the value at the step's end), as the
-    matrix method builds them. An input is a known regressor of the row, never a stock."""
-    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids]
-    if not inputs:
-        return prev, list(ids)
-    return np.vstack([prev] + [v[None, :] for _, v in inputs]), list(ids) + [k for k, _ in inputs]
-
-
-def remeasure(r: dict, profiles: dict, stocks: list[dict], run: dict, opts: dict) -> None:
-    """Each profile measured again beside the numbers its row ends with (conservation may have
-    changed its drain after the profile was measured), with the pieces found beside it kept."""
-    ids = [s["id"] for s in stocks]
-    t = run["t"]
-    T = len(t) - 1
-    times = np.asarray(t[1:], dtype=float)
-    lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
-    prev, dy = lv[:, :-1], np.diff(lv, axis=1)
-    columns, names = reader_columns(prev, ids, t, opts)
-    if opts.get("known"):
-        dy = dy - known_changes(opts["known"], ids, len(t))[:, 1:]
-    conf = configurations(opts.get("eras"), t) if r.get("eras") else None
-    cfg = conf[1] if conf else np.zeros(T, dtype=int)
-    rows = {m["id"]: m for m in r.get("matrix") or []}
-    for s, fp in profiles.items():
-        row = rows.get(s)
-        if row is None:
-            continue
-        k = ids.index(s)
-        res = dy[k].copy()
-        for c, coef in enumerate(row["coefL"]):
-            m = cfg == c
-            for j, b in coef.items():
-                res[m] -= b * columns[names.index(j)][m]
-        for f in r["flows"]:
-            if f.get("inflow") and not f.get("from") and f.get("to") == s:
-                res -= _series(f, times)
-            elif f.get("inflow") and f.get("from") == s and not f.get("to"):
-                res += _series(f, times)
-        fp["series"] = refit(res, fp)
+DEFAULTS = {"era_levels": "allowed"}
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    opts = dict(opts or {})
-    profiles = find(stocks, run, opts)
-    if not profiles:
-        r = matrix_identify(stocks, run, opts)
-        r["periods"] = {}
-        return r
-    n = len(run["t"])
-    ids = [s["id"] for s in stocks]
-    known = {k: list(np.nan_to_num(np.asarray(v, dtype=float))[:n]) + [0.0] * max(0, n - len(v)) for k, v in (opts.get("known") or {}).items()}
-    for s, fp in profiles.items():
-        base = np.asarray(known.get(s) or [0.0] * n, dtype=float)
-        base[1:] += fp["series"]
-        known[s] = list(base)
-    # the main line's candidates, each with the profiles taken out as known; a profiled row's inflow
-    # varies, so conservation may set its drain from its receivers, as for a row with pieces. Each
-    # candidate's profiles are measured again beside its numbers before it is judged.
-    has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
-    extra = known_flows(opts["known"], ids, run["t"]) if opts.get("known") else []
-    variants = opts.pop("variants", None) or VARIANTS
-    best, tried = None, []
-    for v in variants:
-        if v.get("split_eras") and not has_eras:
-            continue
-        r = identify_one(stocks, run, {**opts, **v, "known": known, "varying_inflow": set(profiles)})
-        own = {s: dict(fp) for s, fp in profiles.items()}
-        remeasure(r, own, stocks, run, opts)
-        r["flows"] = with_profiles(r["flows"], own, run["t"])
-        e = judge(r["flows"] + extra, stocks, run)
-        tried.append({"name": v["name"], "error": e})
-        if best is None or e < best[1]:
-            best = (r, e, v["name"])
-    r = best[0]
-    r["chosen"], r["tried"] = best[2], tried
-    if opts.get("against_main_line", True):
-        # the main line's own choice competes on the same terms: a profile that takes an internal
-        # flow (a rate that repeats, times a level) makes the model run away, and the judge sees it
-        m = matrix_identify(stocks, run, {**opts, "variants": variants})
-        e = min(x["error"] for x in m["tried"])
-        if e < best[1]:
-            m["tried"] = tried + [{"name": "main line: " + x["name"], "error": x["error"]} for x in m["tried"]]
-            m["periods"] = {}
-            m["rejected_periods"] = {s: fp["P"] for s, fp in profiles.items()}
-            return m
-        r["tried"] = tried + [{"name": "main line: " + x["name"], "error": x["error"]} for x in m["tried"]]
-    r["periods"] = {s: {"period": fp["P"], "segments": len(fp["segments"]), "slow": len(fp["slow"]) - 1} for s, fp in profiles.items()}
-    return r
+    opts = {**DEFAULTS, **(opts or {})}
+    base_opts = {k: v for k, v in opts.items() if k not in ("era_levels",)}
+    base = main_line(stocks, run, dict(base_opts))
+    base_err = min(x["error"] for x in base["tried"])
+    if not base.get("matrix"):
+        return base
+    processes = find(stocks, run, base["matrix"], opts)
+    base["regimes"] = [{"rows": p["rows"], "K": p["K"], "switches": int((p["z"][1:] != p["z"][:-1]).sum()), "gain": round(p["gain"], 1), "coef_gain": round(p["coef_gain"], 1)} for p in processes]
+    if not processes:
+        return base
+    extra = known_flows(opts["known"], [s["id"] for s in stocks], run["t"]) if opts.get("known") else []
+    best, best_err, tried = base, base_err, list(base["tried"])
+    # each process of regimes on its own, and all of them together
+    sets = [[p] for p in processes] + ([processes] if len(processes) > 1 and opts.get("combine", True) else [])
+    for ps in sets:
+        eras = eras_with(ps, opts.get("eras"), run["t"])
+        tag = "+".join(",".join(p["rows"]) for p in ps)
+        for v in VARIANTS:
+            if not v.get("split_eras"):
+                continue
+            r = identify_one(stocks, run, {**opts, **v, "eras": eras})
+            e = judge(r["flows"] + extra if r["flows"] else [], stocks, run)
+            name = v["name"].replace("numbers per era", f"numbers per era and regime ({tag})")
+            tried.append({"name": name, "error": e})
+            if e < best_err and e < base_err * (1 - opts.get("judge_margin", 0.1)):
+                best, best_err = {**r, "chosen": name, "regimes": base["regimes"]}, e
+    best["tried"] = tried
+    return best
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -172,7 +65,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is

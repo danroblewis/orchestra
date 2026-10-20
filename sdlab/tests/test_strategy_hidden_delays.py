@@ -20,6 +20,7 @@ from synth import generate, skill
 
 from sdlab.discovery.hidden import delayed
 from sdlab.discovery.simulate import behaviour_error
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 
 _GRADE = Path(__file__).resolve().parent / "bench" / "grade.py"
@@ -75,7 +76,7 @@ def test_hidden_delays_recovers_the_unmeasured_stock(data):
 
 
 def test_the_matrix_reads_the_arrivals_as_pieces_and_misses(data):
-    r = load("matrix")(data["stocks"], data["run"], {"eras": data["eras"]})
+    r = main_line(data["stocks"], data["run"], {"eras": data["eras"]})
     assert any(f["to"] == "b" and f["from"] is None and f.get("inflow") for f in r["flows"])
     assert skill(r, data, 20) < 0.5                                         # found -25%
 

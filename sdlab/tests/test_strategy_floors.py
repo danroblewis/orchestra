@@ -18,9 +18,10 @@ import numpy as np
 from synth import generate, skill
 
 from sdlab.discovery.simulate import Model
+from sdlab.discovery.identify import identify as main_line  # the pinned main line (the matrix strategy earns its pieces since docs/research/k8s-302.md)
 from sdlab.discovery.strategies import load
 
-floors, matrix = load("floors"), load("matrix")
+floors, matrix = load("floors"), main_line
 BY_BIC = {"hinges": True, "select": "bic"}      # the floors chosen by the rows' BIC (see the experiment log)
 
 

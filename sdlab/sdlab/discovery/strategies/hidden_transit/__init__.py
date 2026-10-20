@@ -45,7 +45,7 @@ import math
 
 import numpy as np
 
-from ...identify import identify as main_line
+from .earned import main_line
 from ...simulate import behaviour_error, levels_array
 from .fit import fit_plain, fit_transit, screen
 from .kalman import Pair
