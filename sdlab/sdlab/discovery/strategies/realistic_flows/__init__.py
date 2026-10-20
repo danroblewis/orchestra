@@ -51,6 +51,15 @@ prior, knots (knot counts tried), most (candidates per round), per_candidate (pl
 inflows), guard (steps next to an inflow change left out of the fit), level_price (extra price of
 an inflow value, in log T), seg_base, seg_margin, rounds.
 
+(realistic_flows) The base is the main line with each candidate's pieces earned (earned.py,
+earned_rows.py, earned_joint.py: strategy matrix's copy of earned_pieces' refit, taken unchanged from
+matrix at 49e4ca7), where it was identify.identify: on 303 counts-short the plain main line kept a
+5-piece drain of 30 per step on the final counter (inflight's drain read 8% fast), the cause A that
+k8s-302.md fixed in 18 other strategies (docs/research/k8s-303-realistic-flows.md). The own-drains
+run stays on the plain main line (identify.identify): the earned refit re-decides each row and its
+conservation, which undoes "own drains" (distilled 153, 154 none-short fell to fail). The existing
+choice between the base and the own-drains run (own_gain, by the judge) is unchanged.
+
 Measured inputs (opts "inputs", inputs.py) are columns in every fit (the matrix's, the screen's, each
 curve's, the joint refit's) and every model is priced and judged stepped with them.
 """
@@ -66,7 +75,8 @@ import numpy as np
 
 from ...addition import addition_test
 from ...identify import VARIANTS
-from ...identify import identify as matrix_identify
+from ...identify import identify as plain_identify
+from .earned import main_line as matrix_identify   # (realistic_flows) the main line with pieces earned (earned.py)
 from ...matrix import injected
 from ...simulate import behaviour_error
 from . import search, transit
@@ -126,7 +136,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if left is None or 1.5 * took < 0.25 * left:
             try:
                 with deadline(None if left is None else max(1.0, 0.25 * left)):
-                    own = matrix_identify(stocks, run, {**opts, "candidates": keep, "variants": [
+                    own = plain_identify(stocks, run, {**opts, "candidates": keep, "variants": [
                         {**v, "slack": 0.0, "tol": o["own_tol"], "name": f"{v['name']}, own drains"} for v in VARIANTS]})
                 err = lambda r: min((x["error"] for x in r.get("tried") or []), default=float("inf"))  # noqa: E731
                 tried = list(base.get("tried") or []) + list(own.get("tried") or [])
