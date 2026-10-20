@@ -399,7 +399,16 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         # stock beside the move (kubernetes 305: queue -> retries 0.0396 + outside -> retries
         # 0.0425 x queue, the queue's row draining 0.656 against 0.6167 + 0.0822 received)
         up = changing or opts.get("conserve_up", True)
-        cand = [c for c in range(L) if moves[c] > 0 and ((up and moves[c] > drain[c] and trust) or drain[c] > moves[c])]
+        # (a row conserved in an earlier pass follows what its receivers take after their own refit,
+        # trusted or not: kubernetes 305 counts-long seed 1003, queue lowered to 0.6642 before
+        # inflight's refit raised its gain from queue to 0.5994, leaving 0.0158 as a link)
+        # (and where the shared noise reads every receiver's gain as a move, the noise is the
+        # evidence the receivers are trusted on, in a configuration that trusts rows too: the excess
+        # it would leave as a link is a move's draw; seed 1003, inflight 0.5168 against 0.5308
+        # taken, 0.0141 left as a link beside inflight -> errors_total, read as a move at cost 49.5)
+        recv = [r["id"] for r in rows if r["id"] != a and any((r["coefL"][c].get(a) or 0) > 0 for c in range(L)) and unit[r["id"]] == unit[a]]
+        noisy_moves = bool(recv) and all(kinds.get((a, b)) == "move" for b in recv)
+        cand = [c for c in range(L) if moves[c] > 0 and ((up and moves[c] > drain[c] and (trust or row.get("conserved") or noisy_moves)) or drain[c] > moves[c])]
         if not cand:
             continue
         in_cand = np.zeros(L, bool)
@@ -442,7 +451,7 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
                     beta[i] = float(forced.beta[n])
                     for c in range(L):
                         if lab < 0 or lab == c:
-                            row["coefL"][c][names[j]] = row["coefL"][c].get(names[j], 0.0) + delta
+                            row["coefL"][c][names[j]] = float(row["coefL"][c].get(names[j], 0.0) + delta)
                 row["beta"] = beta
             changed = True                                            # (a candidate's drain differs from its moves)
             row["conserved"] = True
