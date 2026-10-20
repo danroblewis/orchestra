@@ -13,6 +13,13 @@ from sdlab.ladder import cases as casemod
 SPLIT = "tag:realistic,tag:physics,tag:particles,tag:heavy,tag:real,tag:canonical"
 
 
+@pytest.fixture(autouse=True)
+def node2_split(monkeypatch):
+    """The split machines.yaml had until 2026-10-20 (the CPU pool replaced it; the file names no machine now):
+    the `machine:` syntax and owner() still work for any split a machines.yaml declares."""
+    monkeypatch.setattr(machines, "config", lambda: {"node2": {"ssh": "ubuntu@node2", "cases": SPLIT}})
+
+
 @pytest.fixture
 def two(tmp_path, monkeypatch):
     """Switch between node2's store and mac's: use("node2") / use("mac")."""

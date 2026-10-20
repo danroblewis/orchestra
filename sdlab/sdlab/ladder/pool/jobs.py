@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from .. import store
 from . import db, gitcode, planner
@@ -25,6 +26,7 @@ LIVE = 90                                 # seconds since a worker's last heartb
 CHECK_TREE = ("all", "strategies", "none")
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
 REUSABLE = ("pass", "equivalent", "fail")
+PAUSED = Path.home() / ".sdlab" / "watch.paused"   # the watcher's pause file: while it exists the main line queues nothing
 BACKGROUND = True                         # plan in a thread (tests plan with plan_pending())
 
 
@@ -262,7 +264,9 @@ def _latest_rows(con) -> dict:
 
 def refresh_mainline(force: bool = False) -> dict:
     """Queue the main line's stale cells as a new generation when there are new ones (only while a worker
-    is live, unless force). Returns what it did."""
+    is live, unless force; never while PAUSED exists). Returns what it did."""
+    if PAUSED.exists():
+        return {"skipped": f"paused ({PAUSED} exists)"}
     with db.connect(readonly=True) as con:
         if not force and not live_workers(con):
             return {"skipped": "no live worker"}

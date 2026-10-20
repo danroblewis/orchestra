@@ -49,6 +49,7 @@ def pool(tmp_path, monkeypatch):
     monkeypatch.setenv("SDLAB_MACHINE", "mac")
     monkeypatch.setattr(planner, "RUN", fake_plan)
     monkeypatch.setattr(jobs, "BACKGROUND", False)
+    monkeypatch.setattr(jobs, "PAUSED", tmp_path / "watch.paused")
     refs = {"sdlab": MAIN, "feature": FEATURE, MAIN: MAIN, FEATURE: FEATURE, "HEAD": MAIN}
     monkeypatch.setattr(gitcode, "resolve", lambda ref: refs.get(ref))
     monkeypatch.setattr(gitcode, "main_head", lambda: MAIN)
@@ -304,6 +305,14 @@ def test_the_standing_job_queues_what_is_stale_on_the_main_line(pool):
     w.run_all()
     assert jobs.refresh_mainline(force=True) == {"queued": 0, "head": MAIN}     # everything current now
     assert all(r["machine"] == "mac" for r in store.latest())
+
+
+def test_the_watchers_pause_file_pauses_the_main_line(pool):
+    FakeWorker(pool, name="mac-pool", machine="mac").heartbeat()
+    jobs.PAUSED.touch()
+    assert jobs.refresh_mainline(force=True)["skipped"].startswith("paused")
+    jobs.PAUSED.unlink()
+    assert jobs.refresh_mainline(force=True)["queued"] > 0
 
 
 def test_a_cancelled_job_tells_its_worker(pool):

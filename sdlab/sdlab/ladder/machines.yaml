@@ -1,7 +1,6 @@
-# The other machines that run part of the ladder (machines.py). The machine named here runs the cases
-# its `cases` select (`sdlab-ladder watch --cases machine:node2`); this machine (mac) runs everything
-# else (`--exclude-cases machine:node2`). Tag specs only, so the runs panel can tell whose a case is.
-node2:
-  ssh: ubuntu@10.198.1.109
-  repo: ~/sdlab
-  cases: tag:realistic,tag:physics,tag:particles,tag:heavy,tag:real,tag:canonical
+# The other machines that run a fixed part of the ladder (machines.py), as {name: {ssh, cases}}: a machine
+# named here runs the cases its `cases` select (`--cases machine:NAME`), this one the rest
+# (`--exclude-cases machine:NAME`). Empty since 2026-10-20: the CPU pool (docs/pool.md) replaced the
+# node2 split (node2: tag:realistic,physics,particles,heavy,real,canonical; scripts/sdlab-sync.sh, retired).
+# Every worker now takes any item, and every result still records its machine.
+{}

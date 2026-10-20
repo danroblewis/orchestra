@@ -1,38 +1,36 @@
 #!/bin/sh
-# Keeps SD Lab's ladder testing going with no agent (no tokens): the public server, the watcher that
-# runs every missing or stale test (a strategy's results go stale when its directory's code changes),
-# and the derived verdicts (long-run metrics, strict pass), refreshed every REFRESH seconds; and, since
-# 2026-10-19, the second machine (node2: scripts/sdlab-sync.sh every SYNC seconds pushes code, keeps its
-# watchers up and imports its results) and backups of the store (scripts/sdlab-backup.sh every BACKUP
-# seconds; logs ~/.sdlab/sync.log and ~/.sdlab/backup.log). This machine's watcher leaves node2's
-# share out (--exclude-cases machine:node2, sdlab/ladder/machines.yaml).
+# Keeps SD Lab's ladder testing going with no agent (no tokens): the public server (which holds the CPU
+# pool's job queue, docs/pool.md), this machine's pool worker (half its cores: 14 slots, nice 19, fewer
+# while the agents load it), hourly backups of the store (scripts/sdlab-backup.sh; ~/.sdlab/backup.log),
+# and the derived verdicts (long-run metrics, strict pass), refreshed every REFRESH seconds.
+# Since 2026-10-20 the pool replaces the old watcher and node2's sync (scripts/sdlab-sync.sh, retired):
+# the server's standing main-line job re-runs stale results, and node2 runs its own pool worker as a
+# systemd --user service (docs/pool.md, "Deployment"). The main line queues nothing while
+# ~/.sdlab/watch.paused exists; touch ~/.sdlab/pool-worker.paused to keep this machine's worker down.
 #   start:  nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &
-#   stop:   pkill -f sdlab-daemon.sh   (the server and watcher keep running; stop them separately)
-#   status: tail ~/.sdlab/daemon.log; uv run sdlab-ladder status; the runs panel on /ladder
+#   stop:   pkill -f sdlab-daemon.sh   (the server and worker keep running; stop them separately)
+#   status: tail ~/.sdlab/daemon.log ~/.sdlab/pool-worker.log; uv run sdlab-ladder pool status; /ladder/pool
 cd "$(dirname "$0")/.." || exit 1
 REFRESH=${REFRESH:-3600}
-SYNC=${SYNC:-60}
 BACKUP=${BACKUP:-3600}
+SLOTS=${POOL_SLOTS:-14}
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMBA_NUM_THREADS=1
 mkdir -p ~/.sdlab
 last=0
-synced=0
 backed=0
 while true; do
   if ! lsof -nP -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1; then
     echo "$(date '+%F %T') server down: starting it"
     nohup uv run --directory "$PWD" sdlab --port 8020 --host 0.0.0.0 >> ~/.sdlab/server.log 2>&1 &   # every interface: the pool's workers (docs/pool.md)
+    sleep 20
   fi
-  if [ ! -e ~/.sdlab/watch.paused ] && ! ps aux | grep -v grep | grep -q "bin/sdlab-ladder watch"; then   # touch ~/.sdlab/watch.paused to pause it
-    echo "$(date '+%F %T') watcher down: starting it"
-    nohup nice -n 19 uv run --directory "$PWD" sdlab-ladder watch --strategies all --exclude-cases machine:node2,tag:kubernetes --every 300 \
-      --jobs 4 --timeout 300 --batch 2000 --quiet >> ~/.sdlab/ladder-watch.log 2>&1 &
+  if [ ! -e ~/.sdlab/pool-worker.paused ] && ! pgrep -f "sdlab.ladder worker" >/dev/null; then
+    echo "$(date '+%F %T') pool worker down: starting it ($SLOTS slots)"
+    nohup uv run --directory "$PWD" sdlab-ladder worker --server http://127.0.0.1:8020 --slots "$SLOTS" --min-slots 2 \
+      --max-mem-gb 96 --heavy-slots 2 --yield-load 24 --nice 19 --machine mac --home ~/.sdlab/pool/worker \
+      >> ~/.sdlab/pool-worker.log 2>&1 < /dev/null &
   fi
   now=$(date +%s)
-  if [ $((now - synced)) -ge "$SYNC" ]; then
-    synced=$now
-    pgrep -f "scripts/sdlab-sync.sh" >/dev/null || sh scripts/sdlab-sync.sh >> ~/.sdlab/sync.log 2>&1 &   # never two at once
-  fi
   if [ $((now - backed)) -ge "$BACKUP" ]; then
     backed=$now
     sh scripts/sdlab-backup.sh >> ~/.sdlab/backup.log 2>&1 &
