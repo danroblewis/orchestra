@@ -23,12 +23,14 @@ for search in ({"name": "forward"}, {"name": "backward", "backward_max": 20}):
                 VARIANTS.append({**search, **inflow, **recv, **era, "name": f"{search['name']}, {inflow['name']}, {recv['name']}{era['name']}"})
 
 
-def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None) -> float:
+def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
+          inputs: dict | None = None) -> float:
+    """inputs (optional): measured inputs, {name: value per step aligned with t}, that the flows may read."""
     hs = [h for h in horizons if h < len(run["t"]) / 4]
     if not flows or not hs:
         return float("inf")
     ids = [s["id"] for s in stocks]
-    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections) for h in hs) / len(hs)
+    return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections, inputs=inputs) for h in hs) / len(hs)
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -43,7 +45,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if v.get("split_eras") and not has_eras:
             continue
         r = identify_one(stocks, run, {**opts, **v})
-        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"))
+        e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"),
+                  inputs=opts.get("inputs"))
         tried.append({"name": v["name"], "error": e})
         if keep:
             candidates.append({"name": v["name"], "error": e, "flows": r["flows"]})

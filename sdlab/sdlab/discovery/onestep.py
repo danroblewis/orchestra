@@ -27,11 +27,12 @@ def size(flows: list[dict]) -> int:
     return p
 
 
-def bic(flows: list[dict], ids: list[str], t: list, levels: dict) -> float:
+def bic(flows: list[dict], ids: list[str], t: list, levels: dict, inputs: dict | None = None) -> float:
+    """inputs (optional): measured inputs, {name: value per step aligned with t}, that the flows may read."""
     A = levels_array(levels, ids)
     T = A.shape[1] - 1
     if T < 2:
         return float("inf")
-    nxt = Model(flows, ids).step(A[:, :-1], np.asarray(t, dtype=float)[1:])
+    nxt = Model(flows, ids, inputs={"t": t, "values": inputs} if inputs else None).step(A[:, :-1], np.asarray(t, dtype=float)[1:])
     rss = ((nxt - A[:, 1:]) ** 2).sum(axis=1)
     return float(sum(T * math.log(max(r, 1e-9) / T) for r in rss) + size(flows) * math.log(T))
