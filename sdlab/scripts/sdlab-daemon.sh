@@ -11,7 +11,7 @@
 #   status: tail ~/.sdlab/daemon.log; uv run sdlab-ladder status; the runs panel on /ladder
 cd "$(dirname "$0")/.." || exit 1
 REFRESH=${REFRESH:-3600}
-SYNC=${SYNC:-600}
+SYNC=${SYNC:-60}
 BACKUP=${BACKUP:-3600}
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMBA_NUM_THREADS=1
 mkdir -p ~/.sdlab
@@ -31,7 +31,7 @@ while true; do
   now=$(date +%s)
   if [ $((now - synced)) -ge "$SYNC" ]; then
     synced=$now
-    sh scripts/sdlab-sync.sh >> ~/.sdlab/sync.log 2>&1 &
+    pgrep -f "scripts/sdlab-sync.sh" >/dev/null || sh scripts/sdlab-sync.sh >> ~/.sdlab/sync.log 2>&1 &   # never two at once
   fi
   if [ $((now - backed)) -ge "$BACKUP" ]; then
     backed=$now
