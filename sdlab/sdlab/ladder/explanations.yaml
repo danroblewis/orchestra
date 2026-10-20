@@ -770,6 +770,22 @@ strategies:
     status: active
     note: docs/research/kalman_lna.md.
 
+  engine_forms:
+    idea: kalman_lna's model, with each stock's exchange with the outside read again in the forms the engine can now write - a flow that runs both ways, a drain at the lesser of a capacity and the level, an inflow that is a table of a stock (times an input).
+    how: >-
+      kalman_lna (its own copy) gives a model first. Then, stock by stock, the flows to and from the
+      outside (and the moves into the stock) are fitted again from the stock's one-step change in three
+      forms: a straight line that may change sign (written as an inflow and a drain shifted by the same
+      constant, or one two-way flow for a stock that goes below 0), MIN(a x level, capacity of other
+      stocks), and a table of a stock or input, rising, falling or free, optionally times an input. A
+      form replaces the base's flows only when it wins by BIC with every inflow piece counted, fits no
+      worse, and (on near-exact data) fits near exactly. A replaced move becomes a drain of its source,
+      unless the source's own change says it was a move.
+    helps_with: Inputs and rates that change sign (two-way flows, signed stocks), drains capped by a capacity (MIN), inflows switched on by another stock (a dead zone), measured inputs gated by a table of the stock they fill.
+    builds_on: kalman_lna
+    note: docs/research/engine_forms.md.
+    status: work in progress
+
   structures:
     idea: combined's model, replaced by one built from the classic SD structures when the data clearly prefer it.
     how: >-
