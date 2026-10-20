@@ -98,3 +98,28 @@ is achievable (p 0.75) and still fails: the gate is not earned on 300 counted st
 - 212: two gated inflows (Q and Rejected) from one input, and a saturating move; the base model is
   too far off for one gate per round.
 - 047 counts-long: a goal gap on another stock is not among the gate's readings, so a curve stands in.
+
+## Kubernetes 303 (2026-10-20, fcc0c9a)
+
+**Failure.** After the two broad 303 rounds (def0acb, 9956255/b9fe1d6) inflow_effects failed only
+303 counts-short: a spurious `responses_total -> outside` of 5 pieces (mean 30.3 a step). `analyse`
+rates the variant achievable (p 1.00), so it was the method's fault. The pieces come from the shared
+matrix base unchanged (effect_hats' step and the gate added nothing; eiv's white test sees no
+measurement error): the matrix read the move `inflight -> responses_total` from inflight's row
+(0.5402; that row alone gives 0.542, along the queue/inflight ridge a smooth input makes), while the
+counter's own row gives 0.5017, and 5 outflow pieces on the counter took up the difference. The
+same flows (30.26) failed coflow_hats, effect_hats, held_out, loop_transit, realistic_flows,
+realistic_hats and sindy.
+
+**Fix (fcc0c9a).** The base, re-cut, is now pruned by the strategy's own price (`prune`, as each
+candidate already was; option `prune_base`). With the pieces gone the joint refit reads the move from
+both rows: 0.6004 / 0.5018 / 1.0017 (truth 0.6 / 0.5 / 1), price 5801.3 against 5806.6.
+
+**Numbers.** `uv run sdlab-ladder run --strategies inflow_effects --cases 300,301,302,303 --jobs 4
+--timeout 600` (single-threaded, fcc0c9a): 20 of 20 pass; 303 counts-short fail -> pass, the other
+19 pass -> pass. Paired sample, 40 cells it ran before (160 and 217 at all four variants, 32 drawn
+with seed 303; scratchpad `pair.py`): the same code with `prune_base` off, in process, against the
+ladder rows: **no flip** (22 pass, 13 fail, 2 equivalent, 2 differs, 1 error both ways, the error a
+harness KeyError on part-galton-board). The found model changed in 6 cells (003 cl, 017 cs, 042#1 cl,
+050#6 cs, 050#7 cs, 053#3 cs), each by dropping a small spurious flow. Summed discovery seconds 748
+-> 1,118 (+49%; not paired in time).
