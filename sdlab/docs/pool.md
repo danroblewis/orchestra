@@ -71,8 +71,11 @@ moves, and every 10 minutes when it has nothing left, and only while some worker
 whose last pool attempt at the same hashes ended in an error is not queued again until a hash changes
 (no endless retries of a cell that always crashes).
 
-The standing job replaces the watchers (`sdlab-ladder watch` here and on node2); while both run they
-duplicate work. Stop the watchers when the pool's workers are up (`touch ~/.sdlab/watch.paused` here).
+The standing job replaces the watchers (`sdlab-ladder watch` here and on node2). Since 2026-10-20 nothing
+starts a watcher (the daemon keeps the Mac's pool worker up instead, and node2's watchers are gone), and
+the main line queues nothing while `~/.sdlab/watch.paused` exists: `rm ~/.sdlab/watch.paused` starts it
+(within a minute, while a worker is live), `touch ~/.sdlab/watch.paused` stops it queuing (what is queued
+still runs; `sdlab-ladder pool cancel JOB` drops it).
 
 ## Results, and the main line's latest
 
@@ -306,15 +309,50 @@ restarts from there. Every 2 minutes it asks the server for HEAD; when its own c
 `uv.lock`, `pyproject.toml`) differs there, it stops claiming, lets its items finish, and restarts from
 the new commit. `--no-self-update` runs it from the checkout it was started in (the tests do).
 
-**Starting them.** Copy the token first (`~/.sdlab/pool.token`, mode 0600), then:
-
-    # node2: all 24 cores; memory admission keeps it under 52 GB of its 62 GB
-    nohup ~/.local/bin/uv run --directory ~/sdlab/sdlab sdlab-ladder worker --server http://10.198.1.131:8020 \
-        --slots 24 --max-mem-gb 52 --heavy-slots 2 --machine node2 >> ~/.sdlab/pool-worker.log 2>&1 &
-    # the Mac: half its cores, nice 19, fewer slots while the agents load it
-    nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab-ladder worker --server http://127.0.0.1:8020 \
-        --slots 14 --max-mem-gb 96 --heavy-slots 1 --yield-load 24 --machine mac >> ~/.sdlab/pool-worker.log 2>&1 &
+**Starting them.** See "Deployment" below for the two that run. By hand: copy the token first
+(`~/.sdlab/pool.token`, mode 0600), then `sdlab-ladder worker --server URL --slots N ...` from any checkout.
 
 Stop one with `pkill -TERM -f "sdlab.ladder worker"` (the pattern matches both `sdlab-ladder worker` and,
 once it runs from `self/`, `python -m sdlab.ladder worker`). Tests: `uv run pytest tests/test_pool_worker.py`; `SDLAB_POOL_E2E=1` adds the end-to-end test
 (a test server on a temporary store, the real planner, a real worker with two slots: about 4 minutes).
+
+## Deployment (2026-10-20)
+
+**node2** (`ubuntu@10.198.1.109`, 24 cores, 62 GB, shared with other work of the user's): a systemd
+`--user` service, `sdlab-pool-worker` (lingering is on, so it starts at boot without a login, and
+`Restart=always` brings it back 30 s after a failure). `scripts/pool/install-node2.sh` installs or
+re-installs it from here: the token (`~/.sdlab/pool.token`, 0600), `~/.sdlab/machine` (`node2`), a boot
+checkout cloned from the server's bundle (`~/.sdlab/pool/boot`, no remote: no GitHub, no push), its venv,
+and the unit (`scripts/pool/sdlab-pool-worker.service`). The worker then follows the main line's HEAD by
+itself (`self/`). Settings: 23 slots (all cores but one, for the supervisor and the machine's other
+work), `--max-mem-gb 50`, `--heavy-slots 2`, nice 19, and a cgroup ceiling for the whole service
+(`MemoryHigh=53G`, `MemoryMax=55G`): past it the kernel kills an item, which is posted as crashed. Change
+them with `SLOTS=.. MEMGB=.. HEAVY=.. sh scripts/pool/install-node2.sh`.
+
+    ssh ubuntu@10.198.1.109 systemctl --user status sdlab-pool-worker     # or: journalctl --user -u sdlab-pool-worker
+    ssh ubuntu@10.198.1.109 tail -f ~/.sdlab/pool-worker.log
+    ssh ubuntu@10.198.1.109 systemctl --user stop sdlab-pool-worker       # items finish (600 s), then are released
+
+**The Mac**: `scripts/sdlab-daemon.sh` starts it when it is not running (`pgrep -f "sdlab.ladder worker"`):
+14 slots (half of 28 cores), `--min-slots 2 --yield-load 24` (one slot fewer per unit of 1-minute load
+over 24), `--max-mem-gb 96 --heavy-slots 2`, nice 19, home `~/.sdlab/pool/worker` (beside the server's
+`planner/` and `mirror.git`, never the agents' checkout), log `~/.sdlab/pool-worker.log`. `touch
+~/.sdlab/pool-worker.paused` keeps it down; `pkill -TERM -f "sdlab.ladder worker"` stops it (the daemon
+starts it again within a minute unless paused).
+
+**What it replaced.** node2's two watchers, its checkout `~/sdlab`, bare repository `~/sdlab.git`, store
+`~/.cache/sdlab` and `~/.sdlab` were removed (all 2275 of its results were already in the store here; a
+copy of its store and logs is in `~/.sdlab/node2-retired/`). The Mac's `node2` git remote, the daemon's
+sync and watcher, and `machines.yaml`'s split are gone; `scripts/sdlab-sync.sh` only says it is retired.
+
+**Measured on 2026-10-20** (`sqlite3 ~/.cache/sdlab/ladder/results.sqlite "select machine, case_id,
+strategy, peak_rss_mb from pool_results"`): peak RSS of an item is 0.2 to 0.45 GB on the small cases, up to
+9.1 GB on a realistic case (sd-ci, kalman_lna, counts-long), about 7 GB on sd-k8s-small (kalman_lna), and
+over 33 GB on sd-k8s-platform (kalman_lna, killed at its 32 GB hard limit on the first try): that one fits
+only the Mac (an item's hard limit is at most half its machine: 31 GB on node2). The smoke job (job 4:
+matrix and kalman_lna on cases 001 to 020, all variants, 160 items) took 2.5 minutes: node2 ran 108 items
+(13.5 s of wall time each on average), the Mac 52 (5.4 s each).
+
+**The main line** is paused while `~/.sdlab/watch.paused` exists (it was left in place for the boundary
+workflow). To start it: `rm ~/.sdlab/watch.paused`; the server queues the stale cells of the `sdlab` HEAD
+within a minute (`uv run sdlab-ladder pool status` shows a `main line @ <commit>` job).

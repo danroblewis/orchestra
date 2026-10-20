@@ -2788,6 +2788,12 @@ uses about two cores per worker during gradients despite the single-thread setti
 
 ## Two machines and backups (`machines.py`, `exchange.py`, `backup.py`)
 
+**History since 20 October 2026.** The CPU pool (docs/pool.md) replaced the split described here: node2's
+watchers, its checkout, bare repository and store are gone, `scripts/sdlab-sync.sh` is retired, the
+`node2` git remote is removed and `machines.yaml` names no machine. Workers on node2 and the Mac pull any
+item from the server's queue and post results to the store here; every result still records its machine.
+Export, import and backups below still work.
+
 Since 19 October 2026 the ladder runs on two machines. The Mac ("mac") keeps the source-of-truth result
 store (`~/.cache/sdlab/ladder/results.sqlite`); node2 (`ubuntu@10.198.1.109`, 24 cores, 62 GB) runs part
 of the ladder into its own store, and its results are imported into the Mac's.

@@ -107,19 +107,15 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     held back by the judge or the old bench is not dismissed. When out of ideas, an ideation agent
     reads the research docs and every idea runs as a parallel experiment.
 15. **The ladder stays current and fast.** Results are keyed by strategy, case and scorer hashes,
-    so a change marks them stale. One supervised watcher re-runs stale results:
-    `nice -n 19 uv run sdlab-ladder watch --strategies all --exclude-cases machine:node2,tag:kubernetes --every 300 --jobs 4 --timeout 300 --batch 2000`
-    (every active strategy; parked ones are skipped since 2026-10-20, the user, and run only when named or by
-    `sync`; the kubernetes set is run by its per-rung investigations; a run that errors or times out counts
-    as not passing), logging to
-    `~/.sdlab/ladder-watch.log`; check it with `pgrep -fl "sdlab-ladder watch"`. A second machine, node2,
-    runs the realistic, physics, particle, heavy, real-data and canonical cases (`--cases machine:node2`,
-    `sdlab/ladder/machines.yaml`) into its own store. `scripts/sdlab-sync.sh` imports its results here every
-    10 minutes (`sdlab-ladder export`/`import`; each result records its `machine`). It also pushes committed
-    code there and keeps its watchers up. The store here is the source of truth, backed up hourly to
-    `~/.sdlab/backups/` (`scripts/sdlab-backup.sh`, `sdlab-ladder restore`). See docs/LADDER.md, "Two
-    machines and backups". Agents run only
-    their own strategy (`--strategies <name>`), never a full sync. When the watcher has a backlog,
+    so a change marks them stale. The CPU pool's standing main-line job (rule 15b) re-runs the stale
+    results of the `sdlab` HEAD (every active strategy; parked ones are skipped since 2026-10-20, the user,
+    and run only when named; the kubernetes set is run by its per-rung investigations; a run that errors or
+    times out counts as not passing). It queues nothing while `~/.sdlab/watch.paused` exists (`rm` it to
+    start the main line). Since 2026-10-20 the pool replaces the old watcher (`sdlab-ladder watch`) and
+    node2's split and sync (`machines.yaml` names no machine; `scripts/sdlab-sync.sh` is retired); nothing
+    starts them. The store here is the source of truth, backed up hourly to
+    `~/.sdlab/backups/` (`scripts/sdlab-backup.sh`, `sdlab-ladder restore`). Agents run only
+    their own strategy (`--strategies <name>`), never a full sync. When the main line has a backlog,
     the board mixes versions: say so when quoting it. Leaderboard rates are over the cells a
     strategy has run, with its coverage shown. The public UI
     (`https://sdlab.dansproject.space/ladder`) must load in about a second. Restart the server after
@@ -128,8 +124,8 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     (on every interface since 2026-10-20, the user, so the pool's workers reach it; what writes or hands out
     work needs the pool's token). Check that the old process has gone (use `kill -9` if it hangs).
     With no agent running, `scripts/sdlab-daemon.sh` keeps all of this going without tokens: it
-    restarts the server and the watcher if they stop, syncs node2 every 10 minutes, backs up the store
-    hourly, and refreshes the long-run and strict verdicts hourly. Start it with `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &`.
+    restarts the server and the Mac's pool worker if they stop, backs up the store hourly, and refreshes
+    the long-run and strict verdicts hourly. Start it with `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &`.
 15b. **CPU goes through the pool** (the user, 2026-10-20; docs/pool.md). CPU, not agents, is the
     bottleneck. The server holds a job queue; workers on node2 (all its CPU, within its memory) and the
     Mac (half its CPU, `nice 19`) pull items and post results; they never write a database. An agent
@@ -139,8 +135,9 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     `pool status JOB` and `pool results JOB`. A job runs its commit; its results become the main line's
     latest only when their hashes equal the `sdlab` HEAD's. The page is `/ladder/pool`. A worker is
     `sdlab-ladder worker --server URL --slots N` (a checkout per slot, memory-aware; docs/pool.md, "Workers").
-    In progress: the server and the worker are built and tested (2026-10-20), but no worker runs yet on node2
-    or the Mac; until they do, nothing takes jobs and the watchers run as before.
+    Running since 2026-10-20 (docs/pool.md, "Deployment"): node2's worker is the systemd --user service
+    `sdlab-pool-worker` (`scripts/pool/install-node2.sh`); the Mac's (14 slots, home `~/.sdlab/pool/worker`,
+    log `~/.sdlab/pool-worker.log`) is kept up by the daemon (`touch ~/.sdlab/pool-worker.paused` keeps it down).
 16. **Probing a real, live system needs the user's approval.**
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from

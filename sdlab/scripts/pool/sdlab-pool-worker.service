@@ -1,0 +1,31 @@
+# node2's CPU pool worker (docs/pool.md, "Deployment"), a systemd --user service (lingering is on, so it
+# starts at boot without a login). Installed by scripts/pool/install-node2.sh as
+# ~/.config/systemd/user/sdlab-pool-worker.service. It runs the boot checkout's worker, which restarts
+# itself from ~/.sdlab/pool/worker/self at the main line's HEAD (same PID: execve).
+#   status: systemctl --user status sdlab-pool-worker; journalctl --user -u sdlab-pool-worker; ~/.sdlab/pool-worker.log
+#   stop:   systemctl --user stop sdlab-pool-worker   (items finish within --grace, then are killed and released)
+[Unit]
+Description=SD Lab CPU pool worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMBA_NUM_THREADS=1
+ExecStart=%h/.sdlab/pool/boot/sdlab/.venv/bin/sdlab-ladder worker --server http://10.198.1.131:8020 \
+    --slots @SLOTS@ --max-mem-gb @MEMGB@ --heavy-slots @HEAVY@ --nice 19 --machine node2 --home %h/.sdlab/pool/worker
+StandardOutput=append:%h/.sdlab/pool-worker.log
+StandardError=append:%h/.sdlab/pool-worker.log
+Restart=always
+RestartSec=30
+# SIGTERM to the supervisor only: it lets running items finish (--grace 600 s), then kills and releases them
+KillMode=mixed
+TimeoutStopSec=700
+# a hard ceiling for the whole pool (items included), under node2's 62 GB: past it the kernel kills an
+# item, which the slot posts as crashed (retried once where there is more memory)
+MemoryHigh=@HIGHGB@G
+MemoryMax=@MAXGB@G
+
+[Install]
+WantedBy=default.target
