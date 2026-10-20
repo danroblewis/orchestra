@@ -13,7 +13,9 @@ units of that SE (z), the truth's own refit on the same run in the same units (s
 itself pulls off is told from a method's error), each found part the truth lacks against the SE of
 that term added to the truth, and the joint distance of all found numbers from the true ones under
 the bound's covariance (chi-square on the directions the run pins down; its p-value is the
-confidence that the found numbers are a draw the data could have given). Noise-free data (`none`)
+confidence that the found numbers are a draw the data could have given). A number the run does not pin
+down at all (unidentified) is listed in `unidentified` and is no evidence either way: it does not make `ok`
+false (the truth itself has it). Noise-free data (`none`)
 have no noise model: every SE is the floor FLOOR_REL x |true| (the data carry 4 decimals; the
 scorer's own tolerance there is 2%), and the joint test is not made.
 
@@ -29,6 +31,14 @@ prediction errors, so only the mean dynamics differ. The truth's numbers are ref
   the method placed counts as one number, which is generous to it): **the found model fits better than
   the truth can**: it fits the run's noise with its extra numbers or pieces (or the refit failed);
 - otherwise **the data cannot tell them apart**. p = P(chi2_df >= LR) is the confidence.
+
+Three guards (an adversarial check, 2026-10-20, on the truth itself given as the found model): the reference is
+the better of the refit and the true numbers (the refit, Gauss-Newton at fixed innovation covariances, can end
+below the true numbers on weekly means); a biased variant gives the found model its bias free, as the refit has
+it (a found model that took the bias out and one in the reported units are both judged at their best bias; the
+truth itself was rejected by LR 400-1000 without it); and where the noise model rejects the truth itself against
+its refit (LR_truth > the critical value: a floor that binds, a two-way flow's counting noise, readings that are
+not Gaussian), a found model is rejected only when it also fits worse than the true numbers by the critical value.
 
 A rejection comes with where the misfit is: each measured stock's share of the likelihood loss, its
 one-step errors' mean (a level offset: a constant or an inflow wrong or missing) and lag-1
@@ -279,7 +289,10 @@ def bound_check(cell: Cell, found) -> dict | None:
             out["joint"]["extra_terms"] = len(ext)
     zs = [abs(r["z"]) for r in rows + extras if r.get("z") is not None]
     out["worst_z"] = max(zs) if zs else None
-    bad = [r for r in rows if r["diagnosis"] not in ("within the bound", "missing but small: within the bound")] + \
+    # an unidentified number is no evidence either way (the truth itself has it): reported, not held against the model
+    out["unidentified"] = [r["key"] for r in rows if r["diagnosis"].startswith("unidentified")]
+    bad = [r for r in rows if r["diagnosis"] not in ("within the bound", "missing but small: within the bound")
+           and not r["diagnosis"].startswith("unidentified")] + \
           [e for e in extras if e["diagnosis"].startswith("spurious")]
     out["ok"] = not bad and (out.get("joint") is None or out["joint"]["p"] >= ALPHA)
     kinds = sorted({r["diagnosis"].split(":")[0] for r in bad})
@@ -353,9 +366,10 @@ def _entries(cell: Cell, flows: list[dict], ext: list = (), C_ext: np.ndarray | 
 
 # ---- the likelihood ----
 
-def _found_system(cell: Cell, flows: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray] | str:
+def _found_system(cell: Cell, flows: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | str:
     """The found model on the Kalman model's state (every true stock; a stock the found model does not
-    touch stays put): (A per configuration, configuration per step, d per step), or why not."""
+    touch stays put), in its own units: (A per configuration, configuration per step, u per step, the inputs'
+    part per step), or why not."""
     m = cell.m
     n = len(m.ids)
     for f in flows:
@@ -367,21 +381,62 @@ def _found_system(cell: Cell, flows: list[dict]) -> tuple[np.ndarray, np.ndarray
     cols = m.cols
     cache: dict[bytes, int] = {}
     A_list, cfg = [], np.zeros(len(m.t), dtype=np.int64)
-    d = np.zeros((len(m.t), n))
+    u = np.zeros((len(m.t), n))
+    vin = np.zeros((len(m.t), n))
     for k, tt in enumerate(m.t):
         sys_ = linear_system(flows, cols, (tt, tt))
         if sys_ is None:
             return "the found model is not linear in the measured stocks and inputs: not covered"
-        B, u = sys_
-        Bs, Bi, uu = B[:n, :n], B[:n, n:], u[:n]
+        B, uu = sys_
+        Bs, Bi = B[:n, :n], B[:n, n:]
         A = np.eye(n) + Bs
         key = A.tobytes()
         if key not in cache:
             cache[key] = len(A_list)
             A_list.append(A)
         cfg[k] = cache[key]
-        d[k] = A @ m.inj[k] + uu + (Bi @ m.U[:, k] if Bi.size else 0.0)
-    return np.array(A_list), cfg, d
+        u[k] = uu[:n]
+        if Bi.size:
+            vin[k] = Bi @ m.U[:, k]
+    return np.array(A_list), cfg, u, vin
+
+
+def _in_units(cell: Cell, sys_, Dv: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The found system followed in reported units x' = Dv x (a biased stock's bias), as SSM.system follows
+    the truth: (A per configuration, configuration per step, d per step)."""
+    A_list, cfg, u, vin = sys_
+    A = Dv[None, :, None] * A_list / Dv[None, None, :]
+    d = np.einsum("kij,kj->ki", A[cfg], cell.m.inj * Dv) + (u + vin) * Dv
+    return A, cfg, d
+
+
+def _found_ll(cell: Cell, sys_) -> tuple[float, np.ndarray, np.ndarray, dict]:
+    """The found model's log-likelihood with the variant's bias free (the truth's refit frees it too): a
+    found model in the reported units (bias 1) and one that took the bias out (bias the truth's) are both
+    judged at their best bias. Returns (ll, errors, covariances, {stock: bias})."""
+    m = cell.m
+    n = len(m.ids)
+    D = np.ones(n)
+    if not m.bias:
+        return (*_loglik(cell, *_in_units(cell, sys_, D)), {})
+    from scipy.optimize import minimize
+    where = [m.idx[s] for s in m.bias]
+
+    def nll(z):
+        Dv = D.copy()
+        Dv[where] = np.exp(np.clip(z, -3.0, 3.0))
+        ll = _loglik(cell, *_in_units(cell, sys_, Dv))[0]
+        return -ll if math.isfinite(ll) else 1e300
+
+    best = None
+    for z0 in (np.zeros(len(where)), np.log(np.maximum(1e-6, m.D0[where]))):
+        r = minimize(nll, z0, method="Nelder-Mead", options={"xatol": 1e-6, "fatol": 1e-6, "maxiter": 400})
+        if best is None or r.fun < best.fun:
+            best = r
+    Dv = D.copy()
+    Dv[where] = np.exp(np.clip(best.x, -3.0, 3.0))
+    ll, E, S = _loglik(cell, *_in_units(cell, sys_, Dv))
+    return ll, E, S, {s: float(Dv[i]) for s, i in zip(m.bias, where)}
 
 
 def _loglik(cell: Cell, A_cfg, cfg, d) -> tuple[float, np.ndarray, np.ndarray]:
@@ -465,28 +520,41 @@ def likelihood_check(cell: Cell, found) -> dict | None:
     sys_ = _found_system(cell, flows)
     if isinstance(sys_, str):
         return {"check": "likelihood", "covered": False, "why": sys_}
-    ll_f, Ef, Sf = _loglik(cell, *sys_)
+    ll_f, Ef, Sf, bias = _found_ll(cell, sys_)
     ll_r, Er, Sr = _truth_ll(cell, cell.refit())
-    ll_0, _, _ = _truth_ll(cell, cell.m.theta0)
+    ll_0, E0, S0 = _truth_ll(cell, cell.m.theta0)
+    refit_failed = ll_0 > ll_r
+    if refit_failed:                    # the true numbers are a point of the true structure: the best it does is at least that
+        ll_r, Er, Sr = ll_0, E0, S0
     _, null = cell.kalman()._bound()
     P = cell.m.P
     df = max(1, P - (null.shape[1] if null.size else 0))
     n_true, n_found = cell.truth_numbers(), found_numbers(flows, {int(e["start"]) for e in cell.data.get("eras") or []})
     extra = n_found - n_true
     LR = 2.0 * (ll_r - ll_f)
+    LR0 = 2.0 * (ll_0 - ll_f)
+    LR_truth = 2.0 * (ll_r - ll_0)
     crit = float(chi2.ppf(1 - ALPHA, df))
     crit_extra = float(chi2.ppf(1 - ALPHA, max(1, extra)))
-    if LR > crit:
+    misfit = LR_truth > crit            # the noise model rejects the truth itself on this run (a floor that binds, two-way
+                                        # counting noise, non-Gaussian readings): judged against the true numbers as well
+    rejected = LR > crit and (not misfit or LR0 > crit)
+    if rejected:
         verdict = "the data reject the found model"
+    elif LR > crit:
+        verdict = ("the data cannot tell it from the truth at its true numbers (the Kalman noise model is approximate on this run: "
+                   "it rejects the truth itself against its refit)")
     elif -LR > crit_extra:
         verdict = "the found model fits better than the truth can: it fits the run's noise with its extra numbers, or the truth's refit failed"
     else:
         verdict = "the data cannot tell them apart"
     out = {"check": "likelihood", "covered": True, "ll_found": ll_f, "ll_truth_refit": ll_r, "ll_truth": ll_0,
-           "LR": LR, "LR_truth": 2.0 * (ll_r - ll_0), "df": df, "critical": crit, "p": float(chi2.sf(max(LR, 0.0), df)),
+           "LR": LR, "LR_truth": LR_truth, "LR_vs_true_numbers": LR0, "df": df, "critical": crit, "p": float(chi2.sf(max(LR, 0.0), df)),
            "numbers": {"truth": n_true, "truth_identifiable": df, "found": n_found, "extra": extra}, "alpha": ALPHA,
-           "verdict": verdict, "rejected": LR > crit}
-    if LR > crit or -LR > crit_extra:
+           "verdict": verdict, "rejected": rejected, "noise_model_misfit": misfit, "refit_failed": refit_failed}
+    if bias:
+        out["bias"] = bias
+    if rejected or -LR > crit_extra:
         out["where"] = _where(cell, Ef, Sf, Er, Sr)
     return out
 

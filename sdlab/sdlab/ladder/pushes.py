@@ -21,7 +21,10 @@ oscillation) starts from where it got to; `settled` says which.
 
 **The battery** (the same for every case, sized from the case):
 - an impulse into each measured stock (IMPULSE x the stock's recorded range, added before the first step,
-  as an injection is);
+  as an injection is); out of it instead when the start sits at the top of what the run recorded and taking
+  the impulse out stays inside it ("an impulse out of S"), so the push stays where the data are (a found table
+  effect ends at the last level seen: pushed beyond it, a model right on every recorded level answers
+  "no response");
 - on each measured input series and on the outside inflow into each measured stock the truth feeds from
   outside: an impulse (one step), a step, and a sine u = a (1 + sin(2 pi h / P)) at the periods
   PERIOD_X x 2 pi tau (tau: the truth's slowest time constant at the start; at least 4 steps), with
@@ -42,14 +45,18 @@ pushed, so a found model's own drift (a different equilibrium) cancels; for a mo
   fitted over the last two periods after the transient (with a constant and a linear trend, so a
   counter's growth does not leak in); `err` = |gain_f - gain_t| / the truth's gain, floored as above.
 A comparison **agrees** when the footprint and sign match and err <= TOL_SHAPE (TOL_GAIN for gain, and
-the phase within TOL_PHASE degrees). With a reference (`reference=K`: the truth's own structure refit,
+the phase within TOL_PHASE degrees); when neither model responds (both below the footprint), it agrees
+whatever the two small curves' ratio. With a reference (`reference=K`: the truth's own structure refit,
 strict.refit, on the run discovery saw and on K - 1 more runs of the same variant, strict's seeds), each
 tolerance widens to Z x the refits' rms error on the same comparison: what the data allow the truth's
 own structure, so a noisy variant's limit is not blamed on a strategy. One refit is a sample of one;
 strict.py uses 1 + 6.
 
 **Returned**: per push, per stock, the numbers; `agree`: the fraction of comparisons that agree (a
-confidence score, 1 = every push answered as the truth); `agree_fixed`: the same at the fixed
+confidence score, 1 = every push answered as the truth); `agree_in_range`: the same over
+the pushes that keep the truth's measured stocks within the run's recorded range (RANGE_MARGIN; a push that
+leaves it is marked `outside_data` and its diagnoses say "an extrapolation": the data may not decide there);
+`agree_fixed`: the same at the fixed
 tolerances, and `data_limited`: how many comparisons the reference widened (where even the truth's own
 structure, refit, misses the fixed tolerance: there an "agree" says little); `footprint`: missing / spurious / wrong-sign
 responses; `diagnosis`: short plain sentences on the worst disagreements and what kind of wrong each
@@ -98,6 +105,7 @@ TOL_GAIN = 0.10
 TOL_PHASE = 10.0        # degrees
 Z = 3.0                 # a reference widens a tolerance to Z x the refits' rms error
 SETTLE_FRAC = 0.05
+RANGE_MARGIN = 0.05     # a pushed truth beyond the recorded range by more than this x the range is outside the data
 PUSH = "push__"         # the rows that carry an outside inflow push
 
 
@@ -210,6 +218,7 @@ class Bench:
         A = np.nan_to_num(np.array([np.asarray(all_levels.get(s, [0.0] * len(t)), float) for s in self.ids]))
         rng = A.max(axis=1) - A.min(axis=1)
         self.scale = dict(zip(self.ids, np.where(rng > 0, rng, np.maximum(np.abs(A).max(axis=1), 1.0)).tolist()))
+        self.range = {s: (float(A[i].min()), float(A[i].max())) for i, s in enumerate(self.ids)}
         self.not_covered: list[str] = []
         # frozen truth
         self.flows = [f for f in truth_flows_at(tm, self.t_s)]
@@ -268,7 +277,13 @@ class Bench:
     def _battery(self) -> list[dict]:
         out = []
         for s in self.measured:
-            out.append({"kind": "impulse", "on": "stock", "target": s, "size": IMPULSE * self.scale[s], "name": f"an impulse into {s}"})
+            a = IMPULSE * self.scale[s]
+            lo, hi = self.range[s]
+            x = float(self.x[self.ids.index(s)])
+            if x + a > hi + RANGE_MARGIN * self.scale[s] and x - a >= max(0.0, lo - RANGE_MARGIN * self.scale[s]):
+                out.append({"kind": "impulse", "on": "stock", "target": s, "size": -a, "name": f"an impulse out of {s}"})
+            else:
+                out.append({"kind": "impulse", "on": "stock", "target": s, "size": a, "name": f"an impulse into {s}"})
         sources = [("input", k, INPUT_REL * max(abs(self.input_mean[k]), 1e-9) if self.input_mean[k] else 1.0) for k in self.inputs]
         sources += [("inflow", s, INPUT_REL * self.inflow_mean[s]) for s in self.inflow_targets]
         for on, target, a in sources:
@@ -309,6 +324,17 @@ class Bench:
             i = ids.index(s)
             L0[i, n] = max(0.0, L0[i, n] + a)
         X = runner.run(L0, self.U)
+        if runner is self.runner:                       # the truth: which pushes take a measured stock outside the data
+            self.outside = []
+            for n in range(1, N):
+                far = []
+                for s in self.measured:
+                    i, (lo, hi) = ids.index(s), self.range[s]
+                    m = RANGE_MARGIN * self.scale[s]
+                    run = np.concatenate([L0[i, n:n + 1], X[i, n, :]])
+                    if run.max() > hi + m or run.min() < lo - m:
+                        far.append(s)
+                self.outside.append(far)
         R = (X[:, 1:, :] - X[:, :1, :]) / np.array([p["size"] for p in self.pushes])[None, :, None]
         return np.transpose(R, (1, 0, 2))[:, rows, :]
 
@@ -405,7 +431,7 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
     Rt = b.truth[:, b.measured_rows(), :]
     Rf, fdyn = b.found(found_flows, ceilings)
     ref = _reference_errors(reference or [])
-    pushes, comps, issues = [], [], []
+    pushes, comps, issues, inside = [], [], [], []
     fixed, limited = [], 0
     footprint = {"missing": [], "spurious": [], "sign": []}
     for i, p in enumerate(b.pushes):
@@ -418,6 +444,8 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
         else:
             top = float(np.abs(rt).max(initial=0.0))
         floor = FOOT * top if top > 0 else 1e-12
+        far = b.outside[i]
+        n_issues = len(issues)
         stocks = {}
         for j, s in enumerate(b.measured):
             r_ref = ref.get((p["name"], s)) or {}
@@ -428,8 +456,8 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
                 dph = abs(_wrap(ph_f - ph_t)) if on_t and on_f else None
                 tol = max(TOL_GAIN, Z * (r_ref.get("err") or 0.0))
                 tol_ph = max(TOL_PHASE, Z * (r_ref.get("dphase") or 0.0))
-                ok = on_t == on_f and err <= tol and (dph is None or dph <= tol_ph)
-                fixed.append(on_t == on_f and err <= TOL_GAIN and (dph is None or dph <= TOL_PHASE))
+                ok = on_t == on_f and (not on_t or (err <= tol and (dph is None or dph <= tol_ph)))   # neither responds: agree
+                fixed.append(on_t == on_f and (not on_t or (err <= TOL_GAIN and (dph is None or dph <= TOL_PHASE))))
                 limited += tol > TOL_GAIN or tol_ph > TOL_PHASE
                 row = {"gain_true": _fin(g_t), "gain_found": _fin(g_f), "phase_true": _fin(ph_t, 4) if on_t else None,
                        "phase_found": _fin(ph_f, 4) if on_f else None, "dphase": _fin(dph, 4), "err": _fin(err), "agree": ok,
@@ -441,8 +469,8 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
                 sign_t, sign_f = np.sign(st["peak"]), np.sign(sf["peak"])
                 err = float(np.linalg.norm(rf[j] - rt[j])) / max(float(np.linalg.norm(rt[j])), floor * math.sqrt(H))
                 tol = max(TOL_SHAPE, Z * (r_ref.get("err") or 0.0))
-                ok = on_t == on_f and (not on_t or sign_t == sign_f) and err <= tol
-                fixed.append(on_t == on_f and (not on_t or sign_t == sign_f) and err <= TOL_SHAPE)
+                ok = on_t == on_f and (not on_t or (sign_t == sign_f and err <= tol))     # neither responds: agree
+                fixed.append(on_t == on_f and (not on_t or (sign_t == sign_f and err <= TOL_SHAPE)))
                 limited += tol > TOL_SHAPE
                 row = {"true": {k: v if isinstance(v, int) else _fin(v) for k, v in st.items()}, "found": {k: v if isinstance(v, int) else _fin(v) for k, v in sf.items()},
                        "err": _fin(err), "agree": ok, "responds": [bool(on_t), bool(on_f)]}
@@ -450,6 +478,8 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
                 row["tol"] = _fin(tol)
             stocks[s] = row
             comps.append(ok)
+            if not far:
+                inside.append(ok)
             if ok:
                 continue
             # what kind of wrong
@@ -487,8 +517,12 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
                 if not what:
                     what.append(f"its response curve differs from the truth's by {err:.0%}")
                 issues.append((2, err, f"{s} after {p['name']}: " + "; ".join(what)))
+        if far:                                        # what the found model was never shown: say so on every issue
+            note = f" (the truth's {', '.join(far)} leaves the recorded range: an extrapolation, which the data may not decide)"
+            issues[n_issues:] = [(w, e, m + note) for w, e, m in issues[n_issues:]]
         pushes.append({"push": p["name"], "kind": p["kind"], "on": p["on"], "target": p["target"], "size": _fin(p["size"]),
-                       **({"period": p["period"]} if p["kind"] == "sine" else {}), "stocks": stocks})
+                       **({"period": p["period"]} if p["kind"] == "sine" else {}), "stocks": stocks,
+                       **({"outside_data": far} if far else {})})
     # frequency response per path: where along the periods it goes wrong
     for src in {(p["on"], p["target"]) for p in b.pushes if p["kind"] == "sine"}:
         rows = [(p["period"], q) for p, q in zip(b.pushes, pushes) if p["kind"] == "sine" and (p["on"], p["target"]) == src]
@@ -496,6 +530,7 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
         label = src[1] if src[0] == "input" else f"the outside inflow into {src[1]}"
         for s in b.measured:
             bad = [(P, q["stocks"][s]) for P, q in rows if not q["stocks"][s]["agree"] and all(q["stocks"][s]["responds"])]
+            far = sorted({x for _, q in rows for x in q.get("outside_data") or []})
             if not bad:
                 continue
             slow_ok = rows[-1][1]["stocks"][s]["agree"]
@@ -505,11 +540,12 @@ def compare(bench: Bench, found_flows: list[dict], ceilings: dict | None = None,
                     else "wrong steady-state gain (the coefficient or balance on the path)")
             issues.append((2, r["err"] or 0, f"{s} driven by a sine in {label}: gain {r['gain_found']:.3g} vs the truth's {r['gain_true']:.3g}"
                            f" at period {P}" + (f", phase {r['phase_found']:.0f} vs {r['phase_true']:.0f} degrees" if r.get("phase_found") is not None else "")
-                           + f": {kind}"))
+                           + f": {kind}" + (f" (the truth's {', '.join(far)} leaves the recorded range at some period: an extrapolation)" if far else "")))
     issues.sort(key=lambda x: (-x[0], -(x[1] or 0)))
     agree = sum(comps) / len(comps) if comps else None
     out = {"agree": _fin(agree, 4), "n": len(comps), "verdict": None if agree is None else "agrees" if agree == 1 else "differs",
            "agree_fixed": _fin(sum(fixed) / len(fixed), 4) if fixed else None, "data_limited": limited,
+           "agree_in_range": _fin(sum(inside) / len(inside), 4) if inside else None, "n_in_range": len(inside),
            "footprint": footprint, "diagnosis": [m for *_, m in issues[:8]], "issues": len(issues),
            "tau_true": _fin(b.tau), "tau_found": _fin(fdyn["tau"]), "rho_true": _fin(b.rho), "rho_found": _fin(fdyn["rho"]),
            "settled": b.settled, "start_step": b.t_s, "periods": b.periods, "horizon": {"impulse": b.h_imp, "sine": b.H},

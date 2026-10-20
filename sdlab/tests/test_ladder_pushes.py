@@ -119,3 +119,34 @@ def test_freeze_takes_the_piece_that_holds():
     assert pushes._freeze(f, 100)["rate"]["value"] == 2 and "byTime" not in pushes._freeze(f, 100)
     g = {"from": None, "to": "A", "rate": {"form": "constant", "value": 0}, "inflow": [{"from": 1, "to": 10, "value": 5.0}]}
     assert pushes._freeze(g, 10)["rate"] == {"form": "constant", "value": 5.0}
+
+
+def test_a_response_below_the_footprint_on_both_sides_agrees():
+    """Neither model responds (both below FOOT x the push's largest true response): the footprints match, so the
+    comparison agrees, whatever the two small curves' relative difference (it was a 'wrong-signed path' of 0)."""
+    tm, d, b = _bench("003-chain-2")
+    leak = {"id": "leak", "from": "B", "to": "A", "rate": {"form": "proportional", "stock": "B", "k": 0.004}}
+    out = pushes.compare(b, _truth_as_found(tm, d) + [leak])
+    row = next(p for p in out["pushes"] if p["on"] == "stock" and p["target"] == "B")["stocks"]["A"]
+    assert row["responds"] == [False, False] and row["err"] > pushes.TOL_SHAPE and row["agree"]
+    assert out["agree"] == 1.0 and not any(out["footprint"].values())
+    leak["rate"]["k"] = 0.02                                           # above the footprint: a path the truth does not have
+    out = pushes.compare(b, _truth_as_found(tm, d) + [leak])
+    assert any(s == "A" and push.endswith("B") for push, s in out["footprint"]["spurious"])
+
+
+def test_a_stock_at_the_top_of_its_range_is_pushed_down_and_extrapolations_are_marked():
+    """018's C settles at the top of what the run recorded (70): the impulse takes material out of C, so it stays
+    where the data are (a found table effect ends at the last level seen); a push that takes the truth beyond the
+    recorded range is marked, and agree_in_range leaves it out."""
+    tm, d, b = _bench("018-table-effect", "none-long")
+    names = [p["name"] for p in b.pushes if p["on"] == "stock"]
+    assert "an impulse out of C" in names
+    imp = next(p for p in b.pushes if p["name"] == "an impulse out of C")
+    assert imp["size"] < 0
+    out = pushes.compare(b, _truth_as_found(tm, d))
+    assert out["agree"] == 1.0 and out["agree_in_range"] == 1.0
+    step = next(p for p in out["pushes"] if p["kind"] == "step" and p["target"] == "C")
+    assert "C" in step["outside_data"]
+    assert 0 < out["n_in_range"] < out["n"]
+    assert not next(p for p in out["pushes"] if p["push"] == "an impulse out of C").get("outside_data")

@@ -114,3 +114,35 @@ def test_found_numbers_count_placed_breakpoints_not_announced_ones():
 def test_the_checks_are_not_in_the_score_hash():
     import inspect
     assert "consistency" not in inspect.getsource(score.score_hash)
+
+
+def test_a_biased_variant_gives_the_found_model_its_bias():
+    """bias-short reports B x 1.2: the truth in true units was rejected (no bias in the found model's likelihood);
+    with the bias free, as the refit has it, the truth cannot be told from its refit and the bias is recovered."""
+    c = cell("080-noisy-chain-2", "bias-short")
+    lk = C.likelihood_check(c, c.truth_flows)
+    assert not lk["rejected"] and lk["verdict"] == "the data cannot tell them apart"
+    assert lk["bias"]["B"] == pytest.approx(1.2, abs=0.05)
+    assert lk["LR_vs_true_numbers"] <= 1e-6
+
+
+def test_the_reference_is_never_below_the_true_numbers():
+    """Weekly means: the refit can end below the true numbers; the reference is then the true numbers (LR_truth 0)."""
+    c = cell("082-noisy-link-loop", "weekly-long")
+    lk = C.likelihood_check(c, c.truth_flows)
+    assert lk["LR_truth"] >= 0 and lk["LR"] >= -1e-9
+    assert lk["verdict"] == "the data cannot tell them apart"
+
+
+def test_where_the_noise_model_rejects_the_truth_itself_a_found_model_is_judged_against_the_true_numbers():
+    """025 empties its stock (a floor the linear model does not have): the truth's refit beats the true numbers by far
+    more than chi-square allows, so the truth is not rejected, a model far off still is; the unidentified numbers (the
+    empty eras' constants) are reported, not held against the model."""
+    c = cell("025-runs-empty", "counts-long")
+    lk = C.likelihood_check(c, c.truth_flows)
+    assert lk["noise_model_misfit"] and lk["LR"] > lk["critical"] and not lk["rejected"]
+    assert lk["verdict"].startswith("the data cannot tell it from the truth at its true numbers")
+    far = C.likelihood_check(c, scaled(c.truth_flows, 0.7))
+    assert far["rejected"] and far["LR_vs_true_numbers"] > far["critical"]
+    b = C.bound_check(c, c.truth_flows)
+    assert b["ok"] and b["unidentified"]
