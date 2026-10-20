@@ -33,6 +33,11 @@ prior, knots (knot counts tried), most (candidates per round), per_candidate (pl
 inflows), guard (steps next to an inflow change left out of the fit), level_price (extra price of
 an inflow value, in log T), seg_base, seg_margin, rounds.
 
+The base is the main line with each candidate's outside-inflow pieces earned (earned.py, earned_rows.py,
+earned_joint.py: a copy of sdlab/discovery/strategies/matrix/earned*.py at 49e4ca7; kubernetes 303
+counts-short, docs/research/k8s-303-r3.md): without it the pinned main line's chance pieces (a
+5-piece drain out of the final counter beside an 8% fast inflight drain) were the base every stage kept.
+
 Measured inputs (opts "inputs", inputs.py) are columns in every fit (the matrix's, the screen's, each
 curve's, the joint refit's) and every model is priced and judged stepped with them.
 """
@@ -46,7 +51,7 @@ import os
 import numpy as np
 
 from ...addition import addition_test
-from ...identify import identify as matrix_identify
+from .earned import main_line as matrix_identify   # identify.identify with each candidate's pieces earned (earned.py, matrix's copy)
 from ...matrix import injected
 from ...simulate import behaviour_error
 from . import search

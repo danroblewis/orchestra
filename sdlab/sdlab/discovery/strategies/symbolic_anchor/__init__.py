@@ -33,7 +33,7 @@ from __future__ import annotations
 import json
 import os
 
-from ...addition import addition_test
+from .addition import addition_test                # a copy that reads the measured inputs
 from ...effects import only_rows, screen, translate, virtual
 from ...identify import VARIANTS, judge
 from .earned import main_line as matrix_identify
@@ -74,7 +74,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 r = identify_one(vstocks, vrun, {**fit_opts, **v, "only_rows": rows})
                 flows = translate(r["flows"], meta, stocks)
                 name = f"effects {_label(group)}{'' if plain else ' (curved level only)'}, {v['name']}"
-                e = judge(flows + extra if flows else [], stocks, run)
+                e = judge(flows + extra if flows else [], stocks, run, injections=opts.get("injections"),
+                          inputs=opts.get("inputs"))
                 out.append((name, flows, e))
                 base["tried"].append({"name": name, "error": e})
                 if keep:
@@ -92,9 +93,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         tests = []
         for name, flows, _ in cands:                      # else each is tested; the largest gain that passes
             test = addition_test(current, flows, stocks, run, inflow=opts["inflow"], z=opts["z"], floor=opts["floor"],
-                                 pieces=opts["pieces"], extra=extra, refit_len=opts["refit_len"])
+                                 pieces=opts["pieces"], extra=extra, refit_len=opts["refit_len"],
+                                 inputs=opts.get("inputs"))
             for other in opts["also"] if test["accept"] else []:
-                gain = addition_test(current, flows, stocks, run, inflow=other, extra=extra, refit_len=opts["refit_len"])["gain"]
+                gain = addition_test(current, flows, stocks, run, inflow=other, extra=extra, refit_len=opts["refit_len"],
+                                     inputs=opts.get("inputs"))["gain"]
                 test[f"gain {other}"] = gain
                 test["accept"] = test["accept"] and gain > 0
             tests.append((test, name, flows))
