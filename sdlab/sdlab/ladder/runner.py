@@ -93,9 +93,23 @@ def retired() -> dict[str, str]:
     return dict(yaml.safe_load(RETIRED.read_text()) or {}) if RETIRED.exists() else {}
 
 
+ROSTERS = Path(__file__).with_name("rosters")
+
+
+def roster(name: str) -> dict[str, dict]:
+    """A competition's eliminated strategies (rosters/<name>.yaml): {strategy: {rung, kind, reason, of}}."""
+    import yaml
+
+    p = ROSTERS / f"{name}.yaml"
+    if not p.exists():
+        raise SystemExit(f"no roster {name!r} (have: {', '.join(sorted(q.stem for q in ROSTERS.glob('*.yaml')))})")
+    return dict((yaml.safe_load(p.read_text()) or {}).get("eliminated") or {})
+
+
 def select_strategies(spec: str | None, parked_too: bool = False) -> tuple[list[dict], list[dict]]:
     """(available, skipped) strategy listings for a comma list, "all" (every strategy except the
-    parked and retired ones) or "everything" (every strategy except the retired ones). A parked or
+    parked and retired ones) "everything" (every strategy except the retired ones) or "roster:NAME" (everything less the strategies
+    rosters/NAME.yaml eliminated from that competition). A parked or
     retired strategy still runs when named. parked_too reads "all" as "everything": `sync` does,
     since parked strategies are still active (the watchers run them) and a sync that left their
     stale cells behind left them stale wherever no watcher looks (tag:kubernetes on the Mac)."""
@@ -108,6 +122,9 @@ def select_strategies(spec: str | None, parked_too: bool = False) -> tuple[list[
         names = [n for n in every if n not in skip]
     elif spec == "everything":
         names = [n for n in every if n not in gone]
+    elif spec.startswith("roster:"):                         # a competition's survivors: not retired, not eliminated
+        out = roster(spec.split(":", 1)[1])
+        names = [n for n in every if n not in gone and n not in out]
     else:
         names = [n.strip() for n in spec.split(",") if n.strip()]
     unknown = [n for n in names if n not in every]

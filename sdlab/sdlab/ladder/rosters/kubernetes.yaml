@@ -1,0 +1,15 @@
+# The kubernetes competition (the user, 2026-10-20): every non-retired strategy enters at rung 300;
+# each rung's investigation (300-317, one at a time) fixes what fails and eliminates a strategy only
+# for a hard reason. Eliminated strategies stay on the rest of the ladder and keep their docs; their
+# ideas may be reused, their code is not run on later rungs. Select the survivors with
+# `--strategies roster:kubernetes`.
+#
+# kind: impossible  - the method cannot represent the rung's mechanism, and adding it would rewrite
+#                     the method (verified by two skeptics)
+#       duplicate   - gives the same result as another survivor (`of`) on every cell run so far
+#       not-entered - not in the competition (and why)
+eliminated:
+  kalman_bayes:
+    rung: "302"
+    kind: not-entered
+    reason: parked on 2026-10-20 (7x kalman_lna's cost, no better; docs/research/kalman_bayes.md)
