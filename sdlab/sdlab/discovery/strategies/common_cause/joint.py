@@ -189,6 +189,103 @@ class System:
         out["theta"] = theta
         return out
 
+    def shared(self, fit: dict) -> np.ndarray:
+        """The rows' noise at each step as one covariance (T x S x S), inverted. A row's variance is
+        its throughput in the fit (gross); a move j -> s (a same-unit column of row s reading j with a
+        positive number) is one count that leaves j and arrives in s, so its flow m is in both rows'
+        variances and minus rho m is their covariance: Sigma = D + rho sum m (e_s - e_j)(e_s - e_j)',
+        with D what is left of the throughputs (at least a tenth), so it is positive definite. rho
+        (0 to 1, one per unit) is read off the fit's residuals: how much the move's rows really do
+        share noise (1 for counting noise; 0 when a level's noise is its own, as with measurement
+        noise, or when the move is a link). Without counting noise the rows are independent."""
+        S, T = self.S, self.T
+        eye = np.broadcast_to(np.eye(S), (T, S, S)).copy()
+        if not self.counting:
+            return eye
+        g = np.array(fit["gross"], dtype=float)
+        e = np.array(fit["res"], dtype=float)
+        m = np.zeros((S, S, T))
+        for s, r in enumerate(self.rows):
+            for k, q in enumerate(r["set"]):
+                j = r["col"][q][0]
+                if j < S and j != s and self.unit[self.ids[j]] == self.unit[self.ids[s]] and fit["beta"][s][k] > 0:
+                    m[j, s] += fit["beta"][s][k] * np.abs(r["X"][q])
+        m = m + m.transpose(1, 0, 2)
+        rho = np.zeros(S)
+        for un in dict.fromkeys(self.unit[i] for i in self.ids):
+            ss = [s for s in range(S) if self.unit[self.ids[s]] == un]
+            phi = float(np.mean([(e[s] ** 2 / g[s]).mean() for s in ss]))
+            mm = sum(float(m[a, b].sum()) for a in ss for b in ss if a < b)
+            if mm > 0 and phi > 0:
+                cross = sum(float((e[a] * e[b]).sum()) for a in ss for b in ss if a < b and m[a, b].any())
+                rho[ss] = min(1.0, max(0.0, -cross / (phi * mm)))
+        m = m * np.sqrt(rho[:, None, None] * rho[None, :, None])
+        d = np.maximum(g - m.sum(1), 0.1 * g)
+        sig = -m.transpose(2, 0, 1)
+        i = np.arange(S)
+        sig[:, i, i] = (d + m.sum(1)).T
+        return np.linalg.inv(sig)
+
+    def shared_nll(self, tied: set, W: np.ndarray, cuts: list) -> float:
+        """-2 log L (less what is the same for every fit) of the rows fitted together by generalised
+        least squares with the noise covariance W^-1 (shared), with the ties as constraints and each
+        row's pieces (cuts) as its own levels; one variance scale per unit. With W fixed, a tie can
+        only raise it."""
+        S, T = self.S, self.T
+        index = {p: i for i, p in enumerate(self.free)}
+        Q = len(self.free)
+        blocks = []
+        for s, r in enumerate(self.rows):
+            ix = [index[(s, q)] for q in r["set"]]
+            X = [r["X"][q] for q in r["set"]]
+            c = cuts[s]
+            if c:
+                for lo, hi in zip(c[:-1], c[1:]):
+                    x = np.zeros(T)
+                    x[lo:hi] = 1.0
+                    X.append(x)
+                    ix.append(Q)
+                    Q += 1
+            blocks.append((ix, np.array(X) if X else np.zeros((0, T))))
+        groups = [[s for s in range(S) if self.unit[self.ids[s]] == un] for un in dict.fromkeys(self.unit[i] for i in self.ids)]
+        G = np.zeros((Q, Q))
+        b = np.zeros(Q)
+        for ss in groups:
+            for s in ss:
+                ix, X = blocks[s]
+                if not ix:
+                    continue
+                for j in ss:
+                    XW = X * W[:, s, j]
+                    b[ix] += XW @ self.dy[j]
+                    jx, Xj = blocks[j]
+                    if jx:
+                        G[np.ix_(ix, jx)] += XW @ Xj.T
+        A = []
+        for a, c in sorted((a, c) for a in tied for c in self.configs(a)):
+            row = np.zeros(Q)
+            for q in self._reading(a, a, c):
+                row[index[(a, q)]] += 1.0
+            for s in self._same_unit(a):
+                for q in self._reading(s, a, c):
+                    row[index[(s, q)]] += 1.0
+            A.append(row)
+        A = np.array(A) if A else np.zeros((0, Q))
+        G[np.diag_indices_from(G)] += 1e-9 * (np.abs(np.diag(G)) + 1)
+        K = np.block([[G, A.T], [A, np.zeros((len(A), len(A)))]])
+        rhs = np.concatenate([b, np.zeros(len(A))])
+        try:
+            theta = np.linalg.solve(K, rhs)[:Q]
+        except np.linalg.LinAlgError:
+            theta = np.linalg.lstsq(K, rhs, rcond=None)[0][:Q]
+        e = np.array([self.dy[s] - (theta[ix] @ X if ix else 0.0) for s, (ix, X) in enumerate(blocks)])
+        nll = 0.0
+        for ss in groups:
+            z = float(np.einsum("st,tsk,kt->", e[ss], W[:, ss][:, :, ss], e[ss]))
+            n = len(ss) * T
+            nll += n * math.log(max(z / n, 1e-300))
+        return nll
+
     def _evaluate(self, theta, index, w, cuts, fixed=None) -> dict:
         betas, res, gross, inflow = [], [], [], []
         for s, r in enumerate(self.rows):
@@ -215,31 +312,49 @@ class System:
 
 
 def decide(system: System, log_t: float, trace: bool = False) -> dict:
-    """Tie or free each source (in all its configurations at once), one at a time while BIC on the
-    counting likelihood improves, starting from every source free; every decision is made with
-    changing rows' pieces found at the textbook price (System.fit, honest). Every fit compared
-    is weighted by the free fit's throughputs, held fixed, so that the comparison is nested (a tie
-    can only cost likelihood) and the BIC step is a likelihood-ratio test. Refitting the
-    throughputs from each fit's own numbers let a tie lower -2 log L by raising the variance it
-    claims (305 counts-long: a give-up drain folded into the retry move at 4 sd). The model is then
-    fitted with the chosen ties and the cheap pieces: a changing row keeps the matrix's pieces when
-    free, and gets pieces found with its drain held when tied."""
+    """Tie or free each source (in all its configurations at once), one change at a time while BIC
+    on the counting likelihood improves, starting from every source free; every decision is made
+    with changing rows' pieces found at the textbook price (System.fit, honest).
+
+    A source whose own inflow is steady is judged on the rows' joint likelihood
+    (System.shared_nll): a move's count leaves its source and arrives in its receiver, so the two
+    rows share noise, and the noise covariance is the free fit's, held fixed (quasi-likelihood: the
+    variance weighs the residuals but is not evidence about the numbers), so the tied and free
+    fits are nested and the step is a likelihood-ratio test. Before, each fit's throughputs were
+    refitted from its own numbers: a tie could lower -2 log L by claiming more variance (305
+    counts-long: a give-up drain folded into the retry move at 4 sd; the retries stock empties
+    every step, so its outflow is far less noisy than its throughput says), and the rows were
+    taken as independent (305 counts-short: 2.0 sd row by row, 2.9 sd together).
+    A source whose inflow changes (pieces) cannot tell its drain from the changes, so its own row's
+    numbers are no evidence against a tie; it is judged as before, on each fit's own throughputs
+    and pieces, where the throughput a tie implies is the evidence (an intake changing every 30
+    steps: sd-pipeline). The model is then fitted with the chosen ties and the cheap pieces: a
+    changing row keeps the matrix's pieces when free, and gets pieces found with its drain held
+    when tied."""
     cands = system.ties()
     tied: set = set()
-    gross = system.fit(tied, honest=True)["gross"]
-    best = system.fit(tied, honest=True, gross=gross)
-    score = best["nll"] + best["P"] * log_t
+    free = system.fit(tied, honest=True)
+    W = system.shared(free)
+
+    def price(ts: set) -> tuple[float, float]:
+        """(BIC on each fit's own throughputs, BIC on the shared likelihood with the free fit's)."""
+        own = system.fit(ts, honest=True)
+        held = system.fit(ts, honest=True, gross=free["gross"])
+        return own["nll"] + own["P"] * log_t, system.shared_nll(ts, W, held["cuts"]) + held["P"] * log_t
+
+    score = price(tied)
     while True:
         step = None
         for t in cands:
             trial = tied ^ {t}
-            f = system.fit(trial, honest=True, gross=gross)
-            sc = f["nll"] + f["P"] * log_t
+            sc = price(trial)
+            k = 0 if system.changing(t) else 1
+            gain = score[k] - sc[k]
             if trace:
-                print(f"    tie {system.ids[t]} {'on' if t in trial else 'off'}: {sc:.2f} vs {score:.2f}")
-            if sc < score - 1e-9 and (step is None or sc < step[1]):
-                step = (trial, sc, f)
+                print(f"    tie {system.ids[t]} {'on' if t in trial else 'off'}: gain {gain:.2f} ({'own' if k == 0 else 'shared'})")
+            if gain > 1e-9 and (step is None or gain > step[1]):
+                step = (trial, gain, sc)
         if step is None:
             break
-        tied, score, best = step
+        tied, score = step[0], step[2]
     return system.fit(tied)
