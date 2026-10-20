@@ -138,3 +138,17 @@ def test_exact_cells_select_only_those():
     assert got == [("007-link", "counts-short"), ("048-random-stepping-inflow-drain#1", "counts-short"), ("141-noisy-offset-oscillator", "none-short")]
     with pytest.raises(SystemExit):
         cells_for(None, None, None, "081@counts-medium")
+
+
+def test_cells_from_a_cache_folder(tmp_path, monkeypatch):
+    import json as _json
+
+    from sdlab.ladder.objective_test import cells_of
+    monkeypatch.setenv("SDLAB_LADDER_CACHE", str(tmp_path))
+    f = tmp_path / "objective_test" / "v1-base"
+    f.mkdir(parents=True)
+    (f / "a.json").write_text(_json.dumps({"case": "007-link", "variant": "counts-short"}))
+    (f / "b.json").write_text("not json")
+    assert cells_of("v1-base") == [("007-link", "counts-short")]
+    with pytest.raises(SystemExit):
+        cells_of("v1-missing")

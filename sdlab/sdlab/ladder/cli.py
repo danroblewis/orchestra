@@ -510,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--sets", help="named sets: " + ", ".join(("p0", "p1", "p2", "p3", "p4", "p5")))
     ot.add_argument("--variants")
     ot.add_argument("--cells", help="an exact cell list: case@variant,... (e.g. 007@counts-short,081@meas-short)")
+    ot.add_argument("--cells-from", metavar="FOLDER", help="the cells cached in this objective_test folder (e.g. a baseline's)")
     ot.add_argument("--out", help="write the cells and the summary as JSON")
     ot.add_argument("--jobs", type=int, default=2, help="workers (at most 4; JAX's CPU runtime uses ~2 cores each)")
     ot.add_argument("--timeout", type=float, default=900.0, help="seconds per cell; a cell that runs out is resumable")

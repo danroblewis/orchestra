@@ -2649,6 +2649,8 @@ the store and hands the evaluator only the discovery view (its loader asserts th
 uv run sdlab-ladder objective-test --cases 007,009 --variants counts-short     # some cells
 uv run sdlab-ladder objective-test --sets p0 --out p0.json                     # a named phase
 uv run sdlab-ladder objective-test --sets p1 --report-only                     # the tables, from the cache
+uv run sdlab-ladder objective-test --cells 007@counts-short,081@meas-short     # exactly these cells
+uv run sdlab-ladder objective-test --code-table v2-tau-priced --cells ...      # another code table
 ```
 
 `--sets` takes `p0` (the named rows of section 7.6, each at its named variant), `p1` to `p5` (tag sets,
@@ -2656,7 +2658,18 @@ section 7.6); `--cases` and `--variants` take the ladder's syntax. `--jobs` (def
 cells in a process pool at `nice 19`; the pool is shut down before the command returns. `--timeout`
 (default 900 s) caps a cell: a cell that runs out is written as far as it got and **resumes** on the next
 run (the cache is written after every candidate). `--max-groups` (default 40) caps the distinct stored
-structures per cell; the rest are reported as not run.
+structures per cell; the rest are reported as not run. `--cells case@variant,...` names exact cells (added
+to any `--cases`/`--sets` selection); `--cells-from FOLDER` takes the cells cached in a cache folder (a baseline's).
+
+**Code tables** (`unified/codetable.py`; `--code-table NAME`, or `SDLAB_UNIFIED_CODE_TABLE`, default
+`v1`). Each is one global choice of how the noise character eta is estimated and priced, the same for
+every case: `v1` (eta free per fit, unpriced); `v2-` plus one or more of `eta-lean` / `eta-joint` (all of
+eta fitted once per data set, on the lean model or jointly across the cell's candidates, and held for
+every candidate), `phi-lean` / `phi-joint` (only phi held that way), `tau-priced` (each tau off unless it
+pays 1/2 ln N_s), `phi-prior[=w]` (a normal prior on ln phi at 0, width w, default 1), joined by `+`
+(e.g. `v2-phi-lean+tau-priced`). With a held option the cell stores `data_eta`; the joint options first
+fit the truth and every group with eta free (`Tstar_free`, `fit_free`), then refit everything holding the
+joint eta (about twice v1's cost). Each table has its own cache folder.
 
 **Per cell.** The truth T is `skill.truth_by_time` on the evaluator's grid (with its hidden starts,
 ceilings, dt and signed stocks). T0 is T at its written numbers with only the noise character fitted; T*
@@ -2697,7 +2710,7 @@ every E with its parts and mechanism.
 **Where the results are.** `$SDLAB_LADDER_CACHE/objective_test/<code table>-<hash of the evaluator and
 the harness>/<case>__<variant>.json`, one file per cell, never the result store. A change to the
 evaluator or the harness starts a new folder, so numbers from different code never mix. The evaluator's
-hash covers its own modules only (`frontend`, `engine`, `kalman`, `price`, `objective`), not the rest
+hash covers its own modules only (`frontend`, `engine`, `kalman`, `price`, `objective`, `codetable`), not the rest
 of the `unified` package, so work on the strategy does not move the folder. The labels are computed by
 `objective_labels.py`, which is outside the key: after a labelling fix,
 

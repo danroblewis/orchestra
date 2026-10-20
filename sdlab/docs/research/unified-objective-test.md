@@ -264,3 +264,62 @@ Cells whose label or outcome changed (14):
 
 The corrected baseline: truth best in 182 of 227 judged committed cells (tests 56/63, distilled 26/35,
 noisy 33/46, canonical 20/28, control 32/40, realistic 15/15).
+
+## 6. Noise-character options for M1, as code tables (80cc13b, 20 October 2026)
+
+**Built, not yet run on the sample.** The M1 arms of section 4, item 2, are selectable code tables
+(`sdlab/discovery/strategies/unified/codetable.py`; `--code-table NAME`, default `v1`). Each is one
+global choice; none reads the case, set, variant or input type. Options (join with `+`, e.g.
+`v2-phi-lean+tau-priced`):
+
+| table | what changes |
+| --- | --- |
+| `v1` (default) | eta free in every fit, unpriced. The fit is bit-identical to before (T0, T* and every group's J on 048#1 and 059 counts-short equal the cached values). |
+| `v2-eta-lean` | all of eta fitted once per data set on the lean model (a constant inflow and an own drain per measured stock, eta free), held for every candidate |
+| `v2-eta-joint` | all of eta fitted once per data set: the eta minimising the sum of D over the truth and every group at their own free-eta fits; then everything refitted holding it (about twice v1's cost) |
+| `v2-phi-lean`, `v2-phi-joint` | only phi held that way (phi is already one number across stocks; this makes it one number per data set, priced once); beta, tau, alpha, rho2 free |
+| `v2-tau-priced` | each tau_s off (ln tau = -40) unless turning it on lowers J by more than 1/2 ln N_s (the pooled hidden tau: 1/2 ln N); stays off when counting noise explains the innovations |
+| `v2-phi-prior[=w]` | J gains 1/2 (ln phi / w)^2 (default w = 1), minimised inside every fit; every case pays it |
+
+Not offered: phi pinned to the counting value where reports are whole numbers (it branches on input type).
+
+**Quick check only** (3 cells per table; commit 80cc13b; folders `<table>-4611b9813a`; the v1 row is the
+re-labelled baseline `v1-74e6892a11`):
+
+```sh
+uv run sdlab-ladder objective-test --code-table <table> --cells 007@counts-short,059@counts-short,086@counts-short --jobs 3 --timeout 900
+```
+
+| table | 007-link | 059-small-inflow-step | 086-noisy-stepping-inflow |
+| --- | --- | --- | --- |
+| v1 | E, min delta -4.9 | E-price, -6.1 | E, -4.6 |
+| eta-lean | E, -7.1 (lean phi 2.6e-5) | E-price, -2.6 (phi 3.9) | S, truth best (phi 7.2) |
+| eta-joint | E, -7.4 (phi 4e-6) | E-price, -6.9 | E, -8.2 |
+| phi-lean | E, -7.5 | F, -17.3 | S, truth best |
+| phi-joint | **S, truth best, +5.1** | E-price, -5.7 | E, -6.2 |
+| tau-priced | **OK, +33.2** (no tau on) | E-price, -4.6 | E, -4.6 |
+| phi-prior (w = 1) | E-price, -2.5 | E-price, -5.8 | E, -4.3 |
+
+Read (3 cells, not a result): tau-priced recovers the design's probe case 007 as section 2 predicted
+(+34.6 with tau capped); it does not touch the phi-trade cells 059 and 086. The lean reference is a poor
+noise estimate: with tau free, its tau absorbs the lean model's misfit and phi goes to 0 (007) or far above
+1 (059, 086), so eta-lean and phi-lean move the truth's own fit off its noise (sanity fails everywhere).
+The obvious next combination is `v2-phi-lean+tau-priced` (the lean reference with tau priced too).
+
+**Target cells** (the 22 committed M1 and truth-fit cells of section 2, part-capacity-gate being C, plus
+110 for the phi > 1 trade):
+
+```sh
+uv run sdlab-ladder objective-test --code-table <table> --jobs 3 --timeout 900 --cells 007@counts-short,027@counts-short,048#1@counts-short,059@counts-short,063@counts-short,110@counts-short,134@counts-short,135@counts-short,153@counts-short,160@counts-short,224@counts-short,081@counts-short,081@gaps-short,081@meas-short,082@counts-short,082@gaps-short,082@meas-short,084@meas-short,085@meas-short,086@counts-short,086@gaps-short,086@meas-short,141@none-short
+```
+
+**Full sample** (exactly the 349 cells of the re-labelled baseline, 227 judged; compare with
+`v1-74e6892a11`, whose v1 fits are unchanged):
+
+```sh
+for T in v2-eta-lean v2-eta-joint v2-phi-lean v2-phi-joint v2-tau-priced v2-phi-prior; do
+  uv run sdlab-ladder objective-test --code-table $T --cells-from v1-74e6892a11 --jobs 3 --timeout 900
+done
+```
+
+Not done: eta restarts (still inherit the first start's eta); the full sample; any choice of v2.

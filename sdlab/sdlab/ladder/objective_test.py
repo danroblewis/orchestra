@@ -561,12 +561,32 @@ def load_cells(cells: list[tuple[str, str]]) -> list[dict]:
     return out
 
 
+def cells_of(folder: str) -> list[tuple[str, str]]:
+    """The (case, variant) cells cached in a cache folder (a name under objective_test/), e.g. a
+    baseline's, so another code table runs exactly the same cells."""
+    root = cache_dir().parent / folder
+    if not root.is_dir():
+        raise SystemExit(f"--cells-from {folder!r}: no such cache folder under {root.parent}")
+    out = []
+    for p in sorted(root.glob("*.json")):
+        try:
+            c = json.loads(p.read_text())
+        except ValueError:
+            continue
+        if c.get("case") and c.get("variant"):
+            out.append((c["case"], c["variant"]))
+    return out
+
+
 def main(a) -> int:
     from .objective_report import report
     if getattr(a, "code_table", None):
         os.environ[codetable.ENV] = codetable.parse(a.code_table).name     # the workers inherit it
-    sel = a.cases or a.sets or getattr(a, "cells", None)
+    sel = a.cases or a.sets or getattr(a, "cells", None) or getattr(a, "cells_from", None)
     cells = cells_for(a.cases, a.sets, a.variants, getattr(a, "cells", None)) if (sel or not getattr(a, "relabel", None)) else [("-", "-")]
+    if getattr(a, "cells_from", None):
+        base = cells if (a.cases or a.sets or getattr(a, "cells", None)) else []
+        cells = list(dict.fromkeys(base + cells_of(a.cells_from)))
     if not cells:
         print("no cells", flush=True)
         return 2

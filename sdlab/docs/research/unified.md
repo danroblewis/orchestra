@@ -16,6 +16,7 @@ ladder; the quantum estimate is copied from `strategies/combined/judge.py` at c7
 | `engine.py` | the step in JAX, in the engine's order: rates (floored unless two-way) x effects, x dt per sub-step, outflows sharing what a stock holds (stock by stock), inflows sharing the room under a ceiling, levels floored unless signed. |
 | `kalman.py` | the filter and D: an extended Kalman filter on that step (Jacobian by JAX), process noise phi V (diag(a) - beta B) V' + diag(tau), each report a scalar update with variance q^2/12 + alpha + rho^2 mu^2, scored as the probability of its quantisation bin; a report at the floor takes the censoring mass. |
 | `price.py` | code table v1: P_num = sum 1/2 ln N_j (N_j: the reports of the measured stocks number j moves, over the steps where it acts), P_struct (section 4.3 of the design), eps = 0.5 nat. |
+| `codetable.py` | the code-table versions (v1 default; v2 noise options eta-lean/joint, phi-lean/joint, tau-priced, phi-prior), one global choice each, selected by `--code-table` (unified-objective-test.md, section 6) |
 | `objective.py` | J = D + P_num + P_struct, the fit (eta alone from three declared starts, then everything jointly; L-BFGS-B on JAX gradients), diagnostics (innovation dispersion and Ljung-Box z), the lean start. |
 
 The harness is `sdlab/ladder/objective_test.py` and `objective_report.py`, run as
