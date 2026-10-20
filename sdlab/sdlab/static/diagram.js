@@ -205,7 +205,8 @@
       el("path", { d: `M${a.x} ${a.y} L${tip.x} ${tip.y}`, stroke: col, "stroke-width": f.thin ? 1.8 : 3.2, fill: "none", "stroke-dasharray": f.dashed ? "7 5" : null }, g);
       el("path", { d: `M${a.x} ${a.y} L${b.x} ${b.y}`, stroke: "transparent", "stroke-width": 14, fill: "none" }, g);
       arrowHead(g, a, b, col, 12);
-      if (!f.from || !f.to) cloud(gFlows, spots.get(f));
+      // an invented flow's outside (source or sink) is invented too: drawn in the flow's colour
+      if (!f.from || !f.to) cloud(gFlows, spots.get(f), f.cls === "spurious" && !f.thin ? { stroke: col, "stroke-width": 1.8 } : {});
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
       // the label sits beside the arrow, on the side its offset pushed it to (above when level)

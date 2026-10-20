@@ -55,7 +55,7 @@
         title: `${t.flow.id}: ${t.equation}\n${CLS_WORD[t.cls] || t.cls}${t.notes.length ? "\n" + t.notes.join("\n") : ""}`,
         reads: readsOf(t.flow, t.reads.map((x) => ({ stock: x.stock, label: x.kind === "uses" ? `uses ${fmt(x.per)}` : "effect", dash: x.kind === "uses" ? "1 3" : "5 4", cls: x.cls === "missing" ? "missed" : x.cls || "plain" }))) };
     });
-    const dStocks = [...tStocks, ...fStocks.filter((s) => !tStocks.some((t) => t.id === s.id))];
+    const dStocks = [...tStocks, ...fStocks.filter((s) => !tStocks.some((t) => t.id === s.id)).map((s) => ({ ...s }))];   // copies: the diff colours them
     cmp.found.forEach((x) => {
       const f = x.flow, invented = x.cls === "spurious", reread = x.cls === "equiv" && !x.parts.length, extra = x.spurious.length && x.parts.length;
       if (!invented && !reread && !extra) return;
@@ -67,6 +67,14 @@
         const id = viaOf.get(x);
         dFlows.push({ cls, label, label2, title, from: f.from || f.via.echo, to: id, reads: [] }, { cls, label: "", from: id, to: f.to, reads: [] });
       } else dFlows.push({ cls, thin: !!extra, label, label2, title, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, cls)) });
+    });
+    // a stock only the found model has (an inferred or hidden stage) takes the colour of the flows that
+    // make it: red when every one of them is invented, the equivalent colour when one is a re-reading
+    dStocks.forEach((st) => {
+      if (tStocks.some((t) => t.id === st.id)) return;
+      const touch = dFlows.filter((f) => f.from === st.id || f.to === st.id);
+      if (touch.length && touch.every((f) => f.cls === "spurious")) st.cls = "spurious";
+      else if (touch.some((f) => f.cls === "equiv")) st.cls = "equiv";
     });
     return { tD, fD: { stocks: fStocks, flows: fFlows }, dD: { stocks: dStocks, flows: dFlows }, vias, alias };
   }
