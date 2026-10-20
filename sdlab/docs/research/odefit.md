@@ -193,6 +193,48 @@ Against the Tests leaders, odefit is matrix wherever levels are counted, so kalm
 and combined stay well ahead on counts and noisy reports. odefit is a physics/smooth-data method
 with the main line as its fallback, not a replacement for them.
 
+## Round 2: square roots of the levels (`948c0a2`)
+
+**What changed:** a `roots` family beside the products: sqrt(level) of every stock as a column of every
+row, fitted with the linear terms by output error, pruned by BIC, and kept under the same checks (10
+BIC, the held-out 30% at most 0.8 of the linear model's error, no runaway). Written as `constant x
+table(level)` flows (the shared simulator has no sqrt: an `expr` rate evaluates as 0 in
+`discovery.simulate.Model`, which the scorer uses for found models), a sqrt on a 30-segment grid up to
+20 times the highest level; a negative number on a stock's own root drains it, and what another stock
+of its unit gains from that root moves out of the drain (H1 -> H2). Counted levels still go to the main
+line before any of this, so counts cells cannot change.
+
+**Physics** (`sdlab-ladder run --strategies odefit --cases phys-,141,142,143,122,196 --jobs 1 --timeout
+300` at `aef4b5f`, single-threaded, 19 October 2026; 48 items, 812 s): **26 of 28** (25 before).
+
+| case | before (333f814) | after | gap @20 after (points) |
+|---|---|---|---|
+| coupled tanks | P P F P | **P P P P** | +0.7, +2.2, +0.7, +2.2 (both sqrt flows, fitted together) |
+| draining tank | P P P P | P P P P | -2.8, +1.9, -1.7, +1.9 |
+| Lotka-Volterra, spring, cooling, chain | 16 of 16 | 16 of 16 | as before |
+| thermostat | P F P F | P F P F | -4.3, -19.9, -4.3, -3.2 (as stored at 333f814: none-long is the main line's after the judge guard) |
+| 141-143 | 12 of 12 | 12 of 12 | |
+| 122, 196 (none) | F F, F F | F F, F F | the roots do not win there (122's drain is a table, not a sqrt); own_tables passes them |
+
+Aggregate (`summary()["physics"]`): structure 27 of 28, fresh@20 96.3% against the reference's 97.1%
+(gap -0.8), long-run error 10.3% (reference 17.0%).
+
+**Thermostat, what remains:** no memoryless form passes the long runs: under the closed loop the best
+predictor reads the outside weakly (the reference fails its own structure there), and hinge
+controllers (option `hinges`) lose skill (meas-long -20.1 points). A latch (heater state with memory)
+cannot be written for the scorer: `discovery.simulate.Model` has no switch or expression rates, the
+structure Jacobian holds a found model's hidden stocks at 0 (so T <- setpoint through a latch is
+invisible), and the long run ignores ceilings. That is a harness / shared-library question (the
+user's, with the pending scoring question on T <- outside).
+
+**Standard tests:** `sdlab-ladder sync --strategies odefit --variants none,meas --jobs 2 --timeout 300`
+(single-threaded, 18:00-19:20 PDT, stopped at 285 of 696 items; the watcher ran others at the same
+hash). Of the 564 standard none/meas cells, **341 were run at the new hash and none changed status**
+against odefit's previous result (194 pass, 59 equivalent, 88 fail, as before); **223 not run**.
+Counted levels go to the main line before any root is tried, so counts cells are unchanged by
+construction (status differences there against older stored rows come from main-line changes since
+333f814, not this round; not counted here).
+
 ## Lessons
 
 - The physics' noise failures were errors in variables. Output error with estimated segment starts
