@@ -40,6 +40,9 @@
     pool   submit|status|results|cancel ...
                                   the CPU pool's job queue (docs/pool.md): submit a job at a committed ref,
                                   follow it, read its results (`sdlab-ladder pool --help`)
+    worker --server URL --slots N [--home DIR] [--max-mem-gb G] ...
+                                  a CPU pool worker: pulls items, runs each in its slot's own checkout at
+                                  the item's commit, posts the results (pool/worker.py; `sdlab-ladder worker --help`)
 
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
@@ -532,10 +535,15 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--relabel", metavar="FOLDERS", help="re-label the cached cells of these cache folders (comma list, later wins) into the current one, no refitting")
     pl = sub.add_parser("pool", help="the CPU pool's job queue: submit, status, results, cancel (docs/pool.md)", add_help=False)
     pl.add_argument("rest", nargs=argparse.REMAINDER)
+    wk = sub.add_parser("worker", help="a CPU pool worker (docs/pool.md, Workers)", add_help=False)
+    wk.add_argument("rest", nargs=argparse.REMAINDER)
     args = sys.argv[1:] if argv is None else argv
     if args[:1] == ["pool"]:                                     # its own parser (pool/cli.py), --help included
         from .pool import cli as pool_cli
         return pool_cli.main(args[1:])
+    if args[:1] == ["worker"]:                                   # its own parser (pool/worker.py)
+        from .pool import worker as pool_worker
+        return pool_worker.main(args[1:])
     a = ap.parse_args(argv)
     if a.command == "objective-test":
         from . import objective_test

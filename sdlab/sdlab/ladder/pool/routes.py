@@ -7,6 +7,7 @@
     DELETE /api/pool/jobs/{id}                 T  cancel it
     POST   /api/pool/claim                     T  items for a worker
     POST   /api/pool/heartbeat                 T  register a worker, renew its leases
+    POST   /api/pool/release                   T  a stopping worker gives its leases back
     POST   /api/pool/results                   T  one finished item
     GET    /api/pool/status                       workers, queue by job, main line, throughput
     GET    /api/pool/workers                      the worker registry
@@ -88,6 +89,14 @@ def claim(body: dict[str, Any] | None = BODY):
 def heartbeat(body: dict[str, Any] | None = BODY):
     try:
         return leases.heartbeat(body or {})
+    except jobs.Refused as e:
+        return _refused(e)
+
+
+@router.post("/release", dependencies=TOKEN)
+def release(body: dict[str, Any] | None = BODY):
+    try:
+        return leases.release(body or {})
     except jobs.Refused as e:
         return _refused(e)
 

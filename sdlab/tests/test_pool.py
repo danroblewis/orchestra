@@ -338,3 +338,18 @@ def test_bundle_of_the_real_repository(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         gitcode.bundle("not-a-sha", [])
     assert isinstance(gitcode.dirty(["matrix"], harness=True), list)
+
+
+def test_a_stopping_worker_releases_its_leases(pool):
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    w = FakeWorker(pool)
+    it = w.claim()[0]
+    other = pool.post("/api/pool/release", headers=H, json={"worker": "someone-else", "leases": [it["lease_id"]]}).json()
+    assert other["released"] == []                                      # only the holder can give it back
+    assert pool.post("/api/pool/release", json={"worker": w.name, "leases": [it["lease_id"]]}).status_code == 401
+    got = pool.post("/api/pool/release", headers=H, json={"worker": w.name, "leases": [it["lease_id"]]}).json()
+    assert got["released"] == [it["lease_id"]]
+    with db.connect(readonly=True) as con:
+        st = con.execute("SELECT state, lost, lease_id FROM pool_items WHERE id = ?", (it["item_id"],)).fetchone()
+        assert st["state"] == "queued" and st["lost"] == 0 and st["lease_id"] is None   # not counted as a lost lease
+    assert FakeWorker(pool, name="next").claim()[0]["item_id"] == it["item_id"]

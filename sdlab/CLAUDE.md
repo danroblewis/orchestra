@@ -131,8 +131,10 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     cost`); anything larger it commits first and submits: `uv run sdlab-ladder pool submit --strategies
     <its own> --cases ... --by <agent>` (refused while the code it uses has uncommitted changes), then
     `pool status JOB` and `pool results JOB`. A job runs its commit; its results become the main line's
-    latest only when their hashes equal the `sdlab` HEAD's. The page is `/ladder/pool`. In progress:
-    the server side is in (2026-10-20); until the workers run, nothing takes jobs and the watchers run as before.
+    latest only when their hashes equal the `sdlab` HEAD's. The page is `/ladder/pool`. A worker is
+    `sdlab-ladder worker --server URL --slots N` (a checkout per slot, memory-aware; docs/pool.md, "Workers").
+    In progress: the server and the worker are built and tested (2026-10-20), but no worker runs yet on node2
+    or the Mac; until they do, nothing takes jobs and the watchers run as before.
 16. **Probing a real, live system needs the user's approval.**
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from

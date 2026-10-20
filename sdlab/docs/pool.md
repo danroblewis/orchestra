@@ -11,9 +11,9 @@ of test runners fed by one job queue:
   as it has: 20 workers of `sd-k8s-small` (~10 GB each) once ran it out of memory and every run crashed.
   Workers therefore admit an item only when its expected peak memory fits (see *Memory*).
 - **Workers** pull items, run them and post the results. They never write a database. Each worker slot
-  has its own checkout (`~/.sdlab/pool/slot-<n>/` on node2; on the Mac under `~/.sdlab/pool/`, never the
-  agents' checkout), moved to each item's commit before it runs. Code comes only from the Mac's
-  repository, through the server (git bundles; no GitHub, nothing pushed to origin).
+  has its own checkout (`~/.sdlab/pool/worker/slot-<n>/`, on the Mac too: never the agents' checkout),
+  moved to each item's commit before it runs. Code comes only from the Mac's repository, through the
+  server (git bundles; no GitHub, nothing pushed to origin). See *Workers* below.
 
 The server side lives in `sdlab/ladder/pool/` (tables in the result store's file, endpoints under
 `/api/pool`, the page `/ladder/pool`); the command line is `uv run sdlab-ladder pool ...`.
@@ -193,6 +193,10 @@ Answer: `{"renewed": [...], "lost": [...], "cancel": [...]}`: `lost` are leases 
 holds (expired and given to another, or the item is done): it should stop those items and not post
 them; `cancel` are items of a cancelled job: stop them.
 
+`POST /api/pool/release` T: a stopping worker gives leases back: `{"worker": "node2-pool", "leases":
+["b1e...", ...]}` -> `{"released": [...]}`. The items wait again at once, and it does not count as a lost
+lease; only the worker that holds a lease can release it.
+
 `POST /api/pool/results` T: one finished item.
 
 ```json
@@ -241,3 +245,76 @@ bundle when `have` is empty or unknown). A slot that lacks a job's commit runs:
 
 The bundles are made from a bare mirror the server keeps (`~/.sdlab/pool/mirror.git`), so the
 repository's own refs are never touched.
+
+## Workers
+
+    uv run sdlab-ladder worker --server http://10.198.1.131:8020 --slots N [--home ~/.sdlab/pool/worker]
+        [--max-mem-gb G] [--heavy-slots 2] [--yield-load L] [--nice 19] [--machine NAME] [--name NAME]
+
+The code is `sdlab/ladder/pool/worker.py` (the supervisor), `slot.py` (a slot), `child.py` (the item
+process), `repo.py` (bundles and checkouts), `outbox.py`, `host.py` (memory and load) and `client.py`.
+
+**Its home** (`--home`, default `~/.sdlab/pool/worker`; never inside the agents' checkout):
+
+| path | what |
+|------|------|
+| `repo.git` | a bare object store fed only by the server's bundles (each commit kept as `refs/pool/c/<sha>`) |
+| `self/` | the supervisor's own checkout, at the main line's HEAD |
+| `slot-<n>/` | slot n's checkout (`git clone --shared` of `repo.git`), with its own venv (`sdlab/.venv`) |
+| `cache/slot-<n>/` | slot n's ladder cache (`SDLAB_LADDER_CACHE`): an empty store of its own; the parts named by hash (`data`, `draws`, `real`, `physics`, `particles`) are links to `--cache` (default `~/.cache/sdlab/ladder`, the machine's own) |
+| `outbox/` | results not yet answered by the server (`refused/`: posts it refused for good, with its answer) |
+| `logs/slot-<n>.log` | what the item processes printed |
+
+**Running an item.** A slot whose checkout is at another commit fetches it (a bundle of what `repo.git`
+lacks), checks it out (`checkout -f --detach`, `clean -fd`; ignored files such as the venv stay) and runs
+`uv sync --all-extras` when `uv.lock` or `pyproject.toml` changed. It then runs the item in an item
+process: the checkout's own python running a snippet that uses only what every commit's runner has
+(`select_strategies`, `plan(force=True)`, `run_item`), so a job runs its commit's code, with the same
+environment as today's runs (`OMP/OPENBLAS/MKL/VECLIB/NUMBA_NUM_THREADS=1`, JAX's `XLA_FLAGS`, `nice
+19`). The process works out the item's hashes from its own plan and does not run an item whose promised
+hashes differ (the server then rejects the post). A re-score is handed the stored flows (`prev`). The
+process stays up for the next item of the same commit and is restarted after an item that left it over
+3 GB, after a heavy item, and every 200 items. It exits when its supervisor is gone.
+
+**Memory.** The worker claims only what fits: it promises the lesser of its budget (`--max-mem-gb`,
+default 85% of the machine) less what its items hold or are expected to reach, and the OS's available
+memory less the growth its items are still expected to make and a reserve (`--reserve-gb`, default
+the larger of 2 GB and 5%). The server adds its own 1 GB margin per item, and `heavy` items need a free
+heavy slot (`--heavy-slots`). Every item has a hard limit (its expected peak x 2, at least 4 GB, at most
+half the machine): the slot samples its resident memory every second and kills it past the limit,
+posting it `crashed` (retried once where there is more memory). Peak RSS is posted with every result:
+on Linux the exact high-water mark (`/proc/self/clear_refs` reset before the item, `VmHWM` after), on
+macOS the highest sample (or `ru_maxrss` for a fresh process).
+
+**Time.** `run_item`'s own timeout covers discovery; scoring is unbounded, so the slot also stops an item
+after twice its timeout plus 15 minutes and posts it as a timeout.
+
+**Load.** With `--yield-load L` the worker takes fewer slots while the 1-minute load is above L (one
+fewer per unit over); running items finish. This is what keeps the Mac usable for its agents.
+
+**Leases.** A heartbeat every 30 s renews the leases of the running items; one the server calls lost or
+cancelled is killed and not posted.
+
+**Outbox.** Every result is written to `outbox/` before it is posted and deleted once the server has
+answered; while the server is down they wait there and are resent every 15 s and at the next start.
+
+**Shutdown.** SIGTERM, SIGINT or SIGHUP: no new items; running items finish (up to `--grace`, 600 s).
+Past that, or on a second signal, they are killed and their leases released (`POST /api/pool/release`).
+
+**Self-update.** Started from any checkout, the worker first moves to `self/` at the main line's HEAD and
+restarts from there. Every 2 minutes it asks the server for HEAD; when its own code (`sdlab/ladder/pool/`,
+`uv.lock`, `pyproject.toml`) differs there, it stops claiming, lets its items finish, and restarts from
+the new commit. `--no-self-update` runs it from the checkout it was started in (the tests do).
+
+**Starting them.** Copy the token first (`~/.sdlab/pool.token`, mode 0600), then:
+
+    # node2: all 24 cores; memory admission keeps it under 52 GB of its 62 GB
+    nohup ~/.local/bin/uv run --directory ~/sdlab/sdlab sdlab-ladder worker --server http://10.198.1.131:8020 \
+        --slots 24 --max-mem-gb 52 --heavy-slots 2 --machine node2 >> ~/.sdlab/pool-worker.log 2>&1 &
+    # the Mac: half its cores, nice 19, fewer slots while the agents load it
+    nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab-ladder worker --server http://127.0.0.1:8020 \
+        --slots 14 --max-mem-gb 96 --heavy-slots 1 --yield-load 24 --machine mac >> ~/.sdlab/pool-worker.log 2>&1 &
+
+Stop one with `pkill -TERM -f "sdlab.ladder worker"` (the pattern matches both `sdlab-ladder worker` and,
+once it runs from `self/`, `python -m sdlab.ladder worker`). Tests: `uv run pytest tests/test_pool_worker.py`; `SDLAB_POOL_E2E=1` adds the end-to-end test
+(a test server on a temporary store, the real planner, a real worker with two slots: about 4 minutes).

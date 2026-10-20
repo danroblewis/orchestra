@@ -1,5 +1,5 @@
 """Handing out work: claims (by job priority, memory admission, heavy slots), heartbeats (the worker
-registry and lease renewal) and expired leases. docs/pool.md, "Work".
+registry and lease renewal), released leases (a worker that stops) and expired leases. docs/pool.md, "Work".
 
 An item is leased to one worker at a time, for LEASE_SECONDS, renewed by heartbeats; an expired lease puts
 the item back in the queue, and an item whose lease is lost LOST_LIMIT times becomes an error.
@@ -156,3 +156,23 @@ def heartbeat(body: dict) -> dict:
                 lost.append(lease)
         _seen(con, worker, machine, info)
     return {"renewed": renewed, "lost": lost, "cancel": cancel, "lease_seconds": LEASE_SECONDS}
+
+
+def release(body: dict) -> dict:
+    """A worker gives leases back (it is stopping): their items wait again at once, without counting as a
+    lost lease (docs/pool.md, POST /api/pool/release)."""
+    worker = _name(body, "worker")
+    leases = [x for x in (body.get("leases") or []) if isinstance(x, str)][:MAX_SLOTS * 4]
+    released = []
+    with db.LOCK, db.connect() as con:
+        jobs_hit = set()
+        for lease in leases:
+            r = con.execute("SELECT id, job_id FROM pool_items WHERE lease_id = ? AND state = 'leased' AND worker = ?", (lease, worker)).fetchone()
+            if r is None:
+                continue
+            con.execute("UPDATE pool_items SET state = 'queued', lease_id = NULL, worker = NULL, lease_expires = NULL WHERE id = ?", (r["id"],))
+            released.append(lease)
+            jobs_hit.add(r["job_id"])
+        for job_id in jobs_hit:
+            jobs.settle(con, job_id)
+    return {"released": released}
