@@ -9,6 +9,7 @@ import sqlite3
 
 FACTOR = 1.2
 MARGIN_MB = 1024           # kept free beyond the expected peaks
+RETRY_FACTOR = 1.25        # a crashed item's retry needs this much more memory than it had (accept.py)
 DEFAULTS = (("heavy", 16000.0), ("realistic", 10000.0), ("physics", 3000.0), ("particles", 3000.0),
             ("canonical", 3000.0), ("real", 3000.0))
 DEFAULT_MB = 1000.0

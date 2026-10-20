@@ -88,8 +88,10 @@ def claim(body: dict) -> dict:
                 break
             tags = json.loads(r["tags"] or "[]")
             exp = peaks.expected(r["case_id"], r["strategy"], tags)
-            if r["min_free_mb"] and free < r["min_free_mb"]:
-                continue                                       # a crashed item: only where there is more memory than where it crashed
+            if r["min_free_mb"]:
+                if free < r["min_free_mb"]:
+                    continue                                   # a crashed item: only where there is more memory than where it crashed
+                exp = max(exp, r["min_free_mb"] / memory.RETRY_FACTOR)   # and expected to need it (its hard limit follows)
             if exp + memory.MARGIN_MB > left:
                 continue
             if r["heavy"] and heavy_free <= 0:
@@ -114,7 +116,7 @@ def claim(body: dict) -> dict:
     return {"lease_seconds": LEASE_SECONDS, "items": out}
 
 
-INFO = ("slots", "busy", "cpus", "load", "mem_total_mb", "mem_free_mb", "heavy_slots", "version", "nice")
+INFO = ("slots", "busy", "cpus", "load", "mem_total_mb", "mem_free_mb", "budget_mb", "heavy_slots", "version", "nice")
 
 
 def _seen(con, worker: str, machine: str, info: dict | None) -> None:

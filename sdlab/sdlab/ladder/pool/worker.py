@@ -154,6 +154,7 @@ class Worker:
         held = {s.run.item["lease_id"]: s for s in busy if s.run}
         body = {"worker": self.name, "machine": self.machine, "slots": self.slots_n, "busy": len(busy), "cpus": os.cpu_count(),
                 "load": round(host.load1(), 2), "mem_total_mb": round(self.total_mb), "mem_free_mb": round(host.mem_available_mb()),
+                "budget_mb": round(self.budget_mb),
                 "heavy_slots": self.heavy_slots, "leases": list(held), "version": (self.self_commit or "local")[:12], "nice": self.nice}
         code, ans = self.client.call("POST", "/api/pool/heartbeat", body)
         if code != 200:

@@ -243,6 +243,20 @@ def test_a_crash_is_retried_once_with_more_memory_then_recorded(pool):
     assert "BrokenProcessPool" not in res[0]["error"]                   # the main line does not take it for a crash to run again
 
 
+def test_a_retry_never_needs_more_than_the_biggest_worker_can_promise(pool):
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    w = FakeWorker(pool, name="mac-pool", machine="mac", free_mb=60000)    # mem_total 63000, no budget_mb sent: 85% of it
+    w.heartbeat()
+    it = w.claim()[0]
+    assert w.post(it, outcome="crashed", free=60000, peak=33000).json()["retry"]
+    with db.connect(readonly=True) as con:
+        need = con.execute("SELECT min_free_mb FROM pool_items WHERE id = ?", (it["item_id"],)).fetchone()[0]
+    assert need == pytest.approx(0.9 * 0.85 * 63000)                     # not 1.25 x 60000, which no worker could promise
+    w.free_mb = need + 2000
+    again = w.claim()[0]
+    assert again["item_id"] == it["item_id"] and again["expected_peak_mb"] >= need / 1.25   # its hard limit rises with it
+
+
 def test_memory_admission_and_heavy_slots(pool):
     submit(pool, strategies="s1", cases="big")
     w = FakeWorker(pool, free_mb=12000, heavy_free=2)

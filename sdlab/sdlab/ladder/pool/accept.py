@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 
 from .. import store
-from . import db, jobs, leases
+from . import db, jobs, leases, memory
 
 CRASH_LIMIT = 2                           # the second crash is recorded as an error
 REJECT_LIMIT = 2                          # the second hash/commit mismatch makes the item an error
-RETRY_FACTOR = 1.25                       # a crashed item's retry needs this much more memory than where it crashed
+RETRY_FACTOR = memory.RETRY_FACTOR        # a crashed item's retry needs this much more memory than where it crashed
 KEEP = ("status", "seconds", "error", "scores", "found", "code_commit", "code_dirty", "score_seconds", "wall_seconds", "wait_seconds")
 HASHES = ("case_hash", "strategy_hash", "score_hash")
 
@@ -106,9 +106,10 @@ def _crashed(con, it, mine: bool, body, worker, machine, slot, peak, free) -> in
     if it["crashes"] + 1 < CRASH_LIMIT:
         if mine:
             need = max(it["min_free_mb"] or 0, (free or 0) * RETRY_FACTOR, (peak or 0) * RETRY_FACTOR)
-            cap = con.execute("SELECT MAX(CAST(json_extract(info, '$.mem_total_mb') AS REAL)) FROM pool_workers").fetchone()[0]
+            cap = con.execute("SELECT MAX(CAST(COALESCE(json_extract(info, '$.budget_mb'), 0.85 * json_extract(info, '$.mem_total_mb')) AS REAL))"
+                              " FROM pool_workers").fetchone()[0]
             if cap:
-                need = min(need, 0.9 * cap)                    # never more than the biggest machine can give
+                need = min(need, 0.9 * cap)                    # never more than the biggest worker can promise (its budget)
             con.execute("UPDATE pool_items SET state = 'queued', crashes = crashes + 1, lease_id = NULL, worker = NULL, min_free_mb = ?,"
                         " error = ? WHERE id = ?", (need or None, err, it["id"]))
             jobs.settle(con, it["job_id"])
