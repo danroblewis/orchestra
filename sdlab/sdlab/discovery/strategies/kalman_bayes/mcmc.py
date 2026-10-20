@@ -19,22 +19,28 @@ def mode(f, x0: np.ndarray, free: np.ndarray | None = None, until: float = math.
     free = np.ones(len(x0), bool) if free is None else free
     if not free.any():
         return x0
+    best = [f(x0), x0.copy()]
+
     def g(y):
         if time.monotonic() > until:
             raise TimeoutError
         x = x0.copy()
         x[free] = y
-        return f(x)
+        v = f(x)
+        if v < best[0]:
+            best[0], best[1] = v, x
+        return v
     try:
         with warnings.catch_warnings(), np.errstate(all="ignore"):
             warnings.simplefilter("ignore", RuntimeWarning)       # Powell's line search meets the boxes' infinities
-            r = minimize(g, x0[free], method="Powell", options={"maxiter": maxiter, "xtol": 1e-4, "ftol": 1e-7})
+            r = minimize(g, x0[free], method="Powell", options={"maxiter": maxiter, "maxfev": 60 * int(free.sum()) + 200,
+                                                                   "xtol": 1e-4, "ftol": 1e-7})
         y = r.x
     except TimeoutError:
-        return x0
+        return best[1]                                         # the best point seen when the time ran out
     x = x0.copy()
     x[free] = y
-    return x if f(x) <= f(x0) else x0
+    return x if f(x) <= best[0] else best[1]
 
 
 def _step(x: np.ndarray) -> np.ndarray:

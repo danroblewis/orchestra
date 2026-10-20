@@ -36,7 +36,8 @@ LOG_LO = {"tau": 1e-8, "phi": 1e-4, "alpha": 1e-6, "rho2": 1e-8}
 @njit(cache=True)
 def _filter(A, b, Q, obs_at, Y, mask, Rv, scale, meas, span, reset, m0, P0, z_out):
     """Negative log-likelihood (without 2 pi) and each report's standardised innovation (z_out,
-    points x measured, written in place; nan where not seen)."""
+    points x measured, written in place). The reports at a point are taken one at a time (their
+    errors are independent), so no matrix is inverted."""
     K, S = b.shape
     nm = meas.shape[0]
     aug = span > 1
@@ -52,11 +53,16 @@ def _filter(A, b, Q, obs_at, Y, mask, Rv, scale, meas, span, reset, m0, P0, z_ou
             P[i, S + i] = P0[i]
             P[S + i, i] = P0[i]
     T = np.zeros((D, D))
-    tmp = np.zeros((D, D))
+    TP = np.zeros((D, D))
+    mn = np.zeros(D)
+    kv = np.zeros(D)
+    row = np.zeros(D)
     total = 0.0
     for k in range(K):
         if k > 0:
-            T[:, :] = 0.0
+            for i in range(D):
+                for j in range(D):
+                    T[i, j] = 0.0
             for i in range(S):
                 for j in range(S):
                     T[i, j] = A[k, i, j]
@@ -64,13 +70,30 @@ def _filter(A, b, Q, obs_at, Y, mask, Rv, scale, meas, span, reset, m0, P0, z_ou
                         T[S + i, j] = A[k, i, j]
                 if aug and not reset[k]:
                     T[S + i, S + i] = 1.0
-            mn = T @ m
+            for i in range(D):
+                v = 0.0
+                for j in range(D):
+                    v += T[i, j] * m[j]
+                mn[i] = v
             for i in range(S):
                 mn[i] += b[k, i]
                 if aug:
                     mn[S + i] += b[k, i]
-            tmp[:, :] = T @ P
-            P = tmp @ T.T
+            for i in range(D):
+                m[i] = mn[i]
+            for i in range(D):
+                for j in range(D):
+                    v = 0.0
+                    for c in range(D):
+                        v += T[i, c] * P[c, j]
+                    TP[i, j] = v
+            for i in range(D):
+                for j in range(i + 1):
+                    v = 0.0
+                    for c in range(D):
+                        v += TP[i, c] * T[j, c]
+                    P[i, j] = v
+                    P[j, i] = v
             for i in range(S):
                 for j in range(S):
                     q = Q[k, i, j]
@@ -79,49 +102,28 @@ def _filter(A, b, Q, obs_at, Y, mask, Rv, scale, meas, span, reset, m0, P0, z_ou
                         P[S + i, S + j] += q
                         P[i, S + j] += q
                         P[S + i, j] += q
-            m = mn
         p = obs_at[k]
         if p < 0:
             continue
-        # the reports seen at this point
-        cnt = 0
-        for r in range(nm):
-            if mask[p, r]:
-                cnt += 1
-        if cnt == 0:
-            continue
-        H = np.zeros((cnt, D))
-        e = np.zeros(cnt)
-        Rr = np.zeros(cnt)
-        rr = np.zeros(cnt, np.int64)
-        c = 0
         for r in range(nm):
             if not mask[p, r]:
                 continue
             col = meas[r] + (S if aug else 0)
             h = scale[r] / (span if aug else 1.0)
-            H[c, col] = h
-            e[c] = Y[p, r] - h * m[col]
-            Rr[c] = Rv[p, r]
-            rr[c] = r
-            c += 1
-        PH = P @ H.T
-        Sk = H @ PH
-        for i in range(cnt):
-            Sk[i, i] += Rr[i]
-        L = np.linalg.cholesky(Sk)
-        ld = 0.0
-        for i in range(cnt):
-            ld += 2.0 * math.log(L[i, i])
-        Si = np.linalg.inv(Sk)
-        We = Si @ e
-        total += 0.5 * (ld + e @ We)
-        for i in range(cnt):
-            z_out[p, rr[i]] = e[i] / math.sqrt(Sk[i, i])
-        Kg = PH @ Si
-        m = m + Kg @ e
-        P = P - Kg @ PH.T
-        P = 0.5 * (P + P.T)
+            sv = h * h * P[col, col] + Rv[p, r]
+            if not sv > 0.0:
+                return math.inf
+            e = Y[p, r] - h * m[col]
+            total += 0.5 * (math.log(sv) + e * e / sv)
+            z_out[p, r] = e / math.sqrt(sv)
+            for i in range(D):
+                kv[i] = P[i, col] * h / sv
+                row[i] = h * P[col, i]
+            for i in range(D):
+                m[i] += kv[i] * e
+            for i in range(D):
+                for j in range(D):
+                    P[i, j] -= kv[i] * row[j]
     return total
 
 

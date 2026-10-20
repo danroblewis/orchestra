@@ -175,7 +175,9 @@ def _point(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 BUDGET_BAYES = 300.0  # seconds for the whole strategy without a caller's timer (opts "bayes_budget")
 USE = 0.85            # share of the caller's time the strategy plans to use (the rest is margin)
 BAG_SHARE = 0.5       # of what the point answer leaves, at most this share for the blocks
-EACH = 3.0            # a block may take this many times the full run's own time (at least 10 s)
+BAG_TIMES = 6.0       # and at most this many times the full run's own time (8 blocks of 70% take about 5.6)
+EACH = 2.0            # a block may take this many times the full run's own time (at least 10 s)
+MCMC_MOST = 90.0      # seconds at most for the posterior (mode, Hessian, chain)
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -205,7 +207,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             return None
 
     t1 = time.monotonic()
-    members = bag.ensemble(one, stocks, run, opts, max(10.0, EACH * took), t1 + BAG_SHARE * max(0.0, until - t1))
+    bag_until = t1 + min(BAG_SHARE * max(0.0, until - t1), 20.0 + BAG_TIMES * took)
+    members = bag.ensemble(one, stocks, run, opts, max(10.0, EACH * took), bag_until)
     info["seconds"]["blocks"] = round(time.monotonic() - t1, 2)
     flows = r["flows"]
     inc = None
@@ -217,7 +220,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         info.update(blocks=len(members), skipped_blocks=f"{len(members)} blocks in the time (fewer than {bag.MIN_BLOCKS})")
     t2 = time.monotonic()
     try:
-        post, pinfo = posterior(flows, stocks, run, opts, r, until) if flows else (None, {"skipped": "no flows kept"})
+        post, pinfo = posterior(flows, stocks, run, opts, r, min(until, t2 + MCMC_MOST)) if flows else (None, {"skipped": "no flows kept"})
     except (np.linalg.LinAlgError, FloatingPointError, ValueError, ZeroDivisionError) as e:
         post, pinfo = None, {"skipped": f"{type(e).__name__}: {e}"[:200]}
     info["seconds"]["posterior"] = round(time.monotonic() - t2, 2)

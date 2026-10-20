@@ -43,16 +43,16 @@ def posterior(flows: list[dict], stocks: list[dict], run: dict, opts: dict, foun
     free = np.zeros(lik.dim, bool)
     free[lik.p:] = True
     left = lambda share: time.monotonic() + share * max(0.0, until - time.monotonic())  # noqa: E731
-    x = mode(f, x0, free, until=left(0.15))                      # the noise numbers at the found flows
+    x = mode(f, x0, free, until=left(0.1))                       # the noise numbers at the found flows
     out = lik.leave_out(x)
     if out:
-        x = mode(f, x, free, until=left(0.15))
-    x = mode(f, x, None, until=left(0.3))                       # the joint mode
+        x = mode(f, x, free, until=left(0.1))
+    x = mode(f, x, None, until=left(0.2))                       # the joint mode
     # the flows' numbers sampled with the noise numbers held at the joint mode (empirical Bayes: sampled
     # jointly, the noise numbers at their bounds left the chains with an effective size near 10)
     eta = x[lik.p:]
     g = lambda th: f(np.concatenate([th, eta]))                 # noqa: E731
-    H = hessian(g, x[: lik.p], until=left(0.3))
+    H = hessian(g, x[: lik.p], until=left(0.2))
     C = proposal(H, x[: lik.p])
     ch = sample(g, x[: lik.p], C, until, n=DRAWS, burn=BURN, seed=seed)
     th = ch["draws"]
