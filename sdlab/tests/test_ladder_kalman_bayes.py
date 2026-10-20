@@ -8,7 +8,7 @@ import time
 import numpy as np
 
 from sdlab.discovery.strategies.kalman_bayes import bag
-from sdlab.discovery.strategies.kalman_bayes.posterior import posterior
+from sdlab.discovery.strategies.kalman_bayes.posterior import mode, sample
 
 
 def _chain(T: int = 400, seed: int = 3) -> dict:
@@ -32,7 +32,8 @@ FLOWS = [{"from": None, "to": "A", "rate": {"form": "constant", "value": 21.0}},
 def test_posterior_covers_the_truth_and_writes_its_summary():
     run = _chain()
     stocks = [{"id": "A"}, {"id": "B"}]
-    got, info = posterior(FLOWS, stocks, run, {}, {}, time.monotonic() + 60)
+    m = mode(FLOWS, stocks, run, {}, {}, time.monotonic() + 20)
+    got, info = sample(m, time.monotonic() + 40)
     assert got is not None, info
     truth = {("outside->A", "value"): 20.0, ("A->B", "k"): 0.5, ("B->outside", "k"): 0.2}
     for n in info["numbers"]:
@@ -55,3 +56,12 @@ def test_a_block_is_an_ordinary_shorter_run():
     r, o = bag.block(run, {"injections": [{"t": 5, "stock": "A", "amount": 3}, {"t": 50, "stock": "A", "amount": 3}]}, 30, 100)
     assert r["t"][0] == 31 and len(r["levels"]["A"]) == 70
     assert [j["t"] for j in o["injections"]] == [50]
+
+
+def test_a_rate_that_goes_below_zero_is_held_at_zero_by_the_prior():
+    """Below 0 the engine floors a rate, the likelihood is flat there: the prior keeps k >= 0."""
+    run = _chain(T=200)
+    flows = [{"from": "B", "to": None, "rate": {"form": "proportional", "stock": "B", "k": 0.01}}]
+    m = mode(flows, [{"id": "A"}, {"id": "B"}], run, {}, {}, time.monotonic() + 10)
+    got, info = sample(m, time.monotonic() + 10)
+    assert got is not None and all(n["lo"] >= 0 for n in info["numbers"])

@@ -181,13 +181,14 @@ MCMC_MOST = 90.0      # seconds at most for the posterior (mode, Hessian, chain)
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    """kalman_lna's answer, its structure kept to the flows most blocks find (bag.py), and its numbers
-    replaced by their posterior medians (posterior.py)."""
+    """kalman_lna's answer; the structure of the flows most blocks find (bag.py) in its place where that
+    structure's BIC on the whole run is lower; and the numbers replaced by their posterior medians
+    (posterior.py)."""
     import time
 
     from . import bag
     from ._vendored.combined.deadline import Overrun, deadline
-    from .posterior import posterior
+    from .posterior import mode, sample
 
     opts = dict(opts or {})
     began = time.monotonic()
@@ -210,17 +211,32 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     bag_until = t1 + min(BAG_SHARE * max(0.0, until - t1), 20.0 + BAG_TIMES * took)
     members = bag.ensemble(one, stocks, run, opts, max(10.0, EACH * took), bag_until)
     info["seconds"]["blocks"] = round(time.monotonic() - t1, 2)
-    flows = r["flows"]
-    inc = None
+    inc, bagged = None, None
     if len(members) >= bag.MIN_BLOCKS:
-        inc = bag.inclusion(flows, members)
-        flows, dropped, added = bag.bagged(flows, members, inc)
+        inc = bag.inclusion(r["flows"], members)
+        bagged, dropped, added = bag.bagged(r["flows"], members, inc)
         info.update(blocks=len(members), inclusion={bag.label(k): round(p, 3) for k, p in inc.items()}, dropped=dropped, added=added)
+        if not dropped and not added:
+            bagged = None
     else:
         info.update(blocks=len(members), skipped_blocks=f"{len(members)} blocks in the time (fewer than {bag.MIN_BLOCKS})")
     t2 = time.monotonic()
+    end = min(until, t2 + MCMC_MOST)
+    post, pinfo = None, {}
     try:
-        post, pinfo = posterior(flows, stocks, run, opts, r, min(until, t2 + MCMC_MOST)) if flows else (None, {"skipped": "no flows kept"})
+        # the found structure's mode; the blocks' structure's mode on the same reports, kept when its BIC
+        # (the noise numbers counted) is lower: the blocks propose, the whole run's evidence decides
+        m = mode(r["flows"], stocks, run, opts, r, t2 + 0.3 * (end - t2))
+        info["structure"] = "found"
+        if m is not None and bagged:
+            mb = mode(bagged, stocks, run, opts, r, t2 + 0.5 * (end - t2), mask=m.lik.mask)
+            info["bic"] = {"found": round(m.bic(), 2), "blocks": round(mb.bic(), 2) if mb else None}
+            if mb is not None and mb.bic() < m.bic():
+                m, info["structure"] = mb, "blocks"
+        if m is not None:
+            post, pinfo = sample(m, end)
+        else:
+            pinfo = {"skipped": "no numbers, or a likelihood not finite at the found numbers"}
     except (np.linalg.LinAlgError, FloatingPointError, ValueError, ZeroDivisionError) as e:
         post, pinfo = None, {"skipped": f"{type(e).__name__}: {e}"[:200]}
     info["seconds"]["posterior"] = round(time.monotonic() - t2, 2)
