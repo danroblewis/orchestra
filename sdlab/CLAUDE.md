@@ -102,8 +102,10 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     reads the research docs and every idea runs as a parallel experiment.
 15. **The ladder stays current and fast.** Results are keyed by strategy, case and scorer hashes,
     so a change marks them stale. One supervised watcher re-runs stale results:
-    `nice -n 19 uv run sdlab-ladder watch --strategies everything --exclude-cases machine:node2 --every 300 --jobs 4 --timeout 300 --batch 2000`
-    (every strategy, parked ones too; a run that errors or times out counts as not passing), logging to
+    `nice -n 19 uv run sdlab-ladder watch --strategies all --exclude-cases machine:node2,tag:kubernetes --every 300 --jobs 4 --timeout 300 --batch 2000`
+    (every active strategy; parked ones are skipped since 2026-10-20, the user, and run only when named or by
+    `sync`; the kubernetes set is run by its per-rung investigations; a run that errors or times out counts
+    as not passing), logging to
     `~/.sdlab/ladder-watch.log`; check it with `pgrep -fl "sdlab-ladder watch"`. A second machine, node2,
     runs the realistic, physics, particle, heavy, real-data and canonical cases (`--cases machine:node2`,
     `sdlab/ladder/machines.yaml`) into its own store. `scripts/sdlab-sync.sh` imports its results here every
