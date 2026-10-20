@@ -772,6 +772,19 @@ strategies:
     status: active
     note: docs/research/kalman_lna.md.
 
+  kalman_bayes:
+    idea: kalman_lna's model with a posterior in place of one best fit - how often each flow is found, and a range for every number.
+    how: >-
+      kalman_lna (its own copy) gives a model. The discovery is then run again on eight overlapping
+      blocks of the run (each 70% of it): a flow found in at most half of the blocks is dropped, and a
+      flow found in most blocks is added. The numbers of the flows kept are then sampled (a Kalman
+      filter's likelihood written on the flows, adaptive Metropolis), and each number is returned at
+      its posterior median, with its spread and 95% interval written beside it.
+    helps_with: Telling which flows and numbers the data pin down; noisy reports where one best fit lands just outside the tolerance.
+    builds_on: kalman_lna
+    status: work in progress
+    note: docs/research/kalman_bayes.md.
+
   engine_forms:
     idea: kalman_lna's model, with each stock's exchange with the outside read again in the forms the engine can now write - a flow that runs both ways, a drain at the lesser of a capacity and the level, an inflow that is a table of a stock (times an input).
     how: >-
