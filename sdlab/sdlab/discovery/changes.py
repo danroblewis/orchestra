@@ -6,7 +6,9 @@ series of pieces whose changes are found in what the levels leave unexplained.
 
 from __future__ import annotations
 
+import hashlib
 import math
+from collections import OrderedDict
 
 import numpy as np
 from numba import njit
@@ -56,11 +58,29 @@ def _last_cut(r: np.ndarray, min_len: int, pen: float) -> np.ndarray:
     return last
 
 
+_MEMO: OrderedDict = OrderedDict()     # (series bytes digest, length, min_len, mult) -> cuts; per process
+_MEMO_SIZE = 4096                      # the most recent results kept (approved by the user, 2026-10-20)
+
+
 def pelt(r: np.ndarray, min_len: int, mult: float) -> list[int]:
     """Cuts 0 = c0 < c1 < ... < ck = n of r into pieces of constant mean. Each change costs
     mult x log n x the noise variance (estimated from successive differences, so that the changes
-    themselves do not inflate it)."""
+    themselves do not inflate it). A pure function of its arguments, so a series it has seen
+    before (strategies re-run it on the same residuals many times) is answered from memory."""
     r = np.nan_to_num(np.asarray(r, dtype=float))
+    key = (hashlib.blake2b(np.ascontiguousarray(r).tobytes(), digest_size=16).digest(), r.shape, int(min_len), float(mult))
+    got = _MEMO.get(key)
+    if got is not None:
+        _MEMO.move_to_end(key)
+        return list(got)
+    cuts = _pelt(r, min_len, mult)
+    _MEMO[key] = tuple(cuts)
+    if len(_MEMO) > _MEMO_SIZE:
+        _MEMO.popitem(last=False)
+    return cuts
+
+
+def _pelt(r: np.ndarray, min_len: int, mult: float) -> list[int]:
     n = r.shape[0]
     dv = float(np.sum(np.diff(r) ** 2))
     pen = mult * math.log(n) * ((dv / (2 * max(1, n - 1))) or 1.0)
