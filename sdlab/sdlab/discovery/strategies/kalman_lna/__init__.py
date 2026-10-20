@@ -80,6 +80,10 @@ MISFIT = 0.3          # nor where, with the error read, the atoms still leave th
                       # step variance unexplained (effects, co-flows, caps: an error would stand in)
 
 
+CLOSER = 1.25         # the base's answer replaces the filter's only when the filter's multi-step error is this
+                      # many times the base's (on the ladder, models that are both sound differ by up to ~1.15)
+
+
 def _closer(filtered: dict, based: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
     """The filter's answer, or the base's where its flows (numbers refitted for a measurement error) run
     closer to the data over 5, 20 and 100 steps (a filter's model with a stock nobody measures is kept:
@@ -91,7 +95,7 @@ def _closer(filtered: dict, based: dict, stocks: list[dict], run: dict, opts: di
         return filtered
     mine = judge(filtered.get("flows") or [], ids, run, opts)
     theirs = judge(refit(based.get("flows") or [], stocks, run, opts)[0], ids, run, opts)
-    if theirs < mine:
+    if theirs * CLOSER < mine:
         return {**based, "kalman": {**filtered["kalman"], "reading": None, "filter_judged": [mine, theirs]}}
     return {**filtered, "kalman": {**filtered["kalman"], "filter_judged": [mine, theirs]}}
 

@@ -328,6 +328,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return r
 
 
+CLOSER = 1.25         # the pick replaces the filter's model only when the filter's multi-step error is this
+                      # many times the pick's (on the ladder, models that are both sound differ by up to ~1.15)
+
+
 def _closer(filtered: dict, picked: dict, stocks: list[dict], run: dict, opts: dict) -> bool:
     """Whether the pick, its numbers refitted for a measurement error (eiv.py), runs closer to the data
     over 5, 20 and 100 steps than the Kalman filter's model, whose atoms read no measured input (the
@@ -339,7 +343,7 @@ def _closer(filtered: dict, picked: dict, stocks: list[dict], run: dict, opts: d
     if not _known(filtered.get("flows") or [], set(ids) | set(opts.get("inputs") or {})):
         return False
     mine = judge(filtered.get("flows") or [], ids, run, opts)
-    return judge(refit(picked.get("flows") or [], stocks, run, opts)[0], ids, run, opts) < mine
+    return judge(refit(picked.get("flows") or [], stocks, run, opts)[0], ids, run, opts) * CLOSER < mine
 
 
 def _summary(cands: list[dict], cfg: dict) -> list[dict]:
