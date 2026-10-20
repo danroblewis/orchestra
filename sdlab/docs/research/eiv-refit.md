@@ -83,3 +83,30 @@ remeasure: the measured-input KeyError group, not this cause), so it passes meas
 The first version of the filter comparison (e8edf28, base kept whenever closer) turned 080 and 081
 meas-long pass -> fail/equivalent for kalman_lna, engine_forms and combined2, and 086 meas-short
 pass -> fail for combined2; the 1.25 margin (5a31020) removed all of them.
+
+## Round 2: seven more strategies (commit 4006a72)
+
+common_cause, sindy, shared_noise, numopt_bo, numopt_cma, numopt_nm and numopt_powell had no refit:
+on 300 meas they stored the one-step fit (sindy, shared_noise: 1.275 / 0.637 short, 1.221 / 0.612
+long; common_cause 1.204 / 0.602, 1.198 / 0.601), and numopt_*'s in-sample judge rejected the
+output-error search on meas-short (e0 0.07804 < e1 0.0844), leaving the biased base. Each now carries
+the same eiv.py (byte-identical copy; sindy inline with `_eiv_` names, from held_out.py) wrapped
+around its identify; for numopt_* the refit runs on the final answer, after the search and its judge.
+Applying the refit to their answers gives 1.0838 / 0.5410 (short) and 0.9783 / 0.4901 (long), as for
+the 40.
+
+Paired check, same code and scorer, base (`_identify`) vs refitted, in one process
+(`scratchpad .../eiv7/pair.py`), on 204 cells per strategy (300, 301 and 080-088, 112, 139, 141-143,
+303, 306, 002, 007, 011, 016, 023, all variants): 1,428 cells, refit used in 148; 31 fail -> pass,
+2 pass -> equivalent, no other change.
+
+- fail -> pass: all 10 target cells (300 meas-short and meas-long for common_cause, sindy,
+  shared_noise; 300 meas-short for the four numopt), 023-injection none-short/long (sindy and the four
+  numopt; the refit lands on 0.5 / 0.2 / 10 exactly), 141 none (sindy x2, numopt_bo x2,
+  numopt_powell long), 142 meas-long (common_cause, sindy), 143 none-short (four numopt).
+- pass -> equivalent: 087-noisy-injection outliers-long for shared_noise and numopt_cma. The outliers
+  make the white test fire (z -12.9), and the IV fit enlarges a spurious A -> B link already in the
+  structure from 0.011 to 0.050 (judge 0.1032 -> 0.1023), and moves the true numbers away (0.505 ->
+  0.486, 10.11 -> 9.72). The module does the same for matrix (one of the 40; its stored 087
+  outliers-long result predates e8edf28, so the board does not show it yet). A fix belongs in eiv.py
+  for every copy (e.g. a robust or margin-gated acceptance), not in these seven alone.
