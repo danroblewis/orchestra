@@ -26,11 +26,17 @@ class Steps:
     E: np.ndarray | None = None         # stocks x steps: the levels each step ends at
     w: np.ndarray | None = None         # the steps a fit reads (1) or leaves out (0): set per stock
 
+    def signed(self, x: str) -> bool:
+        """Does x go below 0 (a signed stock)? Clearly: on at least 5% of the steps, and by more than
+        1% of its largest size (a level reported with an error dips just below 0 now and then)."""
+        v = self.S[self.ids.index(x)]
+        return bool(np.mean(v < 0) >= 0.05 and np.min(v) < -0.01 * np.max(np.abs(v)))
+
     def free(self, x: str) -> np.ndarray:
         """The steps where x's floor did not bind: x ended above 0 (or x goes below 0 somewhere,
         a signed stock with no floor)."""
         i = self.ids.index(x)
-        if np.min(self.S[i]) < 0 or np.min(self.E[i]) < 0:
+        if self.signed(x):
             return np.ones(self.n)
         return (self.E[i] > 0).astype(float)
 

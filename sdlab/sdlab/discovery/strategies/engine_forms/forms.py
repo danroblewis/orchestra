@@ -63,9 +63,9 @@ def best_linear(y: np.ndarray, st: Steps, readers: list[str], floor: float, most
 def linear(x: str, y: np.ndarray, st: Steps, floor: float) -> Fit | None:
     readers = [x] + sorted(st.U) + [s for s in st.ids if s != x]
     coef, yh, _ = best_linear(y, st, readers, floor)
-    signed = bool(np.min(st.series(x)) < 0)
-    if not signed and needs_shift(coef, st) <= 0:
-        return None
+    signed = st.signed(x)
+    if not signed and (needs_shift(coef, st) <= 0 or np.min(st.series(x)) < 0):
+        return None                      # one-way flows write it (or the levels only dip below 0 by error)
     return Fit("linear", yh, len(coef), write_linear(x, coef, st, signed), {"coef": coef, "signed": signed})
 
 
