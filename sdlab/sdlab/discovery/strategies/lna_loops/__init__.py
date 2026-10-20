@@ -20,7 +20,7 @@ from ._vendored import lna
 from .run import PRICE, close_loops, stage  # noqa: F401  (close_loops: the stage's step, for tests)
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     price = float(opts.pop("loop_price", PRICE))
     state: dict = {}
@@ -28,3 +28,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if r.get("method") == "lna":
         r["loops_closed"] = state.get("loops_closed", [])
     return r
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

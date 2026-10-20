@@ -24,7 +24,7 @@ from .judge import improve
 from .steps import build
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     r = base(stocks, run, opts)
     if (r.get("kalman") or {}).get("reading"):
@@ -35,3 +35,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     trace: list[str] = []
     flows = improve(list(r.get("flows") or []), st, trace=trace)
     return {**r, "flows": flows, "engine_forms": {"trace": trace}}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

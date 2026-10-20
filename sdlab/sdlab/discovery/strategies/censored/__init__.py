@@ -311,7 +311,7 @@ def cap_candidates(flows, ids, t, prev, dy, i, floor_rss, margin, recut=False, m
     return out + [(base + cap.as_flows(fit, row, prev[i], dy[i], came, wanted, at), f"demand {fit['D']:.3g} from {row} capped on {int(fit['capped'].sum())} steps")]
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     o = {k: opts.pop(k, v) for k, v in DEFAULTS.items()}
     r0 = main_line(stocks, run, opts)
@@ -379,3 +379,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if math.isfinite(e0) and e1 > o["judge_slack"] * e0:
         return {**r0, "censored": taken, "censored_rejected": {"judge": e1, "main_line": e0}}
     return {**r0, "flows": flows, "censored": taken, "judge": {"censored": e1, "main_line": e0}}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

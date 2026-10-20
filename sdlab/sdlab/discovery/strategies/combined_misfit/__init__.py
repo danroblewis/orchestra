@@ -32,7 +32,7 @@ from .fitcheck import goodness
 DEFAULTS = {"z": 5.0, "switch": True}
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     env = json.loads(os.environ.get("SDLAB_COMBINED_MISFIT") or "{}")
     own = {k: opts.pop(k) for k in list(opts) if k in C.DEFAULTS or k in DEFAULTS or k == "specialists"}
@@ -62,3 +62,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     out = dict(best["result"])
     out["combined"] = {"chosen": best["name"], "misfit": how, "candidates": C._summary(cands, cfg)}
     return out
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

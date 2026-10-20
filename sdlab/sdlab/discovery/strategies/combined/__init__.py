@@ -194,7 +194,7 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
     return min(scored, key=rank)[1]
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     env = json.loads(os.environ.get("SDLAB_COMBINED") or "{}")
     own = {k: opts.pop(k) for k in list(opts) if k in DEFAULTS or k == "specialists"}
@@ -222,3 +222,11 @@ def _summary(cands: list[dict], cfg: dict) -> list[dict]:
             s["flows"] = c["result"].get("flows")
         out.append(s)
     return out
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

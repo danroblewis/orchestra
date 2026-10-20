@@ -125,7 +125,7 @@ def _not_injected(found: dict[str, np.ndarray], run: dict, injections: list[dict
     return out
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     found = _not_injected(find_pulses(stocks, run, opts), run, opts.get("injections"))
     if not found:
@@ -167,3 +167,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     r["flows"] = flows + [g for k, a in pulses.items() for g in pulse_flows(k, a, run["t"])]
     r["pulses"] = {k: int((a != 0).sum()) for k, a in pulses.items()}
     return r
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

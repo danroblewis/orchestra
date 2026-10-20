@@ -107,7 +107,7 @@ def _arrays(stocks, run, opts):
     return ids, prev, dy
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """effect_hats' search, anytime: the best answer so far is kept, and when the time runs short
     (`share` of what the caller's timer leaves after the base) the search stops and that answer is
     returned instead of the whole run timing out."""
@@ -398,3 +398,11 @@ def _clean(flows: list[dict]) -> list[dict]:
             f["inflow"] = [{k: v for k, v in g.items() if k != "pool"} for g in segs]
         out.append(f)
     return out
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

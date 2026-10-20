@@ -40,7 +40,7 @@ CLEARLY = 0.8        # a search model with more numbers than the base must behav
 BASES = {"combined": combined, "lna_stack": lna_stack}
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     env = json.loads(os.environ.get("SDLAB_STRUCTURES") or "{}")
     own = {k: opts.pop(k) for k in list(opts) if k in DEFAULTS}
@@ -103,3 +103,11 @@ def _compare(mine: dict, base: dict, stocks: list[dict], run: dict, opts: dict, 
     if (sm["k"] <= sb["k"] and bm <= bb * (1 + slack) + 1e-9) or bm <= CLEARLY * bb:
         out["chosen"] = "structures"
     return out
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

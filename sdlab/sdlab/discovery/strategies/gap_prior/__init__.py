@@ -105,7 +105,7 @@ def as_coflows(flows: list[dict], apart=None) -> list[dict]:
     return out
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     found = _lna(stocks, run, opts)
     if found.get("method") == "lna":
         return found                    # counting noise: the likelihood chose between them
@@ -140,3 +140,11 @@ def conventions(found: dict, stocks: list[dict], run: dict, opts: dict | None = 
     if not math.isfinite(after) or after > before * (1 + 1e-3) + 1e-9:
         return found
     return {**found, "flows": flows, "gap_prior": True}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

@@ -25,7 +25,7 @@ from ._vendored.lna_pulses.run import Budget
 from .run import hooks
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     ids = [s["id"] for s in stocks]
     T = len(run["t"]) - 1
@@ -81,3 +81,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             out["flows"] = flows + [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])]
             out["pulses"] = {i: int((a != 0).sum()) for i, a in pulses.items()}
     return conventions(out, stocks, run, opts)
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

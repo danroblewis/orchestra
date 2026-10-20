@@ -31,7 +31,7 @@ def own_reading_guard(r: dict, state: dict, stocks: list[dict], run: dict, opts:
     return r
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     state: dict = {}
     r = lna.identify(stocks, run, opts, hooks=stage(state))
@@ -39,3 +39,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if r.get("method") == "lna":
         r["levels"] = {stocks[s]["id"]: len(g) for s, g in (state.get("levels") or {}).items()}
     return r
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

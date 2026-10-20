@@ -259,7 +259,7 @@ def base(stocks: list[dict], run: dict, opts: dict, cfg: dict, cached: dict) -> 
     return r
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     env = json.loads(os.environ.get("SDLAB_COMBINED2") or "{}")
     own = {k: opts.pop(k) for k in list(opts) if k in DEFAULTS or k == "specialists"}
@@ -267,7 +267,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     use = set(cfg["stages"] or [])
     began = time.perf_counter()
     trail: list = []
-    kal = None
+    kal, filtered = None, None
     if "kalman" in use:
         t0 = time.perf_counter()
         try:
@@ -277,8 +277,12 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             trail.append({"stage": "kalman", "error": f"{type(e).__name__}: {e}"[:300]})
             kal, got = None, None
         trail.append({"stage": "kalman", "seconds": round(time.perf_counter() - t0, 3), "answered": got is not None})
-        if got is not None:
+        if got is not None and (got.get("kalman") or {}).get("reading") != "meas":
             return {**got, "combined2": {"chosen": "kalman", "stages": trail}}
+        # the filter's model for a measurement error is weighed against the pick below (_closer)
+        filtered = got
+    if filtered is not None and stages.short(stocks, run, opts):
+        return {**filtered, "combined2": {"chosen": "kalman", "stages": trail}}
     if "archetypes" in use and stages.short(stocks, run, opts):
         r = stages.archetypes_alone(stocks, run, opts)
         return {**r, "combined2": {"chosen": "archetypes", "stages": trail + [{"stage": "archetypes", "alone": "short"}]}}
@@ -318,8 +322,24 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             r = got
         except Exception as e:                           # noqa: BLE001
             trail.append({"stage": "kalman after", "error": f"{type(e).__name__}: {e}"[:300]})
+    if filtered is not None and not _closer(filtered, r, stocks, run, opts):
+        r, chosen = filtered, "kalman"
     r["combined2"] = {**info, "chosen": chosen, "stages": trail, "seconds": round(time.perf_counter() - began, 3)}
     return r
+
+
+def _closer(filtered: dict, picked: dict, stocks: list[dict], run: dict, opts: dict) -> bool:
+    """Whether the pick, its numbers refitted for a measurement error (eiv.py), runs closer to the data
+    over 5, 20 and 100 steps than the Kalman filter's model, whose atoms read no measured input (the
+    judge's multi-step error, which a measurement error does not bias). A filter's model with a stock
+    nobody measures is kept: the judge runs on the measured levels only."""
+    from .eiv import _known, judge, refit
+
+    ids = [s["id"] for s in stocks]
+    if not _known(filtered.get("flows") or [], set(ids) | set(opts.get("inputs") or {})):
+        return False
+    mine = judge(filtered.get("flows") or [], ids, run, opts)
+    return judge(refit(picked.get("flows") or [], stocks, run, opts)[0], ids, run, opts) < mine
 
 
 def _summary(cands: list[dict], cfg: dict) -> list[dict]:
@@ -332,3 +352,11 @@ def _summary(cands: list[dict], cfg: dict) -> list[dict]:
             s["flows"] = c["result"].get("flows")
         out.append(s)
     return out
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

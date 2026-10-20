@@ -85,7 +85,7 @@ def _arrays(stocks, run, opts):
     return ids, prev, dy
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = {**json.loads(os.environ.get("SDLAB_EFFECT_HATS_OPTS") or "{}"), **(opts or {})}
     keep = opts.pop("candidates", False)
     o = {**DEFAULTS, **{k: opts.pop(k) for k in list(opts) if k in DEFAULTS}}
@@ -270,3 +270,11 @@ def _clean(flows: list[dict]) -> list[dict]:
             f["inflow"] = [{k: v for k, v in g.items() if k != "pool"} for g in segs]
         out.append(f)
     return out
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

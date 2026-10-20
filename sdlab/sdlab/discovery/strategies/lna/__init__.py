@@ -34,7 +34,7 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, opts: dict, horizons
     return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=opts.get("injections"), **kw) for h in hs) / len(hs)
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
     """hooks: stages a variant adds (run.HOOKS); none for lna itself."""
     opts = dict(opts or {})
     base = _matrix(stocks, run, dict(opts))
@@ -47,3 +47,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dic
     if (MISFIT is not None and found["misfit"] > MISFIT) or not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
         return {**base, "lna": {k: found[k] for k in ("judged", "nll", "dispersion", "misfit")}}
     return found
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {}), hooks), stocks, run, opts)

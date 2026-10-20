@@ -80,11 +80,27 @@ MISFIT = 0.3          # nor where, with the error read, the atoms still leave th
                       # step variance unexplained (effects, co-flows, caps: an error would stand in)
 
 
+def _closer(filtered: dict, based: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
+    """The filter's answer, or the base's where its flows (numbers refitted for a measurement error) run
+    closer to the data over 5, 20 and 100 steps (a filter's model with a stock nobody measures is kept:
+    the judge runs on the measured levels only)."""
+    from .eiv import _known, judge, refit
+
+    ids = [s["id"] for s in stocks]
+    if not _known(filtered.get("flows") or [], set(ids) | set(opts.get("inputs") or {})):
+        return filtered
+    mine = judge(filtered.get("flows") or [], ids, run, opts)
+    theirs = judge(refit(based.get("flows") or [], stocks, run, opts)[0], ids, run, opts)
+    if theirs < mine:
+        return {**based, "kalman": {**filtered["kalman"], "reading": None, "filter_judged": [mine, theirs]}}
+    return {**filtered, "kalman": {**filtered["kalman"], "filter_judged": [mine, theirs]}}
+
+
 def noisy(ev: dict) -> bool:
     return ev["lr"] > LR_NOISE * ev["price"] and ev["floor"] <= FLOOR and ev["misfit"] <= MISFIT
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     base = _base(opts.get("kalman_base", BASE))
     t, Y = _levels(stocks, run)
@@ -116,9 +132,16 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             prepared = False
     gross = int(ses.gross.sum()) if prepared else 0
     if prepared and (uneven or noisy(info["evidence"]) or gross):
-        got = kalman("uneven" if uneven else "meas" if noisy(info["evidence"]) else "outliers")
-        if got is not None:
+        why = "uneven" if uneven else "meas" if noisy(info["evidence"]) else "outliers"
+        got = kalman(why)
+        if got is not None and why != "meas":
             return got
+        if got is not None:
+            # the filter's atoms read no measured input: its model is weighed against the base's, with the
+            # base's numbers refitted for the measurement error (eiv.py), on the judge's multi-step error
+            # (which a measurement error does not bias); the base's answer is kept only when it runs closer
+            r = base(stocks, run, dict(opts))
+            return _closer(got, r, stocks, run, opts)
     r = base(stocks, run, opts)
     if prepared and not uneven:
         scaled = scale_pattern(r.get("flows") or [])
@@ -127,3 +150,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             if got is not None and (got.get("lag") or got.get("scales")):
                 return got
     return {**r, "kalman": {"reading": None, **info, "trace": ses.trace}}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

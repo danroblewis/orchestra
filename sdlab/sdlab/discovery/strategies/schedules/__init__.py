@@ -37,7 +37,7 @@ from .search import search
 DEFAULTS = {"margin": 2.0, "flow_price": 0.5, "budget": 60.0, "judge_slack": 1.5}
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     o = {k: opts.pop(k, v) for k, v in DEFAULTS.items()}
     r0 = censored(stocks, run, opts)
@@ -72,3 +72,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for f in flows:
         f.pop("free_c", None)
     return {**r0, "flows": flows, "schedules": taken, "judge": {"schedules": e1, "censored": e0}}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

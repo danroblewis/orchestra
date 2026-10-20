@@ -77,7 +77,7 @@ def options(opts: dict | None) -> dict:
     return {**OPTIONS, **(opts or {})}
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = options(opts)
     keep = opts.pop("candidates", False)                 # the bench grades every candidate
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
@@ -104,3 +104,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if keep:
         r["candidates"] = candidates
     return r
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

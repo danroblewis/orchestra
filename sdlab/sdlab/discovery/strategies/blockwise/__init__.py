@@ -226,7 +226,7 @@ def choose(cands: list[dict]) -> dict:
     return min(ok, key=lambda c: c["error"] + c["norm"]) if ok else cands[0]
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     o = {**DEFAULTS, **{k: opts.pop(k) for k in list(opts) if k in DEFAULTS}}
     began = time.perf_counter()
@@ -295,3 +295,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         result["inferred_levels"] = {h: np.asarray(v, dtype=float).tolist() for h, v in result["inferred_levels"].items()}
     result["seconds"] = round(time.perf_counter() - began, 1)
     return result
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

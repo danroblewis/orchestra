@@ -75,7 +75,7 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
     return out
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     env = json.loads(os.environ.get("SDLAB_EARNED") or "{}")
     opts = {**opts, **env}
@@ -100,3 +100,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r.pop(k, None)
     r["chosen"], r["tried"] = best[2], tried
     return r
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

@@ -128,7 +128,7 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     return {"transit": best_t, "plain": best_p, "found": found, "gain": other - best_t["bic"]}
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     margin = opts.pop("ht_margin", 4.0)
     found_ratio = opts.pop("ht_found_ratio", 1.5)
@@ -255,3 +255,11 @@ def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferre
             continue
         flows, inferred, base_e = new, inf, e
     return flows, inferred
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

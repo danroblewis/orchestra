@@ -11,7 +11,7 @@ from __future__ import annotations
 from ...identify import identify as _main_line
 
 
-def identify(stocks, run, opts=None):
+def _identify(stocks, run, opts=None):
     r = _main_line(stocks, run, opts)
     wip = "unified: work in progress (no search yet); this is the main line's model"
     r["note"] = f"{wip}. {r['note']}" if r.get("note") else wip
@@ -19,3 +19,11 @@ def identify(stocks, run, opts=None):
 
 
 __all__ = ["identify"]
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

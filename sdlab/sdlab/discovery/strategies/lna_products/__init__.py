@@ -19,7 +19,7 @@ from ._vendored.lna_levels import own_reading_guard
 from .run import stage
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     state: dict = {}
     r = lna.identify(stocks, run, opts, hooks=stage(state))
@@ -30,3 +30,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r["products"], r["product_gain"] = state["products"], state.get("product_gain")
     return r
 
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

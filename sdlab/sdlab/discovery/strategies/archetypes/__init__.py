@@ -103,7 +103,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, cfg: dict) -> dict | Non
     return r
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     env = json.loads(os.environ.get("SDLAB_ARCHETYPES") or "{}")
     own = {k: opts.pop(k) for k in list(opts) if k in DEFAULTS}
@@ -145,3 +145,11 @@ def choose(stocks: list[dict], run: dict, opts: dict, cfg: dict, base_identify) 
         chosen = "archetypes" if e_mine < e_keep else "base"
     rd = lambda x: None if x is None or not math.isfinite(x) else round(x, 4)  # noqa: E731
     return {"chosen": chosen, "holdout": {"from": n, "archetypes": rd(e_mine), "base": rd(e_base), "persistence": rd(e_keep)}}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)

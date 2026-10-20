@@ -88,7 +88,7 @@ def candidate(flows, ids, t, prev, dy, i, floor_var, o, mi=None, counting=False)
             base + drift_flows(row, one, t))
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     o = {k: opts.pop(k, v) for k, v in DEFAULTS.items()}
     r0 = main_line(stocks, run, opts)
@@ -136,3 +136,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             flows = cand[0]
             taken.append({"row": row, "rewrite": cand[1], "bic": round(sc, 2), "counting": empty})
     return {**r0, "flows": flows, "drifting_drain": taken}
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
