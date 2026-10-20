@@ -61,7 +61,10 @@ def case(case_id: str) -> dict:
 
 @router.get("/strategies")
 def strategies(request: Request) -> Response:
-    return compact.respond(("strategies", explain.PATH.stat().st_mtime), api.strategies, request)   # as does a strategy that changes
+    from . import runner
+
+    marks = [p.stat().st_mtime for p in (runner.RETIRED, runner.PARKED, *runner.ROSTERS.glob("*.yaml")) if p.exists()]
+    return compact.respond(("strategies", explain.PATH.stat().st_mtime, *marks), api.strategies, request)   # as does a strategy that changes
 
 
 @router.get("/glossary")

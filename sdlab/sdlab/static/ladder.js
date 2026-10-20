@@ -681,6 +681,20 @@
       else if (e.key === "Backspace" && !inp.value && (S.ctags || []).length) { S.ctags = S.ctags.slice(0, -1); renderCaseCards(); show(); }
     };
   }
+  // the open case's strategies: the competing ones first; eliminated ones (for a kubernetes case) and
+  // retired ones, which are not run on new cases, folded away with why
+  function caseStrategies(c) {
+    const k8s = c.tags.includes("kubernetes");
+    const out = (s) => k8s && s.eliminated && s.eliminated.kubernetes;
+    const cell = (s, note) => `<span class="cst"${note ? ` data-tip="${esc(note)}"` : ""}><span class="small">${esc(s.name)}</span> ${squares(c.id, s.name)}</span>`;
+    const live = S.strategies.filter((s) => s.standing !== "retired" && !out(s));
+    const elim = S.strategies.filter((s) => s.standing !== "retired" && out(s));
+    const gone = S.strategies.filter((s) => s.standing === "retired");
+    const fold = (list, title, note) => list.length ? `<details class="cfold"><summary class="small muted">${list.length} ${title}</summary><div class="cstrats">${list.map((s) => cell(s, note(s))).join("")}</div></details>` : "";
+    return `<div class="cstrats">${live.map((s) => cell(s, s.standing === "parked" ? `parked: ${s.why}` : "")).join("")}</div>`
+      + fold(elim, "eliminated from the kubernetes competition (not run on later rungs)", (s) => { const e = s.eliminated.kubernetes; return `eliminated at rung ${e.rung} (${e.kind}): ${e.reason}`; })
+      + fold(gone, "retired strategies (not run on new cases)", (s) => `retired: ${s.why}`);
+  }
   async function renderCase() {
     const c = S.byId[S.csel.case]; if (!c) { $("cdetail").innerHTML = ""; return; }
     if (!S.summary || !S.summary.covers(c.id)) await loadSummary(c.id);
@@ -691,7 +705,7 @@
         <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")} · hash ${esc(short(c.hash))}</span>
         <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
         <div class="cdsum cs-${caseClass(S.cstats && S.cstats.by[c.id])}">${caseSummary(S.cstats && S.cstats.by[c.id])}</div></div>
-      <div class="cstrats">${S.strategies.map((s) => `<span class="cst"><span class="small">${esc(s.name)}</span> ${squares(c.id, s.name)}</span>`).join("")}</div>
+      ${caseStrategies(c)}
       <figure class="dpanel single"><figcaption>True model</figcaption><svg id="c-diagram" role="img" aria-label="The case's true model"></svg></figure>
       <div class="tablewrap"><table class="rtable"><thead><tr><th>flow</th><th>from → to</th><th>equation</th></tr></thead><tbody>
         ${flows.map((x) => `<tr><td><b>${esc(x.flow.id)}</b></td><td class="mono">${esc(x.flow.from || "outside")} → ${esc(x.flow.to || "outside")}</td><td class="mono">${esc(x.eq)}</td></tr>`).join("")}

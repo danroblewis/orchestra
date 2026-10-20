@@ -550,6 +550,7 @@ i.cs-pass, i.cs-mixed, i.cs-fail, i.cs-none { display: inline-block; width: 10px
 .tsug { padding: 3px 8px; font-size: 12.5px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
 .tsug.on, .tsug[data-add]:hover { background: var(--panel); box-shadow: inset 3px 0 0 var(--fg); }
 .cstrats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 10px; }
+.cfold { margin: 0 0 8px; } .cfold summary { cursor: pointer; }
 .cst { display: inline-flex; gap: 5px; align-items: center; font-family: var(--mono); }
 @media (max-width: 800px) {
   .cbrowse { grid-template-columns: 1fr; }

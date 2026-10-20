@@ -52,7 +52,16 @@ def case(case_id: str) -> dict | None:
 
 
 def strategies() -> list[dict]:
-    return jsonable([{**s, "about": explain.about(s["name"])} for s in catalog.listing()])
+    """Every strategy, with its standing: retired (retired.yaml), parked (parked.yaml) or "" (active),
+    and the competitions that eliminated it ({roster: {rung, kind, reason}}, rosters/*.yaml)."""
+    from . import runner
+
+    gone, park = runner.retired(), runner.parked()
+    rosters = {p.stem: runner.roster(p.stem) for p in sorted(runner.ROSTERS.glob("*.yaml"))}
+    return jsonable([{**s, "about": explain.about(s["name"]),
+                      "standing": "retired" if s["name"] in gone else "parked" if s["name"] in park else "",
+                      "why": gone.get(s["name"]) or park.get(s["name"]) or "",
+                      "eliminated": {k: v[s["name"]] for k, v in rosters.items() if s["name"] in v}} for s in catalog.listing()])
 
 
 def glossary() -> dict:
