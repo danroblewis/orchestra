@@ -92,7 +92,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         # the matrix's judge steps its candidates without the inputs: its chosen model judged again
         base_e = judge(base["flows"], stocks, run, injections=opts.get("injections"), inputs=inputs)
     fit_opts = {**opts, "weighted": o["weighted"], "guard": o["guard"], "level_price": o["level_price"], "no_self_links": o["no_self_links"],
-                "pair": o["pair"], "coflows": o["coflows"]}
+                "pair": o["pair"], "coflows": o["coflows"], "link_prior": o["prior"]}
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
     seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]

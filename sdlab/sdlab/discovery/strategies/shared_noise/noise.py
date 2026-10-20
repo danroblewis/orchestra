@@ -60,8 +60,9 @@ class _Budget:
     growth) plus, per candidate gain, a move or a link; each source's drain beyond its moves goes
     outside."""
 
-    def __init__(self, S: int, drains: np.ndarray, cands: list[tuple[int, int, float]], fixed: np.ndarray):
+    def __init__(self, S: int, drains: np.ndarray, cands: list[tuple[int, int, float]], fixed: np.ndarray, capped: np.ndarray | None = None):
         self.S, self.drains, self.cands, self.fixed = S, drains, cands, fixed
+        self.capped = np.zeros(S, bool) if capped is None else capped
 
     def predict(self, moves: np.ndarray) -> np.ndarray:
         P = self.fixed.copy()
@@ -70,8 +71,9 @@ class _Budget:
             P[s, s] += mu
             if m:
                 P[a, a] += mu
-                P[a, s] -= mu
-                P[s, a] -= mu
+                if not self.capped[a]:
+                    P[a, s] -= mu
+                    P[s, a] -= mu
                 out[a] -= mu
         P[np.diag_indices(self.S)] += np.maximum(0.0, out)
         return P
@@ -95,11 +97,16 @@ def _cost(obs: np.ndarray, w: np.ndarray, pred: np.ndarray, one_sided: bool = Fa
 
 
 def analyse(rows: list[dict], ids: list[str], dy: np.ndarray, prev: np.ndarray, unit: dict, final: set, z: float = 3.0, tol: float = 0.003, misfit: bool = False, swap: bool = False, one_sided: bool = False,
-            columns: np.ndarray | None = None, names: list[str] | None = None, no_draws: bool = True) -> Noise:
+            columns: np.ndarray | None = None, names: list[str] | None = None, no_draws: bool = True, capped: float | None = 2.0) -> Noise:
     """columns, names (optional): every series a row's numbers may read, named; the stocks' levels
     first (as prev, ids), then any measured inputs. A number on an input is an outside inflow of
     its row's stock: its draws land in that stock alone, never a move or a link between stocks.
-    no_draws: residuals far below counting noise (noise-free data) decide nothing."""
+    no_draws: residuals far below counting noise (noise-free data) decide nothing.
+    capped (z, None for off): a stock that drains about all it holds each step (its drain d with
+    d + z sqrt(d / mean level) >= 1) has its outflows cut to what it holds on many steps, so what
+    leaves it is its level, not a draw: its moves share no draw with their receivers, and the noise
+    cannot tell them from links (kubernetes 305: retries drains 0.96-1.0 per step, and its retried
+    move read as a link, or the queue's timeout move read as one in its place)."""
     S = len(ids)
     res = residuals(rows, dy)
     means = prev.mean(axis=1)
@@ -135,7 +142,13 @@ def analyse(rows: list[dict], ids: list[str], dy: np.ndarray, prev: np.ndarray, 
             fixed[s, s] += abs(float(np.mean([p["value"] for p in row["inflow"]])))
     if not cands:
         return noise
-    budget = _Budget(S, drains, cands, fixed)
+    cap = np.zeros(S, bool)
+    if capped is not None:
+        for s, row in enumerate(rows):
+            d = -(row["coefL"][0].get(ids[s]) or 0.0)
+            if d > 0 and ids[s] not in final and means[s] > 0:
+                cap[s] = d + capped * np.sqrt(d / means[s]) >= 1.0
+    budget = _Budget(S, drains, cands, fixed, cap)
     tri = lambda P: np.triu(P)  # noqa: E731
 
     def cost(m):

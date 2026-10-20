@@ -38,11 +38,19 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
     An outflow to outside carried by pieces on a stock X with no drain k x X is also offered as that
     drain in their place, refitted jointly with the rest (kubernetes 304 counts-short: the matrix's
     conservation folds a real outside drain into the move and leaves the excess to 7 constant pieces,
-    which a plain drop hands to the input's gain; the drain prices better)."""
+    which a plain drop hands to the input's gain; the drain prices better).
+    A link from outside into Y that reads a stock X (outside -> Y = k x X) is also offered as the move
+    X -> Y, merged into that move when there is one, refitted jointly, whatever its size (kubernetes 305:
+    the matrix's conservation splits a move whose receiver gains more than its source's row loses into
+    the move plus a link reading the source, queue -> retries + outside -> retries[queue]; the move alone
+    prices better; on counts-short the move prices 0.3 above the link, which it beats once the link
+    pays the prior, opts "link_prior" x log T, that rank() in __init__ charges a rate that is not its
+    source's level)."""
     inputs = (opts or {}).get("inputs")
     score = score or (lambda fl: price(fl, ids, run, inputs))
     cur = flows
     best = score(cur)
+    link_prior = float((opts or {}).get("link_prior", 2.0)) * math.log(max(2, len(run["t"]) - 1))
     while len(cur) > 1:
         size = amounts(cur, ids, run, inputs)
         cutoff = small * float(np.median(size)) if len(size) else 0.0
@@ -52,6 +60,12 @@ def prune(flows: list[dict], ids: list[str], run: dict, opts: dict | None = None
                 fl, _ = refit(cur[:i] + cur[i + 1:] + [alt], ids, run, opts)
                 s = score(fl)
                 if s < best and (trial is None or s < trial[0]):
+                    trial = (s, fl)
+            for alt in _move_for(cur, i, ids):
+                fl, _ = refit(alt, ids, run, opts)
+                s = score(fl)
+                # the link paid the strategy's prior for a rate that is not its source's level
+                if s - link_prior < best and (trial is None or s < trial[0]):
                     trial = (s, fl)
             if size[i] >= cutoff:
                 continue
@@ -76,6 +90,32 @@ def _drain_for(flows: list[dict], i: int, ids: list[str]) -> list[dict]:
         return []
     rate = {"form": "proportional", "stock": x, "k": 0.0}
     return [{"from": x, "to": None, "ratio": 1, "rate": rate, "rates": [rate]}]
+
+
+def _move_for(flows: list[dict], i: int, ids: list[str]) -> list[list[dict]]:
+    """[the flows with link i, outside -> Y = k x X (X a stock other than Y), read as the move X -> Y]:
+    merged into an existing move X -> Y = k' x X when there is one (the link dropped), else added in
+    its place; [] when flow i is no such link."""
+    f = flows[i]
+    rate = f.get("rate") or {}
+    y = f.get("to")
+    if f.get("from") or y not in ids or f.get("inflow") or f.get("byTime") or f.get("effects") or f.get("hat") or f.get("uses"):
+        return []
+    if rate.get("form") == "proportional":
+        x, k = rate.get("stock"), rate.get("k")
+    elif rate.get("form") == "linear" and not rate.get("c") and len(rate.get("terms") or []) == 1:
+        x, k = rate["terms"][0].get("stock"), rate["terms"][0].get("k")
+    else:
+        return []
+    if x not in ids or x == y:
+        return []
+    rest = flows[:i] + flows[i + 1:]
+    if any(g.get("from") == x and g.get("to") == y and not g.get("effects") and not g.get("hat") and not g.get("uses")
+           and (g.get("rate") or {}).get("form") == "proportional" and (g.get("rate") or {}).get("stock") == x for g in rest):
+        return [rest]
+    move = {"from": x, "to": y, "ratio": 1, "rate": {"form": "proportional", "stock": x, "k": float(k or 0)}}
+    move["rates"] = [move["rate"]]
+    return [rest[:i] + [move] + rest[i:]]
 
 
 def size(flows: list[dict]) -> int:

@@ -320,9 +320,13 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     extras, names, columns = ctx.get("extras") or [], ctx.get("names") or ids, ctx.get("columns", prev)   # (opts "extra_columns")
     # shared noise (opt-in): which gains are moves and which links, read off the rows' residuals
     noise = analyse(rows, ids, dy, prev, ctx["unit"], ctx["final"], opts.get("noise_z", 3.0), opts.get("tol", 0.003), opts.get("noise_misfit", False), opts.get("noise_swap", False), opts.get("noise_one_sided", False),
-                     columns=columns, names=names, no_draws=opts.get("noise_no_draws", True)) if opts.get("shared_noise") else None
+                     columns=columns, names=names, no_draws=opts.get("noise_no_draws", True), capped=opts.get("noise_capped", 2.0)) if opts.get("shared_noise") else None
     kinds = noise.kinds if noise else None
-    conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts, kinds)
+    # (with the rows' other numbers refitted, a receiver's gain can change after its source was
+    # conserved: passes until nothing changes, at most 3)
+    for _ in range(3 if opts.get("conserve_refit", True) else 1):
+        if not conserve(rows, ids, ctx["final"], ctx["unit"], prev, dy, cfg, L, ctx["bic"], ctx["log_t"], opts, kinds, names):
+            break
 
     # a row whose numbers conservation changed: its outside inflow's pieces are measured again with
     # the numbers it ends with (the pieces were measured beside the row's own, biased, drain)
@@ -363,15 +367,17 @@ def finish(rows: list[dict], ctx: dict, opts: dict) -> dict:
     return out
 
 
-def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=None) -> None:
+def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=None, names=None) -> bool:
     """Conservation unless the data clearly says otherwise: a stock's drain is what same-unit stocks
     are seen to receive from it (measured, often more precisely, in their rows). Per configuration,
     tested together: setting the drain to what the receivers take must cost the row no more than
     log T in BIC (refitting the rest), or, for a row with a changing inflow (which cannot separate
-    its drain from the changes), be within 30%. A receiver whose gain the shared noise reads as a link
+    its drain from the changes), be within 30%. A drain below what the receivers take is raised the
+    same way (by the refit test alone for a row with a steady inflow). A receiver whose gain the shared noise reads as a link
     (`kinds`) takes nothing from the stock; and a stock with such a link has its drain lowered only
     when the refit test passes (the link's gain is no evidence that its drain is too high)."""
     kinds = kinds or {}
+    changed = False
     for s, row in enumerate(rows):
         a = row["id"]
         if a in final:
@@ -387,7 +393,13 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         changing = (bool(row["cuts"]) and len(row["cuts"]) > 2) or a in (opts.get("varying_inflow") or ())
         linked = any(kinds.get((a, r["id"])) == "link" for r in rows)
         trust = row.get("trust_receivers", opts.get("trust_receivers")) is not False   # a row may carry its own setting
-        cand = [c for c in range(L) if moves[c] > 0 and ((changing and moves[c] > drain[c] and trust) or drain[c] > moves[c])]
+        # receivers taking more than the row's drain (trusted): raised to what they take when the
+        # refit test passes, for a row with a steady inflow too (opts "conserve_up", default on; off
+        # only a changing row): the excess was otherwise read as a link out of nowhere reading the
+        # stock beside the move (kubernetes 305: queue -> retries 0.0396 + outside -> retries
+        # 0.0425 x queue, the queue's row draining 0.656 against 0.6167 + 0.0822 received)
+        up = changing or opts.get("conserve_up", True)
+        cand = [c for c in range(L) if moves[c] > 0 and ((up and moves[c] > drain[c] and trust) or drain[c] > moves[c])]
         if not cand:
             continue
         in_cand = np.zeros(L, bool)
@@ -407,7 +419,8 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         else:
             cuts2 = row["cuts"]
         sums = row_sums(y2, Xf, cuts2)
-        fixed = fit_subset(sums, idx).rss
+        forced = fit_subset(sums, idx)
+        fixed = forced.rss
         p2 = len(idx) + (len(cuts2) - 1 if cuts2 else 0)
         slack = opts.get("slack", 0.3)
         # priced at one log T: the forced fit already has one number fewer (the drain), so the
@@ -417,7 +430,23 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         if bic(fixed, p2) <= bic(row["rss"], row["p"]) + opts.get("conserve_allow", 0.0) * log_t or (changing and all(abs(drain[c] - moves[c]) / max(drain[c], moves[c]) < slack and not (linked and drain[c] > moves[c]) for c in cand)):
             for c in cand:
                 row["coefL"][c][a] = -moves[c]
+            # the row's other numbers as the forced fit refitted them (opts "conserve_refit", default
+            # on): a drain raised to what the receivers take with the inflow's gain left as the free
+            # fit read it starves the stock (kubernetes 305 counts-long: queue 0.656 -> 0.699 with
+            # traffic's gain kept at 0.940, where the refit reads 0.98; the judge then kept the split)
+            if opts.get("conserve_refit", True) and names is not None:
+                beta = np.array(row["beta"], dtype=float)          # (a copy: kept raw rows share the array)
+                for n, (q, i) in enumerate(others):
+                    j, lab = row["col"][q]
+                    delta = float(forced.beta[n]) - beta[i]
+                    beta[i] = float(forced.beta[n])
+                    for c in range(L):
+                        if lab < 0 or lab == c:
+                            row["coefL"][c][names[j]] = row["coefL"][c].get(names[j], 0.0) + delta
+                row["beta"] = beta
+            changed = True                                            # (a candidate's drain differs from its moves)
             row["conserved"] = True
+    return changed
 
 
 def input_flows(rows: list[dict], c: int, inputs: list[str], columns: np.ndarray, names: list[str]) -> list[dict]:

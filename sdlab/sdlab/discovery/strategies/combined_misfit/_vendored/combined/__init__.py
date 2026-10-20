@@ -40,7 +40,8 @@
 opts (also SDLAB_COMBINED, JSON): "specialists" (names, in order; default SPECIALISTS), "price"
 (the BIC multiplier, default 1), "per_flow" (numbers a flow costs for being there, default 0: a
 flow is priced by its numbers), "budget" (seconds, default 240), "cap" (seconds per specialist,
-default 90), "refit" (refit every candidate's numbers, default on), "guard" and "guard_floor"
+default 90), "refit" (refit every candidate's numbers, default on), "link_moves" (a link from outside reading a
+stock offered as the move from it, kept when the score falls; default on), "guard" and "guard_floor"
 (default 4 and 0.1; guard 0 turns it off), "trace" (keep every candidate's flows in the result).
 """
 
@@ -140,6 +141,15 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
             if s2 is not None and s2["nll"] < s["nll"] - 1e-9:
                 c["result"] = r = {**r, "flows": flows, "refitted": True}
                 s = {**s2, "refitted": True}
+        if cfg.get("link_moves", True):
+            try:
+                flows, s3, n = _links_as_moves(r["flows"], s, data, price, per_flow, starts)
+            except Exception as e:                       # noqa: BLE001
+                c["link_moves_error"] = f"{type(e).__name__}: {e}"[:300]
+                n = 0
+            if n:
+                c["result"] = r = {**r, "flows": flows, "links_as_moves": n}
+                s = s3
         c["score"] = s
         scored.append((i, c, starts))
     if not scored:
@@ -165,6 +175,55 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
         return (round(x[1]["score"]["bic"], 6), cross_reads(x[1]["result"]["flows"]), x[1]["score"]["k"],
                 PREFERENCE.index(name) if name in PREFERENCE else len(PREFERENCE), x[0])
     return min(scored, key=rank)[1]
+
+
+def _move_for(flows: list[dict], i: int, ids: list[str]) -> list[dict] | None:
+    """The flows with link i (outside -> Y = k x X, X a measured stock other than Y) read as the move
+    X -> Y: merged into an existing move X -> Y = k' x X (the link dropped), else in its place; None
+    when flow i is no such link."""
+    f = flows[i]
+    rate = f.get("rate") or {}
+    y = f.get("to")
+    if f.get("from") or y not in ids or any(f.get(k) for k in ("inflow", "byTime", "effects", "uses", "via", "rates_by_era")):
+        return None
+    if rate.get("form") == "proportional":
+        x, k = rate.get("stock"), rate.get("k")
+    elif rate.get("form") == "linear" and not rate.get("c") and len(rate.get("terms") or []) == 1:
+        x, k = rate["terms"][0].get("stock"), rate["terms"][0].get("k")
+    else:
+        return None
+    if x not in ids or x == y:
+        return None
+    rest = flows[:i] + flows[i + 1:]
+    if any(g.get("from") == x and g.get("to") == y and not g.get("effects") and not g.get("uses") and not g.get("byTime")
+           and (g.get("rate") or {}).get("form") == "proportional" and (g.get("rate") or {}).get("stock") == x for g in rest):
+        return rest
+    rate = {"form": "proportional", "stock": x, "k": float(k or 0)}
+    return rest[:i] + [{"from": x, "to": y, "ratio": 1, "rate": rate, "rates": [rate]}] + rest[i:]
+
+
+def _links_as_moves(flows: list[dict], s: dict, data: J.Data, price: float, per_flow: float, starts: dict) -> tuple[list[dict], dict, int]:
+    """Each link from outside that reads a stock X (outside -> Y = k x X) offered as the move X -> Y
+    (merged into that move when there is one), its numbers refitted, and kept while the judge's
+    score falls (kubernetes 305: the matrix's conservation splits a move whose receiver gains more
+    than its source's row loses into the move plus a link reading the source, queue -> retries +
+    outside -> retries[queue]; the move alone scores better). Returns (flows, score, links read)."""
+    n = 0
+    while True:
+        best = None
+        for i in range(len(flows)):
+            alt = _move_for(flows, i, data.ids)
+            if alt is None:
+                continue
+            fl = refit(alt, data, J.weights(alt, data)) or alt
+            s2 = J.score(fl, data, price, per_flow, starts)
+            if s2["bic"] < s["bic"] - 1e-9 and (best is None or s2["bic"] < best[1]["bic"]):
+                best = (fl, s2)
+        if best is None:
+            return flows, s, n
+        flows, s = best
+        s = {**s, "refitted": True}
+        n += 1
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
