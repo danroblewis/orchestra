@@ -116,18 +116,22 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed
 # _eiv_. When the levels carry measurement error (one-step residuals negatively correlated from step to
 # step), the found numbers are refitted with the levels two steps back as instruments, and kept only if
-# the model then runs at least as close to the data over 5, 20 and 100 steps.
+# the model then runs at least as close to the data over 5, 20 and 100 steps. Parts the instrumented fit
+# cannot tell from nothing are pruned first (docs/research/k8s-303.md).
 import copy as _eiv_copy  # noqa: E402
 
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array, starts_for as _eiv_starts_for  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is
                       # exact unless a floor, a shared stock or an effect bends them)
 _EIV_HORIZONS = (5, 20, 100)
+_EIV_PRICE = 2.0           # a part's price per number on the instrumented fit's Wald statistic (Akaike's)
+_EIV_TRIM = 5.0            # a one-step residual beyond this many robust sds marks a level outlier
+_EIV_GUARD = 2.0           # paired standard errors the pruned model may lose by at the longest horizon
 
 
 def _eiv_slots(flows: list[dict]) -> list[tuple[dict, str]]:
@@ -225,6 +229,165 @@ def _eiv_white_z(e: _eiv_np.ndarray, dy: _eiv_np.ndarray) -> list[float]:
     return out
 
 
+def _eiv_units(flows: list[dict]) -> list[tuple[int, int | None]]:
+    """The parts pruning may drop, as (flow, term): a whole flow (None), or one term of a linear rate
+    with more than one number. Flows that follow the eras are left alone."""
+    out = []
+    for fi, f in enumerate(flows):
+        if f.get("byTime"):
+            continue
+        r = f.get("rate") or {}
+        terms = [ti for ti, x in enumerate(r.get("terms") or []) if x.get("k") is not None]
+        if r.get("form") == "linear" and len(terms) + bool(r.get("c")) > 1:
+            out += [(fi, ti) for ti in terms]
+        else:
+            out.append((fi, None))
+    return out
+
+
+def _eiv_unit_places(fit: _EivFit, unit: tuple[int, int | None]) -> list[int]:
+    """The positions of a part's numbers in fit.places."""
+    fi, ti = unit
+    f = fit.flows[fi]
+    if ti is not None:
+        mine = {id(f["rate"]["terms"][ti])}
+    else:
+        r = f.get("rate") or {}
+        mine = {id(g) for g in f.get("inflow") or []} | {id(r)} | {id(x) for x in r.get("terms") or []}
+    return [j for j, (d, k) in enumerate(fit.places) if id(d) in mine and (ti is None or k == "k")]
+
+
+def _eiv_without(flows: list[dict], unit: tuple[int, int | None]) -> list[dict]:
+    fi, ti = unit
+    out = _eiv_copy.deepcopy(flows)
+    if ti is None:
+        del out[fi]
+    else:
+        r = out[fi]["rate"]
+        del r["terms"][ti]
+        if out[fi].get("rates"):
+            out[fi]["rates"] = [r]
+    return out
+
+
+def _eiv_name(flows: list[dict], unit: tuple[int, int | None]) -> str:
+    f = flows[unit[0]]
+    return (f"{f.get('from') or 'outside'} -> {f.get('to') or 'outside'}"
+            + (f" [{f['rate']['terms'][unit[1]].get('stock')}]" if unit[1] is not None else ""))
+
+
+class _EivInstrumented:
+    """A structure's instrumented fit: its numbers (least squares, then instrumental-variables steps;
+    a step that fails keeps the last finite one), their covariance, and which numbers some row reads."""
+
+    def __init__(self, flows: list[dict], ids: list[str], t: _eiv_np.ndarray, A: _eiv_np.ndarray, inputs: dict | None,
+                 rows: _eiv_np.ndarray, w: _eiv_np.ndarray):
+        self.work, self.w = _eiv_copy.deepcopy(flows), w
+        self.fit = _EivFit(self.work, ids, t, A, inputs, rows)
+        th = self.fit.theta()
+        self.ok = len(th) > 0
+        if not self.ok:
+            return
+        for _ in range(_EIV_ITERATIONS):
+            th = th + _eiv_np.linalg.lstsq(self.stack(self.fit.jac(th, 1)), self.stack(self.fit.resid(th)), rcond=None)[0]
+        e = self.fit.resid(th)
+        dev = _eiv_np.abs(e - _eiv_np.median(e, axis=1, keepdims=True))
+        bad = set(rows[_eiv_np.any(dev > _EIV_TRIM * 1.4826 * _eiv_np.maximum(_eiv_np.median(dev, axis=1), 1e-12)[:, None], axis=0)].tolist())
+        keep = _eiv_np.array([r for r in rows if not {r - 1, r, r + 1, r + 2} & bad])
+        if bad and len(keep) >= 10 * len(th):            # the rows a level outlier touches, as a change or an instrument
+            self.fit = _EivFit(self.work, ids, t, A, inputs, keep)
+        good = None
+        for _ in range(_EIV_ITERATIONS):
+            J, Zi = self.stack(self.fit.jac(th, 1)), self.stack(self.fit.jac(th, 2))
+            c = _eiv_np.sqrt((J ** 2).sum(axis=0))
+            act = c > 0                                  # a number no row reads (a piece outside the rows) stays
+            ZJ = (Zi[:, act] / c[act]).T @ (J[:, act] / c[act])
+            if not act.any() or not _eiv_np.all(_eiv_np.isfinite(ZJ)) or _eiv_np.linalg.cond(ZJ) > 1e12:
+                break
+            step = _eiv_np.zeros_like(th)
+            step[act] = _eiv_np.linalg.solve(ZJ, (Zi[:, act] / c[act]).T @ self.stack(self.fit.resid(th))) / c[act]
+            if not _eiv_np.all(_eiv_np.isfinite(th + step)):
+                break
+            th = good = th + step
+        self.ok = good is not None
+        if not self.ok:
+            return
+        self.th = good
+        J, Zi, e = self.fit.jac(good, 1), self.fit.jac(good, 2), self.fit.resid(good)
+        self.live = _eiv_np.abs(J).sum(axis=(0, 1)) > 0
+        g = _eiv_np.einsum("srp,sr->rp", Zi * w[:, None, None], e * w[:, None])     # each step's moments
+        S = g.T @ g
+        for lag, weight in ((1, 2 / 3), (2, 1 / 3)):
+            C = g[lag:].T @ g[:-lag]
+            S += weight * (C + C.T)
+        B = _eiv_np.linalg.pinv(_eiv_np.einsum("srp,srq->pq", Zi * w[:, None, None], J * w[:, None, None]))
+        self.V = B @ S @ B.T
+        self.fit.set(good)
+
+    def stack(self, M: _eiv_np.ndarray) -> _eiv_np.ndarray:
+        w = self.w
+        return (M * (w[:, None] if M.ndim == 2 else w[:, None, None])).reshape(-1, *M.shape[2:])
+
+    def weakest(self) -> tuple[int, int | None] | None:
+        """The part with the largest shortfall of its Wald statistic below PRICE per number, or None."""
+        best = None
+        for u in _eiv_units(self.work):
+            js = _eiv_unit_places(self.fit, u)
+            if not js:
+                continue
+            if not self.live[js].any():                 # it never flows
+                return u
+            wald = float(self.th[js] @ _eiv_np.linalg.pinv(self.V[_eiv_np.ix_(js, js)]) @ self.th[js])
+            short = wald - _EIV_PRICE * len(js)
+            if short < 0 and (best is None or short < best[0]):
+                best = (short, u)
+        return best and best[1]
+
+
+def _eiv_runs(flows: list[dict], ids: list[str], run: dict, opts: dict) -> _eiv_np.ndarray:
+    """Each run's share of the judge (behaviour_error) at its longest horizon."""
+    hs = [h for h in _EIV_HORIZONS if h < len(run["t"]) / 4]
+    A = _eiv_levels_array(run["levels"], ids)
+    n, h = A.shape[1], hs[-1]
+    s0 = _eiv_starts_for(n, h, 80)
+    sd = A.std(axis=1)
+    sd[sd == 0] = 1
+    tt = _eiv_np.asarray(run["t"], dtype=float)
+    inputs = opts.get("inputs")
+    end = _EivModel(flows, ids, inputs={"t": run["t"], "values": inputs} if inputs else None).run(
+        A[:, s0 - 1], tt[s0[None, :] + _eiv_np.arange(h)[:, None]], opts.get("injections"))
+    obs = A[:, s0 + h - 1]
+    e = ((end - obs) / sd[:, None]) ** 2
+    e[~_eiv_np.isfinite(e)] = 1e6
+    return e.sum(axis=0) / max(1e-9, float((((obs - A[:, s0 - 1]) / sd[:, None]) ** 2).sum()))
+
+
+def _eiv_prune(flows: list[dict], ids: list[str], t: _eiv_np.ndarray, A: _eiv_np.ndarray, inputs: dict | None, rows: _eiv_np.ndarray,
+           w: _eiv_np.ndarray, run: dict, opts: dict) -> tuple[list[dict], dict] | None:
+    """The flows with the parts the instrumented fit cannot tell from nothing dropped and the rest
+    refitted, and what was done; None when nothing is dropped or no stage passes the guard."""
+    cur, names, stages = _EivInstrumented(flows, ids, t, A, inputs, rows, w), [], []
+    while cur.ok and len(cur.work) > 1:
+        u = cur.weakest()
+        if u is None:
+            break
+        nxt = _EivInstrumented(_eiv_without(cur.work, u), ids, t, A, inputs, rows, w)
+        if not nxt.ok:
+            break
+        names.append(_eiv_name(cur.work, u))
+        cur = nxt
+        stages.append((cur.work, list(names)))
+    if not stages or not [h for h in _EIV_HORIZONS if h < len(run["t"]) / 4]:
+        return None
+    before = _eiv_runs(flows, ids, run, opts)
+    for work, dropped in reversed(stages):
+        d = _eiv_runs(work, ids, run, opts) - before
+        z = float(d.sum() / max(1e-12, _eiv_np.sqrt(len(d) * d.var(ddof=1)))) if len(d) > 1 else float("inf")
+        if z <= _EIV_GUARD:
+            return work, {"dropped": dropped, "z": round(z, 2)}
+    return None
+
+
 def _eiv_refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
     """The flows with their numbers refitted by instrumental variables where the module says, and
     what was found ({} where nothing could be tested)."""
@@ -261,6 +424,10 @@ def _eiv_refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | No
     if min(z) > -_eiv_norm.isf(_EIV_ALPHA / len(z)):
         fit.set(theta0)
         return flows, info
+    fit.set(theta0)
+    pruned = _eiv_prune(flows, ids, t, A, {"t": list(run["t"]), "values": inputs} if inputs else None, rows, w, run, opts)
+    if pruned:
+        return pruned[0], {**info, **pruned[1], "used": True}
     th_i = th_o.copy()
     for _ in range(_EIV_ITERATIONS):
         J, Z = stack(fit.jac(th_i, 1)), stack(fit.jac(th_i, 2))

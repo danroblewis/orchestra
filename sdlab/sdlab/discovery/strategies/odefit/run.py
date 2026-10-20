@@ -11,6 +11,7 @@ import numpy as np
 from .earned import main_line as mainline
 from ...simulate import behaviour_error
 from . import compare as C
+from . import eiv
 from . import extend as E
 from . import fit as F
 from .write import sig, to_flows
@@ -178,6 +179,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The main line's model, or the output-error model where it behaves better on the data."""
     opts = dict(opts or {})
     base = mainline(stocks, run, {k: v for k, v in opts.items() if k not in OWN_OPTS})
+    base = eiv.apply(base, stocks, run, opts)      # its numbers refitted, and parts pruned, under measurement error (eiv.py)
     if counted(run):
         return {**base, "chosen_by": "counted levels: the main line"}
     t = np.asarray(run["t"], dtype=float)

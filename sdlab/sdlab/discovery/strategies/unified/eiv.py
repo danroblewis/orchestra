@@ -18,7 +18,22 @@ The instrumented numbers replace the found ones only when
 - the refitted model runs at least as close to the data over 5, 20 and 100 steps (the main line's
   judge: a multi-step error, which measurement error does not bias), so a structure the instruments
   do not suit keeps its numbers.
-The structure is never changed. Flows that read a stock nobody measures are left as they are.
+
+Pruning (docs/research/k8s-303.md). Where the data show measurement error, the structure itself was
+chosen on the biased one-step fit, so it can carry parts the instrumented fit cannot tell from nothing:
+an exact, smooth input stands in for the noisy level it nearly copies (a spurious `outside -> inflight
+= k x traffic`, an inflated drain), a drain is split between a move and an exit, chance pieces fill the
+gap. Before the refit above, the parts are tested on the instrumented fit itself: each part's numbers
+by their Wald statistic (sandwich covariance, the moments summed over the stocks per step with a
+Bartlett window of 2 steps, since measurement error leaves them MA(1)), the part with the largest
+shortfall below PRICE per number dropped (a part that never flows, its rate gone negative, first), and
+the rest refitted, until every part pays its price. Rows a level outlier touches (a one-step residual
+beyond TRIM robust sds) are left out of these fits. The pruned model is kept if, at the judge's longest
+horizon, it runs no further from the data than the found one by more than GUARD paired standard errors
+(over the judge's runs); at shorter horizons the measurement error at each run's start, which a
+faster-draining model forgets sooner, still favours the biased numbers. Failing that, the last stage
+before it is tried, and failing all, the refit above as before.
+Flows that read a stock nobody measures are left as they are.
 """
 
 from __future__ import annotations
@@ -28,12 +43,15 @@ import copy
 import numpy as np
 from scipy.stats import norm
 
-from ...simulate import Model, behaviour_error, levels_array
+from ...simulate import Model, behaviour_error, levels_array, starts_for
 
 ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is
                       # exact unless a floor, a shared stock or an effect bends them)
 HORIZONS = (5, 20, 100)
+PRICE = 2.0           # a part's price per number on the instrumented fit's Wald statistic (Akaike's)
+TRIM = 5.0            # a one-step residual beyond this many robust sds marks a level outlier
+GUARD = 2.0           # paired standard errors the pruned model may lose by at the longest horizon
 
 
 def slots(flows: list[dict]) -> list[tuple[dict, str]]:
@@ -131,6 +149,165 @@ def white_z(e: np.ndarray, dy: np.ndarray) -> list[float]:
     return out
 
 
+def _units(flows: list[dict]) -> list[tuple[int, int | None]]:
+    """The parts pruning may drop, as (flow, term): a whole flow (None), or one term of a linear rate
+    with more than one number. Flows that follow the eras are left alone."""
+    out = []
+    for fi, f in enumerate(flows):
+        if f.get("byTime"):
+            continue
+        r = f.get("rate") or {}
+        terms = [ti for ti, x in enumerate(r.get("terms") or []) if x.get("k") is not None]
+        if r.get("form") == "linear" and len(terms) + bool(r.get("c")) > 1:
+            out += [(fi, ti) for ti in terms]
+        else:
+            out.append((fi, None))
+    return out
+
+
+def _unit_places(fit: _Fit, unit: tuple[int, int | None]) -> list[int]:
+    """The positions of a part's numbers in fit.places."""
+    fi, ti = unit
+    f = fit.flows[fi]
+    if ti is not None:
+        mine = {id(f["rate"]["terms"][ti])}
+    else:
+        r = f.get("rate") or {}
+        mine = {id(g) for g in f.get("inflow") or []} | {id(r)} | {id(x) for x in r.get("terms") or []}
+    return [j for j, (d, k) in enumerate(fit.places) if id(d) in mine and (ti is None or k == "k")]
+
+
+def _without(flows: list[dict], unit: tuple[int, int | None]) -> list[dict]:
+    fi, ti = unit
+    out = copy.deepcopy(flows)
+    if ti is None:
+        del out[fi]
+    else:
+        r = out[fi]["rate"]
+        del r["terms"][ti]
+        if out[fi].get("rates"):
+            out[fi]["rates"] = [r]
+    return out
+
+
+def _name(flows: list[dict], unit: tuple[int, int | None]) -> str:
+    f = flows[unit[0]]
+    return (f"{f.get('from') or 'outside'} -> {f.get('to') or 'outside'}"
+            + (f" [{f['rate']['terms'][unit[1]].get('stock')}]" if unit[1] is not None else ""))
+
+
+class _Instrumented:
+    """A structure's instrumented fit: its numbers (least squares, then instrumental-variables steps;
+    a step that fails keeps the last finite one), their covariance, and which numbers some row reads."""
+
+    def __init__(self, flows: list[dict], ids: list[str], t: np.ndarray, A: np.ndarray, inputs: dict | None,
+                 rows: np.ndarray, w: np.ndarray):
+        self.work, self.w = copy.deepcopy(flows), w
+        self.fit = _Fit(self.work, ids, t, A, inputs, rows)
+        th = self.fit.theta()
+        self.ok = len(th) > 0
+        if not self.ok:
+            return
+        for _ in range(ITERATIONS):
+            th = th + np.linalg.lstsq(self.stack(self.fit.jac(th, 1)), self.stack(self.fit.resid(th)), rcond=None)[0]
+        e = self.fit.resid(th)
+        dev = np.abs(e - np.median(e, axis=1, keepdims=True))
+        bad = set(rows[np.any(dev > TRIM * 1.4826 * np.maximum(np.median(dev, axis=1), 1e-12)[:, None], axis=0)].tolist())
+        keep = np.array([r for r in rows if not {r - 1, r, r + 1, r + 2} & bad])
+        if bad and len(keep) >= 10 * len(th):            # the rows a level outlier touches, as a change or an instrument
+            self.fit = _Fit(self.work, ids, t, A, inputs, keep)
+        good = None
+        for _ in range(ITERATIONS):
+            J, Zi = self.stack(self.fit.jac(th, 1)), self.stack(self.fit.jac(th, 2))
+            c = np.sqrt((J ** 2).sum(axis=0))
+            act = c > 0                                  # a number no row reads (a piece outside the rows) stays
+            ZJ = (Zi[:, act] / c[act]).T @ (J[:, act] / c[act])
+            if not act.any() or not np.all(np.isfinite(ZJ)) or np.linalg.cond(ZJ) > 1e12:
+                break
+            step = np.zeros_like(th)
+            step[act] = np.linalg.solve(ZJ, (Zi[:, act] / c[act]).T @ self.stack(self.fit.resid(th))) / c[act]
+            if not np.all(np.isfinite(th + step)):
+                break
+            th = good = th + step
+        self.ok = good is not None
+        if not self.ok:
+            return
+        self.th = good
+        J, Zi, e = self.fit.jac(good, 1), self.fit.jac(good, 2), self.fit.resid(good)
+        self.live = np.abs(J).sum(axis=(0, 1)) > 0
+        g = np.einsum("srp,sr->rp", Zi * w[:, None, None], e * w[:, None])     # each step's moments
+        S = g.T @ g
+        for lag, weight in ((1, 2 / 3), (2, 1 / 3)):
+            C = g[lag:].T @ g[:-lag]
+            S += weight * (C + C.T)
+        B = np.linalg.pinv(np.einsum("srp,srq->pq", Zi * w[:, None, None], J * w[:, None, None]))
+        self.V = B @ S @ B.T
+        self.fit.set(good)
+
+    def stack(self, M: np.ndarray) -> np.ndarray:
+        w = self.w
+        return (M * (w[:, None] if M.ndim == 2 else w[:, None, None])).reshape(-1, *M.shape[2:])
+
+    def weakest(self) -> tuple[int, int | None] | None:
+        """The part with the largest shortfall of its Wald statistic below PRICE per number, or None."""
+        best = None
+        for u in _units(self.work):
+            js = _unit_places(self.fit, u)
+            if not js:
+                continue
+            if not self.live[js].any():                 # it never flows
+                return u
+            wald = float(self.th[js] @ np.linalg.pinv(self.V[np.ix_(js, js)]) @ self.th[js])
+            short = wald - PRICE * len(js)
+            if short < 0 and (best is None or short < best[0]):
+                best = (short, u)
+        return best and best[1]
+
+
+def _runs(flows: list[dict], ids: list[str], run: dict, opts: dict) -> np.ndarray:
+    """Each run's share of the judge (behaviour_error) at its longest horizon."""
+    hs = [h for h in HORIZONS if h < len(run["t"]) / 4]
+    A = levels_array(run["levels"], ids)
+    n, h = A.shape[1], hs[-1]
+    s0 = starts_for(n, h, 80)
+    sd = A.std(axis=1)
+    sd[sd == 0] = 1
+    tt = np.asarray(run["t"], dtype=float)
+    inputs = opts.get("inputs")
+    end = Model(flows, ids, inputs={"t": run["t"], "values": inputs} if inputs else None).run(
+        A[:, s0 - 1], tt[s0[None, :] + np.arange(h)[:, None]], opts.get("injections"))
+    obs = A[:, s0 + h - 1]
+    e = ((end - obs) / sd[:, None]) ** 2
+    e[~np.isfinite(e)] = 1e6
+    return e.sum(axis=0) / max(1e-9, float((((obs - A[:, s0 - 1]) / sd[:, None]) ** 2).sum()))
+
+
+def _prune(flows: list[dict], ids: list[str], t: np.ndarray, A: np.ndarray, inputs: dict | None, rows: np.ndarray,
+           w: np.ndarray, run: dict, opts: dict) -> tuple[list[dict], dict] | None:
+    """The flows with the parts the instrumented fit cannot tell from nothing dropped and the rest
+    refitted, and what was done; None when nothing is dropped or no stage passes the guard."""
+    cur, names, stages = _Instrumented(flows, ids, t, A, inputs, rows, w), [], []
+    while cur.ok and len(cur.work) > 1:
+        u = cur.weakest()
+        if u is None:
+            break
+        nxt = _Instrumented(_without(cur.work, u), ids, t, A, inputs, rows, w)
+        if not nxt.ok:
+            break
+        names.append(_name(cur.work, u))
+        cur = nxt
+        stages.append((cur.work, list(names)))
+    if not stages or not [h for h in HORIZONS if h < len(run["t"]) / 4]:
+        return None
+    before = _runs(flows, ids, run, opts)
+    for work, dropped in reversed(stages):
+        d = _runs(work, ids, run, opts) - before
+        z = float(d.sum() / max(1e-12, np.sqrt(len(d) * d.var(ddof=1)))) if len(d) > 1 else float("inf")
+        if z <= GUARD:
+            return work, {"dropped": dropped, "z": round(z, 2)}
+    return None
+
+
 def refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
     """The flows with their numbers refitted by instrumental variables where the module says, and
     what was found ({} where nothing could be tested)."""
@@ -167,6 +344,10 @@ def refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = 
     if min(z) > -norm.isf(ALPHA / len(z)):
         fit.set(theta0)
         return flows, info
+    fit.set(theta0)
+    pruned = _prune(flows, ids, t, A, {"t": list(run["t"]), "values": inputs} if inputs else None, rows, w, run, opts)
+    if pruned:
+        return pruned[0], {**info, **pruned[1], "used": True}
     th_i = th_o.copy()
     for _ in range(ITERATIONS):
         J, Z = stack(fit.jac(th_i, 1)), stack(fit.jac(th_i, 2))
