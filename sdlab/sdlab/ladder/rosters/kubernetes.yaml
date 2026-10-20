@@ -4,6 +4,10 @@
 # ideas may be reused, their code is not run on later rungs. Select the survivors with
 # `--strategies roster:kubernetes`.
 #
+# A winner passes every variant of every rung, 300-317. If no survivor wins at 317, the eliminated
+# strategies are revisited (the user, 2026-10-20): latest eliminations first, each re-run on the rungs it
+# missed with the fixes made since, and brought back if the reason no longer holds.
+#
 # kind: impossible  - the method cannot represent the rung's mechanism, and adding it would rewrite
 #                     the method (verified by two skeptics)
 #       duplicate   - gives the same result as another survivor (`of`) on every cell run so far
