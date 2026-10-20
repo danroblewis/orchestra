@@ -75,6 +75,11 @@ def split(flows: list[dict], a: str, b: str) -> tuple[list[int], list[int]]:
             out.append(i)
         elif f.get("to") == b and f.get("from") is None and f.get("driver") == a:
             out.append(i)
+        elif f.get("from") == b and f.get("to") is None and f.get("driver") == a:
+            # loop_transit: a link from A of the other sign (B's loss read from A), as the main line
+            # writes B's row when pieces carry the loop's total and H = total - A - B (156 counts-long
+            # with each candidate's pieces earned: B -> outside 0.269 x A beside B's pieces)
+            out.append(i)
         elif f.get("from") == b and f.get("to") is None and _prop_on(f, b):
             out.append(i)
     return out, [i for i in range(len(flows)) if i not in set(out)]
