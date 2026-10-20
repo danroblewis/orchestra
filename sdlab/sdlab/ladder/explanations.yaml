@@ -358,7 +358,7 @@ strategies:
       BIC) and behaves no worse on the multi-step judge.
     helps_with: Effects on outside inflows (distilled 160, from sd-farm-soil) and a measured inflow gated by a table of its own stock (distilled 217, from 212).
     builds_on: effect_hats (copy)
-    status: work in progress
+    status: active
     note: Research document docs/research/inflow_effects.md.
 
   realistic_flows:
