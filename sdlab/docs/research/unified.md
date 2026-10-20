@@ -59,8 +59,32 @@ The harness is `sdlab/ladder/objective_test.py` and `objective_report.py`, run a
 
 ## Results
 
-See the smoke test below. Nothing beyond it has been run; the phases P0-P5 are not run.
+**Smoke test only** (commit d59a98a, 19 October 2026; cache `objective_test/v1-f6443f802e`), ten small
+counted cells, 12 minutes with 3 workers:
+
+    uv run sdlab-ladder objective-test --cases 007,008,009,010,011,015,016,019,020,024 --variants counts-short --jobs 3 --timeout 1200
+
+| cell (counts-short) | label | wrong groups | analysis | note |
+| --- | --- | --- | --- | --- |
+| 007-link | **E** | 3 OK, 1 TIE-unexplained, 1 X, 1 E | achievable | the E: a move A -> B with a constant (realistic_flows, schedules), delta -2.4 = D -0.2, P_num +0.7, P_struct -2.9; its phi went to 0 and tau took the noise ("noise absorbing structure", risk R2) |
+| 008-link-loop | OK | 3 OK | data-limited | T* restarts disagree by more than eps |
+| 009-births-and-deaths | S | none (4 right groups) | achievable | phi fitted at 0.06 with births and deaths both large (0.63, 0.65): phi trades against the gross flow size (risk R1) |
+| 010-loop-branch | S | 5 OK, 3 X | data-limited | tau on B 1.9 (the declared "near 0" threshold); T* restarts disagree |
+| 011-goal-gap | OK | 10 OK, 3 X | achievable | |
+| 015-hidden-stock | OK | 7 OK | achievable | |
+| 016-coflow | S | 8 OK | data-limited | tau on A 0.77 |
+| 019-announced-era | OK | 7 OK | achievable | |
+| 020-unannounced-step | OK | 3 OK, 1 X | achievable | T* restarts disagree |
+| 024-floor-binds | S | 14 OK, 1 X | achievable | tau on A 2.9; beta fitted at 1.0; T* restarts disagree |
+
+The truth ranks first among the wrong groups in 9 of 10 cells (in 007 the X group and the E group beat
+it). Under one-step BIC on the same fits (arm A-bic): 7 OK, 1 TIE, 1 E. Read: the corner and the replica
+hold; on these cells the objective already prefers the truth to almost every stored wrong model; the
+sanity block fails on 4 of 10 cells, three of them on the declared "tau near 0" threshold (tau 0.8-2.9
+against counting variances of order 10) and one on phi trading against gross flows. Neither is fixed
+here: a change to the data model or to the declared thresholds is a new code-table version, decided
+with the user (R9).
 
 ## Verdict
 
-None yet: the objective test is built, the pilot (P0) is not run.
+None yet: the objective test is built and smoke-tested; the pilot (P0) and the phases P1-P5 are not run.
