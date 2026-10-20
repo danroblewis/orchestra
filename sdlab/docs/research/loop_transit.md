@@ -80,3 +80,30 @@ blocked by the loop any more but by mechanisms other agents own:
 - Pairs on rates given per era (`byTime`): the pair fit would need a kA and kin per era (sd-recycling
   counts-long, sd-eras-like runs).
 - A stage after an affine or co-flowed move (158, 161).
+
+## Kubernetes 303 counts-short (2026-10-20; code 6fdef00, 6ee696d)
+
+**Cause (rule 4b: method, not data; `sdlab-ladder analyse` rates the cell achievable, p 1.00).** The base
+was the pinned `identify.identify`: its "backward, changing inflows" candidate put 5 chance pieces on the
+final counter (`responses_total -> outside` 30.3 mean) beside an inflated drain (0.54) and a link
+`outside -> inflight 0.0103 x queue`, and won the judge over constant inflows by 5e-6 (0.173786 vs
+0.173791). The search and transit steps never touch a counter's pieces, so the answer kept them.
+
+**Fix.** 6fdef00: the base is the main line with each candidate's pieces earned (own copy of
+matrix/earned*.py at 8c507a8, k8s-302.md's fix). 303 counts-short gives 1.002 x traffic, 0.6004,
+0.5018. That made 156 counts-long pass -> fail: its earned base is "changing inflows" with B's pieces
+carrying the loop's total (stepping 0.2 x 40 at each addition) and `B -> outside 0.269 x A`; the pair kept
+that link and found no stage. 6ee696d makes the pair replace B's loss read from A (a link of the other
+sign, as it already replaced a link into B from A); the stage is found as before (delay 1.967, kin 0.2025,
+move 0.3052).
+
+**Ladder** (`uv run sdlab-ladder run --strategies loop_transit --cases 300,301,302,303,156 --jobs 4
+--timeout 600`, single-threaded, 6ee696d): 23 pass, 1 fail (156 counts-short, as before); 303 counts-short
+fail -> pass; no other flip on 300-303 or 156.
+
+**Paired** (in process, `runner.run_item`, before = HEAD fcc0c9a's tree, after = 6ee696d's): sample A,
+40 cells (156 x 4, 20 passed, 16 not passed, drawn at random): fail -> pass 058 counts-short, fail ->
+equivalent 055#5 counts-short, no loss. Sample B, 40 cells of the cases where transit stages were found
+before: fail -> equivalent 043#4 counts-short; **pass -> fail 042-random-two-chains-of-two#5
+counts-short** (B1's drain written as a move into B2: the earned refit's joint tie, the loss
+earned_pieces itself has on this cell; open, k8s-302.md).
