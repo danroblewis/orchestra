@@ -95,6 +95,12 @@ def _earned(y: np.ndarray, Xa: np.ndarray, pick: dict, T: int, P: int, gamma: fl
     return best
 
 
+def _select(y: np.ndarray, X: np.ndarray, cuts: list[int] | None, **kw) -> list[int]:
+    """sparse.select, or no columns when the row may read none (sparse.select fails on an empty
+    library: a lone stock with only an outside inflow, 001-inflow-only)."""
+    return select(y, X, cuts, **kw) if X.shape[0] else []
+
+
 def fit_row(y: np.ndarray, X: np.ndarray, allowed: list[int], inflow: str = "changing", min_piece: int = 5, simple: list[int] | None = None,
             gamma: float = 0.0, pelt_mult: float = 1.0, simpler: dict[int, list[int]] | None = None) -> dict:
     """A copy of sparse.fit_row (the pinned shared library, at b9fe1d6) with one addition: chosen
@@ -110,7 +116,7 @@ def fit_row(y: np.ndarray, X: np.ndarray, allowed: list[int], inflow: str = "cha
     P = len(allowed)
 
     def form(c, extra, chosen=None):
-        chosen = select(y, Xa, c, gamma=gamma, simpler=simp) if chosen is None else chosen
+        chosen = _select(y, Xa, c, gamma=gamma, simpler=simp) if chosen is None else chosen
         f = fit_subset(row_sums(y, Xa, c), chosen)
         return {"cuts": c, "chosen": chosen, "f": f, "sc": _ebic(T, f.rss, len(chosen) + extra, len(chosen), P, gamma)}
 
@@ -124,9 +130,9 @@ def fit_row(y: np.ndarray, X: np.ndarray, allowed: list[int], inflow: str = "cha
         cuts = [0, T]
         for p in range(5):
             if p == 0 and first is not None:
-                chosen = [first[q] for q in select(y, Xa[first], cuts, gamma=gamma)]
+                chosen = [first[q] for q in _select(y, Xa[first], cuts, gamma=gamma)]
             else:
-                chosen = select(y, Xa, cuts, gamma=gamma, simpler=simp)
+                chosen = _select(y, Xa, cuts, gamma=gamma, simpler=simp)
             f = fit_subset(row_sums(y, Xa, cuts), chosen)
             nxt = pelt(y - (f.beta @ Xa[chosen] if chosen else 0), min_piece, 0.5 if p == 0 else pelt_mult)
             if nxt == cuts and p >= 2:
