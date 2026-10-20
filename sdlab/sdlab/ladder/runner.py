@@ -134,8 +134,21 @@ def select_strategies(spec: str | None, parked_too: bool = False) -> tuple[list[
     return [s for s in chosen if s["available"]], [s for s in chosen if not s["available"]]
 
 
-def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None = None, force: bool = False) -> list[dict]:
-    """The items to run: every (case, variant, strategy) that is stale (or every one, with force)."""
+def confirm_of(case: dict, variant: dict) -> str | None:
+    """The variant a noise-free long run confirms (the user, 2026-10-20): none-long runs only after the same
+    strategy's none-short passes. With no noise a short run pins the numbers; the long run agreed with it
+    on 97.7% of results while costing 42% of all test time. None for every other variant."""
+    if variant.get("noise") != "none" or variant.get("length") != "long":
+        return None
+    short = next((v["name"] for v in case["variants"] if v.get("noise") == "none" and v.get("length") == "short"), None)
+    return short
+
+
+def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None = None, force: bool = False,
+         every_variant: bool = False) -> list[dict]:
+    """The items to run: every (case, variant, strategy) that is stale (or every one, with force). A noise-free
+    long run waits for its short run (confirm_of): it is planned only when the short run is current and passes
+    (every_variant or force plans it anyway)."""
     sh = score.score_hash()
     have = {(r["case"], r["variant"], r["strategy"]): r for r in store.latest()}
     items = []
@@ -148,7 +161,12 @@ def plan(case_ids: list[str], strategies: list[dict], variants: list[str] | None
                 continue
             if c.get("real") and _real_data.available(c, v["name"]):     # a real case's download is missing: not run (cli says why)
                 continue
+            short = None if (force or every_variant or (variants and v["name"] in variants)) else confirm_of(c, v)
             for s in strategies:
+                if short:
+                    sr = have.get((cid, short, s["name"]))
+                    if sr is None or sr.get("status") != "pass" or store.staleness(sr, c["hash"], s["hash"], shc):
+                        continue                                   # confirms a short pass only (not run otherwise)
                 why = "forced" if force else store.staleness(have.get((cid, v["name"], s["name"])), c["hash"], s["hash"], shc)
                 if why:
                     items.append({"case": cid, "variant": v["name"], "strategy": s["name"], "case_hash": c["hash"],

@@ -89,7 +89,7 @@ def do_run(a, force: bool, command: str) -> int:
     cids = runner.select_cases(a.cases, getattr(a, "exclude_cases", None))
     for note in missing_notes(cids):
         print(f"skipping {note}", file=sys.stderr)                  # real cases whose data are not downloaded: not run
-    items = runner.plan(cids, strategies, variants, force=force)
+    items = runner.plan(cids, strategies, variants, force=force, every_variant=getattr(a, "every_variant", False))
     if not items:
         print("Nothing to run: every result is current.")
         return 0
@@ -444,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
         if cases:
             p.add_argument("--cases")
             p.add_argument("--variants")
+            p.add_argument("--every-variant", action="store_true", help="also none-long where none-short has not passed (it only confirms a short pass by default)")
         p.add_argument("--jobs", type=int)
         p.add_argument("--timeout", type=float, default=runner.TIMEOUT)
         p.add_argument("--quiet", action="store_true")
