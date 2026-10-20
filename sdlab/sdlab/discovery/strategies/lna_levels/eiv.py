@@ -454,7 +454,7 @@ def refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = 
     """The flows with their numbers refitted by instrumental variables where the module says, drains
     made moves where a level shows its receiver (Moves), and what was found ({} where nothing could be
     tested)."""
-    out, info = _refit(flows, stocks, run, opts)
+    out, info = _refit_numbers(flows, stocks, run, opts)
     if not info.pop("error", False):
         return out, info
     moved, done = merge(out, [s["id"] for s in stocks], run, opts or {})
@@ -463,7 +463,7 @@ def refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = 
     return moved, {**info, "moved": done, "used": True}
 
 
-def _refit(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
+def _refit_numbers(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[list[dict], dict]:
     """refit's numbers and pruning; info["error"] where the data show measurement error."""
     opts = opts or {}
     ids = [s["id"] for s in stocks]
