@@ -509,11 +509,14 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--cases", help="the --cases syntax")
     ot.add_argument("--sets", help="named sets: " + ", ".join(("p0", "p1", "p2", "p3", "p4", "p5")))
     ot.add_argument("--variants")
+    ot.add_argument("--cells", help="an exact cell list: case@variant,... (e.g. 007@counts-short,081@meas-short)")
     ot.add_argument("--out", help="write the cells and the summary as JSON")
     ot.add_argument("--jobs", type=int, default=2, help="workers (at most 4; JAX's CPU runtime uses ~2 cores each)")
     ot.add_argument("--timeout", type=float, default=900.0, help="seconds per cell; a cell that runs out is resumable")
     ot.add_argument("--max-groups", type=int, default=40, help="distinct stored structures per cell (the rest: not run)")
     ot.add_argument("--report-only", action="store_true", help="only the report, from the cache")
+    ot.add_argument("--code-table", metavar="NAME", help="the objective's code table (unified/codetable.py): v1 (default), or "
+                    "v2-<option>[+<option>...] with options eta-lean, eta-joint, phi-lean, phi-joint, tau-priced, phi-prior[=width]")
     ot.add_argument("--relabel", metavar="FOLDERS", help="re-label the cached cells of these cache folders (comma list, later wins) into the current one, no refitting")
     a = ap.parse_args(argv)
     if a.command == "objective-test":

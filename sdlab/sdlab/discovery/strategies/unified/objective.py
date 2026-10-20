@@ -74,71 +74,240 @@ def prepare(view: dict, flows: list[dict], grid: Grid | None = None, **opts) -> 
     return Model(build(view, flows, grid=g, **opts), g)
 
 
-def _minimize(m: Model, theta: np.ndarray, eta: np.ndarray, fit_theta: bool) -> dict:
+def _penalty(eta: np.ndarray, prior: float | None) -> float:
+    """The phi prior's code (code table option phi-prior): 1/2 (ln phi / width)^2; 0 without one."""
+    return 0.0 if prior is None else 0.5 * float(eta[0] / prior) ** 2
+
+
+def _minimize(m: Model, theta: np.ndarray, eta: np.ndarray, fit_theta: bool, fixed: dict | None = None,
+              prior: float | None = None) -> dict:
+    """L-BFGS-B over theta (when fit_theta) and the free eta components; `fixed` {eta index: value}
+    holds the others; `prior` adds the phi prior to what is minimised. With neither, this is code table
+    v1's fit exactly. Returns D (the data code alone) and obj (D plus the prior)."""
     from scipy.optimize import minimize
 
     P = m.st.P
     vg = m.filt["value_and_grad"]
+    eta = np.asarray(eta, dtype=float).copy()
+    free = np.ones(len(eta), dtype=bool)
+    for i, v in (fixed or {}).items():
+        free[i] = False
+        eta[i] = v
+    if not fit_theta and not free.any():               # nothing to fit: evaluate
+        D = m.D(theta, eta)
+        return {"D": D, "obj": D + _penalty(eta, prior), "theta": np.asarray(theta, float), "eta": eta, "nit": 0, "calls": 1,
+                "gnorm": 0.0, "message": "nothing free", "ok": True}
     sc = m.theta_scale(theta) if fit_theta else np.ones(P)
-    w0 = np.concatenate([theta / sc, eta]) if fit_theta else eta.copy()
-    bounds = ([(None, None)] * P if fit_theta else []) + m.eta_bounds()
+    w0 = np.concatenate([theta / sc, eta[free]]) if fit_theta else eta[free]
+    bounds = ([(None, None)] * P if fit_theta else []) + [b for b, k in zip(m.eta_bounds(), free) if k]
     calls = [0]
+
+    def unpack(w):
+        et = eta.copy()
+        et[free] = w[P:] if fit_theta else w
+        return (w[:P] * sc if fit_theta else theta), et
 
     def f(w):
         calls[0] += 1
-        full = np.concatenate([w[:P] * sc, w[P:]]) if fit_theta else np.concatenate([theta, w])
-        v, g = vg(full, P)
+        th, et = unpack(w)
+        v, g = vg(np.concatenate([th, et]), P)
         v, g = float(v), np.asarray(g, dtype=float)
         if not np.isfinite(v) or not np.all(np.isfinite(g)):
             return 1e300, np.zeros_like(w)
-        g = np.concatenate([g[:P] * sc, g[P:]]) if fit_theta else g[P:]
+        ge = g[P:]
+        if prior is not None:
+            v = v + _penalty(et, prior)
+            ge = ge.copy()
+            ge[0] += et[0] / prior ** 2
+        g = np.concatenate([g[:P] * sc, ge[free]]) if fit_theta else ge[free]
         return v, g
 
     res = minimize(f, w0, jac=True, method="L-BFGS-B", bounds=bounds, options={"maxiter": MAXITER, "maxfun": 2 * MAXITER})
     w = res.x
-    th = w[:P] * sc if fit_theta else theta
-    et = w[P:] if fit_theta else w
+    th, et = unpack(w)
     _, g = f(w)
     lo = np.array([b[0] if b[0] is not None else -np.inf for b in bounds])
     hi = np.array([b[1] if b[1] is not None else np.inf for b in bounds])
-    free = ~(((w <= lo + 1e-8) & (g > 0)) | ((w >= hi - 1e-8) & (g < 0)))
-    gnorm = float(np.linalg.norm(g[free])) if free.any() else 0.0
-    return {"D": float(res.fun), "theta": th, "eta": et, "nit": int(res.nit), "calls": calls[0], "gnorm": gnorm,
-            "message": str(res.message), "ok": bool(res.success)}
+    fr = ~(((w <= lo + 1e-8) & (g > 0)) | ((w >= hi - 1e-8) & (g < 0)))
+    gnorm = float(np.linalg.norm(g[fr])) if fr.any() else 0.0
+    obj = float(res.fun)
+    return {"D": obj - _penalty(et, prior), "obj": obj, "theta": th, "eta": et, "nit": int(res.nit), "calls": calls[0],
+            "gnorm": gnorm, "message": str(res.message), "ok": bool(res.success)}
 
 
-def fit(m: Model, starts: list[np.ndarray] | None = None, fit_theta: bool = True, eta_starts=ETA_STARTS) -> dict:
-    """The best fit over the theta starts: eta alone first (from each declared eta start, keep the
-    best), then everything jointly (fit_theta). Returns J, D, the prices, theta, eta (raw and read),
-    every start's J, and whether it converged (gradient norm below 1e-4 N and the best two starts
-    within EPSILON, when there are two)."""
-    began = time.perf_counter()
-    starts = [m.theta0] if starts is None else starts
-    N = max(1, m.grid.n_reports)
+def tau_index(m: Model) -> list[int]:
+    """The eta components that are a tau (kalman.eta_names): one per measured stock, and the pooled
+    hidden-stock one when the structure has hidden stocks."""
+    k = len(m.grid.ids)
+    return list(range(2, 2 + k)) + ([2 + k] if len(m.st.ids) > m.st.n_measured else [])
+
+
+def tau_price(m: Model, i: int) -> float:
+    """The price of tau component i when it is on (code table option tau-priced): 1/2 ln N, N the
+    stock's scored reports (the pooled hidden tau: every scored report)."""
+    k = len(m.grid.ids)
+    N = int(np.isfinite(m.grid.y[1:, i - 2]).sum()) if i < 2 + k else m.grid.n_reports
+    return 0.5 * math.log(max(1, N))
+
+
+def _fit_starts(m: Model, starts: list, fit_theta: bool, eta_starts, fixed: dict, prior) -> list[dict]:
+    """v1's multi-start fit: per theta start, eta alone from each declared eta start (keep the best),
+    then everything jointly; later theta starts begin from the eta the first chose. Sorted by obj."""
     tries = []
-    etas = [m.eta_vector(spec) for spec in eta_starts]
+    etas, seen = [], set()
+    for spec in eta_starts:
+        e = m.eta_vector(spec)
+        for i, v in fixed.items():
+            e[i] = v
+        if tuple(e) not in seen:                         # held components can make two starts one
+            seen.add(tuple(e))
+            etas.append(e)
     for th0 in starts:
         th0 = np.asarray(th0, dtype=float)
         best = None
         for eta in etas:
-            r = _minimize(m, th0, eta, fit_theta=False)
-            if best is None or r["D"] < best["D"]:
+            r = _minimize(m, th0, eta, False, fixed, prior)
+            if best is None or r["obj"] < best["obj"]:
                 best = r
         etas = [best["eta"]]                         # later theta starts begin from the eta the first one chose
-        r = _minimize(m, th0, best["eta"], fit_theta=True) if fit_theta and m.st.P else best
-        if r["D"] > best["D"]:                       # never worse than its own eta-only start
+        r = _minimize(m, th0, best["eta"], True, fixed, prior) if fit_theta and m.st.P else best
+        if r["obj"] > best["obj"]:                   # never worse than its own eta-only start
             r = best
         tries.append(r)
-    tries.sort(key=lambda r: r["D"])
-    b = tries[0]
-    agree = len(tries) < 2 or (tries[1]["D"] - b["D"]) <= price.EPSILON
-    out = {"J": m.J(b["D"]), "D": b["D"], "P_num": m.P_num, "P_struct": m.P_struct["total"], "P_struct_items": m.P_struct,
-           "theta": b["theta"].tolist(), "eta": b["eta"].tolist(), "eta_read": eta_read(b["eta"], m.grid),
+    tries.sort(key=lambda r: r["obj"])
+    return tries
+
+
+TAU_ON_START = ETA_STARTS[0]["ln_tau"]           # a tau that is turned on starts where the declared starts put it
+
+
+def _select_tau(m: Model, b: dict, fit_theta: bool, fixed: dict, prior) -> tuple[dict, list[int]]:
+    """tau-priced: from the fit with every tau off, turn each tau on alone (refit from b) and keep the
+    ones that lower obj + their price; with several, try them together and keep the better. A tau stays
+    off when counting noise (and the rest of eta) already explains the innovations."""
+    idx = tau_index(m)
+    ft = fit_theta and bool(m.st.P)
+    base = b["obj"]
+    gains = []
+    for i in idx:
+        e = np.asarray(b["eta"], float).copy()
+        e[i] = TAU_ON_START
+        fx = {k: v for k, v in fixed.items() if k != i}
+        r = _minimize(m, np.asarray(b["theta"], float), e, ft, fx, prior)
+        c = r["obj"] + tau_price(m, i)
+        if c < base:
+            gains.append((c, i, r))
+    if not gains:
+        return b, []
+    gains.sort(key=lambda x: x[0])
+    best_c, i0, best = gains[0]
+    on = [i0]
+    if len(gains) > 1:
+        e = np.asarray(best["eta"], float).copy()
+        all_on = [i for _, i, _ in gains]
+        for _, i, r in gains[1:]:
+            e[i] = r["eta"][i]
+        fx = {k: v for k, v in fixed.items() if k not in all_on}
+        r = _minimize(m, np.asarray(best["theta"], float), e, ft, fx, prior)
+        c = r["obj"] + sum(tau_price(m, i) for i in all_on)
+        if c < best_c:
+            best, on = r, sorted(all_on)
+    return best, on
+
+
+def fit(m: Model, starts: list[np.ndarray] | None = None, fit_theta: bool = True, eta_starts=ETA_STARTS,
+        held=None, table=None) -> dict:
+    """The best fit over the theta starts: eta alone first (from each declared eta start, keep the
+    best), then everything jointly (fit_theta). Returns J, D, the prices, theta, eta (raw and read),
+    every start's J, and whether it converged (gradient norm below 1e-4 N and the best two starts
+    within EPSILON, when there are two).
+
+    table: the code table (codetable.py; default the active one, v1 unless chosen). held: the data
+    set's eta vector, whose components the table holds (eta-*/phi-* options) are fixed at it; without
+    `held` nothing is held. J = D + P_num + P_struct + P_eta, P_eta the priced eta elements (0 in v1)."""
+    from .codetable import TAU_OFF, active
+
+    table = active() if table is None else table
+    began = time.perf_counter()
+    starts = [m.theta0] if starts is None else starts
+    N = max(1, m.grid.n_reports)
+    fixed = {}
+    if held is not None:
+        fixed = {i: float(held[i]) for i in table.held_index(len(m.grid.ids))}
+    taus = tau_index(m) if table.tau_priced else []
+    off = {**fixed, **{i: TAU_OFF for i in taus if i not in fixed}}
+    tries = _fit_starts(m, starts, fit_theta, eta_starts, off, table.phi_prior)
+    agree = len(tries) < 2 or (tries[1]["obj"] - tries[0]["obj"]) <= price.EPSILON
+    b, on = (_select_tau(m, tries[0], fit_theta, off, table.phi_prior) if taus else (tries[0], []))
+    p_tau = sum(tau_price(m, i) for i in on)
+    P_eta = p_tau + _penalty(b["eta"], table.phi_prior)
+    out = {"J": m.J(b["D"]) + P_eta, "D": b["D"], "P_num": m.P_num, "P_struct": m.P_struct["total"], "P_struct_items": m.P_struct,
+           "theta": np.asarray(b["theta"]).tolist(), "eta": np.asarray(b["eta"]).tolist(), "eta_read": eta_read(np.asarray(b["eta"]), m.grid),
            "gnorm": b["gnorm"], "converged": bool(b["gnorm"] < 1e-4 * N or b["ok"]), "restarts_agree": bool(agree),
-           "start_J": [m.J(r["D"]) for r in tries], "message": b["message"],
+           "start_J": [m.J(r["D"]) + _penalty(r["eta"], table.phi_prior) for r in tries], "message": b["message"],
            "numbers": m.st.P, "complexity": price.complexity(m.st), "seconds": round(time.perf_counter() - began, 3)}
+    if not table.is_v1:
+        out.update({"P_eta": P_eta, "code_table": table.name, "held": sorted(fixed), "tau_on": on})
     out["diagnostics"] = diagnostics(m, b["theta"], b["eta"])
     return out
+
+
+def lean_flows(view: dict) -> list[dict]:
+    """The lean model (design 6, step 1a): each measured stock has a constant inflow and an own drain."""
+    out = []
+    for s in view["stocks"]:
+        out.append({"from": None, "to": s["id"], "rate": {"form": "constant", "value": 1.0}})
+        out.append({"from": s["id"], "to": None, "rate": {"form": "proportional", "stock": s["id"], "k": 0.05}})
+    return out
+
+
+def lean_eta(view: dict, grid: Grid, table=None) -> dict:
+    """The data set's eta from the lean model, eta free (the table's other options apply): the fit."""
+    from .codetable import active
+
+    table = active() if table is None else table
+    m = prepare(view, lean_flows(view), grid=grid)
+    return fit(m, [lean_start(m), m.theta0], table=table.free_only())
+
+
+def joint_eta(fits: list[tuple], table=None, maxiter: int = 200) -> dict:
+    """The data set's eta jointly across a candidate set: fits = [(model, theta, eta)], each a
+    candidate's own free-eta fit. The held components (table.held_index) minimise the sum over
+    candidates of D(theta_c, eta_c with those components shared), each candidate's other components
+    and theta at their own fit. Started from the better of the candidates' componentwise median and
+    the first candidate's eta. Returns {"eta", "sum_D", "candidates", "message"}."""
+    from scipy.optimize import minimize
+
+    from .codetable import active
+
+    table = active() if table is None else table
+    if not fits:
+        raise ValueError("joint_eta: no candidates")
+    k = len(fits[0][0].grid.ids)
+    idx = np.array(table.held_index(k), dtype=int)
+    etas = np.array([np.asarray(e, float) for _, _, e in fits])
+    bounds = [fits[0][0].eta_bounds()[i] for i in idx]
+
+    def total(w):
+        v, gs = 0.0, np.zeros(len(idx))
+        for mm, th, e in fits:
+            et = np.asarray(e, float).copy()
+            et[idx] = w
+            P = mm.st.P
+            val, g = mm.filt["value_and_grad"](np.concatenate([np.asarray(th, float), et]), P)
+            val, g = float(val), np.asarray(g, float)
+            if not np.isfinite(val) or not np.all(np.isfinite(g)):
+                return 1e300, np.zeros(len(idx))
+            v += val
+            gs += g[P:][idx]
+        return v, gs
+
+    cands = [np.median(etas[:, idx], axis=0), etas[0, idx]]
+    w0 = min(cands, key=lambda w: total(w)[0])
+    res = minimize(total, w0, jac=True, method="L-BFGS-B", bounds=bounds, options={"maxiter": maxiter})
+    eta = etas[0].copy()
+    eta[idx] = res.x
+    return {"eta": eta.tolist(), "sum_D": float(res.fun), "candidates": len(fits), "message": str(res.message)}
 
 
 def diagnostics(m: Model, theta, eta) -> dict:
@@ -194,4 +363,4 @@ def fitted_flows(m: Model, theta) -> list[dict]:
     return write_back(m.st, np.asarray(theta, float))
 
 
-__all__ = ["Model", "prepare", "fit", "lean_start", "fitted_flows", "diagnostics", "n_eta"]
+__all__ = ["Model", "prepare", "fit", "lean_start", "lean_flows", "lean_eta", "joint_eta", "fitted_flows", "diagnostics", "n_eta"]

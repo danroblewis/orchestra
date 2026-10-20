@@ -32,6 +32,12 @@ Per cell (case, variant):
 The labels are computed by objective_labels.py, which is not in the cache key: after a fix there,
 `--relabel FOLDERS` re-labels cached cells without refitting them.
 
+Code tables (unified/codetable.py, `--code-table NAME`, default v1): with an option that holds eta
+(or phi) at one value per data set, the cell first fits that value (`data_eta`): eta-lean / phi-lean
+from the lean model; eta-joint / phi-joint by a first pass that fits the truth and every group with eta
+free (`Tstar_free`, `fit_free`), then the joint eta across them; then every fit above holds it (the
+joint pass's own theta is an extra start). Every candidate on a cell gets the same held value.
+
 Results go to a study cache, $SDLAB_LADDER_CACHE/objective_test/<code table>-<evaluator hash>/, one
 JSON per cell, written after every candidate, so a run resumes where it stopped. Never to the store.
 """
@@ -49,6 +55,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..discovery.strategies.unified import codetable
 from . import cases as casemod
 from .data import cache_root
 from .objective_labels import ORDER, label as _label, plausible as _plausible  # noqa: F401  (re-exported)
@@ -56,7 +63,7 @@ from .objective_labels import ORDER, label as _label, plausible as _plausible  #
 EVALUATOR = Path(__file__).resolve().parent.parent / "discovery" / "strategies" / "unified"
 # the evaluator's own modules (what objective.py imports); not the rest of the strategy package, so work
 # on the strategy (its search, its identify) does not move the cache and break resuming
-EVALUATOR_MODULES = ("frontend.py", "engine.py", "kalman.py", "price.py", "objective.py")
+EVALUATOR_MODULES = ("frontend.py", "engine.py", "kalman.py", "price.py", "objective.py", "codetable.py")
 OBSERVE_GAPS = ("lag", "weekly", "bias")     # observation choices (lag, span, scale) are not built in v1
 SETS = {
     # P0: the named rows of section 7.6 (the ones the class can hold today run; the rest are C)
@@ -79,8 +86,10 @@ def evaluator_hash() -> str:
 
 
 def cache_dir() -> Path:
-    from ..discovery.strategies.unified.price import CODE_TABLE
-    return cache_root() / "objective_test" / f"{CODE_TABLE}-{evaluator_hash()}"
+    """The active code table's folder (codetable.py: v1 unless SDLAB_UNIFIED_CODE_TABLE or
+    --code-table names another), keyed by the evaluator's hash."""
+    from ..discovery.strategies.unified.codetable import active
+    return cache_root() / "objective_test" / f"{active().name}-{evaluator_hash()}"
 
 
 def _cell_path(cid: str, variant: str, where: Path | None = None) -> Path:
@@ -228,7 +237,7 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
     from ..discovery.strategies.unified.frontend import NotExpressible, grid_of
     from ..discovery.strategies.unified.price import EPSILON
     from ..skill import truth_by_time
-    from . import analysis, data, particles, physics, score, store
+    from . import analysis, data, particles, physics, score
     from . import sim as _sim
 
     c = casemod.load(cid)
@@ -266,55 +275,66 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
         cell.update(label="C", why=f"the truth is not expressible: {e}", done=True)
         return
     cell["reports"] = grid.n_reports
+    table = codetable.active()
+    cell["code_table"] = table.name
     th0 = mt.theta0
+    rng = np.random.default_rng(20261019)
+    t_starts = [th0] + [th0 * rng.uniform(0.7, 1.3, size=th0.shape) for _ in range(4)]
+    groups: dict[str, dict] = cell.setdefault("groups", {})
+    held, extra_t = None, []
+    if table.held and table.source == "lean":
+        if "data_eta" not in cell:
+            r = ob.lean_eta(view, grid, table)
+            cell["data_eta"] = {"source": "lean", "eta": r["eta"], "eta_read": r["eta_read"], "J": r["J"], "tau_on": r.get("tau_on")}
+            save()
+        held = cell["data_eta"]["eta"]
+    elif table.held and table.source == "joint":
+        if "Tstar_free" not in cell:
+            cell["Tstar_free"] = _brief(ob.fit(mt, t_starts, table=table.free_only()))
+            save()
+        _list_groups(cell, c, v, tm, d, truth_flows, times, measured, known)
+        save()
+        for g in _order(groups)[:max_groups]:
+            if "fit_free" in g or "error" in g:
+                continue
+            if not clock.left():
+                cell["timeout"] = True
+                return
+            mw, starts = _group_model(g, view, grid)
+            if mw is None:
+                save()
+                continue
+            g["fit_free"] = _brief(ob.fit(mw, starts, table=table.free_only()))
+            save()
+        if "data_eta" not in cell:
+            fits = [(mt, cell["Tstar_free"]["theta"], cell["Tstar_free"]["eta"])]
+            for g in _order(groups)[:max_groups]:
+                if "fit_free" in g:
+                    mw, _ = _group_model(g, view, grid)
+                    fits.append((mw, g["fit_free"]["theta"], g["fit_free"]["eta"]))
+            r = ob.joint_eta(fits, table)
+            cell["data_eta"] = {"source": "joint", **r, "eta_read": ob.eta_read(np.asarray(r["eta"]), grid)}
+            save()
+        held = cell["data_eta"]["eta"]
+        extra_t = [np.asarray(cell["Tstar_free"]["theta"], float)]
     if "T0" not in cell:
-        cell["T0"] = _brief(ob.fit(mt, [th0], fit_theta=False))
+        cell["T0"] = _brief(ob.fit(mt, [th0], fit_theta=False, held=held))
         save()
     if "Tstar" not in cell:
-        rng = np.random.default_rng(20261019)
-        starts = [th0] + [th0 * rng.uniform(0.7, 1.3, size=th0.shape) for _ in range(4)]
-        r = ob.fit(mt, starts)
+        r = ob.fit(mt, t_starts + extra_t, held=held)
         cell["Tstar"] = {**_brief(r), "flows": ob.fitted_flows(mt, r["theta"]), **_shape(truth_flows)}
         save()
     T = cell["Tstar"]
     if "sanity" not in cell:
-        cell["sanity"] = _sanity(cell, mt, th0, v, grid, ob)
+        cell["sanity"] = _sanity(cell, mt, th0, v, grid, ob, held)
         save()
     if not clock.left():
         cell["timeout"] = True
         return
     # candidates: stored found models, grouped by structure; then the hard negatives
-    sh = _score_hash(c)
-    groups: dict[str, dict] = cell.setdefault("groups", {})
-    if "listed" not in cell:
-        rows = [r for r in store.latest(cid, variant, found=True) if r["status"] not in ("error", "timeout") and r.get("found")]
-        for r in rows:
-            status = r["status"]
-            if r["score_hash"] != sh:
-                try:
-                    status = score.equations(c, v["noise"], tm, r["found"], d)["status"]
-                except Exception:  # noqa: BLE001
-                    status = "unscored"
-            sig = signature(r["found"], known)
-            g = groups.setdefault(sig, {"sig": sig, "source": "store", "strategies": [], "statuses": [], "numbers": [],
-                                        "truth_structure": sig == signature(truth_flows, known)})
-            g["strategies"].append(r["strategy"])
-            g["statuses"].append(status)
-            if len(g["numbers"]) < 2 and r["found"] not in g["numbers"]:
-                g["numbers"].append(r["found"])
-        for i, (why, alt) in enumerate(analysis.alternatives(tm, measured)):
-            af, _ = truth_by_time(alt, times)
-            af = json.loads(json.dumps(af))
-            try:
-                status = score.equations(c, v["noise"], tm, af, d)["status"]
-            except Exception:  # noqa: BLE001
-                status = "unscored"
-            sig = "alt" + str(i) + "-" + signature(af, known)
-            groups[sig] = {"sig": sig, "source": "alternative", "why": why, "strategies": [], "statuses": [status], "numbers": [af]}
-        cell["listed"] = True
-        save()
-    order = sorted(groups.values(), key=lambda g: (g["source"] != "alternative", -len(g["strategies"])))
-    for n, g in enumerate(order):
+    _list_groups(cell, c, v, tm, d, truth_flows, times, measured, known)
+    save()
+    for n, g in enumerate(_order(groups)):
         if "fit" in g or "error" in g:
             continue
         if n >= max_groups:
@@ -324,21 +344,13 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
             cell["timeout"] = True
             return
         g["right"] = all(s in ("pass", "equivalent") for s in g["statuses"])   # provisional: _label decides
-        try:
-            members = [ob.prepare(view, canonical(nums), grid=grid) for nums in g["numbers"]]
-        except NotExpressible as e:
-            g["error"] = f"not expressible: {e}"
+        mw, starts = _group_model(g, view, grid)
+        if mw is None:
             save()
             continue
-        except Exception as e:  # noqa: BLE001
-            g["error"] = f"{type(e).__name__}: {e}"
-            save()
-            continue
-        mw = members[0]
-        layout = [(sl.kind, sl.path[2] if sl.kind == "coef" else None) for sl in mw.st.slots]
-        starts = [m.theta0 for m in members if [(sl.kind, sl.path[2] if sl.kind == "coef" else None) for sl in m.st.slots] == layout]
-        starts.append(ob.lean_start(mw))
-        r = ob.fit(mw, starts)
+        if "fit_free" in g:
+            starts = starts + [np.asarray(g["fit_free"]["theta"], float)]
+        r = ob.fit(mw, starts, held=held)
         g["fit"] = _brief(r)
         g.update(_shape(g["numbers"][0]))
         refit = ob.fitted_flows(mw, r["theta"])
@@ -349,6 +361,8 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
             g["refit_status"] = "unscored"
         g["delta"] = g["fit"]["J"] - T["J"]
         g["delta_parts"] = {"D": g["fit"]["D"] - T["D"], "P_num": g["fit"]["P_num"] - T["P_num"], "P_struct": g["fit"]["P_struct"] - T["P_struct"]}
+        if "P_eta" in g["fit"] or "P_eta" in T:
+            g["delta_parts"]["P_eta"] = g["fit"].get("P_eta", 0.0) - T.get("P_eta", 0.0)
         N = max(1, cell["reports"])
         g["delta_bic"] = (g["fit"]["D"] + 0.5 * g["fit"]["numbers"] * math.log(N)) - (T["D"] + 0.5 * T["numbers"] * math.log(N))
         g.pop("numbers_fitted", None)
@@ -357,19 +371,81 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
     cell["done"] = True
 
 
+def _order(groups: dict) -> list[dict]:
+    """The groups in the order they are fitted: the hard negatives first, then by how many strategies found them."""
+    return sorted(groups.values(), key=lambda g: (g["source"] != "alternative", -len(g["strategies"])))
+
+
+def _list_groups(cell: dict, c: dict, v: dict, tm: dict, d: dict, truth_flows: list, times: list, measured: set, known: set) -> None:
+    """The candidates, once per cell: stored found models grouped by structure, then the hard negatives."""
+    from ..skill import truth_by_time
+    from . import analysis, score, store
+
+    if cell.get("listed"):
+        return
+    sh = _score_hash(c)
+    groups = cell.setdefault("groups", {})
+    rows = [r for r in store.latest(cell["case"], cell["variant"], found=True)
+            if r["status"] not in ("error", "timeout") and r.get("found")]
+    for r in rows:
+        status = r["status"]
+        if r["score_hash"] != sh:
+            try:
+                status = score.equations(c, v["noise"], tm, r["found"], d)["status"]
+            except Exception:  # noqa: BLE001
+                status = "unscored"
+        sig = signature(r["found"], known)
+        g = groups.setdefault(sig, {"sig": sig, "source": "store", "strategies": [], "statuses": [], "numbers": [],
+                                    "truth_structure": sig == signature(truth_flows, known)})
+        g["strategies"].append(r["strategy"])
+        g["statuses"].append(status)
+        if len(g["numbers"]) < 2 and r["found"] not in g["numbers"]:
+            g["numbers"].append(r["found"])
+    for i, (why, alt) in enumerate(analysis.alternatives(tm, measured)):
+        af, _ = truth_by_time(alt, times)
+        af = json.loads(json.dumps(af))
+        try:
+            status = score.equations(c, v["noise"], tm, af, d)["status"]
+        except Exception:  # noqa: BLE001
+            status = "unscored"
+        sig = "alt" + str(i) + "-" + signature(af, known)
+        groups[sig] = {"sig": sig, "source": "alternative", "why": why, "strategies": [], "statuses": [status], "numbers": [af]}
+    cell["listed"] = True
+
+
+def _group_model(g: dict, view: dict, grid):
+    """A group's model and its theta starts (the first two members' numbers that share the first's slot
+    layout, and the lean start); (None, None) with g["error"] set when it cannot be built."""
+    from ..discovery.strategies.unified import objective as ob
+    from ..discovery.strategies.unified.frontend import NotExpressible
+    try:
+        members = [ob.prepare(view, canonical(nums), grid=grid) for nums in g["numbers"]]
+    except NotExpressible as e:
+        g["error"] = f"not expressible: {e}"
+        return None, None
+    except Exception as e:  # noqa: BLE001
+        g["error"] = f"{type(e).__name__}: {e}"
+        return None, None
+    mw = members[0]
+    layout = [(sl.kind, sl.path[2] if sl.kind == "coef" else None) for sl in mw.st.slots]
+    starts = [m.theta0 for m in members if [(sl.kind, sl.path[2] if sl.kind == "coef" else None) for sl in m.st.slots] == layout]
+    starts.append(ob.lean_start(mw))
+    return mw, starts
+
+
 def _brief(r: dict) -> dict:
     keep = ("J", "D", "P_num", "P_struct", "theta", "eta", "eta_read", "gnorm", "converged", "restarts_agree", "start_J", "message",
-            "numbers", "complexity", "seconds", "diagnostics", "P_struct_items")
+            "numbers", "complexity", "seconds", "diagnostics", "P_struct_items", "P_eta", "code_table", "held", "tau_on")
     return {k: r[k] for k in keep if k in r}
 
 
-def _sanity(cell: dict, mt, th0, v: dict, grid, ob) -> dict:
+def _sanity(cell: dict, mt, th0, v: dict, grid, ob, held=None) -> dict:
     T, T0 = cell["Tstar"], cell["T0"]
     checks = {"refit_no_worse": T["J"] <= T0["J"] + 1e-6}
     worse = {}
     best = np.asarray(T["theta"])
     for f in (0.7, 0.9, 1.1, 1.3):
-        r = ob.fit(mt, [best * f], fit_theta=False)
+        r = ob.fit(mt, [best * f], fit_theta=False, held=held)
         worse[str(f)] = r["J"] - T["J"]
     checks["beats_scaled"] = all(x > 0 for x in worse.values())
     ok, why = _plausible(T["eta_read"], v, grid)
@@ -379,8 +455,22 @@ def _sanity(cell: dict, mt, th0, v: dict, grid, ob) -> dict:
     return {"ok": all(checks.values()), "checks": checks, "scaled_minus_T": worse, "eta_why": why, "diagnostics": dg}
 
 
-def cells_for(spec: str | None, sets: str | None, variants: str | None) -> list[tuple[str, str]]:
+def cells_for(spec: str | None, sets: str | None, variants: str | None, cells: str | None = None) -> list[tuple[str, str]]:
+    """The (case, variant) cells: --cases/--sets crossed with --variants, plus --cells, an exact list of
+    case@variant (case by the --cases syntax, one case each)."""
     from .runner import select_cases
+    exact = []
+    for one in (cells or "").split(","):
+        one = one.strip()
+        if not one:
+            continue
+        cid, at, vn = one.rpartition("@")
+        ids = select_cases(cid) if at else []
+        if len(ids) != 1 or vn not in [x["name"] for x in casemod.load(ids[0])["variants"]]:
+            raise SystemExit(f"--cells {one!r}: want case@variant naming one case and one of its variants")
+        exact.append((ids[0], vn))
+    if not (spec or sets):
+        return list(dict.fromkeys(exact))
     parts = [spec] if spec else []
     named_variants: dict[str, str] = {}
     for s in (sets or "").split(","):
@@ -411,7 +501,7 @@ def cells_for(spec: str | None, sets: str | None, variants: str | None) -> list[
             if not want and pinned and v["name"] != pinned:
                 continue
             out.append((cid, v["name"]))
-    return out
+    return list(dict.fromkeys(out + exact))
 
 
 def _one(item):
@@ -473,7 +563,10 @@ def load_cells(cells: list[tuple[str, str]]) -> list[dict]:
 
 def main(a) -> int:
     from .objective_report import report
-    cells = cells_for(a.cases, a.sets, a.variants) if (a.cases or a.sets or not getattr(a, "relabel", None)) else [("-", "-")]
+    if getattr(a, "code_table", None):
+        os.environ[codetable.ENV] = codetable.parse(a.code_table).name     # the workers inherit it
+    sel = a.cases or a.sets or getattr(a, "cells", None)
+    cells = cells_for(a.cases, a.sets, a.variants, getattr(a, "cells", None)) if (sel or not getattr(a, "relabel", None)) else [("-", "-")]
     if not cells:
         print("no cells", flush=True)
         return 2
@@ -481,7 +574,7 @@ def main(a) -> int:
     got = None
     if getattr(a, "relabel", None):
         from .objective_labels import changes, relabel_folders
-        sel = set(cells) if (a.cases or a.sets) else None
+        sel = set(cells) if sel else None
         got = relabel_folders([x.strip() for x in a.relabel.split(",") if x.strip()], sel, a.jobs or 1)
         print(changes(got))
         print(f"re-labelled {len(got)} cells into {cache_dir()}")
