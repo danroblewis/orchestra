@@ -657,3 +657,33 @@ All six leaders fail every cell of the five cases (`sdlab-ladder run --strategie
 **Needs you**
 - **The Mac watcher excludes `tag:kubernetes`.** Should it now include it? Parked strategies' kubernetes cells are re-scored only by hand.
 - **part-* cells error in the harness**, at physics/score.py:133.
+
+## 2026-10-20 (note: Kubernetes rung 3, case 302)
+
+**Finished:** [k8s-302.md](k8s-302.md), with round 2's details in [k8s-302-round2.md](k8s-302-round2.md). All 49 active strategies now pass every variant of 302-k8s-responses-counter. Before (rows on 66086e7) it was 174/196 cells: counts-short 27 pass / 22 fail, every other variant passing. Now it is 196/196, all on committed code: `store.latest(case='302-k8s-responses-counter')`. The sync `sdlab-ladder sync --strategies all --cases 302` printed "Nothing to run".
+
+**Why:** the new feature, the final counter `responses_total`, exposed two older faults.
+- **Chance pieces on inflight.** The counter fixes inflight's drain at 0.4973. Chance PELT pieces on inflight then absorb the leftover drain and win the in-sample judge (0.0461 vs 0.0520). Fixed by copying earned_pieces' refit into 17 strategies plus shared_noise's reselect (8c507a8), then into recession, starved_coflows and matrix_v2 (284390d).
+- **Input-blind judges.** held_out, matrix_v2, recession and starved_coflows judged without the measured inputs and picked the counter-only candidate. Fixed by passing the inputs to their judges (c33de93).
+
+**Flips:** no 300, 301 or 302 cell went pass -> not pass.
+
+Off-rung losses, from paired in-process samples:
+- 16 from earned_pieces' refit:
+  - 15 inherited: noise-free collinear cross-links (042#5, 043#6/#8), 087 outliers, 016/080 pass -> equivalent for numopt
+  - 1 from the textbook-price addition: drifting_drain 121
+- 2 more from round 1's sample 1: master_eq 048#3 and drifting_drain 196.
+- 9 from the input-aware judge, where the blind judge had been right by accident: 142 meas-long, 200, 201, 204, 215.
+- 4 in round 2: recession 083 counts-long, starved_coflows 042#5 and 043#6, matrix_v2 043#4.
+
+The gains were much larger: 184 fail -> pass on round 1's sample 1, 48 on cause B's 848 input cells, and +16 in round 2.
+
+**Retirements:** none. All faults were fixable inside each fit. Refuted on the way:
+- matrix's `gate` option: +6/-2 against +24/-0.
+- matrix_v2's `white` and `pelt_mult 2` options.
+- Round 1's claim that the 3 leftover cells had a second cause.
+
+**Needs you**
+- The earned refit now carries earned_pieces' noise-free cross-link and 087 outlier losses into 21 strategies. Should one fix (for example matrix_v2's float-precision rss floor under `exact`) be copied into every copy?
+- mass_balance's `one_hidden` mechanism is lost (3 xfail).
+- The refit makes runs about 1.4-2.7x slower, so watcher timeouts on sd-* cells are possible.
