@@ -687,3 +687,26 @@ The gains were much larger: 184 fail -> pass on round 1's sample 1, 48 on cause 
 - The earned refit now carries earned_pieces' noise-free cross-link and 087 outlier losses into 21 strategies. Should one fix (for example matrix_v2's float-precision rss floor under `exact`) be copied into every copy?
 - mass_balance's `one_hidden` mechanism is lost (3 xfail).
 - The refit makes runs about 1.4-2.7x slower, so watcher timeouts on sd-* cells are possible.
+
+## 2026-10-20 (note: Kubernetes rung 4, case 303)
+
+**Finished:** [k8s-303.md](k8s-303.md). Case 303-k8s-daily-traffic (302 with smooth daily traffic, plus meas variants) went from 188/294 cells passing to 293/294: `store.latest(case='303-k8s-daily-traffic')` over `select_strategies('everything')`, after `sdlab-ladder sync --strategies all --cases 303` printed "Nothing to run". counts-short 41 -> 49, meas-short 0 -> 49, meas-long 0 -> 48. The one left is odefit meas-long. 300, 301 and 302 still pass every cell (294, 196, 196).
+
+**Why:**
+- **meas.** The counter's step changes were buried by 5% level error (C1). This is an older cause: 303 is the first case with meas on a final counter. Smooth exact traffic also stood in for the noisy queue (C2), which is the new feature.
+- **counts-short.** 8 strategies without the earned refit put chance outflow pieces on the final counter, because the daily cycle makes inflight's row weakly identified.
+
+**Fixes:**
+- **Harness (be34a8a).** `sync --strategies all` now includes parked active strategies, and `analyse` works on meas variants.
+- **eiv.py, every copy.** Instrumented Wald pruning (def0acb). A drain becomes a move when the receiver's level-space row, with GLS noise growing with the level, earns it (9956255/b9fe1d6): +95 on 303, +35 on 143 meas-long, 0 regressions.
+- **Per strategy.** The earned refit or base pruning went into coflow_hats, effect_hats, held_out, inflow_effects, loop_transit, realistic_flows and realistic_hats. sindy got earned pieces in fit_row. symbolic_anchor's addition test now reads the inputs.
+- **Off-rung losses.** 5 in the paired samples, 4 of them the earned refit's known ones (083, 084, 042#5).
+
+**Retired:** symbolic_anchor. Two skeptics could not refute it: there is no cell only it passes, and no small change lifts its effect coverage above 2/114.
+
+**Not retired:** sindy. A skeptic showed it is the only strategy ever to pass sd-eras counts-long; the store had hidden this behind BrokenProcessPool rows.
+
+**Needs you:**
+- The per-stock oracle's tolerances are about 30x the joint bound on all counts/meas cells. Narrowing them changes what a pass means.
+- realistic_hats' net -2 sample (099e99d).
+- odefit meas-long.

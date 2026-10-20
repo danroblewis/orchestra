@@ -25,3 +25,5 @@ hidden_delays: matrix plus one mechanism; dominated by combined, common_cause, e
 mass_balance_all: dominated by mass_balance
 symbolic: dominated by symbolic_anchor
 impulses: dominated by periodic_inflows (and lna_pulses on 022)
+# Retired on 2026-10-20 after Kubernetes rung 4 (docs/research/k8s-303.md, confirmed by two skeptics):
+symbolic_anchor: in practice matrix plus a near-inert effect search (effects 1/114, at most 2/114 with small changes); sole passer of no cell, matrix_v2 covers all but 3 of its cells
