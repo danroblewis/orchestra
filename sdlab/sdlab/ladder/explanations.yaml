@@ -54,7 +54,7 @@ strategies:
       was measured alone on the whole ladder, and the defaults are the ones that helped.
     helps_with: Spurious inflow pieces and the fast drains they cause, goal gaps, exactly collinear noise-free stocks, products of stocks.
     builds_on: matrix (a copy), with fixes from earned_pieces, censored, effect_hats, common_cause and structures
-    status: work in progress
+    status: active
 
   change_price:
     idea: The main line, but a stock's outside inflow may change over time only if the change is worth its textbook price.
