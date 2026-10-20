@@ -12,6 +12,9 @@ x's one-step change clearly better for its numbers (BIC, every inflow piece coun
 - a drain at MIN(a x level, capacity), capacity a linear function of other stocks or inputs;
 - an inflow that is a table of a stock or an input, optionally times an input (a dead zone; an
   admission gate), beside the stock's linear flows.
+
+Where the base read the levels as noisy reports (kalman_lna's filter chosen), its answer is kept:
+one-step changes of noisy levels are not the flows.
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ from .steps import build
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     r = base(stocks, run, opts)
+    if (r.get("kalman") or {}).get("reading"):
+        return r          # the base read the levels as noisy reports: one-step changes of them are not the flows
     st = build(stocks, run, opts)
     if st is None:
         return r
