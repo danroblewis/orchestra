@@ -36,6 +36,8 @@ from .ladder.compact_routes import router as compact_router
 from .ladder.strategy_routes import router as strategy_router
 from .ladder.newest_routes import router as newest_router
 from .ladder.timing_routes import router as timing_router
+from .ladder.pool.routes import router as pool_router
+from .ladder.pool import service as pool_service
 from .ladder import newest as ladder_newest
 from .ladder import runs as ladder_runs
 from .research import router as research_router
@@ -203,7 +205,9 @@ def create_app() -> FastAPI:
         ladder_newest.warm()                   # the case files' first commits (cached; one git log if HEAD moved) and regressions
         ladder_runs.warm()                     # the runs panel and the results' times (timing.py), in the background
         threading.Thread(target=ladder_routes.strategies, args=(None,), daemon=True, name="strategies").start()   # hash every strategy now, not on the first request
+        pool_service.start()                   # the CPU pool's queue: planning, leases, the main line (docs/pool.md)
         yield
+        pool_service.stop()
         for r in runs.values():
             r.stop()
         basic_runs.stop_all()
@@ -498,6 +502,10 @@ def create_app() -> FastAPI:
     def probes_page() -> HTMLResponse:
         return page("probes.html")
 
+    @app.get("/ladder/pool")
+    def pool_page() -> HTMLResponse:
+        return page("pool.html")
+
     app.include_router(research_router)
     app.include_router(ladder_router)
     app.include_router(compact_router)
@@ -505,6 +513,7 @@ def create_app() -> FastAPI:
     app.include_router(strategy_router)
     app.include_router(newest_router)
     app.include_router(timing_router)
+    app.include_router(pool_router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

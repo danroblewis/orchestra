@@ -21,7 +21,7 @@ backed=0
 while true; do
   if ! lsof -nP -iTCP:8020 -sTCP:LISTEN >/dev/null 2>&1; then
     echo "$(date '+%F %T') server down: starting it"
-    nohup uv run --directory "$PWD" sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &
+    nohup uv run --directory "$PWD" sdlab --port 8020 --host 0.0.0.0 >> ~/.sdlab/server.log 2>&1 &   # every interface: the pool's workers (docs/pool.md)
   fi
   if [ ! -e ~/.sdlab/watch.paused ] && ! ps aux | grep -v grep | grep -q "bin/sdlab-ladder watch"; then   # touch ~/.sdlab/watch.paused to pause it
     echo "$(date '+%F %T') watcher down: starting it"

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ladder CPU pool</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e3e1db; --card: #ffffff;
+    --ok: #2f7d4f; --bad: #c0392b; --warn: #b7791f; --bar: #2f6fd6; --track: #eceae4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c;
+      --ok: #4fae74; --bad: #e0685a; --warn: #d9a441; --bar: #6b9cf0; --track: #2b2a27;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c;
+    --ok: #4fae74; --bad: #e0685a; --warn: #d9a441; --bar: #6b9cf0; --track: #2b2a27;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header a { color: var(--fg); text-decoration: none; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  h1 { font-size: 18px; margin: 0 8px 0 0; }
+  h2 { font-size: 15px; margin: 22px 0 8px; }
+  main { padding: 16px; max-width: 1200px; margin: 0 auto; }
+  .note { color: var(--muted); margin: 0 0 14px; max-width: 900px; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; min-width: 130px; }
+  .tile b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: 12px; }
+  .wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { padding: 5px 9px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.l, th.l { text-align: left; }
+  tr:last-child td { border-bottom: 0; }
+  .meter { display: inline-block; width: 90px; height: 8px; background: var(--track); border-radius: 4px; vertical-align: middle; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--bar); }
+  .meter.hot i { background: var(--warn); }
+  .live { color: var(--ok); } .dead { color: var(--muted); } .bad { color: var(--bad); }
+  .empty { color: var(--muted); padding: 10px; }
+  code { font-size: 12px; }
+  .spark { display: block; width: 100%; max-width: 600px; height: 60px; }
+  .spark rect { fill: var(--bar); }
+</style>
+</head>
+<body>
+<header>
+  <h1>CPU pool</h1>
+  <a href="/ladder">&#129692; Ladder</a>
+  <a href="/ladder/leaderboard">&#127942; Leaderboard</a>
+</header>
+<main>
+  <p class="note">The ladder's test runners: workers on node2 and the Mac pull items from the server's queue, run them at the
+  job's commit and post the results. Agents' jobs come first; the standing main-line job keeps the <code id="branch">sdlab</code>
+  branch's results current when the pool is otherwise idle. <span id="at"></span></p>
+  <div class="tiles" id="tiles"></div>
+  <h2>Workers</h2>
+  <div class="wrap"><table id="workers"></table></div>
+  <h2>Queue by job</h2>
+  <div class="wrap"><table id="jobs"></table></div>
+  <h2>Throughput</h2>
+  <p class="note" id="thru"></p>
+  <svg class="spark" id="spark" viewBox="0 0 600 60" preserveAspectRatio="none" role="img" aria-label="results per 10 minutes, last 6 hours"></svg>
+  <h2>Recently finished</h2>
+  <div class="wrap"><table id="recent"></table></div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const gb = (mb) => mb == null ? "-" : (mb / 1024).toFixed(1) + " GB";
+const dur = (s) => s == null ? "-" : s < 90 ? Math.round(s) + " s" : s < 5400 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
+function meter(frac, hot) {
+  const f = Math.max(0, Math.min(1, frac || 0));
+  return `<span class="meter${hot ? " hot" : ""}"><i style="width:${(100 * f).toFixed(0)}%"></i></span>`;
+}
+function tiles(s) {
+  const live = s.workers.filter((w) => w.live);
+  const slots = live.reduce((a, w) => a + (w.slots || 0), 0);
+  const t = [[live.length, "live workers"], [slots, "slots"], [s.totals.leased, "running"], [s.totals.queued, "waiting"],
+             [s.throughput.last_hour.reduce((a, m) => a + m.results, 0), "results, last hour"], [s.totals.results, "pool results stored"]];
+  $("tiles").innerHTML = t.map(([v, k]) => `<div class="tile"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
+}
+function workers(s) {
+  if (!s.workers.length) { $("workers").innerHTML = `<tr><td class="empty l">No worker has registered yet.</td></tr>`; return; }
+  $("workers").innerHTML = `<tr><th class="l">worker</th><th class="l">machine</th><th class="l">seen</th><th>slots</th><th>running</th><th>heavy</th><th>load / cores</th><th>free memory</th></tr>` +
+    s.workers.map((w) => {
+      const load = w.load != null && w.cpus ? w.load / w.cpus : null;
+      const used = w.mem_total_mb ? 1 - (w.mem_free_mb || 0) / w.mem_total_mb : null;
+      return `<tr><td class="l">${esc(w.name)}</td><td class="l">${esc(w.machine)}</td>` +
+        `<td class="l ${w.live ? "live" : "dead"}">${w.live ? "live" : "gone"} (${dur(w.ago)} ago)</td>` +
+        `<td>${esc(w.slots ?? "-")}</td><td>${esc(w.leased)}</td><td>${esc(w.heavy_leased)}/${esc(w.heavy_slots ?? "-")}</td>` +
+        `<td>${load == null ? "-" : meter(load, load > 0.9) + " " + w.load.toFixed(1) + " / " + w.cpus}</td>` +
+        `<td>${used == null ? "-" : meter(used, used > 0.85) + " " + gb(w.mem_free_mb) + " of " + gb(w.mem_total_mb)}</td></tr>`;
+    }).join("");
+}
+function jobRow(j) {
+  const c = j.counts, done = c.done + c.reused + c.error, total = j.total || 1;
+  const sts = Object.entries(j.statuses || {}).map(([k, v]) => `${esc(k)} ${v}`).join(", ");
+  const who = j.kind === "mainline" ? "main line" : esc(j.by || "agent");
+  return `<tr><td class="l">#${j.id}</td><td class="l">${who}</td><td>${j.priority}</td><td class="l"><code>${esc((j.commit || "").slice(0, 10))}</code></td>` +
+    `<td class="l${j.state === "failed" ? " bad" : ""}">${esc(j.state)}</td><td>${meter(done / total)} ${done}/${j.total}</td>` +
+    `<td>${c.leased}</td><td>${c.queued}</td><td class="l">${sts || "-"}</td><td>${j.per_hour ? Math.round(j.per_hour) + "/h" : "-"}</td>` +
+    `<td>${dur(j.eta_seconds)}</td><td class="l">${esc(j.note || j.error || "")}</td></tr>`;
+}
+const JOBHEAD = `<tr><th class="l">job</th><th class="l">by</th><th>priority</th><th class="l">commit</th><th class="l">state</th><th>done</th><th>running</th><th>waiting</th><th class="l">statuses</th><th>pace</th><th>left</th><th class="l">note</th></tr>`;
+function spark(s) {
+  const b = s.throughput.per_10_min, svg = $("spark");
+  const now = Date.now(), start = now - 6 * 3600e3, n = 36, counts = new Array(n).fill(0);
+  for (const x of b) {
+    const i = Math.floor((Date.parse(x.at + ":00Z") - start) / 600e3);
+    if (i >= 0 && i < n) counts[i] += x.results;
+  }
+  const max = Math.max(1, ...counts), w = 600 / n;
+  svg.innerHTML = counts.map((c, i) => `<rect x="${(i * w + 1).toFixed(1)}" width="${(w - 2).toFixed(1)}" y="${(60 - 58 * c / max).toFixed(1)}" height="${(58 * c / max).toFixed(1)}"><title>${c} results</title></rect>`).join("");
+  const per = s.throughput.last_hour.map((m) => `${esc(m.machine)} ${m.results} results (${dur(m.busy_seconds)} busy)`).join("; ");
+  $("thru").textContent = (per ? "Last hour: " + per + ". " : "No results in the last hour. ") + "Bars: results per 10 minutes over the last 6 hours (peak " + max + ").";
+}
+async function load() {
+  try {
+    const r = await fetch("/api/pool/status", {cache: "no-store"});
+    const s = await r.json();
+    $("branch").textContent = s.mainline.branch;
+    $("at").textContent = `Main line at ${(s.mainline.head || "?").slice(0, 10)}. Updated ${new Date(s.at).toLocaleTimeString()}.`;
+    tiles(s); workers(s); spark(s);
+    $("jobs").innerHTML = s.jobs.length ? JOBHEAD + s.jobs.map(jobRow).join("") : `<tr><td class="empty l">Nothing queued.</td></tr>`;
+    $("recent").innerHTML = s.recent.length ? JOBHEAD + s.recent.map(jobRow).join("") : `<tr><td class="empty l">No finished jobs yet.</td></tr>`;
+  } catch (e) {
+    $("at").textContent = "Could not read the pool's status: " + e;
+  }
+}
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>

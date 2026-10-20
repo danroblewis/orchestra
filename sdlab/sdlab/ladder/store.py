@@ -135,7 +135,8 @@ def _here() -> str:
 def record(row: dict) -> int:
     """Store a result (case, variant, strategy, case_hash, strategy_hash, score_hash, status,
     seconds?, error?, scores?, found?, code_commit?, code_dirty?, score_seconds?, wall_seconds?, wait_seconds?,
-    run_id?) as the latest for its key, made on this machine (machines.here())."""
+    run_id?, machine?) as the latest for its key, made on this machine (machines.here()) unless it names the
+    machine that made it (a pool worker's result, pool/accept.py)."""
     with connect() as con:
         con.execute("UPDATE results SET latest = 0 WHERE case_id = ? AND variant = ? AND strategy = ? AND latest = 1",
                     (row["case"], row["variant"], row["strategy"]))
@@ -146,7 +147,7 @@ def record(row: dict) -> int:
              row["status"], row.get("seconds"), row.get("error"),
              json.dumps(row["scores"]) if row.get("scores") is not None else None,
              json.dumps(row["found"]) if row.get("found") is not None else None, row.get("code_commit"), row.get("code_dirty"),
-             row.get("score_seconds"), row.get("wall_seconds"), row.get("wait_seconds"), row.get("run_id"), _here()))
+             row.get("score_seconds"), row.get("wall_seconds"), row.get("wait_seconds"), row.get("run_id"), row.get("machine") or _here()))
         return int(cur.lastrowid)
 
 

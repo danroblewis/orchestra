@@ -118,11 +118,21 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     strategy has run, with its coverage shown. The public UI
     (`https://sdlab.dansproject.space/ladder`) must load in about a second. Restart the server after
     Python changes:
-    `pkill -f "sdlab --port 8020"; nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &`.
-    Check that the old process has gone (use `kill -9` if it hangs).
+    `pkill -f "sdlab --port 8020"; nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab --port 8020 --host 0.0.0.0 >> ~/.sdlab/server.log 2>&1 &`
+    (on every interface since 2026-10-20, the user, so the pool's workers reach it; what writes or hands out
+    work needs the pool's token). Check that the old process has gone (use `kill -9` if it hangs).
     With no agent running, `scripts/sdlab-daemon.sh` keeps all of this going without tokens: it
     restarts the server and the watcher if they stop, syncs node2 every 10 minutes, backs up the store
     hourly, and refreshes the long-run and strict verdicts hourly. Start it with `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &`.
+15b. **CPU goes through the pool** (the user, 2026-10-20; docs/pool.md). CPU, not agents, is the
+    bottleneck. The server holds a job queue; workers on node2 (all its CPU, within its memory) and the
+    Mac (half its CPU, `nice 19`) pull items and post results; they never write a database. An agent
+    runs a small test itself (`sdlab-ladder run`, at most 40 items and 2 CPU-minutes by `sdlab-ladder
+    cost`); anything larger it commits first and submits: `uv run sdlab-ladder pool submit --strategies
+    <its own> --cases ... --by <agent>` (refused while the code it uses has uncommitted changes), then
+    `pool status JOB` and `pool results JOB`. A job runs its commit; its results become the main line's
+    latest only when their hashes equal the `sdlab` HEAD's. The page is `/ladder/pool`. In progress:
+    the server side is in (2026-10-20); until the workers run, nothing takes jobs and the watchers run as before.
 16. **Probing a real, live system needs the user's approval.**
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from

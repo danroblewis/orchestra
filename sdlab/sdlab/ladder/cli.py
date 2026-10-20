@@ -37,6 +37,10 @@
                                   add exported results to this store (new ids, skipped when already here; latest:
                                   the newest `at` per cell); --high-water: the newest id imported from MACHINE
 
+    pool   submit|status|results|cancel ...
+                                  the CPU pool's job queue (docs/pool.md): submit a job at a committed ref,
+                                  follow it, read its results (`sdlab-ladder pool --help`)
+
 Common: --jobs N (default CPU cores - 1), --timeout S (per item, default 120).
 """
 
@@ -526,6 +530,12 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--code-table", metavar="NAME", help="the objective's code table (unified/codetable.py): v1 (default), or "
                     "v2-<option>[+<option>...] with options eta-lean, eta-joint, phi-lean, phi-joint, tau-priced, phi-prior[=width]")
     ot.add_argument("--relabel", metavar="FOLDERS", help="re-label the cached cells of these cache folders (comma list, later wins) into the current one, no refitting")
+    pl = sub.add_parser("pool", help="the CPU pool's job queue: submit, status, results, cancel (docs/pool.md)", add_help=False)
+    pl.add_argument("rest", nargs=argparse.REMAINDER)
+    args = sys.argv[1:] if argv is None else argv
+    if args[:1] == ["pool"]:                                     # its own parser (pool/cli.py), --help included
+        from .pool import cli as pool_cli
+        return pool_cli.main(args[1:])
     a = ap.parse_args(argv)
     if a.command == "objective-test":
         from . import objective_test
