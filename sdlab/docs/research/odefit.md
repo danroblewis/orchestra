@@ -255,3 +255,9 @@ construction (status differences there against older stored rows come from main-
   form). The hinge code is there; it needs a held-out check that also prices fresh skill.
 - Product terms with the reference's form (a rate times a linear effect) for crowding cases (103, 139)
   on the standard ladder.
+
+## Kubernetes 303 (2026-10-20)
+
+303 meas-long fails: the output-error model (no conservation) prefers a wrong queue row by 26 BIC and
+wins the held-out comparison by 1%. A 2-paired-SE gate (711d936) lost 6 of 40 paired cells and was
+reverted (240f9d2). See [k8s-303-hats-odefit.md](k8s-303-hats-odefit.md), with the capability remark.

@@ -279,3 +279,10 @@ files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the sam
 - **Speed.** Run time is ~24x matrix on the examples (the matrix variants with the virtual stock, the
   re-cut and pruning); fewer variants per candidate or a cheaper screen would cut it.
 - **Combination.** The strategy `combined` already runs effect_hats beside the other specialists.
+
+## Kubernetes 303 (2026-10-20, 631e5b8)
+
+303 counts-short failed on the shared main line's five chance pieces of an outflow from the final
+counter; the re-cut base is now pruned by effect_hats' own price (`prune_base`, inflow_effects' rule at
+fcc0c9a): 300-303 20 of 20, paired 40 cells +1 pass, +1 equivalent, none worse. See
+[k8s-303-hats-odefit.md](k8s-303-hats-odefit.md), which also has its capability remark.
