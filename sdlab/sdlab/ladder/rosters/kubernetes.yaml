@@ -12,6 +12,7 @@
 #                     the method (verified by two skeptics)
 #       duplicate   - gives the same result as another survivor (`of`) on every cell run so far
 #       not-entered - not in the competition (and why)
+#       withdrawn   - taken out by the user (parked to save CPU), not for a fault
 eliminated:
   kalman_bayes:
     rung: "302"
@@ -27,3 +28,19 @@ eliminated:
       eiv.apply(main_line(...)) with main_line byte-identical to matrix's and eiv.py equal to matrix's
       inline _eiv_; unified's own search is unbuilt ("WORK IN PROGRESS"). Comes back if it is built.
       Package kept (objective_test.py imports it). docs/research/k8s-304.md
+  combined:
+    rung: "305"
+    kind: withdrawn
+    reason: selection composite parked by the user on 2026-10-20 to save CPU (combined2 stays in)
+  combined_lean:
+    rung: "305"
+    kind: withdrawn
+    reason: selection composite parked by the user on 2026-10-20 to save CPU (combined2 stays in)
+  combined_misfit:
+    rung: "305"
+    kind: withdrawn
+    reason: selection composite parked by the user on 2026-10-20 to save CPU (combined2 stays in)
+  combined_r2:
+    rung: "305"
+    kind: withdrawn
+    reason: selection composite parked by the user on 2026-10-20 to save CPU (combined2 stays in)

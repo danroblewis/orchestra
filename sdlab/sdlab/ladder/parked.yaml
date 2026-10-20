@@ -13,3 +13,7 @@ numopt_powell: Powell refit; 173 s, 34% pass
 gradient: JAX refit through a differentiable simulator; 197 s, 35% pass (same as matrix)
 held_out_blend: held-out judge blended with the in-sample one; 124 s, 36% pass
 kalman_bayes: kalman_lna with a block bootstrap and MCMC posterior; median 21 s per cell against 2.9 s (7.4x), 164 of 484 passes against its point answer's 177 (docs/research/kalman_bayes.md, 2026-10-20)
+combined: selection composite (runs copies of specialists, keeps one answer); ~4.4 h of discovery per ladder; parked 2026-10-20 (the user) to save CPU, combined2 kept
+combined_lean: selection composite variant; ~4.2 h per ladder; parked 2026-10-20 (the user)
+combined_misfit: selection composite variant; ~4.2 h per ladder; parked 2026-10-20 (the user)
+combined_r2: selection composite variant; parked 2026-10-20 (the user)
