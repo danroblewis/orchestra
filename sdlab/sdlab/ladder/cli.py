@@ -514,6 +514,7 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--timeout", type=float, default=900.0, help="seconds per cell; a cell that runs out is resumable")
     ot.add_argument("--max-groups", type=int, default=40, help="distinct stored structures per cell (the rest: not run)")
     ot.add_argument("--report-only", action="store_true", help="only the report, from the cache")
+    ot.add_argument("--relabel", metavar="FOLDERS", help="re-label the cached cells of these cache folders (comma list, later wins) into the current one, no refitting")
     a = ap.parse_args(argv)
     if a.command == "objective-test":
         from . import objective_test

@@ -114,10 +114,10 @@ def test_labels_of_a_cell():
     def g(delta, **kw):
         fit = {"J": 100 + delta, "complexity": {"cuts": 2, "flows": 3, "numbers": 5}, "eta_read": {"phi": 1.0, "tau": {"A": 0.0}}}
         return {"fit": fit, "delta": delta, "delta_parts": {"D": delta - 1, "P_num": 0.5, "P_struct": 0.5},
-                "delta_bic": delta, "source": "store", "right": False, **kw}
+                "delta_bic": delta, "source": "store", "statuses": ["fail"], **kw}
 
     cell = {"Tstar": T, "analysis": "achievable", "sanity": {"ok": True},
-            "groups": {"a": g(5.0), "b": g(0.2), "c": g(-3.0), "d": g(-3.0, refit_status="pass"), "e": g(-9.0, right=True)}}
+            "groups": {"a": g(5.0), "b": g(0.2), "c": g(-3.0), "d": g(-3.0, refit_status="pass"), "e": g(-9.0, statuses=["pass"])}}
     _label(cell, 0.5)
     lab = {k: v["label"] for k, v in cell["groups"].items()}
     assert lab == {"a": "OK", "b": "TIE-unexplained", "c": "E", "d": "X", "e": "right"}

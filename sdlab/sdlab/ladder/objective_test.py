@@ -16,17 +16,21 @@ Per cell (case, variant):
 - every distinct stored found model (store.latest(found=True), errors and empty ones dropped),
   grouped by structure (numbers stripped, piece places kept): refitted from the first two members'
   numbers and from the lean start, the lowest J kept (W*). A stored status from an older scorer is
-  re-scored. Wrong = fail; right = pass or equivalent;
+  re-scored. Right = the truth's own structure (hidden stocks named by place, not name), or every
+  stored member passes or is equivalent and the group's refit does not re-score as a fail; else wrong;
 - the hard negatives analysis.alternatives(): structures with no more numbers than the truth that
   make the same mean change, graded by score.equations;
 - the sanity block on T (S), and the label of every wrong candidate by delta = J(W*) - J(T*):
   OK (> eps), X (its refitted numbers re-score as right), TIE (|delta| <= eps; known if an alternative
-  or the cell is unidentifiable), F (T* did not converge or its restarts disagree), L (data-limited
-  or unidentifiable cell), E (objective failure: split into its D, P_num and P_struct parts, E-price
+  or the cell is unidentifiable), L (data-limited or unidentifiable cell), F (T* did not converge,
+  its restarts disagree, or its numbers scaled or T0 score better), E (objective failure: split into its D, P_num and P_struct parts, E-price
   when D favours the truth; with what the winner has that the truth lacks). C (class gap: the truth
   cannot be expressed yet) is a cell label of its own. P (the particle referee) is not built: never
   given. The cell takes its worst label (E > P > F > S > L > TIE > OK).
 - the same labels under plain one-step BIC (D + 1/2 k ln N, the A-bic arm) for comparison.
+
+The labels are computed by objective_labels.py, which is not in the cache key: after a fix there,
+`--relabel FOLDERS` re-labels cached cells without refitting them.
 
 Results go to a study cache, $SDLAB_LADDER_CACHE/objective_test/<code table>-<evaluator hash>/, one
 JSON per cell, written after every candidate, so a run resumes where it stopped. Never to the store.
@@ -47,12 +51,12 @@ import numpy as np
 
 from . import cases as casemod
 from .data import cache_root
+from .objective_labels import ORDER, label as _label, plausible as _plausible  # noqa: F401  (re-exported)
 
 EVALUATOR = Path(__file__).resolve().parent.parent / "discovery" / "strategies" / "unified"
 # the evaluator's own modules (what objective.py imports); not the rest of the strategy package, so work
 # on the strategy (its search, its identify) does not move the cache and break resuming
 EVALUATOR_MODULES = ("frontend.py", "engine.py", "kalman.py", "price.py", "objective.py")
-ORDER = ["E", "P", "F", "S", "L", "TIE", "OK"]
 OBSERVE_GAPS = ("lag", "weekly", "bias")     # observation choices (lag, span, scale) are not built in v1
 SETS = {
     # P0: the named rows of section 7.6 (the ones the class can hold today run; the rest are C)
@@ -114,9 +118,33 @@ def canonical(flows: list[dict]) -> list[dict]:
     return sorted(flows, key=lambda f: json.dumps(_skeleton(f), sort_keys=True, default=str))
 
 
-def signature(flows: list[dict]) -> str:
-    """A found model's structure: its flows with every number stripped and piece places kept."""
+def _renamed(sk: dict, names: dict) -> dict:
+    """A skeleton with its stock names mapped (names not in `names` kept)."""
+    m = lambda s: names.get(s, s)  # noqa: E731
+    return {**sk, "from": m(sk["from"]), "to": m(sk["to"]),
+            "segs": [(a, sorted(m(r) for r in rs)) if a != "expr" else (a, rs) for a, rs in sk["segs"]],
+            "uses": sorted(m(u) for u in sk["uses"]), "effects": [(m(e[0]), *e[1:]) for e in sk["effects"]]}
+
+
+def signature(flows: list[dict], known: set | None = None) -> str:
+    """A found model's structure: its flows with every number stripped and piece places kept. With
+    `known` (the measured stocks and inputs), every other stock is a hidden one and is named by its
+    place, not its name: hidden stocks are masked, the flows sorted, and the hidden stocks named h0,
+    h1, ... in order of first appearance, so a model that only renames a hidden stock has the same
+    signature. Without hidden stocks the signature is the same as with `known` unset."""
     out = [_skeleton(f) for f in flows]
+    if known is not None:
+        def stocks(sk):
+            return [sk["from"], sk["to"], *(r for a, rs in sk["segs"] if a != "expr" for r in rs), *sk["uses"], *(e[0] for e in sk["effects"])]
+        hidden = {s for sk in out for s in stocks(sk) if s not in known and s not in (None, "None")}
+        if hidden:
+            masked = sorted(out, key=lambda sk: json.dumps(_renamed(sk, {h: "?" for h in hidden}), sort_keys=True, default=str))
+            names: dict = {}
+            for sk in masked:
+                for s in stocks(sk):
+                    if s in hidden and s not in names:
+                        names[s] = f"h{len(names)}"
+            out = [_renamed(sk, names) for sk in out]
     out.sort(key=lambda x: json.dumps(x, sort_keys=True, default=str))
     return hashlib.sha256(json.dumps(out, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
@@ -127,47 +155,6 @@ def _score_hash(c: dict) -> str:
     sh = score.score_hash()
     shc = particles.score_hash(sh) if particles.is_particles(c) else physics.score_hash(sh) if physics.is_physics(c) else sh
     return _sim.code_hash(shc) if _sim.uses_new(c.get("model") or {}) else shc
-
-
-def _plausible(eta: dict, v: dict, grid) -> tuple[bool, str]:
-    """Is the truth's fitted noise character plausible for the variant (section 7.5)?"""
-    noise = v.get("noise")
-    obs = v.get("observe") or {}
-    q2 = {s: float(q) ** 2 for s, q in zip(grid.ids, grid.q)}
-    sc2 = {s: float(x) ** 2 for s, x in zip(grid.ids, grid.scale)}
-    small = lambda x, s: x <= max(0.1 * q2[s], 1e-4 * sc2[s])  # noqa: E731
-    if noise == "none":
-        ok = eta["phi"] < 0.05 and all(small(eta["tau"][s], s) and small(eta["alpha"][s], s) for s in grid.ids)
-        return ok, f"none: phi {eta['phi']:.3g}, variances at their floor: {ok}"
-    if not 0.7 <= eta["phi"] <= 1.4:
-        return False, f"counting: phi {eta['phi']:.3g} outside [0.7, 1.4]"
-    if obs.get("kind") == "meas":
-        rel, ab = float(obs.get("rel", 0.05)), float(obs.get("abs", 1.0))
-        bad = [s for s in grid.ids if not (0.5 * ab ** 2 <= eta["alpha"][s] + 1e-12 <= 2 * ab ** 2 or ab == 0)
-               or not (0.5 * rel ** 2 <= eta["rho2"][s] <= 2 * rel ** 2 or rel == 0)]
-        return not bad, f"meas: alpha/rho2 off by more than x2 on {bad}" if bad else "meas: ok"
-    bad = [s for s in grid.ids if not small(eta["tau"][s], s)]
-    return not bad, f"counts: tau not near 0 on {bad}" if bad else "counts: ok"
-
-
-def _mechanism(w: dict, t: dict) -> list[str]:
-    """What the winner W has that the truth T lacks (E subtypes)."""
-    out = []
-    cw, ct = w["fit"]["complexity"], t["fit"]["complexity"]
-    if cw["cuts"] > ct["cuts"]:
-        out.append("extra pieces")
-    if cw["flows"] > ct["flows"]:
-        out.append("extra flows")
-    if cw["numbers"] < ct["numbers"]:
-        out.append("fewer numbers")
-    if w.get("self_reinforcing") and not t.get("self_reinforcing"):
-        out.append("self-reinforcing reading")
-    if (w.get("links") or 0) > (t.get("links") or 0):
-        out.append("spurious link")
-    ew, et = w["fit"]["eta_read"], t["fit"]["eta_read"]
-    if ew["phi"] > 2 * et["phi"] + 1e-9 or any(ew["tau"][s] > 4 * et["tau"][s] + 1e-9 for s in ew["tau"]):
-        out.append("noise absorbing structure (tau or phi)")
-    return out
 
 
 def _shape(flows: list[dict]) -> dict:
@@ -210,6 +197,7 @@ def run_cell(cid: str, variant: str, timeout: float | None = 900.0, max_groups: 
     if cell.get("done"):
         return cell
     clock = _Clock(timeout)
+    cell.pop("timeout", None)                        # a resumed cell: set again only if it runs out again
     cell.update({"case": cid, "variant": variant, "evaluator": (where or cache_dir()).name})
 
     def save():
@@ -267,6 +255,7 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
     truth_flows, _ = truth_by_time(tm, times)
     truth_flows = json.loads(json.dumps(truth_flows))
     measured = {s["id"] for s in view["stocks"]}
+    known = measured | set(view.get("inputs") or {})
     opts = {"dt": float(tm.get("dt") or 1),
             "ceilings": {s["id"]: s["max"] for s in tm["stocks"] if s.get("max") is not None},
             "signed": {s["id"] for s in tm["stocks"] if s.get("signed")},
@@ -306,8 +295,9 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
                     status = score.equations(c, v["noise"], tm, r["found"], d)["status"]
                 except Exception:  # noqa: BLE001
                     status = "unscored"
-            sig = signature(r["found"])
-            g = groups.setdefault(sig, {"sig": sig, "source": "store", "strategies": [], "statuses": [], "numbers": []})
+            sig = signature(r["found"], known)
+            g = groups.setdefault(sig, {"sig": sig, "source": "store", "strategies": [], "statuses": [], "numbers": [],
+                                        "truth_structure": sig == signature(truth_flows, known)})
             g["strategies"].append(r["strategy"])
             g["statuses"].append(status)
             if len(g["numbers"]) < 2 and r["found"] not in g["numbers"]:
@@ -319,7 +309,7 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
                 status = score.equations(c, v["noise"], tm, af, d)["status"]
             except Exception:  # noqa: BLE001
                 status = "unscored"
-            sig = "alt" + str(i) + "-" + signature(af)
+            sig = "alt" + str(i) + "-" + signature(af, known)
             groups[sig] = {"sig": sig, "source": "alternative", "why": why, "strategies": [], "statuses": [status], "numbers": [af]}
         cell["listed"] = True
         save()
@@ -333,7 +323,7 @@ def _compute(cell: dict, cid: str, variant: str, clock: _Clock, save, max_groups
         if not clock.left():
             cell["timeout"] = True
             return
-        g["right"] = all(s in ("pass", "equivalent") for s in g["statuses"])
+        g["right"] = all(s in ("pass", "equivalent") for s in g["statuses"])   # provisional: _label decides
         try:
             members = [ob.prepare(view, canonical(nums), grid=grid) for nums in g["numbers"]]
         except NotExpressible as e:
@@ -387,53 +377,6 @@ def _sanity(cell: dict, mt, th0, v: dict, grid, ob) -> dict:
     dg = T.get("diagnostics") or {}
     checks["innovations"] = (dg.get("dispersion_z") is None or abs(dg["dispersion_z"]) <= 3) and (dg.get("ljung_box_z") is None or dg["ljung_box_z"] <= 3)
     return {"ok": all(checks.values()), "checks": checks, "scaled_minus_T": worse, "eta_why": why, "diagnostics": dg}
-
-
-def _label(cell: dict, eps: float) -> None:
-    T = cell["Tstar"]
-    unident = cell.get("analysis") in ("unidentifiable",)
-    limited = cell.get("analysis") in ("data-limited", "unidentifiable")
-    fitbad = not (T.get("converged") and T.get("restarts_agree"))
-    labels, bic = [], []
-    for g in cell.get("groups", {}).values():
-        if "fit" not in g:
-            continue
-        d = g["delta"]
-        if g.get("right"):
-            g["label"] = "right"
-            continue
-        if g.get("refit_status") in ("pass", "equivalent"):
-            g["label"] = "X"
-        elif d > eps:
-            g["label"] = "OK"
-        elif abs(d) <= eps:
-            g["label"] = "TIE-known" if (g["source"] == "alternative" or unident) else "TIE-unexplained"
-        elif fitbad:
-            g["label"] = "F"
-        elif limited:
-            g["label"] = "L"
-        else:
-            g["label"] = "E-price" if g["delta_parts"]["D"] > 0 else "E"
-            g["mechanism"] = _mechanism(g, {"fit": T, **{k: T.get(k) for k in ("self_reinforcing", "links")}})
-        labels.append(g["label"])
-        db = g["delta_bic"]
-        bic.append("OK" if db > eps else ("TIE" if abs(db) <= eps else "E"))
-    worst = "OK"
-    rank = lambda lab: ORDER.index(lab.split("-")[0]) if lab.split("-")[0] in ORDER else len(ORDER)  # noqa: E731
-    for lab in labels:
-        if lab != "X" and rank(lab) < rank(worst):
-            worst = lab
-    if not cell.get("sanity", {}).get("ok", True) and rank("S") < rank(worst):
-        worst = "S"
-    cell["label"] = worst if labels or worst == "S" else "no wrong candidates"
-    cell["label_bic"] = min(bic, key=lambda x: ["E", "TIE", "OK"].index(x)) if bic else "no wrong candidates"
-    wrong = [g for g in cell.get("groups", {}).values() if "fit" in g and not g.get("right")]
-    right = [g for g in cell.get("groups", {}).values() if "fit" in g and g.get("right")]
-    cell["min_delta"] = min((g["delta"] for g in wrong), default=None)
-    cell["truth_rank"] = 1 + sum(1 for g in wrong if g["fit"]["J"] < T["J"])
-    cell["right_abs_delta"] = [abs(g["delta"]) for g in right]
-    best = min(wrong + right, key=lambda g: g["fit"]["J"], default=None)
-    cell["winner_equivalent"] = bool(best is None or best["fit"]["J"] >= T["J"] or best.get("right") or best.get("refit_status") in ("pass", "equivalent"))
 
 
 def cells_for(spec: str | None, sets: str | None, variants: str | None) -> list[tuple[str, str]]:
@@ -530,12 +473,19 @@ def load_cells(cells: list[tuple[str, str]]) -> list[dict]:
 
 def main(a) -> int:
     from .objective_report import report
-    cells = cells_for(a.cases, a.sets, a.variants)
+    cells = cells_for(a.cases, a.sets, a.variants) if (a.cases or a.sets or not getattr(a, "relabel", None)) else [("-", "-")]
     if not cells:
         print("no cells", flush=True)
         return 2
     print(f"objective test: {len(cells)} cells, cache {cache_dir()}", flush=True)
     got = None
+    if getattr(a, "relabel", None):
+        from .objective_labels import changes, relabel_folders
+        sel = set(cells) if (a.cases or a.sets) else None
+        got = relabel_folders([x.strip() for x in a.relabel.split(",") if x.strip()], sel, a.jobs or 1)
+        print(changes(got))
+        print(f"re-labelled {len(got)} cells into {cache_dir()}")
+        return 0
     if not a.report_only:
         t0 = time.time()
 

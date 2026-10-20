@@ -100,6 +100,7 @@ class Slot:
     stocks: tuple                   # the stocks whose one-step mean it moves (for N_j)
     steps: np.ndarray | None = None  # grid steps where it acts (None: all)
     path: tuple = ()                # where to write it back: (flow, ...) into the flows
+    more: list = field(default_factory=list)   # further write-back paths: segments that share this slot
 
 
 @dataclass
@@ -254,6 +255,8 @@ def build(view: dict, flows: list[dict], *, dt: float = 1.0, ceilings: dict | No
                     slot_of[k] = len(st.slots)
                     path = segs[si][2]
                     st.slots.append(Slot(v, "coef", fi, touched, None, (fi, path, r)))
+                else:
+                    st.slots[slot_of[k]].more.append((fi, segs[si][2], r))   # a tied segment: written back too
                 seg_slot.append(slot_of[k])
             col = np.array([seg_slot[s] for s in seg_at])
             col = np.where(col < 0, -1, col)
@@ -324,8 +327,8 @@ def write_back(st: Structure, theta: np.ndarray) -> list[dict]:
     coef: dict = {}
     for sl, v in zip(st.slots, theta):
         if sl.kind == "coef":
-            fi, path, r = sl.path
-            coef.setdefault((fi, path), {})[r] = float(v)
+            for fi, path, r in [sl.path, *sl.more]:          # every segment the slot is shared by
+                coef.setdefault((fi, path), {})[r] = float(v)
     for (fi, path), nf in coef.items():
         f = out[fi]
         tgt = f

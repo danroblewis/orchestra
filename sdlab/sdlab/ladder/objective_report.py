@@ -10,7 +10,7 @@ import statistics
 
 from . import cases as casemod
 
-SET_TAGS = ("canonical", "distilled", "control")
+SET_TAGS = ("canonical", "control", "realistic", "physics", "particles", "real", "noisy", "distilled")
 
 
 def _set_of(cell: dict) -> str:
