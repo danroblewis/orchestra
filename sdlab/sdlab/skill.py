@@ -3,6 +3,13 @@
 From ~150 moments in a run, the found and the true model are both run H steps from every stock's
 true level, fed the same outside inflows (the truth's schedule replaces the found model's outside
 inflow into every stock the truth feeds from outside), so only their own dynamics differ.
+
+Only a truly exogenous inflow is swapped (the user, 2026-10-19): a constant outside inflow with no
+effect, co-flow (`uses`), driver or two-way reading attached (`exogenous`). A "constant" inflow that
+carries an effect of a stock (sd-sawmill's sharpening) is endogenous: it is neither fed to the found
+model nor taken from it. A found `c + k x` inflow (form linear) into a stock the truth feeds has its
+`c` swapped as a constant is (set to 0, the truth's constant fed instead), so the outside part is not
+counted twice; its links stay.
 skill = 1 - (spread between them / how far the truth moved)^2: 1 = behaves as the truth, 0 = no
 better than assuming nothing changes, below 0 = worse.
 
@@ -42,9 +49,41 @@ def truth_flows_at(truth_model: dict, t: int) -> list[dict]:
     return flows
 
 
+_READERS = ("effects", "uses", "driver", "two_way", "whole")
+
+
+def exogenous(f: dict) -> bool:
+    """A constant outside inflow with nothing attached that reads the model (no effect, co-flow,
+    driver, or two-way reading): the only kind the grader swaps."""
+    return (not f.get("from") and bool(f.get("to")) and (f.get("rate") or {}).get("form") == "constant"
+            and not any(f.get(k) for k in _READERS))
+
+
+def _outside_part_swapped(f: dict) -> dict:
+    """A found `c + k x` inflow (form linear, nothing attached) with its constant c set to 0 (also in its
+    byTime segments): the truth's constant is fed in its place."""
+    zero = lambda r: {**r, "c": 0} if (r or {}).get("form") == "linear" else r  # noqa: E731
+    out = {**f, "rate": zero(f.get("rate"))}
+    if f.get("byTime"):
+        out["byTime"] = [{**g, "rate": zero(g.get("rate"))} for g in f["byTime"]]
+    return out
+
+
+def own_flows(flows: list[dict], fed: set) -> list[dict]:
+    """A found model's flows less what the grader swaps for the truth's: its constant outside inflows
+    with nothing attached into a stock the truth feeds, and the constant of a `c + k x` inflow there."""
+    out = []
+    for f in flows:
+        swappable = not f.get("from") and f.get("to") in fed and not any(f.get(k) for k in _READERS)
+        if swappable and (f.get("rate") or {}).get("form") == "constant":
+            continue
+        out.append(_outside_part_swapped(f) if swappable else f)
+    return out
+
+
 def truth_by_time(truth_model: dict, times: list) -> tuple[list[dict], set]:
     """The truth over the run as flows whose rate follows the schedule (byTime), and the stocks it
-    feeds with a constant outside inflow."""
+    feeds with a truly exogenous constant outside inflow (`exogenous`)."""
     per_t = [truth_flows_at(truth_model, int(t)) for t in times]
     flows = []
     for i, f in enumerate(truth_model["flows"]):
@@ -56,7 +95,7 @@ def truth_by_time(truth_model: dict, times: list) -> tuple[list[dict], set]:
             else:
                 segs.append({"from": t, "to": t, "rate": rate})
         flows.append({**f, "byTime": segs})
-    fed = {f["to"] for f in truth_model["flows"] if not f.get("from") and f.get("to") and (f.get("rate") or {}).get("form") == "constant"}
+    fed = {f["to"] for f in truth_model["flows"] if exogenous(f)}
     return flows, fed
 
 
@@ -68,7 +107,8 @@ def truth_runs(truth_model: dict, data: dict, horizon: int = 20, starts: int = 1
     ids = list(all_levels)
     truth, fed = truth_by_time(truth_model, t)
     const = lambda r: r if (r or {}).get("form") == "constant" else {"form": "constant", "value": 0}  # noqa: E731
-    exo = [{**f, "byTime": [{**g, "rate": const(g["rate"])} for g in f["byTime"]]} for f in truth if not f.get("from") and f.get("to") in fed]
+    exo = [{**f, "byTime": [{**g, "rate": const(g["rate"])} for g in f["byTime"]]} for f in truth
+           if not f.get("from") and f.get("to") in fed and not any(f.get(k) for k in _READERS)]
     A = levels_array(all_levels, ids)
     s0 = starts_for(A.shape[1], horizon, starts)
     times = np.asarray(t, dtype=float)[s0[None, :] + np.arange(horizon)[:, None]]
@@ -94,6 +134,13 @@ def _renamed(x, names: dict):
     return x
 
 
+def _found_model(flows: list[dict], ids: list[str], **kw) -> Model:
+    """simulate.Model, or for a found model with a two-way flow or a signed stock the harness's
+    SignedModel (sdlab/ladder/sim.py: not floored where the model says so)."""
+    from .ladder.sim import found_model
+    return found_model(flows, ids, **kw)
+
+
 def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 20, starts: int = 150, truth: dict | None = None,
                    ci: bool = False, own_run: bool = True) -> dict:
     """skill@horizon of result's flows against the truth on this run; with ci, also "ci": the 95%
@@ -108,7 +155,7 @@ def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 2
     tr = truth or truth_runs(truth_model, data, horizon, starts)
     ids, fed, exo, A, s0, times, truth_end = (tr[k] for k in ("ids", "fed", "exo", "A", "s0", "times", "truth_end"))
     measured = list(data["levels"])
-    own = [f for f in result["flows"] if not (not f.get("from") and f.get("to") in fed and not f.get("driver") and (f.get("rate") or {}).get("form") == "constant")]
+    own = own_flows(result["flows"], fed)
     hidden = list(dict.fromkeys(unmeasured(own, measured) + list(result.get("inferred_levels") or {})))
     if hidden:
         est = dict(result.get("inferred_levels") or {}) if own_run else {}
@@ -117,10 +164,10 @@ def same_behaviour(result: dict, truth_model: dict, data: dict, horizon: int = 2
             est = {**observe(own, measured, data["t"], data["levels"], hidden, first), **est}
         names = {x: f"found:{x}" for x in hidden}
         A_found = np.vstack([A] + [np.nan_to_num(np.asarray(est[x], dtype=float))[None, :] for x in hidden])
-        found_end = Model(_renamed(own, names) + exo, ids + list(names.values()), inputs=tr.get("inputs"),
+        found_end = _found_model(_renamed(own, names) + exo, ids + list(names.values()), inputs=tr.get("inputs"),
                           ceilings=result.get("ceilings")).run(A_found[:, s0 - 1], times, tr.get("injections"))[: len(ids)]
     else:
-        found_end = Model(own + exo, ids, inputs=tr.get("inputs"), ceilings=result.get("ceilings")).run(A[:, s0 - 1], times, tr.get("injections"))
+        found_end = _found_model(own + exo, ids, inputs=tr.get("inputs"), ceilings=result.get("ceilings")).run(A[:, s0 - 1], times, tr.get("injections"))
     m = [ids.index(k) for k in measured]
     apart = float(((found_end[m] - truth_end[m]) ** 2).sum())
     moved = float(((truth_end[m] - A[m][:, s0 - 1]) ** 2).sum())

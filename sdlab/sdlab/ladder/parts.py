@@ -165,16 +165,73 @@ def _inflow_parts(out: dict, notes: list, flows: list[dict], b: str, measured: s
                 out[("viaeffect", None, b, e["stock"])] = e
 
 
+def _smoothings(flows: list[dict], measured: set, inputs, window: tuple[int, int]) -> tuple[dict, set]:
+    """The unmeasured stocks that are information smoothings (SMOOTH, SMOOTHn, a found model's own
+    smoothing stock): S filled from outside at k_in x Y (Y a measured stock, an input, or an earlier
+    stage) and drained to outside at k_out x S, nothing else moving it. {S: (X, gain, delay)}: what it
+    smooths (the measured stock or input at the start of its chain), its level per unit of X at rest
+    (product of k_in / k_out) and its delay (sum of 1 / k_out); and the indexes of their flows."""
+    inner = {x for f in flows for x in (f.get("from"), f.get("to")) if x and x not in measured}
+    one: dict[str, tuple] = {}
+    for h in inner:
+        ins = [(i, f) for i, f in enumerate(flows) if f.get("to") == h]
+        outs = [(i, f) for i, f in enumerate(flows) if f.get("from") == h]
+        if not ins or not outs or any(f.get("from") or f.get("via") or f.get("effects") or f.get("uses") for _, f in ins) \
+                or any(f.get("to") or f.get("via") or f.get("effects") or f.get("uses") for _, f in outs):
+            continue
+        if any(u.get("stock") == h for f in flows for u in f.get("uses") or []):
+            continue
+        fin = [form_over(f, *window) for _, f in ins]
+        fout = [form_over(f, *window) for _, f in outs]
+        if any(x is None or x[0] or len(x[1]) != 1 for x in fin + fout):
+            continue
+        readers = {next(iter(x[1])) for x in fin}
+        k_out = sum(x[1].get(h, 0.0) for x in fout)
+        if len(readers) != 1 or any(h not in x[1] for x in fout) or k_out <= 0:
+            continue
+        y = readers.pop()
+        if y == h:
+            continue
+        one[h] = (y, sum(x[1][y] for x in fin) / k_out, 1 / k_out, [i for i, _ in ins + outs])
+    out, used = {}, set()
+
+    def chain(h, seen):
+        if h in out:
+            return out[h]
+        y, g, d, _ = one[h]
+        if y in measured or y in inputs:
+            out[h] = (y, g, d)
+        elif y in one and y not in seen:
+            up = chain(y, seen | {h})
+            out[h] = None if up is None else (up[0], up[1] * g, up[2] + d)
+        else:
+            out[h] = None
+        return out[h]
+
+    for h in one:
+        chain(h, {h})
+    out = {h: v for h, v in out.items() if v is not None}
+    for h in out:
+        used.update(one[h][3])
+    return out, used
+
+
 def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set | frozenset = frozenset()) -> tuple[dict, list[str]]:
     """{key: value} for the flows over a window, and notes on what could not be read. Keys are tuples:
     ("flow", from, to, reader), ("uses", from, to, stock), ("effect", from, to, stock),
     ("hidden", from, to); from / to None for outside. A hidden path fed from outside is ("hidden", None,
     to) = {"delay"} with the numbers of its inflow as ("via", None, to, reader) (and its effects as
     ("viaeffect", None, to, stock)). A reader may be a measured input (inputs: their names), read as a
-    stock is."""
+    stock is. A rate that reads an information smoothing of X (an unmeasured stock filled from outside
+    reading X and drained by its own level, or a chain of them: SMOOTH, SMOOTH3; `_smoothings`) is the
+    part ("smooth", from, to, X) = {"gain", "delay"}: the rate's number times the smoothing's level per
+    unit of X at rest, and the smoothing's delay (the user, 2026-10-19); the smoothing's own flows are
+    part of it."""
     out: dict[tuple, object] = {}
     notes: list[str] = []
     chains, used = _hidden_chains(flows, measured)
+    smooth, smooth_flows = _smoothings(flows, measured, inputs, window)
+    used = used | smooth_flows
     for (a, b), c in chains.items():
         if a is None:                                     # fed from outside: its delay, and the numbers of what feeds it
             out[("hidden", None, b)] = {"delay": _delay(c, window)}
@@ -214,6 +271,13 @@ def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set
         if c:
             out[("flow", a, b, ONE)] = out.get(("flow", a, b, ONE), 0.0) + c
         for j, k in ks.items():
+            if j in smooth and j not in measured:             # reads a smoothing of x: one part, gain and delay
+                x, g, d = smooth[j]
+                prev = out.get(("smooth", a, b, x)) or {"gain": 0.0, "delay": 0.0}
+                gain = prev["gain"] + k * g
+                delay = (prev["gain"] * prev["delay"] + k * g * d) / gain if gain else d
+                out[("smooth", a, b, x)] = {"gain": gain, "delay": delay}
+                continue
             if j not in measured and j not in inputs:
                 notes.append(f"{a}->{b} reads unmeasured {j}, not scored")
                 continue
@@ -230,8 +294,9 @@ def parts(flows: list[dict], measured: set, window: tuple[int, int], inputs: set
 def kind(key: tuple) -> str:
     if key[0] == "whole":
         return "whole flow"
-    if key[0] in ("uses", "effect", "hidden", "via", "viaeffect"):
-        return {"uses": "co-flow", "effect": "effect", "hidden": "hidden", "via": "hidden inflow", "viaeffect": "hidden inflow effect"}[key[0]]
+    if key[0] in ("uses", "effect", "hidden", "via", "viaeffect", "smooth"):
+        return {"uses": "co-flow", "effect": "effect", "hidden": "hidden", "via": "hidden inflow", "viaeffect": "hidden inflow effect",
+                "smooth": "reads a smoothing"}[key[0]]
     _, a, b, r = key
     if a and b:
         return "move"
@@ -252,6 +317,8 @@ def label(key: tuple) -> str:
         return f"outside -> (hidden) -> {key[2]} [{'const' if key[3] == ONE else key[3]}]"
     if key[0] == "viaeffect":
         return f"effect {key[3]} on outside -> (hidden) -> {key[2]}"
+    if key[0] == "smooth":
+        return f"{end(key[1])} -> {end(key[2])} [smooth({key[3]})]"
     return f"{key[0]} {key[3]} on {end(key[1])} -> {end(key[2])}"
 
 

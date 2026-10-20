@@ -114,12 +114,10 @@ def test_the_reference_is_fitted_graded_and_passes_its_own_scoring(cid):
     assert f20 is not None and np.isfinite(f20) and ref["longrun"]["err"] is not None
     s = physics.score_found(c, "none-short", c["model"]["flows"], d, fr)
     assert s["physics"]["gap20"] == pytest.approx(0.0, abs=1e-9)
-    if c["physics"]["system"] == "thermostat":
-        # closed loop: the best predicting SD model all but drops the outside's coupling (the heater absorbs it)
-        assert [r["key"] for r in ref["structure"]["couplings"] if not r["sign_ok"]] == ["T <- outside"] and s["status"] == "fail"
-    else:
-        assert ref["structure"]["ok"], ref["structure"]
-        assert s["status"] == "pass"
+    # the thermostat's structure is the reference's (closed loop: the best predicting SD model all but
+    # drops the outside's coupling, the heater absorbs it), so the reference passes there too
+    assert ref["structure"]["ok"], ref["structure"]
+    assert s["status"] == "pass"
     if c["physics"]["system"] in ("newton-cooling", "reaction-chain", "mass-spring-damper"):
         assert f20 > 0.99, "exactly linear physics: the best SD model is (almost) exact"
 
@@ -181,3 +179,21 @@ def test_sampling_couplings_are_allowed_never_required():
     assert s["physics"]["structure_ok"], "V <- V is the physics' own (damping): a stronger one is a number, not a structure"
     s = physics.score_found(c, "none-long", ref + [{"id": "x4", "from": None, "to": "V", "rate": {"form": "proportional", "stock": "V", "k": 0.3}}], d, fr)
     assert not s["physics"]["structure_ok"], "V reading itself positively is the wrong sign"
+
+
+def test_thermostat_structure_is_the_references_and_the_declared_outside_coupling_is_allowed():
+    from sdlab.ladder.physics import score as pscore
+    c = casemod.load("phys-thermostat")
+    d = data.load(c, "none-long")
+    expected, allowed = pscore.expected_structure(c, d.get("clean") or d)
+    keys = {(x, y) for x, y, *_ in expected}
+    assert ("T", "outside") not in keys and ["T", "outside"] in allowed and ("T", "T") in keys
+    # a non-switching system keeps the physics' declared couplings
+    tank = casemod.load("phys-draining-tank")
+    dt = data.load(tank, "none-short")
+    assert pscore.expected_structure(tank, dt) == ([tuple(x) for x in tank["physics"]["couplings"]], [])
+    # a model with the outside coupling at full strength is not spurious; one without T <- setpoint fails
+    fr = data.load(c, "none-long", fresh=True)
+    no_setpoint = [f for f in c["model"]["flows"] if "setpoint" not in str(f)]
+    s = physics.score_found(c, "none-long", no_setpoint, d, fr)
+    assert not s["physics"]["structure_ok"]

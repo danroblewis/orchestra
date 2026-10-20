@@ -14,6 +14,13 @@
               levels there (`mean_err`), each capped at 1 (a run that diverges counts 1)
   reference   the best SD model (reference.py), graded the same way: what SD Lab's forms can do
 
+**A switching system's structure** (the thermostat; systems.py `hybrid`) is compared against the
+reference model's structure on the same run rather than the physics' declared couplings (the user,
+2026-10-19): in a closed loop the best SD model reads a declared coupling (T <- outside) below the
+presence threshold, so no model can show it. The couplings the reference has (its Jacobian on the run,
+structure.py) are required with the reference's sign (the declared shape where the physics declares
+one); a declared coupling the reference lacks is allowed, never required, and never spurious.
+
 **pass** (the physics view's verdict): the structure agrees (every coupling the physics has is
 present with its sign, nothing spurious; the shape is reported, not required, since SD Lab's forms
 cannot write a sqrt or a switch) and the fresh run's skill@20 is within 5 points of the
@@ -25,9 +32,10 @@ from __future__ import annotations
 import numpy as np
 
 from ...discovery.observer import observe, unmeasured
-from ...discovery.simulate import Model, levels_array, starts_for
+from ...discovery.simulate import levels_array, starts_for
 from ...skill import same_behaviour
-from . import structure
+from ..sim import found_model
+from . import structure, systems
 
 HORIZONS = (20, 100)
 STARTS = 150
@@ -78,7 +86,7 @@ def long_run(flows: list[dict], long: dict) -> dict:
         est = observe(own, ids, long["t"][:w + 1], {s: v[:w + 1] for s, v in long["levels"].items()}, hidden, {})
         L = np.vstack([L, np.array([[float(np.nan_to_num((est.get(h) or [0.0])[-1]))] for h in hidden])])
     inputs = {"t": long["t"], "values": long["inputs"]} if long.get("inputs") else None
-    model = Model(own, ids + hidden, inputs=inputs)
+    model = found_model(own, ids + hidden, inputs=inputs)       # a two-way or signed found model: not floored (sim.py)
     pulses: dict[float, list] = {}
     for j in long.get("injections") or []:
         if j["stock"] in ids:
@@ -90,7 +98,7 @@ def long_run(flows: list[dict], long: dict) -> dict:
     diverged = False
     for k in range(w + 1, T.shape[1]):
         for i, amount in pulses.get(t[k], []):
-            L[i, 0] = max(0.0, L[i, 0] + amount)
+            L[i, 0] = L[i, 0] + amount if getattr(model, "signed", None) is not None and model.signed[i] else max(0.0, L[i, 0] + amount)
         L = model.step(L, t[k:k + 1])
         F[:, k] = L[: len(ids), 0]
         if not np.all(np.isfinite(F[:, k])) or np.any(np.abs(F[:, k]) > limit):
@@ -111,8 +119,26 @@ def grade(case: dict, flows: list[dict], clean: dict, fresh: dict, long: dict, i
     ph = case["physics"]
     names, V, _ = structure.variables(clean, ph["inputs"])
     rec, src, p = structure.found_jacobian(flows, clean, ph["inputs"])
-    cmp = structure.compare([tuple(c) for c in ph["couplings"]], structure.couplings(rec, src, p, V), sampling)
+    expected, allowed = expected_structure(case, clean)
+    cmp = structure.compare(expected, structure.couplings(rec, src, p, V), list(sampling or []) + allowed)
     return {"structure": cmp, "behaviour": behaviour(flows, clean, fresh, inferred), "longrun": long_run(flows, long)}
+
+
+def expected_structure(case: dict, clean: dict) -> tuple[list[tuple], list[list[str]]]:
+    """(the couplings a found model must have, [[receiver, source]] it may have without them being
+    required or spurious): the physics' declared couplings, or for a switching system the reference
+    model's present couplings on this run (module docstring)."""
+    ph = case["physics"]
+    declared = [tuple(c) for c in ph["couplings"]]
+    if not systems.SYSTEMS[ph["system"]].hybrid:
+        return declared, []
+    names, V, _ = structure.variables(clean, ph["inputs"])
+    rec, src, p = structure.found_jacobian(case["model"]["flows"], clean, ph["inputs"])
+    shapes = {(x, y): shp for x, y, _, shp in declared}
+    ref = [c for c in structure.couplings(rec, src, p, V) if c["present"]]
+    expected = [(c["receiver"], c["source"], c["sign"], shapes.get((c["receiver"], c["source"]), c["shape"])) for c in ref]
+    have = {(c["receiver"], c["source"]) for c in ref}
+    return expected, [[x, y] for x, y, *_ in declared if (x, y) not in have]
 
 
 def skill(b: dict, where: str, h: int):

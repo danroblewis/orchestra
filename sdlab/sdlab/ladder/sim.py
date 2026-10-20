@@ -18,6 +18,14 @@ here instead, by the engine itself (sdlab/sdtruth.py, noise none):
   not the sum over its sub-steps (substep.py refits only the linear forms).
 
 A truth that uses none of these is scored as before, through simulate.py (sdlab/skill.py, score.py).
+
+**Found models that say they are two-way or signed** (the user, 2026-10-19): a found flow marked
+`"two_way": true` is not floored at 0 (a negative rate moves material back, from `to` to `from`), and a
+stock a found flow marks signed (`"signed": true` for the stocks that flow moves, or `"signed": [ids]`)
+may go below 0 (no floor on its level or its outflows; an injection may take it below 0), as the engine
+runs them (MODEL.md). simulate.py (pinned) floors every rate and level, so skill@H and the physics' long
+run step such a found model with `SignedModel` here instead (`found_model`); a found model with neither
+mark runs through simulate.Model exactly as before.
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ from pathlib import Path
 
 import numpy as np
 
+from ..discovery.simulate import Model, _Rate
 from ..sdtruth import Truth, _Program, uses_2d
 
 HERE = Path(__file__).resolve().parent
@@ -138,3 +147,159 @@ def amounts(f: dict, data: dict, states: list[dict]) -> np.ndarray:
         fl = {fid: float(v[i + 1]) for fid, v in counters.items() if i + 1 < len(v)}
         out[i] = fns[k](view, fl)
     return out
+
+
+# ---- found models with two-way flows or signed stocks ----
+
+def signed_stocks(flows: list[dict]) -> set[str]:
+    """The stocks a found model marks signed (module docstring)."""
+    out: set[str] = set()
+    for f in flows:
+        s = f.get("signed")
+        if s is True:
+            out |= {x for x in (f.get("from"), f.get("to")) if x}
+        elif isinstance(s, (list, tuple)):
+            out |= {x for x in s if isinstance(x, str)}
+    return out
+
+
+def says_signed(flows: list[dict]) -> bool:
+    """Does a found model have a two-way flow or a signed stock (so simulate.Model's floors would not run it)?"""
+    return any(f.get("two_way") for f in flows) or bool(signed_stocks(flows))
+
+
+def found_model(flows: list[dict], ids: list[str], inputs: dict | None = None, dt: float = 1.0, ceilings: dict | None = None) -> Model:
+    """The simulator for a found model: SignedModel when it says it is two-way or signed, else simulate.Model."""
+    if says_signed(flows):
+        return SignedModel(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
+    return Model(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
+
+
+class _Unfloored(_Rate):
+    """A two-way flow's rate: simulate._Rate without the floor at 0."""
+
+    def __call__(self, L: np.ndarray, seg: np.ndarray) -> np.ndarray:
+        if self.form == "mixed":
+            out = np.zeros(L.shape[1])
+            for g in np.unique(seg):
+                m = seg == g
+                out[m] = _Unfloored([self.rates[g]], self.index)(L[:, m], np.zeros(int(m.sum()), int))
+            return out
+        if self.form == "constant":
+            return self.value[seg]
+        if self.form == "proportional":
+            return self.k[seg] * self._level(L, self.stocks[0])
+        if self.form == "gap":
+            return (self.goal[seg] - self._level(L, self.stocks[0])) / self.time[seg]
+        if self.form == "linear":
+            return self.c[seg] + sum(k[seg] * self._level(L, i) for k, i in zip(self.ks, self.stocks))
+        return np.zeros(L.shape[1])
+
+
+class SignedModel(Model):
+    """simulate.Model with two-way flows (rate not floored; a negative amount moves from `to` to `from`)
+    and signed stocks (level and outflows not floored). The floor of an unsigned stock applies to
+    whichever stock a two-way flow takes from, and a ceiling to whichever it fills, as in the engine."""
+
+    def __init__(self, flows: list[dict], ids: list[str], inputs: dict | None = None, dt: float = 1.0, ceilings: dict | None = None):
+        super().__init__(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
+        index = {s: i for i, s in enumerate(ids)}
+        if self.inputs is not None:                           # as simulate.Model indexes the inputs: after the stocks
+            index.update({k: len(ids) + j for j, k in enumerate([k for k in inputs["values"] if k not in index])})
+        self.two = [bool(f.get("two_way")) for f in flows]
+        for n, f in enumerate(flows):
+            if not self.two[n] or self.parts[n][5] is not None:
+                continue
+            src, dst, ratio, segs, _, vals = self.parts[n]
+            rates = [g["rate"] for g in f["byTime"]] if f.get("byTime") else [f.get("rate") or {}]
+            self.parts[n] = (src, dst, ratio, segs, _Unfloored(rates, index), vals)
+        self.signed = np.array([s in signed_stocks(flows) for s in ids], dtype=bool)
+
+    def _amounts(self, L: np.ndarray, t: np.ndarray) -> list:
+        R = self._read(L, t)
+        zero = np.zeros(L.shape[1], int)
+        amounts = []
+        for src, dst, ratio, segs, rate, vals in self.parts:
+            seg = segs(t) if segs is not None else zero
+            amounts.append(vals[seg] if vals is not None else rate(R, seg))
+        for i, effect in self.effects:
+            amounts[i] = amounts[i] * effect(R)
+        if self.n_sub > 1:
+            amounts = [a * self.dt for a in amounts]
+        S = L.shape[0]
+        # what each unsigned stock gives: its outflows (a two-way flow's positive part), a two-way flow
+        # into it running backwards, and the flows that use it up; shared out of what it holds
+        for c in range(S):
+            if self.signed[c]:
+                continue
+            takers = [(i, float(r), 1.0) for i, (src, _, r, *_) in enumerate(self.parts) if src == c]
+            takers += [(i, 1.0, -1.0) for i, (src, dst, *_) in enumerate(self.parts) if dst == c and self.two[i]]
+            takers += [(i, per, 1.0) for i, cc, per in self.uses if cc == c]
+            if not takers:
+                continue
+            want = sum(np.maximum(0.0, side * amounts[i]) * w for i, w, side in takers)
+            k = np.where((want > L[c]) & (L[c] > -1), np.maximum(0.0, L[c]) / np.where(want > 0, want, 1), 1.0)
+            for i, _, side in takers:
+                amounts[i] = np.where(side * amounts[i] > 0, amounts[i] * k, amounts[i])
+        for c, cap in self.ceilings:                          # nothing enters a full stock
+            if c >= S:
+                continue
+            ins = [(i, 1.0) for i, (_, dst, *_) in enumerate(self.parts) if dst == c]
+            ins += [(i, -1.0) for i, (src, *_) in enumerate(self.parts) if src == c and self.two[i]]
+            want = sum(np.maximum(0.0, side * amounts[i]) for i, side in ins)
+            room = np.maximum(0.0, cap - L[c])
+            k = np.where(want > room, room / np.where(want > 0, want, 1), 1.0)
+            for i, side in ins:
+                amounts[i] = np.where(side * amounts[i] > 0, amounts[i] * k, amounts[i])
+        return amounts
+
+    def _amounts_added(self, L: np.ndarray, t: np.ndarray) -> list:
+        return self._amounts(L, t)
+
+    def _floor(self, nxt: np.ndarray) -> np.ndarray:
+        keep = np.zeros(nxt.shape[0], dtype=bool)
+        keep[: len(self.signed)] = self.signed
+        return np.where((nxt >= 0) | keep[:, None], nxt, 0.0)
+
+    def _substeps(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        for _ in range(self.n_sub):
+            L = self._floor(L + self._raw_change(L, t))
+        return L
+
+    def _raw_change(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        amounts = self._amounts(L, t)
+        d = np.zeros_like(L, dtype=float)
+        for (src, dst, ratio, *_), a in zip(self.parts, amounts):
+            if src is not None:
+                d[src] -= a * ratio
+            if dst is not None:
+                d[dst] += a
+        for i, c, per in self.uses:
+            d[c] -= amounts[i] * per
+        return d
+
+    def change(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        if self.n_sub > 1:
+            return self._substeps(L, t) - L
+        return self._raw_change(L, t)
+
+    def step(self, L: np.ndarray, t: np.ndarray) -> np.ndarray:
+        if self.n_sub > 1:
+            return self._substeps(L, t)
+        return self._floor(L + self._raw_change(L, t))
+
+    def run(self, L: np.ndarray, times: np.ndarray, injections: list[dict] | None = None) -> np.ndarray:
+        index = {s: i for i, s in enumerate(self.ids)}
+        pulses = [(float(j["t"]), index[j["stock"]], float(j["amount"])) for j in injections or [] if j.get("stock") in index]
+        for t in times:
+            if pulses:
+                L = L.copy()
+                for tj, i, amount in pulses:
+                    hit = t == tj
+                    if hit.any():
+                        L[i, hit] = L[i, hit] + amount if self.signed[i] else np.maximum(0.0, L[i, hit] + amount)
+                        for c, cap in self.ceilings:
+                            if c == i:
+                                L[i, hit] = np.minimum(cap, L[i, hit])
+            L = self.step(L, t)
+        return L

@@ -9,7 +9,10 @@ measured stock or outside. The kind follows from the key: a **move** (measured t
 effect is a part (effect, from, to, stock); a hidden stock between measured A and B (A -> H -> B, H
 not measured) is one part (hidden, A, B) = {k_in, delay}; a hidden path fed from outside into B is
 (hidden, None, B) = {delay} with its inflow's numbers as (via, None, B, reader) parts (and its
-effects as (viaeffect, None, B, stock), compared as a whole). Found and true parts with the same key
+effects as (viaeffect, None, B, stock), compared as a whole); a rate that reads an information
+smoothing of X (SMOOTH / SMOOTHn of a measured stock or input, or a found model's own smoothing stock)
+is (smooth, from, to, X) = {gain, delay}: the gain compared as a number reading X, the delay within
+rel (2026-10-19). Found and true parts with the same key
 are summed (two links into one stock from the same driver are one number in the data).
 
 **A truth at a sub-step** (dt < 1) is compared by its per-recorded-step equivalents (substep.py): a
@@ -42,7 +45,9 @@ the same change of every stock on the run's states (_same_function); it is repor
 Not checked for a truth with hidden stocks.
 
 **Behaviour.** skill@20 and skill@100 (sdlab/skill.py) on the run discovery saw and on a fresh run
-(another seed), each with a 95% bootstrap interval over the start moments.
+(another seed), each with a 95% bootstrap interval over the start moments. Only the truth's truly
+exogenous inflows are swapped in (skill.exogenous); a found model with a two-way flow or a signed
+stock is run unfloored where it says so (sim.SignedModel).
 """
 
 from __future__ import annotations
@@ -69,7 +74,7 @@ def score_hash() -> str:
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
     for p in (here / "score.py", here / "parts.py", here / "oracle.py", here / "hidden_oracle.py",
-              here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
+              here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here / "sim.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
 
@@ -91,6 +96,8 @@ def _size(key: tuple, value, means: dict, among: dict) -> float:
         if "k_in" not in value:                              # fed from outside: the amount through it
             return sum(_size(k, v, means, among) for k, v in among.items() if k[0] == "via" and k[2] == key[2])
         return abs(value["k_in"]) * means.get(key[1], 0.0)
+    if key[0] == "smooth":                                   # reads a smoothing of x: about gain x x
+        return abs(value["gain"]) * means.get(key[3], 0.0)
     if key[0] == "uses":
         return abs(value) * sum(_size(k, v, means, among) for k, v in among.items() if k[0] == "flow" and k[1:3] == key[1:3])
     return math.inf
@@ -229,6 +236,20 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             ok, err = function_check[("via", k[2])]
             row.update(true=_show(true_w[0].get(k)), found_value=_show(next((fp[k] for fp in found_w if k in fp), None)),
                        ok=bool(row["found"] and ok), error=err, compared="as a whole flow (effects on a hidden path's inflow)")
+        elif k[0] == "smooth":                                     # a rate reading a smoothing: its gain as a number, its delay within rel
+            oks, errs = [], []
+            for tp, fp in zip(true_w, found_w):
+                if k not in tp:
+                    continue
+                if k not in fp:
+                    oks.append(False)
+                    continue
+                o1, e1 = _close(tp[k]["gain"], fp[k]["gain"], k[3], tol, means, scale)
+                o2 = abs(fp[k]["delay"] - tp[k]["delay"]) <= tol["rel"] * tp[k]["delay"] + 1e-9
+                oks.append(o1 and o2)
+                errs.append(max(e1, abs(fp[k]["delay"] - tp[k]["delay"]) / max(1e-9, tp[k]["delay"])))
+            row.update(true=true_w[0].get(k), found_value=next((fp[k] for fp in found_w if k in fp), None), ok=bool(oks) and all(oks),
+                       error=max(errs) if errs else None, compared="gain and delay of the smoothing the rate reads")
         elif k[0] == "hidden":
             oks, errs, ses = [], [], []
             for w, (tp, fp) in enumerate(zip(true_w, found_w)):
