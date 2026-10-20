@@ -337,6 +337,15 @@ failures on 113-117 are findings).
 The case checks (`checks.py`) let a signed stock go negative, skip a switch's level, and count a
 two-way flow as moving when it moves either way.
 
+**Found models with two-way flows or signed stocks** (the user, 2026-10-19; `sim.py` `SignedModel`).
+A found flow marked `"two_way": true` is not floored at 0 (a negative amount moves from its `to` to its
+`from`), and a stock a found flow marks signed (`"signed": true` for the stocks that flow moves, or
+`"signed": ["X", ...]`) has no floor on its level, its outflows or an injection. skill@H and the
+physics' long run step such a model with `SignedModel` (the discovery library's simulator floors
+every rate and level and is pinned); a model with neither mark runs as before. The equations already
+compared a found two-way flow unfloored (`mark_found`). A stock is signed only when a flow says so: a
+two-way flow on an unsigned stock (221) still stops at its floor.
+
 **YAML traps.** Inside `{...}` (flow style) a comma ends the value, so a rate with commas
 (`effect(...)`, `max(0, ...)`, `uses(...)`) goes on its own line (block style). A value that starts
 with `- ` or `[` reads as a list: quote it. Strings with `: ` or ` #` (a title,
@@ -850,6 +859,14 @@ the case grades (both lengths, its seed and the fresh one), with every coupling 
 presence threshold. The thermostat's control coupling cannot be checked that way: the heater has
 memory (hysteresis), so the instantaneous Jacobian does not see it, and it is declared.
 
+**The thermostat is compared against the reference's structure** (the user, 2026-10-19;
+`physics/score.py` `expected_structure`). In its closed loop the best SD model reads T <- outside
+below the presence threshold (the heater absorbs it), so no model could show the declared coupling.
+For a switching system (`hybrid`) the required couplings are the reference model's present couplings
+on the same run, with the reference's sign (and the declared shape where declared): T <- T (-) and
+T <- setpoint (+). A declared coupling the reference lacks (T <- outside) is allowed, never required
+and never spurious. Every other system keeps its declared couplings.
+
 | case | couplings X <- Y (sign, shape) |
 |---|---|
 | draining tank | H <- H (-, sqrt), H <- pump (+, linear) |
@@ -995,7 +1012,8 @@ What they find against the physics:
 - **Thermostat**: nothing passes. Noise-free long runs give matrix, lna and combined all three
   couplings, linear (a controller without its floor), at fresh skill@20 59% against the reference's
   79% and a long-run error of 87% against 12%; short runs miss T <- T or give it, or the outside's
-  coupling, the wrong sign. The reference itself drops T <- outside (closed loop, above).
+  coupling, the wrong sign. The reference itself drops T <- outside (closed loop, above); since
+  2026-10-19 the thermostat's structure is the reference's (above), so the reference passes.
 - **Measurement noise** breaks the linear cases that pass without it: on the spring every leader
   loses V <- P and V <- force (fresh skill@20 6-50% against ~100%); on the chain every leader but
   earned_pieces (meas-short) loses C <- B (C only grows, to 285 on the short run and 1,568 on the
@@ -2273,6 +2291,49 @@ I, a smoothing) is still not scored. The hidden oracle covers one hidden stock f
 a DELAY3 supply line (105, 110) or an inflow with effects (108) is scored with the tolerances alone.
 The strict pass references (`strict.py`) still refit dt < 1 truths at dt = 1. A real case's `real`
 variant is still analysed on the published model's noise-free run.
+
+### The scoring changes of 19 October 2026, second round: before and after
+
+Four changes the user approved on 2026-10-19, committed at 056ebd5 on branch `sdlab`. Unit tests:
+`tests/test_ladder_scoring_1019.py` and the thermostat test in `tests/test_ladder_physics.py`.
+
+1. **The behaviour grader feeds in only truly exogenous inflows** (`skill.exogenous`, `own_flows`). A
+   truth's constant outside inflow is swapped into the found model only when no effect, co-flow
+   (`uses`), driver or two-way reading is attached; sd-sawmill's sharpening (`6 x table(sharpness)`),
+   sd-farm-soil's growth, sd-clinic-doses' walk-ins, 114, 123, 128, 160, 210, 211 and 224 are
+   endogenous and are neither fed in nor taken from the found model (which must then carry their
+   numbers, and a schedule on them, itself). A found `c + k x` inflow (form `linear`, nothing
+   attached) into a stock the truth feeds has its `c` set to 0 and the truth's constant fed instead,
+   so the outside part is no longer counted twice (ideas-2026-10-18.md, "Merging a constant and a
+   link"); its links stay. Physics grading (no swap) is unchanged.
+2. **The thermostat's structure is the reference's** (physics/score.py `expected_structure`; "Scoring
+   the physics" above): T <- T and T <- setpoint required with the reference's signs, T <- outside
+   allowed.
+3. **Found two-way flows and signed stocks** run unfloored where the model says so (`sim.SignedModel`;
+   "Expressions, signed stocks, ..." above). sim.py joins the score hash.
+4. **A rate that reads a smoothing is a part**: (smooth, from, to, X) = {gain, delay}, X the measured
+   stock or input the smoothing (SMOOTH, SMOOTH3, or a found model's own smoothing stock: filled from
+   outside reading X, drained by its own level) starts from; gain = the rate's number x the product of
+   k_in / k_out along the chain, delay = the sum of 1 / k_out. The gain is compared as a number reading
+   X, the delay within rel. 115's graduation is (Students -> outside, smooth(enrolment)) = {1, 4}.
+
+**Before and after.** `tests/study_rescore_1019.py` (select, then score with the scorer at ea82c31 and
+at 056ebd5, then compare; offline, on the stored found flows, nothing written to the store; 19 October
+2026, 18:00-18:40 PDT). Rows each change can touch, of the store's 91,655 latest rows: 2,508 (swap),
+16 (signed), 251 (smooth), 1,836 (physics). Behaviour is graded with no inferred levels on either side
+(the store keeps none). No row errored on either side.
+
+| change | rows | status flips | other changes |
+|---|---|---|---|
+| 1. exogenous swap, c + k x | 2,507 | 0 (behaviour is not in the status) | realistic runs meeting the goal (skill@20 >= 90%, skill@100 >= 80%, in sample): **120 miss -> meet, all sd-farm-soil** (every leader, both lengths), **2 meet -> miss** (sd-clinic-doses, sd-cloud-credits, one run each). skill@20 in sample (clipped at -100%): 1,556 runs up and 234 down by more than a point; endogenous-inflow cases (114, 123, 128, 160, 210, 211, 224) mean +66 points (128 the only one down on average, -4.8 points raw), the c + k x fix on the simple cases (002-060, 141, 142) mean +106 points (models that merged c + k x went from far below 0 to near 1); sd-sawmill 94 runs, mean -0.8 points raw (min -116: a model that leant on the swapped sharpening) |
+| 2. thermostat structure | 1,836 physics rows (256 thermostat) | **48 fail -> pass**, all phys-thermostat: 45 meas-short, 3 meas-long (combined_lean, combined_r2, odefit); none pass -> fail | structure ok on 94 more thermostat rows (45 meas-short, 49 meas-long); the other meas-long ones stay below the reference's skill@20 by more than 5 points. 50 of 256 thermostat rows pass now |
+| 3. two-way, signed | 16 (all engine_forms) | 0 | skill@20 in sample up on 12 (113 +3.9 points raw mean, 220 +0.5, real-adoption-radio +0.5), down on 1 (081, -11 points) |
+| 4. smoothing part | 251 (115: 178, sd-k8s-small 64, sd-k8s-platform 9) | 0 | 115 still fails for every strategy: no strategy writes a graduation reading a smoothing of the input, and the one they write (reading enrolment or Students) is now a missed part plus a spurious one instead of a spurious one alone |
+
+**Left open.** No strategy marks a stock `signed` yet (engine_forms writes `two_way` and `bothWays`
+only), so a signed stock's floor still applies to every stored model; 220's found models are graded
+two-way but floored at 0. A smoothing's own hidden stock is held at 0 in the physics Jacobian
+(structure.py), as every found hidden stock is.
 
 ## Complexity (`sdlab/sdlab/ladder/complexity.py`)
 
