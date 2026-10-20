@@ -5,6 +5,11 @@ judged by blocked cross-validation (holdout.py, copied below with the measured i
 candidate is fitted on all but one, and run forward inside the held-out block, its outside inflows
 there taken from what the fit knows (the piece in force before the block). The candidate with the
 lowest held-out error is then fitted on all the data.
+
+Every candidate fit (in each fold and on all the data) is refitted by earned.refit (a copy of
+earned_pieces' refit, from recession/ at 284390d): its rows chosen again, outside-inflow pieces kept
+only where earned, conservation decided jointly. Without it every candidate kept chance pieces or a
+spurious drain on the final counter (303 counts-short; docs/research/k8s-303-held_out.md).
 """
 
 from __future__ import annotations
@@ -13,18 +18,34 @@ import math
 
 import numpy as np
 
-from ..holdout import blocks, fill_gaps
-from ..identify import VARIANTS, judge
-from ..matrix import identify_one
-from ..simulate import behaviour_error
+from ...holdout import blocks, fill_gaps
+from ...identify import VARIANTS, judge
+from ...matrix import identify_one
+from ...simulate import behaviour_error
+from .earned import refit
 
 FOLDS = 5
 HORIZONS = (5, 20, 100)
 CAP = 1e3          # one block where a candidate runs away counts as badly as any other runaway
 
 
+def fit_one(stocks: list[dict], run: dict, opts: dict) -> dict:
+    """matrix.identify_one with the candidate's rows refitted (earned.refit; opts["earned"] False: not)."""
+    if opts.get("earned") is False:
+        return identify_one(stocks, run, opts)
+    r = identify_one(stocks, run, {**opts, "keep_fit": True, "keep_rows": True, "input_columns": True})
+    if r.get("flows") is not None and r.get("fit"):
+        try:
+            r = refit(stocks, r, opts)
+        except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+            pass
+    for k in ("fit", "ctx", "raw_rows"):
+        r.pop(k, None)
+    return r
+
+
 def held_out_errors(stocks: list[dict], run: dict, opts: dict, folds: int = 5, horizons=(5, 20, 100), fill: str = "last") -> list[dict]:
-    """holdout.held_out_errors (a copy, from 66086e7) with the measured inputs (opts["inputs"]): each
+    """holdout.held_out_errors (a copy, from 66086e7; each fold fitted by fit_one) with the measured inputs (opts["inputs"]): each
     held-out block's runs read the inputs over that block, as the fit on the other steps did. Per
     held-out block: {"block": (a, b), "errors": {horizon: error}} (behaviour_error, run on the block's
     own levels; a horizon is used only when it is under half the block)."""
@@ -36,7 +57,7 @@ def held_out_errors(stocks: list[dict], run: dict, opts: dict, folds: int = 5, h
     for a, b in blocks(T, folds):
         mask = np.ones(T, bool)
         mask[a:b] = False
-        r = identify_one(stocks, run, {**opts, "steps": mask})
+        r = fit_one(stocks, run, {**opts, "steps": mask})
         flows = fill_gaps(r["flows"], fill)
         tb = t[a:b + 1]
         lb = {i: list(run["levels"][i][a:b + 1]) for i in run["levels"]}
@@ -56,7 +77,8 @@ def score(blocks: list[dict]) -> float:
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    """opts beyond identify_one's: folds, fill ("last" or "mean"), horizons, and blend: with
+    """opts beyond identify_one's: folds, fill ("last" or "mean"), horizons, earned (default True: each
+    candidate fit refitted, fit_one), and blend: with
     blend > 0 the score is log(in-sample error) + blend x log(held-out error) (the main line's judge,
     nudged by the held-out one)."""
     opts = dict(opts or {})
@@ -70,12 +92,12 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         e = score(held_out_errors(stocks, run, {**opts, **v}, folds=folds, horizons=horizons, fill=fill))
         full = None
         if blend:
-            full = identify_one(stocks, run, {**opts, **v})
+            full = fit_one(stocks, run, {**opts, **v})
             e = math.log(max(1e-9, judge(full["flows"], stocks, run, inputs=opts.get("inputs") or None))) + blend * math.log(max(1e-9, e))
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
             best = (v, e, full)
-    r = best[2] or identify_one(stocks, run, {**opts, **best[0]})
+    r = best[2] or fit_one(stocks, run, {**opts, **best[0]})
     r["chosen"], r["tried"] = best[0]["name"], tried
     return r
 
@@ -96,7 +118,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array, starts_for as _eiv_starts_for  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array, starts_for as _eiv_starts_for  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is

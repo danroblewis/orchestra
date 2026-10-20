@@ -46,9 +46,10 @@ def inflow_mean(r: dict, stock: str) -> float:
 
 
 def test_held_out_judge_rejects_a_candidate_whose_pieces_compensate_for_a_misread_flow():
+    # the judge on its own: candidates as the matrix fits them (earned False: no refit)
     d = population(600, 3)
     base = in_sample(d["stocks"], d["run"], {"variants": VARIANTS})
-    r = held_out(d["stocks"], d["run"], {"variants": VARIANTS})
+    r = held_out(d["stocks"], d["run"], {"variants": VARIANTS, "earned": False})
     # in sample, the trap fits best: births read as a move adults -> children, and adults' outside
     # inflow raised to ~234 a step (truth: 80, then 160) to pay for it
     assert base["chosen"] == TRAP
@@ -63,6 +64,19 @@ def test_held_out_judge_rejects_a_candidate_whose_pieces_compensate_for_a_misrea
     assert not any(f.get("from") == "adults" and f.get("to") == "children" for f in r["flows"])
     # graded: in-sample pick 65.6% skill@20, held-out pick 73.7%
     assert skill(r, d) > skill(base, d)
+
+
+def test_the_refit_rechooses_the_trap_candidates_rows():
+    # with each candidate refitted (the default, earned.refit), the trap's rows are chosen again, so
+    # it and "trust rows" become the same model; the chosen one still runs closer than the in-sample
+    # pick (skill@20 0.98 against 0.66), though births come out as a move adults -> children 0.03
+    # plus a link 0.007 (truth: a link 0.022) (docs/research/k8s-303-held_out.md)
+    d = population(600, 3)
+    base = in_sample(d["stocks"], d["run"], {"variants": VARIANTS})
+    r = held_out(d["stocks"], d["run"], {"variants": VARIANTS})
+    errors = {x["name"]: x["error"] for x in r["tried"]}
+    assert errors[TRAP] == errors["changing inflows, trust rows"] < errors["constant inflows"]
+    assert skill(r, d) > skill(base, d) + 0.2
 
 
 def tickets(steps: int, seed: int) -> dict:
