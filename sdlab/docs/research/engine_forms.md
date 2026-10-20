@@ -40,10 +40,17 @@ switch with memory read as about 180 inflow pieces (225).
 
 ## Results
 
-Offline check (scratch script: engine_forms' pass applied to kalman_lna's stored found flows, the
-changed cells scored as the runner scores them), and ladder runs: see the commit message and the
-final report of the 2026-10-19 session for numbers; `uv run sdlab-ladder status --strategies engine_forms`
-reproduces the stored ones.
+`sdlab-ladder run --strategies engine_forms --jobs 2` at 89f2097 (2026-10-19 18:38 PDT), passes of 4
+(before: kalman_lna, its base, as stored): 220 4 (0), 221 4 (0), 222 3 (0; counts-short data-limited,
+analyse p 0.57), 224 3 (0), 217 3 (0), 225 0 (0), 130 0 (0), 131 0 (0; none-* equivalent).
+Hard cases: 210 1 of 4 (0; 4 of 4 at 5ba03f7, before the base's measurement-error reading was
+skipped: kalman_lna reads 210's chatter as measurement error), 212 none-* 2/6 parts (0/6),
+sd-webshop-stock 3/10 and 4/10 parts (0 and 2), 113, 114, phys-thermostat, sd-learning-curve as the
+base (114's skill@20 drops to -100%: the MIN is an `expr`, which simulate.py evaluates as 0). Elsewhere
+(cells re-run at 85e1e46+): 123 none-* and 196 none-long fail -> pass, 136 and 137 fail -> equivalent;
+no pass lost among the 148 re-run cells but part-capacity-gate, which errors in the particle scorer
+(KeyError 'gate', not this strategy). The watcher's other engine_forms rows ran an earlier
+uncommitted version (17:00) and are stale.
 
 ## Scoring blockers found
 
