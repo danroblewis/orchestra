@@ -234,7 +234,15 @@ def staleness(row: dict | None, case_hash: str, strategy_hash: str, score_hash: 
         return "strategy changed"
     if row["score_hash"] != score_hash:
         return "score_only" if row["status"] not in ("error", "timeout") else "scoring changed"
+    if row["status"] == "error" and _crashed(row.get("error")):
+        return "worker crashed"                       # the machine, not the strategy: run it again
     return None
+
+
+def _crashed(error: str | None) -> bool:
+    """An error from the worker process dying (out of memory, killed), not from the strategy."""
+    e = error or ""
+    return "BrokenProcessPool" in e or "terminated abruptly" in e
 
 
 # ---- progress ----
