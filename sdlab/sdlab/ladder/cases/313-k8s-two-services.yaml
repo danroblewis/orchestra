@@ -1,0 +1,26 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Rungs 14-17 grow the topology on rung 4's service
+# (queue -> inflight -> responses_total, daily traffic); rung 18 is the mesh with every feature of rungs 1-13.
+title: "Kubernetes 14: two services, one calling the other"
+level: 14
+tags: [kubernetes, input, chain, move, final, periodic, link]
+tests: "rung 4's service twice: frontend (fed by the measured traffic) calls catalog, 0.3 calls a step per request in frontend_inflight (0.6 calls per request) into catalog_queue; each service's queue -> inflight -> responses_total chain as in rung 4; recovered as two chains joined by a link from frontend_inflight into catalog_queue, not a move (the caller's requests are not used up by the call)"
+seed: 313
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  frontend_queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"frontend\"})"}
+  frontend_inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"frontend\"}[5m]))"}
+  frontend_responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"frontend\",code!~\"5..\"}) (a counter)"}
+  catalog_queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"catalog\"})"}
+  catalog_inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"catalog\"}[5m]))"}
+  catalog_responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"catalog\",code!~\"5..\"}) (a counter)"}
+flows:
+  outside -> frontend_queue as requests: 1 * traffic
+  frontend_queue -> frontend_inflight as frontend_dispatched: 0.6 * frontend_queue
+  frontend_inflight -> frontend_responses_total as frontend_completed: 0.5 * frontend_inflight
+  outside -> catalog_queue as catalog_calls: 0.3 * frontend_inflight
+  catalog_queue -> catalog_inflight as catalog_dispatched: 0.6 * catalog_queue
+  catalog_inflight -> catalog_responses_total as catalog_completed: 0.5 * catalog_inflight
+variants:
+  noise: [none, counts, meas]

@@ -1,0 +1,59 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 12: a node pool that can be full"
+level: 12
+tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max, delay, effect, effect-table, injection]
+tests: "rung 11 on a node pool (nodes, measured; 4 of the service's pods fit a node): a pending pod starts only while there is room, min(0.5 x pending, 4 x nodes - ready); three nodes (12 pods) hold the peak's 10, and an announced node failure on Monday, Wednesday and Friday at 10:50 (one node gone, its 3 ready pods back to pending; the node replaced 30 steps later) leaves pods pending at the peak; recovered as a MIN of pending and the room left by nodes and ready"
+seed: 311
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+  responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code!~\"5..\"}) (a counter: nothing leaves it)"}
+  errors_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code=~\"5..\"}) (a counter)"}
+  retries: {initial: 0, unit: requests, query: "sum(increase(envoy_cluster_upstream_rq_retry{cluster=\"api\"}[5m])) (requests timed out in the step, waiting for the client to retry)"}
+  ready: {initial: 9, unit: pods, query: "kube_deployment_status_replicas_ready{deployment=\"api\"}"}
+  cpu: {initial: 1500, unit: millicores, query: "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"api\"}[10m])) (millicores, all pods)"}
+  desired: {initial: 9, unit: pods, query: "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"api\"}"}
+  pending: {initial: 0, unit: pods, query: "sum(kube_pod_status_phase{phase=\"Pending\",pod=~\"api-.*\"})"}
+  mem: {initial: 300, unit: MiB, query: "avg(container_memory_working_set_bytes{container=\"api\"}) / 2^20 (MiB a pod)"}
+  leak: {initial: 0, unit: MiB, hidden: true}
+  oom_kills_total: {initial: 0, unit: pods, final: true, query: "sum(kube_pod_container_status_restarts_total{container=\"api\"}) for OOMKilled (a counter)"}
+  nodes: {initial: 3, unit: nodes, query: "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: "min(0.6 * queue, 40 * ready)"
+  queue -> retries as timeouts: 0.08 * queue
+  retries -> queue as retried: 0.6 * retries
+  retries -> outside as gave_up: 0.4 * retries
+  inflight -> responses_total as completed: 0.5 * inflight
+  inflight -> errors_total as errors: 0.03 * inflight
+  outside -> cpu as used: 1.25 * inflight + 20 * ready
+  cpu -> outside as window: 0.5 * cpu
+  outside -> desired as hpa_up: {rate: "max(0, min(16, ceil(cpu / 192.5)) - desired)", exact: true}
+  desired -> outside as hpa_down: {rate: "1 * (desired > max(3, ceil(cpu / 157.5)))", exact: true}
+  outside -> pending as created: {rate: "max(0, desired - pending - ready)", exact: true}
+  pending -> ready as started: "min(0.5 * pending, max(0, 4 * nodes - ready))"
+  ready -> outside as deleted: {rate: "max(0, ready - desired)", exact: true}
+  outside -> mem as allocated: "0.5 * (150 + leak + 2 * inflight / max(1, ready))"
+  mem -> outside as freed: 0.5 * mem
+  outside -> leak as leaking: 1
+  ready -> pending as oom_killed:
+    rate: 1 * ready * effect(mem, table, [[0, 0], [480, 0], [512, 0.3], [560, 0.8], [5000, 1]])
+  outside -> oom_kills_total as oom_counted: {rate: "flow(oom_killed)", exact: true}
+  leak -> outside as oom_reset:
+    rate: 1 * leak * effect(mem, table, [[0, 0], [480, 0], [512, 0.3], [560, 0.8], [5000, 1]])
+injections:
+  - {t: 130, stock: nodes, amount: -1}
+  - {t: 130, stock: ready, amount: -3}
+  - {t: 130, stock: pending, amount: 3}
+  - {t: 160, stock: nodes, amount: 1}
+  - {t: 706, stock: nodes, amount: -1}
+  - {t: 706, stock: ready, amount: -3}
+  - {t: 706, stock: pending, amount: 3}
+  - {t: 736, stock: nodes, amount: 1}
+  - {t: 1282, stock: nodes, amount: -1}
+  - {t: 1282, stock: ready, amount: -3}
+  - {t: 1282, stock: pending, amount: 3}
+  - {t: 1312, stock: nodes, amount: 1}

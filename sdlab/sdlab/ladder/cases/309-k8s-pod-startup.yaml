@@ -1,0 +1,34 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 10: pods start slowly (pending to ready)"
+level: 10
+tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max, delay]
+tests: "rung 9 with a startup delay: the HPA now sets desired replicas (measured), the Deployment creates the missing pods as pending (measured), and a pending pod becomes ready at 0.5 a step (10 minutes on average; image pull and readiness probe); surplus ready pods are deleted at once; recovered as the HPA on desired, the gap desired - pending - ready creating pods, and the move pending -> ready, not ready following cpu directly"
+seed: 309
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+  responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code!~\"5..\"}) (a counter: nothing leaves it)"}
+  errors_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code=~\"5..\"}) (a counter)"}
+  retries: {initial: 0, unit: requests, query: "sum(increase(envoy_cluster_upstream_rq_retry{cluster=\"api\"}[5m])) (requests timed out in the step, waiting for the client to retry)"}
+  ready: {initial: 9, unit: pods, query: "kube_deployment_status_replicas_ready{deployment=\"api\"}"}
+  cpu: {initial: 1500, unit: millicores, query: "1000 * sum(rate(container_cpu_usage_seconds_total{container=\"api\"}[10m])) (millicores, all pods)"}
+  desired: {initial: 9, unit: pods, query: "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"api\"}"}
+  pending: {initial: 0, unit: pods, query: "sum(kube_pod_status_phase{phase=\"Pending\",pod=~\"api-.*\"})"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: "min(0.6 * queue, 40 * ready)"
+  queue -> retries as timeouts: 0.08 * queue
+  retries -> queue as retried: 0.6 * retries
+  retries -> outside as gave_up: 0.4 * retries
+  inflight -> responses_total as completed: 0.5 * inflight
+  inflight -> errors_total as errors: 0.03 * inflight
+  outside -> cpu as used: 1.25 * inflight + 20 * ready
+  cpu -> outside as window: 0.5 * cpu
+  outside -> desired as hpa_up: {rate: "max(0, min(16, ceil(cpu / 192.5)) - desired)", exact: true}
+  desired -> outside as hpa_down: {rate: "1 * (desired > max(3, ceil(cpu / 157.5)))", exact: true}
+  outside -> pending as created: {rate: "max(0, desired - pending - ready)", exact: true}
+  pending -> ready as started: 0.5 * pending
+  ready -> outside as deleted: {rate: "max(0, ready - desired)", exact: true}

@@ -1,0 +1,36 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Rungs 14-17 grow the topology on rung 4's service
+# (queue -> inflight -> responses_total, daily traffic); rung 18 is the mesh with every feature of rungs 1-13.
+title: "Kubernetes 16: fan-out, one service calls two"
+level: 16
+tags: [kubernetes, input, chain, move, final, periodic, link]
+tests: "rung 15 plus fan-out: frontend also calls cart (0.15 a step per request in frontend_inflight; cart dispatches at 0.5 and completes at 0.4), so two callees share one caller's daily shape; recovered as two links from frontend_inflight, one into each callee's queue, and no link between the callees (catalog and cart move together only because they share a caller)"
+seed: 315
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  frontend_queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"frontend\"})"}
+  frontend_inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"frontend\"}[5m]))"}
+  frontend_responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"frontend\",code!~\"5..\"}) (a counter)"}
+  catalog_queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"catalog\"})"}
+  catalog_inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"catalog\"}[5m]))"}
+  catalog_responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"catalog\",code!~\"5..\"}) (a counter)"}
+  pricing_queue: {initial: 30, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"pricing\"})"}
+  pricing_inflight: {initial: 60, unit: requests, query: "sum(increase(http_server_requests_total{service=\"pricing\"}[5m]))"}
+  pricing_responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"pricing\",code!~\"5..\"}) (a counter)"}
+  cart_queue: {initial: 30, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"cart\"})"}
+  cart_inflight: {initial: 60, unit: requests, query: "sum(increase(http_server_requests_total{service=\"cart\"}[5m]))"}
+  cart_responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"cart\",code!~\"5..\"}) (a counter)"}
+flows:
+  outside -> frontend_queue as requests: 1 * traffic
+  frontend_queue -> frontend_inflight as frontend_dispatched: 0.6 * frontend_queue
+  frontend_inflight -> frontend_responses_total as frontend_completed: 0.5 * frontend_inflight
+  outside -> catalog_queue as catalog_calls: 0.3 * frontend_inflight
+  catalog_queue -> catalog_inflight as catalog_dispatched: 0.6 * catalog_queue
+  catalog_inflight -> catalog_responses_total as catalog_completed: 0.5 * catalog_inflight
+  outside -> pricing_queue as pricing_calls: 0.4 * catalog_inflight
+  pricing_queue -> pricing_inflight as pricing_dispatched: 0.7 * pricing_queue
+  pricing_inflight -> pricing_responses_total as pricing_completed: 0.6 * pricing_inflight
+  outside -> cart_queue as cart_calls: 0.15 * frontend_inflight
+  cart_queue -> cart_inflight as cart_dispatched: 0.5 * cart_queue
+  cart_inflight -> cart_responses_total as cart_completed: 0.4 * cart_inflight

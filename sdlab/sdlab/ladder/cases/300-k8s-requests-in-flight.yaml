@@ -1,0 +1,20 @@
+# Kubernetes rung 1 (tag kubernetes, docs/research/kubernetes-ladder.md). One step is 5 minutes (a day is 288
+# steps, the long run 2000 steps is Monday 00:00 to Sunday 22:40). Stock names are the Prometheus series a
+# scrape would give; `query` is the PromQL each measured stock stands for.
+title: "Kubernetes 1: requests in flight"
+level: 1
+tags: [kubernetes, input, inflow, outflow]
+tests: "one service's requests in flight, fed by the measured traffic at its load balancer (load-test steps) and completed at a service rate: recovered as 1 x traffic in and 0.5 x inflight out (a request takes two steps, 10 minutes, on average)"
+seed: 300
+inputs:
+  traffic: 300 + sin(60, 70) + pulse_train(200, 40, 50, 150) - pulse_train(120, 110, 25, 150)
+stocks:
+  inflight:
+    initial: 100
+    unit: requests
+    query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (approximation: what the service handled in the step, plus its backlog)"
+flows:
+  outside -> inflight as requests: 1 * traffic
+  inflight -> outside as completed: 0.5 * inflight
+variants:
+  noise: [none, counts, meas]

@@ -1,0 +1,23 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 6: retries, a loop back into the queue"
+level: 6
+tags: [kubernetes, input, chain, move, final, periodic, split, loop]
+tests: "rung 5 with the timed-out requests retried: they go to retries (the sidecar's retries in the step, measured), 60% come back into the queue next step and 40% give up; recovered as the loop queue -> retries -> queue with the give-up drain, not as a smaller timeout rate or extra traffic"
+seed: 305
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+  responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code!~\"5..\"}) (a counter: nothing leaves it)"}
+  errors_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code=~\"5..\"}) (a counter)"}
+  retries: {initial: 0, unit: requests, query: "sum(increase(envoy_cluster_upstream_rq_retry{cluster=\"api\"}[5m])) (requests timed out in the step, waiting for the client to retry)"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: 0.6 * queue
+  queue -> retries as timeouts: 0.08 * queue
+  retries -> queue as retried: 0.6 * retries
+  retries -> outside as gave_up: 0.4 * retries
+  inflight -> responses_total as completed: 0.5 * inflight
+  inflight -> errors_total as errors: 0.03 * inflight

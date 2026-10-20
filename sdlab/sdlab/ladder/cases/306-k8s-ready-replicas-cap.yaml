@@ -1,0 +1,41 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 7: ready replicas cap the throughput"
+level: 7
+tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, injection]
+tests: "rung 6 with a capacity: the service dispatches min(0.6 x queue, 40 x ready) a step, the demand or what the ready pods can take (40 requests a pod a step), whichever is less; ready (measured) is scaled by hand, +4 pods at 08:00 and -4 at 20:00 (9 pods at night, 13 by day) every day (announced: kubectl scale), so the cap binds in the afternoon peak and at 20:00; recovered as a MIN of the queue and ready, not one rate of one stock"
+seed: 306
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+  responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code!~\"5..\"}) (a counter: nothing leaves it)"}
+  errors_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code=~\"5..\"}) (a counter)"}
+  retries: {initial: 0, unit: requests, query: "sum(increase(envoy_cluster_upstream_rq_retry{cluster=\"api\"}[5m])) (requests timed out in the step, waiting for the client to retry)"}
+  ready: {initial: 9, unit: pods, query: "kube_deployment_status_replicas_ready{deployment=\"api\"}"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: "min(0.6 * queue, 40 * ready)"
+  queue -> retries as timeouts: 0.08 * queue
+  retries -> queue as retried: 0.6 * retries
+  retries -> outside as gave_up: 0.4 * retries
+  inflight -> responses_total as completed: 0.5 * inflight
+  inflight -> errors_total as errors: 0.03 * inflight
+injections:
+  - {t: 96, stock: ready, amount: 4}
+  - {t: 240, stock: ready, amount: -4}
+  - {t: 384, stock: ready, amount: 4}
+  - {t: 528, stock: ready, amount: -4}
+  - {t: 672, stock: ready, amount: 4}
+  - {t: 816, stock: ready, amount: -4}
+  - {t: 960, stock: ready, amount: 4}
+  - {t: 1104, stock: ready, amount: -4}
+  - {t: 1248, stock: ready, amount: 4}
+  - {t: 1392, stock: ready, amount: -4}
+  - {t: 1536, stock: ready, amount: 4}
+  - {t: 1680, stock: ready, amount: -4}
+  - {t: 1824, stock: ready, amount: 4}
+  - {t: 1968, stock: ready, amount: -4}
+variants:
+  noise: [none, counts, meas]

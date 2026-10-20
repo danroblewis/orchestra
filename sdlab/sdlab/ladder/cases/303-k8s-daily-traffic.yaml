@@ -1,0 +1,19 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 4: the daily traffic cycle with weekend dips"
+level: 4
+tags: [kubernetes, input, chain, move, final, periodic]
+tests: "rung 3 driven by realistic traffic instead of load-test steps: a daily cycle (peak 14:00, trough 02:00, 288 steps a day) with a weekend dip (Saturday and Sunday 30% lower), the measured input; the same chain is recovered when the input is smooth and periodic, so the inflow is not mistaken for a periodic schedule"
+seed: 303
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+  responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code!~\"5..\"}) (a counter: nothing leaves it)"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: 0.6 * queue
+  inflight -> responses_total as completed: 0.5 * inflight
+variants:
+  noise: [none, counts, meas]

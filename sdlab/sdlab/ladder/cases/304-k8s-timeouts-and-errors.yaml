@@ -1,0 +1,20 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 5: timeouts and errors as extra exits"
+level: 5
+tags: [kubernetes, input, chain, move, final, periodic, split]
+tests: "rung 4 plus two more exits: requests waiting too long time out (0.08 of the queue a step, gone from the queue; the client sees a 504 that the service never counts) and the service fails 3% of the in-flight requests a step into errors_total (a 5xx counter, measured); recovered as two drains beside the moves, each from the right stock, the timeouts not folded into the dispatch rate"
+seed: 304
+inputs:
+  traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+  responses_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code!~\"5..\"}) (a counter: nothing leaves it)"}
+  errors_total: {initial: 0, unit: requests, final: true, query: "sum(http_server_requests_total{service=\"api\",code=~\"5..\"}) (a counter)"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: 0.6 * queue
+  queue -> outside as timeouts: 0.08 * queue
+  inflight -> responses_total as completed: 0.5 * inflight
+  inflight -> errors_total as errors: 0.03 * inflight

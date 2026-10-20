@@ -1,0 +1,16 @@
+# Kubernetes ladder (tag kubernetes, docs/research/kubernetes-ladder.md): a 5-minute step, Prometheus-style
+# stock names, `query` the PromQL each measured stock stands for. Each rung adds one feature to the one before.
+title: "Kubernetes 2: a request queue in front of processing"
+level: 2
+tags: [kubernetes, input, chain, move]
+tests: "rung 1 plus a queue: traffic waits at the load balancer (queue, the sidecar's pending requests) and is dispatched to the service at 0.6 of the queue a step, then completed at 0.5; recovered as a chain traffic -> queue -> inflight -> outside, not as traffic feeding inflight directly with a lag"
+seed: 301
+inputs:
+  traffic: 300 + sin(60, 70) + pulse_train(200, 40, 50, 150) - pulse_train(120, 110, 25, 150)
+stocks:
+  queue: {initial: 50, unit: requests, query: "sum(envoy_cluster_upstream_rq_pending_active{cluster=\"api\"}) (the mesh sidecar's pending requests)"}
+  inflight: {initial: 100, unit: requests, query: "sum(increase(http_server_requests_total{service=\"api\"}[5m])) (what the service handled in the step, plus its backlog)"}
+flows:
+  outside -> queue as requests: 1 * traffic
+  queue -> inflight as dispatched: 0.6 * queue
+  inflight -> outside as completed: 0.5 * inflight
