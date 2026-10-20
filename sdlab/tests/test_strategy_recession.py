@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from synth import generate, skill
 
-from sdlab.discovery.recession import quiet_steps
+from sdlab.discovery.strategies.recession.drains import quiet_steps
 from sdlab.discovery.strategies import load
 
 

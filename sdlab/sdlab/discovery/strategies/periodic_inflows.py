@@ -65,6 +65,16 @@ def with_profiles(flows: list[dict], profiles: dict, t: list) -> list[dict]:
     return out
 
 
+def reader_columns(prev: np.ndarray, ids: list[str], t: list, opts: dict) -> tuple[np.ndarray, list[str]]:
+    """Every series a row's numbers may read, and their names: the stocks' levels at the start of each
+    step, then the measured inputs (opts "inputs") during it (the value at the step's end), as the
+    matrix method builds them. An input is a known regressor of the row, never a stock."""
+    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (opts.get("inputs") or {}).items() if k not in ids]
+    if not inputs:
+        return prev, list(ids)
+    return np.vstack([prev] + [v[None, :] for _, v in inputs]), list(ids) + [k for k, _ in inputs]
+
+
 def remeasure(r: dict, profiles: dict, stocks: list[dict], run: dict, opts: dict) -> None:
     """Each profile measured again beside the numbers its row ends with (conservation may have
     changed its drain after the profile was measured), with the pieces found beside it kept."""
@@ -74,6 +84,7 @@ def remeasure(r: dict, profiles: dict, stocks: list[dict], run: dict, opts: dict
     times = np.asarray(t[1:], dtype=float)
     lv = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, [0] * len(t)), dtype=float) for i in ids]))
     prev, dy = lv[:, :-1], np.diff(lv, axis=1)
+    columns, names = reader_columns(prev, ids, t, opts)
     if opts.get("known"):
         dy = dy - known_changes(opts["known"], ids, len(t))[:, 1:]
     conf = configurations(opts.get("eras"), t) if r.get("eras") else None
@@ -88,7 +99,7 @@ def remeasure(r: dict, profiles: dict, stocks: list[dict], run: dict, opts: dict
         for c, coef in enumerate(row["coefL"]):
             m = cfg == c
             for j, b in coef.items():
-                res[m] -= b * prev[ids.index(j)][m]
+                res[m] -= b * columns[names.index(j)][m]
         for f in r["flows"]:
             if f.get("inflow") and not f.get("from") and f.get("to") == s:
                 res -= _series(f, times)

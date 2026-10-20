@@ -3,6 +3,10 @@
 Every candidate of the main line is entered as it is and, where some row's outside inflow has quiet
 stretches whose fit differs from the row's own, again with those rows' levels fitted on the quiet steps
 and the inflow measured with them fixed. The judge chooses among all of them, as in identify().
+
+The shared recession.py is pinned, so this package carries its own copy (drains.py, from bcb7192),
+which looks a row's readers up among the levels and the measured inputs (the shared one crashed on
+any case with a measured input).
 """
 
 from __future__ import annotations
@@ -10,9 +14,9 @@ from __future__ import annotations
 import json
 import os
 
-from ..identify import VARIANTS, judge
-from ..matrix import identify_one, known_flows
-from ..recession import apply
+from ...identify import VARIANTS, judge
+from ...matrix import identify_one, known_flows
+from .drains import apply
 
 
 # the recession options (recession.py); SDLAB_RECESSION (JSON) overrides them for bench ablations
@@ -62,7 +66,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is
