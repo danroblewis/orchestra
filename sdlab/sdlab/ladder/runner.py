@@ -93,12 +93,16 @@ def retired() -> dict[str, str]:
     return dict(yaml.safe_load(RETIRED.read_text()) or {}) if RETIRED.exists() else {}
 
 
-def select_strategies(spec: str | None) -> tuple[list[dict], list[dict]]:
+def select_strategies(spec: str | None, parked_too: bool = False) -> tuple[list[dict], list[dict]]:
     """(available, skipped) strategy listings for a comma list, "all" (every strategy except the
     parked and retired ones) or "everything" (every strategy except the retired ones). A parked or
-    retired strategy still runs when named."""
+    retired strategy still runs when named. parked_too reads "all" as "everything": `sync` does,
+    since parked strategies are still active (the watchers run them) and a sync that left their
+    stale cells behind left them stale wherever no watcher looks (tag:kubernetes on the Mac)."""
     every = {s["name"]: s for s in catalog.listing()}
     gone = retired()
+    if parked_too and (not spec or spec == "all"):
+        spec = "everything"
     if not spec or spec == "all":
         skip = {**parked(), **gone}
         names = [n for n in every if n not in skip]

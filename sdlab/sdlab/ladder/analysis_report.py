@@ -38,10 +38,13 @@ def text(a: dict) -> str:
             out.append(f"        {'exactly' if g['exact'] else 'nearly'} collinear: " + ", ".join(f"{w:+.2f} {c}" for c, w in zip(g["columns"], g["weights"]))
                        + f" (relative size {g['relative_size']:.1e})")
     if a.get("parameters"):
-        out.append("   Numbers (Cramér-Rao bound: the best SE any unbiased method can reach; mean only = least squares):")
+        out.append("   Numbers (Cramér-Rao bound: the best SE any unbiased method can reach; mean only = least squares;"
+                   " noisy variants: the Kalman filter's SE on the reported data):")
         for p in a["parameters"]:
-            out.append(f"     {p['name']:36s} true {p['true']:<10.4g} bound SE {_g(p['crb_se']):>9s}  (mean only {_g(p['crb_se_mean_only'])})"
-                       + ("  NOT IDENTIFIED" if p["unidentified"] else ""))
+            se = p.get("crb_se", p.get("se_kalman"))                  # noise_analysis.py gives se_kalman and no mean-only SE
+            out.append(f"     {p['name']:36s} true {p['true']:<10.4g} bound SE {_g(se):>9s}"
+                       + (f"  (mean only {_g(p['crb_se_mean_only'])})" if "crb_se_mean_only" in p else "  (Kalman)" if "se_kalman" in p else "")
+                       + ("  NOT IDENTIFIED" if p.get("unidentified") else ""))
     if a.get("parts"):
         out.append("   Scored parts: P(an estimate at the bound is within the scorer's tolerance):")
         for r in a["parts"]:

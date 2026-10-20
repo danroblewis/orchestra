@@ -72,7 +72,7 @@ def _progress(item, row, n, total) -> None:
 
 
 def do_run(a, force: bool, command: str) -> int:
-    strategies, skipped = runner.select_strategies(a.strategies)
+    strategies, skipped = runner.select_strategies(a.strategies, parked_too=command == "sync")   # sync: stale parked cells too
     for s in skipped:
         print(f"skipping strategy {s['name']}: {s['reason']}", file=sys.stderr)
     variants = [v.strip() for v in (a.variants or "").split(",") if v.strip()] or None

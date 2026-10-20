@@ -1,6 +1,7 @@
-# Strategies the ladder skips by default ("all" in run / sync / watch / status), because they are slow
-# and no better than the main line on the ladder. They still run when named (--strategies numopt_bo)
-# or with --strategies everything. Measured on the full ladder, 2026-10-18 (compute summed over runs).
+# Strategies the ladder skips by default ("all" in run / watch / status), because they are slow
+# and no better than the main line on the ladder. They still run when named (--strategies numopt_bo),
+# with --strategies everything, and in `sync` (which reads "all" as "everything": they are still
+# active, and their stale cells must not be left behind). Measured on the full ladder, 2026-10-18 (compute summed over runs).
 numopt_bo: Bayesian optimisation of the numbers; 969 s per ladder, 34% pass (matrix 35%)
 numopt_fd_coarse: finite differences with coarse learnable inflows; 325 s, 22% pass
 numopt_fd: finite-difference refit; 142 s, 20% pass
