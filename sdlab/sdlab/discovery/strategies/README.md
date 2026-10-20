@@ -51,3 +51,4 @@ raise `MissingExtra` (`sdlab/discovery/optional.py`).
 | `loop_transit` | realistic_hats with hidden stages that close a loop: injections in the pair's rows, the return move refitted with shared noise | [loop_transit](../../../docs/research/loop_transit.md) |
 | `inflow_effects` | effect_hats with outside inflows read as a schedule or a measured input times a table of a stock (gate.py) | [inflow_effects](../../../docs/research/inflow_effects.md) |
 | `schedules` | censored's model searched again with every number refitted jointly: era-only flows dropped, constants on moves, periodic pulses and top-ups, co-flows | [schedules](../../../docs/research/schedules.md) |
+| `unified` | work in progress: one model class, one data model and one objective (J); only the objective and its test are built, identify() is the main line's | [unified](../../../docs/research/unified.md) |

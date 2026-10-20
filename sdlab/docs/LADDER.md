@@ -2636,6 +2636,66 @@ GET /api/ladder/runs              {now, watcher: {batch, alive, pace, backlog, e
 The watcher records batches from its restart on 2026-10-19; a batch started before has no counts, and
 reads as having done nothing until it finishes.
 
+## The objective test (`objective_test.py`, `objective_report.py`)
+
+Does the TRUE model score best under the unified objective J (docs/research/unified-design.md), when it
+and every wrong stored model are refitted the same way from the discovery view? The test separates
+objective failures from search failures before any search for the unified design is written
+(design, section 7). The objective itself is the work-in-progress strategy package
+`sdlab/discovery/strategies/unified/` (docs/research/unified.md); the harness here reads the truth and
+the store and hands the evaluator only the discovery view (its loader asserts that).
+
+```sh
+uv run sdlab-ladder objective-test --cases 007,009 --variants counts-short     # some cells
+uv run sdlab-ladder objective-test --sets p0 --out p0.json                     # a named phase
+uv run sdlab-ladder objective-test --sets p1 --report-only                     # the tables, from the cache
+```
+
+`--sets` takes `p0` (the named rows of section 7.6, each at its named variant), `p1` to `p5` (tag sets,
+section 7.6); `--cases` and `--variants` take the ladder's syntax. `--jobs` (default 2, at most 4) runs
+cells in a process pool at `nice 19`; the pool is shut down before the command returns. `--timeout`
+(default 900 s) caps a cell: a cell that runs out is written as far as it got and **resumes** on the next
+run (the cache is written after every candidate). `--max-groups` (default 40) caps the distinct stored
+structures per cell; the rest are reported as not run.
+
+**Per cell.** The truth T is `skill.truth_by_time` on the evaluator's grid (with its hidden starts,
+ceilings, dt and signed stocks). T0 is T at its written numbers with only the noise character fitted; T*
+is T refitted from those numbers and four starts perturbed by up to +-30% (fixed seed), the lowest J kept.
+Every latest stored found model (`store.latest(found=True)`, errors, timeouts and empty models dropped) is
+grouped by structure (numbers stripped, piece places kept); a group is refitted from its first two
+members' numbers and from the lean start, keeping the lowest J (W*). A stored status from an older scorer
+is re-scored. `analysis.alternatives()` adds the hard negatives (the same mean change with no more
+numbers), graded by `score.equations`. A group whose members all pass or are equivalent is **right**; else
+it is **wrong**, and gets the first label that applies, by delta = J(W*) - J(T*):
+
+| label | condition |
+| --- | --- |
+| OK | delta > eps (0.5 nat) |
+| X | its refitted numbers re-score as pass or equivalent |
+| TIE-known / TIE-unexplained | \|delta\| <= eps; known when it is an alternative or the cell is unidentifiable |
+| F | delta < -eps and T* did not converge or its restarts disagree by more than eps |
+| L | delta < -eps on a data-limited or unidentifiable cell (`analysis.get`, not recomputed) |
+| E / E-price | everything else: an objective failure (E-price: the data code D favours the truth, the price decides), with its D, P_num and P_struct parts and what the winner has that the truth lacks |
+
+A cell takes the worst label of its wrong groups (E > P > F > S > L > TIE > OK); **S** is a failed sanity
+block on T (J(T*) <= J(T0); T* beats its numbers scaled by 0.7, 0.9, 1.1 and 1.3; the fitted noise
+character plausible for the variant; innovations' dispersion and Ljung-Box z <= 3). **C** (the class
+cannot hold the truth yet) is counted apart: physics, particle and real cases (no proxy truth yet), the
+`lag`, `weekly` and `bias` variants (observation choices are not built), and truths that use the 2d engine
+features. **P** (the particle-filter referee) is not built and is never given. The same labels under plain
+one-step BIC (D + 1/2 k ln N, the A-bic arm, on the same fits) are reported beside them.
+
+**Per set** (tests, canonical, distilled, control): the share of achievable, non-C cells labelled OK or
+TIE-known, the count per label, min delta, the truth's rank, and |J(R) - J(T)| for right groups; then
+every E with its parts and mechanism.
+
+**Where the results are.** `$SDLAB_LADDER_CACHE/objective_test/<code table>-<hash of the evaluator and
+the harness>/<case>__<variant>.json`, one file per cell, never the result store. A change to the
+evaluator or the harness starts a new folder, so numbers from different code never mix.
+
+**Cost.** A short (300-step) cell with 10-20 distinct structures takes 1-10 minutes. JAX's CPU runtime
+uses about two cores per worker during gradients despite the single-thread settings, so keep `--jobs` low.
+
 ## Two machines and backups (`machines.py`, `exchange.py`, `backup.py`)
 
 Since 19 October 2026 the ladder runs on two machines. The Mac ("mac") keeps the source-of-truth result
@@ -2875,6 +2935,7 @@ Run `uv run sdlab` and open `http://127.0.0.1:8020/ladder`; run `uv run sdlab-la
 | Read API | `api.py`, endpoints in `routes.py` |
 | Newest cases | `case_dates.py` (first commit per case file, cached by HEAD), `newest.py` (the view, impact, regressions), `newest_routes.py`; page `sdlab/static/newest.html`, `ladder-newest.js` |
 | Page | `sdlab/static/ladder.html`, `ladder.js` (views), `ladder-compare.js` (true vs found, flow by flow), `diagram.js` (drawing, shared with the editor) |
+| Objective test | `objective_test.py` (cells, labels, cache), `objective_report.py` (the tables); the evaluator in `sdlab/discovery/strategies/unified/`; `tests/test_unified_objective.py` |
 | Probes | `analysis.py` (identifiability, alternatives, labels; cached), `fisher.py` (the truth's numbers, Fisher information, ML refit), `sweep.py` (phase diagrams), `analysis_report.py` (`analyse`), `analysis_routes.py`, `noise_analysis.py` (the noisy variants); page `sdlab/static/probes.html` |
 | Real data | `real/` (`sources.py` fetching and the cache, `loaders.py`, `models.py` the published structures, `fit.py`, `build.py` the catalogue, `case.py`, `data.py`, `score.py`, `report.py`), `cases/real/*.yaml`, the BLS snapshot `real/data/bls_cps_flows.csv` |
 | Canonical | `canonical/` (source models, recipes, `build.py`, `coverage.py`, the importer's `read.py`, `match.py`, `timefns.py`), `pysd_import.py` |

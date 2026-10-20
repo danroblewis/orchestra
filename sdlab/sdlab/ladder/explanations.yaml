@@ -866,6 +866,20 @@ strategies:
     status: work in progress
     note: docs/research/archetypes.md.
 
+  unified:
+    idea: One model class, one data model and one objective for every case (docs/research/unified-design.md) - so far only the objective, with no search.
+    how: >-
+      Any model - the truth, a stored found model, a search candidate - is read into one stock-and-flow
+      structure with numbered slots and run through an extended Kalman filter whose noise (counting,
+      splitting, extra shocks, measurement error) is always estimated, never switched. Its score is the
+      code length of every report's rounding bin plus a fixed price per number and per structural choice.
+      The objective test (sdlab-ladder objective-test) checks that the true model scores best before any
+      search is written. Its identify() is a placeholder that returns the main line's model.
+    helps_with: Nothing on the ladder yet - its ladder rows are the main line's (matrix) model.
+    builds_on: kalman_lna, lna, master_eq, odefit (ideas only; the code is its own)
+    status: work in progress
+    note: docs/research/unified.md; design in docs/research/unified-design.md.
+
 glossary:
 
   # the model's parts

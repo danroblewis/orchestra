@@ -1,7 +1,8 @@
 # One algorithm for every case: the unified design
 
-Status: **design, not built.** Nothing here has a ladder result yet. The first thing to build is the
-objective test (section 7). No search code is written until that test has been run and read.
+Status: **the objective (code table v1) and the objective test are built** (docs/research/unified.md,
+`uv run sdlab-ladder objective-test`); the test's phases have not been run. No search code is written
+until that test has been run and read.
 
 ## 1. The goal and what this document settles
 

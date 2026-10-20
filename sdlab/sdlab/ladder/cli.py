@@ -505,7 +505,19 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("--jobs", type=int)
     an.add_argument("--validate", action="store_true", help="the bound against ML refits on fresh seeds (CASE, --variant)")
     an.add_argument("--seeds", type=int, default=20)
+    ot = sub.add_parser("objective-test", help="does the true model score best under the unified objective (objective_test.py)?")
+    ot.add_argument("--cases", help="the --cases syntax")
+    ot.add_argument("--sets", help="named sets: " + ", ".join(("p0", "p1", "p2", "p3", "p4", "p5")))
+    ot.add_argument("--variants")
+    ot.add_argument("--out", help="write the cells and the summary as JSON")
+    ot.add_argument("--jobs", type=int, default=2, help="workers (at most 4; JAX's CPU runtime uses ~2 cores each)")
+    ot.add_argument("--timeout", type=float, default=900.0, help="seconds per cell; a cell that runs out is resumable")
+    ot.add_argument("--max-groups", type=int, default=40, help="distinct stored structures per cell (the rest: not run)")
+    ot.add_argument("--report-only", action="store_true", help="only the report, from the cache")
     a = ap.parse_args(argv)
+    if a.command == "objective-test":
+        from . import objective_test
+        return objective_test.main(a)
     if a.command == "run":
         return do_run(a, True, "run")
     if a.command == "sync":
