@@ -112,6 +112,9 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     Python changes:
     `pkill -f "sdlab --port 8020"; nohup uv run --directory /Users/daniellewis/orchestra/sdlab sdlab --port 8020 >> ~/.sdlab/server.log 2>&1 &`.
     Check that the old process has gone (use `kill -9` if it hangs).
+    With no agent running, `scripts/sdlab-daemon.sh` keeps all of this going without tokens: it
+    restarts the server and the watcher if they stop, and refreshes the long-run and strict verdicts
+    hourly. Start it with `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &`.
 16. **Probing a real, live system needs the user's approval.**
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from
