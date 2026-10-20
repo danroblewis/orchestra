@@ -89,6 +89,33 @@ def summarise(post: list[dict], label: str) -> None:
           f"below 1 {np.mean(ratio < 1):.3f}, above 10 {np.mean(ratio > 10):.3f}")
 
 
+def inclusion_report(mine: dict) -> None:
+    """Each returned flow's inclusion probability, for flows between ends the truth has and others."""
+    import re
+
+    true_in, other_in, low_cells, cells = [], [], 0, 0
+    for r in mine.values():
+        flows = r.get("found") or []
+        if not flows or "inclusion" not in flows[0]:
+            continue
+        cells += 1
+        sc = r.get("scores") or {}
+        eq = sc if "parts" in sc else sc.get("equations") or sc
+        ends = {(m.group(1), m.group(2)) for p in eq.get("parts") or [] if (m := re.match(r"(\S+) -> (\S+)", p["key"]))}
+        low = False
+        for f in flows:
+            e = (f.get("from") or "outside", f.get("to") or "outside")
+            (true_in if e in ends else other_in).append(f["inclusion"])
+            low |= f["inclusion"] <= 0.5
+        low_cells += low
+    t, o = np.array(true_in), np.array(other_in)
+    print(f"\ninclusion: {cells} cells with blocks; {low_cells} return a flow at or below 0.5 (the found structure kept by BIC)")
+    if len(t):
+        print(f"  flows on true ends: {len(t)}, mean inclusion {t.mean():.3f}, at or below 0.5 {np.mean(t <= 0.5):.3f}")
+    if len(o):
+        print(f"  flows on other ends: {len(o)}, mean inclusion {o.mean():.3f}, at or below 0.5 {np.mean(o <= 0.5):.3f}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cases", default=None)
@@ -136,6 +163,7 @@ def main() -> None:
               f"kalman_lna median {np.median(s0):.1f} p90 {np.percentile(s0, 90):.1f} max {s0.max():.1f} total {s0.sum():.0f}; "
               f"ratio median {np.median(s1 / s0):.1f}")
     print("timeouts/errors:", Counter(r["status"] for r in mine.values() if r["status"] in ("timeout", "error")))
+    inclusion_report(mine)
     if a.point:
         with open(a.point) as fh:
             pt = json.load(fh)

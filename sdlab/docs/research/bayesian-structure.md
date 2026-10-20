@@ -1,6 +1,6 @@
 # Bayesian structure learning and bootstrap ensembles
 
-**Status:** idea (not started)
+**Status:** the cheap ensemble and MCMC on the numbers tried as [kalman_bayes](kalman_bayes.md) (2026-10-20): reject as an answer, keep as uncertainty; reversible-jump MCMC over structures not started.
 
 ## Why
 A posterior over models (how often each flow appears) instead of one answer; uncertainty to show on the page.
