@@ -3,6 +3,9 @@
 **Status:** done. First version at commit 52cd6d1; current version at 06b0062, which allows transit
 on closed loops and never takes a used stock as a stage. Both were run on the realistic cases and on
 462 hand-written test cells, 19 Oct 2026.
+**Kubernetes 303 (2026-10-20, 099e99d):** the base is now matrix's earned main line (a copy of its earned
+refit), clearing 303 counts-short; 2 of 40 paired cells lost (083 counts-long, 084 outliers-short), see
+[k8s-303-realistic-hats.md](k8s-303-realistic-hats.md).
 **Verdict:** keep as the realistic leader's successor.
 - It loses no test cell against effect_hats and gains 11 (015, 026, 085: hidden stocks).
 - It answers on 11 of effect_hats' 12 realistic timeouts.
