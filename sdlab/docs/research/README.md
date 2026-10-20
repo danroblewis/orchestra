@@ -37,7 +37,7 @@ comparison script of exp/symbolic-regression.
 | [A procedural generator of ground-truth SD models](procedural-generator.md) | done (I2; merged) | main line on 300 generated models: -49% mean skill@20, 22 of 600 runs meet the goal (examples: 29.6%) |
 | [Amortised / simulation-based inference of structure](simulation-based-inference.md) | idea (not started) | - |
 | [Bayesian structure learning and bootstrap ensembles](bayesian-structure.md) | idea (not started) | - |
-| [Causal discovery on time series (PCMCI+, Granger)](causal-discovery.md) | idea (not started) | - |
+| [Causal discovery on time series (PCMCI+, Granger)](causal-discovery.md) | done (offline baseline, 2026-10-20; `scripts/causal_bench.py`) | reject: graph F1 on Tests PCMCI+ 0.60, conditional Granger 0.71, our row regression as a t test 0.82, structures 0.93; only helps lag-1 strategies on hidden/delayed edges (+0.19 vs matrix_v2), which structures already finds; LPCMCI confounder flags carry no signal |
 | [Experiment design / active excitation in live runs](experiment-design.md) | idea (not started) | - |
 | [FROLS term selection](frols.md) | idea (not started) | - |
 | [General rate equations (exp, log, powers, two-stock functions)](general-equations.md) | idea (not started) | - |

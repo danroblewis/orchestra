@@ -220,6 +220,12 @@ quadrantChart
 - **Causal-inference research** (done): Pearl's do-calculus and causality in dynamic systems; five ideas
   (a shake-response judge, shakes as instruments, invariance across eras and shakes, probe design, an
   identifiability report).
+- **[Time-series causal discovery](causal-discovery.md)** (done, offline baseline, 2026-10-20): PCMCI+,
+  PCMCI, LPCMCI (Tigramite, scratch venv only) and Granger tests on what a strategy sees, graded on the
+  graph. Tests set pooled F1: PCMCI+ 0.60, conditional Granger 0.71, our own row regression as a t
+  test 0.82, structures 0.93. The only gain is on lagged edges through hidden stocks against lag-1
+  strategies (+0.19 vs matrix_v2), which structures already finds. LPCMCI's confounder flags carry no
+  signal. Reject.
 - **Active probing** (unfinished): shaking controllable flows (pause, throttle, boost, dithering) and
   reading the impulse responses.
 - **Natural experiments** (unfinished, near its final runs): using shocks already in the data.
