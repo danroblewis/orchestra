@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 
 from .identify import VARIANTS
-from .identify import identify as _identify
+from .identify import identify as _base_identify
 
 # the experiment's settings (SDLAB_SHARED_NOISE="noise_misfit=1,..." overrides, for iterating)
 # (v5, the recorded result; the v3/v4 guards: noise_misfit, noise_swap, noise_one_sided)
@@ -23,7 +23,15 @@ for _kv in filter(None, os.environ.get("SDLAB_SHARED_NOISE", "").split(",")):
     SETTINGS[_k] = float(_v) if "." in _v else bool(int(_v)) if _v in ("0", "1") else _v
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     opts.setdefault("variants", [{**v, **SETTINGS} for v in VARIANTS])
-    return _identify(stocks, run, opts)
+    return _base_identify(stocks, run, opts)
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py, a copy of e8edf28's)."""
+    from .eiv import apply
+
+    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
