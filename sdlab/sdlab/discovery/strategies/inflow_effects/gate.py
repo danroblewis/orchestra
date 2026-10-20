@@ -92,6 +92,15 @@ def price(flows, ids, A, tt, mi, injections=None, res=None) -> float:
     return float(sum(T * math.log(max(r, fl) / T) for r, fl in zip(rss, floor)) + size(flows) * math.log(T))
 
 
+def row_price(flows, ids, A, tt, mi, r, injections=None, res=None) -> float:
+    """R's own row's one-step error term (as in price), with no size term."""
+    T = A.shape[1] - 1
+    i = ids.index(r)
+    rss = onestep_rss(flows, ids, A, tt, mi, injections)[i]
+    fl = 1e-9 if res is None else max(1e-9, T * float(res[i]) ** 2 / 6.0)
+    return float(T * math.log(max(rss, fl) / T))
+
+
 def _carries_effect(f: dict) -> bool:
     return bool(f.get("effects") or f.get("uses") or f.get("byTime"))
 
@@ -582,6 +591,21 @@ def _orphans(before: list[dict], after: list[dict]) -> bool:
     return bool(touched(before) - touched(after))
 
 
+def _barely_used(flows, ids, prev, tt, mi, u: str, share: float = 0.05) -> bool:
+    """The co-flow's use of U is under `share` of everything U loses: U is not really used, and
+    the reading only re-labels the base's move (047-random-goal-gap#6: P -> I written as an inflow
+    of I using 4e-5 P per unit, with P's loss moved to a gap of P)."""
+    iu = ids.index(u)
+    use = loss = 0.0
+    for f in flows:
+        d = deltas(f, ids, prev, tt, mi)[iu]
+        lost = float(np.mean(np.maximum(0.0, -d)))
+        loss += lost
+        if any(x.get("stock") == u for x in f.get("uses") or []):
+            use += lost
+    return loss <= 0 or use < share * loss
+
+
 def _negative(flows, ids, prev, tt, mi) -> bool:
     """A flow (without effects) that runs backwards on more than 5% of the steps: an outside inflow
     c + d x U that turns negative, a link with a negative number."""
@@ -727,7 +751,8 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
                 fu = h.flows()
                 if fu is None or _negative(fu, ids, prev, tt, mi) or _orphans(cur, fu):
                     continue
-                if u is not None and not move and not h.result["p"] > 1e-6:
+                if u is not None and not move and (not h.result["p"] > 1e-6
+                                                   or _barely_used(fu, ids, prev, tt, mi, u)):
                     continue                                        # no co-flow: the U reading is the plain one
                 fu = _prune(fu, ids, A, tt, mi, inj, res)
                 if _orphans(cur, fu):
@@ -738,6 +763,12 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
                 # a curve a straight line would do (a move k x U read as a constant x a rising table
                 # of U) must beat the straight line by the same margin as the base
                 if alt is not None and not pf < price(alt, ids, A, tt, mi, inj, res) - o["gate_gain"] * log_t:
+                    continue
+                # the gain must be earned on R's own row, the row whose inflow is read again: a
+                # reading that only soaks up another row's misfit (100-canonical-sir: I -> R as pieces x
+                # f(I), taking up the error of S -> I's table through I's row) is not an inflow effect
+                if not (row_price(fu, ids, A, tt, mi, r, inj, res) + (size(fu) - size(cur)) * log_t
+                        < row_price(cur, ids, A, tt, mi, r, inj, res) - o["gate_gain"] * log_t):
                     continue
                 cands.append((pf, fu, how))
             if os.environ.get("SDLAB_GATE_DEBUG"):
