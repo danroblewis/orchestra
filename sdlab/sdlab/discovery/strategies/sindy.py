@@ -24,6 +24,7 @@ MissingExtra.
 
 from __future__ import annotations
 
+import math
 import os
 
 import numpy as np
@@ -33,17 +34,116 @@ from ..identify import identify as matrix_identify
 from ..identify import judge
 from ..matrix import configurations
 from ..optional import require
-from ..regression import piece_values
+from ..regression import piece_values, row_sums
 
 try:                                     # optional: uv sync --extra research (pysindy, cvxpy)
     from ..conserve_joint import conserve
     from ..library import build, era_of, factors
-    from ..sparse import fit_row, inflow_series, plain_sindy
+    from ..sparse import inflow_series, plain_sindy, select
     from ..term_flows import read
 except ImportError:                      # identify() says what is missing
     pass
+from ..changes import pelt
+from ..regression import fit_subset
+from scipy.stats import chi2 as _chi2
 
 LEVELS = ("plain", "levels", "products", "constrained", "uses", "full", "combo")
+
+
+def _ebic(T: int, rss: float, p: float, k: int, P: int, gamma: float) -> float:
+    """BIC plus the price of having picked k of P candidate terms (sparse._ebic)."""
+    return T * math.log(max(rss, 1e-12) / T) + p * math.log(T) + 2 * gamma * (math.lgamma(P + 1) - math.lgamma(k + 1) - math.lgamma(P - k + 1))
+
+
+def _changes_price(cuts: list[int] | None) -> int:
+    """An outside inflow's numbers when every change is priced as a value and a place (as earned_pieces
+    prices them): a constant is one, every change adds two."""
+    return 0 if not cuts else 1 + 2 * (len(cuts) - 2)
+
+
+def _white(e: np.ndarray, alpha: float = 0.01) -> bool:
+    """Ljung-Box: no autocorrelation in e up to lag ceil(sqrt(T)) at level alpha (a copy of
+    earned_pieces' rows.white at 66086e7, via matrix/earned_rows.py)."""
+    e = np.asarray(e, dtype=float) - float(np.mean(e))
+    n = e.shape[0]
+    v = float(e @ e)
+    if n < 10 or v <= 0:
+        return True
+    m = min(n - 2, int(math.ceil(math.sqrt(n))))
+    r = np.array([float(e[k:] @ e[:-k]) / v for k in range(1, m + 1)])
+    q = n * (n + 2) * float(np.sum(r * r / (n - np.arange(1, m + 1))))
+    return bool(_chi2.sf(q, m) > alpha)
+
+
+def _earned(y: np.ndarray, Xa: np.ndarray, pick: dict, T: int, P: int, gamma: float) -> dict:
+    """The pieces kept only if they earn their places: dropped (for no inflow or a constant one, the
+    levels chosen beside the pieces kept) when that leaves white residuals and a lower BIC with every
+    change priced as a value and a place (earned_pieces' rule, rows.reselect "beside"). fit_row prices
+    a change as its value alone while PELT chooses the places, so chance pieces paid on counting noise
+    (kubernetes 303 counts-short: five pieces of an outflow from the final counter, 21 below the
+    no-piece BIC, 1.8 above it once the four places are priced); docs/research/k8s-303-sindy.md."""
+    chosen = pick["chosen"]
+    best, best_sc = pick, _ebic(T, pick["f"].rss, len(chosen) + _changes_price(pick["cuts"]), len(chosen), P, gamma)
+    for cuts in (None, [0, T]):
+        f = fit_subset(row_sums(y, Xa, cuts), chosen)
+        sc = _ebic(T, f.rss, len(chosen) + _changes_price(cuts), len(chosen), P, gamma)
+        if sc >= best_sc - 1e-9:
+            continue
+        e = y - (f.beta @ Xa[chosen] if chosen else 0.0)
+        if _white(e):
+            best, best_sc = {"cuts": cuts, "chosen": chosen, "f": f, "sc": sc}, sc
+    return best
+
+
+def fit_row(y: np.ndarray, X: np.ndarray, allowed: list[int], inflow: str = "changing", min_piece: int = 5, simple: list[int] | None = None,
+            gamma: float = 0.0, pelt_mult: float = 1.0, simpler: dict[int, list[int]] | None = None) -> dict:
+    """A copy of sparse.fit_row (the pinned shared library, at b9fe1d6) with one addition: chosen
+    pieces must earn their places (_earned). y: one stock's change per step; X: library values (terms
+    x steps); allowed: the terms this row may use; simple: those used in the first pass, before the
+    inflow's pieces are known (so that products do not stand in for changes in the inflow). Returns
+    the chosen terms, their numbers, and the outside inflow's pieces."""
+    T = y.shape[0]
+    Xa = X[allowed] if allowed else np.zeros((0, T))
+    first = [q for q, f in enumerate(allowed) if f in set(simple)] if simple is not None else None
+    at = {f: q for q, f in enumerate(allowed)}
+    simp = {at[f]: [at[j] for j in js if j in at] for f, js in (simpler or {}).items() if f in at}
+    P = len(allowed)
+
+    def form(c, extra, chosen=None):
+        chosen = select(y, Xa, c, gamma=gamma, simpler=simp) if chosen is None else chosen
+        f = fit_subset(row_sums(y, Xa, c), chosen)
+        return {"cuts": c, "chosen": chosen, "f": f, "sc": _ebic(T, f.rss, len(chosen) + extra, len(chosen), P, gamma)}
+
+    # the outside inflow: none, constant, or changing - each with the terms chosen beside it (a
+    # changing inflow only for a stock whose inflow is on average clearly one way, as in matrix.py)
+    pick = form(None, 0)
+    if inflow != "none":
+        const = form([0, T], 1)
+        pick = const if const["sc"] < pick["sc"] else pick
+    if inflow == "changing":
+        cuts = [0, T]
+        for p in range(5):
+            if p == 0 and first is not None:
+                chosen = [first[q] for q in select(y, Xa[first], cuts, gamma=gamma)]
+            else:
+                chosen = select(y, Xa, cuts, gamma=gamma, simpler=simp)
+            f = fit_subset(row_sums(y, Xa, cuts), chosen)
+            nxt = pelt(y - (f.beta @ Xa[chosen] if chosen else 0), min_piece, 0.5 if p == 0 else pelt_mult)
+            if nxt == cuts and p >= 2:
+                break
+            cuts = nxt
+        if len(cuts) > 2:
+            pcs = form(cuts, len(cuts) - 1)
+            vals = piece_values(y, Xa, pcs["chosen"], pcs["f"].beta, cuts)
+            W = sum(v["w"] for v in vals)
+            mean = sum(v["v"] * v["w"] for v in vals) / W
+            sd = math.sqrt(sum(v["w"] * (v["v"] - mean) ** 2 for v in vals) / W)
+            if (pick is const or abs(mean) > 0.5 * sd) and pcs["sc"] < pick["sc"]:
+                pick = _earned(y, Xa, pcs, T, P, gamma)
+    chosen, beta = pick["chosen"], pick["f"].beta
+    pieces = piece_values(y, Xa, chosen, beta, pick["cuts"]) if pick["cuts"] else []
+    return {"terms": [allowed[q] for q in chosen], "beta": [float(b) for b in beta], "pieces": pieces, "cuts": pick["cuts"],
+            "rss": pick["f"].rss, "p": len(chosen) + (len(pick["cuts"]) - 1 if pick["cuts"] else 0)}
 
 
 def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
