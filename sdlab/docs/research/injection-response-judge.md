@@ -1,6 +1,6 @@
 # An interventional judge: injection responses every candidate must reproduce
 
-**Status:** idea (not started)
+**Status:** built as the push test, on the models (2026-10-20, `pushes.py`, part of [evidence.md](evidence.md)): spikes, steps and sines into the truth and the found model, responses compared stock by stock. The data-side local projections below (`responses.py`, `--probes K`) are not built.
 
 ## Why
 The judge scores candidates by their behaviour on the data they were fitted to. In the causal

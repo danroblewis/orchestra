@@ -32,6 +32,7 @@ uv run sdlab-ladder check                              # every case file compile
 uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
 uv run sdlab-ladder freeze 042#5                       # write draw 5 of parametric case 042 as an ordinary case
 uv run sdlab-ladder strict                             # fill strict pass's caches, then pass vs strict pass per strategy
+uv run sdlab-ladder evidence --cases 300 --jobs 3     # evidence beside the pass (push test, Kalman bound, likelihood, NO-TRUTH checks) and the confidence score
 uv run sdlab-ladder cost --strategies lna              # the wall time re-testing lna would take (Time and runs, below)
 ```
 
@@ -2590,6 +2591,34 @@ verdict) and **strict known** (verdicts over cells run) columns, and "Rank by: s
 its Set and Runs pickers give the realistic, canonical (in the tests), noisy and per-variant views.
 The strategy page has a strict tile and a chip on each passing card (strict / not strict: why /
 strict: not computed).
+
+## Evidence beside the pass (`evidence.py`, `pushes.py`, `consistency.py`, `notruth.py`)
+
+Reasons to believe a found model is right, **beside** pass / equivalent / fail and strict. They are
+evidence, not a gate: no status changes, and score.py and its hash are untouched. Each check says what
+it found and, when it finds a problem, what kind of wrong it points to. Design, calibration and
+results: [research/evidence.md](research/evidence.md).
+
+- **Push test** (`pushes.py`, uses the truth): spikes, steps and sines into every input and outside
+  inflow, and impulses into each measured stock, given to the truth and the found model alike at the
+  run's last operating point. It compares the responses stock by stock (footprint, sign, curve within
+  10%, sine gain within 10% and phase within 10 degrees, widened to 3 x the truth's own refits' error).
+  It diagnoses a missing or spurious path, a wrong sign, a path too strong, or a drain too fast.
+- **Kalman bound and likelihood** (`consistency.py`, uses the truth): each number against its joint
+  Cramér-Rao SE, and a likelihood ratio against the truth refitted on the same data. It diagnoses a
+  method error, the run's draw, a common factor (for example "every number about x0.93"), or a data
+  limit ("cannot tell them apart"). Linear truths only.
+- **NO-TRUTH checks** (`notruth.py`, only the discovery view): residual whiteness, invariance of the
+  refitted numbers across eras and halves, held-out forecasts, and agreement with the other models on
+  the cell.
+- **Confidence score** (`evidence_confidence.py`): P(right) from the NO-TRUTH features, a logistic
+  model cross-validated by case family. It ranks well (AUC 0.87 out of fold on the Tests sample) but
+  is not calibrated on variants it was not trained on.
+
+`uv run sdlab-ladder evidence [--strategies S] [--cases C] [--variants V] [--jobs N<=3] [--reference 3]`
+fills `$SDLAB_LADDER_CACHE/evidence.sqlite`, keyed by result id and evidence code hash. Long run and
+strict are read from their caches. It prints one line per result and the confidence report. It is not
+yet shown on the ladder pages.
 
 ## Reading the matrix
 
