@@ -114,4 +114,4 @@ comparison script of exp/symbolic-regression.
 | [combined_misfit: multi-step error picks where no candidate fits the counts](combined_misfit.md) | done (ladder, examples bench; e0bc5f5, self-contained 0bb2b02) | adopt into combined: realistic skill@20 45.2% (stored combined 40.6%), tests unchanged but one cell (678 vs 679); bench 42.6% / 49.3%, 17 of 66 meet the goal |
 | [combined_lean: change places at a modified-BIC price, weak flows dropped](combined_lean.md) | done (ladder; 781c56c) | adopt into combined, gated: strict 649 vs 618 of 936, passes 682 vs 679, noisy 32 vs 26; 3 true weak links lost (008/046#8/082 counts-short) |
 | [combined_r2: both](combined_r2.md) | done (ladder; bench not run) | the round-2 proposal: 682 pass, 649 strict, realistic 44.1% |
-
+| [blockwise: discovery that scales to the Kubernetes models](blockwise.md) | done (ladder, ea82c31) | keep for large input-driven models: sd-k8s-small skill@20 96.1% / 98.1% (matrix 58.2% / 87.2%) in 6 s; sd-k8s-platform 99.4% / 99.3% in ~40 s, 2.2 GB (every other strategy empty or timeout); parts right 25-27 of 117 (matrix 19-23); standard tests unchanged (fallback below 15 stocks) |
