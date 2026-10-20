@@ -63,12 +63,21 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
     labels, cfg = (conf[0], conf[1]) if conf else ([None], np.zeros(T, dtype=int))
     L = len(labels)
 
+    # measured inputs (opts "inputs", {name: value per step aligned with t}): a column each after the
+    # library terms, its value during the step (t[k] to t[k + 1]: the value at t[k + 1], as the matrix
+    # reads it); any row may take one (k > 0 an inflow k x input, k < 0 an outflow)
+    inputs = [(k, np.nan_to_num(np.asarray(v, dtype=float))[1: len(t)]) for k, v in (o.get("inputs") or {}).items() if k not in ids] \
+        if o["mode"] != "plain" else []
     if o["mode"] == "plain":
         terms = [(j,) for j in range(S)]
         X = prev
         rows = plain_sindy(prev, dy)
     else:
         terms, X = build(prev, o["products"], cfg, L)
+        nT = len(terms)
+        ins = list(range(nT, nT + len(inputs)))
+        if inputs:
+            X = np.vstack([X] + [v[None, :] for _, v in inputs])
 
         def ok(term, s):
             fs = factors(term)
@@ -78,11 +87,11 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
         simpler = {f: [level_of[j] for j in dict.fromkeys(term)] for f, term in enumerate(terms) if len(term) == 2}
         rows = []
         for s in range(S):
-            base = [f for f, term in enumerate(terms) if era_of(term) is None and ok(term, s)]
-            simple = [f for f in base if len(terms[f]) == 1]
+            base = [f for f, term in enumerate(terms) if era_of(term) is None and ok(term, s)] + ins
+            simple = [f for f in base if f in ins or len(terms[f]) == 1]
             r = fit_row(dy[s], X, base, o["inflow"], simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)
             if L > 1:
-                js = {factors(terms[f])[0] for f in r["terms"] if len(factors(terms[f])) == 1} | ({s} if s not in final else set())
+                js = {factors(terms[f])[0] for f in r["terms"] if f < nT and len(factors(terms[f])) == 1} | ({s} if s not in final else set())
                 extra = [f for f, term in enumerate(terms) if era_of(term) is not None and term[0] in js and ok(term, s)]
                 if extra:
                     r = fit_row(dy[s], X, base + extra, o["inflow"], simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)
@@ -91,7 +100,7 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
     note = None
     if o.get("constrain"):
         u = np.array([inflow_series(r, T) for r in rows])
-        note = conserve(rows, terms, X, dy, u, unit, final)
+        note = conserve(rows, terms + [("input", k) for k, _ in inputs], X, dy, u, unit, final)   # an input is no one's source
         for s, r in enumerate(rows):                     # the pieces measured again with the numbers kept
             if r["cuts"]:
                 res = dy[s] - (np.array(r["beta"]) @ X[r["terms"]] if r["terms"] else 0)
@@ -104,6 +113,8 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
         for r in rows:
             d: dict[int, float] = {}
             for f, b in zip(r["terms"], r["beta"]):
+                if f >= len(terms):                      # a measured input: read below
+                    continue
                 e = era_of(terms[f])
                 if e is None:
                     d[f] = d.get(f, 0.0) + b
@@ -112,18 +123,39 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
                     d[base_f] = d.get(base_f, 0.0) + b
             coef.append(d)
         base_terms = terms
-        per_label.append(read(stocks, base_terms, coef, prev, inflow if c == 0 else [[] for _ in rows], uses=o.get("uses", False)))
+        per_label.append(read(stocks, base_terms, coef, prev, inflow if c == 0 else [[] for _ in rows], uses=o.get("uses", False))
+                         + _input_flows(rows, ids, len(terms), inputs))
     flows = merge_by_label(per_label, labels, conf[2]) if L > 1 else per_label[0]
-    matrix = [{"id": ids[s], "terms": [_name(terms[f], ids) for f in r["terms"]], "beta": r["beta"], "inflow": inflow[s]} for s, r in enumerate(rows)]
+    names = terms + [("input", k) for k, _ in inputs]
+    matrix = [{"id": ids[s], "terms": [_name(names[f], ids) for f in r["terms"]], "beta": r["beta"], "inflow": inflow[s]} for s, r in enumerate(rows)]
     out = {"flows": flows, "matrix": matrix, "method": "sindy", "windows": T, "window": 1}
     if note:
-        out["conservation"] = {"kept": [_name(terms[f], ids) for f in note["kept"]], "tried": note["tried"]}
+        out["conservation"] = {"kept": [_name(names[f], ids) for f in note["kept"]], "tried": note["tried"]}
     if L > 1:
         out["eras"] = labels
     return out
 
 
+def _input_flows(rows: list[dict], ids: list[str], nT: int, inputs: list) -> list[dict]:
+    """Flows reading measured inputs, from the rows' numbers on their columns (after the nT library
+    terms): k > 0 an inflow from outside at k x input, k < 0 an outflow to outside at -k x input (as
+    matrix.input_flows reads the matrix's rows)."""
+    out = []
+    for s, r in enumerate(rows):
+        for f, k in zip(r["terms"], r["beta"]):
+            if f < nT or not k:
+                continue
+            name, v = inputs[f - nT]
+            rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": round(abs(k), 6)}]}
+            ends = {"from": None, "to": ids[s]} if k > 0 else {"from": ids[s], "to": None}
+            out.append({**ends, "ratio": 1, "rate": rate, "rates": [rate], "perStep": abs(k) * float(v.mean()),
+                        "nearly": [], "bothWays": False, "input": name})
+    return out
+
+
 def _name(term: tuple, ids: list[str]) -> str:
+    if term and term[0] == "input":
+        return term[1]
     fs = "*".join(ids[j] for j in factors(term))
     return fs + (f"@{era_of(term)}" if era_of(term) is not None else "")
 
@@ -151,11 +183,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     best, tried = None, []
     if level == "combo":
         r = matrix_identify(stocks, run, opts)
-        best = (r, judge(r["flows"], stocks, run), "matrix: " + r["chosen"])
+        best = (r, judge(r["flows"], stocks, run, inputs=opts.get("inputs")), "matrix: " + r["chosen"])
         tried = [{"name": best[2], "error": best[1]}]
     for v in variants(level, has_eras):
         r = identify_one(stocks, run, {**opts, **v})
-        e = judge(r["flows"], stocks, run) if level in ("full", "combo") else 0.0
+        e = judge(r["flows"], stocks, run, inputs=opts.get("inputs")) if level in ("full", "combo") else 0.0
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
             best = (r, e, v["name"])

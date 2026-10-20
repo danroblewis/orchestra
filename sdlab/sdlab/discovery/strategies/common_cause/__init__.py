@@ -31,10 +31,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True}, ops_)
+        r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True}, ops_)
         if r.get("flows") is not None and r.get("fit"):
             r = refit(stocks, r, opts, ops_)
-        e = judge(r["flows"], stocks, run, injections=opts.get("injections"))
+        e = judge(r["flows"], stocks, run, injections=opts.get("injections"), inputs=opts.get("inputs"))
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
             best = (r, e, v["name"])

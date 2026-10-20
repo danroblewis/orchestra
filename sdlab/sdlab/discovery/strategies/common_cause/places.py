@@ -105,7 +105,7 @@ def candidate(row: dict, s: int, cuts: list[int], ids, stocks, prev, dy, cfg, L,
     elimination from every level it may read, places it does not need dropped (and, with none
     left, the constant too if it does not pay)."""
     y = dy[s]
-    X, col = columns(s, ids, prev, cfg, L, _allowed(s, ids, stocks))
+    X, col = columns(s, ids, prev, cfg, L, _allowed(s, ids, stocks) + list(range(len(ids), prev.shape[0])))   # + measured inputs
     if not len(col):
         return None
     chosen, _, _ = backward(y, X, cuts, list(range(len(col))), _shared_price(cuts), fs)
@@ -200,6 +200,10 @@ def confound(c: dict, row: dict, s: int, witnesses) -> bool:
     return bool(dropped & set(witnesses))
 
 
+def _nm(ids: list[str], j: int) -> str:
+    return ids[j] if j < len(ids) else f"input {j - len(ids)}"
+
+
 def _resid(r: dict) -> np.ndarray:
     return r["_y"] - (fit_subset(row_sums(r["_y"], r["X"], r["cuts"]), r["set"]).beta @ r["X"][r["set"]] if r["set"] else 0.0)
 
@@ -262,7 +266,7 @@ def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray
                 c["_y"] = dy[s]
             ok = accept(c, row, T, per_change, alpha) and confound(c, row, s, others)
             if trace and c:
-                print(f"  round {rnd} {ids[s]}: {len(cuts) - 2} places from {[ids[k] for k in others]} -> {len(c['cuts'] or [0, 0]) - 2}, {[ids[c['col'][q][0]] for q in c['set']]}: {c['bic']:.1f} vs own {own_bic(row, T, per_change):.1f} {[ids[row['col'][q][0]] for q in row['set']]}{' taken' if ok else ''}")
+                print(f"  round {rnd} {ids[s]}: {len(cuts) - 2} places from {[ids[k] for k in others]} -> {len(c['cuts'] or [0, 0]) - 2}, {[_nm(ids, c['col'][q][0]) for q in c['set']]}: {c['bic']:.1f} vs own {own_bic(row, T, per_change):.1f} {[_nm(ids, row['col'][q][0]) for q in row['set']]}{' taken' if ok else ''}")
             new = c if ok else row
             if new.get("set") != out[s].get("set") or new.get("cuts") != out[s].get("cuts"):
                 changed = True

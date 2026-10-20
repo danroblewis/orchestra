@@ -34,12 +34,13 @@ def inflow_params(cuts: list[int] | None, per_change: float = 2) -> float:
 
 def columns(s: int, ids: list[str], prev: np.ndarray, cfg: np.ndarray, L: int, allowed: list[int]) -> tuple[np.ndarray, list[tuple[int, int]]]:
     """The row's columns: each allowed level, and with configurations its number's departure in
-    every configuration but the first (col: (stock index, configuration or -1 for shared))."""
+    every configuration but the first (col: (stock index, configuration or -1 for shared)). prev may
+    carry measured inputs after the levels (index len(ids) on): one shared number each."""
     X, col = [], []
     for j in allowed:
         X.append(prev[j])
         col.append((j, -1))
-        for c in range(1, L):
+        for c in range(1 if j < len(ids) else L, L):
             m = cfg == c
             if m.any() and not m.all():
                 X.append(np.where(m, prev[j], 0.0))
@@ -98,6 +99,7 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
     final = {x["id"] for x in stocks if x.get("final")}
     allowed = [j for j in range(len(ids)) if not (ids[s] in final and j == s)
                and (j == s or not group.get(ids[j]) or not group.get(ids[s]) or group[ids[j]] == group[ids[s]])]
+    allowed += list(range(len(ids), prev.shape[0]))          # measured inputs, after the levels
     pieces = bool(row["cuts"]) and len(row["cuts"]) > 2
     best = {"row": row, "bic": _bic(T, row["rss"], len(row["set"]) + inflow_params(row["cuts"], per_change)), "name": "matrix"}
     X, col = columns(s, ids, prev, cfg, L, allowed)
