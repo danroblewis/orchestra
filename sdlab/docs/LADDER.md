@@ -2824,6 +2824,7 @@ GET /api/ladder/longrun/{id}?at=&window=
 GET /api/ladder/version
 GET /api/ladder/leaderboard?variant=&level=&kind=&set=&age=
 GET /api/ladder/matrix?case=
+GET /api/ladder/casestats
 GET /api/ladder/timing
 GET /api/ladder/timing/{name}
 GET /api/ladder/runs
@@ -2862,7 +2863,14 @@ is served.
   recall or skill per variant, every result clickable into Now) and each strategy's totals per
   version.
 - **Cases**: every case with its "tests" sentence, true diagram and equations, and a plot of its
-  data in any variant.
+  data in any variant. The list colours each case by the share of strategies that pass it
+  (`GET /api/ladder/casestats`, `case_stats.py`: a strategy passes a case when every variant it ran
+  passes; the rate is over the strategies that ran it, equivalent shown but not counted): green at
+  50% or more, amber 1-49%, red 0%, grey when no strategy ran it. It filters by text, tags (an
+  autocomplete; a case must carry every chosen tag), status (passing, mixed, failing, not run) and
+  set (Tests, Kubernetes, Realistic, Physics, Real data), and sorts by ladder order, level or pass
+  rate. The counts are made on the server once per summary version, and a case's row is added up
+  again only when one of its cells changed.
 
 The **leaderboard** (`/ladder/leaderboard`, 🏆 from the ladder and research pages) ranks every
 strategy by pass rate, recall, precision and skill, sortable, with variant and level filters. It

@@ -556,20 +556,122 @@
   }
 
   // ---------- Cases ----------
+  // The list: each case coloured by how many strategies pass it (/api/ladder/casestats, case_stats.py: a
+  // strategy passes a case when every variant it ran passes), filtered by text, tags (all of them),
+  // status and set, sorted by the ladder's order, level or pass rate.
+  const CSTATUS = [["all", "all"], ["pass", "passing"], ["mixed", "mixed"], ["fail", "failing"], ["none", "not run"]];
+  const CSETS = [["all", "every set"], ["tests", "Tests"], ["kubernetes", "Kubernetes"], ["realistic", "Realistic"], ["physics", "Physics"], ["real", "Real data"]];
+  const CSORTS = [["ladder", "ladder order"], ["level", "level"], ["rate-up", "pass rate, lowest first"], ["rate-down", "pass rate, highest first"]];
+  async function loadCaseStats() {
+    try {
+      const v = (await get("/api/ladder/version")).version;
+      if (S.cstats && S.cstats.version === v) return false;
+      const m = await get("/api/ladder/casestats"), by = {};
+      m.rows.forEach((r) => { const x = {}; m.fields.forEach((f, i) => { x[f] = r[i]; }); by[x.case] = x; });
+      S.cstats = { version: m.version, strategies: m.strategies, by };
+      return true;
+    } catch (e) { setStatus(`case stats: ${e.message}`, true); return false; }
+  }
+  // green: at least half the strategies that ran it pass; amber: some (1-49%); red: none; grey: none ran it
+  function caseClass(x) {
+    if (!x || !x.ran) return "none";
+    const r = x.pass / x.ran;
+    return r >= 0.5 ? "pass" : r > 0 ? "mixed" : "fail";
+  }
+  function caseRate(x) { return x && x.ran ? x.pass / x.ran : null; }
+  function caseSummary(x) {
+    const n = S.cstats ? S.cstats.strategies : 0;
+    if (!S.cstats) return `<span class="csum muted">…</span>`;
+    if (!x || !x.ran) return `<span class="csum muted">not run by any of ${n} strategies</span>`;
+    const t = { total: n, pass: x.pass, equivalent: x.equivalent, fail: x.fail, error: x.other, missing: n - x.ran };
+    const tipTxt = `<b>${esc(x.case)}</b>: of the ${x.ran} strategies that ran it (of ${n}), ${x.pass} pass every variant they ran, ${x.equivalent} are equivalent, ${x.fail} fail, ${x.other} error or time out${n - x.ran ? `; ${n - x.ran} have not run it` : ""}<br>cells (variant × strategy): ${x.cells_pass} of ${x.cells_run} run pass, ${x.cells - x.cells_run} not run`;
+    return `<span class="csum" data-tip="${esc(tipTxt)}"><span class="crate">${Math.round(100 * x.pass / x.ran)}% of ${x.ran} pass</span>${x.equivalent ? `<span class="muted"> · ${x.equivalent} ≈</span>` : ""}<span class="sbar">${["pass", "equivalent", "fail", "error"].map((k) => t[k] ? `<span class="st-${k}" style="flex:${t[k]}"></span>` : "").join("")}${t.missing ? `<span class="st-none" style="flex:${t.missing}"></span>` : ""}</span></span>`;
+  }
+  function caseList() {
+    const q = (S.cfilter || "").toLowerCase(), tags = S.ctags || [], st = S.cstatus || "all", set = S.cset || "all";
+    const by = (S.cstats && S.cstats.by) || {};
+    const inSet = (c) => { const x = by[c.id]; return set === "all" || (x && (set === "kubernetes" ? x.kubernetes : x.set === set)); };
+    const base = S.cases.filter((c) => tags.every((t) => c.tags.includes(t)) && inSet(c) && (!q || `${c.id} ${c.title} ${c.tests} ${c.tags.join(" ")}`.toLowerCase().includes(q)));
+    const counts = { all: base.length, pass: 0, mixed: 0, fail: 0, none: 0 };
+    base.forEach((c) => { counts[caseClass(by[c.id])] += 1; });
+    let list = st === "all" ? base : base.filter((c) => caseClass(by[c.id]) === st);
+    const order = new Map(S.cases.map((c, i) => [c.id, i]));
+    const rate = (c) => caseRate(by[c.id]);
+    if (S.csort === "level") list = [...list].sort((a, b) => a.level - b.level || order.get(a.id) - order.get(b.id));
+    if (S.csort === "rate-up" || S.csort === "rate-down") {
+      const d = S.csort === "rate-up" ? 1 : -1;
+      list = [...list].sort((a, b) => (rate(a) === null) - (rate(b) === null) || d * ((rate(a) || 0) - (rate(b) || 0)) || a.level - b.level || order.get(a.id) - order.get(b.id));
+    }
+    return { list, counts };
+  }
   function renderCases() {
-    const tags = [...new Set(S.cases.flatMap((c) => c.tags))].sort();
-    const q = (S.cfilter || "").toLowerCase();
-    const list = S.cases.filter((c) => (!S.ctag || c.tags.includes(S.ctag)) && (!q || `${c.id} ${c.title} ${c.tests} ${c.tags.join(" ")}`.toLowerCase().includes(q)));
-    if (!S.csel.case || !S.byId[S.csel.case]) S.csel.case = (list[0] || S.cases[0] || {}).id;
-    $("clist").innerHTML = `<input id="cfind" type="search" placeholder="Find a case" value="${esc(S.cfilter || "")}" aria-label="Find a case">
-      <div class="chips tagchips"><button class="chip${S.ctag ? "" : " on"}" data-tag="">all</button>${tags.map((t) => `<button class="chip${S.ctag === t ? " on" : ""}" data-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div>
-      <div class="ccards">${list.map((c) => `<button class="card ccard${c.id === S.csel.case ? " on" : ""}" data-case="${esc(c.id)}">
-        <span class="ctitle">${esc(c.id)} <span class="muted">· level ${esc(c.level)}</span></span><span class="cverdict">${esc(c.title)}</span><span class="cstatus">${esc(c.tags.join(", "))}</span></button>`).join("") || '<p class="empty">No case matches.</p>'}</div>`;
-    $("cfind").oninput = (e) => { S.cfilter = e.target.value; renderCases(); const f = $("cfind"); f.focus(); f.setSelectionRange(f.value.length, f.value.length); };
-    $("clist").querySelectorAll("[data-tag]").forEach((b) => (b.onclick = () => { S.ctag = b.dataset.tag || null; renderCases(); }));
-    $("clist").querySelectorAll("[data-case]").forEach((b) => (b.onclick = () => { S.csel.case = b.dataset.case; remember(); renderCases(); }));
+    if (!S.cstats) loadCaseStats().then((changed) => { if (changed && S.view === "cases") renderCaseCards(); });
+    if (S.ctag) { S.ctags = [S.ctag]; S.ctag = null; }                 // from the matrix's per-tag table
+    if (!S.csel.case || !S.byId[S.csel.case]) S.csel.case = (caseList().list[0] || S.cases[0] || {}).id;
+    const legend = `<div class="clegend small"><span><i class="cs-pass"></i>≥ 50% pass</span><span><i class="cs-mixed"></i>1–49%</span><span><i class="cs-fail"></i>0%</span><span><i class="cs-none"></i>not run</span>
+      <span class="muted" data-tip="A strategy passes a case when every variant it ran passes. The rate is over the strategies that ran the case; equivalent (≈) is shown, not counted as a pass.">of the strategies that ran it ⓘ</span></div>`;
+    $("clist").innerHTML = `<div class="cfilters">
+      <input id="cfind" type="search" placeholder="Find a case" value="${esc(S.cfilter || "")}" aria-label="Find a case">
+      <div class="tagpick" id="tagpick"><span id="tagchips"></span><input id="tagin" type="text" placeholder="Add a tag…" autocomplete="off" aria-label="Filter by tag" aria-autocomplete="list" aria-controls="tagsugg"><div class="tagsugg" id="tagsugg" role="listbox" hidden></div></div>
+      <div class="chips cstatus-btns" role="group" aria-label="Status" id="cstatus"></div>
+      <div class="cselects"><label class="small">Set <select id="cset">${CSETS.map(([k, w]) => `<option value="${k}" ${(S.cset || "all") === k ? "selected" : ""}>${w}</option>`).join("")}</select></label>
+        <label class="small">Sort <select id="csort">${CSORTS.map(([k, w]) => `<option value="${k}" ${(S.csort || "ladder") === k ? "selected" : ""}>${w}</option>`).join("")}</select></label></div>
+      ${legend}</div>
+      <div class="ccards" id="ccards"></div>`;
+    $("cfind").oninput = (e) => { S.cfilter = e.target.value; renderCaseCards(); };
+    $("cset").onchange = (e) => { S.cset = e.target.value; renderCaseCards(); };
+    $("csort").onchange = (e) => { S.csort = e.target.value; renderCaseCards(); };
+    wireTagPick();
+    renderCaseCards();
     remember();
     renderCase();
+  }
+  function renderCaseCards() {
+    if (!$("ccards")) return;
+    const { list, counts } = caseList(), by = (S.cstats && S.cstats.by) || {};
+    const head = document.querySelector("#cdetail .cdsum");               // the open case's line, once the numbers are here
+    if (head && S.csel.case) { head.className = `cdsum cs-${caseClass(by[S.csel.case])}`; head.innerHTML = caseSummary(by[S.csel.case]); }
+    $("cstatus").innerHTML = CSTATUS.map(([k, w]) => `<button class="chip${(S.cstatus || "all") === k ? " on" : ""}" data-cst="${k}" aria-pressed="${(S.cstatus || "all") === k}">${k !== "all" ? `<i class="cs-${k}"></i>` : ""}${w} <span class="muted">${counts[k]}</span></button>`).join("");
+    $("cstatus").querySelectorAll("[data-cst]").forEach((b) => (b.onclick = () => { S.cstatus = b.dataset.cst; renderCaseCards(); }));
+    $("tagchips").innerHTML = (S.ctags || []).map((t) => `<span class="tagchip">${esc(t)}<button data-untag="${esc(t)}" aria-label="Remove tag ${esc(t)}" title="Remove">×</button></span>`).join("");
+    $("tagchips").querySelectorAll("[data-untag]").forEach((b) => (b.onclick = () => { S.ctags = (S.ctags || []).filter((t) => t !== b.dataset.untag); renderCaseCards(); }));
+    $("ccards").innerHTML = list.map((c) => {
+      const x = by[c.id];
+      return `<button class="card ccard cs-${caseClass(x)}${c.id === S.csel.case ? " on" : ""}" data-case="${esc(c.id)}">
+        <span class="ctitle">${esc(c.id)} <span class="muted">· level ${esc(c.level)}</span></span><span class="cverdict">${esc(c.title)}</span>${caseSummary(x)}<span class="cstatus">${esc(c.tags.join(", "))}</span></button>`;
+    }).join("") || '<p class="empty">No case matches.</p>';
+    $("ccards").querySelectorAll("[data-case]").forEach((b) => (b.onclick = () => {
+      S.csel.case = b.dataset.case; remember();
+      $("ccards").querySelectorAll(".ccard.on").forEach((o) => o.classList.remove("on")); b.classList.add("on");
+      renderCase();
+    }));
+  }
+  // tags: type to get suggestions (with how many cases carry each), Enter or a click adds one, × or
+  // Backspace in the empty box removes one; a case must carry every chosen tag
+  function wireTagPick() {
+    const inp = $("tagin"), box = $("tagsugg");
+    let hits = [], at = 0, counts = {};
+    const show = () => {
+      counts = {};                                     // how many of the cases listed now carry each tag
+      caseList().list.forEach((c) => c.tags.forEach((t) => { counts[t] = (counts[t] || 0) + 1; }));
+      const q = inp.value.trim().toLowerCase(), have = new Set(S.ctags || []);
+      hits = Object.keys(counts).filter((t) => !have.has(t) && (!q || t.toLowerCase().includes(q)))
+        .sort((a, b) => (q ? (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) : 0) || counts[b] - counts[a] || a.localeCompare(b)).slice(0, 12);
+      at = Math.min(at, Math.max(0, hits.length - 1));
+      box.innerHTML = hits.map((t, i) => `<div role="option" class="tsug${i === at ? " on" : ""}" aria-selected="${i === at}" data-add="${esc(t)}">${esc(t)} <span class="muted">${counts[t]}</span></div>`).join("") || `<div class="tsug muted">no tag matches</div>`;
+      box.hidden = false;
+      box.querySelectorAll("[data-add]").forEach((d) => (d.onmousedown = (e) => { e.preventDefault(); add(d.dataset.add); }));
+    };
+    const add = (t) => { S.ctags = [...(S.ctags || []), t]; inp.value = ""; at = 0; renderCaseCards(); show(); };
+    inp.onfocus = show;
+    inp.oninput = () => { at = 0; show(); };
+    inp.onblur = () => { box.hidden = true; };
+    inp.onkeydown = (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); at = Math.max(0, Math.min(hits.length - 1, at + (e.key === "ArrowDown" ? 1 : -1))); show(); }
+      else if (e.key === "Enter") { e.preventDefault(); if (hits[at]) add(hits[at]); }
+      else if (e.key === "Escape") { box.hidden = true; inp.blur(); }
+      else if (e.key === "Backspace" && !inp.value && (S.ctags || []).length) { S.ctags = S.ctags.slice(0, -1); renderCaseCards(); show(); }
+    };
   }
   async function renderCase() {
     const c = S.byId[S.csel.case]; if (!c) { $("cdetail").innerHTML = ""; return; }
@@ -579,7 +681,8 @@
     const flows = c.model.flows.map((f) => ({ flow: f, eq: L.equation(f, c.model.schedule) }));
     $("cdetail").innerHTML = `<div class="casehead"><h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
         <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")} · hash ${esc(short(c.hash))}</span>
-        <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}</div>
+        <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
+        <div class="cdsum cs-${caseClass(S.cstats && S.cstats.by[c.id])}">${caseSummary(S.cstats && S.cstats.by[c.id])}</div></div>
       <div class="cstrats">${S.strategies.map((s) => `<span class="cst"><span class="small">${esc(s.name)}</span> ${squares(c.id, s.name)}</span>`).join("")}</div>
       <figure class="dpanel single"><figcaption>True model</figcaption><svg id="c-diagram" role="img" aria-label="The case's true model"></svg></figure>
       <div class="tablewrap"><table class="rtable"><thead><tr><th>flow</th><th>from → to</th><th>equation</th></tr></thead><tbody>
@@ -668,6 +771,7 @@
           S.boardAt = Date.now();
           window.SDLadderBoard.refresh();
         }
+        if (S.view === "cases") loadCaseStats().then((changed) => { if (changed && S.view === "cases") renderCaseCards(); });
         if (S.view === "matrix" || S.view === "cases" || (S.view === "now" && S.sel.case)) {
           await loadSummary();
           if (S.view === "matrix") renderMatrix();

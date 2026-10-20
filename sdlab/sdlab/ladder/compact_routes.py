@@ -3,6 +3,7 @@
     GET /api/ladder/version                                   {version}: changes whenever the summary does (pages poll this)
     GET /api/ladder/leaderboard?variant=&level=&kind=&set=&age=   the leaderboard's rows for one filter (leaderboard.py)
     GET /api/ladder/matrix?case=                              the matrix view's cells (one case's with case), compact
+    GET /api/ladder/casestats                                 each case's pass rate over the strategies (case_stats.py)
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from . import cases as casemod
-from . import compact, leaderboard
+from . import case_stats, compact, leaderboard
 
 router = APIRouter(prefix="/api/ladder")
 
@@ -32,3 +33,8 @@ def matrix(request: Request, case: str | None = None) -> Response:
     if case and not casemod.known(case):
         raise HTTPException(404, f"no case {case!r}")
     return compact.respond(("matrix", case), lambda: compact.matrix(case or None), request)
+
+
+@router.get("/casestats")
+def casestats(request: Request) -> Response:
+    return compact.respond(("casestats",), case_stats.view, request)
