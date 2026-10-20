@@ -25,8 +25,8 @@ Unknown labels are left out of training and counted.
 Nothing else (no status, no score, no case or strategy name, no complexity) goes in.
 
 **Model**: logistic regression (L2, C = 1, standardised inputs), one row per distinct model on a cell
-(identical found flows on a cell count once). Cross-validated by case (GroupKFold over case ids: a case's
-cells are never in the fold that trains for them). Reports: the label's base rate, out-of-fold AUC, a
+(identical found flows on a cell count once). Cross-validated by case family (GroupKFold over `family`: a
+case's cells, and every draw of a parametric case, 045#1..#8, are never in the fold that trains for them). Reports: the label's base rate, out-of-fold AUC, a
 reliability table (predicted vs observed, by bins of predicted confidence), Brier score against the base rate's,
 the coefficients of the model fitted on everything, each label component on its own (rate, how it splits by
 the scorer's pass, and its own out-of-fold AUC from the same features), and the scorer's pass against the label.
@@ -93,10 +93,12 @@ def _logp(p) -> float:
 
 
 def features(rep: dict) -> list[float] | None:
-    """FEATURES of one report, from its NO-TRUTH part only; None when that part is missing."""
+    """FEATURES of one report, from its NO-TRUTH part only; None when that part, or its agreement, is missing."""
     n = rep.get("notruth")
     if not n:
         return None
+    if "agreement" in n and n["agreement"] is None:
+        return None        # evidence.reports found no agreement for the cell's current results (changed since the fill): missing, not neutral
     v = [VERDICT.get((n.get(k) or {}).get("verdict"), 0.5) for k in ("residuals", "invariance", "heldout", "agreement")]
     sk = (n.get("heldout") or {}).get("min_skill")
     a = n.get("agreement") or {}
@@ -152,8 +154,15 @@ def oof(X: np.ndarray, y: np.ndarray, groups: np.ndarray, folds: int = FOLDS) ->
     return p
 
 
+def family(case_id: str) -> str:
+    """The cross-validation group of a case: a parametric case's draws (NNN-slug#i) share their case file's
+    structure and noise, so they are one group; any other case is its own."""
+    return str(case_id).split("#", 1)[0]
+
+
 def dataset(reps: list[dict]) -> dict:
-    """Distinct models (one per (case, variant, model key)) with features: {X, groups, labels, status, keys, unknown}."""
+    """Distinct models (one per (case, variant, model key)) with features: {X, groups (case family), cases,
+    labels, status, ids}."""
     seen, rows = set(), []
     for r in reps:
         f = features(r)
@@ -164,7 +173,8 @@ def dataset(reps: list[dict]) -> dict:
             continue
         seen.add(key)
         rows.append((r, f, label(r)))
-    return {"X": np.array([f for _, f, _ in rows], float).reshape(-1, len(FEATURES)), "groups": np.array([r["case"] for r, _, _ in rows]),
+    return {"X": np.array([f for _, f, _ in rows], float).reshape(-1, len(FEATURES)),
+            "groups": np.array([family(r["case"]) for r, _, _ in rows]), "cases": np.array([r["case"] for r, _, _ in rows]),
             "labels": [lab for _, _, lab in rows], "status": [r["existing"]["status"] for r, _, _ in rows],
             "ids": [r["id"] for r, _, _ in rows]}
 
@@ -178,7 +188,8 @@ def _target(ds: dict, comp: str) -> tuple[np.ndarray, np.ndarray]:
 def report(reps: list[dict]) -> dict:
     ds = dataset(reps)
     n_all = len(ds["labels"])
-    out: dict = {"features": list(FEATURES), "distinct_models": n_all, "cases": len(set(ds["groups"].tolist()))}
+    out: dict = {"features": list(FEATURES), "distinct_models": n_all, "cases": len(set(ds["cases"].tolist())),
+                 "families": len(set(ds["groups"].tolist()))}
     m, y = _target(ds, "right")
     out["labelled"], out["unknown"] = int(m.sum()), int(n_all - m.sum())
     out["base_rate"] = float(y[m].mean()) if m.any() else None
@@ -204,7 +215,7 @@ def report(reps: list[dict]) -> dict:
         return out
     p = oof(X, yy, g)
     if p is None:
-        out["note"] = "one case only: no grouped cross-validation"
+        out["note"] = "one case family only: no grouped cross-validation"
         return out
     out["auc"] = auc(yy, p)
     out["brier"] = float(np.mean((p - yy) ** 2))
@@ -245,7 +256,7 @@ def text(r: dict) -> str:
     if r.get("note"):
         lines.append(r["note"])
         return "\n".join(lines)
-    lines.append(f"out-of-fold AUC (grouped by case, {FOLDS} folds) {f(r['auc'])}; Brier {f(r['brier'], '{:.3f}')} vs base rate's {f(r['brier_base'], '{:.3f}')};"
+    lines.append(f"out-of-fold AUC (grouped by case family: {r.get('families')} groups, {FOLDS} folds) {f(r['auc'])}; Brier {f(r['brier'], '{:.3f}')} vs base rate's {f(r['brier_base'], '{:.3f}')};"
                  f" the scorer's pass as a score: AUC {f(r['auc_scorer_pass'])}")
     lines.append("reliability (predicted -> observed):")
     for b in r["reliability"]:

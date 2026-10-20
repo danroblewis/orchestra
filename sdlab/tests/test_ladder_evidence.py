@@ -94,6 +94,33 @@ def test_oof_never_trains_on_the_case_it_predicts(monkeypatch):
     assert C.oof(X, y, np.array(["one"] * 60)) is None
 
 
+def test_cross_validation_groups_draws_of_a_parametric_case_together(monkeypatch):
+    """045#1..#8 share their case file's structure: no fold may train on one draw and predict another."""
+    assert C.family("045-random-link#3") == C.family("045-random-link#7") == "045-random-link"
+    assert C.family("011-link") == "011-link"
+    seen = []
+    real = C.oof
+
+    def spy(X, y, groups, folds=C.FOLDS):
+        seen.append(groups)
+        return real(X, y, groups, folds)
+    monkeypatch.setattr(C, "oof", spy)
+    rng = np.random.default_rng(2)
+    reps = [_rep(verdict="agrees" if i % 2 else "differs", case=f"0{40 + i % 6}-fam#{1 + i % 4}", model=f"m{i}", id=i,
+                 nt={"residuals": {"verdict": "supports" if i % 2 else "contradicts", "min_p": float(rng.random())}})
+            for i in range(96)]
+    r = C.report(reps)
+    assert r["cases"] == 12 and r["families"] == 6
+    assert seen and all(set(g.tolist()) <= {f"0{40 + k}-fam" for k in range(6)} for g in seen)
+
+
+def test_missing_agreement_is_missing_not_neutral():
+    """evidence.reports sets agreement None when the cell changed since the fill: no features, not 0.5s."""
+    nt = {"residuals": {"verdict": "supports", "min_p": 0.5}, "agreement": None}
+    assert C.features(_rep(nt=nt)) is None
+    assert C.dataset([_rep(nt=nt)])["X"].shape == (0, len(C.FEATURES))
+
+
 def test_report_learns_an_informative_feature():
     rng = np.random.default_rng(1)
     reps = []
