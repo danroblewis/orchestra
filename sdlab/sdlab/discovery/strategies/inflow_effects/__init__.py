@@ -31,7 +31,7 @@ found and fitted by least squares (docs/research/effect-hats.md).
 opts (also SDLAB_INFLOW_EFFECTS_OPTS, JSON), defaults in DEFAULTS: margin, select ("bic" or "judge"),
 prior, knots (knot counts tried), most (candidates per round), per_candidate (placements), finish
 (models finished per round), halves, weighted (rows weighted by their noise), prune, pool (re-cut
-inflows), guard (steps next to an inflow change left out of the fit), level_price (extra price of
+inflows), prune_base (the base's small flows pruned too), guard (steps next to an inflow change left out of the fit), level_price (extra price of
 an inflow value, in log T), seg_base, seg_margin, rounds.
 
 Measured inputs (opts "inputs", inputs.py) are columns in every fit (the matrix's, the screen's, each
@@ -58,7 +58,7 @@ from .screen import scan
 
 DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True,
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
-            "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "harm": None, "no_self_links": True, "pair": True, "coflows": True}
+            "seg_margin": 3.0, "guard": 2, "level_price": 2.0, "rounds": 1, "prune_base": True, "harm": None, "no_self_links": True, "pair": True, "coflows": True}
 
 
 def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100), injections: list[dict] | None = None,
@@ -115,6 +115,11 @@ def _effect_hats(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     # the base as the candidates will be: its outside inflows pooled and re-cut (judged that way too,
     # since the judge feeds a model its own pieces, and fewer pieces always look worse)
     seg = resegment(base["flows"], ids, run, fit_opts) if o["pool"] else base["flows"]
+    # and its small flows the price does not need dropped, as each candidate's are below (the matrix
+    # keeps pieces on a row whose move it read from the other end: 303 counts-short, a counter's
+    # outflow of 5 pieces taking up an 8% fast drain read from inflight's row)
+    if o["prune"] and o["prune_base"]:
+        seg = prune(seg, ids, run, fit_opts)
     base_b = price(seg, ids, run, inputs)
     fair_e = judge(seg, stocks, run, injections=opts.get("injections"), inputs=inputs) if o["pool"] else base_e
     base.update(bic=base_b, judged={"base": base_e, "recut": fair_e}, effects_tried=[])
@@ -193,7 +198,7 @@ def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, b
         return base
     if price(seg, ids, run, inputs) < price(base["flows"], ids, run, inputs) and fair_e < o["seg_margin"] * base_e \
             and (o["harm"] is None or _fair(base["flows"], seg, stocks, run) >= -o["harm"]):
-        return {**base, "flows": _clean(seg), "chosen": f"{base.get('chosen')}, inflows re-cut"}
+        return {**base, "flows": _clean(seg), "chosen": f"{base.get('chosen')}, inflows re-cut and pruned"}
     return base
 
 
