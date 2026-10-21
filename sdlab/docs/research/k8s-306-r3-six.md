@@ -1,7 +1,9 @@
 # Kubernetes 306, round 3: coflow_hats, held_out, lna_products, milp, realistic_flows, z3exact
 
-**Status:** done (2026-10-21). Code: 3de470a (held_out, milp, z3exact). Baseline: pool job 201 at c7cade0
-(the boundary kind `input`: traffic is fixed at 1 x the input). After: pool job 210 at 3de470a. Only 306 was
+**Status:** done (2026-10-21). Code: 3de470a (held_out, milp, z3exact) and 26522ec (milp's runs test).
+
+- Baseline: pool job 201 at c7cade0 (the boundary kind `input`: traffic is fixed at 1 x the input).
+- After: pool job 210 at 3de470a, and job 212 at 26522ec (milp). Only 306 was
 run; earlier rungs were not re-run (the user: one regression check at the end, in the report step).
 Numbers: `sdlab-ladder pool results 201` / `210`, and `sdlab.ladder.store` (latest rows per cell).
 
@@ -102,8 +104,13 @@ Results:
 - none and counts (all four) still pass on the Mac.
 - meas-long still fails on the Mac.
 
-milp's answer on meas therefore depends on the machine (HiGHS' search under its 60 s limit). The pool
-result is reported as it comes (job 212).
+So milp's answer on meas depends on the machine (HiGHS' search under its 60 s limit).
+
+Pool job 212 at 26522ec ran all six cells on the Mac:
+- none-short, none-long, counts-short and counts-long pass;
+- meas-short and meas-long fail.
+
+The node2 pass is in-process only and is not a stored result.
 
 **Capability.** One mixed-integer program over every candidate flow, including MIN(a X, b Y) with per-step
 regime binaries. It is followed by least-squares refits on one-step changes, counts' capped-drain
