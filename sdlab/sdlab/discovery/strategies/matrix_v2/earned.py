@@ -24,6 +24,7 @@ from . import boundary
 from .earned_joint import System, decide
 from .earned_rows import reselect, rss_floor
 from .matrix import finish
+from .capmin import excluded
 
 
 def refit(stocks: list[dict], r: dict, opts: dict, b: boundary.Boundary | None = None) -> dict:
@@ -51,7 +52,7 @@ def refit(stocks: list[dict], r: dict, opts: dict, b: boundary.Boundary | None =
     floor = max(rss_floor(fit["prev"], fit["dy"].shape[1]), float(ctx.get("exact") or 0.0) * fit["dy"].shape[1])
 
     def exclude(s: int) -> tuple:
-        out = [] if b.inputs_ok(ids[s]) else list(inputs)
+        out = excluded(ids[s], names, list(inputs), b.inputs_ok(ids[s]), opts)   # (capmin.py) the offered series: only the limited flow's rows
         if not b.links_ok(ids[s]):
             out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
         return tuple(out)

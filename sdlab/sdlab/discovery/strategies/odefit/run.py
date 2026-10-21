@@ -295,7 +295,7 @@ def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     if d.n < 12 or not ids:
         return {"flows": [], "note": "too short"}
     seg = int(opts.get("seg", SEG))
-    spec = F.Spec(d.S, d.m, region=Region(boundary.Boundary(run), stocks))
+    spec = F.Spec(d.S, d.m, region=Region(boundary.Boundary(run), stocks, inputs, opts))
     w = 1.0 / np.maximum(d.Y.std(axis=0), 1e-9)
     r = F.fit(spec, d, seg, w)
     # weights: each stock's own output error, so a noisier stock counts less

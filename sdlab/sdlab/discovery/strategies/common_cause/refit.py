@@ -11,6 +11,7 @@ from .joint import System, decide
 from .places import offer
 from .rows import reselect
 from . import boundary
+from .capmin import excluded
 
 ALPHA = 0.001       # the whiteness test's level (one test per row and candidate: 1% rejects true rows too often)
 
@@ -35,7 +36,7 @@ def refit(stocks: list[dict], r: dict, opts: dict, ops: Ops, b: boundary.Boundar
     names = ids + inp
     lev = np.vstack([fit["prev"]] + [ctx["columns"][ctx["names"].index(k)][None, :] for k in inp]) if inp else fit["prev"]
     def exclude(s: int) -> tuple:
-        out = [] if b.inputs_ok(ids[s]) else list(range(len(ids), len(names)))
+        out = excluded(ids[s], names, list(range(len(ids), len(names))), b.inputs_ok(ids[s]), opts)   # (capmin.py) the offered series: only the limited flow's rows
         if not b.links_ok(ids[s]):
             out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
         return tuple(out)

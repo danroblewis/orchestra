@@ -14,6 +14,7 @@ from .earned_rows import reselect, rss_floor
 from .matrix import finish, identify_one, known_flows
 from ...regression import fit_subset, piece_values, row_sums
 from ...simulate import behaviour_error
+from .capmin import excluded
 
 # each combination of: forward or backward search; outside inflows that change or stay constant;
 # trusting the receivers or the rows where stocks are seen receiving more than a stock's own row
@@ -62,7 +63,7 @@ def earn(stocks: list[dict], r: dict, opts: dict, bd: boundary.Boundary | None =
     unit = {x["id"]: x.get("unit") or "" for x in stocks}
 
     def exclude(s: int) -> tuple:
-        out = [] if bd.inputs_ok(ids[s]) else list(inputs)
+        out = excluded(ids[s], names, list(inputs), bd.inputs_ok(ids[s]), opts)   # (capmin.py) the offered series: only the limited flow's rows
         if not bd.links_ok(ids[s]):
             out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
         return tuple(out)

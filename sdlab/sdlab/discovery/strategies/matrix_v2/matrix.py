@@ -41,6 +41,7 @@ from .pieces import pool_recut, white
 from .reading import fold_inflows, pair_linear, product_flows
 from .regression import fit_subset, piece_values, stepwise
 from .regression import row_sums as _row_sums
+from .capmin import excluded
 
 
 REL = 1e-8           # (exact) the floor on a fit's mean square residual, relative to the changes' mean square
@@ -175,8 +176,8 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         linked = bnd.links_ok(sid)
         allowed = [j for j in range(F) if may_affect(base[j], s) and not (sid in final and base[j] == s)
                    and (linked or unit[ids[base[j]]] == unit[sid])]
-        if bnd.inputs_ok(sid):
-            allowed += list(range(I0, P0))
+        ex = set(excluded(sid, names, range(I0, P0), bnd.inputs_ok(sid), opts))   # (capmin.py) the offered series: only the limited flow's rows
+        allowed += [j for j in range(I0, P0) if j not in ex]
         held = bnd.pieces_ok(sid)                          # an outside term (constant or pieces)
         prods = [P0 + q for q, (a, c) in enumerate(pairs) if may_affect(a, s) and may_affect(c, s)
                  and not (sid in final and s in (a, c)) and (linked or unit[ids[a]] == unit[ids[c]] == unit[sid])]

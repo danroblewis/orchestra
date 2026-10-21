@@ -119,8 +119,8 @@ class Builder:
             # reading it) only where an estimated one is, and, read as links, any other stock's level
             # only where an estimated inflow is (a link is an inflow from outside)
             bd = self.boundary
-            if not bd.inputs_ok(sid):
-                allowed[self.I0:] = False
+            for j in _capmin.excluded(sid, names, range(self.I0, len(names)), bd.inputs_ok(sid), self.opts):
+                allowed[j] = False                         # (capmin.py) the offered series: only the limited flow's rows
             for j in range(S):
                 if j != s and ((not bd.links_ok(sid) and self.unit[ids[j]] != self.unit[sid])
                                or (v.get("read") == "links" and not bd.may(sid, "in", "estimate"))):

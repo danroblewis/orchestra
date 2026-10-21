@@ -203,7 +203,7 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
         rows = []
         for s in range(S):
             base = [f for f, term in enumerate(terms) if era_of(term) is None and ok(term, s) and inside(term, s)] \
-                + (ins if bnd.inputs_ok(ids[s]) else [])
+                + [f for f in ins if f not in set(_capmin.excluded(ids[s], {f: inputs[f - nT][0] for f in ins}, ins, bnd.inputs_ok(ids[s]), o))]   # (capmin.py)
             simple = [f for f in base if f in ins or len(terms[f]) == 1]
             inflow = o["inflow"] if bnd.pieces_ok(ids[s]) else "none"
             r = fit_row(dy[s], X, base, inflow, simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)

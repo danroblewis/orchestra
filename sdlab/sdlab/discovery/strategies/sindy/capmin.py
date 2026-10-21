@@ -34,6 +34,37 @@ NAME = "capmin__"      # the offered series' name prefix
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
 
 
+def level_series(name) -> bool:
+    """Is this input the offered series? It is a function of measured levels, not something from
+    outside, so a row reads it wherever it may read the levels (a declared boundary's rule for
+    measured inputs does not apply to it)."""
+    return str(name).startswith(NAME)
+
+
+def offered(opts: dict | None) -> dict:
+    """{series name: (X, its receiver or None)} for the series offer() added to opts."""
+    return {k: (v["source"], v.get("to")) for k, v in ((opts or {}).get("capmin") or {}).items()}
+
+
+def readers(name, opts: dict | None) -> tuple | None:
+    """The stocks whose rows may read the offered series `name`: the flow it limits leaves X and enters
+    its receiver (only X when it leaves for outside); None when `name` is not an offered series."""
+    got = offered(opts).get(name)
+    return None if got is None else tuple(x for x in got if x is not None)
+
+
+def excluded(stock: str, names: list[str], inputs, inputs_ok: bool, opts: dict | None) -> list[int]:
+    """The input columns (indices into names) a row of `stock` may not read: a measured input where the
+    boundary has no measured side for it (not inputs_ok), and an offered series outside the rows of
+    the flow it limits."""
+    out = []
+    for j in inputs:
+        r = readers(names[j], opts)
+        if (r is None and not inputs_ok) or (r is not None and stock not in r):
+            out.append(j)
+    return out
+
+
 def _steps(stocks: list[dict], run: dict, opts: dict):
     """Each measured stock's one-step change less announced injections, the levels its rates read
     (injections added), and each measured input at the step's end (the engine's convention)."""
@@ -181,6 +212,7 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     inp[name] = [float(v) for v in series]
     opts["inputs"] = inp
     best["name"] = name
+    opts["capmin"] = {**(opts.get("capmin") or {}), name: {"source": best["source"], "to": best.get("to")}}
     return opts, best
 
 

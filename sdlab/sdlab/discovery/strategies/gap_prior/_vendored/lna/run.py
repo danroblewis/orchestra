@@ -9,6 +9,7 @@ import numpy as np
 
 from sdlab.discovery.matrix import configurations, injected
 from sdlab.discovery.strategies.gap_prior._vendored.lna.atoms import Atom, features, restricted, stoich, superset, variances
+from ...capmin import readers
 from sdlab.discovery.strategies.gap_prior._vendored.lna.fit import Data, OutOfTime, extra_variance, fit, mean_start, numbers, prune
 from sdlab.discovery.strategies.gap_prior._vendored.lna.changes import merge_eras, pieces, split_eras
 from sdlab.discovery.strategies.gap_prior._vendored.lna.coflows import refine_per, with_coflows
@@ -171,7 +172,13 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
                 coef[s_].setdefault(j, k)
         atoms = restricted(S, coef, unit, final)
     for j in range(S, S + len(inputs)):
-        atoms += [Atom("link", dst=s_, driver=j) for s_ in range(S)] + [Atom("drain", src=s_, driver=j) for s_ in range(S) if s_ not in final]
+        r = readers(inputs[j - S][0], opts)
+        if r is None:
+            atoms += [Atom("link", dst=s_, driver=j) for s_ in range(S)] + [Atom("drain", src=s_, driver=j) for s_ in range(S) if s_ not in final]
+        elif ids.index(r[0]) not in final:             # (capmin.py) the offered MIN(X, theta Y): only the flow it limits
+            x = ids.index(r[0])
+            y = ids.index(r[1]) if len(r) > 1 else None
+            atoms.append(Atom("move", src=x, dst=y, driver=j) if y is not None and unit[y] == unit[x] else Atom("drain", src=x, driver=j))
     if "atoms" in hooks:
         atoms = hooks["atoms"](atoms, d, ctx)
     phi = dispersion(atoms, mean_start(atoms, d), d)

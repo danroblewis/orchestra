@@ -24,11 +24,13 @@ from __future__ import annotations
 import numpy as np
 
 from .boundary import Boundary
+from .capmin import excluded
 
 
 class Region:
-    def __init__(self, b: Boundary, stocks: list[dict]):
+    def __init__(self, b: Boundary, stocks: list[dict], inputs: list[str] | None = None, opts: dict | None = None):
         self.b = b
+        self.inputs, self.opts = list(inputs or []), opts       # (capmin.py) the input names, for the offered series
         self.ids = [s["id"] for s in stocks]
         self.units = [s.get("unit") or "" for s in stocks]
         self.final = {k for k, s in enumerate(stocks) if s.get("final")}
@@ -48,6 +50,11 @@ class Region:
                 if j != i and not links and (self.units[j] != self.units[i] or j in self.final):
                     M[i, j] = False
             M[i, S:S + m] = b.inputs_ok(ids[i])
+            if len(self.inputs) == m:                  # (capmin.py) the offered series: only the limited flow's rows
+                names = ids + self.inputs
+                M[i, S:S + m] = True
+                for j in excluded(ids[i], names, range(S, S + m), b.inputs_ok(ids[i]), self.opts):
+                    M[i, j] = False
             M[i, S + m] = pieces
             k = S + m + 1
             M[i, k:k + len(spec.products)] = pieces

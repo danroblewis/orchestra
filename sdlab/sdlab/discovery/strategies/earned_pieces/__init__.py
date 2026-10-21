@@ -59,7 +59,7 @@ def refit(stocks: list[dict], r: dict, opts: dict, b: boundary.Boundary | None =
     final = {s["id"] for s in stocks if s.get("final")}
     L = len(fit["labels"])
     def exclude(s: int) -> tuple:
-        out = [] if b.inputs_ok(ids[s]) else list(inputs)
+        out = _capmin.excluded(ids[s], names, list(inputs), b.inputs_ok(ids[s]), opts)   # (capmin.py) the offered series: only the limited flow's rows
         if not b.links_ok(ids[s]):
             out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
         return tuple(out)
