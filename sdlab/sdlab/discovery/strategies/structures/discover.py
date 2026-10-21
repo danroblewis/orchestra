@@ -99,6 +99,15 @@ def term_filter(run: dict, ids: list[str]):
     return ok
 
 
+def required(run: dict, ids: list[str]) -> set:
+    """The declared sides, (stock index, "in" | "out"), each of which a model keeps a term on (fit.kept);
+    none when no boundary is declared."""
+    b = boundary.Boundary(run)
+    if not b.declared:
+        return set()
+    return {(ids.index(s), side) for s, e in b.sides.items() if s in ids for side, kinds in e.items() if kinds}
+
+
 def _keep(p: Problem, terms: list[Term]) -> list[Term]:
     ok = getattr(p, "term_ok", None)
     return terms if ok is None else [t for t in terms if ok(t)]
@@ -117,6 +126,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
     m = rows.R.shape[0] - S
     p = Problem(rows, np.nan_to_num(data.dy), data.counts, data.q, deadline=began + seconds)
     p.term_ok = term_filter(run, list(data.ids))
+    p.required = required(run, list(data.ids))
     lib = _keep(p, library(S, m, unit, final, group, products=products))
     if products and S * T * len(lib) > CELLS:
         products = False                                 # (too large to screen: plain terms only)

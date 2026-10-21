@@ -68,7 +68,9 @@ class Boundary:
 
     def may(self, stock: str, side: str, kind: str | None = None) -> bool:
         k = self.kinds(stock, side)
-        return bool(k) if kind is None else kind in k
+        # (fix, as 728efec) a side declared "estimate" may hold any outside flow (its form is to be found and
+        # may read a measured input); a side declared only "measured" holds only inflows reading inputs
+        return bool(k) if kind in (None, "measured") else kind in k
 
     # what a row regression (one stock's change on the levels, inputs and an outside inflow) may hold
     def pieces_ok(self, stock: str) -> bool:
@@ -77,7 +79,7 @@ class Boundary:
 
     def inputs_ok(self, stock: str) -> bool:
         """A measured input's column (positive: an inflow reading it, negative: an outflow)."""
-        return self.may(stock, "in", "measured") or self.may(stock, "out", "measured")
+        return self.may(stock, "in") or self.may(stock, "out")   # (fix, 728efec) wherever an outside flow is declared
 
     def links_ok(self, stock: str) -> bool:
         """A column of a stock of another unit (a link from outside, or a drain to outside, reading it)."""
@@ -104,7 +106,14 @@ def _rate_stocks(f: dict) -> set:
 
 def kind_of(f: dict, inputs: set) -> str:
     """"measured" for an outside flow that reads a measured input, else "estimate"."""
-    return "measured" if f.get("input") or _rate_stocks(f) & inputs else "estimate"
+    # (fix, as 728efec) as the cases declare kinds: "measured" only for an outside inflow whose rate reads
+    # only measured inputs; "estimate" for outflows and for inflows that read a stock, a constant or pieces
+    if f.get("from") is not None or f.get("inflow"):
+        return "estimate"
+    reads = _rate_stocks(f) | ({f["input"]} if f.get("input") else set())
+    r = f.get("rate") or {}
+    const = r.get("form") == "constant" or bool(r.get("c"))
+    return "measured" if reads and reads <= set(inputs) and not const else "estimate"
 
 
 def ends(flows: list[dict], ids: list[str]) -> list[list[tuple[str, str]]]:
@@ -174,6 +183,15 @@ def _n_hidden(flows: list[dict], ids: list[str]) -> int:
     return len({x for f in flows for x in (f.get("from"), f.get("to")) if x and x not in ids})
 
 
+
+
+def kept_sides(old: list[dict], new: list[dict], ids: list[str], b: Boundary) -> bool:
+    """(fix, as c2a4894's kept_sides) Declared: every declared side that has an outside flow in old still
+    has one in new (a declared side's flow exists: it may change form, not vanish). Not declared: True."""
+    if not b.declared:
+        return True
+    have = {x for e in ends(new, ids) for x in e}
+    return all(x in have for e in ends(old, ids) for x in e if b.may(*x))
 
 
 def slots(flows: list[dict]) -> list[tuple[dict, str]]:
@@ -435,7 +453,8 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
     if B in data.ids and A is None:
         for j, g in enumerate(flows):
             S = g.get("from")
-            if j == i or S not in data.ids or S in final or g.get("to") is not None or g.get("inflow") or not _same_unit(stocks, S, B):
+            # (fix, as d5cd56a / ca00790) S == B is no move: B's own drain "moved" into B would only delete it
+            if j == i or S == B or S not in data.ids or S in final or g.get("to") is not None or g.get("inflow") or not _same_unit(stocks, S, B):
                 continue
             moved = copy.deepcopy(flows)
             moved[j]["to"] = B
@@ -481,6 +500,7 @@ def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: l
         i = max(bad, key=lambda j: float(np.abs(data.carried(flows[j])).mean()) if not _n_hidden([flows[j]], data.ids) else 0.0)
         best = None
         alts = alternatives(flows, i, stocks, b, data)
+        alts = [a for a in alts if kept_sides(flows, a[1], data.ids, b)] or alts[:1]   # (fix, c2a4894)
         free = set().union(*(touched(flows, cand, data.ids) for _, cand in alts))
         for what, cand in alts:
             fit = Fit(cand, data, free)
@@ -537,6 +557,8 @@ def pair_moves(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, l
                 moved = copy.deepcopy(flows)
                 moved[i]["to"] = B
                 cand = _joined([h for k, h in enumerate(moved) if k != j])
+                if not kept_sides(flows, cand, data.ids, b):   # (fix, c2a4894) a declared side keeps its flow
+                    continue
                 free = frozenset(touched(flows, cand, data.ids))
                 if free not in base:
                     base[free] = price(Fit(flows, data, set(free)), data, b)

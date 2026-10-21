@@ -31,7 +31,7 @@ def test_atoms_offered_only_on_declared_sides():
     assert not any(a.kind in ("out", "drain") and a.src == 0 for a in kept)                   # A has no outflow
     assert not any(a.src is None and a.dst == 1 for a in kept)                                 # B has no inflow
     assert any(a.kind == "move" for a in kept)
-    assert not allow(Atom("link", dst=0, driver=2))          # an input-driven inflow is "measured": not declared on A
+    assert allow(Atom("link", dst=0, driver=2))              # an estimate side may read a measured input (728efec)
     assert Allow(bd.Boundary({}), ["A", "B"]).keep(kept) == kept
 
 

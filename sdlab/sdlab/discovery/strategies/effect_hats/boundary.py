@@ -185,6 +185,15 @@ def _n_hidden(flows: list[dict], ids: list[str]) -> int:
 
 
 
+def kept_sides(old: list[dict], new: list[dict], ids: list[str], b: Boundary) -> bool:
+    """(fix, as c2a4894's kept_sides) Declared: every declared side that has an outside flow in old still
+    has one in new (a declared side's flow exists: it may change form, not vanish). Not declared: True."""
+    if not b.declared:
+        return True
+    have = {x for e in ends(new, ids) for x in e}
+    return all(x in have for e in ends(old, ids) for x in e if b.may(*x))
+
+
 def slots(flows: list[dict]) -> list[tuple[dict, str]]:
     """The numbers of a structure, as (dict, key): a proportional rate's k, a linear rate's constant
     (when not 0) and its terms' k, a constant's value, an outside inflow's piece values; per era where a
@@ -490,6 +499,7 @@ def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: l
         i = max(bad, key=lambda j: float(np.abs(data.carried(flows[j])).mean()) if not _n_hidden([flows[j]], data.ids) else 0.0)
         best = None
         alts = alternatives(flows, i, stocks, b, data)
+        alts = [a for a in alts if kept_sides(flows, a[1], data.ids, b)] or alts[:1]   # (fix, c2a4894)
         free = set().union(*(touched(flows, cand, data.ids) for _, cand in alts))
         for what, cand in alts:
             if best is not None and data.fits - start >= GUARD_FITS:   # (this copy) the best so far, within the budget
@@ -548,6 +558,8 @@ def pair_moves(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, l
                 moved = copy.deepcopy(flows)
                 moved[i]["to"] = B
                 cand = _joined([h for k, h in enumerate(moved) if k != j])
+                if not kept_sides(flows, cand, data.ids, b):   # (fix, c2a4894) a declared side keeps its flow
+                    continue
                 free = frozenset(touched(flows, cand, data.ids))
                 if free not in base:
                     base[free] = price(Fit(flows, data, set(free)), data, b)

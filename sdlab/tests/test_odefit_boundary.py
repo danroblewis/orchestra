@@ -30,8 +30,8 @@ def test_region_masks_undeclared_columns_and_ties_sources():
     reg = Region(bd.Boundary(DECLARED), STOCKS)
     sp = F.Spec(2, 1, region=reg)                     # columns: A, B, input u, constant
     assert reg.ties == {0: [1]}                        # A has no outflow to outside: its drain is all moves
-    assert sp.mask.tolist() == [[False, True, False, True], [True, True, False, True]]
-    W = sp.unpack(np.array([0.0, 20.0, 0.4, -0.2, 0.0]))[0]   # (A,B) (A,1) (B,A) (B,B) (B,1)
+    assert sp.mask.tolist() == [[False, True, True, True], [True, True, True, True]]   # estimate sides may read u (728efec)
+    W = sp.unpack(np.array([0.0, 0.0, 20.0, 0.4, -0.2, 0.0, 0.0]))[0]   # (A,B) (A,u) (A,1) (B,A) (B,B) (B,u) (B,1)
     assert W[0, 0] == -0.4                             # A's own number: minus what B gains from it
     open_ = F.Spec(2, 1, region=Region(bd.Boundary({}), STOCKS))
     assert open_.mask.all() and not open_.ties
