@@ -12,7 +12,9 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const BOX = { w: 96, h: 46 };
   const LAYOUT = { box: BOX, colw: BOX.w + 150, rowh: BOX.h + 100 };
-  const CLS_COLOR = { ok: "var(--good)", wrong: "var(--warn)", missing: "var(--muted)", missed: "var(--muted)", spurious: "var(--bad)", equiv: "var(--eq)", small: "var(--muted)", unscored: "var(--muted)", plain: "var(--fg)", claim: "var(--warn)" };
+  // git colours (the user, 2026-10-21): the true model is the original, the found model the change. Green: added by the change
+  // (in the found model, not the truth); red: removed by it (in the truth, not found); amber: in both, values wrong; grey: unchanged
+  const CLS_COLOR = { ok: "var(--muted)", wrong: "var(--warn)", missing: "var(--bad)", missed: "var(--bad)", spurious: "var(--good)", equiv: "var(--eq)", small: "var(--muted)", unscored: "var(--muted)", plain: "var(--fg)", claim: "var(--warn)" };
   const CLS_WORD = { ok: "found, right", wrong: "found, a number off", missing: "missed", missed: "missed", spurious: "spurious", equiv: "equivalent", small: "too small to count", unscored: "not scored", claim: "a boundary claim (no boundary declared)" };
 
   // The three diagrams' models, from the comparison, all in the truth's layout: the true model and
@@ -56,9 +58,10 @@
     const off = (t) => t.parts.filter((p) => p.found && !p.ok && p.kind !== "effect").map((p) => `${fmt(p.true)} → ${fmt(p.found_value)}`).join(", ");
     const missedParts = (t) => t.parts.filter((p) => !p.found).map((p) => L.partName(p.key).replace(/^the /, "")).join(", ");
     const dFlows = cmp.truth.map((t) => {
-      const sign = { ok: "✓", wrong: "~", missing: "−", equiv: "≈" }[t.cls] || "·", cls = t.cls === "missing" ? "missed" : t.cls === "unscored" ? "plain" : t.cls;
+      const sign = { ok: "", wrong: "~", missing: "−", equiv: "≈" }[t.cls] ?? "·", cls = t.cls === "missing" ? "missed" : t.cls === "unscored" ? "plain" : t.cls;
       const label2 = t.cls === "wrong" ? (off(t) || `missed ${missedParts(t)}`) : t.cls === "missing" ? `missed ${short2(L.rateText(t.flow.rate))}` : short2(L.rateText(t.flow.rate));
-      return { from: t.flow.from, to: t.flow.to, cls, cloud: kindAt(t.flow), dashed: t.cls === "missing", label: `${sign} ${t.flow.id}${t.cls === "missing" && kindAt(t.flow) ? " (declared, not used)" : ""}`, label2,
+      return { from: t.flow.from, to: t.flow.to, cls, cloud: kindAt(t.flow), dashed: t.cls === "missing", thin: t.cls === "ok" || t.cls === "unscored",
+        label: `${sign}${t.cls === "missing" && kindAt(t.flow) ? " (declared, not used)" : ""}`, label2,
         title: `${t.flow.id}: ${t.equation}\n${CLS_WORD[t.cls] || t.cls}${t.notes.length ? "\n" + t.notes.join("\n") : ""}`,
         reads: readsOf(t.flow, t.reads.map((x) => ({ stock: x.stock, label: x.kind === "uses" ? `uses ${fmt(x.per)}` : "effect", dash: x.kind === "uses" ? "1 3" : "5 4", cls: x.cls === "missing" ? "missed" : x.cls || "plain" }))) };
     });
@@ -130,15 +133,30 @@
     const o = { box: BOX, viewBox: { ...vb, y: vb.y - 26, h: vb.h + 26 }, color, maxScale: 1.3, outline };
     D.draw(svgTrue, tD, pos, o);
     D.draw(svgFound, r ? fD : { stocks: fD.stocks, flows: [] }, pos, o);
-    if (svgDiff) D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, o);
+    if (svgDiff) {
+      D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, o);
+      const cap = svgDiff.closest("figure") && svgDiff.closest("figure").querySelector("figcaption");
+      if (cap && r) cap.textContent = diffStat(cmp);
+    }
     return { vb, alias, cmp };
   }
 
-  const LEGEND = `<span class="d-ok">✓ matched</span> · <span class="d-wrong">~ number off</span> · <span class="d-missed">− missed</span> · <span class="d-spurious">+ invented</span> · <span class="d-equiv">≈ equivalent reading</span><br><span class="muted">outside: ☁ solid measured input · ☁ dashed rate estimated · <span class="d-spurious">red: invented boundary</span> (none declared there) · <span class="d-wrong">amber: boundary claim</span> (no boundary declared)</span>`;
+  // "Differences: 2 removed · 1 added · 1 value wrong", like git diff --stat
+  function diffStat(cmp) {
+    const n = { missed: 0, spurious: 0, wrong: 0, equiv: 0 };
+    L.diffLines(cmp).forEach((l) => { if (l.cls in n) n[l.cls] += 1; });
+    const parts = [n.missed && `${n.missed} removed`, n.spurious && `${n.spurious} added`, n.wrong && `${n.wrong} value${n.wrong > 1 ? "s" : ""} wrong`, n.equiv && `${n.equiv} equivalent`].filter(Boolean);
+    return `Differences: ${parts.length ? parts.join(" · ") : "none"}`;
+  }
+  const LEGEND = `<span class="d-missed">− removed: in the true model, not the found one</span> · <span class="d-spurious">+ added: in the found model, not the true one</span> · <span class="d-wrong">~ in both, values wrong (true → found)</span> · <span class="d-ok">grey: unchanged</span> · <span class="d-equiv">≈ equivalent reading</span><br><span class="muted">outside: ☁ solid measured input · ☁ dashed rate estimated · <span class="d-spurious">green: invented boundary</span> (none declared there) · <span class="d-wrong">amber: boundary claim</span> (no boundary declared)</span>`;
   // the differences as a list, one line per flow
   function diffHtml(cmp) {
-    const lines = L.diffLines(cmp);
-    return `<div class="dlist" role="list">${lines.map((l) => `<div class="dline d-${l.cls}" role="listitem"><span class="dsign">${esc(l.sign)}</span><span class="dends">${esc(l.ends)}</span><span class="dtrue">${esc(l.truth)}</span><span class="dnote">${esc(l.note)}</span></div>`).join("") || '<div class="muted small">nothing to compare</div>'}</div>`;
+    const lines = L.diffLines(cmp), same = (l) => ["ok", "small", "plain", "unscored"].includes(l.cls);
+    const row = (l) => `<div class="dline d-${l.cls}" role="listitem"><span class="dsign">${esc(same(l) ? "" : l.sign)}</span><span class="dends">${esc(l.ends)}</span><span class="dtrue">${esc(l.truth)}</span><span class="dnote">${esc(l.note)}</span></div>`;
+    const changed = lines.filter((l) => !same(l)), kept = lines.filter(same);
+    if (!lines.length) return '<div class="muted small">nothing to compare</div>';
+    return `<div class="dlist" role="list">${changed.map(row).join("") || '<div class="muted small">No differences.</div>'}</div>`
+      + (kept.length ? `<details class="dsame"><summary class="small muted">${kept.length} unchanged</summary><div class="dlist" role="list">${kept.map(row).join("")}</div></details>` : "");
   }
 
   // The repairs as a diagram (the strategy page): only what matters. The truth's layout; right flows

@@ -603,14 +603,14 @@ i.cs-pass, i.cs-mixed, i.cs-fail, i.cs-none { display: inline-block; width: 10px
 .dpair.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .dpair.three.stack { grid-template-columns: 1fr; }
 .dcap { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
-.d-ok { color: var(--good); } .d-wrong { color: var(--warn); } .d-missed, .d-missing { color: var(--muted); } .d-spurious { color: var(--bad); } .d-equiv { color: var(--eq); } .d-small, .d-plain, .d-unscored { color: var(--muted); }
+.d-ok { color: var(--muted); } .d-wrong { color: var(--warn); } .d-missed, .d-missing { color: var(--bad); } .d-spurious { color: var(--good); } .d-equiv { color: var(--eq); } .d-small, .d-plain, .d-unscored { color: var(--muted); }
 .dlist { font: 12.5px var(--mono); margin: 8px 0; border: 1px solid var(--rule); border-radius: 5px; background: var(--canvas); overflow-x: auto; }
 .dline { display: grid; grid-template-columns: 1.6em minmax(9em, max-content) minmax(10em, max-content) 1fr; gap: 0 14px; padding: 2px 8px; color: var(--fg); }
 .dline + .dline { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .dline .dsign { font-weight: 700; text-align: center; }
-.dline.d-ok .dsign { color: var(--good); } .dline.d-wrong .dsign, .dline.d-wrong .dnote { color: var(--warn); }
-.dline.d-missed .dsign, .dline.d-missed .dnote { color: var(--muted); } .dline.d-missed { background: color-mix(in srgb, var(--muted) 8%, transparent); }
-.dline.d-spurious .dsign, .dline.d-spurious .dnote { color: var(--bad); } .dline.d-spurious { background: color-mix(in srgb, var(--bad) 7%, transparent); }
+.dline.d-ok .dsign { color: var(--muted); } .dline.d-wrong .dsign, .dline.d-wrong .dnote { color: var(--warn); }
+.dline.d-missed .dsign, .dline.d-missed .dnote { color: var(--bad); } .dline.d-missed { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+.dline.d-spurious .dsign, .dline.d-spurious .dnote { color: var(--good); } .dline.d-spurious { background: color-mix(in srgb, var(--good) 8%, transparent); }
 .dline.d-equiv .dsign, .dline.d-equiv .dnote { color: var(--eq); }
 .dline.d-wrong { background: color-mix(in srgb, var(--warn) 8%, transparent); }
 .board-cards { grid-template-columns: 1fr; }
@@ -657,3 +657,5 @@ figure.conv figcaption { font-size: 12px; color: var(--muted); }
 .crunhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .crunhead h3 { margin: 0; }
 .cst.on { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; border-radius: 4px; }
+
+.dsame { margin-top: 4px; } .dsame summary { cursor: pointer; }
