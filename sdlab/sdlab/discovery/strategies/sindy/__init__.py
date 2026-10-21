@@ -46,6 +46,8 @@ except ImportError:                      # identify() says what is missing
 from ...changes import pelt
 from ...regression import fit_subset
 from . import boundary
+from .capmin import offered as _offered
+from .capmin_pair import pair as _pair_capmin
 from scipy.stats import chi2 as _chi2
 
 LEVELS = ("plain", "levels", "products", "constrained", "uses", "full", "combo")
@@ -117,7 +119,19 @@ def fit_row(y: np.ndarray, X: np.ndarray, allowed: list[int], inflow: str = "cha
     P = len(allowed)
 
     def form(c, extra, chosen=None):
-        chosen = _select(y, Xa, c, gamma=gamma, simpler=simp) if chosen is None else chosen
+        if chosen is None:
+            chosen = _select(y, Xa, c, gamma=gamma, simpler=simp)
+            # (2026-10-21) the paths and their one-term polish can stop on products that stand in for
+            # levels (306 counts-short: queue x responses_total and queue x errors_total in queue's row,
+            # 3.9 above the true levels-only support, which is two removals and two additions away):
+            # the support chosen among the simple terms alone (levels and inputs) is a second start,
+            # kept when it prices better on the same pieces
+            if first and len(first) < P:
+                alt = sorted(first[q] for q in _select(y, Xa[first], c, gamma=gamma))
+                sums = row_sums(y, Xa, c)
+                price = lambda ch: _ebic(T, fit_subset(sums, ch).rss, len(ch) + extra, len(ch), P, gamma)  # noqa: E731
+                if alt != sorted(chosen) and price(alt) < price(chosen) - 1e-9:
+                    chosen = alt
         f = fit_subset(row_sums(y, Xa, c), chosen)
         return {"cuts": c, "chosen": chosen, "f": f, "sc": _ebic(T, f.rss, len(chosen) + extra, len(chosen), P, gamma)}
 
@@ -305,6 +319,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     declared = boundary.Boundary(run).declared
     for v in variants(level, has_eras):
         r = identify_one(stocks, run, {**opts, **v})
+        if r.get("flows") and _offered(opts):
+            # (capmin_pair.py) a row reads the offered MIN series as an outside flow: its two halves joined
+            # into the one flow capmin.offer found, before the boundary's guard can pair them elsewhere
+            r = {**r, "flows": _pair_capmin(r["flows"], opts)}
         # the declared boundary: the judge sees the candidate guarded (boundary.py); its own model is
         # kept, so the measurement-error refit decides its numbers and the final guard its structure
         g = boundary.apply(r, stocks, run, opts, final=False) if declared and r.get("flows") else r

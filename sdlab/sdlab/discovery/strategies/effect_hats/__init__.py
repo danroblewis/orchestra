@@ -49,6 +49,8 @@ from .inputs import rows as input_rows
 from .price import price, prune
 from .pieces import resegment
 from .screen import scan
+from .capmin import offered
+from .capmin_pair import pair as pair_capmin
 
 DEFAULTS = {"margin": 1.1, "select": "bic", "prior": 2.0, "knots": [2, 3, 4, 6, 8], "most": 3, "halves": True,
             "weighted": True, "per_candidate": 2, "prune": True, "pool": True, "finish": 4, "seg_base": True,
@@ -81,6 +83,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     o = {**DEFAULTS, **{k: opts.pop(k) for k in list(opts) if k in DEFAULTS}}
     base = matrix_identify(stocks, run, {**opts, "candidates": keep})
     base_e = min((x["error"] for x in base.get("tried") or []), default=float("inf"))
+    if base.get("flows") and offered(opts):
+        # (capmin_pair.py) the pinned matrix reads the offered MIN series in every row: its halves joined
+        # into the one flow capmin.offer found, before the boundary's guard can pair them elsewhere
+        base = {**base, "flows": pair_capmin(base["flows"], opts)}
+        base_e = judge(base["flows"], stocks, run, injections=opts.get("injections"), inputs=opts.get("inputs") or None)
     # the declared boundary (boundary.py, docs/research/declared-boundary.md): the base kept inside it
     # (the guard: an outside flow the case does not declare becomes its best-priced alternative), and
     # the search below offers outside flows only on declared sides

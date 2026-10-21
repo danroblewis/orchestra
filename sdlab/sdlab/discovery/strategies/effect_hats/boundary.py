@@ -433,6 +433,15 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
                 if g.get("from") is None and g.get("to") == R and kind_of(g, set(data.inputs)) == "estimate":
                     both = [h for k, h in enumerate(moved) if k != j]
                     out.append((f"{name} and outside -> {R} made the move {A} -> {R}", _joined(both)))
+                    # (this copy, 2026-10-21) the move may read what the inflow read instead of what the
+                    # outflow read: 306 counts-short paired inflight -> outside (a proxy on traffic) with
+                    # outside -> errors_total (on inflight) and kept only the proxy's reader
+                    if not g.get("inflow") and not g.get("byTime") and not f.get("byTime"):
+                        alt = copy.deepcopy(moved)
+                        _set_rate(alt[i], copy.deepcopy(g.get("rate") or {}))
+                        alt[i].pop("driver", None)
+                        out.append((f"{name} and outside -> {R} made the move {A} -> {R} reading the inflow's rate",
+                                    _joined([h for k, h in enumerate(alt) if k != j])))
         r = f.get("rate") or {}
         terms = ([{"stock": r.get("stock"), "k": r.get("k")}] if r.get("form") == "proportional"
                  else r.get("terms") if r.get("form") == "linear" and not r.get("c") else None)
