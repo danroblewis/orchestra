@@ -4,6 +4,7 @@ title: "Kubernetes 7: ready replicas cap the throughput"
 level: 7
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, injection]
 tests: "rung 6 with a capacity: the service dispatches min(0.6 x queue, 40 x ready) a step, the demand or what the ready pods can take (40 requests a pod a step), whichever is less; ready (measured) is scaled by hand, +4 pods at 08:00 and -4 at 20:00 (9 pods at night, 13 by day) every day (announced: kubectl scale), so the cap binds in the afternoon peak and at 20:00; recovered as a MIN of the queue and ready, not one rate of one stock"
+timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
 seed: 306
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

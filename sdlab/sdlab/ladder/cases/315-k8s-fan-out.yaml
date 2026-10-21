@@ -5,6 +5,7 @@ title: "Kubernetes 16: fan-out, one service calls two"
 level: 16
 tags: [kubernetes, input, chain, move, final, periodic, link]
 tests: "rung 15 plus fan-out: frontend also calls cart (0.15 a step per request in frontend_inflight; cart dispatches at 0.5 and completes at 0.4), so two callees share one caller's daily shape; recovered as two links from frontend_inflight, one into each callee's queue, and no link between the callees (catalog and cart move together only because they share a caller)"
+timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
 seed: 315
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

@@ -4,6 +4,7 @@ title: "Kubernetes 11: memory per pod and OOM kills"
 level: 11
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max, delay, effect, effect-table]
 tests: "rung 10 plus memory: the service leaks 1 MiB a step a pod (leak, hidden: nothing scrapes it), and each pod's working set (mem, MiB, measured) follows 150 MiB plus the leak plus 2 MiB per request in flight per ready pod through a 10-minute lag; near the 512 MiB limit pods are OOM-killed (a table of mem: none below 480, 30% of ready pods a step at 512), go back to pending and restart, the kills counted in oom_kills_total (a measured counter) and the killed pods' leak freed; recovered as an effect of mem on the move ready -> pending and on the drain of a hidden leak"
+timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
 seed: 310
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

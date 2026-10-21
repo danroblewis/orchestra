@@ -5,6 +5,7 @@ title: "Kubernetes 18: a mesh of three services with every feature"
 level: 18
 tags: [kubernetes, input, chain, move, final, periodic, link, min, capacity, split, loop, nonlinear, max, delay, effect, effect-table, hidden, injection]
 tests: "every feature of rungs 1-17 at once: frontend (fed by the traffic) calls catalog and cart, and cart calls catalog (a mesh); each service has rung 13's queue, retries, errors, capacity MIN, CPU, HPA on desired, pending pods, a memory leak (hidden) with OOM kills; the three share a node pool (pods start in the room left, shared by their pending counts) with the cluster autoscaler (hidden provisioning stage) and a Postgres pool fed by catalog and cart; announced node failures on Monday, Wednesday and Friday at 10:50; 36 measured stocks and 4 hidden; recovered flow by flow, or at least its behaviour (skill@20)"
+timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
 seed: 317
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

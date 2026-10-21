@@ -4,6 +4,7 @@ title: "Kubernetes 10: pods start slowly (pending to ready)"
 level: 10
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max, delay]
 tests: "rung 9 with a startup delay: the HPA now sets desired replicas (measured), the Deployment creates the missing pods as pending (measured), and a pending pod becomes ready at 0.5 a step (10 minutes on average; image pull and readiness probe); surplus ready pods are deleted at once; recovered as the HPA on desired, the gap desired - pending - ready creating pods, and the move pending -> ready, not ready following cpu directly"
+timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
 seed: 309
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
