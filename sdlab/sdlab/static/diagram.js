@@ -165,7 +165,8 @@
   function draw(svg, D, pos, opts = {}) {
     const box = opts.box || BOX, color = opts.color || (() => "var(--fg)");
     svg.innerHTML = "";
-    const vb = opts.viewBox || bounds(pos, D.flows, box);
+    let vb = opts.viewBox || bounds(pos, D.flows, box);
+    if (opts.outline && !opts.viewBox) vb = { ...vb, y: vb.y - 26, h: vb.h + 26 };     // room for the boundary's frame
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     if (opts.maxScale) svg.style.maxWidth = `${Math.round(vb.w * opts.maxScale)}px`;   // a tiny model is not blown up
     const flows = D.flows.filter((f) => (!f.from || pos[f.from]) && (!f.to || pos[f.to]) && (f.from || f.to));
@@ -179,6 +180,17 @@
       const sign = f.from < f.to ? 1 : -1;                      // the same side for both directions
       return n === 1 ? 0 : sign * (i - (n - 1) / 2) * 16;
     };
+    // the system's boundary (opts.outline: {label, dashed}): a frame around the stocks; outside is the environment
+    if (opts.outline) {
+      const ps = D.stocks.map((s) => pos[s.id]).filter(Boolean);
+      if (ps.length) {
+        const pad = 16, x1 = Math.min(...ps.map((p) => p.x)) - pad, y1 = Math.min(...ps.map((p) => p.y)) - pad - 10;
+        const x2 = Math.max(...ps.map((p) => p.x)) + box.w + pad, y2 = Math.max(...ps.map((p) => p.y)) + box.h + pad;
+        const g = el("g", { class: "doutline" }, svg);
+        el("rect", { x: x1, y: y1, width: x2 - x1, height: y2 - y1, rx: 12, fill: "none", stroke: "var(--muted)", "stroke-width": 1.2, "stroke-dasharray": "8 5", opacity: 0.8 }, g);
+        if (opts.outline.label) text(g, x1 + 8, y1 + 12, opts.outline.label, { "font-size": 10.5, fill: "var(--muted)" });
+      }
+    }
     const gLinks = el("g", {}, svg), gFlows = el("g", {}, svg), gStocks = el("g", {}, svg), gLabels = el("g", {}, svg);
     const geo = new Map(flows.map((f) => [f, flowEnds(f, pos, spots, box, offsetOf(f))]));
 
@@ -206,7 +218,13 @@
       el("path", { d: `M${a.x} ${a.y} L${b.x} ${b.y}`, stroke: "transparent", "stroke-width": 14, fill: "none" }, g);
       arrowHead(g, a, b, col, 12);
       // an invented flow's outside (source or sink) is invented too: drawn in the flow's colour
-      if (!f.from || !f.to) cloud(gFlows, spots.get(f), f.cls === "spurious" && !f.thin ? { stroke: col, "stroke-width": 1.8 } : {});
+      if (!f.from || !f.to) {
+        // the cloud: solid for a measured input, dashed for an outside flow whose rate is estimated
+        // (f.cloud, from the case's declared boundary); an invented or claimed one in the flow's colour
+        const ca = f.cloud === "estimate" ? { "stroke-dasharray": "3 2" } : f.cloud === "measured" ? { "stroke-width": 1.8 } : {};
+        if ((f.cls === "spurious" || f.cls === "claim") && !f.thin) Object.assign(ca, { stroke: col, "stroke-width": 1.8 });
+        cloud(gFlows, spots.get(f), ca);
+      }
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
       // the label sits beside the arrow, on the side its offset pushed it to (above when level)

@@ -12,20 +12,25 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const BOX = { w: 96, h: 46 };
   const LAYOUT = { box: BOX, colw: BOX.w + 150, rowh: BOX.h + 100 };
-  const CLS_COLOR = { ok: "var(--good)", wrong: "var(--warn)", missing: "var(--muted)", missed: "var(--muted)", spurious: "var(--bad)", equiv: "var(--eq)", small: "var(--muted)", unscored: "var(--muted)", plain: "var(--fg)" };
-  const CLS_WORD = { ok: "found, right", wrong: "found, a number off", missing: "missed", missed: "missed", spurious: "spurious", equiv: "equivalent", small: "too small to count", unscored: "not scored" };
+  const CLS_COLOR = { ok: "var(--good)", wrong: "var(--warn)", missing: "var(--muted)", missed: "var(--muted)", spurious: "var(--bad)", equiv: "var(--eq)", small: "var(--muted)", unscored: "var(--muted)", plain: "var(--fg)", claim: "var(--warn)" };
+  const CLS_WORD = { ok: "found, right", wrong: "found, a number off", missing: "missed", missed: "missed", spurious: "spurious", equiv: "equivalent", small: "too small to count", unscored: "not scored", claim: "a boundary claim (no boundary declared)" };
 
   // The three diagrams' models, from the comparison, all in the truth's layout: the true model and
   // the found one each plain (neither is marked: the truth is the reference), and the differences:
   // every flow of either model marked ✓ matched, ~ a number off, − missed, + invented, ≈ equivalent.
   function diagrams(c, cmp, found) {
     const truth = c.model, measured = new Set(cmp.measured);
+    // the case's declared boundary (2026-10-20): {stock: {in: [kinds], out: [kinds]}}, or null (undeclared)
+    const B = c.boundary || null;
+    const sideOf = (f) => (!f.from && f.to ? [f.to, "in"] : f.from && !f.to ? [f.from, "out"] : null);
+    const kindAt = (f) => { const sd = sideOf(f); return sd && B && B[sd[0]] && (B[sd[0]][sd[1]] || [])[0]; };
+    const crossing = (f) => { const sd = sideOf(f); return !sd ? null : !B ? "claim" : kindAt(f) ? "declared" : "invented"; };
     const readsOf = (f, extra) => [...L.readers(f)].filter((x) => x !== "const" && x !== f.from).map((stock) => ({ stock })).concat(extra || []);
     const extrasOf = (f, cls) => [...(f.effects || []).map((e) => ({ stock: e.stock, label: "effect", dash: "5 4", cls })), ...(f.uses || []).map((u) => ({ stock: u.stock, label: `uses ${fmt(+u.per)}`, dash: "1 3", cls }))];
     const tStocks = truth.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured", title: `${s.id}: starts at ${fmt(s.initial)}${measured.has(s.id) ? "" : ", not measured"}` }));
     const tD = {
       stocks: tStocks,
-      flows: cmp.truth.map((t) => ({ from: t.flow.from, to: t.flow.to, cls: "plain", label: t.flow.id, label2: short2(L.rateText(t.flow.rate)),
+      flows: cmp.truth.map((t) => ({ from: t.flow.from, to: t.flow.to, cls: "plain", cloud: kindAt(t.flow), label: t.flow.id, label2: short2(L.rateText(t.flow.rate)),
         title: `${t.flow.id}: ${t.equation}`, reads: readsOf(t.flow, extrasOf(t.flow, "plain")) })),
     };
     // a stock only the found model names (an inferred one) may have a long id: short names in the drawing
@@ -37,7 +42,9 @@
     const fFlows = [], vias = {}, viaOf = new Map();
     const rateLabel = (f) => short2(al(f.inflow && f.inflow.length > 1 ? L.equation(f).split(" on average")[0] : f.byTime && f.byTime.length > 1 ? `${L.rateText(f.rate)} (by time)` : L.rateText(f.rate)));
     cmp.found.forEach((x, k) => {
-      const f = x.flow, common = { cls: "plain", label: rateLabel(f), label2: "", title: `${L.equation(f)}${f.note ? "\n" + f.note : ""}` };
+      const f = x.flow, cr = crossing(f);
+      const common = { cls: cr === "invented" ? "spurious" : cr === "claim" ? "claim" : "plain", cloud: kindAt(f), label: rateLabel(f),
+        label2: cr === "invented" ? "invented boundary" : cr === "claim" ? "boundary claim" : "", title: `${L.equation(f)}${f.note ? "\n" + f.note : ""}` };
       if (f.via) {
         const id = `via:${k}`;
         vias[id] = { from: f.from, to: f.to }; viaOf.set(x, id);
@@ -51,7 +58,7 @@
     const dFlows = cmp.truth.map((t) => {
       const sign = { ok: "✓", wrong: "~", missing: "−", equiv: "≈" }[t.cls] || "·", cls = t.cls === "missing" ? "missed" : t.cls === "unscored" ? "plain" : t.cls;
       const label2 = t.cls === "wrong" ? (off(t) || `missed ${missedParts(t)}`) : t.cls === "missing" ? `missed ${short2(L.rateText(t.flow.rate))}` : short2(L.rateText(t.flow.rate));
-      return { from: t.flow.from, to: t.flow.to, cls, dashed: t.cls === "missing", label: `${sign} ${t.flow.id}`, label2,
+      return { from: t.flow.from, to: t.flow.to, cls, cloud: kindAt(t.flow), dashed: t.cls === "missing", label: `${sign} ${t.flow.id}${t.cls === "missing" && kindAt(t.flow) ? " (declared, not used)" : ""}`, label2,
         title: `${t.flow.id}: ${t.equation}\n${CLS_WORD[t.cls] || t.cls}${t.notes.length ? "\n" + t.notes.join("\n") : ""}`,
         reads: readsOf(t.flow, t.reads.map((x) => ({ stock: x.stock, label: x.kind === "uses" ? `uses ${fmt(x.per)}` : "effect", dash: x.kind === "uses" ? "1 3" : "5 4", cls: x.cls === "missing" ? "missed" : x.cls || "plain" }))) };
     });
@@ -59,14 +66,15 @@
     cmp.found.forEach((x) => {
       const f = x.flow, invented = x.cls === "spurious", reread = x.cls === "equiv" && !x.parts.length, extra = x.spurious.length && x.parts.length;
       if (!invented && !reread && !extra) return;
-      const cls = reread || (x.cls === "equiv") ? "equiv" : "spurious";
-      const label = reread ? "≈ read as" : extra ? "+ extra term" : "+ invented";
+      const cr = crossing(f);
+      const cls = reread || (x.cls === "equiv") ? "equiv" : cr === "claim" && !extra ? "claim" : "spurious";
+      const label = reread ? "≈ read as" : extra ? "+ extra term" : cr === "invented" ? "+ invented boundary" : cr === "claim" ? "? boundary claim" : "+ invented";
       const label2 = extra ? x.spurious.map((p) => `${p.reader || ""} ${fmt(p.value)}`.trim()).join(", ") : rateLabel(f);
       const title = `${L.equation(f)}\n${x.notes.join("\n")}`;
       if (viaOf.has(x)) {
         const id = viaOf.get(x);
         dFlows.push({ cls, label, label2, title, from: f.from || f.via.echo, to: id, reads: [] }, { cls, label: "", from: id, to: f.to, reads: [] });
-      } else dFlows.push({ cls, thin: !!extra, label, label2, title, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, cls)) });
+      } else dFlows.push({ cls, thin: !!extra, cloud: kindAt(f), label, label2, title, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, cls)) });
     });
     // a stock only the found model has (an inferred or hidden stage) takes the colour of the flows that
     // make it: red when every one of them is invented, the equivalent colour when one is a re-reading
@@ -118,13 +126,15 @@
     const x0 = Math.min(...bs.map((b) => b.x)), y0 = Math.min(...bs.map((b) => b.y));
     const vb = { x: x0, y: y0, w: Math.max(...bs.map((b) => b.x + b.w)) - x0, h: Math.max(...bs.map((b) => b.y + b.h)) - y0 };
     const color = (cls) => CLS_COLOR[cls] || "var(--fg)";
-    D.draw(svgTrue, tD, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
-    D.draw(svgFound, r ? fD : { stocks: fD.stocks, flows: [] }, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
-    if (svgDiff) D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, { box: BOX, viewBox: vb, color, maxScale: 1.3 });
+    const outline = { label: c.boundary ? "system boundary" : "boundary not declared" };
+    const o = { box: BOX, viewBox: { ...vb, y: vb.y - 26, h: vb.h + 26 }, color, maxScale: 1.3, outline };
+    D.draw(svgTrue, tD, pos, o);
+    D.draw(svgFound, r ? fD : { stocks: fD.stocks, flows: [] }, pos, o);
+    if (svgDiff) D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, o);
     return { vb, alias, cmp };
   }
 
-  const LEGEND = `<span class="d-ok">✓ matched</span> · <span class="d-wrong">~ number off</span> · <span class="d-missed">− missed</span> · <span class="d-spurious">+ invented</span> · <span class="d-equiv">≈ equivalent reading</span>`;
+  const LEGEND = `<span class="d-ok">✓ matched</span> · <span class="d-wrong">~ number off</span> · <span class="d-missed">− missed</span> · <span class="d-spurious">+ invented</span> · <span class="d-equiv">≈ equivalent reading</span><br><span class="muted">outside: ☁ solid measured input · ☁ dashed rate estimated · <span class="d-spurious">red: invented boundary</span> (none declared there) · <span class="d-wrong">amber: boundary claim</span> (no boundary declared)</span>`;
   // the differences as a list, one line per flow
   function diffHtml(cmp) {
     const lines = L.diffLines(cmp);

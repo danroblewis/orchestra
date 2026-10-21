@@ -767,10 +767,11 @@
     const pos = D.layout(c.model.stocks.map((s) => s.id), c.model.flows, { ...LAYOUT, maxCols: maxCols() });
     D.draw($("c-diagram"), {
       stocks: c.model.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured" })),
-      flows: c.model.flows.map((f) => ({ from: f.from, to: f.to, cls: "plain", label: f.id, label2: short2(L.rateText(f.rate)), title: `${f.id}: ${L.equation(f, c.model.schedule)}`,
+      flows: c.model.flows.map((f) => ({ from: f.from, to: f.to, cls: "plain", label: f.id,
+        cloud: c.boundary && ((!f.from && f.to && ((c.boundary[f.to] || {}).in || [])[0]) || (f.from && !f.to && ((c.boundary[f.from] || {}).out || [])[0])) || undefined, label2: short2(L.rateText(f.rate)), title: `${f.id}: ${L.equation(f, c.model.schedule)}`,
         reads: [...L.readers(f)].filter((x) => x !== "const" && x !== f.from).map((stock) => ({ stock }))
           .concat((f.effects || []).map((e) => ({ stock: e.stock, label: "effect", dash: "5 4", cls: "plain" })), (f.uses || []).map((u) => ({ stock: u.stock, label: `uses ${fmt(+u.per)}`, dash: "1 3", cls: "plain" }))) })),
-    }, pos, { box: BOX, color: (k) => CLS_COLOR[k] || "var(--fg)", maxScale: 1.3 });
+    }, pos, { box: BOX, color: (k) => CLS_COLOR[k] || "var(--fg)", maxScale: 1.3, outline: { label: c.boundary ? "system boundary" : "boundary not declared" } });
     $("cdetail").querySelectorAll(".sq[data-case]").forEach((b) => (b.onclick = () => {
       S.csel.run = { strategy: b.dataset.strategy, variant: b.dataset.variant };
       S.csel.variant = b.dataset.variant;                                     // the data below: the run's variant
