@@ -6,7 +6,8 @@ one structure in a linear model class fit every one-step change within the data'
 
 **The class.** Each measured stock's one-step change is a sum of terms, each a number times a column:
 a measured stock's level, a measured input (aligned as the shared matrix method aligns it: the step from
-t[i] to t[i+1] reads the levels at t[i] and the inputs at t[i+1]), or a constant per announced era. A
+t[i] to t[i+1] reads the levels at t[i] and the inputs at t[i+1]), or a constant; with announced eras,
+every column is split per era (each era its own numbers, each era's term its own term). A
 term is either a *move* between two stocks of the same unit (one number: what one loses the other gains;
 its sign gives the direction) or an *outside* term on one stock. An outside term on stock s reading
 column j is allowed only where the boundary lets it be: with a declared boundary, on a side of s whose
@@ -17,9 +18,17 @@ declared, everywhere. An announced injection is added at the start of its step (
 (Fraction of their repr), the changes and inputs are exact rationals, and Z3 works over the reals
 (linear real arithmetic, exact). The data are rounded to d decimals (d read from the data: the most
 decimals any level has), so the true model's residual on a step of stock s is at most
-2h + h * sum_j |A_sj| over the stock columns (h = half a unit of the d-th decimal; A_sj the net number
-of column j in the row of s), plus a float slack (1e-9 of the largest level). That is the constraint:
-the true structure, if it is in the class, always fits.
+2h + h * sum_j |A_sj| over the stock columns (h = half a unit of the d-th decimal; A_sj the true net
+number of column j in the row of s), plus a float slack (1e-9 of the largest level). The tolerance
+uses NORM_MARGIN (2) x the least-squares row's sum in place of the true one (`tolerances`), so it is a
+fixed number per stock and the constraints stay linear.
+
+**Speed** (three devices, none of which changes what fits): lazy rows (Z3 starts from no steps; a
+candidate structure is checked exactly on every step, and the worst steps it misses join the search
+when no numbers of that structure fit them all); a verification LP per candidate (HiGHS in floats, its
+numbers then checked exactly in rationals; only a borderline answer goes to Z3's exact LP); and the
+bounds of every net number implied by the data (two LPs per stock and column, widened by 1e-7), added
+as constraints, with "some term must reach (s, j)" wherever the interval excludes 0.
 
 **Structures.** A structure is the set of included terms (a move's pair and column; an outside term's
 stock and column). Adding a term with a number of 0 always fits, so structures are counted *irreducible*:
@@ -55,9 +64,9 @@ MAX_DECIMALS = 9              # more decimals than this: raw floats (h from FLOA
 
 @dataclass
 class Column:
-    name: str                 # a stock id, an input name, or "1" (a constant) with its era
+    name: str                 # a stock id, an input name, or "1" (a constant)
     kind: str                 # "stock", "input", "const"
-    era: int | None = None    # for "const": the era index
+    era: int | None = None    # with announced eras: the era it holds in (0 elsewhere), each era its own number
     unit: str | None = None
 
 
@@ -71,7 +80,7 @@ class Term:
 
     def key(self, cols: list[Column]) -> str:
         c = cols[self.col]
-        what = c.name if c.kind != "const" else ("1" if c.era is None else f"1@era{c.era}")
+        what = c.name + ("" if c.era is None else f"@era{c.era}")
         return f"move {self.a}~{self.b} [{what}]" if self.kind == "move" else f"outside {self.a} [{what}]"
 
 
@@ -146,8 +155,10 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
     for j in opts.get("injections") or []:
         if j.get("stock") in ids and j["t"] in t:
             inj[(j["stock"], t.index(j["t"]))] = inj.get((j["stock"], t.index(j["t"])), Fraction(0)) + Fraction(float(j["amount"]))
-    cols = [Column(i, "stock", unit=units[i]) for i in ids] + [Column(k, "input") for k in sorted(inputs)]
-    cols += [Column("1", "const", era=(e if starts else None)) for e in range(len(starts) + 1)]
+    cols = []
+    for e in (range(len(starts) + 1) if starts else [None]):     # announced eras: every number may change at each
+        cols += [Column(i, "stock", era=e, unit=units[i]) for i in ids] + [Column(k, "input", era=e) for k in sorted(inputs)]
+        cols.append(Column("1", "const", era=e))
     keep = [i for i in range(len(t) - 1)
             if all(raw[s][i] == raw[s][i] and raw[s][i + 1] == raw[s][i + 1] for s in ids)
             and all(i + 1 < len(v) and v[i + 1] == v[i + 1] for v in inputs.values())]
@@ -155,13 +166,16 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
     X: list[list[Fraction]] = [[] for _ in cols]
     dY: list[list[Fraction]] = [[] for _ in ids]
     for i in keep:
+        era = era_of(t[i + 1])
         for c, col in enumerate(cols):
-            if col.kind == "stock":
+            if col.era is not None and col.era != era:
+                X[c].append(Fraction(0))
+            elif col.kind == "stock":
                 X[c].append(L[col.name][i] + inj.get((col.name, i + 1), Fraction(0)))
             elif col.kind == "input":
                 X[c].append(Fraction(repr(inputs[col.name][i + 1])))
             else:
-                X[c].append(Fraction(1) if (col.era is None or era_of(t[i + 1]) == col.era) else Fraction(0))
+                X[c].append(Fraction(1))
         for r, s in enumerate(ids):
             dY[r].append(L[s][i + 1] - L[s][i] - inj.get((s, i + 1), Fraction(0)))
     declared = bool(run.get("boundary_declared"))

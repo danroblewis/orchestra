@@ -909,6 +909,20 @@ strategies:
     status: work in progress
     note: docs/research/milp.md.
 
+  z3exact:
+    idea: On data without noise, find the model with the fewest terms that explains every step exactly (to the data's rounding), proved by the Z3 solver.
+    how: >-
+      Every possible term - a move between two stocks, or an outside flow where the case's boundary
+      allows one - gets an on/off switch. The Z3 solver, working with exact fractions, looks for the
+      smallest set of switches whose numbers make every stock's change in every step match the data
+      to within its rounding (4 decimals), with the boundary as a hard rule. The numbers of the set
+      found are then refitted by least squares. When nothing fits that exactly (noisy data, or rates
+      that are not straight-line formulas), it returns no model and says so.
+    helps_with: Noise-free linear systems - chains, loops, drains, measured inputs, announced eras - and telling when the data allow more than one equally small model.
+    builds_on: nothing (its own copy of the harness's identifiability search, sdlab/ladder/z3_ident.py)
+    status: work in progress
+    note: docs/research/z3.md. Noise-free variants only; on noisy data it returns nothing.
+
 glossary:
 
   # the model's parts
