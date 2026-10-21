@@ -205,13 +205,23 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
             dY[r].append(L[s][i + 1] - L[s][i] - inj.get((s, i + 1), Fraction(0)))
     declared = bool(run.get("boundary_declared"))
     terms: list[Term] = []
+    # (strategy copy only, 2026-10-21; docs/research/k8s-306-r3-six.md) an offered capacity series m = MIN(X, theta Y)
+    # (capmin.py) is X's level clipped to the capacity: in the "ends" class a move X -> R may read it as it reads
+    # X, and only the rows capmin allows (X and its receiver, or X alone for an outflow) read it at all; an
+    # outside term reading it is judged as one reading a level, not a measured input
+    from . import capmin as _cm
+    lim = {k: v for k, v in ((k, _cm.readers(k, opts)) for k in inputs) if v is not None}
     for a_i, a in enumerate(ids):
         for b in ids[a_i + 1:]:
             if units[a] == units[b]:
-                terms += [Term("move", c, a, b) for c, col in enumerate(cols) if moves == "any" or col.name in (a, b) and col.kind == "stock"]
+                terms += [Term("move", c, a, b) for c, col in enumerate(cols)
+                          if (col.name not in lim or set(lim[col.name]) == {a, b})
+                          and (moves == "any" or col.name in (a, b) and col.kind == "stock" or set(lim.get(col.name) or ()) == {a, b})]
     for s in ids:
         for c, col in enumerate(cols):
-            sides = _kind_sides(run.get("boundary"), declared, s, col.kind, boundary)
+            if col.name in lim and tuple(lim[col.name]) != (s,):
+                continue
+            sides = _kind_sides(run.get("boundary"), declared, s, "stock" if col.name in lim else col.kind, boundary)
             if sides:
                 terms.append(Term("outside", c, s, sides=sides))
     top = max([abs(v) for s in ids for v in raw[s] if not math.isnan(v)] or [1.0])

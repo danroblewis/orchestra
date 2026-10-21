@@ -11,9 +11,16 @@ import numpy as np
 
 
 class Steps:
+    def same_unit(self, a: str, b: str) -> bool:
+        """Can a move carry a's contents into b? (2026-10-21) Only between stocks of one unit (or where a unit is
+        not given): what leaves a arrives in b, so it is the same stuff. A capacity may read any unit."""
+        ua, ub = self.units.get(a), self.units.get(b)
+        return not ua or not ub or ua == ub
+
     def __init__(self, stocks: list[dict], run: dict, opts: dict):
         self.ids = [s["id"] for s in stocks]
         self.final = {s["id"] for s in stocks if s.get("final")}
+        self.units = {s["id"]: s.get("unit") for s in stocks}
         t = np.asarray(run["t"], dtype=float)
         L = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, []), dtype=float) for i in self.ids]))
         self.t = t

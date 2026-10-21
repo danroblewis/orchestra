@@ -31,8 +31,9 @@ from ...holdout import blocks, fill_gaps
 from ...identify import VARIANTS, judge
 from ...matrix import identify_one
 from ...simulate import behaviour_error
-from . import boundary
+from . import boundary, capmin
 from .earned import refit
+from .pairing import pair
 
 FOLDS = 5
 HORIZONS = (5, 20, 100)
@@ -68,6 +69,8 @@ def fit_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 pass
         for k in ("fit", "ctx", "raw_rows"):
             r.pop(k, None)
+    if r.get("flows") and capmin.offered(opts):           # the offered series' two outside halves as one move (pairing.py)
+        r["flows"] = pair(r["flows"], capmin.offered(opts))
     if b.declared and r.get("flows"):
         r = boundary.apply(r, stocks, _seen(run, opts.get("steps")), opts, final=False)
     return r

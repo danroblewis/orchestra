@@ -1,6 +1,6 @@
 """The candidate flows, from the stocks and the announced boundary (the same rules for every case).
 
-- a move i -> j between measured stocks (i not final: nothing leaves a counter), at a rate
+- a move i -> j between measured stocks of one unit (i not final: nothing leaves a counter), at a rate
   proportional to i;
 - an outside outflow from i (where the boundary declares one; with no boundary declared, from any
   stock that is not final, as a boundary claim), proportional to i;
@@ -82,7 +82,7 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
         if i in st.final:
             continue
         for j in ids:
-            if j != i:
+            if j != i and st.same_unit(i, j):
                 terms.append(Term(i, j, i, 1.0))
     for i in ids:
         if b.kinds(i, "out", i in st.final):
@@ -105,7 +105,7 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
         if i in st.final and not out:
             continue
         x = st.series(i)
-        targets = [j for j in ids if j != i and i not in st.final] + ([None] if out else [])
+        targets = [j for j in ids if j != i and i not in st.final and st.same_unit(i, j)] + ([None] if out else [])
         for y in [s for s in ids if s != i and s not in st.final] + inputs:      # a counter is a record, not a capacity
             yv = st.series(y)
             pos = yv[yv > 1e-12]
@@ -134,7 +134,7 @@ def piece_places(st: Steps) -> list[int]:
 
 def targets(st: Steps, b: Boundary, src: str) -> list:
     """Where a flow from src may go: another measured stock (src not final), or outside where allowed."""
-    out = [j for j in st.ids if j != src and src not in st.final]
+    out = [j for j in st.ids if j != src and src not in st.final and st.same_unit(src, j)]
     return out + ([None] if b.kinds(src, "out", src in st.final) else [])
 
 

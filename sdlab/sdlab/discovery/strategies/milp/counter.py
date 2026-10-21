@@ -71,7 +71,7 @@ def adds(s) -> list:
     for i in st.level_rows:
         r = st.ids[i]
         for x in st.ids:
-            if x == r or x in st.final or any(q[0] == "term" and q[1:4] == (x, r, x) for q in s.parts):
+            if x == r or x in st.final or not st.same_unit(x, r) or any(q[0] == "term" and q[1:4] == (x, r, x) for q in s.parts):
                 continue
             c = s.without(len(s.parts))
             c.parts.append(("term", x, r, x))
