@@ -13,6 +13,9 @@
 #       duplicate   - gives the same result as another survivor (`of`) on every cell run so far
 #       not-entered - not in the competition (and why)
 #       withdrawn   - taken out by the user (parked to save CPU), not for a fault
+# Entered later (they compete from the rung named; the roster selects every non-retired strategy not
+# eliminated, so an entry here is a record, not a switch):
+#   milp at 306 (the user, 2026-10-21): the first strategy to pass the ready-replicas cap (MIN)
 eliminated:
   kalman_bayes:
     rung: "302"
