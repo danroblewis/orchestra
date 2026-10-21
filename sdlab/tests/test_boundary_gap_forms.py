@@ -82,3 +82,20 @@ def test_nothing_where_undeclared(mod):
     r = m.apply({"flows": [_flow("H", None, {"form": "proportional", "stock": "H", "k": 0.03})]},
                 [{"id": "H"}], run, opts)
     assert not any("c + k" in s for s in r["boundary"]["changed"])
+
+
+@pytest.mark.parametrize("mod", COPIES)
+def test_no_offset_from_measurement_error(mod):
+    """A plain drain 0.1 H measured with 10% error: least squares on the one-step changes reads an offset
+    (regression to the mean: -7.6 + 0.22 H
+    with IV_Z 0); instrumented, it is not there."""
+    m = importlib.import_module(f"sdlab.discovery.strategies.{mod}")
+    rng = np.random.default_rng(3)
+    H = [180.0]
+    for t in range(1, 401):
+        H.append(H[-1] + (100.0 if t % 60 == 0 else 0.0) - 0.1 * H[-1])
+    run = {"t": list(range(401)), "levels": {"H": [round(h * (1 + 0.1 * rng.normal()), 3) for h in H]},
+           "boundary": {"H": {"out": ["estimate"]}}, "boundary_declared": True}
+    opts = {"injections": [{"t": t, "stock": "H", "amount": 100.0} for t in range(60, 401, 60)]}
+    r = m.apply({"flows": [_flow("H", None, {"form": "proportional", "stock": "H", "k": 0.08})]}, [{"id": "H"}], run, opts)
+    assert not any("c + k" in s for s in r["boundary"]["changed"]), r["boundary"]["changed"]

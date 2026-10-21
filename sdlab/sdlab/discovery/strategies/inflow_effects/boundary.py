@@ -611,6 +611,7 @@ def price_claims(flows: list[dict], stocks: list[dict], b: Boundary, data: Data,
 
 
 
+
 GAP_FITS = 60          # the gap-form pass stops after this many refits of its own (deterministic)
 
 
@@ -620,6 +621,30 @@ def _line(y: np.ndarray, x: np.ndarray) -> tuple[float, float]:
         return float(np.mean(y)), 0.0
     k, c = np.polyfit(x, y, 1)
     return float(c), float(k)
+
+
+IV_Z = 3.0             # the affine form's c and k must each stand beyond this z when instrumented
+
+
+def _instrumented(y: np.ndarray, x: np.ndarray) -> bool:
+    """Whether y = c + k x holds with both c and k nonzero beyond IV_Z when x is instrumented by its value one
+    step earlier (two-stage least squares). Measurement error on the levels makes the one-step changes
+    fall with the measured level (regression to the mean), which least squares reads as a drain with an
+    offset; an instrument that does not share the step's error reads only what the dynamics hold."""
+    if len(y) < MIN_STEPS + 1 or float(np.std(x)) == 0:
+        return False
+    W = np.column_stack([np.ones(len(y) - 1), x[1:]])
+    Z = np.column_stack([np.ones(len(y) - 1), x[:-1]])
+    ZW = Z.T @ W
+    try:
+        inv = np.linalg.inv(ZW)
+    except np.linalg.LinAlgError:
+        return False
+    beta = inv @ (Z.T @ y[1:])
+    u = y[1:] - W @ beta
+    cov = float(u @ u) / max(1, len(u) - 2) * (inv @ (Z.T @ Z) @ inv.T)
+    se = np.sqrt(np.maximum(np.diag(cov), 1e-300))
+    return bool(np.all(np.abs(beta) > IV_Z * se))
 
 
 def _simple(f: dict, ids: list[str]) -> bool:
@@ -639,8 +664,9 @@ def gap_forms(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, lo
     """On a declared estimate side, the outside flow may have the affine form c + k X (a goal gap, c - k
     X, or a drain with an offset, k X - c; X any measured stock). Per declared estimate side, largest
     first, the side's estimated outside flows of simple forms (a constant, pieces, k X, a one-level
-    linear rate) are tried as one flow c + k X for each X, fitted jointly with every flow of the stock
-    (started from the line through what they carried), and the best replaces them when it prices better
+    linear rate) are tried as one flow c + k X for each X whose c and k both hold when X is instrumented
+    (`_instrumented`), fitted jointly with every flow of the stock (started from the line through what
+    they carried), and the best replaces them when it prices better
     (docs/research/declared-boundary.md, cause 3: 104's 0.1 T - 7, 011's (300 - I) / 5)."""
     if not b.declared or not data.usable or _n_hidden(flows, data.ids):
         return flows
@@ -679,7 +705,7 @@ def gap_forms(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, lo
             if data.fits - done >= GAP_FITS:
                 break
             c, k = _line(y, data.L[data.ids.index(X)])
-            if k == 0 or c == 0:
+            if k == 0 or c == 0 or not _instrumented(y, data.L[data.ids.index(X)]):
                 continue
             g = {key: flows[group[0]][key] for key in ("from", "to", "name") if key in flows[group[0]]}
             g["ratio"] = 1                                 # a new rate: no effects, pieces or driver carried over
