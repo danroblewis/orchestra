@@ -9,6 +9,8 @@ import time
 import numpy as np
 
 from .earned import main_line as mainline
+from . import boundary
+from .inside import Region
 from ...simulate import behaviour_error
 from . import compare as C
 from . import eiv
@@ -176,7 +178,15 @@ def counted(run: dict) -> bool:
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    """The main line's model, or the output-error model where it behaves better on the data."""
+    """_identify's answer kept inside the announced boundary (boundary.py: the guard and the moves
+    where one is declared, each outside flow priced as a boundary claim where none is)."""
+    return boundary.apply(_identify(stocks, run, opts), stocks, run, opts)
+
+
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The main line's model, or the output-error model where it behaves better on the data (both
+    searched inside the announced boundary: the main line's rows and the output-error columns,
+    inside.py)."""
     opts = dict(opts or {})
     base = mainline(stocks, run, {k: v for k, v in opts.items() if k not in OWN_OPTS})
     base = eiv.apply(base, stocks, run, opts)      # its numbers refitted, and parts pruned, under measurement error (eiv.py)
@@ -193,6 +203,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return {**base, "chosen_by": f"output error failed: {type(e).__name__}: {e}"}
     if not own.get("flows"):
         return {**base, "chosen_by": "output error found nothing"}
+    if boundary.Boundary(run).declared:           # what the columns could not stop (a negative cross term): the guard
+        own = boundary.apply(own, stocks, run, opts, final=False)
     spec, theta, d, seg, _ = own["_fit"]
     w = 1.0 / np.maximum(np.asarray(own["odefit"]["noise_sd"]), 1e-9)
     own["noise"] = noise_kind(spec, theta, d, w, seg)
@@ -283,7 +295,7 @@ def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     if d.n < 12 or not ids:
         return {"flows": [], "note": "too short"}
     seg = int(opts.get("seg", SEG))
-    spec = F.Spec(d.S, d.m)
+    spec = F.Spec(d.S, d.m, region=Region(boundary.Boundary(run), stocks))
     w = 1.0 / np.maximum(d.Y.std(axis=0), 1e-9)
     r = F.fit(spec, d, seg, w)
     # weights: each stock's own output error, so a noisier stock counts less
@@ -337,6 +349,8 @@ def output_error(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
             offer("roots", sp, rr)
     if opts.get("hinges", False) and time.perf_counter() < deadline:
         for i in range(d.S):
+            if not spec.region.hinge_ok(i):
+                continue
             for sp, th in E.with_hinge(spec, d, r["W"], i):
                 if time.perf_counter() > deadline:
                     break

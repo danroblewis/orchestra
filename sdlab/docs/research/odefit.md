@@ -261,3 +261,24 @@ construction (status differences there against older stored rows come from main-
 303 meas-long fails: the output-error model (no conservation) prefers a wrong queue row by 26 BIC and
 wins the held-out comparison by 1%. A 2-paired-SE gate (711d936) lost 6 of 40 paired cells and was
 reverted (240f9d2). See [k8s-303-hats-odefit.md](k8s-303-hats-odefit.md), with the capability remark.
+
+## The declared boundary (2026-10-20)
+
+odefit keeps outside flows to where the case declares them (docs/research/declared-boundary.md;
+`odefit/boundary.py` is a copy of `matrix/boundary.py` at 723f72c, HIDDEN_PRICE 0):
+
+- the main line (`earned*.py`) has matrix's hooks: rows filtered per stock, sources with no
+  estimated outflow tied, the guard on every candidate before the judge;
+- the output-error model is searched inside the boundary (`inside.py`): a row reads the constant,
+  products and hinges only on a stock with an `estimate` side, measured inputs only on a `measured`
+  side, levels of another unit (or of a final stock) only on an `estimate` side, and a stock with no
+  estimated outflow is tied (its own number is minus what its receivers gain: `Spec.tie`; the
+  starting one-step fit is solved jointly for tied specs, `fit._one_step_tied`);
+- the answer goes through `boundary.apply` (the guard and moves where declared; outside flows priced
+  as boundary claims where nothing is declared). With nothing declared the search is as before.
+
+On 303 meas-long (the daily-traffic chain with measurement error) the old odefit wrote
+`inflight -> outside`, `queue -> outside` and `outside -> inflight` beside the true chain and failed
+(invented boundary); the new one finds `queue -> inflight 0.62`, `inflight -> responses_total 0.52`,
+`outside -> queue 1.04 traffic` and passes (local run through `runner.run_item`, not stored). Paired
+pool results: see the commit after this one.

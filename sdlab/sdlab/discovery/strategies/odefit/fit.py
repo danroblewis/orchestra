@@ -45,7 +45,7 @@ class Spec:
     """Which terms each stock's change reads: mask (S x P) over the columns of `columns`."""
 
     def __init__(self, S: int, m: int, products: list[tuple[int, int]] | None = None, mask: np.ndarray | None = None,
-                 hinges: list[tuple[int, int]] | None = None, roots: list[int] | None = None):
+                 hinges: list[tuple[int, int]] | None = None, roots: list[int] | None = None, region=None):
         self.S, self.m = S, m
         self.products = list(products or [])
         self.roots = list(roots or [])          # stocks whose square root is a column (after the products)
@@ -54,9 +54,22 @@ class Spec:
         # hinges: (stock, sign): sign x max(0, h . [levels, inputs, 1]) added to the stock's change,
         # h free (S + m + 1 numbers each): a linear rate whose floor at 0 binds
         self.hinges = list(hinges or [])
+        # the declared boundary (inside.py): the columns a row may read at all, and the tied stocks
+        # (no outflow to outside declared), whose own number is minus what their receivers gain
+        self.region = region
+        self.ties = region.ties if region is not None else {}
+        if region is not None:
+            self.mask &= region.mask(self)
 
     def copy(self) -> "Spec":
-        return Spec(self.S, self.m, self.products, self.mask, self.hinges, self.roots)
+        return Spec(self.S, self.m, self.products, self.mask, self.hinges, self.roots, self.region)
+
+    def tie(self, W: np.ndarray) -> np.ndarray:
+        """W (S x P, or K x S x P) with each tied stock's own number set to minus what its same-unit
+        receivers gain from it: its drain is all moves (no exit to outside)."""
+        for a, recv in self.ties.items():
+            W[..., a, a] = -W[..., recv, a].sum(axis=-1) if recv else 0.0
+        return W
 
     def linear(self) -> bool:
         return not self.products and not self.hinges and not self.roots
@@ -72,6 +85,7 @@ class Spec:
     def unpack(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         W = np.zeros((self.S, self.P))
         W[self.mask] = theta[: self.nW]
+        self.tie(W)
         Hs = theta[self.nW:].reshape(len(self.hinges), self.H)
         return W, Hs
 
@@ -176,11 +190,41 @@ def one_step(spec: Spec, d: Data) -> np.ndarray:
     dY = (d.Y[1:] - X.T)
     W = np.zeros((spec.S, spec.P))
     sc = np.maximum(np.abs(C).max(axis=1), 1e-12)
+    if spec.ties:
+        return _one_step_tied(spec, C, dY, sc)
     for i in range(spec.S):
         cols = np.flatnonzero(spec.mask[i])
         if len(cols):
             W[i, cols] = np.linalg.lstsq((C[cols] / sc[cols, None]).T, dY[:, i], rcond=None)[0] / sc[cols]
     return W[spec.mask]
+
+
+def _one_step_tied(spec: Spec, C: np.ndarray, dY: np.ndarray, sc: np.ndarray) -> np.ndarray:
+    """one_step with the ties (the declared boundary): a tied stock's own number is minus what its
+    receivers gain from it, so the rows share numbers and are solved together (normal equations
+    built row by row, each row weighted by its change's spread)."""
+    pos = -np.ones((spec.S, spec.P), int)
+    pos[spec.mask] = np.arange(spec.nW)
+    G = np.zeros((spec.nW, spec.nW))
+    g = np.zeros(spec.nW)
+    Cs = C / sc[:, None]
+    for i in range(spec.S):
+        idx = list(pos[i][spec.mask[i]])
+        cols = [Cs[j] for j in np.flatnonzero(spec.mask[i])]
+        for s in spec.ties.get(i, []):
+            if spec.mask[s, i]:
+                idx.append(pos[s, i])
+                cols.append(-Cs[i])
+        if not idx:
+            continue
+        X = np.array(cols)
+        wi = 1.0 / max(float(dY[:, i].std()), 1e-12)
+        ix = np.array(idx)
+        np.add.at(G, (ix[:, None], ix[None, :]), wi ** 2 * (X @ X.T))
+        np.add.at(g, ix, wi ** 2 * (X @ dY[:, i]))
+    th = np.linalg.lstsq(G + 1e-12 * np.trace(G) * np.eye(len(g)), g, rcond=None)[0]
+    cols_of = np.nonzero(spec.mask)[1]
+    return th / sc[cols_of]
 
 
 def fit(spec: Spec, d: Data, seg_len: int, w: np.ndarray, theta0: np.ndarray | None = None, max_nfev: int = 200,
@@ -267,6 +311,7 @@ def _fit_nonlinear(spec, d, segs, w, theta0, scale, max_nfev, starts0=None, fixe
         K = X.shape[0]
         Ws = np.zeros((K, spec.S, spec.P))
         Ws[:, spec.mask] = th[:, : spec.nW]
+        spec.tie(Ws)
         Hss = th[:, spec.nW:].reshape(K, nh, spec.H)
         Z = X[:, nt:].reshape(K, nseg, S) * zs
         return Ws, Hss, Z
