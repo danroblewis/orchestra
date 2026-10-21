@@ -716,9 +716,10 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
             # a schedule may stand where the base has outside inflows or moves into R
             kinds = ["pieces"] if any(f.get("to") == r and not f.get("effects") for f in cur) else []
             kinds += list(xin_names)
-            # the declared boundary (boundary.py): an outside inflow into R only of a kind declared on
-            # R's inflow side (a scheduled base is estimated, a measured input's base is measured)
-            kinds = [k for k in kinds if bnd.may(r, "in", "estimate" if k == "pieces" else "measured")]
+            # the declared boundary (boundary.py): an outside inflow into R only where R's inflow side is
+            # declared (a scheduled base is an estimated form; a measured input's base times a table is
+            # either kind: an estimated form may read an input)
+            kinds = [k for k in kinds if bnd.may(r, "in", "estimate") or (k != "pieces" and bnd.may(r, "in", "measured"))]
             for kind in kinds:
                 for c in moving:
                     if time.perf_counter() - t0 > o["gate_budget"]:

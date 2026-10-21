@@ -71,3 +71,17 @@ def test_strategy_stays_inside_the_boundary_and_lists_claims(name):
     assert r["boundary"]["declared"] and r["boundary_claims"] == []
     r = load(name)(STOCKS, run, {})
     assert not r["boundary"]["declared"] and r["boundary_claims"]
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_an_estimated_side_may_read_a_measured_input(name):
+    # (these copies) the cases declare "estimate" for any outside flow not driven by inputs alone (217's
+    # arrivals x a table of Q), so a flow reading an input is allowed there; a "measured" side still
+    # takes no estimated form
+    bd = importlib.import_module(f"sdlab.discovery.strategies.{name}.boundary")
+    reads = [_flow(None, "A", {"form": "linear", "c": 0, "terms": [{"stock": "u", "k": 1.0}]}, input="u")]
+    assert bd.violations(reads, ["A", "B"], bd.Boundary(DECLARED), {"u"}) == []
+    assert bd.Boundary(DECLARED).inputs_ok("A")
+    measured_only = {"boundary": {"A": {"in": ["measured"], "out": []}}, "boundary_declared": True}
+    const = [_flow(None, "A", {"form": "constant", "value": 1.0})]
+    assert bd.violations(const, ["A", "B"], bd.Boundary(measured_only), {"u"}) == [0]

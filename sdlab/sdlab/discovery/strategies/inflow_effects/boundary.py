@@ -77,8 +77,13 @@ class Boundary:
         return self.may(stock, "in", "estimate") or self.may(stock, "out", "estimate")
 
     def inputs_ok(self, stock: str) -> bool:
-        """A measured input's column (positive: an inflow reading it, negative: an outflow)."""
-        return self.may(stock, "in", "measured") or self.may(stock, "out", "measured")
+        """A measured input's column (positive: an inflow reading it, negative: an outflow).
+
+        (this copy) also on an estimated side: a case declares "estimate" for every outside flow that is
+        not driven by measured inputs alone (tests/test_ladder_case_boundaries.py), so an estimated form
+        may read an input (217: arrivals x a table of Q is declared "estimate"), and the scorer checks
+        only the stock and side."""
+        return self.may(stock, "in") or self.may(stock, "out")
 
     def links_ok(self, stock: str) -> bool:
         """A column of a stock of another unit (a link from outside, or a drain to outside, reading it)."""
@@ -151,8 +156,11 @@ def violations(flows: list[dict], ids: list[str], b: Boundary, inputs: set) -> l
     of a kind it does not have."""
     if not b.declared:
         return []
+    # (this copy) a flow reading a measured input is allowed on an estimated side too (inputs_ok)
+    def ok(s, side, kind):
+        return b.may(s, side, kind) or (kind == "measured" and b.may(s, side, "estimate"))
     return [i for i, (f, e) in enumerate(zip(flows, ends(flows, ids)))
-            if any(not b.may(s, side, kind_of(f, inputs)) for s, side in e)]
+            if any(not ok(s, side, kind_of(f, inputs)) for s, side in e)]
 
 
 def claims(flows: list[dict], ids: list[str], b: Boundary, inputs: set) -> list[dict]:
