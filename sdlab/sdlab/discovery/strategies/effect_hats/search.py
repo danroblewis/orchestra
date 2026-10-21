@@ -11,6 +11,7 @@ import numpy as np
 from ...identify import VARIANTS
 from ...matrix import identify_one
 from .basis import curve, knots
+from .boundary import placement_ok
 from .joint import refit
 from .price import bic
 from .screen import fit_curve, placements
@@ -54,12 +55,17 @@ def halves(ids, prev, dy, c: dict, xin=None) -> bool:
     return all(float(np.sqrt(np.mean((shape(curve(x, kn, w)) - full) ** 2))) < 0.7 * size for w in fits)
 
 
-def placement_fits(cand: dict, ids, prev, dy, o: dict, xin=None) -> list[dict]:
+def placement_fits(cand: dict, ids, prev, dy, o: dict, xin=None, b=None) -> list[dict]:
     """The candidate's best placements (lowest BIC first, at most o["per_candidate"]), each with its
-    curve; a curve that is not mostly positive (a rate cannot be negative) is dropped."""
+    curve; a curve that is not mostly positive (a rate cannot be negative) is dropped.
+
+    b (boundary.Boundary, the declared boundary: docs/research/declared-boundary.md): a placement with an
+    outside end only where the boundary declares an estimated flow on that stock and side."""
     also = tuple(dict.fromkeys([r for r, _ in cand["rows"]] + ([cand["base"]] if cand["base"] else [])))
     fits = []
     for frm, to in placements(cand):
+        if b is not None and not placement_ok(b, frm, to):
+            continue
         c = best_curve(ids, prev, dy, cand["base"], cand["stock"], frm, to, o["knots"], also=also, xin=xin)
         if c is None or c["positive"] < 0.9:
             continue

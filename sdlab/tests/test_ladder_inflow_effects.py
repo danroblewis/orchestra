@@ -18,7 +18,7 @@ def cache(tmp_path, monkeypatch):
 def run_case(case_id, variant):
     c = casemod.load(runner.select_cases(case_id)[0])
     model = casemod.truth_model(c, variant)
-    d = data.load(c, variant)
+    d = {**data.load(c, variant), **casemod.announced(c)}   # as the runner announces it (a declared boundary)
     r = runner.discover("inflow_effects", model, d)
     return r, score.equations(c, casemod.variant(c, variant)["noise"], model, r["flows"], d)
 

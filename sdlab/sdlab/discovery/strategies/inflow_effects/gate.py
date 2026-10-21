@@ -27,6 +27,7 @@ import numpy as np
 
 from ...simulate import Model, behaviour_error, levels_array
 from .basis import hats, knots
+from .boundary import Boundary, inside
 from .inputs import model_inputs
 from ...changes import pelt
 from .pieces import _kmeans, _segments
@@ -692,6 +693,7 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
         except Exception:                                          # noqa: BLE001
             return float("inf")
 
+    bnd = Boundary(run)
     cur = flows
     cur_p = price(cur, ids, A, tt, mi, inj, res)
     base_e = judge(cur)
@@ -714,6 +716,9 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
             # a schedule may stand where the base has outside inflows or moves into R
             kinds = ["pieces"] if any(f.get("to") == r and not f.get("effects") for f in cur) else []
             kinds += list(xin_names)
+            # the declared boundary (boundary.py): an outside inflow into R only of a kind declared on
+            # R's inflow side (a scheduled base is estimated, a measured input's base is measured)
+            kinds = [k for k in kinds if bnd.may(r, "in", "estimate" if k == "pieces" else "measured")]
             for kind in kinds:
                 for c in moving:
                     if time.perf_counter() - t0 > o["gate_budget"]:
@@ -755,7 +760,7 @@ def search(flows: list[dict], stocks: list[dict], run: dict, opts: dict, o: dict
                                                    or _barely_used(fu, ids, prev, tt, mi, u)):
                     continue                                        # no co-flow: the U reading is the plain one
                 fu = _prune(fu, ids, A, tt, mi, inj, res)
-                if _orphans(cur, fu):
+                if _orphans(cur, fu) or not inside(fu, stocks, run, opts):     # (the declared boundary)
                     continue
                 how = (f" from {u}" if move else f" using {u}") if u else ""
                 pf = price(fu, ids, A, tt, mi, inj, res)

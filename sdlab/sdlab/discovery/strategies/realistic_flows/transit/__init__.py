@@ -40,6 +40,7 @@ import math
 import numpy as np
 
 from ....simulate import behaviour_error, levels_array
+from ..boundary import Boundary, inside
 from .fit import fit_plain, fit_transit, screen
 from .kalman import Pair
 from .pairs import at_means, build, candidate, exogenous, flow_numbers, one_piece, pieces, split
@@ -69,11 +70,15 @@ def counts(run: dict) -> bool:
     return moved
 
 
-def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str, b: str, scale: float) -> dict | None:
+def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str, b: str, scale: float, bd: Boundary | None = None) -> dict | None:
     """The pair's best transit and best plain fits over the variants (A's outside inflow as one
     constant or in the main line's pieces, re-measured; B with or without an outside constant), each
     with its BIC, and the found model's own rows by the same likelihood; None when a least-squares
-    screen of B's row finds no sign of a delay."""
+    screen of B's row finds no sign of a delay.
+
+    (this copy) bd, the declared boundary (boundary.py): B's outside constant is tried only where B may
+    have an estimated outside flow, and a share of A's loss to outside only where A may have an
+    estimated outflow."""
     t = run["t"]
     L = levels_array(levels, ids)
     T = L.shape[1] - 1
@@ -89,7 +94,7 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     best_t, best_p = None, None
     for pair, sp in pairs:
         extra = 2 * len(sp) - 1 if sp else 0                   # each piece: its value and its place
-        for cB_on in (False, True):
+        for cB_on in (False, True) if bd is None or bd.may(b, "in", "estimate") or bd.may(b, "out", "estimate") else (False,):
             p = fit_plain(pair, cB_on)
             p_bic = p["nll"] + (p["k"] + extra) * logn
             if best_p is None or p_bic < best_p["bic"]:
@@ -103,7 +108,7 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     if best_t is None:
         return None
     # a share of A's loss to H (the rest to outside), on the best variant only
-    f = fit_transit(best_t["pair"], best_t["cB_on"], False)
+    f = fit_transit(best_t["pair"], best_t["cB_on"], False) if bd is None or bd.may(a, "out", "estimate") else None
     if f is not None and f["nll"] + (f["k"] + best_t["extra"]) * logn < best_t["bic"]:
         best_t = {**best_t, **f, "bic": f["nll"] + (f["k"] + best_t["extra"]) * logn, "all_to_h": False}
     best_t["keep"] = keep
@@ -174,6 +179,7 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     base_e = judge(flows, stocks, run, None, injections, inputs)
     means = {k: float(np.nanmean(np.asarray(v, dtype=float))) for k, v in run["levels"].items()}
     tried = []
+    bd = Boundary(run)                                   # (this copy) the declared boundary (boundary.py)
     for _ in range(most):
         levels = {**run["levels"], **inferred}
         all_ids = ids + list(inferred)
@@ -193,7 +199,7 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
                     continue
                 if not candidate(flows, a, b):
                     continue
-                res = try_pair(flows, all_ids, run, levels, a, b, scale)
+                res = try_pair(flows, all_ids, run, levels, a, b, scale, bd)
                 if res is None:
                     continue
                 f = res["transit"]
@@ -206,6 +212,9 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
                 if not shortest <= 1 / f["d"] <= len(run["t"]) / turns:
                     continue
                 if res["gain"] > margin * math.log(2 * (len(run["t"]) - 1)) and (best is None or res["gain"] > best[0]["gain"]):
+                    # (this copy) a transit model with an outside flow the declared boundary does not have is not offered
+                    if bd.declared and not inside(build(flows, f["keep"], a, b, f, f["spans"])[0], stocks, run, opts):
+                        continue
                     best = (res, a, b)
         if best is None:
             break

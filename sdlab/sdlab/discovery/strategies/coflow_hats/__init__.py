@@ -54,7 +54,7 @@ from ...addition import addition_test
 from .earned import main_line as matrix_identify   # identify.identify with each candidate's pieces earned (earned.py, matrix's copy)
 from ...matrix import injected
 from ...simulate import behaviour_error
-from . import search
+from . import boundary, search
 from .inputs import rows as input_rows
 from .price import price, prune
 from .cycles import cycle_candidates
@@ -96,6 +96,14 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     o = {**DEFAULTS, **{k: opts.pop(k) for k in list(opts) if k in DEFAULTS}}
     base = matrix_identify(stocks, run, {**opts, "candidates": keep})
     base_e = min((x["error"] for x in base.get("tried") or []), default=float("inf"))
+    # the declared boundary (boundary.py, docs/research/declared-boundary.md): the base kept inside it
+    # (the earned main line already is; the guard catches what else reached it), and the search below
+    # offers outside flows only on declared sides
+    bnd = boundary.Boundary(run)
+    if bnd.declared and base.get("flows") and not boundary.inside(base["flows"], stocks, run, opts):
+        log: list = []
+        base = {**base, "flows": boundary.keep_inside(base["flows"], stocks, run, opts, log), "boundary_guard": log}
+        base_e = judge(base["flows"], stocks, run, injections=opts.get("injections"), inputs=opts.get("inputs") or None)
     if len(run["t"]) < 60:
         return base
     ids, prev, dy = _arrays(stocks, run, opts)
@@ -123,14 +131,15 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         base["effects_tried"] += [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
         raw = []
         for cand in cands[: o["most"]]:
-            for c in search.placement_fits(cand, ids, prev, dy, o, xin):
+            for c in search.placement_fits(cand, ids, prev, dy, o, xin, bnd):
                 raw += [{**t, "fit": c} for t in search.trials(accepted + [c], stocks, run, prev, ids, opts, fit_opts, shapes)]
         # the most promising few are finished: inflows pooled and re-cut, flows the data does not
         # need dropped, then judged
         raw.sort(key=lambda t: t["bic"])
         done = []
         for t in raw[: o["finish"]]:
-            flows = resegment(t["flows"], ids, run, fit_opts) if o["pool"] else t["flows"]
+            flows = boundary.keep_inside(t["flows"], stocks, run, opts)      # the declared boundary (boundary.py)
+            flows = resegment(flows, ids, run, fit_opts) if o["pool"] else flows
             if o["prune"]:
                 flows = prune(flows, ids, run, fit_opts)
             if sum(1 for f in flows if f.get("hat")) < len(accepted) + 1:
@@ -201,6 +210,10 @@ def _inflow_coflows(out: dict, cur_b: float, cur_e: float, o: dict, ids, run, st
             pv, tt = _prev_tt(stocks, run, fit_opts)
             cands += [("a link whose strength follows a cycle", c)
                       for c in cycle_candidates(out["flows"], ids, pv, _arrays(stocks, run, fit_opts)[2], tt)]
+        # (the declared boundary, boundary.py) a candidate with an outside flow the case does not declare
+        # is not offered
+        cands = [(name, c) for name, c in cands if boundary.inside(c, stocks, run, fit_opts)]
+        done = [(name, c) for name, c in done if boundary.inside(c, stocks, run, fit_opts)]
         # the candidates refitted (numbers only) and priced; only the best few are re-cut and judged
         pre = []
         for name, cand in cands:
@@ -279,7 +292,9 @@ def _clean(flows: list[dict]) -> list[dict]:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard where one is declared, each outside flow priced as a
+    boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

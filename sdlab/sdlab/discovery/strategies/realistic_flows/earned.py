@@ -22,13 +22,21 @@ import numpy as np
 
 from ...identify import VARIANTS, judge
 from ...matrix import finish, identify_one, known_flows
+from . import boundary
 from .earned_joint import System, decide
 from .earned_rows import reselect, rss_floor
 
 
-def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
+def refit(stocks: list[dict], r: dict, opts: dict, b: boundary.Boundary | None = None) -> dict:
     """The candidate's rows refitted jointly, sources tied to their receivers where the counting
-    likelihood says so; the model read off again (earned_pieces.refit)."""
+    likelihood says so; the model read off again (earned_pieces.refit).
+
+    (this copy) Inside the boundary b (boundary.py): a row has an outside term (constant or pieces)
+    only where its stock may have an estimated outside flow, reads a measured input only where it may
+    have a measured one, and reads a stock of another unit (a link from or a drain to outside) only
+    where it may have an estimated one; a source with no estimated outflow to outside is tied (its
+    drain is all moves)."""
+    b = b or boundary.Boundary({})
     fit, ctx = r.get("fit"), r.get("ctx")
     if not fit or not ctx:
         return r
@@ -39,10 +47,18 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
     final = {s["id"] for s in stocks if s.get("final")}
     L = len(fit["labels"])
     floor = rss_floor(fit["prev"], fit["dy"].shape[1])
-    rows = [reselect(row, s, ids, stocks, columns if inputs else fit["prev"], fit["dy"], fit["cfg"], L, 2, 0.01, floor, "beside", inputs)["row"]
+
+    def exclude(s: int) -> tuple:
+        out = [] if b.inputs_ok(ids[s]) else list(inputs)
+        if not b.links_ok(ids[s]):
+            out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
+        return tuple(out)
+
+    rows = [reselect(row, s, ids, stocks, columns if inputs else fit["prev"], fit["dy"], fit["cfg"], L, 2, 0.01, floor, "beside", inputs,
+                     pieces_ok=b.pieces_ok(ids[s]), exclude=exclude(s))["row"]
             for s, row in enumerate(rows)]
     system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, True, opts.get("min_piece", 5), "unit")
-    best = decide(system, ctx["log_t"])
+    best = decide(system, ctx["log_t"], forced={a for a in range(len(ids)) if b.must_tie(ids[a])})
     at = fit["at"]
     new = []
     for s, row in enumerate(rows):
@@ -63,8 +79,11 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
 
 
 def main_line(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    """identify.identify, each candidate refitted (refit) before it is judged."""
+    """identify.identify, each candidate refitted (refit) before it is judged; (this copy) inside the
+    announced boundary (boundary.py): refitted inside it, then guarded, so the judge only sees
+    candidates without an undeclared outside flow."""
     opts = dict(opts or {})
+    b = boundary.Boundary(run)
     keep = opts.pop("candidates", False)
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     best, tried, candidates = None, [], []
@@ -75,11 +94,13 @@ def main_line(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True})
         if r.get("flows") is not None and r.get("fit"):
             try:
-                r = refit(stocks, r, opts)
+                r = refit(stocks, r, opts, b)
             except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
                 pass
         for k in ("fit", "ctx", "raw_rows"):
             r.pop(k, None)
+        if b.declared and r.get("flows"):
+            r = boundary.apply(r, stocks, run, opts, final=False)
         e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"),
                   inputs=opts.get("inputs"))
         tried.append({"name": v["name"], "error": e})

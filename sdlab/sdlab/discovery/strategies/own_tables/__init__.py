@@ -33,7 +33,7 @@ import numpy as np
 
 from .earned import main_line
 from ...matrix import injected
-from . import curve, moves, onestep, split
+from . import boundary, curve, moves, onestep, split
 
 DEFAULTS = {"rising": 0.25, "margin": 2.0, "halves": True, "weighted": True, "trim": 0.03, "most": 12, "moves": True}
 
@@ -216,10 +216,18 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     score = onestep.bic(flows, ids, t, prev, dy, floor_rss, skip, mi)
     log_t = math.log(T)
     taken = []
+    # the declared boundary (boundary.py, docs/research/declared-boundary.md): a row's own table is an
+    # estimated flow to or from outside, so it is fitted only on a row whose stock may have one, and a
+    # rewrite whose flows leave the boundary (a drain beside an inflow table where only the inflow is
+    # declared, a link from outside) is not offered
+    bnd = boundary.Boundary(run)
+    ok = lambda fl: boundary.inside(fl, stocks, run, opts)  # noqa: E731
     # moves between measured stocks first (moves.py), then each row's flows to and from outside
     if o["moves"]:
         best = None
         for fl, name in moves.candidates(flows, ids, t, prev, dy, floor_rss, o, inp):
+            if not ok(fl):
+                continue
             sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
             if sc < score - o["margin"] * log_t and (best is None or sc < best[1]):
                 best = (fl, sc, name)
@@ -227,11 +235,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             flows, score = best[0], best[1]
             taken.append({"row": None, "rewrite": best[2], "bic": round(score, 2)})
     for i, row in enumerate(ids):
-        if row in final:
+        if row in final or not bnd.pieces_ok(row):
             continue
         # the readings come preferred first; a later one is taken only if it prices clearly better
         scored = [(fl, onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi), name)
-                  for fl, name in candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o, inp)]
+                  for fl, name in candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o, inp) if ok(fl)]
         best = None
         if scored:
             low = min(sc for _, sc, _ in scored)
@@ -246,7 +254,9 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard where one is declared, each outside flow priced as a
+    boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)
