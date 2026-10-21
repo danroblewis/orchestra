@@ -282,3 +282,10 @@ On 303 meas-long (the daily-traffic chain with measurement error) the old odefit
 (invented boundary); the new one finds `queue -> inflight 0.62`, `inflight -> responses_total 0.52`,
 `outside -> queue 1.04 traffic` and passes (local run through `runner.run_item`, not stored). Paired
 pool results: see the commit after this one.
+
+One change from the reference in odefit's copy of `boundary.py`: where a boundary is declared, no
+alternative or move may take away the last outside flow on a declared side (`kept_sides`; an
+`estimate` side's flow exists, so it may change form, not vanish). Without it `pair_moves` made a
+counted chain's declared `outside -> A` and `B -> outside` into a closed loop `B -> A`
+(tests/test_master_eq_boundary.py): the move's counting noise enters A and B with opposite signs, so
+their unexplained changes are anti-correlated even though no unit goes from B to A.

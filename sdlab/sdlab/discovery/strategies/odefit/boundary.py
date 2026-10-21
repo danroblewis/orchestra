@@ -1,5 +1,8 @@
 # Copied from sdlab/discovery/strategies/matrix/boundary.py at 723f72c (strategies are isolated: copied,
-# never imported; HIDDEN_PRICE 0). Imports only the shared simulator.
+# never imported; HIDDEN_PRICE 0). Imports only the shared simulator. One change in this copy: where a
+# boundary is declared, no alternative or move may take away the last outside flow on a declared side
+# (`estimate` means the flow exists; kept_sides): without it, pair_moves made a counted chain's declared
+# outside -> A and B -> outside into a closed loop B -> A whose numbers fit nearly as well.
 """The declared boundary (docs/research/declared-boundary.md): outside flows only where the case says the
 system meets its environment.
 
@@ -170,6 +173,15 @@ def _n_claims(flows: list[dict], ids: list[str], b: Boundary) -> int:
 
 def _n_hidden(flows: list[dict], ids: list[str]) -> int:
     return len({x for f in flows for x in (f.get("from"), f.get("to")) if x and x not in ids})
+
+
+def kept_sides(old: list[dict], new: list[dict], ids: list[str], b: Boundary) -> bool:
+    """(this copy) Declared: every declared side that has an outside flow in old still has one in new
+    (a declared side's flow exists: it may change form, not vanish). Not declared: True."""
+    if not b.declared:
+        return True
+    have = {x for e in ends(new, ids) for x in e}
+    return all(x in have for e in ends(old, ids) for x in e if b.may(*x))
 
 
 
@@ -476,6 +488,7 @@ def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: l
         i = max(bad, key=lambda j: float(np.abs(data.carried(flows[j])).mean()) if not _n_hidden([flows[j]], data.ids) else 0.0)
         best = None
         alts = alternatives(flows, i, stocks, b, data)
+        alts = [a for a in alts if kept_sides(flows, a[1], data.ids, b)] or alts[:1]
         free = set().union(*(touched(flows, cand, data.ids) for _, cand in alts))
         for what, cand in alts:
             fit = Fit(cand, data, free)
@@ -532,6 +545,8 @@ def pair_moves(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, l
                 moved = copy.deepcopy(flows)
                 moved[i]["to"] = B
                 cand = _joined([h for k, h in enumerate(moved) if k != j])
+                if not kept_sides(flows, cand, data.ids, b):
+                    continue
                 free = frozenset(touched(flows, cand, data.ids))
                 if free not in base:
                     base[free] = price(Fit(flows, data, set(free)), data, b)
