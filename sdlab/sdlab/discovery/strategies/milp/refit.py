@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.optimize import least_squares
+from scipy.stats import norm
 
 from .program import Column
 from .steps import Steps
@@ -52,9 +53,29 @@ class Structure:
                 o += 2
         return out
 
+    def capped(self, theta: np.ndarray) -> list[tuple[str | None, str | None, np.ndarray]]:
+        """The amounts, for counts data as the expected amounts when whole things move: a stock's
+        outflows drawn Poisson around their rates share what it holds (nothing leaves a stock that is not
+        there), so a stock drained near its level loses on average E[min(N, level)] with N ~ Poisson(the
+        total rate), less than the total rate (normal approximation of the Poisson tail)."""
+        out = self.amounts(theta)
+        if not self.st.counts:
+            return out
+        for src in {a[0] for a in out if a[0] in self.pos}:
+            idx = [k for k, a in enumerate(out) if a[0] == src]
+            D = sum(out[k][2] for k in idx)
+            L = self.st.L[self.pos[src]]
+            sd = np.sqrt(np.maximum(D, 1e-9))
+            z = (L - D) / sd
+            loss = sd * norm.pdf(z) - (L - D) * norm.sf(z)          # E[(N - L)+]
+            f = np.where(D > 1e-9, np.clip((D - loss) / np.maximum(D, 1e-9), 0.0, 1.0), 1.0)
+            for k in idx:
+                out[k] = (out[k][0], out[k][1], out[k][2] * f)
+        return out
+
     def change(self, theta: np.ndarray | None = None) -> np.ndarray:
         d = np.zeros_like(self.st.dy)
-        for src, dst, amt in self.amounts(self.theta if theta is None else theta):
+        for src, dst, amt in self.capped(self.theta if theta is None else theta):
             if src in self.pos:
                 d[self.pos[src]] -= amt
             if dst in self.pos:
