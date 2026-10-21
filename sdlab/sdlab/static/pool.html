@@ -62,6 +62,9 @@
   <div class="wrap"><table id="workers"></table></div>
   <h2>Queue by job</h2>
   <div class="wrap"><table id="jobs"></table></div>
+  <p class="note">A noise-free long item (none-long) only confirms a pass of the same case and strategy's none-short: it is
+  <em>held</em> until that result comes, then queued if it passed and <em>skipped</em> otherwise (never run, never counted
+  as a fail). Jobs that name none-long, or ask for every variant, run it anyway.</p>
   <h2>Throughput</h2>
   <p class="note" id="thru"></p>
   <svg class="spark" id="spark" viewBox="0 0 600 60" preserveAspectRatio="none" role="img" aria-label="results per 10 minutes, last 6 hours"></svg>
@@ -80,7 +83,7 @@ function meter(frac, hot) {
 function tiles(s) {
   const live = s.workers.filter((w) => w.live);
   const slots = live.reduce((a, w) => a + (w.slots || 0), 0);
-  const t = [[live.length, "live workers"], [slots, "slots"], [s.totals.leased, "running"], [s.totals.queued, "waiting"],
+  const t = [[live.length, "live workers"], [slots, "slots"], [s.totals.leased, "running"], [s.totals.queued, "waiting"], [s.totals.held || 0, "held for none-short"], [s.totals.skipped || 0, "skipped none-long"],
              [s.throughput.last_hour.reduce((a, m) => a + m.results, 0), "results, last hour"], [s.totals.results, "pool results stored"]];
   $("tiles").innerHTML = t.map(([v, k]) => `<div class="tile"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
 }
@@ -98,15 +101,16 @@ function workers(s) {
     }).join("");
 }
 function jobRow(j) {
-  const c = j.counts, done = c.done + c.reused + c.error, total = j.total || 1;
+  const c = j.counts, skipped = c.skipped || 0, done = c.done + c.reused + c.error + skipped, total = j.total || 1;
   const sts = Object.entries(j.statuses || {}).map(([k, v]) => `${esc(k)} ${v}`).join(", ");
   const who = j.kind === "mainline" ? "main line" : esc(j.by || "agent");
   return `<tr><td class="l">#${j.id}</td><td class="l">${who}</td><td>${j.priority}</td><td class="l"><code>${esc((j.commit || "").slice(0, 10))}</code></td>` +
     `<td class="l${j.state === "failed" ? " bad" : ""}">${esc(j.state)}</td><td>${meter(done / total)} ${done}/${j.total}</td>` +
-    `<td>${c.leased}</td><td>${c.queued}</td><td class="l">${sts || "-"}</td><td>${j.per_hour ? Math.round(j.per_hour) + "/h" : "-"}</td>` +
+    `<td>${c.leased}</td><td>${c.queued}</td><td title="none-long items waiting for their none-short result">${c.held || 0}</td>` +
+    `<td title="none-long items not run: their none-short did not pass">${skipped}</td><td class="l">${sts || "-"}</td><td>${j.per_hour ? Math.round(j.per_hour) + "/h" : "-"}</td>` +
     `<td>${dur(j.eta_seconds)}</td><td class="l">${esc(j.note || j.error || "")}</td></tr>`;
 }
-const JOBHEAD = `<tr><th class="l">job</th><th class="l">by</th><th>priority</th><th class="l">commit</th><th class="l">state</th><th>done</th><th>running</th><th>waiting</th><th class="l">statuses</th><th>pace</th><th>left</th><th class="l">note</th></tr>`;
+const JOBHEAD = `<tr><th class="l">job</th><th class="l">by</th><th>priority</th><th class="l">commit</th><th class="l">state</th><th>done</th><th>running</th><th>waiting</th><th>held</th><th>skipped</th><th class="l">statuses</th><th>pace</th><th>left</th><th class="l">note</th></tr>`;
 function spark(s) {
   const b = s.throughput.per_10_min, svg = $("spark");
   const now = Date.now(), start = now - 6 * 3600e3, n = 36, counts = new Array(n).fill(0);

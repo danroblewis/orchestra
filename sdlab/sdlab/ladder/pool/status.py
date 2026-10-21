@@ -33,6 +33,8 @@ def status() -> dict:
     main = next((j for j in active if j["kind"] == "mainline"), None)
     return {"at": jobs._iso(now), "workers": workers, "jobs": active, "recent": recent,
             "mainline": {"branch": gitcode.branch(), "head": gitcode.main_head(), "job": main["id"] if main else None,
-                         "queued": main["counts"]["queued"] if main else 0, "leased": main["counts"]["leased"] if main else 0},
+                         "queued": main["counts"]["queued"] if main else 0, "leased": main["counts"]["leased"] if main else 0,
+                         "held": main["counts"]["held"] if main else 0, "skipped": main["counts"]["skipped"] if main else 0},
             "throughput": {"last_hour": per_machine, "per_10_min": buckets},
-            "totals": {"queued": totals.get("queued", 0), "leased": totals.get("leased", 0), "results": stored[0] or 0, "promoted": stored[1] or 0}}
+            "totals": {"queued": totals.get("queued", 0), "leased": totals.get("leased", 0), "held": totals.get("held", 0),
+                       "skipped": totals.get("skipped", 0), "results": stored[0] or 0, "promoted": stored[1] or 0}}

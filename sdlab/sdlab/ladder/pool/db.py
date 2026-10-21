@@ -7,7 +7,8 @@ never touches an existing table or row (CREATE ... IF NOT EXISTS only).
                   prev_id: the stored result re-scored), state, rank (slow first), the lease (id, worker,
                   expiry), attempts (crashes, rejections, lost leases), the memory a retry needs
                   (min_free_mb), result_id (pool_results), or reused_id / reused_pool_id: a stored result with
-                  exactly its hashes (in results / pool_results), not run again
+                  exactly its hashes (in results / pool_results), not run again; confirm_id: for a none-long
+                  item held until its none-short passes (jobs.confirm_of), that none-short item
     pool_results  one row per accepted item: job, item, commit, machine, worker, slot, status, peak RSS,
                   the full row (JSON), and promoted_id: its row in `results` when it became the main
                   line's latest (None otherwise; promote: pending | done | not-main-line | current)
@@ -71,9 +72,20 @@ def connect(readonly: bool = False):
         key = str(store.path())
         if key not in _made:
             con.executescript(SCHEMA)
+            _migrate(con)
             if store.path().exists():                 # a read of a store not made yet reads an empty one in memory
                 _made.add(key)
         yield con
+
+
+ITEM_COLUMNS = (("confirm_id", "INTEGER"),)    # added after the table was first made (ALTER ... ADD COLUMN: no row changes)
+
+
+def _migrate(con) -> None:
+    have = {r[1] for r in con.execute("PRAGMA table_info(pool_items)")}
+    for name, kind in ITEM_COLUMNS:
+        if name not in have:
+            con.execute(f"ALTER TABLE pool_items ADD COLUMN {name} {kind}")
 
 
 def reset_cache() -> None:

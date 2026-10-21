@@ -54,6 +54,8 @@ def post(body: dict) -> tuple[int, dict]:
                 return 200, {"accepted": False, "cancelled": True}
             if it["state"] in ("error", "reused"):
                 return 200, {"accepted": False, "duplicate": True, "state": it["state"]}
+            if it["state"] in ("held", "skipped"):                   # never handed out (confirm.py): nobody ran it
+                return 200, {"accepted": False, "stale": True, "state": it["state"]}
             if not isinstance(body.get("commit"), str) or slot is None:
                 raise jobs.Refused(400, "commit and slot: the commit and slot that ran the item (its provenance)")
             mine = it["state"] == "leased" and it["lease_id"] == body.get("lease_id")

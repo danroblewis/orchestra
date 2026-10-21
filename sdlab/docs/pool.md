@@ -43,7 +43,8 @@ Since 2026-10-20 this is enforced and made the default path (`sdlab/ladder/pool/
 `sdlab-ladder run` and `sync` plan first and refuse above the limit, printing the submit command (exit
 code 3; `--local` runs it here anyway and appends it to `~/.sdlab/local-runs.log`). The agents' commands
 are `uv run sdlab-ladder submit` (the run/sync selectors; `--stale` for sync's "only what is stale",
-otherwise every cell again as `run`, sent as `fresh`) and `uv run sdlab-ladder job ID [--wait] [--json]`
+otherwise every cell again as `run`, sent as `fresh`; `--every-variant` as run's, see "none-long confirms
+none-short") and `uv run sdlab-ladder job ID [--wait] [--json]`
 (progress, each item as it finishes, then `run`'s summary line). `pool submit|status|results|cancel`
 stay for the rest.
 
@@ -71,7 +72,8 @@ A job is a set of items, the cells strategies x cases x variants, run at one com
 An item's states: `queued`, `leased` (a worker holds it), `done` (a result is stored), `reused` (a result
 with exactly these hashes was already stored: not run again unless the job asked for `fresh`), `error`
 (it could not be run: crashed twice, its hashes never matched, its lease was lost three times),
-`cancelled`.
+`cancelled`, `held` (a none-long item waiting for its none-short result: never handed out) and `skipped`
+(a none-long item not run because its none-short did not pass; see below).
 
 **Planning.** The server keeps a checkout of its own (`~/.sdlab/pool/planner/`), moves it to the job's
 commit and asks that commit's own code for the hashes (`runner.select_strategies`,
@@ -99,6 +101,27 @@ starts a watcher (the daemon keeps the Mac's pool worker up instead, and node2's
 the main line queues nothing while `~/.sdlab/watch.paused` exists: `rm ~/.sdlab/watch.paused` starts it
 (within a minute, while a worker is live), `touch ~/.sdlab/watch.paused` stops it queuing (what is queued
 still runs; `sdlab-ladder pool cancel JOB` drops it).
+
+**none-long confirms none-short** (the user, 2026-10-20; `sdlab/ladder/pool/confirm.py`). The noise-free
+long variant agreed with the noise-free short one on 97.7% of results and cost 42% of all test time, so,
+as in the local planner (`runner.confirm_of`), a none-long item only confirms a none-short pass of the same
+case and strategy at the same hashes:
+
+- if a current none-short result (exactly its case, strategy and score hashes) is already stored, or the
+  job reuses one, it is decided when the job is planned: queued on a `pass`, `skipped` otherwise;
+- if the job itself runs that none-short (or, for the main line, an earlier generation is running it), the
+  none-long item is `held` (`confirm_id` names the none-short item; claims never hand it out). When the
+  none-short item finishes it is queued on a `pass` and `skipped` on anything else (fail, equivalent,
+  error, timeout, an errored or cancelled item);
+- with no current none-short result stored or coming (e.g. `--variants long` without one), it is skipped.
+
+A skipped item is never run, never stored as a result and never counted as a fail: it counts as finished
+in the job's progress and is listed under `skipped` (with its reason, e.g. `skipped: none-short did not
+pass (fail)`) in `sdlab-ladder pool status`, `sdlab-ladder job ID` and the pool page, which also show
+`held`. A job whose `variants` name `none-long` itself, or that is submitted with `--every-variant`
+(`every_variant: true`), keeps every none-long item as before. The main line follows the rule; a refresh
+whose only stale cells are skipped none-long ones makes no new generation. On job 10 (kubernetes 300-317,
+submitted before this rule) the pool queued 3,444 items where the local planner would have queued 2,688.
 
 ## Results, and the main line's latest
 
@@ -155,7 +178,7 @@ All bodies are JSON. `T` marks the endpoints that need the token.
 ```json
 {"ref": "sdlab", "strategies": "lna,lna_v2", "cases": "tag:realistic", "exclude_cases": null,
  "variants": "counts-long", "priority": 100, "by": "agent-lna", "note": "lna on the realistic set",
- "check_tree": "all", "fresh": false, "timeout": 300}
+ "check_tree": "all", "fresh": false, "timeout": 300, "every_variant": false}
 ```
 
 - `ref`: a branch, tag or commit of the Mac's repository (default `sdlab`); the job records the commit
@@ -171,6 +194,8 @@ All bodies are JSON. `T` marks the endpoints that need the token.
   items are `reused`). An item whose stored result has the same case and strategy hash but another score
   hash is re-scored from the stored flows, as the watcher does.
 - `timeout`: seconds per item (a realistic case's own timeout still applies).
+- `every_variant`: keep every none-long item even where none-short has not passed (default false: see
+  "none-long confirms none-short"; naming `none-long` in `variants` does the same).
 
 Answer (202): `{"job": {"id": 12, "state": "planning", "commit": "3f1c...", ...}}`. 400: a bad field;
 404: an unknown ref; 409: a dirty tree (the answer lists the files).
@@ -178,7 +203,7 @@ Answer (202): `{"job": {"id": 12, "state": "planning", "commit": "3f1c...", ...}
 `GET /api/pool/jobs?limit=50`: the newest jobs with their item counts by state.
 
 `GET /api/pool/jobs/{id}`: one job: `{id, kind, by, note, priority, ref, commit, spec, state, created,
-started, finished, error, counts {queued, leased, done, reused, error, cancelled}, statuses {pass, fail,
+started, finished, error, counts {queued, leased, done, reused, error, cancelled, held, skipped}, statuses {pass, fail,
 ...}, total, per_hour, eta_seconds}`.
 
 `GET /api/pool/jobs/{id}/results?full=0`: its results, one per item: `{item_id, case, variant, strategy,
@@ -257,7 +282,7 @@ Acceptance rules, in order:
 
 `GET /api/pool/status`: what the page shows: the workers (live: a heartbeat in the last 90 seconds;
 machine, slots, busy, load, memory), the queue by job, the main line (HEAD, stale items queued),
-throughput (results per hour by machine, last hour), and totals. No token; nothing secret in it.
+throughput (results per hour by machine, last hour), and totals (queued, leased, held, skipped, results, promoted). No token; nothing secret in it.
 
 `GET /api/pool/workers`: the worker registry (every worker ever seen, with its last heartbeat).
 

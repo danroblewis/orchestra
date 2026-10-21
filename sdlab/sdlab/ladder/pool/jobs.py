@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .. import store
-from . import db, gitcode, planner
+from . import confirm, db, gitcode, planner
 
 AGENT_PRIORITY = 100
 MAX_PRIORITY = 1000
@@ -78,6 +78,7 @@ def submit(body: dict) -> dict:
         raise Refused(400, "timeout: 1..7200 seconds")
     spec["timeout"] = timeout
     spec["fresh"] = bool(body.get("fresh"))
+    spec["every_variant"] = bool(body.get("every_variant"))     # keep none-long where none-short has not passed (confirm.py)
     check = body.get("check_tree", "all")
     if check not in CHECK_TREE:
         raise Refused(400, f"check_tree: one of {', '.join(CHECK_TREE)}")
@@ -163,26 +164,41 @@ def expand(job_id: int) -> None:
             con.execute("UPDATE pool_jobs SET state = 'failed', error = ?, finished = ? WHERE id = ?", (str(e)[:2000], _iso(), job_id))
         return
     variants = [v.strip() for v in (spec.get("variants") or "").split(",") if v.strip()] or None
-    stored = {} if spec.get("fresh") else _stored(list(p["strategies"]))
-    rows = []
+    stored = _stored(list(p["strategies"]))
+    rows, by_key, links = [], {}, []
     for cid, v, s, sh, c in planner.cells(p, variants):
         ch, sc = c["hash"], v["score_hash"]
-        mode, prev, reused, reused_pool = "run", None, None, None
-        for src, rid, rch, rsh, rsc, status, has_found in stored.get((cid, v["name"], s), []):
-            if (rch, rsh, rsc) == (ch, sh, sc) and status in REUSABLE:
-                reused, reused_pool = (rid, None) if src == "results" else (None, rid)
+        mode, prev, reused, reused_pool, status = "run", None, None, None, None
+        for src, rid, rch, rsh, rsc, st, has_found in ([] if spec.get("fresh") else stored.get((cid, v["name"], s), [])):
+            if (rch, rsh, rsc) == (ch, sh, sc) and st in REUSABLE:
+                reused, reused_pool, status = (rid, None, st) if src == "results" else (None, rid, st)
                 break
-        if reused is None and reused_pool is None:
-            for src, rid, rch, rsh, rsc, status, has_found in stored.get((cid, v["name"], s), []):
-                if src == "results" and (rch, rsh) == (ch, sh) and status in REUSABLE and has_found:
+        if reused is None and reused_pool is None and not spec.get("fresh"):
+            for src, rid, rch, rsh, rsc, st, has_found in stored.get((cid, v["name"], s), []):
+                if src == "results" and (rch, rsh) == (ch, sh) and st in REUSABLE and has_found:
                     mode, prev = "rescore", rid
                     break
         state = "reused" if (reused or reused_pool) else "queued"
-        rows.append((job_id, cid, v["name"], s, ch, sh, sc, mode, prev, state, _rank(c, v), int("heavy" in (c.get("tags") or [])),
-                     c.get("timeout"), json.dumps(c.get("tags") or []), reused, reused_pool, _iso() if state == "reused" else None))
+        row = [job_id, cid, v["name"], s, ch, sh, sc, mode, prev, state, _rank(c, v), int("heavy" in (c.get("tags") or [])),
+               c.get("timeout"), json.dumps(c.get("tags") or []), reused, reused_pool, _iso() if state == "reused" else None, None]
+        rows.append(row)
+        by_key[(cid, v["name"], s)] = (row, status, c, v, sh)
+    for (cid, vname, s), (row, _st, c, v, sh) in by_key.items():   # none-long confirms a none-short pass (confirm.py)
+        short = confirm.confirm_of(c, v)
+        if short is None or row[9] != "queued" or confirm.exempt(spec, vname):
+            continue
+        mine = by_key.get((cid, short["name"], s))
+        if mine is not None and mine[0][9] == "queued":
+            row[9] = confirm.HELD
+            links.append(((cid, vname, s), (cid, short["name"], s)))
+            continue
+        st = mine[1] if mine is not None else confirm.stored_status(stored.get((cid, short["name"], s), []), (c["hash"], sh, short["score_hash"]))
+        if st != "pass":
+            row[9], row[16], row[17] = confirm.SKIPPED, _iso(), confirm.why_skipped(short["name"], st)
     with db.LOCK, db.connect() as con:
         con.executemany("INSERT OR IGNORE INTO pool_items (job_id, case_id, variant, strategy, case_hash, strategy_hash, score_hash, mode, prev_id,"
-                        " state, rank, heavy, timeout, tags, reused_id, reused_pool_id, finished) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+                        " state, rank, heavy, timeout, tags, reused_id, reused_pool_id, finished, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+        confirm.link(con, job_id, links)
         skipped = {k: v for k, v in (p.get("skipped") or {}).items()}
         err = ("skipped strategies: " + "; ".join(f"{k}: {v}" for k, v in skipped.items()))[:2000] if skipped else None
         con.execute("UPDATE pool_jobs SET state = 'queued', total = ?, planned_at = ?, error = ? WHERE id = ?", (len(rows), _iso(), err, job_id))
@@ -190,12 +206,19 @@ def expand(job_id: int) -> None:
 
 
 def settle(con, job_id: int) -> None:
-    """A job's state from its items: done once nothing waits or runs."""
+    """A job's state from its items: done once nothing waits, runs or is held. Held none-long items whose
+    none-short has finished (in this job or another) are decided first (confirm.release)."""
+    for other in confirm.release(con, _iso()) - {job_id}:
+        _settle(con, other)
+    _settle(con, job_id)
+
+
+def _settle(con, job_id: int) -> None:
     j = con.execute("SELECT state, started FROM pool_jobs WHERE id = ?", (job_id,)).fetchone()
     if j is None or j["state"] in ("planning", "cancelled", "failed", "done"):
         return
     n = dict(con.execute("SELECT state, COUNT(*) FROM pool_items WHERE job_id = ? GROUP BY state", (job_id,)).fetchall())
-    if not n.get("queued") and not n.get("leased"):
+    if not n.get("queued") and not n.get("leased") and not n.get(confirm.HELD):
         con.execute("UPDATE pool_jobs SET state = 'done', finished = ? WHERE id = ?", (_iso(), job_id))
     elif n.get("leased") or n.get("done") or n.get("error"):
         con.execute("UPDATE pool_jobs SET state = 'running', started = COALESCE(started, ?) WHERE id = ?", (_iso(), job_id))
@@ -210,7 +233,7 @@ def cancel(job_id: int) -> dict:
             raise Refused(409, "the standing main-line job cannot be cancelled")
         if j["state"] in ("done", "cancelled", "failed"):
             return job(job_id)
-        con.execute("UPDATE pool_items SET state = 'cancelled', finished = ? WHERE job_id = ? AND state IN ('queued', 'leased')", (_iso(), job_id))
+        con.execute("UPDATE pool_items SET state = 'cancelled', finished = ? WHERE job_id = ? AND state IN ('queued', 'leased', 'held')", (_iso(), job_id))
         con.execute("UPDATE pool_jobs SET state = 'cancelled', finished = ? WHERE id = ?", (_iso(), job_id))
     return job(job_id)
 
@@ -271,7 +294,7 @@ def refresh_mainline(force: bool = False) -> dict:
         if not force and not live_workers(con):
             return {"skipped": "no live worker"}
         cur = con.execute("SELECT * FROM pool_jobs WHERE kind = 'mainline' AND state IN ('queued', 'running') ORDER BY id DESC LIMIT 1").fetchone()
-        waiting = con.execute("SELECT COUNT(*) FROM pool_items WHERE job_id = ? AND state = 'queued'", (cur["id"],)).fetchone()[0] if cur else 0
+        waiting = con.execute("SELECT COUNT(*) FROM pool_items WHERE job_id = ? AND state IN ('queued', 'held')", (cur["id"],)).fetchone()[0] if cur else 0
     head = gitcode.main_head()
     if head is None:
         return {"skipped": "no main-line branch"}
@@ -287,9 +310,9 @@ def refresh_mainline(force: bool = False) -> dict:
     p = got[1]
     with db.connect(readonly=True) as con:
         latest = _latest_rows(con)
-        busy = {(r[0], r[1], r[2]) for r in con.execute("SELECT i.case_id, i.variant, i.strategy FROM pool_items i JOIN pool_jobs j ON j.id = i.job_id"
-                                                         " WHERE j.kind = 'mainline' AND i.state = 'leased'")}     # running now: not twice
-    rows = []
+        busy = {(r[0], r[1], r[2]): r[3] for r in con.execute("SELECT i.case_id, i.variant, i.strategy, i.id FROM pool_items i JOIN pool_jobs j"
+                                                               " ON j.id = i.job_id WHERE j.kind = 'mainline' AND i.state = 'leased'")}  # running now: not twice
+    rows, by_key, links = [], {}, []
     for cid, v, s, sh, c in planner.cells(p):
         if not standing(p, cid, s) or (cid, v["name"], s) in busy:
             continue
@@ -299,27 +322,43 @@ def refresh_mainline(force: bool = False) -> dict:
             continue
         mode = "rescore" if why == "score_only" else "run"
         rows.append([cid, v["name"], s, c["hash"], sh, v["score_hash"], mode, row["id"] if mode == "rescore" else None,
-                     _rank(c, v), int("heavy" in (c.get("tags") or [])), c.get("timeout"), json.dumps(c.get("tags") or [])])
+                     _rank(c, v), int("heavy" in (c.get("tags") or [])), c.get("timeout"), json.dumps(c.get("tags") or []), "queued", None, None])
+        by_key[(cid, v["name"], s)] = (rows[-1], c, v, sh)
+    for (cid, vname, s), (row, c, v, sh) in by_key.items():      # none-long confirms a none-short pass (confirm.py)
+        short = confirm.confirm_of(c, v)
+        if short is None:
+            continue
+        key = (cid, short["name"], s)
+        if key in by_key or key in busy:
+            row[12] = confirm.HELD                                 # its none-short is queued with it, or running in an earlier generation
+            links.append(((cid, vname, s), busy.get(key, key)))
+            continue
+        sr = latest.get(key)                                       # current (else it would be queued above)
+        if (sr or {}).get("status") != "pass":
+            row[12], row[13], row[14] = confirm.SKIPPED, _iso(), confirm.why_skipped(short["name"], (sr or {}).get("status"))
     with db.LOCK, db.connect() as con:
         if cur is not None:
-            con.execute("UPDATE pool_items SET state = 'cancelled', finished = ? WHERE job_id = ? AND state = 'queued'", (_iso(), cur["id"]))
+            con.execute("UPDATE pool_items SET state = 'cancelled', finished = ? WHERE job_id = ? AND state IN ('queued', 'held')", (_iso(), cur["id"]))
             con.execute("UPDATE pool_jobs SET state = 'done', finished = ?, note = COALESCE(note, '') || ' (superseded)' WHERE id = ?"
                         " AND NOT EXISTS (SELECT 1 FROM pool_items WHERE job_id = ? AND state = 'leased')", (_iso(), cur["id"], cur["id"]))
-        if not rows:
-            return {"queued": 0, "head": head}
+        if not any(r[12] != confirm.SKIPPED for r in rows):        # nothing to run (skipped none-long cells alone make no job)
+            return {"queued": 0, "head": head, **({"skipped_long": len(rows)} if rows else {})}
         cur2 = con.execute("INSERT INTO pool_jobs (kind, by, note, priority, ref, commit_sha, spec, state, created, planned_at, total)"
                            " VALUES ('mainline', 'pool', ?, 0, ?, ?, ?, 'queued', ?, ?, ?)",
                            (f"main line @ {head[:10]}", gitcode.branch(), head, json.dumps(MAINLINE_SPEC), _iso(), _iso(), len(rows)))
         job_id = int(cur2.lastrowid)
         con.executemany("INSERT OR IGNORE INTO pool_items (job_id, case_id, variant, strategy, case_hash, strategy_hash, score_hash, mode, prev_id,"
-                        " rank, heavy, timeout, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [[job_id, *r] for r in rows])
-    return {"queued": len(rows), "job": job_id, "head": head}
+                        " rank, heavy, timeout, tags, state, finished, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [[job_id, *r] for r in rows])
+        confirm.link(con, job_id, links)
+        settle(con, job_id)                                         # a held item whose running none-short has just finished
+    n = {k: sum(r[12] == k for r in rows) for k in ("queued", confirm.HELD, confirm.SKIPPED)}
+    return {"queued": n["queued"], "held": n[confirm.HELD], "skipped_long": n[confirm.SKIPPED], "job": job_id, "head": head}
 
 
 # ---- status ----
 
 def _counts(con, job_id: int) -> dict:
-    n = {k: 0 for k in ("queued", "leased", "done", "reused", "error", "cancelled")}
+    n = {k: 0 for k in ("queued", "leased", "done", "reused", "error", "cancelled", confirm.HELD, confirm.SKIPPED)}
     n.update(dict(con.execute("SELECT state, COUNT(*) FROM pool_items WHERE job_id = ? GROUP BY state", (job_id,)).fetchall()))
     return n
 
@@ -330,7 +369,7 @@ def _info(con, j) -> dict:
     since = _iso(time.time() - 1800)
     recent = con.execute("SELECT COUNT(*) FROM pool_results WHERE job_id = ? AND at > ?", (j["id"], since)).fetchone()[0]
     per_hour = recent * 2.0
-    left = counts["queued"] + counts["leased"]
+    left = counts["queued"] + counts["leased"] + counts[confirm.HELD]
     return {"id": j["id"], "kind": j["kind"], "by": j["by"], "note": j["note"], "priority": j["priority"], "ref": j["ref"],
             "commit": j["commit_sha"], "spec": json.loads(j["spec"] or "{}"), "state": j["state"], "created": j["created"],
             "started": j["started"], "finished": j["finished"], "error": j["error"], "total": j["total"], "counts": counts,

@@ -1,6 +1,6 @@
 """What agents use (CLAUDE.md rule 15c, docs/pool.md "Small tests stay local; sweeps go to the pool"):
 
-    sdlab-ladder submit [--strategies S] [--cases C] [--exclude-cases X] [--variants V] [--stale] [--ref BRANCH] [--by NAME]
+    sdlab-ladder submit [--strategies S] [--cases C] [--exclude-cases X] [--variants V] [--stale] [--every-variant] [--ref BRANCH] [--by NAME]
                         a job for the pool at a committed ref (default: this checkout's branch): the
                         estimate first, then the job id. Refused while the code the job uses has
                         uncommitted changes here, or while a feature branch lacks the sdlab HEAD.
@@ -59,6 +59,8 @@ def _submit_line(a, command: str) -> str:
             parts.append(f"{flag} {v}")
     if command == "sync":
         parts.append("--stale")
+    if getattr(a, "every_variant", False):
+        parts.append("--every-variant")
     return " ".join(parts) + " --by <you>"
 
 
@@ -108,7 +110,7 @@ def _estimate(a) -> tuple[int, float]:
         return estimate(a)
     strategies, _ = runner.select_strategies(a.strategies, parked_too=True)
     variants = [v.strip() for v in (a.variants or "").split(",") if v.strip()] or None
-    items = runner.plan(runner.select_cases(a.cases, a.exclude_cases), strategies, variants)
+    items = runner.plan(runner.select_cases(a.cases, a.exclude_cases), strategies, variants, every_variant=getattr(a, "every_variant", False))
     return len(items), busy_seconds(items) if items else 0.0
 
 
@@ -153,7 +155,7 @@ def submit(a) -> int:
         return 0
     body = {"ref": ref, "strategies": a.strategies, "cases": a.cases, "exclude_cases": a.exclude_cases, "variants": a.variants,
             "priority": a.priority, "by": a.by or os.environ.get("SDLAB_AGENT") or f"{os.environ.get('USER', 'agent')}@{ref}",
-            "note": a.note, "check_tree": a.check_tree, "fresh": not a.stale, "timeout": a.timeout}
+            "note": a.note, "check_tree": a.check_tree, "fresh": not a.stale, "timeout": a.timeout, "every_variant": getattr(a, "every_variant", False)}
     code, got = _call(a.server, "POST", "/api/pool/jobs", body)
     if code != 202:
         print(f"submit: refused by the server ({code}): {got.get('error') or got.get('detail')}", file=sys.stderr)
@@ -204,6 +206,7 @@ def summary(j: dict, results: list[dict]) -> str:
     reused = sum(r.get("state") == "reused" for r in results)
     return (f"job {j['id']}: {len(results)} done" + (f" in {took:.1f} s" if took is not None else "") + ": "
             + ", ".join(f"{v} {k}" for k, v in counts.items() if v) + (f" ({reused} reused)" if reused else "")
+            + (f" ({j['counts']['skipped']} none-long skipped: none-short did not pass)" if (j.get("counts") or {}).get("skipped") else "")
             + ("" if j["state"] == "done" else f" [{j['state']}" + (f": {j['error']}" if j.get("error") else "") + "]"))
 
 
@@ -255,6 +258,8 @@ def add_parsers(sub) -> None:
     s.add_argument("--timeout", type=float, default=300, help="seconds per item")
     s.add_argument("--check-tree", default="all", choices=("all", "strategies", "none"),
                    help="refuse while these have uncommitted changes here: the strategies and the harness (all), the strategies only, nothing")
+    s.add_argument("--every-variant", action="store_true",
+                   help="also none-long where none-short has not passed (by default it only confirms a current none-short pass)")
     s.add_argument("--behind-ok", action="store_true", help="submit a branch that lacks the sdlab HEAD anyway")
     s.add_argument("--estimate-only", action="store_true")
     s.add_argument("--server", default="http://127.0.0.1:8020")

@@ -1,7 +1,7 @@
 """`uv run sdlab-ladder pool <command>`: the pool's client for agents (docs/pool.md).
 
     submit [--ref sdlab] [--strategies S] [--cases C] [--exclude-cases X] [--variants V] [--priority 100]
-           [--by NAME] [--note TEXT] [--check-tree all|strategies|none] [--fresh] [--timeout 300] [--estimate-only]
+           [--by NAME] [--note TEXT] [--check-tree all|strategies|none] [--fresh] [--timeout 300] [--every-variant] [--estimate-only]
                      estimate the job (sdlab-ladder cost's busy time; small jobs may run here with
                      `sdlab-ladder run`), then submit it at the ref's commit
     status [JOB]     the pool (workers, queue by job), or one job
@@ -70,7 +70,8 @@ def submit(a) -> int:
     if a.estimate_only:
         return 0
     body = {"ref": a.ref, "strategies": a.strategies, "cases": a.cases, "exclude_cases": a.exclude_cases, "variants": a.variants,
-            "priority": a.priority, "by": a.by, "note": a.note, "check_tree": a.check_tree, "fresh": a.fresh, "timeout": a.timeout}
+            "priority": a.priority, "by": a.by, "note": a.note, "check_tree": a.check_tree, "fresh": a.fresh, "timeout": a.timeout,
+            "every_variant": getattr(a, "every_variant", False)}
     code, got = _call(a.server, "POST", "/api/pool/jobs", body)
     if code != 202:
         print(f"refused ({code}): {got.get('error') or got.get('detail')}", file=sys.stderr)
@@ -84,12 +85,14 @@ def submit(a) -> int:
 
 def _job_line(j: dict) -> str:
     c = j["counts"]
-    done = c["done"] + c["reused"] + c["error"]
+    done = c["done"] + c["reused"] + c["error"] + c.get("skipped", 0)
     st = ", ".join(f"{k} {v}" for k, v in sorted((j.get("statuses") or {}).items()))
     eta = f", ~{j['eta_seconds'] / 60:.0f} min left" if j.get("eta_seconds") else ""
     who = "main line" if j["kind"] == "mainline" else (j.get("by") or "agent")
     return (f"#{j['id']} {who} p{j['priority']} {(j['commit'] or '')[:10]} {j['state']}: {done}/{j['total']} done"
-            f" ({c['reused']} reused, {c['error']} errors), {c['leased']} running, {c['queued']} waiting{eta}" + (f" [{st}]" if st else "")
+            f" ({c['reused']} reused, {c['error']} errors" + (f", {c['skipped']} skipped: none-short did not pass" if c.get("skipped") else "")
+            + f"), {c['leased']} running, {c['queued']} waiting" + (f", {c['held']} held for their none-short" if c.get("held") else "")
+            + eta + (f" [{st}]" if st else "")
             + (f" -- {j['error']}" if j.get("error") else ""))
 
 
@@ -102,7 +105,9 @@ def status(a) -> int:
         print(_job_line(got["job"]))
         return 0
     code, s = _call(a.server, "GET", "/api/pool/status", token=False)
-    print(f"main line {s['mainline']['branch']} at {(s['mainline']['head'] or '?')[:12]}; {s['totals']['leased']} running, {s['totals']['queued']} waiting")
+    t = s["totals"]
+    print(f"main line {s['mainline']['branch']} at {(s['mainline']['head'] or '?')[:12]}; {t['leased']} running, {t['queued']} waiting"
+          + (f", {t['held']} held for their none-short" if t.get("held") else "") + (f", {t['skipped']} skipped" if t.get("skipped") else ""))
     for w in s["workers"]:
         print(f"  worker {w['name']} ({w['machine']}): {'live' if w['live'] else 'gone'}, {w['leased']} items of {w.get('slots')} slots,"
               f" load {w.get('load')}, free {w.get('mem_free_mb')} MB")
@@ -151,6 +156,7 @@ def main(argv: list[str]) -> int:
     s.add_argument("--check-tree", default="all", choices=("all", "strategies", "none"))
     s.add_argument("--fresh", action="store_true", help="run items even when a result with exactly their hashes is stored")
     s.add_argument("--timeout", type=float, default=300)
+    s.add_argument("--every-variant", action="store_true", help="also none-long where none-short has not passed (it only confirms a short pass by default)")
     s.add_argument("--estimate-only", action="store_true")
     st = sub.add_parser("status", help="the pool, or one job")
     st.add_argument("job", nargs="?", type=int)
