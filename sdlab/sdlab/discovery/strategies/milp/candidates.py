@@ -58,7 +58,11 @@ class Boundary:
         # (2026-10-21) an "input" side is searched as "measured"; __init__.fixed_inputs sets it at 1 x the input
         self.sides = {s: {side: {"measured" if k == "input" else k for k in e.get(side) or []} for side in ("in", "out")} for s, e in raw.items()}
 
+    skip: frozenset = frozenset()   # stocks a controller rule explains (quantized.py): no flow into or out of them is offered
+
     def kinds(self, stock: str, side: str, final: bool) -> set:
+        if stock in self.skip:
+            return set()
         if self.declared:
             return (self.sides.get(stock) or {}).get(side) or set()
         if side == "out" and final:
@@ -134,7 +138,9 @@ def piece_places(st: Steps) -> list[int]:
 
 def targets(st: Steps, b: Boundary, src: str) -> list:
     """Where a flow from src may go: another measured stock (src not final), or outside where allowed."""
-    out = [j for j in st.ids if j != src and src not in st.final and st.same_unit(src, j)]
+    if src in b.skip:
+        return []
+    out = [j for j in st.ids if j != src and src not in st.final and st.same_unit(src, j) and j not in b.skip]
     return out + ([None] if b.kinds(src, "out", src in st.final) else [])
 
 

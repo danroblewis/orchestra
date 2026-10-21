@@ -267,14 +267,23 @@ def _flows(s: Structure) -> list[dict]:
     return out
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, known: dict | None = None) -> dict:
+    """known: {stock: {"amount": change per step}} for stocks a controller rule explains (quantized.py):
+    their rows are fitted to what the rule leaves (nothing) and no flow into or out of them is offered."""
     began = time.perf_counter()
     opts = dict(opts or {})
     st = Steps(stocks, run, opts)
     if st.T < 3 or not st.ids:
         return {"flows": [], "milp": {"note": "too few steps"}}
     bd = candidates.Boundary(run)
+    known = {s: k for s, k in (known or {}).items() if s in st.ids}
+    if known:
+        bd.skip = frozenset(known)
+        for s, k in known.items():
+            st.dy[st.ids.index(s)] -= np.asarray(k["amount"], dtype=float)[:st.T]
     terms, mins = candidates.build(st, bd)
+    terms = [x for x in terms if x.src not in bd.skip and x.dst not in bd.skip]
+    mins = [m for m in mins if m.src not in bd.skip and m.dst not in bd.skip]
     forced = candidates.declared_sides(st, bd)
     K = _sample(st.T)
     scale = _scales(st, _first_scale(st), None)
@@ -400,6 +409,13 @@ _identify_program = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  # noqa: F811
-    from . import oefit
+    from . import oefit, quantized
 
-    return oefit.refit(_identify_program(stocks, run, opts), stocks, run, opts or {})
+    known, notes = quantized.find(stocks, run, opts)          # whole-unit controllers (k8s-308): their rules, from the data
+    result = _identify_program(stocks, run, opts, known)
+    if known:
+        result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
+    result = oefit.refit(result, stocks, run, opts or {})
+    if known:                                                  # the output-error refit does not run the rules' forms
+        result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
+    return {**result, "quantized": notes} if notes else result
