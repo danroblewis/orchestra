@@ -32,6 +32,7 @@ from scipy.sparse import coo_matrix
 
 CLAIM_PRICE = 2.0     # an outside flow where no boundary is declared pays this many log T beyond its numbers (as matrix's boundary.py)
 INF = highspy.kHighsInf
+HEURISTICS = 0.3      # HiGHS's share of MIP effort on primal heuristics (default 0.05): good incumbents early, as the bound is weak
 
 
 @dataclass
@@ -119,6 +120,7 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     h.setOptionValue("random_seed", 0)
     h.setOptionValue("time_limit", float(time_limit))
     h.setOptionValue("mip_rel_gap", float(gap))
+    h.setOptionValue("mip_heuristic_effort", HEURISTICS)
     h.passModel(lp)
     if start:                                                   # a feasible start: the last solve's columns that are offered again
         x0 = np.zeros(ncol)

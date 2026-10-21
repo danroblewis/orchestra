@@ -24,6 +24,7 @@ from .steps import Steps
 
 __all__ = ["identify"]
 
+EXACT = 10.0          # a structure leaving every stock's mean misfit within this many floors explains the data exactly
 SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
 SAMPLE = 300          # steps the program reads (evenly spaced over the run when it is longer)
 PASSES = 4            # program solves at most (each re-estimates the noise scales and offers MINs on the flows found)
@@ -77,7 +78,7 @@ def _screen(st: Steps, s: Structure, mins: list, scale: np.ndarray) -> list:
     scored = []
     for mf in mins:
         x, y = st.series(mf.src), st.series(mf.cap)
-        best = 0.0
+        best = (0.0, None, 0.0)
         for th in candidates.thresholds(st, mf):
             f = np.minimum(x, th * y)
             num, den = 0.0, 0.0
@@ -86,11 +87,22 @@ def _screen(st: Steps, s: Structure, mins: list, scale: np.ndarray) -> list:
                     g = sign * f / scale[pos[end]]
                     num += float(g @ e[pos[end]])
                     den += float(g @ g)
-            if den > 0 and num > 0:
-                best = max(best, num * num / den)
+            if den > 0 and num > 0 and num * num / den > best[0]:
+                best = (num * num / den, float(th), num / den)
         scored.append((best, mf))
-    scored.sort(key=lambda z: -z[0])
-    return [mf for sc, mf in scored[:SCREEN] if sc > 0]
+    scored.sort(key=lambda z: -z[0][0])
+    return [(mf, th, a) for (sc, th, a), mf in scored[:SCREEN] if sc > 0]
+
+
+def _start(chosen: list, screened: list) -> list:
+    """The next solve's start: this one's columns, with the screen's best MIN flow (at its threshold and
+    least-squares number) in place of a plain move it would limit."""
+    if not screened:
+        return chosen
+    mf, th, a = screened[0]
+    out = [(c, v) for c, v in chosen if not (c.src == mf.src and c.dst == mf.dst and c.what == ("term", mf.src))]
+    col = program.Column(mf.src, mf.dst, None, 1.0, 2, None, None, ("min", mf.cap, th))
+    return out + [(col, min(1.0, max(0.0, a)))]
 
 
 def _sample(T: int) -> np.ndarray:
@@ -123,6 +135,8 @@ def _flows(s: Structure) -> list[dict]:
         if p[0] == "min" and a > 0 and b > 0:
             out.append({"from": p[1], "to": p[2], "ratio": 1,
                         "rate": {"form": "expr", "expr": f"min({_num(a):g} * {p[1]}, {_num(b):g} * {p[3]})"}})
+    for n, f in enumerate(out):                  # an id per flow (the engine compiles expression rates by it)
+        f["id"] = f"milp:{f['from'] or 'outside'}->{f['to'] or 'outside'}:{n}"
     return out
 
 
@@ -153,13 +167,16 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             tried.append(s)
             break                          # no better than a structure already found: the search has converged
         tried.append(s)
+        if np.all(np.mean(np.abs(st.dy - s.change()), axis=1) <= EXACT * _floor(st)):
+            break                          # every change explained to the data's rounding: nothing left to find
         pairs = {(p[1], p[2]) for p in s.parts if p[1] is not None and (p[0] == "min" or p[3] == p[1])}
         nxt = [m for m in mins if (m.src, m.dst) in pairs]
-        nxt += [m for m in _screen(st, s, mins, scale) if m not in nxt]
+        screened = _screen(st, s, mins, scale)
+        nxt += [m for m, _, _ in screened if m not in nxt]
         if (s.key(), len(nxt)) in seen:
             break
         seen.add((s.key(), len(nxt)))
-        offer, zoom, start = nxt, s.thetas(), sol["chosen"]
+        offer, zoom, start = nxt, s.thetas(), _start(sol["chosen"], screened)
         e = np.abs(st.dy - s.change())
         unit = _scales(st, np.ones(len(st.ids)), s.gross())
         scale = _scales(st, np.maximum(np.mean(e / unit, axis=1), _floor(st)), s.gross())
