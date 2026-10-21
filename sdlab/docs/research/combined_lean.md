@@ -91,4 +91,19 @@ approval, CLAUDE.md invariant 2; docs/research/declared-boundary.md). This strat
 - **The answer:** the guard and the anti-correlated pair moves once more (declared), or the moves and the
   priced claims (not declared), bounded the same way; `boundary` and `boundary_claims` in the result.
 
-Results: in progress (paired pool runs on Kubernetes 300-305 and 40 Tests cells; see below when reported).
+Results (CPU pool, 2026-10-20, paired: before = 3cc5c54, after = a578c86; same cells, variants and seeds;
+`pool_results` of the jobs named; nothing timed out or errored):
+
+| set | jobs (before/after) | pass + equivalent | invented boundary | discovery seconds (sum) |
+|---|---|---|---|---|
+| Kubernetes 300-305, all variants (28 cells) | 26/60 | 27 -> 27 (+305 counts-long; -303 meas-long) | 1 -> 0 | 367 -> 873 |
+| 40 Tests cells (104, 114, 152, 155, 202, 207, 220, 012, 010, 063 x none/counts, short/long) | 28/62 | 8 -> 8 (no flips) | 28 -> 0 | 444 -> 1325 |
+
+The Tests cells were chosen where the stored results had the most invented boundaries (and three that
+passed). Every invented boundary is gone. The loss on 303 meas-long (in all six composites) is the
+numbers, not the structure: before, the pick had three invented outside flows that the errors-in-variables
+refit (eiv.py) dropped while instrumenting the numbers (queue -> inflight 0.56, true 0.6); now the pick is
+already inside the boundary, eiv's multi-step check keeps the least-squares numbers biased by the
+measurement error (0.68; instrumented 0.56 judged 0.212 against 0.209), and the cell fails on the numbers.
+The fix belongs to eiv's acceptance test (next step). Discovery time rose on most of them (the guard over
+every candidate and the final passes, each bounded at 150/120 refits and 30 s).
