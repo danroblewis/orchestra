@@ -941,6 +941,22 @@ strategies:
     builds_on: nothing (its own copy of the harness's identifiability search, sdlab/ladder/z3_ident.py)
     status: active
     note: docs/research/z3.md. A specialist for noise-free linear cases; its best effort elsewhere is weak (it passes none of the cells no linear structure fits).
+  z3robust:
+    idea: z3exact's kind of model searched by Z3's optimiser instead of exact equality, so it tolerates noise and outliers - the fewest terms whose misfit stays within a band set by the noise measured in the data.
+    how: >-
+      The same possible terms as z3exact (moves between stocks, outside flows only where the boundary
+      allows them, a declared input at exactly 1 x its series, a capacity limit MIN(a X, b Y) where the
+      data show one, numbers that change at announced eras). Every step's equation is compressed, without
+      losing evidence, into a few rotated equations per stock, scaled by that stock's noise level estimated
+      from the data, after leaving out gross outliers. Z3 then finds the fewest terms (soft constraints,
+      MaxSMT) whose misfit stays inside a band that grows with the noise, and lists the other smallest
+      sets; these and a backward-elimination candidate are compared on misfit plus a price per term, and
+      the winner's numbers are refitted by least squares on every step. Z3 runs in its own process with a
+      time limit; when it runs out the backward-elimination answer is used and the note says so.
+    helps_with: Linear systems with counting noise, gross outliers or missing samples, where an exact search finds nothing.
+    builds_on: z3exact (copies of its class, flows and capacity-limit code, at commit 45bfaac)
+    status: active
+    note: docs/research/z3robust.md.
 
 glossary:
 
