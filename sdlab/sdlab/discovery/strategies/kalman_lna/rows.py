@@ -425,13 +425,16 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         the column and the best hidden integrator (derived.py 3); (gain, meta, column) of the best, or None."""
         best = None
         switches = [np.ones(T)] + [m["switch"] for m in derived_meta.values() if m.get("switch") is not None]
-        Hs = [(_derived.integrator(a, sw)) for sw in switches for a in _derived.decays(sw)]
+        grid = [(w, a) for w, sw in enumerate(switches) for a in _derived.decays(sw)]
+        Hs = [_derived.integrator(a, switches[w]) for w, a in grid]
         for S in resid:
             if S in final or "in" not in _sides(S, declared, bd) or time.monotonic() > deadline:
                 continue
             r = rows[S]
             y = dy[ids.index(S)]
-            sup = [X[:, names.index(n)] for n in r["lin"] if n in names and n is not None]
+            own = [n for n in r["lin"] if n in names and n is not None]
+            sup = [X[:, names.index(n)] for n in own + ([S] if S in names and S not in own else [])]   # and its own level
+            scan = []
             for ia in stock_cols:
                 for ib in stock_cols:
                     if ia == ib:
@@ -440,14 +443,23 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
                     if e in taken:
                         continue
                     col = X[:, ia] / np.maximum(1.0, X[:, ib])
-                    top = math.inf
-                    for h0, h1 in Hs:
-                        A = np.vstack(sup + [col, h0, h1, np.ones(T)]).T
-                        _, sse = _lstsq(A, y)
-                        top = min(top, sse)
-                    g = T * math.log((r["sse"] + floor[S]) / (top + floor[S])) - 5 * logT
-                    if best is None or g > best[0]:
-                        best = (g, {"expr": e, "reads": [names[ia], names[ib]], "base": names[ia], "row": S}, col)
+                    sses = [_lstsq(np.vstack(sup + [col, h0, h1, np.ones(T)]).T, y)[1] for h0, h1 in Hs]
+                    k = int(np.argmin(sses))
+                    scan.append((sses[k], k, ia, ib, e, col))
+            for sse0, k, ia, ib, e, col in sorted(scan, key=lambda c: c[0])[:3]:     # the drain rate refined
+                w, a = grid[k]
+                same = [g for g in range(len(grid)) if grid[g][0] == w]
+                pos = same.index(k)
+                lo, hi = grid[same[max(0, pos - 1)]][1], grid[same[min(len(same) - 1, pos + 1)]][1]
+
+                def f(x, col=col, w=w):
+                    h0, h1 = _derived.integrator(x, switches[w])
+                    return _lstsq(np.vstack(sup + [col, h0, h1, np.ones(T)]).T, y)[1]
+
+                top = min(sse0, _derived.golden(f, lo, hi)[1]) if hi > lo else sse0
+                g = T * math.log((r["sse"] + floor[S]) / (top + floor[S])) - 5 * logT
+                if best is None or g > best[0]:
+                    best = (g, {"expr": e, "reads": [names[ia], names[ib]], "base": names[ia], "row": S}, col)
         return best
 
     rows, old = {}, {}
@@ -485,6 +497,9 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         got = _derived.search(X, names, stock_cols, resid, floor, {S: _span(rows[S]) for S in resid}, T,
                               {m["expr"] for m in derived_meta.values()})
         joint = _ratio_hidden(resid, {m["expr"] for m in derived_meta.values()}, stock_cols)
+        if opts.get("rows_trace"):
+            print("rows joint", None if joint is None else (round(joint[0], 1), joint[1]["expr"], joint[1]["row"]),
+                  None if got is None else round(got[0], 1))
         if joint is not None and (got is None or joint[0] > got[0]):
             got = joint
         if got is None or got[0] < PRICE * logT:
