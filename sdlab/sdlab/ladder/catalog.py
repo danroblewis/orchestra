@@ -20,6 +20,7 @@ import hashlib
 import importlib.util
 import re
 import sys
+import threading
 from pathlib import Path
 
 from ..discovery import strategies as _strategies
@@ -30,6 +31,7 @@ NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 SIBLING = re.compile(r"from\s+\.(\w+)\s+import|from\s+sdlab\.discovery\.strategies\.(\w+)\s+import|from\s+\.\s+import\s+(\w+)")
 
 
+_BUILD = threading.RLock()  # serialises listing() builds (several threads rebuilding at once starved the server)
 _memo: dict = {}           # within one listing(): the names and the shared files, worked out once
 
 
@@ -179,14 +181,16 @@ def listing(check: bool = True) -> list[dict]:
     """[{name, hash, available, reason}] for every strategy module (cached until a file changes)."""
     key = (_key(), tuple(names()), tuple(map(str, _strategies.__path__)), check)
     if _cache.get("key") != key:
-        _memo.clear()
-        _memo["names"], _memo["shared"] = names(), _shared_files()   # the tree cannot change within the key
-        try:
-            out = []
-            for n in names():
-                ok, why = availability(n) if check else (True, None)
-                out.append({"name": n, "hash": strategy_hash(n), "available": ok, "reason": why})
-        finally:
-            _memo.clear()
-        _cache.update(key=key, value=out)
+        with _BUILD:                     # one build at a time: concurrent requests wait for it, never rebuild in parallel
+            if _cache.get("key") != key:
+                _memo.clear()
+                _memo["names"], _memo["shared"] = names(), _shared_files()   # the tree cannot change within the key
+                try:
+                    out = []
+                    for n in names():
+                        ok, why = availability(n) if check else (True, None)
+                        out.append({"name": n, "hash": strategy_hash(n), "available": ok, "reason": why})
+                finally:
+                    _memo.clear()
+                _cache.update(key=key, value=out)
     return [dict(x) for x in _cache["value"]]

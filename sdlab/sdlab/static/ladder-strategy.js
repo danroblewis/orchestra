@@ -22,7 +22,7 @@
   const day = (iso) => String(iso || "").slice(0, 10);
 
   const q = new URLSearchParams(location.search);
-  const S = { name: q.get("name") || "", data: null, cases: {}, cells: {}, details: {}, models: {}, errors: {}, tab: {},
+  const S = { name: q.get("name") || "", data: null, cases: {}, cells: {}, details: {}, models: {}, errors: {}, tab: {}, rerun: {},
     f: { status: q.get("status") || "", variant: q.get("variant") || "", kind: q.get("kind") || "tests", level: "", tag: "", sort: q.get("sort") || "wrong", text: "" } };
   try { const t = localStorage.getItem("sdlab.theme"); if (t) document.documentElement.dataset.theme = t; } catch { /* fine */ }
   $("theme").onclick = () => {
@@ -240,7 +240,9 @@
     const strict = strictChip(x);
     const far = x && x.far != null ? `<span class="muted small" data-tip="Both models run free to t = 100,000: the gap as a share of the truth's range (capped at 100%)">err@100k ${pct(x.far, 0)}${x.flag ? ` · <span class="err">${esc(x.flag)}</span>` : ""}</span>` : "";
     return `<article class="card st-${st}" data-case="${esc(c.id)}" tabindex="0" aria-label="${esc(c.id)} ${esc(c.title)}">
-      <div class="chead"><span class="cid">${esc(c.kind === "realistic" ? "" : c.id.slice(0, 3))}${c.kind === "draw" ? esc(c.id.slice(3)) : ""}</span><span class="ctitle" title="${esc(c.id)}: ${esc(c.tests)}">${esc(c.title)}</span></div>
+      <div class="chead"><span class="cid">${esc(c.kind === "realistic" ? "" : c.id.slice(0, 3))}${c.kind === "draw" ? esc(c.id.slice(3)) : ""}</span><span class="ctitle" title="${esc(c.id)}: ${esc(c.tests)}">${esc(c.title)}</span>
+        <button class="rerun" data-rerun title="Re-run ${esc(c.id)} for ${esc(S.name)} now: every variant, at the top of the CPU pool's queue, at the latest committed code">↻ Re-run</button></div>
+      <div class="rr-status small muted" aria-live="polite">${esc(S.rerun[c.id] || "")}</div>
       <div class="chips">${chips}</div>
       <div class="headline"><span class="badge b-${st}">${esc(st === "none" ? "not run" : st)}</span><b>${esc(headline(x))}</b>${strict}${lab}${far}</div>
       <div class="dg"><svg role="img" aria-label="What would make it right"></svg></div>
@@ -415,9 +417,44 @@
   $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeFull(); };
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("overlay").hidden) closeFull(); });
 
+  // the re-run button: one case for this strategy, every variant, at the top of the pool's queue; its
+  // progress shows on the card, and the card redraws with the new results when the job is done
+  async function rerun(c) {
+    const say = (t) => { S.rerun[c.id] = t; const el = $("grid").querySelector(`[data-case="${CSS.escape(c.id)}"] .rr-status`); if (el) el.textContent = t; };
+    say("submitting…");
+    let j;
+    try {
+      const r = await fetch("/api/pool/rerun", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case: c.id, strategy: S.name }) });
+      const d = await r.json();
+      if (!r.ok) { say(`not submitted: ${d.error || r.status}`); return; }
+      j = d.job;
+    } catch (e) { say(`not submitted: ${e.message}`); return; }
+    for (;;) {
+      const n = j.counts || {}, fin = (n.done || 0) + (n.reused || 0) + (n.skipped || 0) + (n.error || 0);
+      if (["done", "cancelled", "failed", "error"].includes(j.state)) break;
+      say(`job ${j.id}: ${j.state === "planning" ? "planning" : `${fin} of ${j.total || "?"} done, ${n.leased || 0} running`}`);
+      await new Promise((ok) => setTimeout(ok, 4000));
+      try { j = (await get(`/api/pool/jobs/${j.id}`)).job; } catch { /* the server restarts: keep asking */ }
+    }
+    const st = Object.entries(j.statuses || {}).map(([k, v]) => `${v} ${k}`).join(", ");
+    say(`job ${j.id} ${j.state}${st ? `: ${st}` : ""} (refreshing…)`);
+    for (let i = 0; i < 6; i++) {                                // the new results reach the summary within seconds
+      await new Promise((ok) => setTimeout(ok, 3000));
+      try {
+        const d = await get(`/api/ladder/strategy/${enc(S.name)}?fresh=${Date.now()}`);
+        d.cells.filter((x) => x.case === c.id).forEach((x) => { S.cells[`${x.case}|${x.variant}`] = x; });
+        delete S.details[c.id]; Object.keys(S.details).forEach((k) => { if (String(k).startsWith(c.id)) delete S.details[k]; });
+      } catch { continue; }
+      const el = $("grid").querySelector(`[data-case="${CSS.escape(c.id)}"]`);
+      if (el) { el.outerHTML = cardHtml(c, shown(c)); fill($("grid").querySelector(`[data-case="${CSS.escape(c.id)}"]`)); }
+    }
+    say(`job ${j.id} ${j.state}${st ? `: ${st}` : ""}`);
+  }
+
   $("grid").onclick = (e) => {
     const card = e.target.closest(".card"); if (!card) return;
     const chip = e.target.closest("[data-v]"), c = S.cases[card.dataset.case];
+    if (e.target.closest("[data-rerun]")) { e.stopPropagation(); rerun(c); return; }
     if (chip) {
       S.tab[c.id] = chip.dataset.v;
       card.outerHTML = cardHtml(c, shown(c));

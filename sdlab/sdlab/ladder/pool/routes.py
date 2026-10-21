@@ -50,6 +50,27 @@ def submit(body: dict[str, Any] | None = BODY):
         return _refused(e)
 
 
+@router.post("/rerun")
+def rerun(body: dict[str, Any] | None = BODY):
+    """The strategy page's re-run button (the user, 2026-10-21; no token, as the user asked): one case for one
+    strategy, every variant again (fresh), at the top of the queue, at the sdlab branch's HEAD."""
+    from .. import cases as casemod, catalog
+    b = body or {}
+    case, strategy = str(b.get("case") or ""), str(b.get("strategy") or "")
+    if strategy not in catalog.names():
+        return JSONResponse({"error": f"no strategy {strategy!r}"}, status_code=404)
+    try:
+        casemod.load(case)
+    except Exception:                                          # noqa: BLE001
+        return JSONResponse({"error": f"no case {case!r}"}, status_code=404)
+    try:
+        return JSONResponse({"job": jobs.submit({"strategies": strategy, "cases": case, "priority": jobs.MAX_PRIORITY,
+                                                 "fresh": True, "check_tree": "none", "by": "ui",
+                                                 "note": f"re-run from the strategy page: {strategy} on {case}"})}, status_code=202)
+    except jobs.Refused as e:
+        return _refused(e)
+
+
 @router.get("/jobs")
 def list_jobs(limit: int = 50, active: bool = False):
     return {"jobs": jobs.jobs(min(max(limit, 1), 500), active)}
