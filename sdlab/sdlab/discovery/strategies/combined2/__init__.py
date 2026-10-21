@@ -397,6 +397,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     written back, where the levels carry measurement error, the numbers are refitted and the structure
     revised on the output error (oefit.py: the model run through the whole record against the measured
     levels)."""
+    from . import hinge
     from . import oefit
     from . import switch
 
@@ -405,7 +406,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (2026-10-21, k8s-308, docs/research/fixes/308-combined2.md) a discrete actuator's outside flows written
     # as switches on the levels (switch.py) before the output-error refit, which otherwise bends the
     # stocks the actuator drives to make up for its smeared linear rate
-    r = switch.apply(r, stocks, run, o, readable=lambda name: not _capmin.level_series(name))
+    # (2026-10-21, k8s-309, docs/research/fixes/309-combined2.md) and each stock's outside sides refitted as
+    # floored linear rates (hinge.py: max(0, c + w . Z), a gap that closes) where its row says so
+    plain = lambda name: not _capmin.level_series(name)   # noqa: E731
+    r = hinge.apply(switch.apply(r, stocks, run, o, readable=plain), stocks, run, o, readable=plain)
     r = oefit.refit(r, stocks, run, o, cap)
-    return switch.apply(_capmin.restore(r, cap), stocks, run, opts)
+    return hinge.apply(switch.apply(_capmin.restore(r, cap), stocks, run, opts), stocks, run, opts)
 

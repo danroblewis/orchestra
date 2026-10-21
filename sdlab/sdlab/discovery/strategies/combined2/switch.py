@@ -243,78 +243,140 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
     for x in levels:
         if x in finals:
             continue
-        d = np.diff(levels[x][:T])
-        chain = _own_chain(flows, x, set(levels))
-        inner = [f for f in flows if f.get("from") and f.get("to") and x in (f["from"], f["to"]) and not _touches(f, chain)]
-        rest = np.zeros(n)
-        ok = True
-        for f in inner:
-            a = _amount(f, cols, n)
-            if a is None:
-                ok = False
+        got = None
+        for drop in (False, True):                        # X's moves with other measured stocks as found, then dropped
+            got = _try(x, flows, levels, cols, n, T, finals, boundary, readable, drop)
+            if got is not None:
                 break
-            rest += (a if f["to"] == x else -a * float(f.get("ratio") or 1))
-        if not ok:
+        if got is None:
             continue
-        r = d - rest
-        scale = max(1e-12, float(np.abs(r).max()))
-        moved = np.abs(r) > STEP_REL * scale
-        if moved.sum() < MIN_EVENTS or moved.mean() > MAX_SHARE:
-            continue
-        outer = [f for f in flows if bool(f.get("from")) != bool(f.get("to")) and x in (f.get("from"), f.get("to"))]
-        if any(f.get("switch") for f in outer):
-            continue                                      # already switched
-        old = np.zeros(n)
-        for f in outer:
-            a = _amount(f, cols, n)
-            if a is None:                                 # a rate this cannot run (an effect, a piece): compared with no flow
-                ok = False
-                break
-            old += a if f.get("to") == x else -a
-        if not ok or chain:                               # (or X's own hidden stocks: what they carry is not known here)
-            old = np.zeros(n)
-            ok = True
-        new_flows, new = [], np.zeros(n)
-        sides = []
-        for side, sign in (("in", 1.0), ("out", -1.0)):
-            ev = moved & (sign * r > 0)
-            if boundary is not None and not (boundary.get(x) or {}).get(side):
-                if ev.any():
-                    sides = None
-                    break
-                continue
-            if ev.sum() < MIN_EVENTS:
-                if ev.any():
-                    sides = None
-                    break
-                continue
-            step = float(np.median(sign * r[ev]))
-            if np.max(np.abs(sign * r[ev] - step)) > STEP_REL * max(1.0, abs(step)):
-                sides = None
-                break
-            got = _fit_side(ev, x, {k: v for k, v in cols.items() if k in levels or readable is None or readable(k)}, n)
-            if got is None or got["misses"] > MISS * n:
-                sides = None
-                break
-            new += sign * step * _on(got, x, cols, n)
-            sides.append(side)
-            fl = {"from": None, "to": x} if side == "in" else {"from": x, "to": None}
-            new_flows.append({**fl, "id": f"switch_{x}_{side}", "ratio": 1, "rate": _expr(step, got, x),
-                              "switch": {"step": step, **got}})
-        if not sides:
-            continue
-        reached = {side for f in flows if _touches(f, chain) for side in (["in"] if not f.get("from") else []) + (["out"] if not f.get("to") else [])}
-        if reached - set(sides):                          # a side X's hidden stocks carry that no switch replaces
-            continue
-        err_new = float(np.sum((r - new) ** 2))
-        err_old = float(np.sum((r - old) ** 2))
-        if err_new > RESIDUAL * err_old:
-            continue
-        keep = [f for f in flows if not (f in outer and (("in" if f.get("to") == x else "out") in sides)) and not _touches(f, chain)]
-        flows[:] = keep + new_flows
-        for h in chain:
+        flows[:], note = got
+        for h in note.get("dropped") or []:
             (out.get("inferred_levels") or {}).pop(h, None)
-        notes.append({"stock": x, "sides": sides, "sse_before": err_old, "sse_after": err_new, **({"dropped": sorted(chain)} if chain else {})})
+        notes.append(note)
     if notes:
         out["switch"] = notes
     return out
+
+
+def _try(x: str, flows: list[dict], levels: dict, cols: dict, n: int, T: int, finals: set, boundary, readable, drop: bool):
+    """X's outside sides as switches: (new flows, note) or None. drop: X's moves with other measured stocks are
+    left out of X's row (a stock that holds exactly still on most steps cannot carry a smooth move: what the
+    fit wrote as one is the actuator's smear), removed with X's outside flows, and each partner stock's row is
+    repaired by a floored refit of its outside sides (hinge.refit_row); kept only where the partners' rows
+    end no worse than before."""
+    from . import hinge
+
+    d = np.diff(levels[x][:T])
+    chain = _own_chain(flows, x, set(levels))
+    inner = [f for f in flows if f.get("from") and f.get("to") and x in (f["from"], f["to"]) and not _touches(f, chain)]
+    dropped = []
+    if drop:
+        dropped = [f for f in inner if (f["to"] if f["from"] == x else f["from"]) in levels]
+        if not dropped:
+            return None
+        inner = [f for f in inner if f not in dropped]
+    rest = np.zeros(n)
+    for f in inner:
+        a = _amount(f, cols, n)
+        if a is None:
+            return None
+        rest += (a if f["to"] == x else -a * float(f.get("ratio") or 1))
+    r = d - rest
+    scale = max(1e-12, float(np.abs(r).max()))
+    moved = np.abs(r) > STEP_REL * scale
+    if moved.sum() < MIN_EVENTS or moved.mean() > MAX_SHARE:
+        return None
+    outer = [f for f in flows if bool(f.get("from")) != bool(f.get("to")) and x in (f.get("from"), f.get("to"))]
+    if any(f.get("switch") for f in outer):
+        return None                                      # already switched
+    old = np.zeros(n)
+    ok = True
+    for f in outer:
+        a = _amount(f, cols, n)
+        if a is None:                                    # a rate this cannot run (an effect, a piece): compared with no flow
+            ok = False
+            break
+        old += a if f.get("to") == x else -a
+    if not ok or chain:                                  # (or X's own hidden stocks: what they carry is not known here)
+        old = np.zeros(n)
+    if drop:                                             # X's row before: with the moves it drops
+        for f in dropped:
+            a = _amount(f, cols, n)
+            if a is None:
+                return None
+            old += (a if f["to"] == x else -a * float(f.get("ratio") or 1))
+    new_flows, new = [], np.zeros(n)
+    sides = []
+    for side, sign in (("in", 1.0), ("out", -1.0)):
+        ev = moved & (sign * r > 0)
+        if boundary is not None and not (boundary.get(x) or {}).get(side):
+            if ev.any():
+                return None
+            continue
+        if ev.sum() < MIN_EVENTS:
+            if ev.any():
+                return None
+            continue
+        step = float(np.median(sign * r[ev]))
+        if np.max(np.abs(sign * r[ev] - step)) > STEP_REL * max(1.0, abs(step)):
+            return None
+        got = _fit_side(ev, x, {k: v for k, v in cols.items() if k in levels or readable is None or readable(k)}, n)
+        if got is None or got["misses"] > MISS * n:
+            return None
+        new += sign * step * _on(got, x, cols, n)
+        sides.append(side)
+        fl = {"from": None, "to": x} if side == "in" else {"from": x, "to": None}
+        new_flows.append({**fl, "id": f"switch_{x}_{side}", "ratio": 1, "rate": _expr(step, got, x),
+                          "switch": {"step": step, **got}})
+    if not sides:
+        return None
+    reached = {side for f in flows if _touches(f, chain) for side in (["in"] if not f.get("from") else []) + (["out"] if not f.get("to") else [])}
+    if reached - set(sides):                             # a side X's hidden stocks carry that no switch replaces
+        return None
+    err_new = float(np.sum((r - new) ** 2))
+    err_old = float(np.sum((d - rest - old) ** 2)) if drop else float(np.sum((r - old) ** 2))
+    if err_new > RESIDUAL * err_old:
+        return None
+    keep = [f for f in flows if not (f in outer and (("in" if f.get("to") == x else "out") in sides)) and not _touches(f, chain)
+            and f not in dropped]
+    keep = keep + new_flows
+    note = {"stock": x, "sides": sides, "sse_before": err_old, "sse_after": err_new, **({"dropped": sorted(chain)} if chain else {})}
+    if drop:
+        partners = sorted({f["to"] if f["from"] == x else f["from"] for f in dropped})
+        lv = {k: v for k, v in levels.items()}
+        repaired = []
+        for y in partners:
+            if y in finals:
+                return None
+            before = _row_sse(y, flows, lv, cols, n)
+            allowed = hinge.allowed_sides(y, {"boundary": boundary, "boundary_declared": boundary is not None}, keep)
+            got = hinge.refit_row(y, keep, lv, cols, n, allowed, force=True)
+            after_flows = got[0] if got else keep
+            after = _row_sse(y, after_flows, lv, cols, n)
+            if before is None or after is None or after > before:
+                return None
+            keep = after_flows
+            repaired.append({"stock": y, "sse_before": before, "sse_after": after})
+        note.update(moves_dropped=[f"{f['from']}->{f['to']}" for f in dropped], repaired=repaired)
+    return keep, note
+
+
+def _row_sse(y: str, flows: list[dict], levels: dict, cols: dict, n: int) -> float | None:
+    """Y's row error under these flows (switches evaluated as written), None where a flow cannot be run."""
+    from . import hinge
+
+    d = np.diff(levels[y][:n + 1])
+    m = np.zeros(n)
+    for f in flows:
+        a, b = f.get("from"), f.get("to")
+        if y not in (a, b):
+            continue
+        if f.get("switch"):
+            amt = f["switch"]["step"] * _on(f["switch"], y, cols, n)
+        else:
+            amt = hinge.amount(f, cols, n)
+        if amt is None:
+            return None
+        m += (-amt * float(f.get("ratio") or 1)) if a == y else amt
+    return float(np.sum((d - m) ** 2))
