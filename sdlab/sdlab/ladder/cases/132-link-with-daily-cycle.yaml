@@ -14,3 +14,6 @@ schedule:
   at 1 night: {s_in: 0.03 * X}
   at 9 day: {s_in: 0.1 * X}
   at 23 night: {s_in: 0.03 * X}
+boundary:
+  X: {in: estimate, out: estimate}
+  S: {in: estimate, out: estimate}

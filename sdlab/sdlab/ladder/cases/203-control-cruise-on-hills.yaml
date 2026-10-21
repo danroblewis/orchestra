@@ -21,3 +21,6 @@ flows:
   I -> outside:
     rate: 1 * V
     exact: true
+boundary:
+  V: {in: estimate, out: [estimate, estimate]}
+  I: {in: measured, out: estimate}

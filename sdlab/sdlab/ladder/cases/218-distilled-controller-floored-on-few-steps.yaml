@@ -9,3 +9,5 @@ stocks: {T: {initial: 120, unit: decidegC}}
 flows:
   outside -> T as heater: 0.3 * setpoint - 0.3 * T
   T -> outside: 0.05 * T
+boundary:
+  T: {in: estimate, out: estimate}

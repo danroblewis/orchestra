@@ -18,3 +18,6 @@ injections:
   - {t: 1850, stock: A, amount: 400}
 variants:
   noise: [counts, meas, gaps, weekly, lag, outliers, bias]
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

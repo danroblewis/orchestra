@@ -15,3 +15,10 @@ flows:
   outside -> A3: draw(5, 40)
   A3 -> B3: draw(0.05, 0.6, log) * A3
   B3 -> outside: draw(0.03, 0.5, log) * B3
+boundary:
+  A1: {in: estimate}
+  B1: {out: estimate}
+  A2: {in: estimate}
+  B2: {out: estimate}
+  A3: {in: estimate}
+  B3: {out: estimate}

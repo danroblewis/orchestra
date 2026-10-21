@@ -11,3 +11,6 @@ flows:
   A -> B: 0.5 * A
   B -> outside: 0.2 * B
   outside -> A as births: grid(0.02, 0.06, 0.1, 0.14, 0.17, 0.19, 0.196) * B
+boundary:
+  A: {in: [estimate, estimate]}
+  B: {out: estimate}

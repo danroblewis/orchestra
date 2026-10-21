@@ -9,3 +9,5 @@ flows:
   X -> outside as crowding:
     rate: 0.6 * X * effect(X, linear, normal=500, max=10)
 variants: {lengths: {short: 21, long: 30}}
+boundary:
+  X: {in: estimate, out: estimate}

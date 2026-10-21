@@ -215,7 +215,8 @@ CONVERTED = {
 @pytest.mark.parametrize("case_id", sorted(CONVERTED))
 def test_each_converted_case_is_the_json_it_replaced(case_id):
     assert casemod.case_files()[case_id].suffix == ".yaml"
-    canonical = json.dumps(casemod.spec(case_id), sort_keys=True, separators=(",", ":"))
+    spec = {k: v for k, v in casemod.spec(case_id).items() if k != "boundary"}   # declared since 2026-10-20, not in the JSON
+    canonical = json.dumps(spec, sort_keys=True, separators=(",", ":"))
     assert hashlib.sha256(canonical.encode()).hexdigest()[:16] == CONVERTED[case_id]
 
 

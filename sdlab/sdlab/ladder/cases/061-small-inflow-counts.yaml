@@ -8,3 +8,5 @@ stocks: {A: 0}
 flows:
   outside -> A: 7.04
   A -> outside: 0.168 * A
+boundary:
+  A: {in: estimate, out: estimate}

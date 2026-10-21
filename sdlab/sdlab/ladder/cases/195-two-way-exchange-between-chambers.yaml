@@ -17,3 +17,6 @@ flows:
   C -> D: 0.016 * C
   D -> C as dc: 0.016 * D
   D -> outside: 0.16 * D
+boundary:
+  A: {in: measured}
+  D: {out: estimate}

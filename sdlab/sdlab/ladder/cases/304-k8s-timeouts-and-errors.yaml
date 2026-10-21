@@ -18,3 +18,5 @@ flows:
   queue -> outside as timeouts: 0.08 * queue
   inflight -> responses_total as completed: 0.5 * inflight
   inflight -> errors_total as errors: 0.03 * inflight
+boundary:
+  queue: {in: measured, out: estimate}

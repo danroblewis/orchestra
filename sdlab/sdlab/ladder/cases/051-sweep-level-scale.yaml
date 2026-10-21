@@ -9,3 +9,6 @@ flows:
   outside -> A: grid(2, 5, 20, 50, 200, 500, 2000)
   A -> B: 0.5 * A
   B -> outside: 0.2 * B
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

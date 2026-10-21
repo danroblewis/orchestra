@@ -57,3 +57,12 @@ injections:
   - {t: 1282, stock: ready, amount: -3}
   - {t: 1282, stock: pending, amount: 3}
   - {t: 1312, stock: nodes, amount: 1}
+boundary:
+  queue: {in: measured}
+  retries: {out: estimate}
+  ready: {out: estimate}
+  cpu: {in: estimate, out: estimate}
+  desired: {in: estimate, out: estimate}
+  pending: {in: estimate}
+  mem: {in: estimate, out: estimate}
+  oom_kills_total: {in: estimate}

@@ -15,3 +15,6 @@ flows:
     rate: 0.2 * Q * effect(Q, linear, normal=1000, max=10)
   Q -> outside as q_competition:
     rate: 0.1 * Q * effect(P, linear, normal=1000, max=10)
+boundary:
+  P: {in: estimate, out: [estimate, estimate]}
+  Q: {in: estimate, out: [estimate, estimate]}

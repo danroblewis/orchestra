@@ -16,3 +16,6 @@ injections:
   - {t: 1050, stock: A, amount: 400}
   - {t: 1450, stock: A, amount: 400}
   - {t: 1850, stock: A, amount: 400}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

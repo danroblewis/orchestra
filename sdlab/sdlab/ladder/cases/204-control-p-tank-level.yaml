@@ -10,3 +10,5 @@ stocks: {H: {initial: 260, unit: litres}}
 flows:
   outside -> H as valve: 10 + 0.25 * setpoint - 0.25 * H
   H -> outside: 1 * demand
+boundary:
+  H: {in: estimate, out: estimate}

@@ -25,3 +25,4 @@ injections:
   - {t: 1550, stock: Work_to_Do, amount: 1000}
   - {t: 1750, stock: Work_to_Do, amount: 1000}
   - {t: 1950, stock: Work_to_Do, amount: 1000}
+boundary: {}

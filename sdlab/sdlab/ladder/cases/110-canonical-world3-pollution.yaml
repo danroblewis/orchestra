@@ -13,3 +13,5 @@ inputs:
 flows:
   outside -> Persistent_Pollution as pollution_appearance: "delay3(pollution_generation, 20, initial=200)"
   Persistent_Pollution -> outside as pollution_assimilation: "0.47619047619047616 * Persistent_Pollution"
+boundary:
+  Persistent_Pollution: {in: estimate, out: estimate}

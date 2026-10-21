@@ -111,7 +111,8 @@ def test_a_missing_flow_and_a_spurious_flow_fail():
     def extra(model, d):
         return model["flows"] + [{"from": "A", "to": None, "rate": {"form": "proportional", "stock": "A", "k": 0.2}}]
     s = scored("003-chain-2", extra, "none-short")
-    assert s["status"] == "fail" and [p["kind"] for p in s["spurious"]] == ["outside outflow"] and s["precision"] < 1
+    # 003 declares its boundary (A: in, B: out; 2026-10-20), so an outflow from A is an invented boundary
+    assert s["status"] == "fail" and [p["kind"] for p in s["spurious"]] == ["invented boundary"] and s["precision"] < 1
 
 
 def test_a_link_found_as_a_move_is_equivalent_not_pass():

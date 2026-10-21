@@ -63,8 +63,9 @@ def test_the_truth_strict_passes_its_own_cells(cid, variant):
 
 
 def test_a_model_with_an_extra_part_fails_strict():
-    def extra(tm):                                       # a tiny drain from A: below the scorer's spurious size, so still a pass
-        tm["flows"].append({"name": "leak", "id": "leak", "from": "A", "to": None, "rate": {"form": "proportional", "stock": "A", "k": 1e-5}})
+    def extra(tm):                                       # a tiny move back from B to A: below the scorer's spurious size, so still a pass
+        # (not an outside flow: 003 declares its boundary since 2026-10-20, and an outside flow it lacks fails at any size)
+        tm["flows"].append({"name": "leak", "id": "leak", "from": "B", "to": "A", "rate": {"form": "proportional", "stock": "B", "k": 1e-5}})
     status, v = judge("003-chain-2", "counts-long", truth_flows("003-chain-2", "counts-long", extra))
     assert status == "pass"
     assert v["strict"] is False and "extra" in v["why"]

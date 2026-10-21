@@ -12,3 +12,6 @@ schedule:
   every: 100
   at 50 burst: {outside -> A: 300}
   at 51 calm: {outside -> A: 10}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

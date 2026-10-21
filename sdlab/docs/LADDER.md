@@ -403,11 +403,19 @@ runner.run_item grades it, behaviour left out): **0 flips**. Same status on test
 real 4,888, physics 1,840, kubernetes 1,829, realistic 1,526. The 715 particle rows could not be
 graded on either side: `physics/score.expected_structure` raises `KeyError` on the particle systems
 (`plant`, `conveyor`, `chambers`, ...), a fault that predates this change, so when the watcher
-re-scores them (the score hash changed) they will be stored as errors until it is fixed. No case
-declares a boundary yet, so nothing is announced and the new rule never runs
-(tests/test_ladder_boundary.py checks every case).
+re-scores them (the score hash changed) they will be stored as errors until it is fixed. That study
+ran before any case declared a boundary.
 
-The real-data cases and the few probes with no boundary stay undeclared. The NO-TRUTH evidence views
+**Declared (2026-10-20):** every numbered case (171 files, 296 case ids with the draws; a parametric
+template declares it once for all its draws) has a `boundary:` derived from its truth: one kind per
+true outside flow reaching a stock and side, `measured` for an outside inflow straight into the stock
+whose rate, effects and era rates read only measured inputs, `estimate` for every other outside flow
+(outflows included, and inflows that reach the stock through a hidden delay, as in 110, 116 and 134).
+Only the boundary was added: every variant's truth model and every draw's accepted attempt and values
+are identical, and so the data (the case hashes change, so their results re-run).
+`tests/test_ladder_case_boundaries.py` checks every numbered case's declaration against its truth.
+The real-data (`real-*`), realistic (`sd-*`), physics (`phys-*`) and particle (`part-*`) cases stay
+undeclared. The NO-TRUTH evidence views
 (notruth_run.py, objective_test.py) are built from `{stocks, t, levels, eras, injections, inputs}` and
 do not carry the boundary yet.
 

@@ -14,3 +14,6 @@ stocks:
 flows:
   outside <-> position as position_term_1: "speed"
   outside <-> speed as elastic_acceleration: "-0.05 * position"
+boundary:
+  position: {in: estimate}
+  speed: {in: estimate}

@@ -12,3 +12,6 @@ schedule:
   every: 200
   at 1 fast announced: {A -> B: 0.5 * A}
   at 101 slow announced: {A -> B: 0.25 * A}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

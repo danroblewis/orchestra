@@ -140,3 +140,31 @@ injections:
   - {t: 1282, stock: catalog_pending, amount: 1}
 variants:
   noise: [none, counts, meas]
+boundary:
+  frontend_queue: {in: measured}
+  frontend_retries: {out: estimate}
+  frontend_ready: {out: estimate}
+  frontend_cpu: {in: estimate, out: estimate}
+  frontend_desired: {in: estimate, out: estimate}
+  frontend_pending: {in: estimate}
+  frontend_mem: {in: estimate, out: estimate}
+  frontend_oom_kills_total: {in: estimate}
+  catalog_queue: {in: [estimate, estimate]}
+  catalog_retries: {out: estimate}
+  catalog_ready: {out: estimate}
+  catalog_cpu: {in: estimate, out: estimate}
+  catalog_desired: {in: estimate, out: estimate}
+  catalog_pending: {in: estimate}
+  catalog_mem: {in: estimate, out: estimate}
+  catalog_oom_kills_total: {in: estimate}
+  cart_queue: {in: estimate}
+  cart_retries: {out: estimate}
+  cart_ready: {out: estimate}
+  cart_cpu: {in: estimate, out: estimate}
+  cart_desired: {in: estimate, out: estimate}
+  cart_pending: {in: estimate}
+  cart_mem: {in: estimate, out: estimate}
+  cart_oom_kills_total: {in: estimate}
+  nodes: {in: estimate, out: estimate}
+  db_waiting: {in: [estimate, estimate]}
+  db_active: {out: estimate}

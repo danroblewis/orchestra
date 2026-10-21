@@ -125,3 +125,9 @@ injections:
   - {t: 2000, stock: Categories__c3, amount: -250}
   - {t: 2000, stock: Categories__c4, amount: -250}
   - {t: 2000, stock: Categories__c5, amount: -250}
+boundary:
+  Categories__c1: {in: estimate, out: estimate}
+  Categories__c2: {in: estimate, out: estimate}
+  Categories__c3: {in: estimate, out: estimate}
+  Categories__c4: {in: estimate, out: estimate}
+  Categories__c5: {in: estimate, out: estimate}

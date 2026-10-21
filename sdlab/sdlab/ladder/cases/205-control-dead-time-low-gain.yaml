@@ -9,3 +9,5 @@ stocks: {T: {initial: 120, unit: decidegC}}
 flows:
   outside -> T as heater: "delay3(0.11 * setpoint - 0.11 * T, 6, initial=10)"
   T -> outside: 0.05 * T
+boundary:
+  T: {in: estimate, out: estimate}

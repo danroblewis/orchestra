@@ -20,3 +20,6 @@ schedule:
   at 231 rush: {outside -> B: 78}
   at 261 back3: {outside -> B: 60}
   at 316 peak: {outside -> B: 120}
+boundary:
+  B: {in: estimate, out: estimate}
+  S: {in: estimate}

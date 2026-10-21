@@ -8,3 +8,5 @@ flows:
   outside -> P as immigration: 10
   outside -> P as births: 0.03 * P
   P -> outside as deaths: 0.05 * P
+boundary:
+  P: {in: [estimate, estimate], out: estimate}

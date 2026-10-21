@@ -14,3 +14,6 @@ schedule:
   at 81 busy: {sell: 60}
   at 141 peak: {sell: 80}
   at 201 normal2: {sell: 40}
+boundary:
+  W: {in: estimate}
+  S: {out: estimate}

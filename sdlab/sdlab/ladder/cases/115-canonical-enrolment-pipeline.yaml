@@ -13,3 +13,5 @@ inputs:
 flows:
   outside -> Students as enrolment: "enrolment"
   Students -> outside as graduation: "smooth3(enrolment, 4, initial=100)"
+boundary:
+  Students: {in: measured, out: estimate}

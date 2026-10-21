@@ -14,3 +14,6 @@ schedule:
   at 121 slow1 announced: {stage1: 0.15 * A}
   at 251 slow2 announced: {stage2: 0.2 * B}
   at 401 more: {deliver: 15}
+boundary:
+  A: {in: estimate}
+  C: {out: estimate}

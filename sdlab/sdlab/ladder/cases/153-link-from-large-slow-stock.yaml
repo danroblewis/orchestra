@@ -17,3 +17,6 @@ schedule:
   at 161 slump: {arrive: 18}
   at 251 normal2: {arrive: 32}
   at 321 boom2: {arrive: 44}
+boundary:
+  O: {in: estimate, out: estimate}
+  H: {in: [estimate, estimate], out: estimate}

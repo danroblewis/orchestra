@@ -10,3 +10,6 @@ flows:
   B -> C: 0.25 * B
   C -> D: 0.1 * C
   D -> outside: 0.05 * D
+boundary:
+  A: {in: estimate}
+  D: {out: estimate}

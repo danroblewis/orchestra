@@ -45,3 +45,5 @@ injections:
   - {t: 1840, stock: Teacup_Temperature, amount: 100}
   - {t: 1900, stock: Teacup_Temperature, amount: 100}
   - {t: 1960, stock: Teacup_Temperature, amount: 100}
+boundary:
+  Teacup_Temperature: {out: estimate}

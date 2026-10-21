@@ -14,3 +14,7 @@ schedule:
   every: 200
   at 1 low: {outside -> C: 3}
   at 101 high: {outside -> C: 7}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}
+  C: {in: estimate, out: estimate}

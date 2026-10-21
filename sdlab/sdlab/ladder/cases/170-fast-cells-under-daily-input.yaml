@@ -17,3 +17,8 @@ flows:
   B0 -> outside: 0.015 * B0
   B1 -> outside: 0.02 * B1
   B2 -> outside: 0.025 * B2
+boundary:
+  P0: {in: measured}
+  B0: {out: estimate}
+  B1: {out: estimate}
+  B2: {out: estimate}

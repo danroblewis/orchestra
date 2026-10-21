@@ -14,3 +14,10 @@ flows:
   outside -> A3: 6
   A3 -> B3: 0.15 * A3
   B3 -> outside: 0.25 * B3
+boundary:
+  A1: {in: estimate}
+  B1: {out: estimate}
+  A2: {in: estimate}
+  B2: {out: estimate}
+  A3: {in: estimate}
+  B3: {out: estimate}

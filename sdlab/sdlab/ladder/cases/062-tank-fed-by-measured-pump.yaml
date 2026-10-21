@@ -9,3 +9,5 @@ stocks: {T: 40}
 flows:
   outside -> T: 2 * pump
   T -> outside: 0.08 * T
+boundary:
+  T: {in: measured, out: estimate}

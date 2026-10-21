@@ -14,3 +14,6 @@ flows:
   outside -> queue as requests: 1 * traffic
   queue -> inflight as dispatched: 0.6 * queue
   inflight -> outside as completed: 0.5 * inflight
+boundary:
+  queue: {in: measured}
+  inflight: {out: estimate}

@@ -32,3 +32,10 @@ flows:
   outside -> pending as created: {rate: "max(0, desired - pending - ready)", exact: true}
   pending -> ready as started: 0.5 * pending
   ready -> outside as deleted: {rate: "max(0, ready - desired)", exact: true}
+boundary:
+  queue: {in: measured}
+  retries: {out: estimate}
+  ready: {out: estimate}
+  cpu: {in: estimate, out: estimate}
+  desired: {in: estimate, out: estimate}
+  pending: {in: estimate}

@@ -43,3 +43,12 @@ flows:
   outside -> oom_kills_total as oom_counted: {rate: "flow(oom_killed)", exact: true}
   leak -> outside as oom_reset:
     rate: 1 * leak * effect(mem, table, [[0, 0], [480, 0], [512, 0.3], [560, 0.8], [5000, 1]])
+boundary:
+  queue: {in: measured}
+  retries: {out: estimate}
+  ready: {out: estimate}
+  cpu: {in: estimate, out: estimate}
+  desired: {in: estimate, out: estimate}
+  pending: {in: estimate}
+  mem: {in: estimate, out: estimate}
+  oom_kills_total: {in: estimate}

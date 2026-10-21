@@ -17,3 +17,7 @@ schedule:
   at 121 storm: {launch: 3}
   at 181 normal2: {launch: 7}
   at 241 season2: {launch: 10}
+boundary:
+  A: {in: estimate}
+  S: {in: estimate, out: estimate}
+  B: {out: estimate}

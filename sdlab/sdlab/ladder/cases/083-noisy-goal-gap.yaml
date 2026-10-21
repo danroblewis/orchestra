@@ -10,3 +10,6 @@ flows:
   I -> outside as demand: 0.1 * I
 variants:
   noise: [counts, meas, gaps, weekly, lag, outliers, bias]
+boundary:
+  P: {in: estimate}
+  I: {out: estimate}

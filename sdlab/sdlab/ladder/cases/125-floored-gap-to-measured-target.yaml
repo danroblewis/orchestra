@@ -9,3 +9,5 @@ stocks: {R: 150}
 flows:
   outside -> R as hiring: 0.16666666666666666 * desired - 0.16666666666666666 * R
   R -> outside: 0.025 * R
+boundary:
+  R: {in: estimate, out: estimate}

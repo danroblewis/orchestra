@@ -16,3 +16,6 @@ flows:
   Rookies -> Experts as assimilation: "0.05 * Rookies"
   Rookies -> outside as rookie_quits: "0.025 * Rookies"
   Experts -> outside as expert_quits: "0.0125 * Experts"
+boundary:
+  Rookies: {in: estimate, out: estimate}
+  Experts: {out: estimate}

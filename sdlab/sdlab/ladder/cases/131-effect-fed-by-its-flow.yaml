@@ -17,3 +17,7 @@ schedule:
   at 161 quiet: {outside -> B: 25}
   at 231 busy: {outside -> B: 40}
   at 421 holidays: {outside -> B: 20}
+boundary:
+  B: {in: estimate}
+  W: {out: estimate}
+  E: {in: estimate, out: estimate}

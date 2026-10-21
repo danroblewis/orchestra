@@ -15,3 +15,6 @@ schedule:
   every: 200
   at 1 low: {immigration: 60}
   at 101 high: {immigration: 140}
+boundary:
+  X: {in: estimate, out: estimate}
+  Y: {in: estimate, out: estimate}

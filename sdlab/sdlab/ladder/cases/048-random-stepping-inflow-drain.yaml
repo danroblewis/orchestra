@@ -12,3 +12,5 @@ schedule:
   every: 200
   at 1 low: {outside -> C: draw(1, 10)}
   at 101 high: {outside -> C: draw(5, 25)}
+boundary:
+  C: {in: estimate, out: estimate}

@@ -15,3 +15,6 @@ schedule:
   at 1 low: {grow: 10}
   at 91 high: {grow: 20}
   at 181 low2: {grow: 10}
+boundary:
+  A: {in: estimate, out: estimate}
+  N: {in: estimate}

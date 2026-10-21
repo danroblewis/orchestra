@@ -13,3 +13,6 @@ schedule:
   at 1 night: {outside -> A: 5}
   at 9 day: {outside -> A: 30}
   at 19 evening: {outside -> A: 10}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

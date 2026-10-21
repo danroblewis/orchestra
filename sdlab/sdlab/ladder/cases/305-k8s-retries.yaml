@@ -21,3 +21,6 @@ flows:
   retries -> outside as gave_up: 0.4 * retries
   inflight -> responses_total as completed: 0.5 * inflight
   inflight -> errors_total as errors: 0.03 * inflight
+boundary:
+  queue: {in: measured}
+  retries: {out: estimate}

@@ -16,3 +16,6 @@ schedule:
   at 101 wave: {immigrate: 1400}
   at 181 closed: {immigrate: 300}
   at 281 normal2: {immigrate: 800}
+boundary:
+  A: {in: estimate, out: estimate}
+  B: {in: estimate, out: estimate}

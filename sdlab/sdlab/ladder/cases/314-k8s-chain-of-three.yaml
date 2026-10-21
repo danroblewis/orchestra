@@ -28,3 +28,7 @@ flows:
   outside -> pricing_queue as pricing_calls: 0.4 * catalog_inflight
   pricing_queue -> pricing_inflight as pricing_dispatched: 0.7 * pricing_queue
   pricing_inflight -> pricing_responses_total as pricing_completed: 0.6 * pricing_inflight
+boundary:
+  frontend_queue: {in: measured}
+  catalog_queue: {in: estimate}
+  pricing_queue: {in: estimate}

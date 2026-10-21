@@ -27,3 +27,5 @@ injections:
   - {t: 1620, stock: Potential_Adopters, amount: 5000}
   - {t: 1770, stock: Potential_Adopters, amount: 5000}
   - {t: 1920, stock: Potential_Adopters, amount: 5000}
+boundary:
+  Adopters: {out: estimate}

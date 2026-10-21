@@ -10,3 +10,6 @@ flows:
   A -> B: draw(0.1, 0.6, log) * A
   B -> outside: draw(0.1, 0.4, log) * B
   outside -> A as births: draw(0.01, 0.09, log) * B
+boundary:
+  A: {in: [estimate, estimate]}
+  B: {out: estimate}

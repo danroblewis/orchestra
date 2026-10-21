@@ -18,3 +18,5 @@ flows:
   inflight -> outside as completed: 0.5 * inflight
 variants:
   noise: [none, counts, meas]
+boundary:
+  inflight: {in: measured, out: estimate}

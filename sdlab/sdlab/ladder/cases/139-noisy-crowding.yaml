@@ -31,3 +31,5 @@ injections:
   - {t: 2000, stock: Population, amount: 1500}
 variants:
   noise: [counts, {meas: {rel: 0.02, abs: 0}}]
+boundary:
+  Population: {in: estimate, out: estimate}

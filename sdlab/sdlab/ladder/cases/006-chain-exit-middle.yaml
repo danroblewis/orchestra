@@ -9,3 +9,6 @@ flows:
   A -> B: 0.3 * A
   A -> outside: 0.2 * A
   B -> outside: 0.2 * B
+boundary:
+  A: {in: estimate, out: estimate}
+  B: {out: estimate}

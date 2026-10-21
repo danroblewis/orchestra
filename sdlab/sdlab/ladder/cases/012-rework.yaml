@@ -9,3 +9,6 @@ flows:
   A -> B: 0.4 * A
   B -> A as rework: 0.1 * B
   B -> outside: 0.2 * B
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

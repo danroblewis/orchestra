@@ -31,3 +31,7 @@ injections:
   - {t: 1600, stock: Task_Backlog, amount: 800}
   - {t: 1750, stock: Task_Backlog, amount: 800}
   - {t: 1900, stock: Task_Backlog, amount: 800}
+boundary:
+  Experts: {out: estimate}
+  Rookies: {in: estimate}
+  Task_Backlog: {in: estimate, out: estimate}

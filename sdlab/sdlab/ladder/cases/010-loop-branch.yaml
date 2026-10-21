@@ -11,3 +11,7 @@ flows:
   outside -> A as births: 0.05 * B
   B -> C: 0.1 * B
   C -> outside: 0.1 * C
+boundary:
+  A: {in: [estimate, estimate]}
+  B: {out: estimate}
+  C: {out: estimate}

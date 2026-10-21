@@ -9,3 +9,5 @@ stocks: {T: 40}
 flows:
   outside -> T: delay1(2 * pump, 8)
   T -> outside: 0.2 * T
+boundary:
+  T: {in: estimate, out: estimate}

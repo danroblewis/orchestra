@@ -18,3 +18,7 @@ schedule:
   at 81 rush: {start: 30}
   at 161 slow: {start: 12}
   at 231 normal2: {start: 20}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}
+  K: {in: estimate}

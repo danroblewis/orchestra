@@ -8,3 +8,6 @@ flows:
   outside -> P as orders: (300 - I) / 5
   P -> I as arrive: 0.25 * P
   I -> outside as demand: 0.1 * I
+boundary:
+  P: {in: estimate}
+  I: {out: estimate}

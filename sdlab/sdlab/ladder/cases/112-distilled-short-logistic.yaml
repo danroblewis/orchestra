@@ -10,3 +10,5 @@ flows:
 variants:
   noise: [none, counts, {meas: {rel: 0.07, abs: 0}}]
   lengths: {short: 10, long: 20}
+boundary:
+  P: {in: estimate, out: estimate}

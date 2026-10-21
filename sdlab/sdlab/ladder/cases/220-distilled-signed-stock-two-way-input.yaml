@@ -9,3 +9,5 @@ stocks:
   X: 0 signed
 flows:
   outside <-> X as net: "1 * u - 0.1 * X"
+boundary:
+  X: {in: estimate}

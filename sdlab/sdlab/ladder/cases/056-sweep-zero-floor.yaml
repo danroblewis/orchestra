@@ -9,3 +9,5 @@ stocks: {A: 0}
 flows:
   outside -> A: grid(20, 5, 2, 1, 0.5, 0.2, 0.1)
   A -> outside: 0.5 * A
+boundary:
+  A: {in: estimate, out: estimate}

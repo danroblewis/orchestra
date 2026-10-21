@@ -40,3 +40,7 @@ injections:
   - {t: 1680, stock: ready, amount: -4}
   - {t: 1824, stock: ready, amount: 4}
   - {t: 1968, stock: ready, amount: -4}
+boundary:
+  queue: {in: measured}
+  retries: {out: estimate}
+  cpu: {in: estimate, out: estimate}

@@ -18,3 +18,6 @@ schedule:
   at 401 cut: {r_in: 40}
   at 481 back: {in: 20}
   at 601 restored: {in: 15, r_in: 60}
+boundary:
+  Q: {in: estimate, out: estimate}
+  R: {in: estimate, out: estimate}

@@ -16,3 +16,8 @@ schedule:
   at 1 normal: {in1: 20, in2: 12}
   at 80 busy: {in1: 35, in2: 21}
   at 160 quiet: {in1: 10, in2: 6}
+boundary:
+  A1: {in: estimate}
+  B1: {out: estimate}
+  A2: {in: estimate}
+  B2: {out: estimate}

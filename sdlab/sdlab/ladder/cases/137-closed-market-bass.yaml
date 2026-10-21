@@ -9,3 +9,4 @@ flows:
   N -> A as imitation:
     rate: 0.3 * N * effect(A, linear, normal=10000, max=10)
   A -> N as churn: 0.02 * A
+boundary: {}

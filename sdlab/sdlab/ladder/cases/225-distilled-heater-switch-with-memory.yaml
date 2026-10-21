@@ -9,3 +9,5 @@ stocks: {T: {initial: 200, unit: decidegC}}
 flows:
   outside -> T as heating: "8 * max(0, heater)"
   T -> outside: 0.02 * T
+boundary:
+  T: {in: estimate, out: estimate}

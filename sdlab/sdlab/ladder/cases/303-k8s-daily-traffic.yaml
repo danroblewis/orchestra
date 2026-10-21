@@ -17,3 +17,5 @@ flows:
   inflight -> responses_total as completed: 0.5 * inflight
 variants:
   noise: [none, counts, meas]
+boundary:
+  queue: {in: measured}

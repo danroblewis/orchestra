@@ -13,3 +13,5 @@ inputs:
 flows:
   outside -> Inventory as arrivals: "delay3(75 - 0.125 * Inventory + customer_demand, 6, initial=200)"
   Inventory -> outside as shipments: "customer_demand"
+boundary:
+  Inventory: {in: estimate, out: estimate}

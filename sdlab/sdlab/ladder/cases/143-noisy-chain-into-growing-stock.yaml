@@ -33,3 +33,4 @@ injections:
   - {t: 1981, stock: A, amount: 80}
 variants:
   noise: [none, {meas: {rel: 0.02, abs: 0.2}}]
+boundary: {}

@@ -14,3 +14,6 @@ schedule:
   every: grid(300, 300, 200, 120, 100, 60, 40)
   at 1 low: {in: 10}
   at grid(151, 151, 101, 61, 51, 31, 21) high: {in: grid(10, 30, 30, 30, 30, 30, 30)}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

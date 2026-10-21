@@ -23,3 +23,6 @@ injections:
   - {t: 1450, stock: Inventory, amount: 400}
   - {t: 1700, stock: Inventory, amount: 400}
   - {t: 1950, stock: Inventory, amount: 400}
+boundary:
+  Inventory: {in: estimate, out: estimate}
+  Capacity: {in: estimate, out: estimate}

@@ -14,3 +14,6 @@ schedule:
   at 101 wet: {rain: 32}
   at 201 dry: {rain: 10}
   at 301 normal2: {rain: 20}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

@@ -9,3 +9,6 @@ flows:
   A -> B: 0.3 * A
   B -> outside: 0.15 * B
 variants: {lengths: {short: 15, long: 20}}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

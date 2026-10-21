@@ -15,3 +15,7 @@ schedule:
   every: 14
   at 1 planning: {plan: 25, reset: 50 - K}
   at 2 sprint: {plan: 1, reset: 0}
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}
+  K: {in: estimate}

@@ -24,3 +24,6 @@ flows:
   catalog_inflight -> catalog_responses_total as catalog_completed: 0.5 * catalog_inflight
 variants:
   noise: [none, counts, meas]
+boundary:
+  frontend_queue: {in: measured}
+  catalog_queue: {in: estimate}

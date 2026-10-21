@@ -9,3 +9,6 @@ flows:
   A -> H as a_h: 0.2 * A
   H -> B as h_b: 0.1 * H
   B -> outside: 0.2 * B
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

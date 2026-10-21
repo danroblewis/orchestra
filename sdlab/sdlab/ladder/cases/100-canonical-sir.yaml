@@ -41,3 +41,4 @@ injections:
   - {t: 1750, stock: Infectious, amount: 20}
   - {t: 1900, stock: Susceptible, amount: 600}
   - {t: 1900, stock: Infectious, amount: 20}
+boundary: {}

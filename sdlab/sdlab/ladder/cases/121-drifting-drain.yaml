@@ -39,3 +39,5 @@ schedule:
   at 541 d27: {A -> outside: 0.0800 * A}
   at 561 d28: {A -> outside: 0.0876 * A}
   at 581 d29: {A -> outside: 0.0958 * A}
+boundary:
+  A: {in: estimate, out: estimate}

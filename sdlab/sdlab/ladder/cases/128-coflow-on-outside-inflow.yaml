@@ -17,3 +17,6 @@ schedule:
   at 131 quiet: {in: 20}
   at 181 restored: {d_in: 150}
   at 241 busy: {in: 40}
+boundary:
+  V: {in: estimate, out: estimate}
+  D: {in: estimate, out: estimate}

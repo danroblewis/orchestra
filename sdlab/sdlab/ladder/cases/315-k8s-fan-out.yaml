@@ -34,3 +34,8 @@ flows:
   outside -> cart_queue as cart_calls: 0.15 * frontend_inflight
   cart_queue -> cart_inflight as cart_dispatched: 0.5 * cart_queue
   cart_inflight -> cart_responses_total as cart_completed: 0.4 * cart_inflight
+boundary:
+  frontend_queue: {in: measured}
+  catalog_queue: {in: estimate}
+  pricing_queue: {in: estimate}
+  cart_queue: {in: estimate}

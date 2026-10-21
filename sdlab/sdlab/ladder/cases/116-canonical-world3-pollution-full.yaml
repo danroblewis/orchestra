@@ -34,3 +34,5 @@ injections:
   - {t: 1760, stock: Persistent_Pollution, amount: 400}
   - {t: 1860, stock: Persistent_Pollution, amount: 400}
   - {t: 1960, stock: Persistent_Pollution, amount: 400}
+boundary:
+  Persistent_Pollution: {in: estimate, out: estimate}

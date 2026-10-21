@@ -6,3 +6,5 @@ seed: 1
 stocks: {A: 0 final}
 flows:
   outside -> A: 20
+boundary:
+  A: {in: estimate}

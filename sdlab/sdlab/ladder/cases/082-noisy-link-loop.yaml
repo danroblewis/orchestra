@@ -11,3 +11,6 @@ flows:
   outside -> A as births: 0.05 * B
 variants:
   noise: [counts, meas, gaps, weekly, lag, outliers, bias]
+boundary:
+  A: {in: [estimate, estimate]}
+  B: {out: estimate}

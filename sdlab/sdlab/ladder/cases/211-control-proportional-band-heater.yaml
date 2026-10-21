@@ -10,3 +10,5 @@ flows:
   outside -> T as heater: "12 * effect(T, table, [[0, 1], [180, 1], [220, 0], [400, 0]])"
   outside -> T as warming: 0.05 * outdoor
   T -> outside: 0.05 * T
+boundary:
+  T: {in: [estimate, measured], out: estimate}

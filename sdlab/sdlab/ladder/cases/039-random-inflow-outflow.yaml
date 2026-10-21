@@ -8,3 +8,5 @@ stocks: {A: 0}
 flows:
   outside -> A: draw(5, 40)
   A -> outside: draw(0.03, 0.5, log) * A
+boundary:
+  A: {in: estimate, out: estimate}

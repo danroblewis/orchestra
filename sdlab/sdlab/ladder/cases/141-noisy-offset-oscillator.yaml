@@ -49,3 +49,6 @@ injections:
   - {t: 1990, stock: V, amount: 400}
 variants:
   noise: [none, {meas: {rel: 0, abs: 60}}]
+boundary:
+  P: {in: estimate, out: estimate}
+  V: {in: estimate, out: estimate}

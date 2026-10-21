@@ -39,3 +39,6 @@ injections:
   - {t: 1968, stock: ready, amount: -4}
 variants:
   noise: [none, counts, meas]
+boundary:
+  queue: {in: measured}
+  retries: {out: estimate}

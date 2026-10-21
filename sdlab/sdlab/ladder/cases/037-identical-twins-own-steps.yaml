@@ -20,3 +20,7 @@ schedule:
   at 190 b_down: {b_in: 20}
   at 220 c_up: {c_in: 35}
   at 270 c_down: {c_in: 20}
+boundary:
+  A: {in: estimate, out: estimate}
+  B: {in: estimate, out: estimate}
+  C: {in: estimate, out: estimate}

@@ -10,3 +10,6 @@ flows:
   B -> outside: 0.2 * B
 variants:
   noise: [counts, meas, gaps, weekly, lag, outliers, bias]
+boundary:
+  A: {in: estimate}
+  B: {out: estimate}

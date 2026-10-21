@@ -25,3 +25,6 @@ injections:
   - {t: 1550, stock: Population, amount: 30}
   - {t: 1750, stock: Population, amount: 30}
   - {t: 1950, stock: Population, amount: 30}
+boundary:
+  Population: {in: estimate, out: estimate}
+  Resource: {in: estimate, out: estimate}

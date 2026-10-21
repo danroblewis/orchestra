@@ -91,16 +91,20 @@ def test_outside_ends_go_through_unmeasured_stocks_and_skip_smoothings():
     assert outside_end(("hidden", None, "B")) == ("B", "in") and outside_end(("uses", "A", None, "B")) == ("A", "out")
 
 
-def test_every_case_is_undeclared_today_and_hashes_as_before(monkeypatch):
-    """No case declares a boundary yet, so nothing is announced and no result can flip; an undeclared
-    case's hash does not move, a declared one's does."""
+def test_numbered_cases_declare_and_the_others_do_not_and_hashes(monkeypatch):
+    """Every numbered ladder case declares its boundary (2026-10-20; tests/test_ladder_case_boundaries.py
+    checks it against the truth); the real, realistic, physics and particle cases do not, so nothing is
+    announced for them. An undeclared case's hash does not move, a declared one's does."""
     if HOME_CACHE:                                               # the draws' accepted attempts are remembered there
         monkeypatch.setenv("SDLAB_LADDER_CACHE", HOME_CACHE)
     else:
         monkeypatch.delenv("SDLAB_LADDER_CACHE")
     for cid in casemod.case_ids():
         c = casemod.load(cid)
-        assert "boundary" not in c and casemod.announced(c) == {}, cid
+        if cid[0].isdigit():
+            assert "boundary" in c and casemod.announced(c)["boundary_declared"] is True, cid
+        else:
+            assert "boundary" not in c and casemod.announced(c) == {}, cid
     c = build(CHAIN)
     assert c["hash"] == casemod.case_hash({k: v for k, v in c.items() if k != "hash"})
     assert build(DECLARED)["hash"] != c["hash"] != build(DECLARED.replace("[estimate]", "[estimate, estimate]"))["hash"]

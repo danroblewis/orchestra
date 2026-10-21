@@ -9,3 +9,5 @@ stocks: {I: 400}
 flows:
   outside -> I: delay3(40 - 0.1 * I + demand, 6)
   I -> outside: demand
+boundary:
+  I: {in: estimate, out: estimate}
