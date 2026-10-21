@@ -33,6 +33,7 @@ from ._vendored.combined import identify as combined
 from ._vendored.combined import judge as J
 from ._vendored.combined.deadline import Overrun, deadline, outer_left
 from ._vendored.lna_stack import identify as lna_stack
+from . import boundary
 from .discover import discover
 
 DEFAULTS = {"seconds": 90.0, "slack": 0.02, "base": "combined", "alone": False, "chains": True, "products": True}
@@ -50,6 +51,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = mine or {"flows": []}
         return {**r, "canon": {k: r.get(k) for k in ("terms", "trace", "bic", "seconds")}}
     base = BASES[cfg["base"]](stocks, run, opts)          # first, so the base runs exactly as it does alone
+    if boundary.Boundary(run).declared and base.get("flows"):
+        # the base kept inside the announced boundary (boundary.py's guard) before it is compared: its
+        # own copy of combined searches with every outside flow open
+        base = boundary.apply(base, stocks, run, opts, final=False)
     left = outer_left()
     cap = float(cfg["seconds"]) if left is None else min(float(cfg["seconds"]), 0.6 * left - 10)
     began = time.perf_counter()
@@ -107,7 +112,10 @@ def _compare(mine: dict, base: dict, stocks: list[dict], run: dict, opts: dict, 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard and moves where one is declared, each outside flow
+    priced as a boundary claim where none is). The search itself offers only terms inside a declared
+    boundary (discover.term_filter)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

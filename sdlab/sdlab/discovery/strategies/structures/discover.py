@@ -9,6 +9,7 @@ import time
 import numpy as np
 
 from ._vendored.combined import judge as J
+from . import boundary
 from .fit import OutOfTime, Problem, conventions, fit, search, variance
 from . import rowwise
 from .gaps import gap_stage
@@ -73,6 +74,36 @@ def closed(dy: np.ndarray, q: float) -> bool:
     return dy.shape[0] >= 2 and float(np.abs(dy.sum(axis=0)).max()) <= 2 * q * dy.shape[0] + 1e-9
 
 
+def term_filter(run: dict, ids: list[str]):
+    """Which terms the search may hold inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md): a term from outside into b (in, link, gap, plink, goal, an
+    outside-fed chain) only where b may have an outside inflow of its kind, one from a to outside (out,
+    drain) only where a may have an outside outflow of its kind; "measured" for a term that reads a
+    measured input, else "estimate". Moves, chains between stocks (hidden stages inside the boundary)
+    and a chain's starting contents are always allowed. None when no boundary is declared (every term
+    offered; outside flows are priced as claims on the answer)."""
+    b = boundary.Boundary(run)
+    if not b.declared:
+        return None
+    S = len(ids)
+
+    def ok(t: Term) -> bool:
+        if t.kind == "init":
+            return True
+        kind = "measured" if any(i >= S for i in t.x) else "estimate"
+        if t.src is None and t.dst is not None:
+            return b.may(ids[t.dst], "in", kind)
+        if t.src is not None and t.dst is None:
+            return b.may(ids[t.src], "out", kind)
+        return True
+    return ok
+
+
+def _keep(p: Problem, terms: list[Term]) -> list[Term]:
+    ok = getattr(p, "term_ok", None)
+    return terms if ok is None else [t for t in terms if ok(t)]
+
+
 def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, chains: bool = True, products: bool = True,
              base_flows: list[dict] | None = None) -> dict | None:
     began = time.monotonic()
@@ -85,10 +116,11 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
     group = [s.get("group") for s in stocks]
     m = rows.R.shape[0] - S
     p = Problem(rows, np.nan_to_num(data.dy), data.counts, data.q, deadline=began + seconds)
-    lib = library(S, m, unit, final, group, products=products)
+    p.term_ok = term_filter(run, list(data.ids))
+    lib = _keep(p, library(S, m, unit, final, group, products=products))
     if products and S * T * len(lib) > CELLS:
         products = False                                 # (too large to screen: plain terms only)
-        lib = library(S, m, unit, final, group, products=False)
+        lib = _keep(p, library(S, m, unit, final, group, products=False))
     if S * T * len(lib) > CELLS:
         return None
     trace: dict = {}
@@ -101,6 +133,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
         for first in rowwise.starts(rows, p.dy, p.var, p.counts, p.eps, S, m, unit, final, products):
             if shut:
                 first = [t for t in first if t.kind == "move"]
+            first = _keep(p, first)
             p.check()
             g = search(p, lib, first)
             if base is None or g.bic < base.bic:
@@ -109,8 +142,8 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
         if not shut:
             base = gap_stage(p, lib, base, S, m)
         pieces = {} if shut else base_pieces(base_flows, list(data.ids), list(run["t"]))
-        if pieces and sum(len(v) for v in pieces.values()) <= MAX_PIECES:
-            pterms = [Term("in", dst=b, span=sp) for b, sps in pieces.items() for sp in sps]
+        if pieces and sum(len(v) for v in pieces.values()) <= MAX_PIECES and _keep(p, [Term("in", dst=b) for b in pieces]):
+            pterms = _keep(p, [Term("in", dst=b, span=sp) for b, sps in pieces.items() for sp in sps])
             g = search(p, lib + pterms, [t for t in base.terms if not (t.kind == "in" and t.dst in pieces)] + pterms)
             trace["pieces"] = {"bic": round(g.bic, 3), "without": round(base.bic, 3), "n": len(pterms)}
             if g.bic < base.bic:
@@ -193,8 +226,8 @@ def _chains(p: Problem, lib: list[Term], base, S, m, unit, final, T, trace):
         hi = math.log(grid[min(len(grid) - 1, k + 1)][1])
         tau = math.exp(_golden(crit, lo, hi)) if hi > lo else grid[k][1]
         prof[n] = round(tau, 4)
-        ext = lib + chain_terms(S, m, n, tau, unit, final)
-        first = rowwise.start(p.rows, p.dy, var0, p.counts, p.eps, S, m, unit, final, True, (n, float(tau)))
+        ext = lib + _keep(p, chain_terms(S, m, n, tau, unit, final))
+        first = _keep(p, rowwise.start(p.rows, p.dy, var0, p.counts, p.eps, S, m, unit, final, True, (n, float(tau))))
         for st in (first, base.terms):
             g = search(p, ext, st)
             if g.bic < best.bic and any(t.kind == "chain" for t in g.terms):
@@ -208,7 +241,7 @@ def _chains(p: Problem, lib: list[Term], base, S, m, unit, final, T, trace):
     for _ in range(3):                 # the delay with the terms kept, then the terms at that delay
         lt = _golden(lambda x: _sharp(p, fit(p, _retau(terms, math.exp(x)))), math.log(max(n, MIN_DELAY, tau / width)), math.log(tau * width))
         tau = math.exp(lt)
-        ext = lib + chain_terms(S, m, n, tau, unit, final)
+        ext = lib + _keep(p, chain_terms(S, m, n, tau, unit, final))
         cur = into_chain(p, search(p, ext, _retau(terms, tau)))
         if set(cur.terms) == set(_retau(terms, tau)):
             break
@@ -236,6 +269,8 @@ def into_chain(p: Problem, cur):
             same = [u for u in cur.terms if u.kind == "chain" and u.src is None and u.dst == t.dst and u.x == t.x and u.chain == ch.chain]
             net = th[t] * (-1.0 if t.kind == "gap" else 1.0) + sum(th[u] * u.sign for u in same)
             alt = Term("chain", dst=t.dst, x=t.x, chain=ch.chain, sign=1.0 if net >= 0 else -1.0)
+            if not _keep(p, [alt]):
+                continue
             rest = [u for u in cur.terms if u != t and u not in same] + [alt]
             g = fit(p, rest)
             if g.bic <= cur.bic + 1.0:

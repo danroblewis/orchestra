@@ -34,6 +34,8 @@ def gap_stage(p: Problem, lib: list[Term], cur: Fit, S: int, m: int, most: int =
     for b in range(S):
         keep = [t for t in cur.terms if not (t.pooled and t.dst == b)]
         for blk in blocks(S, m, b, most):
+            if getattr(p, "term_ok", None) is not None and not all(p.term_ok(t) for t in blk):
+                continue                      # a block outside the announced boundary (discover.term_filter)
             g = fit(p, keep + blk)
             if best is None or g.bic < best.bic:
                 best = g

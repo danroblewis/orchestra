@@ -12,7 +12,7 @@ import pytest
 
 from sdlab.discovery.strategies import load
 
-COPIES = ["earned_pieces", "blockwise", "censored", "schedules", "gap_prior"]
+COPIES = ["earned_pieces", "blockwise", "censored", "schedules", "gap_prior", "structures"]
 STOCKS = [{"id": "A", "unit": "x"}, {"id": "B", "unit": "x"}]
 DECLARED = {"boundary": {"A": {"in": ["estimate"], "out": []}, "B": {"in": [], "out": ["estimate"]}}, "boundary_declared": True}
 
