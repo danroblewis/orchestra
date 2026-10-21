@@ -152,6 +152,7 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     `--local` runs a larger test here anyway; it is logged (`~/.sdlab/local-runs.log`), so use it only
     when the pool cannot (e.g. it is down), and say so.
 16. **Probing a real, live system needs the user's approval.**
+    With no agent running (no tokens), the user runs the backlog with `sh scripts/backlog.sh start --all-cores`; see docs/WEEKEND.md.
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from
     finished agents once pushed the load to 459 on 28 cores. Don't spawn sub-agents unless the

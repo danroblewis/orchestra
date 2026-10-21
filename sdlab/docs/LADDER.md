@@ -1,3 +1,5 @@
+> **Running with no AI agents:** `sh scripts/backlog.sh start --all-cores` runs the backlog on the CPU pool; see [WEEKEND.md](WEEKEND.md).
+
 # The ladder: discovery tested on tiny true models
 
 The ladder is SD Lab's primary test bench for discovery. It is a list of tiny ground-truth models,
