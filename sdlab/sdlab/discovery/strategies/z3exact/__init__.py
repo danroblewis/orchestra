@@ -9,9 +9,10 @@ written (an outside term only on a declared side of its column's kind), then, if
 scorer reads it (any declared side), then with moves reading any column ("any"). Of several smallest structures, the one with the least squared
 error is returned (and the rest counted in the note).
 
-Noisy data: nothing fits within the rounding, so it returns no flows with a note saying so (no best
-effort). The same when the data are outside the linear class (nonlinear rates, floors, unannounced
-changes) or Z3 runs out of time.
+When nothing fits within the rounding (noisy data, or a truth outside the linear class: nonlinear rates,
+floors, unannounced changes) it returns a BEST EFFORT, labelled so in its note and in result["z3"]
+["best_effort"]: backward elimination on the same linear class, each stock's squared error kept within
+1.05 x the all-term model's (`_best_effort`; no Z3, no proof).
 """
 
 from __future__ import annotations
@@ -22,8 +23,9 @@ import numpy as np
 
 from . import core
 
-BUDGET = 60.0                 # seconds of Z3 search per class
-TOTAL = 90.0                  # seconds for everything (the ladder's item timeout is 120 s; Z3 and HiGHS are not interruptible)
+BUDGET = 25.0                 # seconds of Z3 search per exact class
+BEST_EFFORT_RSS = 1.05        # best effort: a term is dropped while every stock's RSS stays within this x the all-term model's
+TOTAL = 95.0                  # seconds for everything (the ladder's item timeout is 120 s; Z3 and HiGHS are not interruptible)
 CLASSES = (("ends", "kinds"), ("ends", "sides"), ("any", "sides"))   # tried in turn until one fits
 CAP = 12                      # smallest structures compared at most
 
@@ -57,12 +59,85 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 + f"; largest one-step residual {miss:.3g}; " + "; ".join(notes))
         return {"flows": flows_of(p, sup, k), "note": note, "z3": {"status": r["status"], "k_min": r.get("k_min"),
                 "smallest": len(fits), "moves": moves, "boundary": rule, "seconds": r["seconds"]}}
+    left = TOTAL - (time.perf_counter() - began)
+    if left >= 5:
+        got = _best_effort(stocks, run, opts, left, notes)
+        if got is not None:
+            return got
     return {"flows": [], "note": "z3exact: no structure found, no flows returned (outside the class: noisy data or a "
             "nonlinear truth; unknown: a timeout or a class too large to search): " + "; ".join(notes)}
 
 
-def _sse(p: core.Problem, sup: list[int], k: np.ndarray) -> float:
+def _best_effort(stocks: list[dict], run: dict, opts: dict, budget: float, notes: list[str]) -> dict | None:
+    """BEST EFFORT, labelled so (result["z3"]["best_effort"] = True and the note), when no structure fits
+    within the data's rounding (noisy data, or a truth outside the linear class): not Z3, but backward
+    elimination on the same class (ends moves, the boundary by sides): start from every term fitted by
+    least squares on the one-step changes, drop the term with the smallest |t| while every stock's
+    residual sum of squares stays within BEST_EFFORT_RSS (1.05) times the all-term model's (plus the
+    rounding's own n h^2), numbers by least squares. (BIC keeps junk terms on noise-free misfit data:
+    its log RSS rewards every tiny gain.)"""
+    began = time.perf_counter()
+    p = core.prepare(stocks, run, opts, moves="ends", boundary="sides")
     X, Y = core._floats(p)
+    S, n = Y.shape
+    cols = []
+    for i, t in enumerate(p.terms):
+        col = np.zeros(S * n)
+        for r, sid in enumerate(p.ids):
+            sg = core._contrib(p, t, sid)
+            if sg:
+                col[r * n:(r + 1) * n] = sg * X[:, t.col]
+        cols.append(col)
+    D, y = np.array(cols).T, Y.reshape(-1)
+    keep = [i for i in range(len(cols)) if np.any(D[:, i])]
+
+    def fit(sup):
+        if not sup:
+            return np.zeros(0), (Y ** 2).sum(axis=1), Y
+        k, *_ = np.linalg.lstsq(D[:, sup], y, rcond=None)
+        res = (y - D[:, sup] @ k).reshape(S, n)
+        return k, (res ** 2).sum(axis=1), res
+
+    k, rss, res = fit(keep)
+    allowed = BEST_EFFORT_RSS * rss + n * float(p.h) ** 2 * 4
+    while keep and time.perf_counter() - began < budget:
+        sigma2 = float((res ** 2).sum()) / max(1, S * n - len(keep))
+        try:
+            cov = np.linalg.pinv(D[:, keep].T @ D[:, keep]) * sigma2
+            tval = np.abs(k) / np.sqrt(np.maximum(np.diag(cov), 1e-300))
+        except np.linalg.LinAlgError:
+            break
+        dropped = False
+        # tried first: outside terms and terms that read neither end of their flow (SD prefers moves that
+        # read their source), each group by |t|; at most ten tries a round
+        order = sorted(range(len(keep)), key=lambda j: (_plain(p, keep[j]), tval[j]))
+        for j in order[:10]:
+            trial = keep[:j] + keep[j + 1:]
+            k2, rss2, res2 = fit(trial)
+            if np.all(rss2 <= allowed):
+                keep, k, res, dropped = trial, k2, res2, True
+                break
+        if not dropped:
+            break
+    notes.append(f"[best effort] backward elimination: {len(keep)} of {len(cols)} terms kept ({time.perf_counter() - began:.1f} s)")
+    if not keep:
+        return None
+    miss = float(np.abs(res).max())
+    note = (f"z3exact BEST EFFORT (no structure fits within the data's rounding; not proved by Z3): {len(keep)} terms by "
+            f"backward elimination (each stock's squared error within {BEST_EFFORT_RSS:g} x the all-term model's) on the linear class; largest one-step residual {miss:.3g}; " + "; ".join(notes))
+    return {"flows": flows_of(p, keep, k), "note": note, "z3": {"status": "best effort", "moves": "ends", "boundary": "sides",
+            "best_effort": True, "seconds": round(time.perf_counter() - began, 3)}}
+
+
+def _plain(p: core.Problem, i: int) -> int:
+    """0 for a term best dropped first (an outside term, or one reading another stock), 1 for a move or
+    drain reading its own stock."""
+    t, c = p.terms[i], p.cols[p.terms[i].col]
+    own = c.kind == "stock" and c.name in (t.a, t.b)
+    return 1 if own else 0
+
+
+def _pred(p: core.Problem, sup: list[int], k: np.ndarray, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
     pred = np.zeros_like(Y)
     for m, i in enumerate(sup):
         t = p.terms[i]
@@ -70,7 +145,12 @@ def _sse(p: core.Problem, sup: list[int], k: np.ndarray) -> float:
             sg = core._contrib(p, t, sid)
             if sg:
                 pred[r] += sg * k[m] * X[:, t.col]
-    return float(((Y - pred) ** 2).sum())
+    return pred
+
+
+def _sse(p: core.Problem, sup: list[int], k: np.ndarray) -> float:
+    X, Y = core._floats(p)
+    return float(((Y - _pred(p, sup, k, X, Y)) ** 2).sum())
 
 
 def _sign(p: core.Problem, col: int) -> float:

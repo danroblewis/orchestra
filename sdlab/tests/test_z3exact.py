@@ -29,7 +29,8 @@ def test_chain_recovered_exactly():
     assert abs(got[(None, "A")]["value"] - 20) < 1e-3
 
 
-def test_noisy_data_returns_nothing():
+def test_noisy_data_gets_a_labelled_best_effort():
     stocks, run = _chain(noise=0.5)
     r = load("z3exact")(stocks, run, {})
-    assert r["flows"] == [] and "outside the class" in r["note"]
+    assert r["z3"]["best_effort"] and "BEST EFFORT" in r["note"]
+    assert {(f["from"], f["to"]) for f in r["flows"]} >= {("A", "B")}
