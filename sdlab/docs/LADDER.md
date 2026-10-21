@@ -385,8 +385,10 @@ user, 2026-10-20). Across failing results, 65% of the invented parts were outsid
 outflows, 24% inflows), and strategies often wrote `A -> outside` plus `outside -> B` instead of the
 move `A -> B`. So a case may declare its boundary, Sterman's model-boundary chart: per measured stock,
 its outside inflows and outflows, one kind per flow, `measured` (driven by a measured input series the
-case already gives) or `estimate` (it exists; its form and rate are to be estimated). Stocks not
-listed have none. Only the stock and the kind are declared, never a form or a rate.
+case already gives) or `estimate` (it exists; its form and rate are to be estimated), and since
+2026-10-21 (the user) `input`: an inflow that IS a measured input series, exactly 1 x one input, no
+constant, never rescaled or supplemented (see "The kind input" below). Stocks not listed have none.
+Only the stock and the kind are declared, never a form or a rate.
 
 ```yaml
 boundary:
@@ -444,6 +446,33 @@ The real-data (`real-*`), realistic (`sd-*`), physics (`phys-*`) and particle (`
 undeclared. The NO-TRUTH evidence views
 (notruth_run.py, objective_test.py) are built from `{stocks, t, levels, eras, injections, inputs}` and
 do not carry the boundary yet.
+
+**The kind `input` (2026-10-21, the user).** combined2 on 306-k8s-ready-replicas-cap found the requests
+inflow as 0.007 x traffic on meas-short (truth 1 x traffic), and on meas-long 0.877 x traffic plus a
+second outside inflow into queue (`min(0.0495 queue, 3.23 ready)`). A measured input is data, not a
+form to fit. So:
+
+- **Cases.** A declared inflow whose truth is exactly 1 x one measured input (an outside inflow
+  straight into the stock, `proportional` with k 1 or `linear` with no constant and one term of k 1, no
+  effects, co-flows or era rates: `caseformat.input_inflows`) declares `in: input`. That is 36 of the 42
+  declared "measured" inflows (34 files: the kubernetes requests 300-317, 115, 117, 142, 170, 171 A and
+  B, 195, 201 I, 202, 203, 207 H1 and I, 209 I, 213-216, 226); 6 keep `measured` (062's 2 x pump, the
+  heaters' 0.05 x outdoor in 200, 201, 210, 211, and 209's 9.8 x downhill). `boundary_problems` refuses an
+  `input` kind the truth does not have (or on an outflow side). Model, variants, tolerance and every
+  truth model are unchanged (`tests/test_ladder_case_boundaries.py` pins their digests); the case hashes
+  change. It is announced like the other kinds (`run["boundary"]`).
+- **Scored** (score.py): on a side declared `input`, the found gain on the input of each true `input`
+  inflow must be the truth's 1 within 1e-6 relative in every window, and where every inflow the side
+  declares is an input, the found inflows there may hold nothing else (constant, piece, other term,
+  effect, co-flow); otherwise the result fails with the note `input altered: ...` (never equivalent;
+  `scores.input_altered`). On **every declared side**, the found model (after same-pair merging) may hold
+  at most as many outside flows as the side declares: a second one is an `invented boundary` with the
+  note `... (one flow per declared side)`.
+- **Strategies** (every `boundary.py`, docs/research/declared-boundary.md "The kind input"): the search
+  reads an `input` side as `measured`; every `apply` (candidates and the final answer) ends with
+  `enforce_sides`, which puts the flow back as exactly 1 x the input, removes what else reads inputs on
+  that side, caps every declared side at its declared count (merge, else drop), and refits the stock's
+  other flows around the fixed inflow. milp and z3exact set the gain at 1 on their final answer.
 
 ### Parametric cases: random numbers
 

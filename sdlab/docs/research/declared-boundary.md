@@ -270,6 +270,79 @@ the change, so their cells are unpaired and left out below. Counts are paired ce
   29,689 items 34.0 h; realistic 2,542, 27.7 h; physics 1,517, 8.5 h; noisy 6,161, 4.6 h; canonical
   1,859, 2.0 h; real 4,264, 28 min).
 
+## The kind input (2026-10-21)
+
+**Why.** combined2 on 306-k8s-ready-replicas-cap meas-short found `outside -> queue = 0.007 x traffic`
+(truth 1 x traffic), and on meas-long 0.877 x traffic plus a second outside inflow into queue
+(`min(0.0495 queue, 3.23 ready)`). The user (2026-10-21): a measured input must not be rescaled or
+supplemented. "measured" meant "driven by a measured input, form and gain estimated", and a declared
+side admitted any number of outside flows.
+
+**What changed** (approved by the user, 2026-10-21; harness 284de71, strategies c7cade0):
+
+- **Cases.** New kind `input`: the inflow IS the measured series, exactly 1 x one input, no constant.
+  36 of the 42 declared "measured" inflows are exactly that in their truth and now declare `in: input`
+  (34 files: the kubernetes requests 300-317, 115, 117, 142, 170, 171 A and B, 195, 201 I, 202, 203, 207
+  H1 and I, 209 I, 213-216, 226); 6 keep `measured` (062's 2 x pump, 0.05 x outdoor in 200, 201, 210,
+  211, 209's 9.8 x downhill). 142's `V <- 1 x force` is exactly 1 x its input, so it is `input` too.
+  Data and simulations unchanged (digests pinned in `tests/test_ladder_case_boundaries.py`).
+- **Scorer.** An `input` side's found gain on its input must be 1 within 1e-6 relative, with nothing
+  else on a side that declares only inputs ("input altered", never equivalent); on every declared side,
+  more found outside flows than declared is an "invented boundary" (one flow per declared side).
+- **Strategies.** Every `boundary.py` (matrix's reference and the 45 copies, vendored ones included)
+  gets one identical hunk. `Boundary` reads an `input` side as `measured` for the search (`fixed`,
+  `limit`, `original` keep the declaration). `apply` (candidates and the final answer) ends with
+  `enforce_sides`. It sets apart the side's input-reading inflows (all of them on an input-only side) and
+  puts back exactly 1 x the input whose fixed flow leaves the best-pricing refit. It strips that input's
+  terms from the side's other flows. It caps every declared side at its declared count (summable rates
+  merged into one, else the smallest dropped). Finally it refits the touched stocks' other flows on
+  their changes less the fixed inflow (`_around`), and never refits the fixed flow. milp and z3exact
+  (no `boundary.py`) read `input` as a measured side and set the final gain at 1 (`fixed_inputs`, no
+  refit). Tests: `tests/test_boundary_input_kind.py` (every copy), `tests/test_ladder_input_boundary.py`.
+- **Not kept:** matrix's row search with the input taken off the row before reselection
+  (`earned.refit`). It lost 303 meas-long (it chose `inflight -> queue` instead of
+  `inflight -> responses_total`), so rows still see a measured side.
+
+**Re-score of stored results** (`tests/study_rescore_input.py`). It grades the 87,558 latest numbered
+rows that are not errors (frozen before job 200 wrote any), offline, by 3747e29 (old cases and scorer)
+and by the working tree at c7cade0 (new). **1,060 flips, every one toward fail, none toward pass:**
+
+| set | rows | pass before -> after | flips |
+|---|---|---|---|
+| kubernetes | 3,296 | 1,692 -> 753 | pass -> fail (input altered) 939 |
+| tests | 84,262 | 36,414 -> 36,358 | equivalent -> fail 65 (input altered 59, second outside flow 3, both 3); pass -> fail 56 (input altered 53, second outside flow 3) |
+
+By case: kubernetes 303 (202), 300 (147), 305 (138), 302 (100), 301 (97), 304 (97), 306 (77), 313 (33),
+315 (25), 314 (21), 307 (2); tests 195 (41), 142 (23), 170 (22), 171 (10), 226 (7), 214 (5), 215 (3),
+216 (3), 201 (2), 207 (2); second outside flow only: 139 (2), 136 (1). By strategy, 2 to 29 flips
+each across every strategy with stored rows there (matrix_v2 and structures also lose 3 and 2 to a second
+outside flow). The old answers estimated the requests' gain (e.g. 0.93 x traffic on matrix 303
+meas-long), within the old 10% tolerance.
+
+**Kubernetes 300-306 on the pool** (job 200 at c7cade0, roster:kubernetes, 44 strategies, every
+variant, 1,494 cells, 0 errors). 1,382 cells pair with the stored result from before:
+
+| | pass | equivalent | fail |
+|---|---|---|---|
+| stored before (old scorer) | 1,283 | 1 | 98 |
+| before, re-graded by the new scorer | 533 | 1 | 848 |
+| after (job 200) | 1,282 | 2 | 98 |
+
+- Against the stored results: 7 gains (z3exact fail -> pass 5 and fail -> equivalent 1, on 300-303
+  counts-short; shared_noise 303 meas-short fail -> pass). 7 losses, all structural, none for an
+  altered input or a second outside flow: 303 counts-long engine_forms and kalman_lna (`inflight ->
+  queue` for `inflight -> responses_total`); 303 meas-long numopt_bo (an effect of queue) and own_tables;
+  303 meas-short numopt_cma (a co-flow) and structures; 306 none-short held_out.
+- Against the stored answers re-graded by the new scorer: fail -> pass 750 (13 to 21 per strategy),
+  pass -> fail 1 (held_out 306 none-short).
+- 112 cells have no stored "before": 306 meas-short and meas-long (88, all fail, as before the change
+  in rung 306's diagnosis), 306 none-long and a few more. combined2 on 306 now has exactly
+  `outside -> queue = 1 x traffic` and no second inflow in all six variants (meas-short and meas-long
+  still fail on the rest of the model).
+
+**Tests sample** (120 numbered non-kubernetes cases: the 16 with an `input` side plus every ~2nd of the
+rest, none-short, roster:kubernetes; pool jobs 206-209 at c7cade0): in progress.
+
 ## Limits and next steps
 
 - Hidden stocks: `matrix` offers none, so a case whose truth needs one (107-canonical-rework,
