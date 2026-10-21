@@ -31,6 +31,8 @@ def swaps(cur: Fitted, d: Data, rounds: int = 6, margin: float = 2.0) -> Fitted:
             for b in _alternatives(a, cur.atoms):
                 if b in cur.atoms:
                     continue
+                if getattr(d, "atom_ok", None) is not None and not d.atom_ok(b):
+                    continue              # (gap_prior's copy) outside the announced boundary: not offered
                 atoms = list(cur.atoms)
                 atoms[i] = b
                 g = fit(atoms, d, cur.theta, maxiter=TRIAL, tau=cur.tau)

@@ -27,6 +27,7 @@ import math
 import numpy as np
 
 from ...identify import judge
+from . import boundary
 from ._vendored.lna import identify as _lna
 
 
@@ -105,8 +106,36 @@ def as_coflows(flows: list[dict], apart=None) -> list[dict]:
     return out
 
 
+def boundary_hooks(stocks: list[dict], run: dict) -> dict | None:
+    """lna's atoms kept inside the announced boundary (boundary.py, docs/research/declared-boundary.md):
+    an atom from outside into s (an inflow, a link, a growth, a gap) only where s may have an outside
+    inflow of its kind, one from s to outside (an outflow, a drain) only where s may have an outside
+    outflow of its kind; the kind is "measured" for an atom a measured input drives, else "estimate".
+    The same test is put on the data (d.atom_ok) so that the gap swaps never offer an atom outside it.
+    None when no boundary is declared (every atom offered; claims are priced on the answer)."""
+    b = boundary.Boundary(run)
+    if not b.declared:
+        return None
+    ids = [s["id"] for s in stocks]
+    S = len(ids)
+
+    def ok(a) -> bool:
+        kind = "measured" if a.driver is not None and a.driver >= S else "estimate"
+        if a.src is None and a.dst is not None:
+            return b.may(ids[a.dst], "in", kind)
+        if a.src is not None and a.dst is None:
+            return b.may(ids[a.src], "out", kind)
+        return True
+
+    def atoms(atoms, d, ctx):
+        d.atom_ok = ok
+        return [a for a in atoms if ok(a)]
+
+    return {"atoms": atoms}
+
+
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    found = _lna(stocks, run, opts)
+    found = _lna(stocks, run, opts, boundary_hooks(stocks, run))
     if found.get("method") == "lna":
         return found                    # counting noise: the likelihood chose between them
     return conventions(found, stocks, run, opts)
@@ -144,7 +173,10 @@ def conventions(found: dict, stocks: list[dict], run: dict, opts: dict | None = 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard and moves where one is declared, each outside flow
+    priced as a boundary claim where none is; where lna falls back to the main line, or the main line
+    reads noise-free data, this guard is what keeps that answer inside)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)
