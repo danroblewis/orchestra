@@ -94,6 +94,12 @@ def _steps(stocks: list[dict], run: dict, opts: dict):
     return ids, final, dy, read, inputs
 
 
+def _same_unit(unit: dict, a: str, b: str) -> bool:
+    """May material move between a and b? Only when both carry the same unit (or a unit is not announced)."""
+    ua, ub = unit.get(a), unit.get(b)
+    return not ua or not ub or ua == ub
+
+
 def _rss(B: np.ndarray, y: np.ndarray) -> float:
     coef, *_ = np.linalg.lstsq(B, y, rcond=None)
     r = y - B @ coef
@@ -163,6 +169,7 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
         return opts, None
     ids, final, dy, read, inputs = got
     T = dy.shape[1]
+    unit = {s["id"]: s.get("unit") for s in stocks}
     B, Q = _design(ids, read, inputs, opts, np.asarray(run["t"], dtype=float), T)
     caps = [(ids[i], read[i]) for i in range(len(ids)) if ids[i] not in final] + list(inputs.items())
     floor = [RESOLUTION * float(np.mean(dy[i] ** 2)) * T + 1e-300 for i in range(len(ids))]   # the data's resolution
@@ -180,11 +187,11 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
             th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
             m = np.minimum(X, th * Y)
             gx, cx = _gain(B, m, dy[xi], floor[xi])
-            if cx >= 0 or gx <= 0:                         # a limited outflow of X takes from X
+            if cx >= 0 or gx <= price:                     # a limited outflow of X takes from X: X's own row shows it (k8s-309)
                 continue
             to = None
             for z in range(len(ids)):
-                if z != xi:
+                if z != xi and _same_unit(unit, x, ids[z]):    # a move joins stocks of one unit (k8s-309)
                     gz, cz = _gain(B, m, dy[z], floor[z])
                     if cz > 0 and gz > price and (to is None or gz > to[0]):
                         to = (gz, z)
