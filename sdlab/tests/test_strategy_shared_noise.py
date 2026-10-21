@@ -54,7 +54,11 @@ def test_a_move_and_a_link_out_of_the_same_stock_at_the_same_rate():
                  steps=2000)
     base = matrix(d["stocks"], d["run"], {})
     assert kind(base, "a", "c") == "move", "the matrix method reads the link as a move (a's drain can pay for it)"
-    r = shared_noise(d["stocks"], d["run"], {})
+    # the boundary the case declares (every ladder case declares one since 2026-10-20): with none, the link
+    # into c is a boundary claim, priced, and the one-step price prefers the move (docs/research/declared-boundary.md)
+    declared = {"boundary": {"a": {"in": ["estimate"], "out": ["estimate"]}, "b": {"out": ["estimate"]},
+                             "c": {"in": ["estimate"], "out": ["estimate"]}}, "boundary_declared": True}
+    r = shared_noise(d["stocks"], {**d["run"], **declared}, {})
     assert kind(r, "a", "b") == "move"
     assert kind(r, "a", "c") == "link"
     out = next(f for f in r["flows"] if f["from"] == "a" and f["to"] is None)

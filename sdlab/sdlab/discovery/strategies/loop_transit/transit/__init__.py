@@ -41,6 +41,7 @@ import numpy as np
 
 from ....balance import amounts
 from ....simulate import behaviour_error, levels_array
+from .. import boundary
 from .fit import fit_plain, fit_transit, screen
 from .kalman import Pair
 from .pairs import _prop_on as _prop, at_means, build, candidate, echo_merged, exogenous, flow_numbers, one_piece, pieces, split
@@ -91,11 +92,16 @@ def _between(flows: list[dict], keep: list[int], ids: list[str], t: list, Ls: np
 
 
 def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str, b: str, scale: float,
-             injections: list[dict] | None = None) -> dict | None:
+             injections: list[dict] | None = None, bd: boundary.Boundary | None = None) -> dict | None:
     """The pair's best transit and best plain fits over the variants (A's outside inflow as one
     constant or in the main line's pieces, re-measured; B with or without an outside constant), each
     with its BIC, and the found model's own rows by the same likelihood; None when a least-squares
-    screen of B's row finds no sign of a delay."""
+    screen of B's row finds no sign of a delay.
+
+    (loop_transit, the declared boundary: ../boundary.py) Inside bd: B's outside constant only where B
+    may have an estimated outside flow, B's own drain only where it may have an estimated outflow, a
+    share of A's loss to outside only where A may have one; with no boundary declared, every variant."""
+    bd = bd or boundary.Boundary({})
     t = run["t"]
     L = levels_array(levels, ids)
     T = L.shape[1] - 1
@@ -125,12 +131,12 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     best_t, best_p = None, None
     for pair, sp in pairs:
         extra = 2 * len(sp) - 1 if sp else 0                   # each piece: its value and its place
-        for cB_on in (False, True):
+        for cB_on in (False, True) if bd.pieces_ok(b) else (False,):
             p = fit_plain(pair, cB_on)
             p_bic = p["nll"] + (p["k"] + extra) * logn
             if best_p is None or p_bic < best_p["bic"]:
                 best_p = {**p, "bic": p_bic}
-            for kb_on in (True, False):          # loop_transit: B without a drain of its own as well
+            for kb_on in (True, False) if bd.may(b, "out", "estimate") else (False,):   # loop_transit: B without a drain of its own as well
                 f = fit_transit(pair, cB_on, True, kb_on=kb_on)
                 if f is None:
                     continue
@@ -140,7 +146,7 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     if best_t is None:
         return None
     # a share of A's loss to H (the rest to outside), on the best variant only
-    f = fit_transit(best_t["pair"], best_t["cB_on"], False, kb_on=best_t["kb_on"])
+    f = fit_transit(best_t["pair"], best_t["cB_on"], False, kb_on=best_t["kb_on"]) if bd.may(a, "out", "estimate") else None
     if f is not None and f["nll"] + (f["k"] + best_t["extra"]) * logn < best_t["bic"]:
         best_t = {**best_t, **f, "bic": f["nll"] + (f["k"] + best_t["extra"]) * logn, "all_to_h": False}
     best_t["keep"] = keep
@@ -213,6 +219,8 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     if r.get("inferred_levels"):
         return r
     ids = [s["id"] for s in stocks]
+    bd = boundary.Boundary(run)              # the announced boundary (../boundary.py)
+    measured_inputs = set(inputs or {})
     if len(run["t"]) < 30 or not flows:
         return r
     unit = {s["id"]: (s.get("unit") or "", s.get("group")) for s in stocks}
@@ -242,14 +250,14 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
                     continue
                 if not candidate(flows, a, b):
                     continue
-                res = try_pair(flows, all_ids, run, levels, a, b, scale, injections)
+                res = try_pair(flows, all_ids, run, levels, a, b, scale, injections, bd)
                 if res is not None:
                     res["base"] = flows
                 # loop_transit: the pair also on the flows with the return move's echo folded in, the
                 # better by BIC with the kept flows' numbers counted (the fold drops one)
                 merged = echo_merged(flows, a, b)
                 if merged is not None:
-                    res_m = try_pair(merged, all_ids, run, levels, a, b, scale, injections)
+                    res_m = try_pair(merged, all_ids, run, levels, a, b, scale, injections, bd)
                     if trace and res_m is not None:
                         print(f"  echo fold {a}>{b}: total {_total(res_m, merged, a, b, run):.1f} vs {_total(res, flows, a, b, run) if res else float('nan'):.1f}; kb {res_m['transit']['kb']:.4f}")
                     if res_m is not None and (res is None or _total(res_m, merged, a, b, run) < _total(res, flows, a, b, run)):
@@ -266,6 +274,10 @@ def add(r: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dic
                 if not shortest <= 1 / f["d"] <= len(run["t"]) / turns:
                     continue
                 if f["kin"] < min_share * f["kA"]:
+                    continue
+                # inside the announced boundary: a transit whose model has an outside flow the case does
+                # not declare is not proposed
+                if boundary.violations(build(res["base"], f["keep"], a, b, f, f["spans"])[0], ids, bd, measured_inputs):
                     continue
                 if res["gain"] > margin * math.log(2 * (len(run["t"]) - 1)) and (best is None or res["gain"] > best[0]["gain"]):
                     best = (res, a, b)

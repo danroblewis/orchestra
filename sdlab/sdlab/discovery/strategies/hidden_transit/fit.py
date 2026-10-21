@@ -96,10 +96,11 @@ def _minimize(cost, x0):
     return p if p.fun <= o.fun else o
 
 
-def fit_transit(pair: Pair, cB_on: bool, all_to_h: bool = True, starts: list[dict] | None = None) -> dict | None:
+def fit_transit(pair: Pair, cB_on: bool, all_to_h: bool = True, starts: list[dict] | None = None, kb_on: bool = True) -> dict | None:
     """The transit model's numbers by maximum likelihood: {kA, kin, d, kb, cB, m0, values (A's inflow
     pieces), nll, k (numbers searched), H (the filtered level)}. all_to_h: kin = kA (A loses only what
-    H takes)."""
+    H takes). kb_on False: B has no drain of its own (kb = 0; ported from loop_transit/transit/fit.py at
+    fc7d3f9, for the declared boundary: B with no outflow to outside declared)."""
     kA0 = a_loss(pair)
     starts = starts if starts is not None else profile(pair, cB_on)
     if not starts:
@@ -120,8 +121,8 @@ def fit_transit(pair: Pair, cB_on: bool, all_to_h: bool = True, starts: list[dic
             kin = kA * _sig(p[i])
             i += 1
         d = D_MAX * _sig(p[i])
-        kb = _exp(p[i + 1])
-        i += 2
+        kb = _exp(p[i + 1]) if kb_on else 0.0
+        i += 2 if kb_on else 1
         cB = p[i] if cB_on else 0.0
         i += cB_on
         return kA, kin, d, kb, cB, p[i]
@@ -134,7 +135,7 @@ def fit_transit(pair: Pair, cB_on: bool, all_to_h: bool = True, starts: list[dic
     for s in tried:
         kA = max(kA0, 1e-4)
         x0 = [_log(kA)] + ([] if all_to_h else [_logit(min(0.999, max(0.01, s["kin"] / kA)))])
-        x0 += [_logit(min(0.999, s["d"] / D_MAX)), _log(max(s["kb"], 1e-4))] + ([s["cB"]] if cB_on else []) + [s["m0"]]
+        x0 += [_logit(min(0.999, s["d"] / D_MAX))] + ([_log(max(s["kb"], 1e-4))] if kb_on else []) + ([s["cB"]] if cB_on else []) + [s["m0"]]
         o = _minimize(cost, np.array(x0))
         if best is None or o.fun < best.fun:
             best = o

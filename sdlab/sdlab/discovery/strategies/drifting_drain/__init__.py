@@ -28,6 +28,7 @@ import math
 
 import numpy as np
 
+from . import boundary
 from .earned import main_line
 from ...matrix import injected
 from . import counts, onestep, segment
@@ -115,9 +116,18 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
 
     log_t = math.log(T)
+    # the announced boundary (boundary.py): the rewrite (an outside inflow and a drain to outside) only on
+    # a stock that may have an estimated outside outflow, never one with an outside flow the case does not
+    # declare; with no boundary declared each outside flow is a claim priced at CLAIM_PRICE x log T
+    bd = boundary.Boundary(run)
+    measured_inputs = set(opts.get("inputs") or {})
+
+    def claims(fl):
+        return boundary.CLAIM_PRICE * len(boundary.claims(fl, ids, bd, measured_inputs)) * log_t
+
     taken = []
     for i, row in enumerate(ids):
-        if row in final:
+        if row in final or not bd.may(row, "out", "estimate"):
             continue
         # counting noise only where the main line left the stock with no flows at all (a stock that
         # barely changes reads as empty by least squares): there the inflow is read from the noise's
@@ -126,11 +136,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         # (051-sweep-level-scale#5 counts-short: a start-up transient read as 50% more inflow)
         empty = o["counting"] and not any(row in (f.get("from"), f.get("to")) for f in flows)
         cand = candidate(flows, ids, t, prev, dy, i, float(floor_rss[i]) / T, o, mi, counting=empty)
-        if cand is None:
+        if cand is None or boundary.violations(cand[0], ids, bd, measured_inputs):
             continue
-        sc, score = price(cand[0], empty), price(flows, empty)
+        sc, score = price(cand[0], empty) + claims(cand[0]), price(flows, empty) + claims(flows)
         # the drift must also earn its stretches against one steady drain read the same way
-        if sc > price(cand[2], empty) - o["margin"] * log_t:
+        if sc > price(cand[2], empty) + claims(cand[2]) - o["margin"] * log_t:
             continue
         if sc < score - o["margin"] * log_t:
             flows = cand[0]
@@ -140,7 +150,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py, a copy of
+    matrix's: the guard where one is declared, each outside flow priced as a boundary claim where none
+    is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)

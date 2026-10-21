@@ -81,10 +81,10 @@ from ...addition import addition_test
 from .earned import main_line as matrix_identify   # identify.identify with each candidate's pieces earned (earned.py)
 from ...matrix import injected
 from ...simulate import behaviour_error
-from . import search, transit
+from . import boundary, search, transit
 from .deadline import Overrun, deadline, outer_left
 from .inputs import rows as input_rows
-from .price import price, prune
+from .price import price as _price, prune
 from .pieces import resegment
 from .screen import scan
 
@@ -151,6 +151,18 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 def _search(stocks: list[dict], run: dict, opts: dict, o: dict, keep, base: dict, state: dict) -> dict:
     base_e = min((x["error"] for x in base.get("tried") or []), default=float("inf"))
     ids, prev, dy = _arrays(stocks, run, opts)
+    # the announced boundary (boundary.py): effect flows end at outside only where the case declares it,
+    # a model with an outside flow it does not declare is never a candidate, and with no boundary
+    # declared each outside flow is a claim priced at CLAIM_PRICE x log T
+    bd = boundary.Boundary(run)
+    measured_inputs = set(opts.get("inputs") or {})
+    log_t0 = math.log(max(2, len(run["t"]) - 1))
+
+    def price(flows, ids, run, inputs):
+        return _price(flows, ids, run, inputs) + boundary.CLAIM_PRICE * len(boundary.claims(flows, ids, bd, measured_inputs)) * log_t0
+
+    def placement_ok(frm, to):
+        return (frm is not None or to is None or bd.may(to, "in", "estimate")) and (to is not None or frm is None or bd.may(frm, "out", "estimate"))
     # measured inputs: their rows (columns of the screen and the curves' fits) and the judge's series
     in_names, in_rows = input_rows(opts.get("inputs"), ids, prev.shape[1])
     xin = in_rows if in_names else None
@@ -166,7 +178,7 @@ def _search(stocks: list[dict], run: dict, opts: dict, o: dict, keep, base: dict
     base_b = price(seg, ids, run, inputs)
     fair_e = judge(seg, stocks, run, injections=opts.get("injections"), inputs=inputs) if o["pool"] else base_e
     base.update(bic=base_b, judged={"base": base_e, "recut": fair_e}, effects_tried=[])
-    state["answer"] = _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks, inputs)
+    state["answer"] = _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks, inputs, price)
     log_t = math.log(max(2, len(run["t"]) - 1))
     accepted, best, chosen, cur_b, cur_e = [], None, None, base_b, fair_e
     tried, shapes, skip = [], set(), set()
@@ -176,7 +188,7 @@ def _search(stocks: list[dict], run: dict, opts: dict, o: dict, keep, base: dict
         base["effects_tried"] += [f"{c['base'] or 1} x f({c['stock']}) in {[r for r, _ in c['rows']]} {c['score']:.0f}" for c in cands]
         raw = []
         for cand in cands[: o["most"]]:
-            for c in search.placement_fits(cand, ids, prev, dy, o, xin):
+            for c in search.placement_fits(cand, ids, prev, dy, o, xin, ok=placement_ok):
                 raw += [{**t, "fit": c} for t in search.trials(accepted + [c], stocks, run, prev, ids, opts, fit_opts, shapes)]
         # the most promising few are finished: inflows pooled and re-cut, flows the data does not
         # need dropped, then judged
@@ -187,6 +199,8 @@ def _search(stocks: list[dict], run: dict, opts: dict, o: dict, keep, base: dict
             if o["prune"]:
                 flows = prune(flows, ids, run, fit_opts)
             if sum(1 for f in flows if f.get("hat")) < len(accepted) + 1:
+                continue
+            if boundary.violations(flows, ids, bd, measured_inputs):
                 continue
             done.append({**t, "flows": flows, "error": judge(flows, stocks, run, injections=opts.get("injections"), inputs=inputs),
                          "bic": price(flows, ids, run, inputs)})
@@ -222,7 +236,7 @@ def _search(stocks: list[dict], run: dict, opts: dict, o: dict, keep, base: dict
     if keep:
         base.setdefault("candidates", []).extend({"name": t["name"], "error": t["error"], "flows": _clean(t["flows"])} for t in tried)
     if best is None:
-        return _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks, inputs)
+        return _seg_base(base, seg, o, ids, run, base_e, fair_e, stocks, inputs, price)
     out = {**best["r"], "flows": _clean(best["flows"]), "chosen": best["name"], "tried": base["tried"],
            "effects_tried": base["effects_tried"], "bic": best["bic"], "base_bic": base_b, "judged": base["judged"]}
     if keep:
@@ -237,9 +251,10 @@ def _fair(base: list[dict], cand: list[dict], stocks: list[dict], run: dict) -> 
 
 
 def _seg_base(base: dict, seg: list[dict], o: dict, ids: list[str], run: dict, base_e: float, fair_e: float,
-              stocks: list[dict] | None = None, inputs: dict | None = None) -> dict:
+              stocks: list[dict] | None = None, inputs: dict | None = None, price=None) -> dict:
     """The base, or (opts["seg_base"]) the base with its inflows pooled and re-cut when that prices
     better, behaves within `seg_margin` of it, and is no worse with re-measured coarse inflows."""
+    price = price or _price
     if not o["seg_base"] or seg is base["flows"]:
         return base
     if price(seg, ids, run, inputs) < price(base["flows"], ids, run, inputs) and fair_e < o["seg_margin"] * base_e \
@@ -267,7 +282,10 @@ def _clean(flows: list[dict]) -> list[dict]:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py, a copy of
+    matrix's: the guard where one is declared, each outside flow priced as a boundary claim where none
+    is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)

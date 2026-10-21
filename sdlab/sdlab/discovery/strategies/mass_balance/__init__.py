@@ -21,9 +21,12 @@ line, not only the chosen one; default False), "mb_trace" (print every proposal)
 
 from __future__ import annotations
 
+import numpy as np
+
 from ...balance import arrivals, pairs, propose
+from . import boundary
 from ...identify import VARIANTS
-from .earned import main_line
+from .earned import main_line, refit
 from ...identify import judge as main_judge
 from ...matrix import identify_one
 from ...observer import observe
@@ -55,8 +58,14 @@ def at_means(flows: list[dict], idx: list[int]) -> list[dict]:
 
 def augment(flows: list[dict], stocks: list[dict], run: dict, opts: dict, tried: list) -> tuple[list[dict], dict, list[str]]:
     """The flows with every hidden stock the balance supports (accepted one at a time, best first),
-    their estimated levels, and the receivers whose arrivals they replaced."""
+    their estimated levels, and the receivers whose arrivals they replaced.
+
+    Inside the announced boundary (boundary.py): "rest to outside" (A loses more than H takes) only
+    where A may have an estimated outflow, and a proposal whose model has an outside flow the case does
+    not declare is not taken."""
     ids = [s["id"] for s in stocks]
+    bd = boundary.Boundary(run)
+    measured_inputs = set(opts.get("inputs") or {})
     levels, receivers = {}, []
     trace = opts.get("mb_trace")
     margin = opts.get("mb_margin", 1.0)
@@ -78,9 +87,12 @@ def augment(flows: list[dict], stocks: list[dict], run: dict, opts: dict, tried:
             ref = base if opts.get("mb_against") == "found" else judge(at_means(flows, arrivals(flows, a, b)), stocks, run, levels)
             pick = None
             variants = [("all to H", p.get("alt") or p["flows"])]
-            if opts.get("mb_rest") and p.get("alt"):
+            if opts.get("mb_rest") and p.get("alt") and bd.may(a, "out", "estimate"):
                 variants.append(("rest to outside", p["flows"]))
             for name, fl in variants:
+                if boundary.violations(fl, ids, bd, measured_inputs):
+                    tried.append({"pair": f"{a}>{b}", "variant": name, "why": "outside the declared boundary"})
+                    continue
                 est = observe(fl, ids, run["t"], run["levels"], [h], {h: p["level"][0]})
                 inferred = {**levels, **est}
                 e = judge(fl, stocks, run, inferred)
@@ -121,11 +133,12 @@ def every_candidate(stocks: list[dict], run: dict, opts: dict, tried: list):
     is kept unless another candidate with hidden stocks behaves better than it does with the arrivals
     those stocks replaced held at their mean."""
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
+    bd = boundary.Boundary(run)
     cands = []
     for v in VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        c = identify_one(stocks, run, {**opts, **v})
+        c = _inside(identify_one(stocks, run, {**opts, **v, **(KEEP if bd.declared else {})}), stocks, run, opts, bd)
         cands.append((main_judge(c["flows"], stocks, run) if c["flows"] else float("inf"), v["name"], c))
     e0, name0, r = min(cands, key=lambda x: x[0])
     r["chosen"], r["tried"] = name0, [{"name": n, "error": e} for e, n, _ in cands]
@@ -149,10 +162,31 @@ def every_candidate(stocks: list[dict], run: dict, opts: dict, tried: list):
     return r, best[1], best[2]
 
 
+KEEP = {"keep_fit": True, "keep_rows": True, "input_columns": True}
+
+
+def _inside(r: dict, stocks: list[dict], run: dict, opts: dict, bd: boundary.Boundary) -> dict:
+    """A candidate kept inside the announced boundary (boundary.py), as the main line's are
+    (earned.main_line): where one is declared, its rows refitted inside it and then guarded."""
+    if bd.declared and r.get("flows") is not None and r.get("fit"):
+        try:
+            r = refit(stocks, r, opts, bd)
+        except np.linalg.LinAlgError:
+            pass
+    for k in ("fit", "ctx", "raw_rows"):
+        r.pop(k, None)
+    if bd.declared and r.get("flows"):
+        r = boundary.apply(r, stocks, run, opts, final=False)
+    return r
+
+
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py, a
+    copy of matrix's: the guard where one is declared, each outside flow priced as a boundary claim
+    where none is)."""
+    r = _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed

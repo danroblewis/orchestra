@@ -11,8 +11,11 @@ not evidence), "coef_within_pieces" (the coefficient test with the row's inflow 
 
 from __future__ import annotations
 
+import numpy as np
+
 from ...identify import VARIANTS, judge
-from .earned import main_line
+from . import boundary
+from .earned import main_line, refit
 from ...matrix import identify_one, known_flows
 from ...regimes import eras_with, find
 
@@ -32,6 +35,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return base
     extra = known_flows(opts["known"], [s["id"] for s in stocks], run["t"]) if opts.get("known") else []
     best, best_err, tried = base, base_err, list(base["tried"])
+    bd = boundary.Boundary(run)
     # each process of regimes on its own, and all of them together
     sets = [[p] for p in processes] + ([processes] if len(processes) > 1 and opts.get("combine", True) else [])
     for ps in sets:
@@ -40,7 +44,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         for v in VARIANTS:
             if not v.get("split_eras"):
                 continue
-            r = identify_one(stocks, run, {**opts, **v, "eras": eras})
+            r = _inside(identify_one(stocks, run, {**opts, **v, "eras": eras, **(KEEP if bd.declared else {})}), stocks, run, opts, bd)
             e = judge(r["flows"] + extra if r["flows"] else [], stocks, run)
             name = v["name"].replace("numbers per era", f"numbers per era and regime ({tag})")
             tried.append({"name": name, "error": e})
@@ -50,10 +54,32 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return best
 
 
+KEEP = {"keep_fit": True, "keep_rows": True, "input_columns": True}
+
+
+def _inside(r: dict, stocks: list[dict], run: dict, opts: dict, bd: boundary.Boundary) -> dict:
+    """A regime candidate kept inside the announced boundary (boundary.py), as the main line's are
+    (earned.main_line): where one is declared, its rows refitted inside it (earned.refit: outside terms
+    only on declared sides, sources with no declared outflow tied) and then guarded."""
+    if bd.declared and r.get("flows") is not None and r.get("fit"):
+        try:
+            r = refit(stocks, r, opts, bd)
+        except np.linalg.LinAlgError:
+            pass
+    for k in ("fit", "ctx", "raw_rows"):
+        r.pop(k, None)
+    if bd.declared and r.get("flows"):
+        r = boundary.apply(r, stocks, run, opts, final=False)
+    return r
+
+
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py, a
+    copy of matrix's: the guard where one is declared, each outside flow priced as a boundary claim
+    where none is)."""
+    r = _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed

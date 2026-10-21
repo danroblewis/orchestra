@@ -45,6 +45,7 @@ import math
 
 import numpy as np
 
+from . import boundary
 from .earned import main_line
 from ...simulate import behaviour_error, levels_array
 from .fit import fit_plain, fit_transit, screen
@@ -78,11 +79,17 @@ def counts(run: dict) -> bool:
     return moved
 
 
-def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str, b: str, scale: float) -> dict | None:
+def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str, b: str, scale: float,
+             bd: boundary.Boundary | None = None) -> dict | None:
     """The pair's best transit and best plain fits over the variants (A's outside inflow as one
     constant or in the main line's pieces, re-measured; B with or without an outside constant), each
     with its BIC, and the found model's own rows by the same likelihood; None when a least-squares
-    screen of B's row finds no sign of a delay."""
+    screen of B's row finds no sign of a delay.
+
+    Inside the announced boundary bd (boundary.py): B's outside constant only where B may have an
+    estimated outside flow, B's own drain only where it may have an estimated outflow, and a share of
+    A's loss to outside only where A may have one (with no boundary declared every variant is tried)."""
+    bd = bd or boundary.Boundary({})
     t = run["t"]
     L = levels_array(levels, ids)
     T = L.shape[1] - 1
@@ -98,12 +105,12 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     best_t, best_p = None, None
     for pair, sp in pairs:
         extra = 2 * len(sp) - 1 if sp else 0                   # each piece: its value and its place
-        for cB_on in (False, True):
+        for cB_on in (False, True) if bd.pieces_ok(b) else (False,):
             p = fit_plain(pair, cB_on)
             p_bic = p["nll"] + (p["k"] + extra) * logn
             if best_p is None or p_bic < best_p["bic"]:
                 best_p = {**p, "bic": p_bic}
-            f = fit_transit(pair, cB_on, True)
+            f = fit_transit(pair, cB_on, True, kb_on=bd.may(b, "out", "estimate"))
             if f is None:
                 continue
             bic = f["nll"] + (f["k"] + extra) * logn
@@ -112,7 +119,7 @@ def try_pair(flows: list[dict], ids: list[str], run: dict, levels: dict, a: str,
     if best_t is None:
         return None
     # a share of A's loss to H (the rest to outside), on the best variant only
-    f = fit_transit(best_t["pair"], best_t["cB_on"], False)
+    f = fit_transit(best_t["pair"], best_t["cB_on"], False, kb_on=bd.may(b, "out", "estimate")) if bd.may(a, "out", "estimate") else None
     if f is not None and f["nll"] + (f["k"] + best_t["extra"]) * logn < best_t["bic"]:
         best_t = {**best_t, **f, "bic": f["nll"] + (f["k"] + best_t["extra"]) * logn, "all_to_h": False}
     best_t["keep"] = keep
@@ -142,6 +149,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     r = main_line(stocks, run, opts)
     flows = r["flows"]
     ids = [s["id"] for s in stocks]
+    bd = boundary.Boundary(run)
+    measured_inputs = set(opts.get("inputs") or {})
     if len(run["t"]) < 30 or not flows:
         return r
     unit = {s["id"]: (s.get("unit") or "", s.get("group")) for s in stocks}
@@ -163,7 +172,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                     continue
                 if not candidate(flows, a, b) or any(f.get("from") == b and f.get("to") == a for f in flows):
                     continue
-                res = try_pair(flows, all_ids, run, levels, a, b, scale)
+                res = try_pair(flows, all_ids, run, levels, a, b, scale, bd)
                 if res is None:
                     continue
                 f = res["transit"]
@@ -174,6 +183,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 # H must turn over many times in the run (a longer delay is a slow drift, which
                 # pieces or a schedule explain as well)
                 if not shortest <= 1 / f["d"] <= len(run["t"]) / turns:
+                    continue
+                # inside the announced boundary: a transit whose model has an outside flow the case
+                # does not declare is not proposed (boundary.py)
+                if boundary.violations(build(flows, f["keep"], a, b, f, f["spans"])[0], ids, bd, measured_inputs):
                     continue
                 if res["gain"] > margin * math.log(2 * (len(run["t"]) - 1)) and (best is None or res["gain"] > best[0]["gain"]):
                     best = (res, a, b)
@@ -195,7 +208,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         flows, inferred, base_e = new, inf, e
         used |= {a, b}
     flows, inferred = stages(flows, stocks, run, opts, inferred, used, final, ids, shortest, turns, margin, found_ratio, slack,
-                             opts_stage, trace)
+                             opts_stage, trace, bd)
     r["flows"] = flows
     r["transit"] = tried
     if inferred:
@@ -205,12 +218,19 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 
 def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferred: dict, used: set, final: set, ids: list[str],
-           shortest: float, turns: float, margin: float, found_ratio: float, slack: float, cfg: dict, trace: bool) -> tuple[list[dict], dict]:
+           shortest: float, turns: float, margin: float, found_ratio: float, slack: float, cfg: dict, trace: bool,
+           bd: boundary.Boundary | None = None) -> tuple[list[dict], dict]:
     """Hidden stages on single measured stocks' inflows (stage.py), greedily, best gain first, after
     the pairs: each must beat the plain alternative and the found row by cfg["margin"] log n, and the
     model with it must behave better on the data than the found model with the stock's outside
-    pieces held at their mean (and at most found_ratio times worse than the model as found)."""
+    pieces held at their mean (and at most found_ratio times worse than the model as found).
+
+    Inside the announced boundary bd (boundary.py): a stage on a stock with no estimated outside
+    inflow declared is not tried (its chain is fed from outside), and a stage whose model has an outside
+    flow the case does not declare is not taken."""
+    bd = bd or boundary.Boundary({})
     injections, inputs = opts.get("injections"), opts.get("inputs")
+    measured_inputs = set(inputs or {})
     T = len(run["t"]) - 1
     d_lo, d_hi = max(1e-4, turns / len(run["t"])), min(0.9, 1 / shortest)
     if d_lo >= d_hi:
@@ -221,7 +241,7 @@ def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferre
     for _ in range(cfg["most"]):
         best = None
         for x in ids:
-            if x in used or x in done or x in final:
+            if x in used or x in done or x in final or not bd.may(x, "in"):
                 continue
             res = try_stock(flows, ids, run, x, injections, inputs, d_lo, d_hi, is_counts)
             if res is None:
@@ -245,6 +265,8 @@ def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferre
             if trace:
                 print(f"  refined: delay {fit['n'] / fit['d']:.3f}, u {fit['terms']}, kX {fit['kX']:.4f}, direct {fit['direct']}")
         new, hs = write_stage(flows, res["keep"], x, fit, f"{x}~stage")
+        if boundary.violations(new, ids, bd, measured_inputs):
+            continue
         H = hidden_levels(fit, dat["cands"], len(dat["y"]))
         inf = {**inferred, **{h: np.maximum(0.0, H[i]).tolist() for i, h in enumerate(hs)}}
         e = judge(new, stocks, run, inf, injections, inputs)
@@ -259,7 +281,10 @@ def stages(flows: list[dict], stocks: list[dict], run: dict, opts: dict, inferre
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py, a copy of
+    matrix's: the guard where one is declared, each outside flow priced as a boundary claim where none
+    is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
