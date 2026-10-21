@@ -4,7 +4,7 @@ time (child.py), kept between items of the same commit and restarted when the co
 or heavy item, or every RECYCLE_ITEMS items.
 
 While an item runs the slot watches it every half second: over its hard memory limit (the expected peak
-x 2, at least 4 GB, at most half the machine) the process is killed and the item posted as `crashed`
+x 2, at least 4 GB, at most half the machine or the worker's budget) the process is killed and the item posted as `crashed`
 (the server retries it once where there is more memory); past a guard of twice its timeout plus
 GUARD_EXTRA seconds (run_item's own timeout covers discovery, not scoring) it is killed and posted as a
 timeout; a lease the server says is lost or cancelled is killed and not posted; at shutdown it is killed
@@ -45,8 +45,11 @@ class Running:
     peak: float = 0.0
 
 
-def hard_limit(expected: float, total_mb: float) -> float:
-    return min(max(2.0 * expected, MIN_LIMIT_MB), total_mb / 2.0)
+def hard_limit(expected: float, total_mb: float, budget_mb: float | None = None) -> float:
+    """Twice the expected peak, at least MIN_LIMIT_MB, at most half the machine and never past the worker's
+    budget (the Mac's 96 GB of 256: one item once reached 132 GB under a half-the-machine limit)."""
+    top = total_mb / 2.0 if budget_mb is None else min(total_mb / 2.0, budget_mb)
+    return min(max(2.0 * expected, MIN_LIMIT_MB), top)
 
 
 class Slot:
@@ -69,7 +72,7 @@ class Slot:
 
     def give(self, item: dict, free_at_claim: float) -> None:
         exp = float(item.get("expected_peak_mb") or 1000.0)
-        self.run = Running(item, exp, hard_limit(exp, self.w.total_mb), free_at_claim)
+        self.run = Running(item, exp, hard_limit(exp, self.w.total_mb, self.w.budget_mb), free_at_claim)
         self.q.put(item)
 
     def abort(self, why: str) -> None:

@@ -273,6 +273,20 @@ def test_memory_admission_and_heavy_slots(pool):
     assert got and got[0]["expected_peak_mb"] == pytest.approx(2400.0)  # 1.2 x the peak measured on the case
 
 
+def test_an_expected_peak_past_every_budget_is_capped_not_queued_for_ever(pool):
+    submit(pool, strategies="s1", cases="big")
+    w = FakeWorker(pool, free_mb=60000, heavy_free=2)                     # mem_total 63000: biggest budget 53550
+    w.heartbeat()
+    it = w.claim()[0]
+    assert w.post(it, outcome="crashed", free=60000, peak=132000.0).json()["retry"] is True
+    it = w.claim()[0]
+    final = w.post(it, outcome="crashed", free=60000, peak=132000.0).json()
+    assert final["result_id"]                                             # a 132 GB peak is now on record for the case
+    submit(pool, strategies="s2", cases="big")
+    got = w.claim()
+    assert got and got[0]["expected_peak_mb"] == pytest.approx(0.9 * 0.85 * 63000)   # not 1.2 x 132 GB, which nobody admits
+
+
 def test_only_main_line_hashes_become_latest(pool):
     jobs.mainline_plan(wait=True)
     main_job = submit(pool, strategies="s1", cases="c1", variants="none")
@@ -357,7 +371,7 @@ def test_bundle_of_the_real_repository(tmp_path, monkeypatch):
     prev = gitcode.resolve("HEAD~1")
     data = gitcode.bundle(head, [prev])
     assert data.startswith(b"# v2 git bundle") or data.startswith(b"# v3 git bundle")
-    assert b"refs/pool/want" in data[:400]
+    assert b" refs/pool/want" in data.split(b"\n\n", 1)[0]                # in the header (after the prerequisites, whose subjects can be long)
     with pytest.raises(ValueError):
         gitcode.bundle("not-a-sha", [])
     assert isinstance(gitcode.dirty(["matrix"], harness=True), list)

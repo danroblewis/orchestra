@@ -13,6 +13,20 @@ RETRY_FACTOR = 1.25        # a crashed item's retry needs this much more memory 
 DEFAULTS = (("heavy", 16000.0), ("realistic", 10000.0), ("physics", 3000.0), ("particles", 3000.0),
             ("canonical", 3000.0), ("real", 3000.0))
 DEFAULT_MB = 1000.0
+CAP_SHARE = 0.9            # no item is expected to need more than this share of the biggest worker's budget
+
+
+def biggest_budget(con: sqlite3.Connection) -> float | None:
+    """The largest budget (MB) any registered worker promises (its heartbeat's budget_mb, else 85% of its memory)."""
+    return con.execute("SELECT MAX(CAST(COALESCE(json_extract(info, '$.budget_mb'), 0.85 * json_extract(info, '$.mem_total_mb')) AS REAL))"
+                       " FROM pool_workers").fetchone()[0]
+
+
+def capped(mb: float, biggest: float | None) -> float:
+    """An expectation no worker could ever admit (a peak recorded by an item killed at a big machine's limit, say)
+    would leave its item queued for ever: it is capped where the biggest worker can take it (and its hard limit
+    stops it there)."""
+    return min(mb, CAP_SHARE * biggest) if biggest else mb
 
 
 class Peaks:

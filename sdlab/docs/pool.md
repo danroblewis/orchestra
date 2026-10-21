@@ -338,8 +338,11 @@ re-installs it from here: the token (`~/.sdlab/pool.token`, 0600), `~/.sdlab/mac
 checkout cloned from the server's bundle (`~/.sdlab/pool/boot`, no remote: no GitHub, no push), its venv,
 and the unit (`scripts/pool/sdlab-pool-worker.service`). The worker then follows the main line's HEAD by
 itself (`self/`). Settings: 23 slots (all cores but one, for the supervisor and the machine's other
-work), `--max-mem-gb 50`, `--heavy-slots 2`, nice 19, and a cgroup ceiling for the whole service
-(`MemoryHigh=53G`, `MemoryMax=55G`): past it the kernel kills an item, which is posted as crashed. Change
+work), `--max-mem-gb 44`, `--heavy-slots 2`, nice 19, and a cgroup ceiling for the whole service
+(`MemoryHigh=47G`, `MemoryMax=49G`, `OOMPolicy=continue`), under what node2's other programs leave (they
+hold ~9 GB of its 62.7 GiB, and it has no swap): past it the kernel kills an item (items run with
+`oom_score_adj` 1000, so they go first), which is posted as crashed; the other slots carry on. Each item's
+hard limit is twice its expected peak, at least 4 GB, at most half the machine or the worker's budget. Change
 them with `SLOTS=.. MEMGB=.. HEAVY=.. sh scripts/pool/install-node2.sh`.
 
     ssh ubuntu@10.198.1.109 systemctl --user status sdlab-pool-worker     # or: journalctl --user -u sdlab-pool-worker

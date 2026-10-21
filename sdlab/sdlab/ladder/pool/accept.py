@@ -117,10 +117,7 @@ def _crashed(con, it, mine: bool, body, worker, machine, slot, peak, free) -> in
     if it["crashes"] + 1 < CRASH_LIMIT:
         if mine:
             need = max(it["min_free_mb"] or 0, (free or 0) * RETRY_FACTOR, (peak or 0) * RETRY_FACTOR)
-            cap = con.execute("SELECT MAX(CAST(COALESCE(json_extract(info, '$.budget_mb'), 0.85 * json_extract(info, '$.mem_total_mb')) AS REAL))"
-                              " FROM pool_workers").fetchone()[0]
-            if cap:
-                need = min(need, 0.9 * cap)                    # never more than the biggest worker can promise (its budget)
+            need = memory.capped(need, memory.biggest_budget(con))   # never more than the biggest worker can promise
             con.execute("UPDATE pool_items SET state = 'queued', crashes = crashes + 1, lease_id = NULL, worker = NULL, min_free_mb = ?,"
                         " error = ? WHERE id = ?", (need or None, err, it["id"]))
             jobs.settle(con, it["job_id"])

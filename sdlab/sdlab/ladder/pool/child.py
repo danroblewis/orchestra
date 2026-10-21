@@ -43,6 +43,11 @@ def _orphan():
         if os.getppid() != _ppid:
             os._exit(3)
 threading.Thread(target=_orphan, daemon=True).start()
+try:                                       # Linux: under memory pressure the kernel kills an item, never the supervisor
+    with open("/proc/self/oom_score_adj", "w") as f:   # or the machine's other programs (node2 runs the user's other projects)
+        f.write("1000")
+except OSError:
+    pass
 from sdlab.ladder import runner, store
 LINUX = sys.platform.startswith("linux")
 def _status(key):

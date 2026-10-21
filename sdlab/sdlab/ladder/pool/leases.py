@@ -77,6 +77,7 @@ def claim(body: dict) -> dict:
         if not slots:
             return {"lease_seconds": LEASE_SECONDS, "items": []}
         peaks = memory.Peaks(con)
+        biggest = memory.biggest_budget(con)
         prefer = f" (j.commit_sha IN ({','.join('?' * len(have))})) DESC," if have else ""
         rows = con.execute("SELECT i.*, j.commit_sha AS commit_sha, j.priority AS priority FROM pool_items i JOIN pool_jobs j ON j.id = i.job_id"
                            " WHERE i.state = 'queued' AND j.state IN ('queued', 'running')"
@@ -92,6 +93,7 @@ def claim(body: dict) -> dict:
                 if free < r["min_free_mb"]:
                     continue                                   # a crashed item: only where there is more memory than where it crashed
                 exp = max(exp, r["min_free_mb"] / memory.RETRY_FACTOR)   # and expected to need it (its hard limit follows)
+            exp = memory.capped(exp, biggest)
             if exp + memory.MARGIN_MB > left:
                 continue
             if r["heavy"] and heavy_free <= 0:

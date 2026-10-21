@@ -3,12 +3,13 @@
 # "Deployment"): the token, a boot checkout cloned from the server's bundle (no GitHub, no push), its
 # venv, and the systemd --user service. Code updates need nothing from here: the worker follows the
 # main line's HEAD itself.
-#   sh scripts/pool/install-node2.sh            (SLOTS=23 MEMGB=50 HEAVY=2 HIGHGB=53 MAXGB=55 by default)
+#   sh scripts/pool/install-node2.sh            (SLOTS=23 MEMGB=44 HEAVY=2 HIGHGB=47 MAXGB=49 by default:
+#   node2's other programs hold ~9 GB of its 62.7 GiB and it has no swap, so the ceiling stays under the rest)
 set -e
 cd "$(dirname "$0")/../.." || exit 1
 HOST=${NODE2_SSH:-ubuntu@10.198.1.109}
 SERVER=${POOL_SERVER:-http://10.198.1.131:8020}
-SLOTS=${SLOTS:-23} MEMGB=${MEMGB:-50} HEAVY=${HEAVY:-2} HIGHGB=${HIGHGB:-53} MAXGB=${MAXGB:-55}
+SLOTS=${SLOTS:-23} MEMGB=${MEMGB:-44} HEAVY=${HEAVY:-2} HIGHGB=${HIGHGB:-47} MAXGB=${MAXGB:-49}
 HEAD=$(git rev-parse sdlab)
 r() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$HOST" "$@"; }
 r 'mkdir -p ~/.sdlab/pool && chmod 700 ~/.sdlab && umask 077 && cat > ~/.sdlab/pool.token && chmod 600 ~/.sdlab/pool.token && echo node2 > ~/.sdlab/machine' < ~/.sdlab/pool.token

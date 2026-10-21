@@ -96,6 +96,7 @@ def test_the_hard_limit_and_the_watchdog():
     assert slot.hard_limit(1000, 64000) == 4096                        # at least 4 GB
     assert slot.hard_limit(10000, 64000) == 20000                      # twice the expected peak
     assert slot.hard_limit(40000, 64000) == 32000                      # at most half the machine
+    assert slot.hard_limit(80000, 262144, 98304) == 98304              # and never past the worker's budget
     s = object.__new__(slot.Slot)
     r = slot.Running({"item_id": 1}, 1000, 4096, 30000)
     assert s._watch(r, 4000, 600) is None
@@ -175,7 +176,7 @@ class SlotHost:
     """What a slot needs of its worker."""
 
     def __init__(self, tmp):
-        self.home, self.total_mb, self.name, self.machine = tmp, 64000.0, "w", "m"
+        self.home, self.total_mb, self.budget_mb, self.name, self.machine = tmp, 64000.0, 54400.0, "w", "m"
         self.posts, self.released = [], []
         self.child = None
         self.sampler = SimpleNamespace(get=lambda pid: (self.child.rss, self.child.rss), reset_high=lambda pid: None,

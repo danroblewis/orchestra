@@ -22,10 +22,14 @@ RestartSec=30
 # SIGTERM to the supervisor only: it lets running items finish (--grace 600 s), then kills and releases them
 KillMode=mixed
 TimeoutStopSec=700
-# a hard ceiling for the whole pool (items included), under node2's 62 GB: past it the kernel kills an
-# item, which the slot posts as crashed (retried once where there is more memory)
+# a hard ceiling for the whole pool (items included), under what node2's other programs leave of its
+# 62.7 GiB (no swap): past it the kernel kills an item (items run with oom_score_adj 1000, so they go
+# before the supervisor or the user's other work), which the slot posts as crashed (retried once where
+# there is more memory). OOMPolicy=continue: one item killed does not stop the other slots (systemd's
+# default, stop, would stop the whole service and every running item with it).
 MemoryHigh=@HIGHGB@G
 MemoryMax=@MAXGB@G
+OOMPolicy=continue
 
 [Install]
 WantedBy=default.target
