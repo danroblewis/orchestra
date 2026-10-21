@@ -54,7 +54,7 @@ class Column:
 
 
 def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, scale: np.ndarray, T: int,
-          claim: bool, time_limit: float, gap: float, start: list | None = None) -> dict:
+          claim: bool, time_limit: float, gap: float, start: list | None = None, near: int | None = None) -> dict:
     """The program on steps K (dy: stocks x every step; scale: stocks x K); the chosen columns with
     their numbers, and the solver's report."""
     S, nK, nc = len(ids), len(K), len(cols)
@@ -104,6 +104,13 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
             R += [np.array([r, r])]; C += [np.array([j, c.base])]; V += [np.array([1.0, 1.0])]
             rlo.append([0.0]); rhi.append([INF])
             r += 1
+    # local branching (Fischetti and Lodi 2003): at most `near` switches flipped from the start's
+    if start and near is not None:
+        centre = {(c.src, c.dst, c.what) for c, _ in start}
+        on = np.array([(c.src, c.dst, c.what) in centre for c in cols])
+        R.append(np.full(nc, r)); C.append(o_z + np.arange(nc)); V.append(np.where(on, -1.0, 1.0))
+        rlo.append([-INF]); rhi.append([float(near - on.sum())])
+        r += 1
     # z <= its claim
     for j, c in enumerate(cols):
         if c.claim in cl:
@@ -132,7 +139,7 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     lp.a_matrix_.num_col_, lp.a_matrix_.num_row_ = ncol, r
     lp.integrality_ = [highspy.HighsVarType.kInteger if i else highspy.HighsVarType.kContinuous for i in integ]
     h = highspy.Highs()
-    h.setOptionValue("output_flag", False)
+    h.setOptionValue("output_flag", bool(__import__("os").environ.get("MILP_HIGHS_LOG")))
     h.setOptionValue("threads", 1)
     h.setOptionValue("random_seed", 0)
     h.setOptionValue("time_limit", float(time_limit))

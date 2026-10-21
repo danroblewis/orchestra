@@ -25,6 +25,7 @@ from .steps import Steps
 __all__ = ["identify"]
 
 EXACT = 10.0          # a structure leaving every stock's mean misfit within this many floors explains the data exactly
+NEAR = 6              # after the first solve, each solve searches within this many switches of its start (local branching)
 SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
 SAMPLE = 150          # steps the program reads (evenly spaced over the run when it is longer)
 PASSES = 4            # program solves at most (each re-estimates the noise scales and offers MINs on the flows found)
@@ -189,7 +190,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     offer: list = []                       # MIN flows offered: on the flows the last solve chose (none at first)
     for _ in range(PASSES):
         cols = candidates.columns(st, terms, offer, bd.claim(), zoom)
-        sol = program.solve(st.ids, st.dy, cols, K, scale[:, K], st.T, bd.claim(), TIME_LIMIT, GAP, start)
+        sol = program.solve(st.ids, st.dy, cols, K, scale[:, K], st.T, bd.claim(), TIME_LIMIT, GAP, start,
+                            NEAR if start else None)
         solves.append(sol["report"])
         if not sol["report"]["found"]:
             break
