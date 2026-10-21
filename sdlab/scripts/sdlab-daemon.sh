@@ -24,7 +24,7 @@ while true; do
     nohup uv run --directory "$PWD" sdlab --port 8020 --host 0.0.0.0 >> ~/.sdlab/server.log 2>&1 &   # every interface: the pool's workers (docs/pool.md)
     sleep 20
   fi
-  if [ ! -e ~/.sdlab/pool-worker.paused ] && ! pgrep -f "sdlab.ladder worker" >/dev/null; then
+  if [ ! -e ~/.sdlab/pool-worker.paused ] && ! pgrep -f "[s]dlab.ladder worker" >/dev/null; then
     echo "$(date '+%F %T') pool worker down: starting it ($SLOTS slots)"
     nohup uv run --directory "$PWD" sdlab-ladder worker --server http://127.0.0.1:8020 --slots "$SLOTS" --min-slots 2 \
       --max-mem-gb 96 --heavy-slots 2 --yield-load 24 --nice 19 --machine mac --home ~/.sdlab/pool/worker \

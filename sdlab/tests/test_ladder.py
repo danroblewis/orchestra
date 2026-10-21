@@ -208,33 +208,34 @@ def fake_row(item, status="pass"):
 
 
 def test_sync_reruns_exactly_the_stale_pairs(two_cases, monkeypatch):
+    # every variant: this test is about staleness; none-long confirming none-short is tests/test_ladder_confirm_long.py
     strategies = [{"name": "matrix", "hash": "m1"}, {"name": "other", "hash": "o1"}]
-    first = runner.plan(casemod.case_ids(), strategies)
+    first = runner.plan(casemod.case_ids(), strategies, every_variant=True)
     assert len(first) == 2 * 4 * 2 and {i["reason"] for i in first} == {"new"}
     for it in first:
         store.record(fake_row(it))
-    assert runner.plan(casemod.case_ids(), strategies) == []
+    assert runner.plan(casemod.case_ids(), strategies, every_variant=True) == []
 
     # a case changes: its 8 pairs (4 variants x 2 strategies) run again, nothing else
     p = two_cases / "003-chain-2.json"
     spec = json.loads(p.read_text())
     spec["model"]["flows"][1]["rate"]["k"] = 0.4
     p.write_text(json.dumps(spec))
-    again = runner.plan(casemod.case_ids(), strategies)
+    again = runner.plan(casemod.case_ids(), strategies, every_variant=True)
     assert {(i["case"], i["reason"]) for i in again} == {("003-chain-2", "case changed")} and len(again) == 8
     for it in again:
         store.record(fake_row(it))
 
     # a strategy changes: its pairs only; a new strategy: all of its pairs
     strategies = [{"name": "matrix", "hash": "m2"}, {"name": "other", "hash": "o1"}, {"name": "new", "hash": "n1"}]
-    again = runner.plan(casemod.case_ids(), strategies)
+    again = runner.plan(casemod.case_ids(), strategies, every_variant=True)
     assert {(i["strategy"], i["reason"]) for i in again} == {("matrix", "strategy changed"), ("new", "new")} and len(again) == 16
     for it in again:
         store.record(fake_row(it))
 
     # the scorer changes: everything is re-scored (discovery is not run again)
     monkeypatch.setattr(score, "score_hash", lambda: "another")
-    again = runner.plan(casemod.case_ids(), strategies)
+    again = runner.plan(casemod.case_ids(), strategies, every_variant=True)
     assert len(again) == 2 * 4 * 3 and {i["mode"] for i in again} == {"rescore"}
 
     # history is kept; one latest per key
