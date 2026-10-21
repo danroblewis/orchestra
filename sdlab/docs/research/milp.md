@@ -110,6 +110,10 @@ with an `id`; an era-dependent flow has `byTime` segments.
 
 ## Results
 
+Note: commit 96e69c0 (another agent, 2026-10-21 00:39) added `counter.py` (counters fitted in level
+space where their changes show measurement error, aimed at 306 meas) to this package; it is part of the
+code measured below, and its effect was not measured separately here.
+
 All numbers from pool jobs at commit 1ba6519 (2026-10-21): `uv run sdlab-ladder job 193 --json`
 (300-312, 027 and 048, every variant) and `uv run sdlab-ladder job 192 --json` (the Tests set: every
 numbered case, `--cases 0,1,2,3`, long variants only where the short one passed). The paired
