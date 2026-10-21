@@ -64,6 +64,7 @@ import z3
 FLOAT_SLACK = 1e-9            # of the largest level: the engine's float arithmetic
 NORM_MARGIN = 2.0             # the tolerance allows twice the least-squares row's sum of |numbers| on levels
 INPUT_DIGITS = 9              # measured inputs are read to this many significant digits (their rounding joins the tolerance)
+MAX_TERMS = 600               # a class with more candidate terms is not searched (its LPs alone take minutes)
 MAX_DECIMALS = 9              # more decimals than this: raw floats (h from FLOAT_SLACK alone)
 
 
@@ -288,12 +289,12 @@ def _floats(p: Problem):
 BOUND_WIDEN = 1e-7            # the LP bounds are widened by this (relative, + absolute on the scale of 1), far above float error
 
 
-def net_bounds(p: Problem) -> dict[tuple[int, int], tuple[float | None, float | None]]:
+def net_bounds(p: Problem, deadline: float | None = None) -> dict[tuple[int, int], tuple[float | None, float | None]]:
     """Per (stock row, column), the interval its net number must lie in for the row to fit every step
     within its tolerance (two LPs each, HiGHS, widened by BOUND_WIDEN); None for an unbounded side
     (columns collinear to the data's precision). Implied by the fit, so adding them as constraints cuts
     the search without changing what fits; a pair whose interval excludes 0 is forced (some term must
-    reach it)."""
+    reach it). Past the deadline (time.perf_counter()) the rest are left out: they only speed the search."""
     from scipy.optimize import linprog
     if not p.steps:
         return {}
@@ -305,6 +306,8 @@ def net_bounds(p: Problem) -> dict[tuple[int, int], tuple[float | None, float | 
         A = np.vstack([X, -X])
         b = np.concatenate([Y[r] + eps, -Y[r] + eps])
         for c in range(J):
+            if deadline is not None and time.perf_counter() > deadline:
+                return out
             got = []
             for sign in (1.0, -1.0):
                 cost = np.zeros(J)
@@ -351,10 +354,10 @@ class Search:
         self.forced: list = []
         self.rows: set = set()
 
-    def add_bounds(self) -> None:
+    def add_bounds(self, deadline: float | None = None) -> None:
         """The implied bounds of the net numbers (net_bounds) and the forced terms, as constraints."""
         p = self.p
-        self.bounds = net_bounds(p)
+        self.bounds = net_bounds(p, deadline)
         for (r, c), (lo, hi) in self.bounds.items():
             parts = [(m, sg) for m, t in enumerate(p.terms) if t.col == c and (sg := _contrib(p, t, p.ids[r]))]
             net = z3.Sum([self.k[m] if sg > 0 else -self.k[m] for m, sg in parts]) if parts else z3.RealVal(0)
@@ -472,6 +475,8 @@ def enumerate_structures(p: Problem, slack: int = 1, cap: int = 20, budget: floa
     out = {"structures": [], "k_min": None, "checks": 0, "complete": False}
     if p.steps < 3:
         return {**out, "status": "unknown (too few steps)", "seconds": 0.0}
+    if len(p.terms) > MAX_TERMS:
+        return {**out, "status": f"unknown (too large: {len(p.terms)} terms)", "seconds": 0.0}
     deadline = began + budget
     sr = Search(p)
     out["build_seconds"] = round(time.perf_counter() - began, 3)
@@ -481,7 +486,7 @@ def enumerate_structures(p: Problem, slack: int = 1, cap: int = 20, budget: floa
         # every structure is a subset of all the terms (the others at 0): if all of them cannot fit, nothing can
         return {**out, "status": "outside the class", "seconds": round(time.perf_counter() - began, 3), "complete": True,
                 "verifies": sr.verifies, "rejected": sr.rejected, "undecided": sr.undecided}
-    sr.add_bounds()
+    sr.add_bounds(began + budget / 3)
     k = 0
     while k <= top:
         if left() <= 0:
