@@ -34,9 +34,9 @@ def test_atoms_inside_the_declared_boundary():
     test = bd.inside(bd.Boundary(DECLARED), ["A", "B"], n_inputs=1)
     assert test(Atom("in", dst=0)) and test(Atom("move", src=0, dst=1, driver=0)) and test(Atom("out", src=1, driver=1))
     assert not test(Atom("in", dst=1)) and not test(Atom("out", src=0, driver=0)) and not test(Atom("gap", dst=1, driver=0))
-    assert not test(Atom("link", dst=0, driver=2))          # row 2 is the measured input: A's inflow is declared "estimate"
+    assert test(Atom("link", dst=0, driver=2))              # row 2 is the measured input: an estimate side may read it (728efec)
     assert test(Atom("link", dst=0, driver=1)) and test(Atom("link", dst=0, driver=7))   # a stock's or a stage's virtual row
-    assert not test(Atom("drain", src=1, driver=2)) and not test(Atom("grow", dst=1, driver=1))
+    assert test(Atom("drain", src=1, driver=2)) and not test(Atom("grow", dst=1, driver=1))   # B's estimate outflow may read u (208's = demand)
     assert bd.inside(bd.Boundary({}), ["A", "B"], 1) is None   # nothing declared: lna's search unchanged
 
 

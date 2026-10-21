@@ -72,7 +72,7 @@ def test_lna_atoms_only_on_declared_sides(name):
     assert allow(Atom("in", dst=0)) and not allow(Atom("in", dst=1))
     assert not allow(Atom("out", src=0, driver=0)) and allow(Atom("out", src=1, driver=1))
     assert allow(Atom("move", src=0, dst=1, driver=0))
-    assert not allow(Atom("link", dst=0, driver=2))          # A's inflow is "estimate", not "measured"
+    assert allow(Atom("link", dst=0, driver=2))              # an estimate side may read a measured input (728efec)
     assert bd.atom_rule({}, ["A", "B"], 1) is None           # nothing declared: every atom offered
 
 

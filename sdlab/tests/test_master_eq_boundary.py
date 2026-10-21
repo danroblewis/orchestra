@@ -28,7 +28,8 @@ def _counted(T_: int = 600, seed: int = 0) -> dict:
 def test_pool_holds_only_declared_outside_terms():
     pool = T.inside(T.conservative(2, 1, ["x", "x"]) + T.extras(2, ["x", "x"], True), bd.Boundary(DECLARED), ["A", "B"])
     sides = {(s, side, kind) for t in pool for s, side, kind in T.outside_sides(t)}
-    assert sides == {(0, "in", "estimate"), (1, "out", "estimate")}
+    assert sides <= {(0, "in", "estimate"), (0, "in", "measured"), (1, "out", "estimate")}   # an estimate side may read inputs
+    assert {(0, "in", "estimate"), (1, "out", "estimate")} <= sides
     assert any(t.kind == "move" and (t.src, t.dst) == (0, 1) for t in pool)
     every = T.conservative(2, 1, ["x", "x"])
     assert T.inside(every, bd.Boundary({}), ["A", "B"]) == every

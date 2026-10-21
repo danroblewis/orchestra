@@ -90,7 +90,8 @@ def test_exact_data_walk_to_the_plainest_exact_set():
     for case_id in ("032-three-chains-of-three", "034-identical-twins", "038-identical-twin-chains"):
         _, s0 = ladder(case_id, "none-long", "matrix")
         _, s = ladder(case_id, "none-long", "matrix_v2", exact=True)
-        assert s0["status"] == "fail" and s["status"] == "pass", case_id
+        # matrix passes 032 too since its boundary.py lost the self-move (the fix matrix_v2's copy made first)
+        assert (s0["status"] == "fail" or case_id.startswith("032")) and s["status"] == "pass", case_id
 
 
 def test_products_offered_to_the_finished_row_keep_the_chains():

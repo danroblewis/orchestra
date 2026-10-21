@@ -72,7 +72,9 @@ class Boundary:
 
     def may(self, stock: str, side: str, kind: str | None = None) -> bool:
         k = self.kinds(stock, side)
-        return bool(k) if kind is None else kind in k
+        # (fix, as 728efec) a side declared "estimate" may hold any outside flow (its form is to be found and
+        # may read a measured input); a side declared only "measured" holds only inflows reading inputs
+        return bool(k) if kind in (None, "measured") else kind in k
 
     # what a row regression (one stock's change on the levels, inputs and an outside inflow) may hold
     def pieces_ok(self, stock: str) -> bool:
@@ -81,7 +83,7 @@ class Boundary:
 
     def inputs_ok(self, stock: str) -> bool:
         """A measured input's column (positive: an inflow reading it, negative: an outflow)."""
-        return self.may(stock, "in", "measured") or self.may(stock, "out", "measured")
+        return self.may(stock, "in") or self.may(stock, "out")   # (fix, 728efec) wherever an outside flow is declared
 
     def links_ok(self, stock: str) -> bool:
         """A column of a stock of another unit (a link from outside, or a drain to outside, reading it)."""
@@ -108,7 +110,14 @@ def _rate_stocks(f: dict) -> set:
 
 def kind_of(f: dict, inputs: set) -> str:
     """"measured" for an outside flow that reads a measured input, else "estimate"."""
-    return "measured" if f.get("input") or _rate_stocks(f) & inputs else "estimate"
+    # (fix, as 728efec) as the cases declare kinds: "measured" only for an outside inflow whose rate reads
+    # only measured inputs; "estimate" for outflows and for inflows that read a stock, a constant or pieces
+    if f.get("from") is not None or f.get("inflow"):
+        return "estimate"
+    reads = _rate_stocks(f) | ({f["input"]} if f.get("input") else set())
+    r = f.get("rate") or {}
+    const = r.get("form") == "constant" or bool(r.get("c"))
+    return "measured" if reads and reads <= set(inputs) and not const else "estimate"
 
 
 def ends(flows: list[dict], ids: list[str]) -> list[list[tuple[str, str]]]:
@@ -448,7 +457,8 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
     if B in data.ids and A is None:
         for j, g in enumerate(flows):
             S = g.get("from")
-            if j == i or S not in data.ids or S in final or g.get("to") is not None or g.get("inflow") or not _same_unit(stocks, S, B):
+            # (fix, as d5cd56a / ca00790) S == B is no move: B's own drain "moved" into B would only delete it
+            if j == i or S == B or S not in data.ids or S in final or g.get("to") is not None or g.get("inflow") or not _same_unit(stocks, S, B):
                 continue
             moved = copy.deepcopy(flows)
             moved[j]["to"] = B
