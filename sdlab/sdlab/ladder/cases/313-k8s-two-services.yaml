@@ -25,5 +25,5 @@ flows:
 variants:
   noise: [none, counts, meas]
 boundary:
-  frontend_queue: {in: measured}
+  frontend_queue: {in: input}
   catalog_queue: {in: estimate}

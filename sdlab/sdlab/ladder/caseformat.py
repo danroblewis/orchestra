@@ -57,7 +57,8 @@ Added on 2026-10-20 (the user: outside flows are a modelling decision; docs/LADD
 
     boundary:                                # the model boundary, announced to discovery: per measured stock
       A: {in: measured, out: estimate}       #   its outside inflows and outflows, each "measured" (driven by a
-      B: {out: [estimate, estimate]}         #   measured input) or "estimate" (form and rate to estimate)
+      B: {out: [estimate, estimate]}         #   measured input) or "estimate" (form and rate to estimate), or
+      C: {in: input}                         #   (2026-10-21) "input": the inflow IS a measured input, exactly 1 x it
                                              # stocks not listed have none; `boundary: {}` declares none at all;
                                              # no boundary key: undeclared (outside flows are boundary claims)
 
@@ -973,7 +974,8 @@ def compile_case(text: str, name: str = "<case>") -> dict:
     return _plain(out)
 
 
-BOUNDARY_KINDS = ("measured", "estimate")       # driven by a measured input series / exists, form and rate to estimate
+BOUNDARY_KINDS = ("measured", "estimate", "input")   # driven by a measured input series / exists, form and rate to estimate /
+# (2026-10-21, the user) the inflow IS a measured input series: exactly 1 x one input, no constant, never rescaled
 
 
 def boundary_spec(raw, where: str = "boundary") -> dict:
@@ -984,7 +986,7 @@ def boundary_spec(raw, where: str = "boundary") -> dict:
     if raw is None or raw == "none":
         return {}
     if not isinstance(raw, dict):
-        raise CaseError(f"{where}: boundary is a mapping of stock to {{in: kinds, out: kinds}} (kinds: measured, estimate), or {{}} for none")
+        raise CaseError(f"{where}: boundary is a mapping of stock to {{in: kinds, out: kinds}} (kinds: measured, estimate, input), or {{}} for none")
     out = {}
     for stock, v in raw.items():
         at = f"{where.split(':')[0]}:{raw.lines.get(stock)}" if isinstance(raw, _Map) and raw.lines.get(stock) else where
@@ -993,13 +995,13 @@ def boundary_spec(raw, where: str = "boundary") -> dict:
         if v is None or v == "none":
             v = {}
         if not isinstance(v, dict) or set(v) - {"in", "out"}:
-            raise CaseError(f"{at}: boundary of {stock}: {{in: kinds, out: kinds}} (kinds: measured, estimate)")
+            raise CaseError(f"{at}: boundary of {stock}: {{in: kinds, out: kinds}} (kinds: measured, estimate, input)")
         entry = {}
         for side in ("in", "out"):
             kinds = v.get(side) or []
             kinds = [kinds] if isinstance(kinds, str) else kinds
             if not isinstance(kinds, list) or any(k not in BOUNDARY_KINDS for k in kinds):
-                raise CaseError(f"{at}: boundary of {stock}: {side} is a kind or a list of kinds (measured, estimate), not {v.get(side)!r}")
+                raise CaseError(f"{at}: boundary of {stock}: {side} is a kind or a list of kinds (measured, estimate, input), not {v.get(side)!r}")
             entry[side] = list(kinds)
         if entry["in"] or entry["out"]:
             out[stock] = entry
@@ -1024,7 +1026,32 @@ def boundary_problems(boundary: dict, model: dict) -> list[str]:
                 problems.append(f"boundary: {s} declares an outside {'inflow' if side == 'in' else 'outflow'} the model does not have")
     if any("measured" in e.get(side, []) for e in boundary.values() for side in ("in", "out")) and not model.get("inputs"):
         problems.append("boundary: a 'measured' outside flow needs a measured input (inputs:)")
+    for s, e in boundary.items():                                   # (2026-10-21) an "input" inflow is exactly 1 x one input
+        if "input" in (e.get("out") or []):
+            problems.append(f"boundary: {s}: 'input' is a kind of outside inflow, not outflow")
+        n = (e.get("in") or []).count("input")
+        if n and n > len(input_inflows(model, s)):
+            problems.append(f"boundary: {s} declares {n} 'input' inflow(s); the model has {len(input_inflows(model, s))} "
+                            "outside inflow(s) into it that are exactly 1 x a measured input")
     return problems
+
+
+def input_inflows(model: dict, stock: str) -> list[dict]:
+    """The model's outside inflows straight into this stock whose rate is exactly 1 x one measured input
+    (a proportional rate with k 1, or a linear one with no constant and one term of k 1), with no effects,
+    co-flows or era rates: what the boundary kind "input" declares (2026-10-21, the user)."""
+    inputs = set(model.get("inputs") or {})
+    changed = {fid for ch in (model.get("schedule") or {}).get("changes") or [] for fid in (ch.get("set") or {})}
+    out = []
+    for f in model.get("flows") or []:
+        if f.get("from") or f.get("to") != stock or f.get("effects") or f.get("uses") or f.get("id") in changed:
+            continue
+        r = f.get("rate") or {}
+        terms = [{"stock": r.get("stock"), "k": r.get("k")}] if r.get("form") == "proportional" else \
+            (r.get("terms") or []) if r.get("form") == "linear" and not r.get("c") else []
+        if len(terms) == 1 and terms[0].get("stock") in inputs and float(terms[0].get("k") or 0) == 1.0:
+            out.append(f)
+    return out
 
 
 def _check_names(text, readable: set[str], where: str) -> str:

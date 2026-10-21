@@ -21,4 +21,4 @@ flows:
     exact: true
 boundary:
   T: {in: [estimate, measured], out: estimate}
-  I: {in: measured, out: estimate}
+  I: {in: input, out: estimate}

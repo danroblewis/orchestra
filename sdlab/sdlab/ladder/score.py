@@ -62,7 +62,11 @@ side the boundary does not have is a spurious part of kind "invented boundary", 
 (only an exactly zero one is not), and so is an outside flow that reaches a measured stock through the
 found model's own unmeasured stocks. The result fails (never equivalent: "A -> outside" plus
 "outside -> B" is not the move A -> B) with the note "invented boundary: ...". Declared outside flows
-are scored as before; a case with no boundary is scored exactly as before.
+are scored as before; a case with no boundary is scored exactly as before. Since 2026-10-21 (the user):
+a declared side holds at most as many found outside flows as it declares (after same-pair flows are
+merged; a second one is an "invented boundary"), and a side declared "input" (the inflow IS a measured
+series) must be fed by exactly 1 x the input, with no extra term or constant where every inflow it
+declares is an input; otherwise the result fails with the note "input altered" (never equivalent).
 
 **Behaviour.** skill@20 and skill@100 (sdlab/skill.py) on the run discovery saw and on a fresh run
 (another seed), each with a 95% bootstrap interval over the start moments. Only the truth's truly
@@ -313,6 +317,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     boundary = case.get("boundary")                                # declared (2026-10-20): outside flows only where it has them
     declared = None if boundary is None else {(st, side) for st, e in boundary.items() for side in ("in", "out") if e.get(side)}
     invented: set[tuple[str, str]] = set()
+    altered: list[tuple[str, str]] = []
     for k in found_keys:
         if k in true_keys or (k[0] in ("flow", "uses", "effect") and (k[1], k[2]) in loose):
             continue
@@ -340,10 +345,27 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
                              "kind": "invented boundary", "value": None, "size": None})
         notes += [f"invented boundary: an outside {'inflow to' if side == 'in' else 'outflow from'} {st}, which the case's boundary does not have"
                   for st, side in sorted(invented)]
+        # (2026-10-21, the user) one found outside flow per declared flow: a second one on a declared side is invented
+        internal = [f for f in found_flows if f.get("from") and f.get("to")]
+        count: dict = {}
+        for f in found_flows:
+            if bool(f.get("from")) != bool(f.get("to")):
+                for end in outside_ends([f] + internal, measured):
+                    count[end] = count.get(end, 0) + 1
+        for (st, side), n in sorted(count.items()):
+            allowed = len((boundary.get(st) or {}).get(side) or [])
+            if allowed and n > allowed and (st, side) not in invented:
+                invented.add((st, side))
+                spurious.append({"key": f"{n} outside {'inflows to' if side == 'in' else 'outflows from'} {st}", "kind": "invented boundary",
+                                 "value": None, "size": None})
+                notes.append(f"invented boundary: {n} outside {'inflows to' if side == 'in' else 'outflows from'} {st}, which the case's "
+                             f"boundary declares {allowed} of (one flow per declared side)")
+        altered = _input_altered(boundary, truth_model, true_w, found_w, inputs)
+        notes += [f"input altered: the outside inflow to {st} {why}" for st, why in altered]
     big_found = [k for k in found_keys if k in true_keys] + [e for e in spurious]
     recall = sum(r["found"] for r in rows) / len(rows) if rows else 1.0
     precision = (sum(1 for k in found_keys if k in true_keys) / len(big_found)) if big_found else (1.0 if not rows else 0.0)
-    passed = all(r["ok"] for r in rows) and not spurious
+    passed = all(r["ok"] for r in rows) and not spurious and not altered
     equivalent = False
     if not passed and effect_ends and not any(k[0] == "hidden" for k in true_keys):
         equivalent = _same_function(truth_flows, found_flows, ids, data, tol)
@@ -355,14 +377,62 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             if T is None or F is None or not _same_system(T, F, ids, cols, tol, means, scale, oracle, wins.index(w)):
                 equivalent = False
                 break
-    if invented:                                                   # never equivalent: "A -> outside" + "outside -> B" is not the move A -> B
-        equivalent = False
+    if invented or altered:                                        # never equivalent: "A -> outside" + "outside -> B" is not the move A -> B,
+        equivalent = False                                         # and a rescaled input is not the measured series
     status = "pass" if passed else "equivalent" if equivalent else "fail"
     out = {"status": status, "pass": passed, "equivalent": equivalent, "recall": recall, "precision": precision,
            "right": sum(r["ok"] for r in rows), "of": len(rows), "parts": rows, "spurious": spurious, "negligible": extra,
            "windows": len(wins), "tolerance": tol, "scale": scale, "notes": sorted(set(notes))}
     if declared is not None:                                       # an undeclared case's scores are as before
         out.update(boundary_declared=True, invented_boundary=len(invented))
+        if altered:
+            out["input_altered"] = len(altered)
+    return out
+
+
+INPUT_REL = 1e-6       # an "input" inflow's gain is 1 up to float rounding (2026-10-21, the user)
+
+
+def own_gain(truth_model: dict, stock: str, name: str) -> float:
+    """What the truth's input inflows into stock carry of input name per unit of it (their count)."""
+    from .caseformat import input_inflows
+    return float(sum(1 for f in input_inflows(truth_model, stock)
+                     if ((f.get("rate") or {}).get("stock") or ((f.get("rate") or {}).get("terms") or [{}])[0].get("stock")) == name))
+
+
+def _input_altered(boundary: dict, truth_model: dict, true_w: list[dict], found_w: list[dict], inputs: set) -> list[tuple[str, str]]:
+    """(2026-10-21, the user) A side declared "input" is fed by the measured series itself, exactly 1 x it:
+    per such stock, the found model's gain on the input of each of the truth's "input" inflows there must
+    equal the truth's (1) within INPUT_REL in every window (an input another true inflow on the side reads
+    too is left to the ordinary tolerance), and, where every inflow declared on the side is an "input",
+    the found inflows there may hold nothing else (no constant, piece, other term, effect or co-flow).
+    Returns [(stock, why)] for the sides that break it."""
+    from .caseformat import input_inflows
+    out = []
+    for st, e in sorted(boundary.items()):
+        kinds = e.get("in") or []
+        if "input" not in kinds:
+            continue
+        only = all(k == "input" for k in kinds)
+        own = {(f.get("rate") or {}).get("stock") or ((f.get("rate") or {}).get("terms") or [{}])[0].get("stock") for f in input_inflows(truth_model, st)}
+        why = None
+        for tp, fp in zip(true_w, found_w):
+            gains = {k: v for k, v in tp.items() if k[0] == "flow" and k[1] is None and k[2] == st and k[3] in inputs & own
+                     and abs(float(v) - own_gain(truth_model, st, k[3])) <= 1e-12}
+            for k, v in gains.items():
+                got = fp.get(k)
+                if got is None or abs(float(got) - float(v)) > INPUT_REL * max(1.0, abs(float(v))):
+                    why = f"reads {k[3]} x {got if got is None else f'{float(got):.6g}'}, not x {float(v):.6g}"
+                    break
+            if why is None and only:
+                extra = [k for k, v in fp.items() if outside_end(k) == (st, "in") and k not in gains
+                         and not (isinstance(v, (int, float)) and abs(float(v)) <= 1e-12)]
+                if extra:
+                    why = f"has {label(extra[0])} beside the input"
+            if why:
+                break
+        if why:
+            out.append((st, why))
     return out
 
 

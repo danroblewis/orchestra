@@ -22,4 +22,4 @@ flows:
 boundary:
   H1: {in: estimate}
   H2: {out: estimate}
-  I: {in: measured, out: estimate}
+  I: {in: input, out: estimate}

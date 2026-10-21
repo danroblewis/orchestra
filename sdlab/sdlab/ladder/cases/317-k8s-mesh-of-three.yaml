@@ -141,7 +141,7 @@ injections:
 variants:
   noise: [none, counts, meas]
 boundary:
-  frontend_queue: {in: measured}
+  frontend_queue: {in: input}
   frontend_retries: {out: estimate}
   frontend_ready: {out: estimate}
   frontend_cpu: {in: estimate, out: estimate}

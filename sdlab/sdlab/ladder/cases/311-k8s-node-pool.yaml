@@ -58,7 +58,7 @@ injections:
   - {t: 1282, stock: pending, amount: 3}
   - {t: 1312, stock: nodes, amount: 1}
 boundary:
-  queue: {in: measured}
+  queue: {in: input}
   retries: {out: estimate}
   ready: {out: estimate}
   cpu: {in: estimate, out: estimate}

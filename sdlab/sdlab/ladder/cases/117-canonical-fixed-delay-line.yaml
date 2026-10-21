@@ -16,5 +16,5 @@ flows:
   Backlog -> Inventory as production_completion: "delay_fixed(0.25 * Backlog, 5, initial=50)"
   Inventory -> outside as shipments: "0.16666666666666666 * Inventory"
 boundary:
-  Backlog: {in: measured}
+  Backlog: {in: input}
   Inventory: {out: estimate}

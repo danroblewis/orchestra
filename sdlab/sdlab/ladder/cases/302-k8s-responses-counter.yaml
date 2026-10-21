@@ -16,4 +16,4 @@ flows:
   queue -> inflight as dispatched: 0.6 * queue
   inflight -> responses_total as completed: 0.5 * inflight
 boundary:
-  queue: {in: measured}
+  queue: {in: input}

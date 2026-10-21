@@ -15,5 +15,5 @@ flows:
   queue -> inflight as dispatched: 0.6 * queue
   inflight -> outside as completed: 0.5 * inflight
 boundary:
-  queue: {in: measured}
+  queue: {in: input}
   inflight: {out: estimate}

@@ -28,7 +28,7 @@ flows:
   outside -> ready as scale_up: {rate: "max(0, min(16, ceil(cpu / 192.5)) - ready)", exact: true}
   ready -> outside as scale_down: {rate: "1 * (ready > max(3, ceil(cpu / 157.5)))", exact: true}
 boundary:
-  queue: {in: measured}
+  queue: {in: input}
   retries: {out: estimate}
   ready: {in: estimate, out: estimate}
   cpu: {in: estimate, out: estimate}

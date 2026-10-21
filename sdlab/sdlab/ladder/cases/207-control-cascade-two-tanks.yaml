@@ -22,6 +22,6 @@ flows:
     rate: 1 * H2
     exact: true
 boundary:
-  H1: {in: [estimate, measured]}
+  H1: {in: [estimate, input]}
   H2: {out: estimate}
-  I: {in: measured, out: estimate}
+  I: {in: input, out: estimate}

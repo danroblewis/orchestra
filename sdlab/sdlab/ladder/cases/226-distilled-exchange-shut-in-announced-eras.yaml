@@ -18,5 +18,5 @@ schedule:
   at 1 open announced: {ab: 0.02 * A, ba: 0.02 * B}
   at 201 shut announced: {ab: 0 * A, ba: 0 * B}
 boundary:
-  A: {in: measured}
+  A: {in: input}
   C: {out: estimate}

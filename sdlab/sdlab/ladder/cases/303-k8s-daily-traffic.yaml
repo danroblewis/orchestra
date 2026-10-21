@@ -18,4 +18,4 @@ flows:
 variants:
   noise: [none, counts, meas]
 boundary:
-  queue: {in: measured}
+  queue: {in: input}

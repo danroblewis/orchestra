@@ -40,5 +40,5 @@ injections:
 variants:
   noise: [none, counts, meas]
 boundary:
-  queue: {in: measured}
+  queue: {in: input}
   retries: {out: estimate}

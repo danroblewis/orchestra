@@ -16,6 +16,6 @@ flows:
   B -> outside: 0.0287 * B
   C -> outside: 0.0497 * C
 boundary:
-  A: {in: measured, out: estimate}
-  B: {in: measured, out: estimate}
+  A: {in: input, out: estimate}
+  B: {in: input, out: estimate}
   C: {out: estimate}

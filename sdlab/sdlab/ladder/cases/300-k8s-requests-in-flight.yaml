@@ -19,4 +19,4 @@ flows:
 variants:
   noise: [none, counts, meas]
 boundary:
-  inflight: {in: measured, out: estimate}
+  inflight: {in: input, out: estimate}

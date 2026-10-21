@@ -19,4 +19,4 @@ flows:
     exact: true
 boundary:
   Y: {in: estimate, out: estimate}
-  I: {in: measured, out: estimate}
+  I: {in: input, out: estimate}

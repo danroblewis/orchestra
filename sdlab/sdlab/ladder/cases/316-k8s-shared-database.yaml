@@ -41,7 +41,7 @@ flows:
   db_waiting -> db_active as acquired: "min(0.8 * db_waiting, 80 - 0.2 * db_active)"
   db_active -> outside as released: 0.8 * db_active
 boundary:
-  frontend_queue: {in: measured}
+  frontend_queue: {in: input}
   catalog_queue: {in: estimate}
   pricing_queue: {in: estimate}
   cart_queue: {in: estimate}

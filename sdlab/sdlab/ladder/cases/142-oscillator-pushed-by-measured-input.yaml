@@ -26,4 +26,4 @@ variants:
   noise: [none, {meas: {rel: 0, abs: 50}}]
 boundary:
   P: {in: estimate, out: estimate}
-  V: {in: [estimate, measured], out: estimate}
+  V: {in: [estimate, input], out: estimate}
