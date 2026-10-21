@@ -1,8 +1,15 @@
 # The declared boundary in strategy code: outside flows only where the case says so
 
-**Status:** built in `matrix` as the reference (`sdlab/discovery/strategies/matrix/boundary.py`, hooks in
-`earned.py`, `earned_rows.py`, `earned_joint.py`, `__init__.py`); tests `tests/test_matrix_boundary.py`.
-Paired results on Kubernetes 300-305 and 60 Tests cells: see [Results](#results).
+**Status:** done (2026-10-20). The user approved the change on 2026-10-20 (CLAUDE.md invariant 2).
+Harness: 48ab938 (the `boundary:` case field, the announcement `run["boundary"]`, the "invented boundary"
+diagnosis). Cases: 9827eaa (every numbered ladder case declares its boundary, derived from its truth;
+data, seeds and engine fingerprints unchanged). Reference: `matrix` (67f5b9e, 723f72c:
+`sdlab/discovery/strategies/matrix/boundary.py`, hooks in `earned.py`, `earned_rows.py`,
+`earned_joint.py`, `__init__.py`; tests `tests/test_matrix_boundary.py`). Every other roster strategy
+carries its own copy, wired into its own search (see [Per-family work](#per-family-work)).
+**Verdict:** keep. No result on either measured set fails for an invented outside flow any more (1,750
+old answers would); Tests +485 passes net; Kubernetes 300-305 -30 passes, almost all one cell
+(303 meas-long) lost to the errors-in-variables refit, not to the boundary search.
 
 ## Why
 
@@ -18,6 +25,23 @@ Before this work, 65% of all invented parts across failing results were outside 
 "outside -> B" (012-rework: `A -> outside = 0.30 A` and `outside -> B = 13.2 (6 pieces)` beside the
 true `A -> B`). Re-grading `matrix`'s stored Tests results against the declared boundaries
 (offline, nothing written) gave 307 of 1,192 cells with an invented boundary.
+
+The user's question that started it (2026-10-20): odefit's answer on 303-k8s-daily-traffic meas-long
+wrote `inflight -> outside`, `queue -> outside` and `outside -> inflight` beside the true chain. Could
+models simply be banned from producing outside inputs and outputs? There was never a menu of pieces to
+remove: each strategy fitted outside terms (a constant, pieces, an input, a link to another unit)
+freely, and those came out as outside flows. The ban therefore has to be information the case gives
+(which outside flows exist) and a rule every strategy follows (none elsewhere).
+
+How the case declares it (Sterman's model-boundary chart): `boundary: {stock: {in: [kinds], out:
+[kinds]}}` in the case file, each kind `measured` (an inflow whose rate reads only measured inputs) or
+`estimate` (every other outside flow: it exists, its form and rate are to be found); `boundary: {}`
+declares none; only the stock and kind are given, never the form or rate. `cases._build` checks each
+declaration against the truth (`caseformat.boundary_problems`), and a unit test checks every declared
+boundary equals the truth's outside flows. Undeclared (no key): real data, realistic `sd-*`, physics,
+particles; there outside flows are allowed as priced boundary claims. Re-scoring every stored row
+before any case declared a boundary (93,318 rows, `tests/study_rescore_boundary.py`, scorer d8cfaf0 vs
+48ab938) gave 0 status changes: the field and diagnosis alone change nothing.
 
 ## The design
 
@@ -59,8 +83,9 @@ decision the case makes, not something discovery may invent.**
 **The price.** Every structure compared is refitted (its numbers by least squares on the one-step
 changes, Gauss-Newton with each stock weighted by its residual spread) and priced as BIC:
 `-2 log L` (Gaussian, one variance per stock, rss floored at the levels' rounding) `+ log T` per number
-`+ 2 log T` per boundary claim `+ 2 log T` per hidden stock (`HIDDEN_PRICE`), so laziness cannot move
-from outside flows to hidden stocks. An alternative with a negative rate is not a model (priced
+`+ 2 log T` per boundary claim. A hidden stock is part of the system inside the boundary and pays only
+for its numbers, like any other part (`HIDDEN_PRICE = 0`, the user, 723f72c): priced the same as
+everything else, so laziness has nowhere cheaper to move to. An alternative with a negative rate is not a model (priced
 infinite). Wiggle the model does not explain is noise: pieces exist only where an `estimate` side
 allows them, and must still earn their BIC.
 
@@ -118,9 +143,122 @@ clock). On the largest model measured (sd-k8s-small counts-short, undeclared: 12
 10,080 steps) the final passes took 99 s (with a budget of 200 refits; now 120) beside matrix's own 495 s (a dense refit of the whole model
 took 1,327 s); on the ladder's small cases they take well under a second.
 
+## Per-family work
+
+Each agent copied `matrix/boundary.py` at 723f72c into its strategies (HIDDEN_PRICE 0, CLAIM_PRICE 2) and
+wired it into the strategy's own search; results per family are in its doc:
+
+| strategies | commits | doc |
+|---|---|---|
+| matrix_v2, held_out, recession, starved_coflows, periodic_inflows | 8a73872, ca00790, c0f0e7a | [matrix_v2.md](matrix_v2.md) and each strategy's doc |
+| lna, lna_levels, lna_loops, lna_products, lna_pulses, lna_stack | 7050136, dae7fc5 | [lna.md](lna.md), [revisit.md](revisit.md) |
+| odefit, master_eq, kalman_lna, engine_forms, common_cause, sindy | c2a4894, b984413 | [odefit.md](odefit.md) and each strategy's doc |
+| combined, combined2, combined_lean, combined_misfit, combined_r2, archetypes | a578c86, d323b6e | each strategy's doc |
+| structures, blockwise, censored, earned_pieces, gap_prior, schedules | f76591e, 728efec, 85beeb9 | [declared-boundary-six.md](declared-boundary-six.md) |
+| effect_hats, inflow_effects, coflow_hats, realistic_flows, realistic_hats, own_tables | 71ec999, 9cfeb75, d5cd56a, 66a901f | each strategy's doc |
+| hidden_transit, loop_transit, latent_eras, mass_balance, drifting_drain, shared_noise | e8c036a | [declared-boundary-transit.md](declared-boundary-transit.md) |
+| numopt_bo, numopt_cma, numopt_nm, numopt_powell | 7d2a370, ab73e30, 7982f41 | [numerical-optimisation.md](numerical-optimisation.md) |
+
+Fixes some copies made that the reference lacks (found by several agents, not in `matrix`):
+
+- **Self-move:** `alternatives()` can replace an inflow into B by "moving" B's own drain into B, which
+  only deletes the drain (305 retries). Fixed in the matrix_v2 family, the hats family and others.
+- **Last declared outflow:** `pair_moves` can turn a declared `outside -> A` and `B -> outside` into a
+  false loop or move, leaving a declared side empty (`kept_sides` in the odefit family's copies).
+- **Kind reading:** `kind_of` calls any outside flow that reads a measured input "measured", so
+  `inputs_ok` refuses inputs on an `estimate` side; but cases declare `estimate` for every flow not
+  driven by inputs alone (208's valve `75 - 0.25 H + 0.8 demand`). Fixed in the six-copies family
+  (728efec) and the hats family (9cfeb75).
+- **Cycling ties:** `earned_joint.decide` can cycle once ties are forced (317: 25,000 fits); bounded in
+  the matrix_v2 family. Refit budgets (`GUARD_FITS` 60-200) in most copies.
+
 ## Results
 
-In progress: see below once the paired runs report.
+**Commands.** Both sets ran on the CPU pool at c0f0e7a, priority 300, only out-of-date cells re-run:
+job 129 (Kubernetes 300-305, all variants) and job 130 (Tests sample: 120 numbered non-kubernetes cases x
+none-short, counts-short; every 2nd or 3rd of the 278 in sorted order, about half draws). "Before" is the
+last stored result for each cell from before 9827eaa, re-graded by c0f0e7a's scorer to count invented
+outside flows. From an export of c0f0e7a (`git archive c0f0e7a | tar -x -C <dir>`):
+
+```
+PYTHONPATH=<dir>/sdlab .venv/bin/python tests/study_boundary_pairs.py before JOB beforeJOB.json
+PYTHONPATH=<dir>/sdlab .venv/bin/python tests/study_boundary_pairs.py report JOB beforeJOB.json
+```
+
+with JOB = 129 or 130. The roster has 44 survivors; milp and z3exact have no stored results from before
+the change, so their cells are unpaired and left out below. Counts are paired cells only.
+
+**Kubernetes 300-305** (1,232 cells, 1,176 paired):
+
+| | pass | equivalent | fail |
+|---|---|---|---|
+| before | 1173 | 2 | 1 |
+| after | 1143 | 5 | 28 |
+
+- Invented boundary: 60 old answers held one (58 of them passed under the old scorer); after, 0.
+- Flips: pass -> fail 28, pass -> equivalent 3, fail -> pass 1. The one gain is **odefit 303
+  meas-long**, the cell the user asked about: it now finds `queue -> inflight`, `inflight ->
+  responses_total` and `outside -> queue x traffic`, with no outside flow beside the chain.
+
+**Tests sample** (10,164 cells, 9,702 paired):
+
+| | pass | equivalent | fail | error | timeout |
+|---|---|---|---|---|---|
+| before | 4719 | 1380 | 3599 | 4 | 0 |
+| after | 5204 | 1347 | 3136 | 14 | 1 |
+
+- Invented boundary: 1,690 old answers held one; after, 0. Of the 1,508 old failing (fail or
+  equivalent) answers with one, 493 now pass and 200 more are equivalent.
+- Gains: fail -> pass 439, fail -> equivalent 304, equivalent -> pass 126.
+- Losses: equivalent -> fail 232, pass -> fail 55, pass -> equivalent 22, new errors 14, new timeout 1.
+
+## Regressions and their causes
+
+1. **303 meas-long, pass -> fail in 24 strategies** (all the matrix line's descendants that run eiv).
+   The structure is right; the numbers are 13% high (`inflight -> responses_total` 0.568 for 0.5). Before,
+   the invented `outside -> inflight` flows made the errors-in-variables refit (`eiv.py`) prune them,
+   and it kept its instrumented numbers (0.559 / 0.466 / 0.933) as a side effect. Now the candidate
+   arrives inside the boundary, eiv has nothing to prune, and its 5/20/100-step judge prefers the
+   biased least-squares numbers (0.2093 vs 0.2124). Fix, already shown in the hats family (d5cd56a):
+   hold the eiv refit to the pruned model's longest-horizon test; the odefit family's alternative is to
+   send the unguarded model to eiv and guard afterwards. Each strategy's own `eiv.py` needs it.
+2. **305-k8s-retries, 6** (schedules, shared_noise, structures; equivalent in effect_hats and
+   inflow_effects). The declared `retries -> outside` outflow is dropped and moved into the queue; the
+   reference lacks the "no declared side loses its last flow" and self-move fixes above.
+3. **104-canonical-teacup, 51** (33 strategies). The truth is `k x (T - room)`. Before, strategies wrote
+   it as an outflow `k T` plus a constant inflow, which was "equivalent"; that inflow is no longer
+   allowed, and no strategy fits an outflow holding a negative constant, so k comes out 0.027 against
+   0.096. The same happens to inflows with a minus sign: 152's `300 - 0.08 A`, the goal gaps 047#3/#5/#7
+   and 083 (the lna family fails there; 17 matrix-family strategies gain on 047#5). Needed: a flow form
+   `c - k X` (an outflow with an offset, the fold alternative generalised) in every search.
+4. **152-move-driven-by-third-stock, 41** (all but matrix_v2, which gains). Pairing an outflow with an
+   inflow makes false moves (A -> B at 0.08 A, and S -> B, which also removes S's declared outflow). The
+   reference's `pair_moves` reads both flows' deterministic amounts, not just their noise, so any outflow
+   and inflow driven by the same level pass its z test; plus the missing last-declared-side guard.
+5. **Control cases 204, 208, 215, 218, 125, about 120** (equivalent -> fail). The found inflow keeps
+   only its constant and loses its setpoint and demand terms: the reference's kind reading (an input
+   read on an `estimate` side refused). Copies with the fix (blockwise, censored, own_tables, the hats
+   family) gain on 208 and 215; copies of the unfixed reference regress.
+6. **engine_forms, 14 new errors** (102, 106, 109, 113, 129, 138, 196, 211, 221, 224): `judge.py:219`
+   `TypeError: 'list' object is not callable`, because line 200 reuses the name `outside` for a list.
+7. **One new timeout:** common_cause on 138 counts-short (over 600 s).
+
+## What is left
+
+- Port the reference fixes into `matrix/boundary.py` (self-move, last declared side, kind reading,
+  cycling ties, noise-only `pair_moves`) and into each copy that lacks them: causes 2, 4 and 5.
+- Each strategy's `eiv.py` acceptance (cause 1) before the Kubernetes competition resumes: 303 must pass
+  again for its 24 strategies. Then 305's retries (cause 2); then 305 can be the next rung.
+- A `c - k X` flow form for teacup and goal gaps (cause 3).
+- engine_forms' name clash (cause 6), a one-line fix by its owner.
+- `notruth_core.check_view` and the unified frontend's `VIEW_KEYS` must accept `boundary` and
+  `boundary_declared` once their views carry them.
+- Not measured: the other variants of the Tests cases, 306-317 as a set, and undeclared cases
+  (realistic, real, physics, particles), where outside flows are now priced as claims.
+- **Backlog:** the watcher is paused (`~/.sdlab/watch.paused`). `sdlab-ladder cost --stale` at c0f0e7a:
+  46,032 stale items for 41 strategies over 394 cases, 77.3 h CPU, about 19.3 h wall at 4 workers (tests
+  29,689 items 34.0 h; realistic 2,542, 27.7 h; physics 1,517, 8.5 h; noisy 6,161, 4.6 h; canonical
+  1,859, 2.0 h; real 4,264, 28 min).
 
 ## Limits and next steps
 

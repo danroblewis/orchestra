@@ -765,3 +765,23 @@ be planned or checked out use up retries instead of being released. A crash's pe
 sd-k8s-platform kalman_lna starts at the 16 GB default. Particle cases fail at HEAD with `KeyError:
 'galton'` (`sdlab/ladder/physics/score.py:133`, a harness bug). The model editor's writing endpoints
 (`/api/models`, including `POST /api/models/{id}/discovery`) need no token and the server is on 0.0.0.0.
+
+## 2026-10-20 (note: the declared boundary)
+
+**Finished:** [declared-boundary.md](declared-boundary.md), at the user's request (approved 2026-10-20):
+outside flows are a modelling decision the case declares, not something discovery may invent. Harness
+48ab938, cases 9827eaa (every numbered case declares its boundary; data and fingerprints unchanged),
+reference `matrix/boundary.py` 723f72c, and a copy wired into every roster strategy's own search.
+Measured on pool jobs 129 and 130 at c0f0e7a, paired against the last result from before 9827eaa
+(`tests/study_boundary_pairs.py`):
+- Invented outside flows: 1,750 old answers -> 0.
+- Kubernetes 300-305 (1,176 paired): pass 1173 -> 1143, fail 1 -> 28. odefit 303 meas-long now passes.
+- Tests sample (120 cases x none/counts-short, 9,702 paired): pass 4719 -> 5204, fail 3599 -> 3136.
+
+**Regressions:** 303 meas-long in 24 strategies (eiv keeps biased numbers once nothing is pruned);
+305 retries 6; teacup and goal gaps (no `c - k X` form); 152 and the control cases (bugs in the
+reference boundary.py that several copies fixed); engine_forms 14 errors (`judge.py` name clash).
+
+**Needs you:** the Kubernetes competition should not resume at 305 until 303 meas-long passes again
+(each strategy's eiv fix). The watcher is still paused; the stale backlog is 46,032 items, 77.3 h CPU
+(about 19 h at 4 workers).
