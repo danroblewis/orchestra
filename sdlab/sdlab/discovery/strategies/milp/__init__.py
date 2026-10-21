@@ -28,6 +28,7 @@ EXACT = 10.0          # a structure leaving every stock's mean misfit within thi
 NEAR = 10             # after the first solve, each solve searches within this many switches of its start (local branching)
 SHAPED = False                   # counts: the local search weighs steps by each structure's own moved amounts
 STEP_ROUNDS = 5                  # drain and inflow steps found in turn at most this many times
+STEP_SPACING = 50                # a start with more than one step per this many steps per inflow is not searched
 STEP_FACTORS = (1.0, 0.5)        # change-point prices (x log T x noise variance) the inflow steps are first sought at
 SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
 SAMPLE = 150          # steps the program reads (evenly spaced over the run when it is longer)
@@ -329,7 +330,14 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 for f in STEP_FACTORS:
                     w = _with_steps(best.without(len(best.parts)), scale, f, into)
                     print("  steps", f, round(w.bic(scale, _floor(st)), 1), len(w.parts), [(p, [round(y, 4) for y in v]) for p, v in w.numbers()][:4])
-            ends += [search(_with_steps(best.without(len(best.parts)), scale, f, into)) for f in STEP_FACTORS]
+            for f in STEP_FACTORS:
+                w = _with_steps(best.without(len(best.parts)), scale, f, into)
+                cap = max(2, st.T // STEP_SPACING) * len(into)
+                pieces = [(abs(v[0]), i) for i, (p, v) in enumerate(w.numbers()) if p[0] == "piece"]
+                for _, i in sorted(sorted(pieces)[:max(0, len(pieces) - cap)], key=lambda z: -z[1]):
+                    w = w.without(i)             # more steps than that chases noise: keep the largest
+                w.refit(scale)
+                ends.append(search(w))
         own = (lambda x: shape(x)) if shape else (lambda x: scale)
         if DEBUG:
             for x in ends:
