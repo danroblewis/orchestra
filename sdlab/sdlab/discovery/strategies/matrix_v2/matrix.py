@@ -41,7 +41,7 @@ from .pieces import pool_recut, white
 from .reading import fold_inflows, pair_linear, product_flows
 from .regression import fit_subset, piece_values, stepwise
 from .regression import row_sums as _row_sums
-from .capmin import excluded
+from .capmin import excluded, level_series
 
 
 REL = 1e-8           # (exact) the floor on a fit's mean square residual, relative to the changes' mean square
@@ -176,8 +176,8 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         linked = bnd.links_ok(sid)
         allowed = [j for j in range(F) if may_affect(base[j], s) and not (sid in final and base[j] == s)
                    and (linked or unit[ids[base[j]]] == unit[sid])]
-        ex = set(excluded(sid, names, range(I0, P0), bnd.inputs_ok(sid), opts))   # (capmin.py) the offered series: only the limited flow's rows
-        allowed += [j for j in range(I0, P0) if j not in ex]
+        barred = set(excluded(sid, names, range(I0, P0), bnd.inputs_ok(sid), opts))   # (capmin.py) the offered series: only the limited flow's rows
+        allowed += [j for j in range(I0, P0) if j not in barred]
         held = bnd.pieces_ok(sid)                          # an outside term (constant or pieces)
         prods = [P0 + q for q, (a, c) in enumerate(pairs) if may_affect(a, s) and may_affect(c, s)
                  and not (sid in final and s in (a, c)) and (linked or unit[ids[a]] == unit[ids[c]] == unit[sid])]
@@ -457,10 +457,37 @@ def input_flows(rows: list[dict], c: int, inputs: list[str], columns: np.ndarray
     """Flows reading measured inputs, from the rows' numbers on them in configuration c: k > 0 an
     inflow from outside at k x input, k < 0 an outflow to outside at -k x input."""
     out = []
+    paired = set()
+    for name in inputs:                    # (capmin.py) the offered MIN series: a move out of the row that loses it
+        if not level_series(name):
+            continue
+        ks = [(r, r["coefL"][c].get(name) or 0.0) for r in rows]
+        neg = [(r, -k) for r, k in ks if k < 0]
+        if len(neg) != 1:
+            continue
+        src, left = neg[0]
+        mean = float(columns[names.index(name)].mean())
+        pos = [k for _, k in ks if k > 0]
+        if len(pos) == 1:                  # one receiver: one move, at the mean of what the two rows read
+            ks = [(r, (k + left) / 2 if k > 0 else k) for r, k in ks]
+            left = (pos[0] + left) / 2
+        for r, k in ks:
+            if k > 0:
+                ends, kk = {"from": src["id"], "to": r["id"]}, min(k, left)
+                left -= kk
+            else:
+                continue
+            rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": round(kk, 6)}]}
+            out.append({**ends, "ratio": 1, "rate": rate, "rates": [rate], "perStep": kk * mean, "nearly": [], "bothWays": False})
+        if left > 0:
+            rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": round(left, 6)}]}
+            out.append({"from": src["id"], "to": None, "ratio": 1, "rate": rate, "rates": [rate], "perStep": left * mean,
+                        "nearly": [], "bothWays": False})
+        paired.add(name)
     for r in rows:
         for name in inputs:
             k = r["coefL"][c].get(name) or 0.0
-            if not k:
+            if not k or name in paired:
                 continue
             rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": round(abs(k), 6)}]}
             ends = {"from": None, "to": r["id"]} if k > 0 else {"from": r["id"], "to": None}
