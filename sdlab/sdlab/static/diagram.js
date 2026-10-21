@@ -162,6 +162,7 @@
   // D: {stocks: [{id, name, sub?, dashed?, cls?, title?}], flows: [{from, to, label, label2?, cls,
   // dashed?, reads: [{stock, label?, dash?, cls?}], title?}]}; pos: {id: {x, y}}; colours come from
   // opts.color(cls). Flows between the same two stocks are drawn side by side.
+  const FADED = 0.12;            // a faded flow or stock (the differences' unchanged context): in place, barely there
   function draw(svg, D, pos, opts = {}) {
     const box = opts.box || BOX, color = opts.color || (() => "var(--fg)");
     svg.innerHTML = "";
@@ -203,15 +204,16 @@
         const bend = 40 * (k % 2 ? -1 : 1) * (1 + Math.floor(k / 2) * 0.7);
         const ctl = { x: (start.x + mid.x) / 2 + dy / L * bend, y: (start.y + mid.y) / 2 - dx / L * bend };
         const end = shorten(mid, ctl, 8), col = r.cls ? color(r.cls) : "var(--muted)";
-        el("path", { d: `M${start.x} ${start.y} Q${ctl.x} ${ctl.y} ${end.x} ${end.y}`, fill: "none", stroke: col, "stroke-width": r.label ? 1.6 : 1.3, "stroke-dasharray": r.dash || "3 4" }, gLinks);
-        arrowHead(gLinks, ctl, end, col, 6);
-        if (r.label) text(gLinks, ctl.x, ctl.y - 3, r.label, { "text-anchor": "middle", "font-size": 11, fill: col, "font-weight": 600 });
+        const gl = f.faded ? el("g", { opacity: FADED }, gLinks) : gLinks;
+        el("path", { d: `M${start.x} ${start.y} Q${ctl.x} ${ctl.y} ${end.x} ${end.y}`, fill: "none", stroke: col, "stroke-width": r.label ? 1.6 : 1.3, "stroke-dasharray": r.dash || "3 4" }, gl);
+        arrowHead(gl, ctl, end, col, 6);
+        if (r.label && !f.faded) text(gl, ctl.x, ctl.y - 3, r.label, { "text-anchor": "middle", "font-size": 11, fill: col, "font-weight": 600 });
       });
     });
 
     flows.forEach((f) => {
       const { a, b } = geo.get(f), col = color(f.cls);
-      const g = el("g", { class: `dflow ${f.cls || ""}` }, gFlows);
+      const g = el("g", { class: `dflow ${f.cls || ""}`, opacity: f.faded ? FADED : null }, gFlows);
       if (f.title) el("title", {}, g).textContent = f.title;
       const tip = shorten(b, a, 10);
       el("path", { d: `M${a.x} ${a.y} L${tip.x} ${tip.y}`, stroke: col, "stroke-width": f.thin ? 1.8 : 3.2, fill: "none", "stroke-dasharray": f.dashed ? "7 5" : null }, g);
@@ -223,7 +225,7 @@
         // (f.cloud, from the case's declared boundary); an invented or claimed one in the flow's colour
         const ca = f.cloud === "estimate" ? { "stroke-dasharray": "3 2" } : f.cloud === "measured" ? { "stroke-width": 1.8 } : {};
         if ((f.cls === "spurious" || f.cls === "claim") && !f.thin) Object.assign(ca, { stroke: col, "stroke-width": 1.8 });
-        cloud(gFlows, spots.get(f), ca);
+        cloud(gFlows, spots.get(f), f.faded ? { ...ca, opacity: FADED } : ca);
       }
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
@@ -231,6 +233,7 @@
       let nx = -dy / L, ny = dx / L;
       if (ny > 0 || (Math.abs(ny) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; }
       if (offsetOf(f) < 0) { nx = -nx; ny = -ny; }
+      if (f.faded) return;                                     // a faded flow keeps its place but has no label
       const lines = [f.label, f.label2].filter(Boolean);
       const w = Math.max(...lines.map((s) => s.length * 6.6), 10) + 10, h = lines.length * 14 + 4;
       const dist = Math.abs(nx) * (w / 2) + Math.abs(ny) * (h / 2) + 10;
@@ -243,7 +246,7 @@
 
     D.stocks.forEach((s) => {
       const p = pos[s.id]; if (!p) return;
-      const g = el("g", { class: `dstock ${s.cls || ""}`, transform: `translate(${p.x} ${p.y})` }, gStocks);
+      const g = el("g", { class: `dstock ${s.cls || ""}`, transform: `translate(${p.x} ${p.y})`, opacity: s.faded ? FADED : null }, gStocks);
       if (s.title) el("title", {}, g).textContent = s.title;
       el("rect", { width: box.w, height: box.h, rx: s.dashed ? 8 : 3, fill: "var(--canvas)", stroke: s.cls ? color(s.cls) : "var(--fg)", "stroke-width": 1.6, "stroke-dasharray": s.dashed ? "6 4" : null }, g);
       text(g, box.w / 2, s.sub ? box.h / 2 - 3 : box.h / 2 + 5, s.name || s.id, { "text-anchor": "middle", "font-size": 14, "font-weight": 600, fill: "var(--fg)" });

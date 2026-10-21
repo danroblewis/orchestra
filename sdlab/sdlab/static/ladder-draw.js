@@ -134,13 +134,25 @@
     D.draw(svgTrue, tD, pos, o);
     D.draw(svgFound, r ? fD : { stocks: fD.stocks, flows: [] }, pos, o);
     if (svgDiff) {
-      D.draw(svgDiff, r ? dD : { stocks: dD.stocks, flows: [] }, pos, o);
+      D.draw(svgDiff, r ? focus(dD, tStockIds(c)) : { stocks: dD.stocks, flows: [] }, pos, o);
       const cap = svgDiff.closest("figure") && svgDiff.closest("figure").querySelector("figcaption");
       if (cap && r) cap.textContent = diffStat(cmp);
     }
     return { vb, alias, cmp };
   }
 
+  // The differences show only what changed, like a git diff's hunks (the user, 2026-10-21): a changed flow (removed, added,
+  // value wrong, equivalent, a claim) with the stocks at its ends; a stock only the found model has, with every flow into or
+  // out of it. Everything else stays where it is (one layout for all three panels), faded, without labels.
+  const CHANGED = new Set(["missed", "missing", "spurious", "wrong", "equiv", "claim"]);
+  const tStockIds = (c) => new Set(c.model.stocks.map((s) => s.id));
+  function focus(dD, trueIds) {
+    const keep = new Set(), newStocks = new Set(dD.stocks.filter((s) => !trueIds.has(s.id)).map((s) => s.id));
+    const shown = (f) => CHANGED.has(f.cls) || newStocks.has(f.from) || newStocks.has(f.to);
+    dD.flows.forEach((f) => { if (shown(f)) { if (f.from) keep.add(f.from); if (f.to) keep.add(f.to); } });
+    newStocks.forEach((id) => keep.add(id));
+    return { stocks: dD.stocks.map((s) => ({ ...s, faded: !keep.has(s.id) })), flows: dD.flows.map((f) => ({ ...f, faded: !shown(f) })) };
+  }
   // "Differences: 2 removed · 1 added · 1 value wrong", like git diff --stat
   function diffStat(cmp) {
     const n = { missed: 0, spurious: 0, wrong: 0, equiv: 0 };
