@@ -22,6 +22,7 @@ import numpy as np
 from ...identify import VARIANTS
 from ...matrix import finish, identify_one
 from ...simulate import behaviour_error
+from . import boundary
 from .joint import System, decide
 from .rows import reselect, rss_floor
 
@@ -36,9 +37,16 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, horizons=(5, 20, 100
     return sum(behaviour_error(flows, ids, run["t"], run["levels"], horizon=h, injections=injections, inputs=inputs) for h in hs) / len(hs)
 
 
-def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
+def refit(stocks: list[dict], r: dict, opts: dict, b: boundary.Boundary | None = None) -> dict:
     """The candidate's rows refitted jointly, sources tied to their receivers where the counting
-    likelihood says so; the model read off again."""
+    likelihood says so; the model read off again.
+
+    Inside the boundary b (boundary.py, docs/research/declared-boundary.md): a row has an outside term
+    (constant or pieces) only where its stock may have an estimated outside flow, reads a measured input
+    only where it may have a measured one, and reads a stock of another unit (a link from or a drain to
+    outside) only where it may have an estimated one; a source with no estimated outflow to outside is
+    tied (its drain is all moves)."""
+    b = b or boundary.Boundary({})
     fit, ctx = r.get("fit"), r.get("ctx")
     if not fit or not ctx:
         return r
@@ -50,12 +58,19 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
     final = {s["id"] for s in stocks if s.get("final")}
     L = len(fit["labels"])
-    if opts.get("reselect", True):
+    def exclude(s: int) -> tuple:
+        out = [] if b.inputs_ok(ids[s]) else list(inputs)
+        if not b.links_ok(ids[s]):
+            out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
+        return tuple(out)
+
+    if opts.get("reselect", True) or b.declared:
         floor = rss_floor(fit["prev"], fit["dy"].shape[1])
-        rows = [reselect(row, s, ids, stocks, columns if inputs else fit["prev"], fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", 0.01), floor, opts.get("levels", "beside"), inputs)["row"]
+        rows = [reselect(row, s, ids, stocks, columns if inputs else fit["prev"], fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", 0.01), floor, opts.get("levels", "beside"), inputs,
+                         pieces_ok=b.pieces_ok(ids[s]), exclude=exclude(s))["row"]
                 for s, row in enumerate(rows)]
     system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", True), opts.get("min_piece", 5), opts.get("scale", "unit"))
-    best = decide(system, ctx["log_t"], trace=opts.get("trace_joint", False))
+    best = decide(system, ctx["log_t"], trace=opts.get("trace_joint", False), forced={a for a in range(len(ids)) if b.must_tie(ids[a])})
     at = fit["at"]
     new = []
     for s, row in enumerate(rows):
@@ -80,6 +95,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     env = json.loads(os.environ.get("SDLAB_EARNED") or "{}")
     opts = {**opts, **env}
     joint = opts.pop("joint", True)
+    b = boundary.Boundary(run)
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     best, tried = None, []
     for v in opts.pop("variants", None) or VARIANTS:
@@ -88,9 +104,12 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = identify_one(stocks, run, {**opts, **v, "keep_fit": joint, "keep_rows": joint, "input_columns": True})
         if joint and r.get("flows") is not None and r.get("fit"):
             try:
-                r = refit(stocks, r, opts)
+                r = refit(stocks, r, opts, b)
             except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
                 pass
+        if b.declared and r.get("flows"):
+            # the guard before the judge (boundary.py): no candidate with an undeclared outside flow
+            r = boundary.apply({k: v for k, v in r.items() if k not in ("fit", "ctx", "raw_rows")}, stocks, run, opts, final=False)
         e = judge(r["flows"], stocks, run, injections=opts.get("injections"), inputs=opts.get("inputs") or None)
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
@@ -104,7 +123,9 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard and moves where one is declared, each outside flow
+    priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

@@ -29,7 +29,8 @@ def ladder(case_id: str, variant: str, strategy: str) -> tuple[dict, dict]:
     # "main_line": the pinned main line (the matrix strategy's own earns its pieces since
     # docs/research/k8s-302.md, a copy of this strategy's refit)
     fn = main_line if strategy == "main_line" else load(strategy)
-    r = fn(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"]}, opts)
+    # the run as the ladder gives it, with the case's declared boundary (cases.announced, 2026-10-20)
+    r = fn(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"], **casemod.announced(case)}, opts)
     return r, score.equations(case, casemod.variant(case, variant)["noise"], model, r["flows"], d)
 
 

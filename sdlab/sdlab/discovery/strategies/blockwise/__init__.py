@@ -26,6 +26,7 @@ import time
 import numpy as np
 
 from ...hidden import delayed
+from . import boundary
 from .earned import main_line as matrix_identify
 from ...matrix import finish, injected
 from .blocks import blocks_of, pick_rows
@@ -89,6 +90,7 @@ class Builder:
         self.copies = {e["id"]: (e["source"], e["delay"]) for e in self.extra}
         self.design = Design(self.X, dy)
         self.opts = opts
+        self.boundary = boundary.Boundary(run)
 
     def rows(self, v: dict) -> list[dict]:
         ids, S, T, names = self.ids, len(self.ids), self.design.T, self.names
@@ -111,7 +113,24 @@ class Builder:
                     a, b = self.group[e["source"]], self.group[sid]
                     if e["source"] == sid or (a and b and a != b):
                         allowed[self.E0 + q] = False
-            r = fit_row(self.design, self.X, s, allowed, o, positive)
+            # inside the announced boundary (boundary.py): an outside inflow (constant or pieces) only
+            # where an estimated outside flow is declared; a measured input's column only where a
+            # measured one is; a stock of another unit (a link from outside, a drain to outside
+            # reading it) only where an estimated one is, and, read as links, any other stock's level
+            # only where an estimated inflow is (a link is an inflow from outside)
+            bd = self.boundary
+            if not bd.inputs_ok(sid):
+                allowed[self.I0:] = False
+            for j in range(S):
+                if j != s and ((not bd.links_ok(sid) and self.unit[ids[j]] != self.unit[sid])
+                               or (v.get("read") == "links" and not bd.may(sid, "in", "estimate"))):
+                    allowed[j] = False
+            for q, e in enumerate(self.extra):
+                src = e["source"]
+                if not bd.links_ok(sid) and self.unit[src] != self.unit[sid]:
+                    allowed[self.E0 + q] = False
+            ro = o if bd.pieces_ok(sid) else {**o, "inflow": "none"}
+            r = fit_row(self.design, self.X, s, allowed, ro, positive)
             out.append({"id": sid, "cols": r["set"], "beta": r["beta"], "pieces": r["pieces"], "cuts": r["cuts"], "rss": r["rss"], "p": r["p"],
                         "trust_receivers": v.get("trust_receivers", True)})
         return out
@@ -234,6 +253,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = matrix_identify(stocks, run, opts)
         r["method"] = "blockwise (the main line: a small model)"
         return r
+    bd = boundary.Boundary(run)
     deadline = began + float(o["budget"])
     t = run["t"]
     if len(t) < 21:
@@ -251,6 +271,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         b0 = time.perf_counter()
         raw = builder.rows(v)
         flows, inferred = builder.flows(raw, v.get("read", "main"))
+        flows = _inside(flows, stocks, run, opts, bd)
         per = judge.per_stock(flows, inferred)
         cands.append({"name": v["name"], "read": v.get("read", "main"), "raw": raw, "flows": flows, "inferred": inferred,
                       "per": per, "per_raw": judge.raw, "error": float(judge.raw.sum()), "norm": float(per.sum())})
@@ -268,6 +289,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             if not any(r.get("hinge") or r.get("ratios") for r in raw):
                 continue
             flows, inferred = builder.flows(raw, "links")
+            flows = _inside(flows, stocks, run, opts, bd)
             per = judge.per_stock(flows, inferred)
             cands.append({"name": f"{c['name']}, {label}", "read": "links", "raw": raw, "flows": flows, "inferred": inferred,
                           "per": per, "per_raw": judge.raw, "error": float(judge.raw.sum()), "norm": float(per.sum())})
@@ -284,6 +306,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if len(set(choice.values())) > 1:
             raw = [same[choice[sid]]["raw"][s] for s, sid in enumerate(ids)]
             flows, inferred = builder.flows(raw, best["read"])
+            flows = _inside(flows, stocks, run, opts, bd)
             per = judge.per_stock(flows, inferred)
             joined = {"name": f"blocks: {desc}", "flows": flows, "inferred": inferred, "error": float(judge.raw.sum()), "norm": float(per.sum())}
             tried.append({"name": joined["name"], "error": joined["error"], "norm": joined["norm"], "flows": len(flows)})
@@ -297,9 +320,19 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return result
 
 
+def _inside(flows: list[dict], stocks: list[dict], run: dict, opts: dict, bd: boundary.Boundary) -> list[dict]:
+    """A candidate's flows kept inside a declared boundary before it is judged (boundary.py's guard:
+    nothing when it is already inside, the usual case after the rows' own restrictions)."""
+    if not bd.declared or not flows:
+        return flows
+    return boundary.apply({"flows": flows}, stocks, run, opts, final=False)["flows"]
+
+
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard and moves where one is declared, each outside flow
+    priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)
