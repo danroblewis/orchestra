@@ -309,6 +309,14 @@ def candidates(flows: list[dict], ctx: Context, spans: list[dict] | None):
     # a drain of x beside a link into y that reads x: the move x -> y (the same levels, one flow fewer)
     for rest, m, why in _fusions(flows, ctx, spans):
         yield f"move {m['from']} -> {m['to']}{why}", rest + [m], False
+    # an outflow to outside written as a constant or pieces: a drain proportional to its own stock (305's
+    # give-up drain of retries, which the main line read as 28 pieces)
+    for i, f in enumerate(flows):
+        x = f.get("from")
+        if x in ids and f.get("to") is None and refittable(f) and not f.get("byTime") and not f.get("uses") \
+                and (f.get("inflow") or (f.get("rate") or {}).get("form") == "constant"):
+            g = {"from": x, "to": None, "ratio": f.get("ratio") or 1, "rate": {"form": "proportional", "stock": x, "k": 0.0}}
+            yield f"{x} -> outside proportional to {x}", flows[:i] + [g] + flows[i + 1 :], False
     for i, f in enumerate(flows):
         rest = flows[:i] + flows[i + 1 :]
         label = f"{f.get('from') or 'outside'} -> {f.get('to') or 'outside'}"
@@ -554,6 +562,26 @@ def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, w
             break
     taken[:] = best[2]
     return best[1], best[0]
+
+
+def restore(flows: list[dict], ctx: Context, floor: np.ndarray, flow_price: float, scale: np.ndarray | None,
+            out_sides: set) -> tuple[list[dict], list[dict]]:
+    """The model with every declared outflow to outside it lacks put back (out_sides: the stocks the
+    announced boundary gives one): a move out of the stock redirected to outside, or a new drain
+    proportional to it, whichever refits to the lower BIC. A declared outside flow exists; only its
+    form is to be found (305 counts-short: the main line's guard wrote retries' give-up drain as a
+    move into errors_total, and counts-long's search dropped it with its pieces)."""
+    ids, steps = set(ctx.ids), []
+    for x in sorted(out_sides):
+        if x not in ids or any(f.get("from") == x and f.get("to") is None for f in flows):
+            continue
+        opts = [(f"{x} -> {f['to']} to outside instead", flows[:i] + [{**f, "to": None}] + flows[i + 1 :])
+                for i, f in enumerate(flows) if f.get("from") == x and f.get("to") in ids and refittable(f) and not f.get("uses")]
+        opts.append((f"a drain of {x} to outside", flows + [{"from": x, "to": None, "ratio": 1, "rate": {"form": "proportional", "stock": x, "k": 0.0}}]))
+        fits = [(bic(c, ctx, floor, flow_price), name, c) for name, c in ((n, refit(c, ctx, scale)) for n, c in opts)]
+        sc, name, flows = min(fits, key=lambda z: z[0])
+        steps.append({"step": name, "bic": round(sc, 2)})
+    return flows, steps
 
 
 def search(flows: list[dict], ctx: Context, floor: np.ndarray, spans: list[dict] | None, margin: float = 2.0,

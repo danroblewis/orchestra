@@ -33,9 +33,14 @@ from ._vendored.censored import identify as censored
 from ._vendored.censored import judge
 from ._vendored.censored import onestep
 from .refit import Context
-from .search import search
+from .search import restore, search
 
 DEFAULTS = {"margin": 2.0, "flow_price": 0.5, "budget": 60.0, "judge_slack": 1.5}
+
+
+def _sides(flows: list[dict], ids: list[str]) -> set:
+    """The (stock, side) pairs the flows' outside ends reach, as the scorer reads them (boundary.ends)."""
+    return {x for e in boundary.ends(flows, ids) for x in e}
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -66,8 +71,18 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     # an undeclared side, or of an undeclared kind, is not offered (no restriction when none is declared)
     bd = boundary.Boundary(run)
     in_set = set((opts.get("inputs") or {}).keys())
-    inside = (lambda fl: not boundary.violations(fl, ids, bd, in_set)) if bd.declared else None
-    flows, taken = search(flows0, ctx, floor, spans, o["margin"], o["flow_price"], o["budget"], scale, inside=inside)
+    # and a declared side keeps its outside flow (it exists: it may change form, never vanish; 305's
+    # retries -> outside, dropped with its pieces before its proportional form was tried)
+    start, restored = flows0, []
+    if bd.declared:          # a declared outflow to outside the start lacks is put back first (search.restore)
+        start, restored = restore(flows0, ctx, floor, o["flow_price"], scale, {x for x in ids if bd.may(x, "out", "estimate")})
+    sides0 = {x for x in _sides(start, ids) if bd.may(*x)}
+    inside = (lambda fl: not boundary.violations(fl, ids, bd, in_set) and sides0 <= _sides(fl, ids)) if bd.declared else None
+    flows, taken = search(start, ctx, floor, spans, o["margin"], o["flow_price"], o["budget"], scale, inside=inside)
+    if restored and not taken:
+        flows, taken = start, restored
+    else:
+        taken = restored + taken
     if not taken:
         return {**r0, "schedules": []}
     inputs = mi and mi["values"]

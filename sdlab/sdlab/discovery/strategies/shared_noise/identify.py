@@ -100,11 +100,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     bd = boundary.Boundary(run)              # the announced boundary (boundary.py)
     # known changes (opts["known"]) are part of every candidate's behaviour when it is judged
     extra = known_flows(opts["known"], [s["id"] for s in stocks], run["t"]) if opts.get("known") else []
+    # stocks with no estimated outside inflow declared: their gains from other stocks are moves (matrix.conserve)
+    closed = {"closed_in": [s["id"] for s in stocks if "estimate" not in bd.kinds(s["id"], "in")]} if bd.declared else {}
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
-        r = identify_one(stocks, run, {**opts, **v, "keep_rows": True, "input_columns": True})
-        r = earn(stocks, r, {**opts, **v}, bd)
+        r = identify_one(stocks, run, {**opts, **v, **closed, "keep_rows": True, "input_columns": True})
+        r = earn(stocks, r, {**opts, **v, **closed}, bd)
         for k in ("raw_rows", "ctx"):
             r.pop(k, None)
         if bd.declared and r.get("flows"):        # no candidate with an outside flow the case does not declare

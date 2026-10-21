@@ -377,6 +377,13 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
     (`kinds`) takes nothing from the stock; and a stock with such a link has its drain lowered only
     when the refit test passes (the link's gain is no evidence that its drain is too high)."""
     kinds = kinds or {}
+    # receivers that can take nothing from outside but by measured inputs (opts "closed_in", from the
+    # announced boundary: no estimated inflow declared on them): what they gain from a same-unit stock is
+    # a move, never a link, so it is trusted and taken from the source's drain (305: retries' gain from
+    # queue, 0.0822, beside a drain of 0.0558 into it, left 0.0263 x queue as a link from outside)
+    closed_in = set(opts.get("closed_in") or ())
+    if closed_in:
+        kinds = {k: ("move" if v == "link" and k[1] in closed_in else v) for k, v in kinds.items()}
     changed = False
     for s, row in enumerate(rows):
         a = row["id"]
@@ -393,6 +400,7 @@ def conserve(rows, ids, final, unit, prev, dy, cfg, L, bic, log_t, opts, kinds=N
         changing = (bool(row["cuts"]) and len(row["cuts"]) > 2) or a in (opts.get("varying_inflow") or ())
         linked = any(kinds.get((a, r["id"])) == "link" for r in rows)
         trust = row.get("trust_receivers", opts.get("trust_receivers")) is not False   # a row may carry its own setting
+        trust = trust or any(r["id"] in closed_in and any((r["coefL"][c].get(a) or 0) > 0 for c in range(L)) for r in rows if r["id"] != a and unit[r["id"]] == unit[a])
         # receivers taking more than the row's drain (trusted): raised to what they take when the
         # refit test passes, for a row with a steady inflow too (opts "conserve_up", default on; off
         # only a changing row): the excess was otherwise read as a link out of nowhere reading the

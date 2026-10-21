@@ -45,6 +45,7 @@ class Problem:
         self.deadline = deadline
         self.price = price
         self.log_t = math.log(max(2, self.T))
+        self.required: set = set()     # (stock, "in" | "out"): declared sides a model must keep a term on
 
     def check(self):
         if self.deadline is not None and time.monotonic() > self.deadline:
@@ -135,6 +136,36 @@ def variance(p: Problem, f: Fit) -> np.ndarray:
         else:
             v += th * np.abs(p.rows.column(t))
     return v + np.maximum(np.abs(pool), 0.05) + p.delta
+
+
+def sides(terms: list[Term]) -> set:
+    """The outside sides the terms hold: (b, "in") for a term from outside into b, (a, "out") for one
+    from a to outside (a hidden chain fed from outside counts for the stock it feeds)."""
+    out = set()
+    for t in terms:
+        if t.kind == "init":
+            continue
+        if t.src is None and t.dst is not None:
+            out.add((t.dst, "in"))
+        elif t.src is not None and t.dst is None:
+            out.add((t.src, "out"))
+    return out
+
+
+def kept(p: Problem, terms: list[Term]) -> bool:
+    """Every declared side still has a term (a declared outside flow exists: it may change form, never
+    vanish; 305's retries -> outside, dropped as the loop back into the queue took its share)."""
+    return not p.required or p.required <= sides(terms)
+
+
+def covered(p: Problem, lib: list[Term], terms: list[Term]) -> list[Term]:
+    """The terms with, for each declared side they leave empty, the library's term on it that fits best."""
+    terms = list(terms)
+    for side in sorted(p.required - sides(terms), key=str):
+        opts = [t for t in lib if t not in terms and sides([t]) == {side}]
+        if opts:
+            terms.append(min(opts, key=lambda t: fit(p, terms + [t]).bic))
+    return terms
 
 
 def _with(terms: list[Term], t: Term) -> list[Term]:
@@ -241,6 +272,7 @@ def search(p: Problem, lib: list[Term], start: list[Term] | None = None, steps: 
     for t in list(terms):
         if t.kind == "chain":
             terms += [i for i in inits(t) if i not in terms]
+    terms = covered(p, lib, terms)
     cur = fit(p, terms)
     cur = backward(p, cur)
     for _ in range(steps):
@@ -256,7 +288,7 @@ def search(p: Problem, lib: list[Term], start: list[Term] | None = None, steps: 
             best = None
             for t in [u for u in cur.terms if u.kind != "init" and u.span is None]:
                 for a in aliases(t, lib):
-                    if a in cur.terms:
+                    if a in cur.terms or not kept(p, _with(_without(cur.terms, t), a)):
                         continue
                     g = fit(p, _with(_without(cur.terms, t), a), w)
                     if best is None or g.bic < best.bic:
@@ -265,6 +297,8 @@ def search(p: Problem, lib: list[Term], start: list[Term] | None = None, steps: 
                 terms = [u for u in cur.terms if u not in (t1, t2)]
                 if t2.kind == "chain":
                     terms = [u for u in terms if not (u.kind == "init" and u.chain_key() == t2.chain_key())]
+                if not kept(p, _with(terms, mv)):
+                    continue
                 g = fit(p, _with(terms, mv), w)
                 if best is None or g.bic < best.bic:
                     best = g
@@ -282,13 +316,14 @@ def backward(p: Problem, cur: Fit) -> Fit:
         if zero:
             terms = cur.terms
             for t in zero:
-                terms = _without(terms, t)
-            g = fit(p, terms, w)
-            if g.bic <= cur.bic + 1e-9:
+                if kept(p, _without(terms, t)):
+                    terms = _without(terms, t)
+            g = fit(p, terms, w) if len(terms) < len(cur.terms) else None
+            if g is not None and g.bic <= cur.bic + 1e-9:
                 cur = g
                 continue
         best = None
-        for t in [u for u in cur.terms if u.kind != "init"]:
+        for t in [u for u in cur.terms if u.kind != "init" and kept(p, _without(cur.terms, u))]:
             g = fit(p, _without(cur.terms, t), w)
             if best is None or g.bic < best.bic:
                 best = g
@@ -317,6 +352,8 @@ def conventions(p: Problem, cur: Fit, lib: list[Term]) -> Fit:
                 if len(t2.x) == 2 and th[t1] > th[t2] * 1.05:
                     continue           # at a product, only a whole move: predation removing X at one rate
                                        # and breeding Y at another is two flows, not a move and an outflow (127)
+                if not kept(p, [u for u in cur.terms if u != t2] + [mv]):
+                    continue
                 g = fit(p, [u for u in cur.terms if u != t2] + [mv])
                 if g.bic <= cur.bic + 1e-6 * max(1.0, abs(cur.bic)):
                     cur, done = g, True
