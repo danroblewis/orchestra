@@ -19,8 +19,8 @@ decision, not something discovery may invent, so:
   better.
 
 The price of a structure is BIC on the one-step changes: -2 log L (Gaussian, one variance per stock)
-plus log T per number, plus CLAIM_PRICE x log T per boundary claim and HIDDEN_PRICE x log T per hidden
-stock, so that laziness cannot move from outside flows to hidden stocks. Numbers are refitted for every
+plus log T per number, plus CLAIM_PRICE x log T per boundary claim. A hidden stock is inside the
+boundary and pays only for its numbers (HIDDEN_PRICE = 0; the user, 2026-10-20). Numbers are refitted for every
 structure compared (`Fit`), by least squares on the one-step changes, so a structure is never judged
 with numbers fitted for another.
 
@@ -38,7 +38,7 @@ import numpy as np
 from ...simulate import Model
 
 CLAIM_PRICE = 2.0      # an outside flow with no declared boundary pays this many log T beyond its numbers
-HIDDEN_PRICE = 2.0     # a hidden stock pays as much as a boundary claim (laziness must not move there)
+HIDDEN_PRICE = 0.0     # a hidden stock is part of the system inside the boundary (the user, 2026-10-20): it pays only for its numbers, no surcharge
 ANTI_Z = 3.0           # two stocks' unexplained changes anti-correlated beyond this z: the move is tried
 ITERATIONS = 4         # Gauss-Newton steps of a refit (one is exact for linear rates without clipping)
 MIN_STEPS = 20         # fewer usable steps: no refit (a flow outside the boundary is then just dropped)
