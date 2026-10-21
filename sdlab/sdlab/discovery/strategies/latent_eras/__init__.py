@@ -588,17 +588,13 @@ _identify_linear = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    return _capmin.wrap(_identify_linear, stocks, run, opts, *args, **kw)
+    """(2026-10-21, k8s-307, docs/research/k8s-307-c1.md) Between the fit and the MIN written back, where the
+    levels carry measurement error, the numbers are refitted and the structure revised on the output error
+    and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
+    record against the measured levels)."""
+    from . import oefit
 
+    o, cap = _capmin.offer(stocks, run, opts)
+    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
+    return _capmin.restore(r, cap)
 
-# State-space refinement (oe.py, docs/research/k8s-306-r3-five.md, 2026-10-21): where the levels carry
-# measurement error, the answer above is refined on a Kalman likelihood (counting noise in every flow,
-# measurement error in the levels): its numbers, and greedy moves of its structure (drop, add, move,
-# send elsewhere, a MIN limit), inside the declared boundary.
-from . import oe as _oe  # noqa: E402
-
-_identify_capmin = identify
-
-
-def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    return _oe.wrap(_identify_capmin, stocks, run, opts, *args, **kw)

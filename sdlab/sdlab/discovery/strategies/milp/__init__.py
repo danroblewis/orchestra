@@ -391,3 +391,15 @@ def fixed_inputs(flows: list[dict], run: dict, inputs) -> list[dict]:
         drop = [i for i in into if i != fed[0]] if all(k == "input" for k in kinds) else []
         flows = [f for i, f in enumerate(flows) if i not in drop]
     return flows
+
+
+# Output error (oefit.py, a copy of combined2's; 2026-10-21, k8s-307, docs/research/k8s-307-c1.md): where the
+# levels carry measurement error, the program's answer (its MINs written as expressions) is refitted and its
+# structure revised on the output error and judged on a Kalman likelihood.
+_identify_program = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  # noqa: F811
+    from . import oefit
+
+    return oefit.refit(_identify_program(stocks, run, opts), stocks, run, opts or {})
