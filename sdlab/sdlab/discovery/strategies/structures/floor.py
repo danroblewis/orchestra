@@ -38,6 +38,7 @@ from ._vendored.combined import judge as J
 ROUNDS = 4
 MAX_TERMS = 4
 GN_ITERS = 12
+FLOOR_GAIN = 2.0    # the floored fit must beat the same columns unfloored by this x log n (the row's -2 log L)
 MIN_BINDS = 3       # a floored rate must be at or below 0 on at least this many steps
 PLAIN = ("constant", "proportional", "linear")
 _DEBUG = bool(os.environ.get("SDLAB_FLOOR_DEBUG"))
@@ -143,11 +144,11 @@ def _row_fit(y: np.ndarray, free: list[tuple], A: np.ndarray, sign: float, thr: 
     return _gn(y, blocks, np.concatenate([theta, w0]))
 
 
-def _select(y: np.ndarray, free: list[tuple], cols: dict[str, np.ndarray], sign: float, q: float) -> tuple[dict, list] | None:
+def _select(y: np.ndarray, free: list[tuple], cols: dict[str, np.ndarray], sign: float, q: float, counts: bool = False) -> tuple[dict, list] | None:
     """The floored linear rate for the stock's side (a linear rate dict) and its free flows' refitted
     numbers, the side's columns chosen forward then backward on BIC."""
     n = len(y)
-    floor = max(q * q / 6.0, 1e-300)
+    floor = 1e-300 if counts else max(q * q / 6.0, 1e-300)   # rounding's variance; counts' quantum is their unit, not their noise
     thr = max(0.5 * q, 1e-9 * float(np.max(np.abs(y)) or 1.0))
     mat = {"1": np.ones(n), **cols}
     names = list(mat)
@@ -162,12 +163,15 @@ def _select(y: np.ndarray, free: list[tuple], cols: dict[str, np.ndarray], sign:
     best = None
     while len(chosen) < MAX_TERMS:
         step = None
-        for c in names:
-            if c in chosen:
-                continue
-            got = fit(chosen + [c])
+        # the first step also tries every pair: a gap's floor binds only with both its sides (the stock and
+        # its goal), and either alone is a rate that never binds (309 counts: no single column helps)
+        tries = [chosen + [c] for c in names if c not in chosen]
+        if not chosen:
+            tries += [[a, b] for j, a in enumerate(names) for b in names[j + 1:]]
+        for use in tries:
+            got = fit(use)
             if got is not None and (step is None or got[0] < step[0]):
-                step = (got[0], chosen + [c], got[1])
+                step = (got[0], use, got[1])
         if step is None or (best is not None and not step[0] < best[0]):
             break
         best, chosen = (step[0], step[2]), step[1]
@@ -183,6 +187,15 @@ def _select(y: np.ndarray, free: list[tuple], cols: dict[str, np.ndarray], sign:
                 best, chosen, pruned = got, use, True
                 break
     th = best[1]
+    # the floor must be what explains the row: the same columns fitted with no floor (an ordinary least squares
+    # of the row on them and on the free flows' columns) must do clearly worse
+    D = np.column_stack([sg * C for sg, C, _ in free] + [sign * np.column_stack([mat[k] for k in chosen])])
+    lin = float(np.sum((y - D @ np.linalg.lstsq(D, y, rcond=None)[0]) ** 2))
+    hinge = n * math.log(max(lin / n, floor)) - n * math.log(max(_row_fit(y, free, np.column_stack([mat[k] for k in chosen]), sign, thr)[1] / n, floor))
+    if _DEBUG:
+        print("floor hinge gain", round(hinge, 1), chosen)
+    if not hinge > FLOOR_GAIN * math.log(n):
+        return None
     c, terms = 0.0, []
     for k, v in zip(chosen, th[nfree:]):
         if k == "1":
@@ -198,14 +211,27 @@ def _select(y: np.ndarray, free: list[tuple], cols: dict[str, np.ndarray], sign:
     return {"form": "linear", "c": c, "terms": terms}, out
 
 
-def _refit(flows: list[dict], data: J.Data, mat: dict, offered: set) -> list[dict]:
-    """Every plain flow's numbers refitted on all measured stocks together, each rate floored at 0 (see
-    the module); the other flows held as they are."""
+def _estimated(f: dict, bound: dict, declared: bool) -> bool:
+    """False for an outside flow on a side the declared boundary gives as measured or an input (its number
+    is fixed: 1 x the series), True otherwise."""
+    if not declared or (f.get("from") and f.get("to")):
+        return True
+    s, side = (f.get("to"), "in") if f.get("from") is None else (f.get("from"), "out")
+    kinds = (bound.get(s) or {}).get(side) or []
+    kinds = [kinds] if isinstance(kinds, str) else list(kinds)
+    return "estimate" in kinds
+
+
+def _refit(flows: list[dict], data: J.Data, mat: dict, offered: set, held=lambda f: False, near: set | None = None) -> list[dict]:
+    """The numbers of every plain flow that touches a stock in `near` (all, when None) refitted on all
+    measured stocks together, each rate floored at 0 (see the module); the other flows (and those `held`)
+    kept as they are."""
     ids = data.ids
     index = {s: i for i, s in enumerate(ids)}
     free, fixed = [], []
     for f in flows:
-        c = _cols(f.get("rate") or {}, mat) if _plain(f) and not (_reads(f) & offered) else None
+        ok = _plain(f) and not (_reads(f) & offered) and not held(f) and (near is None or bool({f.get("from"), f.get("to")} & near))
+        c = _cols(f.get("rate") or {}, mat) if ok else None
         (free if c else fixed).append((f, c))
     if not free:
         return flows
@@ -279,14 +305,13 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
     cols = {k: v for k, v in allcols.items() if k not in offered and np.ptp(v) > 0}
     cur = list(result["flows"])
 
+    def held(f):
+        return not _estimated(f, bound, declared)
+
     def judge(fl):
         return J.score(_post(fl, stocks, run, opts), data)["bic"]
     best = judge(cur)
     first = best
-    again = _refit(cur, data, allcols, offered)            # the baseline refitted the same way, so a change earns its
-    b = judge(again)                                       # place by its structure, not by the refit of its numbers
-    if b < best:
-        best, cur = b, again
     margin = math.log(max(2, data.T))                      # a change must beat the baseline by more than this
     made = []
     for _ in range(ROUNDS):
@@ -299,12 +324,12 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                     here = [f for f in cur if f.get("from") is None and f.get("to") == s]
                 else:
                     here = [f for f in cur if f.get("from") == s and f.get("to") is None]
-                if declared and not (bound.get(s) or {}).get(side):
-                    continue
+                if declared and not _estimated({"from": None if side == "in" else s, "to": s if side == "in" else None}, bound, True):
+                    continue                              # no such side, or one fixed to a measured series
                 if not declared and not here:
                     continue
-                if any(not _plain(f) or (_reads(f) & offered) for f in here):
-                    continue
+                if any((f.get("rate") or {}).get("form") == "expr" or f.get("inflow") or (_reads(f) & offered) for f in here):
+                    continue                              # an expression (a limit written back), a profile, an offered series: kept
                 moves = [f for f in cur if f.get("from") in measured and f.get("to") in measured and s in (f["from"], f["to"])
                          and _plain(f) and not (_reads(f) & offered)]
                 for drop, own in [(d_, o_) for d_ in [[]] + [[mv] for mv in moves] for o_ in (False, True)]:
@@ -316,7 +341,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                         # own: only the stock's own outside flows are refitted with the side (its moves held: their
                         # other stock's row has them too); else its moves are refitted with it as well
                         mine = not (f.get("from") in measured and f.get("to") in measured)
-                        c = _cols(f.get("rate") or {}, allcols) if _plain(f) and not (_reads(f) & offered) and (mine or not own) else None
+                        c = _cols(f.get("rate") or {}, allcols) if _plain(f) and not (_reads(f) & offered) and not held(f) and (mine or not own) else None
                         if c:
                             free.append((-1.0 if f.get("from") == s else 1.0, np.column_stack([col for _, col in c]),
                                          [_get(f["rate"], key) for key, _ in c]))
@@ -325,11 +350,15 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                             fixed_f.append(f)
                     mu = J.one_step(fixed_f, data)[0] if fixed_f else np.zeros_like(data.dy)
                     y = data.dy[i] - mu[i]
-                    got = _select(y, free, cols, 1.0 if side == "in" else -1.0, data.q)
+                    got = _select(y, free, cols, 1.0 if side == "in" else -1.0, data.q, data.counts)
                     if got is None:
+                        if _DEBUG:
+                            print("floor none", s, side, own)
                         continue
                     rate, nums = got
                     amount = rate["c"] + sum(t["k"] * cols[t["stock"]] for t in rate["terms"])
+                    if _DEBUG:
+                        print("floor binds", s, side, own, int(np.sum(amount <= 0)))
                     if int(np.sum(amount <= 0)) < MIN_BINDS:
                         continue                              # the floor never binds: a linear rate, which the fits upstream have
                     upd = {}
@@ -344,7 +373,8 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                     new.append({"id": f"floor_{s}_{side}", "from": None if side == "in" else s, "to": s if side == "in" else None,
                                 "ratio": 1, "rate": rate, "rates": [rate]})
                     note = {"stock": s, "side": side, "dropped": [(f.get("from"), f.get("to")) for f in drop]}
-                    for cand in (new, _refit(new, data, allcols, offered)):
+                    near = {s} | {e for f in drop for e in (f.get("from"), f.get("to"))}
+                    for cand in (new, _refit(new, data, allcols, offered, held, near)):
                         b = judge(cand)
                         if _DEBUG:
                             print("floor cand", s, side, own, note["dropped"], round(b, 1), round(best, 1), json.dumps(rate))
