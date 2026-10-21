@@ -99,3 +99,21 @@ def test_no_offset_from_measurement_error(mod):
     opts = {"injections": [{"t": t, "stock": "H", "amount": 100.0} for t in range(60, 401, 60)]}
     r = m.apply({"flows": [_flow("H", None, {"form": "proportional", "stock": "H", "k": 0.08})]}, [{"id": "H"}], run, opts)
     assert not any("c + k" in s for s in r["boundary"]["changed"]), r["boundary"]["changed"]
+
+
+@pytest.mark.parametrize("mod", COPIES)
+def test_declared_flows_always_present(mod):
+    """A declared outside flow is a given (the user, 2026-10-21): an empty model gets the declared
+    inflow and drain, with fitted numbers; the goal gap's model without its orders gets them back."""
+    m = importlib.import_module(f"sdlab.discovery.strategies.{mod}")
+    run, opts = _cooling()
+    run.update(boundary={"H": {"out": ["estimate"]}}, boundary_declared=True)
+    r = m.apply({"flows": []}, [{"id": "H"}], run, opts)
+    c, x, k = _affine(r["flows"], "H", None)
+    assert x == "H" and abs(k - 0.1) < 0.005 and abs(c + 7) < 0.4, (c, k)
+    run, opts = _gap()
+    run.update(boundary={"P": {"in": ["estimate"]}, "I": {"out": ["estimate"]}}, boundary_declared=True)
+    r = m.apply({"flows": [_flow("P", "I", {"form": "proportional", "stock": "P", "k": 0.25})]},
+                [{"id": "P"}, {"id": "I"}], run, opts, final=False)
+    sides = {(f.get("from"), f.get("to")) for f in r["flows"]}
+    assert (None, "P") in sides and ("I", None) in sides, sides

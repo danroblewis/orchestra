@@ -605,11 +605,6 @@ def price_claims(flows: list[dict], stocks: list[dict], b: Boundary, data: Data,
     return flows
 
 
-
-
-
-
-
 GAP_FITS = 60          # the gap-form pass stops after this many refits of its own (deterministic)
 
 
@@ -721,6 +716,67 @@ def gap_forms(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, lo
     return flows
 
 
+def _missing(flows: list[dict], ids: list[str], b: Boundary, inputs: set) -> list[tuple[str, str]]:
+    """The declared sides (stock, "in"/"out") no flow of the model holds (a flow outside the boundary
+    does not count)."""
+    bad = set(violations(flows, ids, b, inputs))
+    held = {e for i, es in enumerate(ends(flows, ids)) if i not in bad for e in es}
+    return [(s, side) for s, e in b.sides.items() if s in ids for side in ("in", "out") if e.get(side) and (s, side) not in held]
+
+
+def fill_declared(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: list[str]) -> list[dict]:
+    """A declared outside flow is a given of the case (the user, 2026-10-21): the strategy decides its
+    form and numbers, never whether it exists. Each declared side the model lacks gets a flow in the
+    best-pricing allowed form, its numbers started from what the stock leaves unexplained and refitted
+    jointly with the stock's other flows: an estimated inflow a constant, an estimated outflow a drain k X
+    (gap_forms may then give either the form c + k X), a measured inflow one reading a measured input.
+    The declared flows alone, with fitted numbers, are so the floor of every model."""
+    if not b.declared:
+        return flows
+    inputs = set(data.inputs)
+    for s, side in _missing(flows, data.ids, b, inputs):
+        row = data.ids.index(s)
+        sign = 1.0 if side == "in" else -1.0
+        y = sign * (data.dy[row] - data.change(flows)[row]) if data.T else np.zeros(0)
+        x = data.L[row] if data.T else np.zeros(0)
+        cands = []
+        if "estimate" in b.kinds(s, side):
+            if side == "in":
+                c = max(float(np.mean(y)) if len(y) else 0.0, 1e-6)
+                rate = {"form": "constant", "value": c}
+                cands.append(("a constant", {"from": None, "to": s, "ratio": 1, "rate": rate, "rates": [rate]}))
+            else:
+                k = max(float(y @ x / (x @ x)) if len(y) and float(x @ x) > 0 else 0.0, 1e-6)
+                rate = {"form": "proportional", "stock": s, "k": k}
+                cands.append((f"a drain k {s}", {"from": s, "to": None, "ratio": 1, "rate": rate, "rates": [rate]}))
+        if "measured" in b.kinds(s, side) or not cands:
+            for name, series in data.inputs.items():
+                if name in data.ids:
+                    continue
+                v = np.asarray(series, dtype=float)
+                scale = float(np.nanmean(np.abs(v))) or 1.0
+                k = max(float(np.mean(y)) / scale if len(y) else 0.0, 1e-6)
+                rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": k}]}
+                f = {"from": None, "to": s, "ratio": 1, "rate": rate, "rates": [rate], "input": name} if side == "in" else \
+                    {"from": s, "to": None, "ratio": 1, "rate": rate, "rates": [rate], "input": name}
+                cands.append((f"a flow reading {name}", f))
+        best = None
+        for what, f in cands:
+            cand = flows + [f]
+            if violations(cand, data.ids, b, inputs) != violations(flows, data.ids, b, inputs):
+                continue                                   # not a form this side allows (this copy's kind reading)
+            fit = Fit(cand, data, {s})
+            pr = price(fit, data, b) if fit.ok else float("inf")
+            got = fit.flows if fit.ok and math.isfinite(pr) else cand       # unfittable or negative: its started numbers
+            if best is None or pr < best[0]:
+                best = (pr, what, got)
+        if best is None:
+            continue
+        log.append(f"the declared {'inflow into' if side == 'in' else 'outflow from'} {s} was missing: added as {best[1]}")
+        flows = best[2]
+    return flows
+
+
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final: bool = True) -> dict:
     """The hook: a result's flows kept inside the boundary. Declared: the guard, then the moves the
     unexplained changes ask for. Not declared (final only): moves, then each claim priced; the claims
@@ -734,8 +790,10 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final:
     flows = result["flows"]
     if b.declared:
         flows = guard(flows, stocks, b, data, log)
+        flows = fill_declared(flows, stocks, b, data, log)
         if final:
             flows = pair_moves(flows, stocks, b, data, log)
+            flows = fill_declared(flows, stocks, b, data, log)   # the moves may have taken a declared side's flow
             flows = gap_forms(flows, stocks, b, data, log)
     elif final:
         flows = pair_moves(flows, stocks, b, data, log)
