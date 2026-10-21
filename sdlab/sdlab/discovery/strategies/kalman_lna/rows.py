@@ -40,6 +40,8 @@ import time
 
 import numpy as np
 
+from . import derived as _derived
+
 PRICE = 6.0            # the margin a rebuild must win by, in log T
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
 EXPLAINED = 0.5        # a rebuilt row explains at least this share of the stock's change's squares (counting noise leaves the rest)
@@ -47,7 +49,7 @@ SUB = 3                # every subset up to this many readers is tried
 MOST_TERMS = 5         # then forward steps up to this many
 BASE_SUB = 2           # the always-on part of a floored row: every support up to this many readers
 MIN_ON = 5             # a floored term acts on at least this many steps
-TIME = 40.0            # seconds for the whole pass
+TIME = 90.0            # seconds for the whole pass (310: the derived-column search runs inside it)
 TOL_MOVE = 0.02        # a move may take this share more than the source's drain (rounding)
 REPAIRS = 3            # rounds of refitting a row that needs a side the boundary lacks
 LEFT = 1e-4            # what a drain leaves below this share of itself after its moves is rounding
@@ -95,6 +97,8 @@ def _amounts(f: dict, states: list[dict], t_end: np.ndarray) -> np.ndarray | Non
 
 
 def _numbers(f: dict) -> int:
+    if f.get("numbers"):
+        return int(f["numbers"])
     if f.get("inflow"):
         return len(f["inflow"])
     if f.get("byTime"):
@@ -188,7 +192,8 @@ def _trimmed(A: np.ndarray, y: np.ndarray, keep: float = 0.5, rounds: int = 6) -
     return b
 
 
-def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: float, a_cols: list[int] | None = None):
+def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: float, a_cols: list[int] | None = None,
+             b_cols: list[int] | None = None):
     """(bic, base support, a, floored support, b, sse) of y = X_A a + sign max(0, X_B b); None where none fits."""
     n, p = X.shape
     logn = math.log(max(n, 2))
@@ -207,7 +212,7 @@ def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: 
         on = sign * r > tol
         if int(on.sum()) < MIN_ON:
             continue
-        for B, b in _hinge_readers(X, r, on, sign, floor, n, logn):
+        for B, b in _hinge_readers(X, r, on, sign, floor, n, logn, b_cols=b_cols):
             got = _joint(X, y, A, a, B, b, sign, floor, n, logn)
             if got is not None and (best is None or got[0] < best[0]):
                 best = got
@@ -246,14 +251,14 @@ def _joint(X, y, A, a, B, b, sign, floor, n, logn):
     return n * math.log((sse + floor) / n) + (len(A) + len(B)) * logn, A, a, B, b, sse
 
 
-def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3):
+def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[int] | None = None):
     """The floored term's best readers for what the always-on part leaves (r): each subset fitted on the steps
     it acts (on) and scored on every step (off steps must read B . x <= 0); the top few (support, coefs)."""
-    p = X.shape[1]
+    cols = list(range(X.shape[1])) if b_cols is None else b_cols
     got = []
     Xo, yo = X[on], sign * r[on]
-    for k in range(1, min(SUB, p) + 1):
-        for sub in itertools.combinations(range(p), k):
+    for k in range(1, min(SUB, len(cols)) + 1):
+        for sub in itertools.combinations(cols, k):
             b, _ = _lstsq(Xo[:, sub], yo)
             sse = float(((sign * r - np.maximum(0.0, X[:, sub] @ b)) ** 2).sum())
             got.append((n * math.log((sse + floor) / n) + k * logn, sub, b))
@@ -320,17 +325,130 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             cols.remove(j)                                   # S's own term fixed; its floored term may read it
         lin = _sparse(X, yy, floor[S], cols)
         out = {"bic": lin[0], "sse": lin[3], "lin": dict(zip([names[j] for j in lin[1]], map(float, lin[2]))),
-               "hinge": None}
+               "hinge": None, "res": yy - (X[:, list(lin[1])] @ lin[2] if len(lin[1]) else 0.0)}
         if lin[3] > floor[S] and S not in final:
+            b_cols = [j for j in cols if not str(names[j]).startswith("__")]   # a floored term reads levels only
             for side in sorted(_sides(S, declared, bd)):
-                h = _floored(X, yy, 1.0 if side == "in" else -1.0, floor[S], deadline, cols)
+                sign = 1.0 if side == "in" else -1.0
+                h = _floored(X, yy, sign, floor[S], deadline, cols, b_cols)
                 if h is not None and h[0] < out["bic"] - 1e-9:
+                    pred = (X[:, list(h[1])] @ h[2] if len(h[1]) else 0.0) + sign * np.maximum(0.0, X[:, list(h[3])] @ h[4])
                     out = {"bic": h[0], "sse": h[5], "lin": dict(zip([names[j] for j in h[1]], map(float, h[2]))),
-                           "hinge": (side, dict(zip([names[j] for j in h[3]], map(float, h[4]))))}
+                           "hinge": (side, dict(zip([names[j] for j in h[3]], map(float, h[4])))), "res": yy - pred}
+        if (out["sse"] > 100 * floor[S] and S not in final and "in" in _sides(S, declared, bd)
+                and f"__s_{S}" not in exclude):
+            out = _hidden(S, yy, cols, _schedule(S, yy, cols, out), out)
         if self_k is not None:
             out["lin"][S] = out["lin"].get(S, 0.0) + self_k
             out["bic"] += logT
         return out
+
+    qs: dict = {}
+    derived_meta: dict[str, dict] = {}                     # (310, derived.py) columns beyond the levels
+
+    def _schedule(S, yy, cols, out):
+        """(310, derived.py) the row with one constant per block of P steps as fixed effects, where that wins by BIC."""
+        best = out
+        cs = [j for j in cols if names[j] is not None]
+        for P in _derived.PIECES:
+            if T // P < 3 or time.monotonic() > deadline:
+                continue
+            Q = qs.get(P)
+            if Q is None:
+                Q = qs[P] = _derived.basis(T, P)
+            Xd, yd = _derived.demean(X[:, cs], Q), _derived.demean(yy, Q)
+            keep = [k for k in range(len(cs)) if np.ptp(Xd[:, k]) > 1e-9 * (np.ptp(X[:, cs[k]]) + 1e-300)]
+            lin = _sparse(Xd, yd, floor[S], keep)
+            sup = [cs[k] for k in lin[1]]
+            base = X[:, sup] @ lin[2] if sup else np.zeros(T)
+            sch = _derived.fitted(yy - base, Q)
+            res = yy - base - sch
+            sse = float(res @ res)
+            b = T * math.log((sse + floor[S]) / T) + (len(sup) + Q.shape[1]) * logT
+            if b + PRICE * logT < best["bic"]:
+                idx = _derived.blocks(T, P)
+                best = {"bic": b, "sse": sse, "lin": {**dict(zip([names[j] for j in sup], map(float, lin[2]))), f"__s_{S}": 1.0},
+                        "hinge": None, "res": res, "sched": sch, "sched_idx": idx, "sched_q": Q}
+        return best
+
+    def _with(Z, S, yy, cs):
+        """(bic before the extra numbers, support, coefs, fitted extra part, residual) of yy on readers cs plus
+        the columns Z (fixed effects: the readers chosen on what Z leaves)."""
+        U, sv, _ = np.linalg.svd(Z, full_matrices=False)
+        Q = U[:, sv > 1e-10 * sv[0]]
+        Xd, yd = _derived.demean(X[:, cs], Q), _derived.demean(yy, Q)
+        keep = [k for k in range(len(cs)) if np.ptp(Xd[:, k]) > 1e-9 * (np.ptp(X[:, cs[k]]) + 1e-300)]
+        lin = _sparse(Xd, yd, floor[S], keep)
+        sup = [cs[k] for k in lin[1]]
+        base = X[:, sup] @ lin[2] if sup else np.zeros(T)
+        extra = _derived.fitted(yy - base, Q)
+        res = yy - base - extra
+        return sup, lin[2], extra, res, Q
+
+    def _hidden(S, yy, cols, best, plain):
+        """(310, derived.py 3) the row reading a hidden integrator (constant inflow, a drain at a constant rate or
+        switched by a derived switch), written out as a schedule, where it wins by BIC over the plain row."""
+        cs = [j for j in cols if names[j] is not None]
+        switches = [np.ones(T)] + [m["switch"] for m in derived_meta.values() if m.get("switch") is not None]
+        top = None
+        for sw in switches:
+            if time.monotonic() > deadline:
+                break
+
+            def sse_at(a, sw=sw):
+                h0, h1 = _derived.integrator(a, sw)
+                Z = np.vstack([h0, h1, np.ones(T)]).T
+                sup, coef, extra, res, Q = _with(Z, S, yy, cs)
+                return float(res @ res), (sup, coef, extra, res, Q)
+
+            grid = _derived.decays(sw)
+            vals = [sse_at(a)[0] for a in grid]
+            k = int(np.argmin(vals))
+            a = grid[k]
+            if 0 < k < len(grid) - 1:
+                a, _ = _derived.golden(lambda x: sse_at(x)[0], grid[k - 1], grid[k + 1])
+            sse, (sup, coef, extra, res, Q) = sse_at(a)
+            b = T * math.log((sse + floor[S]) / T) + (len(sup) + 4) * logT
+            if top is None or b < top[0]:
+                top = (b, sse, sup, coef, extra, res, Q)
+        if top is None or not top[0] + PRICE * logT < plain["bic"] or not top[0] < best["bic"]:
+            return best
+        b, sse, sup, coef, extra, res, Q = top
+        P = _derived.PIECES[0]
+        return {"bic": b, "sse": sse, "lin": {**dict(zip([names[j] for j in sup], map(float, coef))), f"__s_{S}": 1.0},
+                "hinge": None, "res": res, "sched": extra, "sched_idx": _derived.blocks(T, P), "sched_q": Q,
+                "hidden": True}
+
+    def _ratio_hidden(resid, taken, stock_cols):
+        """(310) a rate per unit of another stock and a hidden integrator are found together: on every row with an
+        inflow side whose row is not at rounding, each ratio column is scored with the row refitted on its readers,
+        the column and the best hidden integrator (derived.py 3); (gain, meta, column) of the best, or None."""
+        best = None
+        switches = [np.ones(T)] + [m["switch"] for m in derived_meta.values() if m.get("switch") is not None]
+        Hs = [(_derived.integrator(a, sw)) for sw in switches for a in _derived.decays(sw)]
+        for S in resid:
+            if S in final or "in" not in _sides(S, declared, bd) or time.monotonic() > deadline:
+                continue
+            r = rows[S]
+            y = dy[ids.index(S)]
+            sup = [X[:, names.index(n)] for n in r["lin"] if n in names and n is not None]
+            for ia in stock_cols:
+                for ib in stock_cols:
+                    if ia == ib:
+                        continue
+                    e = _derived.ratio_expr(names[ia], names[ib])
+                    if e in taken:
+                        continue
+                    col = X[:, ia] / np.maximum(1.0, X[:, ib])
+                    top = math.inf
+                    for h0, h1 in Hs:
+                        A = np.vstack(sup + [col, h0, h1, np.ones(T)]).T
+                        _, sse = _lstsq(A, y)
+                        top = min(top, sse)
+                    g = T * math.log((r["sse"] + floor[S]) / (top + floor[S])) - 5 * logT
+                    if best is None or g > best[0]:
+                        best = (g, {"expr": e, "reads": [names[ia], names[ib]], "base": names[ia], "row": S}, col)
+        return best
 
     rows, old = {}, {}
     for i, S in enumerate(ids):
@@ -341,6 +459,54 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             continue
         old[S] = a
         rows[S] = row(S, dy[i])
+    def _span(r):
+        """An orthonormal basis of what row r already reads (its readers, its floored term, its schedule): a
+        new column is scored on what it adds beyond them."""
+        cols = [X[:, names.index(n)] for n in r["lin"] if n in names]
+        if r.get("hinge"):
+            side, hb = r["hinge"]
+            z = sum(k * X[:, names.index(n)] for n, k in hb.items())
+            cols += [X[:, names.index(n)] * (z > 0) for n in hb]
+        A = np.vstack(cols).T if cols else np.zeros((T, 0))
+        if r.get("sched_q") is not None:
+            A = np.hstack([A, r["sched_q"]])
+        if A.shape[1] == 0:
+            return None
+        U, sv, _ = np.linalg.svd(A, full_matrices=False)
+        return U[:, sv > 1e-10 * sv[0]]
+
+    stock_cols = [j for j, n in enumerate(names) if n in set(ids)]
+    for _ in range(_derived.ROUNDS):
+        if time.monotonic() > deadline:
+            break
+        resid = {S: r["res"] for S, r in rows.items() if r["sse"] > 100 * floor[S]}
+        if not resid:
+            break
+        got = _derived.search(X, names, stock_cols, resid, floor, {S: _span(rows[S]) for S in resid}, T,
+                              {m["expr"] for m in derived_meta.values()})
+        joint = _ratio_hidden(resid, {m["expr"] for m in derived_meta.values()}, stock_cols)
+        if joint is not None and (got is None or joint[0] > got[0]):
+            got = joint
+        if got is None or got[0] < PRICE * logT:
+            break
+        name = f"__d{len(derived_meta)}"
+        derived_meta[name] = got[1]
+        X = np.hstack([X, got[2][:, None]])
+        names = names + [name]
+        if opts.get("rows_trace"):
+            print("rows derived", name, got[1], round(got[0], 1))
+        rows = {S: row(S, dy[ids.index(S)]) for S in rows}
+        for _ in range(2):                                   # a switch's threshold refitted on the rows reading it
+            j = names.index(name)
+            parts = {S: r["res"] + r["lin"][name] * X[:, j] for S, r in rows.items() if r["lin"].get(name)}
+            meta, col = _derived.refine(X, names, derived_meta[name], parts)
+            if col is None:
+                break
+            derived_meta[name] = meta
+            X[:, j] = col
+            rows = {S: row(S, dy[ids.index(S)]) for S in rows}
+        if opts.get("rows_trace"):
+            print("rows derived refined", name, derived_meta[name]["expr"])
     if time.monotonic() > deadline:
         return result
     if opts.get("rows_trace"):
@@ -365,7 +531,8 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             break
         B |= grow
     for _ in range(len(ids) + 1):
-        built = _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor)
+        built = _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor,
+                       derived_meta, t_end)
         if built is None:
             return result
         new_flows, bad = built
@@ -393,8 +560,9 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
     if not tot_new + PRICE * logT < tot_old:
         return result
     out = copy.copy(result)
-    out["flows"] = new_flows
-    out["rows"] = {"rebuilt": sorted(B), "bic": [tot_old, tot_new]}
+    out["flows"] = [_finish(f) for f in new_flows]
+    out["rows"] = {"rebuilt": sorted(B), "bic": [tot_old, tot_new],
+                   **({"derived": [m["expr"] for m in derived_meta.values()]} if derived_meta else {})}
     return out
 
 
@@ -408,21 +576,80 @@ def _rate(terms: dict[str | None, float]) -> dict:
     return {"form": "linear", "c": c, "terms": links}
 
 
-def _flow(a, b, terms) -> dict:
-    r = _rate(terms)
-    return {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}"}
+def _flow(a, b, terms, ctx: dict | None = None) -> dict:
+    ctx = ctx or {}
+    meta, sched = ctx.get("derived") or {}, ctx.get("sched") or {}
+    if not any(s is not None and str(s).startswith("__") for s in terms):
+        r = _rate(terms)
+        return {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}"}
+    # (310, derived.py) a rate reading a derived column is an expression; one carrying a schedule, one per block
+    c = float(terms.get(None, 0.0))
+    parts = []
+    for s_, k in terms.items():
+        if s_ is None or str(s_).startswith("__s_"):
+            continue
+        parts.append(f"{float(k)!r} * ({meta[s_]['expr']})" if s_ in meta else f"{float(k)!r} * {s_}")
+    sname = next((s_ for s_ in terms if s_ is not None and str(s_).startswith("__s_")), None)
+    numbers = len(parts) + (1 if c else 0)
+    if sname is None:
+        r = {"form": "expr", "expr": " + ".join([repr(c)] + parts)}
+        out = {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}", "numbers": numbers}
+        only = [s_ for s_ in terms if s_ is not None]
+        if not c and len(only) == 1 and (meta.get(only[0]) or {}).get("hinge"):
+            out["_effect"] = _effect_form(meta[only[0]], float(terms[only[0]]), ctx.get("names") or [], ctx.get("X"))
+        return out
+    series, idx = sched[sname]
+    t_end = ctx["t_end"]
+    segs = []
+    for blk in range(int(idx.max()) + 1):
+        at = np.flatnonzero(idx == blk)
+        v = c + float(terms[sname]) * float(np.mean(series[at]))     # the block at the schedule's mean over it
+        segs.append({"from": float(t_end[at[0]]), "to": float(t_end[at[-1]]),
+                     "rate": {"form": "expr", "expr": " + ".join([repr(v)] + parts)}})
+    segs[0]["from"] = float(t_end[0]) - 1.0
+    r = dict(segs[-1]["rate"])
+    return {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "byTime": segs, "id": f"rows_{a}_{b}",
+            "numbers": numbers + len(segs)}
 
 
-def _pair(R, B, unit, final):
-    """Moves, outside links in and out, each stock's drain and what its moves leave of it."""
+def _effect_form(m: dict, k: float, names: list, X) -> dict:
+    """k X max(0, Y - theta) (or max(0, theta - Y)) as the engine's own form: a rate k X with an effect of Y, a
+    table that is 0 past the threshold and rises by 1 a unit of Y beyond it (over ten times Y's range)."""
+    ia, ib, up, theta = m["hinge"]
+    span = 10.0 * float(np.ptp(X[:, ib])) + 1.0 if X is not None else 1e4
+    pts = [[theta, 0.0], [theta + span, span]] if up else [[theta - span, span], [theta, 0.0]]
+    r = {"form": "proportional", "stock": names[ia], "k": k}
+    return {"rate": r, "rates": [dict(r)], "effects": [{"stock": names[ib], "shape": "table", "points": pts}]}
+
+
+def _finish(f: dict) -> dict:
+    """A rebuilt flow in its final form (310: a switch column as a rate with an effect)."""
+    if "_effect" not in f:
+        return f
+    g = {k: v for k, v in f.items() if k not in ("_effect", "numbers")}
+    g.update(f["_effect"])
+    return g
+
+
+def _pair(R, B, unit, final, meta=None):
+    """Moves, outside links in and out, each stock's drain and what its moves leave of it. (310) A derived column
+    with base X (derived.py: X x a switch on another stock) that X's row loses and T's gains, T in X's unit, is a
+    move X -> T too; where two stocks gain it, the move goes to the one that is not a counter (final)."""
+    meta = meta or {}
     drain = {S: max(0.0, -R[S]["lin"].get(S, 0.0)) for S in B}
     moves, link_in, link_out = [], {S: {} for S in B}, {S: {} for S in B}
-    cands = []
+    pool = {(S, d): -k for S in B for d, k in R[S]["lin"].items() if d in meta and meta[d]["base"] == S and k < 0}
+    cands, dcands = [], []
     for Tt in B:
         for x, k in R[Tt]["lin"].items():
             if x == Tt:
                 continue
-            if k > 0 and x in B and unit.get(x) == unit.get(Tt) and x not in final:
+            if (Tt, x) in pool:
+                continue                                     # what Tt loses in its own derived column: below
+            base = meta[x]["base"] if x in meta else None
+            if k > 0 and base is not None and (base, x) in pool and base != Tt and unit.get(base) == unit.get(Tt):
+                dcands.append((Tt in final, -k, base, Tt, x))
+            elif k > 0 and x in B and unit.get(x) == unit.get(Tt) and x not in final:
                 cands.append((k, x, Tt))
             elif k > 0:
                 link_in[Tt][x] = k
@@ -431,16 +658,34 @@ def _pair(R, B, unit, final):
     left = dict(drain)
     for k, x, Tt in sorted(cands, key=lambda c: -c[0]):
         if k <= left[x] * (1 + TOL_MOVE) + 1e-12:
-            moves.append((x, Tt, k))
+            moves.append((x, Tt, {x: k}))
             left[x] = max(0.0, left[x] - k)
         else:
             link_in[Tt][x] = k
+    dleft = dict(pool)
+    for _, mk, base, Tt, d in sorted(dcands):
+        k = -mk
+        if k <= dleft[(base, d)] * (1 + TOL_MOVE) + 1e-12:
+            moves.append((base, Tt, {d: k}))
+            dleft[(base, d)] = max(0.0, dleft[(base, d)] - k)
+        else:
+            link_in[Tt][d] = k
+    for (S, d), v in dleft.items():
+        if v > TOL_MOVE * pool[(S, d)]:                     # less is the rounding of the move's two ends
+            link_out[S][d] = v
     return moves, link_in, link_out, drain, left
 
 
-def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor):
+def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor, meta=None, t_end=None):
     """(flows, stocks to leave out) of the rebuild over B; None where a flow cannot run."""
     series = {n: X[:, j] for j, n in enumerate(names)}
+    sched: dict = {}
+
+    def note_sched():
+        for S in B:
+            if R[S].get("sched") is not None:
+                series[f"__s_{S}"] = R[S]["sched"]
+                sched[f"__s_{S}"] = (R[S]["sched"], R[S]["sched_idx"])
     kept, kept_on = [], {S: np.zeros(T) for S in B}
     for n, f in enumerate(flows):
         a, b = f.get("from"), f.get("to")
@@ -463,9 +708,10 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
     for S in B:
         y[S] = dy[ids.index(S)] - kept_on[S]
         R[S] = row(S, y[S]) if np.any(kept_on[S]) else rows[S]
+    note_sched()
     fixed, excl = {}, {S: set() for S in B}
     for _ in range(REPAIRS + 1):
-        moves, link_in, link_out, drain, left = _pair(R, B, unit, final)
+        moves, link_in, link_out, drain, left = _pair(R, B, unit, final, meta)
         for S in B:                                          # a link that moves S by less than the data's
             res = 10.0 * math.sqrt(floor[S] / T)             # rounding is rounding, not a flow
             for links in (link_in[S], link_out[S]):
@@ -493,6 +739,7 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
             break
         for S in redo:
             R[S] = row(S, y[S], fixed.get(S), frozenset(excl[S]))
+        note_sched()
     bad = set()
     for S in B:
         self_k = R[S]["lin"].get(S, 0.0)
@@ -512,7 +759,7 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
             bad.add(S)
     if bad:
         return flows, bad
-    new = [(x, Tt, {x: k}, False) for x, Tt, k in moves]
+    new = [(x, Tt, dict(terms), False) for x, Tt, terms in moves]
     for S in sorted(B):
         h = R[S]["hinge"]
         if link_in[S]:
@@ -523,8 +770,9 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
             new.append((None, S, dict(h[1]), True) if h[0] == "in" else (S, None, dict(h[1]), True))
     new = _together(new, B, y, R, series, floor, T)
     out = list(kept)
+    ctx = {"derived": meta or {}, "sched": sched, "t_end": t_end, "names": names, "X": X}
     for a, b, terms, _ in new:
-        out.append(_flow(a, b, terms))
+        out.append(_flow(a, b, terms, ctx))
     return out, set()
 
 
