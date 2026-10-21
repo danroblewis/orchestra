@@ -659,3 +659,5 @@ figure.conv figcaption { font-size: 12px; color: var(--muted); }
 .cst.on { outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; border-radius: 4px; }
 
 .dsame { margin-top: 4px; } .dsame summary { cursor: pointer; }
+.nowstrat { font-size: 30px; font-weight: 750; line-height: 1.15; letter-spacing: -0.01em; margin: 2px 0 2px; font-family: var(--mono); }
+.nowstrat .nowvar { font-size: 18px; font-weight: 500; color: var(--muted); }

@@ -35,7 +35,7 @@
     <div id="board-wrap" hidden>
       <div class="rcontrols" id="board-controls"></div>
       <div id="board-sum"></div>
-      <p class="note">Each case: the true model, what the strategy found, and their differences (in the third panel and as a list): <b class="d-ok">✓</b> matched, <b class="d-wrong">~</b> a number off, <b class="d-missed">−</b> missed, <b class="d-spurious">+</b> invented, <b class="d-equiv">≈</b> an equivalent reading. Click a case's title for every part.</p>
+      <p class="note">Each case: the true model, what the strategy found, and their differences as a git diff of the truth into the found model (in the third panel and as a list): <b class="d-spurious">+</b> added (in the found model, not the truth), <b class="d-missed">−</b> removed (in the truth, not found), <b class="d-wrong">~</b> values wrong, <b class="d-equiv">≈</b> an equivalent reading; unchanged is grey. Click a case's title for every part.</p>
       <div id="board" class="board-cards"><p class="note">Loading every case…</p></div>
     </div>
     <div id="one-wrap" hidden>

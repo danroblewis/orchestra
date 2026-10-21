@@ -174,6 +174,11 @@ def progress(recent: int | None = None) -> dict:
     """The current or last run. With recent, a light copy for polling: only the running items and the
     `recent` most recently finished ones, plus `counts` (finished items by status) and `queued`."""
     p = store.progress()
+    pool = _pool_progress(recent if recent is not None else 1000)
+    last_local = max([x for i in p["items"] for x in (i.get("started"), i.get("finished")) if x] + [(p.get("run") or {}).get("started") or ""], default="")
+    if pool and pool["last"] > last_local:              # the CPU pool runs the tests now: follow what it does
+        pool.pop("last")
+        return jsonable(pool)
     if recent is None:
         return jsonable(p)
     items = p["items"]
@@ -184,6 +189,37 @@ def progress(recent: int | None = None) -> dict:
     done = sorted((i for i in items if i["state"] == "done" and i["finished"]), key=lambda i: i["finished"], reverse=True)[:max(0, recent)]
     return jsonable({"run": p["run"], "items": [i for i in items if i["state"] == "running"] + done, "counts": counts,
                      "queued": sum(i["state"] == "queued" for i in items)})
+
+
+def _pool_progress(recent: int) -> dict | None:
+    """What the CPU pool is doing, in progress()'s shape (the Now page's follow, the runs strip): the items its
+    workers hold now (running) and its most recent results (done), across every job still open or finished in
+    the last hour. None when the pool has nothing."""
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{store.path()}?mode=ro", uri=True, timeout=5)
+        con.row_factory = sqlite3.Row
+        running = [{"case": r["case_id"], "variant": r["variant"], "strategy": r["strategy"], "state": "running", "reason": f"pool job {r['job_id']}",
+                    "started": r["leased_at"], "finished": None, "status": None}
+                   for r in con.execute("SELECT job_id, case_id, variant, strategy, leased_at FROM pool_items WHERE state = 'leased' ORDER BY leased_at DESC LIMIT 200")]
+        done = [{"case": r["case_id"], "variant": r["variant"], "strategy": r["strategy"], "state": "done", "reason": f"pool job {r['job_id']}",
+                 "started": None, "finished": r["at"], "status": r["status"]}
+                for r in con.execute("SELECT job_id, case_id, variant, strategy, status, at FROM pool_results ORDER BY id DESC LIMIT ?", (max(1, recent),))]
+        hour = con.execute("SELECT status, count(*) FROM pool_results WHERE at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 hour') GROUP BY status").fetchall()
+        queued = con.execute("SELECT count(*) FROM pool_items WHERE state = 'queued'").fetchone()[0]
+        jobs = con.execute("SELECT count(*), min(started) FROM pool_jobs WHERE state IN ('queued', 'running', 'planning')").fetchone()
+        con.close()
+    except sqlite3.Error:
+        return None
+    if not running and not done:
+        return None
+    last = max([i["finished"] for i in done if i["finished"]] + [i["started"] for i in running if i["started"]] + [""])
+    counts = {st: n for st, n in hour}
+    active = bool(running or queued)
+    run = {"id": "pool", "command": f"CPU pool: {jobs[0]} open job{'s' if jobs[0] != 1 else ''}" if jobs[0] else "CPU pool",
+           "started": jobs[1] or last, "finished": None if active else last, "total": sum(counts.values()) + len(running) + queued,
+           "done": sum(counts.values()), "running": len(running)}
+    return {"run": run, "items": running + done, "counts": counts, "queued": queued, "last": last}
 
 
 def _here() -> str:

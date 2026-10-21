@@ -329,6 +329,7 @@
     const found = L.foundOf(r);
     const cmp = L.compare(c.model, found, r && r.scores);
     $("cmp-head").innerHTML = `<div class="casehead">
+        <div class="nowstrat" title="The strategy whose result this is">${esc((r && r.strategy) || S.sel.strategy || "")}<span class="nowvar"> · ${esc((r && r.variant) || S.sel.variant || "")}</span></div>
         <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
         <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</span>
         <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
