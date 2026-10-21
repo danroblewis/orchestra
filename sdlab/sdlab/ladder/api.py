@@ -227,10 +227,12 @@ def _refresh(slot: tuple, strategy_filter: list[str] | None, release: bool) -> N
     """Recompute one summary slot if anything it depends on changed (the caller holds the lock;
     release=True: this thread releases it)."""
     try:
+        from . import head_hashes                             # the sdlab HEAD's hashes are what "current" means
         have = _summaries.get(slot)
         listing = catalog.listing()
         key = (store.version(), tuple((s["name"], s["hash"], s["available"]) for s in listing),
-               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), longrun_cache.version(), analysis.version(), strict.version())
+               tuple((i, casemod.load(i)["hash"]) for i in casemod.case_ids()), score.score_hash(), longrun_cache.version(), analysis.version(), strict.version(),
+               head_hashes.version())
         if not have or have["key"] != key:
             have = {"key": key, "value": _summary(strategy_filter, listing)}
         _summaries[slot] = {**have, "at": time.time()}

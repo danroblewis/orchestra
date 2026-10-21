@@ -38,6 +38,7 @@ from .ladder.newest_routes import router as newest_router
 from .ladder.timing_routes import router as timing_router
 from .ladder.pool.routes import router as pool_router
 from .ladder.pool import service as pool_service
+from .ladder import head_hashes as ladder_head_hashes
 from .ladder import newest as ladder_newest
 from .ladder import runs as ladder_runs
 from .research import router as research_router
@@ -205,6 +206,7 @@ def create_app() -> FastAPI:
         ladder_newest.warm()                   # the case files' first commits (cached; one git log if HEAD moved) and regressions
         ladder_runs.warm()                     # the runs panel and the results' times (timing.py), in the background
         threading.Thread(target=ladder_routes.strategies, args=(None,), daemon=True, name="strategies").start()   # hash every strategy now, not on the first request
+        ladder_head_hashes.enable()            # the pages' "current" is the sdlab HEAD's hashes, not the working tree's
         pool_service.start()                   # the CPU pool's queue: planning, leases, the main line (docs/pool.md)
         yield
         pool_service.stop()

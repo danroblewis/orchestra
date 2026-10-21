@@ -20,7 +20,7 @@ import itertools
 import threading
 
 from ..discovery.api import jsonable
-from . import analysis, complexity, longrun_cache, particles, physics, realistic, score, store, strict
+from . import analysis, complexity, head_hashes, longrun_cache, particles, physics, realistic, score, store, strict
 from . import sim as _sim
 from . import cases as casemod
 from .real import case as _real_case
@@ -156,6 +156,7 @@ def _build(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
     from .api import draw_brief, parametric
     strats = [s for s in listing if not strategy_filter or s["name"] in strategy_filter]
     sh = score.score_hash()
+    head = head_hashes.current()                              # "current" is the sdlab HEAD's hashes, not the working tree's
     have = latest_rows()
     st = _state()
     rows = list(have.values())
@@ -180,10 +181,11 @@ def _build(strategy_filter: list[str] | None, listing: list[dict]) -> dict:
                 rid = row["id"] if row else None
                 lrr = lr.get(rid) if row else None
                 cxr = cx.get(rid) if row else None
-                dep = (rid, c["hash"], s["hash"], s["available"], shc, group, an, cxr, lrr, ref if row else None)
+                cur = head_hashes.hashes(head, c["id"], v["name"], s["name"]) or (c["hash"], s["hash"], shc)
+                dep = (rid, *cur, s["available"], group, an, cxr, lrr, ref if row else None)
                 got = cache.get(key)
                 if got is None or got[0] != dep:
-                    stale = store.staleness(row, c["hash"], s["hash"], shc) if s["available"] else None
+                    stale = store.staleness(row, *cur) if s["available"] else None
                     raw = _make(c, v["name"], s, row, stale, dict(an), cxr, lrr, ref, group)
                     got = cache[key] = (dep, raw, jsonable(raw), stale, next(_serial))
                 seen.add(key)
