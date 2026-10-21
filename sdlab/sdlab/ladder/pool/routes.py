@@ -13,6 +13,8 @@
     GET    /api/pool/workers                      the worker registry
     GET    /api/pool/code/head                 T  the main line's branch and commit
     GET    /api/pool/code/bundle?want=&have=   T  a git bundle of a commit
+    GET    /api/pool/debug/threads             T  every thread's Python stack and the locks' state (served on the
+                                                  event loop, so it answers while the thread pool is stuck)
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import time
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
 from . import accept, auth, db, gitcode, jobs, leases, status
@@ -140,3 +142,19 @@ def code_bundle(want: str, have: str = ""):
         return JSONResponse({"error": str(e)}, status_code=404)
     return Response(data, media_type="application/octet-stream",
                     headers={"Content-Disposition": f'attachment; filename="{want[:12]}.bundle"', "Cache-Control": "no-store"})
+
+
+@router.get("/debug/threads")
+async def debug_threads(request: Request):
+    """Every thread's Python stack (an async endpoint: it runs on the event loop, not in the thread pool that a
+    hang fills, and takes no lock). For diagnosing a stuck server; the pool's token is checked inline."""
+    import sys
+    import threading
+    import traceback
+    given = request.headers.get(auth.HEADER) or (request.headers.get("Authorization") or "")[7:].strip() or None
+    if not auth.ok(given):
+        return JSONResponse({"error": f"the pool's token is required ({auth.HEADER} header)"}, status_code=401)
+    names = {t.ident: t.name for t in threading.enumerate()}
+    frames = sys._current_frames()
+    out = [{"thread": names.get(ident, str(ident)), "ident": ident, "stack": traceback.format_stack(f)} for ident, f in frames.items()]
+    return {"threads": len(out), "db_lock": repr(db.LOCK), "stacks": out}

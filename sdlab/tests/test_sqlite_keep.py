@@ -66,3 +66,19 @@ def test_a_file_not_in_wal_mode_is_not_kept(tmp_path):
     sqlite_keep.connect(p).close()
     assert str(p) not in sqlite_keep.kept()
 
+
+
+def test_the_thread_dump_answers_with_the_token_only(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from sdlab.ladder.pool.routes import router
+    tok = tmp_path / "pool.token"
+    tok.write_text("t0k\n")
+    monkeypatch.setenv("SDLAB_POOL_TOKEN_FILE", str(tok))
+    app = FastAPI()
+    app.include_router(router)
+    c = TestClient(app)
+    assert c.get("/api/pool/debug/threads").status_code == 401
+    got = c.get("/api/pool/debug/threads", headers={"X-Pool-Token": "t0k"}).json()
+    assert got["threads"] >= 1 and all(s["stack"] for s in got["stacks"]) and "RLock" in got["db_lock"]

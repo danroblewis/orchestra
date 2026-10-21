@@ -439,6 +439,20 @@ releases their leases. Pool code changes need no restart of the workers (they fo
 within about 2 minutes, once running items finish); server-side changes (`sdlab/ladder/pool/` routes,
 acceptance, leases) need the server restarted.
 
+**A hung server** (2026-10-20, 17:58-18:30: 0% CPU, nothing answered, job 10 stalled at ~1600 items). A
+macOS `sample` (`~/.sdlab/server-deadlock-1828.sample`) showed SQLite's own deadlock, not the pool's: the
+server's Python links SQLite 3.51.0, whose unix VFS takes a file's inode mutex and then the global VFS mutex
+when a WAL connection closes as the process's only reader (`unixLock` > `unixIsSharingShmNode`), while an
+open takes them the other way round (`findReusableFd`); SQLite 3.51.2 fixed it. One thread was in each, 20
+more opens waited behind them, and 22 pool requests waited on `db.LOCK`, held by one of those opens, until
+the thread pool (40 threads) was full and no endpoint answered. Since then every in-process connection to the
+store (and the strict, evidence and long-run caches) goes through `sdlab/ladder/sqlite_keep.py`, which keeps
+one connection to each WAL file open for the process's life, so a closing connection never takes that path
+(`tests/test_sqlite_keep.py` reproduces the hang with plain `sqlite3.connect` in seconds and shows the keeper
+prevents it). If the server hangs again: `curl -s -H "X-Pool-Token: $(cat ~/.sdlab/pool.token)"
+localhost:8020/api/pool/debug/threads` (served on the event loop, so it answers while the thread pool is
+stuck) gives every thread's Python stack; `sample <pid> 5` gives the native ones.
+
 **Logs.**
 
 | log | where |
