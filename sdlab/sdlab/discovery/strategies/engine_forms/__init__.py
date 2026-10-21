@@ -67,5 +67,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import oefit
 
     o, cap = _capmin.offer(stocks, run, opts)
+    from . import tidy
+
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
+    r = tidy.apply(r, run, o)          # negligible terms dropped, before the MIN is written back (tidy.py, k8s-307)
     return _capmin.restore(r, cap)
