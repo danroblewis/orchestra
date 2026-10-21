@@ -33,7 +33,8 @@ The search runs from two seeds and keeps the one with the lower Gaussian -2 log-
 its own noise variances) plus price: the found structure, and the found structure with every such move
 added and then thinned by the Wald statistic of its fit (the part furthest below its price dropped, one
 fit a step). A strategy whose own fit gave little (an empty reading) is rebuilt from the second. The
-search stops at a time budget (`budget`, seconds) with the best answer so far.
+search stops at a budget of simulated steps (`budget`; so the answer does not depend on the machine's
+speed or load) with the best answer so far; a wall-clock cap (WALL) is only a safety net.
 No outside flow is added or removed (the declared boundary), and a flow fixed to a declared input keeps
 its number. The same rule for every case: nothing reads the case or its truth.
 
@@ -60,6 +61,9 @@ ALPHA = 1e-3           # the white-noise test's level (as eiv.py)
 ROUNDING = 1e-3        # a stock whose one-step residuals are below this share of its changes (rms) is exact
 ROUNDS = 12            # search rounds at most
 BEAM = 8               # structures kept each round (the best of the new ones, better or not)
+BUDGET = 1e9           # simulated steps the search may spend (the found seed first, then the wide one)
+OVERHEAD = 700         # a run's fixed cost, in steps (so the budget is about the same time at any length)
+WALL = 120.0           # seconds: a safety net only (the budget above is what normally stops the search)
 FOUND_SHARE = 0.6      # the share of the budget the search from the found structure may use
 CYCLES = 3             # searches at most, each with the noise read off the model the last one found
 PATIENCE = 4           # rounds without a better structure before the search stops
@@ -211,6 +215,12 @@ class _Data:
         self.S, self.n = A.shape
         self.w = np.ones_like(A)
         self.keep = np.arange(0, self.n, max(1, math.ceil(A.size / POINTS)))
+        self.steps = 0                                   # steps simulated so far, plus OVERHEAD a run (the clock)
+        self.wall = time.monotonic() + WALL
+
+    def over(self, limit: float) -> bool:
+        """Past the step budget `limit` (or, as a safety net only, the wall-clock cap)?"""
+        return self.steps > limit or time.monotonic() > self.wall
 
     def resid(self, X: np.ndarray) -> np.ndarray:
         k = self.keep
@@ -218,6 +228,7 @@ class _Data:
 
 
 def _run(net: _Net, d: _Data, start: np.ndarray) -> np.ndarray:
+    d.steps += d.n + OVERHEAD
     return _sim(d.n, d.S, start, d.inj, d.U, *net.arrays())
 
 
@@ -584,7 +595,7 @@ def _search(net: _Net, start: np.ndarray, cost: float, d: _Data, final: set, pri
         grown = []
         for _, b, st, _, path in beam:
             for label, g, _ in _candidates(b, d, final, st, pool):
-                if time.monotonic() > deadline:
+                if d.over(deadline):
                     break
                 k = _key(g)
                 if k in seen:
@@ -595,7 +606,7 @@ def _search(net: _Net, start: np.ndarray, cost: float, d: _Data, final: set, pri
                     grown.append((score(c2, g2), g2, s2, c2, path + [label]))
         beam = []
         for _, g, st, _, path in sorted(grown, key=lambda x: x[0]):     # the most promising, fitted fully
-            if len(beam) == BEAM or time.monotonic() > deadline:
+            if len(beam) == BEAM or d.over(deadline):
                 break
             g2, s2, c2 = _fit(g, d, st)
             if np.isfinite(c2) and _binds(g2, d, s2):
@@ -607,12 +618,12 @@ def _search(net: _Net, start: np.ndarray, cost: float, d: _Data, final: set, pri
             best, stale = beam[0], 0
         else:
             stale += 1
-        if stale >= PATIENCE or time.monotonic() > deadline:
+        if stale >= PATIENCE or d.over(deadline):
             break
     return best[1], best[2], best[3], best[4]
 
 
-def refit(result: dict, stocks: list[dict], run: dict, opts: dict | None, cap: dict | None = None, budget: float = 60.0) -> dict:
+def refit(result: dict, stocks: list[dict], run: dict, opts: dict | None, cap: dict | None = None, budget: float = BUDGET) -> dict:
     """The result with its flows refitted and revised on the output error (the module's rule), and what
     was done under "oe"."""
     opts = opts or {}
@@ -643,14 +654,13 @@ def refit(result: dict, stocks: list[dict], run: dict, opts: dict | None, cap: d
     orig = net.copy()
     _sane(net, d)
     price = PRICE * math.log(d.S * len(d.keep))
-    t0 = time.monotonic()
-    found = _from(net, d, final, price, t0 + budget * FOUND_SHARE)
-    wide = _from(_superset(net, d, final), d, final, price, t0 + budget, thin=True)
+    found = _from(net, d, final, price, budget * FOUND_SHARE)
+    wide = _from(_superset(net, d, final), d, final, price, budget, thin=True)
     net, start, cost, nll, done, d.w = min(found, wide, key=lambda x: x[3] + price * _numbers(x[0]))
     r0 = d.resid(_run(orig, d, start))
     found_cost = float(r0 @ r0) if np.all(np.isfinite(r0)) else float("inf")
     info = {"seed": "found" if net is found[0] else "every move", "revised": done,
-            "nll": [round(found[3], 1), round(wide[3], 1)]}
+            "nll": [round(found[3], 1), round(wide[3], 1)], "steps": d.steps}
     if not cost < found_cost or not np.isfinite(cost):
         return {**result, "oe": {"used": False, "cost": [found_cost, cost], **info}}
     return {**result, "flows": _write(net, ids), "oe": {"used": True, "cost": [round(found_cost, 1), round(cost, 1)], **info}}
@@ -678,7 +688,7 @@ def _from(net: _Net, d: _Data, final: set, price: float, deadline: float, thin: 
         before = _key(net)
         net, start, cost, path = _search(net, start, cost, d, final, price, deadline)
         done += path
-        if _key(net) == before or time.monotonic() > deadline:
+        if _key(net) == before or d.over(deadline):
             break
     net = _live(net, d, start)
     d.w = _weights(net, d, start)
@@ -691,7 +701,7 @@ def _thin(net: _Net, d: _Data, start: np.ndarray, price: float, deadline: float)
     limit) whose numbers fall furthest below the price per number dropped, refitted, until every part
     pays (one fit a step, where the search would fit every drop)."""
     net, start, _ = _fit(net, d, start)
-    while time.monotonic() < deadline and net.jac is not None:
+    while not d.over(deadline) and net.jac is not None:
         slots = net.slots()
         th = net.get()
         info = net.jac.T @ net.jac
