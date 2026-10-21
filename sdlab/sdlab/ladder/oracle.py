@@ -12,13 +12,21 @@ not in the truth (a found extra term) is tested by adding its column to the stoc
 Only for a truth that is a linear system of the measured stocks (no effects, no hidden stocks);
 otherwise there is no oracle and the tolerances alone apply. Measured inputs (data["inputs"]) are
 columns as the levels are: a number on an input is regressed on the input's value in the step.
+
+A whole flow (sim.py: an expression, a two-way flow, a rate reading a switch) that is piecewise linear
+on the run (a MIN of two linear arms: kubernetes 306, 2026-10-21) is no obstacle: its form in every
+step is known from the truth at the step's state (parts.piecewise), so each regime's numbers are
+columns of their own, nonzero only on that regime's steps (the time-varying linearisation; each regime
+gets its own numbers, so a number two regimes share is counted twice: the SEs are at worst a little
+wide). They are fitted with the rest but are not reported: the whole flow is compared by its amount,
+and se(stock, col) stays the number of the truth's linear flows on that column.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from .parts import ONE, linear_system
+from .parts import ONE, linear_system, piecewise
 
 
 class Oracle:
@@ -26,9 +34,11 @@ class Oracle:
         self.ids = list(data["levels"])
         inputs = {k: v for k, v in (data.get("inputs") or {}).items() if k not in self.ids}
         self.cols = self.ids + list(inputs)                    # the readers: the levels, then the inputs
-        self.systems = [linear_system(truth_flows, self.cols, w) for w in wins]
+        whole = [f for f in truth_flows if f.get("whole")]
+        self.systems = [linear_system([f for f in truth_flows if not f.get("whole")], self.cols, w) for w in wins]
         self.ok = len(data["t"]) > 3 and all(s is not None for s in self.systems)
         self.cache: dict[tuple, dict] = {}
+        self.regimes: list[list[np.ndarray]] = [[] for _ in self.ids]    # per measured stock: the whole flows' columns
         if not self.ok:
             return
         t = data["t"]
@@ -47,6 +57,31 @@ class Oracle:
         for w, (a, b) in enumerate(wins):
             self.win[(steps >= a) & (steps <= b)] = w
         self.W = len(wins)
+        for f in whole:
+            if not self._add_whole(f, data):
+                self.ok = False
+                return
+
+    def _add_whole(self, f: dict, data: dict) -> bool:
+        """A whole flow's regime columns on the rows it moves (False: not piecewise linear in the
+        measured stocks and inputs, or it touches an unmeasured stock)."""
+        idx = {s: i for i, s in enumerate(self.ids)}
+        if f.get("via") or f.get("effects") or any(x and x not in idx for x in (f.get("from"), f.get("to"))):
+            return False
+        got = piecewise(f, data, self.cols, self.prev)
+        if got is None:
+            return False
+        regime, forms = got
+        cols = []
+        for q, (c, ks) in enumerate(forms):
+            on = (regime == q).astype(float)
+            cols += ([on] if c else []) + [on * self.prev[self.cols.index(j)] for j in ks]
+        rows = [(f.get("to"), 1.0), (f.get("from"), -float(f.get("ratio") or 1))]
+        rows += [(u.get("stock"), -float(u.get("per") or 0)) for u in f.get("uses") or [] if u.get("stock") in idx]
+        for st, sign in rows:
+            if st and sign:
+                self.regimes[idx[st]] += cols
+        return True
 
     def _entry(self, i: int, col: str) -> list[float]:
         j = None if col == ONE else self.cols.index(col)
@@ -70,6 +105,10 @@ class Oracle:
             else:
                 cols.append((c, None))
                 X.append(x)
+        for x in self.regimes[i]:                                  # a whole flow's regimes: fitted, not reported
+            if not any(np.array_equal(x, y) for y in X):
+                cols.append((None, None))
+                X.append(x)
         out: dict = {}
         if X:
             A = np.array(X).T
@@ -81,6 +120,8 @@ class Oracle:
             cov = s2 * np.linalg.pinv(A.T @ A)
             se = np.sqrt(np.maximum(0.0, np.diag(cov)))
             for (c, w), b, e in zip(cols, beta, se):
+                if c is None:
+                    continue
                 d = out.setdefault(c, {"est": [None] * self.W, "se": [None] * self.W})
                 for ww in range(self.W) if w is None else [w]:
                     d["est"][ww], d["se"][ww] = float(b), float(e)

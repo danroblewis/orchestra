@@ -30,7 +30,12 @@ one more free number) follows from I^-1, by the parts' Jacobian (fisher.part_map
 
 Only for a truth that is linear in the stocks and the measured inputs (constant, proportional, gap and
 linear rates; no effects, co-flows or other forms): otherwise `model` gives None and the tolerances
-alone apply.
+alone apply. With `piecewise` (the scorer's oracle, noise_oracle.py; kubernetes 306, 2026-10-21) a
+rate that is piecewise linear on the clean run (an expression such as a MIN of two linear arms) is
+covered too: its form in every step is known from the truth at the step's state (parts.piecewise), so
+it runs as a linear rate per regime, each regime's numbers free numbers of their own (the
+time-varying linearisation; the oracle's linear fit does the same). Those numbers are not parts or
+entries: the scorer compares such a flow by its amount.
 """
 
 from __future__ import annotations
@@ -44,7 +49,7 @@ import numpy as np
 from numba import njit
 
 from .fisher import _rate, _rate_leaves, _set, bound
-from .parts import ONE, linear_form, linear_system, parts
+from .parts import ONE, linear_form, linear_system, parts, piecewise as _piecewise
 
 READ_VAR = 1.0 / 12                     # every reported level is at best a whole number
 _CACHE: dict[str, "SSM | None"] = {}
@@ -197,6 +202,8 @@ def _kl(A_cfg, cfg, Q1, Q2, obs_at, R, mask, hscale, span, reset, meas, P0, aug)
 
 
 def _seg(flow: dict, t: int) -> int:
+    if "regime_at" in flow:                                  # a piecewise-linear rate: the regime of the step
+        return flow["regime_at"][t]
     segs = flow["byTime"]
     for i, g in enumerate(segs):
         if g["from"] <= t <= g["to"]:
@@ -220,7 +227,7 @@ def covered(flows: list[dict]) -> bool:
 class SSM:
     """The truth on one noisy run as a state-space model; Fisher information and SEs of its numbers."""
 
-    def __init__(self, data: dict, wins: list[tuple[int, int]]):
+    def __init__(self, data: dict, wins: list[tuple[int, int]], piecewise: bool = False):
         obs, clean = data["observation"], data["clean"]
         self.wins = [tuple(w) for w in wins]
         self.flows = json.loads(json.dumps(clean["flows"]))             # segments that share a rate dict no longer do
@@ -237,6 +244,8 @@ class SSM:
         self.inputs = [k for k in ins if k not in self.idx]
         self.cols = self.ids + self.inputs
         self.U = np.array([np.asarray(ins[k], dtype=float) for k in self.inputs]).reshape(len(self.inputs), N)
+        if piecewise:
+            self._regimes(clean)
         # the numbers
         self.leaves, self.labels, theta = [], [], []
         for fi, f in enumerate(self.flows):
@@ -309,6 +318,29 @@ class SSM:
         self._J: dict = {}
         self._S0i = None
         self.system(self.theta0)                                          # a truth not linear in its readers: no model
+
+    def _regimes(self, clean: dict) -> None:
+        """Each rate that is not linear, as a linear rate per regime (ValueError when it is not piecewise
+        linear in the stocks and measured inputs on the clean run)."""
+        tindex = {v: i for i, v in enumerate(self.t)}
+        inj = np.zeros_like(self.X)
+        for j in clean.get("injections") or []:
+            if j.get("stock") in self.idx and j["t"] in tindex:
+                inj[self.idx[j["stock"]], tindex[j["t"]]] += float(j["amount"])
+        pre = np.vstack([self.X[:, :-1] + inj[:, 1:], self.U[:, 1:]])   # what step k >= 1 reads (as process_noise)
+        for f in self.flows:
+            if covered([f]):
+                continue
+            if f.get("effects") or f.get("uses") or f.get("delay") or f.get("exact"):
+                raise ValueError("effects, co-flows or delays")
+            got = _piecewise(f, {"t": self.t, **({"counters": clean["counters"]} if clean.get("counters") else {})}, self.cols, pre)
+            if got is None:
+                raise ValueError("a rate that is not piecewise linear")
+            regime, forms = got
+            f["byTime"] = [{"from": self.t[0], "to": self.t[-1], "rate": {"form": "linear", **({"c": c} if c else {}),
+                                                                        "terms": [{"stock": j, "k": k} for j, k in ks.items()]}}
+                           for c, ks in forms]
+            f["regime_at"] = {self.t[0]: int(regime[0]), **{self.t[k + 1]: int(q) for k, q in enumerate(regime)}}
 
     # ---- theta -> the system ----
     def flows_at(self, theta: np.ndarray) -> list[dict]:
@@ -482,7 +514,7 @@ class SSM:
         fl = self.flows_at(theta)
         out = {}
         for w, win in enumerate(self.wins):
-            here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl]
+            here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl if "regime_at" not in f]
             pw, _ = parts(here, set(self.measured), win, set(self.inputs))
             for k, v in pw.items():
                 if k[0] in ("flow", "uses", "via") and isinstance(v, (int, float)):
@@ -501,7 +533,7 @@ class SSM:
         out = {}
         cols = self.measured + self.inputs
         for w, win in enumerate(self.wins):
-            here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl]
+            here = [{**{k: v for k, v in f.items() if k != "byTime"}, "rate": f["byTime"][_seg(f, win[0])]["rate"]} for f in fl if "regime_at" not in f]
             sys_ = linear_system(here, cols, win)
             if sys_ is None:
                 return {}
@@ -533,15 +565,16 @@ def _freeze(e: tuple) -> tuple:
     return (tuple(sorted(rows.items(), key=lambda x: str(x[0]))), col, w)
 
 
-def model(data: dict, wins: list[tuple[int, int]]) -> SSM | None:
+def model(data: dict, wins: list[tuple[int, int]], piecewise: bool = False) -> SSM | None:
     """The state-space model of a noisy run (cached per run and windows); None when the truth is not
-    covered or the data are not a noisy variant's."""
+    covered or the data are not a noisy variant's. piecewise: a rate that is piecewise linear on the
+    clean run is covered too (SSM._regimes)."""
     if not data.get("observation") or not (data.get("clean") or {}).get("flows"):
         return None
-    if not covered(data["clean"]["flows"]):
+    if not piecewise and not covered(data["clean"]["flows"]):
         return None
     h = hashlib.sha256()
-    h.update(json.dumps([data["clean"]["flows"], data["observation"], [list(w) for w in wins]], sort_keys=True, default=str).encode())
+    h.update(json.dumps([data["clean"]["flows"], data["observation"], [list(w) for w in wins], piecewise], sort_keys=True, default=str).encode())
     for s in sorted(data["levels"]):
         h.update(np.asarray(data["levels"][s], dtype=float).tobytes())
     for s in sorted(data["clean"]["all_levels"]):
@@ -553,7 +586,7 @@ def model(data: dict, wins: list[tuple[int, int]]) -> SSM | None:
         if len(_CACHE) > 64:
             _CACHE.clear()
         try:
-            _CACHE[key] = SSM(data, wins)
+            _CACHE[key] = SSM(data, wins, piecewise)
         except (ValueError, np.linalg.LinAlgError, TypeError, KeyError):
             _CACHE[key] = None
     return _CACHE[key]

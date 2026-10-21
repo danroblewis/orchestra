@@ -2272,7 +2272,13 @@ The **oracle** (`oracle.py`) is the truth's own structure fitted by least square
 short noisy run cannot pin a rate to 10%, even for someone who knows the structure. The oracle
 allowance keeps a strategy from failing for what the data cannot say. Without noise the oracle's
 SE is about 0, so 2% is all that is allowed. The oracle applies only when the truth is a linear
-system of the measured stocks (no effects, no hidden stocks). A flow with effects is compared as a
+system of the measured stocks (no effects, no hidden stocks), or that system plus whole flows
+(expressions, two-way flows) that are piecewise linear on the run (2026-10-21, kubernetes 306's
+`min(0.6 x queue, 40 x ready)`): such a flow's form in every step is read from the truth at the step's
+state (`parts.piecewise`, forward differences of the engine's rate), steps with the same form are one
+regime, and each regime's numbers are columns of their own, fitted but not reported (the time-varying
+linearisation; the Kalman model of the noisy variants, `noise_kf.py`, does the same for the oracle). A
+rate that is a new form in most steps (a smooth curve) is not covered. A flow with effects is compared as a
 whole: its amount on the run's states (rate x effects) against the found flows between the same
 stocks, by relative rms error within `rel`. Hidden stocks are compared by `k_in` and delay: `k_in`
 like any number, the delay within `max(rel x delay, z x SE)`. Per-case overrides go in

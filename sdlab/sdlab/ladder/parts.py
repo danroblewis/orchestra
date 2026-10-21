@@ -412,3 +412,44 @@ def linear_system(flows: list[dict], ids: list[str], window: tuple[int, int]) ->
                 for j, k in ks.items():
                     B[idx[x["stock"]], idx[j]] -= per * k
     return B, u
+
+
+def piecewise(flow: dict, data: dict, cols: list[str], X: np.ndarray) -> tuple[np.ndarray, list[tuple[float, dict[str, float]]]] | None:
+    """A whole flow (sim.py: an expression, a two-way flow, a rate reading a switch) as a linear form in
+    every step: its engine rate at the step's state (X: cols x steps, the levels and inputs the step
+    reads) and its slope in each column (forward differences), so rate_t = c_t + sum_j k_tj X[j, t]
+    exactly at the state. Steps with the same form are one regime (a MIN's demand arm and its cap arm).
+    (regime of each step, [(c, {col: k})] per regime); None when the rate reads something not in cols,
+    or when it is not piecewise linear on the run (more regimes than a quarter of the steps over the
+    columns: a smooth curve is a new form in every step)."""
+    from . import sim                                         # (sim imports nothing of the scorer's)
+    N = X.shape[1]
+    if N == 0:
+        return None
+    states = lambda M: [{c: float(M[j, i]) for j, c in enumerate(cols)} for i in range(N)]  # noqa: E731
+    try:
+        r = np.asarray(sim.amounts(flow, data, states(X)), dtype=float)
+        G = np.zeros((len(cols), N))
+        for j in range(len(cols)):
+            h = 1e-6 * np.maximum(1.0, np.abs(X[j]))
+            Y = X.copy()
+            Y[j] = X[j] + h
+            G[j] = (np.asarray(sim.amounts(flow, data, states(Y)), dtype=float) - r) / h
+    except Exception:                                         # noqa: BLE001 (an expression reading what the data do not have)
+        return None
+    c = r - (G * X).sum(axis=0)
+    size = float(np.abs(r).max()) + float(np.abs(G * X).max(initial=0.0)) + 1.0
+    tol_c = 1e-6 * size
+    tol_g = 1e-6 * size / np.maximum(1.0, np.abs(X).max(axis=1))
+    key = np.column_stack([np.round(c / tol_c)] + [np.round(G[j] / tol_g[j]) for j in range(len(cols))]).astype(np.int64)
+    uniq, regime = np.unique(key, axis=0, return_inverse=True)
+    if len(uniq) * (1 + len(cols)) > N / 4:
+        return None
+    regime = regime.reshape(-1)
+    forms = []
+    for q in range(len(uniq)):
+        m = regime == q
+        cq = float(np.median(c[m]))
+        forms.append((0.0 if abs(cq) <= tol_c else cq,
+                      {col: float(np.median(G[j, m])) for j, col in enumerate(cols) if abs(np.median(G[j, m])) > tol_g[j]}))
+    return regime, forms

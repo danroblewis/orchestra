@@ -100,11 +100,12 @@ class _Kalman:
 
 
 class _Base:
-    def __init__(self, data: dict, wins: list[tuple[int, int]]):
-        self.noisy = _Kalman(noise_kf.model(data, wins))
-        self.clean = _Kalman(noise_kf.model(clean_view(data), wins) if self.noisy.m is not None else None)
+    def __init__(self, data: dict, wins: list[tuple[int, int]], truth_flows: list[dict] = ()):
+        self.noisy = _Kalman(noise_kf.model(data, wins, piecewise=True))     # a piecewise-linear rate (a MIN) is covered
+        self.clean = _Kalman(noise_kf.model(clean_view(data), wins, piecewise=True) if self.noisy.m is not None else None)
         c = data["clean"]
-        self.flows = c["flows"]
+        whole = {f.get("id"): f["whole"] for f in truth_flows if f.get("whole") and f.get("id")}
+        self.flows = [{**f, "whole": whole[f.get("id")]} if f.get("id") in whole else f for f in c["flows"]]   # the truth's whole flows (sim.mark)
         self.cdata = {"t": c["t"], "levels": c["levels"], "all_levels": c.get("all_levels") or c["levels"],
                       **({"injections": c["injections"]} if c.get("injections") else {}),
                       **({"inputs": c["inputs"]} if c.get("inputs") else {})}     # measured inputs: columns as the levels are
@@ -131,7 +132,7 @@ class KalmanOracle(_Base):
     """oracle.Oracle for a noisy run of a truth without hidden stocks."""
 
     def __init__(self, truth_flows: list[dict], data: dict, wins: list[tuple[int, int]]):
-        super().__init__(data, wins)
+        super().__init__(data, wins, truth_flows)
         self.ids = list(data["levels"])
         self.cols = self.ids + [k for k in (data["clean"].get("inputs") or {}) if k not in self.ids]
         self.W = len(wins)
