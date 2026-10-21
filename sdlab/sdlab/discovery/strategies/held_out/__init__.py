@@ -10,6 +10,15 @@ Every candidate fit (in each fold and on all the data) is refitted by earned.ref
 earned_pieces' refit, from recession/ at 284390d): its rows chosen again, outside-inflow pieces kept
 only where earned, conservation decided jointly. Without it every candidate kept chance pieces or a
 spurious drain on the final counter (303 counts-short; docs/research/k8s-303-held_out.md).
+
+The declared boundary (boundary.py, a copy of matrix/boundary.py at 723f72c; docs/research/declared-boundary.md):
+every candidate fit (each fold and all the data) has its rows refitted inside it (an outside term only
+where an estimated one may be, a measured input only where a measured one may be, sources with no
+estimated outflow tied) and is then guarded (an outside flow the boundary does not have becomes its
+best-priced alternative), so the held-out score judges only candidates inside the boundary; a fold's
+guard refits on that fold's own steps (the held-out block's levels hidden from it). The answer is kept
+inside the boundary (guard and moves where declared, each outside flow priced as a boundary claim where
+not).
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from ...holdout import blocks, fill_gaps
 from ...identify import VARIANTS, judge
 from ...matrix import identify_one
 from ...simulate import behaviour_error
+from . import boundary
 from .earned import refit
 
 FOLDS = 5
@@ -29,18 +39,37 @@ HORIZONS = (5, 20, 100)
 CAP = 1e3          # one block where a candidate runs away counts as badly as any other runaway
 
 
+def _seen(run: dict, steps) -> dict:
+    """run with the levels a fold must not see hidden (NaN at the end of every left-out step), for the
+    boundary guard's refit: boundary.Data uses only steps measured at both ends."""
+    if steps is None:
+        return run
+    hide = np.flatnonzero(~np.asarray(steps, bool)) + 1
+    out = {}
+    for i, v in run["levels"].items():
+        a = np.asarray(v, dtype=float).copy()
+        a[hide[hide < len(a)]] = np.nan
+        out[i] = list(a)
+    return {**run, "levels": out}
+
+
 def fit_one(stocks: list[dict], run: dict, opts: dict) -> dict:
-    """matrix.identify_one with the candidate's rows refitted (earned.refit; opts["earned"] False: not)."""
+    """matrix.identify_one with the candidate's rows refitted (earned.refit; opts["earned"] False: not),
+    inside the declared boundary (refit, then the guard on the steps the fit may see)."""
+    b = boundary.Boundary(run)
     if opts.get("earned") is False:
-        return identify_one(stocks, run, opts)
-    r = identify_one(stocks, run, {**opts, "keep_fit": True, "keep_rows": True, "input_columns": True})
-    if r.get("flows") is not None and r.get("fit"):
-        try:
-            r = refit(stocks, r, opts)
-        except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
-            pass
-    for k in ("fit", "ctx", "raw_rows"):
-        r.pop(k, None)
+        r = identify_one(stocks, run, opts)
+    else:
+        r = identify_one(stocks, run, {**opts, "keep_fit": True, "keep_rows": True, "input_columns": True})
+        if r.get("flows") is not None and r.get("fit"):
+            try:
+                r = refit(stocks, r, opts, b)
+            except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+                pass
+        for k in ("fit", "ctx", "raw_rows"):
+            r.pop(k, None)
+    if b.declared and r.get("flows"):
+        r = boundary.apply(r, stocks, _seen(run, opts.get("steps")), opts, final=False)
     return r
 
 
@@ -104,8 +133,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py:
+    the guard and moves where one is declared, each outside flow priced as a boundary claim where none is)."""
+    r = _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed

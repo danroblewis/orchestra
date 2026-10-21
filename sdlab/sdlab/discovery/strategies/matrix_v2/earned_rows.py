@@ -109,7 +109,8 @@ def white(e: np.ndarray, alpha: float = ALPHA) -> bool:
 
 
 def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
-             per_change: float = 2, alpha: float = ALPHA, floor: float = 0.0, levels: str = "both", inputs: list[int] = ()) -> dict:
+             per_change: float = 2, alpha: float = ALPHA, floor: float = 0.0, levels: str = "both", inputs: list[int] = (),
+             pieces_ok: bool = True, exclude: tuple = ()) -> dict:
     """The row as the matrix fitted it, or levels chosen again with no outside inflow or a constant
     one. A row with pieces is replaced only by one whose residuals are white (nothing left for
     pieces to explain) and whose BIC, every change priced as a value and a place, is lower; a row
@@ -120,25 +121,34 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
     that happens to follow it, then the pieces are dropped) or "both" (each set is tried).
 
     inputs: the rows of prev after the stocks' that are measured inputs' values (indices into prev);
-    every row may read them, as the matrix's rows may."""
+    every row may read them, as the matrix's rows may.
+
+    (this copy, the declared boundary: boundary.py) pieces_ok: whether the row may have an outside
+    term at all (a constant or pieces); exclude: rows of prev it may not read. A matrix row that breaks
+    either is no incumbent: the best row inside them replaces it, white or not."""
     T = dy.shape[1]
     y = dy[s]
     group = {x["id"]: x.get("group") for x in stocks}
     final = {x["id"] for x in stocks if x.get("final")}
     allowed = [j for j in range(len(ids)) if not (ids[s] in final and j == s)
                and (j == s or not group.get(ids[j]) or not group.get(ids[s]) or group[ids[j]] == group[ids[s]])] + list(inputs)
+    allowed = [j for j in allowed if j not in exclude]
     pieces = bool(row["cuts"]) and len(row["cuts"]) > 2
     own = inflow_params(row["cuts"], per_change)
     if row.get("pooled") is not None:
         # (matrix_v2's copy) pooled pieces: one value per pool and a place per change
         own = len(np.unique(row["pooled"]["labels"])) + len(row["cuts"]) - 2
-    best = {"row": row, "bic": _bic(T, row["rss"], len(row["set"]) + own, floor), "name": "matrix"}
+    inside = (pieces_ok or not row["cuts"]) and not any(row["col"][q][0] in exclude for q in row["set"])
+    best = {"row": row, "bic": _bic(T, row["rss"], len(row["set"]) + own, floor) if inside else math.inf, "name": "matrix"}
     X, col = columns(s, ids, prev, cfg, L, allowed)
     if not len(col):
-        return best
+        if inside:
+            return best
+        return {"row": {**row, "X": np.zeros((0, T)), "col": [], "set": [], "cuts": None, "rss": float(y @ y), "p": 0},
+                "bic": _bic(T, float(y @ y), 0, floor), "name": "none"}
     everything = list(range(len(col)))
     beside = backward(y, X, row["cuts"], everything, inflow_params(row["cuts"], per_change), floor)[0] if pieces and levels != "afresh" else None
-    for name, cuts in (("none", None), ("constant", [0, T])):
+    for name, cuts in (("none", None), ("constant", [0, T])) if pieces_ok else (("none", None),):
         sets = []
         if not pieces or levels != "beside":
             sets.append(backward(y, X, cuts, everything, inflow_params(cuts, per_change), floor)[0])
@@ -149,13 +159,13 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
             b = _bic(T, f.rss, len(chosen) + inflow_params(cuts, per_change), floor)
             if b >= best["bic"] - 1e-9:
                 continue
-            if pieces:
+            if pieces and inside:
                 e = y - (f.beta @ X[chosen] if chosen else 0.0)
                 if not white(e - (e.mean() if cuts else 0.0), alpha):
                     continue
             best = {"row": {**row, "X": X, "col": col, "set": list(chosen), "cuts": cuts, "rss": f.rss,
                             "p": len(chosen) + (len(cuts) - 1 if cuts else 0)}, "bic": b, "name": name}
-    if pieces and beside is not None:
+    if pieces and beside is not None and pieces_ok:
         # (added in this copy) the pieces found again at the textbook price (2 x log n x the noise
         # variance) beside the levels, competing on the same BIC (each change priced as a value and a
         # place). The matrix's cheap pieces can be many and noisy where the inflow really changes, so

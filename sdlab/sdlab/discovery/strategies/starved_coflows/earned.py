@@ -21,13 +21,21 @@ from __future__ import annotations
 import numpy as np
 
 from ...matrix import finish
+from . import boundary
 from .earned_joint import System, decide
 from .earned_rows import reselect, rss_floor
 
 
-def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
+def refit(stocks: list[dict], r: dict, opts: dict, b: boundary.Boundary | None = None) -> dict:
     """The candidate's rows refitted jointly, sources tied to their receivers where the counting
-    likelihood says so; the model read off again (earned_pieces.refit)."""
+    likelihood says so; the model read off again (earned_pieces.refit).
+
+    (this copy) Inside the boundary b (boundary.py): a row has an outside term (constant or pieces)
+    only where its stock may have an estimated outside flow, reads a measured input only where it may
+    have a measured one, and reads a stock of another unit (a link from or a drain to outside) only
+    where it may have an estimated one; a source with no estimated outflow to outside is tied (its
+    drain is all moves)."""
+    b = b or boundary.Boundary({})
     fit, ctx = r.get("fit"), r.get("ctx")
     if not fit or not ctx:
         return r
@@ -38,10 +46,18 @@ def refit(stocks: list[dict], r: dict, opts: dict) -> dict:
     final = {s["id"] for s in stocks if s.get("final")}
     L = len(fit["labels"])
     floor = rss_floor(fit["prev"], fit["dy"].shape[1])
-    rows = [reselect(row, s, ids, stocks, columns if inputs else fit["prev"], fit["dy"], fit["cfg"], L, 2, 0.01, floor, "beside", inputs)["row"]
+
+    def exclude(s: int) -> tuple:
+        out = [] if b.inputs_ok(ids[s]) else list(inputs)
+        if not b.links_ok(ids[s]):
+            out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
+        return tuple(out)
+
+    rows = [reselect(row, s, ids, stocks, columns if inputs else fit["prev"], fit["dy"], fit["cfg"], L, 2, 0.01, floor, "beside", inputs,
+                     pieces_ok=b.pieces_ok(ids[s]), exclude=exclude(s))["row"]
             for s, row in enumerate(rows)]
     system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, True, opts.get("min_piece", 5), "unit")
-    best = decide(system, ctx["log_t"])
+    best = decide(system, ctx["log_t"], forced={a for a in range(len(ids)) if b.must_tie(ids[a])})
     at = fit["at"]
     new = []
     for s, row in enumerate(rows):

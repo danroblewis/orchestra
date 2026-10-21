@@ -42,3 +42,17 @@ From the [playbook](PLAYBOOK.md) (citations checked there, Appendix A).
 - Dawid (1984). Statistical theory: the prequential approach. JRSS A 147(2):278-292.
 - Racine (2000). hv-block cross-validation. J. Econometrics 99(1):39-61.
 - Bergmeir, Hyndman, Koo (2018). CSDA 120:70-83 (k-fold is valid only for one-step autoregressive settings).
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (docs/research/declared-boundary.md; CLAUDE.md invariant
+2). `held_out/boundary.py` is a copy of `matrix/boundary.py` at 723f72c (HIDDEN_PRICE 0). Every candidate
+fit (each fold and all the data, `fit_one`) is refitted inside the boundary (`earned.refit`: an outside
+term only where an estimated one may be, a measured input only where a measured one may be, sources with
+no estimated outflow tied) and then guarded, so the held-out score only compares candidates inside the
+boundary. A fold's guard refits on that fold's own steps (`_seen` hides the held-out block's levels). The
+answer: guard and anti-correlated pairs made moves (declared), or each outside flow priced as a boundary
+claim at 2 log T (not declared). The copy's one change: `alternatives()` never pairs an inflow into B with
+B's own outflow (the reference's self-move B -> B).
+
+Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).

@@ -34,6 +34,7 @@ import math
 
 import numpy as np
 
+from . import boundary
 from .changes import pelt
 from .flows import merge_by_label, read_flows
 from .pieces import pool_recut, white
@@ -126,6 +127,11 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
     final = {s["id"] for s in stocks if s.get("final")}
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
     group = {s["id"]: s.get("group") for s in stocks}
+    # (the declared boundary, boundary.py) what each row may read and hold: a measured input only where
+    # a measured outside flow may be, a stock of another unit (a link from or a drain to outside) and an
+    # outside term (constant or pieces) only where an estimated one may be; with no boundary declared
+    # every row may hold all of them, as before
+    bnd = boundary.Boundary(run)
     log_t = math.log(T)
     # (rss_floor) below the data's rounding a row's rss says nothing: each change carries two roundings
     floor = T * resolution(lv) ** 2 / 6 if opts.get("rss_floor") else 0.0
@@ -166,10 +172,14 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         sid, y = ids[s], dy[s]
         X = [columns[j] for j in range(N)]
         col = [(j, -1) for j in range(N)]
-        allowed = [j for j in range(F) if may_affect(base[j], s) and not (sid in final and base[j] == s)]
-        allowed += list(range(I0, P0))
+        linked = bnd.links_ok(sid)
+        allowed = [j for j in range(F) if may_affect(base[j], s) and not (sid in final and base[j] == s)
+                   and (linked or unit[ids[base[j]]] == unit[sid])]
+        if bnd.inputs_ok(sid):
+            allowed += list(range(I0, P0))
+        held = bnd.pieces_ok(sid)                          # an outside term (constant or pieces)
         prods = [P0 + q for q, (a, c) in enumerate(pairs) if may_affect(a, s) and may_affect(c, s)
-                 and not (sid in final and s in (a, c))]
+                 and not (sid in final and s in (a, c)) and (linked or unit[ids[a]] == unit[ids[c]] == unit[sid])]
         late = opts.get("products") == "after"             # products offered only to the finished row
         if not late:
             allowed += prods
@@ -188,6 +198,9 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         # fine pieces first (so the levels' numbers are not biased by unexplained changes), then the
         # usual price; the pieces are found in what the levels leave unexplained. Start from every
         # level when there are few (backward elimination), from none when there are many.
+        # (the boundary) a row with no outside term still chooses its levels beside a constant (a search
+        # aid, as the fine pieces are: without it a forward search from no levels stalls where two
+        # levels only help together), never beside pieces, and its final form has no outside term
         cuts = [0, T]
         chosen = list(allowed) if len(allowed) <= opts.get("backward_max", 0) else []
         for p in range(5):
@@ -207,7 +220,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
                 chosen = step(sums, chosen)
             f = fit_subset(sums, chosen)
             res = y - (f.beta @ Xa[chosen] if chosen else 0)
-            nxt = [0, T] if opts.get("changes") is False else scan(res, "fine" if p == 0 else "pass")
+            nxt = [0, T] if not held or opts.get("changes") is False else scan(res, "fine" if p == 0 else "pass")
             if nxt == cuts and p >= 2:
                 break
             cuts = nxt
@@ -262,7 +275,7 @@ def identify_one(stocks: list[dict], run: dict, opts: dict) -> dict:
         f_none = fit_subset(raw, chosen)
         none = {"cuts": None, "f": f_none, "sc": bic(f_none.rss, len(chosen))}
         constant = try_form([0, T], 1)
-        pick = none if none["sc"] <= constant["sc"] else constant
+        pick = none if not held or none["sc"] <= constant["sc"] else constant
         if len(cuts) > 2:
             # (white) no inflow or a constant one is kept unless what it leaves is not white: chance
             # pieces leave white residuals behind, an inflow that really changes a slow pattern

@@ -28,6 +28,14 @@ Options are OPTIONS (the defaults) under the caller's opts. For an ablation, the
 environment variable (JSON) starts from every option off and turns on what it names (the ladder's
 result store keys results by the code, not the environment, so ablations run outside it:
 tests/study_matrix_v2.py).
+
+The declared boundary (boundary.py, a copy of matrix/boundary.py at 723f72c; docs/research/declared-boundary.md;
+not an option: the boundary is announced information): each row of this package's matrix.py reads a
+measured input only where its stock may have a measured outside flow, and reads a stock of another unit
+or holds an outside term (constant or pieces) only where it may have an estimated one; the earned refit
+keeps rows inside it and ties every source with no estimated outflow; every candidate is guarded before
+the judge, and the answer is kept inside the boundary (guard and moves where declared, each outside
+flow priced as a boundary claim where not).
 """
 
 from __future__ import annotations
@@ -38,6 +46,7 @@ import os
 import numpy as np
 
 from ...simulate import behaviour_error
+from . import boundary
 from .earned import refit
 from .matrix import identify_one, known_flows
 
@@ -89,16 +98,20 @@ def options(opts: dict | None) -> dict:
 
 def one(stocks: list[dict], run: dict, opts: dict) -> dict:
     """identify_one; with the option earned, the candidate's rows refitted (earned.refit)."""
+    b = boundary.Boundary(run)
     if not opts.get("earned"):
-        return identify_one(stocks, run, opts)
-    r = identify_one(stocks, run, {**opts, "keep_fit": True})
-    if r.get("flows") is not None and r.get("fit"):
-        try:
-            r = refit(stocks, r, opts)
-        except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
-            pass
-    for k in ("fit", "ctx"):
-        r.pop(k, None)
+        r = identify_one(stocks, run, opts)
+    else:
+        r = identify_one(stocks, run, {**opts, "keep_fit": True})
+        if r.get("flows") is not None and r.get("fit"):
+            try:
+                r = refit(stocks, r, opts, b)
+            except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
+                pass
+        for k in ("fit", "ctx"):
+            r.pop(k, None)
+    if b.declared and r.get("flows"):
+        r = boundary.apply(r, stocks, run, opts, final=False)
     return r
 
 
@@ -133,7 +146,9 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py: the guard and
+    moves where one is declared, each outside flow priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)

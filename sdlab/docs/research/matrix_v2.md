@@ -146,3 +146,23 @@ Realistic runs much worse than matrix: sd-support-tiers long (42% -> -100%), sd-
 - A pooled inflow still runs away on sd-support-tiers long; pool_white did not catch it.
 - Products under outliers (087) want a robust row.
 - tie_se as proposed needs the joint fit (earned_pieces' joint.py) to be right on changing rows.
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (docs/research/declared-boundary.md; CLAUDE.md invariant
+2). `matrix_v2/boundary.py` is a copy of `matrix/boundary.py` at 723f72c (HIDDEN_PRICE 0), wired into this
+package's own search, not only a final guard, and not an option (the boundary is announced information):
+
+- `matrix.py`'s rows: a measured input's column only where the stock may have a measured outside flow; a
+  stock of another unit (a link from or a drain to outside) and an outside term (constant or pieces)
+  only where it may have an estimated one. A row with no outside term still chooses its levels beside
+  a constant used only as a search aid (forward search from no levels stalls where two levels only help
+  together: 032 none-long's B rows), and its final form has none.
+- `earned.py`'s refit: the same per-row limits (`earned_rows.reselect(pieces_ok, exclude)`), and every
+  source with no estimated outflow tied (`earned_joint.decide(forced)`).
+- every candidate guarded before the judge; the answer: guard and anti-correlated pairs made moves
+  (declared), or each outside flow priced as a boundary claim at 2 log T (not declared).
+- the copy's one change: `alternatives()` never pairs an inflow into B with B's own outflow (the
+  reference turned that into the self-move B -> B).
+
+Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).

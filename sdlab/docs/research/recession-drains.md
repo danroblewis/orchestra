@@ -180,3 +180,16 @@ behaviour-consistency gate, then measure again. The strict brief version is safe
 Kirchner (2009) WRR 45(2):W02429; Brutsaert and Nieber (1977) WRR 13(3):637-643 (recession analysis);
 literature report [compartmental analogues](literature/compartmental-analogues.md), summary item 8;
 [change-price](change-price.md) open ideas (estimate the levels beside cheap pieces and never refit them).
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (docs/research/declared-boundary.md; CLAUDE.md invariant
+2). `recession/boundary.py` is a copy of `matrix/boundary.py` at 723f72c (HIDDEN_PRICE 0). Each main-line
+candidate is refitted inside the boundary (`earned.refit`: an outside term only where an estimated one may
+be, a measured input only where a measured one may be, sources with no estimated outflow tied), so
+recession drains are only tried on rows the boundary lets have an outside inflow; every candidate (with and
+without recession drains) is guarded before the judge. The answer: guard and anti-correlated pairs made
+moves (declared), or each outside flow priced as a boundary claim at 2 log T (not declared). The copy's one
+change: `alternatives()` never pairs an inflow into B with B's own outflow (the reference's self-move).
+
+Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).

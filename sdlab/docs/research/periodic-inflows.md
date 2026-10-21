@@ -114,3 +114,19 @@ MSTL, arXiv:2107.13462; Hyndman and Athanasopoulos (2021) Forecasting: Principle
 ed. (seasonal dummies, dynamic regression); Killick, Fearnhead and Eckley (2012) JASA
 107(500):1590-1598; [held-out-judge](held-out-judge.md) (why stale pieces sank it);
 [change-price](change-price.md).
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (docs/research/declared-boundary.md; CLAUDE.md invariant
+2). `periodic_inflows/boundary.py` is a copy of `matrix/boundary.py` at 723f72c (HIDDEN_PRICE 0). A profile
+is an estimated outside flow, so it is looked for only on a stock whose boundary may have one; the main
+line (`earned.main_line`) refits its rows inside the boundary and guards each candidate; the second pass's
+candidates (profiles taken out as known) are guarded before the judge. The answer: guard and
+anti-correlated pairs made moves (declared), or each outside flow priced as a boundary claim at 2 log T
+(not declared). Two changes in the copy: `alternatives()` never pairs an inflow into B with B's own outflow;
+a profile flow carries its own count of numbers (`numbers`: 2 per profile segment, 2 per slow change, 1 for
+the period, 2 per piece folded in) and is held fixed in a refit. Without that the claim pricing counted one
+number per step-segment of the written profile and dropped it for the move c -> a
+(`tests/test_strategy_periodic_inflows.py`).
+
+Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).

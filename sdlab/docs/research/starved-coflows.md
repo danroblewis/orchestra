@@ -145,3 +145,15 @@ Tobin (1958) Econometrica 26(1):24-36; Lariviere and Porteus (1999) Manage. Sci.
 capped by stock are censored demand); Paoletti et al. (2007) Eur. J. Control 13(2-3):242-260 (known
 switching surfaces); Martinelli et al. (2022) Reactmine, arXiv:2209.03185 (fixed-ratio co-variation);
 [symbolic-regression](symbolic-regression.md) open ideas; failure analysis in [IDEAS-WAVE4](IDEAS-WAVE4.md).
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (docs/research/declared-boundary.md; CLAUDE.md invariant
+2). `starved_coflows/boundary.py` is a copy of `matrix/boundary.py` at 723f72c (HIDDEN_PRICE 0). The
+main-line candidates are refitted inside the boundary (`earned.refit`: an outside term only where an
+estimated one may be, a measured input only where a measured one may be, sources with no estimated outflow
+tied); every candidate, co-flow ones included, is guarded before the judge (`consider`). The answer: guard
+and anti-correlated pairs made moves (declared), or each outside flow priced as a boundary claim at 2 log T
+(not declared). The copy's one change: `alternatives()` never pairs an inflow into B with B's own outflow.
+
+Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).

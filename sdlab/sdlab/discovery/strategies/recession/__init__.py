@@ -12,6 +12,13 @@ Each main-line candidate is refitted before its recession drains are tried and b
 (earned.refit, a copy of earned_pieces' refit from matrix/ at 8c507a8): its rows chosen again,
 outside-inflow pieces kept only where earned, conservation decided jointly. Without it, chance pieces
 on a stock with no outside inflow won the judge (302 counts-short; docs/research/k8s-302.md).
+
+The declared boundary (boundary.py, a copy of matrix/boundary.py at 723f72c; docs/research/declared-boundary.md):
+each candidate's rows are refitted inside it (an outside term only where an estimated one may be, a
+measured input only where a measured one may be, sources with no estimated outflow tied), so recession
+drains are only tried on rows the boundary lets have an outside inflow; every candidate (with and
+without recession drains) is guarded before the judge, and the answer is kept inside the boundary
+(guard and moves where declared, each outside flow priced as a boundary claim where not).
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ import numpy as np
 
 from ...identify import VARIANTS, judge
 from ...matrix import identify_one, known_flows
+from . import boundary
 from .drains import apply
 from .earned import refit
 
@@ -33,6 +41,7 @@ DEFAULTS: dict = {"recession_piece": 2, "recession_trim": 1}
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = {**DEFAULTS, **json.loads(os.environ.get("SDLAB_RECESSION") or "{}"), **(opts or {})}
+    b = boundary.Boundary(run)
     has_eras = len({e.get("label") or e.get("start") for e in opts.get("eras") or [] if e}) >= 2
     extra = known_flows(opts["known"], [s["id"] for s in stocks], run["t"]) if opts.get("known") else []
     best, tried = None, []
@@ -42,7 +51,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True})
         if r.get("flows") is not None and r.get("fit"):
             try:
-                r = refit(stocks, r, opts)
+                r = refit(stocks, r, opts, b)
             except np.linalg.LinAlgError:       # a degenerate joint fit: the candidate as the matrix fitted it
                 pass
         for k in ("fit", "ctx", "raw_rows"):
@@ -57,6 +66,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             cands = cands[:0] if opts.get("recession_replace") else cands
             cands.append((q, v["name"] + ", recession drains"))
         for c, name in cands:
+            if b.declared and c.get("flows"):
+                c = boundary.apply(c, stocks, run, opts, final=False)
             e = judge(c["flows"] + extra if c["flows"] else [], stocks, run, inputs=opts.get("inputs") or None)
             tried.append({"name": name, "error": e})
             if best is None or e < best[1]:
@@ -68,8 +79,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py:
+    the guard and moves where one is declared, each outside flow priced as a boundary claim where none is)."""
+    r = _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed

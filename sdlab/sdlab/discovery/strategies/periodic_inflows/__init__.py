@@ -7,12 +7,19 @@ pieces that could follow anything, and whatever the profile leaves is still free
 The profile is written into the result as an ordinary outside inflow in segments (with the pieces the
 second pass found added in), so the simulator and the page are unchanged. Without a period that pays,
 the result is the main line's.
+
+The declared boundary (boundary.py, a copy of matrix/boundary.py at 723f72c; docs/research/declared-boundary.md):
+a profile is an estimated outside flow, so it is looked for only on a stock whose boundary may have one;
+the main line's rows are fitted inside the boundary (earned.refit), every candidate (both passes) is
+guarded before the judge, and the answer is kept inside it (guard and moves where declared, each outside
+flow priced as a boundary claim where not).
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from . import boundary
 from .earned import main_line as matrix_identify
 from ...identify import VARIANTS, judge
 from ...matrix import configurations, identify_one, known_changes, known_flows
@@ -44,12 +51,17 @@ def with_profiles(flows: list[dict], profiles: dict, t: list) -> list[dict]:
     times = np.asarray(t[1:], dtype=float)
     out = []
     total = {s: fp["series"].copy() for s, fp in profiles.items()}
+    # (the boundary's price, boundary.py) the profile's own numbers (its segments' values and places, the
+    # slow pieces', the period) plus a value and a place per piece folded into it
+    numbers = {s: 2 * len(fp["segments"]) + 2 * max(0, len(fp["slow"]) - 2) + 1 for s, fp in profiles.items()}
     for f in flows:
         if f.get("inflow") and not f.get("from") and f.get("to") in total:
             total[f["to"]] += _series(f, times)
+            numbers[f["to"]] += 2 * len(f["inflow"]) - 1
             continue
         if f.get("inflow") and f.get("from") in total and not f.get("to"):
             total[f["from"]] -= _series(f, times)
+            numbers[f["from"]] += 2 * len(f["inflow"]) - 1
             continue
         out.append(f)
     for s, v in total.items():
@@ -57,11 +69,11 @@ def with_profiles(flows: list[dict], profiles: dict, t: list) -> list[dict]:
         segs = _segments(times, v)
         if mean >= 0:
             out.append({"from": None, "to": s, "ratio": 1, "rate": {"form": "constant", "value": round(mean, 4)}, "rates": [{"form": "constant", "value": round(mean, 4)}],
-                        "perStep": mean, "nearly": [], "bothWays": False, "inflow": segs, "changes": len(segs) - 1, "period": profiles[s]["P"]})
+                        "perStep": mean, "nearly": [], "bothWays": False, "inflow": segs, "changes": len(segs) - 1, "period": profiles[s]["P"], "numbers": numbers[s]})
         else:
             neg = [{**g, "value": -g["value"]} for g in segs]
             out.append({"from": s, "to": None, "ratio": 1, "rate": {"form": "constant", "value": round(-mean, 4)}, "rates": [{"form": "constant", "value": round(-mean, 4)}],
-                        "perStep": -mean, "nearly": [], "bothWays": False, "inflow": neg, "changes": len(neg) - 1, "period": profiles[s]["P"]})
+                        "perStep": -mean, "nearly": [], "bothWays": False, "inflow": neg, "changes": len(neg) - 1, "period": profiles[s]["P"], "numbers": numbers[s]})
     return out
 
 
@@ -110,7 +122,9 @@ def remeasure(r: dict, profiles: dict, stocks: list[dict], run: dict, opts: dict
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
-    profiles = find(stocks, run, opts)
+    b = boundary.Boundary(run)
+    # a profile is an estimated outside flow: only on a stock whose boundary may have one
+    profiles = {s: fp for s, fp in (find(stocks, run, opts) or {}).items() if b.pieces_ok(s)}
     if not profiles:
         r = matrix_identify(stocks, run, opts)
         r["periods"] = {}
@@ -136,6 +150,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         own = {s: dict(fp) for s, fp in profiles.items()}
         remeasure(r, own, stocks, run, opts)
         r["flows"] = with_profiles(r["flows"], own, run["t"])
+        if b.declared and r.get("flows"):
+            r = boundary.apply(r, stocks, run, opts, final=False)
         e = judge(r["flows"] + extra, stocks, run)
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
@@ -159,8 +175,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py:
+    the guard and moves where one is declared, each outside flow priced as a boundary claim where none is)."""
+    r = _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed
