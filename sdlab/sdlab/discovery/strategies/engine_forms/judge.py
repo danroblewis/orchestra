@@ -131,9 +131,15 @@ def candidates(x: str, y: np.ndarray, st: Steps, floor: float, families) -> list
     return out
 
 
-def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list | None = None) -> list[dict]:
-    """The base's flows with each stock's exchange replaced by a form where one wins (module)."""
+def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list | None = None, outside=None) -> list[dict]:
+    """The base's flows with each stock's exchange replaced by a form where one wins (module).
+
+    outside(flows) -> int (the declared boundary, _kalman/boundary.py): how many flows lie outside it;
+    a form that would leave more of them than the flows it replaces is not offered (with its moves
+    into x written as drains of their sources, or as moves where the form reads them), and a stock's
+    rewrite that ends with more of them is undone."""
     trace = trace if trace is not None else []
+    outside = outside or (lambda _: 0)
     if len(st.ids) > MOST_STOCKS:
         trace.append(f"skipped: {len(st.ids)} stocks")
         return flows
@@ -170,6 +176,9 @@ def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list 
             b_lin = F.bic((y_all - lyh) * v, len(coef) + p_keep, floor)
             s_lin = F.sse((y_all - lyh) * v, floor)
             for c in candidates(x, y, st, floor, families):
+                if outside(_shape(flows, drop, c, x, st.ids)) > outside(flows):
+                    trace.append(f"{x}: {c.family} leaves the declared boundary")
+                    continue
                 yh = np.maximum(c.yhat + held, low)        # nothing leaves a stock that is not there
                 b = F.bic((y_all - yh) * v, c.p + p_keep, floor)
                 s = F.sse((y_all - yh) * v, floor)
@@ -184,6 +193,7 @@ def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list 
         if best is None:
             continue
         _, c, drop = best
+        before = flows
         moves_in = [flows[j] for j in drop if flows[j].get("to") == x and flows[j].get("from") in st.ids]
         rest = [f for j, f in enumerate(flows) if j not in drop]
         new = list(c.flows)
@@ -206,5 +216,23 @@ def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list 
                 new, flows, moves_in = as_move, trial, others
         flows = [{"id": f"engine_forms:{c.family}:{f.get('from') or 'outside'}->{f.get('to') or 'outside'}:{n}", **f}
                  if f.get("engine_forms") and "id" not in f else f for n, f in enumerate(flows)]
+        if outside(flows) > outside(before):
+            flows = before
+            trace.append(f"{x}: {c.family} undone (it leaves the declared boundary)")
+            continue
         trace.append(f"{x}: {c.family} chosen{' (pieces kept)' if len(drop) < len(rep) else ''} {c.detail}")
     return flows
+
+
+def _shape(flows: list[dict], drop: list[int], c, x: str, ids: list[str]) -> list[dict]:
+    """The structure a form would leave (for the boundary check): the flows it replaces dropped, the
+    moves into x among them written as drains of their sources, or as moves where the form reads
+    their source (rewrite_as_move), whichever keeps more inside."""
+    moves_in = [flows[j] for j in drop if flows[j].get("to") == x and flows[j].get("from") in ids]
+    rest = [f for j, f in enumerate(flows) if j not in drop]
+    new = list(c.flows)
+    for z in dict.fromkeys(f["from"] for f in moves_in):
+        as_move = rewrite_as_move(new, x, z)
+        if as_move is not None:
+            new, moves_in = as_move, [f for f in moves_in if f["from"] != z]
+    return rest + [as_drain(f) for f in moves_in] + new

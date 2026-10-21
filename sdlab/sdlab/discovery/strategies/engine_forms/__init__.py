@@ -19,6 +19,7 @@ one-step changes of noisy levels are not the flows.
 
 from __future__ import annotations
 
+from ._kalman import boundary
 from ._kalman import identify as base
 from .judge import improve
 from .steps import build
@@ -33,13 +34,18 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if st is None:
         return r
     trace: list[str] = []
-    flows = improve(list(r.get("flows") or []), st, trace=trace)
+    b = boundary.Boundary(run)
+    ids, inputs = [s["id"] for s in stocks], set(opts.get("inputs") or {})
+    flows = improve(list(r.get("flows") or []), st, trace=trace,
+                    outside=lambda fl: len(boundary.violations(fl, ids, b, inputs)))
     return {**r, "flows": flows, "engine_forms": {"trace": trace}}
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (_kalman/boundary.py: the guard
+    and the moves where one is declared, each outside flow priced as a boundary claim where none is;
+    the base's search and the forms pass are inside it too)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

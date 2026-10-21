@@ -73,3 +73,13 @@ uncommitted version (17:00) and are stale.
 
 Pending the full ladder run; keep as a specialist for sign-changing rates, MIN drains and tables of
 another stock or of the own level times an input.
+
+## The declared boundary (2026-10-20)
+
+engine_forms keeps outside flows to where the case declares them (docs/research/declared-boundary.md):
+its copy of kalman_lna (`_kalman/`) carries the same hooks as kalman_lna at 8deb99b (atoms filtered
+by `_kalman/inside.py`, the vendored combined judging guarded candidates, `_kalman/boundary.py`, a copy of
+`matrix/boundary.py` at 723f72c with `kept_sides` and `GUARD_FITS`); the forms pass (`judge.improve`)
+offers no form that leaves more flows outside the boundary than the flows it replaces (a move into x
+it replaces becomes its source's drain: outside, where that source has no estimated outflow), and
+undoes a stock's rewrite that ends with more; the answer goes through `boundary.apply`.

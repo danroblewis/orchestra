@@ -1,5 +1,7 @@
 # Vendored for kalman_lna from sdlab/discovery/strategies/lna/run.py at commit ec2f9e8 (imports rewritten to the
 # vendored copies; otherwise unchanged). Do not edit: re-vendor instead.
+# (kalman_lna, 2026-10-20) Edited after vendoring for the declared boundary: atoms outside it are not offered
+# (kalman_lna/inside.py); see docs/research/kalman_lna.md.
 """The strategy's steps: the data, the noise check, the atoms chosen, co-flows, the flows."""
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from sdlab.discovery.strategies.engine_forms._kalman._vendored.lna.changes impor
 from sdlab.discovery.strategies.engine_forms._kalman._vendored.lna.coflows import refine_per, with_coflows
 from sdlab.discovery.strategies.engine_forms._kalman._vendored.lna.flows import to_flows
 from sdlab.discovery.strategies.engine_forms._kalman._vendored.lna.swaps import swaps
+from sdlab.discovery.strategies.engine_forms._kalman.boundary import Boundary
+from sdlab.discovery.strategies.engine_forms._kalman.inside import Allow
 
 
 def dispersion(atoms: list[Atom], theta: np.ndarray, d: Data) -> float:
@@ -176,6 +180,10 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
         atoms += [Atom("link", dst=s_, driver=j) for s_ in range(S)] + [Atom("drain", src=s_, driver=j) for s_ in range(S) if s_ not in final]
     if "atoms" in hooks:
         atoms = hooks["atoms"](atoms, d, ctx)
+    # (kalman_lna) the declared boundary: an outside atom only where the case declares that side
+    # (input-driven links and drains are "measured"); swaps keep to it too (d.allow)
+    d.allow = Allow(Boundary(run), ids, set(range(S, S + len(inputs))))
+    atoms = d.allow.keep(atoms)
     phi = dispersion(atoms, mean_start(atoms, d), d)
     if phi < 0.2:
         return None                    # no counting noise to read: the matrix's reading stands

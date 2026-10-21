@@ -1,5 +1,7 @@
 # Vendored for kalman_lna from sdlab/discovery/strategies/lna/swaps.py at commit ec2f9e8 (imports rewritten to the
 # vendored copies; otherwise unchanged). Do not edit: re-vendor instead.
+# (kalman_lna, 2026-10-20) Edited after vendoring for the declared boundary: atoms outside it are not offered
+# (kalman_lna/inside.py); see docs/research/kalman_lna.md.
 """Readings with the same averages and the same count of numbers, told apart by the noise alone.
 
 A drain of b driven by a (b loses k x a, drawn on its own) and a goal gap in b's outside inflow
@@ -31,7 +33,7 @@ def swaps(cur: Fitted, d: Data, rounds: int = 6, margin: float = 2.0) -> Fitted:
             if cur.theta[i] <= 0:
                 continue
             for b in _alternatives(a, cur.atoms):
-                if b in cur.atoms:
+                if b in cur.atoms or not getattr(d, "allow", lambda _: True)(b):     # (kalman_lna) the declared boundary
                     continue
                 atoms = list(cur.atoms)
                 atoms[i] = b

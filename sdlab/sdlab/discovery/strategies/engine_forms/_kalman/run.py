@@ -14,6 +14,8 @@ from ._vendored.lna.flows import to_flows
 from . import search as S
 from .model import Fitted, Layout, OutOfTime, Problem
 from .hidden import hidden
+from .boundary import Boundary
+from .inside import Allow
 from .robust import FRAC, RATIO, gross_errors
 
 BUDGET = 100.0        # seconds for the whole search (opts "kalman_budget"); past it, None
@@ -119,6 +121,8 @@ class Session:
                 conf, bucket = None, None
         self.conf, self.bucket = conf, bucket
         self.pr = self.cur = self.full = None
+        # the declared boundary (boundary.py, inside.py): outside atoms only where it allows them
+        self.allow_atom = Allow(Boundary(run), self.ids)
 
     def allow(self, seconds: float) -> None:
         """From now on, at most this many seconds (every Problem made reads the new deadline)."""
@@ -132,6 +136,7 @@ class Session:
 
     def problem(self, span, lag, mask):
         lay = Layout(self.ids, self.t, self.Y, span=span, lag=lag, injections=self.inj, eras=None, mask=mask.copy())
+        lay.allow = self.allow_atom             # read by search.swaps (a swap may not leave the boundary)
         cfg = lay.era_cfg(self.conf)
         if cfg is not None:
             cfg = np.asarray(self.bucket)[cfg]
@@ -149,7 +154,7 @@ class Session:
         if len(t) < 12 or n == 0:
             return False
         mask = self.seen & ~gross_errors(t, self.Y, self.seen, self.inj)
-        atoms0 = candidate_atoms(self.stocks, self.base, None)
+        atoms0 = self.allow_atom.keep(candidate_atoms(self.stocks, self.base, None))
         if n >= 3:
             atoms0 = screened(atoms0, self.problem(spans_to_try(t)[0], 0, mask))
         if self.conf:

@@ -179,9 +179,10 @@ def swaps(pr: Problem, cur: Fitted, rounds: int = 4, margin: float = 2.0) -> Fit
     """Drain <-> goal gap (same means, different noise): a gap must win by `margin`."""
     for _ in range(rounds):
         best = None
+        allow = getattr(pr.lay, "allow", None)          # the declared boundary (inside.py)
         for i, a in enumerate(cur.atoms):
             for b in _alternatives(a, cur.atoms):
-                if b in cur.atoms:
+                if b in cur.atoms or (allow is not None and not allow(b)):
                     continue
                 atoms = list(cur.atoms)
                 atoms[i] = b
