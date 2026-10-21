@@ -40,6 +40,8 @@ injections:
   - {t: 1680, stock: ready, amount: -4}
   - {t: 1824, stock: ready, amount: 4}
   - {t: 1968, stock: ready, amount: -4}
+variants:
+  noise: [none, counts, meas]          # meas added 2026-10-21 (the user): measurement error, as 306
 boundary:
   queue: {in: input}
   retries: {out: estimate}
