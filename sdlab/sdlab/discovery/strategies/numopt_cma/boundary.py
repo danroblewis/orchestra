@@ -1,4 +1,5 @@
-# Copied from sdlab/discovery/strategies/matrix/boundary.py at 723f72c (sdlab/CLAUDE.md invariant 11: no strategy imports another).
+# Copied from sdlab/discovery/strategies/matrix/boundary.py at 723f72c (sdlab/CLAUDE.md invariant 11: no strategy imports another);
+# one change in this copy: the guard's fit budget (GUARD_FITS).
 """The declared boundary (docs/research/declared-boundary.md): outside flows only where the case says the
 system meets its environment.
 
@@ -44,6 +45,8 @@ ANTI_Z = 3.0           # two stocks' unexplained changes anti-correlated beyond 
 ITERATIONS = 4         # Gauss-Newton steps of a refit (one is exact for linear rates without clipping)
 MIN_STEPS = 20         # fewer usable steps: no refit (a flow outside the boundary is then just dropped)
 MAX_FITS = 120         # the optional passes (moves, claims) stop after this many refits (deterministic)
+GUARD_FITS = 160       # (this copy) the guard's own budget: past it, a flow outside the boundary is dropped without trying
+                       # its alternatives, so the largest models stay bounded (still never kept; deterministic)
 
 
 
@@ -463,14 +466,17 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
 
 def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: list[str]) -> list[dict]:
     """No flow outside a declared boundary survives: each, largest first, becomes its best-priced
-    alternative (refitted); without enough data to refit, it is dropped."""
+    alternative (refitted); without enough data to refit, it is dropped. (this copy) Once the guard
+    has made GUARD_FITS refits, the rest are dropped without trying their alternatives."""
     inputs = set(data.inputs)
+    start = data.fits
     for _ in range(3 * len(flows) + 3):
         bad = violations(flows, data.ids, b, inputs)
         if not bad:
             return flows
-        if not data.usable:
-            log += [f"dropped {flows[i].get('from') or 'outside'} -> {flows[i].get('to') or 'outside'} (no refit)" for i in bad]
+        if not data.usable or data.fits - start >= GUARD_FITS:
+            why = "no refit" if not data.usable else "fit budget"
+            log += [f"dropped {flows[i].get('from') or 'outside'} -> {flows[i].get('to') or 'outside'} ({why})" for i in bad]
             return [f for j, f in enumerate(flows) if j not in bad]
         i = max(bad, key=lambda j: float(np.abs(data.carried(flows[j])).mean()) if not _n_hidden([flows[j]], data.ids) else 0.0)
         best = None
