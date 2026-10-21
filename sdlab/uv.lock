@@ -1344,6 +1344,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "highspy" },
     { name = "numba" },
     { name = "numpy" },
     { name = "pyyaml" },
@@ -1369,6 +1370,7 @@ requires-dist = [
     { name = "cma", marker = "extra == 'research'", specifier = ">=4.5.0" },
     { name = "cvxpy", marker = "extra == 'research'", specifier = ">=1.9.3" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "highspy", specifier = ">=1.15.1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "jax", marker = "extra == 'research'", specifier = ">=0.11.2" },
     { name = "numba", specifier = ">=0.68.0" },

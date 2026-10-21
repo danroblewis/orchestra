@@ -895,6 +895,20 @@ strategies:
     status: work in progress
     note: docs/research/unified.md; design in docs/research/unified-design.md.
 
+  milp:
+    idea: Choose which flows exist and their numbers together, in one mixed-integer program solved by the HiGHS solver, including flows capped at the lesser of a demand and a capacity (MIN).
+    how: >-
+      Every flow the declared boundary allows (moves between stocks, the declared outside flows, and
+      capped flows MIN(a x source, b x another stock or input)) gets an on/off switch and its numbers.
+      The solver picks the switches and the numbers that explain each stock's change per step best,
+      paying a price for every number it uses, so simpler models win unless the data needs more. A
+      capped flow's switch point (which side of the MIN is the lesser) is chosen in the same program.
+      The chosen model's numbers are then refitted on every step and parts it does not need are dropped.
+    helps_with: Capacity limits - a flow that is the lesser of a demand and what another stock can take (Kubernetes rung 7) - beside ordinary moves, drains and inflows.
+    builds_on: nothing (its own code; ideas from piecewise-affine identification and best-subset selection by mixed-integer optimisation)
+    status: work in progress
+    note: docs/research/milp.md.
+
 glossary:
 
   # the model's parts
