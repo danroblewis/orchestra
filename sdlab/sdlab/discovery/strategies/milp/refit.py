@@ -8,6 +8,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.stats import norm
 
+from . import counter
 from .program import Column
 from .steps import Steps
 
@@ -114,7 +115,32 @@ class Structure:
                         i = self.pos[end]
                         J[i * T:(i + 1) * T, o] += sign * g / scale[i]
                 o += 1
+        for i, sd in self.st.level_rows.items():                       # a level row: the cumulative change, its start profiled
+            blk = np.cumsum(J[i * T:(i + 1) * T] * scale[i][:, None], axis=0)
+            w = 1.0 / sd ** 2
+            blk -= (w @ blk) / w.sum()
+            J[i * T:(i + 1) * T] = blk / sd[:, None]
         return J
+
+    def resid(self, theta: np.ndarray | None, scale: np.ndarray) -> np.ndarray:
+        """Per stock and step, the weighted misfit: of the one-step change (per scale), or for a stock with a
+        level row (Steps.level_rows: a counter whose levels carry measurement error) of its level less a
+        free start (per the level's noise sd), the start profiled out (weighted mean)."""
+        e = (self.st.dy - self.change(theta)) / scale
+        for i, sd in self.st.level_rows.items():
+            r = np.cumsum(e[i] * scale[i])
+            w = 1.0 / sd ** 2
+            e[i] = (r - (w @ r) / w.sum()) / sd
+        return e
+
+    def row_scale(self, scale: np.ndarray) -> np.ndarray:
+        """The noise scale each row is weighed by (a level row's own sd)."""
+        if not self.st.level_rows:
+            return scale
+        sc = np.array(scale, dtype=float, copy=True)
+        for i, sd in self.st.level_rows.items():
+            sc[i] = sd
+        return sc
 
     def change(self, theta: np.ndarray | None = None) -> np.ndarray:
         d = np.zeros_like(self.st.dy)
@@ -157,7 +183,7 @@ class Structure:
         groups = self._drains()
 
         def res(th):
-            r = ((self.st.dy - self.change(th)) / scale).ravel()
+            r = self.resid(th, scale).ravel()
             return np.concatenate([r, [PENALTY * max(0.0, th[g].sum() - 1.0) for g in groups]]) if groups else r
 
         def jac(th):
@@ -216,10 +242,11 @@ class Structure:
     def bic(self, scale: np.ndarray, floor: np.ndarray, extra: float = 0.0) -> float:
         """Gaussian BIC on every step, each step's variance a stock's (profiled) times scale^2: per stock
         T log(mean squared weighted misfit) + 2 sum log scale, + log T per number."""
-        e = (self.st.dy - self.change()) / scale
-        msq = np.maximum(np.mean(e ** 2, axis=1), (floor[:, None] / scale).mean(axis=1) ** 2)
+        e = self.resid(None, scale)
+        rs = self.row_scale(scale)
+        msq = np.maximum(np.mean(e ** 2, axis=1), (floor[:, None] / rs).mean(axis=1) ** 2)
         n = len(self.theta) + (PIECE_PRICE - 1.0) * sum(p[0] == "piece" for p in self.parts)
-        return float(self.st.T * np.sum(np.log(msq)) + 2.0 * np.sum(np.log(scale)) + np.log(max(self.st.T, 2)) * n + extra)
+        return float(self.st.T * np.sum(np.log(msq)) + 2.0 * np.sum(np.log(rs)) + np.log(max(self.st.T, 2)) * n + extra)
 
 
 PIECE_PRICE = 2.0     # an inflow step pays this many log T (its size and its place), as in the program
@@ -269,6 +296,7 @@ def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets, fo
                         if 0 < k < s.st.T and (p[2], k) not in have:
                             moves.append(s.without(i).with_piece(p[2], k, float(s.theta[o])))
                 o += 2 if p[0] == "min" else 1
+        moves += counter.adds(s)                     # a move into a counter fitted in level space
         for c in [m for m in moves if keeps(m, forced)]:
             sc = own(c)
             c.refit(sc, PRUNE_EVALS)

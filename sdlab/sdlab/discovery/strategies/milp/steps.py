@@ -43,6 +43,7 @@ class Steps:
         self.era = np.maximum(self.era, 0)
         # whole things moved (every measured level an integer): the changes are counts, their
         # scatter grows with the amount moved (a Poisson-like weight per step)
+        self.level_rows: dict[int, np.ndarray] = {}                # stocks fitted in level space (counter.py), with their level noise sd
         self.counts = bool(np.all(np.abs(L - np.round(L)) < 1e-9)) and float(np.abs(dy).max(initial=0)) > 0
 
     def series(self, name: str) -> np.ndarray:

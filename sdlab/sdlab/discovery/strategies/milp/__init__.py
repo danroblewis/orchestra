@@ -18,7 +18,7 @@ import time
 
 import numpy as np
 
-from . import candidates, program
+from . import candidates, counter, program
 from .refit import Structure, drop_tiny, keeps, prune
 from .steps import Steps
 
@@ -312,6 +312,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         for x in tried:
             x.refit(scale)
         best = min(tried, key=lambda x: x.bic(scale, _floor(st), _claims(x, bd)))
+        st.level_rows = counter.level_rows(best)          # counters whose changes show measurement error: their rows in level space
+        if st.level_rows:
+            for x in tried:
+                x.refit(scale)
+            best = min(tried, key=lambda x: x.bic(scale, _floor(st), _claims(x, bd)))
         best = _as_drains(best, bd)
         best.refit(scale)
         shape = (lambda x: _scales(st, np.ones(len(st.ids)), x.gross())) if st.counts and SHAPED else None
@@ -343,5 +348,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
            "solve_seconds": round(sum(r["seconds"] for r in solves), 3),
            "gap": solves[-1]["gap"] if solves else None,
            "gap_closed": bool(solves) and all(r["status"] == "Optimal" for r in solves),
-           "candidates": {"terms": len(terms), "min_flows": len(mins), "columns": len(cols)}, "sample": int(len(K)), "counts": st.counts, "note": note}
+           "candidates": {"terms": len(terms), "min_flows": len(mins), "columns": len(cols)}, "sample": int(len(K)), "counts": st.counts, "note": note,
+           "level_rows": [st.ids[i] for i in sorted(st.level_rows)]}
     return {"flows": flows, "milp": rep}
