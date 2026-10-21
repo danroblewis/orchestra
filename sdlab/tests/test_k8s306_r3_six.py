@@ -63,3 +63,12 @@ def test_milp_moves_keep_one_unit():
     assert not any(t.src and t.dst and "ready" in (t.src, t.dst) for t in terms)     # pods never move into requests
     assert not any(m.dst and "ready" in (m.src, m.dst) for m in mins)
     assert any(m.src == "queue" and m.dst == "inflight" and m.cap == "ready" for m in mins)   # a capacity may read pods
+
+
+def test_milp_runs_test_tells_stretches_from_flicker():
+    import numpy as np
+    from sdlab.discovery.strategies.milp.persist import runs_z
+    stretches = np.array(([True] * 40 + [False] * 60) * 3)
+    flicker = np.random.default_rng(0).random(300) < 0.4
+    assert runs_z(stretches) < -10
+    assert abs(runs_z(flicker)) < 3

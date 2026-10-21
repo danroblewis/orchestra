@@ -19,6 +19,7 @@ import time
 import numpy as np
 
 from . import candidates, counter, program
+from .persist import persistent
 from .refit import Structure, drop_tiny, keeps, prune
 from .steps import Steps
 
@@ -344,6 +345,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 print("  end", round(x.bic(own(x), _floor(st), _claims(x, bd)), 1), [(p, [round(y, 4) for y in v]) for p, v in x.numbers()][:8])
         best = min(ends, key=lambda x: x.bic(own(x), _floor(st), _claims(x, bd)))
         best.refit(own(best))
+        best = persistent(best, own(best))         # a MIN whose regime flips at random is its demand alone (persist.py)
         if DEBUG:
             print("  pruned", [(p, [round(x, 5) for x in v]) for p, v in best.numbers()], best.bic(scale, _floor(st)))
     note = None
