@@ -33,7 +33,10 @@ from .steps import Steps
 
 MARGIN = 10.0        # BIC units a set of gap flows must win by
 MAX_READS = 4        # a gap reads at most this many levels (and the constant)
-FLOOR = 1e-8        # a row's misfit is at least this share of its typical change (the data's rounding)
+DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+EVENTS = 5          # a free flow acts, and a new gap's floor binds, on at least this many steps
+FLOOR = 1e-5        # a row's misfit is at least this share of its typical change (the answer's numbers are written to 6 digits),
+                    # and at least the levels' rounding (_resolution)
 
 
 def _segments(f: dict, st: Steps) -> list[tuple[np.ndarray, dict]]:
@@ -132,8 +135,8 @@ def _rate(d: dict) -> dict:
 class _Fit:
     """Free flows (linear in their readers, floored) fitted with the fixed rest on the rows they touch."""
 
-    def __init__(self, st: Steps, rows: list[int], fixed: np.ndarray, scale: np.ndarray):
-        self.st, self.rows, self.fixed, self.scale = st, rows, fixed, scale
+    def __init__(self, st: Steps, rows: list[int], fixed: np.ndarray, scale: np.ndarray, floor: np.ndarray):
+        self.st, self.rows, self.fixed, self.scale, self.floor = st, rows, fixed, scale, floor
 
     def predict(self, free: list[tuple], theta: np.ndarray) -> np.ndarray:
         st, out, n = self.st, self.fixed.copy(), 0
@@ -164,8 +167,17 @@ class _Fit:
     def bic(self, free, theta) -> float:
         e = self.resid(free, theta).reshape(len(self.rows), self.st.T)
         n = self.st.T
-        rss = np.maximum(np.sum(e * e, axis=1), n * FLOOR ** 2)
+        rss = np.maximum(np.sum(e * e, axis=1), n * self.floor[self.rows] ** 2)
         return float(np.sum(n * np.log(rss / n)) + len(theta) * np.log(n * len(self.rows)))
+
+
+def _resolution(x: np.ndarray) -> float:
+    """The step the levels are written in (1e-4 for levels with four decimals; 0 at full precision): a
+    one-step change carries that rounding, sd resolution / sqrt(6), and no fit explains it."""
+    for k in range(10):
+        if np.all(np.abs(x * 10.0 ** k - np.round(x * 10.0 ** k)) < 1e-6):
+            return 10.0 ** -k
+    return 0.0
 
 
 def _hinge_start(target: np.ndarray, X: np.ndarray) -> np.ndarray:
@@ -250,7 +262,9 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
         if f.get("to") in pos:
             fixed[pos[f["to"]]] += amounts[i]
     scale = np.sqrt(np.mean((st.dy) ** 2, axis=1)) + 1e-12
-    fit = _Fit(st, rows, fixed, scale)
+    res = np.zeros(len(st.ids)) if st.counts else np.array([_resolution(st.L[i]) for i in range(len(st.ids))])
+    floor = np.maximum(FLOOR, res / np.sqrt(6.0) / scale)          # whole-number data (counts): their scatter is the noise
+    fit = _Fit(st, rows, fixed, scale, floor)
 
     def plain_free(i):
         d = _plain(flows[i])
@@ -272,7 +286,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                 old_fixed[pos[f["from"]]] -= amounts[i]
             if f.get("to") in pos:
                 old_fixed[pos[f["to"]]] += amounts[i]
-    old = _Fit(st, rows, old_fixed, scale)
+    old = _Fit(st, rows, old_fixed, scale, floor)
     th0 = np.concatenate(old_th) if old_th else np.zeros(0)
     old_bic = old.bic(old_free, th0)
 
@@ -333,12 +347,42 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             n += len(rd[key])
         return c
 
-    def trial(rd2: dict, start: dict):
-        f2, t2 = build(rd2, start)
-        t2 = fit.fit(f2, t2)
-        return fit.bic(f2, t2), rd2, t2
+    def invalid(rd2: dict, t2: np.ndarray) -> list:
+        """The free flows that move something on fewer than EVENTS steps, and the gaps (not the answer's own
+        rate) whose floor binds (the unfloored rate below 0) on fewer than EVENTS steps: a floor that never
+        acts is a plain linear rate, and the answer's own reading of it is kept."""
+        n, bad = 0, []
+        for key in keys:
+            r = rd2[key]
+            if not r:
+                continue
+            v = sum(k * st.series(x) for k, x in zip(t2[n:n + len(r)], r))
+            n += len(r)
+            tol = 1e-9 * (np.abs(v).max() + 1e-300)
+            if int(np.sum(v > tol)) < EVENTS or (key[0] != "mv" and r != orig.get(key) and int(np.sum(v < -tol)) < EVENTS):
+                bad.append(key)
+        return bad
 
-    best, rd, th = trial(rd, cur)
+    def trial(rd2: dict, start: dict):
+        """Fitted, with each invalid gap put back to the answer's own readers (inf if that cannot mend it)."""
+        for _ in range(len(keys) + 1):
+            f2, t2 = build(rd2, start)
+            t2 = fit.fit(f2, t2)
+            bad = invalid(rd2, t2)
+            if not bad:
+                return fit.bic(f2, t2), rd2, t2
+            mend = [k for k in bad if k in orig and rd2[k] != orig[k]]
+            if not mend:
+                return np.inf, rd2, t2
+            start = {**unpack(rd2, t2), **{k: dict(cur[k]) for k in mend}}
+            rd2 = {**rd2, **{k: orig[k] for k in mend}}
+        return np.inf, rd2, t2
+
+    starts = [trial(rd, cur), trial({k: orig.get(k, v) for k, v in rd.items()}, cur)]
+    if DEBUG:
+        for z in starts:
+            print("hinge start", z[0], {k: v for k, v in z[1].items() if k[0] != "mv"}, np.round(z[2], 4))
+    best, rd, th = min(starts, key=lambda z: z[0])
     for _ in range(4 * MAX_READS + 8):                    # stepwise by BIC: a reader or an optional move out, or a move in
         c = unpack(rd, th)
         step = None
@@ -360,7 +404,8 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
     note = {"old_bic": round(old_bic, 1), "gap_bic": round(best, 1),
             "gaps": {f"{k[0]}:{k[1]}": [x or "1" for x in v] for k, v in rd.items() if k[0] != "mv"},
             "moves_added": [f"{k[1]}->{k[2]}" for k in sorted(optional) if rd[k]]}
-    if not best < old_bic - MARGIN:
+    same = all(rd[k] == orig.get(k) for k in keys if k[0] != "mv") and not any(rd[k] for k in optional)
+    if same or not best < old_bic - MARGIN:           # no new gap and no new move: the answer stands as it is
         note["used"] = False
         return flows, note
     c = unpack(rd, th)
