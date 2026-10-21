@@ -589,3 +589,16 @@ _identify_linear = identify
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
     return _capmin.wrap(_identify_linear, stocks, run, opts, *args, **kw)
+
+
+# State-space refinement (oe.py, docs/research/k8s-306-r3-five.md, 2026-10-21): where the levels carry
+# measurement error, the answer above is refined on a Kalman likelihood (counting noise in every flow,
+# measurement error in the levels): its numbers, and greedy moves of its structure (drop, add, move,
+# send elsewhere, a MIN limit), inside the declared boundary.
+from . import oe as _oe  # noqa: E402
+
+_identify_capmin = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    return _oe.wrap(_identify_capmin, stocks, run, opts, *args, **kw)
