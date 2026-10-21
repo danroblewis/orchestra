@@ -71,4 +71,6 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
 
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
     r = tidy.apply(r, run, o)          # negligible terms dropped, before the MIN is written back (tidy.py, k8s-307)
-    return _capmin.restore(r, cap)
+    from . import controller
+
+    return controller.apply(_capmin.restore(r, cap), stocks, run, opts)   # count stocks driven to a quantized target (k8s-308)
