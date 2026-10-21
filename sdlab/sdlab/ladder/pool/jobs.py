@@ -20,6 +20,8 @@ from . import confirm, db, gitcode, planner
 
 AGENT_PRIORITY = 100
 MAX_PRIORITY = 1000
+MAX_AGENT_ITEMS = 1500                     # an agent job may run at most this many items (the user, 2026-10-21)
+UNCAPPED = {"coordinator", "ui"}           # the coordinator's and the UI's jobs are not capped
 MAINLINE_SPEC = {"strategies": "everything", "cases": "*"}
 MAINLINE_REPLAN = 600                     # seconds: how often an idle main line is planned again at the same HEAD
 LIVE = 90                                 # seconds since a worker's last heartbeat for it to count as live
@@ -183,6 +185,13 @@ def expand(job_id: int) -> None:
                c.get("timeout"), json.dumps(c.get("tags") or []), reused, reused_pool, _iso() if state == "reused" else None, None]
         rows.append(row)
         by_key[(cid, v["name"], s)] = (row, status, c, v, sh)
+    work = sum(1 for r in rows if r[9] == "queued")
+    if j["kind"] == "agent" and work > MAX_AGENT_ITEMS and (j["by"] or "") not in UNCAPPED:
+        msg = (f"too big: {work} items to run (agents' jobs are capped at {MAX_AGENT_ITEMS}, the user, 2026-10-21: one agent's"
+               " job must not block the others); submit a sample, split it, or ask the coordinator")
+        with db.LOCK, db.connect() as con:
+            con.execute("UPDATE pool_jobs SET state = 'failed', error = ?, total = 0, finished = ? WHERE id = ?", (msg, _iso(), job_id))
+        return
     for (cid, vname, s), (row, _st, c, v, sh) in by_key.items():   # none-long confirms a none-short pass (confirm.py)
         short = confirm.confirm_of(c, v)
         if short is None or row[9] != "queued" or confirm.exempt(spec, vname):

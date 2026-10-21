@@ -497,3 +497,10 @@ def test_a_result_is_not_promoted_once_head_has_moved_to_other_hashes(pool, monk
     with db.connect(readonly=True) as con:
         assert con.execute("SELECT promote FROM pool_results").fetchone()[0] == "not-main-line"
     assert accept.recheck_on_new_head() == 1 and accept.promote_pending() == 0   # rechecked, still not the main line's
+
+
+def test_an_agent_job_past_the_cap_fails_and_the_coordinator_is_not_capped(pool, monkeypatch):
+    monkeypatch.setattr(jobs, "MAX_AGENT_ITEMS", 2)              # the user, 2026-10-21: one agent's job must not block the others
+    j = submit(pool, strategies="s1,s2", cases="c1")             # 4 items
+    assert j["state"] == "failed" and "too big" in (j["error"] or "")
+    assert submit(pool, strategies="s1,s2", cases="c1", by="coordinator")["state"] == "queued"
