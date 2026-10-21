@@ -189,4 +189,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (2026-10-21, k8s-308, docs/research/fixes/308-kalman_lna.md) a counted stock driven towards a target read
     # off another stock (a controller: rise by the gap to ceil(X / a), fall a step while above ceil(X / b)) replaces
     # the stock's outside flows where it beats them by BIC (tracker.py)
-    return tracker.revise(_capmin.restore(r, cap), stocks, run, opts)
+    # (2026-10-21, k8s-309, docs/research/fixes/309-kalman_lna.md) each stock's row read off the data (sparse linear,
+    # or linear plus one term floored at 0 on a declared side), and the flows of the stocks whose rows the answer
+    # misses rebuilt from the rows (moves paired by unit, the rest outside links) where that wins by BIC (rows.py)
+    from . import rows
+
+    r = rows.revise(_capmin.restore(r, cap), stocks, run, opts)
+    return tracker.revise(r, stocks, run, opts)
