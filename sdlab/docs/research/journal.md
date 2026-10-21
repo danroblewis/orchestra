@@ -738,3 +738,30 @@ survivors.
 - On 13 of 20 fresh counts-short seeds the matrix line drops the timeout (lna 5/20); seed 304 hides it. A
   proper fix rewrites the matrix line with a counting-variance likelihood. 305's retries feed off timeouts.
 - The scorer's tolerances are still about 30x the bound on counts cells.
+
+## 2026-10-20 (note: the CPU pool)
+
+**Finished:** the CPU pool ([../pool.md](../pool.md)), at the user's request: CPU, not agents, is the
+bottleneck. The server on the Mac holds a job queue in the result store; workers pull items, run them in a
+checkout per slot at the job's commit, and post results. Commits: 253da87 (server, queue, token), 902ded6
+(worker), 4d6f982, c6ceb02 and 27153a0 (deployment), 27a552a (`sdlab-ladder submit` and `job`; `run` and
+`sync` refuse above 40 items or 2 CPU-minutes), dc52b1c and 793b5b5 (review fixes).
+
+**Where:** node2, a systemd `--user` service, 23 slots, `--max-mem-gb 44`, cgroup ceiling 47/49 GB,
+`OOMPolicy=continue` (its other programs hold ~9 GB and it has no swap); the Mac, kept up by the daemon,
+14 slots at nice 19, 96 GB, fewer slots above load 24. 2 heavy slots each. node2's old watchers, checkout,
+bare repository and store are gone (its 2275 results were already here; a copy is in `~/.sdlab/node2-retired/`).
+
+**Measured** (`pool_results`, 2026-10-20): job 4 (160 items) in 2.5 minutes; job 10's first 525 items in
+3.5 minutes (~9,000 an hour: Mac 328 at 3.7 s, node2 197 at 11.2 s). Peaks: small cases under 0.5 GB,
+realistic up to 9.1 GB, sd-k8s-small ~7 GB, sd-k8s-platform kalman_lna 33 GB and then ~130 GB on its retry
+before the hard limit was capped at the worker's budget (793b5b5). A node2 memory stress (job 6, 198
+realistic and heavy items alone) never went over ~22 GB; nothing was killed. The Mac stayed responsive with
+13 busy slots.
+
+**Open:** the main line is still paused (`~/.sdlab/watch.paused`, for the boundary workflow). The daemon's
+`pgrep -f "sdlab.ladder worker"` also matches any shell whose command contains that text. Items that cannot
+be planned or checked out use up retries instead of being released. A crash's peak is not kept, so the next
+sd-k8s-platform kalman_lna starts at the 16 GB default. Particle cases fail at HEAD with `KeyError:
+'galton'` (`sdlab/ladder/physics/score.py:133`, a harness bug). The model editor's writing endpoints
+(`/api/models`, including `POST /api/models/{id}/discovery`) need no token and the server is on 0.0.0.0.

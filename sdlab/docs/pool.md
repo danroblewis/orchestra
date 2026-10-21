@@ -18,6 +18,16 @@ of test runners fed by one job queue:
 The server side lives in `sdlab/ladder/pool/` (tables in the result store's file, endpoints under
 `/api/pool`, the page `/ladder/pool`); the command line is `uv run sdlab-ladder pool ...`.
 
+**For an agent, in short** (details in the next section):
+
+    uv run sdlab-ladder cost --strategies mine --cases tag:realistic     # how big is it?
+    uv run sdlab-ladder run  --strategies mine --cases 001,002           # small (<= 40 items, <= 2 CPU-min): here
+    git commit ...                                                       # larger: commit first (private index)
+    uv run sdlab-ladder submit --strategies mine --cases tag:realistic --by agent-mine
+    uv run sdlab-ladder job 12 --wait                                    # each item, then run's summary
+
+Watch everything at https://sdlab.dansproject.space/ladder/pool or with `uv run sdlab-ladder pool status`.
+
 ## Small tests stay local; sweeps go to the pool
 
 An agent may run a small test itself on the Mac (`uv run sdlab-ladder run --strategies <its own>
@@ -112,13 +122,15 @@ recorded for its case and strategy, else for its case under any strategy, else a
 by tag (`heavy` 16000 MB, `realistic` 10000, `physics`/`particles`/`canonical`/`real` 3000, anything
 else 1000). The server hands an item to a worker only if its expected peak plus a margin (1024 MB)
 fits in the memory the worker says it can still promise (`free_mb`), and a `heavy` item only while the
-worker has a heavy slot free (`heavy_free`; node2: 2 heavy slots). Workers also set a hard per-process
-memory limit (the expected peak x 2, at least 4 GB, at most half the machine) so one item cannot take
-the machine down.
+worker has a heavy slot free (`heavy_free`; 2 heavy slots on each machine). No item is expected to need more than
+90% of the biggest worker's budget (`memory.CAP_SHARE`), so no item waits for ever for memory nobody
+has. Workers also set a hard per-process memory limit (the expected peak x 2, at least 4 GB, at most
+half the machine and never past the worker's budget) so one item cannot take the machine down.
 
 A crashed item (the worker process died: `BrokenProcessPool`, killed by the OOM killer, the hard limit)
-is retried once, only on a worker that can promise more memory than the one it crashed on had; a
-second crash is recorded as an error result.
+is retried once, only on a worker that can promise 1.25 x the memory the one it crashed on had (capped
+at 90% of the biggest budget); a second crash is recorded as an error result. A crash post that is not
+under the item's current lease (resent, or from an expired lease) changes nothing.
 
 ## The token
 
@@ -364,11 +376,76 @@ sync and watcher, and `machines.yaml`'s split are gone; `scripts/sdlab-sync.sh` 
 **Measured on 2026-10-20** (`sqlite3 ~/.cache/sdlab/ladder/results.sqlite "select machine, case_id,
 strategy, peak_rss_mb from pool_results"`): peak RSS of an item is 0.2 to 0.45 GB on the small cases, up to
 9.1 GB on a realistic case (sd-ci, kalman_lna, counts-long), about 7 GB on sd-k8s-small (kalman_lna), and
-over 33 GB on sd-k8s-platform (kalman_lna, killed at its 32 GB hard limit on the first try): that one fits
-only the Mac (an item's hard limit is at most half its machine: 31 GB on node2). The smoke job (job 4:
+over 33 GB on sd-k8s-platform (kalman_lna, killed at its 32 GB hard limit on the first try; its retry on
+the Mac reached about 130 GB before the hard limit was capped at the worker's budget, 793b5b5): that one
+fits only the Mac, and now cannot pass its 96 GB budget there (on node2 an item's limit is at most 44 GB). The smoke job (job 4:
 matrix and kalman_lna on cases 001 to 020, all variants, 160 items) took 2.5 minutes: node2 ran 108 items
 (13.5 s of wall time each on average), the Mac 52 (5.4 s each).
 
 **The main line** is paused while `~/.sdlab/watch.paused` exists (it was left in place for the boundary
 workflow). To start it: `rm ~/.sdlab/watch.paused`; the server queues the stale cells of the `sdlab` HEAD
 within a minute (`uv run sdlab-ladder pool status` shows a `main line @ <commit>` job).
+
+Throughput depends on the mix. On job 10 (the coordinator's kubernetes 300-317 job, 3444 items, mostly
+short cells), the first 525 results came in about 3.5 minutes, about 9,000 items an hour: the Mac 328
+(3.7 s of wall time each) and node2 197 (11.2 s each). On the smoke job a Mac slot was about 2.5 x as fast
+per item as a node2 slot, so the Mac's 14 slots do more than node2's 23.
+
+## Operations
+
+**Status.** `uv run sdlab-ladder pool status [JOB]` (workers, slots in use, load, free memory, the queue
+by job, the main line), `uv run sdlab-ladder job ID [--wait] [--json]`, `uv run sdlab-ladder pool results
+JOB [--full|--json]`, and the page https://sdlab.dansproject.space/ladder/pool. A worker is live while its
+last heartbeat is under 90 s old.
+
+**Start and stop.**
+
+| what | start | stop | status |
+|------|-------|------|--------|
+| the server (queue, store) | the daemon restarts it; by hand: rule 15's command in CLAUDE.md | `pkill -f "sdlab --port 8020"` (the daemon starts it again) | `curl -s localhost:8020/api/pool/status` |
+| the daemon (server, Mac worker, backups) | `nohup sh scripts/sdlab-daemon.sh >> ~/.sdlab/daemon.log 2>&1 &` | `pkill -f sdlab-daemon.sh` (leaves the server and worker running) | `pgrep -fl sdlab-daemon.sh` |
+| the Mac's worker | `rm ~/.sdlab/pool-worker.paused` (the daemon starts it within a minute) | `touch ~/.sdlab/pool-worker.paused; pkill -TERM -f "sdlab.ladder worker"` | `pool status` |
+| node2's worker | `ssh ubuntu@10.198.1.109 systemctl --user start sdlab-pool-worker` | `... systemctl --user stop sdlab-pool-worker` | `... systemctl --user status sdlab-pool-worker` |
+| the main-line job | `rm ~/.sdlab/watch.paused` | `touch ~/.sdlab/watch.paused`, then `pool cancel JOB` for what is queued | `pool status` (`main line @ <commit>`) |
+| an agent's job | `sdlab-ladder submit ...` | `uv run sdlab-ladder pool cancel JOB` | `sdlab-ladder job JOB` |
+
+A worker's first SIGTERM lets running items finish (up to `--grace`, 600 s); a second kills them and
+releases their leases. Pool code changes need no restart of the workers (they follow HEAD themselves,
+within about 2 minutes, once running items finish); server-side changes (`sdlab/ladder/pool/` routes,
+acceptance, leases) need the server restarted.
+
+**Logs.**
+
+| log | where |
+|-----|-------|
+| the server | `~/.sdlab/server.log` (Mac) |
+| the daemon | `~/.sdlab/daemon.log` (Mac) |
+| the Mac's worker (supervisor) | `~/.sdlab/pool-worker.log` |
+| node2's worker (supervisor) | `~/.sdlab/pool-worker.log` on node2, and `journalctl --user -u sdlab-pool-worker` |
+| an item's output | `<home>/logs/slot-<n>.log` on its machine (`~/.sdlab/pool/worker/logs/` on both) |
+| posts refused for good | `<home>/outbox/refused/` (with the server's answer) |
+| local runs over the limit | `~/.sdlab/local-runs.log` (Mac) |
+| what each item did | the store: `pool_results` (machine, slot, commit, peak RSS, the row), `sdlab-ladder pool results JOB` |
+
+**Adding a machine.** It needs nothing but network access to the Mac's port 8020, `git`, `curl` and `uv`:
+
+1. Copy the token: `~/.sdlab/pool.token`, mode 0600 (and `~/.sdlab` 0700).
+2. Name it: `echo <name> > ~/.sdlab/machine` (results record it; or pass `--machine`).
+3. Copy the Mac's `~/.cache/sdlab/real` (1.4 MB) to the same place: items of `real` cases cannot be planned
+   without it (node2 lost two items to this before it was copied).
+4. Choose its size. Slots: one per core for a machine given to the pool (node2: all but one, 23), or the
+   share it gives (the Mac: 14 of 28, with `--yield-load` and `--min-slots`). Memory: `--max-mem-gb` under
+   what the machine's other programs leave, with a few GB to spare (node2: 62.7 GiB, others hold ~9 GB, no
+   swap: 44 GB). `--heavy-slots` 2 unless it is small. A heavy case can need 30 GB or more
+   (sd-k8s-platform with kalman_lna), so a machine under ~64 GB should keep `--max-mem-gb` low enough that
+   the server sends it none (an item goes only where its expected peak plus 1 GB fits).
+5. Start it. Linux: copy `scripts/pool/install-node2.sh` (it takes `NODE2_SSH=user@host`, `POOL_SERVER`,
+   `SLOTS`, `MEMGB`, `HEAVY`, `HIGHGB`, `MAXGB`; it writes `~/.sdlab/machine` as `node2`, so change that
+   line) for a systemd `--user` service with a cgroup ceiling and `OOMPolicy=continue`. Anything else, by
+   hand from a checkout cloned from the server's bundle (`GET /api/pool/code/bundle?want=<HEAD>`, no remote):
+   `nohup uv run --directory <checkout>/sdlab sdlab-ladder worker --server http://10.198.1.131:8020 --slots N --max-mem-gb G --machine <name> >> ~/.sdlab/pool-worker.log 2>&1 &`.
+   The first start syncs one venv per slot, which takes a while.
+6. Check `pool status` shows it live, then submit a small job (`submit --strategies matrix --cases
+   001,002 --variants none-short --by <you>`) and check its results name the new machine.
+
+Linux workers measure an item's exact peak memory (`VmHWM`); macOS ones sample it every second.
