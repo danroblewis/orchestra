@@ -144,3 +144,15 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     o, cap = _capmin.offer(stocks, run, opts)
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
     return _capmin.restore(r, cap)
+
+
+# A stock set by a discrete controller (controller.py, docs/research/fixes/308-structures.md, 2026-10-21): a
+# whole-number stock whose every step's change a target-tracking rule reproduces exactly gets that rule as
+# its outside flows in place of the fitted rates.
+_identify_capmin = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    from . import controller
+
+    return controller.apply(_identify_capmin(stocks, run, opts, *args, **kw), stocks, run, opts)
