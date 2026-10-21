@@ -785,3 +785,28 @@ reference boundary.py that several copies fixed); engine_forms 14 errors (`judge
 **Needs you:** the Kubernetes competition should not resume at 305 until 303 meas-long passes again
 (each strategy's eiv fix). The watcher is still paused; the stale backlog is 46,032 items, 77.3 h CPU
 (about 19 h at 4 workers).
+
+## 2026-10-21 (note: Kubernetes rung 306, the ready-replicas cap)
+
+**Finished:** [k8s-306.md](k8s-306.md). On 306, 4 of 264 cells passed at the start (job 185, milp only).
+At f557534, 194 pass: every none and counts variant 44/44, meas-short 10/44, meas-long 8/44. Eight
+strategies pass all six variants: combined2, earned_pieces, hidden_transit, latent_eras, mass_balance,
+numopt_bo, numopt_powell, realistic_hats.
+
+**Broad fixes:**
+- capmin.py, a copy per strategy: a data-only MIN(X, theta Y) offer. It gave +102 cells.
+- 3747e29: the scorer's oracle measures SEs for a piecewise-linear truth. It gave +55, none against.
+- Round 3 pairing of the offered MIN's halves before the boundary guard, in 7 strategies, plus fixes to schedules, z3exact and sindy. Together +15 none and counts cells.
+- oe.py and oefit.py, output-error and state-space stages for meas, in 10 strategies. They gave +18.
+
+**Regression check:** run only for the 8 that pass 306, as the user asked (jobs 217, 219, 220):
+- 300-305: 224 cells, no flip.
+- Tests sample, none-short: 904 cells, 4 pass -> fail. All four are 195 none-short, in the four oe.py
+  strategies. oe.py's gate reads the levels' rounding as measurement error. Not fixed; it is queued for
+  the next round.
+- The other 36 strategies wait until they pass 306 meas.
+
+**Needs you:**
+- No elimination is proposed. z3exact's "impossible" was refuted by both skeptics.
+- milp should formally enter the roster.
+- Whether to mark z3exact not-entered is your call: it adds no unique passing cell.
