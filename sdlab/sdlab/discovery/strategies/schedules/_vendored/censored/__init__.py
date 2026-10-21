@@ -44,7 +44,7 @@ import math
 import numpy as np
 
 from .....caps import flow_amounts
-from .....identify import identify as main_line
+from .earned import main_line          # (schedules, 2026-10-21) censored's own earned main line (copied at 6e18658)
 from .....matrix import injected
 from .....simulate import Model, behaviour_error
 from ... import boundary

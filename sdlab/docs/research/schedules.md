@@ -146,3 +146,20 @@ Fixed on the way (each a cell that lost to an earlier version):
 
 Outside flows only where the case declares them (own copy of matrix/boundary.py, wired into this
 strategy's search): see [declared-boundary-six.md](declared-boundary-six.md) for the hooks and the paired results.
+
+## Kubernetes 306: the vendored main line (2026-10-21)
+
+On `306-k8s-ready-replicas-cap` counts-short and counts-long (pool job 199, c7cade0), schedules was the
+only survivor in the 306 round 3 set still failing counts. Its start (the vendored censored,
+`_vendored/censored`, at 2dee420) took its main line from the pinned `sdlab/discovery/identify.py`, which
+reads every input, including capmin's offered MIN series and the traffic input, in every row. On
+counts-short, inflight's row read traffic, and the boundary pass paired that term into `inflight ->
+errors_total = 0.052 x traffic` (true 0.03 x inflight). On counts-long the MIN landed on `queue ->
+retries`. Current censored had already replaced that main line with its own earned one, which only
+lets the limited flow's rows read the MIN series (capmin.excluded).
+
+The change: `_vendored/censored/earned.py`, `earned_rows.py` and `earned_joint.py` are copies of
+censored's at 6e18658, imports re-pointed to this package (its own boundary.py and capmin.py, which are
+identical copies). The vendored censored's `main_line` now comes from them. The rest of the strategy
+is unchanged. In-process (not stored), both counts variants pass, 7/7 parts, and none-short still passes.
+Pool results: docs/research/k8s-306-r3.md.
