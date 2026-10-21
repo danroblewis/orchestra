@@ -286,3 +286,22 @@ files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the sam
 counter; the re-cut base is now pruned by effect_hats' own price (`prune_base`, inflow_effects' rule at
 fcc0c9a): 300-303 20 of 20, paired 40 cells +1 pass, +1 equivalent, none worse. See
 [k8s-303-hats-odefit.md](k8s-303-hats-odefit.md), which also has its capability remark.
+
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them ([declared-boundary.md](declared-boundary.md)). The package
+carries its own `boundary.py`, copied from matrix/boundary.py at 723f72c (HIDDEN_PRICE 0, CLAIM_PRICE 2),
+with changes of its own marked "(this copy)": a guard refit budget (GUARD_FITS 60, then a flow outside is
+dropped without a refit), an estimated side may hold a flow reading a measured input (the cases declare
+"estimate" for any flow not driven by inputs alone, 217), no self-move among the alternatives, and the
+helpers `inside`, `keep_inside`, `placement_ok`. In its own search: the pinned main line's base is guarded inside the boundary; an effect's outside placement only on a declared estimated side; each finished trial guarded before it is re-cut, pruned and priced. Every answer ends with
+`boundary.apply` (the guard and the moves; with no boundary declared, outside flows are priced boundary
+claims, listed in `boundary_claims`). The eiv copy holds an instrumented refit with nothing to prune to the
+pruned model's longest-horizon test (303 meas-long).
+
+Paired on the CPU pool (commits 71ec999, 9cfeb75, d5cd56a; before = this strategy at 3cc5c54 on the same
+HEAD, branch boundary-before-hats): Kubernetes 300-305 (28 cells, jobs 54 -> 119) 27 -> 27 pass (+1 equivalent: 305 counts-short pass -> equivalent; 305 none-long fail -> pass); 40 Tests
+cells (008, 028, 059, 114, 117, 154, 196, 203, 208, 213 x none/counts short/long; jobs 57 -> 120)
+8 -> 8 pass, 9 -> 9 equivalent, no status change. Invented boundary (k8s / tests): 1 -> 0 / 11 -> 0. Timeouts unchanged (154 counts-long times out on
+both sides where it did). Kubernetes 316-317 (job 122, after only, 8 cells each; none-long skipped by the pool): no pass; timeouts only on 317 (meas-long in five of the six, counts-long in effect_hats and own_tables, meas-short in own_tables), where the stored results at 793b5b5 already timed out on 317's long variants; coflow_hats now finishes 317 counts-long and meas-long.

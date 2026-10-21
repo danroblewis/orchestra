@@ -123,3 +123,22 @@ ladder rows: **no flip** (22 pass, 13 fail, 2 equivalent, 2 differs, 1 error bot
 harness KeyError on part-galton-board). The found model changed in 6 cells (003 cl, 017 cs, 042#1 cl,
 050#6 cs, 050#7 cs, 053#3 cs), each by dropping a small spurious flow. Summed discovery seconds 748
 -> 1,118 (+49%; not paired in time).
+
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them ([declared-boundary.md](declared-boundary.md)). The package
+carries its own `boundary.py`, copied from matrix/boundary.py at 723f72c (HIDDEN_PRICE 0, CLAIM_PRICE 2),
+with changes of its own marked "(this copy)": a guard refit budget (GUARD_FITS 60, then a flow outside is
+dropped without a refit), an estimated side may hold a flow reading a measured input (the cases declare
+"estimate" for any flow not driven by inputs alone, 217), no self-move among the alternatives, and the
+helpers `inside`, `keep_inside`, `placement_ok`. In its own search: as effect_hats, and the gate (gate.py) offers an inflow effect into R only where R's inflow side is declared (a schedule base only on an estimated side), and no hypothesis that leaves the boundary. Every answer ends with
+`boundary.apply` (the guard and the moves; with no boundary declared, outside flows are priced boundary
+claims, listed in `boundary_claims`). The eiv copy holds an instrumented refit with nothing to prune to the
+pruned model's longest-horizon test (303 meas-long).
+
+Paired on the CPU pool (commits 71ec999, 9cfeb75, d5cd56a; before = this strategy at 3cc5c54 on the same
+HEAD, branch boundary-before-hats): Kubernetes 300-305 (28 cells, jobs 54 -> 119) 27 -> 27 pass (305 counts-short pass -> equivalent; 305 none-long fail -> pass); 40 Tests
+cells (008, 028, 059, 114, 117, 154, 196, 203, 208, 213 x none/counts short/long; jobs 57 -> 120)
+8 -> 8 pass, 9 -> 9 equivalent, no status change. Invented boundary (k8s / tests): 1 -> 0 / 11 -> 0. Timeouts unchanged (154 counts-long times out on
+both sides where it did). Kubernetes 316-317 (job 122, after only, 8 cells each; none-long skipped by the pool): no pass; timeouts only on 317 (meas-long in five of the six, counts-long in effect_hats and own_tables, meas-short in own_tables), where the stored results at 793b5b5 already timed out on 317's long variants; coflow_hats now finishes 317 counts-long and meas-long.
