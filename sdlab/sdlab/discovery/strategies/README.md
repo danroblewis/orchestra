@@ -11,7 +11,7 @@ raise `MissingExtra` (`sdlab/discovery/optional.py`).
 
 | strategy | what it does | topic document |
 |---|---|---|
-| `matrix` | the main line: one-step regression per stock, candidates chosen by multi-step behaviour | [../DISCOVERY-EXPERIMENTS.md](../../../docs/DISCOVERY-EXPERIMENTS.md) |
+| `matrix` | the main line: one-step regression per stock, candidates chosen by multi-step behaviour; outside flows only where the case declares its boundary, else priced as boundary claims (boundary.py) | [../DISCOVERY-EXPERIMENTS.md](../../../docs/DISCOVERY-EXPERIMENTS.md), [declared-boundary.md](../../../docs/research/declared-boundary.md) |
 | `change_price` | an honest BIC price for changes in the outside inflow, with a gate | [change-price](../../../docs/research/change-price.md) |
 | `held_out` | candidates chosen by blocked cross-validation | [held-out-judge](../../../docs/research/held-out-judge.md) |
 | `held_out_blend` | the in-sample judge nudged by the held-out error | [held-out-judge](../../../docs/research/held-out-judge.md) |

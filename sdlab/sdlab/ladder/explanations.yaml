@@ -21,7 +21,9 @@ strategies:
       levels (a regression), with the stock's outside inflow allowed to change in pieces. The
       fitted numbers are read back as flows: moves, links, drains. Several ways of doing the fit
       give several candidate models, and a judge runs each one forward on the data and keeps the
-      one that tracks the measured levels best.
+      one that tracks the measured levels best. Flows from or to outside are allowed only where the
+      case declares its boundary; elsewhere what one stock loses must go to another stock. Where no
+      boundary is declared, each outside flow is a claim that has to pay for itself.
     helps_with: Ordinary linear systems - chains, drains, moves between stocks, links, constant or stepped inflows.
     builds_on: nothing (it is the base the others extend)
     status: active

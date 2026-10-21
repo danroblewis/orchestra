@@ -2,6 +2,7 @@
 candidate's outside-inflow pieces kept only where the data earns them (earned.py, a copy of
 earned_pieces' refit; docs/research/k8s-302.md)."""
 
+from . import boundary
 from .earned import main_line as _identify
 
 __all__ = ["identify"]
@@ -9,8 +10,11 @@ __all__ = ["identify"]
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard where one is declared, each outside flow priced as a
+    boundary claim where none is)."""
+    r = _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy of the strategies' eiv.py, its names prefixed
