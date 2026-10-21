@@ -47,7 +47,7 @@ from ...caps import flow_amounts
 from .earned import main_line
 from ...matrix import injected
 from ...simulate import Model, behaviour_error
-from . import cap, exact, floor, gap, onestep
+from . import boundary, cap, exact, floor, gap, onestep
 
 DEFAULTS = {"margin": 2.0, "judge_slack": None, "floors": True, "caps": True, "recut": True, "pelt_mult": 2.0, "passes": 2, "bend": 0.0, "own_floors": False, "trim": 0.01, "floor_margin": None, "links": True, "gaps": True, "gap_few": 1, "gap_side": True, "gap_margin": 1.0, "exact": True, "gap_lines": True, "gap_extra_upto": 3}
 
@@ -339,6 +339,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     score = onestep.bic(flows, ids, t, prev, dy, floor_rss, skip, mi)
     log_t = math.log(T)
     taken = []
+    # inside the announced boundary (boundary.py): a rewrite is offered only if every flow it puts to
+    # or from outside is on a declared side and of a declared kind (the main line's candidates were
+    # fitted and guarded inside it already: earned.py)
+    bd = boundary.Boundary(run)
+    in_set = set((opts.get("inputs") or {}).keys())
     for _ in range(o["passes"]):
         changed = False
         for i, row in enumerate(ids):
@@ -357,6 +362,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 cs = cap_candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o["margin"], o["recut"], o["pelt_mult"], inputs=mi)
                 cands += [c for c in cs if o["caps"] or "re-cut" in c[1]]
             best = None
+            if bd.declared:
+                cands = [(fl, name) for fl, name in cands if not boundary.violations(fl, ids, bd, in_set)]
             for fl, name in cands:
                 sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
                 m = o["gap_margin"] if name.startswith("gap ") and o["gap_margin"] is not None else o["margin"]
@@ -383,7 +390,9 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard and moves where one is declared, each outside flow
+    priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)
