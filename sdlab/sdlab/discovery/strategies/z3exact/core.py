@@ -29,12 +29,15 @@ number of column j in the row of s), plus a float slack (1e-9 of the largest lev
 uses NORM_MARGIN (2) x the least-squares row's sum in place of the true one (`tolerances`), so it is a
 fixed number per stock and the constraints stay linear.
 
-**Speed** (three devices, none of which changes what fits): lazy rows (Z3 starts from no steps; a
-candidate structure is checked exactly on every step, and the worst steps it misses join the search
-when no numbers of that structure fit them all); a verification LP per candidate (HiGHS in floats, its
-numbers then checked exactly in rationals; only a borderline answer goes to Z3's exact LP); and the
-bounds of every net number implied by the data (two LPs per stock and column, widened by 1e-7), added
-as constraints, with "some term must reach (s, j)" wherever the interval excludes 0.
+**Speed** (none of it changes what fits): the data's steps are not given to Z3 (its exact simplex on
+hundreds of rows of large rationals ignores the timeout); Z3 holds the Booleans, the numbers and the
+bounds every net number must lie in for its row to fit every step (two LPs per stock and column,
+HiGHS, widened outward by 1e-7), with "some term must reach (s, j)" wherever a bound excludes 0. Each
+candidate structure is then verified on every step: a float LP (HiGHS) for its numbers, checked
+exactly in rationals (`_violated`); a structure that does not fit is excluded exactly (that set, not
+its supersets) and Z3 is asked again. If all the terms together do not fit, nothing does ("outside the
+class") before any search. Measured inputs are read to 9 significant digits (their rounding joins the
+tolerance) to keep the rationals small.
 
 **Structures.** A structure is the set of included terms (a move's pair and column; an outside term's
 stock and column). Adding a term with a number of 0 always fits, so structures are counted *irreducible*:
