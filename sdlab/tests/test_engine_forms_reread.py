@@ -58,3 +58,52 @@ def test_noisy_rows_are_left_alone():
     r = reread.apply({"flows": WRONG}, STOCKS, _run(noise=0.3), {})
     assert not r.get("reread")
     assert r["flows"] == WRONG
+
+
+def _killed_run(noise=0.0, n=300, seed=1):
+    """The pod chain above plus kills: ready -> pending at ready x T(mem) (none below 480, rising after),
+    counted by a final stock; mem a measured level rising and falling."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(n)
+    goal = np.round(8 + 4 * np.sin(2 * math.pi * t / 90))
+    mem = np.round(450 + 40 * np.sin(2 * math.pi * t / 70), 4)
+    table = lambda m: np.interp(m, [0, 480, 512, 5000], [0, 0, 0.3, 0.3])  # noqa: E731
+    P, R, K = [0.0], [8.0], [0.0]
+    for i in range(n - 1):
+        created = max(0.0, goal[i] - P[i] - R[i])
+        started = 0.5 * P[i]
+        deleted = max(0.0, R[i] - goal[i])
+        killed = R[i] * float(table(mem[i]))
+        P.append(P[i] + created - started + killed)
+        R.append(R[i] + started - deleted - killed)
+        K.append(K[i] + killed)
+    P, R, K = (np.round(np.array(x), 4) for x in (P, R, K))
+    if noise:
+        P, R, K = P + rng.normal(0, noise, n), R + rng.normal(0, noise, n), K + rng.normal(0, noise, n)
+    run = _run(n=n)
+    run["levels"] = {"goal": list(goal), "pending": list(P), "ready": list(R), "kills": list(K), "mem": list(mem)}
+    run["boundary"] = {**run["boundary"], "kills": {"in": ["estimate"]}, "mem": {"in": ["estimate"], "out": ["estimate"]}}
+    return run
+
+
+KSTOCKS = STOCKS + [{"id": "kills", "unit": "pods", "final": True}, {"id": "mem", "unit": "MiB"}]
+KWRONG = WRONG + [{"from": None, "to": "kills", "rate": {"form": "constant", "value": 0.02}},
+                  {"from": None, "to": "mem", "rate": {"form": "constant", "value": 0.0}}]
+
+
+def test_a_counter_that_is_a_level_times_a_table_is_a_measured_flow():
+    r = reread.apply({"flows": KWRONG}, KSTOCKS, _killed_run(), {})
+    assert r.get("reread"), r
+    got = {(f["from"], f["to"]): f for f in r["flows"]}
+    move = got[("ready", "pending")]
+    assert move["rate"]["stock"] == "ready" and abs(move["rate"]["k"] - 1) < 1e-3
+    assert move["effects"][0]["stock"] == "mem"
+    pts = move["effects"][0]["points"]
+    assert abs(np.interp(486.0, *zip(*pts)) - float(np.interp(486.0, [480, 512], [0, 0.3]))) < 1e-3
+    assert got[(None, "kills")]["effects"][0]["stock"] == "mem"
+    assert abs(_terms(got[("pending", "ready")])["pending"] - 0.5) < 1e-3
+
+
+def test_a_noisy_counter_is_left_alone():
+    r = reread.apply({"flows": KWRONG}, KSTOCKS, _killed_run(noise=0.3), {})
+    assert not r.get("reread")
