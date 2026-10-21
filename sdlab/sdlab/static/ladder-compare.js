@@ -99,7 +99,15 @@
     (f.uses || []).forEach((u) => { s += `, uses ${fmt(+u.per)} ${u.stock} each`; });
     if (f.via) s += ` via a hidden stock (delay ${fmt(+f.via.delay)})`;
     if (f.ratio && f.ratio !== 1) s += ` (${fmt(+f.ratio)} in per 1 out)`;
+    if (f.merged && f.merged.note) s += ` [${f.merged.note}]`;       // flows between the same two stocks are one flow (merge.py)
+    if (f.apart) s += ` [${f.apart}]`;
     return s;
+  }
+
+  // A result's found flows as the scorer reads them: the same-pair flows merged into one
+  // (sdlab/ladder/merge.py; the API's found_merged), else as stored.
+  function foundOf(r) {
+    return (r && (r.found_merged || r.found)) || [];
   }
 
   const endKey = (a, b) => `${a || OUT} → ${b || OUT}`;
@@ -311,7 +319,7 @@
     return lines;
   }
 
-  const api = { fmt, parseKey, readers, rateText, equation, compare, partName, measures, explain, diffLines };
+  const api = { fmt, parseKey, readers, rateText, equation, foundOf, compare, partName, measures, explain, diffLines };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.SDLadder = api;
 })(typeof window !== "undefined" ? window : globalThis);

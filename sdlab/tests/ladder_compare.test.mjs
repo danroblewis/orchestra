@@ -73,6 +73,16 @@ test("equations read as a person would write them", () => {
   assert.equal(L.fmt({ mean: 0.4, per_window: [0.5, 0.25] }), "0.5 / 0.25");
 });
 
+test("a merged flow says what it was merged from, and the page draws the merged flows", () => {
+  const m = { from: "I", to: "R", rate: { form: "proportional", stock: "I", k: 0.493 }, merged: { of: 2, note: "merged from 2 flows: 0.249*I + 0.244*I" } };
+  assert.equal(L.equation(m), "0.493·I [merged from 2 flows: 0.249*I + 0.244*I]");
+  assert.match(L.equation({ ...m, merged: undefined, apart: "kept apart from the other I -> R flow: its rate is multiplied by effects" }), /\[kept apart/);
+  const raw = [{ from: "I", to: "R" }, { from: "I", to: "R" }];
+  assert.equal(L.foundOf({ found: raw, found_merged: [m] }).length, 1);
+  assert.equal(L.foundOf({ found: raw }).length, 2);
+  assert.deepEqual(L.foundOf(null), []);
+});
+
 test("the layout is the same every time and puts a chain in columns", () => {
   const flows = [{ from: "A", to: "B" }, { from: "B", to: "C" }, { from: "C", to: "D" }, { from: null, to: "A" }];
   const a = D.layout(["A", "B", "C", "D"], flows), b = D.layout(["A", "B", "C", "D"], flows);

@@ -41,7 +41,18 @@ def _seg_index(segs: list[dict], t: int) -> int:
 
 
 def form_over(flow: dict, a: int, b: int) -> tuple[float, dict[str, float]] | None:
-    """The flow's linear form averaged over the steps a..b (byTime segments, outside inflow pieces)."""
+    """The flow's linear form averaged over the steps a..b (byTime segments, outside inflow pieces); a
+    merged flow (merge.py): the sum of its originals' forms."""
+    if flow.get("merged"):
+        got = [form_over(m, a, b) for m in flow["merged"]["flows"]]
+        if any(x is None for x in got):
+            return None
+        c, ks = 0.0, {}
+        for c1, k1 in got:
+            c += c1
+            for j, k in k1.items():
+                ks[j] = ks.get(j, 0.0) + k
+        return c, ks
     segs = flow.get("inflow") or flow.get("byTime")
     if not segs:
         return linear_form(flow.get("rate"))
@@ -374,10 +385,11 @@ def label(key: tuple) -> str:
 
 def linear_system(flows: list[dict], ids: list[str], window: tuple[int, int]) -> tuple[np.ndarray, np.ndarray] | None:
     """Every measured stock's change as B @ levels + u over a window (None if a flow is not linear,
-    has effects, or touches an unmeasured stock)."""
+    has effects, or touches an unmeasured stock); a merged flow (merge.py) as its originals, so each
+    co-flow reads the amount of the flow that carried it."""
     idx = {s: i for i, s in enumerate(ids)}
     B, u = np.zeros((len(ids), len(ids))), np.zeros(len(ids))
-    for f in flows:
+    for f in [m for g in flows for m in (g["merged"]["flows"] if g.get("merged") else [g])]:   # a merged flow runs as its originals
         if f.get("effects") or f.get("via"):
             return None
         a, b = f.get("from"), f.get("to")

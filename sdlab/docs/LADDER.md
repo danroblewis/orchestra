@@ -2214,6 +2214,25 @@ a single flow into the next, which nothing else feeds), whose delay is the mean 
 (the sum of 1 / each stage's rate). Parts with the same key are summed on each side, because two
 flows that are one number in the data are scored as that one number.
 
+**Same-pair flows are one flow** (the user, 2026-10-20; `merge.py`). In system dynamics the material
+moving between two stocks is one flow whose rate is the sum of its parts; several flows with the same
+from and to (outside counts as an end) are one process split arbitrarily. So before scoring,
+complexity counting and drawing, a found model's same-pair flows are merged into one flow: terms
+reading the same stock become one coefficient, constants add, and pieces (inflow pieces, `byTime`
+spans) are laid over the union of their spans. The merged flow keeps its originals and says so
+("merged from 2 flows: 0.249*inflight + 0.244*inflight", in the score's notes, the diff list and the
+equations table; the API gives the merged flows as `found_merged`, `found` stays as stored). What
+rides on a duplicate is never hidden: its co-flows ride on the merged flow and are still parts
+(spurious if the truth lacks them). A flow that cannot be summed into one rate the scorer reads
+(effects, a hidden stock `via`, a ratio, a two-way flow, a rate that is not linear) stays a flow of its
+own, marked `apart` with the reason. The linear system, the amounts and behaviour run the originals,
+so the merge changes how a model is cut into parts (a hidden chain or smoothing written as two
+same-pair stages is now seen as one) and counted, never what it computes. Example: lna_pulses on
+304-k8s-timeouts-and-errors counts-long drew inflight -> responses_total twice (0.249 and 0.244 x
+inflight, true 0.5); it is now one arrow, 0.494 x inflight, with the co-flow `uses queue` the second
+copy carried still a spurious part. The truth is merged the same way for complexity only (its parts
+were already summed by key). Re-score: see "Same-pair flows: before and after" below.
+
 **Hidden paths fed from outside** (approved by the user, 2026-10-19). A supply line or a delayed
 input (105, 108, 110, 133, 134, and the found models of every case) used to drop out of the
 scoring: the answer key read a hidden path only between two measured stocks, so the truth's path
@@ -2430,6 +2449,20 @@ only), so a signed stock's floor still applies to every stored model; 220's foun
 two-way but floored at 0. A smoothing's own hidden stock is held at 0 in the physics Jacobian
 (structure.py), as every found hidden stock is.
 
+### Same-pair flows: before and after (2026-10-20)
+
+`tests/study_rescore_merge.py` grades stored found models offline with the scorer before and after
+the merge (nothing written to the store). Only a result whose found model has two flows with the same
+(from, to) can change (for any other the merge returns the flows unchanged), so it grades those rows.
+On the numbered ladder cases (ids starting with a digit) at the `sdlab` HEAD of 20 October (b53008c
+and the merge), 18,587 latest rows had a same-pair group: **0 status flips** (16,053 fail, 1,461 pass,
+1,073 equivalent on both sides). A second run of the new scorer against the store some hours later
+(15,470 of the same rows still latest) again had 0 flips. The found complexity of those rows fell by
+2.1 on average (at most 226; none rose; 284 unchanged). The truth's complexity fell for 142 of 1,488
+case-variants (130 by 1, e.g. 008-link-loop 8 -> 7: its constant inflow and link into A are one flow).
+The realistic, physics, particle and real sets were not re-scored (their slow rows are left to the
+main line's re-run under the new score hash).
+
 ## Complexity (`sdlab/sdlab/ladder/complexity.py`)
 
 How much more complicated a found model is than the truth. A noisy strategy can add flows, pieces
@@ -2446,6 +2479,13 @@ the run:
 | terms | the rate's numbers in its first piece: constant 1, proportional 1, gap 2 (goal, time), linear 1 per stock read + 1 for a non-zero constant (zero terms are not written), available 0; a `via` delay 1 |
 | pieces | for a rate that changes over the run (a found flow's outside inflow pieces or `byTime` segments; the truth's schedule), the numbers of every piece after the first; consecutive equal pieces are one. A found inflow in 9 pieces is 9 numbers |
 | other | effects (linear 3: normal, min, max; table 2 per point), 1 per co-flow use, 1 for a ratio other than 1, 1 per stock that is not measured (hidden or inferred) |
+
+**Same-pair flows are one flow** (2026-10-20, `merge.py`, see Scoring): flows with the same from and
+to are merged before counting, in the truth and the found model alike, so a flow split in two costs
+what the flow does. A merged flow's first span is counted as one summed rate and its later pieces are
+each original's own, counted as before, so a merge never costs more than the flows it merges (an
+inflow in 9 pieces plus a link costs what the two flows did, less one flow). A flow that cannot be
+summed (effects, `via`, a ratio, a rate that is not linear) is counted on its own.
 
 The truth is counted **on the run** (its schedule laid out over steps 2..N, where found pieces
 start), as a found model would have to write it: a found model that writes the true equations

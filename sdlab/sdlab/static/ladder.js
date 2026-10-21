@@ -323,10 +323,10 @@
     </div>`;
   }
 
-  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml: (c, r) => diffHtml(L.compare(c.model, (r && r.found) || [], r && r.scores)), legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
+  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml: (c, r) => diffHtml(L.compare(c.model, L.foundOf(r), r && r.scores)), legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
 
   function renderCompare(c, r, err) {
-    const found = (r && r.found) || [];
+    const found = L.foundOf(r);
     const cmp = L.compare(c.model, found, r && r.scores);
     $("cmp-head").innerHTML = `<div class="casehead">
         <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
@@ -717,7 +717,7 @@
     let r = null, err = null;
     try { r = await get(`/api/ladder/results/${enc(c.id)}/${enc(run.variant)}/${enc(run.strategy)}`); } catch (e) { if (e.status !== 404) err = e; }
     if (my !== S.crtoken || !$("c-run")) return;
-    const cmp = L.compare(c.model, (r && r.found) || [], r && r.scores);
+    const cmp = L.compare(c.model, L.foundOf(r), r && r.scores);
     $("c-run-scores").innerHTML = `${err ? `<p class="note error">${esc(err.message)}</p>` : ""}${scoreTable(r)}`;
     const { alias } = drawPair(c, r, $("c-true"), $("c-found"), cmp, innerWidth >= 900 ? 2 : null, $("c-diff"));
     $("c-dpair").classList.toggle("stack", innerWidth < 900);

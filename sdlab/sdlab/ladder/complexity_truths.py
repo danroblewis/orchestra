@@ -1,6 +1,6 @@
 """A disk cache of the true models' complexity on a variant's run (complexity.of_truth), so a server
 that starts again does not lay every schedule out over every step again (minutes for the whole
-ladder). Keyed by case id, case hash and variant, and by the code that counts (complexity.py and
+ladder). Keyed by case id, case hash and variant, and by the code that counts (complexity.py, merge.py and
 skill.py): a change to either starts a new cache. The file is cache_root()/complexity-truths.json.
 """
 
@@ -21,7 +21,7 @@ _state: dict = {"path": None, "code": None, "values": None}
 
 def _code() -> str:
     h = hashlib.sha256()
-    for p in (_HERE / "complexity.py", _HERE.parent / "skill.py"):
+    for p in (_HERE / "complexity.py", _HERE / "merge.py", _HERE.parent / "skill.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
 

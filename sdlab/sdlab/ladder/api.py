@@ -21,7 +21,8 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
 
 A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status
 ("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}; one read
-with its found flows also has complexity (complexity.py: true vs found) and longrun (longrun.py: long-horizon
+with its found flows also has found_merged when some of its flows share both ends (merge.py: one flow per
+pair of stocks, as the scorer and the drawings read them), complexity (complexity.py: true vs found) and longrun (longrun.py: long-horizon
 metrics, computed once per result id by longrun_cache.py), and summary cells carry both, and strict (strict.py: 1, 0,
 or None when not computed yet) with strict_why (the reasons a pass fails strict, or what is pending).
 """
@@ -33,7 +34,7 @@ import time
 
 from ..discovery.api import jsonable
 from . import cases as casemod
-from . import analysis, catalog, complexity, data, explain, longrun_cache, score, store, strict
+from . import analysis, catalog, complexity, data, explain, longrun_cache, merge, score, store, strict
 from .real import data as _real_data
 
 STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
@@ -79,7 +80,17 @@ def results(case: str | None = None, variant: str | None = None, strategy: str |
 
 def result(case: str, variant: str, strategy: str) -> dict | None:
     rows = store.latest(case, variant, strategy, found=True)
-    return jsonable(longrun_cache.attach(complexity.attach(rows[0]))) if rows else None
+    return jsonable(_merged(longrun_cache.attach(complexity.attach(rows[0])))) if rows else None
+
+
+def _merged(row: dict | None) -> dict | None:
+    """The row with found_merged: its found flows with the same-pair ones merged (merge.py), what the
+    scorer cuts into parts and the page draws; only when some were merged (found stays as stored)."""
+    if row is not None and row.get("found"):
+        got = merge.flows(row["found"])
+        if got is not row["found"]:
+            row["found_merged"] = got
+    return row
 
 
 def history(case: str, variant: str, strategy: str) -> list[dict]:
@@ -88,7 +99,7 @@ def history(case: str, variant: str, strategy: str) -> list[dict]:
 
 def result_by_id(result_id: int) -> dict | None:
     r = store.get(result_id, found=True)
-    return jsonable(longrun_cache.attach(complexity.attach(r))) if r else None
+    return jsonable(_merged(longrun_cache.attach(complexity.attach(r)))) if r else None
 
 
 def run_graph(result_id: int, at: list[int] | None = None, window: int | None = None) -> dict | None:
@@ -156,7 +167,7 @@ def board(strategy: str, variant: str | None = None) -> dict:
     known = set(casemod.case_ids())
     return jsonable({"strategy": strategy, "variant": variant, "best": best_strategy(),
                      "cases": [_case(i) for i in casemod.case_ids()],
-                     "results": [complexity.attach(r) for r in rows if r["case"] in known]})
+                     "results": [_merged(complexity.attach(r)) for r in rows if r["case"] in known]})
 
 
 def progress(recent: int | None = None) -> dict:

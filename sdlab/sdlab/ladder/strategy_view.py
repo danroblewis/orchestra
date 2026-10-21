@@ -26,6 +26,7 @@ import numpy as np
 
 from ..discovery.api import jsonable
 from . import analysis, api, catalog, explain, longrun_cache, store
+from . import merge as _merge
 from . import cases as casemod
 from .repairs import repairs
 
@@ -213,6 +214,9 @@ def details(name: str, ids: list[int]) -> dict:
                   "scores": {k: s.get(k) for k in ("status", "parts", "spurious", "recall", "precision", "right", "of", "windows", "behaviour")} if s else None,
                   "repairs": repairs(s, an) if s and r["status"] not in ("error", "timeout") else None,
                   "analysis": {"label": an.get("label"), "p": an.get("p"), "why": an.get("why"), "equivalences": an.get("equivalences")} if an else None}
+        merged = _merge.flows(r.get("found") or [])         # the same-pair flows as one (merge.py), as the scorer reads them
+        if merged is not (r.get("found") or []) and r.get("found"):
+            out[i]["found_merged"] = merged
         if r["case"] not in models:
             models[r["case"]] = casemod.load(r["case"])["model"]
     return jsonable({"results": out, "models": models})
