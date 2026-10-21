@@ -397,6 +397,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     written back, where the levels carry measurement error, the numbers are refitted and the structure
     revised on the output error (oefit.py: the model run through the whole record against the measured
     levels)."""
+    from . import counted
     from . import hinge
     from . import oefit
     from . import switch
@@ -411,5 +412,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     plain = lambda name: not _capmin.level_series(name)   # noqa: E731
     r = hinge.apply(switch.apply(r, stocks, run, o, readable=plain), stocks, run, o, readable=plain)
     r = oefit.refit(r, stocks, run, o, cap)
-    return hinge.apply(switch.apply(_capmin.restore(r, cap), stocks, run, opts), stocks, run, opts)
+    r = hinge.apply(switch.apply(_capmin.restore(r, cap), stocks, run, opts), stocks, run, opts)
+    # (2026-10-21, k8s-310, docs/research/fixes/310-combined2.md) a counter that counts another flow: that
+    # flow read off the counter's increase (counted.py: k x A x table(X), placed as a move by the rows it
+    # repairs), and the floored sides refitted once more with it held
+    return hinge.apply(counted.apply(r, stocks, run, opts), stocks, run, opts)
 

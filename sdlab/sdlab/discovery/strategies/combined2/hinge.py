@@ -50,7 +50,7 @@ def _linear(rate: dict) -> tuple[float, dict] | None:
 def amount(f: dict, cols: dict, n: int) -> np.ndarray | None:
     """A linear flow's amount per step on the record's states (floored at 0 as the engine does); None when
     this cannot evaluate it."""
-    if f.get("byTime") or f.get("effects") or f.get("uses") or f.get("two_way") or f.get("via"):
+    if f.get("byTime") or f.get("uses") or f.get("two_way") or f.get("via"):
         return None
     lf = _linear(f.get("rate") or {})
     if lf is None or any(j not in cols for j in lf[1]):
@@ -59,7 +59,13 @@ def amount(f: dict, cols: dict, n: int) -> np.ndarray | None:
     r = np.full(n, c, dtype=float)
     for j, k in ks.items():
         r = r + k * cols[j][:n]
-    return np.maximum(0.0, r)
+    r = np.maximum(0.0, r)
+    for e in f.get("effects") or []:              # (2026-10-21, k8s-310) a table effect on a measured column
+        pts = sorted((float(a), float(b)) for a, b in (e.get("points") or []))
+        if e.get("shape") != "table" or not pts or e.get("stock") not in cols:
+            return None
+        r = r * np.maximum(0.0, np.interp(cols[e["stock"]][:n], [p[0] for p in pts], [p[1] for p in pts]))
+    return r
 
 
 def hfit(Z: np.ndarray, y: np.ndarray) -> tuple[float, np.ndarray] | None:
