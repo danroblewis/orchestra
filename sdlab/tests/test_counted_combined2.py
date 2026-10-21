@@ -49,8 +49,17 @@ def test_a_counter_gives_the_move_it_counts():
     assert abs(back["rate"]["k"] - 0.5) < 1e-3
 
 
-def test_a_counter_fed_by_a_move_is_left_alone():
-    stocks, run, flows, _ = _setup()
+def test_a_counter_its_move_explains_is_left_alone():
+    stocks, run, flows, (t, heat, up, wait, falls) = _setup()
+    done = np.concatenate([[0.0], np.cumsum(0.01 * up[:-1])])          # counts an exact move up -> done
+    run["levels"]["falls"] = list(done)
     flows = flows[:2] + [{"from": "up", "to": "falls", "rate": {"form": "proportional", "stock": "up", "k": 0.01}}]
     out = counted.apply({"flows": flows}, stocks, run, {})
     assert "counted" not in out
+
+
+def test_a_smeared_move_into_a_counter_is_replaced():
+    stocks, run, flows, _ = _setup()
+    flows = flows[:2] + [{"from": "wait", "to": "falls", "rate": {"form": "proportional", "stock": "wait", "k": 0.03}}]
+    out = counted.apply({"flows": flows}, stocks, run, {})
+    assert out["counted"][0]["base"] == "up" and not any(f["from"] == "wait" and f["to"] == "falls" for f in out["flows"])

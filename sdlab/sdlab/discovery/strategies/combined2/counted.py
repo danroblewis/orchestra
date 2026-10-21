@@ -1,6 +1,6 @@
 """Counted flows: a measured counter that counts another flow (docs/research/fixes/310-combined2.md, 2026-10-21).
 
-A final stock C (nothing leaves it) fed only from outside, whose model has no move into it, is a counter:
+A final stock C (nothing leaves it) that the boundary lets be fed from outside may be a counter:
 its one-step increase is the amount of some flow elsewhere (kube's restarts counter counts the OOM kills
 that move pods from ready back to pending). Its increase y is measured exactly, so that flow's rate can be
 read off it: y = k x A x table(X) for a base stock A of C's unit (a per-capita rate) or no base (k x
@@ -8,7 +8,9 @@ table(X)), and a reader X (any measured stock or input; a link may cross units).
 linear on knots at quantiles of X over the steps where y > 0, plus the onset (the last X where nothing
 happened, beyond the active range on one side), its values >= 0 by non-negative least squares; knots and
 (A, X) by BIC on C's row (SSE floored at FLOOR_REL of the row's scale, so exact fits tie and parsimony
-picks). Kept only where C's row's BIC falls by more than GAIN log n against the model's own inflow to C.
+picks). Kept only where C's row's BIC falls by more than GAIN log n against the model's own inflows to C
+(a move into C that already explains its row, inflight -> responses_total, is left alone; a smeared one,
+pending -> counter at 0.33 x pending, is replaced, and its source's row repaired with the rest).
 
 Where the counted flow lands: a move A -> B between measured stocks of C's unit (a move needs one unit),
 an outflow A -> outside on a declared side, or nowhere (the counter alone). Each is tried on the rows it
@@ -37,6 +39,7 @@ MAX_KNOTS = 6
 MIN_ACTIVE = 3        # steps with y > 0 the table needs
 PER_KNOT = 3          # active steps per knot of the table (a few events cannot carry a shape)
 ROUNDS = 3            # alternations of the joint move refit and the floored side refit
+ACTIVE_ITERS = 20     # active-set passes of the joint refit
 
 
 def _hats(x: np.ndarray, knots: np.ndarray) -> np.ndarray:
@@ -106,41 +109,61 @@ def _nums(flows: list[dict], rows: set) -> int:
     return k
 
 
+def _value(names: list[str], coef, cols: dict, n: int) -> np.ndarray:
+    v = np.zeros(n)
+    for nm, k in zip(names, coef):
+        v = v + k * (np.ones(n) if nm == "1" else cols[nm][:n])
+    return v
+
+
 def _refit_moves(flows: list[dict], rows: set, levels: dict, cols: dict, n: int) -> list[dict]:
-    """The linear moves with both ends in `rows`, and the rows' ordinary (unfloored) linear outside rates,
-    refitted jointly by least squares on those rows, every other flow held."""
+    """The linear flows on `rows` (moves with both ends in them and their outside rates, floored ones too)
+    refitted jointly on those rows by active-set least squares: each flow's columns count only on the steps
+    where its rate is positive (the engine floors every flow at 0), the steps recomputed from the fit until
+    they settle; every other flow held."""
     def free(f):
         a, b = f.get("from"), f.get("to")
         inner = a in rows and b in rows
-        side = (a is None and b in rows) or (b is None and a in rows)       # an ordinary (unfloored) outside rate
-        return (inner or (side and not str(f.get("id") or "").startswith("floored_"))) and not f.get("effects") and not f.get("inflow") \
-            and not f.get("counted") and hinge._linear(f.get("rate") or {}) is not None and hinge.amount(f, cols, n) is not None
+        side = (a is None and b in rows) or (b is None and a in rows)
+        return (inner or side) and not f.get("effects") and not f.get("inflow") and not f.get("counted") \
+            and hinge._linear(f.get("rate") or {}) is not None and hinge.amount(f, cols, n) is not None
     idx = [i for i, f in enumerate(flows) if free(f)]
     if not idx:
         return flows
     held = [f for i, f in enumerate(flows) if i not in idx]
     order = sorted(rows)
-    ys, blocks = [], []
     params = []
     for i in idx:
         c, ks = hinge._linear(flows[i]["rate"])
         params.append((i, (["1"] if c else []) + list(ks)))
+    ys = []
     for x in order:
         got = hinge.row_error(x, held, levels, cols, n)
         if got is None:
             return flows
         r, sides = got
         ys.append(r - sides["in"] + sides["out"])
-        cols_x = []
-        for i, names in params:
-            f = flows[i]
-            sign = (-float(f.get("ratio") or 1)) if f.get("from") == x else (1.0 if f.get("to") == x else 0.0)
-            for nm in names:
-                v = np.ones(n) if nm == "1" else cols[nm][:n]
-                cols_x.append(sign * v)
-        blocks.append(np.column_stack(cols_x))
-    M, y = np.vstack(blocks), np.concatenate(ys)
-    b, *_ = np.linalg.lstsq(M, y, rcond=None)
+    y = np.concatenate(ys)
+    masks = [np.ones(n, dtype=bool) for _ in params]       # start unfloored (a smeared start can sit at 0 throughout)
+    b = None
+    for _ in range(ACTIVE_ITERS):
+        blocks = []
+        for x in order:
+            cols_x = []
+            for (i, names), on in zip(params, masks):
+                f = flows[i]
+                sign = (-float(f.get("ratio") or 1)) if f.get("from") == x else (1.0 if f.get("to") == x else 0.0)
+                for nm in names:
+                    cols_x.append(sign * on * (np.ones(n) if nm == "1" else cols[nm][:n]))
+            blocks.append(np.column_stack(cols_x))
+        b, *_ = np.linalg.lstsq(np.vstack(blocks), y, rcond=None)
+        new, j = [], 0
+        for _, names in params:
+            new.append(_value(names, b[j:j + len(names)], cols, n) > 0)
+            j += len(names)
+        if all(np.array_equal(m1, m2) for m1, m2 in zip(new, masks)):
+            break
+        masks = new
     out = copy.deepcopy(flows)
     j = 0
     for i, names in params:
@@ -154,7 +177,7 @@ def _refit_moves(flows: list[dict], rows: set, levels: dict, cols: dict, n: int)
             j += 1
         if not terms:
             out[i]["rate"] = {"form": "constant", "value": c}
-        elif len(terms) == 1 and not c:
+        elif len(terms) == 1 and not c and not str(out[i].get("id") or "").startswith("floored_"):
             out[i]["rate"] = {"form": "proportional", "stock": terms[0]["stock"], "k": terms[0]["k"]}
         else:
             out[i]["rate"] = {"form": "linear", "c": c, "terms": terms}
@@ -193,8 +216,8 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
     flows = out["flows"]
     notes = []
     for c in sorted(finals & set(levels)):
-        if any(f.get("to") == c and f.get("from") for f in flows) or any(f.get("from") == c for f in flows):
-            continue                                       # fed by a move: not a counter of another flow
+        if any(f.get("from") == c for f in flows):
+            continue                                       # something leaves it: not a counter
         if run.get("boundary_declared") and not ((run.get("boundary") or {}).get(c) or {}).get("in"):
             continue
         y = np.diff(levels[c][:n + 1])
@@ -204,7 +227,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
         floor = n * (FLOOR_REL * scale) ** 2
         if np.allclose(levels[c], np.round(levels[c])):
             floor = max(floor, n / 12.0)                  # whole-number counts: their rounding
-        mine = [f for f in flows if f.get("to") == c and not f.get("from")]
+        mine = [f for f in flows if f.get("to") == c]     # its inflows (a move into it too): replaced only on C's row's evidence
         own = _row_sse(c, flows, levels, cols, n)
         if own is None:
             continue
