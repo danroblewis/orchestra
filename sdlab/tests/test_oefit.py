@@ -64,3 +64,42 @@ def test_gate_reads_measurement_error_only():
                  for f in model["flows"]]
         got[v] = oe._measurement_error(flows, ids, {"t": d["t"], "levels": d["levels"]}, {"inputs": {k: list(x) for k, x in d["inputs"].items()}})
     assert got == {"none-short": False, "counts-short": False, "meas-short": True}
+
+
+def test_sensitivities_match_finite_differences():
+    """_sens carries _sim's derivatives by every number and starting level (a share past what the source
+    holds, a MIN on either arm, a constant and a link on an outside inflow, an injection)."""
+    net = oe._Net([_flow(-1, 0, [(3, 1.0)]), _flow(0, 1, mins=[(0, 2, 40.0, 0.6)]), _flow(1, -1, [(1, 0.5)]),
+                   _flow(0, 1, [(0, 0.08)]), _flow(-1, 2, [(1, 0.3)], c=2.0), _flow(1, 2, [(1, 0.7)])], ["u"])
+    rng = np.random.default_rng(0)
+    n, S = 200, 3
+    A = np.abs(rng.normal(50, 10, (S, n)))
+    U = (400 + 50 * np.sin(np.arange(n) / 10))[None, :]
+    inj = np.zeros((S, n))
+    inj[2, 50] = 2.0
+    p = np.concatenate([net.get(), A[:, 0]])
+    k = len(p) - S
+    X, J = oe._sens(n, S, p[k:], inj, U, *net.arrays(), *net.positions(), len(p))
+    X0 = oe._sim(n, S, p[k:].copy(), inj, U, *net.arrays())
+    assert np.array_equal(X, X0)
+    for q in range(len(p)):
+        h = 1e-6 * max(1.0, abs(p[q]))
+        pp = p.copy()
+        pp[q] += h
+        g = net.copy()
+        g.put(pp[:k])
+        fd = (oe._sim(n, S, pp[k:].copy(), inj, U, *g.arrays()) - X0) / h
+        assert np.max(np.abs(fd - J[:, :, q])) <= 1e-4 * max(1.0, np.max(np.abs(fd)))
+
+
+def test_moves_keep_one_unit_and_links_skip_counters():
+    """No move is offered between stocks of different announced units, and no link reads a counter."""
+    net = oe._Net([_flow(-1, 0, [(4, 1.0)]), _flow(0, 1, [(0, 0.5)]), _flow(-1, 2, c=5.0), _flow(2, -1, [(2, 0.1)])], ["u"])
+    A = np.abs(np.random.default_rng(1).normal(50, 10, (4, 60))) + np.arange(60)[None, :] * np.array([[0], [0], [0], [1]])
+    d = oe._Data(A, np.zeros((4, 60)), np.ones((1, 60)) + np.arange(60)[None, :] % 7)
+    d.units = ["requests", "requests", "millicores", "requests"]
+    labels = [lab for lab, _, _ in oe._candidates(net, d, {3}, A[:, 0])]
+    assert not [lab for lab in labels if lab.startswith("add move") and ("var 2" in lab)]
+    links = [lab for lab in labels if lab.startswith("link")]
+    assert "link var 0 into flow 2" in links and "link var 4 into flow 2" in links
+    assert not [lab for lab in links if lab.startswith("link var 3 ")]

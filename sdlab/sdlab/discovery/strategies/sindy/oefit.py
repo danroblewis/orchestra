@@ -14,7 +14,7 @@ Here the model is run from fitted starting levels through the whole record, step
 steps (rates floored at 0, a stock's outflows sharing what it holds, announced injections added before
 their step), and its levels are compared with the measured levels: the residual is the measurement
 error plus the drift of the process noise, and no measured level is a regressor. The numbers (and the
-starting levels) are fitted by weighted least squares, each stock's weight from a noise variance
+starting levels) are fitted by weighted least squares (the run's derivatives carried with it, _sens), each stock's weight from a noise variance
 a + b x level^2 fitted to its own residuals (feasible GLS, two passes; again after each search, which
 then runs again from its answer, up to CYCLES times).
 
@@ -83,9 +83,9 @@ ALPHA = 1e-3           # the white-noise test's level (as eiv.py)
 ROUNDING = 1e-3        # a stock whose one-step residuals are below this share of its changes (rms) is exact
 ROUNDS = 12            # search rounds at most
 BEAM = 8               # structures kept each round (the best of the new ones, better or not)
-BUDGET = 1e9           # simulated steps the search may spend (the found seed first, then the wide one)
+BUDGET = 4e8           # simulated steps the search may spend (the found seed first, then the wide one)
 OVERHEAD = 700         # a run's fixed cost, in steps (so the budget is about the same time at any length)
-WALL = 120.0           # seconds: a safety net only (the budget above is what normally stops the search)
+WALL = 180.0           # seconds: a safety net only (the budget above is what normally stops the search)
 FOUND_SHARE = 0.6      # the share of the budget the search from the found structure may use
 CYCLES = 3             # searches at most, each with the noise read off the model the last one found
 PATIENCE = 4           # rounds without a better structure before the search stops
@@ -98,8 +98,9 @@ MOVES = 10.0           # a stock moves when its level varies this many times mor
 POINTS = 3000          # compared levels at most (a long run is compared every k-th step)
 QUICK = 10             # function evaluations of a candidate's first fit (its rank in the round)
 CAP = "capmin__"       # capmin.py's offered series prefix
+JAC_COST = 4.0         # a run with its derivatives costs 1 + (numbers / JAC_COST) runs (measured: 9 runs at 33)
 KF_ITER = 60           # iterations of a Kalman fit of a structure's numbers
-CHOICES = 6            # the best structures of the searches judged on the Kalman likelihood
+CHOICES = 4            # the best structures of the searches judged on the Kalman likelihood
 
 
 @njit(cache=True)
@@ -398,6 +399,120 @@ def _kf_choice(cands: list[_Net], d: _Data, price: float) -> tuple[int, list[flo
     return int(np.argmin(prices)), [round(x, 1) for x in prices]
 
 
+@njit(cache=True)
+def _sens(n, S, start, inj, U, fsrc, fdst, fc, tf, tv, tk, mf, mx, my, mth, ma, qc, qk, qa, qth, P):
+    """_sim's levels (S x n) and their derivatives (S x n x P) by the numbers (positions qc, qk, qa, qth;
+    -1: held) and the starting levels (the last S positions): the same steps, differentiated (a floor
+    at 0 or a MIN's kink taken on the side the step is on)."""
+    F = fsrc.shape[0]
+    V = S + U.shape[0]
+    X = np.zeros((S, n))
+    J = np.zeros((S, n, P))
+    L = start.copy()
+    dL = np.zeros((S, P))
+    for s in range(S):
+        dL[s, P - S + s] = 1.0
+        if L[s] < 0:
+            L[s] = 0.0
+            dL[s, P - S + s] = 0.0
+        X[s, 0] = L[s]
+        for q in range(P):
+            J[s, 0, q] = dL[s, q]
+    v = np.zeros(V)
+    dv = np.zeros((V, P))
+    amt = np.zeros(F)
+    da = np.zeros((F, P))
+    for i in range(1, n):
+        for s in range(S):
+            L[s] = L[s] + inj[s, i]
+            if L[s] < 0:
+                L[s] = 0.0
+                for q in range(P):
+                    dL[s, q] = 0.0
+            v[s] = L[s]
+            for q in range(P):
+                dv[s, q] = dL[s, q]
+        for u in range(U.shape[0]):
+            v[S + u] = U[u, i]
+        for f in range(F):
+            amt[f] = fc[f]
+            for q in range(P):
+                da[f, q] = 0.0
+            if qc[f] >= 0:
+                da[f, qc[f]] = 1.0
+        for j in range(tf.shape[0]):
+            f = tf[j]
+            amt[f] += tk[j] * v[tv[j]]
+            if tv[j] < S:
+                for q in range(P):
+                    da[f, q] += tk[j] * dv[tv[j], q]
+            if qk[j] >= 0:
+                da[f, qk[j]] += v[tv[j]]
+        for j in range(mf.shape[0]):
+            f = mf[j]
+            a, b = v[mx[j]], mth[j] * v[my[j]]
+            if a < b:
+                amt[f] += ma[j] * a
+                if mx[j] < S:
+                    for q in range(P):
+                        da[f, q] += ma[j] * dv[mx[j], q]
+                if qa[j] >= 0:
+                    da[f, qa[j]] += a
+            else:
+                amt[f] += ma[j] * b
+                if my[j] < S:
+                    for q in range(P):
+                        da[f, q] += ma[j] * mth[j] * dv[my[j], q]
+                if qa[j] >= 0:
+                    da[f, qa[j]] += b
+                if qth[j] >= 0:
+                    da[f, qth[j]] += ma[j] * v[my[j]]
+        for f in range(F):
+            if amt[f] < 0:
+                amt[f] = 0.0
+                for q in range(P):
+                    da[f, q] = 0.0
+        for s in range(S):
+            want = 0.0
+            for f in range(F):
+                if fsrc[f] == s:
+                    want += amt[f]
+            if want > L[s] and L[s] > -1:
+                if want > 0:
+                    k = L[s] / want
+                    for q in range(P):
+                        dw = 0.0
+                        for f in range(F):
+                            if fsrc[f] == s:
+                                dw += da[f, q]
+                        dk = (dL[s, q] - k * dw) / want
+                        for f in range(F):
+                            if fsrc[f] == s:
+                                da[f, q] = da[f, q] * k + amt[f] * dk
+                    for f in range(F):
+                        if fsrc[f] == s:
+                            amt[f] *= k
+        for f in range(F):
+            a, b = fsrc[f], fdst[f]
+            if a >= 0:
+                L[a] -= amt[f]
+                for q in range(P):
+                    dL[a, q] -= da[f, q]
+            if b >= 0:
+                L[b] += amt[f]
+                for q in range(P):
+                    dL[b, q] += da[f, q]
+        for s in range(S):
+            if L[s] < 0:
+                L[s] = 0.0
+                for q in range(P):
+                    dL[s, q] = 0.0
+            X[s, i] = L[s]
+            for q in range(P):
+                J[s, i, q] = dL[s, q]
+    return X, J
+
+
 class _Net:
     """A structure in the form _sim runs: flows (src, dst, c, terms [(var, k)], mins [(x, y, theta, a)],
     fixed), over measured stocks `ids` and inputs `names`."""
@@ -471,6 +586,16 @@ class _Net:
         ma = np.array([m[3] for f in F for m in f["mins"]], dtype=float)
         return fsrc, fdst, fc, tf, tv, tk, mf, mx, my, mth, ma
 
+    def positions(self):
+        """Each number's position among slots() (-1: held): per flow its constant, per term, per MIN its a
+        and theta, in arrays()' order."""
+        pos = {s: q for q, s in enumerate(self.slots())}
+        qc = np.array([pos.get((fi, "c", 0), -1) for fi in range(len(self.flows))], dtype=np.int64)
+        qk = np.array([pos.get((fi, "k", j), -1) for fi, f in enumerate(self.flows) for j in range(len(f["terms"]))], dtype=np.int64)
+        qa = np.array([pos.get((fi, "a", j), -1) for fi, f in enumerate(self.flows) for j in range(len(f["mins"]))], dtype=np.int64)
+        qth = np.array([pos.get((fi, "th", j), -1) for fi, f in enumerate(self.flows) for j in range(len(f["mins"]))], dtype=np.int64)
+        return qc, qk, qa, qth
+
 
 class _Data:
     """The measured levels, injections and inputs; the weights; the steps whose levels are compared
@@ -521,9 +646,17 @@ def _fit(net: _Net, d: _Data, start: np.ndarray, nfev: int | None = None) -> tup
         X = _run(net, d, p[k:])
         return d.resid(X)
 
+    qs, keep = net.positions(), d.keep
+
+    def jac(p):                                          # the run's derivatives, carried with it (_sens)
+        net.put(p[:k])
+        d.steps += (1 + len(p) / JAC_COST) * (d.n + OVERHEAD)
+        _, Jx = _sens(d.n, d.S, p[k:], d.inj, d.U, *net.arrays(), *qs, len(p))
+        return (Jx[:, keep, :] * d.w[:, keep, None]).reshape(-1, len(p))
+
     net.jac = None
     try:
-        sol = least_squares(res, p0, bounds=(lo, hi), method="trf", x_scale="jac", max_nfev=nfev or NFEV * len(p0))
+        sol = least_squares(res, p0, jac=jac, bounds=(lo, hi), method="trf", x_scale="jac", max_nfev=nfev or NFEV * len(p0))
         p = sol.x
         net.jac = sol.jac[:, :k]
     except (ValueError, FloatingPointError, np.linalg.LinAlgError):
@@ -1016,6 +1149,7 @@ def refit(result: dict, stocks: list[dict], run: dict, opts: dict | None, cap: d
     if not cost < found_cost or not np.isfinite(cost):
         return {**result, "oe": {"used": False, "cost": [found_cost, cost], **info}}
     net, kf = _kf_numbers(net, d)
+    net = _live(net, d, start)                           # a flow the Kalman numbers left carrying nothing goes
     return {**result, "flows": _write(net, ids), "oe": {"used": True, "cost": [round(found_cost, 1), round(cost, 1)], **info, **kf,
                                                           "kf_prices": kf_prices}}
 
