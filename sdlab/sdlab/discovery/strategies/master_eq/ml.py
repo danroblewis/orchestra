@@ -17,6 +17,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 from . import fit as F
+from . import terms as T
 
 
 def objective(P: F.Problem, cols: np.ndarray, mode: str):
@@ -96,7 +97,12 @@ NONLINEAR_PRICE = 2.0     # a product (bind, catalysed move) costs this many num
 
 
 def bic(f: F.Fit, pen: float) -> float:
-    return f.nll2() + pen * sum(NONLINEAR_PRICE if t.kind in ("bind", "catal") else 1.0 for t, _ in f.terms())
+    """BIC; with no boundary declared, each outside flow (a term's era splits are one flow) also pays
+    the boundary claim's price, P.claim_price (boundary.CLAIM_PRICE) numbers (0 where declared: the
+    pool then holds only the outside terms the boundary allows)."""
+    claim = getattr(f.P, "claim_price", 0.0)
+    flows = {(t.kind, t.src, t.dst, t.other) for t, _ in f.terms() if T.outside_sides(t)} if claim else ()
+    return f.nll2() + pen * (sum(NONLINEAR_PRICE if t.kind in ("bind", "catal") else 1.0 for t, _ in f.terms()) + claim * len(flows))
 
 
 def active(f: F.Fit) -> list[int]:

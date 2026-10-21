@@ -118,3 +118,27 @@ terms cannot write and the held-out choice did not catch. The gains include 057,
   spatial prior (moves between regions whose counts co-vary negatively).
 - Guard the choice against unannounced inflow steps (053, 048, 020 counts): offer the main line's inflow pieces as
   terms.
+
+## The declared boundary (2026-10-20)
+
+master_eq keeps outside flows to where the case declares them (docs/research/declared-boundary.md;
+`master_eq/boundary.py` is a copy of `matrix/boundary.py` at 723f72c, HIDDEN_PRICE 0, with one change:
+`kept_sides`, below):
+
+- the main line (`earned*.py`) has matrix's hooks: rows filtered per stock, sources with no
+  estimated outflow tied (`decide(forced=...)`), the guard on every candidate before the judge;
+- the master equation's term pool holds only the outside terms the boundary allows
+  (`terms.inside`: a drain only on a stock with an `estimate` outflow; a constant or link only on an
+  `estimate` inflow; an input's arrivals only on a `measured` inflow; a bind or catalysed move to
+  outside only on its source's `estimate` outflow). With none declared, every term is in the pool and
+  each outside flow pays `CLAIM_PRICE` numbers in the BIC (`ml.bic`, `P.claim_price`);
+- the answer goes through `boundary.apply` (`__init__.identify`).
+
+`kept_sides` (this copy): where a boundary is declared, no alternative or move may take away the last
+outside flow on a declared side (an `estimate` side's flow exists). Without it the reference's
+`pair_moves` made a counted chain's declared `outside -> A = 6` and `B -> outside = 0.05 B` into a
+closed loop `B -> A` (the move A -> B's counting noise makes A's and B's unexplained changes
+anti-correlated; the loop fits nearly as well for one number fewer). tests/test_master_eq_boundary.py.
+`tests/test_master_eq.py::test_levels_not_counted_go_to_the_main_line` compared with the shared
+`identify` since master_eq's main line became its own earned_pieces copy (it failed before this
+change); it now compares with that copy.

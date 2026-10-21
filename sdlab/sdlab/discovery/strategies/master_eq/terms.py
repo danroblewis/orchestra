@@ -117,3 +117,22 @@ def extras(S: int, units: list[str], products: bool) -> list[Term]:
                     out.append(Term("catal", a, c, b))
                     out.append(Term("catal", b, c, a))
     return out
+
+
+def outside_sides(t: Term) -> list[tuple[int, str, str]]:
+    """Where the term meets the outside, as the scorer reads a flow's ends (boundary.ends): (stock,
+    side, kind), kind "measured" for an input's arrivals, else "estimate"; [] for a move (a bind's or
+    a catalysed move's second stock is a co-flow or an effect, not an end)."""
+    if t.kind == "input":
+        return [(t.dst, "in", "measured")]
+    if t.kind in ("const", "link"):
+        return [(t.dst, "in", "estimate")]
+    if t.kind in ("drain", "bind", "catal") and t.dst is None:
+        return [(t.src, "out", "estimate")]
+    return []
+
+
+def inside(terms: list[Term], b, ids: list[str]) -> list[Term]:
+    """The terms a declared boundary allows (boundary.Boundary b): an outside end only on a declared
+    stock and side, of a declared kind. With nothing declared, every term."""
+    return [t for t in terms if all(b.may(ids[s], side, kind) for s, side, kind in outside_sides(t))]

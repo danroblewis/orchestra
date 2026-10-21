@@ -3,8 +3,8 @@ probabilities fitted to counted levels; other data go to the main line."""
 
 import numpy as np
 
-from sdlab.discovery.identify import identify as mainline
 from sdlab.discovery.strategies.master_eq import fit as F
+from sdlab.discovery.strategies.master_eq.earned import main_line as own_main_line
 from sdlab.discovery.strategies.master_eq import ml as ML
 from sdlab.discovery.strategies.master_eq import terms as T
 from sdlab.discovery.strategies.master_eq.run import identify
@@ -69,4 +69,5 @@ def test_levels_not_counted_go_to_the_main_line():
     run = {"t": run["t"], "levels": {k: [x + 0.5 for x in v] for k, v in run["levels"].items()}}
     r = identify(stocks, run, opts)
     assert r["chosen_by"].startswith("levels not counted")
-    assert r["flows"] == mainline(stocks, run, dict(opts))["flows"]
+    # master_eq's own main line (its copy of earned_pieces, earned.py), not the shared identify
+    assert r["flows"] == own_main_line(stocks, run, dict(opts))["flows"]

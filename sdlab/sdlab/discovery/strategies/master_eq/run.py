@@ -17,6 +17,7 @@ import time
 import numpy as np
 
 from .earned import main_line as mainline
+from . import boundary
 from ...simulate import behaviour_error
 from . import fit as F
 from . import ml as ML
@@ -152,11 +153,15 @@ def master(stocks: list[dict], run: dict, opts: dict) -> dict:
     D, ids, inputs, spans = prepare(stocks, run, opts)
     S, m = D.S, D.u.shape[1]
     units = [s.get("unit") or "" for s in stocks]
-    P = F.Problem(D, T.conservative(S, m, units, D.labels))
+    # the declared boundary (boundary.py): only the outside terms it allows are in the pool; with
+    # none declared, each outside flow is a boundary claim priced in the BIC (ml.bic)
+    b = boundary.Boundary(run)
+    P = F.Problem(D, T.inside(T.conservative(S, m, units, D.labels), b, ids))
+    P.claim_price = 0.0 if b.declared else boundary.CLAIM_PRICE
     pen = math.log(P.N)
     trace = []
     base_cols = list(range(len(P.pool)))
-    P.add(T.extras(S, units, S <= int(opts.get("products_upto", PRODUCTS_UPTO))))
+    P.add(T.inside(T.extras(S, units, S <= int(opts.get("products_upto", PRODUCTS_UPTO))), b, ids))
     alts = alternatives(P)
     keys = {t.key(): k for k, t in enumerate(P.pool)}
     rev = {k: keys[("move", t.dst, t.src, None, t.era)] for k, t in enumerate(P.pool) if t.kind == "move" and ("move", t.dst, t.src, None, t.era) in keys}

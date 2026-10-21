@@ -221,15 +221,19 @@ class System:
         return {"beta": betas, "res": res, "gross": gross, "inflow": inflow, "nll": nll}
 
 
-def decide(system: System, log_t: float, trace: bool = False) -> dict:
+def decide(system: System, log_t: float, trace: bool = False, forced: set = frozenset()) -> dict:
     """Tie or free each source (in all its configurations at once), one at a time while BIC on the
     counting likelihood improves, starting from every source free; every decision is made with
     changing rows' pieces found at the textbook price (System.fit, honest). The model is then
     fitted with the chosen ties and the cheap pieces: a changing row keeps the matrix's pieces when
-    free, and gets pieces found with its drain held when tied."""
+    free, and gets pieces found with its drain held when tied.
+
+    (this copy, the declared boundary: boundary.py) forced: the sources whose drain must be all moves
+    (no outflow to outside declared); each that can be tied is tied from the start and stays tied."""
     system.set_receivers(system.fit(set()))
     cands = system.ties()
-    tied: set = set()
+    tied: set = {a for a in cands if a in forced}
+    cands = [a for a in cands if a not in tied]
     best = system.fit(tied, honest=True)
     score = best["nll"] + best["P"] * log_t
     while True:
