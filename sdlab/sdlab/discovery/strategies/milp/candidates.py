@@ -24,7 +24,7 @@ import numpy as np
 from .program import Column
 from .steps import Steps
 
-GRID = 24            # thresholds a MIN flow's program chooses among (quantiles of source / capacity)
+GRID = 8            # thresholds a MIN flow's program chooses among (quantiles of source / capacity)
 NEG_PRICE = 0.5      # a negative term (a goal gap) pays this many log T beyond its number: a drain or a move reads the same
 ZOOM = 12            # thresholds around a MIN's refitted one when the program is solved again
 
@@ -107,6 +107,12 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
             for j in targets:
                 mins.append(MinFlow(i, j, y))
     return terms, mins
+
+
+def targets(st: Steps, b: Boundary, src: str) -> list:
+    """Where a flow from src may go: another measured stock (src not final), or outside where allowed."""
+    out = [j for j in st.ids if j != src and src not in st.final]
+    return out + ([None] if b.kinds(src, "out", src in st.final) else [])
 
 
 def thresholds(st: Steps, mf: MinFlow, around: float | None = None) -> np.ndarray:

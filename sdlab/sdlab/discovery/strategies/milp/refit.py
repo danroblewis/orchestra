@@ -133,14 +133,39 @@ class Structure:
         """Each MIN's refitted threshold b / a, keyed (src, dst, cap)."""
         return {(p[1], p[2], p[3]): v[1] / v[0] for p, v in self.numbers() if p[0] == "min" and v[0] > 0}
 
+    def _drains(self) -> list[list[int]]:
+        """Per stock, the positions of the numbers of its drains proportional to itself."""
+        out, o = {}, 0
+        for p in self.parts:
+            if p[0] == "term" and p[1] is not None and p[3] == p[1]:
+                out.setdefault(p[1], []).append(o)
+            o += 2 if p[0] == "min" else 1
+        return [v for v in out.values() if len(v) > 1]
+
     def refit(self, scale: np.ndarray, evals: int = 200) -> np.ndarray:
+        """Least squares on every step; a stock's proportional drains together take at most all of it
+        in a step (sum of their numbers <= 1, a penalty row): with counts the expected amount saturates
+        at the level, so without it their total is not identified, only their shares."""
         if not len(self.theta):
             return self.theta
         x0 = np.clip(self.theta, self.lo, self.hi)
-        res = lambda th: ((self.st.dy - self.change(th)) / scale).ravel()  # noqa: E731
+        groups = self._drains()
+
+        def res(th):
+            r = ((self.st.dy - self.change(th)) / scale).ravel()
+            return np.concatenate([r, [PENALTY * max(0.0, th[g].sum() - 1.0) for g in groups]]) if groups else r
+
+        def jac(th):
+            J = self.jac(th, scale)
+            if not groups:
+                return J
+            P = np.zeros((len(groups), len(th)))
+            for k, g in enumerate(groups):
+                if th[g].sum() > 1.0:
+                    P[k, g] = PENALTY
+            return np.vstack([J, P])
         try:
-            r = least_squares(res, x0, jac=lambda th: self.jac(th, scale), bounds=(self.lo, self.hi), method="trf",
-                              x_scale="jac", max_nfev=evals)
+            r = least_squares(res, x0, jac=jac, bounds=(self.lo, self.hi), method="trf", x_scale="jac", max_nfev=evals)
             if np.sum(r.fun ** 2) <= np.sum(res(x0) ** 2):
                 self.theta = r.x
         except (ValueError, np.linalg.LinAlgError):
@@ -169,6 +194,13 @@ class Structure:
         out.lo, out.hi = np.append(out.lo, 0.0), np.append(out.hi, 1.0)
         return out
 
+    def rerouted(self, i: int, dst) -> "Structure":
+        """A copy with part i's flow sent to another stock (or outside), its numbers kept."""
+        out = self.without(len(self.parts))           # a copy
+        p = self.parts[i]
+        out.parts[i] = (p[0], p[1], dst) + tuple(p[3:])
+        return out
+
     def bic(self, scale: np.ndarray, floor: np.ndarray, extra: float = 0.0) -> float:
         """Gaussian BIC on every step: per stock T log(mean squared weighted misfit) + log T per number."""
         e = (self.st.dy - self.change()) / scale
@@ -176,6 +208,7 @@ class Structure:
         return float(self.st.T * np.sum(np.log(msq)) + np.log(max(self.st.T, 2)) * len(self.theta) + extra)
 
 
+PENALTY = 1e4         # weight of a drain total beyond 1 (per unit, against misfits per noise scale)
 PRUNE_EVALS = 30      # function evaluations of each refit while pruning (started from the numbers already fitted)
 
 
@@ -191,14 +224,19 @@ def drop_tiny(s: Structure, rel: float = 1e-6) -> Structure:
     return s
 
 
-def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price) -> Structure:
-    """Drop parts, or read a MIN as its demand alone, one at a time while the refitted BIC (with
-    price(structure): its boundary claims) improves: the program's absolute misfit on a sample can keep a
-    part the full least squares does not need."""
+def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets) -> Structure:
+    """Drop a part, read a MIN as its demand alone, or send a flow from a stock to another of the
+    targets(src) the boundary allows, one change at a time while the refitted BIC (with price(structure):
+    its boundary claims) improves: a local search around the program's answer, whose absolute misfit on a
+    sample of the steps and limited search can keep a part, or a destination, the full least squares does
+    not prefer."""
     cur = s.bic(scale, floor, price(s))
     while s.parts:
         best = None
-        for c in [s.without(i) for i in range(len(s.parts))] + [x for x in (s.simplified(i) for i in range(len(s.parts))) if x]:
+        moves = [s.without(i) for i in range(len(s.parts))] + [x for x in (s.simplified(i) for i in range(len(s.parts))) if x]
+        moves += [s.rerouted(i, d) for i, p in enumerate(s.parts) if p[1] is not None and p[0] in ("term", "min")
+                  for d in targets(p[1]) if d != p[2] and not any(q[1:3] == (p[1], d) and q[0] == p[0] and q[3:] == p[3:] for q in s.parts)]
+        for c in moves:
             c.refit(scale, PRUNE_EVALS)
             b = c.bic(scale, floor, price(c))
             if b < cur and (best is None or b < best[0]):

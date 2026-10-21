@@ -25,11 +25,11 @@ from .steps import Steps
 __all__ = ["identify"]
 
 EXACT = 10.0          # a structure leaving every stock's mean misfit within this many floors explains the data exactly
-NEAR = 6              # after the first solve, each solve searches within this many switches of its start (local branching)
+NEAR = 10             # after the first solve, each solve searches within this many switches of its start (local branching)
 SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
 SAMPLE = 150          # steps the program reads (evenly spaced over the run when it is longer)
 PASSES = 4            # program solves at most (each re-estimates the noise scales and offers MINs on the flows found)
-TIME_LIMIT = 40.0     # seconds of HiGHS per solve
+TIME_LIMIT = 60.0     # seconds of HiGHS per solve
 GAP = 1e-4            # relative MIP gap HiGHS stops at
 DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
 FLOOR = 1e-6          # a stock's noise scale is at least this fraction of its typical level and change
@@ -224,7 +224,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         best = min(tried, key=lambda x: x.bic(scale, _floor(st), _claims(x, bd)))
         best = _as_drains(best, bd)
         best.refit(scale)
-        best = prune(best, scale, _floor(st), lambda x: _claims(x, bd))
+        best = prune(best, scale, _floor(st), lambda x: _claims(x, bd), lambda src: candidates.targets(st, bd, src))
+        best.refit(scale)
         if DEBUG:
             print("  pruned", [(p, [round(x, 5) for x in v]) for p, v in best.numbers()], best.bic(scale, _floor(st)))
     flows = _flows(best) if best is not None else []
