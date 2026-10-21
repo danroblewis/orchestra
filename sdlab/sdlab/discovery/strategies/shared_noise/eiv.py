@@ -518,7 +518,17 @@ def _refit_numbers(flows: list[dict], stocks: list[dict], run: dict, opts: dict 
     before, after = judge(flows, ids, run, opts), judge(work, ids, run, opts)
     info.update(found=theta0.round(6).tolist(), instrumented=th_i.round(6).tolist(), judged=[before, after])
     if not after <= before:
-        return flows, info
+        # (this copy, the declared boundary) a structure that arrives with nothing to prune (outside flows
+        # kept to the boundary already) is held to the pruned model's test: no further from the data at
+        # the judge's longest horizon by more than GUARD paired standard errors, since at shorter horizons
+        # the measurement error at each run's start still favours the biased numbers (303 meas-long)
+        if not [h for h in HORIZONS if h < len(run["t"]) / 4]:
+            return flows, info
+        d = _runs(work, ids, run, opts) - _runs(flows, ids, run, opts)
+        z = float(d.sum() / max(1e-12, np.sqrt(len(d) * d.var(ddof=1)))) if len(d) > 1 else float("inf")
+        info["z"] = round(z, 2)
+        if not z <= GUARD:
+            return flows, info
     return work, {**info, "used": True}
 
 
