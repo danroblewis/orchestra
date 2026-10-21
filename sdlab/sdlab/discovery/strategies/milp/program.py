@@ -3,7 +3,10 @@
 Every candidate is a column: a flow (src -> dst, either end possibly outside) whose amount per step is
 v x f[k], f a known series and 0 <= v <= ub z, z binary (the column is in the model):
 
-- a linear term: f = what it reads (the source's level, a link's stock, an input, 1);
+- a linear term: f = what it reads (the source's level, a link's stock, an input, 1); an estimated
+  outside inflow may also read its own stock's level with a negative number (a goal gap, c - k x level);
+- with announced eras, an era's change of a term: f = the term's series in that era (0 elsewhere), v
+  signed, and the term's rate in the era (base + change) never negative;
 - a capacity-limited flow MIN(a x src, b x cap) at threshold theta = b / a: f = MIN(src, theta x cap)
   and v = a. A MIN's regime (which side is the lesser at step k) is a threshold on src / cap (the
   demand is the lesser exactly when src[k] / cap[k] <= theta), so a per-step regime binary with its
@@ -41,10 +44,12 @@ class Column:
     dst: str | None
     f: np.ndarray            # the series the number multiplies (every step)
     ub: float
-    numbers: int             # BIC price: this many log T
+    numbers: float           # BIC price: this many log T
     group: tuple | None      # at most one column of a group (a MIN flow's thresholds)
     claim: tuple | None      # the outside flow it is part of (priced once where no boundary is declared)
-    what: tuple              # ("term", reader) or ("min", cap, theta)
+    what: tuple              # ("term", reader), ("neg", reader), ("era", reader, era) or ("min", cap, theta)
+    signed: bool = False     # -ub z <= v <= ub z (an era's change of a rate)
+    base: int | None = None  # the column whose rate this one changes in its era: their sum is never negative
 
 
 def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, scale: np.ndarray, T: int,
@@ -65,6 +70,7 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     w = (2.0 * (T / nK) / scale).ravel()
     cost = np.concatenate([np.zeros(nc), [logT * c.numbers for c in cols], np.full(len(claims), CLAIM_PRICE * logT), w, w])
     lo = np.zeros(ncol)
+    lo[:nc] = [-c.ub if c.signed else 0.0 for c in cols]
     hi = np.concatenate([[c.ub for c in cols], np.ones(nc + len(claims)), np.full(2 * S * nK, INF)])
     integ = np.concatenate([np.zeros(nc), np.ones(nc + len(claims)), np.zeros(2 * S * nK)])
     R, C, V, rlo, rhi = [], [], [], [], []
@@ -87,6 +93,16 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     V += [np.ones(nc), -np.array([c.ub for c in cols])]
     rlo.append(np.full(nc, -INF)); rhi.append(np.zeros(nc))
     r += nc
+    # signed: v >= -ub z; an era's change: base + change >= 0
+    for j, c in enumerate(cols):
+        if c.signed:
+            R += [np.array([r, r])]; C += [np.array([j, o_z + j])]; V += [np.array([1.0, c.ub])]
+            rlo.append([0.0]); rhi.append([INF])
+            r += 1
+        if c.base is not None:
+            R += [np.array([r, r])]; C += [np.array([j, c.base])]; V += [np.array([1.0, 1.0])]
+            rlo.append([0.0]); rhi.append([INF])
+            r += 1
     # z <= its claim
     for j, c in enumerate(cols):
         if c.claim in cl:
@@ -144,5 +160,5 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     x = np.array(h.getSolution().col_value) if info.primal_solution_status else None
     rep = {"status": status, "seconds": round(took, 3), "gap": float(info.mip_gap), "objective": float(info.objective_function_value),
            "bound": float(info.mip_dual_bound), "columns": int(ncol), "rows": int(r), "binaries": int(integ.sum()), "found": x is not None}
-    chosen = [] if x is None else [(c, float(x[j])) for j, c in enumerate(cols) if x[o_z + j] > 0.5 and x[j] > 0]
+    chosen = [] if x is None else [(c, float(x[j])) for j, c in enumerate(cols) if x[o_z + j] > 0.5 and x[j] != 0]
     return {"chosen": chosen, "report": rep}

@@ -13,22 +13,25 @@ from .steps import Steps
 
 
 class Structure:
-    """Parts: ("term", src, dst, reader) with one number v, or ("min", src, dst, cap) with two (a, b):
-    MIN(a x src, b x cap)."""
+    """Parts with one number v: ("term", src, dst, reader) at v x reader; ("neg", src, dst, reader) at
+    -v x reader (a goal gap's own level); ("era", src, dst, reader, e) at v x reader in era e only (an
+    era's signed change of that term). And ("min", src, dst, cap) with two (a, b): MIN(a x src, b x cap)."""
 
     def __init__(self, st: Steps, chosen: list[tuple[Column, float]]):
         self.st = st
-        self.parts, theta, hi = [], [], []
+        self.parts, theta, lo, hi = [], [], [], []
         for c, v in chosen:
-            if c.what[0] == "term":
-                self.parts.append(("term", c.src, c.dst, c.what[1]))
-                theta.append(v)
-                hi.append(c.ub)
-            else:
+            if c.what[0] == "min":
                 self.parts.append(("min", c.src, c.dst, c.what[1]))
                 theta += [v, v * c.what[2]]
+                lo += [0.0, 0.0]
                 hi += [1.0, np.inf]
-        self.theta, self.hi = np.array(theta, dtype=float), np.array(hi, dtype=float)
+            else:
+                self.parts.append((c.what[0], c.src, c.dst) + tuple(c.what[1:]))
+                theta.append(v)
+                lo.append(-c.ub if c.signed else 0.0)
+                hi.append(c.ub)
+        self.theta, self.lo, self.hi = np.array(theta, dtype=float), np.array(lo, dtype=float), np.array(hi, dtype=float)
         self.pos = {s: i for i, s in enumerate(st.ids)}
 
     def key(self) -> tuple:
@@ -37,7 +40,7 @@ class Structure:
     def numbers(self) -> list[tuple[tuple, list[float]]]:
         out, o = [], 0
         for p in self.parts:
-            k = 1 if p[0] == "term" else 2
+            k = 2 if p[0] == "min" else 1
             out.append((p, [float(v) for v in self.theta[o:o + k]]))
             o += k
         return out
@@ -45,12 +48,17 @@ class Structure:
     def amounts(self, theta: np.ndarray) -> list[tuple[str | None, str | None, np.ndarray]]:
         out, o = [], 0
         for p in self.parts:
-            if p[0] == "term":
-                out.append((p[1], p[2], theta[o] * self.st.series(p[3])))
-                o += 1
-            else:
+            if p[0] == "min":
                 out.append((p[1], p[2], np.minimum(theta[o] * self.st.series(p[1]), theta[o + 1] * self.st.series(p[3]))))
                 o += 2
+                continue
+            x = self.st.series(p[3])
+            if p[0] == "neg":
+                x = -x
+            elif p[0] == "era":
+                x = x * (self.st.era == p[4])
+            out.append((p[1], p[2], theta[o] * x))
+            o += 1
         return out
 
     def capped(self, theta: np.ndarray) -> list[tuple[str | None, str | None, np.ndarray]]:
@@ -98,10 +106,10 @@ class Structure:
     def refit(self, scale: np.ndarray) -> np.ndarray:
         if not len(self.theta):
             return self.theta
-        x0 = np.clip(self.theta, 0.0, self.hi)
+        x0 = np.clip(self.theta, self.lo, self.hi)
         res = lambda th: ((self.st.dy - self.change(th)) / scale).ravel()  # noqa: E731
         try:
-            r = least_squares(res, x0, bounds=(np.zeros_like(x0), self.hi), method="trf", x_scale="jac", max_nfev=200)
+            r = least_squares(res, x0, bounds=(self.lo, self.hi), method="trf", x_scale="jac", max_nfev=200)
             if np.sum(r.fun ** 2) <= np.sum(res(x0) ** 2):
                 self.theta = r.x
         except (ValueError, np.linalg.LinAlgError):
@@ -111,11 +119,11 @@ class Structure:
     def without(self, i: int) -> "Structure":
         """A copy without part i."""
         out = Structure(self.st, [])
-        offs = np.cumsum([0] + [1 if p[0] == "term" else 2 for p in self.parts])
+        offs = np.cumsum([0] + [2 if p[0] == "min" else 1 for p in self.parts])
         keep = [j for j in range(len(self.parts)) if j != i]
         out.parts = [self.parts[j] for j in keep]
         idx = [k for j in keep for k in range(offs[j], offs[j + 1])]
-        out.theta, out.hi = self.theta[idx].copy(), self.hi[idx].copy()
+        out.theta, out.lo, out.hi = self.theta[idx].copy(), self.lo[idx].copy(), self.hi[idx].copy()
         return out
 
     def bic(self, scale: np.ndarray, floor: np.ndarray, extra: float = 0.0) -> float:
@@ -132,7 +140,7 @@ def drop_tiny(s: Structure, rel: float = 1e-6) -> Structure:
     for i in reversed(range(len(s.parts))):
         src, dst, amt = s.amounts(s.theta)[i]
         ref = max(scale.get(src, 0.0), scale.get(dst, 0.0))
-        if float(np.mean(amt)) <= rel * ref:
+        if float(np.mean(np.abs(amt))) <= rel * ref:
             s = s.without(i)
     return s
 

@@ -24,6 +24,7 @@ from .program import Column
 from .steps import Steps
 
 GRID = 24            # thresholds a MIN flow's program chooses among (quantiles of source / capacity)
+NEG_PRICE = 0.5      # a negative term (a goal gap) pays this many log T beyond its number: a drain or a move reads the same
 ZOOM = 12            # thresholds around a MIN's refitted one when the program is solved again
 
 
@@ -33,6 +34,7 @@ class Term:
     dst: str | None
     reader: str | None       # a stock, an input, or None (the constant)
     ub: float                # big-M: the largest the number may be
+    neg: bool = False        # read with a negative number (a goal gap's own level: c - k x level)
 
 
 @dataclass
@@ -87,6 +89,8 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
             readers = [None] + readers + [s for s in ids if s != j]
         for r in readers:
             terms.append(Term(None, j, r, cap / (1.0 if r is None else mean(r))))
+        if "estimate" in kinds:                    # a goal gap: c - k x a stock's level
+            terms += [Term(None, j, r, cap / mean(r), neg=True) for r in ids]
     mins: list[MinFlow] = []
     for i in ids:
         out = bool(b.kinds(i, "out", i in st.final))
@@ -121,9 +125,15 @@ def columns(st: Steps, terms: list[Term], mins: list[MinFlow], claim: bool, zoom
     """The program's columns: every term, and each MIN flow at each of its thresholds (zoom: a MIN flow's
     refitted theta, to choose again among a finer grid around it beside the coarse one)."""
     out = []
+    eras = len(st.era_starts)
     for t in terms:
-        out.append(Column(t.src, t.dst, st.series(t.reader), t.ub, 1, None,
-                          (t.src, t.dst) if claim and (t.src is None or t.dst is None) else None, ("term", t.reader)))
+        f = -st.series(t.reader) if t.neg else st.series(t.reader)
+        cl = (t.src, t.dst) if claim and (t.src is None or t.dst is None) else None
+        out.append(Column(t.src, t.dst, f, t.ub, 1 + (NEG_PRICE if t.neg else 0.0), None, cl, ("neg" if t.neg else "term", t.reader)))
+        if eras > 1 and not t.neg:
+            base = len(out) - 1
+            for e in range(1, eras):
+                out.append(Column(t.src, t.dst, f * (st.era == e), t.ub, 1, None, cl, ("era", t.reader, e), signed=True, base=base))
     for mf in mins:
         x, y = st.series(mf.src), st.series(mf.cap)
         key = (mf.src, mf.dst, mf.cap)

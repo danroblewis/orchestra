@@ -113,23 +113,45 @@ def _num(v: float) -> float:
     return float(f"{v:.6g}")
 
 
+def _rate(parts: dict) -> dict:
+    """{reader: number} (None: the constant) as a rate."""
+    c = parts.get(None, 0.0)
+    reads = [(r, v) for r, v in parts.items() if r is not None and v != 0]
+    if not reads:
+        return {"form": "constant", "value": _num(c)}
+    if len(reads) == 1 and c == 0:
+        return {"form": "proportional", "stock": reads[0][0], "k": _num(reads[0][1])}
+    return {"form": "linear", "c": _num(c), "terms": [{"stock": r, "k": _num(v)} for r, v in reads]}
+
+
 def _flows(s: Structure) -> list[dict]:
-    """The structure in SD Lab's flow format."""
-    groups: dict[tuple, list] = {}
+    """The structure in SD Lab's flow format (a flow whose rate changes with the announced eras gets
+    one segment per era, byTime)."""
+    base: dict[tuple, dict] = {}
+    eras: dict[tuple, dict] = {}
     out = []
     for p, v in s.numbers():
-        if p[0] == "term" and v[0] > 0:
-            groups.setdefault((p[1], p[2]), []).append((p[3], v[0]))
-    for (src, dst), parts in groups.items():
-        c = sum(v for r, v in parts if r is None)
-        reads = [(r, v) for r, v in parts if r is not None]
-        if not reads:
-            rate = {"form": "constant", "value": _num(c)}
-        elif len(reads) == 1 and c == 0:
-            rate = {"form": "proportional", "stock": reads[0][0], "k": _num(reads[0][1])}
-        else:
-            rate = {"form": "linear", "c": _num(c), "terms": [{"stock": r, "k": _num(v)} for r, v in reads]}
-        out.append({"from": src, "to": dst, "ratio": 1, "rate": rate})
+        if p[0] in ("term", "neg"):
+            d = base.setdefault((p[1], p[2]), {})
+            d[p[3]] = d.get(p[3], 0.0) + (-v[0] if p[0] == "neg" else v[0])
+        elif p[0] == "era":
+            base.setdefault((p[1], p[2]), {})
+            d = eras.setdefault((p[1], p[2]), {}).setdefault(p[4], {})
+            d[p[3]] = d.get(p[3], 0.0) + v[0]
+    starts = s.st.era_starts
+    for key, parts in base.items():
+        f = {"from": key[0], "to": key[1], "ratio": 1, "rate": _rate(parts)}
+        if key in eras:
+            segs = []
+            for e, t0 in enumerate(starts):
+                pe = dict(parts)
+                for r, dv in (eras[key].get(e) or {}).items():
+                    pe[r] = pe.get(r, 0.0) + dv
+                t1 = starts[e + 1] - 1 if e + 1 < len(starts) else float(s.st.t[-1])
+                segs.append({"from": t0, "to": t1, "rate": _rate(pe)})
+            f["byTime"] = segs
+            f["rates"] = [g["rate"] for g in segs]
+        out.append(f)
     for p, v in s.numbers():
         a, b = (v + [0.0])[:2]
         if p[0] == "min" and a > 0 and b > 0:

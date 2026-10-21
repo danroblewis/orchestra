@@ -36,6 +36,11 @@ class Steps:
             u = np.nan_to_num(np.asarray(v, dtype=float))
             if len(u) >= self.T + 1:
                 self.inputs[name] = u[1:self.T + 1]
+        # announced eras: each step's era (the last one starting at or before the step's time t[k+1])
+        starts = sorted(float(e["start"]) for e in (opts.get("eras") or []) if e and e.get("start") is not None)
+        self.era_starts = starts if len(starts) > 1 else [float(t[0])]
+        self.era = np.searchsorted(np.array(self.era_starts), t[1:self.T + 1], side="right") - 1
+        self.era = np.maximum(self.era, 0)
         # whole things moved (every measured level an integer): the changes are counts, their
         # scatter grows with the amount moved (a Poisson-like weight per step)
         self.counts = bool(np.all(np.abs(L - np.round(L)) < 1e-9)) and float(np.abs(dy).max(initial=0)) > 0
