@@ -15,7 +15,8 @@ from .steps import Steps
 class Structure:
     """Parts with one number v: ("term", src, dst, reader) at v x reader; ("neg", src, dst, reader) at
     -v x reader (a goal gap's own level); ("era", src, dst, reader, e) at v x reader in era e only (an
-    era's signed change of that term). And ("min", src, dst, cap) with two (a, b): MIN(a x src, b x cap)."""
+    era's signed change of that term); ("piece", None, dst, None, k) a signed step of an estimated
+    inflow's constant from step k on (an unannounced change). And ("min", src, dst, cap) with two (a, b): MIN(a x src, b x cap)."""
 
     def __init__(self, st: Steps, chosen: list[tuple[Column, float]]):
         self.st = st
@@ -45,6 +46,17 @@ class Structure:
             o += k
         return out
 
+    def series(self, p: tuple) -> np.ndarray:
+        """What a one-number part's number multiplies at every step."""
+        x = self.st.series(p[3])
+        if p[0] == "neg":
+            return -x
+        if p[0] == "era":
+            return x * (self.st.era == p[4])
+        if p[0] == "piece":
+            return x * (np.arange(self.st.T) >= p[4])
+        return x
+
     def amounts(self, theta: np.ndarray) -> list[tuple[str | None, str | None, np.ndarray]]:
         out, o = [], 0
         for p in self.parts:
@@ -52,12 +64,7 @@ class Structure:
                 out.append((p[1], p[2], np.minimum(theta[o] * self.st.series(p[1]), theta[o + 1] * self.st.series(p[3]))))
                 o += 2
                 continue
-            x = self.st.series(p[3])
-            if p[0] == "neg":
-                x = -x
-            elif p[0] == "era":
-                x = x * (self.st.era == p[4])
-            out.append((p[1], p[2], theta[o] * x))
+            out.append((p[1], p[2], theta[o] * self.series(p)))
             o += 1
         return out
 
@@ -99,9 +106,7 @@ class Structure:
                 own = theta[o] * x <= theta[o + 1] * y
                 cols = [np.where(own, x, 0.0), np.where(own, 0.0, y)]
             else:
-                x = self.st.series(p[3])
-                x = -x if p[0] == "neg" else x * (self.st.era == p[4]) if p[0] == "era" else x
-                cols = [x]
+                cols = [self.series(p)]
             for g in cols:
                 g = g if f is None else g * f
                 for end, sign in ((p[1], 1.0), (p[2], -1.0)):        # residual = dy - change: a source's change is -amount
@@ -201,13 +206,23 @@ class Structure:
         out.parts[i] = (p[0], p[1], dst) + tuple(p[3:])
         return out
 
+    def with_piece(self, dst: str, k: int, v: float = 0.0) -> "Structure":
+        """A copy with a step of dst's estimated inflow constant from step k on."""
+        out = self.without(len(self.parts))
+        out.parts.append(("piece", None, dst, None, int(k)))
+        out.theta, out.lo, out.hi = np.append(out.theta, v), np.append(out.lo, -np.inf), np.append(out.hi, np.inf)
+        return out
+
     def bic(self, scale: np.ndarray, floor: np.ndarray, extra: float = 0.0) -> float:
-        """Gaussian BIC on every step: per stock T log(mean squared weighted misfit) + log T per number."""
+        """Gaussian BIC on every step, each step's variance a stock's (profiled) times scale^2: per stock
+        T log(mean squared weighted misfit) + 2 sum log scale, + log T per number."""
         e = (self.st.dy - self.change()) / scale
         msq = np.maximum(np.mean(e ** 2, axis=1), (floor[:, None] / scale).mean(axis=1) ** 2)
-        return float(self.st.T * np.sum(np.log(msq)) + np.log(max(self.st.T, 2)) * len(self.theta) + extra)
+        n = len(self.theta) + (PIECE_PRICE - 1.0) * sum(p[0] == "piece" for p in self.parts)
+        return float(self.st.T * np.sum(np.log(msq)) + 2.0 * np.sum(np.log(scale)) + np.log(max(self.st.T, 2)) * n + extra)
 
 
+PIECE_PRICE = 2.0     # an inflow step pays this many log T (its size and its place), as in the program
 PENALTY = 1e4         # weight of a drain total beyond 1 (per unit, against misfits per noise scale)
 PRUNE_EVALS = 30      # function evaluations of each refit while pruning (started from the numbers already fitted)
 
@@ -224,23 +239,43 @@ def drop_tiny(s: Structure, rel: float = 1e-6) -> Structure:
     return s
 
 
-def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets) -> Structure:
+def keeps(s: Structure, forced: list) -> bool:
+    """Every declared outside flow still has a plain part."""
+    have = {(p[1], p[2]) for p in s.parts if p[0] in ("term", "neg", "min")}
+    return all(k in have for k in forced)
+
+
+def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets, forced: list = (), places=None,
+          shape=None) -> Structure:
     """Drop a part, read a MIN as its demand alone, or send a flow from a stock to another of the
     targets(src) the boundary allows, one change at a time while the refitted BIC (with price(structure):
     its boundary claims) improves: a local search around the program's answer, whose absolute misfit on a
     sample of the steps and limited search can keep a part, or a destination, the full least squares does
     not prefer."""
-    cur = s.bic(scale, floor, price(s))
+    own = (lambda x: shape(x)) if shape else (lambda x: scale)     # counts: each structure weighs steps by what it moves
+    cur = s.bic(own(s), floor, price(s))
     while s.parts:
         best = None
         moves = [s.without(i) for i in range(len(s.parts))] + [x for x in (s.simplified(i) for i in range(len(s.parts))) if x]
         moves += [s.rerouted(i, d) for i, p in enumerate(s.parts) if p[1] is not None and p[0] in ("term", "min")
                   for d in targets(p[1]) if d != p[2] and not any(q[1:3] == (p[1], d) and q[0] == p[0] and q[3:] == p[3:] for q in s.parts)]
-        for c in moves:
-            c.refit(scale, PRUNE_EVALS)
-            b = c.bic(scale, floor, price(c))
-            if b < cur and (best is None or b < best[0]):
+        if places:                                   # an inflow step: move it a little
+            o = 0
+            have = {(p[2], p[4]) for p in s.parts if p[0] == "piece"}
+            for i, p in enumerate(s.parts):
+                if p[0] == "piece":
+                    for dk in (-4, -2, -1, 1, 2, 4):
+                        k = p[4] + dk
+                        if 0 < k < s.st.T and (p[2], k) not in have:
+                            moves.append(s.without(i).with_piece(p[2], k, float(s.theta[o])))
+                o += 2 if p[0] == "min" else 1
+        for c in [m for m in moves if keeps(m, forced)]:
+            sc = own(c)
+            c.refit(sc, PRUNE_EVALS)
+            b = c.bic(sc, floor, price(c))
+            if b < cur:                              # first improvement (the moves are cheap to try, not to refit)
                 best = (b, c)
+                break
         if best is None:
             break
         cur, s = best

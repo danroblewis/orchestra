@@ -54,7 +54,8 @@ class Column:
 
 
 def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, scale: np.ndarray, T: int,
-          claim: bool, time_limit: float, gap: float, start: list | None = None, near: int | None = None) -> dict:
+          claim: bool, time_limit: float, gap: float, start: list | None = None, near: int | None = None,
+          forced: list | None = None) -> dict:
     """The program on steps K (dy: stocks x every step; scale: stocks x K); the chosen columns with
     their numbers, and the solver's report."""
     S, nK, nc = len(ids), len(K), len(cols)
@@ -103,6 +104,13 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
         if c.base is not None:
             R += [np.array([r, r])]; C += [np.array([j, c.base])]; V += [np.array([1.0, 1.0])]
             rlo.append([0.0]); rhi.append([INF])
+            r += 1
+    # a declared outside flow is a given: at least one of its plain columns is in the model
+    for key in forced or []:
+        js = [j for j, c in enumerate(cols) if (c.src, c.dst) == key and not c.signed]
+        if js:
+            R.append(np.full(len(js), r)); C.append(o_z + np.array(js)); V.append(np.ones(len(js)))
+            rlo.append([1.0]); rhi.append([INF])
             r += 1
     # local branching (Fischetti and Lodi 2003): at most `near` switches flipped from the start's
     if start and near is not None:

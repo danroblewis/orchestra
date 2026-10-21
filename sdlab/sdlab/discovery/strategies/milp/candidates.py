@@ -25,6 +25,11 @@ from .program import Column
 from .steps import Steps
 
 GRID = 8            # thresholds a MIN flow's program chooses among (quantiles of source / capacity)
+PIECES = 100         # an estimated inflow's constant may step at one of about this many evenly spaced change points
+                     # (found by the final local search on every step, refined to the step; not in the program,
+                     # whose sample of steps sees too little of each stretch)
+PIECE_MIN = 5        # ... at least this many steps apart and from the ends
+PIECE_PRICE = 2.0    # a step pays this many log T (its size and its place)
 NEG_PRICE = 0.5      # a negative term (a goal gap) pays this many log T beyond its number: a drain or a move reads the same
 ZOOM = 12            # thresholds around a MIN's refitted one when the program is solved again
 
@@ -36,6 +41,7 @@ class Term:
     reader: str | None       # a stock, an input, or None (the constant)
     ub: float                # big-M: the largest the number may be
     neg: bool = False        # read with a negative number (a goal gap's own level: c - k x level)
+    pieces: bool = False     # an estimated inflow's constant, which may step at unannounced change points
 
 
 @dataclass
@@ -89,7 +95,7 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
         if "estimate" in kinds:
             readers = [None] + readers + [s for s in ids if s != j]
         for r in readers:
-            terms.append(Term(None, j, r, cap / (1.0 if r is None else mean(r))))
+            terms.append(Term(None, j, r, cap / (1.0 if r is None else mean(r)), pieces=r is None))
         if "estimate" in kinds:                    # a goal gap: c - k x a stock's level
             terms += [Term(None, j, r, cap / mean(r), neg=True) for r in ids]
     mins: list[MinFlow] = []
@@ -107,6 +113,22 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
             for j in targets:
                 mins.append(MinFlow(i, j, y))
     return terms, mins
+
+
+def declared_sides(st: Steps, b: Boundary) -> list[tuple]:
+    """The outside flows the declared boundary gives: (None, stock) inflows and (stock, None) outflows.
+    A given, not a choice (the user, 2026-10-21): they are always in the model; only their form and
+    numbers are found."""
+    if not b.declared:
+        return []
+    out = [(None, s) for s in st.ids if b.kinds(s, "in", s in st.final)]
+    return out + [(s, None) for s in st.ids if b.kinds(s, "out", s in st.final)]
+
+
+def piece_places(st: Steps) -> list[int]:
+    """The steps an estimated inflow's constant may step at (its pieces)."""
+    every = max(PIECE_MIN, st.T // PIECES)
+    return list(range(every, st.T - PIECE_MIN + 1, every))
 
 
 def targets(st: Steps, b: Boundary, src: str) -> list:
