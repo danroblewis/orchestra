@@ -155,7 +155,18 @@
       ${running.length ? `<div class="chips running-now"><span class="muted small">running now:</span>${running.slice(0, 6).map((i) => `<button class="chip" data-case="${esc(i.case)}" data-variant="${esc(i.variant)}" data-strategy="${esc(i.strategy)}">${esc(i.case)} · ${esc(i.variant)} · ${esc(i.strategy)}</button>`).join("")}${running.length > 6 ? `<span class="muted small">+${running.length - 6}</span>` : ""}</div>` : ""}`;
     $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; if (S.follow) { S.nowMode = "one"; followTick(true); } remember(); });
     box.querySelectorAll(".chip[data-case]").forEach((b) => b.addEventListener("click", () => pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy })));
+    const t = (p && p.times) || [];
+    box.querySelectorAll(".tbar").forEach((b) => b.addEventListener("click", () => openTime(t[+b.dataset.ti])));
+    const step = (d) => { const i = timesAt(t); openTime(t[i === -1 ? (d < 0 ? t.length - 1 : 0) : Math.max(0, Math.min(t.length - 1, i + d))]); renderLive(); };
+    if ($("t-prev")) $("t-prev").onclick = () => step(-1);
+    if ($("t-next")) $("t-next").onclick = () => step(1);
   }
+  // the chart's bar for the result on screen (-1: none of them)
+  function timesAt(t) {
+    if (S.follow || S.nowMode !== "one") return -1;
+    return t.findIndex((x) => (S.sel.id && x.id === S.sel.id) || (!S.sel.id && x.case === S.sel.case && x.variant === S.sel.variant && x.strategy === S.sel.strategy));
+  }
+  function openTime(x) { if (x) pick({ case: x.case, variant: x.variant, strategy: x.strategy, ...(x.id ? { id: x.id } : {}) }); }
   // how long the newest results took (the pool's last 120), one bar each, coloured by status, with each item's
   // timeout as a dashed tick: a run that bumps into its limit shows at once (the user, 2026-10-21)
   function timingChart(p) {
@@ -164,14 +175,18 @@
     const W = 720, H = 70, n = t.length, bw = W / n, top = Math.max(...t.map((x) => Math.max(x.seconds || 0, x.timeout || 0)), 1);
     const y = (s) => H - (H - 4) * Math.sqrt(Math.max(0, s) / top);            // square-root scale: short runs stay visible
     const col = (st) => ({ pass: "var(--good)", equivalent: "var(--eq)", fail: "var(--bad)", error: "var(--bad)", timeout: "var(--warn)" }[st] || "var(--muted)");
+    const cur = timesAt(t);
     const bars = t.map((x, i) => {
       const s = x.status === "timeout" ? x.timeout : x.seconds || 0;
-      return `<rect x="${(i * bw).toFixed(1)}" y="${y(s).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${(H - y(s)).toFixed(1)}" fill="${col(x.status)}" opacity="0.85"><title>${esc(`${x.case} · ${x.variant} · ${x.strategy}: ${x.status}, ${x.status === "timeout" ? `stopped at its ${x.timeout} s limit` : `${(x.seconds || 0).toFixed(1)} s`} (limit ${x.timeout} s)`)}</title></rect>`
+      return `<rect class="tbar${i === cur ? " on" : ""}" data-ti="${i}" x="${(i * bw).toFixed(1)}" y="${y(s).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${(H - y(s)).toFixed(1)}" fill="${col(x.status)}"><title>${esc(`${x.case} · ${x.variant} · ${x.strategy}: ${x.status}, ${x.status === "timeout" ? `stopped at its ${x.timeout} s limit` : `${(x.seconds || 0).toFixed(1)} s`} (limit ${x.timeout} s) — click to open`)}</title></rect>`
         + `<line x1="${(i * bw).toFixed(1)}" x2="${((i + 1) * bw - 1).toFixed(1)}" y1="${y(x.timeout).toFixed(1)}" y2="${y(x.timeout).toFixed(1)}" stroke="var(--fg)" stroke-dasharray="2 2" opacity="0.5"/>`;
     }).join("");
     const secs = t.map((x) => x.seconds || 0).sort((a, b) => a - b), med = secs[Math.floor(secs.length / 2)], p90 = secs[Math.floor(secs.length * 0.9)];
     const to = t.filter((x) => x.status === "timeout").length;
-    return `<figure class="timing"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="How long the newest results took">${bars}</svg>
+    return `<figure class="timing"><div class="tnav"><button class="btn" id="t-prev" ${cur <= 0 && cur !== -1 ? "disabled" : ""} title="The result finished before the one shown">◀ previous</button>
+      <span class="small muted">${cur >= 0 ? `result ${cur + 1} of ${n}` : `newest of ${n}`}</span>
+      <button class="btn" id="t-next" ${cur === -1 || cur >= n - 1 ? "disabled" : ""} title="The result finished after the one shown">next ▶</button></div>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="How long the newest results took; click a bar to open it">${bars}</svg>
       <figcaption class="small muted">Run times of the last ${n} results (square-root scale; dashes: each one's time limit): median ${med.toFixed(1)} s, 90th percentile ${p90.toFixed(0)} s, longest ${secs[secs.length - 1].toFixed(0)} s${to ? `, <span class="err">${to} timed out</span>` : ""}</figcaption></figure>`;
   }
   // the runs panel (/api/ladder/runs, runs.py): the watcher's batch, pace, backlog and ETA, and the newest runs

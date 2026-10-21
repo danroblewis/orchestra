@@ -221,8 +221,8 @@ def _pool_progress(recent: int) -> dict | None:
                  "started": None, "finished": r["at"], "status": r["status"], "seconds": r["seconds"], "machine": r["machine"]}
                 for r in con.execute("SELECT job_id, case_id, variant, strategy, status, at, seconds, machine FROM pool_results ORDER BY id DESC LIMIT ?", (max(1, recent),))]
         # the timing chart: the last 120 results' times (also when the caller asked for fewer items)
-        times = [{"case": r[0], "variant": r[1], "strategy": r[2], "status": r[3], "seconds": r[4], "timeout": r[5] or 300}
-                 for r in con.execute("SELECT p.case_id, p.variant, p.strategy, p.status, p.seconds, i.timeout FROM pool_results p"
+        times = [{"case": r[0], "variant": r[1], "strategy": r[2], "status": r[3], "seconds": r[4], "timeout": r[5] or 300, "id": r[6]}
+                 for r in con.execute("SELECT p.case_id, p.variant, p.strategy, p.status, p.seconds, i.timeout, p.promoted_id FROM pool_results p"
                                       " LEFT JOIN pool_items i ON i.id = p.item_id ORDER BY p.id DESC LIMIT 120")][::-1]
         hour = con.execute("SELECT status, count(*) FROM pool_results WHERE at > strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 hour') GROUP BY status").fetchall()
         queued = con.execute("SELECT count(*) FROM pool_items WHERE state = 'queued'").fetchone()[0]
