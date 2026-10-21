@@ -245,8 +245,18 @@ the change, so their cells are unpaired and left out below. Counts are paired ce
 
 ## What is left
 
-- Port the reference fixes into `matrix/boundary.py` (self-move, last declared side, kind reading,
-  cycling ties, noise-only `pair_moves`) and into each copy that lacks them: causes 2, 4 and 5.
+- ~~Port the reference fixes~~ **Done in 14e1351** for self-move (d5cd56a, ca00790), last declared side
+  (c2a4894's `kept_sides`) and kind reading (728efec): `matrix/boundary.py` and every copy lacking one
+  (46 files, vendored lna and `_kalman` copies included; the hats family keeps its own kind reading,
+  9cfeb75). Paired on the pool at 3f2557e (before) vs 14e1351 (after), 46 strategies, `--stale`:
+  - jobs 139 / 141 (125, 152, 204, 208, 215, 218 x none-short, counts-short; 552 cells): fail -> equivalent
+    186, fail -> pass 6, no losses (125 +36, 204 +11, 208 +58, 215 +57, 218 +30). **152 unchanged** (all
+    fail): its truth `outside -> A = 300 - 0.08 A` needs the `c - k X` form (cause 3), not a boundary fix.
+  - jobs 140 / 142 (Kubernetes 300-305, all variants; 1,288 cells): pass 1275 -> 1278; 305 retries +4
+    (combined_misfit, numopt_cma counts-long fail -> pass; effect_hats, inflow_effects counts-short
+    equivalent -> pass); one loss, shared_noise 301 counts-short pass -> fail (an extra `inflight -> outside`
+    reading traffic, now allowed on the estimate outflow side, pushes the other numbers 13% high).
+  - Not ported (not in `boundary.py`): cycling ties (`earned_joint`); noise-only `pair_moves` is in no copy.
 - Each strategy's `eiv.py` acceptance (cause 1) before the Kubernetes competition resumes: 303 must pass
   again for its 24 strategies. Then 305's retries (cause 2); then 305 can be the next rung.
 - A `c - k X` flow form for teacup and goal gaps (cause 3).

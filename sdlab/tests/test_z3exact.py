@@ -32,4 +32,4 @@ def test_chain_recovered_exactly():
 def test_noisy_data_returns_nothing():
     stocks, run = _chain(noise=0.5)
     r = load("z3exact")(stocks, run, {})
-    assert r["flows"] == [] and "no structure" in r["note"]
+    assert r["flows"] == [] and "outside the class" in r["note"]

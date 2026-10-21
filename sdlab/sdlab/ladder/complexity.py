@@ -17,6 +17,14 @@ each flow's rate over the run:
   co-flow use, 1 for a ratio other than 1, and 1 per stock the model has that is not measured
   (a hidden or inferred stock: its level is one more thing to know).
 
+**Same-pair flows are one flow** (the user, 2026-10-20; merge.py): flows with the same (from, to),
+outside counting as an end, are merged before counting, in the truth and in a found model alike: one
+flow whose rate is the sum of theirs (two numbers reading the same stock are one number). A merged
+flow's first span is counted as one rate; its later pieces are each original's own, counted as
+before, so a merge never costs more than the flows it merges (an inflow in pieces plus a link costs
+what the two flows did, less one flow). A flow that cannot be summed (effects, a hidden
+stock, a ratio, a rate that is not linear) is counted on its own.
+
 The truth is counted **on the run**, as a found model would have to write it: its schedule is laid
 out over the steps the data covers (steps 2..N, where the found models' pieces start), so a periodic
 schedule on a long run is as many pieces as it has changes in the run. A found model that writes the
@@ -41,6 +49,7 @@ import math
 
 from ..skill import truth_by_time
 from . import cases as casemod
+from . import merge as _merge
 from . import store
 
 PARTS = ("flows", "terms", "pieces", "other")
@@ -89,14 +98,27 @@ def _pieces(flow: dict) -> list[int] | None:
     return None
 
 
+def _merged_pieces(flow: dict) -> list[int]:
+    """A merged flow's pieces (merge.py): the numbers of its first span (the summed rate: two numbers
+    reading the same stock are one), then each original's own later pieces as _pieces counts them. So
+    a merge never costs more than the flows it merges: a constant inflow in pieces plus a link costs
+    what the two flows did, less one flow."""
+    from .parts import linear_form
+    g = (flow.get("byTime") or [{"rate": flow.get("rate")}])[0]
+    c, ks = linear_form(g.get("rate")) or (0.0, {})
+    first = int(bool(c)) + sum(1 for k in ks.values() if k)
+    return [first] + [n for m in flow["merged"]["flows"] for n in (_pieces(m) or [])[1:]]
+
+
 def count(flows: list[dict], measured: set) -> dict:
-    """{flows, terms, pieces, other, total} for a model's flows; `measured`: the measured stocks."""
+    """{flows, terms, pieces, other, total} for a model's flows; `measured`: the measured stocks.
+    Flows between the same two stocks are counted as one (merge.py)."""
     out = dict.fromkeys(PARTS, 0)
     hidden = set()
-    for f in flows or []:
+    for f in _merge.flows(flows or []):
         via = bool(f.get("via"))
         out["flows"] += 2 if via else 1
-        segs = _pieces(f)
+        segs = _merged_pieces(f) if f.get("merged") else _pieces(f)
         if segs:
             out["terms"] += segs[0]
             out["pieces"] += sum(segs[1:])

@@ -118,7 +118,7 @@
   // the true model, the found one and their differences, drawn the same way into three svgs (the
   // differences only once there is a result); returns {vb, alias, cmp}
   function drawPair(c, r, svgTrue, svgFound, cmp, cols, svgDiff) {
-    const found = (r && r.found) || [];
+    const found = L.foundOf(r);
     cmp = cmp || L.compare(c.model, found, r && r.scores);
     const { tD, fD, dD, vias, alias } = diagrams(c, cmp, found);
     const pos = sharedLayout(c, found, vias, cols);
@@ -146,7 +146,7 @@
   // invented one (remove), an equivalent reading in its own colour. repairs: repairs.py's items.
   const REPAIR_COLOR = { faint: "var(--faint)", wrong: "var(--warn)", add: "var(--add)", remove: "var(--bad)", equiv: "var(--eq)", plain: "var(--fg)" };
   function drawRepairs(c, r, svg, rep, opts = {}) {
-    const found = ((r && r.found) || []).map((f) => (f.via ? { ...f, via: null, note: "via a hidden stock" } : f));
+    const found = L.foundOf(r).map((f) => (f.via ? { ...f, via: null, note: "via a hidden stock" } : f));
     const cmp = L.compare(c.model, found, r && r.scores);
     const items = (rep && rep.items) || [];
     const measured = new Set(cmp.measured);

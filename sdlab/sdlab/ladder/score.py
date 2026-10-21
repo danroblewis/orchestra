@@ -15,6 +15,16 @@ is (smooth, from, to, X) = {gain, delay}: the gain compared as a number reading 
 rel (2026-10-19). Found and true parts with the same key
 are summed (two links into one stock from the same driver are one number in the data).
 
+**Same-pair flows are one flow** (the user, 2026-10-20; merge.py). Before it is cut into parts, a found
+model's flows with the same (from, to) (outside counts as an end) are merged into one flow whose rate
+is the sum of theirs (terms reading the same stock one coefficient, constants added, pieces laid over
+the union of their spans). Their co-flows ride on the merged flow and are still parts (scored, and
+spurious if the truth lacks them); a flow whose rate cannot be summed with the others (effects, a
+hidden stock, a ratio, a rate that is not linear) stays apart and says so in the notes. The linear
+system, the amounts and behaviour run the originals, so the merge changes how the model is cut into
+parts (a hidden chain or a smoothing written as two same-pair flows is now seen as one), never what it
+computes.
+
 **A truth at a sub-step** (dt < 1) is compared by its per-recorded-step equivalents (substep.py): a
 drain k recorded every 1/dt sub-steps is 1 - (1 - k dt)^(1/dt) per step.
 
@@ -73,6 +83,7 @@ from ..skill import same_behaviour, truth_by_time, truth_runs
 from .noise_oracle import make_hidden_oracle, make_oracle
 from .parts import ONE, _hidden_chains, form_over, kind, label, linear_system, outside_end, outside_ends, parts, windows
 from .substep import per_step
+from . import merge as _merge
 from . import sim as _sim
 
 DEFAULTS = {"rel": 0.10, "rel_exact": 0.02, "floor": 0.01, "floor_exact": 0.002, "spurious": 0.05, "z": 3.0}
@@ -83,7 +94,7 @@ def score_hash() -> str:
     """The scoring code: a change re-scores stored results (without re-running discovery)."""
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for p in (here / "score.py", here / "parts.py", here / "oracle.py", here / "hidden_oracle.py",
+    for p in (here / "score.py", here / "parts.py", here / "merge.py", here / "oracle.py", here / "hidden_oracle.py",
               here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here / "sim.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -128,7 +139,7 @@ def _flow_amounts(flows: list[dict], data: dict, states: list[dict] | None = Non
     t = data["t"]
     states = states if states is not None else _levels_at(data)
     total = np.zeros(len(t) - 1)
-    for f in flows:
+    for f in [m for g in flows for m in ([g] if g.get("whole") else _merge.members_of(g))]:   # a merged flow as its originals
         if f.get("whole"):                                    # 2d: the engine's own rate (sim.py)
             total += _sim.amounts(f, data, states)
             continue
@@ -174,6 +185,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     """Equation recovery: {status, pass, equivalent, recall, precision, parts: [...], spurious: [...],
     notes}. status is "pass", "equivalent" or "fail"."""
     tol = _tolerances(case, noise)
+    notes: list[str] = []
     measured = set(data["levels"])
     ids = list(data["levels"])
     lv = data.get("all_levels") or data["levels"]
@@ -185,6 +197,8 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     truth_flows, _ = truth_by_time(truth_model, t)
     truth_flows, _ = per_step(truth_flows, data, truth_model)      # a truth at a sub-step: its per-recorded-step numbers (substep.py)
     truth_flows = _sim.mark(truth_flows, truth_model)             # 2d's expression, two-way, auxiliary and switch flows: compared as a whole
+    found_flows = _merge.flows(found_flows)                         # flows between the same two stocks are one flow (merge.py)
+    notes += [f"found: {x}" for x in _merge.notes(found_flows)]
     found_flows = _sim.mark_found(found_flows, truth_model)
     effect_ends = {(f.get("from") if f.get("from") in measured else None, f.get("to") if f.get("to") in measured else None)
                    for f in truth_model["flows"] if f.get("effects")}
@@ -193,7 +207,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     two_way_ends = {ends_of(f) for f in truth_flows if f.get("whole") and f.get("two_way")}
     loose = whole_ends | {e[::-1] for e in two_way_ends}          # found parts on these ends are compared within the whole, never spurious
     effect_ends = effect_ends | whole_ends
-    true_w, found_w, notes = [], [], []
+    true_w, found_w = [], []
     for w in wins:
         tp, tn = parts(truth_flows, measured, w, inputs)
         fp, fn = parts(found_flows, measured, w, inputs)
@@ -358,7 +372,7 @@ def _changes(flows: list[dict], ids: list[str], data: dict, states: list[dict]) 
     measured or a rate is not linear."""
     idx = {s: i for i, s in enumerate(ids)}
     change, gross = np.zeros((len(ids), len(states))), np.zeros((len(ids), len(states)))
-    for f in flows:
+    for f in _merge.members(flows):                                   # a merged flow as its originals: each co-flow on its own flow
         if f.get("via") or (f.get("from") and f["from"] not in idx) or (f.get("to") and f["to"] not in idx):
             return None
         q = _flow_amounts([f], data, states)

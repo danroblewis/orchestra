@@ -55,8 +55,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 + f"; largest one-step residual {miss:.3g}; " + "; ".join(notes))
         return {"flows": flows_of(p, sup, k), "note": note, "z3": {"status": r["status"], "k_min": r.get("k_min"),
                 "smallest": len(fits), "moves": moves, "seconds": r["seconds"]}}
-    return {"flows": [], "note": "z3exact: no structure of the linear class fits the data within its rounding "
-            "(noisy data, a nonlinear truth, or a timeout): no flows returned. " + "; ".join(notes)}
+    return {"flows": [], "note": "z3exact: no structure found, no flows returned (outside the class: noisy data or a "
+            "nonlinear truth; unknown: a timeout or a class too large to search): " + "; ".join(notes)}
 
 
 def _sse(p: core.Problem, sup: list[int], k: np.ndarray) -> float:
