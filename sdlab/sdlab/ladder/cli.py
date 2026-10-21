@@ -551,6 +551,8 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--code-table", metavar="NAME", help="the objective's code table (unified/codetable.py): v1 (default), or "
                     "v2-<option>[+<option>...] with options eta-lean, eta-joint, phi-lean, phi-joint, tau-priced, phi-prior[=width]")
     ot.add_argument("--relabel", metavar="FOLDERS", help="re-label the cached cells of these cache folders (comma list, later wins) into the current one, no refitting")
+    from . import z3_ident_report
+    z3_ident_report.add_parser(sub)
     pl = sub.add_parser("pool", help="the CPU pool's job queue: submit, status, results, cancel (docs/pool.md)", add_help=False)
     pl.add_argument("rest", nargs=argparse.REMAINDER)
     wk = sub.add_parser("worker", help="a CPU pool worker (docs/pool.md, Workers)", add_help=False)
@@ -563,6 +565,9 @@ def main(argv: list[str] | None = None) -> int:
         from .pool import worker as pool_worker
         return pool_worker.main(args[1:])
     a = ap.parse_args(argv)
+    if a.command == "ident":
+        from . import z3_ident_report
+        return z3_ident_report.main(a)
     if a.command == "objective-test":
         from . import objective_test
         return objective_test.main(a)
