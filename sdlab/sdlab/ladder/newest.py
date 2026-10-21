@@ -5,7 +5,7 @@ newest cases; and true regressions (a strategy now failing a cell its previous v
     view(strategies?)   {now, leaders, rows, impact, regressions, distilled_source}; cached (see _cache)
     ages()              {file id: when it was added} and the regressions' totals: what the leaderboard needs
     regressions()       the latest result of every (case, variant, strategy) against the strategy's previous
-                        version on the same case (case hash): pass -> not pass, or equivalent -> fail/error/timeout
+                        version on the same case (case hash): pass -> not pass, equivalent -> fits/fail/error/timeout, or fits -> fail/error/timeout
 
 Everything here reads: the summary (api.summary, cached), the case dates (case_dates.py, cached from
 git), docs/LADDER.md's "Distilled cases" table (where each distilled case came from) and, for the
@@ -31,8 +31,8 @@ KIND_TAGS = {"distilled", "canonical", "noisy", "realistic", "physics", "particl
 TEST_KINDS = ("test", "distilled", "noisy", "canonical")       # the kinds in the Tests pass rate
 WINDOWS = (6, 24, 168)                                          # hours: "added in the last N hours"
 N_LEADERS = 8
-GOOD = {"pass": 2, "equivalent": 1}
-LETTER = {"pass": "P", "equivalent": "E", "fail": "F", "error": "X", "timeout": "T"}
+GOOD = {"pass": 3, "equivalent": 2, "fits": 1}
+LETTER = {"pass": "P", "equivalent": "E", "fits": "~", "fail": "F", "error": "X", "timeout": "T"}
 
 
 def kind(c: dict) -> str:

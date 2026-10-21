@@ -15,7 +15,7 @@
   const pct = (v, d = 1) => (v == null || !Number.isFinite(+v) ? "–" : `${(100 * v).toFixed(d)}%`);
   const enc = encodeURIComponent;
   const VARIANTS = ["none-short", "none-long", "counts-short", "counts-long"];
-  const RANK = { fail: 0, error: 1, timeout: 1, equivalent: 2, pass: 3 };
+  const RANK = { fail: 0, error: 1, timeout: 1, fits: 1.5, equivalent: 2, pass: 3 };
   const WORD = { number: ["number", "numbers"], add: ["add", "add"], remove: ["remove", "remove"], form: ["change form", "change form"] };
   const CARD_LAYOUT = { box: { w: 64, h: 34 }, colw: 64 + 112, rowh: 34 + 74 };
   const when = (iso) => { const d = new Date(iso); return isNaN(d) ? "–" : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
@@ -70,7 +70,7 @@
         ${tile(pct(t.strict_rate), `strict pass · ${t.strict} of ${t.strict_known} known`, `${STRICT_TIP} Over the cells with a strict verdict (${t.strict_known} of ${t.ran} run); a pass not computed yet is left out, never a fail.`)}
         ${tile(pct(t.achievable_rate), `pass where achievable · ${t.achievable_pass}/${t.achievable}`, "Passes over the cells whose data allow a pass (analysis.py: achievable).")}
         ${tile(`${t.ran}/${t.of}`, `coverage (${pct(t.of ? t.ran / t.of : null, 0)})`, "Cells run out of all test cells (cases × variants).")}
-        ${tile(`${t.equivalent} / ${t.fail}`, "equivalent / fail")}
+        ${tile(`${t.equivalent} / ${t.fits || 0} / ${t.fail}`, "equivalent / fits / fail", "Equivalent: proven to be the truth's equations drawn another way. Fits: the data cannot tell it from the truth, but its equations differ (not proven); neither is a pass.")}
         ${tile(pct(t.occam), "Occam score", "Accuracy × parsimony, per run: fit (1 for pass or equivalent, else the share of true numbers right) × min(1, true ÷ found complexity).")}
         ${tile(pct(t.far), `err@100k (${t.far_n} runs)`, "Both models run free to t = 100,000: the gap as a share of the truth's range, capped at 100%; a run that runs away counts 100%.")}
         ${tile(t.repairs == null ? "–" : t.repairs.toFixed(1), "repairs per run (mean)")}
@@ -100,7 +100,7 @@
       const r = svg.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W;
       const i = Math.max(0, Math.min(n - 1, Math.round(n === 1 ? 0 : (x - m.l) / (W - m.l - m.r) * (n - 1)))), p = pts[i], v = p.v, tt = v.totals;
       cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("visibility", "visible");
-      showTip(`<b>version ${i + 1} of ${n}</b>${v.code_changed ? " · code changed" : i ? " · scorer changed" : ""}<br>strategy <span class="mono">${esc(v.strategy_hash)}</span>, scorer <span class="mono">${esc(v.score_hash)}</span><br>commit${v.commits.length > 1 ? "s" : ""} <span class="mono">${esc(v.commits.join(", ") || "–")}</span><br>${esc(when(v.first))} – ${esc(when(v.last))}, ${v.ran} results<br>after it: ${tt.pass} pass, ${tt.equivalent} equivalent, ${tt.fail} fail${tt.error + tt.timeout ? `, ${tt.error + tt.timeout} error/timeout` : ""} of ${p.ran} run (${v.of} cells)<br>pass rate ${pct(p.rate)} · coverage ${pct(p.cov)}`, e);
+      showTip(`<b>version ${i + 1} of ${n}</b>${v.code_changed ? " · code changed" : i ? " · scorer changed" : ""}<br>strategy <span class="mono">${esc(v.strategy_hash)}</span>, scorer <span class="mono">${esc(v.score_hash)}</span><br>commit${v.commits.length > 1 ? "s" : ""} <span class="mono">${esc(v.commits.join(", ") || "–")}</span><br>${esc(when(v.first))} – ${esc(when(v.last))}, ${v.ran} results<br>after it: ${tt.pass} pass, ${tt.equivalent} equivalent, ${tt.fits || 0} fits, ${tt.fail} fail${tt.error + tt.timeout ? `, ${tt.error + tt.timeout} error/timeout` : ""} of ${p.ran} run (${v.of} cells)<br>pass rate ${pct(p.rate)} · coverage ${pct(p.cov)}`, e);
     };
     svg.onpointerleave = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
   }
@@ -191,7 +191,7 @@
     const o = (v, w, cur) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(w)}</option>`;
     const f = S.f;
     $("controls").innerHTML = `
-      <label>Verdict <select data-f="status">${[["", "any"], ["fail", "fail"], ["equivalent", "equivalent"], ["pass", "pass"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => o(v, w, f.status)).join("")}</select></label>
+      <label>Verdict <select data-f="status">${[["", "any"], ["fail", "fail"], ["fits", "fits (not proven)"], ["equivalent", "equivalent"], ["pass", "pass"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => o(v, w, f.status)).join("")}</select></label>
       <label>Variant <select data-f="variant">${o("", "worst of four", f.variant)}${VARIANTS.map((v) => o(v, v, f.variant)).join("")}</select></label>
       <label>Cases <select data-f="kind">${[["tests", "tests (fixed + draws)"], ["test", "fixed cases"], ["draw", "random draws"], ["realistic", "realistic"], ["physics", "physics"], ["all", "all"]].map(([v, w]) => o(v, w, f.kind)).join("")}</select></label>
       <label>Level <select data-f="level">${o("", "any", f.level)}${levels.map((l) => o(l, `level ${l}`, f.level)).join("")}</select></label>

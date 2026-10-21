@@ -201,7 +201,8 @@
       const all = [...r.truth, ...r.found].map((x) => x.cls);
       r.cls = all.sort((a, b) => (rank[b] || 0) - (rank[a] || 0))[0] || "ok";
     });
-    return { status, equivalent, truth: tFlows, found: fFlows, rows, measured: [...measured],
+    const book = equivalent && scores.algebra && scores.algebra.bookkeeping ? scores.algebra.bookkeeping : null;   // (2026-10-21) how a proven equivalent drawing differs
+    return { status, equivalent, bookkeeping: book, truth: tFlows, found: fFlows, rows, measured: [...measured],
       extraStocks: [...new Set(found.flatMap((f) => [f.from, f.to]).filter((x) => x && !truth.stocks.some((s) => s.id === x)))] };
   }
 
@@ -292,7 +293,11 @@
     if (s.status === "pass") out.push("Pass: every true number is right in every window and nothing is invented.");
     else if (s.status === "equivalent") {
       const read = miss.length || sp.length ? `It read ${list(miss.map((p) => partName(p.key))) || "the truth"} as ${list(sp.map((p) => partName(p.key))) || "other numbers"}: ` : "";
-      out.push(`Equivalent, not a pass. ${read}the same equations for every stock's change, so the data cannot tell the two apart (they would differ only if a floor bound or a stock emptied).`);
+      const book = s.algebra && s.algebra.bookkeeping ? ` (${s.algebra.bookkeeping})` : "";
+      out.push(`Equivalent, not a pass. ${read}every stock's net rate is proven the same function of the stocks and inputs for every state${book}.`);
+    } else if (s.status === "fits") {
+      const why = (s.notes || []).find((n) => n.startsWith("fits, not proven equivalent: "));
+      out.push(`Fits, not proven: the data cannot tell it from the truth, but its equations differ${why ? ` (${why.slice("fits, not proven equivalent: ".length)})` : ""}. Not a pass, not equivalent.`);
     } else if (s.status === "fail") {
       const why = [miss.length && `${miss.length} true number${miss.length === 1 ? "" : "s"} missing`, off.length && `${off.length} off`, sp.length && `${sp.length} invented`].filter(Boolean);
       out.push(`Fail: ${list(why) || "the equations differ"}${why.length ? "" : ""}.`);
@@ -331,7 +336,7 @@
         note = `${feq ? `found ${feq}` : "found"}: ${bits.join("; ")}`;
       } else if (t.cls === "equiv") {
         sign = "≈";
-        note = `${feq ? `found ${feq}; ` : ""}${miss.length ? `missed ${miss.map((p) => partName(p.key)).join(", ")}, ` : ""}read another way with the same behaviour (equivalent)`;
+        note = `${feq ? `found ${feq}; ` : ""}${miss.length ? `missed ${miss.map((p) => partName(p.key)).join(", ")}, ` : ""}${cmp.bookkeeping ? `the same equations drawn another way (proven equivalent: ${cmp.bookkeeping})` : "read another way with the same behaviour (equivalent)"}`;
       }
       lines.push({ sign, cls: t.cls === "missing" ? "missed" : t.cls, ends: t.flow.via ? `${t.flow.from} → (hidden) → ${t.flow.to}` : endsOf(t.flow), truth: `${t.flow.id} ${t.equation}`, note });
     });
@@ -339,7 +344,7 @@
     cmp.found.forEach((x) => {
       const f = x.flow, ends = f.via ? `${f.from} → (hidden) → ${f.to}` : endsOf(f);
       if (x.cls === "spurious") lines.push({ sign: "+", cls: "spurious", ends, truth: "", note: `invented ${x.equation}` });
-      else if (x.cls === "equiv" && !x.parts.length) lines.push({ sign: "≈", cls: "equiv", ends, truth: "", note: `read as ${x.equation}${missedNames.length ? ` (equivalent to ${missedNames.join(", ")})` : " (equivalent)"}` });
+      else if (x.cls === "equiv" && !x.parts.length) lines.push({ sign: "≈", cls: "equiv", ends, truth: "", note: `read as ${x.equation}${missedNames.length ? ` (equivalent to ${missedNames.join(", ")})` : " (equivalent)"}${cmp.bookkeeping ? `; ${cmp.bookkeeping}` : ""}` });
       else if (x.spurious.length && x.parts.length) lines.push({ sign: "+", cls: x.cls === "equiv" ? "equiv" : "spurious", ends, truth: "", note: `extra term on ${x.equation}: ${x.spurious.map((p) => `${partName(p.key)} ${fmt(p.value)}`).join(", ")}` });
       else if (x.cls === "small") lines.push({ sign: "·", cls: "small", ends, truth: "", note: `too small to count: ${x.equation}` });
     });

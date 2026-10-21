@@ -228,7 +228,7 @@ def _kubernetes(mine: list, meta: dict, vf: str) -> dict:
     bad = sorted((meta[c["case"]]["level"], c["case"]) for c in kr if c["status"] not in ("pass", "equivalent"))
     return {"kPass": p / len(kr) if kr else NAN, "kPassN": p, "kRun": len(kr), "kOf": len(kc), "kPassEq": pe / len(kr) if kr else NAN,
             "kSkill20": _mean(s20), "kBreak": bad[0][1] if bad else None,
-            "kTip": (f"{len(kr)} of {len(kc)} kubernetes runs done; {p} pass, {pe - p} equivalent, "
+            "kTip": (f"{len(kr)} of {len(kc)} kubernetes runs done; {p} pass, {pe - p} equivalent, {sum(1 for c in kr if c['status'] == 'fits')} fits, "
                      f"{sum(1 for c in kr if c['status'] == 'timeout')} timeouts, {sum(1 for c in kr if c['status'] == 'error')} errors; "
                      f"95% interval of the mean skill@20 {ci_text(s20)}; first rung not passed: {bad[0][1] if bad else 'none'}")
             if kc else "not run on the kubernetes set yet"}
@@ -367,12 +367,12 @@ def _row(name: str, mine: list, kept: list, sm: dict, meta: dict, vf: str, lv: i
     secs = 0
     for c in cs:
         secs = secs + (c.get("seconds") or 0)
-    p, e, fl = k("pass"), k("equivalent"), k("fail")
+    p, e, fi, fl = k("pass"), k("equivalent"), k("fits"), k("fail")
     elsewhere: dict = {}
     for c in cs:
         if c.get("machine"):                                # a cell run on another machine (api.flatten)
             elsewhere[c["machine"]] = elsewhere.get(c["machine"], 0) + 1
-    return {"name": name, "runs": n, "machines": elsewhere, "of": len(kept), "cover": n / len(kept), "p": p, "e": e, "fl": fl, "o": n - p - e - fl,
+    return {"name": name, "runs": n, "machines": elsewhere, "of": len(kept), "cover": n / len(kept), "p": p, "e": e, "fi": fi, "fl": fl, "o": n - p - e - fi - fl,
             "pass": p / n, "passeq": (p + e) / n, "recall": _mean(num("recall")), "precision": _mean(num("precision")),
             "skill20": _mean(num("skill20")), "fresh20": _mean(num("fresh20")), "skill100": _mean(num("skill100")), "seconds": secs,
             **_complexity(cs), **_long_run(sm.get("longrun") or {}, name, vf, lv), **_achievable(cs), **_strict(cs),

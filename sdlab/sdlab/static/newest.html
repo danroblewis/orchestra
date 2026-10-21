@@ -7,17 +7,17 @@
 <style>
   :root {
     --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e3e1db; --card: #ffffff; --chip: #f1efe9;
-    --pass: #2f7d4f; --equiv: #2f6fd6; --fail: #c0392b; --other: #9b9892; --none: #d9d6cf; --warn: #a86500;
+    --pass: #2f7d4f; --equiv: #2f6fd6; --fits: #138a91; --fail: #c0392b; --other: #9b9892; --none: #d9d6cf; --warn: #a86500;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c; --chip: #2a2926;
-      --pass: #4fae74; --equiv: #6b9cf0; --fail: #e0685a; --other: #77756f; --none: #3a3935; --warn: #e0a24f;
+      --pass: #4fae74; --equiv: #6b9cf0; --fits: #3fc1c9; --fail: #e0685a; --other: #77756f; --none: #3a3935; --warn: #e0a24f;
     }
   }
   :root[data-theme="dark"] {
     --bg: #161614; --fg: #ecebe6; --muted: #a3a19a; --line: #34332f; --card: #1f1e1c; --chip: #2a2926;
-    --pass: #4fae74; --equiv: #6b9cf0; --fail: #e0685a; --other: #77756f; --none: #3a3935; --warn: #e0a24f;
+    --pass: #4fae74; --equiv: #6b9cf0; --fits: #3fc1c9; --fail: #e0685a; --other: #77756f; --none: #3a3935; --warn: #e0a24f;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -60,7 +60,7 @@
   .lead { width: auto; margin-top: 6px; }
   .lead td { padding: 2px 8px 2px 0; border: 0; text-align: left; }
   .sq { display: inline-block; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 3px; font-size: 11px; color: #fff; margin-right: 2px; text-decoration: none; }
-  .s-P { background: var(--pass); } .s-E { background: var(--equiv); } .s-F { background: var(--fail); }
+  .s-P { background: var(--pass); } .s-E { background: var(--equiv); } .s-fits { background: var(--fits); } .s-F { background: var(--fail); }
   .s-X, .s-T { background: var(--other); } .s-_ { background: var(--none); color: var(--muted); }
   .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
   details summary { cursor: pointer; color: var(--muted); }
@@ -100,7 +100,7 @@
 
   <h2>Cases, newest first</h2>
   <div class="legend">
-    <span><i class="sq s-P">P</i>pass</span><span><i class="sq s-E">E</i>equivalent</span><span><i class="sq s-F">F</i>fail</span>
+    <span><i class="sq s-P">P</i>pass</span><span><i class="sq s-E">E</i>equivalent (proven)</span><span><i class="sq s-fits">~</i>fits (not proven)</span><span><i class="sq s-F">F</i>fail</span>
     <span><i class="sq s-X">X</i>error / <i class="sq s-T">T</i>timeout</span><span><i class="sq s-_">·</i>not run</span>
     <span id="vnames"></span>
   </div>

@@ -1104,7 +1104,11 @@ glossary:
   equivalent:
     term: Equivalent
     group: Results
-    text: A different structure that produces exactly the same changes as the truth, so the data cannot tell them apart (e.g. births and deaths read as their difference). Shown apart from a pass.
+    text: A different drawing whose equations are algebraically the truth's - every stock's net rate of change is the same function of the stocks, inputs and time for every state, not only the run's, and this is proven (e.g. births and deaths read as their difference, a move written as a link and an outflow). Shown apart from a pass.
+  fits:
+    term: Fits (not proven)
+    group: Results
+    text: Different equations that the data cannot tell from the truth - the same change of every stock on the run - but not algebraically the same, so not equivalent (e.g. a floored gap read as an inflow and a drain where the floor never bound, numbers on a ridge, a mechanism the run never exercised). Not a pass; shown apart from equivalent.
   recall:
     term: Recall
     group: Results

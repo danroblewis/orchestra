@@ -28,7 +28,7 @@ from pathlib import Path
 from .cli import SMALL_ITEMS, SMALL_SECONDS, _call, _job_line
 
 FINAL = ("done", "cancelled", "failed")
-ORDER = ("pass", "equivalent", "fail", "error", "timeout")
+ORDER = ("pass", "equivalent", "fits", "fail", "error", "timeout")
 POLL = 10.0
 
 

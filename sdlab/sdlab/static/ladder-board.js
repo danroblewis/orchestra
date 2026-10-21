@@ -9,7 +9,7 @@
   const pct = (v) => (v === null || v === undefined || !Number.isFinite(+v) ? "–" : `${(100 * v).toFixed(1)}%`);
   const ci = (c) => (Array.isArray(c) && c.length === 2 && c.every((x) => x !== null) ? ` <span class="muted">[${(100 * c[0]).toFixed(0)}, ${(100 * c[1]).toFixed(0)}]</span>` : "");
   const VARIANTS = ["none-short", "none-long", "counts-short", "counts-long"];
-  const RANK = { fail: 0, error: 1, timeout: 1, equivalent: 2, pass: 3 };
+  const RANK = { fail: 0, error: 1, timeout: 1, fits: 1.5, equivalent: 2, pass: 3 };
   const DEF = {
     error: "Equation error: the share of the equations' numbers that are wrong: (true numbers missing + true numbers off + invented numbers) ÷ true numbers. 0% = the true equations, within tolerance.",
     recall: "Recall: true numbers the found model has (right kind and ends, whatever the value) ÷ all true numbers.",
@@ -122,7 +122,7 @@
       <label>Strategy <select id="b-strat">${strats.map((s) => opt(s.name, s.name === d.best ? `${s.name} (best pass rate)` : s.name, B.strategy)).join("")}</select></label>
       <label>Variant <select id="b-var">${[...VARIANTS.map((v) => [v, v]), ["all", "all four (tabs)"]].map(([v, w]) => opt(v, w, B.variant)).join("")}</select></label>
       <label data-tip="Tests: the ladder's tiny true models. Realistic: SD Lab's example models (sdlab/examples/sd-*), as on the examples' bench, where behaviour (skill, the goal) is the headline. Physics: physical systems solved in continuous time (no SD truth), against their physics and the best SD model; their counts variants read as meas. Real data: measured series beside a published model (held-out prediction, agreement), never in a pass rate; shown on their own. Kubernetes: a web service on Kubernetes grown one feature a rung (tag kubernetes, docs/research/kubernetes-ladder.md), with sd-k8s-small and sd-k8s-platform as its top rungs; not in the tests' pass rate.">Set <select id="b-set">${[["tests", "tests"], ["kubernetes", "kubernetes"], ["realistic", "realistic examples"], ["physics", "physics"], ["real", "real data"], ["all", "all"]].map(([v, w]) => opt(v, w, B.set)).join("")}</select></label>
-      <label>Verdict <select id="b-status">${[["", "any"], ["pass", "pass"], ["equivalent", "equivalent"], ["fail", "fail"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => opt(v, w, B.status)).join("")}</select></label>
+      <label>Verdict <select id="b-status">${[["", "any"], ["pass", "pass"], ["equivalent", "equivalent"], ["fits", "fits (not proven)"], ["fail", "fail"], ["error", "error / timeout"], ["none", "not run"]].map(([v, w]) => opt(v, w, B.status)).join("")}</select></label>
       <label>Level <select id="b-level">${opt("", "any", B.level)}${levels.map((l) => opt(l, `level ${l}`, B.level)).join("")}</select></label>
       <label>Tag <select id="b-tag">${opt("", "any", B.tag)}${tags.map((t) => opt(t, t, B.tag)).join("")}</select></label>
       <label>Sort <select id="b-sort">${[["level", "by level"], ["status", "worst verdict first"], ["error", "largest error first"]].map(([v, w]) => opt(v, w, B.sort)).join("")}</select></label>
@@ -149,10 +149,10 @@
     const ms = rs.map((r) => L.measures(r.scores));
     const mean = (k) => { const v = ms.map((m) => m[k]).filter((x) => x !== null && Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
     const clipMean = (k) => { const v = ms.map((m) => m[k]).filter((x) => x !== null && Number.isFinite(x)).map((x) => Math.max(-1, x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-    const bar = ["pass", "equivalent", "fail", "error", "timeout"].map((k) => count(k) ? `<span class="seg st-${k}" style="flex:${count(k)}" data-tip="${count(k)} ${k}"></span>` : "").join("")
+    const bar = ["pass", "equivalent", "fits", "fail", "error", "timeout"].map((k) => count(k) ? `<span class="seg st-${k}" style="flex:${count(k)}" data-tip="${count(k)} ${k}"></span>` : "").join("")
       + (n - rs.length ? `<span class="seg queued" style="flex:${n - rs.length}" data-tip="${n - rs.length} not run"></span>` : "");
     $("board-sum").innerHTML = `<div class="bsum">
-        <span class="bsum-v"><span class="stbadge st-pass">${count("pass")} pass</span> <span class="stbadge st-equivalent">${count("equivalent")} equivalent</span> <span class="stbadge st-fail">${count("fail")} fail</span>${count("error") + count("timeout") ? ` <span class="stbadge st-error">${count("error") + count("timeout")} error</span>` : ""}${n - rs.length ? ` <span class="stbadge st-none">${n - rs.length} not run</span>` : ""} <span class="muted small">of ${n} shown</span></span>
+        <span class="bsum-v"><span class="stbadge st-pass">${count("pass")} pass</span> <span class="stbadge st-equivalent">${count("equivalent")} equivalent</span>${count("fits") ? ` <span class="stbadge st-fits">${count("fits")} fits</span>` : ""} <span class="stbadge st-fail">${count("fail")} fail</span>${count("error") + count("timeout") ? ` <span class="stbadge st-error">${count("error") + count("timeout")} error</span>` : ""}${n - rs.length ? ` <span class="stbadge st-none">${n - rs.length} not run</span>` : ""} <span class="muted small">of ${n} shown</span></span>
         <span data-tip="${esc(DEF.error)}">equation error <b>${pct(mean("errorScore"))}</b></span>
         <span data-tip="${esc(DEF.recall)}">recall <b>${pct(mean("recall"))}</b></span>
         <span data-tip="${esc(DEF.precision)}">precision <b>${pct(mean("precision"))}</b></span>
@@ -170,7 +170,7 @@
     const rs = d.by[c.id] || {};
     const tabs = B.variant === "all" ? `<span class="btabs" role="tablist" aria-label="Variant">${caseVariants(c).map((v) => {
       const x = rs[v], on = r && r.variant === v;
-      return `<button role="tab" aria-selected="${on}" class="btab${on ? " on" : ""}" data-tab="${esc(v)}"><span class="sq st-${x ? x.status : "none"}">${x ? x.status[0].toUpperCase() : "·"}</span>${esc(v)}</button>`;
+      return `<button role="tab" aria-selected="${on}" class="btab${on ? " on" : ""}" data-tab="${esc(v)}"><span class="sq st-${x ? x.status : "none"}">${x ? (x.status === "fits" ? "~" : x.status[0].toUpperCase()) : "·"}</span>${esc(v)}</button>`;
     }).join("")}</span>` : "";
     const worst = m && m.rateWorst ? `, ${pct(m.rateMax)} at worst (${esc(m.rateWorst)})` : "";
     const meas = m ? `<dl class="bmeas">

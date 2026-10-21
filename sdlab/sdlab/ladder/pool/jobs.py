@@ -26,8 +26,8 @@ MAINLINE_SPEC = {"strategies": "everything", "cases": "*"}
 MAINLINE_REPLAN = 600                     # seconds: how often an idle main line is planned again at the same HEAD
 LIVE = 90                                 # seconds since a worker's last heartbeat for it to count as live
 CHECK_TREE = ("all", "strategies", "none")
-STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
-REUSABLE = ("pass", "equivalent", "fail")
+STATUSES = ("pass", "equivalent", "fits", "fail", "error", "timeout")
+REUSABLE = ("pass", "equivalent", "fits", "fail")
 PAUSED = Path.home() / ".sdlab" / "watch.paused"   # the watcher's pause file: while it exists the main line queues nothing
 BACKGROUND = True                         # plan in a thread (tests plan with plan_pending())
 

@@ -148,7 +148,9 @@ def compare(truth: dict, found: list, scores: dict | None) -> dict:
         for x in (g(f, "from"), g(f, "to")):
             if truthy(x) and x not in ids and x not in extra:
                 extra.append(x)
-    return {"status": status, "equivalent": equivalent, "truth": t_flows, "found": f_flows, "rows": rows, "measured": measured, "extra_stocks": extra}
+    book = g(g(scores, "algebra") or {}, "bookkeeping") if equivalent else None     # (2026-10-21) how a proven equivalent drawing differs
+    return {"status": status, "equivalent": equivalent, "truth": t_flows, "found": f_flows, "rows": rows, "measured": measured, "extra_stocks": extra,
+            "bookkeeping": book if truthy(book) else None}
 
 
 def _row_key(f) -> str:
@@ -199,7 +201,8 @@ def lines(cmp: dict) -> list[dict]:
         elif cls == "equiv":
             sign = "≈"
             note = (f"{'found ' + feq + '; ' if feq else ''}{'missed ' + ', '.join(part_name(g(p, 'key')) for p in miss) + ', ' if miss else ''}"
-                    "read another way with the same behaviour (equivalent)")
+                    + (f"the same equations drawn another way (proven equivalent: {cmp['bookkeeping']})" if cmp.get("bookkeeping")
+                       else "read another way with the same behaviour (equivalent)"))
         f = t["flow"]
         out.append({"sign": SIGN[sign], "cls": "missed" if cls == "missing" else cls, "ends": t_ends(f), "side": "truth", "index": i,
                     "true_id": js_str(g(f, "id")), "true_eq": t["equation"], "found_eq": feq, "truth": f"{js_str(g(f, 'id'))} {t['equation']}",
@@ -212,7 +215,8 @@ def lines(cmp: dict) -> list[dict]:
             out.append({**base, "sign": "+", "cls": "spurious", "numbers": [_number(p, True) for p in x["spurious"]], "note": f"invented {x['equation']}"})
         elif cls == "equiv" and not x["parts"]:
             out.append({**base, "sign": "=", "cls": "equiv", "numbers": [_number(p, True) for p in x["spurious"]],
-                        "note": f"read as {x['equation']}{' (equivalent to ' + ', '.join(missed_names) + ')' if missed_names else ' (equivalent)'}"})
+                        "note": f"read as {x['equation']}{' (equivalent to ' + ', '.join(missed_names) + ')' if missed_names else ' (equivalent)'}"
+                                + (f"; {cmp['bookkeeping']}" if cmp.get("bookkeeping") else "")})
         elif x["spurious"] and x["parts"]:
             terms = ", ".join(f"{part_name(g(p, 'key'))} {fmt(g(p, 'value'))}" for p in x["spurious"])
             out.append({**base, "sign": "+", "cls": "equiv" if cls == "equiv" else "spurious", "numbers": [_number(p, True) for p in x["spurious"]],

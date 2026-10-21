@@ -7,7 +7,7 @@
   const pct = (v) => (v == null || Number.isNaN(v) ? "–" : (100 * v).toFixed(1) + "%");
   const TESTS = new Set(["test", "distilled", "noisy", "canonical"]);
   const SET = { test: "tests", distilled: "tests", noisy: "tests", canonical: "tests", realistic: "realistic", physics: "physics", particles: "physics", real: "real" };
-  const WORD = { P: "pass", E: "equivalent", F: "fail", X: "error", T: "timeout", ".": "not run" };
+  const WORD = { P: "pass", E: "equivalent", "~": "fits", F: "fail", X: "error", T: "timeout", ".": "not run" };
   let D = null;
   const F = { win: "h6", kind: "", everyone: false, q: "" };
   try { Object.assign(F, JSON.parse(localStorage.getItem("sdlab.newest") || "{}")); } catch { /* defaults */ }
@@ -96,7 +96,7 @@
     const r = D.regressions;
     if (r == null) { $("reg").innerHTML = `<p class="note">Being computed in the background (one pass over the result store); reload in a few seconds.</p>`; return; }
     const head = `<p class="note">A regression is a cell (case × variant) where a strategy's latest result is worse than its previous version's
-      (a different strategy hash) on the same case (same case hash): pass → anything else, or equivalent → fail, error or timeout. Checked over every
+      (a different strategy hash) on the same case (same case hash): pass → anything else, equivalent → fits, fail, error or timeout, or fits → fail, error or timeout. Checked over every
       strategy, ${esc(when(r.computed))}.</p>`;
     if (!r.n) { $("reg").innerHTML = head + `<div class="callout up">None: no strategy fails a cell that its previous version passed.</div>`; return; }
     const rows = r.items.map((x) => `<tr><td class="l"><a href="/ladder/strategy?name=${enc(x.strategy)}">${esc(x.strategy)}</a></td>
@@ -115,7 +115,7 @@
     const lead = D.leaders.map((l) => {
       const x = r.leaders[l.name];
       if (!x) return "";
-      const sq = x.v != null ? [...x.v].map((ch, i) => `<a class="sq s-${ch === "." ? "_" : ch}" href="/ladder?view=now&case=${enc(r.id)}&variant=${enc(vs[i])}&strategy=${enc(l.name)}" title="${esc(`${l.name}, ${vs[i]}: ${WORD[ch]}`)}">${ch === "." ? "·" : ch}</a>`).join("")
+      const sq = x.v != null ? [...x.v].map((ch, i) => `<a class="sq s-${ch === "." ? "_" : ch === "~" ? "fits" : ch}" href="/ladder?view=now&case=${enc(r.id)}&variant=${enc(vs[i])}&strategy=${enc(l.name)}" title="${esc(`${l.name}, ${vs[i]}: ${WORD[ch]}`)}">${ch === "." ? "·" : ch}</a>`).join("")
         : `<span class="small muted">${r.n_draws} draws × ${vs.length} variants</span>`;
       return `<tr><td><a href="/ladder/strategy?name=${enc(l.name)}&kind=${SET[r.kind] === "tests" ? "tests" : SET[r.kind]}">${esc(l.name)}</a></td><td>${sq}</td>
         <td class="small muted num">${x.p}/${x.n} pass${x.e ? `, ${x.e} eq` : ""}${x.n < x.of ? `, ${x.of - x.n} not run` : ""}</td>

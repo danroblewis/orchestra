@@ -47,12 +47,18 @@ flows between the same stocks, as relative rms error within rel. Override per ca
 **Scores.** recall = true parts whose key the found model has (right kind and ends); precision =
 found parts above the size threshold whose key is true; pass = every true part right and no
 spurious part (a found part the truth lacks, larger than "spurious", 5% of the median true part
-size, and with an oracle, larger than z standard errors of that term added to the truth's fit). **equivalent** (when not pass): the found flows make the same linear system as the truth
-(every stock's change the same function of the levels, the measured inputs and the outside, within
-tolerance), so the data cannot tell them apart (births and deaths of one stock seen as their
-difference, a gap seen as an inflow and a drain); for a truth with effects, the found flows compute
-the same change of every stock on the run's states (_same_function); it is reported apart from pass.
-Not checked for a truth with hidden stocks.
+size, and with an oracle, larger than z standard errors of that term added to the truth's fit). When not
+a pass, the data cannot tell the found model from the truth when the found flows make the same linear
+system (every stock's change the same function of the levels, the measured inputs and the outside, within
+tolerance; births and deaths seen as their difference, a gap seen as an inflow and a drain), or for a
+truth with effects compute the same change of every stock on the run's states (_same_function); not
+checked for a truth with hidden stocks. Since 2026-10-21 (the user) such a model is **equivalent** only
+when algebra.py proves every stock's net rate the truth's for every state (births and deaths as their
+difference, a move as a link and an outflow; the note says how the drawings differ), else it **fits**
+(not proven: the gap's floor, which the run never reached; the note names where it differs). Neither is
+a pass. A found move between stocks of different units standing for the truth's link and outflow fails;
+the conserving drawing of a truth's link and outflow (a found move of one unit) stays equivalent unless
+CONSERVING_PASS.
 
 **The boundary** (the user, 2026-10-20). A case that declares its boundary (caseformat.boundary_spec;
 per measured stock, its outside inflows and outflows) is told it, and outside flows are a modelling
@@ -90,6 +96,12 @@ from .substep import per_step
 from . import merge as _merge
 from . import sim as _sim
 
+# A found move between stocks of one unit where the truth draws a link into B and an outflow from A of the
+# same amount is the conserving drawing (algebra.bookkeeping). The user prefers it (2026-10-21), but the link
+# cases (007, 045, 046, 054, 055, 010, ...) say in their `tests:` that the link IS the answer, so counting the
+# move as the pass would change what those cases mean (CLAUDE.md rule 2): off until the user decides. It is
+# then "equivalent" with the note; a truth's move drawn as a link and an outflow is "equivalent" too.
+CONSERVING_PASS = False
 DEFAULTS = {"rel": 0.10, "rel_exact": 0.02, "floor": 0.01, "floor_exact": 0.002, "spurious": 0.05, "z": 3.0}
 HORIZONS = (20, 100)
 
@@ -98,8 +110,8 @@ def score_hash() -> str:
     """The scoring code: a change re-scores stored results (without re-running discovery)."""
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for p in (here / "score.py", here / "parts.py", here / "merge.py", here / "oracle.py", here / "hidden_oracle.py",
-              here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here / "sim.py", here.parent / "skill.py", here.parent / "discovery" / "simulate.py"):
+    for p in (here / "score.py", here / "algebra.py", here / "parts.py", here / "merge.py", here / "oracle.py", here / "hidden_oracle.py",
+              here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here / "sim.py", here.parent / "skill.py", here.parent / "sdtruth_expr.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
 
@@ -186,8 +198,8 @@ def _close(true: float, found: float, reader: str | None, tol: dict, means: dict
 
 
 def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict], data: dict) -> dict:
-    """Equation recovery: {status, pass, equivalent, recall, precision, parts: [...], spurious: [...],
-    notes}. status is "pass", "equivalent" or "fail"."""
+    """Equation recovery: {status, pass, equivalent, fits, recall, precision, parts: [...], spurious: [...],
+    notes, algebra?}. status is "pass", "equivalent", "fits" or "fail"."""
     tol = _tolerances(case, noise)
     notes: list[str] = []
     measured = set(data["levels"])
@@ -379,15 +391,73 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
                 break
     if invented or altered:                                        # never equivalent: "A -> outside" + "outside -> B" is not the move A -> B,
         equivalent = False                                         # and a rescaled input is not the measured series
-    status = "pass" if passed else "equivalent" if equivalent else "fail"
-    out = {"status": status, "pass": passed, "equivalent": equivalent, "recall": recall, "precision": precision,
+    # (the user, 2026-10-21) the data cannot tell them apart; equivalent only when every net rate is proven
+    # the truth's for every state (algebra.py), else "fits"; the conserving drawing of a proven one is the pass
+    proof, book, fits = None, None, False
+    if equivalent:
+        proof, book = _prove(truth_model, truth_flows, found_flows, ids, wins, inputs, data, tol, means, scale, oracle, true_w, found_w)
+        if not proof["equivalent"]:
+            equivalent, fits = False, True
+            notes.append("fits, not proven equivalent: " + _why_not(proof))
+        elif book["unit_moves"]:
+            equivalent = False
+            notes.append("units: " + book["note"])
+        elif book["conserving"] and CONSERVING_PASS:
+            equivalent, passed = False, True
+            notes.append("pass by the conserving drawing: " + book["note"])
+        else:
+            notes.append("equivalent (proven): " + book["note"])
+    status = "pass" if passed else "equivalent" if equivalent else "fits" if fits else "fail"
+    out = {"status": status, "pass": passed, "equivalent": equivalent, "fits": fits, "recall": recall, "precision": precision,
            "right": sum(r["ok"] for r in rows), "of": len(rows), "parts": rows, "spurious": spurious, "negligible": extra,
            "windows": len(wins), "tolerance": tol, "scale": scale, "notes": sorted(set(notes))}
+    if proof is not None:
+        out["algebra"] = {k: proof[k] for k in ("equivalent", "proven", "method", "regions", "differences", "notes")}
+        if book is not None:
+            out["algebra"]["bookkeeping"] = book["note"]
+            out["algebra"]["conserving"] = book["conserving"]
     if declared is not None:                                       # an undeclared case's scores are as before
         out.update(boundary_declared=True, invented_boundary=len(invented))
         if altered:
             out["input_altered"] = len(altered)
     return out
+
+
+def _prove(truth_model, truth_flows, found_flows, ids, wins, inputs, data, tol, means, scale, oracle, true_w, found_w) -> tuple[dict, dict | None]:
+    """algebra.check with the scorer's tolerance for each coefficient (a linear one as _same_system compares it,
+    with the oracle's standard error; a product's against the product of the mean levels it reads), and, when
+    proven, algebra.bookkeeping on the parts."""
+    from . import algebra as _algebra
+
+    def coef_close(row: str, mono: tuple, a: float, b: float, w: int) -> bool:
+        if not mono:
+            return _close(a, b, None, tol, means, scale, oracle.se(row, ONE, w))[0]
+        if len(mono) == 1 and not mono[0].startswith("@"):
+            return _close(a, b, mono[0], tol, means, scale, oracle.se(row, mono[0], w))[0]
+        level = max(1e-9, float(np.prod([means.get(m, 1.0) if not m.startswith("@") else 1.0 for m in mono])))
+        return abs(a - b) <= max(tol["rel"] * abs(a), tol["floor"] * scale / level) + 1e-12
+
+    def part_close(key: tuple, a: float, b: float) -> bool:
+        return _close(a, b, key[3] if key[0] in ("flow", "via") else None, tol, means, scale)[0]
+
+    signed = {s["id"] for s in truth_model.get("stocks") or [] if s.get("signed")} | _sim.signed_stocks(found_flows)
+    proof = _algebra.check(truth_flows, found_flows, ids, wins, inputs=sorted(inputs), states=_levels_at(data), close=coef_close,
+                           rel=tol["rel"], aux=truth_model.get("auxiliaries"), signed=signed)
+    if not proof["equivalent"]:
+        return proof, None
+    units = {s["id"]: s.get("unit") for s in truth_model.get("stocks") or []}
+    return proof, _algebra.bookkeeping(true_w, found_w, units, part_close)
+
+
+def _why_not(proof: dict) -> str:
+    if not proof["proven"]:
+        return f"not covered by the algebra ({'; '.join(proof['notes']) or proof['method']})"
+    d = proof["differences"][0]
+    at = ", ".join(f"{k}={v:.4g}" for k, v in sorted(d.get("at", {}).items()))
+    if d.get("exact"):
+        return f"the net rate of {d['stock']} differs in the region around {at}"
+    return (f"the net rate of {d['stock']} differs in the region around {at} (window {d['window'][0]}-{d['window'][1]}): "
+            f"its {d['term']} term is {d['truth']:.4g} in the truth, {d['found']:.4g} found")
 
 
 INPUT_REL = 1e-6       # an "input" inflow's gain is 1 up to float rounding (2026-10-21, the user)

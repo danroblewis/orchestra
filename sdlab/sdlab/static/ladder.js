@@ -15,8 +15,8 @@
   const when = (iso) => { if (!iso) return "–"; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }); };
   const short = (h) => (h ? String(h).slice(0, 7) : "–");
   const { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, drawPair, diffHtml, compareOf } = window.SDLadderDraw;
-  const STATUS_LETTER = { pass: "P", equivalent: "E", fail: "F", error: "X", timeout: "T" };
-  const STATUS_WORD = { pass: "pass", equivalent: "equivalent", fail: "fail", error: "error", timeout: "timeout" };
+  const STATUS_LETTER = { pass: "P", equivalent: "E", fits: "~", fail: "F", error: "X", timeout: "T" };
+  const STATUS_WORD = { pass: "pass", equivalent: "equivalent (proven)", fits: "fits (the data cannot tell it from the truth; not proven, not a pass)", fail: "fail", error: "error", timeout: "timeout" };
   const SERIES = 8;                                      // categorical slots --c1..--c8 (style.css)
 
   const S = {
@@ -140,7 +140,7 @@
     const r = p.run, active = !r.finished, items = p.items || [];   // the server reports a dead run as finished (aborted)
     const counts = p.counts || {};
     const running = items.filter((i) => i.state === "running");
-    const bar = ["pass", "equivalent", "fail", "error", "timeout"].map((k) => counts[k] ? `<span class="seg st-${k}" style="flex:${counts[k]}" data-tip="${counts[k]} ${k}"></span>` : "").join("")
+    const bar = ["pass", "equivalent", "fits", "fail", "error", "timeout"].map((k) => counts[k] ? `<span class="seg st-${k}" style="flex:${counts[k]}" data-tip="${counts[k]} ${k}"></span>` : "").join("")
       + (running.length ? `<span class="seg running" style="flex:${running.length}" data-tip="${running.length} running"></span>` : "")
       + (p.queued ? `<span class="seg queued" style="flex:${p.queued}" data-tip="${p.queued} queued"></span>` : "");
     const tally = Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(", ") || "nothing finished yet";
@@ -183,7 +183,7 @@
     if (!t.length) return "";
     const W = 720, H = 48, n = t.length, bw = W / n, top = Math.max(...t.map((x) => Math.max(x.seconds || 0, x.timeout || 0)), 1);
     const y = (s) => H - (H - 4) * Math.sqrt(Math.max(0, s) / top);            // square-root scale: short runs stay visible
-    const col = (st) => ({ pass: "var(--good)", equivalent: "var(--eq)", fail: "var(--bad)", error: "var(--bad)", timeout: "var(--warn)" }[st] || "var(--muted)");
+    const col = (st) => ({ pass: "var(--good)", equivalent: "var(--eq)", fits: "var(--fits)", fail: "var(--bad)", error: "var(--bad)", timeout: "var(--warn)" }[st] || "var(--muted)");
     const cur = timesAt(t);
     const bars = t.map((x, i) => {
       const s = x.status === "timeout" ? x.timeout : x.seconds || 0;
@@ -422,7 +422,7 @@
     const strats = matrixStrategies(sm);
     renderMatrixControls(sm, strats);
     $("matrix-note").innerHTML = `Each cell has one square per variant, in the order ${S.cases[0] ? S.cases[0].variants.map((v) => `<code>${esc(v.name)}</code>`).join(", ") : ""}. Click a square (or a cell) to open it in <a href="#" data-goto="now">Now</a>. Hover a case for what it tests.`;
-    $("mlegend").innerHTML = [["pass", "P pass"], ["equivalent", "E equivalent"], ["fail", "F fail"], ["error", "X error"], ["timeout", "T timeout"], ["none", "· not run"]].map(([k, w]) => `<span><span class="sq st-${k} demo">${w[0]}</span>${esc(w.slice(2))}</span>`).join("")
+    $("mlegend").innerHTML = [["pass", "P pass"], ["equivalent", "E equivalent (proven)"], ["fits", "~ fits (not proven)"], ["fail", "F fail"], ["error", "X error"], ["timeout", "T timeout"], ["none", "· not run"]].map(([k, w]) => `<span><span class="sq st-${k} demo">${w[0]}</span>${esc(w.slice(2))}</span>`).join("")
       + `<span><span class="sq st-pass stale demo">P</span>stale (a sync would run it again)</span>`
       + `<span><span class="sq st-fail an-data-limited demo">F</span>data-limited (even the best method rarely meets the tolerance)</span>`
       + `<span><span class="sq st-fail an-unidentifiable demo">F</span>unidentifiable (only an equivalent model is possible)</span>`;
@@ -434,7 +434,7 @@
     });
     const tot = strats.map((s) => {
       const t = sm.totals[s.name] || {};
-      return `<td class="num"><b>${(t.pass || 0) + (t.equivalent || 0)}</b>/${t.total || 0}<div class="small muted">${t.pass || 0} P · ${t.equivalent || 0} E · ${t.fail || 0} F${t.error ? ` · ${t.error} X` : ""}${t.timeout ? ` · ${t.timeout} T` : ""}${t.missing ? ` · ${t.missing} not run` : ""}${t.stale ? ` · ${t.stale} stale` : ""}</div>${stackBar(t)}</td>`;
+      return `<td class="num"><b>${(t.pass || 0) + (t.equivalent || 0)}</b>/${t.total || 0}<div class="small muted">${t.pass || 0} P · ${t.equivalent || 0} E${t.fits ? ` · ${t.fits} ~` : ""} · ${t.fail || 0} F${t.error ? ` · ${t.error} X` : ""}${t.timeout ? ` · ${t.timeout} T` : ""}${t.missing ? ` · ${t.missing} not run` : ""}${t.stale ? ` · ${t.stale} stale` : ""}</div>${stackBar(t)}</td>`;
     }).join("");
     $("matrix").innerHTML = `<thead><tr><th>case</th>${strats.map((s) => `<th title="${esc(s.available ? `${s.name}: hash ${s.hash}` : `${s.name}: ${s.reason || "unavailable"}`)}"><span class="vh">${esc(s.name)}${s.available ? "" : " (unavailable)"}</span></th>`).join("")}</tr></thead>
       <tbody>${body}</tbody><tfoot><tr><th>pass + equivalent</th>${tot}</tr></tfoot>`;
@@ -442,7 +442,7 @@
     $("tags").innerHTML = `<thead><tr><th>tag</th><th class="num">cases</th>${strats.map((s) => `<th>${esc(s.name)}</th>`).join("")}</tr></thead><tbody>${tags.map((tag) =>
       `<tr><th><a href="#" data-tag="${esc(tag)}">${esc(tag)}</a></th><td class="num">${S.cases.filter((c) => c.tags.includes(tag)).length}</td>${strats.map((s) => {
         const g = sm.by_tag[tag][s.name] || {};
-        return `<td class="num" data-tip="${esc(`${tag} · ${s.name}: ${g.pass || 0} pass, ${g.equivalent || 0} equivalent, ${g.fail || 0} fail${g.error ? `, ${g.error} error` : ""}${g.timeout ? `, ${g.timeout} timeout` : ""}${g.missing ? `, ${g.missing} not run` : ""}`)}">${(g.pass || 0) + (g.equivalent || 0)}/${g.total || 0}${stackBar(g)}</td>`;
+        return `<td class="num" data-tip="${esc(`${tag} · ${s.name}: ${g.pass || 0} pass, ${g.equivalent || 0} equivalent, ${g.fits || 0} fits, ${g.fail || 0} fail${g.error ? `, ${g.error} error` : ""}${g.timeout ? `, ${g.timeout} timeout` : ""}${g.missing ? `, ${g.missing} not run` : ""}`)}">${(g.pass || 0) + (g.equivalent || 0)}/${g.total || 0}${stackBar(g)}</td>`;
       }).join("")}</tr>`).join("")}</tbody>`;
     $("view-matrix").querySelectorAll(".sq[data-case]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy }); }));
     $("view-matrix").querySelectorAll(".mcell").forEach((td) => (td.onclick = () => pick({ case: td.dataset.case, strategy: td.dataset.strategy })));
@@ -485,7 +485,7 @@
   }
   function stackBar(t) {
     const total = t.total || 0; if (!total) return "";
-    return `<div class="sbar">${["pass", "equivalent", "fail", "error", "timeout"].map((k) => t[k] ? `<span class="st-${k}" style="flex:${t[k]}"></span>` : "").join("")}${t.missing ? `<span class="st-none" style="flex:${t.missing}"></span>` : ""}</div>`;
+    return `<div class="sbar">${["pass", "equivalent", "fits", "fail", "error", "timeout"].map((k) => t[k] ? `<span class="st-${k}" style="flex:${t[k]}"></span>` : "").join("")}${t.missing ? `<span class="st-none" style="flex:${t.missing}"></span>` : ""}</div>`;
   }
 
   // ---------- History ----------
@@ -587,13 +587,13 @@
       const W = tl.length * (bw + gap);
       const bars = tl.map((v, k) => {
         let y = H; const x = k * (bw + gap);
-        const segs = ["pass", "equivalent", "fail", "error", "timeout"].map((st) => {
+        const segs = ["pass", "equivalent", "fits", "fail", "error", "timeout"].map((st) => {
           const n = v.totals[st] || 0; if (!n) return "";
           const h = n / v.of * H; y -= h;
           return `<rect class="st-${st}" x="${x}" y="${y.toFixed(1)}" width="${bw}" height="${Math.max(0, h - 0.5).toFixed(1)}"/>`;
         }).join("");
         const missing = v.of - Object.values(v.totals).reduce((a, b) => a + b, 0);
-        const tipTxt = `<b>${esc(s.name)}</b> version ${k + 1}: strategy ${esc(short(v.strategy_hash))}, scorer ${esc(short(v.score_hash))}<br>first ran ${esc(when(v.first))}, ${v.ran} result${v.ran === 1 ? "" : "s"}<br>after it: ${v.totals.pass} pass, ${v.totals.equivalent} equivalent, ${v.totals.fail} fail${v.totals.error ? `, ${v.totals.error} error` : ""}${v.totals.timeout ? `, ${v.totals.timeout} timeout` : ""}${missing ? `, ${missing} not run` : ""} of ${v.of}`;
+        const tipTxt = `<b>${esc(s.name)}</b> version ${k + 1}: strategy ${esc(short(v.strategy_hash))}, scorer ${esc(short(v.score_hash))}<br>first ran ${esc(when(v.first))}, ${v.ran} result${v.ran === 1 ? "" : "s"}<br>after it: ${v.totals.pass} pass, ${v.totals.equivalent} equivalent, ${v.totals.fits || 0} fits, ${v.totals.fail} fail${v.totals.error ? `, ${v.totals.error} error` : ""}${v.totals.timeout ? `, ${v.totals.timeout} timeout` : ""}${missing ? `, ${missing} not run` : ""} of ${v.of}`;
         return `<g data-tip="${esc(tipTxt)}"><rect x="${x}" y="0" width="${bw}" height="${H}" fill="var(--rule)" opacity=".35"/>${segs}</g>`;
       }).join("");
       const last = tl[tl.length - 1];
@@ -639,9 +639,9 @@
     const n = S.cstats ? S.cstats.strategies : 0;
     if (!S.cstats) return `<span class="csum muted">…</span>`;
     if (!x || !x.ran) return `<span class="csum muted">not run by any of ${n} strategies</span>`;
-    const t = { total: n, pass: x.pass, equivalent: x.equivalent, fail: x.fail, error: x.other, missing: n - x.ran };
-    const tipTxt = `<b>${esc(x.case)}</b>: of the ${x.ran} strategies that ran it (of ${n}), ${x.pass} pass every variant they ran, ${x.equivalent} are equivalent, ${x.fail} fail, ${x.other} error or time out${n - x.ran ? `; ${n - x.ran} have not run it` : ""}<br>cells (variant × strategy): ${x.cells_pass} of ${x.cells_run} run pass, ${x.cells - x.cells_run} not run`;
-    return `<span class="csum" data-tip="${esc(tipTxt)}"><span class="crate">${Math.round(100 * x.pass / x.ran)}% of ${x.ran} pass</span>${x.equivalent ? `<span class="muted"> · ${x.equivalent} ≈</span>` : ""}<span class="sbar">${["pass", "equivalent", "fail", "error"].map((k) => t[k] ? `<span class="st-${k}" style="flex:${t[k]}"></span>` : "").join("")}${t.missing ? `<span class="st-none" style="flex:${t.missing}"></span>` : ""}</span></span>`;
+    const t = { total: n, pass: x.pass, equivalent: x.equivalent, fits: x.fits || 0, fail: x.fail, error: x.other, missing: n - x.ran };
+    const tipTxt = `<b>${esc(x.case)}</b>: of the ${x.ran} strategies that ran it (of ${n}), ${x.pass} pass every variant they ran, ${x.equivalent} are equivalent, ${x.fits || 0} fit (not proven), ${x.fail} fail, ${x.other} error or time out${n - x.ran ? `; ${n - x.ran} have not run it` : ""}<br>cells (variant × strategy): ${x.cells_pass} of ${x.cells_run} run pass, ${x.cells - x.cells_run} not run`;
+    return `<span class="csum" data-tip="${esc(tipTxt)}"><span class="crate">${Math.round(100 * x.pass / x.ran)}% of ${x.ran} pass</span>${x.equivalent ? `<span class="muted"> · ${x.equivalent} ≈</span>` : ""}<span class="sbar">${["pass", "equivalent", "fits", "fail", "error"].map((k) => t[k] ? `<span class="st-${k}" style="flex:${t[k]}"></span>` : "").join("")}${t.missing ? `<span class="st-none" style="flex:${t.missing}"></span>` : ""}</span></span>`;
   }
   function caseList() {
     const q = (S.cfilter || "").toLowerCase(), tags = S.ctags || [], st = S.cstatus || "all", set = S.cset || "all";

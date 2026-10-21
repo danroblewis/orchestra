@@ -64,7 +64,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const LET = { pass: "P", equivalent: "E", fail: "F", error: "X", timeout: "T" };
+const LET = { pass: "P", equivalent: "E", fits: "~", fail: "F", error: "X", timeout: "T" };
 let sweeps = [];
 const remember = (k, v) => { try { localStorage.setItem("probes." + k, v); } catch (e) { /* storage blocked */ } };
 const recall = (k) => { try { return localStorage.getItem("probes." + k); } catch (e) { return null; } };

@@ -386,8 +386,8 @@ body.research-page { overflow: hidden; }
 @media (max-width: 700px) { .rmain { padding: 8px 16px 40px; } .rnav { display: none; } }
 
 /* ladder page (/ladder): read only, the research page's frame; status and verdict colours */
-.ladder-page { --on-st: #fff; --eq: #2a78d6; --st-error: #7e22ce; --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #e34948; }
-@media (prefers-color-scheme: dark) { .ladder-page { --on-st: #111; --eq: #3987e5; --st-error: #c084fc; --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767; } }
+.ladder-page { --on-st: #fff; --eq: #2a78d6; --fits: #138a91; --st-error: #7e22ce; --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; --c5: #e87ba4; --c6: #008300; --c7: #6250d6; --c8: #e34948; }
+@media (prefers-color-scheme: dark) { .ladder-page { --on-st: #111; --eq: #3987e5; --fits: #3fc1c9; --st-error: #c084fc; --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; --c5: #d55181; --c6: #008300; --c7: #9085e9; --c8: #e66767; } }
 .ltabs { display: flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
 .ltabs button { border: 0; background: transparent; padding: 5px 14px; color: var(--muted); }
 .ltabs button + button { border-left: 1px solid var(--rule); }
@@ -407,8 +407,8 @@ body.research-page { overflow: hidden; }
 .seg-btns .btn:first-child { border-radius: 5px 0 0 5px; }
 .seg-btns .btn:last-child { border-radius: 0 5px 5px 0; }
 
-/* status squares: P E F X T, and · for not run; stale is hatched */
-.st-pass { --st: var(--good); } .st-equivalent { --st: var(--eq); } .st-fail { --st: var(--bad); }
+/* status squares: P E ~ F X T, and · for not run; stale is hatched (~ fits: the data cannot tell it from the truth, not proven) */
+.st-pass { --st: var(--good); } .st-equivalent { --st: var(--eq); } .st-fits { --st: var(--fits); } .st-fail { --st: var(--bad); }
 .st-error { --st: var(--st-error); } .st-timeout { --st: var(--warn); } .st-none { --st: transparent; }
 .sq4 { display: inline-flex; gap: 2px; vertical-align: middle; flex-wrap: nowrap; }
 .strip { display: inline-flex; gap: 2px; vertical-align: middle; flex-wrap: wrap; }
@@ -497,7 +497,7 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
 .chartbox .ln.hid { stroke-dasharray: 5 4; }
 .chartbox .xhair { stroke: var(--muted); stroke-width: 1; }
 .chartbox text.dl { font: 600 11px var(--mono); }
-.chartbox rect.st-pass, .chartbox rect.st-equivalent, .chartbox rect.st-fail, .chartbox rect.st-error, .chartbox rect.st-timeout { fill: var(--st); }
+.chartbox rect.st-pass, .chartbox rect.st-equivalent, .chartbox rect.st-fits, .chartbox rect.st-fail, .chartbox rect.st-error, .chartbox rect.st-timeout { fill: var(--st); }
 .ladder-page .ln.c1, .ladder-page .pt.c1 { stroke: var(--c1); } .ladder-page .pt.c1, .ladder-page .sw.c1, .ladder-page .dl.c1 { fill: var(--c1); background: var(--c1); }
 .ladder-page .ln.c2 { stroke: var(--c2); } .ladder-page .pt.c2, .ladder-page .sw.c2, .ladder-page .dl.c2 { fill: var(--c2); background: var(--c2); }
 .ladder-page .ln.c3 { stroke: var(--c3); } .ladder-page .pt.c3, .ladder-page .sw.c3, .ladder-page .dl.c3 { fill: var(--c3); background: var(--c3); }
@@ -516,7 +516,7 @@ pre.err { white-space: pre-wrap; font: 12px var(--mono); color: var(--bad); }
 .tltable { width: auto; min-width: 0; }
 .tltable th { font-weight: 500; font-size: 12px; }
 .tlbars { display: block; }
-.tlbars rect.st-pass, .tlbars rect.st-equivalent, .tlbars rect.st-fail, .tlbars rect.st-error, .tlbars rect.st-timeout { fill: var(--st); }
+.tlbars rect.st-pass, .tlbars rect.st-equivalent, .tlbars rect.st-fits, .tlbars rect.st-fail, .tlbars rect.st-error, .tlbars rect.st-timeout { fill: var(--st); }
 
 /* Cases */
 .cbrowse { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
@@ -640,7 +640,7 @@ table.cmp td:nth-child(n+3) { font-family: var(--mono); }
 tr.cmp-ok td:first-child { color: var(--good); }
 tr.cmp-wrong td:first-child, tr.cmp-wrong td:last-child { color: var(--warn); }
 tr.cmp-missing td:first-child, tr.cmp-spurious td:first-child, tr.cmp-missing td:nth-child(4), tr.cmp-spurious td:last-child { color: var(--bad); }
-.cmp-verdict.cmp-pass { color: var(--good); } .cmp-verdict.cmp-fail { color: var(--bad); } .cmp-verdict.cmp-equivalent { color: var(--accent); }
+.cmp-verdict.cmp-pass { color: var(--good); } .cmp-verdict.cmp-fail { color: var(--bad); } .cmp-verdict.cmp-equivalent { color: var(--accent); } .cmp-verdict.cmp-fits { color: var(--muted); }
 .convs { display: grid; gap: 8px; }
 figure.conv { margin: 0; }
 figure.conv figcaption { font-size: 12px; color: var(--muted); }

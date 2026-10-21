@@ -119,13 +119,17 @@ def test_the_hidden_oracle_covers_a_stock_fed_from_outside(case_id):
 
 # ---- 3. measured inputs in the equivalence ----
 
-def test_an_exact_equivalent_reading_a_measured_input_is_equivalent():
+def test_an_exact_equivalent_reading_a_measured_input_fits():
     """125's hiring (desired - R) / 6 written as an inflow desired / 6 and a larger drain of R: the same
-    linear system of the level and the input (the floor aside)."""
+    linear system of the level and the input (the floor aside), so the data cannot tell them apart; since
+    2026-10-21 (the user, algebra.py) that is "fits", not "equivalent": the floored gap is 0 where R > desired,
+    the inflow and drain are not."""
     c, model, d = setup("125-floored-gap-to-measured-target", "none-short")
     flows = [with_rate({"from": None, "to": "R"}, {"form": "linear", "c": 0, "terms": [{"stock": "desired", "k": 1 / 6}]}),
              with_rate({"from": "R", "to": None}, {"form": "proportional", "stock": "R", "k": 1 / 6 + 0.025})]
-    assert scored("125-floored-gap-to-measured-target", "none-short", flows)["status"] == "equivalent"
+    s = scored("125-floored-gap-to-measured-target", "none-short", flows)
+    assert s["status"] == "fits" and s["algebra"]["proven"] and not s["algebra"]["equivalent"]
+    assert s["algebra"]["differences"][0]["at"]["R"] > s["algebra"]["differences"][0]["at"]["desired"]
     flows[0] = with_rate(flows[0], {"form": "linear", "c": 0, "terms": [{"stock": "desired", "k": 0.12}]})
     assert scored("125-floored-gap-to-measured-target", "none-short", flows)["status"] == "fail"
 
@@ -151,8 +155,9 @@ def test_a_product_that_computes_something_else_is_not():
     assert scored("101-canonical-seir", "none-short", swapped(model, d, 1.3))["status"] == "fail"
 
 
-def test_an_adoption_twin_read_through_the_other_stock_is_equivalent():
-    """N = 100 - A on every sample of an adoption twin: rates that read A in place of N compute the same."""
+def test_an_adoption_twin_read_through_the_other_stock_fits():
+    """N = 100 - A on every sample of an adoption twin: rates that read A in place of N compute the same on
+    the data, but not for every state (N and A are two stocks), so it fits and is not proven equivalent (2026-10-21)."""
     from sdlab.ladder.real import data as real_data
     c = casemod.load("real-adoption-internet")
     model = casemod.truth_model(c, "twin")
@@ -162,7 +167,7 @@ def test_an_adoption_twin_read_through_the_other_stock_is_equivalent():
         r = f["rate"]
         k = r["terms"][0]["k"]
         alt[i] = with_rate(f, {"form": "linear", "c": r.get("c", 0) + 100 * k, "terms": [{"stock": "A", "k": -k}]})
-    assert score.equations(c, "counts", model, alt, d)["status"] == "equivalent"
+    assert score.equations(c, "counts", model, alt, d)["status"] == "fits"
 
 
 # ---- 5. twins ----

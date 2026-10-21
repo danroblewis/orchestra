@@ -21,7 +21,7 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
 
 A result: {id, case, variant, strategy, case_hash, strategy_hash, score_hash, at, latest, status
-("pass" | "equivalent" | "fail" | "error" | "timeout"), seconds, error, scores (score.py), found?}; one read
+("pass" | "equivalent" | "fits" | "fail" | "error" | "timeout"; fits: the data cannot tell it from the truth, not proven equivalent), seconds, error, scores (score.py), found?}; one read
 with its found flows also has found_merged when some of its flows share both ends (merge.py: one flow per
 pair of stocks, as the scorer and the drawings read them), complexity (complexity.py: true vs found) and longrun (longrun.py: long-horizon
 metrics, computed once per result id by longrun_cache.py), and summary cells carry both, and strict (strict.py: 1, 0,
@@ -38,7 +38,7 @@ from . import cases as casemod
 from . import analysis, catalog, complexity, data, explain, longrun_cache, merge, score, store, strict
 from .real import data as _real_data
 
-STATUSES = ("pass", "equivalent", "fail", "error", "timeout")
+STATUSES = ("pass", "equivalent", "fits", "fail", "error", "timeout")
 
 
 def _case(cid: str) -> dict:

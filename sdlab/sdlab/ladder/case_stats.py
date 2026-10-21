@@ -2,11 +2,12 @@
 server from the summary (api.summary) so the page never fetches every cell to colour its list.
 
     verdict(statuses)   one strategy's verdict on a case from its run variants' statuses (None: not run)
-    row(case, cells)    [ran, pass, equivalent, fail, error or timeout, cells run, cells passing, cells]
+    row(case, cells)    [ran, pass, equivalent, fits, fail, error or timeout, cells run, cells passing, cells]
     view()              {version, strategies, fields, rows: [[case id, set, kubernetes, level, *row]]}, cached
 
 A strategy's verdict on a case: "pass" when every variant it ran passes, "equivalent" when every one
-is pass or equivalent (and not all pass), "fail" when any is a fail, otherwise "error" (an error or a
+is pass or equivalent (and not all pass), "fits" when every one is pass, equivalent or fits (2026-10-21:
+the data cannot tell it from the truth, not proven equivalent), "fail" when any is a fail, otherwise "error" (an error or a
 timeout, which counts as not passing). Variants it has not run are left out; a strategy with no run
 variant has not run the case and is not counted ("not run" is never a fail or a pass). The pass rate
 the page shows is pass / ran: equivalent is shown beside it, not counted as a pass.
@@ -21,7 +22,7 @@ import threading
 
 from . import leaderboard
 
-FIELDS = ("ran", "pass", "equivalent", "fail", "other", "cells_run", "cells_pass", "cells")
+FIELDS = ("ran", "pass", "equivalent", "fits", "fail", "other", "cells_run", "cells_pass", "cells")
 
 
 def verdict(statuses: list) -> str | None:
@@ -32,6 +33,8 @@ def verdict(statuses: list) -> str | None:
         return "pass"
     if all(s in ("pass", "equivalent") for s in run):
         return "equivalent"
+    if all(s in ("pass", "equivalent", "fits") for s in run):
+        return "fits"
     return "fail" if "fail" in run else "error"
 
 
@@ -40,13 +43,13 @@ def row(cells: list[dict]) -> list[int]:
     per: dict[str, list] = {}
     for c in cells:
         per.setdefault(c["strategy"], []).append(c["status"])
-    n = {"pass": 0, "equivalent": 0, "fail": 0, "error": 0}
+    n = {"pass": 0, "equivalent": 0, "fits": 0, "fail": 0, "error": 0}
     for sts in per.values():
         v = verdict(sts)
         if v:
             n[v] += 1
     run = [c for c in cells if c["status"]]
-    return [sum(n.values()), n["pass"], n["equivalent"], n["fail"], n["error"], len(run),
+    return [sum(n.values()), n["pass"], n["equivalent"], n["fits"], n["fail"], n["error"], len(run),
             sum(1 for c in run if c["status"] == "pass"), len(cells)]
 
 

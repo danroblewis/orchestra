@@ -2314,7 +2314,7 @@
     const b = S.model.basic || { case: S.truth.case }, strat = r.strategy || "matrix", bv = S.model.basic ? S.basicVariant : c.variant || S.truth.variant;
     const links = `<p class="note">On the ladder: <a href="/ladder/strategy?name=${encodeURIComponent(strat)}" target="_blank" rel="noopener">${esc(strat)}'s cases</a> (find ${esc(S.model.basic ? b.case.slice(0, 3) : b.case)}) · <a href="/ladder?view=now&case=${encodeURIComponent(b.case)}&variant=${encodeURIComponent(bv)}&strategy=${encodeURIComponent(strat)}" target="_blank" rel="noopener">this case's ladder result, every part</a> (on the recorded data, not this run)</p>`;
     const rep = c.repairs;
-    const verdict = { pass: "right: every true number within tolerance, nothing extra", equivalent: "equivalent: the same behaviour, read another way", fail: "not right yet" }[c.status] || c.status;
+    const verdict = { pass: "right: every true number within tolerance, nothing extra", equivalent: "equivalent: the truth's equations, proven, drawn another way", fits: "fits: the data cannot tell it from the truth, but its equations differ (not proven)", fail: "not right yet" }[c.status] || c.status;
     return `<h2 style="margin-top:14px">Against the truth</h2>
       <p class="note">On the ${c.steps} ${esc(tu())}s it was found from, by the ladder's scorer: <b class="cmp-verdict cmp-${esc(c.status)}">${esc(verdict)}</b>${rep && rep.headline ? ` · ${esc(rep.headline)}` : ""}.</p>
       ${r.compareStale ? `<p class="note">These are the previous estimate's; the newest is being compared.</p>` : ""}

@@ -2373,12 +2373,30 @@ the data need).
 - **pass**: every true part is found and right, and no part is spurious. A spurious part is a found
   part the truth lacks that is larger than 5% of the median true part size. With an oracle, it must
   also be larger than 3 SE of that term added to the truth's fit.
-- **equivalent** (not a pass): the found flows make the same linear system as the truth. Every
-  measured stock's change is the same function of the levels, the measured inputs and the outside,
-  within the same tolerances, in every window. So the data cannot tell the two apart while no floor
-  binds. Examples: births and deaths seen as their difference, a gap seen as an inflow plus a drain,
-  a link seen as a move, 125's floored gap to a measured target seen as an inflow reading the
-  target and a larger drain. It is reported apart from pass.
+- **equivalent** (not a pass; proven, since 2026-10-21): a different drawing whose equations are
+  algebraically the truth's. Every measured stock's net rate of change (its inflows less its outflows) is
+  the same function of the stocks, the measured inputs and the window of time as the truth's, for
+  every state, not only the run's, and `algebra.py` proves it (below). Examples: births and deaths seen as
+  their difference, a move seen as a link into B and an outflow from A of the same amount (kubernetes
+  309's `retries -> queue` at 0.6 x retries against a link into queue reading retries at 0.6 and a drain
+  of retries at 0.6; on 309 itself the declared boundary still fails that drawing, since queue's inflow
+  is declared to be the input alone), a co-flow written as an outflow of the used stock reading the flow's source, a
+  product with its roles swapped. The note says how the drawings differ (`equivalent (proven): ...`, and
+  the diff's `=` / `≈` lines carry it). It is reported apart from pass.
+- **fits** (not a pass, not equivalent; 2026-10-21, the user): the data cannot tell the found model from
+  the truth (the older equivalence below holds), but its equations are not the truth's: they differ in
+  some region of the state space the run never reached (a floor that never bound, a mechanism never
+  exercised, numbers on a ridge). Examples: a gap `max(0, (g - X) / T)` seen as an inflow `g / T` and a
+  drain `X / T` (they differ where X > g: 011, 047, 083, 125), 158's floored release seen as a plain
+  release and a constant moved round it, an adoption twin's rates reading A in place of N (N = 100 - A on
+  the data, two stocks in the state). The note names the stock, a state in the region and the term
+  (`fits, not proven equivalent: the net rate of P differs in the region around I=1.149e+04, P=7966: its
+  1 term is 0 in the truth, 60 found`). Letter `~`, colour teal, in the squares, legends, leaderboard and
+  case stats.
+- **The older equivalence**, which "fits" needs (and "equivalent" needs as well as the proof): the found
+  flows make the same linear system as the truth. Every measured stock's change is the same function of
+  the levels, the measured inputs and the outside, within the same tolerances, in every window. So the
+  data cannot tell the two apart while no floor binds.
   - **Measured inputs** (2026-10-19) are columns of that system as the levels are; before, a flow
     reading one made the check give up, so an exact equivalent of 125 or 106 was a fail.
   - **A truth with effects** (2026-10-19) is equivalent when the found flows compute the same change
@@ -2391,6 +2409,37 @@ the data need).
     amount through the stock was tried first and was far too loose (a model with no flows came within
     10% of a logistic stock whose births and deaths nearly cancel). No tolerance is wider than before.
   - Not checked for a truth with hidden stocks.
+- **The proof** (`algebra.py`, the user, 2026-10-21), run only where the older equivalence holds. Per
+  window, every flow's amount is written as an expression tree in the engine's arithmetic (a linear rate
+  floored at 0 unless two-way, an expression rate with MIN, MAX, ABS, comparisons, IF THEN ELSE, LOOKUP,
+  products and functions, auxiliaries and flow(id) substituted, `available`, times its effects: a table is a
+  LOOKUP floored at 0, a linear effect MIN(hi, MAX(lo, x / normal))); a stock's net rate is its inflows less
+  ratio x its outflows and per x the flows that use it up. A found linear rate's numbers are its window
+  averages, as the pass reads them. The kinks (where a MIN or MAX changes branch, a floor binds, a
+  comparison flips, a LOOKUP passes a point) cut the state space (stocks >= 0 unless signed, inputs >= 0
+  when the run's are, each up to 100 x its largest value on the run) into regions, found by linear
+  programs (a region is split wherever a kink changes sign inside it); in each region every branch is
+  fixed, both net rates are polynomials (sympy), and they are compared coefficient by coefficient with
+  the scorer's tolerance (rel, the floor, the oracle's SE for a linear coefficient; a product's against
+  the product of the mean levels it reads). Two polynomials that agree on an open region agree everywhere
+  in it, so this is a proof, not a sample. A region thinner than rel of the run's range between two kinks
+  a tolerance apart is let off; each found number within rel of a truth number is snapped to it first
+  (and the comparison is tried unsnapped too), so a kink a tolerance away lines up. Step functions (CEIL,
+  FLOOR, INTEGER, MODULO, QUANTUM) are opaque atoms, free variables (the same atom on both sides cancels);
+  a region whose rates are not polynomials (a division by a stock, SQRT) is compared by sympy's simplify of
+  the exact difference. Not covered (so "fits"): a flow touching an unmeasured stock, a kink that is not
+  affine in the state. The engine's sharing of a stock among its outflows and stock ceilings are not
+  modelled. `scores.algebra` = {equivalent, proven, method ("identity", "regions", "not covered"),
+  regions, differences, notes, bookkeeping, conserving}.
+- **The conserving drawing.** The user prefers (2026-10-21) the drawing that writes a transfer as a MOVE
+  between stocks of one unit: a found model that draws the truth's move as a link and an outflow is
+  "equivalent" (never a pass) with the note `not conserving: the move is the preferred drawing`, and a
+  found move between stocks of different units standing for the truth's link and outflow fails
+  (`units: ...`). A found move where the truth draws a link and an outflow of one unit (007, 045, 046, 054,
+  055, 010: their `tests:` say the link is the answer) is the conserving drawing; it would be the pass by
+  the user's preference, but that changes what those cases mean (CLAUDE.md rule 2), so it stays
+  "equivalent" (note `[conserving]` in `scores.algebra.conserving`) until the user decides
+  (`score.CONSERVING_PASS`; 4,376 stored results would become passes, see below).
 - **fail**: anything else. **error** / **timeout**: the strategy raised or ran out of time.
 
 **recall** is the share of true parts whose key the found model has (right kind and ends,
@@ -2502,6 +2551,34 @@ and the merge), 18,587 latest rows had a same-pair group: **0 status flips** (16
 case-variants (130 by 1, e.g. 008-link-loop 8 -> 7: its constant inflow and link into A are one flow).
 The realistic, physics, particle and real sets were not re-scored (their slow rows are left to the
 main line's re-run under the new score hash).
+
+### Proven equivalence and "fits": before and after (2026-10-21)
+
+The user's change of 2026-10-21 (CLAUDE.md rule 5): "equivalent" only when proven (`algebra.py`), a new
+status "fits" for what the data cannot tell apart but is not proven, the conserving drawing preferred.
+`tests/study_rescore_algebra.py` re-scored the stored found flows offline (nothing written to the store):
+every latest row of a numbered case (88,587 rows, errors and timeouts left out) with the scorer at
+c058aae (before), then the rows that scorer called equivalent (8,639) with the new one; the change acts
+only where the older equivalence holds, and a random 1,200 of the other rows re-scored with the new
+scorer kept their status (529 pass, 671 fail). Before: 38,629 pass, 8,639 equivalent, 41,319 fail.
+
+| flip | rows | where |
+|---|---|---|
+| equivalent -> equivalent (proven) | 7,094 | 046 (1,624), 045 (1,451), 054 (1,424), 055 (1,033), 009 (222), 082 (219), 010 (187), 007 (181), 008 (167), 016 (143), 128 (137), 081 (134), ... 307 (9), 304 (1) |
+| equivalent -> fits | 1,545 | 215 (185), 208 (169), 158 (139), 218 (110), 047#5 (109), 214 (109), 216 (109), 125 (61), 200 (52), 047#8 (51), 083 (51), 127 (51), ...; every strategy (1 to 46 rows each) |
+| equivalent -> pass, pass -> anything, fail -> anything | 0 | |
+
+Every "fits" was a proven difference (none "not covered"). Examples: 011-goal-gap numopt_fd_profile
+(#6111): the gap read as an inflow 60 and a drain, where P > the goal the truth's inflow is 0; 016-coflow
+paced_moves (#27298): R's inflow written as `max(0, 8 - 0.15 A)`, which stops where A > 53 while the
+truth's co-flow keeps using R up; 158-affine-release lna_pulses (#206749): the floored release
+`-6 + 0.02 A` read as `0.02 A` with 6 moved round it (the truth's A gains 20, the found 23, at A = 150).
+Of the 7,094 proven, 4,376 are the conserving drawing of a truth's link and outflow (a found move between
+stocks of one unit, mostly 045, 046, 054, 055): they would become passes if the user turns
+`score.CONSERVING_PASS` on. Rows the new scorer took longest on: 1.8 s (132 latent_eras), 1.2 s (224
+engine_forms). The realistic (sd-*), physics, particle and real sets were not re-scored here (physics and
+particles have no equivalent; the realistic rows are left to the main line's re-run under the new score
+hash).
 
 ## Complexity (`sdlab/sdlab/ladder/complexity.py`)
 
@@ -2746,7 +2823,7 @@ case                             matrix
 Each cell has one letter per variant, in the order `none-short, none-long, counts-short,
 counts-long`:
 
-- P pass, E equivalent, F fail, X error, T timeout, . not run;
+- P pass, E equivalent (proven), ~ fits (not proven), F fail, X error, T timeout, . not run;
 - `*` after the letters means the result is stale (a sync would run it again).
 
 The number is the mean recall over the variants. Read the letters left to right. A strategy should
@@ -3018,7 +3095,9 @@ so in the console).
 - `+` **added**: in the found model, not the truth: an invented flow or boundary, an extra term on a
   found flow, the flows of a stock only the found model has.
 - `~` **a number wrong**: in both, true -> found per number, with its relative error.
-- `=` **equivalent**: the result is "equivalent", the same system read another way.
+- `=` **equivalent**: the result is "equivalent", the same system read another way; since 2026-10-21 the
+  line carries the proof's bookkeeping note (how the drawings differ: a move drawn as a link and an
+  outflow, ...). A "fits" result is not marked equivalent: its lines show the differences as they are.
 - unchanged lines are context (` ` found and right, `.` too small to count or not scored).
 - the **hunk**: the changed flows, the stocks at their ends, and every stock only the found model has
   with its flows: what the differences diagram draws at full strength.

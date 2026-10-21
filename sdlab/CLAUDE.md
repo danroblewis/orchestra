@@ -47,6 +47,10 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
    turn a fail into a pass is reported to the user with before/after statuses, and a change to
    what counts as a pass (e.g. counting "equivalent" as a pass) needs the user's approval. A
    tolerance may widen only by a measured standard error, never to make a strategy pass.
+   Since 2026-10-21 (the user) "equivalent" means proven: every stock's net rate is algebraically the
+   truth's for every state (`sdlab/ladder/algebra.py`). A model the data cannot tell from the truth whose
+   equations differ off the run (a floor that never bound) is "fits" (letter `~`), never a pass and not
+   equivalent; read its note (`fits, not proven equivalent: ...`) for the region where it differs.
 6. **Comparisons are fair.** Strategies are compared on the same cases, variants and seeds, with
    paired comparisons and confidence intervals. Benches run single-threaded
    (`OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMBA_NUM_THREADS=1`).

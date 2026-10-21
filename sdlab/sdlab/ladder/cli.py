@@ -75,7 +75,7 @@ import time  # noqa: E402
 from . import api, catalog, checks, longrun_cache, runner, score  # noqa: E402
 from . import cases as casemod  # noqa: E402
 
-LETTER = {"pass": "P", "equivalent": "E", "fail": "F", "error": "X", "timeout": "T", None: "."}
+LETTER = {"pass": "P", "equivalent": "E", "fits": "~", "fail": "F", "error": "X", "timeout": "T", None: "."}
 
 
 def pct(v) -> str:
@@ -138,7 +138,7 @@ def status(a) -> int:
         if not x["available"]:
             print(f"strategy {x['name']}: skipped ({x['reason']})")
     variants = list(dict.fromkeys(v for c in s["cases"] for v in c["variants"]))
-    print("Cells: one letter per variant (" + ", ".join(variants) + "): P pass, E equivalent, F fail, X error, T timeout, . not run;"
+    print("Cells: one letter per variant (" + ", ".join(variants) + "): P pass, E equivalent (proven), ~ fits (not proven), F fail, X error, T timeout, . not run;"
           " * after a cell: stale. recall: mean over variants.\n")
     width = max(len(c["id"]) for c in s["cases"]) if s["cases"] else 10
     print(f"{'case':{width}s}  " + "  ".join(f"{n:>16s}" for n in strats))
@@ -152,7 +152,7 @@ def status(a) -> int:
         print(f"{c['id']:{width}s}  " + "  ".join(row))
     for n in strats:
         t = s["totals"][n]
-        print(f"\n{n}: {t['pass']} pass, {t['equivalent']} equivalent, {t['fail']} fail, {t['error']} error, {t['timeout']} timeout,"
+        print(f"\n{n}: {t['pass']} pass, {t['equivalent']} equivalent, {t.get('fits', 0)} fits, {t['fail']} fail, {t['error']} error, {t['timeout']} timeout,"
               f" {t['missing']} not run, {t['stale']} stale, of {t['total']}; discovery {t['seconds']:.1f} s in all")
         if t.get("achievable") or t.get("data_limited") or t.get("unidentifiable"):
             print(f"  over the cells the data allow (sdlab-ladder analyse): {t['achievable_pass']} pass of {t['achievable']} achievable"
