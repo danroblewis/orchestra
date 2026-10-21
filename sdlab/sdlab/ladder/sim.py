@@ -168,11 +168,82 @@ def says_signed(flows: list[dict]) -> bool:
     return any(f.get("two_way") for f in flows) or bool(signed_stocks(flows))
 
 
+def _rates(f: dict) -> list[dict]:
+    return [g.get("rate") or {} for g in f["byTime"]] if f.get("byTime") else [f.get("rate") or {}]
+
+
+def says_expr(flows: list[dict]) -> bool:
+    """Does a found model have an expression rate (simulate._Rate, pinned, reads one as 0)?"""
+    return any(r.get("form") == "expr" for f in flows if not f.get("inflow") for r in _rates(f))
+
+
 def found_model(flows: list[dict], ids: list[str], inputs: dict | None = None, dt: float = 1.0, ceilings: dict | None = None) -> Model:
-    """The simulator for a found model: SignedModel when it says it is two-way or signed, else simulate.Model."""
+    """The simulator for a found model: SignedModel when it says it is two-way or signed, else simulate.Model;
+    either with its expression rates evaluated (_ExprRate) where it has any."""
     if says_signed(flows):
-        return SignedModel(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
-    return Model(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
+        model = SignedModel(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
+    else:
+        model = Model(flows, ids, inputs=inputs, dt=dt, ceilings=ceilings)
+    if says_expr(flows):
+        rows = list(ids)
+        if model.inputs is not None:                      # as simulate.Model indexes the inputs: after the stocks
+            rows += [k for k in inputs["values"] if k not in set(ids)]
+        index = {s: i for i, s in enumerate(rows)}
+        for n, f in enumerate(flows):
+            src, dst, ratio, segs, rate, vals = model.parts[n]
+            if vals is None and any(r.get("form") == "expr" for r in _rates(f)):
+                model.parts[n] = (src, dst, ratio, segs, _ExprRate(_rates(f), index, two_way=bool(f.get("two_way"))), vals)
+    return model
+
+
+class _ExprRate:
+    """A found flow's rate where some segment is an expression (`{"form": "expr", "expr": "min(0.6 * queue,
+    40 * ready)"}`, MODEL.md), evaluated state by state with the engine's own expression compiler
+    (sdtruth_expr, as the engine runs the truth); its other segments as simulate._Rate (or _Unfloored for a
+    two-way flow) evaluates them. Floored at 0 unless two-way, as the engine does. A name the model does
+    not step (or flow(id), which a found model has no counters for) reads as 0, as simulate.Model reads a
+    stock it does not step; an expression that does not parse reads as 0 (simulate._Rate's answer)."""
+
+    def __init__(self, rates: list[dict], index: dict[str, int], two_way: bool = False):
+        from ..sdtruth_expr import ExprError, compile_expr, parse
+
+        self.index, self.two = index, two_way
+        self.fns = []
+        for r in rates:
+            if r.get("form") == "expr":
+                try:
+                    self.fns.append(compile_expr(parse(r.get("expr"))))
+                except (ExprError, KeyError, ValueError, TypeError):
+                    self.fns.append(None)
+            else:
+                self.fns.append((_Unfloored if two_way else _Rate)([r], index))
+
+    def __call__(self, L: np.ndarray, seg: np.ndarray) -> np.ndarray:
+        out = np.zeros(L.shape[1])
+        names = list(self.index)
+        for g in np.unique(seg):
+            m = np.flatnonzero(seg == g)
+            fn = self.fns[int(g)]
+            if fn is None:
+                continue
+            if isinstance(fn, _Rate):                     # a linear segment (_Unfloored is a _Rate too)
+                out[m] = fn(L[:, m], np.zeros(len(m), int))
+                continue
+            for j in m:
+                view = _Zero(zip(names, (float(L[i, j]) if i < L.shape[0] else 0.0 for i in self.index.values())))
+                try:
+                    v = float(fn(view, _Zero()))
+                except (ArithmeticError, ValueError, TypeError):
+                    v = 0.0
+                out[j] = v if self.two else max(0.0, v)
+        return np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+
+class _Zero(dict):
+    """A view in which a name nobody gave reads as 0."""
+
+    def __missing__(self, key):
+        return 0.0
 
 
 class _Unfloored(_Rate):
