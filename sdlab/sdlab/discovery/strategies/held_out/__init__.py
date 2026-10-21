@@ -611,7 +611,17 @@ def _eiv_refit_numbers(flows: list[dict], stocks: list[dict], run: dict, opts: d
     before, after = _eiv_judge(flows, ids, run, opts), _eiv_judge(work, ids, run, opts)
     info.update(found=theta0.round(6).tolist(), instrumented=th_i.round(6).tolist(), judged=[before, after])
     if not after <= before:
-        return flows, info
+        # (as eiv.py, the declared boundary) a structure that arrives with nothing to prune (outside flows
+        # kept to the boundary already) is held to the pruned model's test: no further from the data at
+        # the judge's longest horizon by more than GUARD paired standard errors, since at shorter horizons
+        # the measurement error at each run's start still favours the biased numbers (303 meas-long)
+        if not [h for h in _EIV_HORIZONS if h < len(run["t"]) / 4]:
+            return flows, info
+        d = _eiv_runs(work, ids, run, opts) - _eiv_runs(flows, ids, run, opts)
+        z = float(d.sum() / max(1e-12, _eiv_np.sqrt(len(d) * d.var(ddof=1)))) if len(d) > 1 else float("inf")
+        info["z"] = round(z, 2)
+        if not z <= _EIV_GUARD:
+            return flows, info
     return work, {**info, "used": True}
 
 
