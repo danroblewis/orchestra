@@ -57,13 +57,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         note = (f"z3exact: {len(sup)} terms, {r['status']} in the class '{moves}, {rule}'"
                 + (f" ({len(fits)} smallest structures fit; the least squared error kept)" if len(fits) > 1 else "")
                 + f"; largest one-step residual {miss:.3g}; " + "; ".join(notes))
-        return {"flows": flows_of(p, sup, k), "note": note, "z3": {"status": r["status"], "k_min": r.get("k_min"),
+        return {"flows": fixed_inputs(flows_of(p, sup, k), run, (opts.get("inputs") or {}).keys()), "note": note, "z3": {"status": r["status"], "k_min": r.get("k_min"),
                 "smallest": len(fits), "moves": moves, "boundary": rule, "seconds": r["seconds"]}}
     left = TOTAL - (time.perf_counter() - began)
     if left >= 5:
         got = _best_effort(stocks, run, opts, left, notes)
         if got is not None:
-            return got
+            return {**got, "flows": fixed_inputs(got.get("flows") or [], run, (opts.get("inputs") or {}).keys())}
     return {"flows": [], "note": "z3exact: no structure found, no flows returned (outside the class: noisy data or a "
             "nonlinear truth; unknown: a timeout or a class too large to search): " + "; ".join(notes)}
 
@@ -225,3 +225,33 @@ _identify_linear = identify
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
     return _capmin.wrap(_identify_linear, stocks, run, opts, *args, **kw)
+
+
+def fixed_inputs(flows: list[dict], run: dict, inputs) -> list[dict]:
+    """(2026-10-21, the user) A declared "input" inflow IS the measured series: the inflow into such a stock
+    that reads a measured input is set at exactly 1 x it (no constant, never rescaled); on a side that
+    declares only inputs, the stock's other outside inflows are dropped. The other numbers are not refitted
+    (this strategy's search reads the side as "measured")."""
+    if not run.get("boundary_declared"):
+        return flows
+    inputs = set(inputs or ())
+    flows = [dict(f) for f in flows]
+
+    def reads(f: dict) -> list:
+        r = f.get("rate") or {}
+        t = [r.get("stock")] if r.get("form") == "proportional" else [x.get("stock") for x in r.get("terms") or []]
+        return [x for x in t if x in inputs]
+
+    for s, e in sorted((run.get("boundary") or {}).items()):
+        kinds = list(e.get("in") or [])
+        into = [i for i, f in enumerate(flows) if f.get("from") is None and f.get("to") == s and not f.get("byTime")]
+        fed = [i for i in into if reads(flows[i])]
+        if "input" not in kinds or not fed:
+            continue
+        name = reads(flows[fed[0]])[0]
+        rate = {"form": "proportional", "stock": name, "k": 1.0}
+        flows[fed[0]] = {**{k: v for k, v in flows[fed[0]].items() if k in ("from", "to", "name", "id")},
+                         "ratio": 1, "rate": rate, "rates": [rate], "input": name}
+        drop = [i for i in into if i != fed[0]] if all(k == "input" for k in kinds) else []
+        flows = [f for i, f in enumerate(flows) if i not in drop]
+    return flows

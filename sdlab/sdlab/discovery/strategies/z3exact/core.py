@@ -149,8 +149,8 @@ def _kind_sides(boundary: dict | None, declared: bool, stock: str, kind: str, ru
     e = (boundary or {}).get(stock) or {}
     if rule == "sides":
         return tuple(side for side in ("in", "out") if e.get(side))
-    want = "measured" if kind == "input" else "estimate"
-    return tuple(side for side in ("in", "out") if want in (e.get(side) or []))
+    want = {"measured", "input"} if kind == "input" else {"estimate"}      # (2026-10-21) an "input" side reads its input
+    return tuple(side for side in ("in", "out") if want & set(e.get(side) or []))
 
 
 MOVE_CLASSES = ("ends", "any")

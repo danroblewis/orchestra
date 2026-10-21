@@ -59,6 +59,11 @@ class Boundary:
     def __init__(self, run: dict):
         self.declared = bool(run.get("boundary_declared"))
         raw = run.get("boundary") or {}
+        # (2026-10-21) an "input" side: searched as "measured", its flow fixed at 1 x the input (enforce_sides)
+        self.original = {s: {side: list(e.get(side) or []) for side in ("in", "out")} for s, e in raw.items()}
+        self.fixed = {s: e["in"].count("input") for s, e in self.original.items() if "input" in e["in"]} if self.declared else {}
+        self.limit = {(s, side): len(e[side]) for s, e in self.original.items() for side in ("in", "out") if e[side]} if self.declared else {}
+        raw = _as_measured(raw)
         self.sides = {s: {side: set(e.get(side) or []) for side in ("in", "out")} for s, e in raw.items()}
 
     def kinds(self, stock: str, side: str) -> set:
@@ -805,4 +810,166 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final:
         out["boundary_claims"] = claims(flows, data.ids, b, set(data.inputs))
     elif log:
         out["boundary_guard"] = log
+    return out
+
+
+# (2026-10-21, the user) The kind "input": a declared inflow that IS a measured input series, exactly
+# 1 x it (no constant, never rescaled or supplemented); and on every declared side at most as many outside
+# flows as the side declares. The search reads an "input" side as a "measured" one (Boundary.__init__);
+# every call of `apply` then ends with `enforce_sides`, which sets the input's flow at exactly 1 x the
+# input and refits the stock's other flows around it (its contribution taken off the stock's change).
+
+
+def _as_measured(raw: dict) -> dict:
+    """The announced boundary with each "input" kind read as "measured" (what the search sees)."""
+    return {s: {side: ["measured" if k == "input" else k for k in (e.get(side) or [])] for side in ("in", "out")}
+            for s, e in (raw or {}).items()}
+
+
+def _input_flow(stock: str, name: str) -> dict:
+    rate = {"form": "proportional", "stock": name, "k": 1.0}
+    return {"from": None, "to": stock, "ratio": 1, "rate": rate, "rates": [rate], "input": name}
+
+
+def _summable(f: dict) -> bool:
+    """A rate that adds to another as numbers do: a constant, k X or a linear rate, nothing else on it."""
+    r = f.get("rate") or {}
+    return (not f.get("byTime") and not f.get("inflow") and not f.get("effects") and not f.get("uses") and not f.get("via")
+            and float(f.get("ratio") or 1) == 1.0 and r.get("form") in ("constant", "proportional", "linear"))
+
+
+def _sum_rates(group: list[dict]) -> dict:
+    """Same-side flows of summable rates as one linear flow (constants added, terms on one level added)."""
+    c, terms = 0.0, {}
+    for f in group:
+        r = f["rate"]
+        if r["form"] == "constant":
+            c += float(r.get("value") or 0)
+        elif r["form"] == "proportional":
+            terms[r["stock"]] = terms.get(r["stock"], 0.0) + float(r.get("k") or 0)
+        else:
+            c += float(r.get("c") or 0)
+            for x in r.get("terms") or []:
+                terms[x["stock"]] = terms.get(x["stock"], 0.0) + float(x.get("k") or 0)
+    rate = {"form": "linear", "c": c, "terms": [{"stock": s, "k": k} for s, k in terms.items()]}
+    g = {k: v for k, v in group[0].items() if k in ("from", "to", "name", "id")}
+    return {**g, "ratio": 1, "rate": rate, "rates": [rate]}
+
+
+def _without(f: dict, name: str) -> dict | None:
+    """f with its terms reading the input name removed (None when nothing is left of it)."""
+    r = f.get("rate") or {}
+    if f.get("byTime") or f.get("inflow"):
+        return f
+    if r.get("form") == "proportional" and r.get("stock") == name:
+        return None
+    if r.get("form") == "linear" and any(x.get("stock") == name for x in r.get("terms") or []):
+        rate = {**r, "terms": [x for x in r["terms"] if x.get("stock") != name]}
+        if not rate["terms"] and not rate.get("c"):
+            return None
+        return {**f, "rate": rate, "rates": [rate]}
+    return f
+
+
+def _around(flows: list[dict], fixed: list[dict], data: Data, free: set) -> Fit | None:
+    """flows refitted (the stocks in free) on the stocks' changes less what the fixed flows carry."""
+    if not data.usable or not free or _n_hidden(flows, data.ids):
+        return None
+    rest = copy.copy(data)
+    rest.dy = data.dy - data.change(fixed) if fixed else data.dy
+    fit = Fit(flows, rest, set(free))
+    data.fits = rest.fits
+    return fit if fit.ok else None
+
+
+def enforce_sides(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: list[str]) -> list[dict]:
+    """Declared only. Each side declared "input" gets exactly 1 x one measured input (the one whose fixed
+    flow leaves the best-pricing refit of the rest), and loses every other flow reading an input (on a side
+    that declares only inputs, every other flow); the input's terms come off the side's other flows. Then
+    every declared side keeps at most as many outside flows as it declares: the excess of summable rates
+    is merged into one, the rest dropped smallest first. The touched stocks' other flows are refitted
+    around the fixed inflows, which are never refitted or rescaled."""
+    if not b.declared or not (b.fixed or b.limit):
+        return flows
+    inputs = set(data.inputs)
+    names = [n for n in data.inputs if n not in data.ids]
+    flows = copy.deepcopy(flows)
+    touched: set = set()
+    fixed: list[dict] = []
+    for s, n in sorted(b.fixed.items()):
+        if s not in data.ids or not names:
+            continue
+        only = b.limit.get((s, "in"), 0) == n
+        own = "measured" in b.original.get(s, {}).get("in", [])
+        e = ends(flows, data.ids)
+        hint = [x for f in flows if f.get("from") is None and f.get("to") == s for x in sorted(_rate_stocks(f)) if x in names]
+        gone = [i for i, f in enumerate(flows) if (only and (s, "in") in e[i])
+                or (not own and f.get("from") is None and f.get("to") == s and kind_of(f, inputs) == "measured")]
+        if gone:
+            log.append(f"{len(gone)} outside inflow(s) of {s} set apart for its declared input")
+        flows = [f for i, f in enumerate(flows) if i not in gone]
+        touched.add(s)
+        for _ in range(n):
+            best = None
+            for name in [x for x in names if not any(g["to"] == s and g["rate"]["stock"] == x for g in fixed)]:
+                f = _input_flow(s, name)
+                cand = [g for g in (_without(h, name) if h.get("from") is None and h.get("to") == s else h for h in flows) if g is not None]
+                fit = _around(cand, fixed + [f], data, {s})
+                pr = price(fit, data, b) if fit is not None else float("inf")
+                key = (pr, hint.index(name) if name in hint else len(hint), names.index(name))
+                if best is None or key < best[0]:
+                    best = (key, f, cand)
+            if best is None:
+                break
+            fixed.append(best[1])
+            flows = best[2]
+            log.append(f"the declared input inflow of {s} fixed at exactly 1 x {best[1]['rate']['stock']}")
+    for (s, side), n in sorted(b.limit.items()):
+        if s not in data.ids:
+            continue
+        allowed = n - (sum(1 for g in fixed if g["to"] == s) if side == "in" else 0)
+        on = [i for i, es in enumerate(ends(flows, data.ids)) if (s, side) in es]
+        if len(on) <= allowed:
+            continue
+        direct = [i for i in on if _summable(flows[i]) and (flows[i].get("to") if side == "in" else flows[i].get("from")) == s]
+        if len(direct) >= 2 and allowed >= 1:
+            one = _sum_rates([flows[i] for i in direct])
+            flows = [f for i, f in enumerate(flows) if i not in direct[1:]]
+            flows[direct[0]] = one
+            log.append(f"{len(direct)} outside {'inflows to' if side == 'in' else 'outflows from'} {s} merged into one")
+            on = [i for i, es in enumerate(ends(flows, data.ids)) if (s, side) in es]
+        while len(on) > max(allowed, 0):
+            i = min(on, key=lambda j: float(np.abs(data.carried(flows[j])).mean()) if not _n_hidden([flows[j]], data.ids) else 0.0)
+            log.append(f"dropped {flows[i].get('from') or 'outside'} -> {flows[i].get('to') or 'outside'} "
+                       f"(one outside flow per declared {'inflow' if side == 'in' else 'outflow'} of {s})")
+            flows = [f for j, f in enumerate(flows) if j != i]
+            on = [j for j, es in enumerate(ends(flows, data.ids)) if (s, side) in es]
+        touched.add(s)
+    if touched:
+        fit = _around(flows, fixed, data, touched)
+        if fit is not None and not fit.negative:
+            flows = fit.flows
+    return flows + fixed
+
+
+_apply_sides = apply
+
+
+def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final: bool = True, **kw) -> dict:
+    """The hook (as before), then enforce_sides: an "input" side's flow exactly 1 x its input, at most one
+    outside flow per declared flow; what it did is added to result["boundary"]["changed"] (final) or
+    result["boundary_guard"]."""
+    out = _apply_sides(result, stocks, run, opts, final, **kw)
+    if not isinstance(out, dict) or out.get("flows") is None:
+        return out
+    b = Boundary(run)
+    if not b.declared or not (b.fixed or b.limit):
+        return out
+    data = kw.get("data") or Data(stocks, run, opts or {})
+    log: list[str] = []
+    out = {**out, "flows": enforce_sides(out["flows"], stocks, b, data, log)}
+    if log and final:
+        out["boundary"] = {**(out.get("boundary") or {}), "changed": list((out.get("boundary") or {}).get("changed") or []) + log}
+    elif log:
+        out["boundary_guard"] = list(out.get("boundary_guard") or []) + log
     return out

@@ -358,4 +358,34 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
            "gap_closed": bool(solves) and all(r["status"] == "Optimal" for r in solves),
            "candidates": {"terms": len(terms), "min_flows": len(mins), "columns": len(cols)}, "sample": int(len(K)), "counts": st.counts, "note": note,
            "level_rows": [st.ids[i] for i in sorted(st.level_rows)]}
-    return {"flows": flows, "milp": rep}
+    return {"flows": fixed_inputs(flows, run, (opts.get("inputs") or {}).keys()), "milp": rep}
+
+
+def fixed_inputs(flows: list[dict], run: dict, inputs) -> list[dict]:
+    """(2026-10-21, the user) A declared "input" inflow IS the measured series: the inflow into such a stock
+    that reads a measured input is set at exactly 1 x it (no constant, never rescaled); on a side that
+    declares only inputs, the stock's other outside inflows are dropped. The other numbers are not refitted
+    (this strategy's search reads the side as "measured")."""
+    if not run.get("boundary_declared"):
+        return flows
+    inputs = set(inputs or ())
+    flows = [dict(f) for f in flows]
+
+    def reads(f: dict) -> list:
+        r = f.get("rate") or {}
+        t = [r.get("stock")] if r.get("form") == "proportional" else [x.get("stock") for x in r.get("terms") or []]
+        return [x for x in t if x in inputs]
+
+    for s, e in sorted((run.get("boundary") or {}).items()):
+        kinds = list(e.get("in") or [])
+        into = [i for i, f in enumerate(flows) if f.get("from") is None and f.get("to") == s and not f.get("byTime")]
+        fed = [i for i in into if reads(flows[i])]
+        if "input" not in kinds or not fed:
+            continue
+        name = reads(flows[fed[0]])[0]
+        rate = {"form": "proportional", "stock": name, "k": 1.0}
+        flows[fed[0]] = {**{k: v for k, v in flows[fed[0]].items() if k in ("from", "to", "name", "id")},
+                         "ratio": 1, "rate": rate, "rates": [rate], "input": name}
+        drop = [i for i in into if i != fed[0]] if all(k == "input" for k in kinds) else []
+        flows = [f for i, f in enumerate(flows) if i not in drop]
+    return flows

@@ -55,7 +55,8 @@ class Boundary:
     def __init__(self, run: dict):
         self.declared = bool(run.get("boundary_declared"))
         raw = run.get("boundary") or {}
-        self.sides = {s: {side: set(e.get(side) or []) for side in ("in", "out")} for s, e in raw.items()}
+        # (2026-10-21) an "input" side is searched as "measured"; __init__.fixed_inputs sets it at 1 x the input
+        self.sides = {s: {side: {"measured" if k == "input" else k for k in e.get(side) or []} for side in ("in", "out")} for s, e in raw.items()}
 
     def kinds(self, stock: str, side: str, final: bool) -> set:
         if self.declared:
