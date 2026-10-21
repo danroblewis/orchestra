@@ -35,7 +35,8 @@ from scipy.sparse import coo_matrix
 
 CLAIM_PRICE = 2.0     # an outside flow where no boundary is declared pays this many log T beyond its numbers (as matrix's boundary.py)
 INF = highspy.kHighsInf
-HEURISTICS = 0.3      # HiGHS's share of MIP effort on primal heuristics (default 0.05): good incumbents early, as the bound is weak
+NODES = 100           # branch-and-bound nodes per solve (deterministic, unlike the time limit; the root alone often uses the time on a slow machine)
+HEURISTICS = 0.05     # HiGHS's share of MIP effort on primal heuristics (its default; more stalls at the root)
 
 
 @dataclass
@@ -137,6 +138,8 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     h.setOptionValue("time_limit", float(time_limit))
     h.setOptionValue("mip_rel_gap", float(gap))
     h.setOptionValue("mip_heuristic_effort", HEURISTICS)
+    if NODES:
+        h.setOptionValue("mip_max_nodes", int(NODES))
     h.passModel(lp)
     if start:                                                   # a feasible start: the last solve's columns that are offered again
         x0 = np.zeros(ncol)
@@ -159,6 +162,6 @@ def solve(ids: list[str], dy: np.ndarray, cols: list[Column], K: np.ndarray, sca
     status = h.modelStatusToString(h.getModelStatus())
     x = np.array(h.getSolution().col_value) if info.primal_solution_status else None
     rep = {"status": status, "seconds": round(took, 3), "gap": float(info.mip_gap), "objective": float(info.objective_function_value),
-           "bound": float(info.mip_dual_bound), "columns": int(ncol), "rows": int(r), "binaries": int(integ.sum()), "found": x is not None}
+           "bound": float(info.mip_dual_bound), "nodes": int(info.mip_node_count), "columns": int(ncol), "rows": int(r), "binaries": int(integ.sum()), "found": x is not None}
     chosen = [] if x is None else [(c, float(x[j])) for j, c in enumerate(cols) if x[o_z + j] > 0.5 and x[j] != 0]
     return {"chosen": chosen, "report": rep}

@@ -26,9 +26,9 @@ __all__ = ["identify"]
 
 EXACT = 10.0          # a structure leaving every stock's mean misfit within this many floors explains the data exactly
 SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
-SAMPLE = 300          # steps the program reads (evenly spaced over the run when it is longer)
+SAMPLE = 150          # steps the program reads (evenly spaced over the run when it is longer)
 PASSES = 4            # program solves at most (each re-estimates the noise scales and offers MINs on the flows found)
-TIME_LIMIT = 20.0     # seconds of HiGHS per solve
+TIME_LIMIT = 40.0     # seconds of HiGHS per solve
 GAP = 1e-4            # relative MIP gap HiGHS stops at
 DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
 FLOOR = 1e-6          # a stock's noise scale is at least this fraction of its typical level and change
