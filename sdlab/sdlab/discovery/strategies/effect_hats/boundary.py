@@ -444,7 +444,9 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
     if B in data.ids and A is None:
         for j, g in enumerate(flows):
             S = g.get("from")
-            if j == i or S not in data.ids or S in final or g.get("to") is not None or g.get("inflow") or not _same_unit(stocks, S, B):
+            # (this copy) S == B is no move: B's own drain "moved" into B would only delete it (305 counts-long
+            # lost retries -> outside that way)
+            if j == i or S == B or S not in data.ids or S in final or g.get("to") is not None or g.get("inflow") or not _same_unit(stocks, S, B):
                 continue
             moved = copy.deepcopy(flows)
             moved[j]["to"] = B

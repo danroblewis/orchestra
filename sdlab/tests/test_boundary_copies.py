@@ -85,3 +85,13 @@ def test_an_estimated_side_may_read_a_measured_input(name):
     measured_only = {"boundary": {"A": {"in": ["measured"], "out": []}}, "boundary_declared": True}
     const = [_flow(None, "A", {"form": "constant", "value": 1.0})]
     assert bd.violations(const, ["A", "B"], bd.Boundary(measured_only), {"u"}) == [0]
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_no_self_move_among_the_alternatives(name):
+    # (these copies) B's own drain is never "moved" into B: that would only delete it (305 counts-long)
+    bd = importlib.import_module(f"sdlab.discovery.strategies.{name}.boundary")
+    run = {**_chain(), **DECLARED}
+    flows = [_flow(None, "B", {"form": "constant", "value": 1.0}), _flow("B", None, {"form": "proportional", "stock": "B", "k": 0.2})]
+    alts = bd.alternatives(flows, 0, STOCKS, bd.Boundary(run), bd.Data(STOCKS, run, {}))
+    assert not any(f.get("from") == f.get("to") for _, cand in alts for f in cand)

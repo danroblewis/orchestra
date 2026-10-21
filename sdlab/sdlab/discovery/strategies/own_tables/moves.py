@@ -90,12 +90,16 @@ def candidates(flows, ids, t, prev, dy, floor_rss, o, inp=None) -> list[tuple[li
         # sign, so both rows are fitted together
         drops = [([g for g in rest if not (_outside(g, src) and set(_reads(g)) <= {src})], "those reading only itself"),
                  ([g for g in rest if not _outside(g, src)], "all")]
+        # (the declared boundary) a source with no outside flows at all (a boundary that declares none on
+        # it) has nothing to drop, and its row says the same curve with the opposite sign as it stands
+        if not any(_outside(g, src) for g in rest):
+            drops.append((list(rest), "none to drop"))
         for rest_d, what in drops:
-            if len(rest_d) == len(rest) or (what == "all" and len(rest_d) == len(drops[0][0])):
+            if what != "none to drop" and (len(rest_d) == len(rest) or (what == "all" and len(rest_d) == len(drops[0][0]))):
                 continue
             y_i = dy[i] - onestep.changes(rest_d, ids, t, prev, mi)[i]
             fits.append((rest_d, np.concatenate([y, -y_i]), np.concatenate([x, x]), np.hstack([Z, np.zeros_like(Z)]),
-                         name + f", {src}'s outside flows dropped ({what})"))
+                         name + (f", fitted on {src}'s row too" if what == "none to drop" else f", {src}'s outside flows dropped ({what})")))
         for base, yy, xx, ZZ, nm in fits:
             mine = _fit(yy, xx, ZZ, floor_rss[j], o, src, dst)
             if mine is not None:

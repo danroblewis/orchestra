@@ -219,15 +219,15 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     # the declared boundary (boundary.py, docs/research/declared-boundary.md): a row's own table is an
     # estimated flow to or from outside, so it is fitted only on a row whose stock may have one, and a
     # rewrite whose flows leave the boundary (a drain beside an inflow table where only the inflow is
-    # declared, a link from outside) is not offered
+    # declared, a link from outside, a move's destination constant where only an outflow is) is offered
+    # with the guard applied (each such flow made its best-priced alternative)
     bnd = boundary.Boundary(run)
-    ok = lambda fl: boundary.inside(fl, stocks, run, opts)  # noqa: E731
+    inside = lambda fl: boundary.keep_inside(fl, stocks, run, opts)  # noqa: E731
     # moves between measured stocks first (moves.py), then each row's flows to and from outside
     if o["moves"]:
         best = None
         for fl, name in moves.candidates(flows, ids, t, prev, dy, floor_rss, o, inp):
-            if not ok(fl):
-                continue
+            fl = inside(fl)
             sc = onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi)
             if sc < score - o["margin"] * log_t and (best is None or sc < best[1]):
                 best = (fl, sc, name)
@@ -239,7 +239,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             continue
         # the readings come preferred first; a later one is taken only if it prices clearly better
         scored = [(fl, onestep.bic(fl, ids, t, prev, dy, floor_rss, skip, mi), name)
-                  for fl, name in candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o, inp) if ok(fl)]
+                  for fl, name in ((inside(fl), name) for fl, name in candidates(flows, ids, t, prev, dy, i, float(floor_rss[i]), o, inp))]
         best = None
         if scored:
             low = min(sc for _, sc, _ in scored)
