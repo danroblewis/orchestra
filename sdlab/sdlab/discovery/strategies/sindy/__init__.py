@@ -29,22 +29,23 @@ import os
 
 import numpy as np
 
-from ..flows import merge_by_label
-from ..identify import identify as matrix_identify
-from ..identify import judge
-from ..matrix import configurations
-from ..optional import require
-from ..regression import piece_values, row_sums
+from ...flows import merge_by_label
+from ...identify import identify as matrix_identify
+from ...identify import judge
+from ...matrix import configurations
+from ...optional import require
+from ...regression import piece_values, row_sums
 
 try:                                     # optional: uv sync --extra research (pysindy, cvxpy)
-    from ..conserve_joint import conserve
-    from ..library import build, era_of, factors
-    from ..sparse import inflow_series, plain_sindy, select
-    from ..term_flows import read
+    from ...conserve_joint import conserve
+    from ...library import build, era_of, factors
+    from ...sparse import inflow_series, plain_sindy, select
+    from ...term_flows import read
 except ImportError:                      # identify() says what is missing
     pass
-from ..changes import pelt
-from ..regression import fit_subset
+from ...changes import pelt
+from ...regression import fit_subset
+from . import boundary
 from scipy.stats import chi2 as _chi2
 
 LEVELS = ("plain", "levels", "products", "constrained", "uses", "full", "combo")
@@ -189,18 +190,28 @@ def identify_one(stocks: list[dict], run: dict, o: dict) -> dict:
             fs = factors(term)
             return all(j == s or not group[j] or not group[s] or group[j] == group[s] for j in fs) and not (s in final and s in fs)
 
+        # the declared boundary (boundary.py): a row reads a measured input only on a measured side, a
+        # level of another unit (or a product with one) only on an estimate side, and has an outside
+        # inflow (constant or changing) only on an estimate side
+        bnd = boundary.Boundary(run)
+
+        def inside(term, s):
+            return bnd.links_ok(ids[s]) or all(unit[j] == unit[s] for j in factors(term))
+
         level_of = {term[0]: f for f, term in enumerate(terms) if len(term) == 1}
         simpler = {f: [level_of[j] for j in dict.fromkeys(term)] for f, term in enumerate(terms) if len(term) == 2}
         rows = []
         for s in range(S):
-            base = [f for f, term in enumerate(terms) if era_of(term) is None and ok(term, s)] + ins
+            base = [f for f, term in enumerate(terms) if era_of(term) is None and ok(term, s) and inside(term, s)] \
+                + (ins if bnd.inputs_ok(ids[s]) else [])
             simple = [f for f in base if f in ins or len(terms[f]) == 1]
-            r = fit_row(dy[s], X, base, o["inflow"], simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)
+            inflow = o["inflow"] if bnd.pieces_ok(ids[s]) else "none"
+            r = fit_row(dy[s], X, base, inflow, simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)
             if L > 1:
                 js = {factors(terms[f])[0] for f in r["terms"] if f < nT and len(factors(terms[f])) == 1} | ({s} if s not in final else set())
-                extra = [f for f, term in enumerate(terms) if era_of(term) is not None and term[0] in js and ok(term, s)]
+                extra = [f for f, term in enumerate(terms) if era_of(term) is not None and term[0] in js and ok(term, s) and inside(term, s)]
                 if extra:
-                    r = fit_row(dy[s], X, base + extra, o["inflow"], simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)
+                    r = fit_row(dy[s], X, base + extra, inflow, simple=simple, gamma=o.get("gamma", 1.0), pelt_mult=o.get("pelt_mult", 1.0), simpler=simpler)
             rows.append(r)
 
     note = None
@@ -291,9 +302,13 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = matrix_identify(stocks, run, opts)
         best = (r, judge(r["flows"], stocks, run, inputs=opts.get("inputs")), "matrix: " + r["chosen"])
         tried = [{"name": best[2], "error": best[1]}]
+    declared = boundary.Boundary(run).declared
     for v in variants(level, has_eras):
         r = identify_one(stocks, run, {**opts, **v})
-        e = judge(r["flows"], stocks, run, inputs=opts.get("inputs")) if level in ("full", "combo") else 0.0
+        # the declared boundary: the judge sees the candidate guarded (boundary.py); its own model is
+        # kept, so the measurement-error refit decides its numbers and the final guard its structure
+        g = boundary.apply(r, stocks, run, opts, final=False) if declared and r.get("flows") else r
+        e = judge(g["flows"], stocks, run, inputs=opts.get("inputs")) if level in ("full", "combo") else 0.0
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
             best = (r, e, v["name"])
@@ -304,8 +319,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (the _eiv_ code below)."""
-    return _eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    measurement error (the _eiv_ code below), then kept inside the announced boundary (boundary.py:
+    the guard and the moves where one is declared, each outside flow priced as a boundary claim where
+    none is; the rows are fitted inside it, identify_one)."""
+    return boundary.apply(_eiv_apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)
 
 
 # Errors in variables (docs/research/eiv-refit.md): a copy (as in held_out.py at e8edf28) of the strategies' eiv.py, its names prefixed
@@ -318,7 +335,7 @@ import copy as _eiv_copy  # noqa: E402
 import numpy as _eiv_np  # noqa: E402
 from scipy.stats import norm as _eiv_norm  # noqa: E402
 
-from ..simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array, starts_for as _eiv_starts_for  # noqa: E402
+from ...simulate import Model as _EivModel, behaviour_error as _eiv_behaviour_error, levels_array as _eiv_levels_array, starts_for as _eiv_starts_for  # noqa: E402
 
 _EIV_ALPHA = 1e-3          # the white-noise test's level (one-sided, over the stocks)
 _EIV_ITERATIONS = 3        # Gauss-Newton steps of each fit (the rates are linear in their numbers, so one is

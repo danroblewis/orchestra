@@ -51,3 +51,17 @@ sd-emergency.
 - Noise-weighted rows; table-shaped effects from binned residuals; the joint conservation fit alone
   into the main line.
 
+
+## The declared boundary (2026-10-20)
+
+The strategy is now a package (`sdlab/discovery/strategies/sindy/__init__.py`, the former `sindy.py`
+unchanged but for its imports, plus `sindy/boundary.py`, a copy of `matrix/boundary.py` at 723f72c,
+HIDDEN_PRICE 0, with `kept_sides` and `GUARD_FITS` as in odefit's copy). Its rows are fitted inside the
+announced boundary (docs/research/declared-boundary.md): a measured input's column only on a stock with
+a `measured` side, a level of another unit (or a product with one) only on an `estimate` side, an
+outside inflow (constant or changing) only on an `estimate` side. The judge sees each candidate
+guarded; the candidate's own model goes to the errors-in-variables refit, and the answer through
+`boundary.apply`. Conservation is the shared `conserve_joint` (pinned), so a source with no declared
+outflow is not tied in the fit: the guard makes its leftover drain a move or drops it.
+tests/test_strategy_sindy.py's "products" ablation is read before the boundary step (identify prices
+its spurious link into b as an unearned boundary claim and drops it).

@@ -18,7 +18,7 @@ pytest.importorskip("pysindy", reason="optional: uv sync --extra research")
 pytest.importorskip("cvxpy", reason="optional: uv sync --extra research")
 
 from sdlab.discovery import identify as matrix  # noqa: E402
-from sdlab.discovery.strategies.sindy import identify  # noqa: E402
+from sdlab.discovery.strategies.sindy import _identify, identify  # noqa: E402
 
 
 def find(r, a, b):
@@ -93,7 +93,9 @@ def test_conservation_across_rows_takes_a_move_from_the_row_that_measures_it_bes
     # method trusts the receiver and sets a's drain to b's reading.
     d = generate(**NOISY_RECEIVER)
     r = identify(d["stocks"], d["run"], {"sindy": "constrained", "pelt_mult": 2})
-    free = identify(d["stocks"], d["run"], {"sindy": "products", "pelt_mult": 2})
+    # the ablation as its search leaves it (identify's boundary step prices that link as a boundary
+    # claim not earned, and drops it)
+    free = _identify(d["stocks"], d["run"], {"sindy": "products", "pelt_mult": 2})
     m = matrix(d["stocks"], d["run"])
     assert r["conservation"]["kept"] == ["a"]
     assert abs(k(find(r, "a", "b")[0]) - 0.3) <= 0.005                # joint: 0.2997
