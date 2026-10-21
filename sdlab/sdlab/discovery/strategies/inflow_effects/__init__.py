@@ -50,7 +50,7 @@ from ...addition import addition_test
 from ...identify import identify as matrix_identify
 from ...matrix import injected
 from ...simulate import behaviour_error
-from . import boundary, gate, search
+from . import boundary, gate, pairing, search
 from .inputs import rows as input_rows
 from .price import price, prune
 from .pieces import resegment
@@ -99,6 +99,11 @@ def _effect_hats(stocks: list[dict], run: dict, opts: dict | None = None) -> dic
     keep = opts.pop("candidates", False)
     o = {**DEFAULTS, **{k: opts.pop(k) for k in list(opts) if k in DEFAULTS}}
     base = matrix_identify(stocks, run, {**opts, "candidates": keep})
+    if base.get("flows"):
+        # (pairing.py) the pinned matrix reads the offered MIN series and every input in every row: its two
+        # outside terms on the series made the move the offer found, and an input read where the declared
+        # boundary has no side dropped, before the guard pairs outside flows one at a time (306 counts)
+        base = {**base, "flows": pairing.unpaired_inputs(pairing.pair(base["flows"], opts), boundary.Boundary(run), opts)}
     base_e = min((x["error"] for x in base.get("tried") or []), default=float("inf"))
     # the declared boundary (boundary.py, docs/research/declared-boundary.md): the base kept inside it
     # (the guard: an outside flow the case does not declare becomes its best-priced alternative), and

@@ -15,7 +15,7 @@ from ...identify import VARIANTS, judge
 from ._vendored.matrix import PLAIN, identify_one
 from .exact import make_scan, ops, scale_of
 from .refit import refit
-from . import boundary
+from . import boundary, pairing
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -36,6 +36,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True}, ops_)
         if r.get("flows") is not None and r.get("fit"):
             r = refit(stocks, r, opts, ops_, b)
+        if r.get("flows"):
+            # (pairing.py) the offered MIN series' two outside terms made the move the offer found, before
+            # the guard pairs outside flows one at a time (306 counts-long: queue -> retries took the MIN)
+            r = {**r, "flows": pairing.pair(r["flows"], opts)}
         own = r
         if b.declared and r.get("flows"):
             # the guard: the judge sees each candidate inside the boundary; the chosen candidate's own
