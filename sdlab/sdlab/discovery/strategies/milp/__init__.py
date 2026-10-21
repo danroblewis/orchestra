@@ -409,12 +409,14 @@ _identify_program = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  # noqa: F811
-    from . import oefit, quantized
+    from . import hinge, oefit, quantized
 
     known, notes = quantized.find(stocks, run, opts)          # whole-unit controllers (k8s-308): their rules, from the data
     result = _identify_program(stocks, run, opts, known)
     if known:
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
+    flows, gaps = hinge.refine(result.get("flows") or [], stocks, run, opts, skip=known)   # floored gap flows (k8s-309)
+    result = {**result, "flows": flows, "gaps": gaps}
     result = oefit.refit(result, stocks, run, opts or {})
     if known:                                                  # the output-error refit does not run the rules' forms
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
