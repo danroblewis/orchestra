@@ -28,6 +28,7 @@ import math
 import numpy as np
 
 from ...matrix import configurations, injected
+from . import boundary
 from ._vendored.censored import identify as censored
 from ._vendored.censored import judge
 from ._vendored.censored import onestep
@@ -61,7 +62,12 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     floor = T * ((1e-4 * dy.std(axis=1)) ** 2 + 1e-8)
     res = dy - onestep.changes(flows0, ids, t, prev, mi)
     scale = np.sqrt((res ** 2).mean(axis=1)) + 1e-4 * dy.std(axis=1) + 1e-9
-    flows, taken = search(flows0, ctx, floor, spans, o["margin"], o["flow_price"], o["budget"], scale)
+    # the search stays inside the announced boundary (boundary.py): a step that puts an outside flow on
+    # an undeclared side, or of an undeclared kind, is not offered (no restriction when none is declared)
+    bd = boundary.Boundary(run)
+    in_set = set((opts.get("inputs") or {}).keys())
+    inside = (lambda fl: not boundary.violations(fl, ids, bd, in_set)) if bd.declared else None
+    flows, taken = search(flows0, ctx, floor, spans, o["margin"], o["flow_price"], o["budget"], scale, inside=inside)
     if not taken:
         return {**r0, "schedules": []}
     inputs = mi and mi["values"]
@@ -76,7 +82,9 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py,
+    docs/research/declared-boundary.md: the guard and moves where one is declared, each outside flow
+    priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

@@ -505,9 +505,11 @@ def _key(flows: list[dict]) -> tuple:
     return tuple(sorted(out))
 
 
-def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, width=4, tie=0.25):
+def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, width=4, tie=0.25, inside=None):
     """A beam search: the `width` best models (by BIC) are each offered every step; the best
-    `width` of them and their children go on, until a round finds nothing better than the best."""
+    `width` of them and their children go on, until a round finds nothing better than the best.
+    inside: a model's flows -> whether it stays inside the announced boundary (boundary.py); a step
+    that leaves it is not offered."""
     score = bic(flows, ctx, floor, flow_price)
     first = refit(flows, ctx, scale)
     s1 = bic(first, ctx, floor, flow_price)
@@ -530,6 +532,8 @@ def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, w
                 if k in seen:
                     continue
                 seen.add(k)
+                if inside is not None and not inside(cand):
+                    continue
                 c = refit(cand, ctx, scale)
                 sc = bic(c, ctx, floor, flow_price)
                 if sc < sc0 - (margin * log_t if adds else tie * log_t):
@@ -553,7 +557,8 @@ def beam(flows, ctx, floor, spans, margin, flow_price, deadline, scale, taken, w
 
 
 def search(flows: list[dict], ctx: Context, floor: np.ndarray, spans: list[dict] | None, margin: float = 2.0,
-           flow_price: float = 0.5, budget: float = 60.0, scale: np.ndarray | None = None, width: int = 4) -> tuple[list[dict], list[dict]]:
+           flow_price: float = 0.5, budget: float = 60.0, scale: np.ndarray | None = None, width: int = 4,
+           inside=None) -> tuple[list[dict], list[dict]]:
     """The model after the beam search from two starts (the given model, and the same with every
     pieced inflow as one constant, its cuts found again), the one with the lower BIC; and its steps."""
     began = time.perf_counter()
@@ -568,7 +573,7 @@ def search(flows: list[dict], ctx: Context, floor: np.ndarray, spans: list[dict]
         keys.add(key)
         taken = [{"step": name, "bic": None}] if name else []
         left = budget - (time.perf_counter() - began)
-        f, sc = beam(start, ctx, floor, spans, margin, flow_price, time.perf_counter() + left / (len(starts) - k), scale, taken, width)
+        f, sc = beam(start, ctx, floor, spans, margin, flow_price, time.perf_counter() + left / (len(starts) - k), scale, taken, width, inside=inside)
         runs.append((sc, f, taken))
     sc, f, taken = min(runs, key=lambda x: x[0])
     if sc >= s0 or not [x for x in taken if x["bic"] is not None]:
