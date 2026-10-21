@@ -201,3 +201,22 @@ realistic runs mostly time out.
 - The exact-tie key uses the page order (nearer, then earlier stocks) only to break ties the data
   cannot (038 none: B1 fits A1 and A2 equally). A conservation-aware key (prefer the source whose
   own row loses what the receiver gains) would not need the order.
+
+## The declared boundary (2026-10-20)
+
+common_cause keeps outside flows to where the case declares them (docs/research/declared-boundary.md;
+`common_cause/boundary.py` is a copy of `matrix/boundary.py` at 723f72c, HIDDEN_PRICE 0, with `kept_sides`
+and `GUARD_FITS`, as in odefit's copy):
+
+- rows reselected inside it (`rows.reselect(pieces_ok, exclude)`, as matrix's: an outside term only on
+  an `estimate` side, inputs only on a `measured` side, other-unit levels only on an `estimate` side);
+- shared change places offered only to rows that may have an outside term (`places.offer(pieces_ok)`);
+- sources with no estimated outflow tied from the start (`joint.decide(forced)`);
+- the judge sees every candidate guarded, and the chosen candidate's own model is kept for the
+  measurement-error refit (eiv.py: the guard's one-step least squares numbers cost the 303 meas-long
+  pass otherwise); the answer goes through `boundary.apply`.
+
+With no boundary declared, outside flows are boundary claims: on 038 none-long (identical twin chains,
+noise-free) the claim price makes `B1 -> outside` the move `B1 -> B2` (identical levels fit it exactly),
+so the noise-free collinearity tests (tests/test_ladder_common_cause.py) now announce the case's
+boundary as the ladder does; declared, 038 passes.

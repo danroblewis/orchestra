@@ -31,7 +31,11 @@ def ladder(case_id: str, variant: str, strategy: str) -> tuple[dict, dict]:
     model = casemod.truth_model(case, variant)
     d = data.load(case, variant)
     opts = {"eras": d["eras"] if len(d.get("eras") or []) > 1 else None}
-    r = load(strategy)(casemod.page_stocks(model), {"t": d["t"], "levels": d["levels"]}, opts)
+    run = {"t": d["t"], "levels": d["levels"]}
+    ann = casemod.announced(case)                 # the case's declared boundary, announced as the ladder does
+    if ann.get("boundary_declared"):
+        run.update(boundary=ann["boundary"], boundary_declared=True)
+    r = load(strategy)(casemod.page_stocks(model), run, opts)
     return r, score.equations(case, casemod.variant(case, variant)["noise"], model, r["flows"], d)
 
 

@@ -15,6 +15,7 @@ from ...identify import VARIANTS, judge
 from ._vendored.matrix import PLAIN, identify_one
 from .exact import make_scan, ops, scale_of
 from .refit import refit
+from . import boundary
 
 
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
@@ -28,16 +29,24 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     best, tried = None, []
     # exact: the floored fit, stepwise and PELT (exact.py), passed to the private copy of the matrix
     ops_ = ops(scale) if exact else PLAIN
+    b = boundary.Boundary(run)
     for v in opts.pop("variants", None) or VARIANTS:
         if v.get("split_eras") and not has_eras:
             continue
         r = identify_one(stocks, run, {**opts, **v, "keep_fit": True, "keep_rows": True, "input_columns": True}, ops_)
         if r.get("flows") is not None and r.get("fit"):
-            r = refit(stocks, r, opts, ops_)
+            r = refit(stocks, r, opts, ops_, b)
+        own = r
+        if b.declared and r.get("flows"):
+            # the guard: the judge sees each candidate inside the boundary; the chosen candidate's own
+            # model is returned, so the measurement-error refit (eiv.py) decides its numbers and the
+            # final guard (identify) its structure (the guard's one-step least squares numbers are
+            # biased by measurement error: 303 meas-long)
+            r = boundary.apply({k: v for k, v in r.items() if k not in ("fit", "ctx", "raw_rows")}, stocks, run, opts, final=False)
         e = judge(r["flows"], stocks, run, injections=opts.get("injections"), inputs=opts.get("inputs"))
         tried.append({"name": v["name"], "error": e})
         if best is None or e < best[1]:
-            best = (r, e, v["name"])
+            best = (own, e, v["name"])
     r = best[0]
     for k in ("fit", "ctx", "raw_rows"):
         r.pop(k, None)
@@ -47,7 +56,9 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py, a copy of e8edf28's)."""
+    measurement error (eiv.py, a copy of e8edf28's), then kept inside the announced boundary
+    (boundary.py: the guard and the moves where one is declared, each outside flow priced as a
+    boundary claim where none is; the rows, places and ties are searched inside it, refit.py)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

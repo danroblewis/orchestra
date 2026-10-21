@@ -311,7 +311,7 @@ class System:
         return {"beta": betas, "res": res, "gross": gross, "inflow": inflow, "nll": nll}
 
 
-def decide(system: System, log_t: float, trace: bool = False) -> dict:
+def decide(system: System, log_t: float, trace: bool = False, forced: set = frozenset()) -> dict:
     """Tie or free each source (in all its configurations at once), one change at a time while BIC
     on the counting likelihood improves, starting from every source free; every decision is made
     with changing rows' pieces found at the textbook price (System.fit, honest).
@@ -332,7 +332,10 @@ def decide(system: System, log_t: float, trace: bool = False) -> dict:
     changing row keeps the matrix's pieces when free, and gets pieces found with its drain held
     when tied."""
     cands = system.ties()
-    tied: set = set()
+    # (the declared boundary, boundary.py) forced: sources with no outflow to outside declared, tied
+    # from the start and never freed
+    tied: set = {a for a in cands if a in forced}
+    cands = [a for a in cands if a not in tied]
     free = system.fit(tied, honest=True)
     W = system.shared(free)
 

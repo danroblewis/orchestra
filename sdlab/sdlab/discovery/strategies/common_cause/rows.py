@@ -88,11 +88,15 @@ def white(e: np.ndarray, alpha: float = ALPHA) -> bool:
 
 
 def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
-             per_change: float = 2, alpha: float = ALPHA, fs=fit_subset) -> dict:
+             per_change: float = 2, alpha: float = ALPHA, fs=fit_subset, pieces_ok: bool = True, exclude: tuple = ()) -> dict:
     """The row as the matrix fitted it, or the levels chosen afresh with no outside inflow or a
     constant one. A row with pieces is replaced only by one whose residuals are white (nothing left
     for pieces to explain) and whose BIC, every change priced as a value and a place, is lower; a
-    row without pieces by one with a lower BIC."""
+    row without pieces by one with a lower BIC.
+
+    (the declared boundary, boundary.py; as matrix/earned_rows.reselect at 67f5b9e) pieces_ok: whether
+    the row may have an outside term at all (a constant or pieces); exclude: rows of prev it may not
+    read. A matrix row that breaks either is no incumbent: the best row inside them replaces it."""
     T = dy.shape[1]
     y = dy[s]
     group = {x["id"]: x.get("group") for x in stocks}
@@ -100,15 +104,21 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
     allowed = [j for j in range(len(ids)) if not (ids[s] in final and j == s)
                and (j == s or not group.get(ids[j]) or not group.get(ids[s]) or group[ids[j]] == group[ids[s]])]
     allowed += list(range(len(ids), prev.shape[0]))          # measured inputs, after the levels
+    allowed = [j for j in allowed if j not in exclude]
     pieces = bool(row["cuts"]) and len(row["cuts"]) > 2
-    best = {"row": row, "bic": _bic(T, row["rss"], len(row["set"]) + inflow_params(row["cuts"], per_change)), "name": "matrix"}
+    inside = (pieces_ok or not row["cuts"]) and not any(row["col"][q][0] in exclude for q in row["set"])
+    best = {"row": row, "bic": _bic(T, row["rss"], len(row["set"]) + inflow_params(row["cuts"], per_change)) if inside else math.inf,
+            "name": "matrix"}
     X, col = columns(s, ids, prev, cfg, L, allowed)
     if not len(col):
-        return best
+        if inside:
+            return best
+        return {"row": {**row, "X": np.zeros((0, T)), "col": [], "set": [], "cuts": None, "rss": float(y @ y), "p": 0},
+                "bic": _bic(T, float(y @ y), 0), "name": "none"}
     # with pieces, the levels are chosen beside them (so that changes in the inflow cannot hide in
     # levels that happen to follow them), and then the pieces are dropped
     start = backward(y, X, row["cuts"], list(range(len(col))), inflow_params(row["cuts"], per_change), fs)[0] if pieces else None
-    for name, cuts in (("none", None), ("constant", [0, T])):
+    for name, cuts in (("none", None), ("constant", [0, T])) if pieces_ok else (("none", None),):
         if pieces:
             chosen = start
             f = fs(row_sums(y, X, cuts), chosen)
@@ -117,7 +127,7 @@ def reselect(row: dict, s: int, ids: list[str], stocks: list[dict], prev: np.nda
             chosen, rss, b = backward(y, X, cuts, list(range(len(col))), inflow_params(cuts, per_change), fs)
         if b >= best["bic"] - 1e-9:
             continue
-        if pieces:
+        if pieces and inside:
             e = y - (f.beta @ X[chosen] if chosen else 0.0)
             if not white(e - (e.mean() if cuts else 0.0), alpha):
                 continue

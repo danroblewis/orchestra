@@ -222,7 +222,7 @@ def _left(rows: list[dict], W: list[int], dy: np.ndarray) -> dict:
 
 def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray, dy: np.ndarray, cfg: np.ndarray, L: int,
           pelt, min_piece: int = 5, per_change: float = 2, trace: bool = False, rounds: int = 3, alpha: float = 0.01, re_cut: bool = True,
-          fs=fit_subset) -> list[dict]:
+          fs=fit_subset, pieces_ok: list[bool] | None = None) -> list[dict]:
     """The rows that show changes of their own (in what their own level leaves, at the textbook
     price) are the witnesses. Each row is offered pieces at the places the *other* witnesses show
     jointly (a place paid once by them, a value per witness), at a value each: a place this row
@@ -256,7 +256,7 @@ def offer(rows: list[dict], ids: list[str], stocks: list[dict], prev: np.ndarray
         changed = False
         for s, row in enumerate(rows):
             others = tuple(k for k in K if k != s)
-            if not others:
+            if not others or (pieces_ok is not None and not pieces_ok[s]):     # (the declared boundary) no outside term
                 continue
             cuts = places_of(others)
             if len(cuts) <= 2:

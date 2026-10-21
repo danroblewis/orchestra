@@ -10,11 +10,16 @@ from .exact import tiebreak
 from .joint import System, decide
 from .places import offer
 from .rows import reselect
+from . import boundary
 
 ALPHA = 0.001       # the whiteness test's level (one test per row and candidate: 1% rejects true rows too often)
 
 
-def refit(stocks: list[dict], r: dict, opts: dict, ops: Ops) -> dict:
+def refit(stocks: list[dict], r: dict, opts: dict, ops: Ops, b: boundary.Boundary | None = None) -> dict:
+    """(the declared boundary b, boundary.py) rows reselected inside it (an outside term only on an
+    estimate side, inputs only on a measured side, other-unit levels only on an estimate side), shared
+    places offered only to rows that may have an outside term, sources with no estimated outflow tied."""
+    b = b or boundary.Boundary({})
     fit, ctx = r.get("fit"), r.get("ctx")
     if not fit or not ctx:
         return r
@@ -29,14 +34,22 @@ def refit(stocks: list[dict], r: dict, opts: dict, ops: Ops) -> dict:
     inp = list(ctx.get("inputs") or [])
     names = ids + inp
     lev = np.vstack([fit["prev"]] + [ctx["columns"][ctx["names"].index(k)][None, :] for k in inp]) if inp else fit["prev"]
-    if opts.get("reselect", True):
-        rows = [reselect(row, s, ids, stocks, lev, fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", ALPHA), fs)["row"] for s, row in enumerate(rows)]
+    def exclude(s: int) -> tuple:
+        out = [] if b.inputs_ok(ids[s]) else list(range(len(ids), len(names)))
+        if not b.links_ok(ids[s]):
+            out += [j for j in range(len(ids)) if unit[ids[j]] != unit[ids[s]]]
+        return tuple(out)
+
+    if opts.get("reselect", True) or b.declared:
+        rows = [reselect(row, s, ids, stocks, lev, fit["dy"], fit["cfg"], L, opts.get("change_params", 2), opts.get("alpha", ALPHA), fs,
+                         pieces_ok=b.pieces_ok(ids[s]), exclude=exclude(s))["row"] for s, row in enumerate(rows)]
     if opts.get("shared_places", True):
-        rows = offer(rows, ids, stocks, lev, fit["dy"], fit["cfg"], L, pelt, mp, opts.get("change_params", 2), opts.get("trace_places", False), alpha=opts.get("alpha", ALPHA), re_cut=opts.get("honest", True), fs=fs)
+        rows = offer(rows, ids, stocks, lev, fit["dy"], fit["cfg"], L, pelt, mp, opts.get("change_params", 2), opts.get("trace_places", False), alpha=opts.get("alpha", ALPHA), re_cut=opts.get("honest", True), fs=fs,
+                     pieces_ok=[b.pieces_ok(i) for i in ids])
     if opts.get("tiebreak", True):
         rows = [tiebreak(row, s, fit["dy"][s], fs) for s, row in enumerate(rows)]
     system = System(rows, ids, unit, final, fit["dy"], fit["cfg"], L, opts.get("counting", True), mp, opts.get("scale", "unit"), pelt)
-    best = decide(system, ctx["log_t"], trace=opts.get("trace_joint", False))
+    best = decide(system, ctx["log_t"], trace=opts.get("trace_joint", False), forced={a for a in range(len(ids)) if b.must_tie(ids[a])})
     at = fit["at"]
     new = []
     for s, row in enumerate(rows):
