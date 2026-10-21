@@ -98,7 +98,11 @@ def main_line(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
                 pass
         for k in ("fit", "ctx", "raw_rows"):
             r.pop(k, None)
+        own = r
         if b.declared and r.get("flows"):
+            # (this copy) the judge sees the candidate guarded; the candidate's own model is kept, so
+            # the measurement-error refit (eiv.py) decides its numbers and the final guard its structure
+            # (the guard's one-step least squares numbers are biased by measurement error: 303 meas-long)
             r = boundary.apply(r, stocks, run, opts, final=False)
         e = judge(r["flows"] + extra if r["flows"] else [], stocks, run, injections=opts.get("injections"),
                   inputs=opts.get("inputs"))
@@ -106,7 +110,7 @@ def main_line(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if keep:
             candidates.append({"name": v["name"], "error": e, "flows": r["flows"]})
         if best is None or e < best[1]:
-            best = (r, e, v["name"])
+            best = (own, e, v["name"])
     r = best[0]
     r["chosen"], r["tried"] = best[2], tried
     if keep:
