@@ -398,20 +398,14 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     revised on the output error (oefit.py: the model run through the whole record against the measured
     levels)."""
     from . import oefit
+    from . import switch
 
     o, cap = _capmin.offer(stocks, run, opts)
-    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    return _capmin.restore(r, cap)
+    r = _identify_linear(stocks, run, o, *args, **kw)
+    # (2026-10-21, k8s-308, docs/research/fixes/308-combined2.md) a discrete actuator's outside flows written
+    # as switches on the levels (switch.py) before the output-error refit, which otherwise bends the
+    # stocks the actuator drives to make up for its smeared linear rate
+    r = switch.apply(r, stocks, run, o, readable=lambda name: not _capmin.level_series(name))
+    r = oefit.refit(r, stocks, run, o, cap)
+    return switch.apply(_capmin.restore(r, cap), stocks, run, opts)
 
-
-# A discrete actuator (switch.py, docs/research/fixes/308-combined2.md, 2026-10-21): a stock moved in whole
-# steps on a few steps and not at all on the rest has its outside flows written as switches on the levels
-# (s x (c + w_X X + w_Y Y > 0), within the range of X its moves happened in) where they fit X's row.
-from . import switch as _switch  # noqa: E402
-
-_identify_min = identify
-
-
-def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    """The answer above with each discrete actuator's outside flows written as switches (switch.py)."""
-    return _switch.apply(_identify_min(stocks, run, opts, *args, **kw), stocks, run, opts)

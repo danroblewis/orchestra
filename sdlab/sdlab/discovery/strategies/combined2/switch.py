@@ -186,8 +186,41 @@ def _expr(step: float, sw: dict, x: str) -> dict:
     return {"form": "expr", "expr": f"{step!r} * " + " * ".join(conds)}
 
 
-def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
-    """The answer with each discrete actuator's outside flows written as switches (see the docstring)."""
+def _touches(f: dict, stocks: set) -> bool:
+    return bool(stocks) and (f.get("from") in stocks or f.get("to") in stocks)
+
+
+def _own_chain(flows: list[dict], x: str, measured: set) -> set:
+    """The unmeasured stocks (a found model's hidden stages) linked, through unmeasured stocks only, to the
+    measured stock x and to no other measured stock: x's own hidden chain, which a switch on x replaces."""
+    nbr: dict = {}
+    for f in flows:
+        a, b = f.get("from"), f.get("to")
+        if a and b:
+            nbr.setdefault(a, set()).add(b)
+            nbr.setdefault(b, set()).add(a)
+    out = set()
+    for h0 in [h for h in nbr.get(x, ()) if h not in measured]:
+        comp, todo, hits = set(), [h0], set()
+        while todo:
+            h = todo.pop()
+            if h in comp:
+                continue
+            comp.add(h)
+            for g in nbr.get(h, ()):
+                if g in measured:
+                    hits.add(g)
+                elif g not in comp:
+                    todo.append(g)
+        if hits == {x}:
+            out |= comp
+    return out
+
+
+def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None, readable=None) -> dict:
+    """The answer with each discrete actuator's outside flows written as switches (see the docstring).
+    readable(name): whether a switch may read that measured input (default: every one); an input it may
+    not read is still used to evaluate the model's other flows."""
     if not isinstance(result, dict) or not result.get("flows"):
         return result
     levels = {k: np.asarray(v, dtype=float) for k, v in (run.get("levels") or {}).items()}
@@ -211,7 +244,8 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
         if x in finals:
             continue
         d = np.diff(levels[x][:T])
-        inner = [f for f in flows if f.get("from") and f.get("to") and x in (f["from"], f["to"])]
+        chain = _own_chain(flows, x, set(levels))
+        inner = [f for f in flows if f.get("from") and f.get("to") and x in (f["from"], f["to"]) and not _touches(f, chain)]
         rest = np.zeros(n)
         ok = True
         for f in inner:
@@ -228,15 +262,18 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
         if moved.sum() < MIN_EVENTS or moved.mean() > MAX_SHARE:
             continue
         outer = [f for f in flows if bool(f.get("from")) != bool(f.get("to")) and x in (f.get("from"), f.get("to"))]
+        if any(f.get("switch") for f in outer):
+            continue                                      # already switched
         old = np.zeros(n)
         for f in outer:
             a = _amount(f, cols, n)
-            if a is None:
+            if a is None:                                 # a rate this cannot run (an effect, a piece): compared with no flow
                 ok = False
                 break
             old += a if f.get("to") == x else -a
-        if not ok:
-            continue
+        if not ok or chain:                               # (or X's own hidden stocks: what they carry is not known here)
+            old = np.zeros(n)
+            ok = True
         new_flows, new = [], np.zeros(n)
         sides = []
         for side, sign in (("in", 1.0), ("out", -1.0)):
@@ -255,7 +292,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
             if np.max(np.abs(sign * r[ev] - step)) > STEP_REL * max(1.0, abs(step)):
                 sides = None
                 break
-            got = _fit_side(ev, x, cols, n)
+            got = _fit_side(ev, x, {k: v for k, v in cols.items() if k in levels or readable is None or readable(k)}, n)
             if got is None or got["misses"] > MISS * n:
                 sides = None
                 break
@@ -266,13 +303,18 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
                               "switch": {"step": step, **got}})
         if not sides:
             continue
+        reached = {side for f in flows if _touches(f, chain) for side in (["in"] if not f.get("from") else []) + (["out"] if not f.get("to") else [])}
+        if reached - set(sides):                          # a side X's hidden stocks carry that no switch replaces
+            continue
         err_new = float(np.sum((r - new) ** 2))
         err_old = float(np.sum((r - old) ** 2))
         if err_new > RESIDUAL * err_old:
             continue
-        keep = [f for f in flows if not (f in outer and (("in" if f.get("to") == x else "out") in sides))]
+        keep = [f for f in flows if not (f in outer and (("in" if f.get("to") == x else "out") in sides)) and not _touches(f, chain)]
         flows[:] = keep + new_flows
-        notes.append({"stock": x, "sides": sides, "sse_before": err_old, "sse_after": err_new})
+        for h in chain:
+            (out.get("inferred_levels") or {}).pop(h, None)
+        notes.append({"stock": x, "sides": sides, "sse_before": err_old, "sse_after": err_new, **({"dropped": sorted(chain)} if chain else {})})
     if notes:
         out["switch"] = notes
     return out
