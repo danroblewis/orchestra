@@ -948,12 +948,13 @@ strategies:
       allows them, a declared input at exactly 1 x its series, a capacity limit MIN(a X, b Y) where the
       data show one, numbers that change at announced eras). Every step's equation is compressed, without
       losing evidence, into a few rotated equations per stock, scaled by that stock's noise level estimated
-      from the data, after leaving out gross outliers. Z3 then finds the fewest terms (soft constraints,
-      MaxSMT) whose misfit stays inside a band that grows with the noise, and lists the other smallest
-      sets; these and a backward-elimination candidate are compared on misfit plus a price per term, and
-      the winner's numbers are refitted by least squares on every step. Z3 runs in its own process with a
+      from the data, after leaving out gross outliers. Z3 then proves the fewest terms whose misfit stays
+      inside a band that grows with the noise (asking "does a model of at most k terms fit?" for smaller
+      and smaller k), and lists the other smallest sets; these and a backward-elimination candidate are
+      compared on misfit plus a price per term (of near ties, the one with the fewest moves), and the
+      winner's numbers are refitted by least squares on every step. Z3 runs in its own process with a
       time limit; when it runs out the backward-elimination answer is used and the note says so.
-    helps_with: Linear systems with counting noise, gross outliers or missing samples, where an exact search finds nothing.
+    helps_with: Linear systems with counting noise, gross outliers or missing samples, where an exact search finds nothing. Weak under measurement error and unannounced inflow steps.
     builds_on: z3exact (copies of its class, flows and capacity-limit code, at commit 45bfaac)
     status: active
     note: docs/research/z3robust.md.
