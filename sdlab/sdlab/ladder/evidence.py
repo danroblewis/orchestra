@@ -28,12 +28,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sqlite3
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from pathlib import Path
 
+from . import sqlite_keep
 from .data import cache_root
 
 HERE = Path(__file__).resolve().parent
@@ -61,7 +61,7 @@ def path() -> Path:
 def connect():
     p = path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(p, timeout=30)
+    con = sqlite_keep.connect(p, timeout=30)
     try:
         con.execute("PRAGMA journal_mode=WAL")
         con.execute("CREATE TABLE IF NOT EXISTS evidence (result_id INTEGER NOT NULL, code TEXT NOT NULL, part TEXT NOT NULL,"

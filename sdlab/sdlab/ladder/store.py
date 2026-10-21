@@ -29,6 +29,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from . import sqlite_keep
 from .data import cache_root
 
 SCHEMA = """
@@ -71,8 +72,9 @@ def connect(readonly: bool = False):
         con = sqlite3.connect(":memory:")
     else:
         p.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(p, timeout=30)
+        con = sqlite_keep.connect(p, timeout=30)             # never sqlite3.connect: SQLite 3.51.0's deadlock (sqlite_keep.py)
         con.execute("PRAGMA journal_mode=WAL")
+        sqlite_keep.keep(p, now_wal=True)                     # a store made just now (a no-op once kept)
     con.row_factory = sqlite3.Row
     try:
         con.executescript(SCHEMA)

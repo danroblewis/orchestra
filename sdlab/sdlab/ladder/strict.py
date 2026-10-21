@@ -54,7 +54,6 @@ import hashlib
 import json
 import math
 import os
-import sqlite3
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -63,6 +62,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import sqlite_keep
 from .data import cache_root
 
 HERE = Path(__file__).resolve().parent
@@ -304,7 +304,7 @@ def path() -> Path:
 def connect():
     p = path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(p, timeout=30)
+    con = sqlite_keep.connect(p, timeout=30)
     try:
         con.execute("PRAGMA journal_mode=WAL")
         con.execute("CREATE TABLE IF NOT EXISTS refs (case_id TEXT NOT NULL, case_hash TEXT NOT NULL, variant TEXT NOT NULL,"
