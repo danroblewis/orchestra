@@ -330,7 +330,7 @@ strategies:
       better with its own pieces.
     helps_with: Keeping symbolic's real effects while refusing effects that inflow pieces could have produced.
     builds_on: symbolic
-    status: active
+    status: retired
     note: Research - the "anchor" rule was rejected; the "safe" rule keeps a third of symbolic's gain with no losses.
 
   effect_hats:
@@ -760,7 +760,7 @@ strategies:
       is a claim the judge charges for.
     helps_with: Every case at once - the aim is the best of each specialist.
     builds_on: lna, common_cause, censored, hidden_transit, effect_hats, periodic_inflows
-    status: work in progress
+    status: parked
     note: Its research document (combined.md) is not written yet.
 
   kalman_lna:
@@ -851,7 +851,7 @@ strategies:
       is a claim the judge charges for.
     helps_with: Realistic models, where no candidate is exactly right and the one-step score picks models that drift off over many steps.
     builds_on: combined
-    status: active
+    status: parked
     note: docs/research/combined_misfit.md.
 
   combined_lean:
@@ -866,7 +866,7 @@ strategies:
       is a claim the judge charges for.
     helps_with: The strict tier - passes that carry one or two extra inflow pieces or a weak extra flow.
     builds_on: combined
-    status: active
+    status: parked
     note: docs/research/combined_lean.md.
 
   combined_r2:
@@ -879,7 +879,7 @@ strategies:
       is a claim the judge charges for.
     helps_with: Realistic models and the strict tier at once.
     builds_on: combined_misfit, combined_lean
-    status: active
+    status: parked
     note: docs/research/ideas-2026-10-18.md.
 
   archetypes:
