@@ -182,6 +182,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     record against the measured levels)."""
     from . import oefit
 
+    from . import tracker
+
     o, cap = _capmin.offer(stocks, run, opts)
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    return _capmin.restore(r, cap)
+    # (2026-10-21, k8s-308, docs/research/fixes/308-kalman_lna.md) a counted stock driven towards a target read
+    # off another stock (a controller: rise by the gap to ceil(X / a), fall a step while above ceil(X / b)) replaces
+    # the stock's outside flows where it beats them by BIC (tracker.py)
+    return tracker.revise(_capmin.restore(r, cap), stocks, run, opts)
