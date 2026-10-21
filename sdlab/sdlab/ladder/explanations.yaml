@@ -935,11 +935,12 @@ strategies:
       smallest set of switches whose numbers make every stock's change in every step match the data
       to within its rounding (4 decimals), with the boundary as a hard rule. The numbers of the set
       found are then refitted by least squares. When nothing fits that exactly (noisy data, or rates
-      that are not straight-line formulas), it returns no model and says so.
+      that are not straight-line formulas), it returns a best effort and labels it so: the same kind
+      of terms, the least useful dropped one by one while the fit stays almost as good.
     helps_with: Noise-free linear systems - chains, loops, drains, measured inputs, announced eras - and telling when the data allow more than one equally small model.
     builds_on: nothing (its own copy of the harness's identifiability search, sdlab/ladder/z3_ident.py)
-    status: work in progress
-    note: docs/research/z3.md. Noise-free variants only; on noisy data it returns nothing.
+    status: active
+    note: docs/research/z3.md. A specialist for noise-free linear cases; its best effort elsewhere is weak (it passes none of the cells no linear structure fits).
 
 glossary:
 
