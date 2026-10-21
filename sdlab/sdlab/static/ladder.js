@@ -148,6 +148,7 @@
         <span class="livedot${active ? " on" : ""}" aria-hidden="true"></span>
         <b>${active ? "Running" : r.aborted ? "Last run (stopped before the end)" : "Last run"}</b> <code>${esc(r.command || "sdlab-ladder")}</code>
         <span class="muted small">${r.done}/${r.total} done${active ? `, ${r.running} running` : ""} · ${esc(tally)} · ${active ? `started ${esc(when(r.started))}` : `finished ${esc(when(r.finished))}`}</span>
+        ${navHtml(p)}
         <label class="follow" title="Show each result as the run finishes it"><input type="checkbox" id="follow" ${S.follow ? "checked" : ""}> follow the run</label>
       </div>
       <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="${r.total}" aria-valuenow="${r.done}">${bar}</div>
@@ -160,6 +161,14 @@
     const step = (d) => { const i = timesAt(t); openTime(t[i === -1 ? (d < 0 ? t.length - 1 : 0) : Math.max(0, Math.min(t.length - 1, i + d))]); renderLive(); };
     if ($("t-prev")) $("t-prev").onclick = () => step(-1);
     if ($("t-next")) $("t-next").onclick = () => step(1);
+  }
+  // previous / next through the chart's results, on the status line
+  function navHtml(p) {
+    const t = (p && p.times) || [], n = t.length; if (!n) return "";
+    const cur = timesAt(t);
+    return `<span class="tnav"><button class="btn small" id="t-prev" ${cur === 0 ? "disabled" : ""} title="The result finished before the one shown">◀</button>
+      <span class="small muted">${cur >= 0 ? `${cur + 1}/${n}` : `newest`}</span>
+      <button class="btn small" id="t-next" ${cur === -1 || cur >= n - 1 ? "disabled" : ""} title="The result finished after the one shown">▶</button></span>`;
   }
   // the chart's bar for the result on screen (-1: none of them)
   function timesAt(t) {
@@ -183,11 +192,10 @@
     }).join("");
     const secs = t.map((x) => x.seconds || 0).sort((a, b) => a - b), med = secs[Math.floor(secs.length / 2)], p90 = secs[Math.floor(secs.length * 0.9)];
     const to = t.filter((x) => x.status === "timeout").length;
-    return `<figure class="timing"><div class="tnav"><button class="btn" id="t-prev" ${cur <= 0 && cur !== -1 ? "disabled" : ""} title="The result finished before the one shown">◀ previous</button>
-      <span class="small muted">${cur >= 0 ? `result ${cur + 1} of ${n}` : `newest of ${n}`}</span>
-      <button class="btn" id="t-next" ${cur === -1 || cur >= n - 1 ? "disabled" : ""} title="The result finished after the one shown">next ▶</button></div>
-      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="How long the newest results took; click a bar to open it">${bars}</svg>
-      <figcaption class="small muted">Run times of the last ${n} results (square-root scale; dashes: each one's time limit): median ${med.toFixed(1)} s, 90th percentile ${p90.toFixed(0)} s, longest ${secs[secs.length - 1].toFixed(0)} s${to ? `, <span class="err">${to} timed out</span>` : ""}</figcaption></figure>`;
+    const stats = `Run times of the last ${n} results (square-root scale; dashes: each one's time limit): median ${med.toFixed(1)} s, 90th percentile ${p90.toFixed(0)} s, longest ${secs[secs.length - 1].toFixed(0)} s${to ? `, ${to} timed out` : ""}`;
+    return `<figure class="timing" title="${esc(stats)}">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(stats)}; click a bar to open it">${bars}</svg>
+      </figure>`;
   }
   // the runs panel (/api/ladder/runs, runs.py): the watcher's batch, pace, backlog and ETA, and the newest runs
   const hrs = (h) => (h == null ? "–" : h * 60 < 90 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`);
@@ -366,8 +374,7 @@
     const cmp = await compareOf(c, r);
     if (my !== S.rctoken) return;
     $("cmp-head").innerHTML = `<div class="casehead">
-        <div class="nowstrat" title="The strategy whose result this is">${esc((r && r.strategy) || S.sel.strategy || "")}<span class="nowvar"> · ${esc((r && r.variant) || S.sel.variant || "")}</span></div>
-        <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span> <span class="muted small ctags">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</span></h2>
+        <h2 class="ctitle2 nowline"><span class="nowstrat" title="The strategy whose result this is">${esc((r && r.strategy) || S.sel.strategy || "")}<span class="nowvar"> · ${esc((r && r.variant) || S.sel.variant || "")}</span></span> ${esc(c.id)} <span>${esc(c.title)}</span> <span class="muted small ctags">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</span></h2>
         ${testsHtml(c)}${drawHtml(c)}
       </div>
       ${S.focusRunning && S.follow ? `<p class="note discrunning">Running now: ${r ? "showing its previous result until it finishes." : "no earlier result."}</p>` : ""}

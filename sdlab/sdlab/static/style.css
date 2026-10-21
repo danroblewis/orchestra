@@ -671,4 +671,16 @@ figure.conv figcaption { font-size: 12px; color: var(--muted); }
 .testsfold > summary::-webkit-details-marker { display: none; }
 .testsfold[open] > summary { display: none; }
 .ctitle2 .ctags { font-weight: 400; margin-left: 8px; }
-.timing svg { height: 48px; }
+.timing svg { height: 36px; }
+/* the Now page's result above the fold (2026-10-21) */
+.livehead .tnav { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; margin-right: 10px; }
+.livehead .tnav .btn.small { padding: 0 6px; font-size: 12px; }
+.timing { margin: 4px 0 2px; } .timing svg { height: 36px; }
+.running-now { max-height: 1.9em; overflow: hidden; }
+.nowline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0; }
+.nowline .nowstrat { font-size: 26px; margin: 0; }
+#one-wrap .scores { font-size: 12.5px; row-gap: 2px; }
+#one-wrap .casehead { margin-bottom: 4px; }
+#dpair .dpanel svg { max-height: max(220px, calc(100vh - 380px)); }
+#dpair .dcap { display: none; }
+#dpair .dpanel:last-child .dcap { display: block; }
