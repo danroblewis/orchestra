@@ -1,33 +1,32 @@
-"""The noise-tolerant structure search of z3robust: Z3's optimiser (OMT, MaxSMT) in place of z3exact's exact
-equality (docs/research/z3robust.md).
+"""The noise-tolerant structure search of z3robust: Z3 in place of z3exact's exact equality
+(docs/research/z3robust.md).
 
-**Blocks, not sampled steps.** Z3's exact simplex slows sharply with rows, so it reads at most BLOCKS
-equations. Each is the sum of the one-step equations of a run of consecutive steps (within one era): the
-block's level change (less injections) equals the terms' numbers times the column sums over the block. It
-is exact for the class (a sum of exact equations), uses every step, and averages the noise: a block of m
-steps carries counting noise ~sqrt(m) sigma against a signal ~m, and level (measurement) errors only at
-its two ends. Thinning to sampled steps instead lost the transients that identify the numbers (counts:
-the empty structure won).
+**The equations Z3 reads** (`Compressed`, the default): every one-step equation, rotated. With the columns
+X = U diag(d) V' (gross steps left out first: a residual of the all-column fit beyond GROSS robust noise
+levels in some stock), a stock's squared misfit is ||U'y - diag(d) V' k||^2 plus a constant no structure
+changes, so q = rank(X) rows per stock carry every step's evidence, and under the true structure each
+rotated residual is one step's noise (white). Each stock's rows are divided by its noise level sigma_s
+(the robust scatter of its all-column one-step residuals, never below the data's rounding). `Blocks`
+(sums of consecutive steps) is the alternative tried first; it averaged away the fluctuations that
+identify drains near equilibrium.
 
-**The objective.** Each stock's block residual r_sb is measured in units of its noise level sigma_s,
-estimated from the data (`noise_scales`: the robust scatter of the block rows' all-column least-squares
-residuals, corrected for the columns' degrees of freedom, never below the data's rounding). Three
-encodings (`solve`), each with a Boolean per term (its number is 0 unless included) and a term price of
-PRICE x log(n S):
+**The search** (encoding "band", the default): an epsilon band that grows with the noise. Every stock's
+rotated residuals must lie in an L1 ball of 0.8 q + BALL_Z x 0.6 sqrt(q) noise units (what q unit normal
+residuals reach; doubled, then quadrupled, when nothing fits), with a Boolean per term (its number is 0
+unless included). Z3 (a Solver with an AtMost(k) assumption, k lowered from the last structure found
+until "unsat") finds the fewest terms that fit, then lists the other structures of that size; those, and
+the warm start (backward elimination on L1 + price), are compared on L1 + PRICE_Q sqrt(log T) per term,
+with each structure's L1-optimal numbers (HiGHS). The other encodings were measured and are kept for
+comparison (`compare.py`): "weighted" (one OMT objective, L1 beyond a band + If(b, price, 0), local
+branching around the warm start), "maxsmt" (a hard band with soft outlier marks and soft terms, MaxRes),
+"ladder" (the L1 as a staircase of soft constraints). Z3's optimiser timed out on 18-30 candidates
+where the cardinality search takes seconds.
 
-- "weighted": one arithmetic objective, sum_sb max(0, |r_sb| - band) + price x If(b, 1, 0) (an L1 loss
-  beyond an epsilon band, OMT).
-- "maxsmt": the epsilon band is hard (HARD_BAND noise units) except on blocks marked as outliers, each mark
-  a soft constraint of weight OUTLIER, each Not(b_t) a soft constraint of weight price, one MaxSMT
-  objective (MaxRes), then the L1 residual lexicographically.
-- "ladder": the L1 beyond the band as a staircase of soft constraints (|r| within band + j STAIR, j = 0..
-  LEVELS - 1, weight 1 each: a truncated L1, so an outlier costs at most LEVELS), with the terms' soft
-  constraints, one MaxSMT objective.
-
-The band is Z_BAND noise units, or the rounding tolerance where that is wider (it grows with the noise:
-noise-free data get z3exact's tolerance). A declared "input" inflow's number is fixed at 1; a one-sided
-outside flow is kept at or above -band on every block. At most MAX_TERMS candidates (`screen`),
-coefficients rounded to DIGITS significant digits, and a timeout (the best model so far is kept).
+A declared "input" inflow's number is fixed at 1; a link (an outside term reading another stock) is an
+inflow (its number >= 0); a one-sided outside flow is kept at or above 0 on SIGN_STEPS steps. At most
+MAX_TERMS candidates (`screen`), coefficients rounded to enough significant digits for the equations'
+size in noise units, and a timeout; solve_guarded runs Z3 in a forked process and kills it past its
+timeout (Z3 does not always honour it).
 """
 
 from __future__ import annotations
@@ -62,6 +61,10 @@ OPTSMT = "basic"      # Z3's optsmt engine ('basic' or 'symba')
 NEAR = 2              # weighted: the first radius of switches around the incumbent Z3 searches
 RADIUS_STEP = 2       # weighted: the radius grows by this when Z3 finds nothing better within it
 BALL_Z = 1.0          # band: a row's L1 ball is 0.8 q + BALL_Z x 0.6 sqrt(q) noise units (q rotated equations)
+WIDEN = (1.0, 2.0, 4.0)  # band: the ball's scales tried in turn while nothing fits
+ENUM_SECONDS = 5.0    # band: seconds spent listing the other smallest structures at most
+TIE = 0.5             # band: structures within this of the best L1 + price are rivals the data cannot rank;
+                      # of those, the fewest moves (a move claims conservation between two stocks)
 ENUM_CAP = 12         # band: smallest structures compared at most
 WARM_CONTENDS = True  # band: the warm start's structure is compared with Z3's on L1 + price
 GRACE = 3.0           # seconds past Z3's timeout before its process is killed
@@ -188,8 +191,9 @@ def noise_scales(p: core.Problem, B) -> np.ndarray:
 
 def screen(p: core.Problem, B: Blocks, sigma: np.ndarray, cap: int | None = None) -> list[int]:
     """The candidate terms Z3 is given: all of them when there are at most cap; else those touching a (stock,
-    column) pair whose least-squares number (the stock's block change on every per-era column) has |t| >
-    T_SCREEN (a whole-run column: any of its eras' pairs), ranked by the largest such |t|, at most cap."""
+    column) pair whose least-squares number (the stock's change on every per-era column) has |t| > T_SCREEN
+    (a whole-run column: any of its eras' pairs; a move: in both its rows), ranked by that |t| (a move: the
+    smaller of its two), at most cap."""
     cap = MAX_TERMS if cap is None else cap
     if len(p.terms) <= cap:
         return list(range(len(p.terms)))
@@ -207,9 +211,9 @@ def screen(p: core.Problem, B: Blocks, sigma: np.ndarray, cap: int | None = None
             same = [o for o in base if p.cols[o].name == col.name and p.cols[o].kind == col.kind]
             tv[:, c] = tv[:, same].max(axis=1) if same else 0.0
     score = []
-    for m, t in enumerate(p.terms):
-        rows = [r for r, sid in enumerate(p.ids) if core._contrib(p, t, sid)]
-        score.append((max(tv[r, t.col] for r in rows), m))
+    for m, t in enumerate(p.terms):        # a move needs its column clearly in both of its rows (else it is an
+        rows = [r for r, sid in enumerate(p.ids) if core._contrib(p, t, sid)]     # outside term in the one)
+        score.append((min(tv[r, t.col] for r in rows), m))
     return sorted(m for b, m in sorted(score, reverse=True)[:cap] if b > T_SCREEN)
 
 
@@ -261,9 +265,21 @@ def link(p: core.Problem, m: int) -> bool:
     return t.kind == "outside" and c.kind == "stock" and c.name != t.a
 
 
+def gap_row(p: core.Problem, m: int, sup) -> bool:
+    """Does the stock of term m have an outside constant in sup? Then a negative link on it is a goal gap
+    (an inflow c - k X), not a drain in disguise."""
+    a = p.terms[m].a
+    return any(p.terms[x].kind == "outside" and p.terms[x].a == a and p.cols[p.terms[x].col].kind == "const" for x in sup)
+
+
+def unsigned(p: core.Problem, m: int, sup) -> bool:
+    """Must term m's number be at or above 0? A link outside a goal gap."""
+    return link(p, m) and not gap_row(p, m, sup)
+
+
 def _signed(p: core.Problem, B, sup: list[int], nums: dict, sigma: np.ndarray, price: float) -> float:
     """objective() plus SIGN_PENALTY per link with a negative number."""
-    return objective(p, B, sup, nums, sigma, price) + SIGN_PENALTY * sum(1 for m in sup if link(p, m) and nums[m] < 0)
+    return objective(p, B, sup, nums, sigma, price) + SIGN_PENALTY * sum(1 for m in sup if unsigned(p, m, sup) and nums[m] < 0)
 
 
 def warm(p: core.Problem, B, cand: list[int], sigma: np.ndarray, fixed: dict[int, float], price: float) -> tuple[list[int], dict, float]:
@@ -320,8 +336,11 @@ def solve(p: core.Problem, B: Blocks, cand: list[int], sigma: np.ndarray, fixed:
     SX = B.signs                                   # the rows a one-sided outside flow is kept >= 0 on
     ssc = np.abs(SX).max(axis=0)
     ssc[ssc == 0] = 1.0
-    opt = z3.Optimize()
-    opt.set("optsmt_engine", OPTSMT)
+    if encoding == "band":          # feasibility under cardinality assumptions: a plain Solver (Optimize's check
+        opt = z3.Solver()           # was far slower on the same constraints: 43#4 counts, k = 28 timed out)
+    else:
+        opt = z3.Optimize()
+        opt.set("optsmt_engine", OPTSMT)
     opt.set("timeout", max(1, int(timeout * 1000)))
     b = {m: z3.Bool(f"b{m}") for m in cand}
     w = {m: z3.Real(f"w{m}") for m in cand}        # the term's number x its column's scale
@@ -329,8 +348,10 @@ def solve(p: core.Problem, B: Blocks, cand: list[int], sigma: np.ndarray, fixed:
         if m in fixed:
             opt.add(z3.Implies(b[m], w[m] == _q(fixed[m] * sc[p.terms[m].col])))
         opt.add(z3.Implies(z3.Not(b[m]), w[m] == 0))
-        if link(p, m):
-            opt.add(w[m] >= 0)
+        if link(p, m):                 # a link is an inflow, unless its stock has a constant inflow (a goal gap)
+            consts = [b[x] for x in cand if p.terms[x].kind == "outside" and p.terms[x].a == p.terms[m].a
+                      and p.cols[p.terms[x].col].kind == "const"]
+            opt.add(z3.Or([w[m] >= 0] + consts))
     us, row_us = [], {}
     for r, sid in enumerate(p.ids):
         parts = [(m, sg) for m in cand if (sg := core._contrib(p, p.terms[m], sid))]
@@ -461,7 +482,7 @@ def l1_numbers(p: core.Problem, B, sup: list[int], sigma: np.ndarray, fixed: dic
     scl[scl == 0] = 1.0
     c = np.concatenate([np.zeros(k), np.ones(N)])
     A = np.block([[G / scl, -np.eye(N)], [-G / scl, -np.eye(N)]])
-    lp = linprog(c, A_ub=A, b_ub=np.concatenate([y, -y]), bounds=[(0, None) if link(p, m) else (None, None) for m in free]
+    lp = linprog(c, A_ub=A, b_ub=np.concatenate([y, -y]), bounds=[(0, None) if unsigned(p, m, sup) else (None, None) for m in free]
                  + [(0, None)] * N, method="highs")
     if lp.status != 0:
         nums = _lsq(p, B, sup, sigma, fixed)
@@ -472,32 +493,68 @@ def l1_numbers(p: core.Problem, B, sup: list[int], sigma: np.ndarray, fixed: dic
 
 
 def _band(p, B, cand, sigma, opt, b, w, sc, row_us, read, price, deadline, wsup, wnums, ub, fixed) -> dict:
-    """The epsilon-band search: every row's rotated residuals within its L1 ball (hard), the fewest terms
-    (each Not(b) a soft constraint: MaxSMT); then every other structure of that size within the band
-    (block each found one and its supersets, ask again), and of those the least L1 + price is kept."""
+    """The epsilon-band search: every row's rotated residuals within its L1 ball (hard), and the fewest
+    terms: Z3 asked "does a structure of at most k terms fit?" (an AtMost(k) assumption: SAT with linear
+    real arithmetic, far faster here than Z3's MaxSMT engines, which timed out on 30 candidates), k
+    bisected between 0 and the size of the last structure found; then every other structure of that size
+    within the band (each found one and its supersets blocked, ask again). Of those, the least L1 + price
+    is kept (and compared with the warm start's)."""
     R = ball(B.n)
+    widen = z3.Real("widen")             # the ball's scale: 1, or wider when nothing fits (the epsilon grows)
     for r, u in row_us.items():
-        opt.add(z3.Sum(u) <= _q(max(R, R * float(B.eps[r]) / sigma[r])))
-    for m in cand:
-        opt.add_soft(z3.Not(b[m]), weight="1", id="terms")
-    found, kmin, status = [], None, "unknown"
-    while len(found) < ENUM_CAP and time.perf_counter() < deadline - 0.05:
-        opt.set("timeout", max(1, int((deadline - time.perf_counter()) * 1000)))
-        got = opt.check()
+        opt.add(z3.Sum(u) <= widen * _q(max(R, R * float(B.eps[r]) / sigma[r])))
+    bs = [b[m] for m in cand]
+    limits: dict = {}
+
+    def fits(k: int, until: float | None = None):
+        if k not in limits:
+            limits[k] = z3.Bool(f"atmost{k}")
+            opt.add(z3.Implies(limits[k], z3.AtMost(*bs, k)))
+        left = (until or deadline) - time.perf_counter()
+        if left <= 0.05:
+            return z3.unknown, None
+        opt.set("timeout", max(1, int(left * 1000)))
+        got = opt.check(limits[k])
         if got != z3.sat:
-            status = "complete" if got == z3.unsat else "unknown (timeout)"
-            break
+            return got, None
         model = opt.model()
-        sup = [m for m in cand if z3.is_true(model.eval(b[m], model_completion=True))]
-        if kmin is None:
-            kmin = len(sup)
-        if len(sup) > kmin:
-            status = "complete"
+        return got, [m for m in cand if z3.is_true(model.eval(b[m], model_completion=True))]
+
+    found, kmin, status, checks = [], None, "unknown (timeout)", 0
+    scale = 1.0
+    for scale in WIDEN:                  # the band as estimated, then wider while nothing fits at all
+        opt.push()
+        opt.add(widen == _q(scale))
+        got, sup = fits(len(cand))
+        checks += 1
+        if got != z3.unsat:
             break
-        found.append(sup)
-        opt.add(z3.Or([z3.Not(b[m]) for m in sup]) if sup else z3.BoolVal(False))
-    else:
-        status = "cap" if len(found) >= ENUM_CAP else "unknown (timeout)"
+        opt.pop()
+    if got == z3.sat:
+        best, proved = sup, False
+        while True:                      # downward: each answer is a structure smaller than the last
+            got, sup = fits(len(best) - 1) if best else (z3.unsat, None)
+            checks += 1
+            if got == z3.sat:
+                best = sup
+            else:
+                proved = got == z3.unsat
+                break
+        kmin = len(best)
+        found = [best]
+        opt.add(z3.Or([z3.Not(b[m]) for m in best]) if best else z3.BoolVal(False))
+        stop = min(deadline, time.perf_counter() + ENUM_SECONDS)
+        while proved and len(found) < ENUM_CAP and time.perf_counter() < stop:
+            got, sup = fits(kmin, stop)
+            checks += 1
+            if got != z3.sat:
+                break
+            found.append(sup)
+            opt.add(z3.Or([z3.Not(b[m]) for m in sup]) if sup else z3.BoolVal(False))
+        status = ("proved smallest, all listed" if got == z3.unsat else "proved smallest" if proved else
+                  "smallest not proved (timeout)") + (f" (band x {scale:g})" if scale != 1.0 else "")
+    elif got == z3.unsat:
+        status = f"nothing fits the band (x {scale:g})"
     scored = []
     for sup in found:
         nums, l1 = l1_numbers(p, B, sup, sigma, fixed)
@@ -506,9 +563,10 @@ def _band(p, B, cand, sigma, opt, b, w, sc, row_us, read, price, deadline, wsup,
         nums, l1 = l1_numbers(p, B, wsup, sigma, fixed)
         scored.append((l1 + price * len(wsup), 1, wsup, nums, "warm start (backward elimination)"))
     scored.sort(key=lambda x: (x[0], x[1]))
-    obj, _, sup, nums, src = scored[0]
+    near = [x for x in scored if x[0] <= scored[0][0] + TIE]      # data-equivalent rivals: the fewest moves
+    obj, _, sup, nums, src = min(near, key=lambda x: (sum(p.terms[m].kind == "move" for m in x[2]), x[0], x[1]))
     return {"status": status, "support": sup, "numbers": nums, "objective": obj, "from": src, "smallest": len(found),
-            "k_min": kmin, "ball": R}
+            "k_min": kmin, "ball": R, "checks": checks}
 
 
 def objective(p: core.Problem, B: Blocks, sup: list[int], nums: dict, sigma: np.ndarray, price: float) -> float:

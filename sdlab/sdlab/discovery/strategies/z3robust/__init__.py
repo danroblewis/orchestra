@@ -1,19 +1,21 @@
-"""z3robust: z3exact's class searched by Z3's optimiser, tolerant of noise (docs/research/z3robust.md).
+"""z3robust: z3exact's class searched by Z3 within a noise band, tolerant of noise (docs/research/z3robust.md).
 
 z3exact (docs/research/z3.md) asks Z3 for the fewest terms that fit every one-step change within the data's
 rounding: exact on noise-free data, nothing on noisy data. z3robust keeps its candidate class (core.py, a
 copy: moves between stocks of one unit reading one of their two stocks, outside terms only where the
 declared boundary allows them, a declared "input" inflow fixed at 1 x its series, the offered capacity
 series MIN(X, theta Y) with its regime (capmin.py, a copy), per-era columns for announced eras plus a
-whole-run column each, goal gaps as a constant and a level on one row) and replaces the equality by an
-optimisation (robust.py): per-step residuals beyond an epsilon band (in units of each stock's noise level,
-estimated from the data) are slack variables, and Z3 minimises their sum (L1) plus a price of log n per
-included term, on a sample of the steps. The structure's numbers are then refitted by least squares on
-every step (rows weighted by their noise level, steps whose residual is gross left out once), with the
-declared inputs at 1.
+whole-run column each, goal gaps as a constant and a level on one row) and replaces the equality by a
+band that grows with the noise (robust.py): every step's equation compressed into a few rotated
+equations per stock in units of its noise level (estimated from the data; gross outliers left out), the
+fewest terms whose rotated residuals stay in an L1 ball (Z3, cardinality search), the smallest such
+structures and a backward-elimination warm start compared on L1 + a price per term, and the winner's
+numbers refitted by least squares on every step (rows weighted by their noise level, gross residuals
+left out once), declared inputs at 1, links kept as inflows.
 
 The classes tried: ends moves with the boundary as written ("kinds"), and, where a boundary is declared,
-by sides as the scorer reads it ("sides"); the lower objective is kept (kinds on a tie).
+by sides as the scorer reads it ("sides"); the lower L1 + price is kept (kinds on a tie). Steps of an
+irregular spacing (samples missing from t) are left out.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ SOLVE = 25.0                  # seconds of Z3 per class at most
 CLASSES = (("ends", "kinds"), ("ends", "sides"))
 EQUATIONS = "compressed"      # what Z3 reads: "compressed" (rotated equations of every step) or "blocks"
 ENCODING = "band"             # robust.solve's encoding: "band" (MaxSMT under an L1 ball per row), "weighted", "maxsmt", "ladder"
+MIN_STEPS = 8                 # fewer one-step changes than this: no answer
 TRIM = 5.0                    # the refit leaves out steps whose residual exceeds this many noise levels (once)
 
 
@@ -95,7 +98,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             tried.append(f"[{moves}, {rule}] not tried (out of time)")
             break
         p = core.prepare(stocks, run, opts, moves=moves, boundary=rule, pooled=True)
-        if p.steps < 20:
+        if p.steps < MIN_STEPS:
             return {"flows": [], "note": "z3robust: too few steps."}
         if best is not None and [t.key(p.cols) for t in p.terms] == best["keys"]:
             continue                                        # the same class as the one solved
@@ -121,8 +124,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     sup = sorted(got["support"])
     ss = robust.step_sigma(p, sup, best["sigma"], best["B"])
     k, miss, dropped = refit(p, sup, ss, best["fixed"])
-    while any(robust.link(p, m) and v < 0 for m, v in zip(sup, k)):     # a link the refit turned negative: dropped
-        worst = min((v, m) for m, v in zip(sup, k) if robust.link(p, m))[1]
+    while any(robust.unsigned(p, m, sup) and v < 0 for m, v in zip(sup, k)):     # a link the refit turned negative: dropped
+        worst = min((v, m) for m, v in zip(sup, k) if robust.unsigned(p, m, sup))[1]
         sup = [m for m in sup if m != worst]
         k, miss, dropped = refit(p, sup, ss, best["fixed"])
     fl = flows.fixed_inputs(flows.flows_of(p, sup, k), run, (opts.get("inputs") or {}).keys())
