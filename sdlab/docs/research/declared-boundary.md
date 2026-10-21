@@ -341,7 +341,24 @@ variant, 1,494 cells, 0 errors). 1,382 cells pair with the stored result from be
   still fail on the rest of the model).
 
 **Tests sample** (120 numbered non-kubernetes cases: the 16 with an `input` side plus every ~2nd of the
-rest, none-short, roster:kubernetes; pool jobs 206-209 at c7cade0): in progress.
+rest, none-short, roster:kubernetes; pool jobs 206-209 at c7cade0, 4,972 cells, 0 errors; 4,968 pair
+with a stored result). The stored rows come from mixed older commits (the main line's backlog), so the
+fair "before" is those answers re-graded by the new scorer (study above):
+
+| | pass | equivalent | fail |
+|---|---|---|---|
+| before, re-graded by the new scorer | 2,385 | 836 | 1,747 |
+| after (jobs 206-209) | 2,479 | 884 | 1,605 |
+
+- Gains: fail -> pass 105 (226 +37, 054 +25, 195 +9, 170 +7, 043 +5, 053 +5, ...), fail -> equivalent
+  71 (154 +38, 216 +18, 214 +4, ...), equivalent -> pass 12.
+- Losses: equivalent -> fail 27 (215: 16, 214: 9, 216: 1, 016: 1), pass -> equivalent 16 (016: 5, 054: 3,
+  ...), pass -> fail 7 (201: 2; 049, 058, 063, 135, 142: 1 each). None of 214/215's failures carries an
+  "input altered" or second-outside-flow note: the I and Y numbers refitted around the fixed setpoint
+  inflow miss the tolerance.
+- Against the stored statuses instead: pass 2,395 -> 2,479, equivalent 890 -> 884, fail 1,683 -> 1,605
+  (202's 34 equivalent -> fail are already fails when its stored answers are re-graded at 3747e29: a
+  scorer change before this one).
 
 ## Limits and next steps
 
