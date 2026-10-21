@@ -1,5 +1,6 @@
-"""The class and the exact search of z3exact: a copy of sdlab/ladder/z3_ident.py at commit c291f87
-(the harness's identifiability instrument), without its hidden-stock test. Strategies are isolated
+"""The class and the exact search of z3exact: a copy of sdlab/ladder/z3_ident.py (the harness's
+identifiability instrument) as committed with this file (first copied at c291f87; the two were edited
+together while docs/research/z3.md was written), without its hidden-stock test. Strategies are isolated
 (CLAUDE.md rule 11): changing the harness's copy never changes this one.
 
 Original docstring:
@@ -55,6 +56,7 @@ The strategy z3exact carries its own copy of the class and search (strategies ar
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from fractions import Fraction
@@ -64,6 +66,7 @@ import z3
 
 FLOAT_SLACK = 1e-9            # of the largest level: the engine's float arithmetic
 NORM_MARGIN = 2.0             # the tolerance allows twice the least-squares row's sum of |numbers| on levels
+INPUT_DIGITS = 9              # measured inputs are read to this many significant digits (their rounding joins the tolerance)
 MAX_DECIMALS = 9              # more decimals than this: raw floats (h from FLOAT_SLACK alone)
 
 
@@ -113,7 +116,7 @@ def _decimals(values) -> int | None:
     """The most decimals any value has (None: more than MAX_DECIMALS, raw floats)."""
     most = 0
     for v in values:
-        if v is None or v != v:
+        if v is None or math.isnan(v):
             continue
         for d in range(MAX_DECIMALS + 1):
             if round(v, d) == v:
@@ -155,7 +158,7 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
     inputs = {k: [float(x) for x in v] for k, v in (opts.get("inputs") or {}).items() if k not in ids}
     eras = opts.get("eras") or []
     starts = sorted(float(e["start"]) for e in eras)[1:] if len(eras) > 1 else []
-    era_of = lambda time_: sum(1 for s in starts if time_ >= s)  # noqa: E731
+    era_of = lambda time_: sum(1 for s in starts if time_ >= s)
     inj = {}
     for j in opts.get("injections") or []:
         if j.get("stock") in ids and j["t"] in t:
@@ -165,9 +168,11 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
         cols += [Column(i, "stock", era=e, unit=units[i]) for i in ids] + [Column(k, "input", era=e) for k in sorted(inputs)]
         cols.append(Column("1", "const", era=e))
     keep = [i for i in range(len(t) - 1)
-            if all(raw[s][i] == raw[s][i] and raw[s][i + 1] == raw[s][i + 1] for s in ids)
-            and all(i + 1 < len(v) and v[i + 1] == v[i + 1] for v in inputs.values())]
-    L = {s: [_frac(v, decimals) if v == v else Fraction(0) for v in raw[s]] for s in ids}
+            if all(not math.isnan(raw[s][i]) and not math.isnan(raw[s][i + 1]) for s in ids)
+            and all(i + 1 < len(v) and not math.isnan(v[i + 1]) for v in inputs.values())]
+    L = {s: [_frac(v, decimals) if not math.isnan(v) else Fraction(0) for v in raw[s]] for s in ids}
+    in_dec = {k: max(0, INPUT_DIGITS - 1 - int(np.floor(np.log10(max(1e-12, max(abs(x) for x in v if not math.isnan(x)) if any(not math.isnan(x) for x in v) else 1.0)))))
+              for k, v in inputs.items()}
     X: list[list[Fraction]] = [[] for _ in cols]
     dY: list[list[Fraction]] = [[] for _ in ids]
     for i in keep:
@@ -178,7 +183,7 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
             elif col.kind == "stock":
                 X[c].append(L[col.name][i] + inj.get((col.name, i + 1), Fraction(0)))
             elif col.kind == "input":
-                X[c].append(Fraction(repr(inputs[col.name][i + 1])))
+                X[c].append(_frac(inputs[col.name][i + 1], in_dec[col.name]))
             else:
                 X[c].append(Fraction(1))
         for r, s in enumerate(ids):
@@ -194,21 +199,24 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
             sides = _kind_sides(run.get("boundary"), declared, s, col.kind)
             if sides:
                 terms.append(Term("outside", c, s, sides=sides))
-    top = max([abs(v) for s in ids for v in raw[s] if v == v] or [1.0])
+    top = max([abs(v) for s in ids for v in raw[s] if not math.isnan(v)] or [1.0])
     h = Fraction(1, 2 * 10 ** decimals) if decimals is not None else Fraction(0)
     slack = Fraction(FLOAT_SLACK) * Fraction(max(1.0, top))
-    eps = tolerances(X, dY, cols, h, slack)
+    h_in = {k: Fraction(1, 2 * 10 ** d) for k, d in in_dec.items()}
+    eps = tolerances(X, dY, cols, h, slack, h_in)
     return Problem(ids, cols, terms, X, dY, h, slack, decimals, eps,
                    [float(e["start"]) for e in sorted(eras, key=lambda e: float(e["start"]))] if eras else [],
                    declared, "" if len(keep) == len(t) - 1 else f"{len(t) - 1 - len(keep)} steps left out (missing values)")
 
 
-def tolerances(X: list, dY: list, cols: list[Column], h: Fraction, slack: Fraction) -> list[Fraction]:
+def tolerances(X: list, dY: list, cols: list[Column], h: Fraction, slack: Fraction, h_in: dict | None = None) -> list[Fraction]:
     """Per stock, the tolerance on every step's residual: 2h (its two rounded levels) + h x NORM_MARGIN x
     sum_j |A_sj| over the stock columns (the rounding of the levels the row reads), with A_s the
     least-squares net numbers of the stock's row on every column, + the float slack. It holds for the
     true row whenever sum_j |A_true,sj| <= NORM_MARGIN x the least-squares one (on noise-free data the
-    least-squares row is the true row up to the rounding, unless columns are collinear)."""
+    least-squares row is the true row up to the rounding, unless columns are collinear). Measured inputs are
+read to INPUT_DIGITS significant digits (small rationals keep Z3's exact pivoting fast); h_in (half a unit of
+an input's last digit) x NORM_MARGIN x |A_s,input| joins the tolerance."""
     if not dY or not dY[0]:
         return [2 * h + slack for _ in dY]
     M = np.array([[float(v) for v in row] for row in X]).T
@@ -217,7 +225,9 @@ def tolerances(X: list, dY: list, cols: list[Column], h: Fraction, slack: Fracti
     for row in dY:
         a, *_ = np.linalg.lstsq(M, np.array([float(v) for v in row]), rcond=None)
         norm = float(np.abs(a[stock_cols]).sum()) if stock_cols else 0.0
-        out.append(2 * h + h * Fraction(max(1.0, NORM_MARGIN * norm)).limit_denominator(10 ** 6) + slack)
+        inp = sum(float(h_in[col.name]) * NORM_MARGIN * abs(float(a[c])) for c, col in enumerate(cols) if col.kind == "input" and h_in)
+        out.append(2 * h + h * Fraction(max(1.0, NORM_MARGIN * norm)).limit_denominator(10 ** 6)
+                   + Fraction(inp).limit_denominator(10 ** 12) + slack)
     return out
 
 
@@ -232,37 +242,15 @@ def _q(f: Fraction):
     return z3.RealVal(f"{f.numerator}/{f.denominator}")
 
 
-FIRST_ROWS = 0                # lazy rows: the search starts from this many steps spread over the run (at least 2 per column)
-ADD_ROWS = 8                  # and adds up to this many of the worst violated steps per stock when a candidate fails
-
-
-def _fit(p: Problem, solver, kvar: dict, rows) -> None:
-    """Every step in rows fits within its stock's tolerance, and every one-sided outside flow's rate is
-    not below 0 there; kvar: {term index: its Z3 number} (terms not in it are 0)."""
-    J = len(p.cols)
-    for r, sid in enumerate(p.ids):
-        eps = _q(p.eps[r])
-        net = {}
-        for m, v in kvar.items():
-            sg = _contrib(p, p.terms[m], sid)
-            if sg:
-                net.setdefault(p.terms[m].col, []).append(v if sg > 0 else -v)
-        one_sided = {side: [m for m in kvar if p.terms[m].kind == "outside" and p.terms[m].a == sid and p.terms[m].sides == (side,)]
-                     for side in ("in", "out")}
-        for i in rows:
-            pred = [_q(p.X[c][i]) * z3.Sum(vs) for c, vs in net.items() if c < J and p.X[c][i] != 0]
-            res = _q(p.dY[r][i]) - (z3.Sum(pred) if pred else z3.RealVal(0))
-            solver.add(res <= eps, -res <= eps)
-            for side, sign in (("in", 1), ("out", -1)):
-                got = [kvar[m] * _q(p.X[p.terms[m].col][i]) for m in one_sided[side] if p.X[p.terms[m].col][i] != 0]
-                if got:
-                    solver.add(sign * z3.Sum(got) >= -eps)
+ADD_ROWS = 8                  # the worst missed steps reported per stock
 
 
 def _violated(p: Problem, kv: dict, rows: set) -> list[int]:
     """The steps outside rows where these numbers ({term: Fraction}) miss a stock's tolerance (or drive
-    a one-sided outside flow below 0), the worst first, up to ADD_ROWS per stock."""
+    a one-sided outside flow below 0), the worst first, up to ADD_ROWS per stock. Floats pick the steps
+    that could miss (within a millionth of the tolerance); only those are decided in rationals."""
     out: list[int] = []
+    X, Y = _floats(p)
     for r, sid in enumerate(p.ids):
         net = {}
         for m, v in kv.items():
@@ -271,8 +259,13 @@ def _violated(p: Problem, kv: dict, rows: set) -> list[int]:
                 net[p.terms[m].col] = net.get(p.terms[m].col, Fraction(0)) + sg * v
         sided = {side: [(p.terms[m].col, v) for m, v in kv.items() if v and p.terms[m].kind == "outside"
                         and p.terms[m].a == sid and p.terms[m].sides == (side,)] for side in ("in", "out")}
+        eps = float(p.eps[r])
+        fmiss = np.abs(Y[r] - sum((float(a) * X[:, c] for c, a in net.items()), np.zeros(X.shape[0]))) - eps
+        for side, sign in (("in", 1.0), ("out", -1.0)):
+            if sided[side]:
+                fmiss = np.maximum(fmiss, -sign * sum((float(a) * X[:, c] for c, a in sided[side]), np.zeros(X.shape[0])) - eps)
         bad = []
-        for i in range(p.steps):
+        for i in np.flatnonzero(fmiss > -1e-6 * eps).tolist():
             if i in rows:
                 continue
             miss = abs(p.dY[r][i] - sum((a * p.X[c][i] for c, a in net.items()), Fraction(0))) - p.eps[r]
@@ -286,26 +279,13 @@ def _violated(p: Problem, kv: dict, rows: set) -> list[int]:
 
 
 def _floats(p: Problem):
-    X = np.array([[float(v) for v in row] for row in p.X]).T          # steps x columns
-    Y = np.array([[float(v) for v in row] for row in p.dY])           # stocks x steps
-    return X, Y
-
-
-def _cheb(p: Problem, r: int, zero: list[int], X: np.ndarray, Y: np.ndarray) -> float | None:
-    """The smallest t such that the row of stock r, with these columns held at 0, fits every step within
-    its tolerance + t (an LP, HiGHS, floats); None when the LP fails."""
-    from scipy.optimize import linprog
-    J = X.shape[1]
-    free = [c for c in range(J) if c not in zero]
-    M = X[:, free]
-    n, m = M.shape
-    eps = float(p.eps[r])
-    A = np.block([[M, -np.ones((n, 1))], [-M, -np.ones((n, 1))]])
-    b = np.concatenate([Y[r] + eps, -Y[r] + eps])
-    cost = np.zeros(m + 1)
-    cost[-1] = 1.0
-    got = linprog(cost, A_ub=A, b_ub=b, bounds=[(None, None)] * m + [(0, None)], method="highs")
-    return float(got.x[-1]) if got.status == 0 else None
+    """The data as floats (steps x columns, stocks x steps), computed once per problem."""
+    got = getattr(p, "_float_cache", None)
+    if got is None:
+        got = (np.array([[float(v) for v in row] for row in p.X]).T.reshape(p.steps, len(p.cols)),
+               np.array([[float(v) for v in row] for row in p.dY]).reshape(len(p.ids), p.steps))
+        p._float_cache = got
+    return got
 
 
 BOUND_WIDEN = 1e-7            # the LP bounds are widened by this (relative, + absolute on the scale of 1), far above float error
@@ -321,7 +301,7 @@ def net_bounds(p: Problem) -> dict[tuple[int, int], tuple[float | None, float | 
     if not p.steps:
         return {}
     X, Y = _floats(p)
-    n, J = X.shape
+    J = X.shape[1]
     out = {}
     for r in range(len(p.ids)):
         eps = float(p.eps[r])
@@ -340,107 +320,24 @@ def net_bounds(p: Problem) -> dict[tuple[int, int], tuple[float | None, float | 
             if got is None:
                 break
             lo, hi = got
-            w = lambda v: BOUND_WIDEN * (1 + abs(v))  # noqa: E731
+            w = lambda v: BOUND_WIDEN * (1 + abs(v))
             out[(r, c)] = (None if lo is None else lo - w(lo), None if hi is None else hi + w(hi))
     return out
 
 
-def _fit(p: Problem, solver, kvar: dict, rows) -> None:
-    """Every step in rows fits within its stock's tolerance, and every one-sided outside flow's rate is
-    not below 0 there; kvar: {term index: its Z3 number} (terms not in it are 0)."""
-    J = len(p.cols)
-    for r, sid in enumerate(p.ids):
-        eps = _q(p.eps[r])
-        net = {}
-        for m, v in kvar.items():
-            sg = _contrib(p, p.terms[m], sid)
-            if sg:
-                net.setdefault(p.terms[m].col, []).append(v if sg > 0 else -v)
-        one_sided = {side: [m for m in kvar if p.terms[m].kind == "outside" and p.terms[m].a == sid and p.terms[m].sides == (side,)]
-                     for side in ("in", "out")}
-        for i in rows:
-            pred = [_q(p.X[c][i]) * z3.Sum(vs) for c, vs in net.items() if c < J and p.X[c][i] != 0]
-            res = _q(p.dY[r][i]) - (z3.Sum(pred) if pred else z3.RealVal(0))
-            solver.add(res <= eps, -res <= eps)
-            for side, sign in (("in", 1), ("out", -1)):
-                got = [kvar[m] * _q(p.X[p.terms[m].col][i]) for m in one_sided[side] if p.X[p.terms[m].col][i] != 0]
-                if got:
-                    solver.add(sign * z3.Sum(got) >= -eps)
-
-
-def _violated(p: Problem, kv: dict, rows: set) -> list[int]:
-    """The steps outside rows where these numbers ({term: Fraction}) miss a stock's tolerance (or drive
-    a one-sided outside flow below 0), the worst first, up to ADD_ROWS per stock."""
-    out: list[int] = []
-    for r, sid in enumerate(p.ids):
-        net = {}
-        for m, v in kv.items():
-            sg = _contrib(p, p.terms[m], sid)
-            if sg and v:
-                net[p.terms[m].col] = net.get(p.terms[m].col, Fraction(0)) + sg * v
-        sided = {side: [(p.terms[m].col, v) for m, v in kv.items() if v and p.terms[m].kind == "outside"
-                        and p.terms[m].a == sid and p.terms[m].sides == (side,)] for side in ("in", "out")}
-        bad = []
-        for i in range(p.steps):
-            if i in rows:
-                continue
-            miss = abs(p.dY[r][i] - sum((a * p.X[c][i] for c, a in net.items()), Fraction(0))) - p.eps[r]
-            for side, sign in (("in", 1), ("out", -1)):
-                if sided[side]:
-                    miss = max(miss, -sign * sum((a * p.X[c][i] for c, a in sided[side]), Fraction(0)) - p.eps[r])
-            if miss > 0:
-                bad.append((miss, i))
-        out += [i for _, i in sorted(bad, reverse=True)[:ADD_ROWS]]
-    return sorted(set(out))
-
-
-def _floats(p: Problem):
-    X = np.array([[float(v) for v in row] for row in p.X]).T          # steps x columns
-    Y = np.array([[float(v) for v in row] for row in p.dY])           # stocks x steps
-    return X, Y
-
-
-def _cheb(p: Problem, r: int, zero: list[int], X: np.ndarray, Y: np.ndarray) -> float | None:
-    """The smallest t such that the row of stock r, with these columns held at 0, fits every step within
-    its tolerance + t (an LP, HiGHS, floats); None when the LP fails."""
-    from scipy.optimize import linprog
-    J = X.shape[1]
-    free = [c for c in range(J) if c not in zero]
-    M = X[:, free]
-    n, m = M.shape
-    eps = float(p.eps[r])
-    A = np.block([[M, -np.ones((n, 1))], [-M, -np.ones((n, 1))]])
-    b = np.concatenate([Y[r] + eps, -Y[r] + eps])
-    cost = np.zeros(m + 1)
-    cost[-1] = 1.0
-    got = linprog(cost, A_ub=A, b_ub=b, bounds=[(None, None)] * m + [(0, None)], method="highs")
-    return float(got.x[-1]) if got.status == 0 else None
-
-
-def forced_columns(p: Problem) -> list[tuple[int, int]]:
-    """(stock row, column) pairs whose net number cannot be 0: with it at 0, the row's best fit (the
-    Chebyshev LP) misses some step by more than its tolerance again (t > eps: far beyond any float
-    error of the LP). These are implied constraints: they cut the search without changing what fits."""
-    if not p.steps:
-        return []
-    X, Y = _floats(p)
-    out = []
-    for r in range(len(p.ids)):
-        base = _cheb(p, r, [], X, Y)
-        if base is None or base > 0:
-            continue                              # the row fits nothing linear: no cut (the search will say)
-        for c in range(X.shape[1]):
-            t = _cheb(p, r, [c], X, Y)
-            if t is not None and t > float(p.eps[r]):
-                out.append((r, c))
-    return out
+def _outward(v: float, up: bool) -> Fraction:
+    """A short rational at or beyond v (a bound widened, never narrowed, to keep Z3's rationals small)."""
+    q = Fraction(int(np.ceil(v * 1e9)) if up else int(np.floor(v * 1e9)), 10 ** 9)
+    return q
 
 
 class Search:
     """The Z3 encoding of a Problem: a Boolean per term (included), a real number per term (0 unless
-    included), and the fit within epsilon on a growing set of steps (lazy rows: a candidate structure
-    found on the steps so far is checked on every step, exactly; if its numbers miss somewhere and no
-    other numbers of that structure fit every step, the worst steps missed join the search)."""
+    included), the net numbers' implied bounds (net_bounds) and "some term reaches (s, j)" where a bound
+    excludes 0. The data's steps are not in Z3 (its exact simplex on hundreds of rows with large rationals
+    does not honour the timeout): each candidate structure is verified on every step outside Z3
+    (`verify`), and a structure that does not fit is excluded exactly (that set of terms, not its
+    supersets), so Z3 is asked again."""
 
     def __init__(self, p: Problem):
         self.p = p
@@ -449,54 +346,58 @@ class Search:
         self.k = [z3.Real(f"k{i}") for i in range(len(p.terms))]
         for b, k in zip(self.inc, self.k):
             self.s.add(z3.Implies(z3.Not(b), k == 0))
-        n = FIRST_ROWS
-        self.rows = set(np.linspace(0, p.steps - 1, min(n, p.steps)).round().astype(int).tolist()) if p.steps else set()
-        _fit(p, self.s, dict(enumerate(self.k)), sorted(self.rows))
         self.verifies = 0
-        self.exact_verifies = 0
+        self.undecided = 0
+        self.rejected = 0
+        self.limits: dict = {}
+        self.bounds: dict = {}
+        self.forced: list = []
+        self.rows: set = set()
+
+    def add_bounds(self) -> None:
+        """The implied bounds of the net numbers (net_bounds) and the forced terms, as constraints."""
+        p = self.p
         self.bounds = net_bounds(p)
-        self.forced = []
         for (r, c), (lo, hi) in self.bounds.items():
             parts = [(m, sg) for m, t in enumerate(p.terms) if t.col == c and (sg := _contrib(p, t, p.ids[r]))]
             net = z3.Sum([self.k[m] if sg > 0 else -self.k[m] for m, sg in parts]) if parts else z3.RealVal(0)
             if lo is not None:
-                self.s.add(net >= _q(Fraction(lo)))
+                self.s.add(net >= _q(_outward(lo, False)))
             if hi is not None:
-                self.s.add(net <= _q(Fraction(hi)))
+                self.s.add(net <= _q(_outward(hi, True)))
             if (lo is not None and lo > 0) or (hi is not None and hi < 0):    # forced: some term reaching (r, c) is included
                 self.forced.append((r, c))
                 self.s.add(z3.Or([self.inc[m] for m, _ in parts] or [z3.BoolVal(False)]))
 
     def _check(self, k: int, timeout_ms: float):
-        self.s.push()
-        self.s.add(z3.AtMost(*self.inc, k))
+        """At most k terms, as an assumption (no push: Z3's push propagates without a timeout)."""
+        if k not in self.limits:
+            self.limits[k] = z3.Bool(f"atmost{k}")
+            self.s.add(z3.Implies(self.limits[k], z3.AtMost(*self.inc, k)))
         self.s.set("timeout", max(1, int(timeout_ms)))
-        got = self.s.check()
+        got = self.s.check(self.limits[k])
         model = self.s.model() if got == z3.sat else None
-        self.s.pop()
         return got, model
 
-    def verify(self, support: list[int], timeout_ms: float) -> dict | None:
-        """Numbers for this structure that fit every step ({term: Fraction}), or None. A float LP (HiGHS)
-        first: its numbers are checked exactly; a clear miss (the LP's best still misses by more than a
-        thousandth of the tolerance) is a no; only a borderline answer goes to Z3's exact LP."""
+    def verify(self, support: list[int]) -> dict | None:
+        """Numbers for this structure that fit every step ({term: Fraction}, checked exactly), or None.
+        A float LP (HiGHS) minimises the largest miss beyond the tolerance; its numbers are checked in
+        rationals, and if they miss by a hair, the LP is solved again inside a slightly smaller tolerance
+        (an interior point). Still unproven although the LP's miss is within a thousandth of the
+        tolerance: counted as undecided (and treated as not fitting)."""
         self.verifies += 1
-        got = _lp_numbers(self.p, support)
-        if got is not None:
+        tight = float(min(self.p.eps))
+        for shrink in (0.0, 1e-6, 1e-3):
+            got = _lp_numbers(self.p, support, shrink)
+            if got is None:
+                return None
             t, kv = got
             if not _violated(self.p, kv, set()):
                 return kv
-            if t > 1e-3 * float(min(self.p.eps)):
+            if t > 1e-3 * tight:
                 return None
-        self.exact_verifies += 1
-        v = z3.Solver()
-        v.set("timeout", max(1, int(timeout_ms)))
-        kvar = {m: z3.Real(f"v{m}") for m in support}
-        _fit(self.p, v, kvar, range(self.p.steps))
-        if v.check() != z3.sat:
-            return None
-        mo = v.model()
-        return {m: _frac_of(mo.eval(x, model_completion=True)) for m, x in kvar.items()}
+        self.undecided += 1
+        return None
 
     def find(self, k: int, deadline: float):
         """(z3 result, (support, numbers)) for a structure of at most k terms that fits every step."""
@@ -509,21 +410,25 @@ class Search:
                 return got, None
             sup = [i for i, b in enumerate(self.inc) if z3.is_true(model.eval(b, model_completion=True))]
             kv = {m: _frac_of(model.eval(self.k[m], model_completion=True)) for m in sup}
-            bad = _violated(self.p, kv, self.rows)
-            if not bad:
+            if not _violated(self.p, kv, set()):
                 return z3.sat, (sup, kv)
-            ok = self.verify(sup, (deadline - time.perf_counter()) * 1000)
+            ok = self.verify(sup)
             if ok is not None:
                 return z3.sat, (sup, ok)
-            self.rows |= set(bad)
-            _fit(self.p, self.s, dict(enumerate(self.k)), bad)
+            self.rejected += 1
+            self.exclude(sup)
+
+    def exclude(self, support: list[int]) -> None:
+        """Exclude exactly this set of terms (it does not fit; a superset still may)."""
+        on = set(support)
+        self.s.add(z3.Or([z3.Not(self.inc[i]) for i in support] + [self.inc[i] for i in range(len(self.inc)) if i not in on]))
 
     def block(self, support: list[int]) -> None:
         """Exclude this set of terms and every superset of it."""
         self.s.add(z3.Or([z3.Not(self.inc[i]) for i in support]) if support else z3.BoolVal(False))
 
 
-def _lp_numbers(p: Problem, support: list[int]):
+def _lp_numbers(p: Problem, support: list[int], shrink: float = 0.0):
     """(t, {term: Fraction}): the structure's numbers minimising t, the largest miss beyond each stock's
     tolerance over every step (t <= 0: it fits), with one-sided outside rates kept at or above -eps."""
     from scipy.optimize import linprog
@@ -536,7 +441,7 @@ def _lp_numbers(p: Problem, support: list[int]):
             sg = _contrib(p, p.terms[ti], sid)
             if sg:
                 D[:, j] = sg * X[:, p.terms[ti].col]
-        eps = float(p.eps[r])
+        eps = float(p.eps[r]) * (1 - shrink)
         rows += [np.hstack([D, -np.ones((n, 1))]), np.hstack([-D, -np.ones((n, 1))])]
         rhs += [Y[r] + eps, -Y[r] + eps]
         for side, sign in (("in", 1.0), ("out", -1.0)):
@@ -566,7 +471,7 @@ def enumerate_structures(p: Problem, slack: int = 1, cap: int = 20, budget: floa
     {status, k_min, structures: [[term index]], at_min, seconds, checks, complete}. status: "identifiable",
     "not identifiable", "outside the class", "unknown (timeout)"."""
     began = time.perf_counter()
-    left = lambda: budget - (time.perf_counter() - began)  # noqa: E731
+    left = lambda: budget - (time.perf_counter() - began)
     out = {"structures": [], "k_min": None, "checks": 0, "complete": False}
     if p.steps < 3:
         return {**out, "status": "unknown (too few steps)", "seconds": 0.0}
@@ -575,6 +480,11 @@ def enumerate_structures(p: Problem, slack: int = 1, cap: int = 20, budget: floa
     out["build_seconds"] = round(time.perf_counter() - began, 3)
     out["numbers"] = []
     top = len(p.terms) if max_size is None else min(max_size, len(p.terms))
+    if sr.verify(list(range(len(p.terms)))) is None and not sr.undecided:
+        # every structure is a subset of all the terms (the others at 0): if all of them cannot fit, nothing can
+        return {**out, "status": "outside the class", "seconds": round(time.perf_counter() - began, 3), "complete": True,
+                "verifies": sr.verifies, "rejected": sr.rejected, "undecided": sr.undecided}
+    sr.add_bounds()
     k = 0
     while k <= top:
         if left() <= 0:
@@ -583,7 +493,7 @@ def enumerate_structures(p: Problem, slack: int = 1, cap: int = 20, budget: floa
         out["checks"] += 1
         if got == z3.unknown:
             return {**out, "status": "unknown (timeout)", "seconds": round(time.perf_counter() - began, 3), "at_k": k,
-                    "rows": len(sr.rows)}
+                    "verifies": sr.verifies, "rejected": sr.rejected, "undecided": sr.undecided}
         if got == z3.sat:
             break
         k += 1
@@ -608,7 +518,7 @@ def enumerate_structures(p: Problem, slack: int = 1, cap: int = 20, budget: floa
         if not exhausted[size]:
             break
     at_min = [s for s in out["structures"] if len(s) == k]
-    out.update(at_min=len(at_min), complete=all(exhausted.values()), exhausted=exhausted, rows=len(sr.rows), verifies=sr.verifies, exact_verifies=sr.exact_verifies)
+    out.update(at_min=len(at_min), complete=all(exhausted.values()), exhausted=exhausted, verifies=sr.verifies, rejected=sr.rejected, undecided=sr.undecided)
     status = ("not identifiable" if len(at_min) > 1 else "identifiable" if exhausted.get(k) else "unknown (timeout)")
     out.update(status=status, seconds=round(time.perf_counter() - began, 3))
     return out

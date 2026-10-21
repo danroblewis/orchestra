@@ -15,6 +15,7 @@ import json
 import sys
 import time
 from collections import Counter
+from datetime import UTC
 
 from . import cases as casemod
 from . import data as datamod
@@ -55,7 +56,7 @@ def analysis_label(case_id: str, variant: str, compute: bool) -> str | None:
 
 def one(case_id: str, variant: str, moves: str = "ends", slack: int = 1, cap: int = 20, budget: float = 120.0,
         hidden: bool = False, compute_analysis: bool = False) -> dict:
-    stocks, run, opts, c = page(case_id, variant)
+    stocks, run, opts, _ = page(case_id, variant)
     began = time.perf_counter()
     p = zi.prepare(stocks, run, opts, moves=moves)
     prep = time.perf_counter() - began
@@ -68,7 +69,7 @@ def one(case_id: str, variant: str, moves: str = "ends", slack: int = 1, cap: in
     out = {"case": case_id, "variant": variant, "moves": moves, "status": r["status"], "k_min": r.get("k_min"),
            "at_min": r.get("at_min"), "structures": structures, "terms": len(p.terms), "steps": p.steps,
            "decimals": p.decimals, "seconds": round(prep + r["seconds"], 3), "checks": r.get("checks"),
-           "rows": r.get("rows"), "verifies": r.get("verifies"), "exact_verifies": r.get("exact_verifies"),
+           "verifies": r.get("verifies"), "rejected": r.get("rejected"), "undecided": r.get("undecided"),
            "complete": r.get("complete"), "declared": p.declared, "note": p.note,
            "analysis": analysis_label(case_id, variant, compute_analysis), "scorer": scorer_verdicts(case_id, variant)}
     if hidden and r["status"] == "outside the class":
@@ -86,8 +87,8 @@ def _guard(a, n: int) -> bool:
               f"strategies, not this tool: pass --local to run it here (logged to {local_log()}).", file=sys.stderr)
         return False
     import os
-    from datetime import datetime, timezone
-    entry = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "command": "ident", "argv": sys.argv[1:],
+    from datetime import datetime
+    entry = {"at": datetime.now(UTC).isoformat(timespec="seconds"), "command": "ident", "argv": sys.argv[1:],
              "items": n, "busy_seconds": None, "cwd": os.getcwd(), "pid": os.getpid(), "user": os.environ.get("USER")}
     try:
         lp = local_log()
@@ -104,7 +105,7 @@ def _line(r: dict) -> str:
     sc = r["scorer"]
     scorer = " ".join(f"{k} {sc[k]}" for k in ("pass", "equivalent", "fail", "error", "timeout") if sc.get(k)) or "no results"
     k = "" if r["k_min"] is None else f" k*={r['k_min']}" + (f" ({r['at_min']} of that size)" if r["at_min"] and r["at_min"] > 1 else "")
-    extra = "" if r.get("complete", True) else "; larger sizes cut short by the budget"
+    extra = "" if r.get("complete", True) else "; enumeration cut short (budget or cap)"
     rel = (r["structures"][0].get("relabelings") or []) if r.get("structures") else []
     if rel:
         extra += f"; same-row splits the boundary allows: {len(rel)}"

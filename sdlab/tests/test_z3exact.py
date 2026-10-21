@@ -11,8 +11,8 @@ def _chain(noise: float = 0.0, steps: int = 120):
     lv = {"A": [], "B": []}
     rng = random.Random(1)
     for _ in range(steps):
-        for s in x:
-            lv[s].append(round(x[s] + rng.gauss(0, noise), 4) if noise else round(x[s], 4))
+        for s, v in x.items():
+            lv[s].append(round(v + rng.gauss(0, noise), 4) if noise else round(v, 4))
         a, b = x["A"], x["B"]
         x = {"A": a + 20 - 0.5 * a, "B": b + 0.5 * a - 0.2 * b}
     run = {"t": list(range(1, steps + 1)), "levels": lv, "boundary_declared": True,

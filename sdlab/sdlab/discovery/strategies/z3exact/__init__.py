@@ -15,22 +15,30 @@ changes) or Z3 runs out of time.
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 
 from . import core
 
-BUDGET = 60.0                 # seconds of Z3 search per class (the ladder's item timeout is 120 s)
+BUDGET = 60.0                 # seconds of Z3 search per class
+TOTAL = 90.0                  # seconds for everything (the ladder's item timeout is 120 s; Z3 and HiGHS are not interruptible)
 CAP = 12                      # smallest structures compared at most
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     notes = []
+    began = time.perf_counter()
     for moves in core.MOVE_CLASSES:
+        budget = min(BUDGET, TOTAL - (time.perf_counter() - began))
+        if budget < 5:
+            notes.append(f"[{moves}] not tried (out of time)")
+            break
         p = core.prepare(stocks, run, opts, moves=moves)
         if p.steps < 20:
             return {"flows": [], "note": "z3exact: too few steps."}
-        r = core.enumerate_structures(p, slack=0, cap=CAP, budget=BUDGET)
+        r = core.enumerate_structures(p, slack=0, cap=CAP, budget=budget)
         notes.append(f"[{moves}] {r['status']} ({r['seconds']:.1f} s, {r.get('checks')} checks)")
         if not r["structures"]:
             if r["status"].startswith("unknown"):
@@ -93,7 +101,7 @@ def flows_of(p: core.Problem, sup: list[int], k: np.ndarray, t: list | None = No
     out = []
     era_t = [float(x) for x in p.era_starts]
     for (a, b), parts in groups.items():
-        def rate(e, linear: bool = False) -> dict:
+        def rate(e, linear: bool = False, parts=parts, a=a) -> dict:
             c0 = sum(v for c, v in parts if p.cols[c].kind == "const" and p.cols[c].era == e)
             reads = [(p.cols[c].name, v) for c, v in parts if p.cols[c].kind != "const" and p.cols[c].era == e]
             if not reads and not linear:
