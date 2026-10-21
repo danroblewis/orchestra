@@ -10,7 +10,11 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py, a copy of e8edf28's)."""
+    measurement error (eiv.py, a copy of e8edf28's), then kept inside the announced boundary
+    (boundary.py, a copy of matrix's at 723f72c; docs/research/declared-boundary.md): the guard and
+    the moves where one is declared, each outside flow priced as a boundary claim where none is."""
+    from . import boundary
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts)

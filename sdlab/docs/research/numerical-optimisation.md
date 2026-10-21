@@ -59,3 +59,25 @@ the judge (commit f6643bf; `tests/test_strategy_numopt_inputs.py`). `numopt_fd`,
 Ladder (each of the four, same seeds, before vs after): 300/301 0/10 -> 9/10 passing (300 meas-short
 still fails: errors-in-variables bias 27%, the matrix base has it too); 96 other paired cells with an
 unchanged scorer: fail -> pass 10-12 (062, 302-305), pass -> fail 0.
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (docs/research/declared-boundary.md; the user's approval,
+CLAUDE.md invariant 2). Each of `numopt_bo`, `numopt_cma`, `numopt_nm`, `numopt_powell` carries its own copy of
+`matrix/boundary.py` at 723f72c (`HIDDEN_PRICE = 0`: a hidden stock pays only for its numbers; `CLAIM_PRICE = 2`)
+and the same hooks as matrix at 67f5b9e, applied to its own copies of `earned.py`, `earned_rows.py`,
+`earned_joint.py` (which were identical to matrix's before that commit):
+
+- the base model is fitted inside the boundary from the start: a row has an outside term only on a declared
+  `estimate` side, reads a measured input only on a declared `measured` side, reads a stock of another unit
+  only on an `estimate` side; a source with no `estimate` outflow is tied (its drain is all moves);
+- every candidate is guarded before the judge chooses (`boundary.apply(..., final=False)`);
+- the numerical search itself (`numopt.py`) adds effects, co-flows and hidden stocks on the base's flows, never
+  an outside flow, so it needs no candidate filter; the searched model is still guarded before the judge
+  compares it with the base;
+- the final answer (after the errors-in-variables refit) goes through `boundary.apply`: the guard and
+  anti-correlated pairs tried as moves where a boundary is declared, each outside flow priced as a boundary
+  claim (and listed in `boundary_claims`) where none is. The optional passes stop after `MAX_FITS = 120`
+  refits.
+
+Tests: `tests/test_numopt_boundary.py`. Paired results (Kubernetes 300-305 and 40 Tests cells): in progress.

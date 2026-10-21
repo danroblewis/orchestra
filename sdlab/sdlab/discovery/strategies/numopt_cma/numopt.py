@@ -272,6 +272,7 @@ def identify_with(method: str, stocks: list[dict], run: dict, opts: dict | None 
     """identify() (the matrix method, candidates chosen by behaviour), then search() from its
     model; the searched model is kept only if identify()'s judge prefers it."""
     from ...identify import judge
+    from . import boundary
     from .earned import main_line as identify
 
     opts = dict(opts or {})
@@ -281,6 +282,11 @@ def identify_with(method: str, stocks: list[dict], run: dict, opts: dict | None 
         return r
     inputs = opts.get("inputs")
     flows, note = search(stocks, run, r["flows"], method, nopts, inputs)
+    # (the declared boundary, boundary.py) the search adds effects, co-flows and hidden stocks on the
+    # base's flows, never an outside flow, and the base is inside the boundary already (earned.py);
+    # the guard still sees the searched model before the judge, so no undeclared outside flow is kept
+    if boundary.Boundary(run).declared:
+        flows = boundary.apply({"flows": flows}, stocks, run, opts, final=False)["flows"]
     e0, e1 = judge(r["flows"], stocks, run, inputs=inputs), judge(flows, stocks, run, inputs=inputs)
     note["judge"] = (round(e0, 5), round(e1, 5))
     kept = e1 < e0
