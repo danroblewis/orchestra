@@ -393,4 +393,12 @@ _identify_linear = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    return _capmin.wrap(_identify_linear, stocks, run, opts, *args, **kw)
+    """(2026-10-21, k8s-306 round 3, docs/research/k8s-306-r3-oefit.md) Between the fit and the MIN
+    written back, where the levels carry measurement error, the numbers are refitted and the structure
+    revised on the output error (oefit.py: the model run through the whole record against the measured
+    levels)."""
+    from . import oefit
+
+    o, cap = _capmin.offer(stocks, run, opts)
+    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
+    return _capmin.restore(r, cap)
