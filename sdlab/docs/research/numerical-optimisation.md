@@ -80,4 +80,25 @@ and the same hooks as matrix at 67f5b9e, applied to its own copies of `earned.py
   claim (and listed in `boundary_claims`) where none is. The optional passes stop after `MAX_FITS = 120`
   refits.
 
-Tests: `tests/test_numopt_boundary.py`. Paired results (Kubernetes 300-305 and 40 Tests cells): in progress.
+Tests: `tests/test_numopt_boundary.py`. A later commit (ab73e30) gives the guard copy its own budget
+(`GUARD_FITS = 160` refits; past it a flow outside the boundary is dropped untried, never kept).
+
+Paired results (CPU pool, 2026-10-20, same cells for all four: before = fc7d3f9, jobs 90, 101-111; after =
+7d2a370, jobs 20, 23, 25, 27, 29, 33, 96-100; 272 items, all paired, no errors). The 40 Tests cells are
+25 where numopt_bo's stored answer had an outside flow the declared boundary lacks and 15 stored passes,
+picked evenly from the sorted list.
+
+| set | numopt_bo | numopt_cma | numopt_nm | numopt_powell |
+|---|---|---|---|---|
+| Kubernetes 300-305 (28 cells), pass | 27 -> 27 | 26 -> 27 | 27 -> 27 | 27 -> 27 |
+| 40 Tests cells, pass | 18 -> 23 | 18 -> 23 | 18 -> 23 | 18 -> 23 |
+| cells with an invented boundary | 16 -> 0 | 16 -> 0 | 16 -> 0 | 15 -> 0 |
+
+- fail -> pass, all four: 047#1 none-short (equivalent -> pass for powell), 047#6 counts-short, 080 outliers-short,
+  083 counts-short, 087 lag-long, 305 none-long; cma also 305 counts-long.
+- pass -> fail, all four: 303 meas-long. The structure is still right (recall and precision 1); the move
+  inflight -> responses_total comes out at 0.568 against 0.5 (error 13.5%, se 0.019).
+- 195 counts-long: a timeout before, a fail after.
+- The longest item took 72.5 s before and 43.9 s after. The pool has no numopt results for 313-317. Run by
+  hand, numopt_powell on 317 none-long took more than 30 minutes both before and after the change, so 317
+  times out either way.
