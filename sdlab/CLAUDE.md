@@ -86,7 +86,7 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     (`sdlab-ladder submit` refuses a branch that lacks the `sdlab` HEAD). Results of a commit that is
     not the `sdlab` HEAD stay with their job and never become the main line's latest unless their
     hashes equal the HEAD's. Nothing is pushed to origin.
-12. **Agents own their files.** A strategy agent adds or edits only its own package, tests and doc.
+12. **Agents own their files.** One agent edits a strategy package at a time: run `sh scripts/strategy-lock.sh acquire <strategy> <your name>` before editing it (exit 1: another agent holds it; edit something else or report what you need) and `release` after your commit (the user, 2026-10-21). A strategy agent adds or edits only its own package, tests and doc.
     It does not edit the shared discovery library or another agent's strategy (invariant 11), the harness (`sdlab/ladder/`, `sdlab/skill.py`,
     `tests/bench/`, the server, static files) or another strategy; it reports the needed fix
     instead. An agent given a shared module owns only that module and edits others surgically.
