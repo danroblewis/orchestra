@@ -81,7 +81,11 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     - **The test harness** (`sdtruth.py`, `sdlab/ladder/`, `skill.py`) is not strategy code.
       Harness features go into harness modules, never into the discovery library.
 
-    Work happens in this checkout on branch `sdlab`; there are no new git branches or worktrees.
+    Work happens on branch `sdlab`, or on an agent's own feature branch (allowed since 2026-10-20, the
+    user): commit it and keep it up to date with `sdlab` (merge `sdlab` in) before submitting pool jobs
+    (`sdlab-ladder submit` refuses a branch that lacks the `sdlab` HEAD). Results of a commit that is
+    not the `sdlab` HEAD stay with their job and never become the main line's latest unless their
+    hashes equal the HEAD's. Nothing is pushed to origin.
 12. **Agents own their files.** A strategy agent adds or edits only its own package, tests and doc.
     It does not edit the shared discovery library or another agent's strategy (invariant 11), the harness (`sdlab/ladder/`, `sdlab/skill.py`,
     `tests/bench/`, the server, static files) or another strategy; it reports the needed fix
@@ -115,8 +119,8 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
     node2's split and sync (`machines.yaml` names no machine; `scripts/sdlab-sync.sh` is retired); nothing
     starts them. The store here is the source of truth, backed up hourly to
     `~/.sdlab/backups/` (`scripts/sdlab-backup.sh`, `sdlab-ladder restore`). Agents run only
-    their own strategy (`--strategies <name>`), never a full sync. When the main line has a backlog,
-    the board mixes versions: say so when quoting it. Leaderboard rates are over the cells a
+    their own strategy (`--strategies <name>`), never a full sync, and test it as rule 15c says.
+    When the main line has a backlog, the board mixes versions: say so when quoting it. Leaderboard rates are over the cells a
     strategy has run, with its coverage shown. The public UI
     (`https://sdlab.dansproject.space/ladder`) must load in about a second. Restart the server after
     Python changes:
@@ -129,15 +133,21 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
 15b. **CPU goes through the pool** (the user, 2026-10-20; docs/pool.md). CPU, not agents, is the
     bottleneck. The server holds a job queue; workers on node2 (all its CPU, within its memory) and the
     Mac (half its CPU, `nice 19`) pull items and post results; they never write a database. An agent
-    runs a small test itself (`sdlab-ladder run`, at most 40 items and 2 CPU-minutes by `sdlab-ladder
-    cost`); anything larger it commits first and submits: `uv run sdlab-ladder pool submit --strategies
-    <its own> --cases ... --by <agent>` (refused while the code it uses has uncommitted changes), then
-    `pool status JOB` and `pool results JOB`. A job runs its commit; its results become the main line's
-    latest only when their hashes equal the `sdlab` HEAD's. The page is `/ladder/pool`. A worker is
+    runs a small test itself and submits anything larger (rule 15c). A job runs its commit; its results
+    become the main line's latest only when their hashes equal the `sdlab` HEAD's. The page is `/ladder/pool`. A worker is
     `sdlab-ladder worker --server URL --slots N` (a checkout per slot, memory-aware; docs/pool.md, "Workers").
     Running since 2026-10-20 (docs/pool.md, "Deployment"): node2's worker is the systemd --user service
     `sdlab-pool-worker` (`scripts/pool/install-node2.sh`); the Mac's (14 slots, home `~/.sdlab/pool/worker`,
     log `~/.sdlab/pool-worker.log`) is kept up by the daemon (`touch ~/.sdlab/pool-worker.paused` keeps it down).
+15c. **Small tests here, larger ones on the pool** (the user, 2026-10-20). `sdlab-ladder run` and `sync`
+    are for small tests: at most 40 items and 2 CPU-minutes of busy time (`sdlab-ladder cost`'s
+    estimate). Above that they refuse and print the command to use instead. Commit first, then
+    `uv run sdlab-ladder submit --strategies <its own> --cases ... [--variants ...] [--stale] --by <agent>`
+    (the run/sync selectors; `--stale` runs only what is stale, as sync; it runs the checkout's branch at
+    its commit and is refused while that code has uncommitted changes), and
+    `uv run sdlab-ladder job ID --wait` (each item, then run's summary; `--json` for scores and flows).
+    `--local` runs a larger test here anyway; it is logged (`~/.sdlab/local-runs.log`), so use it only
+    when the pool cannot (e.g. it is down), and say so.
 16. **Probing a real, live system needs the user's approval.**
 17. **Clean up when you finish.** Before an agent's final report, it stops every run, bench and
     browser it started (and their worker processes). The machine is shared: leftover runs from

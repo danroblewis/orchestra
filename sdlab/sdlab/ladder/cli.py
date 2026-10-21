@@ -1,10 +1,18 @@
 """The ladder's command line: uv run sdlab-ladder <command> (or python -m sdlab.ladder).
 
-    run    [--strategies a,b|all] [--cases ids|tag:x|level:n|machine:m] [--exclude-cases SPEC] [--variants none,long,counts-short]
+    run    [--strategies a,b|all] [--cases ids|tag:x|level:n|machine:m] [--exclude-cases SPEC] [--variants none,long,counts-short] [--local]
                                   run those now, current or not (a new row in the history); --exclude-cases (the
-                                  --cases syntax) leaves cases out, also for sync and watch
-    sync   [--strategies ...]     run every stale (case, variant, strategy): new or changed cases, new or
-                                  changed strategies or discovery code; a scorer change re-scores stored flows
+                                  --cases syntax) leaves cases out, also for sync and watch. Small runs only: above
+                                  40 items or 2 CPU-minutes (sdlab-ladder cost) it is refused and names the submit
+                                  command (CLAUDE.md rule 15c); --local runs it here anyway, logged
+    sync   [--strategies ...] [--local]
+                                  run every stale (case, variant, strategy): new or changed cases, new or
+                                  changed strategies or discovery code; a scorer change re-scores stored flows;
+                                  the same size limit as run
+    submit [--strategies ...] [--cases ...] [--exclude-cases ...] [--variants ...] [--stale] [--ref BRANCH] [--by NAME]
+                                  the CPU pool runs it at a committed ref (default this checkout's branch): prints
+                                  the estimate and the job id; --stale: only what is stale, as sync (pool/agent.py)
+    job    ID [--wait] [--json]   a pool job's progress; --wait: each item as it finishes, then run's summary
     status [--strategies ...] [--variant V]
                                   the strategy x case matrix, per-tag summaries, and what is stale
     show   CASE [--strategy S] [--variant V]
@@ -93,6 +101,10 @@ def do_run(a, force: bool, command: str) -> int:
     if not items:
         print("Nothing to run: every result is current.")
         return 0
+    if command in ("run", "sync"):                               # small tests here; larger ones go to the pool (rule 15c)
+        from .pool import agent as pool_agent
+        if not pool_agent.guard(a, items, command):
+            return 3
     backlog = len(items)
     batch = getattr(a, "batch", 0) or 0
     if batch and len(items) > batch:
@@ -453,8 +465,13 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--exclude-cases", help="cases to leave out (the --cases syntax), e.g. machine:node2: what another machine runs")
         return p
 
-    common(exclude(sub.add_parser("run", help="run strategies on cases, current or not")))
-    common(exclude(sub.add_parser("sync", help="run everything stale (optionally only some strategies, cases, variants)")))
+    for name, text in (("run", "run strategies on cases, current or not (small tests: larger ones are submitted)"),
+                       ("sync", "run everything stale (optionally only some strategies, cases, variants; small tests only)")):
+        p = sub.add_parser(name, help=text)
+        common(exclude(p))
+        p.add_argument("--local", action="store_true", help="run here even above the local limit (40 items, 2 CPU-minutes); logged")
+    from .pool import agent as pool_agent
+    pool_agent.add_parsers(sub)
     ex = sub.add_parser("export", help="results made here since an id (or the last export) to a gzipped JSONL file (exchange.py)")
     ex.add_argument("--since-id", type=int, help="export results with a larger id (default: since the last export)")
     ex.add_argument("--out", help="the file (default $SDLAB_LADDER_CACHE/exports/<machine>-<since>-<upto>.jsonl.gz)")
@@ -553,6 +570,8 @@ def main(argv: list[str] | None = None) -> int:
         return do_run(a, True, "run")
     if a.command == "sync":
         return do_run(a, False, "sync")
+    if a.command in ("submit", "job"):
+        return getattr(pool_agent, a.command)(a)
     if a.command == "export":
         from . import exchange
         got = exchange.export(a.since_id, a.out)

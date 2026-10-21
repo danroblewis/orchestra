@@ -29,8 +29,21 @@ the same estimate first and says when a job is small enough to run locally. The 
 time (local); `--strategies lna` over every case is 1484 items, 58 CPU-minutes (the pool; its 62
 realistic items alone are 30 minutes).
 
+Since 2026-10-20 this is enforced and made the default path (`sdlab/ladder/pool/agent.py`):
+`sdlab-ladder run` and `sync` plan first and refuse above the limit, printing the submit command (exit
+code 3; `--local` runs it here anyway and appends it to `~/.sdlab/local-runs.log`). The agents' commands
+are `uv run sdlab-ladder submit` (the run/sync selectors; `--stale` for sync's "only what is stale",
+otherwise every cell again as `run`, sent as `fresh`) and `uv run sdlab-ladder job ID [--wait] [--json]`
+(progress, each item as it finishes, then `run`'s summary line). `pool submit|status|results|cancel`
+stay for the rest.
+
 Before submitting, an agent commits its strategy and keeps its branch up to date: a job runs a commit,
-never a working tree.
+never a working tree. Agents may work on feature branches (the user, 2026-10-20). `submit` defaults to
+the checkout's branch, refuses while the job's code has uncommitted changes in the agent's own checkout
+(the client checks its checkout, so a worktree on a feature branch is checked too; the server checks
+its own), and refuses a branch that lacks the `sdlab` HEAD (`--behind-ok` for an older commit on
+purpose). Results of a commit other than the `sdlab` HEAD stay in the job; they reach the main line only
+when their hashes equal the HEAD's.
 
 ## Jobs
 

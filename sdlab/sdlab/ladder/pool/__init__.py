@@ -13,6 +13,7 @@ The server side:
     memory.py    an item's expected peak memory
     routes.py    the endpoints under /api/pool
     cli.py       `sdlab-ladder pool ...`: submit, status, results, cancel
+    agent.py     what agents use: `sdlab-ladder submit` and `job`, and run's and sync's size guard (rule 15c)
 
 The worker (`sdlab-ladder worker`, docs/pool.md "Workers"):
 

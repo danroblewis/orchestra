@@ -21,13 +21,14 @@ model that shows it. The 31 examples (`sdlab/examples/sd-*`) and the generated m
 ## Commands
 
 ```
-uv run sdlab-ladder sync                               # run everything stale (all strategies, all cases)
-uv run sdlab-ladder sync --strategies matrix           # only matrix
-uv run sdlab-ladder run --strategies matrix --cases 003,tag:loop --variants counts   # run these now, current or not
+uv run sdlab-ladder sync --strategies matrix --cases 003   # run what is stale of these, here (small tests only)
+uv run sdlab-ladder run --strategies matrix --cases 003,tag:loop --variants counts   # run these now, current or not (small tests only)
+uv run sdlab-ladder submit --strategies matrix --cases tag:realistic --by me   # larger runs: the CPU pool, at a committed ref
+uv run sdlab-ladder job 12 --wait                      # a pool job's items as they finish, then run's summary
 uv run sdlab-ladder status                             # the strategy x case matrix, per-tag summaries
 uv run sdlab-ladder status --strategies matrix --variant counts-short   # one strategy, one variant in detail
 uv run sdlab-ladder show 011 --strategy matrix         # true vs found equations, part by part, with scores
-uv run sdlab-ladder watch                              # sync now, then whenever a case or strategy changes
+uv run sdlab-ladder watch                              # retired (2026-10-20): the pool's main-line job does this
 uv run sdlab-ladder check                              # every case file compiles, and the cases' sanity checks
 uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
 uv run sdlab-ladder freeze 042#5                       # write draw 5 of parametric case 042 as an ordinary case
@@ -42,6 +43,31 @@ draws, and `042#5` is one. Variants are chosen by name (`counts-short`),
 noise (`none`, `counts`) or length (`short`, `long`). Common options: `--jobs N` (default: CPU cores
 minus 1; each worker uses one numpy thread) and `--timeout S` (per item, default 120 s). A strategy
 that raises is recorded as `error` and one that runs out of time as `timeout`; the run carries on.
+
+### Small tests here, larger ones on the CPU pool (2026-10-20)
+
+CPU is the bottleneck, so the cores of the Mac and node2 are one pool of test runners
+([pool.md](pool.md)). `run` and `sync` are for small tests: they plan first, and above **40 items or 2
+CPU-minutes of busy time** (the estimate `sdlab-ladder cost` makes from stored per-cell times) they
+refuse and print the `submit` command to use instead (exit code 3). `--local` runs a larger one here
+anyway; each such run is appended to `~/.sdlab/local-runs.log` (time, command, items, estimate).
+
+`sdlab-ladder submit` takes the same selectors (`--strategies`, `--cases`, `--exclude-cases`,
+`--variants`) and runs them on the pool at a committed ref: by default the checkout's own branch, or
+`--ref`. Without `--stale` every cell is run again, as `run` does; with `--stale` only cells with no
+stored result of exactly their hashes are, as `sync` does. It prints the estimate and the job id. It is
+refused while the code the job uses has uncommitted changes in this checkout (the job's strategies and
+the harness; `--check-tree strategies` checks only the strategies, `none` nothing), and while a feature
+branch lacks the `sdlab` HEAD (merge it first; `--behind-ok` for an older commit on purpose).
+`sdlab-ladder job ID` prints the job's progress; `--wait` prints each item as it finishes (case,
+variant, strategy, status, seconds, machine and slot) and ends with the summary line `run` prints;
+`--json` prints the job and its results (scores and found flows included). `sdlab-ladder pool
+status|results|cancel` show the whole queue, a job's results, and cancel one.
+
+A job's results are stored with its job id, commit, machine and slot. They become the main line's
+latest (what the leaderboard shows) only when their case, strategy and score hashes equal those of the
+`sdlab` HEAD; results of a feature branch or an older commit stay queryable by job and never enter the
+main line otherwise.
 
 Data and results live outside the repository, in `$SDLAB_LADDER_CACHE` (default
 `~/.cache/sdlab/ladder`): `data/` holds each case's runs, and `results.sqlite` holds the results.
@@ -2155,9 +2181,10 @@ Any change to discovery's shared code therefore re-runs every strategy, but addi
 not re-run the others. A strategy whose import fails (for example, an optional package that is
 missing) is listed as unavailable with the reason and skipped. It does not crash the run.
 
-To add one, follow [DISCOVERY-LOOP.md](DISCOVERY-LOOP.md). Write the module, then run
-`uv run sdlab-ladder sync --strategies <name>` and read its column next to `matrix`'s in
-`sdlab-ladder status`.
+To add one, follow [DISCOVERY-LOOP.md](DISCOVERY-LOOP.md). Write the module, try it on a few cases
+here (`uv run sdlab-ladder sync --strategies <name> --cases 001,...,007`), commit it, then submit the
+rest (`uv run sdlab-ladder submit --strategies <name> --stale --by <you>`, `sdlab-ladder job ID
+--wait`) and read its column next to `matrix`'s in `sdlab-ladder status`.
 
 ## Scoring (`sdlab/sdlab/ladder/score.py`)
 
