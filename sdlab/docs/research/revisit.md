@@ -360,6 +360,15 @@ up, and lna_stack keeps its own copy of lna's guard to guard lna's reading with 
 and the flow writer as a function (`run.written(cur, d, ctx)`: lna_levels copies lna's four lines
 that write atoms as flows, to guard lna's own reading).
 
+## The declared boundary (2026-10-20)
+
+lna_levels, lna_loops, lna_products, lna_pulses and lna_stack respect the declared boundary through their
+own lna copies, which carry lna's boundary code (docs/research/lna.md, "The declared boundary"): outside
+atoms only where declared, claims priced in lna's BIC where none is, the guard on the matrix's model and
+on the answer. The stages' own outside terms go through the same test: levels' inflow rows and products'
+scaled outflows are held at 0 off a declared side, loops' closing links are not offered there, and
+pulses (lna_pulses, lna_stack) are kept only on a declared estimated side (`inside_pulses`).
+
 ## Recommendations
 
 **Unpark: none.** The parked strategies' only wins of their own on the ladder were 016 noise-free

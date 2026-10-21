@@ -22,6 +22,7 @@ from scipy.stats import chi2
 from ...identify import identify as _matrix
 from ...matrix import injected
 from ...simulate import Model
+from ._vendored.lna import boundary
 from ._vendored.impulses import _flows as pulse_flows
 from ._vendored.impulses import find_pulses
 from ._vendored.lna import GUARD, judge
@@ -125,14 +126,32 @@ def _not_injected(found: dict[str, np.ndarray], run: dict, injections: list[dict
     return out
 
 
+def inside_pulses(found: dict[str, np.ndarray], run: dict) -> dict[str, np.ndarray]:
+    """(the declared boundary) Pulses are outside flows: a burst into a stock only where the case
+    declares an estimated outside inflow there, one out of it only where it declares an estimated
+    outflow; with no boundary declared, every pulse (each a boundary claim, priced at the end)."""
+    b = boundary.Boundary(run)
+    if not b.declared:
+        return found
+    out = {}
+    for stock, a in found.items():
+        if not b.may(stock, "in", "estimate"):
+            a = np.where(a > 0, 0.0, a)
+        if not b.may(stock, "out", "estimate"):
+            a = np.where(a < 0, 0.0, a)
+        if a.any():
+            out[stock] = a
+    return out
+
+
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
-    found = _not_injected(find_pulses(stocks, run, opts), run, opts.get("injections"))
+    found = inside_pulses(_not_injected(find_pulses(stocks, run, opts), run, opts.get("injections")), run)
     if not found:
         return _lna(stocks, run, opts)
     ids = [s["id"] for s in stocks]
     T = len(run["t"]) - 1
-    base = _matrix(stocks, run, dict(opts))
+    base = boundary.apply(_matrix(stocks, run, dict(opts)), stocks, run, opts, final=False)   # the declared boundary
     rest = {k: v for k, v in opts.items() if k != "candidates"}
     inj = opts.get("injections")
     budget = Budget(opts)
@@ -171,7 +190,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (the lna copy's boundary.py,
+    docs/research/declared-boundary.md: the guard and paired moves where one is declared, each outside
+    flow priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts, searched=r.get("method") == "lna")   # lna's own reading: its search tried the moves and priced the claims

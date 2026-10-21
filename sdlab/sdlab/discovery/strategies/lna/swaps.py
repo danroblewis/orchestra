@@ -29,7 +29,7 @@ def swaps(cur: Fitted, d: Data, rounds: int = 6, margin: float = 2.0) -> Fitted:
             if cur.theta[i] <= 0:
                 continue
             for b in _alternatives(a, cur.atoms):
-                if b in cur.atoms:
+                if b in cur.atoms or (d.inside is not None and not d.inside(b)):
                     continue
                 atoms = list(cur.atoms)
                 atoms[i] = b

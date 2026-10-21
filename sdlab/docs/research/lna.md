@@ -191,6 +191,30 @@ the bench), 6 of 200 meeting the goal. Against the matrix's run of the same pool
 shared code): matrix -52.4% / -48.1%, 7 of 200; paired at skill@20, lna better in 44 runs and worse
 in 56. Neutral within noise; worst motifs for lna: inflow_season, branch, floor.
 
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (`run["boundary"]`; docs/research/declared-boundary.md).
+lna carries its own copy of `matrix/boundary.py` (at `723f72c`, HIDDEN_PRICE 0) as `lna/boundary.py`,
+with two additions: `atom_side`/`inside`/`claim`, which read an lna atom's outside end (`in`, `grow`,
+`gap`, `link`: an inflow; `out`, `drain`: an outflow; "measured" when it reads a measured input's row,
+else "estimate"), and a bound on the guard's refits (`GUARD_FITS`). Wired into lna's own search:
+
+- **declared:** atoms with an outside end on a side, or of a kind, the case does not declare are never
+  offered (run.py, after the atoms hook), and `fit` holds at 0 any that a stage offers later (levels,
+  loops, products, the gap/drain swaps); the moves between stocks stay in the superset, so an outflow
+  from A and an inflow into B that track each other are read as the move by the counting-noise
+  likelihood itself (which tells a move from a link plus an outflow, as least squares cannot). The
+  matrix's model is guarded (`apply(..., final=False)`) before the judge compares it.
+- **not declared:** each outside end (a stock's inflow, or outflow, whatever its form) is a boundary
+  claim priced at `CLAIM_PRICE x log T` in lna's own BIC (`fit.prune`, `run.bic`).
+- **the answer:** `boundary.apply` after eiv: the guard (declared), and `boundary_claims` listed; the
+  least-squares passes (paired moves, priced claims) run only when the answer is the matrix's model,
+  not lna's own reading (`searched=True`; on lna's reading they turned 007-link's link into a move).
+
+The same code is in the lna copies of lna_levels, lna_loops, lna_products, lna_pulses and lna_stack;
+lna_pulses and lna_stack also keep a pulse only on a declared estimated side (`inside_pulses`). Tests:
+`tests/test_lna_boundary.py`. Ladder results: see the commit after this one (in progress).
+
 ## Proposed shared changes
 
 - `ladder/oracle.py`: a standard error for a co-flow's `per` (and for a gap's terms) from the

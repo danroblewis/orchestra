@@ -11,6 +11,7 @@ import numpy as np
 from scipy.optimize import lsq_linear, minimize
 
 from .atoms import Atom, features, pooling, stoich
+from .boundary import CLAIM_PRICE
 from .likelihood import ROUNDING, fisher, nll
 
 
@@ -27,6 +28,8 @@ class Data:
     delta: float = ROUNDING
     free: np.ndarray | None = None   # the stocks whose variance beyond counting noise is fitted (others: 0)
     deadline: float | None = None    # time.monotonic() past which fitting stops (OutOfTime)
+    inside: object = None            # atom -> bool: may it be in the model (the declared boundary, boundary.inside); None: every atom
+    claim: object = None             # atom -> bool: is it a boundary claim (no boundary declared, boundary.claim); None: none is
 
 
 class OutOfTime(Exception):
@@ -102,7 +105,12 @@ def fit(atoms: list[Atom], d: Data, start: np.ndarray | None = None, maxiter: in
             return 1e300, np.zeros_like(x)
         return v, np.concatenate([g[:F] / scale, g[F:] * vs])
 
-    r = minimize(f, np.concatenate([x0, t0]), jac=True, method="L-BFGS-B", bounds=[(0, None)] * F + [(0, None) if f else (0, 0) for f in free], options={"maxiter": maxiter, "ftol": FTOL_TRIAL if loose or maxiter <= TRIAL else FTOL, "gtol": 1e-5})
+    # an atom outside the declared boundary has no place in the model: its number is held at 0 (so
+    # whatever a stage offers there, the likelihood cannot use it; prune then drops it)
+    shut = [d.inside is not None and not d.inside(a) for a in atoms]
+    if any(shut):
+        x0 = np.where(shut, 0.0, x0)
+    r = minimize(f, np.concatenate([x0, t0]), jac=True, method="L-BFGS-B", bounds=[(0, 0) if s_ else (0, None) for s_ in shut] + [(0, None) if f else (0, 0) for f in free], options={"maxiter": maxiter, "ftol": FTOL_TRIAL if loose or maxiter <= TRIAL else FTOL, "gtol": 1e-5})
     th = r.x[:F] / scale
     th[r.x[:F] < 1e-6] = 0.0
     return Fitted(list(atoms), th, float(r.fun), r.x[F:] * vs)
@@ -117,9 +125,9 @@ def extra_variance(cur: Fitted, d: Data, price: float | None = None) -> np.ndarr
     for s in np.argsort(cur.tau if cur.tau is not None else np.zeros(S)):
         trial = free.copy()
         trial[s] = False
-        g = fit(cur.atoms, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline), cur.theta, maxiter=TRIAL, tau=cur.tau)
+        g = fit(cur.atoms, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline, d.inside, d.claim), cur.theta, maxiter=TRIAL, tau=cur.tau)
         if g.nll - cur.nll < price:
-            free, cur = trial, polish(g, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline))
+            free, cur = trial, polish(g, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline, d.inside, d.claim))
     return free
 
 
@@ -131,6 +139,15 @@ def polish(g: Fitted, d: Data) -> Fitted:
 def numbers(atoms: list[Atom], idx: list[int]) -> int:
     """The numbers these atoms carry: one each, and a co-flow's per."""
     return sum(1 + len(atoms[i].uses) for i in idx)
+
+
+def claims(atoms: list[Atom], idx, d: Data, among: list[Atom] | None = None) -> int:
+    """How many boundary claims (d.claim: a stock's outside inflow, or outflow) these atoms make that
+    the atoms `among` (the rest of the model) do not also make; 0 where a boundary is declared."""
+    if d.claim is None:
+        return 0
+    other = {d.claim(a) for a in among or []} - {None}
+    return len({d.claim(atoms[i]) for i in idx} - {None} - other)
 
 
 def wald(cur: Fitted, d: Data) -> dict:
@@ -179,11 +196,13 @@ def prune(fitted: Fitted, d: Data, price: float | None = None, tries: int = 3) -
         order = sorted(wald(cur, d).items(), key=lambda kv: kv[1][0])
         done = False
         for key, (w, idx) in order[:tries]:
-            if w > 4 * price:
+            # a boundary claim (an outside flow, no boundary declared) also pays CLAIM_PRICE x log T
+            extra = claims(cur.atoms, idx, d, [a for j, a in enumerate(cur.atoms) if j not in idx]) * CLAIM_PRICE * price / numbers(cur.atoms, idx)
+            if w > 4 * price + extra:
                 break
             rest = [j for j in range(len(cur.atoms)) if j not in idx]
             g = fit([cur.atoms[j] for j in rest], d, cur.theta[rest], maxiter=TRIAL, tau=cur.tau)
-            if (g.nll - cur.nll) / numbers(cur.atoms, idx) < price:
+            if (g.nll - cur.nll) / numbers(cur.atoms, idx) < price + extra:
                 cur, done = polish(g, d), True
                 break
         if not done:

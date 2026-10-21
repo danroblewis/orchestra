@@ -66,7 +66,8 @@ def stage(state: dict, margin: float = MARGIN) -> dict:
         for a, th in zip(cur.atoms, cur.theta):
             if th <= 0 or a.era is not None or a.kind not in ("move", "out") or a.uses:
                 continue
-            offer += [x for x in extra if x.kind == a.kind and x.src == a.src and x.dst == a.dst and x not in offer]
+            offer += [x for x in extra if x.kind == a.kind and x.src == a.src and x.dst == a.dst and x not in offer
+                      and (d.inside is None or d.inside(x))]   # the declared boundary: a product outflow only where one is declared
         if not offer:
             return cur
         try:

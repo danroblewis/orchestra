@@ -9,7 +9,8 @@ import numpy as np
 
 from sdlab.discovery.matrix import configurations, injected
 from sdlab.discovery.strategies.lna_stack._vendored.lna.atoms import Atom, features, restricted, stoich, superset, variances
-from sdlab.discovery.strategies.lna_stack._vendored.lna.fit import Data, OutOfTime, extra_variance, fit, mean_start, numbers, prune
+from sdlab.discovery.strategies.lna_stack._vendored.lna.boundary import CLAIM_PRICE, Boundary, claim, inside
+from sdlab.discovery.strategies.lna_stack._vendored.lna.fit import Data, OutOfTime, claims, extra_variance, fit, mean_start, numbers, prune
 from sdlab.discovery.strategies.lna_stack._vendored.lna.changes import merge_eras, pieces, split_eras
 from sdlab.discovery.strategies.lna_stack._vendored.lna.coflows import refine_per, with_coflows
 from sdlab.discovery.strategies.lna_stack._vendored.lna.flows import to_flows
@@ -100,7 +101,10 @@ def search(cur, d: Data):
 
 
 def bic(cur, d: Data) -> float:
-    return 2 * cur.nll + numbers(cur.atoms, range(len(cur.atoms))) * math.log(d.dy.shape[1])
+    """BIC, each boundary claim (an outside flow, no boundary declared: boundary.py) at CLAIM_PRICE x
+    log T more."""
+    live = [i for i in range(len(cur.atoms)) if cur.theta[i] > 0]
+    return 2 * cur.nll + (numbers(cur.atoms, range(len(cur.atoms))) + CLAIM_PRICE * claims(cur.atoms, live, d)) * math.log(d.dy.shape[1])
 
 
 def discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict | None = None) -> dict | None:
@@ -174,6 +178,16 @@ def _discover(stocks: list[dict], run: dict, opts: dict, base: dict, hooks: dict
         atoms += [Atom("link", dst=s_, driver=j) for s_ in range(S)] + [Atom("drain", src=s_, driver=j) for s_ in range(S) if s_ not in final]
     if "atoms" in hooks:
         atoms = hooks["atoms"](atoms, d, ctx)
+    # the declared boundary (boundary.py): an atom with an outside end only on a side and of a kind the
+    # case declares; the rest are not offered, and fit holds at 0 any a later stage offers
+    # where none is declared, an outside flow is a boundary claim, priced in prune and bic
+    d.inside = inside(Boundary(run), ids, len(inputs))
+    d.claim = claim(Boundary(run), ids, len(inputs))
+    ctx["inside"] = d.inside
+    if d.inside is not None:
+        atoms = [a for a in atoms if d.inside(a)]
+        if not atoms:
+            return None                # nothing to fit inside the boundary: the matrix's reading (guarded) stands
     phi = dispersion(atoms, mean_start(atoms, d), d)
     if phi < 0.2:
         return None                    # no counting noise to read: the matrix's reading stands

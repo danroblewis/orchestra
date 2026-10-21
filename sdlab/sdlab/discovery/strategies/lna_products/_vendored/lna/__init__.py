@@ -16,6 +16,7 @@ import math
 
 from sdlab.discovery.identify import identify as _matrix
 from sdlab.discovery.simulate import behaviour_error
+from sdlab.discovery.strategies.lna_products._vendored.lna import boundary
 from sdlab.discovery.strategies.lna_products._vendored.lna.run import discover
 
 GUARD = 4.0          # the matrix's model is kept when the likelihood's is judged this much worse
@@ -37,7 +38,7 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, opts: dict, horizons
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
     """hooks: stages a variant adds (run.HOOKS); none for lna itself."""
     opts = dict(opts or {})
-    base = _matrix(stocks, run, dict(opts))
+    base = boundary.apply(_matrix(stocks, run, dict(opts)), stocks, run, opts, final=False)   # the declared boundary (boundary.py)
     found = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base, hooks)
     if found is None:
         return base

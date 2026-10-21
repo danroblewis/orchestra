@@ -14,6 +14,7 @@ worse) is applied to the result and to lna's own reading.
 
 from __future__ import annotations
 
+from ._vendored.lna import boundary
 from ._vendored import lna
 from ._vendored.lna_levels import own_reading_guard
 from .run import stage
@@ -33,7 +34,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (the lna copy's boundary.py,
+    docs/research/declared-boundary.md: the guard and paired moves where one is declared, each outside
+    flow priced as a boundary claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts, searched=r.get("method") == "lna")   # lna's own reading: its search tried the moves and priced the claims

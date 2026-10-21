@@ -8,6 +8,12 @@ difference, the variance their sum), and a goal gap from an inflow beside a drai
 has no covariance to read: there the matrix method's reading is returned unchanged. A model the
 likelihood found is kept unless the matrix's model behaves clearly better in the judge (a guard
 against a model that runs away).
+
+The declared boundary (boundary.py, a copy of matrix's; docs/research/declared-boundary.md): where a
+case declares one, the search offers outside flows (inflows, outflows, links, drains, growth, gaps)
+only on the sides and of the kinds declared, and holds any other at 0; the matrix's model is guarded
+before it is judged; and the answer goes through the guard and the paired-move pass. Where none is
+declared, each outside flow of the answer is a boundary claim, priced and listed (boundary.apply).
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ import math
 
 from ...identify import identify as _matrix
 from ...simulate import behaviour_error
+from . import boundary
 from .run import discover
 
 GUARD = 4.0          # the matrix's model is kept when the likelihood's is judged this much worse
@@ -37,7 +44,7 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, opts: dict, horizons
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
     """hooks: stages a variant adds (run.HOOKS); none for lna itself."""
     opts = dict(opts or {})
-    base = _matrix(stocks, run, dict(opts))
+    base = boundary.apply(_matrix(stocks, run, dict(opts)), stocks, run, opts, final=False)
     found = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base, hooks)
     if found is None:
         return base
@@ -51,7 +58,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: di
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {}), hooks), stocks, run, opts)
+    r = apply(_identify(stocks, run, dict(opts or {}), hooks), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts, searched=r.get("method") == "lna")   # lna's own reading: its search tried the moves and priced the claims

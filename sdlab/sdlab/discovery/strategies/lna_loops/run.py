@@ -23,6 +23,8 @@ def close_loops(cur, d, price: float = PRICE):
         if (src, dst) in have:          # a already reads b (a link, or a move back from b)
             continue
         cand = Atom("link", dst=src, driver=dst)
+        if d.inside is not None and not d.inside(cand):
+            continue                    # the declared boundary: no outside inflow into src (boundary.py)
         g = fit(cur.atoms + [cand], d, np.append(cur.theta, 1e-3), tau=cur.tau)
         if g.theta[-1] > 0 and cur.nll - g.nll > price:
             cur = g
