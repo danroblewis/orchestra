@@ -54,7 +54,13 @@ def post(body: dict) -> tuple[int, dict]:
                 return 200, {"accepted": False, "cancelled": True}
             if it["state"] in ("error", "reused"):
                 return 200, {"accepted": False, "duplicate": True, "state": it["state"]}
+            if not isinstance(body.get("commit"), str) or slot is None:
+                raise jobs.Refused(400, "commit and slot: the commit and slot that ran the item (its provenance)")
             mine = it["state"] == "leased" and it["lease_id"] == body.get("lease_id")
+            if outcome == "crashed" and not mine:
+                # a resent post (its answer was lost) or a lease that is no longer this worker's: the crash was
+                # counted when it came under its lease, or the item has moved on; never a second crash
+                return 200, {"accepted": False, "stale": True, "state": it["state"]}
             why = _mismatch(it, body, row) if outcome == "result" else (
                 f"commit {str(body.get('commit'))[:12]} is not the job's {it['job_commit'][:12]}" if body.get("commit") and body.get("commit") != it["job_commit"] else None)
             if why:
@@ -73,6 +79,11 @@ def post(body: dict) -> tuple[int, dict]:
 def _mismatch(it, body: dict, row: dict) -> str | None:
     if body.get("commit") and body["commit"] != it["job_commit"]:
         return f"commit {str(body['commit'])[:12]} is not the job's {it['job_commit'][:12]}"
+    if it["mode"] == "run":                                   # what runner.run_item imported (provenance.loaded); a re-score keeps its flows'
+        if row.get("code_commit") is not None and row["code_commit"] != it["job_commit"]:
+            return f"the row's code_commit {str(row['code_commit'])[:12]} is not the job's {it['job_commit'][:12]} (other code ran)"
+        if row.get("code_dirty"):
+            return f"the row's code_dirty {str(row['code_dirty'])[:16]}: the code that ran was not the job's commit"
     said = body.get("hashes")
     if not isinstance(said, dict):
         return "hashes: the worker's own case, strategy and score hashes are required"

@@ -376,3 +376,110 @@ def test_a_stopping_worker_releases_its_leases(pool):
         st = con.execute("SELECT state, lost, lease_id FROM pool_items WHERE id = ?", (it["item_id"],)).fetchone()
         assert st["state"] == "queued" and st["lost"] == 0 and st["lease_id"] is None   # not counted as a lost lease
     assert FakeWorker(pool, name="next").claim()[0]["item_id"] == it["item_id"]
+
+
+# ---- adversarial review (2026-10-20): a resent or stale crash post never ends an item, a result names the
+# commit and slot that ran it, a row whose own provenance says other code ran is refused, and a result
+# promises the main line nothing once HEAD has moved on ----
+
+
+def _item(item_id: int):
+    with db.connect(readonly=True) as con:
+        return con.execute("SELECT * FROM pool_items WHERE id = ?", (item_id,)).fetchone()
+
+
+def _n_results() -> int:
+    with db.connect(readonly=True) as con:
+        return con.execute("SELECT COUNT(*) FROM pool_results").fetchone()[0]
+
+
+def _body(w: FakeWorker, it: dict, **over) -> dict:
+    hashes = {k: it[k] for k in ("case_hash", "strategy_hash", "score_hash")}
+    row = {"case": it["case"], "variant": it["variant"], "strategy": it["strategy"], **hashes, "status": "pass", "seconds": 0.5,
+           "scores": {}, "found": [], "code_commit": it["commit"]}
+    body = {"worker": w.name, "machine": w.machine, "slot": 3, "item_id": it["item_id"], "lease_id": it["lease_id"],
+            "commit": it["commit"], "outcome": "result", "hashes": hashes, "peak_rss_mb": 500.0, "row": row}
+    body.update(over)
+    return body
+
+
+def test_a_resent_crash_post_does_not_make_the_retry_an_error(pool):
+    """The outbox resends a post whose answer it did not get: the first crash must stay the only one."""
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    w = FakeWorker(pool, free_mb=8000)
+    w.heartbeat()
+    it = w.claim()[0]
+    body = _body(w, it, outcome="crashed", row={}, error="BrokenProcessPool")
+    assert pool.post("/api/pool/results", headers=H, json=body).json()["retry"]
+    again = pool.post("/api/pool/results", headers=H, json=body)
+    assert again.status_code == 200
+    st = _item(it["item_id"])
+    assert st["state"] == "queued" and st["crashes"] == 1          # still waiting for its one retry
+    assert _n_results() == 0
+
+
+def test_a_stale_crash_post_does_not_end_another_workers_run(pool):
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    small, large = FakeWorker(pool, name="small", free_mb=8000), FakeWorker(pool, name="large", free_mb=40000)
+    small.heartbeat()
+    large.heartbeat()
+    it = small.claim()[0]
+    body = _body(small, it, outcome="crashed", row={}, error="killed")
+    assert pool.post("/api/pool/results", headers=H, json=body).json()["retry"]
+    it2 = large.claim()[0]
+    assert it2["item_id"] == it["item_id"]
+    pool.post("/api/pool/results", headers=H, json=body)            # small's post, resent while large runs the retry
+    st = _item(it["item_id"])
+    assert st["state"] == "leased" and st["lease_id"] == it2["lease_id"]
+    assert _n_results() == 0
+    assert large.heartbeat()["renewed"] == [it2["lease_id"]]
+    assert large.post(it2).json()["accepted"]
+
+
+def test_a_result_must_name_its_commit_and_slot(pool):
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    w = FakeWorker(pool)
+    it = w.claim()[0]
+    body = _body(w, it)
+    del body["commit"]
+    assert pool.post("/api/pool/results", headers=H, json=body).status_code in (400, 409)
+    body = _body(w, it)
+    del body["slot"]
+    assert pool.post("/api/pool/results", headers=H, json=body).status_code in (400, 409)
+    assert _n_results() == 0
+    ok = pool.post("/api/pool/results", headers=H, json=_body(w, it)).json()
+    assert ok["accepted"]
+    with db.connect(readonly=True) as con:
+        r = con.execute("SELECT * FROM pool_results WHERE id = ?", (ok["result_id"],)).fetchone()
+    assert (r["commit_sha"], r["machine"], r["worker"], r["slot"], r["job_id"]) == (MAIN, "node2", w.name, "3", it["job_id"])
+
+
+@pytest.mark.parametrize("row_over", [{"code_commit": FEATURE}, {"code_dirty": "deadbeef"}])
+def test_a_run_whose_row_says_other_code_ran_is_refused(pool, row_over):
+    """runner.run_item records the code it imported (provenance.loaded): another commit, or a patch on top
+    of the job's, is not the job's code, whatever the hashes say."""
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    w = FakeWorker(pool)
+    it = w.claim()[0]
+    body = _body(w, it)
+    body["row"].update(row_over)
+    r = pool.post("/api/pool/results", headers=H, json=body)
+    assert r.status_code == 409
+    assert _n_results() == 0
+    with db.connect(readonly=True) as con:
+        assert con.execute("SELECT COUNT(*) FROM results").fetchone()[0] == 0
+
+
+def test_a_result_is_not_promoted_once_head_has_moved_to_other_hashes(pool, monkeypatch):
+    submit(pool, strategies="s1", cases="c1", variants="none")
+    w = FakeWorker(pool)
+    it = w.claim()[0]
+    moved = "c" * 40                                                 # s1's code changed on the main line meanwhile
+    monkeypatch.setattr(gitcode, "main_head", lambda: moved)
+    jobs.mainline_plan(wait=True)
+    got = w.post(it).json()
+    assert got["accepted"] and got["promoted_id"] is None
+    assert list(store.latest("c1", "none", "s1")) == []
+    with db.connect(readonly=True) as con:
+        assert con.execute("SELECT promote FROM pool_results").fetchone()[0] == "not-main-line"
+    assert accept.recheck_on_new_head() == 1 and accept.promote_pending() == 0   # rechecked, still not the main line's
