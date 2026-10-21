@@ -197,8 +197,8 @@ def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list 
         moves_in = [flows[j] for j in drop if flows[j].get("to") == x and flows[j].get("from") in st.ids]
         rest = [f for j, f in enumerate(flows) if j not in drop]
         new = list(c.flows)
-        outside = rest + [as_drain(f) for f in moves_in] + new
-        flows = outside
+        drained = rest + [as_drain(f) for f in moves_in] + new
+        flows = drained
         # a dropped move from z, and the form reads z: is it a move from z after all? z's own change
         # tells (a move takes what it reads out of z; an outside inflow beside z's drain does not)
         for z in dict.fromkeys(f["from"] for f in moves_in):
@@ -209,7 +209,7 @@ def improve(flows: list[dict], st: Steps, families=tuple(FAMILIES), trace: list 
             others = [f for f in moves_in if f["from"] != z]
             trial = rest + [as_drain(f) for f in others] + as_move
             vz = weights(flows, z, st)
-            s_out = F.sse((st.D[k] - st.change(outside)[k]) * vz, 0.0)
+            s_out = F.sse((st.D[k] - st.change(drained)[k]) * vz, 0.0)
             s_move = F.sse((st.D[k] - st.change(trial)[k]) * vz, 0.0)
             trace.append(f"{x}: the part reading {z} as a move from {z}: {z}'s residual {s_move:.4g} vs {s_out:.4g} as an outside inflow")
             if s_move < s_out:

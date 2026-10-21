@@ -34,3 +34,21 @@ def test_engine_forms_stays_inside_the_boundary():
     r = load("engine_forms")(STOCKS, {**_chain(), **DECLARED}, {})
     assert not bd.violations(r["flows"], ["A", "B"], bd.Boundary(DECLARED), set()), r["flows"]
     assert r["boundary"]["declared"] and r["boundary_claims"] == []
+
+
+def _run_case(case: str, variant: str = "none-short") -> dict:
+    from sdlab.ladder import cases as casemod, data, runner
+    c = casemod.load(case)
+    return runner.discover("engine_forms", casemod.truth_model(c, variant), {**data.load(c, variant), **casemod.announced(c)})
+
+
+def test_a_chosen_form_is_checked_against_the_boundary():
+    # judge.improve once named its drained flows `outside`, shadowing the boundary counter it then
+    # called: "'list' object is not callable" on every cell where a form was chosen (14 cells of job 130)
+    trace = _run_case("102-canonical-bass")["engine_forms"]["trace"]
+    assert any("chosen" in t for t in trace), trace
+
+
+def test_a_form_that_leaves_the_boundary_is_undone():
+    trace = _run_case("196-concave-move-between-tanks")["engine_forms"]["trace"]
+    assert any("undone" in t for t in trace), trace
