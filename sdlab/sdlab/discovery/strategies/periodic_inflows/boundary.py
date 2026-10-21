@@ -600,6 +600,96 @@ def price_claims(flows: list[dict], stocks: list[dict], b: Boundary, data: Data,
     return flows
 
 
+
+
+
+
+GAP_FITS = 60          # the gap-form pass stops after this many refits of its own (deterministic)
+
+
+def _line(y: np.ndarray, x: np.ndarray) -> tuple[float, float]:
+    """Least-squares c, k of y = c + k x (k 0 when x does not vary)."""
+    if float(np.std(x)) == 0:
+        return float(np.mean(y)), 0.0
+    k, c = np.polyfit(x, y, 1)
+    return float(c), float(k)
+
+
+def _simple(f: dict, ids: list[str]) -> bool:
+    """A rate the affine form generalises: a constant, pieces, k X, or a linear rate of at most one level
+    (with or without effects on it; no eras)."""
+    if f.get("byTime"):
+        return False
+    if f.get("inflow"):
+        return True
+    r = f.get("rate") or {}
+    terms = r.get("terms") or []
+    return (r.get("form") == "constant" or (r.get("form") == "proportional" and r.get("stock") in ids)
+            or (r.get("form") == "linear" and len(terms) <= 1 and all(x.get("stock") in ids for x in terms)))
+
+
+def gap_forms(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: list[str]) -> list[dict]:
+    """On a declared estimate side, the outside flow may have the affine form c + k X (a goal gap, c - k
+    X, or a drain with an offset, k X - c; X any measured stock). Per declared estimate side, largest
+    first, the side's estimated outside flows of simple forms (a constant, pieces, k X, a one-level
+    linear rate) are tried as one flow c + k X for each X, fitted jointly with every flow of the stock
+    (started from the line through what they carried), and the best replaces them when it prices better
+    (docs/research/declared-boundary.md, cause 3: 104's 0.1 T - 7, 011's (300 - I) / 5)."""
+    if not b.declared or not data.usable or _n_hidden(flows, data.ids):
+        return flows
+    inputs = set(data.inputs)
+    done = data.fits
+    sides = []
+    for f in flows:
+        A, B = f.get("from"), f.get("to")
+        if (A is None) == (B is None) or kind_of(f, inputs) != "estimate" or not _simple(f, data.ids):
+            continue
+        s, side = (B, "in") if A is None else (A, "out")
+        if s in data.ids and b.may(s, side, "estimate") and (s, side) not in sides:
+            sides.append((s, side))
+    size = {k: 0.0 for k in sides}
+    for f in flows:
+        k = (f.get("to"), "in") if f.get("from") is None else (f.get("from"), "out")
+        if k in size:
+            size[k] += float(np.abs(data.carried(f)).mean())
+    for s, side in sorted(sides, key=lambda k: -size[k]):
+        group = [j for j, f in enumerate(flows)
+                 if ((f.get("from") is None and f.get("to") == s) if side == "in" else (f.get("from") == s and f.get("to") is None))
+                 and kind_of(f, inputs) == "estimate" and _simple(f, data.ids)]
+        if not group or (len(group) == 1 and not flows[group[0]].get("inflow")
+                         and (flows[group[0]].get("rate") or {}).get("form") == "linear"
+                         and (flows[group[0]].get("rate") or {}).get("c") and len(flows[group[0]]["rate"].get("terms") or []) == 1):
+            continue                                       # nothing to do, or already c + k X (its numbers kept)
+        sign = 1.0 if side == "in" else -1.0
+        rest = [f for j, f in enumerate(flows) if j not in group]
+        y = sign * (data.dy - data.change(rest))[data.ids.index(s)]          # what the side's flows carry
+        free = {s}
+        base = price(Fit(flows, data, free), data, b)
+        if not math.isfinite(base):
+            continue
+        best = None
+        for X in data.ids:
+            if data.fits - done >= GAP_FITS:
+                break
+            c, k = _line(y, data.L[data.ids.index(X)])
+            if k == 0 or c == 0:
+                continue
+            g = {key: flows[group[0]][key] for key in ("from", "to", "name") if key in flows[group[0]]}
+            g["ratio"] = 1                                 # a new rate: no effects, pieces or driver carried over
+            _set_rate(g, {"form": "linear", "c": c, "terms": [{"stock": X, "k": k}]})
+            cand = rest + [g]
+            fit = Fit(cand, data, free)
+            pr = price(fit, data, b) + 1e6 * len(violations(fit.flows, data.ids, b, inputs))
+            if pr < base and (best is None or pr < best[0]):
+                best = (pr, X, fit.flows)
+        if best is not None:
+            r = best[2][-1]["rate"]
+            log.append(f"{len(group)} outside {'inflow' if side == 'in' else 'outflow'}(s) of {s} made one flow "
+                       f"c + k {best[1]} ({r['c']:.4g} + {r['terms'][0]['k']:.4g} {best[1]})")
+            flows = best[2]
+    return flows
+
+
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final: bool = True) -> dict:
     """The hook: a result's flows kept inside the boundary. Declared: the guard, then the moves the
     unexplained changes ask for. Not declared (final only): moves, then each claim priced; the claims
@@ -615,6 +705,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final:
         flows = guard(flows, stocks, b, data, log)
         if final:
             flows = pair_moves(flows, stocks, b, data, log)
+            flows = gap_forms(flows, stocks, b, data, log)
     elif final:
         flows = pair_moves(flows, stocks, b, data, log)
         flows = price_claims(flows, stocks, b, data, log)
