@@ -28,6 +28,9 @@ uv run sdlab-ladder job 12 --wait                      # a pool job's items as t
 uv run sdlab-ladder status                             # the strategy x case matrix, per-tag summaries
 uv run sdlab-ladder status --strategies matrix --variant counts-short   # one strategy, one variant in detail
 uv run sdlab-ladder show 011 --strategy matrix         # true vs found equations, part by part, with scores
+uv run sdlab-ladder diff 308 --strategy kalman_lna     # the found model as a git diff of the truth, per variant (The diff, below)
+uv run sdlab-ladder diff tag:kubernetes --summary --strategies roster:kubernetes   # the most common diff lines across a rung
+uv run sdlab-ladder diff 308 --strategy kalman_lna --variant counts-short --between HEAD~5 HEAD   # what changed between two results
 uv run sdlab-ladder watch                              # retired (2026-10-20): the pool's main-line job does this
 uv run sdlab-ladder check                              # every case file compiles, and the cases' sanity checks
 uv run sdlab-ladder new my-slug                        # write the next case, NNN-my-slug.yaml, from a template
@@ -3000,6 +3003,61 @@ compressed snapshots. On 19 October 2026 the 1,367 MB store (249,104 results) co
 
 Generated case data (about 1.6 GB) is not backed up, because it is regenerated deterministically.
 
+## The diff (`diff.py`, `diff_text.py`, `diff_report.py`; 2026-10-21)
+
+A found model read as a git diff of the true one (the user, 2026-10-21): the truth is the original, the
+found model the change. It is made once, in Python, and both agents and the page read it, so they can
+never disagree: `sdlab-ladder diff` prints it, `GET /api/ladder/diff/{case}/{variant}/{strategy}?result=ID`
+returns it, and the page draws its verdicts, its caption and its hunk (`ladder-draw.js` `compareOf`,
+`ladder-compare.js` `withDiff`; the page's own comparison is used only when the endpoint fails, and says
+so in the console).
+
+- `-` **removed**: a true flow not found (a declared outside flow left unused included).
+- `+` **added**: in the found model, not the truth: an invented flow or boundary, an extra term on a
+  found flow, the flows of a stock only the found model has.
+- `~` **a number wrong**: in both, true -> found per number, with its relative error.
+- `=` **equivalent**: the result is "equivalent", the same system read another way.
+- unchanged lines are context (` ` found and right, `.` too small to count or not scored).
+- the **hunk**: the changed flows, the stocks at their ends, and every stock only the found model has
+  with its flows: what the differences diagram draws at full strength.
+
+`diff.diff(case, found_flows, scores)` returns `{status, equivalent, stat: {removed, added, wrong,
+equivalent}, caption, lines: [{sign, cls, ends, side, index, true_id, true_eq, found_eq, truth, numbers:
+[{part, true, found, rel_error, ok, found_it}], note}], unchanged: [...], hunk: {stocks, flows: [{side,
+index, ends, cls}]}, flows: {truth, found} (each flow's class, parts, notes, badge), rows, extra_stocks,
+measured}`. It is the page's logic (`compare`, `diffLines`, `diagrams`, `focus`, `diffStat`) ported line
+for line, JavaScript's number formatting included; on 2026-10-21 it gave exactly the page's lines,
+caption, classes, rows and hunk on every one of the store's 97,559 latest results.
+`tests/test_ladder_diff.py` checks it against the page's own code with node.
+
+```
+$ uv run sdlab-ladder diff 308 --strategy kalman_lna --variant counts-short
+308-k8s-hpa kalman_lna counts-short (fail): 2 values wrong  [result #383522, 3483526d1]
+~ retries -> queue               retried: retries 0.6 -> 0.721 (20% off)
+~ retries -> outside             gave_up: retries 0.4 -> 0.221 (45% off)
+  (12 unchanged)
+hunk: queue, retries
+```
+
+Without `--variant`, one block per variant; `--context` adds the unchanged lines; `--json` gives
+diff.py's JSON (with the result id, commit and status).
+
+**The rung summary**, `sdlab-ladder diff CASES --summary [--strategies roster:kubernetes] [--variants ...]
+[--top N]`, is the review step's broad-cause finder: every diff line of the latest results, normalised
+(the sign, the ends and the flow's form with its numbers as `#`, and for a wrong number which number and
+which way), counted across strategies and variants, with how many strategies share it and examples:
+
+```
+   17  - outside -> pending  #·desired − #·pending − #·ready
+       4 strategies, e.g. engine_forms 309 counts-long; odefit 309 none-long; combined2 310 counts-long; kalman_lna 310 counts-long
+   12  ~ ready -> outside  #·ready − #·desired  [ready low, missed desired]
+```
+
+**Before and after**, `sdlab-ladder diff CASE --strategy S --variant V --between REF_A REF_B` (the newest
+stored result whose code is each commit or an ancestor of it) or `--ids A,B`: the status and stat
+change, the lines that went away (`fixed`), appeared (`new`) or changed (each wrong number closer to or
+further from the truth), and the found flows that appeared, disappeared or changed, by ends.
+
 ## The read API (for a page)
 
 `sdlab/sdlab/ladder/api.py`. Every function is read only and returns JSON-safe values:
@@ -3017,6 +3075,7 @@ Generated case data (about 1.6 GB) is not backed up, because it is regenerated d
 | `timeline(strategy)` | one point per version (strategy hash and scorer hash, in the order they first ran): `{strategy_hash, score_hash, first, last, ran, totals: {status: n}, of}`, the totals being the ladder's state just after that version (each case and variant's newest result up to then) |
 | `board(strategy, variant?)` | `{strategy, variant, best, cases, results}`: every case and one strategy's latest results (found flows included) in a variant, or all four |
 | `best_strategy()` | the available strategy with the highest pass rate |
+| `diff(case, variant, strategy, id?)` | the latest result (or result `id` of that cell) as a git diff of the truth (diff.py; The diff, above), or None |
 | `progress(recent?)` | `{run: {id, command, started, finished, total, done, running}, items: [{case, variant, strategy, state (queued, running, done), reason, started, finished, status}]}`; with `recent`, a light copy for polling: only the running items and the `recent` latest finished, plus `counts` (finished items by status) and `queued` |
 | `summary(strategies?)` | `{strategies, cases, cells: [{case, variant, strategy, status, stale, recall, precision, right, of, spurious, skill20, skill20_ci, skill100, skill100_ci, fresh20, fresh20_ci, fresh100, fresh100_ci, seconds, at, error, occam, cx_true, cx_found, cx_extra, cx_ratio, cx_by: [flows, terms, pieces, other], goal, goal_fresh (realistic cells only)}], by_tag: {tag: {strategy: counts}}, totals: {strategy: counts} (the tests only), realistic: {strategy: aggregate} (Realistic cases), physics: {strategy: aggregate} (Physics cases), score_hash, longrun (the long-run aggregate, below)}` |
 | `run_graph(id, at?, window?)` | one result's true vs found levels run free, far ahead: `{result, stocks, run, overview, windows, metrics, how}` (Long run, below) |

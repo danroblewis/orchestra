@@ -57,16 +57,17 @@
     // the differences
     const off = (t) => t.parts.filter((p) => p.found && !p.ok && p.kind !== "effect").map((p) => `${fmt(p.true)} → ${fmt(p.found_value)}`).join(", ");
     const missedParts = (t) => t.parts.filter((p) => !p.found).map((p) => L.partName(p.key).replace(/^the /, "")).join(", ");
-    const dFlows = cmp.truth.map((t) => {
+    const dFlows = cmp.truth.map((t, i) => {
       const sign = { ok: "", wrong: "~", missing: "−", equiv: "≈" }[t.cls] ?? "·", cls = t.cls === "missing" ? "missed" : t.cls === "unscored" ? "plain" : t.cls;
       const label2 = t.cls === "wrong" ? (off(t) || `missed ${missedParts(t)}`) : t.cls === "missing" ? `missed ${short2(L.rateText(t.flow.rate))}` : short2(L.rateText(t.flow.rate));
-      return { from: t.flow.from, to: t.flow.to, cls, cloud: kindAt(t.flow), dashed: t.cls === "missing", thin: t.cls === "ok" || t.cls === "unscored",
+      return { src: `truth:${i}`, from: t.flow.from, to: t.flow.to, cls, cloud: kindAt(t.flow), dashed: t.cls === "missing", thin: t.cls === "ok" || t.cls === "unscored",
         label: `${sign}${t.cls === "missing" && kindAt(t.flow) ? " (declared, not used)" : ""}`, label2,
         title: `${t.flow.id}: ${t.equation}\n${CLS_WORD[t.cls] || t.cls}${t.notes.length ? "\n" + t.notes.join("\n") : ""}`,
         reads: readsOf(t.flow, t.reads.map((x) => ({ stock: x.stock, label: x.kind === "uses" ? `uses ${fmt(x.per)}` : "effect", dash: x.kind === "uses" ? "1 3" : "5 4", cls: x.cls === "missing" ? "missed" : x.cls || "plain" }))) };
     });
     const dStocks = [...tStocks, ...fStocks.filter((s) => !tStocks.some((t) => t.id === s.id)).map((s) => ({ ...s }))];   // copies: the diff colours them
-    cmp.found.forEach((x) => {
+    cmp.found.forEach((x, k) => {
+      const src = `found:${k}`;
       const f = x.flow, invented = x.cls === "spurious", reread = x.cls === "equiv" && !x.parts.length, extra = x.spurious.length && x.parts.length;
       if (!invented && !reread && !extra) return;
       const cr = crossing(f);
@@ -76,8 +77,8 @@
       const title = `${L.equation(f)}\n${x.notes.join("\n")}`;
       if (viaOf.has(x)) {
         const id = viaOf.get(x);
-        dFlows.push({ cls, label, label2, title, from: f.from || f.via.echo, to: id, reads: [] }, { cls, label: "", from: id, to: f.to, reads: [] });
-      } else dFlows.push({ cls, thin: !!extra, cloud: kindAt(f), label, label2, title, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, cls)) });
+        dFlows.push({ src, cls, label, label2, title, from: f.from || f.via.echo, to: id, reads: [] }, { src, cls, label: "", from: id, to: f.to, reads: [] });
+      } else dFlows.push({ src, cls, thin: !!extra, cloud: kindAt(f), label, label2, title, from: f.from, to: f.to, reads: readsOf(f, extrasOf(f, cls)) });
     });
     // a stock only the found model has (an inferred or hidden stage) takes the colour of the flows that
     // make it: red when every one of them is invented, the equivalent colour when one is a re-reading
@@ -134,7 +135,7 @@
     D.draw(svgTrue, tD, pos, o);
     D.draw(svgFound, r ? fD : { stocks: fD.stocks, flows: [] }, pos, o);
     if (svgDiff) {
-      D.draw(svgDiff, r ? focus(dD, tStockIds(c)) : { stocks: dD.stocks, flows: [] }, pos, o);
+      D.draw(svgDiff, r ? focus(dD, tStockIds(c), cmp.api && cmp.api.hunk) : { stocks: dD.stocks, flows: [] }, pos, o);
       const cap = svgDiff.closest("figure") && svgDiff.closest("figure").querySelector("figcaption");
       if (cap && r) cap.textContent = diffStat(cmp);
     }
@@ -146,7 +147,12 @@
   // out of it. Everything else stays where it is (one layout for all three panels), faded, without labels.
   const CHANGED = new Set(["missed", "missing", "spurious", "wrong", "equiv", "claim"]);
   const tStockIds = (c) => new Set(c.model.stocks.map((s) => s.id));
-  function focus(dD, trueIds) {
+  // hunk: the server's (diff.py), when the comparison came from it: what to draw at full strength, by flow and stock.
+  function focus(dD, trueIds, hunk) {
+    if (hunk) {
+      const flows = new Set(hunk.flows.map((h) => `${h.side}:${h.index}`)), stocks = new Set(hunk.stocks);
+      return { stocks: dD.stocks.map((s) => ({ ...s, faded: !stocks.has(s.id) })), flows: dD.flows.map((f) => ({ ...f, faded: !flows.has(f.src) })) };
+    }
     const keep = new Set(), newStocks = new Set(dD.stocks.filter((s) => !trueIds.has(s.id)).map((s) => s.id));
     const shown = (f) => CHANGED.has(f.cls) || newStocks.has(f.from) || newStocks.has(f.to);
     dD.flows.forEach((f) => { if (shown(f)) { if (f.from) keep.add(f.from); if (f.to) keep.add(f.to); } });
@@ -155,10 +161,32 @@
   }
   // "Differences: 2 removed · 1 added · 1 value wrong", like git diff --stat
   function diffStat(cmp) {
+    if (cmp.api) return cmp.api.caption;
     const n = { missed: 0, spurious: 0, wrong: 0, equiv: 0 };
     L.diffLines(cmp).forEach((l) => { if (l.cls in n) n[l.cls] += 1; });
     const parts = [n.missed && `${n.missed} removed`, n.spurious && `${n.spurious} added`, n.wrong && `${n.wrong} value${n.wrong > 1 ? "s" : ""} wrong`, n.equiv && `${n.equiv} equivalent`].filter(Boolean);
     return `Differences: ${parts.length ? parts.join(" · ") : "none"}`;
+  }
+  // The comparison for a result, its verdicts from the server's diff (GET /api/ladder/diff/...; diff.py), so the page and
+  // `sdlab-ladder diff` never disagree. Cached by result id (a stored result never changes); if the endpoint fails, the
+  // page's own comparison (L.compare), said so in the console.
+  const DIFFS = new Map();
+  async function compareOf(c, r) {
+    const found = L.foundOf(r), cmp = L.compare(c.model, found, r && r.scores);
+    if (!r || r.id === undefined || r.id === null || !r.variant || !r.strategy) return cmp;
+    let dif = DIFFS.get(r.id);
+    if (!dif) {
+      try {
+        const res = await fetch(`/api/ladder/diff/${encodeURIComponent(c.id)}/${encodeURIComponent(r.variant)}/${encodeURIComponent(r.strategy)}?result=${encodeURIComponent(r.id)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        dif = await res.json();
+        DIFFS.set(r.id, dif);
+      } catch (e) {
+        console.warn(`diff of result ${r.id}: the server's diff failed (${e.message}); using the page's own comparison`);
+        return cmp;
+      }
+    }
+    return L.withDiff(cmp, dif, r.scores);
   }
   const LEGEND = `<span class="d-missed">− removed: in the true model, not the found one</span> · <span class="d-spurious">+ added: in the found model, not the true one</span> · <span class="d-wrong">~ in both, values wrong (true → found)</span> · <span class="d-ok">grey: unchanged</span> · <span class="d-equiv">≈ equivalent reading</span><br><span class="muted">outside: ☁ solid measured input · ☁ dashed rate estimated · <span class="d-spurious">green: invented boundary</span> (none declared there) · <span class="d-wrong">amber: boundary claim</span> (no boundary declared)</span>`;
   // the differences as a list, one line per flow
@@ -206,5 +234,5 @@
     return D.draw(svg, { stocks, flows }, pos, { box, viewBox: vb, color: (k) => REPAIR_COLOR[k] || "var(--fg)", maxScale: opts.maxScale });
   }
 
-  root.SDLadderDraw = { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, diagrams, sharedLayout, drawPair, diffHtml, drawRepairs };
+  root.SDLadderDraw = { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, diagrams, sharedLayout, drawPair, diffHtml, drawRepairs, compareOf, focus, diffStat };
 })(window);

@@ -17,6 +17,10 @@
                                   the strategy x case matrix, per-tag summaries, and what is stale
     show   CASE [--strategy S] [--variant V]
                                   true and found equations side by side, part by part, with the scores
+    diff   CASE --strategy S [--variant V] [--json] | CASES --summary [--strategies roster:NAME] [--variants ...]
+           | CASE --strategy S --variant V --between REF_A REF_B | --ids A,B
+                                  the found model as a git diff of the truth (diff.py; what the page draws): per
+                                  result, the most common lines across a rung, or what changed between two results
     watch  [--every 3]            sync now, then again whenever a case, a strategy or discovery changes
     check  [--cases ...]          every case file compiles, then the case checks (bounded, moving, every flow moves)
     new    SLUG [--title T] [--level N]
@@ -553,6 +557,8 @@ def main(argv: list[str] | None = None) -> int:
     ot.add_argument("--relabel", metavar="FOLDERS", help="re-label the cached cells of these cache folders (comma list, later wins) into the current one, no refitting")
     from . import z3_ident_report
     z3_ident_report.add_parser(sub)
+    from . import diff_report
+    diff_report.add_parser(sub)
     pl = sub.add_parser("pool", help="the CPU pool's job queue: submit, status, results, cancel (docs/pool.md)", add_help=False)
     pl.add_argument("rest", nargs=argparse.REMAINDER)
     wk = sub.add_parser("worker", help="a CPU pool worker (docs/pool.md, Workers)", add_help=False)
@@ -596,6 +602,9 @@ def main(argv: list[str] | None = None) -> int:
     if a.command in ("backup", "restore"):
         from . import backup
         return backup.main(a)
+    if a.command == "diff":
+        from . import diff_report
+        return diff_report.main(a)
     if a.command == "status":
         return status(a)
     if a.command == "show":

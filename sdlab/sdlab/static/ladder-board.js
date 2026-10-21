@@ -197,18 +197,23 @@
       ${P.drawHtml(c)}
       ${tabs}
       <div class="bdiag" data-draw="${esc(c.id)}"><figure class="dpanel"><figcaption>${isData(c) ? "Published model (refit on what discovery saw)" : partEq(c) ? "Mean-field model (the truth)" : isPart(c) ? "Mean-field model (before its refit)" : isPhys(c) ? "Best SD model (reference)" : "True model"}</figcaption><svg role="img" aria-label="The true model"></svg></figure><figure class="dpanel"><figcaption>${r ? `Found by ${esc(r.strategy)} · ${esc(r.variant)}` : "Not run"}</figcaption><svg role="img" aria-label="The found model"></svg></figure><figure class="dpanel"><figcaption>Differences</figcaption><svg role="img" aria-label="The differences"></svg><p class="dcap">${P.legend()}</p></figure></div>
-      ${r && r.found && (!isPhys(c) || partEq(c)) ? P.diffHtml(c, r) : ""}
+      ${r && r.found && (!isPhys(c) || partEq(c)) ? `<div class="bdlist" data-dlist></div>` : ""}
       ${r ? `<p class="bexplain">${esc((partEq(c) && r.scores && r.scores.particles ? `Against the mean-field model: ${L.explain(r.scores)} ` : isPart(c) && r.scores && r.scores.particles ? `Prediction only: fresh skill@20 and @100 are ${r.scores.particles.near_reference ? "each within 5 points of" : "not both within 5 points of"} the mean-field reference's. ` : isPhys(c) && r.scores && r.scores.physics ? `${r.scores.physics.structure_ok ? "The coupling graph and signs agree with the physics" : "The coupling graph or signs differ from the physics"}; fresh skill@20 is ${r.scores.physics.near_reference ? "within 5 points of" : "more than 5 points below"} the reference's. ${(r.scores.notes || []).join(" ")}` : isData(c) ? realExplain(r) : L.explain(r.scores)) || (r.error ? `Error: ${String(r.error).slice(0, 200)}` : ""))}</p>` : `<p class="bexplain muted">${esc(B.strategy)} has not run on this case${B.variant === "all" ? "" : ` in ${esc(B.variant)}`} yet.</p>`}
       ${meas}
     </article>`;
   }
 
-  function draw(el) {
+  // the verdicts, the caption and the hunk come from the server's diff (P.compareOf: diff.py), the page's own comparison only if that fails
+  async function draw(el) {
     const d = B.data, c = d && d.cases.find((x) => x.id === el.dataset.draw); if (!c) return;
     const r = shown(c, d);
-    const svgs = el.querySelectorAll("svg");
-    P.drawPair(c, r, svgs[0], svgs[1], null, 2, svgs[2]);     // compact: two columns, wrapped
     el.dataset.drawn = "1";
+    const cmp = await P.compareOf(c, r);
+    if (!el.isConnected) return;
+    const svgs = el.querySelectorAll("svg");
+    P.drawPair(c, r, svgs[0], svgs[1], cmp, 2, svgs[2]);     // compact: two columns, wrapped
+    const list = el.closest(".bcard") && el.closest(".bcard").querySelector("[data-dlist]");
+    if (list) list.innerHTML = P.diffHtml(cmp);
   }
 
   async function render(reload) {

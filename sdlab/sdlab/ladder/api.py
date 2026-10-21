@@ -15,6 +15,7 @@ value JSON-safe. The server exposes it under /api/ladder (sdlab/server.py); see 
     progress(recent?)                    the current or last run: {run, items}; with recent, a light copy for polling
     board(strategy, variant?)            every case with one strategy's latest results (found flows included)
     best_strategy()                      the available strategy with the highest pass rate
+    diff(case, variant, strategy, id?)   the found model as a git diff of the truth (diff.py): stat, lines, hunk, per-flow verdicts
     run_graph(id, at?, window?)          one result's true vs found levels run free from the start, far ahead (longrun_series.py)
     summary()                            the matrix: strategies, cases, cells (one per case x variant x
                                          strategy, flattened scores, stale or not) and per-tag and per-strategy totals
@@ -100,6 +101,20 @@ def history(case: str, variant: str, strategy: str) -> list[dict]:
 def result_by_id(result_id: int) -> dict | None:
     r = store.get(result_id, found=True)
     return jsonable(_merged(longrun_cache.attach(complexity.attach(r)))) if r else None
+
+
+def diff(case_id: str, variant: str, strategy: str, result_id: int | None = None) -> dict | None:
+    """The found model as a git diff of the truth (diff.py; what the page draws and `sdlab-ladder diff`
+    prints): the latest result of the cell, or result_id when it is one of the cell's (None otherwise)."""
+    from . import diff_report
+    if result_id is None:
+        rows = store.latest(case_id, variant, strategy, found=True)
+        row = rows[0] if rows else None
+    else:
+        row = store.get(result_id, found=True)
+        if row and (row["case"], row["variant"], row["strategy"]) != (case_id, variant, strategy):
+            row = None
+    return jsonable(diff_report.of_row(diff_report.case_view(case_id), row)) if row else None
 
 
 def run_graph(result_id: int, at: list[int] | None = None, window: int | None = None) -> dict | None:

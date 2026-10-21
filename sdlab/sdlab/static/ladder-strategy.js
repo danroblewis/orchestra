@@ -390,8 +390,11 @@
     $("close").onclick = closeFull;
     try {
       G.drawRepairs(cc, det, $("f-rep"), det.repairs, { full: true, cols: innerWidth >= 900 ? 3 : 1, pad: 24 });
-      G.drawPair(cc, det, $("f-true"), $("f-found"), null, innerWidth >= 900 ? 3 : 1, $("f-diff"));
     } catch (e) { $("f-rep").outerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    try {
+      const cmp = await G.compareOf(cc, { strategy: S.name, ...det });     // the verdicts from the server's diff (diff.py)
+      if ($("f-diff")) G.drawPair(cc, det, $("f-true"), $("f-found"), cmp, innerWidth >= 900 ? 3 : 1, $("f-diff"));
+    } catch (e) { if ($("f-true")) $("f-true").outerHTML = `<p class="err">${esc(e.message)}</p>`; }
     if (!(id in S.errors)) { const r = await get(`/api/ladder/strategy/${enc(S.name)}/errors?ids=${id}`).catch(() => ({})); S.errors[id] = r[id] ?? null; }
     $("f-err").innerHTML = spark(S.errors[id], { h: 200, w: 900, axis: true }) + (S.errors[id] && S.errors[id].stocks ? `<div class="legend small">${S.errors[id].stocks.slice(0, 16).map((s, k) => `<span><i class="key" style="background:var(--c${(k % 8) + 1})"></i>${esc(s)}</span>`).join(" ")}</div>` : "");
     hoverSpark($("f-err").querySelector("svg"), S.errors[id]);

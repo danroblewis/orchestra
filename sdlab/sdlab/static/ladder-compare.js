@@ -205,6 +205,29 @@
       extraStocks: [...new Set(found.flatMap((f) => [f.from, f.to]).filter((x) => x && !truth.stocks.some((s) => s.id === x)))] };
   }
 
+  // The comparison with its verdicts from the server's diff (sdlab/ladder/diff.py, GET /api/ladder/diff/...), so the page
+  // and `sdlab-ladder diff` can never disagree: every flow's class, its parts, notes and badge, the rows, the lines, the
+  // stat and the hunk come from dif; cmp (compare()'s) keeps the flows and equations. No dif, or one that does not fit
+  // these flows: cmp unchanged (the page's own logic, the fallback).
+  function withDiff(cmp, dif, scores) {
+    if (!dif || !dif.flows || dif.flows.truth.length !== cmp.truth.length || dif.flows.found.length !== cmp.found.length) return cmp;
+    scores = scores || {};
+    const byKey = {};
+    [...(scores.parts || []), ...(scores.spurious || [])].forEach((p) => { byKey[p.key] = { ...p, ...parseKey(p.key) }; });
+    const pick = (keys) => (keys || []).map((k) => byKey[k]).filter(Boolean);
+    const truth = cmp.truth.map((t, i) => {
+      const v = dif.flows.truth[i];
+      return { ...t, cls: v.cls, parts: pick(v.parts), notes: v.notes, badge: v.badge, reads: t.reads.map((x, j) => ({ ...x, cls: v.reads && v.reads[j] ? v.reads[j].cls : x.cls })) };
+    });
+    const found = cmp.found.map((x, k) => {
+      const v = dif.flows.found[k];
+      return { ...x, cls: v.cls, parts: pick(v.parts), spurious: pick(v.spurious), notes: v.notes, badge: v.badge };
+    });
+    const rows = (dif.rows || []).map((w) => ({ ends: w.ends, cls: w.cls, truth: w.truth.map((i) => truth[i]), found: w.found.map((k) => found[k]) }));
+    return { ...cmp, truth, found, rows, extraStocks: dif.extra_stocks || cmp.extraStocks, api: dif };
+  }
+  const GLYPH = { " ": "✓", "-": "−", "=": "≈", ".": "·", "+": "+", "~": "~" };
+
   // ---------- error measures and a plain-language explanation, from the scorer's parts ----------
   // A part in words: "the move A → B", "the drain of B", "the inflow to A", "the link B ⇒ A", ...
   function partName(key) {
@@ -285,6 +308,10 @@
   //   ≈ outside → B                         read as 0.2·A (equivalent to the link A ⇒ B)
   // {sign, cls, ends, truth, note}; truth is the true flow's id and equation ("" for an invented one).
   function diffLines(cmp) {
+    if (cmp.api) {                                  // the server's lines (diff.py), in the page's order: truth flows, then found ones
+      const all = [...cmp.api.lines, ...cmp.api.unchanged].sort((a, b) => (a.side === b.side ? a.index - b.index : a.side === "truth" ? -1 : 1));
+      return all.map((x) => ({ sign: GLYPH[x.sign] || x.sign, cls: x.cls, ends: x.ends.replace(/ -> /g, " → "), truth: x.truth, note: x.note }));
+    }
     const lines = [];
     const endsOf = (f) => `${f.from || "outside"} → ${f.to || "outside"}`;
     const foundFor = (t) => cmp.found.filter((x) => x.parts.some((p) => t.parts.some((q) => q.key === p.key)));
@@ -319,7 +346,7 @@
     return lines;
   }
 
-  const api = { fmt, parseKey, readers, rateText, equation, foundOf, compare, partName, measures, explain, diffLines };
+  const api = { fmt, parseKey, readers, rateText, equation, foundOf, compare, withDiff, partName, measures, explain, diffLines };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.SDLadder = api;
 })(typeof window !== "undefined" ? window : globalThis);

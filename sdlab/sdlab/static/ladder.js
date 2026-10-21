@@ -14,7 +14,7 @@
   const ci = (c) => (Array.isArray(c) && c.length === 2 && c.every((x) => x !== null) ? ` <span class="muted">[${(100 * c[0]).toFixed(1)}, ${(100 * c[1]).toFixed(1)}]</span>` : "");
   const when = (iso) => { if (!iso) return "–"; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }); };
   const short = (h) => (h ? String(h).slice(0, 7) : "–");
-  const { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, drawPair, diffHtml } = window.SDLadderDraw;
+  const { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, drawPair, diffHtml, compareOf } = window.SDLadderDraw;
   const STATUS_LETTER = { pass: "P", equivalent: "E", fail: "F", error: "X", timeout: "T" };
   const STATUS_WORD = { pass: "pass", equivalent: "equivalent", fail: "fail", error: "error", timeout: "timeout" };
   const SERIES = 8;                                      // categorical slots --c1..--c8 (style.css)
@@ -342,11 +342,13 @@
     </div>`;
   }
 
-  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml: (c, r) => diffHtml(L.compare(c.model, L.foundOf(r), r && r.scores)), legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
+  if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml, compareOf, legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
 
-  function renderCompare(c, r, err) {
-    const found = L.foundOf(r);
-    const cmp = L.compare(c.model, found, r && r.scores);
+  // the verdicts come from the server's diff (compareOf: diff.py), the page's own comparison only if that fails
+  async function renderCompare(c, r, err) {
+    const my = (S.rctoken = (S.rctoken || 0) + 1);
+    const cmp = await compareOf(c, r);
+    if (my !== S.rctoken) return;
     $("cmp-head").innerHTML = `<div class="casehead">
         <div class="nowstrat" title="The strategy whose result this is">${esc((r && r.strategy) || S.sel.strategy || "")}<span class="nowvar"> · ${esc((r && r.variant) || S.sel.variant || "")}</span></div>
         <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
@@ -737,7 +739,8 @@
     let r = null, err = null;
     try { r = await get(`/api/ladder/results/${enc(c.id)}/${enc(run.variant)}/${enc(run.strategy)}`); } catch (e) { if (e.status !== 404) err = e; }
     if (my !== S.crtoken || !$("c-run")) return;
-    const cmp = L.compare(c.model, L.foundOf(r), r && r.scores);
+    const cmp = await compareOf(c, r);
+    if (my !== S.crtoken || !$("c-run")) return;
     $("c-run-scores").innerHTML = `${err ? `<p class="note error">${esc(err.message)}</p>` : ""}${scoreTable(r)}`;
     const { alias } = drawPair(c, r, $("c-true"), $("c-found"), cmp, innerWidth >= 900 ? 2 : null, $("c-diff"));
     $("c-dpair").classList.toggle("stack", innerWidth < 900);

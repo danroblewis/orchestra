@@ -40,6 +40,9 @@ keep the results trustworthy. Breaking one needs the user's approval, and the co
 4b. **A failure is diagnosed before it is fixed.** Is it the method's fault or the data's limit?
    That is decided by identifiability and the best achievable accuracy for that case and variant,
    not by guessing.
+   Start with the diff: `uv run sdlab-ladder diff CASE --strategy S` (the found model as a git diff of the
+   truth, exactly what the page draws), `--summary` across a rung's strategies and variants for the
+   broad causes, and `--between REF_A REF_B` to see what a change did to a cell (docs/LADDER.md, "The diff").
 5. **Scoring changes are visible.** The scorer's hash re-scores stored results. A change that can
    turn a fail into a pass is reported to the user with before/after statuses, and a change to
    what counts as a pass (e.g. counting "equivalent" as a pass) needs the user's approval. A
