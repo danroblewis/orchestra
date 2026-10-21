@@ -1,6 +1,8 @@
 # A copy of matrix/boundary.py at 723f72c (strategies are isolated: copied, never imported; HIDDEN_PRICE 0.0).
 # Changed in this copy: alternatives() never pairs an inflow into B with B's own outflow (the reference
-# made that the self-move B -> B: matrix_v2 on 032 none-long); a periodic profile (a flow with "numbers", written
+# made that the self-move B -> B: matrix_v2 on 032 none-long); the guard is bounded (GUARD_TOP, GUARD_FITS:
+# alternatives ranked by their price with the numbers as they stand, only the best few refitted, and a cap on
+# refits per guard call; without it 316-317 went from seconds to timeouts); a periodic profile (a flow with "numbers", written
 # by periodic_inflows.with_profiles) is priced by its own numbers (the profile's, not one per step's segment)
 # and held fixed in a refit (slots skips it).
 """The declared boundary (docs/research/declared-boundary.md): outside flows only where the case says the
@@ -48,6 +50,8 @@ ANTI_Z = 3.0           # two stocks' unexplained changes anti-correlated beyond 
 ITERATIONS = 4         # Gauss-Newton steps of a refit (one is exact for linear rates without clipping)
 MIN_STEPS = 20         # fewer usable steps: no refit (a flow outside the boundary is then just dropped)
 MAX_FITS = 120         # the optional passes (moves, claims) stop after this many refits (deterministic)
+GUARD_TOP = 3          # (this copy) the guard refits only this many alternatives per flow, the best by their unrefitted price
+GUARD_FITS = 24        # (this copy) and at most this many per guard call; beyond it, alternatives are chosen unrefitted
 
 
 
@@ -470,6 +474,7 @@ def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: l
     """No flow outside a declared boundary survives: each, largest first, becomes its best-priced
     alternative (refitted); without enough data to refit, it is dropped."""
     inputs = set(data.inputs)
+    refits = 0
     for _ in range(3 * len(flows) + 3):
         bad = violations(flows, data.ids, b, inputs)
         if not bad:
@@ -481,13 +486,25 @@ def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: l
         best = None
         alts = alternatives(flows, i, stocks, b, data)
         free = set().union(*(touched(flows, cand, data.ids) for _, cand in alts))
+        # (this copy, bounded) each alternative priced with its numbers as they stand (no refit), then the
+        # GUARD_TOP best refitted while the call's budget lasts; an alternative that keeps more violations
+        # than it removes is worse than none
+        rough = []
         for what, cand in alts:
+            fit = Fit(cand, data, set())
+            data.fits -= 1                                  # an unrefitted price is not a refit
+            pr = (price(fit, data, b) if fit.ok else float("inf")) + 1e6 * len(violations(cand, data.ids, b, inputs))
+            rough.append((pr, what, cand))
+        rough.sort(key=lambda x: x[0])
+        for pr, what, cand in rough[:GUARD_TOP] if refits < GUARD_FITS else []:
+            refits += 1
             fit = Fit(cand, data, free)
-            # an alternative that keeps more violations than it removes is worse than none
             pr = price(fit, data, b) if fit.ok else float("inf")
             pr += 1e6 * len(violations(fit.flows, data.ids, b, inputs))
             if best is None or pr < best[0]:
                 best = (pr, what, fit.flows if fit.ok else cand)
+        if best is None:
+            best = rough[0]
         log.append(best[1])
         flows = best[2]
     return [f for j, f in enumerate(flows) if j not in violations(flows, data.ids, b, inputs)]

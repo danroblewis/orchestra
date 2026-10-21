@@ -55,4 +55,10 @@ answer: guard and anti-correlated pairs made moves (declared), or each outside f
 claim at 2 log T (not declared). The copy's one change: `alternatives()` never pairs an inflow into B with
 B's own outflow (the reference's self-move B -> B).
 
+Bounded (so the largest models do not time out; the first version took 316-317 from seconds to
+timeouts): the guard prices each alternative with its numbers as they stand and refits only the best 3,
+at most 24 refits per guard call (`GUARD_TOP`, `GUARD_FITS`); and `earned_joint.decide` never revisits a
+set of ties and stops after 2 x (candidates + 1) steps (from the forced ties it cycled: 317 none-short,
+25,000 fits for one candidate).
+
 Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).

@@ -344,7 +344,11 @@ def decide(system: System, log_t: float, trace: bool = False, forced: set = froz
     when tied.
 
     (this copy, the declared boundary: boundary.py) forced: the sources whose drain must be all moves
-    (no outflow to outside declared); each that can be tied is tied from the start and stays tied."""
+    (no outflow to outside declared); each that can be tied is tied from the start and stays tied.
+    Each step is judged on its own source's criterion (own or shared), so there is no one score that
+    must fall, and from the forced ties the search can cycle (317 none-short: 25,000 fits flipping the
+    same sources): a set of ties already visited is never taken again, and the search stops after
+    2 x (candidates + 1) steps."""
     system.set_receivers(system.fit(set()))
     cands = system.ties()
     tied: set = {a for a in cands if a in forced}
@@ -359,10 +363,13 @@ def decide(system: System, log_t: float, trace: bool = False, forced: set = froz
         return own["nll"] + own["P"] * log_t, system.shared_nll(ts, W, held["cuts"]) + held["P"] * log_t
 
     score = price(tied)
-    while True:
+    seen = {frozenset(tied)}
+    for _ in range(2 * (len(cands) + 1)):
         step = None
         for t in cands:
             trial = tied ^ {t}
+            if frozenset(trial) in seen:
+                continue
             sc = price(trial)
             k = 0 if system.changing(t) else 1
             gain = score[k] - sc[k]
@@ -373,4 +380,5 @@ def decide(system: System, log_t: float, trace: bool = False, forced: set = froz
         if step is None:
             break
         tied, score = step[0], step[2]
+        seen.add(frozenset(tied))
     return system.fit(tied)

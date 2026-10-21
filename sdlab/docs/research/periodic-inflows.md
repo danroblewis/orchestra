@@ -129,4 +129,10 @@ the period, 2 per piece folded in) and is held fixed in a refit. Without that th
 number per step-segment of the written profile and dropped it for the move c -> a
 (`tests/test_strategy_periodic_inflows.py`).
 
+Bounded (so the largest models do not time out; the first version took 316-317 from seconds to
+timeouts): the guard prices each alternative with its numbers as they stand and refits only the best 3,
+at most 24 refits per guard call (`GUARD_TOP`, `GUARD_FITS`); and `earned_joint.decide` never revisits a
+set of ties and stops after 2 x (candidates + 1) steps (from the forced ties it cycled: 317 none-short,
+25,000 fits for one candidate).
+
 Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).
