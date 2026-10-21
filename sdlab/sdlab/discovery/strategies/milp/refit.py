@@ -252,6 +252,8 @@ class Structure:
 PIECE_PRICE = 2.0     # an inflow step pays this many log T (its size and its place), as in the program
 PENALTY = 1e4         # weight of a drain total beyond 1 (per unit, against misfits per noise scale)
 PRUNE_EVALS = 30      # function evaluations of each refit while pruning (started from the numbers already fitted)
+PRUNE_WORK = 6e8      # a prune stops (keeping what it has) after refits costing this much: sum of steps x stocks x numbers
+                      # (k8s-310: a start with ~100 inflow steps on 2000 steps took 230 s a prune; deterministic, unlike a clock)
 
 
 def drop_tiny(s: Structure, rel: float = 1e-6) -> Structure:
@@ -281,7 +283,8 @@ def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets, fo
     not prefer."""
     own = (lambda x: shape(x)) if shape else (lambda x: scale)     # counts: each structure weighs steps by what it moves
     cur = s.bic(own(s), floor, price(s))
-    while s.parts:
+    work = 0.0
+    while s.parts and work < PRUNE_WORK:
         best = None
         moves = [s.without(i) for i in range(len(s.parts))] + [x for x in (s.simplified(i) for i in range(len(s.parts))) if x]
         moves += [s.rerouted(i, d) for i, p in enumerate(s.parts) if p[1] is not None and p[0] in ("term", "min")
@@ -298,8 +301,11 @@ def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets, fo
                 o += 2 if p[0] == "min" else 1
         moves += counter.adds(s)                     # a move into a counter fitted in level space
         for c in [m for m in moves if keeps(m, forced)]:
+            if work >= PRUNE_WORK:
+                break
             sc = own(c)
             c.refit(sc, PRUNE_EVALS)
+            work += float(c.st.T) * len(c.st.ids) * max(1, len(c.theta))
             b = c.bic(sc, floor, price(c))
             if b < cur:                              # first improvement (the moves are cheap to try, not to refit)
                 best = (b, c)

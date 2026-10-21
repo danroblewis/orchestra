@@ -409,14 +409,20 @@ _identify_program = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  # noqa: F811
-    from . import hinge, oefit, quantized
+    from . import effects, hinge, oefit, quantized
 
     known, notes = quantized.find(stocks, run, opts)          # whole-unit controllers (k8s-308): their rules, from the data
     result = _identify_program(stocks, run, opts, known)
     if known:
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
-    flows, gaps = hinge.refine(result.get("flows") or [], stocks, run, opts, skip=known)   # floored gap flows (k8s-309)
-    result = {**result, "flows": flows, "gaps": gaps}
+    flows, eff = effects.refine(result.get("flows") or [], stocks, run, opts, skip=known)  # table-effect flows (k8s-310)
+    flows, gaps = hinge.refine(flows, stocks, run, opts, skip=known)   # floored gap flows (k8s-309)
+    if gaps.get("used"):                                       # the gaps may uncover an effect flow their misfit hid
+        flows, more = effects.refine(flows, stocks, run, opts, skip=known)
+        if more:
+            eff = {"effects": (eff.get("effects") or []) + more["effects"]}
+            flows, gaps = hinge.refine(flows, stocks, run, opts, skip=known)
+    result = {**result, "flows": flows, "gaps": gaps, **({"effects": eff} if eff else {})}
     result = oefit.refit(result, stocks, run, opts or {})
     if known:                                                  # the output-error refit does not run the rules' forms
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}

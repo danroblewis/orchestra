@@ -82,19 +82,47 @@ def _value(rate: dict, st: Steps, env: dict) -> np.ndarray | None:
     return None
 
 
+def effect_value(e: dict, x: float) -> float:
+    """A table or linear effect's multiplier at level x (a copy of the engine's, sdlab/runner.py effect_value)."""
+    if e.get("shape") == "table" and e.get("points"):
+        pts = sorted((float(a), float(b)) for a, b in e["points"])
+        if x <= pts[0][0]:
+            return max(0.0, pts[0][1])
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if x <= x1:
+                return max(0.0, y0 + (y1 - y0) * (x - x0) / max(1e-9, x1 - x0))
+        return max(0.0, pts[-1][1])
+    normal = max(1e-9, float(e.get("normal") or 1))
+    lo = float(e["min"]) if e.get("min") is not None else 0.0
+    hi = float(e["max"]) if e.get("max") is not None else 1.0
+    return min(hi, max(lo, x / normal))
+
+
 def _amount(f: dict, st: Steps, env: dict) -> np.ndarray | None:
+    """A flow's amount per step: its rate floored at 0, times its effects (effects.py)."""
     out = np.zeros(st.T)
     for mask, rate in _segments(f, st):
         v = _value(rate, st, env)
         if v is None:
             return None
         out[mask] = v[mask]
-    return np.maximum(out, 0.0)
+    out = np.maximum(out, 0.0)
+    for e in f.get("effects") or []:
+        x = env.get(e.get("stock"))
+        if x is None:
+            return None
+        x = np.asarray(x, float)
+        if e.get("shape") == "table" and e.get("points"):
+            pts = sorted((float(a), float(b)) for a, b in e["points"])
+            out = out * np.maximum(0.0, np.interp(x, [p[0] for p in pts], [p[1] for p in pts]))
+        else:
+            out = out * np.array([effect_value(e, float(v)) for v in x])
+    return out
 
 
 def _plain(f: dict) -> dict | None:
     """{reader: k} (None: the constant) of a flow with one linear rate, else None."""
-    if f.get("byTime"):
+    if f.get("byTime") or f.get("effects"):
         return None
     r = f.get("rate") or {}
     if r.get("form") == "constant":
@@ -160,8 +188,12 @@ class _Fit:
     def fit(self, free: list[tuple], theta0: np.ndarray) -> np.ndarray:
         if len(theta0) == 0:
             return theta0
+        pos = set(self.st.ids)                     # a move's number on its own source is not negative (k8s-310: a move
+        lo = np.array([0.0 if (src in pos and dst in pos and r == src) else -np.inf     # pushed below 0 moves nothing and
+                       for src, dst, readers in free for r in readers])                 # its gradient is lost)
+        theta0 = np.maximum(theta0, lo + 1e-12 * np.isfinite(lo))
         r = least_squares(lambda th: self.resid(free, th), theta0, method="trf", max_nfev=400, x_scale="jac",
-                          ftol=1e-15, xtol=1e-15, gtol=1e-15)
+                          bounds=(lo, np.full(len(lo), np.inf)), ftol=1e-15, xtol=1e-15, gtol=1e-15)
         return r.x
 
     def bic(self, free, theta) -> float:
@@ -196,7 +228,9 @@ def _hinge_start(target: np.ndarray, X: np.ndarray) -> np.ndarray:
     return w
 
 
-def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, skip=()) -> tuple[list[dict], dict]:
+def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, skip=(), avoid=frozenset()) -> tuple[list[dict], dict]:
+    """avoid: (stock, side) pairs not offered a gap (a gap there acted on too few steps to be one, and the
+    answer's own flow there is not a plain rate it could go back to: k8s-310, a stepped inflow)."""
     opts = opts or {}
     st = Steps(stocks, run, opts)
     if st.T < 10 or not st.ids:
@@ -217,7 +251,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             have = [i for i, f in enumerate(flows) if (f.get("from"), f.get("to")) == ends]
             kinds = (bd.get(s) or {}).get(side) or []
             ok = ("estimate" in kinds) if declared else bool(have)
-            if not ok or len(have) > 1 or any(amounts[i] is None for i in have):
+            if not ok or len(have) > 1 or any(amounts[i] is None for i in have) or (s, side) in avoid:
                 continue
             cands.append((s, side, have[0] if have else None))
     if not cands:
@@ -239,7 +273,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
     replaced = {i for _, _, i in cands if i is not None}
     moves = [i for i, f in enumerate(flows) if i not in replaced and (f.get("from") in cstocks or f.get("to") in cstocks)
              and f.get("from") in pos and f.get("to") in pos and _plain(f) is not None]
-    have_mv = {(flows[i]["from"], flows[i]["to"]) for i in moves}
+    have_mv = {(flows[i]["from"], flows[i]["to"]) for i in moves} | {(f.get("from"), f.get("to")) for f in flows if f.get("effects")}
     extra_mv = [(a, b) for a in st.ids for b in st.ids
                 if a != b and (a in cstocks or b in cstocks) and (a, b) not in have_mv and st.units.get(a)
                 and st.same_unit(a, b) and not ({a, b} & (st.final | set(skip)))]
@@ -373,16 +407,22 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             f2, t2 = build(rd2, start)
             t2 = fit.fit(f2, t2)
             bad = invalid(rd2, t2)
+            if DEBUG and bad:
+                print("  hinge invalid", bad)
             if not bad:
                 return fit.bic(f2, t2), rd2, t2
             mend = [k for k in bad if k in orig and rd2[k] != orig[k]]
+            stuck.update(k for k in bad if k[0] != "mv" and k not in orig)
             if not mend:
                 return np.inf, rd2, t2
             start = {**unpack(rd2, t2), **{k: dict(cur[k]) for k in mend}}
             rd2 = {**rd2, **{k: orig[k] for k in mend}}
         return np.inf, rd2, t2
 
+    stuck: set = set()
     starts = [trial(rd, cur), trial({k: orig.get(k, v) for k, v in rd.items()}, cur)]
+    if not np.isfinite(min(z[0] for z in starts)) and stuck - set(avoid):
+        return refine(flows, stocks, run, opts, skip, frozenset(avoid) | frozenset(stuck))
     if DEBUG:
         for z in starts:
             print("hinge start", z[0], {k: v for k, v in z[1].items() if k[0] != "mv"}, np.round(z[2], 4))
