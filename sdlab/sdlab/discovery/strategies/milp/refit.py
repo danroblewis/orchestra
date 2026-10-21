@@ -104,6 +104,18 @@ class Structure:
         return float(self.st.T * np.sum(np.log(msq)) + np.log(max(self.st.T, 2)) * len(self.theta) + extra)
 
 
+def drop_tiny(s: Structure, rel: float = 1e-6) -> Structure:
+    """Without the parts that move next to nothing (below rel of the changes of the stocks they touch):
+    the program may switch a column on at a number of 0."""
+    scale = {x: float(np.mean(np.abs(s.st.dy[i]))) + 1e-12 for i, x in enumerate(s.st.ids)}
+    for i in reversed(range(len(s.parts))):
+        src, dst, amt = s.amounts(s.theta)[i]
+        ref = max(scale.get(src, 0.0), scale.get(dst, 0.0))
+        if float(np.mean(amt)) <= rel * ref:
+            s = s.without(i)
+    return s
+
+
 def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price) -> Structure:
     """Drop parts one at a time while the refitted BIC (with price(structure): its boundary claims)
     improves: the program's absolute misfit on a sample can keep a part the full least squares does not need."""

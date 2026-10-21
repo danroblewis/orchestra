@@ -19,14 +19,15 @@ import time
 import numpy as np
 
 from . import candidates, program
-from .refit import Structure, prune
+from .refit import Structure, drop_tiny, prune
 from .steps import Steps
 
 __all__ = ["identify"]
 
+SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
 SAMPLE = 300          # steps the program reads (evenly spaced over the run when it is longer)
 PASSES = 4            # program solves at most (each re-estimates the noise scales and offers MINs on the flows found)
-TIME_LIMIT = 60.0     # seconds of HiGHS per solve
+TIME_LIMIT = 20.0     # seconds of HiGHS per solve
 GAP = 1e-4            # relative MIP gap HiGHS stops at
 DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
 FLOOR = 1e-6          # a stock's noise scale is at least this fraction of its typical level and change
@@ -65,6 +66,31 @@ def _claims(s: Structure, bd) -> float:
         return 0.0
     n = len({(p[1], p[2]) for p in s.parts if p[1] is None or p[2] is None})
     return program.CLAIM_PRICE * np.log(max(s.st.T, 2)) * n
+
+
+def _screen(st: Steps, s: Structure, mins: list, scale: np.ndarray) -> list:
+    """The MIN flows most worth offering (column generation's pricing step, by least squares): each
+    flow's best threshold column, scored by how much of what the structure s leaves unexplained
+    (stocks x steps, per noise scale) it would explain alone; the SCREEN best."""
+    e = (st.dy - s.change()) / scale
+    pos = {x: i for i, x in enumerate(st.ids)}
+    scored = []
+    for mf in mins:
+        x, y = st.series(mf.src), st.series(mf.cap)
+        best = 0.0
+        for th in candidates.thresholds(st, mf):
+            f = np.minimum(x, th * y)
+            num, den = 0.0, 0.0
+            for end, sign in ((mf.src, -1.0), (mf.dst, 1.0)):
+                if end in pos:
+                    g = sign * f / scale[pos[end]]
+                    num += float(g @ e[pos[end]])
+                    den += float(g @ g)
+            if den > 0 and num > 0:
+                best = max(best, num * num / den)
+        scored.append((best, mf))
+    scored.sort(key=lambda z: -z[0])
+    return [mf for sc, mf in scored[:SCREEN] if sc > 0]
 
 
 def _sample(T: int) -> np.ndarray:
@@ -118,13 +144,18 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         solves.append(sol["report"])
         if not sol["report"]["found"]:
             break
-        s = Structure(st, sol["chosen"])
+        s = drop_tiny(Structure(st, sol["chosen"]))
         s.refit(scale)
         if DEBUG:
             print("pass", sol["report"], "\n  chosen", [(p, [round(x, 5) for x in v]) for p, v in s.numbers()], "\n  bic", s.bic(scale, _floor(st)))
+        price = lambda x: x.bic(scale, _floor(st), _claims(x, bd))  # noqa: E731
+        if tried and price(s) >= min(price(x) for x in tried):
+            tried.append(s)
+            break                          # no better than a structure already found: the search has converged
         tried.append(s)
         pairs = {(p[1], p[2]) for p in s.parts if p[1] is not None and (p[0] == "min" or p[3] == p[1])}
         nxt = [m for m in mins if (m.src, m.dst) in pairs]
+        nxt += [m for m in _screen(st, s, mins, scale) if m not in nxt]
         if (s.key(), len(nxt)) in seen:
             break
         seen.add((s.key(), len(nxt)))
