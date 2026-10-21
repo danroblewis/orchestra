@@ -198,4 +198,11 @@ at most 24 refits per guard call (`GUARD_TOP`, `GUARD_FITS`); and `earned_joint.
 set of ties and stops after 2 x (candidates + 1) steps (from the forced ties it cycled: 317 none-short,
 25,000 fits for one candidate).
 
-Results: in progress (paired before/after on Kubernetes 300-305 and 40 stored Tests cells, CPU pool).
+Results (CPU pool, 2026-10-20; before = 7d2a370, jobs 21/14/126; after = ca00790, jobs 123/124/125;
+`uv run sdlab-ladder job ID --json`; Tests cells: 015, 104, 124, 137, 152, 196, 004, 012, 030, 041#1 x
+none/counts x short/long): Kubernetes 300-305 27 -> 27 of 28 (gained 305 none-long, lost 303 meas-long); 40 Tests cells 16 -> 16; 316-317 0 -> 0 of 8, timeouts 0 -> 1 (317 none-short). Results with an invented boundary: 24 of 40 Tests cells -> 0, and none
+left on Kubernetes or 316-317. 303 meas-long: the search now finds the true structure itself (before it
+had two invented `outside -> inflight` flows that the errors-in-variables step pruned, and that step's
+instrumented numbers were kept); now that step's instrumented numbers (0.93, 0.56, 0.47 against 1, 0.6,
+0.5) lose its own keep test by 0.003 in the judge, so the least-squares numbers (1.135, 0.68, 0.57,
+13% high) stay and fail on numbers.
