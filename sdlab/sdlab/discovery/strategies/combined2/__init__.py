@@ -402,3 +402,16 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     o, cap = _capmin.offer(stocks, run, opts)
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
     return _capmin.restore(r, cap)
+
+
+# A discrete actuator (switch.py, docs/research/fixes/308-combined2.md, 2026-10-21): a stock moved in whole
+# steps on a few steps and not at all on the rest has its outside flows written as switches on the levels
+# (s x (c + w_X X + w_Y Y > 0), within the range of X its moves happened in) where they fit X's row.
+from . import switch as _switch  # noqa: E402
+
+_identify_min = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    """The answer above with each discrete actuator's outside flows written as switches (switch.py)."""
+    return _switch.apply(_identify_min(stocks, run, opts, *args, **kw), stocks, run, opts)
