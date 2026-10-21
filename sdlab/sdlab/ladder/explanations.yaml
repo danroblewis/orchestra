@@ -787,7 +787,7 @@ strategies:
       its posterior median, with its spread and 95% interval written beside it.
     helps_with: Telling which flows and numbers the data pin down; noisy reports where one best fit lands just outside the tolerance.
     builds_on: kalman_lna
-    status: work in progress
+    status: parked
     note: docs/research/kalman_bayes.md.
 
   engine_forms:
