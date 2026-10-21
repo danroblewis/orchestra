@@ -14,7 +14,9 @@ the true structure far below every strategy's one-step answer).
 1. Gate: some measured stock's one-step residuals under the found model are negatively correlated
    from one step to the next beyond chance (p < ALPHA over the stocks): what white measurement error
    leaves (counting noise leaves them white; a structure that misses something leaves them smooth).
-   Elsewhere the answer is returned unchanged.
+   A stock whose residuals are below ROUNDING of its squared changes is left out: that is the recorded
+   levels' rounding (4 decimals), which leaves the same signature. Elsewhere the answer is returned
+   unchanged.
 2. Noise, first: each stock's a and b from the lag-1 covariance of its one-step residuals (white
    measurement error gives E[e_t e_{t-1}] = -var at the level), without negative parts. It is not
    fitted on the found model: fitted on a wrong model, a stock's measurement variance takes in what
@@ -71,6 +73,7 @@ from scipy.optimize import minimize
 from scipy.stats import norm
 
 ALPHA = 1e-3      # the white-noise test's level (one-sided, over the stocks)
+ROUNDING = 1e-8   # residuals below this share of a stock's squared changes are the levels' rounding
 ROUNDS = 8        # greedy rounds at most
 SCREEN = 6        # iterations of a candidate's screening fit
 SCREEN_T = 400    # steps a candidate is screened on (the first ones)
@@ -508,12 +511,16 @@ class Fit:
 def _gate(net: Net, d: Data) -> tuple[bool, np.ndarray]:
     """Measurement error shown, and each step's one-step residuals (rows 1..T-1)."""
     D = _one_step(np.asarray(net.theta, float), d.Y, d.U, d.INJ, *net.encode())
-    e = np.diff(d.Y, axis=0) - D
+    dy = np.diff(d.Y, axis=0)
+    e = dy - D
     zs = []
     for i in range(d.n):
         x = e[:, i] - e[:, i].mean()
         v = float(x @ x)
-        zs.append(float(x[1:] @ x[:-1]) / v * math.sqrt(len(x)) if v > 1e-12 * max(1.0, float(np.mean(d.Y[:, i] ** 2))) else 0.0)
+        if v <= ROUNDING * max(1e-12, float(np.sum(dy[:, i] ** 2))):
+            zs.append(0.0)                       # rounding of the recorded levels, not measurement error
+            continue
+        zs.append(float(x[1:] @ x[:-1]) / v * math.sqrt(len(x)))
     return min(zs) < norm.ppf(ALPHA / max(1, d.n)), e
 
 

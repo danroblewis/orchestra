@@ -59,8 +59,9 @@ def test_parse_capmin_expression():
         oe._parse_expr("max(queue, ready)")
 
 
-@pytest.mark.parametrize("variant", ["none-short", "counts-short"])
+@pytest.mark.parametrize("variant", ["none-short", "none-long", "counts-short"])
 def test_gate_leaves_answers_without_measurement_error(variant):
+    """none-long's levels are rounded to 4 decimals: white, but rounding, not measurement error."""
     oe = importlib.import_module(f"sdlab.discovery.strategies.{COPIES[0]}.oe")
     stocks, run, opts = _args(CASE, variant)
     r = {"flows": [dict(f) for f in TRUTH]}
