@@ -303,7 +303,9 @@ def net_bounds(p: Problem, deadline: float | None = None) -> dict[tuple[int, int
     out = {}
     for r in range(len(p.ids)):
         eps = float(p.eps[r])
-        A = np.vstack([X, -X])
+        sc = np.abs(X).max(axis=0)
+        sc[sc == 0] = 1.0
+        A = np.vstack([X / sc, -X / sc])                 # columns scaled to 1 (HiGHS's numerics); bounds scaled back
         b = np.concatenate([Y[r] + eps, -Y[r] + eps])
         for c in range(J):
             if deadline is not None and time.perf_counter() > deadline:
@@ -319,8 +321,8 @@ def net_bounds(p: Problem, deadline: float | None = None) -> dict[tuple[int, int
                     break
             if got is None:
                 break
-            lo, hi = got
-            w = lambda v: BOUND_WIDEN * (1 + abs(v))
+            lo, hi = (None if v is None else v / sc[c] for v in got)
+            w = lambda v, c=c, sc=sc: BOUND_WIDEN * (1 + abs(v)) + 10 * BOUND_WIDEN / sc[c]     # + the LP's tolerance in this column's scale
             out[(r, c)] = (None if lo is None else lo - w(lo), None if hi is None else hi + w(hi))
     return out
 
@@ -392,6 +394,8 @@ class Search:
             if got is None:
                 return None
             t, kv = got
+            if math.isnan(t):
+                break                             # the LP failed numerically: undecided
             if not _violated(self.p, kv, set()):
                 return kv
             if t > 1e-3 * tight:
@@ -454,10 +458,16 @@ def _lp_numbers(p: Problem, support: list[int], shrink: float = 0.0):
                 rhs.append(np.full(n, eps))
     cost = np.zeros(m + 1)
     cost[-1] = 1.0
-    lp = linprog(cost, A_ub=np.vstack(rows), b_ub=np.concatenate(rhs), bounds=[(None, None)] * (m + 1), method="highs")
-    if lp.status != 0:
+    A = np.vstack(rows)
+    scale = np.abs(A[:, :m]).max(axis=0) if m else np.ones(0)       # columns scaled to 1 (levels reach 1e5: HiGHS's
+    scale[scale == 0] = 1.0                                          # numerics fail unscaled)
+    A[:, :m] /= scale
+    lp = linprog(cost, A_ub=A, b_ub=np.concatenate(rhs), bounds=[(None, None)] * (m + 1), method="highs")
+    if lp.status == 2:
         return None
-    return float(lp.x[-1]), {ti: Fraction(float(v)) for ti, v in zip(support, lp.x[:-1])}
+    if lp.status != 0:
+        return float("nan"), {}
+    return float(lp.x[-1]), {ti: Fraction(float(v)) for ti, v in zip(support, lp.x[:-1] / scale)}
 
 
 def _frac_of(v) -> Fraction:
