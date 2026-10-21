@@ -78,7 +78,7 @@ import yaml
 
 OUTSIDE = "outside"
 TOP_KEYS = {"title", "level", "tags", "tests", "seed", "stocks", "flows", "schedule", "injections", "variants", "tolerance", "draws",
-            "dt", "inputs", "source", "auxiliaries", "switches", "boundary"}
+            "dt", "inputs", "source", "auxiliaries", "switches", "boundary", "timeout"}
 DELAYS = {"delay1": 1, "delay3": 3}                               # DELAYn(rate, time): n hidden stocks in a chain
 TRENDS = ("trend", "forecast")                                     # TREND / FORECAST: a smoothing and an expression (2d)
 SMOOTHS = {"smooth": 1, "smooth3": 3}                             # SMOOTHn(x, time): n hidden stocks, exact flows
@@ -922,6 +922,11 @@ def compile_case(text: str, name: str = "<case>") -> dict:
     if "draws" in raw:
         raise CaseError(f"{_at(raw, 'draws', name)}: draws is for a case with draw(lo, hi) numbers (draws.py), and this one has none")
     out = {k: raw[k] for k in ("title", "level", "tags", "tests", "tolerance", "source") if k in raw}   # source: where a case comes from, and its licence
+    if "timeout" in raw:                                            # seconds a run may take (the runner's and the pool's; not in the hash)
+        t = raw["timeout"]
+        if not isinstance(t, (int, float)) or isinstance(t, bool) or not 1 <= t <= 7200:
+            raise CaseError(f"{_at(raw, 'timeout', name)}: timeout is seconds, 1 to 7200")
+        out["timeout"] = float(t)
     if "boundary" in raw:                                           # declared (even empty); checked against the model in cases.py
         out["boundary"] = boundary_spec(raw["boundary"], _at(raw, "boundary", name))
     v = raw.get("variants")
