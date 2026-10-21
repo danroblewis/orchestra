@@ -139,10 +139,17 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     levels carry measurement error, the numbers are refitted and the structure revised on the output error
     and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
     record against the measured levels)."""
-    from . import oefit
+    from . import floor, oefit
 
     o, cap = _capmin.offer(stocks, run, opts)
-    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
+    r = _identify_linear(stocks, run, o, *args, **kw)
+    # (k8s-309, docs/research/fixes/309-structures.md) outside rates refitted under the engine's floor before
+    # the output-error refit, which would read a floored rate fitted as a drift as measurement error
+    r = floor.apply(r, stocks, run, opts, judge_opts=o)
+    try:
+        r = oefit.refit(r, stocks, run, o, cap)
+    except Exception as e:                           # noqa: BLE001  (a failed refit leaves the answer as it was: 309 none-long)
+        r = {**r, "oefit_error": f"{type(e).__name__}: {e}"[:300]}
     return _capmin.restore(r, cap)
 
 
