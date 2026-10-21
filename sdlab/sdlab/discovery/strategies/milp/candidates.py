@@ -8,7 +8,8 @@
   reads the measured inputs only; an "estimate" side reads a constant, the inputs, and the other
   measured stocks' levels (links);
 - a capacity-limited flow from i (a move, or an outside outflow where one is allowed) at
-  MIN(a x i, b x Y), Y another measured stock or an input: the demand of the source, or what Y can take.
+  MIN(a x i, b x Y), Y another measured stock (not a counter: a final stock only records) or an input:
+  the demand of the source, or what Y can take.
 
 Every number is non-negative (rates are non-negative and every reader is), so nothing is ever a
 negative flow; conservation holds by construction (a move's amount leaves i and enters j).
@@ -98,7 +99,7 @@ def build(st: Steps, b: Boundary) -> tuple[list[Term], list[MinFlow]]:
             continue
         x = st.series(i)
         targets = [j for j in ids if j != i and i not in st.final] + ([None] if out else [])
-        for y in [s for s in ids if s != i] + inputs:
+        for y in [s for s in ids if s != i and s not in st.final] + inputs:      # a counter is a record, not a capacity
             yv = st.series(y)
             pos = yv[yv > 1e-12]
             if len(pos) < 2 or np.ptp(yv) <= 0:

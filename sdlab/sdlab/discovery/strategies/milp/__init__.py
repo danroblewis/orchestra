@@ -105,6 +105,19 @@ def _start(chosen: list, screened: list) -> list:
     return out + [(col, min(1.0, max(0.0, a)))]
 
 
+def _as_drains(s: Structure, bd) -> Structure:
+    """A gap term reading an inflow's own stock (c - k x level) written as that stock's drain where the
+    boundary allows one: the same levels, and the simpler reading (the program may pick either when it
+    stops at its time limit)."""
+    parts = []
+    for p in s.parts:
+        if p[0] == "neg" and p[1] is None and p[3] == p[2] and bd.kinds(p[2], "out", p[2] in s.st.final):
+            p = ("term", p[2], None, p[2])
+        parts.append(p)
+    s.parts = parts
+    return s
+
+
 def _sample(T: int) -> np.ndarray:
     return np.arange(T) if T <= SAMPLE else np.unique(np.linspace(0, T - 1, SAMPLE).round().astype(int))
 
@@ -207,6 +220,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         for x in tried:
             x.refit(scale)
         best = min(tried, key=lambda x: x.bic(scale, _floor(st), _claims(x, bd)))
+        best = _as_drains(best, bd)
+        best.refit(scale)
         best = prune(best, scale, _floor(st), lambda x: _claims(x, bd))
         if DEBUG:
             print("  pruned", [(p, [round(x, 5) for x in v]) for p, v in best.numbers()], best.bic(scale, _floor(st)))
