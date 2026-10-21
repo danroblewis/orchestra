@@ -163,3 +163,15 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import controller
 
     return controller.apply(_identify_capmin(stocks, run, opts, *args, **kw), stocks, run, opts)
+
+
+# A counted move with a threshold effect (counted.py, docs/research/fixes/310-structures.md, 2026-10-21): a
+# counter's increments fitted as A x table(X), written as its inflow and offered as the move A -> B it counts.
+_identify_controller = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    from . import counted
+
+    r = _identify_controller(stocks, run, opts, *args, **kw)
+    return counted.apply(r, stocks, run, opts)
