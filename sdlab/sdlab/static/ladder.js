@@ -172,7 +172,7 @@
   function timingChart(p) {
     const t = (p && p.times) || [];
     if (!t.length) return "";
-    const W = 720, H = 70, n = t.length, bw = W / n, top = Math.max(...t.map((x) => Math.max(x.seconds || 0, x.timeout || 0)), 1);
+    const W = 720, H = 48, n = t.length, bw = W / n, top = Math.max(...t.map((x) => Math.max(x.seconds || 0, x.timeout || 0)), 1);
     const y = (s) => H - (H - 4) * Math.sqrt(Math.max(0, s) / top);            // square-root scale: short runs stay visible
     const col = (st) => ({ pass: "var(--good)", equivalent: "var(--eq)", fail: "var(--bad)", error: "var(--bad)", timeout: "var(--warn)" }[st] || "var(--muted)");
     const cur = timesAt(t);
@@ -218,11 +218,12 @@
     }).join("");
     const me = p.machine && (p.machines || []).length ? ` on <b>${esc(p.machine)}</b>` : "";
     box.hidden = false;
-    box.innerHTML = `<p>${batch}${me}</p>
+    box.innerHTML = `<details class="runsfold"${runsOpen ? " open" : ""}><summary><b>Backlog${me}:</b> ${num(bl.items)} stale, about ${hrs((bl.seconds || 0) / 3600)} of work <span class="muted small">(details: the old watcher, pace, recent runs)</span></summary>
+      <p>${batch}${me}</p>
       <p>Backlog${me}: <b>${num(bl.items)}</b> stale (${num(bl.run)} to run, ${num(bl.rescore)} to re-score), about ${hrs((bl.seconds || 0) / 3600)} of work <span class="muted" title="each item's cost from: ${esc(how)}">· ${esc(sets)}</span></p>
       <p>Pace: <b>${num(pc.per_hour != null ? Math.round(pc.per_hour) : null)}</b> results/h over the last ${pc.hours ?? "–"} h (${pc.batches || 0} batches)${pc.efficiency != null ? `, ${Math.round(100 * pc.efficiency)}% of the workers' time on items` : ""} · ${etaText}</p>${others}
-      <details${runsOpen ? " open" : ""}><summary>Recent runs (every <code>sdlab-ladder run</code>, sync and watch batch)</summary><div class="tablewrap"><table><thead><tr><th>run</th><th class="l">command</th><th class="l">started</th><th>took</th><th>done</th><th>errors</th><th>timeouts</th><th>workers</th><th>busy</th><th class="l">state</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
-    box.querySelector("details").addEventListener("toggle", (e) => { runsOpen = e.target.open; });
+      <details><summary>Recent runs (every <code>sdlab-ladder run</code>, sync and watch batch)</summary><div class="tablewrap"><table><thead><tr><th>run</th><th class="l">command</th><th class="l">started</th><th>took</th><th>done</th><th>errors</th><th>timeouts</th><th>workers</th><th>busy</th><th class="l">state</th></tr></thead><tbody>${rows}</tbody></table></div></details></details>`;
+    box.querySelector("details.runsfold").addEventListener("toggle", (e) => { runsOpen = e.target.open; });
   }
   let runsAt = 0;
   async function pollRuns(force) {
@@ -366,9 +367,8 @@
     if (my !== S.rctoken) return;
     $("cmp-head").innerHTML = `<div class="casehead">
         <div class="nowstrat" title="The strategy whose result this is">${esc((r && r.strategy) || S.sel.strategy || "")}<span class="nowvar"> · ${esc((r && r.variant) || S.sel.variant || "")}</span></div>
-        <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
-        <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</span>
-        <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
+        <h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span> <span class="muted small ctags">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")}</span></h2>
+        ${testsHtml(c)}${drawHtml(c)}
       </div>
       ${S.focusRunning && S.follow ? `<p class="note discrunning">Running now: ${r ? "showing its previous result until it finishes." : "no earlier result."}</p>` : ""}
       ${err ? `<p class="note error">${esc(err.message)}</p>` : ""}
@@ -381,6 +381,10 @@
     $("cmp-body").innerHTML = equationsHtml(c, cmp, r);
   }
 
+  // what a case tests, on one line; click it for the whole description
+  function testsHtml(c) {
+    return `<details class="testsfold"><summary class="tests" title="Click for the whole description">Tests: ${esc(c.tests)}</summary><p class="tests">Tests: ${esc(c.tests)}</p></details>`;
+  }
   function equationsHtml(c, cmp, r, sel = S.sel) {
     const s = (r && r.scores) || {};
     const rows = cmp.rows.map((row) => `<tr class="cls-${row.cls}">
@@ -786,7 +790,7 @@
     const flows = c.model.flows.map((f) => ({ flow: f, eq: L.equation(f, c.model.schedule) }));
     $("cdetail").innerHTML = `<div class="casehead"><h2 class="ctitle2">${esc(c.id)} <span>${esc(c.title)}</span></h2>
         <span class="muted small">level ${esc(c.level)} · ${c.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join(" ")} · hash ${esc(short(c.hash))}</span>
-        <p class="tests">Tests: ${esc(c.tests)}</p>${drawHtml(c)}
+        ${testsHtml(c)}${drawHtml(c)}
         <div class="cdsum cs-${caseClass(S.cstats && S.cstats.by[c.id])}">${caseSummary(S.cstats && S.cstats.by[c.id])}</div></div>
       ${caseStrategies(c)}
       ${caseRunHtml()}
