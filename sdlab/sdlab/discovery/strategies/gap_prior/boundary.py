@@ -1,4 +1,9 @@
-"""(A copy of matrix/boundary.py at 723f72c, HIDDEN_PRICE 0: strategies are isolated, copied, never imported.)
+"""(A copy of matrix/boundary.py at 723f72c, HIDDEN_PRICE 0: strategies are isolated, copied, never imported.
+This copy reads the kinds as the cases declare them (docs/LADDER.md, "Declared"): "measured" only for an
+outside inflow whose rate reads only measured inputs, "estimate" for every other outside flow, outflows
+and inflows that also read a stock included; an estimate side may read measured inputs (`kind_of`,
+`may`, `inputs_ok`). The reference called any flow reading an input "measured" and kept input columns
+off estimate sides, which dropped 208's true outflow (= demand) and its valve.)
 
 The declared boundary (docs/research/declared-boundary.md): outside flows only where the case says the
 system meets its environment.
@@ -65,8 +70,10 @@ class Boundary:
         return self.sides.get(stock, {}).get(side, set())
 
     def may(self, stock: str, side: str, kind: str | None = None) -> bool:
+        """(this copy) A side declared "estimate" may hold any outside flow (its form is to be found, and
+        may read a measured input); a side declared only "measured" holds only inflows reading inputs."""
         k = self.kinds(stock, side)
-        return bool(k) if kind is None else kind in k
+        return bool(k) if kind in (None, "measured") else kind in k
 
     # what a row regression (one stock's change on the levels, inputs and an outside inflow) may hold
     def pieces_ok(self, stock: str) -> bool:
@@ -74,8 +81,9 @@ class Boundary:
         return self.may(stock, "in", "estimate") or self.may(stock, "out", "estimate")
 
     def inputs_ok(self, stock: str) -> bool:
-        """A measured input's column (positive: an inflow reading it, negative: an outflow)."""
-        return self.may(stock, "in", "measured") or self.may(stock, "out", "measured")
+        """A measured input's column (positive: an inflow reading it, negative: an outflow): (this copy)
+        wherever any outside flow is declared."""
+        return self.may(stock, "in") or self.may(stock, "out")
 
     def links_ok(self, stock: str) -> bool:
         """A column of a stock of another unit (a link from outside, or a drain to outside, reading it)."""
@@ -101,8 +109,14 @@ def _rate_stocks(f: dict) -> set:
 
 
 def kind_of(f: dict, inputs: set) -> str:
-    """"measured" for an outside flow that reads a measured input, else "estimate"."""
-    return "measured" if f.get("input") or _rate_stocks(f) & inputs else "estimate"
+    """(this copy, as the cases declare kinds) "measured" for an outside inflow whose rate reads only
+    measured inputs, else "estimate" (outflows, and inflows that read a stock, a constant or pieces)."""
+    if f.get("from") is not None or f.get("inflow"):
+        return "estimate"
+    reads = _rate_stocks(f) | ({f["input"]} if f.get("input") else set())
+    r = f.get("rate") or {}
+    const = r.get("form") == "constant" or bool(r.get("c"))
+    return "measured" if reads and reads <= set(inputs) and not const else "estimate"
 
 
 def ends(flows: list[dict], ids: list[str]) -> list[list[tuple[str, str]]]:

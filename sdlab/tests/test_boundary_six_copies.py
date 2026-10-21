@@ -53,3 +53,21 @@ def test_strategy_stays_inside_the_declared_boundary(name):
 def test_strategy_lists_claims_without_a_boundary(name):
     r = load(name)(STOCKS, _chain(), {})
     assert not r["boundary"]["declared"] and r["boundary_claims"]
+
+
+@pytest.mark.parametrize("name", COPIES)
+def test_kinds_are_read_as_the_cases_declare_them(name):
+    """docs/LADDER.md "Declared": "measured" only for an outside inflow reading only measured inputs;
+    every other outside flow (an outflow reading an input, an inflow also reading a stock) is
+    "estimate", and an estimate side may read inputs (208: H -> outside = demand, declared estimate)."""
+    bd = _bd(name)
+    lin = lambda *ts, c=0: {"form": "linear", "c": c, "terms": [{"stock": s, "k": 1.0} for s in ts]}  # noqa: E731
+    out_demand = {"from": "H", "to": None, "rate": lin("demand"), "input": "demand"}
+    valve = {"from": None, "to": "H", "rate": lin("H", "demand", c=75)}
+    feed = {"from": None, "to": "H", "rate": lin("demand"), "input": "demand"}
+    assert bd.kind_of(out_demand, {"demand"}) == "estimate" and bd.kind_of(valve, {"demand"}) == "estimate"
+    assert bd.kind_of(feed, {"demand"}) == "measured"
+    est = bd.Boundary({"boundary": {"H": {"in": ["estimate"], "out": ["estimate"]}}, "boundary_declared": True})
+    assert est.inputs_ok("H") and not bd.violations([out_demand, valve, feed], ["H"], est, {"demand"})
+    meas = bd.Boundary({"boundary": {"H": {"in": ["measured"], "out": []}}, "boundary_declared": True})
+    assert bd.violations([out_demand, valve, feed], ["H"], meas, {"demand"}) == [0, 1]
