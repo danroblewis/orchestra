@@ -349,7 +349,8 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
 
     def invalid(rd2: dict, t2: np.ndarray) -> list:
         """The free flows that move something on fewer than EVENTS steps, and the gaps (not the answer's own
-        rate) whose floor binds (the unfloored rate below 0) on fewer than EVENTS steps: a floor that never
+        rate) whose floor binds (the unfloored rate below 0; for an outflow, while its stock holds something)
+        on fewer than EVENTS steps: a floor that never
         acts is a plain linear rate, and the answer's own reading of it is kept."""
         n, bad = 0, []
         for key in keys:
@@ -359,7 +360,10 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             v = sum(k * st.series(x) for k, x in zip(t2[n:n + len(r)], r))
             n += len(r)
             tol = 1e-9 * (np.abs(v).max() + 1e-300)
-            if int(np.sum(v > tol)) < EVENTS or (key[0] != "mv" and r != orig.get(key) and int(np.sum(v < -tol)) < EVENTS):
+            binds = v < -tol
+            if key[0] != "mv" and key[1] == "out":         # an empty stock moves nothing out anyway: not the floor's doing
+                binds &= st.L[pos[key[0]]] > 0
+            if int(np.sum(v > tol)) < EVENTS or (key[0] != "mv" and r != orig.get(key) and int(np.sum(binds)) < EVENTS):
                 bad.append(key)
         return bad
 
