@@ -1,5 +1,7 @@
 # Vendored for kalman_lna from sdlab/discovery/strategies/combined/__init__.py at commit ec2f9e8 (imports rewritten to the
 # vendored copies; otherwise unchanged). Do not edit: re-vendor instead.
+# (kalman_lna, 2026-10-20) Edited after vendoring for the declared boundary: every candidate guarded before
+# the judge where one is declared, outside flows priced as boundary claims where none is (boundary.py).
 """combined: the specialist strategies run side by side, and one judge picks among their models
 (docs/research/combined.md).
 
@@ -49,6 +51,7 @@ default 90), "refit" (refit every candidate's numbers, default on), "guard" and 
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 
@@ -62,6 +65,7 @@ from sdlab.discovery.strategies.kalman_lna._vendored.lna_pulses import identify 
 from sdlab.discovery.strategies.kalman_lna._vendored.lna_stack import identify as lna_stack
 from sdlab.discovery.strategies.kalman_lna._vendored.periodic_inflows import identify as periodic_inflows
 
+from sdlab.discovery.strategies.kalman_lna import boundary as B
 from sdlab.discovery.strategies.kalman_lna._vendored.combined import judge as J
 from sdlab.discovery.strategies.kalman_lna._vendored.combined.deadline import Overrun, deadline, outer_left
 from sdlab.discovery.strategies.kalman_lna._vendored.combined.refit import refit
@@ -121,6 +125,7 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg:
 def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None:
     """The candidate with the lowest score among those that do not run away (see the docstring)."""
     price, per_flow = float(cfg["price"]), float(cfg["per_flow"])
+    boundary = B.Boundary(run)
     scored = []
     for i, c in enumerate(cands):
         r = c.get("result")
@@ -142,6 +147,11 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
             if s2 is not None and s2["nll"] < s["nll"] - 1e-9:
                 c["result"] = r = {**r, "flows": flows, "refitted": True}
                 s = {**s2, "refitted": True}
+        if not boundary.declared:
+            # (kalman_lna) no boundary declared: each outside flow is a boundary claim, CLAIM_PRICE log T
+            # on the -2 log L scale (this judge's nll is -log L: half that, times its price multiplier)
+            n_claims = len(B.claims(r["flows"], data.ids, boundary, set(data.inputs or {})))
+            s = {**s, "claims": n_claims, "bic": s["bic"] + 0.5 * price * B.CLAIM_PRICE * math.log(max(2, data.T)) * n_claims}
         c["score"] = s
         scored.append((i, c, starts))
     if not scored:
@@ -176,11 +186,31 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     cfg = {**DEFAULTS, **own, **env}
     names = list(cfg.get("specialists") or SPECIALISTS)
     cands = candidates(stocks, run, opts, names, cfg)
+    own: dict = {}
+    if B.Boundary(run).declared:
+        # (kalman_lna) the declared boundary: the judge sees each specialist's model with every flow
+        # outside it replaced by its best-priced alternative (dropped, made a move), so it chooses among
+        # models inside the boundary; the chosen specialist's own model is returned, and kalman_lna's
+        # measurement-error refit (eiv.py) and final guard (boundary.apply) take it from there: the
+        # guard's numbers are one-step least squares, which measurement error biases (303 meas-long)
+        for i, c in enumerate(cands):
+            r = c.get("result")
+            if r and r.get("flows"):
+                try:
+                    g = B.apply(r, stocks, run, opts, final=False)
+                except Exception as e:                   # noqa: BLE001  (the judge sees it as it was)
+                    c["boundary_error"] = f"{type(e).__name__}: {e}"[:300]
+                    continue
+                if g.get("boundary_guard"):
+                    own[i], c["result"] = r, g
     data = J.Data(stocks, run, opts.get("injections"), opts.get("inputs"))
     best = choose(cands, data, run, cfg)
     if best is None:
         return {"flows": [], "combined": {"chosen": None, "candidates": _summary(cands, cfg)}}
-    r = dict(best["result"])
+    i = next(k for k, c in enumerate(cands) if c is best)
+    r = dict(own[i]) if i in own else dict(best["result"])
+    if i in own:
+        r["boundary_judged"] = best["result"].get("boundary_guard")
     r["combined"] = {"chosen": best["name"], "candidates": _summary(cands, cfg)}
     return r
 

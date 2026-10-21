@@ -174,3 +174,25 @@ mostly combined's run-to-run spread. Summed discovery time 10861 s against combi
 - Co-flows, effects and floors as atoms of the filter (lna has co-flows; floors are what keeps the
   gate off for case 056).
 - Speed: four stocks on long runs take up to 80 s (the information matrix is O(P^2) per point).
+
+## The declared boundary (2026-10-20)
+
+kalman_lna keeps outside flows to where the case declares them (docs/research/declared-boundary.md;
+`kalman_lna/boundary.py` is a copy of `matrix/boundary.py` at 723f72c, HIDDEN_PRICE 0, with two changes:
+`kept_sides`, a declared side's outside flow is never taken away by the guard or a move; `GUARD_FITS`,
+the guard refits at most 60 structures per call and drops what is still outside after that):
+
+- the filter's atoms (`run.Session`) and the vendored lna's (`_vendored/lna/run.py`, the lna variants
+  share it) are offered only where the boundary allows them (`inside.Allow`: `in`, `grow`, `link`,
+  `gap` on an `estimate` inflow, or a `measured` one for a link reading an input; `out`, `drain` on an
+  outflow), and their swaps (drain <-> gap) keep to it;
+- the vendored combined's judge sees every candidate guarded (`boundary.apply(final=False)`) where a
+  boundary is declared, and prices each outside flow as a boundary claim where none is; it returns the
+  chosen specialist's own model, so the measurement-error refit (eiv.py) decides its numbers (on 303
+  meas-long, handing eiv the guard's one-step least-squares numbers lost the pass: 0.69 and 0.58 for
+  0.6 and 0.5; eiv judged its instrumented 0.56 and 0.47 1.5% worse there);
+- the answer goes through `boundary.apply` (`identify`).
+
+The other vendored specialists (censored, effect_hats, hidden_transit, periodic_inflows, common_cause)
+are not searched inside the boundary themselves: the combined's guard on their candidates and the
+final guard keep the answer legal.

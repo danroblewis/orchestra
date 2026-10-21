@@ -2,7 +2,9 @@
 # never imported; HIDDEN_PRICE 0). Imports only the shared simulator. One change in this copy: where a
 # boundary is declared, no alternative or move may take away the last outside flow on a declared side
 # (`estimate` means the flow exists; kept_sides): without it, pair_moves made a counted chain's declared
-# outside -> A and B -> outside into a closed loop B -> A whose numbers fit nearly as well.
+# outside -> A and B -> outside into a closed loop B -> A whose numbers fit nearly as well. And a second:
+# the guard refits at most GUARD_FITS structures per call; past it, a flow still outside the boundary
+# is dropped without a refit (the largest models stay within their time; the answer stays legal).
 """The declared boundary (docs/research/declared-boundary.md): outside flows only where the case says the
 system meets its environment.
 
@@ -48,6 +50,7 @@ ANTI_Z = 3.0           # two stocks' unexplained changes anti-correlated beyond 
 ITERATIONS = 4         # Gauss-Newton steps of a refit (one is exact for linear rates without clipping)
 MIN_STEPS = 20         # fewer usable steps: no refit (a flow outside the boundary is then just dropped)
 MAX_FITS = 120         # the optional passes (moves, claims) stop after this many refits (deterministic)
+GUARD_FITS = 60        # (this copy) the guard's refits per call; past them a flow outside the boundary is dropped
 
 
 
@@ -482,8 +485,9 @@ def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: l
         bad = violations(flows, data.ids, b, inputs)
         if not bad:
             return flows
-        if not data.usable:
-            log += [f"dropped {flows[i].get('from') or 'outside'} -> {flows[i].get('to') or 'outside'} (no refit)" for i in bad]
+        if not data.usable or data.fits >= GUARD_FITS:
+            why = "no refit" if not data.usable else "no refit: the guard's budget is spent"
+            log += [f"dropped {flows[i].get('from') or 'outside'} -> {flows[i].get('to') or 'outside'} ({why})" for i in bad]
             return [f for j, f in enumerate(flows) if j not in bad]
         i = max(bad, key=lambda j: float(np.abs(data.carried(flows[j])).mean()) if not _n_hidden([flows[j]], data.ids) else 0.0)
         best = None
