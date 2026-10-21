@@ -161,5 +161,6 @@ lets the limited flow's rows read the MIN series (capmin.excluded).
 The change: `_vendored/censored/earned.py`, `earned_rows.py` and `earned_joint.py` are copies of
 censored's at 6e18658, imports re-pointed to this package (its own boundary.py and capmin.py, which are
 identical copies). The vendored censored's `main_line` now comes from them. The rest of the strategy
-is unchanged. In-process (not stored), both counts variants pass, 7/7 parts, and none-short still passes.
-Pool results: docs/research/k8s-306-r3.md.
+is unchanged. Pool job 204 (72d0aaf, 306 only): counts-short and counts-long fail -> pass (7/7 parts),
+none-short and none-long stay pass, meas-short and meas-long stay fail (0 pass -> fail). Earlier rungs were
+not re-run (one regression check at the end of the 306 round).
