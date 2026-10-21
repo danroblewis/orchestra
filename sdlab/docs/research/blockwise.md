@@ -45,3 +45,8 @@ Matrix's parts are its stored flows scored again with the current scorer (no sto
 - **Harness memory:** the 10-15 GB per worker is the harness keeping every flow's counter, not discovery.
 
 **Verdict:** keep, and use it for large models driven by a measured input. Next: effect tables beyond ratios, and stages offered to `moves` candidates.
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (own copy of matrix/boundary.py, wired into this
+strategy's search): see [declared-boundary-six.md](declared-boundary-six.md) for the hooks and the paired results.

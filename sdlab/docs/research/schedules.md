@@ -141,3 +141,8 @@ Fixed on the way (each a cell that lost to an earlier version):
   eras to its neighbours, a co-flow that replaces the used stock's outflows). The search budget is
   60 s.
 - No new distilled case was written.
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (own copy of matrix/boundary.py, wired into this
+strategy's search): see [declared-boundary-six.md](declared-boundary-six.md) for the hooks and the paired results.

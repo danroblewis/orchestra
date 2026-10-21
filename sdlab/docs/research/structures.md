@@ -169,3 +169,8 @@ combined (item 2f) rather than as a wrapper.
 - More than one hidden chain; chains between two measured stocks fed by a product.
 - The search's counts weighting is fixed per round; lna's likelihood (covariance across stocks)
   would tell moves from links and gaps from outflows better (106 counts-short).
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (own copy of matrix/boundary.py, wired into this
+strategy's search): see [declared-boundary-six.md](declared-boundary-six.md) for the hooks and the paired results.

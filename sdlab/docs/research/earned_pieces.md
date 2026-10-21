@@ -217,3 +217,8 @@ files, single-threaded: 1074 of 1074 cells gave byte-identical flows and the sam
   judge or a complexity budget would stop it.
 - sd-manufacturing: let the counting likelihood see unmeasured receivers (an exit to outside is a flow
   too), or tie only when the tied row fits within its own noise.
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (own copy of matrix/boundary.py, wired into this
+strategy's search): see [declared-boundary-six.md](declared-boundary-six.md) for the hooks and the paired results.

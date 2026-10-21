@@ -339,3 +339,8 @@ results of the previous code, read from `sdlab.ladder.store.latest(strategy="cen
 
 **What remains:** the short control runs (the setpoint does not move: the data's limit), 201 and 211
 short and counts, 204 counts-long and 106 counts-short.
+
+## The declared boundary (2026-10-20)
+
+Outside flows only where the case declares them (own copy of matrix/boundary.py, wired into this
+strategy's search): see [declared-boundary-six.md](declared-boundary-six.md) for the hooks and the paired results.
