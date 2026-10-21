@@ -204,7 +204,9 @@ else "estimate"), and a bound on the guard's refits (`GUARD_FITS`). Wired into l
   loops, products, the gap/drain swaps); the moves between stocks stay in the superset, so an outflow
   from A and an inflow into B that track each other are read as the move by the counting-noise
   likelihood itself (which tells a move from a link plus an outflow, as least squares cannot). The
-  matrix's model is guarded (`apply(..., final=False)`) before the judge compares it.
+  matrix's model is judged as the guard would keep it (`apply(..., final=False)`), but returned as it
+  is, so eiv's instrumented refit cleans its outside flows first and the final guard what is left
+  (guarding it first, by least squares on levels with measurement error, lost 303 meas-long).
 - **not declared:** each outside end (a stock's inflow, or outflow, whatever its form) is a boundary
   claim priced at `CLAIM_PRICE x log T` in lna's own BIC (`fit.prune`, `run.bic`).
 - **the answer:** `boundary.apply` after eiv: the guard (declared), and `boundary_claims` listed; the

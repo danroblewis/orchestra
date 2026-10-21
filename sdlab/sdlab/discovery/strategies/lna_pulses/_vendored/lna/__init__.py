@@ -38,12 +38,15 @@ def judge(flows: list[dict], stocks: list[dict], run: dict, opts: dict, horizons
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, hooks: dict | None = None) -> dict:
     """hooks: stages a variant adds (run.HOOKS); none for lna itself."""
     opts = dict(opts or {})
-    base = boundary.apply(_matrix(stocks, run, dict(opts)), stocks, run, opts, final=False)   # the declared boundary (boundary.py)
+    base = _matrix(stocks, run, dict(opts))
     found = discover(stocks, run, {k: v for k, v in opts.items() if k != "candidates"}, base, hooks)
     if found is None:
         return base
     mine = judge(found["flows"], stocks, run, opts)
-    theirs = judge(base["flows"], stocks, run, opts)
+    # the matrix's model judged as the guard (boundary.py) would keep it inside the declared boundary;
+    # returned as it is, so that eiv's refit (which drops and moves outside flows by instruments) sees it
+    # first and the final guard (identify, or the strategy's) cleans what is left
+    theirs = judge(boundary.apply(base, stocks, run, opts, final=False)["flows"], stocks, run, opts)
     found["judged"] = {"lna": mine, "matrix": theirs}
     if (MISFIT is not None and found["misfit"] > MISFIT) or not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
         return {**base, "lna": {k: found[k] for k in ("judged", "nll", "dispersion", "misfit")}}

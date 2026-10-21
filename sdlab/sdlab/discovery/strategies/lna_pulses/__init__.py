@@ -151,7 +151,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return _lna(stocks, run, opts)
     ids = [s["id"] for s in stocks]
     T = len(run["t"]) - 1
-    base = boundary.apply(_matrix(stocks, run, dict(opts)), stocks, run, opts, final=False)   # the declared boundary
+    base = _matrix(stocks, run, dict(opts))
     rest = {k: v for k, v in opts.items() if k != "candidates"}
     inj = opts.get("injections")
     budget = Budget(opts)
@@ -175,7 +175,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         return _lna(stocks, run, opts)
     if r is not None:
         mine = judge(flows + [g for k, a in pulses.items() for g in pulse_flows(k, a, run["t"])], stocks, run, opts)
-        theirs = judge(base["flows"], stocks, run, opts)
+        theirs = judge(boundary.apply(base, stocks, run, opts, final=False)["flows"], stocks, run, opts)   # judged inside the declared boundary; returned as it is (eiv, then the final guard)
         if not math.isfinite(mine) or (math.isfinite(theirs) and mine > GUARD * theirs):
             r = None
     if r is None:                       # no counting noise (or the guard): the matrix's reading, re-measured

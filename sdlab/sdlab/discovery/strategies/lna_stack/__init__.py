@@ -49,7 +49,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     ids = [s["id"] for s in stocks]
     T = len(run["t"]) - 1
     inj = opts.get("injections")
-    base = boundary.apply(_matrix(stocks, run, dict(opts)), stocks, run, opts, final=False)   # the declared boundary
+    base = _matrix(stocks, run, dict(opts))
     rest = {k: v for k, v in opts.items() if k != "candidates"}
     budget = Budget(opts)
     found = inside_pulses(_not_injected(find_pulses(stocks, run, opts), run, inj), run)
@@ -80,7 +80,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     if r is not None:
         extra = [g for i, a in pulses.items() for g in pulse_flows(i, a, run["t"])]
         flows = r["flows"] + extra
-        theirs = judge(base["flows"], stocks, run, opts)
+        theirs = judge(boundary.apply(base, stocks, run, opts, final=False)["flows"], stocks, run, opts)   # judged inside the declared boundary; returned as it is (eiv, then the final guard)
         # lna's guard on lna's own reading (pulses out) first, then on the result: where lna would
         # keep the matrix's model, so does this
         for fl in (state["lna_flows"] + extra, flows):
