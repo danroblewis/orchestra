@@ -17,8 +17,8 @@ every column is split per era (each era its own numbers, each era's term its own
 term is either a *move* between two stocks of the same unit (one number: what one loses the other gains;
 its sign gives the direction) or an *outside* term on one stock. An outside term on stock s reading
 column j is allowed only where the boundary lets it be: with a declared boundary, on a side of s whose
-kinds hold the column's kind ("measured" for an input, "estimate" for a constant or a level); with none
-declared, everywhere. An announced injection is added at the start of its step (as matrix.py does).
+kinds hold the column's kind ("measured" for an input, "estimate" for a constant or a level; the rule
+"kinds"), or on any declared side of s (the rule "sides", the scorer's); with none declared, everywhere. An announced injection is added at the start of its step (as matrix.py does).
 
 **Fitting within epsilon, exactly.** The levels are parsed as the decimals they were written as
 (Fraction of their repr), the changes and inputs are exact rationals, and Z3 works over the reals
@@ -135,24 +135,35 @@ def _frac(v: float, decimals: int | None) -> Fraction:
     return Fraction(repr(round(v, decimals))) if decimals is not None else Fraction(v)
 
 
-def _kind_sides(boundary: dict | None, declared: bool, stock: str, kind: str) -> tuple:
-    """The sides an outside term of this column kind may be on."""
-    want = "measured" if kind == "input" else "estimate"
+BOUNDARY_RULES = ("kinds", "sides")
+
+
+def _kind_sides(boundary: dict | None, declared: bool, stock: str, kind: str, rule: str = "kinds") -> tuple:
+    """The sides an outside term reading a column of this kind may be on. "kinds": a declared side whose
+    kinds hold the column's ("measured" for an input, "estimate" for a constant or a level), as the
+    case writes it and matrix's boundary.py enforces it; "sides": any declared side, whatever the
+    column, as the scorer judges it (score.py, "The boundary": stock and side only; some cases declare
+    "estimate" for a flow that reads an input, e.g. 204's valve, 106's hiring)."""
     if not declared:
         return ("in", "out")
     e = (boundary or {}).get(stock) or {}
+    if rule == "sides":
+        return tuple(side for side in ("in", "out") if e.get(side))
+    want = "measured" if kind == "input" else "estimate"
     return tuple(side for side in ("in", "out") if want in (e.get(side) or []))
 
 
 MOVE_CLASSES = ("ends", "any")
 
 
-def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str = "ends") -> Problem:
+def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str = "ends", boundary: str = "kinds") -> Problem:
     """The class and the exact data for what a page gets (stocks, run, opts as runner.discover builds them).
     moves: "ends" (a move's rate reads the level of one of its two stocks: SD's usual drain or transfer)
     or "any" (a move's rate may read any column: every linear system's decompositions)."""
     if moves not in MOVE_CLASSES:
         raise ValueError(f"moves: one of {MOVE_CLASSES}")
+    if boundary not in BOUNDARY_RULES:
+        raise ValueError(f"boundary: one of {BOUNDARY_RULES}")
     opts = opts or {}
     ids = [s["id"] for s in stocks]
     units = {s["id"]: s.get("unit") for s in stocks}
@@ -200,7 +211,7 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
                 terms += [Term("move", c, a, b) for c, col in enumerate(cols) if moves == "any" or col.name in (a, b) and col.kind == "stock"]
     for s in ids:
         for c, col in enumerate(cols):
-            sides = _kind_sides(run.get("boundary"), declared, s, col.kind)
+            sides = _kind_sides(run.get("boundary"), declared, s, col.kind, boundary)
             if sides:
                 terms.append(Term("outside", c, s, sides=sides))
     top = max([abs(v) for s in ids for v in raw[s] if not math.isnan(v)] or [1.0])

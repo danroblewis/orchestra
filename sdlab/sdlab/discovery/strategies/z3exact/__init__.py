@@ -4,8 +4,9 @@ The fewest terms that fit every one-step change within the data's own rounding, 
 boundary as a hard constraint (core.py: Z3 over exact rationals, a copy of the harness's z3_ident.py),
 then the numbers refitted by least squares (all stocks' changes jointly). The class is linear: moves
 between stocks of one unit reading one of their two stocks ("ends"), and outside terms where the
-boundary allows them (constants per announced era, measured inputs, levels); if nothing of that class
-fits, moves may read any column ("any"). Of several smallest structures, the one with the least squared
+boundary allows them (constants, measured inputs, levels; per announced era); the boundary first as
+written (an outside term only on a declared side of its column's kind), then, if nothing fits, as the
+scorer reads it (any declared side), then with moves reading any column ("any"). Of several smallest structures, the one with the least squared
 error is returned (and the rest counted in the note).
 
 Noisy data: nothing fits within the rounding, so it returns no flows with a note saying so (no best
@@ -23,6 +24,7 @@ from . import core
 
 BUDGET = 60.0                 # seconds of Z3 search per class
 TOTAL = 90.0                  # seconds for everything (the ladder's item timeout is 120 s; Z3 and HiGHS are not interruptible)
+CLASSES = (("ends", "kinds"), ("ends", "sides"), ("any", "sides"))   # tried in turn until one fits
 CAP = 12                      # smallest structures compared at most
 
 
@@ -30,16 +32,16 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     opts = dict(opts or {})
     notes = []
     began = time.perf_counter()
-    for moves in core.MOVE_CLASSES:
+    for moves, rule in CLASSES:
         budget = min(BUDGET, TOTAL - (time.perf_counter() - began))
         if budget < 5:
-            notes.append(f"[{moves}] not tried (out of time)")
+            notes.append(f"[{moves}, {rule}] not tried (out of time)")
             break
-        p = core.prepare(stocks, run, opts, moves=moves)
+        p = core.prepare(stocks, run, opts, moves=moves, boundary=rule)
         if p.steps < 20:
             return {"flows": [], "note": "z3exact: too few steps."}
         r = core.enumerate_structures(p, slack=0, cap=CAP, budget=budget)
-        notes.append(f"[{moves}] {r['status']} ({r['seconds']:.1f} s, {r.get('checks')} checks)")
+        notes.append(f"[{moves}, {rule}] {r['status']} ({r['seconds']:.1f} s, {r.get('checks')} checks)")
         if not r["structures"]:
             if r["status"].startswith("unknown"):
                 break
@@ -50,11 +52,11 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             fits.append((_sse(p, sup, k), sup, k, miss))
         fits.sort(key=lambda x: x[0])
         _, sup, k, miss = fits[0]
-        note = (f"z3exact: {len(sup)} terms, {r['status']} in the class '{moves}'"
+        note = (f"z3exact: {len(sup)} terms, {r['status']} in the class '{moves}, {rule}'"
                 + (f" ({len(fits)} smallest structures fit; the least squared error kept)" if len(fits) > 1 else "")
                 + f"; largest one-step residual {miss:.3g}; " + "; ".join(notes))
         return {"flows": flows_of(p, sup, k), "note": note, "z3": {"status": r["status"], "k_min": r.get("k_min"),
-                "smallest": len(fits), "moves": moves, "seconds": r["seconds"]}}
+                "smallest": len(fits), "moves": moves, "boundary": rule, "seconds": r["seconds"]}}
     return {"flows": [], "note": "z3exact: no structure found, no flows returned (outside the class: noisy data or a "
             "nonlinear truth; unknown: a timeout or a class too large to search): " + "; ".join(notes)}
 

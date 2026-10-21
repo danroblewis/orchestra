@@ -55,10 +55,10 @@ def analysis_label(case_id: str, variant: str, compute: bool) -> str | None:
 
 
 def one(case_id: str, variant: str, moves: str = "ends", slack: int = 1, cap: int = 20, budget: float = 120.0,
-        hidden: bool = False, compute_analysis: bool = False) -> dict:
+        hidden: bool = False, compute_analysis: bool = False, boundary: str = "kinds") -> dict:
     stocks, run, opts, _ = page(case_id, variant)
     began = time.perf_counter()
-    p = zi.prepare(stocks, run, opts, moves=moves)
+    p = zi.prepare(stocks, run, opts, moves=moves, boundary=boundary)
     prep = time.perf_counter() - began
     r = zi.enumerate_structures(p, slack=slack, cap=cap, budget=budget)
     structures = []
@@ -66,7 +66,7 @@ def one(case_id: str, variant: str, moves: str = "ends", slack: int = 1, cap: in
         k, miss = zi.refit(p, sup)
         structures.append({"size": len(sup), "terms": zi.describe(p, sup, k), "max_residual": miss,
                            "relabelings": zi.relabelings(p, sup)})
-    out = {"case": case_id, "variant": variant, "moves": moves, "status": r["status"], "k_min": r.get("k_min"),
+    out = {"case": case_id, "variant": variant, "moves": moves, "boundary": boundary, "status": r["status"], "k_min": r.get("k_min"),
            "at_min": r.get("at_min"), "structures": structures, "terms": len(p.terms), "steps": p.steps,
            "decimals": p.decimals, "seconds": round(prep + r["seconds"], 3), "checks": r.get("checks"),
            "verifies": r.get("verifies"), "rejected": r.get("rejected"), "undecided": r.get("undecided"),
@@ -111,7 +111,7 @@ def _line(r: dict) -> str:
         extra += f"; same-row splits the boundary allows: {len(rel)}"
     if r.get("hidden"):
         extra += f"; one hidden linear stock: {'may fit (necessary condition holds)' if r['hidden'].get('fits') else 'does not fit'}"
-    return (f"{r['case']} {r['variant']} [{r['moves']}]: {r['status']}{k}; {r['seconds']:.2f} s, {r['checks']} checks{extra}"
+    return (f"{r['case']} {r['variant']} [{r['moves']}{'' if r.get('boundary', 'kinds') == 'kinds' else ', sides'}]: {r['status']}{k}; {r['seconds']:.2f} s, {r['checks']} checks{extra}"
             f" | analysis: {r['analysis'] or 'not cached'} | scorer: {scorer}")
 
 
@@ -135,7 +135,8 @@ def main(a) -> int:
     for cid, v in cells:
         for moves in a.moves.split(","):
             try:
-                r = one(cid, v, moves=moves, slack=a.slack, cap=a.cap, budget=a.budget, hidden=a.hidden, compute_analysis=a.analyse)
+                r = one(cid, v, moves=moves, slack=a.slack, cap=a.cap, budget=a.budget, hidden=a.hidden, compute_analysis=a.analyse,
+                        boundary=a.boundary)
             except Exception as e:                               # noqa: BLE001  (one cell's failure is reported, the sweep goes on)
                 r = {"case": cid, "variant": v, "moves": moves, "status": f"error: {type(e).__name__}: {e}", "k_min": None,
                      "at_min": None, "structures": [], "seconds": 0.0, "checks": 0, "analysis": None, "scorer": {}}
@@ -164,6 +165,8 @@ def add_parser(sub) -> None:
     p.add_argument("--cases", help="the --cases syntax (instead of CASE)")
     p.add_argument("--variant", default="none-short", help="none-short, none-long, or both (comma list)")
     p.add_argument("--moves", default="ends", help="the move class: ends (a move reads one of its stocks), any (any column), or both: ends,any")
+    p.add_argument("--boundary", default="kinds", choices=zi.BOUNDARY_RULES,
+                   help="kinds: an outside term only on a declared side of its column's kind (as written; matrix); sides: any declared side (the scorer's rule)")
     p.add_argument("--slack", type=int, default=1, help="also enumerate irreducible structures this many terms larger than the smallest")
     p.add_argument("--cap", type=int, default=20, help="at most this many structures per cell")
     p.add_argument("--budget", type=float, default=120.0, help="seconds per cell (then: unknown (timeout))")
