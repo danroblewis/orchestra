@@ -16,6 +16,7 @@ from . import rowwise
 from .gaps import gap_stage
 from .terms import Rows, Term, chain_terms, library
 from .write import to_flows
+from ...boundary import CLAIM_PRICE, Boundary, side_rule   # (boundary: docs/research/declared-boundary.md)
 
 ORDERS = (1, 2, 3, 4)
 MAX_PIECES = 30          # the base's inflow pieces are offered only up to this many (more: the base fits pieces to
@@ -87,12 +88,17 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
     group = [s.get("group") for s in stocks]
     m = rows.R.shape[0] - S
     p = Problem(rows, np.nan_to_num(data.dy), data.counts, data.q, deadline=began + seconds)
+    rule = side_rule(Boundary(run), list(data.ids), m)   # (boundary: docs/research/declared-boundary.md): outside terms only on declared sides
+    p.allow = None if rule is None else (lambda t: t.kind == "init" or rule(t.src, t.dst, t.x))
+    p.claim = 0.0 if Boundary(run).declared else CLAIM_PRICE
     lib = library(S, m, unit, final, group, products=products)
     if products and S * T * len(lib) > CELLS:
         products = False                                 # (too large to screen: plain terms only)
         lib = library(S, m, unit, final, group, products=False)
     if S * T * len(lib) > CELLS:
         return None
+    if p.allow is not None:
+        lib = [t for t in lib if p.allow(t)]
     trace: dict = {}
     shut = closed(p.dy, data.q)
     if shut:

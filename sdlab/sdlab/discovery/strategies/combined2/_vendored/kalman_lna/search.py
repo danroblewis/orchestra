@@ -48,6 +48,9 @@ def warm(cur: Fitted | None, atoms: list[Atom], extra: dict | None = None) -> np
 
 
 def refit(pr: Problem, atoms: list[Atom], cur: Fitted | None, extra: dict | None = None, trial: bool = False) -> Fitted:
+    allow = getattr(pr, "allow", None)
+    if allow is not None:                                # (boundary: docs/research/declared-boundary.md): atoms off the declared boundary are left out
+        atoms = [a for a in atoms if allow(a)]
     th0 = warm(cur, atoms, extra) if cur is not None else start_theta(pr, atoms)
     return pr.fit(atoms, start=cur, theta0=np.maximum(th0, 1e-6), maxiter=TRIAL_ITER if trial else 400, ftol=1e-7 if trial else 1e-9)
 

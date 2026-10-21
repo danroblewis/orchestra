@@ -17,6 +17,7 @@ from . import search as S
 from .model import Fitted, Layout, OutOfTime, Problem
 from .hidden import hidden
 from .robust import FRAC, RATIO, gross_errors
+from ...boundary import atom_rule   # (boundary: docs/research/declared-boundary.md)
 
 BUDGET = 100.0        # seconds for the whole search (opts "kalman_budget"); past it, None
 MAX_LAG = 8           # reporting delays tried where announced injections pin one
@@ -109,6 +110,7 @@ class Session:
         self.deadline = time.monotonic() + float(opts.get("kalman_budget", BUDGET))
         self.clock = time.monotonic()
         self.ids = [s["id"] for s in stocks]
+        self.rule = atom_rule(run, self.ids, 0)   # (boundary: docs/research/declared-boundary.md): the filter's atoms (no measured inputs) only on declared sides
         self.t = np.asarray(run["t"], dtype=np.int64)
         self.Y = np.array([np.asarray(run["levels"].get(i, [np.nan] * len(self.t)), dtype=float) for i in self.ids]).T
         self.seen = np.isfinite(self.Y)
@@ -137,7 +139,9 @@ class Session:
         cfg = lay.era_cfg(self.conf)
         if cfg is not None:
             cfg = np.asarray(self.bucket)[cfg]
-        return Problem(lay, cfg, self.deadline)
+        pr = Problem(lay, cfg, self.deadline)
+        pr.allow = self.rule
+        return pr
 
     def first_fit(self, pr):
         cur = S.refit(pr, self.atoms0, None, trial=True)

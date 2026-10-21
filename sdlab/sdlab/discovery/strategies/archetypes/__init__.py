@@ -34,6 +34,7 @@ from .hidden import search_hidden
 from .holdout import cut_run, error, forecast, persistence
 from .search import conserved, search
 from .write import flows as to_flows
+from .boundary import CLAIM_PRICE, Boundary, side_rule   # (boundary: docs/research/declared-boundary.md)
 
 DEFAULTS = {"seconds": 60.0, "powers": [0.0, 0.5, 1.0], "base": "combined", "alone": False, "max_steps": 120, "max_stocks": 3,
             "moves": True, "hidden": True, "price": True}
@@ -72,6 +73,11 @@ def discover(stocks: list[dict], run: dict, opts: dict, cfg: dict) -> dict | Non
     if Y.shape[1] < 4:
         return None
     inj = injections(opts, ids, t)
+    # (boundary: docs/research/declared-boundary.md): terms with an outside end only on declared sides; with none declared, each outside term is a
+    # boundary claim priced CLAIM_PRICE x log T on top of AICc
+    rule = side_rule(Boundary(run), ids, 0)
+    allow = None if rule is None else (lambda x: rule(x.src, x.dst, x.mono))
+    claim = 0.0 if Boundary(run).declared else CLAIM_PRICE * math.log(max(2, Y.shape[1] - 1))
     began = time.perf_counter()
     per = float(cfg["seconds"]) / max(1, len(cfg["powers"]))
     best, tried = None, []
@@ -79,11 +85,11 @@ def discover(stocks: list[dict], run: dict, opts: dict, cfg: dict) -> dict | Non
     hidden = bool(cfg["hidden"]) and 2 <= m <= cfg["max_stocks"]
     per = per / (1 + (m if hidden else 0))
     for p in cfg["powers"]:
-        D = Data(Y, inj, power=float(p))
+        D = Data(Y, inj, power=float(p), allow=allow, claim=claim)
         fits = [("measured", search(D, per, moves=bool(cfg["moves"]), price=bool(cfg["price"])), None)]
         if hidden:
             for i in ([] if conserved(Y) else pulses(Y)):
-                h = search_hidden(Y, inj, float(p), i, per, moves=bool(cfg["moves"]), price=bool(cfg["price"]))
+                h = search_hidden(Y, inj, float(p), i, per, moves=bool(cfg["moves"]), price=bool(cfg["price"]), allow=allow, claim=claim)
                 if h is not None:
                     fits.append((f"hidden source of {ids[i]}", h, i))
         for name, f, i in fits:
@@ -152,4 +158,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     measurement error (eiv.py)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    from . import boundary
+
+    # the declared boundary (boundary.py, docs/research/declared-boundary.md): the guard and the moves where one
+    # is declared, each outside flow priced as a boundary claim where none is
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

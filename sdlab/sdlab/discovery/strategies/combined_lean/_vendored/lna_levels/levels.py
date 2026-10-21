@@ -35,7 +35,7 @@ def _aug(d: Data, rows: list[np.ndarray]) -> Data:
         return d
     R = np.array(rows, dtype=float)
     free = None if d.free is None else np.concatenate([d.free, np.zeros(len(rows), bool)])
-    return Data(np.vstack([d.prev, R]), np.vstack([d.dy, np.zeros_like(R)]), d.cfg, d.delta, free)
+    return Data(np.vstack([d.prev, R]), np.vstack([d.dy, np.zeros_like(R)]), d.cfg, d.delta, free, allow=d.allow)   # (boundary, this composite's copy)
 
 
 def _tau(cur: Fitted, n: int) -> np.ndarray | None:

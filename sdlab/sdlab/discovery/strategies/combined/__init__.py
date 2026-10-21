@@ -36,7 +36,13 @@
    drifts off over many steps (it picked such models on the realistic examples); the guard only
    removes them and never ranks the rest, because this in-data judge replays each model's own
    inflow pieces and so favours many pieces (a tighter guard, 2x, loses about 20 test cells).
-4. The lowest score wins; exact ties go to the model with fewer flows that read a stock other
+4. The declared boundary (boundary.py, a copy of matrix's; docs/research/declared-boundary.md): where the
+   case declares one, every candidate is kept inside it before the judge sees it (the guard: a flow
+   outside it becomes its best-priced alternative, a move or nothing), and lna's atoms (the search
+   six of the specialists share) are offered only on declared sides; where none is declared, each
+   outside flow is a boundary claim and the judge adds its price (2 log T on the -2 log L scale). The
+   answer passes the guard, the moves and the claims once more at the end.
+5. The lowest score wins; exact ties go to the model with fewer flows that read a stock other
    than the ones they join, then to fewer numbers, then to the earlier name in PREFERENCE (the
    lna family first).
 
@@ -51,6 +57,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import time
 
@@ -65,6 +72,7 @@ from ._vendored.lna_stack import identify as lna_stack
 from ._vendored.periodic_inflows import identify as periodic_inflows
 
 from ...identify import identify as _main_line
+from . import boundary
 from . import judge as J
 from .deadline import Overrun, deadline, outer_left
 from .refit import refit
@@ -120,7 +128,7 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg:
             out.append({"name": name, "result": r, "seconds": round(time.perf_counter() - t0, 3)})
         if not any(c.get("result") for c in out):
             out.append(fallback(stocks, run, opts, cached))
-    return out
+    return boundary.inside_candidates(out, stocks, run, opts)
 
 
 def fallback(stocks: list[dict], run: dict, opts: dict, cached: dict) -> dict:
@@ -167,6 +175,9 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
             if s2 is not None and s2["nll"] < s["nll"] - 1e-9:
                 c["result"] = r = {**r, "flows": flows, "refitted": True}
                 s = {**s2, "refitted": True}
+        claim = boundary.claim_price(r["flows"], data.ids, run, math.log(max(2, data.T)))
+        if claim:                                        # outside flows with no boundary declared: boundary claims
+            s = {**s, "bic": s["bic"] + claim, "claims": claim}
         c["score"] = s
         scored.append((i, c, starts))
     if not scored:
@@ -226,7 +237,8 @@ def _summary(cands: list[dict], cfg: dict) -> list[dict]:
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     """The answer above with its numbers refitted by instrumental variables where the levels carry
-    measurement error (eiv.py)."""
+    measurement error (eiv.py), then kept inside the announced boundary (boundary.py: the guard and
+    the moves where one is declared, each outside flow priced as a claim where none is)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

@@ -204,6 +204,11 @@ def search(D: Data, seconds: float, moves: bool = True, price: bool = True) -> F
     prev, dy = onestep(D)
     glv = glv_start(D)
     fams = families(D.m, dy.mean(axis=1), glv)
+    if D.allow is not None:                               # (boundary: docs/research/declared-boundary.md): outside terms only on declared sides
+        lib = [t for t in lib if D.allow(t)]
+        glv = [t for t in glv if D.allow(t)]
+        fams = {k: [t for t in v if D.allow(t)] for k, v in fams.items()}
+        fams = {k: v for k, v in fams.items() if v}
     if conserved(D.Y):                                    # a closed total: only moves between the stocks
         lib = [t for t in lib if t.kind == "move"]
         fams = {k: v for k, v in fams.items() if v and all(t.kind == "move" for t in v)}

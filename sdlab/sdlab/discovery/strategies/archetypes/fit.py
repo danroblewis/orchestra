@@ -30,6 +30,8 @@ class Data:
     inj: np.ndarray               # samples x stocks (all stocks, hidden ones too)
     power: float = 0.0
     hidden: int = 0               # unmeasured stocks after the measured ones
+    allow: object = None          # (boundary: docs/research/declared-boundary.md) term -> bool: terms with an outside end off a declared boundary
+    claim: float = 0.0            # (boundary: docs/research/declared-boundary.md) what each outside term adds to AICc with no boundary declared
     W: np.ndarray = field(init=False)
     scale: np.ndarray = field(init=False)
     cap: float = field(init=False)
@@ -92,6 +94,10 @@ def aicc(nll: float, k: int, N: int) -> float:
 
 
 def fit(terms: list[Term], D: Data, theta0: np.ndarray, x00: np.ndarray, iters: int = 200) -> Fit:
+    if D.allow is not None:                              # (boundary: docs/research/declared-boundary.md): a term off the declared boundary is left out
+        keep = [k for k, t in enumerate(terms) if D.allow(t)]
+        if len(keep) < len(terms):
+            terms, theta0 = [terms[k] for k in keep], np.asarray(theta0, dtype=float)[keep]
     src, dst, a, b = arrays(terms)
     K = len(terms)
     n = D.m + D.hidden
@@ -124,7 +130,8 @@ def fit(terms: list[Term], D: Data, theta0: np.ndarray, x00: np.ndarray, iters: 
     nll = nll_of(X, D)
     k = K + n + D.m
     ok = bounded(best[:K], X, src, dst, a, b, D)
-    return Fit(list(terms), best[:K].copy(), best[K:].copy(), nll, k, aicc(nll, k, D.n_obs) if ok else math.inf, X, ok)
+    claims = D.claim * sum(1 for t, th in zip(terms, best[:K]) if (t.src is None) != (t.dst is None) and th > 0)   # (boundary: docs/research/declared-boundary.md)
+    return Fit(list(terms), best[:K].copy(), best[K:].copy(), nll, k, aicc(nll, k, D.n_obs) + claims if ok else math.inf, X, ok)
 
 
 def bounded(theta, X, src, dst, a, b, D: Data) -> bool:

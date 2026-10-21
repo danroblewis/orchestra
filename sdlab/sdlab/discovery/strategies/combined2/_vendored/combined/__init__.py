@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import time
 
@@ -71,6 +72,7 @@ from . import judge as J
 from .deadline import Overrun, deadline, outer_left
 from .refit import refit
 from .shared import once
+from ...boundary import claim_price, inside_candidates   # (boundary, this composite's copy: docs/research/declared-boundary.md)
 
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "lna_stack": lna_stack, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
@@ -122,7 +124,7 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg:
             out.append({"name": name, "result": r, "seconds": round(time.perf_counter() - t0, 3)})
         if not any(c.get("result") for c in out):
             out.append(fallback(stocks, run, opts, cached))
-    return out
+    return inside_candidates(out, stocks, run, opts)   # (boundary, this composite's copy: docs/research/declared-boundary.md): each model inside a declared boundary
 
 
 def fallback(stocks: list[dict], run: dict, opts: dict, cached: dict) -> dict:
@@ -169,6 +171,9 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
             if s2 is not None and s2["nll"] < s["nll"] - 1e-9:
                 c["result"] = r = {**r, "flows": flows, "refitted": True}
                 s = {**s2, "refitted": True}
+        claim = claim_price(r["flows"], data.ids, run, math.log(max(2, data.T)))   # (boundary, this composite's copy: docs/research/declared-boundary.md)
+        if claim:                                        # outside flows with no boundary declared: boundary claims
+            s = {**s, "bic": s["bic"] + claim, "claims": claim}
         c["score"] = s
         scored.append((i, c, starts))
     if not scored:

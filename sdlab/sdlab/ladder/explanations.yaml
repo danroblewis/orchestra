@@ -755,6 +755,9 @@ strategies:
       as they are. One judge scores every model by how likely the measured changes are under it
       (applied exactly as the simulator applies it) plus a BIC price for every number it wrote
       down. The lowest score wins; ties go to the simpler model.
+      Flows from or to outside are offered only where the case declares its boundary, and every
+      candidate is kept inside it before the judge; where no boundary is declared, each outside flow
+      is a claim the judge charges for.
     helps_with: Every case at once - the aim is the best of each specialist.
     builds_on: lna, common_cause, censored, hidden_transit, effect_hats, periodic_inflows
     status: work in progress
@@ -828,6 +831,9 @@ strategies:
       pieces replay the data. Finally the structures search (products, gaps over several stocks,
       hidden delay chains) and archetypes may replace the pick when they clearly do better. Every
       specialist is its own copy.
+      Flows from or to outside are offered only where the case declares its boundary, and every
+      candidate is kept inside it before the judge; where no boundary is declared, each outside flow
+      is a claim the judge charges for.
     helps_with: One strategy for the whole ladder - noisy reports, canonical structures, short series, physics, curved and drifting flows, co-flows, and realistic models where in-data fit favours runaway models.
     builds_on: combined, kalman_lna, structures, archetypes, odefit, own_tables, drifting_drain, censored, coflow_hats, realistic_hats
     status: work in progress
@@ -840,6 +846,9 @@ strategies:
       says, and do they not repeat in time? If either test fails clearly (more than 5 standard
       errors), no candidate is right, the one-step score cannot be trusted, and the candidate whose
       runs over 5, 20 and 100 steps stay closest to the data is chosen instead.
+      Flows from or to outside are offered only where the case declares its boundary, and every
+      candidate is kept inside it before the judge; where no boundary is declared, each outside flow
+      is a claim the judge charges for.
     helps_with: Realistic models, where no candidate is exactly right and the one-step score picks models that drift off over many steps.
     builds_on: combined
     status: active
@@ -852,6 +861,9 @@ strategies:
       costing about one and a half times what BIC charges (the modified BIC used for change points).
       Then flows are taken out one at a time while the price-adjusted score falls and the model still
       tracks the data over many steps. It only runs where the model fits the data to their noise.
+      Flows from or to outside are offered only where the case declares its boundary, and every
+      candidate is kept inside it before the judge; where no boundary is declared, each outside flow
+      is a claim the judge charges for.
     helps_with: The strict tier - passes that carry one or two extra inflow pieces or a weak extra flow.
     builds_on: combined
     status: active
@@ -862,6 +874,9 @@ strategies:
     how: >-
       The judge switches to many-step error where no candidate fits the counts, and the chosen model
       then loses the inflow changes and flows the data barely earn (only where it fits).
+      Flows from or to outside are offered only where the case declares its boundary, and every
+      candidate is kept inside it before the judge; where no boundary is declared, each outside flow
+      is a claim the judge charges for.
     helps_with: Realistic models and the strict tier at once.
     builds_on: combined_misfit, combined_lean
     status: active
@@ -876,6 +891,9 @@ strategies:
       from the whole list of terms pays extra for the choice. Below 20 steps, where the main line
       returns nothing, this is the answer; on longer runs combined's model is kept unless this one
       forecasts the run's last quarter better when both are refitted on the rest.
+      Flows from or to outside are offered only where the case declares its boundary, and every
+      candidate is kept inside it before the judge; where no boundary is declared, each outside flow
+      is a claim the judge charges for.
     helps_with: The real-data cases - Gause's lab cultures and the boarding-school flu (6 to 14 samples), technology adoption (Bass), predator and prey.
     builds_on: combined (on runs of 20 steps or more)
     status: work in progress

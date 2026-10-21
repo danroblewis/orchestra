@@ -16,6 +16,7 @@ from ...simulate import Model
 def cut_run(run: dict, opts: dict, n: int) -> tuple[dict, dict]:
     t = list(run["t"])[:n]
     r = {"t": t, "levels": {k: list(v)[:n] for k, v in run["levels"].items()}}
+    r.update({k: run[k] for k in ("boundary", "boundary_declared") if k in run})   # (boundary: docs/research/declared-boundary.md): announced, not data
     o = dict(opts)
     if o.get("injections"):
         o["injections"] = [j for j in o["injections"] if float(j["t"]) <= float(t[-1])]

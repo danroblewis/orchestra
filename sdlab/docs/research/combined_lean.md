@@ -66,3 +66,29 @@ again at 781c56c), compared on the 936 test cells every strategy ran. combined's
   sd-population. The gate keeps it off most realistic runs. The gap to stored combined is mostly combined's
   own run-to-run differences (see combined_misfit.md).
 
+## The declared boundary (2026-10-20)
+
+Outside flows are a modelling decision the case makes, not something discovery may invent (the user's
+approval, CLAUDE.md invariant 2; docs/research/declared-boundary.md). This strategy carries its own copy of
+`matrix/boundary.py` at 723f72c (`combined_lean/boundary.py`; HIDDEN_PRICE 0, CLAIM_PRICE 2) and uses it:
+
+- **lna's atoms** (the search lna, gap_prior, lna_pulses, lna_stack and its levels and products stages share,
+  `_vendored/lna/`): an atom with an outside end (in, grow, link, gap, out, drain) is offered only on a
+  declared side and kind (`atom_rule`: one that reads a measured input is "measured", any other
+  "estimate"); the candidate set is filtered before the noise check and every later fit holds an atom off
+  the boundary at 0 (swaps and stages cannot bring one back). A stock with no declared outflow therefore
+  has no drain: what it loses is moves.
+- The other specialists' copies (censored, effect_hats, common_cause, hidden_transit, periodic_inflows)
+  start from the main line's matrix method (the pinned shared library, which they cannot change) and are
+  kept inside the boundary by the guard on their models below.
+- **Every candidate before the judge:** where a boundary is declared, each candidate model passes the guard
+  (`inside_candidates`: a flow outside it becomes its best-priced alternative, a move into a stock of its
+  unit, a link made a move, or nothing), with one refit budget for all candidates (GUARD_FITS 150 refits,
+  and at most 30 s or half what the caller's timer leaves; past it the offending flows are dropped
+  unrefitted, never kept). Identical candidates are guarded once.
+- **The judge:** with no boundary declared, each outside flow is a boundary claim and adds CLAIM_PRICE x log T
+  (on the -2 log L scale, so half that on the judge's negative log-likelihood) to the candidate's BIC.
+- **The answer:** the guard and the anti-correlated pair moves once more (declared), or the moves and the
+  priced claims (not declared), bounded the same way; `boundary` and `boundary_claims` in the result.
+
+Results: in progress (paired pool runs on Kubernetes 300-305 and 40 Tests cells; see below when reported).

@@ -33,10 +33,11 @@ def seed_terms(m: int, i: int) -> tuple[list[Term], list[Term]]:
     return hid, chain
 
 
-def search_hidden(Y: np.ndarray, inj: np.ndarray, power: float, i: int, seconds: float, moves: bool = True, price: bool = True) -> Fit | None:
+def search_hidden(Y: np.ndarray, inj: np.ndarray, power: float, i: int, seconds: float, moves: bool = True, price: bool = True,
+                  allow=None, claim: float = 0.0) -> Fit | None:
     deadline = time.perf_counter() + seconds
     m = Y.shape[0]
-    D = Data(Y, np.hstack([inj, np.zeros((inj.shape[0], 2))]), power=power, hidden=2)
+    D = Data(Y, np.hstack([inj, np.zeros((inj.shape[0], 2))]), power=power, hidden=2, allow=allow, claim=claim)   # (boundary: docs/research/declared-boundary.md)
     hid, chain = seed_terms(m, i)
     terms = hid + chain
     top = max(1e-9, float(np.max(Y[i])))
@@ -59,7 +60,7 @@ def search_hidden(Y: np.ndarray, inj: np.ndarray, power: float, i: int, seconds:
     cache: dict = {}
     locked = frozenset(hid)
     cur, _ = backward(best, D, cache, deadline, locked)
-    lib = library(m, moves=moves)
+    lib = [t for t in library(m, moves=moves) if allow is None or allow(t)]
     cur = stepwise(D, lib, cur, cache, deadline, locked=locked)
     if price:
         extra = max(0.0, 2 * math.log(len(lib)) - 2)

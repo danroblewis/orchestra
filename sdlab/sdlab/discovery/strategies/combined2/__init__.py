@@ -32,6 +32,13 @@ Every specialist is a copy (_vendored/, each with its source commit): no other s
    one when it forecasts the run's last quarter better.
 7. kalman again: a reporting delay or a stock counted at a scale sends the data to the filter,
    unless the pick fits the levels to their noise (screens.fits).
+8. The declared boundary (boundary.py, a copy of matrix's; docs/research/declared-boundary.md): where the
+   case declares one, outside flows are offered only on its declared sides by the searches this
+   composite carries (lna's atoms, shared by six specialists, and kalman's; structures' and
+   archetypes' terms), every candidate and every stage's model is kept inside it before it is
+   judged (the guard), and the answer passes the guard and the moves once more at the end. With none
+   declared, every outside flow is a boundary claim priced 2 log T (-2 log L scale) by the judge and
+   by structures' and archetypes' criteria.
 
 opts (also SDLAB_COMBINED2, JSON): combined's ("specialists", "price", "per_flow", "budget", "cap",
 "refit", "guard", "guard_floor", "trace"), plus "tight", "held" and "held_floor" (the held-inflow
@@ -49,6 +56,7 @@ import time
 
 from sdlab.discovery.identify import identify as _main_line
 
+from . import boundary
 from . import judge as J2
 from . import screens
 from . import stages
@@ -71,6 +79,7 @@ from ._vendored.periodic_inflows import identify as periodic_inflows
 from ._vendored.realistic_hats import identify as realistic_hats
 from .forecast import held
 from .shared import once
+from .boundary import claim_price, inside_candidates   # (boundary, this composite's copy: docs/research/declared-boundary.md)
 
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "lna_stack": lna_stack, "common_cause": common_cause,
               "censored": censored, "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats,
@@ -143,7 +152,7 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg:
         out.append({"name": name, "result": r, "seconds": round(time.perf_counter() - t0, 3)})
     if not any(c.get("result") for c in out):
         out.append(fallback(stocks, run, opts, cached))
-    return out
+    return inside_candidates(out, stocks, run, opts)   # (boundary, this composite's copy: docs/research/declared-boundary.md): each model inside a declared boundary
 
 
 def fallback(stocks: list[dict], run: dict, opts: dict, cached: dict) -> dict:
@@ -192,6 +201,9 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict, eras: bool = F
             if s2 is not None and s2["nll"] < s["nll"] - 1e-9:
                 c["result"] = r = {**r, "flows": flows, "refitted": True}
                 s = {**s2, "refitted": True}
+        claim = claim_price(r["flows"], data.ids, run, math.log(max(2, data.T)))   # (boundary, this composite's copy: docs/research/declared-boundary.md)
+        if claim:                                        # outside flows with no boundary declared: boundary claims
+            s = {**s, "bic": s["bic"] + claim, "claims": claim}
         c["score"] = s
         scored.append((i, c, starts))
     if not scored:
@@ -305,6 +317,8 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             trail.append({"stage": name, "error": f"{type(e).__name__}: {e}"[:300]})
             continue
         took = (got.get("method") == name)
+        if took:                                         # (boundary) a stage's model, too, inside a declared boundary
+            got = boundary.apply(got, stocks, run, opts, final=False)
         trail.append({"stage": name, "seconds": round(time.perf_counter() - t0, 3), "replaced": took})
         if took:
             chosen = name
@@ -363,4 +377,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     measurement error (eiv.py)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    from . import boundary as B
+
+    # the declared boundary (boundary.py, docs/research/declared-boundary.md): the guard and the moves where one
+    # is declared, each outside flow priced as a boundary claim where none is (every path above, kalman's too)
+    return B.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

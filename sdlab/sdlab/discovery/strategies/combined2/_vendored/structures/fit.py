@@ -47,6 +47,8 @@ class Problem:
         self.deadline = deadline
         self.price = price
         self.log_t = math.log(max(2, self.T))
+        self.allow = None          # (boundary: docs/research/declared-boundary.md) term -> bool: terms with an outside end off a declared boundary
+        self.claim = 0.0           # (boundary: docs/research/declared-boundary.md) log T multiples (-2 log L scale) per outside flow, no boundary declared
 
     def check(self):
         if self.deadline is not None and time.monotonic() > self.deadline:
@@ -88,6 +90,8 @@ def fit(p: Problem, terms: list[Term], weights: np.ndarray | None = None) -> Fit
     reweighted by each stock's residual variance (twice)."""
     p.check()
     terms = list(dict.fromkeys(terms))
+    if p.allow is not None:                              # (boundary: docs/research/declared-boundary.md): a term off the declared boundary is left out
+        terms = [t for t in terms if p.allow(t)]
     J = len(terms)
     if J == 0:
         r = p.dy.copy()
@@ -117,7 +121,18 @@ def fit(p: Problem, terms: list[Term], weights: np.ndarray | None = None) -> Fit
             mask = new
         if settled:
             break
-    return Fit(terms, theta, r, _nll(p, r), numbers(terms), p.price, p.log_t)
+    f = Fit(terms, theta, r, _nll(p, r), numbers(terms), p.price, p.log_t)
+    if p.claim:                                          # (boundary: docs/research/declared-boundary.md): each outside flow a boundary claim
+        f.bic += 0.5 * p.claim * p.log_t * outside_flows(f.live())
+    return f
+
+
+def outside_flows(live: list) -> int:
+    """(boundary: docs/research/declared-boundary.md) The outside flows the live terms write: one per stock's pooled outside inflow, one per
+    other term with an outside end (an outflow, a drain, an outside-fed chain)."""
+    pooled = {t.dst for t, _ in live if t.pooled and t.src is None}
+    rest = sum(1 for t, _ in live if not t.pooled and (t.src is None) != (t.dst is None) and t.kind != "init")
+    return len(pooled) + rest
 
 
 def _nll(p: Problem, r: np.ndarray) -> float:

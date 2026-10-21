@@ -30,4 +30,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     measurement error (eiv.py)."""
     from .eiv import apply
 
-    return apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    from . import boundary
+
+    # the declared boundary (boundary.py, docs/research/declared-boundary.md): the guard and the moves where one
+    # is declared, each outside flow priced as a boundary claim where none is
+    return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)

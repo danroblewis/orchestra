@@ -48,6 +48,7 @@ stock offered as the move from it, kept when the score falls; default on), "guar
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 
@@ -65,6 +66,7 @@ from sdlab.discovery.strategies.combined_r2._vendored.combined import judge as J
 from sdlab.discovery.strategies.combined_r2._vendored.combined.deadline import Overrun, deadline, outer_left
 from sdlab.discovery.strategies.combined_r2._vendored.combined.refit import refit
 from sdlab.discovery.strategies.combined_r2._vendored.combined.shared import once
+from ...boundary import claim_price, inside_candidates   # (boundary, this composite's copy: docs/research/declared-boundary.md)
 
 STRATEGIES = {"lna": lna, "gap_prior": gap_prior, "lna_pulses": lna_pulses, "lna_stack": lna_stack, "common_cause": common_cause, "censored": censored,
               "hidden_transit": hidden_transit, "periodic_inflows": periodic_inflows, "effect_hats": effect_hats}
@@ -114,7 +116,7 @@ def candidates(stocks: list[dict], run: dict, opts: dict, names: list[str], cfg:
                 out.append({"name": name, "error": f"{type(e).__name__}: {e}"[:300]})
                 continue
             out.append({"name": name, "result": r, "seconds": round(time.perf_counter() - t0, 3)})
-    return out
+    return inside_candidates(out, stocks, run, opts)   # (boundary, this composite's copy: docs/research/declared-boundary.md): each model inside a declared boundary
 
 
 def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None:
@@ -150,6 +152,9 @@ def choose(cands: list[dict], data: J.Data, run: dict, cfg: dict) -> dict | None
             if n:
                 c["result"] = r = {**r, "flows": flows, "links_as_moves": n}
                 s = s3
+        claim = claim_price(r["flows"], data.ids, run, math.log(max(2, data.T)))   # (boundary, this composite's copy: docs/research/declared-boundary.md)
+        if claim:                                        # outside flows with no boundary declared: boundary claims
+            s = {**s, "bic": s["bic"] + claim, "claims": claim}
         c["score"] = s
         scored.append((i, c, starts))
     if not scored:

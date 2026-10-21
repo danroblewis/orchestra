@@ -27,6 +27,7 @@ class Data:
     delta: float = ROUNDING
     free: np.ndarray | None = None   # the stocks whose variance beyond counting noise is fitted (others: 0)
     deadline: float | None = None    # time.monotonic() past which fitting stops (OutOfTime)
+    allow: object = None             # (boundary, this composite's copy) atom -> bool: atoms off the declared boundary are held at 0
 
 
 class OutOfTime(Exception):
@@ -65,9 +66,19 @@ def fit(atoms: list[Atom], d: Data, start: np.ndarray | None = None, maxiter: in
     S, T = d.dy.shape
     V, Z = stoich(atoms, S), features(atoms, d.prev, d.cfg)
     scale = np.maximum(Z.mean(axis=1), 1e-9) if atoms else np.zeros(0)   # theta x scale: the mean amount per step
+    # (boundary, this composite's copy): an atom off the declared boundary (d.allow) is held at 0; prune then removes it
+    ban = np.array([not d.allow(a) for a in atoms], dtype=bool) if d.allow is not None and atoms else np.zeros(len(atoms), bool)
     if atoms:
-        x0 = (mean_start(atoms, d) if start is None else np.asarray(start, float)) * scale
-        x0 = np.maximum(x0, 1e-3)
+        if start is not None:
+            x0 = np.asarray(start, float).copy()
+        elif ban.any():
+            x0 = np.zeros(len(atoms))
+            if (~ban).any():
+                x0[~ban] = mean_start([a for a, k in zip(atoms, ban) if not k], d)
+        else:
+            x0 = mean_start(atoms, d)
+        x0 = np.maximum(x0 * scale, 1e-3)
+        x0[ban] = 0.0
     else:
         x0 = np.zeros(0)
     vs = np.maximum(d.dy.var(axis=1), 1.0)                            # tau's scale: each stock's spread
@@ -102,7 +113,7 @@ def fit(atoms: list[Atom], d: Data, start: np.ndarray | None = None, maxiter: in
             return 1e300, np.zeros_like(x)
         return v, np.concatenate([g[:F] / scale, g[F:] * vs])
 
-    r = minimize(f, np.concatenate([x0, t0]), jac=True, method="L-BFGS-B", bounds=[(0, None)] * F + [(0, None) if f else (0, 0) for f in free], options={"maxiter": maxiter, "ftol": FTOL_TRIAL if loose or maxiter <= TRIAL else FTOL, "gtol": 1e-5})
+    r = minimize(f, np.concatenate([x0, t0]), jac=True, method="L-BFGS-B", bounds=[(0, 0) if k else (0, None) for k in ban] + [(0, None) if f else (0, 0) for f in free], options={"maxiter": maxiter, "ftol": FTOL_TRIAL if loose or maxiter <= TRIAL else FTOL, "gtol": 1e-5})
     th = r.x[:F] / scale
     th[r.x[:F] < 1e-6] = 0.0
     return Fitted(list(atoms), th, float(r.fun), r.x[F:] * vs)
@@ -117,9 +128,9 @@ def extra_variance(cur: Fitted, d: Data, price: float | None = None) -> np.ndarr
     for s in np.argsort(cur.tau if cur.tau is not None else np.zeros(S)):
         trial = free.copy()
         trial[s] = False
-        g = fit(cur.atoms, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline), cur.theta, maxiter=TRIAL, tau=cur.tau)
+        g = fit(cur.atoms, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline, d.allow), cur.theta, maxiter=TRIAL, tau=cur.tau)
         if g.nll - cur.nll < price:
-            free, cur = trial, polish(g, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline))
+            free, cur = trial, polish(g, Data(d.prev, d.dy, d.cfg, d.delta, trial, d.deadline, d.allow))
     return free
 
 

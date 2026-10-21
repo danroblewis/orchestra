@@ -76,6 +76,7 @@ def hidden(pr: Problem, cur: Fitted, search, most: int = 1) -> tuple[Problem, Fi
             d = 1.0 / delay
             ref = _path(pr.zref[a], k_in, d)
             p2 = Problem(pr.lay, pr.cfg, pr.deadline, hidden=[name], hidden_ref=ref[None, :])
+            p2.allow = getattr(pr, "allow", None)   # (boundary: docs/research/declared-boundary.md)
             p2.free_tau[: pr.nm] = pr.free_tau[: pr.nm]
             p2.noise, p2.scaled = pr.noise, pr.scaled
             p2.set_reference(np.vstack([pr.ref[: pr.nm], ref[None, :]]), pr.yref2 ** 0.5)
