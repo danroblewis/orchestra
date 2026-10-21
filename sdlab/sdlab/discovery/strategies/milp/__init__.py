@@ -124,6 +124,36 @@ def _as_drains(s: Structure, bd) -> Structure:
     return s
 
 
+def _one_per_side(s: Structure, bd, scale: np.ndarray, floor: np.ndarray, price) -> Structure:
+    """(k8s-310) A declared outside side holds one flow: where the answer has a MIN flow on it beside the
+    side's plain flow (or two MINs), the side is given each of them alone, refitted, and BIC keeps the best.
+    The program may choose both (a MIN's columns and a term's are separate), and the scorer counts the
+    second as an invented boundary."""
+    if not bd.declared:
+        return s
+    for _ in range(len(s.parts)):
+        sides: dict = {}
+        for i, p in enumerate(s.parts):
+            if p[0] in ("term", "neg", "min") and (p[1] is None) != (p[2] is None):
+                sides.setdefault((p[1], p[2]), []).append(i)
+        clash = next(((k, ix) for k, ix in sides.items() if sum(s.parts[i][0] == "min" for i in ix) + any(s.parts[i][0] != "min" for i in ix) > 1), None)
+        if clash is None:
+            return s
+        _, ix = clash
+        mins = [i for i in ix if s.parts[i][0] == "min"]
+        plain = [i for i in ix if s.parts[i][0] != "min"]
+        options = ([plain] if plain else []) + [[m] for m in mins]
+        tried = []
+        for keep in options:
+            x = s
+            for i in sorted(set(ix) - set(keep), reverse=True):
+                x = x.without(i)
+            x.refit(scale)
+            tried.append((x.bic(scale, floor, price(x)), len(tried), x))
+        s = min(tried)[2]
+    return s
+
+
 def _declared(st: Steps, bd, forced: list, have: Structure | None) -> Structure:
     """have (or nothing) with every declared outside flow it lacks added in its plainest form: an
     inflow at a constant (measured: k x each input), an outflow proportional to its stock."""
@@ -355,6 +385,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, known: dic
         best = min(ends, key=lambda x: x.bic(own(x), _floor(st), _claims(x, bd)))
         best.refit(own(best))
         best = persistent(best, own(best))         # a MIN whose regime flips at random is its demand alone (persist.py)
+        best = _one_per_side(best, bd, own(best), _floor(st), lambda x: _claims(x, bd))
         if DEBUG:
             print("  pruned", [(p, [round(x, 5) for x in v]) for p, v in best.numbers()], best.bic(scale, _floor(st)))
     note = None
