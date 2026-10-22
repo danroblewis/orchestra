@@ -13,7 +13,7 @@ changes are regressed on a constant, every measured level and every input, with 
 is chosen over quantiles of X / Y and refined by golden section. The best pair is then refined on X's
 row together with the other row m explains best (where the flow goes), by the profile likelihood of
 both rows. m is offered only where it wins decisively on X's row: Gaussian BIC better by more than
-PRICE x log T, with each regime holding on at least MIN_SHARE of the steps (a limit that never binds,
+PRICE x log T, with each regime holding on at least MIN_SHARE of the steps and MIN_STEPS steps (a limit that never binds,
 or always does, is a linear rate). The same rule for every case; nothing reads the case or its truth.
 
 This file is copied into each strategy that uses it (strategies are isolated, CLAUDE.md rule 11); the
@@ -28,7 +28,10 @@ import math
 import numpy as np
 
 PRICE = 6.0            # the extra numbers' price (theta and the arm), in log T, plus a margin
-MIN_SHARE = 0.05       # each regime holds on at least this share of the steps
+MIN_SHARE = 0.01       # each regime holds on at least this share of the steps ...
+MIN_STEPS = 5          # ... and on at least this many (k8s 312, docs/research/fixes/312-structures.md: with the
+                       # autoscaler adding nodes, the pods' capacity binds only after a node failure, on 7 of 299
+                       # steps; at 5% the grid stopped at theta 61 for 66.7 and the base lost the dispatch move)
 GRID = 24              # theta candidates (quantiles of X / Y)
 NAME = "capmin__"      # the offered series' name prefix
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
@@ -176,7 +179,8 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
             if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
                 continue
             ratio = X[Y > 0] / Y[Y > 0]
-            grid = np.unique(np.quantile(ratio, np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
+            lo = max(MIN_SHARE, MIN_STEPS / len(ratio))
+            grid = np.unique(np.quantile(ratio, np.linspace(lo, 1 - lo, GRID)))
             th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
             m = np.minimum(X, th * Y)
             gx, cx = _gain(B, m, dy[xi], floor[xi])
@@ -192,7 +196,8 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
             th, _ = _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
                                            for r in rows), grid)
             share = float(np.mean(X <= th * Y))
-            if not (MIN_SHARE <= share <= 1 - MIN_SHARE):
+            held = int(np.sum(X <= th * Y))
+            if not (MIN_SHARE <= share <= 1 - MIN_SHARE) or min(held, T - held) < MIN_STEPS:
                 continue
             m = np.minimum(X, th * Y)
             gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)

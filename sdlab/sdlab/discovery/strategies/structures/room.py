@@ -26,6 +26,7 @@ leaves unexplained:
 from __future__ import annotations
 
 import math
+import os
 
 import numpy as np
 
@@ -36,6 +37,7 @@ from .hidden import _amount
 from .repair import _bic, _fit, _free, _numbers, _sign
 
 TRIM = 5.0
+_DEBUG = bool(os.environ.get("SDLAB_ROOM_DEBUG"))
 
 GATE = 100.0
 PRICE = 6.0
@@ -107,7 +109,11 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
     bad = [s for s, r in res.items() if r is not None and float(np.sqrt(np.mean(r * r))) > GATE * q]
     if len(bad) < 2:
         return result
-    have = {(f.get("from"), f.get("to")) for f in flows}
+    # (k8s 312) a plain move X -> B already in the answer (the base's proportional stand-in for the limited
+    # one: 312 none-short `pending -> ready = 0.15 pending`) is replaced by the candidate, not a reason to skip it
+    plain_mv = {(f.get("from"), f.get("to")): f for f in flows if f.get("from") in measured and f.get("to") in measured
+                and _free(f, X, bound, declared) and (f.get("rate") or {}).get("form") in ("proportional", "linear")}
+    have = {(f.get("from"), f.get("to")) for f in flows} - set(plain_mv)
     caps = [k for k in X if k not in finals and np.ptp(X[k]) > 0]
 
     def rows_of(fl, a, b):
@@ -146,6 +152,17 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
             if a == b or (a, b) in have or unit.get(a) != unit.get(b) or unit.get(a) is None:
                 continue
             ra, rb = res[a], res[b]
+            if (a, b) in plain_mv:
+                am = _amount(plain_mv[(a, b)], X, n)
+                ra, rb = ra - am, rb + am
+            # (k8s 312) ranked with the free flows of the two rows refitted beside it (linearly): the residual and
+            # each candidate are projected off their columns. Ranked on the raw residuals, a fit whose floored sides
+            # had absorbed the missing room (312 none-short) put capacities like retries ahead of the nodes.
+            Q = _free_basis(flows, a, b, plain_mv.get((a, b)), X, n, bound, declared)
+            r2 = np.concatenate([ra, rb])
+            if Q is not None:
+                r2 = r2 - Q @ (Q.T @ r2)
+            ra, rb = r2[:n], r2[n:]
             yy = float(ra @ ra + rb @ rb)
             for z in ids:
                 if z in finals or z == a or unit.get(z) != unit.get(a) or np.ptp(X[z]) <= 0:
@@ -164,8 +181,11 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                         for th in np.unique(np.quantile(A[R > 0] / R[R > 0], np.linspace(0.05, 0.95, GRID))):
                             m = np.minimum(A, th * R)
                             # the move takes k m from a and gives it to b: k by least squares on both residuals
-                            g = float(-ra @ m + rb @ m)
-                            mm = 2.0 * float(m @ m)
+                            v = np.concatenate([-m, m])
+                            if Q is not None:
+                                v = v - Q @ (Q.T @ v)
+                            g = float(np.concatenate([ra, rb]) @ v)
+                            mm = float(v @ v)
                             if mm <= 0 or g <= 0:
                                 continue
                             coarse.append((yy - g * g / mm, a, b, y, z, float(c)))
@@ -182,6 +202,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
     best = None
     for a, b, y, z, c0 in top:
         base = evaluate(flows, a, b)
+        others = [f for f in flows if f is not plain_mv.get((a, b))]
         if base is None:
             continue
         A, Y, Z = X[a], X[y], X[z]
@@ -189,7 +210,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         def trial(c, th):
             X[SERIES] = np.minimum(A, th * np.maximum(0.0, c * Y - Z))
             mv = {"id": f"room_{a}_{b}", "from": a, "to": b, "ratio": 1, "rate": {"form": "proportional", "stock": SERIES, "k": 0.1}}
-            return evaluate(flows + [mv], a, b)
+            return evaluate(others + [mv], a, b)
 
         def by_theta(c):
             R = np.maximum(0.0, c * Y - Z)
@@ -205,6 +226,11 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         if got is None:
             continue
         gain = base[0] - got[0]
+        k_mv = next((float((f.get("rate") or {}).get("k") or 0.0) for f in got[1] if f.get("id") == f"room_{a}_{b}"), 0.0)
+        if _DEBUG:
+            print("room cand", a, b, y, z, "c", round(c, 4), "th", round(th, 4), "k", round(k_mv, 4), "gain", round(gain, 1))
+        if k_mv <= 0:                                 # (k8s 312) a candidate whose move runs backwards is no room move
+            continue
         if gain > PRICE * math.log(n) and (best is None or gain > best[0]):
             best = (gain, got[1], {"source": a, "to": b, "cap": y, "occupant": z, "c": float(c), "theta": float(th),
                                    "bic": [round(base[0], 1), round(got[0], 1)]})
@@ -228,6 +254,30 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                                   and (_amount(f, X, n) is not None and float(np.max(_amount(f, X, n))) <= 0.0))]
     X.pop(SERIES, None)
     return {**result, "flows": out, "room": {**info, "kept": True}}
+
+
+def _free_basis(flows: list[dict], a: str, b: str, skip, X: dict, n: int, bound: dict, declared: bool):
+    """An orthonormal basis of the columns the free flows touching rows a and b give those two rows (stacked
+    a over b; None when there are none)."""
+    from .repair import _linear
+
+    cols = []
+    for f in flows:
+        if f is skip or not (a in (f.get("from"), f.get("to")) or b in (f.get("from"), f.get("to"))) or not _free(f, X, bound, declared):
+            continue
+        c, ks = _linear(f.get("rate"))
+        names = (["1"] if (c or not ks) else []) + list(ks)
+        for nm in names:
+            col = np.ones(n) if nm == "1" else X[nm]
+            cols.append(np.concatenate([_sign(f, a) * col, _sign(f, b) * col]))
+    if not cols:
+        return None
+    M = np.column_stack(cols)
+    M = M[:, np.abs(M).max(axis=0) > 0]
+    if M.shape[1] == 0:
+        return None
+    U, sv, _ = np.linalg.svd(M / np.abs(M).max(axis=0), full_matrices=False)
+    return U[:, sv > 1e-10 * sv[0]]
 
 
 _NUM = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"

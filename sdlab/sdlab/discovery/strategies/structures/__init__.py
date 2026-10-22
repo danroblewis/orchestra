@@ -139,10 +139,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     levels carry measurement error, the numbers are refitted and the structure revised on the output error
     and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
     record against the measured levels)."""
-    from . import floor, oefit, rebuild
+    from . import floor, moves, oefit, rebuild
 
     o, cap = _capmin.offer(stocks, run, opts)
     r = _identify_linear(stocks, run, o, *args, **kw)
+    # (k8s 312, docs/research/fixes/312-structures.md) rows whose missing terms are moves rebuilt together by
+    # best subset and their terms paired into moves, before the single-row rebuild below writes them as sides
+    r = moves.coflows(moves.apply(r, stocks, run, o), stocks, run, o)
     # (k8s 311, docs/research/fixes/311-structures.md) rows the forward-stepwise fits left far from exact (a fast
     # equilibrium no single column explains) rebuilt by best subset, before the floor refits their sides
     r = rebuild.apply(r, stocks, run, o)
@@ -195,11 +198,14 @@ _identify_counted = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    from . import hidden, room
+    from . import delay, hidden, room
 
     r = hidden.apply(_identify_counted(stocks, run, opts, *args, **kw), stocks, run, opts)
     # (k8s 311) the room move's numbers refitted last, its rows explained by everything else by then
-    return room.polish(r, stocks, run, opts)
+    r = room.polish(r, stocks, run, opts)
+    # (k8s 312) an outside inflow through a hidden first-order delay stage, on a row nothing else explains (after
+    # the polish: the stage may read the room the polished move computes)
+    return delay.apply(r, stocks, run, opts)
 
 
 # Rows left unexplained repaired with the plain moves and outflows they lack (repair.py,
