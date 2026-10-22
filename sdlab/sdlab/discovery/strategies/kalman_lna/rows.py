@@ -413,14 +413,22 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             sse, (sup, coef, extra, res, Q) = sse_at(a)
             b = T * math.log((sse + floor[S]) / T) + (len(sup) + 4) * logT
             if top is None or b < top[0]:
-                top = (b, sse, sup, coef, extra, res, Q)
+                top = (b, sse, sup, coef, extra, res, Q, a, sw)
         if top is None or not top[0] + PRICE * logT < plain["bic"] or not top[0] < best["bic"]:
             return best
-        b, sse, sup, coef, extra, res, Q = top
+        b, sse, sup, coef, extra, res, Q, a, sw = top
         P = _derived.PIECES[0]
-        return {"bic": b, "sse": sse, "lin": {**dict(zip([names[j] for j in sup], map(float, coef))), f"__s_{S}": 1.0},
-                "hinge": None, "res": res, "sched": extra, "sched_idx": _derived.blocks(T, P), "sched_q": Q,
-                "hidden": True}
+        out = {"bic": b, "sse": sse, "lin": {**dict(zip([names[j] for j in sup], map(float, coef))), f"__s_{S}": 1.0},
+               "hinge": None, "res": res, "sched": extra, "sched_idx": _derived.blocks(T, P), "sched_q": Q,
+               "hidden": True}
+        # (310, round 2) the integrator itself, so it is written as a hidden stock H (h' = 1 - a s H) the row reads,
+        # not as a schedule: extra = p0 h0 + p1 h1 + p2 = p1 H + p2 with H's start p0 / p1
+        h0, h1 = _derived.integrator(a, sw)
+        p, *_ = np.linalg.lstsq(np.vstack([h0, h1, np.ones(T)]).T, extra, rcond=None)
+        if abs(p[1]) > 1e-12:
+            sw_meta = next((m for m in derived_meta.values() if m.get("switch") is sw), None)
+            out["integrator"] = {"a": float(a), "switch": sw_meta, "p": [float(x) for x in p], "h": h1 + (p[0] / p[1]) * h0}
+        return out
 
     def _ratio_hidden(resid, taken, stock_cols):
         """(310) a rate per unit of another stock and a hidden integrator are found together: on every row with an
@@ -560,9 +568,11 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         if not grow:
             break
         B |= grow
+    hidden_lv: dict = {}
     for _ in range(len(ids) + 1):
+        hidden_lv.clear()
         built = _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor,
-                       derived_meta, t_end)
+                       derived_meta, t_end, hidden_lv)
         if built is None:
             return result
         new_flows, bad = built
@@ -573,6 +583,8 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             return result
     else:
         return result
+    if hidden_lv:                                            # (310 round 2) the rows' hidden stocks at each step's start
+        states = [{**st, **{H: float(h[k]) for H, h in hidden_lv.items()}} for k, st in enumerate(states)]
     new_amts = [_amounts(f, states, t_end) for f in new_flows]
     tot_old = tot_new = 0.0
     for S in B:
@@ -591,6 +603,20 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         return result
     out = copy.copy(result)
     out["flows"] = [_finish(f) for f in new_flows]
+    if hidden_lv:                                            # their levels on the run (aligned with t), for the judge
+        lv = dict(out.get("inferred_levels") or {})
+        for H, h in hidden_lv.items():
+            f = next((g for g in out["flows"] if g.get("from") == H), None)
+            drain = _amounts(f, states, t_end) if f is not None and not f.get("effects") else None
+            if f is not None and drain is None:
+                rate = float(f["rate"]["k"])
+                e = f["effects"][0]
+                (x0, y0), (x1, y1) = e["points"]
+                xs = np.array([st[e["stock"]] for st in states])
+                drain = rate * h * np.clip(y0 + (xs - x0) * (y1 - y0) / (x1 - x0), min(y0, y1), max(y0, y1))
+            last = float(h[-1]) + 1.0 - (float(drain[-1]) if drain is not None else 0.0)
+            lv[H] = [float(v) for v in h] + [last]
+        out["inferred_levels"] = lv
     out["rows"] = {"rebuilt": sorted(B), "bic": [tot_old, tot_new],
                    **({"derived": [m["expr"] for m in derived_meta.values()]} if derived_meta else {})}
     return out
@@ -621,6 +647,12 @@ def _flow(a, b, terms, ctx: dict | None = None) -> dict:
         parts.append(f"{float(k)!r} * ({meta[s_]['expr']})" if s_ in meta else f"{float(k)!r} * {s_}")
     sname = next((s_ for s_ in terms if s_ is not None and str(s_).startswith("__s_")), None)
     numbers = len(parts) + (1 if c else 0)
+    if sname is not None and sname in (ctx.get("hid") or {}):
+        # (310 round 2) the row reads its hidden stock H: m (p1 H + p2), H's own flows written by _build
+        p = ctx["hid"][sname][1]["p"]
+        m = float(terms[sname])
+        r = {"form": "expr", "expr": " + ".join([repr(c + m * p[2]), f"{m * p[1]!r} * {ctx['hidden_names'][sname]}"] + parts)}
+        return {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}", "numbers": numbers + 2}
     if sname is None:
         r = {"form": "expr", "expr": " + ".join([repr(c)] + parts)}
         out = {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}", "numbers": numbers}
@@ -706,16 +738,47 @@ def _pair(R, B, unit, final, meta=None):
     return moves, link_in, link_out, drain, left
 
 
-def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor, meta=None, t_end=None):
+def _hidden_name(S: str, taken: set) -> str:
+    h, n = f"{S}_hidden", 2
+    while h in taken:
+        h, n = f"{S}_hidden{n}", n + 1
+    taken.add(h)
+    return h
+
+
+def _hidden_flows(H: str, integ: dict, names: list, X) -> list[dict]:
+    """(310 round 2) a hidden integrator h' = 1 - a s h as a found model's own hidden stock H: an outside inflow of
+    1 a step and a drain a H, switched (s = max(0, Y - theta) or max(0, theta - Y)) by an effect table on Y."""
+    one = {"form": "constant", "value": 1.0}
+    out = [{"from": None, "to": H, "ratio": 1, "rate": one, "rates": [dict(one)], "id": f"rows_in_{H}"}]
+    if integ["a"] > 0:
+        r = {"form": "proportional", "stock": H, "k": float(integ["a"])}
+        f = {"from": H, "to": None, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{H}_out"}
+        m = integ.get("switch")
+        if m is not None:
+            ia, ib, up, theta = m["hinge"]
+            span = 10.0 * float(np.ptp(X[:, ib])) + 1.0
+            pts = [[theta, 0.0], [theta + span, span]] if up else [[theta - span, span], [theta, 0.0]]
+            f["effects"] = [{"stock": names[ib], "shape": "table", "points": pts}]
+        out.append(f)
+    return out
+
+
+def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor, meta=None, t_end=None,
+           hidden_out: dict | None = None):
     """(flows, stocks to leave out) of the rebuild over B; None where a flow cannot run."""
     series = {n: X[:, j] for j, n in enumerate(names)}
     sched: dict = {}
+    hid: dict = {}
 
     def note_sched():
         for S in B:
             if R[S].get("sched") is not None:
                 series[f"__s_{S}"] = R[S]["sched"]
                 sched[f"__s_{S}"] = (R[S]["sched"], R[S]["sched_idx"])
+                hid.pop(f"__s_{S}", None)
+                if R[S].get("integrator") is not None:
+                    hid[f"__s_{S}"] = (S, R[S]["integrator"])
     kept, kept_on = [], {S: np.zeros(T) for S in B}
     for n, f in enumerate(flows):
         a, b = f.get("from"), f.get("to")
@@ -800,9 +863,16 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
             new.append((None, S, dict(h[1]), True) if h[0] == "in" else (S, None, dict(h[1]), True))
     new = _together(new, B, y, R, series, floor, T)
     out = list(kept)
-    ctx = {"derived": meta or {}, "sched": sched, "t_end": t_end, "names": names, "X": X}
+    taken = set(ids) | set(names)
+    ctx = {"derived": meta or {}, "sched": sched, "t_end": t_end, "names": names, "X": X, "hid": hid,
+           "hidden_names": {sn: _hidden_name(S, taken) for sn, (S, _) in hid.items()}}
     for a, b, terms, _ in new:
         out.append(_flow(a, b, terms, ctx))
+    for sn, H in ctx["hidden_names"].items():               # (310 round 2) each integrator a row reads is a hidden stock
+        if any(H in str((f.get("rate") or {}).get("expr", "")) for f in out):
+            out += _hidden_flows(H, hid[sn][1], names, X)
+            if hidden_out is not None:
+                hidden_out[H] = hid[sn][1]["h"]
     return out, set()
 
 

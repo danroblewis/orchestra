@@ -59,5 +59,13 @@ def test_rows_find_the_switch_move_the_ratio_and_the_hidden_drive():
     assert kill["effects"][0]["stock"] == "mem" and abs(kill["effects"][0]["points"][0][0] - 300) < 0.05
     assert got[(None, "kills")]["effects"][0]["stock"] == "mem"          # the counter reads the same switch
     inflow = got[(None, "mem")]
-    assert "load / max(1, ready)" in inflow["rate"]["expr"] and inflow.get("byTime")
+    assert "load / max(1, ready)" in inflow["rate"]["expr"] and not inflow.get("byTime")
     assert abs(got[("mem", None)]["rate"]["k"] - 0.5) < 0.01
+    # the hidden drive is the model's own hidden stock (not a schedule): 1 a step in, 0.02 h max(0, mem - 300) out
+    assert "mem_hidden" in inflow["rate"]["expr"]
+    assert got[(None, "mem_hidden")]["rate"] == {"form": "constant", "value": 1.0}
+    drain = got[("mem_hidden", None)]
+    assert abs(drain["rate"]["k"] - 0.02) < 1e-3 and drain["effects"][0]["stock"] == "mem"
+    assert abs(drain["effects"][0]["points"][0][0] - 300) < 0.5
+    h = np.array(r["inferred_levels"]["mem_hidden"])
+    assert len(h) == len(run["t"]) and h[0] == h[0]
