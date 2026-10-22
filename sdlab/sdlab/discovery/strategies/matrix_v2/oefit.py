@@ -671,6 +671,8 @@ def _fit(net: _Net, d: _Data, start: np.ndarray, nfev: int | None = None) -> tup
 def _weights(net: _Net, d: _Data, start: np.ndarray) -> np.ndarray:
     """Each point's weight 1 / sd, the variance a + b x level^2 fitted to each stock's squared residuals."""
     X = _run(net, d, start)
+    if not np.all(np.isfinite(X)):                       # (port-matrix_v2: combined2's oefit-guard, 7539346; ledger
+        return d.w                                       # type 10) a run that blows up: the weights kept
     w = np.empty_like(d.A)
     for s in range(d.S):
         r2 = (X[s] - d.A[s]) ** 2
@@ -678,7 +680,10 @@ def _weights(net: _Net, d: _Data, start: np.ndarray) -> np.ndarray:
         v = np.full(d.n, max(float(np.median(r2)), 1e-12))
         for _ in range(4):
             z = np.minimum(r2, 25 * v)
-            ab = np.linalg.lstsq(V / v[:, None], z / v, rcond=None)[0]
+            try:
+                ab = np.linalg.lstsq(V / v[:, None], z / v, rcond=None)[0]
+            except np.linalg.LinAlgError:                # (port-matrix_v2, 7539346) 309/311 counts-long on the Mac:
+                return d.w                               # SVD did not converge
             v = np.maximum(max(ab[0], 0.0) + max(ab[1], 0.0) * X[s] ** 2, 1e-6 * max(float(np.mean(z)), 1e-12))
         w[s] = 1 / np.sqrt(v)
     return w

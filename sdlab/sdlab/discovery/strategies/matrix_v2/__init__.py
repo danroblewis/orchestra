@@ -170,7 +170,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import oefit
 
     o, cap = _capmin.offer(stocks, run, opts)
-    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
+    r = _guarded(oefit.refit, _identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
     # (2026-10-22, port-matrix_v2, docs/research/fixes/port-matrix_v2.md) kalman_lna's post-passes, copied at 9d3ca8e
     # (fix ledger types 2, 3, 6, 7, 11, 12, 15): each stock's row read off the data (sparse linear, or linear plus one
     # floored term on a declared side; derived columns, a hidden integrator, a capped move) and the flows of the stocks
@@ -181,8 +181,17 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (matrix_v2) the controller is read before the rows as well as after them: the matrix's answer draws a
     # controller's stock with proxies the rows would otherwise rebuild as a hidden stage (308 none-short: a delayed
     # inflow beside the controller, two flows on ready's one declared inflow)
-    r = tracker.revise(_capmin.restore(r, cap), stocks, run, opts)
-    r = rows.revise(r, stocks, run, opts, cap)
-    r = tracker.revise(r, stocks, run, opts)
+    r = _guarded(tracker.revise, _capmin.restore(r, cap), stocks, run, opts)
+    r = _guarded(rows.revise, r, stocks, run, opts, cap)
+    r = _guarded(tracker.revise, r, stocks, run, opts)
     # (port-matrix_v2) a move that is 0 on every nonnegative state is no flow (dead.py; ledger type 17's exact case)
     return dead.apply(r, stocks, run, opts)
+
+
+def _guarded(stage, r: dict, *args) -> dict:
+    """(port-matrix_v2; fix ledger type 10, refit-guard structures 3bf52d6 and its widening engine_forms 104ee76) a
+    later pass that fails on the numbers (an SVD that does not converge, a float error) keeps its input."""
+    try:
+        return stage(r, *args)
+    except (np.linalg.LinAlgError, FloatingPointError, ValueError, ZeroDivisionError, OverflowError):
+        return r
