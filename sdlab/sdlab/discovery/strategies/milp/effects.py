@@ -43,6 +43,8 @@ LOW, HIGH = 0.02, 0.995
 MAX_FLOWS = 3        # effect flows added at most per call
 FLOOR = 1e-5         # a row's misfit is at least this share of its typical change (and the levels' rounding)
 QUIET = 2.0          # a row whose misfit is within this many times its rounding noise is explained (_quiet)
+MATERIAL = 1e-5      # an effect flow moves at least this share of the gross amount through its rows (rms): the numbers are
+                     # written to 6 digits, so a smaller flow fits their rounding (k8s-312: 7e-7 x inflight on queue's row)
 DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
 
 
@@ -116,8 +118,12 @@ class _Rows:
         # (k8s-310 counts-long) a counter's declared inflow may be a schedule (the program steps a constant to follow
         # kills): a counted move may replace it, the schedule held at its amounts in the comparison and charged its numbers
         held = [i for i in self.drop if _plain(flows[i]) is None]
-        if any(not (counter and (flows[i].get("from"), flows[i].get("to")) == (None, counter) and not flows[i].get("effects")
-                    and amounts[i] is not None) for i in held):
+        # (k8s-312) or a MIN the program wrote on the candidate's own pair (min(0.43 ready, 1.57 pending) standing in for kills):
+        # held at its amounts in the answer's side and charged its numbers, as a schedule is
+        own_min = lambda f: ((f.get("from"), f.get("to")) == (src, dst) and src is not None and dst is not None  # noqa: E731
+                             and not f.get("effects") and not f.get("room_fit") and str((f.get("rate") or {}).get("expr") or "").startswith("min("))
+        if any(not (((counter and (flows[i].get("from"), flows[i].get("to")) == (None, counter)) or own_min(flows[i]))
+                    and not flows[i].get("effects") and amounts[i] is not None) for i in held):
             return
         n, rows = st.T, self.rows
         w = 1.0 / scale[rows]
@@ -168,7 +174,7 @@ class _Rows:
                 if st.ids[row] == flows[i].get("from"):
                     fixed[j] -= amounts[i]
         self.held = (fixed * w[:, None]).ravel()
-        self.held_n = sum(len(flows[i].get("byTime") or [1]) for i in held)
+        self.held_n = sum(2 if own_min(flows[i]) else len(flows[i].get("byTime") or [1]) for i in held)
         self.sign = np.array([(-1.0 if st.ids[r] == src else 0.0) + (1.0 if st.ids[r] in (dst, counter) else 0.0) for r in rows])
         self.w, self.n, self.floor = w, n, floor[rows]
         self.R = st.series(reader)
@@ -249,6 +255,13 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                     read.setdefault(e, set()).update(x.get("stock") for x in f.get("effects") or [])
         best, tops = None, []
         quiet = _quiet(st, flows, env, amounts)
+        gross = np.zeros(len(st.ids))                    # each row's gross amount per step (rms over the steps)
+        for f, a in zip(flows, amounts):
+            if a is None:
+                continue
+            for e in (f.get("from"), f.get("to")):
+                if e in st.ids:
+                    gross[st.ids.index(e)] += float(np.sqrt(np.mean(a ** 2)))
         for cand in cands:
             src, dst, reader, counter = cand
             if (src, dst) in have or (counter and (None, counter) in have):
@@ -281,6 +294,8 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                             continue
                         s = float(cp @ r0) / den
                         if s <= 0:
+                            continue
+                        if not st.counts and float(np.sqrt(np.mean((s * amt) ** 2))) < MATERIAL * max(gross[r] for r in rw.rows):
                             continue
                         e1 = r0 - s * cp
                         b = rw.bic(e1, B.shape[1] + 2)
@@ -380,3 +395,36 @@ def _polish(st, flows, env, scale, floor, grids) -> tuple[list[dict], list]:
         flows = keep + [{**g, "effects": [dict(e) for e in eff], **({"effect_fit": {**fit, "hinges": hs}} if g is f0 else {})} for g in group]
         done.append({"flow": f"{cand[0] or 'outside'}->{cand[1] or 'outside'}", "hinges": [_num(v) for v in hs], "slopes": [_num(v) for v in ss]})
     return flows, done
+
+
+def _refit(flows, stocks, run, opts, skip):
+    from .polish import refine
+    return refine(flows, stocks, run, opts, skip=skip)
+
+
+def prune(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, skip=()) -> tuple[list[dict], dict]:
+    """(k8s-312) An effect flow this module wrote, not a counted move or a counter's inflow, is dropped when the rows it
+    touches are within QUIET times their rounding noise without it (_quiet) once the rest is in place: found while
+    another structure was still missing, it fitted that misfit (a slope of 7e-7 on queue's row while the pods' room
+    was wrong), which is gone now."""
+    opts = opts or {}
+    st = Steps(stocks, run, opts)
+    if st.T < 20 or st.counts:
+        return flows, {}
+    env = _env(st)
+    pos = {s: i for i, s in enumerate(st.ids)}
+    out, dropped = list(flows or []), []
+    for f in list(out):
+        fit = f.get("effect_fit") or {}
+        if not fit or fit.get("counter") or f.get("counts") or any(g.get("counts") == f.get("id") for g in out):
+            continue
+        rows = {pos[x] for x in (f.get("from"), f.get("to")) if x in pos}
+        rest = [g for g in out if g is not f]
+        rest, _ = _refit(rest, stocks, run, opts, skip)          # the other numbers refitted without it (they were fitted beside it)
+        amounts = [_amount(g, st, env) for g in rest]
+        if any(a is None for g, a in zip(rest, amounts) if {g.get("from"), g.get("to")} & {st.ids[r] for r in rows}):
+            continue
+        if rows and rows <= _quiet(st, rest, env, amounts):
+            out = rest
+            dropped.append(f"{f.get('from') or 'outside'}->{f.get('to') or 'outside'}")
+    return out, ({"pruned": dropped} if dropped else {})

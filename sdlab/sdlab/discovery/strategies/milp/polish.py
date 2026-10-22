@@ -112,7 +112,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
 
     t0 = np.concatenate(th0 + [np.array([v for sh in shaped for v in sh[3:5]], float)])
     lo = np.r_[[0.0 if (x in pos and y in pos and r == x) else -np.inf for x, y, rd in free for r in rd], np.full(2 * len(shaped), 1e-12)]
-    t0 = np.maximum(t0, lo + 1e-12 * np.isfinite(lo))
+    t0 = np.maximum(np.where(np.isfinite(t0), t0, 0.0), lo + 1e-12 * np.isfinite(lo))
     b0 = bic(t0)
     r = least_squares(resid, t0, method="trf", x_scale="jac", max_nfev=400, bounds=(lo, np.full(len(lo), np.inf)),
                       ftol=1e-15, xtol=1e-15, gtol=1e-15)

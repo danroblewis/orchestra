@@ -56,7 +56,7 @@ def _fit_min(rw: _Rows, S: np.ndarray, Y: np.ndarray) -> tuple[float, float, np.
     if pick is None:
         return 0.0, 0.0, rw.r0
     f = lambda p: rw.resid(np.minimum(p[0] * S, p[1] * Y))  # noqa: E731
-    r = least_squares(f, [pick[1], pick[2]], bounds=([1e-9, 1e-9], [np.inf, np.inf]), method="trf", x_scale="jac", max_nfev=300)
+    r = least_squares(f, [max(pick[1], 2e-9), max(pick[2], 2e-9)], bounds=([1e-9, 1e-9], [np.inf, np.inf]), method="trf", x_scale="jac", max_nfev=300)
     return float(r.x[0]), float(r.x[1]), f(r.x)
 
 

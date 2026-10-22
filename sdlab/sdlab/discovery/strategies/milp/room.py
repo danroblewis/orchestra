@@ -178,7 +178,7 @@ def _fit(rw: _Rows, S, D, Y, start=None) -> tuple[float, float]:
         start = pick[1:]
     f = lambda p: rw.resid(amount(S, D, Y, p[0], p[1]))  # noqa: E731
     box = ([1e-9, 1e-9], [np.inf, np.inf])
-    fit = least_squares(f, list(start), bounds=box, method="trf", x_scale="jac", max_nfev=200)
+    fit = least_squares(f, [max(float(v), 2e-9) for v in start], bounds=box, method="trf", x_scale="jac", max_nfev=200)
     # then robustly: a flow still missing on a few steps (a rare effect flow, found after this one) must not bend the
     # numbers the other steps set; the scale is the least-squares residual's median absolute deviation
     e = f(fit.x)
@@ -212,7 +212,8 @@ def _joint(st: Steps, rw: _Rows, free: list, S, D, Y, a: float, b: float, scale,
         net = fit.predict(free, p[2:]) + sgn * amount(S, D, Y, p[0], p[1])[None, :]
         return ((st.dy - net)[rw.rows] / scale[rw.rows, None]).ravel()
 
-    p0 = np.concatenate([[a, b], np.maximum(th, lo + 1e-12 * np.isfinite(lo))])
+    th = np.where(np.isfinite(th), th, 0.0)
+    p0 = np.concatenate([[max(a, 2e-9) if np.isfinite(a) else 0.1, max(b, 2e-9) if np.isfinite(b) else 1.0], np.maximum(th, lo + 1e-12 * np.isfinite(lo))])
     r = least_squares(resid, p0, bounds=(np.r_[1e-9, 1e-9, lo], np.full(len(p0), np.inf)), method="trf", x_scale="jac",
                       max_nfev=400, ftol=1e-12, xtol=1e-12, gtol=1e-12)
     e = resid(r.x).reshape(2, st.T)
@@ -237,15 +238,17 @@ def _floored(st: Steps, rw: _Rows, S, D, Y, a: float, b: float, scale, floor):
 
 
 def _with_counted(st: Steps, flows: list[dict], src: str, dst: str) -> list[dict] | None:
-    """(k8s-312) flows with each counter's effect inflow (effects.py: into a final counter C, reading R of C's unit) placed
-    as the move it counts between the pair's two stocks (R one of them, the other its receiver), as counted() places it;
-    None when there is none to place. The kills a counted move carries off ready onto pending stay in both rows'
-    misfit while the counter's inflow alone carries them, and keep the room's share below SHARE."""
-    out, placed = [dict(f) for f in flows], False
+    """(k8s-312) flows with each counter's effect flow (effects.py: into a final counter C, reading R of C's unit; fed from
+    outside, or a move R -> C) placed as the move it counts between the pair's two stocks (R one of them, the other its
+    receiver X), with the counter fed from outside by the same amount, as counted() places it; a plain or MIN flow the
+    program wrote on R -> X (a stand-in for those kills) goes. None when there is none to place. The kills a counted
+    move carries off ready onto pending stay in both rows' misfit while the counter's flow alone carries them, and keep
+    the room's share below SHARE."""
+    out, placed, gone = [dict(f) for f in flows], False, set()
     for k, f0 in enumerate(flows):
         fit = f0.get("effect_fit") or {}
         c, R = f0.get("to"), fit.get("reader")
-        if f0.get("from") is not None or c not in st.final or fit.get("counter") or f0.get("counts"):
+        if c not in st.final or fit.get("counter") or f0.get("counts") or f0.get("from") not in (None, R):
             continue
         if R not in (src, dst) or st.units.get(R) != st.units.get(c):
             continue
@@ -253,11 +256,14 @@ def _with_counted(st: Steps, flows: list[dict], src: str, dst: str) -> list[dict
         if st.units.get(X) != st.units.get(R) or any((g.get("from"), g.get("to")) == (R, X) and g.get("effects") for g in flows):
             continue
         mid = f"milp:effect:{R}->{X}"
-        out[k] = {kk: v for kk, v in f0.items() if kk != "effect_fit"} | {"counts": mid}
+        out[k] = {kk: v for kk, v in f0.items() if kk != "effect_fit"} | {"from": None, "counts": mid}
         out.append({"from": R, "to": X, "ratio": 1, "id": mid, "rate": dict(f0["rate"]), "effects": [dict(e) for e in f0["effects"]],
                     "effect_fit": {**fit, "counter": c}})
+        gone |= {i for i, g in enumerate(flows) if (g.get("from"), g.get("to")) == (R, X) and not g.get("effects") and not g.get("room_fit")
+                 and (_plain(g) is not None or str((g.get("rate") or {}).get("expr") or "").startswith("min("))}
+        gone |= {i for i, g in enumerate(flows) if i != k and (g.get("from"), g.get("to")) == (None, c) and _plain(g) is not None}
         placed = True
-    return out if placed else None
+    return [f for i, f in enumerate(out) if i not in gone] if placed else None
 
 
 def _polish(st: Steps, flows: list[dict], env: dict, scale, floor) -> tuple[list[dict], list]:
@@ -375,7 +381,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                         g2, s2, a2, b2, b02 = _floored(st, rw2, S, D, Y, a, b, scale, floor)
                         if DEBUG:
                             print("  room with counted move", src, dst, y, round(g2, 1), round(s2, 3), round(a2, 4), round(b2, 4), "move alone", round(b0 - b02, 1))
-                        if b02 <= b0 and s2 >= SHARE:
+                        if s2 >= SHARE and g2 + (b0 - b02) > MARGIN:     # the placement and the room judged together
                             gain, share, a, b, rw, base = g2 + (b0 - b02), s2, a2, b2, rw2, alt
             amt = amount(S, D, Y, a, b)
             moves = amt > 1e-9 * (np.abs(amt).max() + 1e-300)
