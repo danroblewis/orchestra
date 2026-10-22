@@ -5,7 +5,8 @@ GATE x the data's quantum) is refitted on a wider library, beside its own level 
 
 - **per-unit columns** X / max(1, Y), for every pair of measured stocks that are not counters (a quantity per
   pod, per server; a counter's running total is no quantity per unit): the engine's own safe ratio, written
-  as an expression;
+  as an expression; counters are not offered as level columns either (a running total that only grows is a
+  trend, not a reader);
 - **a hidden integrator** H, filled from outside at 1 a step (its scale is free: the row's coefficient carries
   it) and drained at d_t x H, where the drain fraction d_t is a constant a (a log grid, refined by golden
   section) or a table effect the answer already carries on some flow (counted.py's threshold tables: what
@@ -182,7 +183,9 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                     seen.add(key)
                     tables.append((e["stock"], e["points"]))
 
-    levels_cols = {k: v for k, v in X.items() if np.ptp(v) > 0}
+    # a counter's running total is no reader either: it only grows, so a term on it is a trend standing in for
+    # a misfit (310 none-short: -0.042 x oom_kills_total in mem's inflow), and it runs away off the run
+    levels_cols = {k: v for k, v in X.items() if np.ptp(v) > 0 and k not in finals}
     ratio_cols = {}
     for a in L:
         for b in L:
