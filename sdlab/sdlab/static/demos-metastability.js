@@ -35,6 +35,16 @@
     document.head.appendChild(st);
   }
 
+  // the shared model view (demos.js modelView) for the found model shown, at the end of the tab; replaced when the model changes
+  function mview(p, h, s) {
+    const key = [s.case, s.variant, s.strategy, s.result || ""].join("|"), old = p.querySelector(":scope > details.mview");
+    if (old && old.dataset.key === key) return;
+    if (old) old.remove();
+    if (!h.modelView) return;
+    const box = h.modelView(p, { case: s.case, variant: s.variant, strategy: s.strategy, ...(s.result ? { result: s.result } : {}) });
+    box.dataset.key = key;
+  }
+
   function ui(p, h) {
     css();
     const { get, esc, fmt, chart } = h;
@@ -154,6 +164,9 @@
     async function examples() {
       const box = $("#ms-examples");
       $("#ms-exname").textContent = S.strategy + "'s found model";
+      const fm = S.scan.found.find((f) => f.strategy === S.strategy && !f.missing);
+      if (fm) mview(p, h, { case: S.scan.case, variant: S.scan.variant, strategy: S.strategy, result: fm.source.result });
+      else p.querySelector(":scope > details.mview")?.remove();
       if (S.scan.truth.base_stuck) { box.innerHTML = `<p class="muted">With this retry behaviour the true system breaks without a spike; pick another to see runs.</p>`; return; }
       const picks = S.pick ? [S.pick] : defaults();
       p.querySelectorAll("td.cell.on").forEach((x) => x.classList.remove("on"));

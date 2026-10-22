@@ -8,6 +8,16 @@
   const ival = (h, x, d = 3) => `${h.fmt(x.value, d)} <span class="muted small">[${h.fmt(x.lo, d)}, ${h.fmt(x.hi, d)}]</span>`;
   const signed = (h, x, d = 3) => (x === null || x === undefined || !isFinite(x) ? "–" : `${x > 0 ? "+" : ""}${h.fmt(x, d)}`);
 
+  // the shared model view (demos.js modelView) for the found model shown, at the end of the tab; replaced when the model changes
+  function mview(p, h, s) {
+    const key = [s.case, s.variant, s.strategy, s.result || ""].join("|"), old = p.querySelector(":scope > details.mview");
+    if (old && old.dataset.key === key) return;
+    if (old) old.remove();
+    if (!h.modelView) return;
+    const box = h.modelView(p, { case: s.case, variant: s.variant, strategy: s.strategy, ...(s.result ? { result: s.result } : {}) });
+    box.dataset.key = key;
+  }
+
   window.SDDemos.register({
     tab: "attribution",
     title: "10. Before/after attribution",
@@ -36,6 +46,7 @@
         let r;
         try { r = await h.get(`/api/demos/attribution/run?project=${encodeURIComponent(project)}&counts=${counts}&seed=${q("#a-seed").value}`); } catch (e) { out.innerHTML = `<p class="bad">${h.esc(e.message)}</p>`; return; }
         out.innerHTML = view(r);
+        mview(p, h, r.source);
         if (counts) seeds(project);
       }
 

@@ -26,6 +26,16 @@
       <text x="${W - m.r}" y="${H - 2}" text-anchor="end">traffic scale</text>${ticks}${today}${pick}${lines}</svg>`;
   }
 
+  // the shared model view (demos.js modelView) for the found model shown, at the end of the tab; replaced when the model changes
+  function mview(p, h, s) {
+    const key = [s.case, s.variant, s.strategy, s.result || ""].join("|"), old = p.querySelector(":scope > details.mview");
+    if (old && old.dataset.key === key) return;
+    if (old) old.remove();
+    if (!h.modelView) return;
+    const box = h.modelView(p, { case: s.case, variant: s.variant, strategy: s.strategy, ...(s.result ? { result: s.result } : {}) });
+    box.dataset.key = key;
+  }
+
   const room = (x) => (x === null || x === undefined ? "below 0.5×" : `${x}×`);
   function headText(hd, rows, k) {
     if (hd[k] === 2.5 && rows[rows.length - 1].binds[k] < 0.01) return "beyond 2.5×";
@@ -91,6 +101,7 @@
     const sl = out.querySelector("#cap-scale");
     sl.oninput = () => (out.querySelector("#cap-scale-v").textContent = `${(+sl.value).toFixed(1)}×`);
     sl.onchange = () => weekRun(p, h, q, +sl.value);
+    mview(p, h, src);
     weekRun(p, h, q, 2.0);
   }
 

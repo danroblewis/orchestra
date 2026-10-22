@@ -103,6 +103,17 @@
       <div class="panel tablewrap" style="margin-top:10px;max-width:700px"><table><thead><tr><th>day</th><th>events</th><th class="num">found: worst</th><th class="num">hours over</th><th class="num">true: worst</th><th class="num">hours over</th></tr></thead><tbody>
         ${r.days.filter((d) => d.found_flag || d.truth_flag || d.events.length).map((d) => `<tr><td>${d.day + 1} ${d.weekday}</td><td>${h.esc(d.events.join(", "))}</td>
           <td class="num">${num(d.found)}</td><td class="num">${d.found_hours}</td><td class="num">${num(d.truth)}</td><td class="num">${d.truth_hours}</td></tr>`).join("")}</tbody></table></div>`;
+    mview(p, h, src);
+  }
+
+  // the shared model view (demos.js modelView) for the found model shown, at the end of the tab; replaced when the model changes
+  function mview(p, h, s) {
+    const key = [s.case, s.variant, s.strategy, s.result || ""].join("|"), old = p.querySelector(":scope > details.mview");
+    if (old && old.dataset.key === key) return;
+    if (old) old.remove();
+    if (!h.modelView) return;
+    const box = h.modelView(p, { case: s.case, variant: s.variant, strategy: s.strategy, ...(s.result ? { result: s.result } : {}) });
+    box.dataset.key = key;
   }
 
   window.SDDemos.register({ tab: "risk-calendar", title: "5. Risk calendar", ui });

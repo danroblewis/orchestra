@@ -7,6 +7,16 @@
   const ival = (h, x, d = 4) => `${h.fmt(x.value, d)} <span class="muted small">±${h.fmt(1.96 * x.se, 2)}</span>`;
   const pc = (x) => `${Math.round(100 * x)}%`;
 
+  // the shared model view (demos.js modelView) for the found model shown, at the end of the tab; replaced when the model changes
+  function mview(p, h, s) {
+    const key = [s.case, s.variant, s.strategy, s.result || ""].join("|"), old = p.querySelector(":scope > details.mview");
+    if (old && old.dataset.key === key) return;
+    if (old) old.remove();
+    if (!h.modelView) return;
+    const box = h.modelView(p, { case: s.case, variant: s.variant, strategy: s.strategy, ...(s.result ? { result: s.result } : {}) });
+    box.dataset.key = key;
+  }
+
   window.SDDemos.register({
     tab: "canary",
     title: "11. Canary guard",
@@ -35,6 +45,7 @@
         let r;
         try { r = await h.get(`/api/demos/canary/run?regression=${encodeURIComponent(reg)}&size=${q("#c-size").value}&seed=${q("#c-seed").value}&steps=${steps}&counts=${counts}`); } catch (e) { out.innerHTML = `<p class="bad">${h.esc(e.message)}</p>`; return; }
         out.innerHTML = view(r);
+        mview(p, h, r.source);
         const key = `${reg}|${steps}|${counts}`;
         if (key !== lastTable) { lastTable = key; table(reg, steps, counts); }
       }

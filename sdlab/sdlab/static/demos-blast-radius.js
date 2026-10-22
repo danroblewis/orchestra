@@ -8,6 +8,16 @@
 
   window.SDDemos.register({ tab: "blast-radius", title: "12. Blast radius", ui });
 
+  // the shared model view (demos.js modelView) for the found model shown, at the end of the tab; replaced when the model changes
+  function mview(p, h, s) {
+    const key = [s.case, s.variant, s.strategy, s.result || ""].join("|"), old = p.querySelector(":scope > details.mview");
+    if (old && old.dataset.key === key) return;
+    if (old) old.remove();
+    if (!h.modelView) return;
+    const box = h.modelView(p, { case: s.case, variant: s.variant, strategy: s.strategy, ...(s.result ? { result: s.result } : {}) });
+    box.dataset.key = key;
+  }
+
   function ui(p, h) {
     const { get, esc } = h;
     const S = { setup: null };
@@ -65,7 +75,8 @@
 
     function intro() {
       const c = cs(), m = cell();
-      if (!m) { $("#b-intro").innerHTML = `<p class="bad">No stored passing found model for this system.</p>`; return; }
+      if (!m) { $("#b-intro").innerHTML = `<p class="bad">No stored passing found model for this system.</p>`; p.querySelector(":scope > details.mview")?.remove(); return; }
+      mview(p, h, { case: c.case, variant: m.variant, strategy: m.strategy, result: m.result });
       const wrong = m.false_links.map((e) => `a false link <span class="mono">${esc(e.join(" → "))}</span>`).concat(m.missed_links.map((e) => `a missed link <span class="mono">${esc(e.join(" → "))}</span>`));
       $("#b-intro").className = "";
       $("#b-intro").innerHTML = `<p class="src">System: <span class="mono">${esc(c.case)}</span>, ${c.steps} steps of ${S.setup.step_minutes} minutes; every service has a queue, requests in flight and a counter of responses; a caller's requests in flight make calls into its callees' queues.
