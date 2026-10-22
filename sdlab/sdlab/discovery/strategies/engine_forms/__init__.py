@@ -87,7 +87,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     r = _guarded("hidden", lambda: hidden.apply(r, stocks, run, opts), r)      # a row reading a hidden integrator, written as a hidden stock (k8s-310)
     from . import delay
 
-    return _guarded("delay", lambda: delay.apply(r, stocks, run, opts), r)    # a stock fed from outside through a hidden DELAY1 stage (k8s-312); last
+    r = _guarded("delay", lambda: delay.apply(r, stocks, run, opts), r)       # a stock fed from outside through a hidden DELAY1 stage (k8s-312)
+    from . import earn
+
+    return _guarded("earn", lambda: earn.apply(r, stocks, run, opts), r)       # each move between measured stocks earns its place on all rows (k8s-316); last
 
 
 def _guarded(name: str, step, r: dict) -> dict:
