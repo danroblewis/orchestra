@@ -1,86 +1,79 @@
 # 310 (k8s-memory-oom): milp
 
-Status (2026-10-21): **none of the 4 plan variants pass, and none can pass as the case is scored today**
-(the mem inflow, below).
-The OOM kills (the move ready -> pending with a table effect of mem, and the counter that counts it) and
-the pod gaps are now right on none-short, none-long and counts-long. What still fails is the mem row: its
-inflow reads the hidden `leak`, and the scorer cannot credit a found model that reads a hidden stock of its
-own (below). counts-short is also data-limited.
+Status (2026-10-22, round 1 after the scorer credits a found hidden stock, 198baf2): **none-short and none-long
+pass 26/26** (pool job 281, cd7383f; again in job 284, 9bbd66a). counts-short and counts-long still fail, and both are **data-limited**
+(below), so they are not targets. All 4 variants are achievable or not as follows:
 
-Where the results come from: pool job 267 (8ff75a7, `uv run sdlab-ladder job 267`), and
-`uv run sdlab-ladder show 310-k8s-memory-oom --strategy milp --variant V`. Pool job **273** (573c5a5, the
-final commit) was still queued behind coordinator job 271 (about 134 min left) when I stopped. It is
-**not run yet**: `uv run sdlab-ladder job 273`. The 573c5a5 column comes from local single-process
-diagnostic runs of the same code (scratchpad `m310/run.py`, the strategy's `identify` plus
-`score.equations`; the Mac was loaded by 14 pool slots). They are not pool results.
+| variant      | achievable?                                    | before (job 273, 573c5a5) | job 281 (cd7383f)                  | job 284 (9bbd66a) |
+|--------------|------------------------------------------------|---------------------------|------------------------------------|-------------------|
+| none-short   | yes                                            | FAIL 21/23, 83 s (mem row) | **PASS 26/26**, 81 s, mac          | **PASS 26/26**, 188 s, node2 |
+| none-long    | yes                                            | FAIL 21/23, 238 s (mem row) | **PASS 26/26**, 246 s, mac        | **PASS 26/26**, 1196 s, node2 (limit 1800 s since 7aa4efb) |
+| counts-short | no: 3 kill steps (6 kills), kill SE ~40%       | FAIL 15/23, 143 s         | FAIL 15/23, 141 s                  | FAIL 15/23, 261 s, node2 |
+| counts-long  | no: kill flow's best error 9.2% with the true knots given (tolerance 10%) | FAIL 20/23, 770 s | FAIL 20/23, 800 s | FAIL 20/23, 893 s, node2 (4 spurious, was 6) |
 
-| variant      | analyse                                    | before (a660e75)  | job 267 (8ff75a7, node2) | local, 573c5a5 code |
-|--------------|--------------------------------------------|-------------------|--------------------------|---------------------|
-| none-short   | "not analysed" (a truth it does not cover) | FAIL 13/23, 66 s  | FAIL 21/23, 193 s: mem row, plus 2 outflows from mem (a MIN beside the drain: fixed in 573c5a5) | FAIL 21/23: mem row only |
-| none-long    | "not analysed"                             | TIMEOUT (900 s)   | TIMEOUT (900 s)          | FAIL 21/23, 220 s: mem row only (run just before the one-per-side step) |
-| counts-short | "not analysed"; data-limited (below)       | FAIL 16/23, 142 s | FAIL 14/23, 389 s        | FAIL 15/23 (post-program steps on a cached program answer) |
-| counts-long  | "not analysed"                             | TIMEOUT (900 s)   | TIMEOUT (900 s)          | FAIL 20/23, 867 s: OOM move and counter wrong (program answer stepped the counter), 6 spurious |
+Commands: `uv run sdlab-ladder job 281`, `uv run sdlab-ladder job 284`, `uv run sdlab-ladder show 310-k8s-memory-oom --strategy milp --variant V`.
+`analyse` does not cover this truth ("not analysed": effect tables and a hidden stock), so the data limits below
+were checked by hand.
 
-counts-long is still close to the 900 s limit: the program and its prunes took 844 s on the loaded Mac.
+The found model on none-short (job 281), the mem block:
+
+```
+outside -> mem_hidden = 1
+mem_hidden -> outside = 1 x mem_hidden x table(mem)      (the kill share's table, polished on mem's row)
+outside -> mem        = 75.4959 + 0.499981 mem_hidden + 1.00002 inflight / max(1, ready)
+mem -> outside        = 0.499987 mem
+```
+
+The scorer matched `mem_hidden` to the truth's `leak` (level = -0.9585 + 1 x leak, R^2 1.0000; none-long 0 + 0.9961 x leak).
 
 ## Diagnosis (rule 4b)
 
-`sdlab-ladder analyse` does not cover this truth (effect tables, a hidden stock), so I judged each part
-myself.
-
-- **The OOM move and its counter were a method fault.** The truth is `ready -> pending` at
-  `ready x table(mem)` (0 below 480 MiB, 0.3 at 512) and `oom_kills_total` fed `flow(oom_killed)`. The
-  program's columns are linear in the levels, so it fitted a constant into the counter (0.0094 a step)
-  and dropped the move. The pods rows were then left with the kill spikes, and hinge.py's gap search on
-  them failed: its trials were invalid, so `outside -> pending` stayed a constant and `ready -> outside`
-  stayed `0.003 ready`. On none data the counter's increments divided by ready give the table exactly,
-  so these parts are identifiable.
-- **The long variants timed out because of the program's inflow-step starts.** The profile (cProfile,
-  none-long) showed `refit.prune` taking 460 s over 2 of the 3 searches. A start with about 100 inflow
-  steps (the mem inflow chasing the leak's ramp) gave a structure with about 120 numbers on 2000 steps,
-  so each refit's SVD took 0.47 s.
-- **The mem inflow cannot pass for any model with the true structure (scorer limitation).** The truth is
-  `0.5 (150 + leak + 2 inflight / max(1, ready))`, where `leak` is hidden (1 MiB a step, partly freed
-  by each OOM kill). A whole flow is scored by its amounts on the truth's states (`score._levels_at`,
-  `all_levels`). A found model's own hidden stock is not one of those states. I gave the scorer the
-  truth itself with `leak` renamed to `hmem` (scratchpad `m310/truthscore.py`), and
-  `score.equations` raised `ExprError: flow allocated reads ['hmem']: not a stock, input or auxiliary`.
-  A linear rewrite would read the hidden stock as 0, about 40% of the inflow's rms. The only way to pass
-  is a proxy built from measured stocks: a least-squares fit of the true leak on the measured levels
-  comes within 0.6% of the inflow (none-short) and 1.5% (none-long), against an allowed 2%. That
-  proxy reads `responses_total` as a clock and `oom_kills_total` as the resets. It is not the leak, so I
-  did not tune milp towards it. `mem -> outside` (0.5) fails with it, at 0.34-0.42, because the program
-  bends the drain to make up for the inflow.
-  **Harness fix needed (not mine to make):** score a whole flow that reads the found model's own hidden
-  stock on the found model's simulated states, or compare the mem row as a whole.
-- **counts-short is data-limited.** The run has 3 kill steps (6 kills in 300 steps). The kill amount's
-  relative SE is about 1/sqrt(6), roughly 40%, against an allowed 10%. milp's amount error is 31%.
-  queue <-> retries (0.0895 for 0.08, 0.681 for 0.6) is the same limit as on 309 counts-short: bound SE
-  0.127, p 0.010.
+- **The mem row was a method fault, now fixed.** The truth's inflow is `0.5 (150 + leak + 2 inflight / max(1, ready))`,
+  with `leak' = 1 - leak x table(mem)` (the same table as the OOM kills). milp wrote it as a 4-segment schedule over
+  traffic, retries, queue and the counters, and bent the drain to 0.39 (truth 0.5). Since 198baf2 the scorer credits a
+  found hidden stock, and a schedule standing in for one is "fits, not robust". On none data, the row less its drain is
+  exactly `c + g H + k inflight / max(1, ready)` once H is stepped with the kill share as its drain, so it is identifiable.
+- **The borrowed drain table must be polished.** The kill table milp finds is 1% off in slope (0.297 at 512 for 0.3).
+  With it, the scorer's match fitted an offset of 2.48, and `leak -> outside` got a spurious constant (25/26 with one
+  spurious part). Polishing the drain's table on mem's own row (scale and level shift) makes the offset about 0:
+  `hidden_match._fit_start` with the found table gives alpha 2.476, and with the slope 1.05% higher it gives -0.0125
+  (scratchpad `m310/alpha.py`).
+- **counts-short is data-limited** (round-1 doc): 3 kill steps, kill amount SE about 1/sqrt(6), against 10%. Also, the
+  mem row's misfit is within the Poisson scatter of its gross flow (rss 124k against 89k noise, 300 steps), and the
+  hidden model explains only 36% of the excess, so the step leaves it alone.
+- **counts-long is data-limited on the kill flow.** There are 44 kill steps (91 kills). Above mem 512 there are 5 steps
+  with 17 kills, and that is where the whole-flow comparison on the run's states weighs most (mem reaches 682 there,
+  where the truth's table flattens at 0.8). With the truth's knots given (480, 512, 560, 5000) and only the heights
+  fitted by Poisson ML on the measured kills, the kill flow's error is **9.2%** against the 10% tolerance (scratchpad
+  `m310/oracle_tab.py`: the truth's flows with that table, `score.equations`). A method that must also find the knots
+  cannot be expected to get under 10%. engine_forms' agent finds the same (Fisher SE 0.20 with the truth's knots,
+  491632e). The other counts-long misses (spurious `outside -> cpu` terms, a `retries -> queue` MIN, `queue ->
+  responses_total`) are the 309 sub-structure on counts-long, which is data-limited (309 counts-long, `analyse` p 0.25).
 
 ## Fixes kept
 
 | type | mechanism | commit | how another strategy adopts it |
 |------|-----------|--------|--------------------------------|
-| table-effect | `milp/effects.py`, `refine(flows, stocks, run, opts, skip)`. **Candidates:** every flow the boundary allows. That is a move between two measured stocks of one unit (reading its source), an outside inflow on an "estimate" side (reading a same-unit measured stock, or nothing), an outside outflow on such a side, and a **counted move**: a move whose amount a counter's declared inflow also counts, the same amount on both. Each is tried with every non-counter measured level X as the effect's driver (any unit). **Form:** `R x sum_m s_m max(0, X - h_m)`, or with `h - X` instead. For a given hinge h, it is one least-squares column, fitted with the plain flows on the rows it touches. Those flows' numbers are refitted unfloored. The flow it would replace (same pair, or the counter's outside inflow) is in the comparison and out of the candidate. h runs over 40 quantiles of X, is then polished continuously between grid neighbours, and a second hinge is tried as a bend. **Kept** when BIC over the touched rows beats the answer by more than 10, it moves something on 5 or more steps, and it explains at least half of one touched row's misfit (a proxy for other missing structure trims, it does not explain). A second effect of the same X on a row already carrying one is refused, because it is that flow's adjustment. **Written** as `{"rate": 1 x R, "effects": [{"stock": X, "shape": "table", "points": ...}]}`, with points at the hinges and one span beyond the run's range. | 8ff75a7 | Copy `effects.py` together with milp's `hinge.py` (for `_amount`, `_env`, `_plain`, `_resolution`) and `steps.py`. Call `flows, note = effects.refine(flows, stocks, run, opts, skip=<controller stocks>)` after the strategy's own search. |
-| effect-polish | The same module re-fits each effect flow it wrote (hinges and slopes, kept in `effect_fit`), along with the counter inflow that counts it, against the flows as they now stand. In `identify` the order is effects, then gaps (hinge.py), then effects again if the gaps were used (polish plus new candidates), then gaps again if anything new was added. The first slope (0.00927) was fitted beside the gap misfit, and the first round also added a spurious `ready -> oom_kills_total` correction. | 8ff75a7 | Part of the copied `effects.py`: call `refine` again after any later step that changes the touched rows. |
-| effects-in-amounts | `hinge._amount` multiplies by a flow's effects (a copy of the engine's `effect_value`; tables through `np.interp`). `hinge._plain` treats a flow with effects as not plain, so it is held fixed and never refitted as a linear rate. Moves already carried by an effect flow are not offered again as extra plain moves. | 8ff75a7 | Copy `hinge.py` again, or patch `_amount` and `_plain` the same way in your copy. |
-| move-bound | `hinge._Fit.fit`: a move's number on its own source is bounded at 0 or above. A move pushed below 0 moves nothing, its gradient vanishes, and the gaps absorbed its role: a start at `pending -> ready = -42` with `ready -> outside = r - d - 0.5 p`. | 8ff75a7 | One line in the copied `hinge.py` (the bounds passed to `least_squares`). |
-| gap-avoid | `hinge.refine(..., avoid)`: when every start is invalid because a new gap cannot act on 5 or more steps on a side whose answer flow is not plain (a stepped inflow, so there is nothing to go back to), the search runs again without that side. On counts-short the mem inflow's gap made every trial infinite, so no pod gap was used. | 8ff75a7 | Part of the copied `hinge.py`. |
-| prune-budget | `refit.prune` stops (keeping what it has) after refit work of `sum(T x stocks x numbers^2)` of 1.5e10, about 25 s of 120-number refits on 2000 steps. The budget is counted, not timed, so results stay deterministic. | 8ff75a7, 573c5a5 | Any local search that refits whole structures. Count the work and stop on it, not on a clock. |
-| one-per-side | `milp._one_per_side`, after `persistent`: on a declared outside side holding a MIN beside its plain flow (or two MINs), each is tried alone, refitted, and BIC keeps one. The program picks MIN columns and term columns independently. Job 267 (node2) had `mem -> outside = 0.047 mem` plus `min(0.0136 mem, 14.6 pending)`, and two flows out of cpu, both "invented boundary". | 573c5a5 | A strategy whose search can put two flows on a declared side: the same post-step over its structure. |
+| hidden-integrator | `milp/hidden.py`, `refine(flows, stocks, run, opts, skip)`, run last in `identify` (after the output-error refit). For each measured stock S with a declared "estimate" inflow side: the target is S's change less every flow on S other than its own outside flows. A hidden stock H is filled at 1 a step (its scale is carried by the inflow's coefficient) and drains by a per-step fraction E. E is none, a constant (13-point log grid from 1e-4 to 1, then bounded polish), or **the per-unit rate of a flow already in the model whose rate is proportional to its own measured source (with its effects)**, as the leak goes with the killed pods. H is stepped from 0 on the measured levels. The inflow's columns are chosen by BIC forward selection (at most 8, each must lower BIC by 2) over the constant, measured levels, inputs and per-unit ratios `X / max(1, Y)`. S's drain is fitted with them. The same selection without H is a candidate, so H is written only where it beats every model without one. **Kept** when BIC over S's row beats S's current outside flows (every schedule piece's numbers counted) by more than 10 and explains at least half the misfit above the noise floor. **Written** as `outside -> S_hidden` (constant 1), `S_hidden -> outside` (proportional, with the source flow's effects), `outside -> S` (an expression when it reads ratios), `S -> outside`. | cd7383f | Copy `hidden.py` along with milp's `hinge.py` (`_amount`, `_env`, `_resolution`) and `steps.py`. Call it after the strategy's final refit. The strategy must already have the drain's source flow (here the counted OOM move with its table, effects.py). |
+| hidden-drain-polish | `hidden._polish`: where H's drain is borrowed from a flow with table effects, the tables are refitted on S's own row by Nelder-Mead over one value scale and one level shift (all the drain's tables together). The inflow's columns are held, then chosen again on the polished H (2 rounds). The hidden drain is its own flow, so its table may differ from the source flow's. | cd7383f | Part of `hidden.py`. Any strategy that borrows a fitted table for a hidden stock should refit it on the row that reads the hidden stock: a 1% slope error was enough to make the scorer's match fit an offset (a spurious constant on the drain). |
+| noise-floor share | `hidden.py` measures "explains half the misfit" above the noise: the levels' rounding (`_resolution / sqrt 6`), or for counts the Poisson scatter of what moves through S in a step (sum of the gross amounts of the flows on S). It skips a row only when its misfit is within 1% of that. Two models of one row on the same steps differ by far less than the noise's own spread, so BIC decides above it. | 9bbd66a | A share test (effects.py's SHARE and copies of it in other strategies) on count data should compare with the misfit above the Poisson floor, not the raw misfit. |
+| counted-replaces-schedule | `effects._Rows`: a counted-move candidate may replace its counter's declared outside inflow even when the program wrote that inflow as a schedule (byTime). In the comparison the schedule is held at its amounts and charged one number per piece. Only a final counter's inflow qualifies, never a general stock's: the earlier general version (reverted in round 1) admitted proxy effects on mem's stepped inflow. On job 273's counts-long answer the 15-piece counter schedule is replaced (gain 3835), and the kill move's error goes from 99% to 30% (still over 10%: data-limited, above). | 9bbd66a | In a strategy that adds counted moves (combined2/structures `counted.py`, engine_forms `reread.py`): when the counter's inflow is stepped, compare against it at its amounts with its pieces' numbers, instead of refusing the candidate. |
 
-Tried and reverted (not committed): (a) bends of either sign in the effect table (to follow 310's
-table flattening past 512-560 MiB on counts-long, where mem reaches 682): the OOM amount error went from
-30% to 20%; (b) letting an effect flow replace a stepped (byTime) flow, holding it at its amounts in the
-comparison. That let the counted move replace counts-long's stepped counter constant. On none-short both
-admitted proxy effects on the mem row (`outside -> mem` x effect(cpu), `mem -> outside` x effect(retries)):
-the leak's misfit is level-switched enough to pass the half-misfit test. A sharper guard against proxies
-is needed before either goes in.
+none-long took 1196 s on node2 in job 284 (246 s on the Mac in job 281). That is under the kubernetes limit of 1800 s,
+but it is the slowest cell: the program's inflow-step search dominates (round 0's prune budget), not the hidden step
+(about 1-7 s locally).
 
-Not run: per the plan, no regression run on earlier rungs. Risks to check in the later full regression:
-the prune budget can truncate the inflow-step searches on long variants (309 none-long ran 266 s before),
-and effects.py can add an effect flow wherever a level-switched misfit stays above half of a row's misfit.
+Tested only on 310, per the plan. The hidden step on the stored 307-309 answers of milp (all four variants each, run
+locally on the stored flows) adds no hidden stock anywhere. It is not a regression run: the later full regression
+should confirm it. Risk: a row whose schedule stands in for a slow drift could get a constant-drain hidden stock where
+the truth has none. The without-H candidate and the BIC margin guard against this, but it is untested beyond the ladder.
 
-Tests: `tests/test_milp_effects.py`. The first test recovers a counted move switched on past 470 from
-an answer holding a constant in the counter. The second checks that a model with no effect is left alone.
+Tests: `tests/test_milp_hidden.py` (a hidden integrator with a constant drain recovered with its per-unit ratio
+column; a row explained by measured columns gets none) and `tests/test_milp_effects.py::test_counted_move_replaces_a_stepped_counter_inflow`
+(fails on the code before 9bbd66a).
+
+## Round 0 (before the scorer change, 8ff75a7 and 573c5a5)
+
+The table-effect flows, counted moves, effects in hinge amounts, the move bound, gap-avoid, prune budget and one flow per
+declared side are recorded in `docs/research/fix-ledger.md` (milp rows) and in this file's history (`git show 09f2794:sdlab/docs/research/fixes/310-milp.md`).
+They took none-short and none-long from 13/23 (and a 900 s timeout) to 21/23, leaving only the mem row, which this round fixes.
