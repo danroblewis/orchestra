@@ -7,9 +7,11 @@ away elsewhere, the runaway guard sets it aside and the pick may carry no flows 
 two counters; the levels say exactly what they are). The later passes only refit the flows a model has.
 
 Here, for each unit (a move needs both stocks in one unit), the measured stocks of that unit form a block.
-When one of its rows (the stock's one-step change less the model's flows on it) is left above LOOSE of its
-change's energy, the moves and declared outflows the model lacks are offered together: every proportional
-move A -> B (A not a counter, both in the block, neither direction present) and A -> outside on a declared
+When one of its stocks has no flow at all in the model while its row (its one-step change) is above LOOSE of
+its change's energy (a stock the pick left bare; rows with flows are the other passes' to refit: on the
+noisy counts variants a looser trigger traded right moves for spurious ones), the moves and declared outflows the model lacks are offered together: every proportional
+move A -> B (A not a counter, both in the block, neither direction present: a loop's two moves both come
+from the fit, as queue <-> retries) and A -> outside on a declared
 outflow side A has no flow on, fitted at once to the block's residual rows by non-negative least squares
 (each move appears in two rows with opposite signs, so mass balance identifies it where a single row
 cannot: one move at a time, greedy, took queue -> responses_total for inflight's two exits). The kept
@@ -152,7 +154,8 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
                 loose = False
                 break
             energy = float(np.sum(np.diff(levels[x][:n + 1]) ** 2))
-            loose = loose or v > LOOSE * max(energy, 1e-300)
+            bare = not any(x in (f.get("from"), f.get("to")) for f in flows)
+            loose = loose or (bare and v > LOOSE * max(energy, 1e-300))
         if not loose:
             continue
         scale = max(1e-12, max(float(np.abs(np.diff(levels[x][:n + 1])).max()) for x in rows))
