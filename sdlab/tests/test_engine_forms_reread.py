@@ -107,3 +107,13 @@ def test_a_counter_that_is_a_level_times_a_table_is_a_measured_flow():
 def test_a_noisy_counter_is_left_alone():
     r = reread.apply({"flows": KWRONG}, KSTOCKS, _killed_run(noise=0.3), {})
     assert not r.get("reread")
+
+
+def test_a_table_with_no_start_inside_the_data_range_is_none():
+    # Y sits on its two extremes (19 at 0, one at 1): every grid start is an end of the range, none inside it
+    # (engine_forms 307 counts-long crashed with "'NoneType' object is not subscriptable" here).
+    z = np.array([0.0] * 19 + [1.0])
+    x = np.ones(20)
+    y = x * (z == 0)
+    assert reread._table(y, x, z, 1) is None
+    assert reread._table(y, x, z, 2) is None

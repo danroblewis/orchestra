@@ -190,6 +190,8 @@ def _table(y: np.ndarray, x: np.ndarray, z: np.ndarray, inner: int):
         r = float(np.sqrt(np.mean(fit(u0)[2] ** 2)))
         if best is None or r < best[0]:
             best = (r, u0)
+    if best is None:   # no starting knot lies strictly inside the data's range (e.g. Y sits on its extremes)
+        return None
     try:
         u = least_squares(lambda v: fit(v)[2], best[1], method="trf", diff_step=1e-4, max_nfev=200).x
     except (ValueError, np.linalg.LinAlgError):
