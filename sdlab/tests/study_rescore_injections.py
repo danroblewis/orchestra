@@ -6,7 +6,9 @@ study_rescore_input.py rows makes them, filtered to the cases with announced inj
     OLD_LEVELS=1 .venv/bin/python tests/study_rescore_injections.py rows.json old.json 8
     .venv/bin/python tests/study_rescore_injections.py rows.json new.json 8
 """
-import json, os, sys
+import json
+import os
+import sys
 from concurrent.futures import ProcessPoolExecutor
 for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMBA_NUM_THREADS"):
     os.environ[k] = "1"
