@@ -106,8 +106,16 @@
 
   // A result's found flows as the scorer reads them: the same-pair flows merged into one
   // (sdlab/ladder/merge.py; the API's found_merged), else as stored.
+  // the found flows, a hidden stock the scorer matched to the truth's (scores.hidden_match) named as the truth's: drawn in
+  // its place, not as a stock only the found model has (2026-10-21; diff.py matched_names does the same)
   function foundOf(r) {
-    return (r && (r.found_merged || r.found)) || [];
+    const f = (r && (r.found_merged || r.found)) || [];
+    const hm = (r && r.scores && r.scores.hidden_match) || {};
+    const pairs = Object.entries(hm).filter(([t, m]) => m && m.found && m.found !== t).map(([t, m]) => [m.found, t]);
+    if (!pairs.length) return f;
+    let text = JSON.stringify(f);
+    pairs.forEach(([old, nu]) => { text = text.replace(new RegExp(`(?<![A-Za-z0-9_])${old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9_])`, "g"), nu); });
+    return JSON.parse(text);
   }
 
   const endKey = (a, b) => `${a || OUT} → ${b || OUT}`;

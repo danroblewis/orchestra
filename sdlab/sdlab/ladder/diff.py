@@ -19,6 +19,9 @@ scorer reads them (merge.py). found_flows: the merged flows (api's found_merged,
 
 from __future__ import annotations
 
+import json
+import re
+
 from .diff_text import OUT, UNDEF, equation, fmt, g, js_round, js_str, num, parse_key, part_name, readers, truthy
 
 SIGN = {"✓": " ", "~": "~", "−": "-", "+": "+", "≈": "=", "·": "."}        # the page's glyphs -> ours
@@ -311,10 +314,25 @@ def _flow_view(x: dict, found_side: bool) -> dict:
     return out
 
 
+def matched_names(found_flows: list | None, scores: dict | None) -> list:
+    """The found flows with each hidden stock the scorer matched to the truth's (scores["hidden_match"]: {true:
+    {found, ...}}; hidden_match.py) named as the truth's, so the diff draws it in the truth's place and does not
+    count it as a stock only the found model has (2026-10-21). Only names change, not numbers. ladder-compare.js
+    foundOf does the same."""
+    hm = (scores or {}).get("hidden_match") or {}
+    pairs = [(m["found"], true) for true, m in hm.items() if isinstance(m, dict) and m.get("found") and m["found"] != true]
+    if not pairs or not found_flows:
+        return list(found_flows or [])
+    text = json.dumps(found_flows)
+    for old, new in pairs:
+        text = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(old)}(?![A-Za-z0-9_])", new, text)
+    return json.loads(text)
+
+
 def diff(case: dict, found_flows: list | None, scores: dict | None) -> dict:
     """The found model as a diff of the truth. case: the case (model, boundary); found_flows: the
     found flows as the scorer reads them (merged); scores: the result's scores."""
-    cmp = compare(case["model"], found_flows or [], scores)
+    cmp = compare(case["model"], matched_names(found_flows, scores), scores)
     ls = lines(cmp)
     n = stat(ls)
     return {"status": cmp["status"], "equivalent": cmp["equivalent"], "stat": n, "caption": caption(n),

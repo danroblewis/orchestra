@@ -140,3 +140,14 @@ def test_the_page_draws_the_same_diff_from_its_own_logic_and_from_the_server():
         assert g["own"]["kept"] == d["hunk"]["stocks"]
         py = sorted([*d["lines"], *d["unchanged"]], key=lambda x: (x["side"] != "truth", x["index"]))
         assert [[x["cls"], x["ends"], x["note"]] for x in py] == [[cls, ends.replace(" → ", " -> "), note] for _, cls, ends, _, note in g["own"]["lines"]]
+
+
+def test_a_matched_hidden_stock_takes_the_truths_name():
+    """(2026-10-21) milp on 310 found the leak as its own hidden stock mem_hidden, matched by the scorer: the diff
+    names it leak, so it is drawn in leak's place and not as a stock only the found model has."""
+    from sdlab.ladder.diff import matched_names
+    found = [{"from": None, "to": "mem_hidden", "rate": {"form": "constant", "value": 1.0}},
+             {"from": None, "to": "mem", "rate": {"form": "expr", "expr": "75 + 0.5 * mem_hidden + mem_hidden2"}}]
+    got = matched_names(found, {"hidden_match": {"leak": {"found": "mem_hidden", "alpha": 0, "beta": 1, "r2": 1}}})
+    assert got[0]["to"] == "leak" and got[1]["rate"]["expr"] == "75 + 0.5 * leak + mem_hidden2"
+    assert matched_names(found, {}) == found and found[0]["to"] == "mem_hidden"

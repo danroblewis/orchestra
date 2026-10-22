@@ -26,7 +26,28 @@
     const B = c.boundary || null;
     const sideOf = (f) => (!f.from && f.to ? [f.to, "in"] : f.from && !f.to ? [f.from, "out"] : null);
     const kindAt = (f) => { const sd = sideOf(f); return sd && B && B[sd[0]] && (B[sd[0]][sd[1]] || [])[0]; };
-    const crossing = (f) => { const sd = sideOf(f); return !sd ? null : !B ? "claim" : kindAt(f) ? "declared" : "invented"; };
+    // an outside flow at an unmeasured stock is inside the boundary unless the model's flows carry it on to a measured stock
+    // on a side the case does not declare (the scorer's rule: score.py, parts.outside_ends); "hidden" then (2026-10-21)
+    const reached = (flows, start, side) => {
+      const seen = new Set(), todo = [start], hit = new Set();
+      while (todo.length) {
+        const x = todo.pop(); if (seen.has(x)) continue; seen.add(x);
+        if (measured.has(x)) { hit.add(x); continue; }
+        flows.forEach((g) => { if (g.from && g.to) { if (side === "in" && g.from === x) todo.push(g.to); if (side === "out" && g.to === x) todo.push(g.from); } });
+      }
+      return hit;
+    };
+    const crossing = (f, flows) => {
+      const sd = sideOf(f);
+      if (!sd) return null;
+      if (B && kindAt(f)) return "declared";
+      if (!measured.has(sd[0]) && flows) {
+        const hit = [...reached(flows, sd[0], sd[1])];
+        if (!hit.length) return "hidden";
+        if (B && hit.every((st) => B[st] && (B[st][sd[1]] || []).length)) return "declared";
+      }
+      return !B ? "claim" : "invented";
+    };
     const readsOf = (f, extra) => [...L.readers(f)].filter((x) => x !== "const" && x !== f.from).map((stock) => ({ stock })).concat(extra || []);
     const extrasOf = (f, cls) => [...(f.effects || []).map((e) => ({ stock: e.stock, label: "effect", dash: "5 4", cls })), ...(f.uses || []).map((u) => ({ stock: u.stock, label: `uses ${fmt(+u.per)}`, dash: "1 3", cls }))];
     const tStocks = truth.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured", title: `${s.id}: starts at ${fmt(s.initial)}${measured.has(s.id) ? "" : ", not measured"}` }));
@@ -39,12 +60,14 @@
     const alias = {};
     cmp.extraStocks.forEach((id, i) => { alias[id] = id.length <= 6 ? id : `h${i + 1}`; });
     const al = (t) => cmp.extraStocks.reduce((acc, id) => acc.split(id).join(alias[id]), t);
-    const fStocks = truth.stocks.filter((s) => measured.has(s.id)).map((s) => ({ id: s.id, name: s.id }))
+    const usedH = new Set(found.flatMap((f) => [f.from, f.to]).filter((x) => x && !measured.has(x)));   // a true hidden stock the found model has (its own, matched: scores.hidden_match)
+    const fStocks = truth.stocks.filter((s) => measured.has(s.id) || usedH.has(s.id))
+      .map((s) => (measured.has(s.id) ? { id: s.id, name: s.id } : { id: s.id, name: s.id, dashed: true, sub: "hidden, matched", title: `${s.id}: the found model's own hidden stock, matched to the truth's by its level` }))
       .concat(cmp.extraStocks.map((id) => ({ id, name: alias[id], dashed: true, sub: "inferred", title: `${alias[id]}: ${id}, a stock the found model infers (not measured)` })));
-    const fFlows = [], vias = {}, viaOf = new Map();
+    const fFlows = [], vias = {}, viaOf = new Map(), foundFlows = cmp.found.map((x) => x.flow);
     const rateLabel = (f) => short2(al(f.inflow && f.inflow.length > 1 ? L.equation(f).split(" on average")[0] : f.byTime && f.byTime.length > 1 ? `${L.rateText(f.rate)} (by time)` : L.rateText(f.rate)));
     cmp.found.forEach((x, k) => {
-      const f = x.flow, cr = crossing(f);
+      const f = x.flow, cr = crossing(f, foundFlows);
       const common = { cls: cr === "invented" ? "spurious" : cr === "claim" ? "claim" : "plain", cloud: kindAt(f), label: rateLabel(f),
         label2: cr === "invented" ? "invented boundary" : cr === "claim" ? "boundary claim" : "", title: `${L.equation(f)}${f.note ? "\n" + f.note : ""}` };
       if (f.via) {
@@ -70,7 +93,7 @@
       const src = `found:${k}`;
       const f = x.flow, invented = x.cls === "spurious", reread = x.cls === "equiv" && !x.parts.length, extra = x.spurious.length && x.parts.length;
       if (!invented && !reread && !extra) return;
-      const cr = crossing(f);
+      const cr = crossing(f, foundFlows);
       const cls = reread || (x.cls === "equiv") ? "equiv" : cr === "claim" && !extra ? "claim" : "spurious";
       const label = reread ? "≈ read as" : extra ? "+ extra term" : cr === "invented" ? "+ invented boundary" : cr === "claim" ? "? boundary claim" : "+ invented";
       const label2 = extra ? x.spurious.map((p) => `${p.reader || ""} ${fmt(p.value)}`.trim()).join(", ") : rateLabel(f);
