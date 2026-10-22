@@ -179,12 +179,86 @@ class Structure:
             o += 2 if p[0] == "min" else 1
         return [v for v in out.values() if len(v) > 1]
 
+    def blocks(self) -> list[tuple[list[int], list[int]]]:
+        """(k8s-317, block refit) The structure's independent blocks: (part positions, stock rows). Parts
+        that share a measured stock (an end) are in one block; a reader is data and couples nothing. Every
+        residual row, its counts share (a source's outflows: one row), its level row and its drain penalty
+        (one stock) lie inside one block, so the least squares separates exactly into them."""
+        parent = list(range(len(self.parts)))
+
+        def root(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        at: dict = {}
+        for i, p in enumerate(self.parts):
+            for end in (p[1], p[2]):
+                if end in self.pos:
+                    if end in at:
+                        parent[root(i)] = root(at[end])
+                    else:
+                        at[end] = i
+        out: dict = {}
+        for i in range(len(self.parts)):
+            out.setdefault(root(i), []).append(i)
+        res = []
+        for ix in out.values():
+            rows = sorted({self.pos[e] for i in ix for e in self.parts[i][1:3] if e in self.pos})
+            res.append((ix, rows))
+        return res
+
+    def subset(self, ix: list[int]) -> "Structure":
+        """A copy with only the parts at positions ix (their numbers kept)."""
+        out = Structure(self.st, [])
+        offs = np.cumsum([0] + [2 if p[0] == "min" else 1 for p in self.parts])
+        out.parts = [self.parts[j] for j in ix]
+        idx = [k for j in ix for k in range(offs[j], offs[j + 1])]
+        out.theta, out.lo, out.hi = self.theta[idx].copy(), self.lo[idx].copy(), self.hi[idx].copy()
+        out._idx = idx
+        return out
+
     def refit(self, scale: np.ndarray, evals: int = 200) -> np.ndarray:
-        """Least squares on every step; a stock's proportional drains together take at most all of it
-        in a step (sum of their numbers <= 1, a penalty row): with counts the expected amount saturates
-        at the level, so without it their total is not identified, only their shares."""
+        """(k8s-317, block refit) The least squares of _refit, solved block by block (blocks()): the same
+        problem, separable, so each block's SVD is its own small one (36 stocks: one joint fit of ~80
+        numbers on 10,764 rows took 29 s, most of it the SVD)."""
         if not len(self.theta):
             return self.theta
+        bl = self.blocks() if BLOCKS else []
+        if len(bl) <= 1:
+            return self._refit(scale, evals)
+        theta = self.theta.copy()
+        for ix, rows in bl:
+            sub = self.subset(ix)
+            sub._rows = rows
+            sub._refit(scale, evals)
+            theta[sub._idx] = sub.theta
+        self.theta = theta
+        return self.theta
+
+    def _refit(self, scale: np.ndarray, evals: int = 200) -> np.ndarray:
+        """Least squares on every step; a stock's proportional drains together take at most all of it
+        in a step (sum of their numbers <= 1, a penalty row): with counts the expected amount saturates
+        at the level, so without it their total is not identified, only their shares. (k8s-317) A block
+        (refit) reads only its own rows (self._rows); a stock no part touches has a residual that no
+        number moves."""
+        if not len(self.theta):
+            return self.theta
+        rows = getattr(self, "_rows", None)
+        if rows is not None:
+            T = self.st.T
+            sel = np.concatenate([np.arange(i * T, (i + 1) * T) for i in rows])
+            full_res, full_jac = self.resid, self.jac
+            self.resid = lambda th, sc: full_res(th, sc)[rows]              # noqa: E731
+            self.jac = lambda th, sc: full_jac(th, sc)[sel]                  # noqa: E731
+            try:
+                return self._refit_rows(scale, evals)
+            finally:
+                del self.resid, self.jac
+        return self._refit_rows(scale, evals)
+
+    def _refit_rows(self, scale: np.ndarray, evals: int = 200) -> np.ndarray:
         x0 = np.clip(self.theta, self.lo, self.hi)
         groups = self._drains()
 
@@ -255,6 +329,7 @@ class Structure:
         return float(self.st.T * np.sum(np.log(msq)) + 2.0 * np.sum(np.log(rs)) + np.log(max(self.st.T, 2)) * n + extra)
 
 
+BLOCKS = True         # (k8s-317) refit block by block (Structure.blocks): the same least squares, separated
 PIECE_PRICE = 2.0     # an inflow step pays this many log T (its size and its place), as in the program
 PENALTY = 1e4         # weight of a drain total beyond 1 (per unit, against misfits per noise scale)
 PRUNE_EVALS = 30      # function evaluations of each refit while pruning (started from the numbers already fitted)

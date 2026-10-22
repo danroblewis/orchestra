@@ -18,7 +18,8 @@ The mechanism, the same for every stock and every reader:
 - the amount is one unit a step ("1 * (S < target)") or the whole gap ("max(0, target - S)"), whichever
   fits the changes better (one unit on a tie);
 - the rule is kept only where its changes match S's measured changes within MISS of their total, with
-  at least EVENTS steps each way it claims, on sides where S may have an outside flow (the boundary
+  at least EVENTS steps each way it claims (k8s-317: or at least FEW, where the rule then misses no step:
+  a quiet service's autoscaler on a short run moves 3 times up and 5 down), on sides where S may have an outside flow (the boundary
   declares the side, or none is declared). Then S's changes are the rule's: the program fits the other
   stocks with S's row taken out (its changes less the rule's, no flow into or out of S offered), and
   S's flows are the rule's (__init__.identify).
@@ -33,6 +34,7 @@ import numpy as np
 
 SPARSE = 0.5       # a controlled stock changes in at most this share of the steps
 EVENTS = 5         # ... and acts at least this many steps on each side the rule claims
+FEW = 3            # (k8s-317) or at least this many, where the whole rule then reproduces every step exactly
 MISS = 0.05        # the rule's changes match the measured ones within this share of their total
 
 
@@ -58,7 +60,7 @@ def _g(x: float) -> str:
 def _side(S: np.ndarray, dS: np.ndarray, X: np.ndarray, up: bool, edge: float):
     """The best rule on one side reading X: (amount per step, errors, (a, clip or None, unit step?))."""
     ev = dS > 0 if up else dS < 0
-    if int(ev.sum()) < EVENTS:
+    if int(ev.sum()) < FEW:
         return None
     best = None
     for clip in (None, edge):
@@ -141,7 +143,8 @@ def find(stocks: list[dict], run: dict, opts: dict | None = None) -> tuple[dict,
         pred = sum((r[0] if side == "in" else -r[0]) for side, (x, r) in found.items())
         miss, total = float(np.abs(pred - dS).sum()), float(np.abs(dS).sum())
         unexplained = ((dS > 0).any() and "in" not in found) or ((dS < 0).any() and "out" not in found)
-        if unexplained or miss > MISS * total:
+        few = any(int(((dS > 0) if side == "in" else (dS < 0)).sum()) < EVENTS for side in found)
+        if unexplained or miss > MISS * total or (few and miss > 0):
             notes.append({"stock": s, "used": False, "miss": round(miss, 3), "total": total})
             continue
         flows = []
