@@ -29,4 +29,4 @@ blocks passes find nothing to change on a linear two-chain model.
 ## Not targets
 
 meas-short and meas-long are data-limited (`analyse` p 0.13 and 0.27) and deferred per the plan. combined2's meas-long
-result (#4d317d5, 4/6) is stale and was not re-run.
+result (4/6, code 4d317d5, 2026-10-21) is stale and was not re-run.
