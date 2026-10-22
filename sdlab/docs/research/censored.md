@@ -139,6 +139,24 @@ Ablations (my harness, earlier commits): floors and caps alone give exactly matr
 (PPPF) and 025 (PPPP). The re-cut adds 002, 006, 012, 013, 014 and 016 (counts) and 024
 counts-long. Links add the 047 goal gaps.
 
+## Kubernetes rungs 300-311 (2026-10-22, docs/research/fixes/port-censored.md)
+
+The kubernetes climb's post-stages were copied from structures (dd9d8d1) into `censored/post/`, with seven
+changes for censored's base, listed in the fix doc. They are the controller, floored sides, rebuilt rows and
+moves, room-limited move, repair, counted move, hidden stock, delay stage and earn, plus capmin's source-row, unit
+and trimmed-gain guards. Each cell below is none-short, none-long, counts-short, counts-long, from pool jobs 378
+(before, 7c3fb13) and 398 (after, 3de593d):
+
+| rung | before | after |
+|---|---|---|
+| 300-307 | PPPP each | PPPP each (no regression) |
+| 308-k8s-hpa | FFFF | **PPFP** |
+| 309-k8s-pod-startup | FFFX | **PPFF** |
+| 310-k8s-memory-oom | FXFF | **PPFF** |
+| 311-k8s-node-pool | FFFF | **PPFF** |
+
+All the cells that still fail are data-limited (fix-ledger.md), and so are not targets.
+
 ## Bench results
 
 Single-threaded, `--jobs 3`. Each was compared with a matrix run on the same day and the same shared
