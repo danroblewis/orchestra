@@ -177,6 +177,7 @@ class SlotHost:
 
     def __init__(self, tmp):
         self.home, self.total_mb, self.budget_mb, self.name, self.machine = tmp, 64000.0, 54400.0, "w", "m"
+        self.slots_n, self.recycle_items, self.recycle_mb, self.child_idle = 17, 25, None, 600.0
         self.posts, self.released = [], []
         self.child = None
         self.sampler = SimpleNamespace(get=lambda pid: (self.child.rss, self.child.rss), reset_high=lambda pid: None,
@@ -245,6 +246,65 @@ def test_a_lost_lease_is_stopped_and_not_posted_and_shutdown_releases(tmp_path, 
     assert w.posts == [] and w.released == [] and w.child.killed
     w = _run_slot(tmp_path, monkeypatch, [{"event": "start", "hashes": H3, "match": True}], abort="shutdown")
     assert w.posts == [] and w.released == ["L5"]
+
+
+def test_the_recycle_threshold():
+    assert slot.recycle_mb(54400, 23) == 1536.0                        # node2: 2365 MB a slot, a quarter is under 1.5 GB
+    assert slot.recycle_mb(98304, 4) == 6144.0                         # a big share: a quarter of it
+    assert slot.recycle_mb(98304, 4, 2048) == 2048.0                   # --recycle-gb
+
+
+DONE = {"event": "done", "hashes": H3, "row": {"status": "pass"}, "hwm_mb": 812.5}
+
+
+def _slot_after_items(tmp_path, monkeypatch, n, rss, **host):
+    """A slot that has run n items on one child (rss after each); returns (host, slot, children started)."""
+    w = SlotHost(tmp_path)
+    for k, v in host.items():
+        setattr(w, k, v)
+    started = []
+    def prepare(self, commit):
+        if self.child is None:
+            self.child = w.child = ScriptedChild([], rss)
+            started.append(self.child)
+        self.child.events = [{"event": "start", "hashes": H3, "match": True}, dict(DONE, rss_mb=rss)]
+        return self.child
+    monkeypatch.setattr(slot.Slot, "_prepare", prepare)
+    s = slot.Slot(1, w)
+    for i in range(n):
+        s.give(dict(ITEM, item_id=i), 30000.0)
+        for _ in range(400):
+            if not s.busy:
+                break
+            time.sleep(0.01)
+        assert not s.busy
+    return w, s, started
+
+
+def test_an_item_process_is_recycled_after_n_items(tmp_path, monkeypatch):
+    w, s, started = _slot_after_items(tmp_path, monkeypatch, 7, 300.0, recycle_items=3)
+    s.close()
+    assert len(w.posts) == 7 and len(started) == 3                    # items 1-3, 4-6, 7
+    assert [c.items for c in started] == [3, 3, 1] and started[0].killed and started[1].killed
+
+
+def test_an_item_process_is_recycled_when_it_holds_too_much(tmp_path, monkeypatch):
+    w, s, started = _slot_after_items(tmp_path, monkeypatch, 3, 1600.0)  # over node2's 1536 MB after each item
+    s.close()
+    assert len(w.posts) == 3 and len(started) == 3 and all(c.items == 1 for c in started)
+    w, s, started = _slot_after_items(tmp_path, monkeypatch, 3, 1400.0)  # under it: one process for all three
+    assert len(started) == 1 and s.child is started[0] and not started[0].killed
+    s.close()
+
+
+def test_an_idle_item_process_is_stopped(tmp_path, monkeypatch):
+    w, s, started = _slot_after_items(tmp_path, monkeypatch, 1, 300.0, child_idle=0.3)
+    for _ in range(300):
+        if s.child is None:
+            break
+        time.sleep(0.01)
+    assert s.child is None and started[0].killed                       # the next item starts a new one
+    s.close()
 
 
 def test_an_item_that_cannot_be_planned_is_posted_without_hashes(tmp_path, monkeypatch):

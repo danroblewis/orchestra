@@ -1,7 +1,11 @@
 """One worker slot: its own checkout ($HOME/slot-<n>, moved to each item's commit), its own ladder cache
 ($HOME/cache/slot-<n>: an empty store, with the hash-named data parts shared), and one item process at a
-time (child.py), kept between items of the same commit and restarted when the commit changes, after a big
-or heavy item, or every RECYCLE_ITEMS items.
+time (child.py), kept between items of the same commit and recycled (stopped; the next item starts a new
+one) when the commit changes, after a heavy item, after `recycle_items` items, when its resident memory
+after an item is over `recycle_mb` (default the larger of RECYCLE_MIN_MB and RECYCLE_SHARE of the slot's
+share of the budget), and after `child_idle` seconds without an item. A long-lived item process only
+grows (numpy, numba and JAX caches, fragmentation): on node2 on 2026-10-21 23 of them held ~2 GB each
+after 5.5 hours, and memory admission ran 1 slot of 23.
 
 While an item runs the slot watches it every half second: over its hard memory limit (the expected peak
 x 2, at least 4 GB, at most half the machine or the worker's budget) the process is killed and the item posted as `crashed`
@@ -26,8 +30,10 @@ from .repo import PROJECT, CodeError
 
 log = logging.getLogger("sdlab.pool.worker")
 
-RECYCLE_MB = 3000            # an item process this big after an item is restarted (its memory goes back)
-RECYCLE_ITEMS = 200
+RECYCLE_ITEMS = 25           # an item process is recycled after this many items
+RECYCLE_MIN_MB = 1536.0      # ... or when it holds more than max(this, RECYCLE_SHARE x the slot's budget share) after an item
+RECYCLE_SHARE = 0.25
+CHILD_IDLE = 600.0           # ... or after this many seconds without an item
 GUARD_FACTOR = 2.0
 GUARD_EXTRA = 900.0
 MIN_LIMIT_MB = 4096.0
@@ -52,6 +58,14 @@ def hard_limit(expected: float, total_mb: float, budget_mb: float | None = None)
     return min(max(2.0 * expected, MIN_LIMIT_MB), top)
 
 
+def recycle_mb(budget_mb: float, slots: int, override: float | None = None) -> float:
+    """The resident memory past which an item process is recycled after an item: `override` when given, else
+    the larger of RECYCLE_MIN_MB and RECYCLE_SHARE of one slot's share of the budget."""
+    if override:
+        return float(override)
+    return max(RECYCLE_MIN_MB, RECYCLE_SHARE * budget_mb / max(1, slots))
+
+
 class Slot:
     def __init__(self, n: int, worker):
         self.n = n
@@ -63,6 +77,7 @@ class Slot:
         self.child: Child | None = None
         self.run: Running | None = None
         self.q: queue.Queue = queue.Queue()
+        self.idle_since = time.time()
         self.thread = threading.Thread(target=self._loop, daemon=True, name=f"pool-slot-{n}")
         self.thread.start()
 
@@ -92,7 +107,13 @@ class Slot:
 
     def _loop(self) -> None:
         while True:
-            it = self.q.get()
+            idle = float(getattr(self.w, "child_idle", CHILD_IDLE))
+            try:
+                it = self.q.get(timeout=max(0.05, min(30.0, idle / 4)))
+            except queue.Empty:
+                if self.child is not None and self.run is None and time.time() - self.idle_since > idle:
+                    self._recycle(f"idle for {time.time() - self.idle_since:.0f} s")
+                continue
             if it is None:
                 return
             try:
@@ -102,6 +123,14 @@ class Slot:
                 self._drop_child(stop=False)
             finally:
                 self.run = None
+                self.idle_since = time.time()
+
+    def _recycle(self, why: str) -> None:
+        c = self.child
+        if c is None:
+            return
+        log.info("slot %s: recycling its item process %s after %d items: %s", self.n, c.pid, c.items, why)
+        self._drop_child(stop=True)
 
     def _drop_child(self, stop: bool) -> None:
         c, self.child = self.child, None
@@ -185,9 +214,15 @@ class Slot:
                     peak = max(r.peak, ev.get("maxrss_mb") or 0.0) if child.fresh else max(r.peak, now)
                 child.fresh = False
                 self._post(it, "result", ev.get("hashes"), row, peak)
-                big = max(now, ev.get("rss_mb") or 0.0) > RECYCLE_MB
-                if big or it.get("heavy") or child.items >= RECYCLE_ITEMS:
-                    self._drop_child(stop=True)
+                held = max(now, ev.get("rss_mb") or 0.0)
+                top = recycle_mb(self.w.budget_mb, getattr(self.w, "slots_n", 1), getattr(self.w, "recycle_mb", None))
+                most = int(getattr(self.w, "recycle_items", RECYCLE_ITEMS))
+                if held > top:
+                    self._recycle(f"memory: it holds {held:.0f} MB, over {top:.0f} MB")
+                elif it.get("heavy"):
+                    self._recycle("heavy item")
+                elif child.items >= most:
+                    self._recycle(f"items: {child.items} run (at most {most})")
                 return
 
     def _watch(self, r: Running, rss: float, guard: float) -> str | None:

@@ -14,7 +14,9 @@ a database.
 - **Memory.** It claims only what fits: the memory it can still promise is the lesser of its budget
   (--max-mem-gb, default 85% of the machine) less what its items hold or are expected to reach, and the
   OS's available memory less the growth still expected and a reserve. Heavy items need a free heavy slot.
-  Each item has a hard limit (slot.py) and its peak RSS is posted with the result.
+  Each item has a hard limit (slot.py) and its peak RSS is posted with the result. A slot's item process is
+  recycled after --recycle-items items, when it holds more than --recycle-gb after an item, and after
+  --child-idle-minutes without one (slot.py), so long-lived processes do not keep growing.
 - **Load.** With --yield-load L it takes fewer slots while the 1-minute load is above L (the Mac: its
   agents stay usable); running items finish.
 - **Heartbeats** every 30 s renew its leases; a lease the server calls lost or cancelled is stopped.
@@ -42,6 +44,7 @@ from .client import Client, Down
 from .outbox import Outbox
 from .planner import SHARED
 from .repo import PROJECT, CodeError, Repo
+from . import slot as slot_mod
 from .slot import Slot
 
 log = logging.getLogger("sdlab.pool.worker")
@@ -74,6 +77,9 @@ class Worker:
         self.hb_every = a.heartbeat
         self.poll = a.poll
         self.update_every = a.update_every
+        self.recycle_items = max(1, a.recycle_items)
+        self.recycle_mb = a.recycle_gb * 1024 if a.recycle_gb else None     # None: slot.recycle_mb's default
+        self.child_idle = max(1.0, a.child_idle_minutes * 60.0)
         self.self_update = not a.no_self_update
         self.self_commit = os.environ.get(SELF_ENV) or None
         self.total_mb = host.mem_total_mb()
@@ -280,8 +286,10 @@ class Worker:
         lock.flush()
         if self.self_update and not self.self_commit:
             self.bootstrap()
-        log.info("worker %s (%s): %d slots, %d heavy, budget %.0f of %.0f MB, reserve %.0f MB, nice %s, yield above load %s, code %s, home %s",
-                 self.name, self.machine, self.slots_n, self.heavy_slots, self.budget_mb, self.total_mb, self.reserve_mb, self.nice,
+        log.info("worker %s (%s): %d slots, %d heavy, budget %.0f of %.0f MB, reserve %.0f MB, item processes recycled after %d items,"
+                 " over %.0f MB or idle %.0f s, nice %s, yield above load %s, code %s, home %s",
+                 self.name, self.machine, self.slots_n, self.heavy_slots, self.budget_mb, self.total_mb, self.reserve_mb, self.recycle_items,
+                 slot_mod.recycle_mb(self.budget_mb, self.slots_n, self.recycle_mb), self.child_idle, self.nice,
                  self.yield_load, (self.self_commit or "this checkout")[:12], self.home)
         self.sampler.start()
         self.slots = [Slot(n, self) for n in range(1, self.slots_n + 1)]
@@ -362,6 +370,10 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--heartbeat", type=float, default=30)
     ap.add_argument("--poll", type=float, default=3, help="seconds between claims when idle")
     ap.add_argument("--update-every", type=float, default=120, help="seconds between checks for a new worker")
+    ap.add_argument("--recycle-items", type=int, default=slot_mod.RECYCLE_ITEMS, help="restart a slot's item process after this many items")
+    ap.add_argument("--recycle-gb", type=float, help="restart it when it holds more than this after an item (default max(%.1f GB, %g x the slot's"
+                    " share of the budget))" % (slot_mod.RECYCLE_MIN_MB / 1024, slot_mod.RECYCLE_SHARE))
+    ap.add_argument("--child-idle-minutes", type=float, default=slot_mod.CHILD_IDLE / 60, help="stop an item process idle this long")
     ap.add_argument("--no-self-update", action="store_true", help="run from this checkout, never DIR/self")
     return ap
 

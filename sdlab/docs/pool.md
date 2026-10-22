@@ -303,6 +303,7 @@ repository's own refs are never touched.
 
     uv run sdlab-ladder worker --server http://10.198.1.131:8020 --slots N [--home ~/.sdlab/pool/worker]
         [--max-mem-gb G] [--heavy-slots 2] [--yield-load L] [--nice 19] [--machine NAME] [--name NAME]
+        [--recycle-items 25] [--recycle-gb G] [--child-idle-minutes 10]
 
 The code is `sdlab/ladder/pool/worker.py` (the supervisor), `slot.py` (a slot), `child.py` (the item
 process), `repo.py` (bundles and checkouts), `outbox.py`, `host.py` (memory and load) and `client.py`.
@@ -326,12 +327,28 @@ process: the checkout's own python running a snippet that uses only what every c
 environment as today's runs (`OMP/OPENBLAS/MKL/VECLIB/NUMBA_NUM_THREADS=1`, JAX's `XLA_FLAGS`, `nice
 19`). The process works out the item's hashes from its own plan and does not run an item whose promised
 hashes differ (the server then rejects the post). A re-score is handed the stored flows (`prev`). The
-process stays up for the next item of the same commit and is restarted after an item that left it over
-3 GB, after a heavy item, and every 200 items. It exits when its supervisor is gone.
+process stays up for the next item of the same commit and exits when its supervisor is gone.
+
+**Recycling the item process.** A long-lived item process only grows (numpy, numba and JAX caches, memory
+fragmentation): on node2 on 2026-10-21 its 23 item processes had run 5.5 hours and held ~2 GB each, so
+memory admission (which counts what every slot's process holds) ran 1 slot of 23 while another program
+used 19 GB; restarting the service freed 34 GB. So a slot stops its item process (the next item starts a
+new one, at a cost of a few seconds of imports) when:
+
+| when | setting | default |
+|------|---------|---------|
+| it has run N items | `--recycle-items N` | 25 |
+| its resident memory after an item is over a threshold | `--recycle-gb G` | the larger of 1.5 GB and 1/4 of the slot's share of the budget (budget / slots; node2: 1.5 GB) |
+| it has had no item for a while | `--child-idle-minutes M` | 10 |
+| the slot moves to another commit, or after a heavy item | | always |
+
+Each recycle is logged (`slot n: recycling its item process PID after K items: why`). The defaults are
+`RECYCLE_ITEMS`, `RECYCLE_MIN_MB`, `RECYCLE_SHARE` and `CHILD_IDLE` in `slot.py`.
 
 **Memory.** The worker claims only what fits: it promises the lesser of its budget (`--max-mem-gb`,
-default 85% of the machine) less what its items hold or are expected to reach, and the OS's available
-memory less the growth its items are still expected to make and a reserve (`--reserve-gb`, default
+default 85% of the machine) less what its items hold or are expected to reach (an idle slot's item
+process counts with what it holds), and the OS's available memory (Linux: `MemAvailable`, which counts
+reclaimable page cache and slab, not `MemFree`; macOS: free, inactive, speculative and purgeable pages) less the growth its items are still expected to make and a reserve (`--reserve-gb`, default
 the larger of 2 GB and 5%). The server adds its own 1 GB margin per item, and `heavy` items need a free
 heavy slot (`--heavy-slots`). Every item has a hard limit (its expected peak x 2, at least 4 GB, at most
 half the machine): the slot samples its resident memory every second and kills it past the limit,
