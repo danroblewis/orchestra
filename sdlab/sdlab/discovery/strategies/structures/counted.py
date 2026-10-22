@@ -16,7 +16,7 @@ counter's row (a constant or one level) by FIT_GAIN x log n.
 The counter's inflow is then written as that rate. The same rate is offered as a move A -> B for every
 measured B in the same unit (a move needs both ends in one unit); the plain flows touching A and B are
 refitted with it under the engine's floors (floor._refit), the floored outside rates searched again
-(floor.apply), and the move kept when combined's judge (judge.score) prefers the model by more than log T.
+(floor.apply), the rows' missing plain moves added back (repair.py, 2026-10-22), and the move kept when combined's judge (judge.score) prefers the model by more than log T.
 """
 
 from __future__ import annotations
@@ -178,6 +178,10 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                   "effects": copy.deepcopy(eff)}
             cand = floor._refit(base + [mv], data, mat, offered, near={top["a"], b})
             cand = (floor.apply({"flows": cand}, stocks, run, opts, judge_opts=jo).get("flows")) or cand
+            # (2026-10-22) the rows the move lands on repaired with the plain moves they lack (repair.py):
+            # 310 none-long on node2 had lost `pending -> ready`, which only pays once the kill move is in
+            from . import repair
+            cand = repair.apply({"flows": cand}, stocks, run, opts).get("flows") or cand
             sc = J.score(cand, data)["bic"]
             if sc < best - math.log(max(2, data.T)):
                 best_flows, best, note["move"] = cand, sc, f"{top['a']} -> {b}"
