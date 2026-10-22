@@ -1,3 +1,4 @@
+# sindy's copy of engine_forms/oefit.py at 2bca23f (rule 11: copied, never imported; port-sindy, 2026-10-22).
 # A copy, one per strategy that uses it (sdlab/CLAUDE.md invariant 11: no strategy imports another);
 # tests/test_oefit.py checks that the copies are identical.
 """Output error: where the levels carry measurement error, the found structure's numbers refitted by
@@ -322,7 +323,10 @@ def _noise0(net: _Net, d: _Data) -> np.ndarray:
     out = np.zeros(2 * S)
     for s in range(S):
         V = np.column_stack([np.ones(d.n - 1), d.A[s, 1:] ** 2])
-        ab = np.linalg.lstsq(V, 0.5 * e[s] ** 2, rcond=None)[0]
+        try:
+            ab = np.linalg.lstsq(V, 0.5 * e[s] ** 2, rcond=None)[0]
+        except np.linalg.LinAlgError:                    # a run that blows up (k8s-312 counts-long): the floors below
+            ab = (0.0, 0.0)
         out[s] = max(float(ab[0]), 1e-6 * max(1e-9, float(np.var(d.A[s]))), 1e-9)
         out[S + s] = max(float(ab[1]), 1e-10)
     return out
@@ -671,6 +675,8 @@ def _fit(net: _Net, d: _Data, start: np.ndarray, nfev: int | None = None) -> tup
 def _weights(net: _Net, d: _Data, start: np.ndarray) -> np.ndarray:
     """Each point's weight 1 / sd, the variance a + b x level^2 fitted to each stock's squared residuals."""
     X = _run(net, d, start)
+    if not np.all(np.isfinite(X)):                       # a run that blows up: the weights kept (combined2 7539346, k8s-310)
+        return d.w
     w = np.empty_like(d.A)
     for s in range(d.S):
         r2 = (X[s] - d.A[s]) ** 2
@@ -678,7 +684,10 @@ def _weights(net: _Net, d: _Data, start: np.ndarray) -> np.ndarray:
         v = np.full(d.n, max(float(np.median(r2)), 1e-12))
         for _ in range(4):
             z = np.minimum(r2, 25 * v)
-            ab = np.linalg.lstsq(V / v[:, None], z / v, rcond=None)[0]
+            try:
+                ab = np.linalg.lstsq(V / v[:, None], z / v, rcond=None)[0]
+            except np.linalg.LinAlgError:                # (k8s-312 counts-long on the Mac, job 316: SVD did not converge)
+                return d.w
             v = np.maximum(max(ab[0], 0.0) + max(ab[1], 0.0) * X[s] ** 2, 1e-6 * max(float(np.mean(z)), 1e-12))
         w[s] = 1 / np.sqrt(v)
     return w
@@ -713,6 +722,8 @@ def _parse(flows: list[dict], ids: list[str], names: list[str], cap: dict | None
             return None
         lin, mins = [], list(pre) if form == "expr" else []
         for name, k in terms:
+            if cap and name == cap.get("name") and cap.get("pool") is not None:
+                return None                              # (k8s-316) a fixed pool's MIN is not one this refit runs
             if cap and name == cap.get("name"):
                 mins.append((var[cap["source"]], var[cap["cap"]], float(cap["theta"]), k))
             elif name in var and not str(name).startswith(CAP):

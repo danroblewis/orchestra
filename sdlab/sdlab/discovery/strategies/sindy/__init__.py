@@ -853,8 +853,32 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     levels carry measurement error, the numbers are refitted and the structure revised on the output error
     and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
     record against the measured levels)."""
-    from . import oefit
+    from . import controller, delay, earn, hidden, oefit, pool, reread, tidy
 
     o, cap = _capmin.offer(stocks, run, opts)
-    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    return _capmin.restore(r, cap)
+    r = _identify_linear(stocks, run, o, *args, **kw)
+    r = _guarded("oefit", lambda: oefit.refit(r, stocks, run, o, cap), r)
+    # (port-sindy, 2026-10-22: engine_forms' post passes at 2bca23f, docs/research/fixes/port-sindy.md; fix-ledger
+    # types 1, 2, 3, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17)
+    r = _guarded("tidy", lambda: tidy.apply(r, run, o), r)   # negligible terms dropped before the MIN is written back (type 1)
+    r = _capmin.restore(r, cap)
+    r = _guarded("reread", lambda: reread.apply(r, stocks, run, opts), r)        # exact rows read again: floored, counted, MIN moves (types 3, 6, 12, 16)
+    r = _guarded("pool", lambda: pool.apply(r, stocks, run, opts), r)            # a move the declared boundary forces across units (type 13)
+    r = _guarded("controller", lambda: controller.apply(r, stocks, run, opts), r)  # count stocks driven to a quantized target (type 2)
+    r = _guarded("hidden", lambda: hidden.apply(r, stocks, run, opts), r)      # a row reading a hidden integrator, written as a stock (type 11)
+    r = _guarded("delay", lambda: delay.apply(r, stocks, run, opts), r)       # a hidden DELAY1 stage (type 14)
+    return _guarded("earn", lambda: earn.apply(r, stocks, run, opts), r)       # each move earns its place on all rows (type 17); last
+
+
+def _guarded(name: str, step, r: dict) -> dict:
+    """A later pass whose linear algebra fails numerically keeps its input, and says so (fix-ledger type 10, a copy
+    of engine_forms' _guarded at 2bca23f). Only numerical failures are caught; any other error still raises."""
+    try:
+        return step()
+    except (np.linalg.LinAlgError, FloatingPointError) as e:
+        import traceback
+
+        where = next((f"{fr.filename.rsplit('/', 1)[-1]}:{fr.lineno}" for fr in reversed(traceback.extract_tb(e.__traceback__))
+                      if "sindy" in fr.filename), "?")
+        note = f"{name}: {type(e).__name__} at {where} ({e}); its input kept"
+        return {**r, "guarded": list(r.get("guarded") or []) + [note]}
