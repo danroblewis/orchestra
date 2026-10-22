@@ -47,3 +47,18 @@ def test_no_effect_left_alone():
     ans = _answer()[:2]
     flows, note = effects.refine(ans, stocks, run, {})
     assert not any(f.get("effects") for f in flows), note
+
+
+def test_counted_move_replaces_a_stepped_counter_inflow():
+    """(k8s-310 counts-long) the program writes the counter's inflow as a schedule following the kills: the
+    counted move still replaces it (the schedule held at its amounts and charged its numbers)."""
+    stocks, run = _model()
+    kills = np.diff(np.asarray(run["levels"]["kills"]))
+    cuts = [0, 60, 120, 180, 240]
+    segs = [{"from": float(a), "to": float(b - 1), "rate": {"form": "constant", "value": float(np.mean(kills[a:b]))}}
+            for a, b in zip(cuts, cuts[1:] + [len(kills)])]
+    ans = _answer()
+    ans[2] = {**ans[2], "byTime": segs, "rates": [g["rate"] for g in segs], "rate": segs[0]["rate"]}
+    flows, note = effects.refine(ans, stocks, run, {})
+    assert {(f["from"], f["to"]) for f in flows if f.get("effects")} == {("ready", "pending"), (None, "kills")}, note
+    assert not any(f["to"] == "kills" and f.get("byTime") for f in flows)

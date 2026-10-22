@@ -33,6 +33,8 @@ from .steps import Steps
 
 MARGIN = 10.0        # BIC units the hidden model must win by
 SHARE = 0.5          # and it explains at least this share of the current misfit
+QUIET = 0.01         # a row whose misfit is within this share of its noise is left alone (models of one row on the
+                     # same steps differ by far less than the noise's own spread, so BIC decides above it)
 MAX_COLS = 8         # columns forward selection adds at most
 A_GRID = np.logspace(-4, 0, 13)
 DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
@@ -171,6 +173,15 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
         floor2 = max((res / np.sqrt(6.0)) ** 2, (1e-6 * float(np.mean(np.abs(st.L[j])) + 1e-12)) ** 2)
         p_cur = sum(_numbers(out[i]) for i in own)
         bic_cur = n * np.log(max(float(cur @ cur), n * floor2) / n) + p_cur * np.log(n)
+        rss_cur = float(cur @ cur)
+        noise = n * floor2                                   # the misfit no model explains: the levels' rounding, and for
+        if st.counts:                                        # counts the Poisson scatter of what moves through S in a step
+            gross = sum(np.abs(amounts[i]) for i, f in enumerate(out) if S in (f.get("from"), f.get("to")))
+            noise = max(noise, float(np.sum(gross)))
+        if DEBUG:
+            print("hidden", S, "rss", rss_cur, "noise", noise, "n", n)
+        if rss_cur <= noise * (1 + QUIET):                   # the row is explained to its noise: nothing to look for (a time saver)
+            continue
         # the drains H may have
         drains: list = [("none", None, None)]
         for i, f in enumerate(out):
@@ -242,11 +253,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                 bic, cols, H = b2 + 2 * np.log(n), [0] + [c + 1 for c in ch], r[3]
         if DEBUG:
             print("hidden", S, "current", round(bic_cur, 1), p_cur, [(round(t[0], 1), t[1]) for t in tried[:6]])
-        rss_new, rss_cur = float(e @ e), float(cur @ cur)
-        noise = n * floor2                                   # the misfit no model explains: the levels' rounding, and for
-        if st.counts:                                        # counts the Poisson scatter of what moves through S in a step
-            gross = sum(np.abs(amounts[i]) for i, f in enumerate(out) if S in (f.get("from"), f.get("to")))
-            noise = max(noise, float(np.sum(gross)))
+        rss_new = float(e @ e)
         excess = max(rss_cur - noise, 1e-300)
         if DEBUG:
             print("hidden", S, "decide", round(bic, 1), round(bic_cur, 1), "rss", rss_cur, rss_new, "noise", noise)

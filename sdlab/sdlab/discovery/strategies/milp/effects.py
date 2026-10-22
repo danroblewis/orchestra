@@ -75,7 +75,11 @@ class _Rows:
         self.rows = [pos[e] for e in dict.fromkeys((src, dst, counter)) if e in pos]
         ends = {(src, dst)} | ({(None, counter)} if counter else set())
         self.drop = [i for i, f in enumerate(flows) if (f.get("from"), f.get("to")) in ends]
-        if any(_plain(flows[i]) is None for i in self.drop):
+        # (k8s-310 counts-long) a counter's declared inflow may be a schedule (the program steps a constant to follow
+        # kills): a counted move may replace it, the schedule held at its amounts in the comparison and charged its numbers
+        held = [i for i in self.drop if _plain(flows[i]) is None]
+        if any(not (counter and (flows[i].get("from"), flows[i].get("to")) == (None, counter) and not flows[i].get("effects")
+                    and amounts[i] is not None) for i in held):
             return
         n, rows = st.T, self.rows
         w = 1.0 / scale[rows]
@@ -86,6 +90,8 @@ class _Rows:
             if not {pos[x] for x in e} & set(rows):
                 continue
             d = _plain(f)
+            if i in held:
+                continue
             if i in self.drop:
                 dropped.append((f.get("from"), f.get("to"), d))
                 continue
@@ -116,6 +122,15 @@ class _Rows:
         self.B = columns(free)
         self.D = columns(dropped)
         self.y = (target * w[:, None]).ravel()
+        fixed = np.zeros((len(rows), n))                         # the held schedules' amounts on their rows
+        for i in held:
+            for j, row in enumerate(rows):
+                if st.ids[row] == flows[i].get("to"):
+                    fixed[j] += amounts[i]
+                if st.ids[row] == flows[i].get("from"):
+                    fixed[j] -= amounts[i]
+        self.held = (fixed * w[:, None]).ravel()
+        self.held_n = sum(len(flows[i].get("byTime") or [1]) for i in held)
         self.sign = np.array([(-1.0 if st.ids[r] == src else 0.0) + (1.0 if st.ids[r] in (dst, counter) else 0.0) for r in rows])
         self.w, self.n, self.floor = w, n, floor[rows]
         self.R = st.series(reader)
@@ -207,8 +222,9 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             r0 = rw.y - Q @ (Q.T @ rw.y)
             BD = np.column_stack(rw.B + rw.D) if rw.B + rw.D else np.zeros((len(rw.y), 0))
             QD = np.linalg.qr(BD)[0] if BD.shape[1] else np.zeros((len(rw.y), 0))
-            eD = rw.y - QD @ (QD.T @ rw.y)
-            base = rw.bic(eD, BD.shape[1])            # the answer as it stands (the replaced flows in, refitted)
+            yD = rw.y - rw.held
+            eD = yD - QD @ (QD.T @ yD)
+            base = rw.bic(eD, BD.shape[1] + rw.held_n)   # the answer as it stands (the replaced flows in, refitted; a held schedule as it is)
             rss0 = np.sum(eD.reshape(len(rw.rows), n) ** 2, axis=1)
             for x in drivers:
                 if any(x in read.get(st.ids[r], ()) for r in rw.rows):
