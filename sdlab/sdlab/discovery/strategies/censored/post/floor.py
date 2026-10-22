@@ -336,7 +336,10 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict, on
                     continue                              # no such side, or one fixed to a measured series
                 if not declared and not here:
                     continue
-                if any((f.get("rate") or {}).get("form") == "expr" or _profile(f) or (_reads(f) & offered) for f in here):
+                # (censored port) on a declared estimated side a profile in pieces is a stand-in the judge charges per
+                # piece (params.numbers): it is refitted like any plain side (311 none-long: censored's main line wrote
+                # ready's scale-down as 36 pieces, which kept the floor, the room and the repair off ready's row)
+                if any((f.get("rate") or {}).get("form") == "expr" or (_profile(f) and not declared) or (_reads(f) & offered) for f in here):
                     continue                              # an expression (a limit written back), a profile, an offered series: kept
                 moves = [f for f in cur if f.get("from") in measured and f.get("to") in measured and s in (f["from"], f["to"])
                          and _plain(f) and not (_reads(f) & offered)]

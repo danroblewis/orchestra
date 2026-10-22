@@ -70,7 +70,20 @@ def _amount(f: dict, X: dict, n: int) -> np.ndarray | None:
     if f.get("byTime") or f.get("via") or f.get("uses"):
         return None
     if len(f.get("inflow") or []) > 1:
-        return None         # (censored port) an inflow in pieces: its rate field is not what it moves (024's pieces)
+        # (censored port) a flow in pieces moves its pieces' values, not its rate field (024's pieces): read at the
+        # step times steps.adjust noted, as the engine reads them (simulate._Segments); None without them
+        from . import steps
+        if steps.TIMES is None or len(steps.TIMES) != n or f.get("effects"):
+            return None
+        segs = f["inflow"]
+        order = sorted(range(len(segs)), key=lambda i: segs[i]["from"])
+        froms = np.array([segs[i]["from"] for i in order], dtype=float)
+        tos = np.array([segs[i]["to"] for i in order], dtype=float)
+        pos = np.searchsorted(froms, steps.TIMES, side="right") - 1
+        ok = (pos >= 0) & (steps.TIMES <= tos[np.clip(pos, 0, None)])
+        idx = np.where(ok, np.array(order)[np.clip(pos, 0, None)], len(segs) - 1)
+        vals = np.maximum(0.0, np.array([float(g["value"]) for g in segs]))
+        return vals[idx]
     a = _rate_amount(f.get("rate"), X, n)
     if a is None:
         return None

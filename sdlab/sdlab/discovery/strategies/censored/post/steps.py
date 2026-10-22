@@ -23,8 +23,16 @@ def injected(run: dict, opts: dict | None, n: int) -> dict[str, np.ndarray]:
     return out
 
 
+TIMES: np.ndarray | None = None   # (censored port) the step times of the run adjust() last saw: t[1:n+1]
+
+
 def adjust(X: dict, dy: dict, run: dict, opts: dict | None, n: int) -> None:
-    """X (levels at each step's start) and dy (each step's change) in place: injections in X, out of dy."""
+    """X (levels at each step's start) and dy (each step's change) in place: injections in X, out of dy.
+    (censored port) Also notes the steps' times (the engine reads a flow in pieces at t[1:]), so hidden._amount
+    can read a flow written in pieces (censored's main line writes declared sides as pieces)."""
+    global TIMES
+    t = np.asarray(run.get("t") or [], dtype=float)
+    TIMES = t[1:n + 1] if len(t) >= n + 1 else None
     for s, a in injected(run, opts, n).items():
         if s in X:
             X[s] = X[s][:n] + a

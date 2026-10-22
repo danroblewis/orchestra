@@ -174,9 +174,15 @@ def test_pod_floors_and_no_false_min():
     assert not any("capmin__desired" in str(f.get("rate")) for f in r["flows"])
 
 
-def test_inflow_pieces_are_not_rebuilt_as_their_rate():
-    """An inflow in pieces carries a placeholder rate: the post-stages leave its row alone (024 stays a pass)."""
+def test_inflow_pieces_are_read_as_their_pieces():
+    """A flow in pieces carries a placeholder rate: the post-stages read its pieces at the step times (311
+    none-long: ready's scale-down and the counter's inflow in pieces), or nothing when the times are unknown."""
+    from sdlab.discovery.strategies.censored.post import steps
     from sdlab.discovery.strategies.censored.post.hidden import _amount
 
-    f = {"from": None, "to": "A", "rate": {"form": "constant", "value": 20.0}, "inflow": [{"from": 0, "to": 5, "value": 10.0}, {"from": 5, "to": 9, "value": 40.0}]}
+    f = {"from": None, "to": "A", "rate": {"form": "constant", "value": 20.0},
+         "inflow": [{"from": 0, "to": 5, "value": 10.0}, {"from": 5, "to": 9, "value": 40.0}]}
+    steps.TIMES = None
     assert _amount(f, {"A": np.ones(9)}, 9) is None
+    steps.adjust({}, {}, {"t": list(range(10))}, {}, 9)
+    assert list(_amount(f, {"A": np.ones(9)}, 9)) == [10.0] * 4 + [40.0] * 5   # (the first piece covering t, as simulate._Segments)

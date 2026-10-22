@@ -211,6 +211,8 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         if len(top) >= TOP:
             break
     best = None
+    if _DEBUG:
+        print("room top", top, "bad", bad)
     for a, b, y, z, c0 in top:
         base = evaluate(flows, a, b)
         others = [f for f in flows if f is not plain_mv.get((a, b))]
@@ -235,6 +237,8 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         got = trial(c, th)
         X.pop(SERIES, None)
         if got is None:
+            if _DEBUG:
+                print("room cand none", a, b, y, z, c, th)
             continue
         gain = base[0] - got[0]
         k_mv = next((float((f.get("rate") or {}).get("k") or 0.0) for f in got[1] if f.get("id") == f"room_{a}_{b}"), 0.0)
