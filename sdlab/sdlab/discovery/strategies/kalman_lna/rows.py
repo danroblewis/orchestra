@@ -360,6 +360,20 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     final = {s["id"] for s in stocks if s.get("final")}
     declared = bool(run.get("boundary_declared"))
     bd = run.get("boundary") or {}
+    alone = {S for S in ids if sum(unit.get(o) == unit.get(S) for o in ids) == 1}
+
+    def movable(Sx, St):
+        """May a move X -> T carry X's loss into T? In one unit, always. (316) Across units only where the declared
+        boundary and the units leave no other way: X alone in its unit with no outside outflow (what it loses can
+        only go into another stock), or T alone in its unit with no outside inflow (what it gains can only come
+        from one): pgbouncer's waiting queries become active connections, the move is the conservation claim."""
+        if unit.get(Sx) == unit.get(St):
+            return True
+        if not declared or Sx in final or St in final:
+            return False
+        return ((Sx in alone and "out" not in _sides(Sx, declared, bd))
+                or (St in alone and "in" not in _sides(St, declared, bd)))
+
     readers = [i for i, s in enumerate(ids) if s not in final]
     names = [ids[i] for i in readers] + list(inputs) + [None]
     X = np.vstack([read[i] for i in readers] + [inputs[k] for k in inputs] + [np.ones(T)]).T
@@ -639,16 +653,60 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         one = names.index(None) if None in names else None
         if one is None:
             return []
+
+        def consider(Sx, St, ix, x, zcols, a, b):
+            Z = X[:, zcols]
+            col = _derived.cap_column(x, Z, a, b)
+            g = 0.0
+            for S, sgn in ((Sx, -1.0), (St, 1.0)):
+                if S not in resid:
+                    continue
+                Q = spans.get(S)
+                c = _derived.demean(col, Q) if Q is not None else col
+                rr = _derived.demean(resid[S], Q) if Q is not None else resid[S]
+                if float(c @ rr) * sgn <= 0:
+                    return                                  # the source must lose it and the receiver gain it
+                g += _derived._gain(c, rr, float(rr @ rr), floor[S], T)
+            g -= (len(zcols) + 1) * logT
+            e = _derived.cap_expr(Sx, a, [(names[j], bb) for j, bb in zip(zcols, b)])
+            if e in taken or not math.isfinite(g):
+                return
+            if opts.get("rows_trace_cap") and g > -1e9:
+                print("cap cand", Sx, St, round(g, 1), e)
+            found.append((g, {"expr": e, "reads": [Sx] + [names[j] for j in zcols if names[j] is not None], "base": Sx,
+                              "row": St, "room": [names[j] for j in zcols],
+                              "cap": (ix, zcols, float(a), np.asarray(b, dtype=float))}, col))
+
+        def seeds(Sx, St):
+            """(316) a cap read off a row's floored term that reads X with a negative number: the receiver's change
+            T' = ... - max(0, room - a X) is T' = ... - room + min(a X, room), so min(a X, max(0, room)) is the move,
+            with the room exactly what the floored term reads besides X (no lower bound to fit it to)."""
+            out = []
+            for S in (St, Sx):
+                h = (rows.get(S) or {}).get("hinge")
+                if not h or h[1].get(Sx, 0.0) >= 0:
+                    continue
+                room = [(n, k) for n, k in h[1].items() if n != Sx]
+                if not room or any(n not in names or (n is not None and n not in ids) for n, _ in room):
+                    continue
+                out.append((-float(h[1][Sx]), [names.index(n) for n, _ in room], np.array([k for _, k in room], dtype=float)))
+            return out
         cand = [S for S in resid if S not in final and S in names]
+        # (316) a receiver across units (movable) may be a stock whose row is already read (a floored inflow that is
+        # the cap's other side): only the source's gain scores it then, and the judge below refits both rows
+        recv = cand + [S for S in rows if S not in resid and S not in final and S in names]
         for Sx in cand:
             ix = names.index(Sx)
             x = X[:, ix]
-            for St in cand:
-                if St == Sx or unit.get(St) != unit.get(Sx) or time.monotonic() > deadline:
+            for St in recv:
+                if (St == Sx or not movable(Sx, St) or (St not in resid and unit.get(St) == unit.get(Sx))
+                        or time.monotonic() > deadline):
                     continue
                 # what T gains or X loses, whichever is more: the move's amount where T has no other outflow or X no
                 # other inflow on the step (a lower bound elsewhere, fitted as one)
                 targets = [np.maximum(0.0, np.maximum(dy[ids.index(St)], -dy[ids.index(Sx)]))]
+                for a, zcols, b in seeds(Sx, St):
+                    consider(Sx, St, ix, x, zcols, a, b)
                 zs = [j for j in stock_cols if j != ix]
                 for k in range(1, _derived.CAP_READERS + 1):
                     for sub, const in itertools.product(itertools.combinations(zs, k), (False, True)):
@@ -661,26 +719,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                             got = cap_fits[key]
                             if got is None:
                                 continue
-                            _, a, b = got
-                            col = _derived.cap_column(x, Z, a, b)
-                            g = 0.0
-                            for S, sgn in ((Sx, -1.0), (St, 1.0)):
-                                Q = spans.get(S)
-                                c = _derived.demean(col, Q) if Q is not None else col
-                                rr = _derived.demean(resid[S], Q) if Q is not None else resid[S]
-                                if float(c @ rr) * sgn <= 0:
-                                    g = -math.inf                   # the source must lose it and the receiver gain it
-                                    break
-                                g += _derived._gain(c, rr, float(rr @ rr), floor[S], T)
-                            g -= (len(zcols) + 1) * logT
-                            e = _derived.cap_expr(Sx, a, [(names[j], bb) for j, bb in zip(zcols, b)])
-                            if e in taken or not math.isfinite(g):
-                                continue
-                            if opts.get("rows_trace_cap") and g > -1e9:
-                                print("cap cand", Sx, St, round(g, 1), e)
-                            found.append((g, {"expr": e, "reads": [Sx] + [names[j] for j in sub], "base": Sx, "row": St,
-                                              "room": [names[j] for j in zcols],
-                                              "cap": (ix, zcols, float(a), np.asarray(b, dtype=float))}, col))
+                            consider(Sx, St, ix, x, zcols, got[1], got[2])
         found.sort(key=lambda c: -c[0])
         return found[:_derived.CAP_TRY]
 
@@ -849,7 +888,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     for _ in range(len(ids) + 1):
         hidden_lv.clear()
         built = _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor,
-                       derived_meta, t_end, hidden_lv)
+                       derived_meta, t_end, hidden_lv, movable)
         if built is None:
             return result
         new_flows, bad = built
@@ -983,10 +1022,11 @@ def _finish(f: dict) -> dict:
     return g
 
 
-def _pair(R, B, unit, final, meta=None):
+def _pair(R, B, unit, final, meta=None, movable=None):
     """Moves, outside links in and out, each stock's drain and what its moves leave of it. (310) A derived column
     with base X (derived.py: X x a switch on another stock) that X's row loses and T's gains, T in X's unit, is a
-    move X -> T too; where two stocks gain it, the move goes to the one that is not a counter (final)."""
+    move X -> T too; where two stocks gain it, the move goes to the one that is not a counter (final). (316) A capped
+    column (derived.py 4) may cross units where movable(X, T) says the boundary leaves it no other way."""
     meta = meta or {}
     drain = {S: max(0.0, -R[S]["lin"].get(S, 0.0)) for S in B}
     moves, link_in, link_out = [], {S: {} for S in B}, {S: {} for S in B}
@@ -999,7 +1039,9 @@ def _pair(R, B, unit, final, meta=None):
             if (Tt, x) in pool:
                 continue                                     # what Tt loses in its own derived column: below
             base = meta[x]["base"] if x in meta else None
-            if k > 0 and base is not None and (base, x) in pool and base != Tt and unit.get(base) == unit.get(Tt):
+            if k > 0 and base is not None and (base, x) in pool and base != Tt and (
+                    unit.get(base) == unit.get(Tt)
+                    or (movable is not None and meta[x].get("cap") is not None and movable(base, Tt))):
                 dcands.append((Tt in final, -k, base, Tt, x))
             elif k > 0 and x in B and unit.get(x) == unit.get(Tt) and x not in final:
                 cands.append((k, x, Tt))
@@ -1076,7 +1118,7 @@ def _delay_flows(H: str, S: str, d: dict) -> list[dict]:
 
 
 def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor, meta=None, t_end=None,
-           hidden_out: dict | None = None):
+           hidden_out: dict | None = None, movable=None):
     """(flows, stocks to leave out) of the rebuild over B; None where a flow cannot run."""
     series = {n: X[:, j] for j, n in enumerate(names)}
     sched: dict = {}
@@ -1119,7 +1161,7 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
     note_sched()
     fixed, excl = {}, {S: set() for S in B}
     for _ in range(REPAIRS + 1):
-        moves, link_in, link_out, drain, left = _pair(R, B, unit, final, meta)
+        moves, link_in, link_out, drain, left = _pair(R, B, unit, final, meta, movable)
         for S in B:                                          # a link that moves S by less than the data's
             res = 10.0 * math.sqrt(floor[S] / T)             # rounding is rounding, not a flow
             for links in (link_in[S], link_out[S]):
