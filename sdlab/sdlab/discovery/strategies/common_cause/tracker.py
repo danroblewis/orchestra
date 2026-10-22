@@ -65,11 +65,20 @@ def _rate_value(rate: dict, state: dict) -> float | None:
 
 
 def _amounts(f: dict, states: list[dict]) -> np.ndarray | None:
-    if f.get("byTime") or f.get("effects") or f.get("uses") or f.get("inflow"):
-        return None                                        # (port-common_cause) pieces too: this reader has no clock
+    if f.get("effects") or f.get("uses"):
+        return None
     out = np.zeros(len(states))
+    if f.get("inflow"):                                    # (port-common_cause) pieces in time, as krows.py reads them
+        for k, s in enumerate(states):
+            seg = next((g for g in f["inflow"] if g["from"] <= s["__t"] <= g["to"]), f["inflow"][-1])
+            out[k] = max(0.0, float(seg.get("value") or 0.0))
+        return out
+    segs = f.get("byTime")
     for i, s in enumerate(states):
-        v = _rate_value(f.get("rate") or {}, s)
+        rate = f.get("rate") or {}
+        if segs:
+            rate = next((g for g in segs if g["from"] <= s["__t"] <= g["to"]), segs[-1]).get("rate") or {}
+        v = _rate_value(rate, s)
         if v is None:
             return None
         out[i] = max(0.0, v)
@@ -100,8 +109,8 @@ def _data(stocks: list[dict], run: dict, opts: dict):
         u = np.nan_to_num(np.asarray(v, dtype=float))
         if len(u) >= T + 1:
             inputs[name] = u[1:T + 1]                       # an input is read at the step's end
-    states = [{**{ids[i]: float(read[i, k]) for i in range(len(ids))}, **{n: float(u[k]) for n, u in inputs.items()}}
-              for k in range(T)]
+    states = [{**{ids[i]: float(read[i, k]) for i in range(len(ids))}, **{n: float(u[k]) for n, u in inputs.items()},
+               "__t": float(t[k + 1])} for k in range(T)]       # (port-common_cause) the step's end, for pieces
     return ids, final, dy, read, inputs, states
 
 
@@ -236,59 +245,162 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         if got is not None:
             todo.append(got)
     todo.sort(key=lambda g: -g["misfit"])                   # the worst-fitted outside nets first
-    changed, drop, added = [], set(), []
-    for g in todo:
-        si, S, sides, outside, net, base, k_base, floor = (g[k] for k in ("si", "S", "sides", "outside", "net", "base",
-                                                                           "k_base", "floor"))
-        readers = [(ids[j], read[j]) for j in range(len(ids)) if j != si and ids[j] not in final] + list(inputs.items())
-        Sv = read[si]
-        fits = {}
-        for s in sides:
-            y = np.maximum(net, 0.0) if s == "in" else np.maximum(-net, 0.0)
-            fits[s] = _side(s, Sv, y, readers, floor, deadline)
-        fits = {s: c for s, c in fits.items() if c is not None}
-        if not fits:
-            continue
-        pred = np.zeros(T)
-        for s, c in fits.items():
-            target = np.ceil(dict(readers)[c["reader"]] / c["a"])
-            if c["clamp"] is not None:
-                target = np.minimum(c["clamp"], target) if s == "in" else np.maximum(c["clamp"], target)
-            p = _predict(s, c["form"], Sv, target, c["d"])
-            c["idle"] = int((p <= 0).sum())
-            pred += p if s == "in" else -p
-        k_new = sum(c["numbers"] for c in fits.values())
-        for s in sides:                                      # a side the tracker leaves keeps its flows
-            if s not in fits:
-                for n in outside[s]:
-                    k_new += _numbers(flows[n])
-                    if S not in (flows[n].get("from"), flows[n].get("to")):
-                        continue                             # a hidden stage's own inflow: numbers, no amount on S
-                    amt = _amounts(flows[n], states)
-                    pred += amt if s == "in" else -amt
-        bic = lambda sse, k: T * math.log((sse + floor) / T) + k * logT  # noqa: E731
-        sse_new = float(((net - pred) ** 2).sum())
-        sse_base = float(((net - base) ** 2).sum())
-        if any(c["idle"] < MIN_FIRES for c in fits.values()):
-            continue                                         # (port-common_cause) a rule acting on every step is a rate
-        if sse_new > (1 - EXPLAINED) * float(net @ net) or not bic(sse_new, k_new) + PRICE * logT < bic(sse_base, k_base):
-            continue
-        drop |= {n for s in fits for n in outside[s]}
-        for s, c in fits.items():
-            rate = {"form": "expr", "expr": _expr(s, c, S)}
-            added.append({"from": None if s == "in" else S, "to": S if s == "in" else None, "ratio": 1,
-                          "rate": rate, "rates": [dict(rate)], "id": f"tracker_{s}_{S}"})
-        changed.append({"stock": S, **{s: dict(c) for s, c in fits.items()}, "sse": [sse_base, sse_new]})
+    changed, drop, added, replace = [], set(), [], {}
+    for g0 in todo:
+        # (port-common_cause, fix ledger type 4) where the answer's moves between S and other measured stocks keep the
+        # tracker from winning (a smooth move smeared onto the actuator: 308 none-long's retries -> ready), it is tried
+        # again with those moves taken off S and carried by each partner's own outside flow on that side, so every
+        # partner's row is unchanged exactly and only S's row decides
+        for g in (g0, _moved(g0, ids, final, dy, read, states, flows, declared, bd)):
+            if g is None:
+                continue
+            touched = set(g["outside"]["in"]) | set(g["outside"]["out"]) | {m[0] for m in g["moved"]} \
+                | {m[3] for m in g["moved"] if m[3] is not None}
+            if touched & (drop | set(replace)):
+                break                                        # another stock's tracker already took one of these flows
+            got = _attempt(g, ids, final, read, inputs, states, flows, T, logT, deadline)
+            if got is None:
+                continue
+            fits, sse_base, sse_new = got
+            drop |= {n for s in fits for n in g["outside"][s]}
+            for n, A, side, m, rate in g["moved"]:
+                drop.add(n)
+                if m is None:
+                    added.append({"from": None if side == "in" else A, "to": A if side == "in" else None, "ratio": 1,
+                                  "rate": rate, "id": f"tracker_carried_{side}_{A}"})
+                else:
+                    replace[m] = {**flows[m], "rate": rate}
+                    replace[m].pop("rates", None)
+            S = g["S"]
+            for s, c in fits.items():
+                rate = {"form": "expr", "expr": _expr(s, c, S)}
+                added.append({"from": None if s == "in" else S, "to": S if s == "in" else None, "ratio": 1,
+                              "rate": rate, "rates": [dict(rate)], "id": f"tracker_{s}_{S}"})
+            changed.append({"stock": g["S"], **{s: dict(c) for s, c in fits.items()}, "sse": [sse_base, sse_new],
+                            "moved": [flows[m[0]].get("from") for m in g["moved"]] + [flows[m[0]].get("to") for m in g["moved"]]})
+            break
     if not changed:
         return result
     out = copy.copy(result)
-    out["flows"] = [f for n, f in enumerate(flows) if n not in drop] + added
+    out["flows"] = [replace.get(n, f) for n, f in enumerate(flows) if n not in drop] + added
     gone = {x for n in drop for x in (flows[n].get("from"), flows[n].get("to"))} - {x for f in out["flows"]
                                                                                    for x in (f.get("from"), f.get("to"))}
     if gone and out.get("inferred_levels"):                  # a replaced hidden stage's levels leave with it
         out["inferred_levels"] = {h: v for h, v in out["inferred_levels"].items() if h not in gone}
     out["tracker"] = changed
     return out
+
+
+def _attempt(g, ids, final, read, inputs, states, flows, T, logT, deadline):
+    """(fits, sse_base, sse_new) where a tracker on g's stock wins, else None."""
+    si, S, sides, outside, net, base, k_base, floor = (g[k] for k in ("si", "S", "sides", "outside", "net", "base",
+                                                                       "k_base", "floor"))
+    readers = [(ids[j], read[j]) for j in range(len(ids)) if j != si and ids[j] not in final] + list(inputs.items())
+    Sv = read[si]
+    fits = {}
+    for s in sides:
+        y = np.maximum(net, 0.0) if s == "in" else np.maximum(-net, 0.0)
+        fits[s] = _side(s, Sv, y, readers, floor, deadline)
+    fits = {s: c for s, c in fits.items() if c is not None}
+    if not fits:
+        return None
+    pred = np.zeros(T)
+    for s, c in fits.items():
+        target = np.ceil(dict(readers)[c["reader"]] / c["a"])
+        if c["clamp"] is not None:
+            target = np.minimum(c["clamp"], target) if s == "in" else np.maximum(c["clamp"], target)
+        p = _predict(s, c["form"], Sv, target, c["d"])
+        c["idle"] = int((p <= 0).sum())
+        pred += p if s == "in" else -p
+    k_new = sum(c["numbers"] for c in fits.values())
+    for s in sides:                                          # a side the tracker leaves keeps its flows
+        if s not in fits:
+            for n in outside[s]:
+                k_new += _numbers(flows[n])
+                if S not in (flows[n].get("from"), flows[n].get("to")):
+                    continue                                 # a hidden stage's own inflow: numbers, no amount on S
+                amt = _amounts(flows[n], states)
+                pred += amt if s == "in" else -amt
+    bic = lambda sse, k: T * math.log((sse + floor) / T) + k * logT  # noqa: E731
+    sse_new = float(((net - pred) ** 2).sum())
+    sse_base = float(((net - base) ** 2).sum())
+    if any(c["idle"] < MIN_FIRES for c in fits.values()):
+        return None                                          # (port-common_cause) a rule acting on every step is a rate
+    if sse_new > (1 - EXPLAINED) * float(net @ net) or not bic(sse_new, k_new) + PRICE * logT < bic(sse_base, k_base):
+        return None
+    return fits, sse_base, sse_new
+
+
+def _terms(rate: dict) -> tuple[float, dict] | None:
+    """(constant, {stock: k}) of a plain rate; None for any other form."""
+    form = (rate or {}).get("form")
+    if form == "proportional":
+        return 0.0, {rate.get("stock"): float(rate.get("k") or 0.0)}
+    if form == "linear":
+        out: dict = {}
+        for t in rate.get("terms") or []:
+            out[t.get("stock")] = out.get(t.get("stock"), 0.0) + float(t.get("k") or 0.0)
+        return float(rate.get("c") or 0.0), out
+    if form == "constant":
+        return float(rate.get("value", rate.get("c", 0.0)) or 0.0), {}
+    return None
+
+
+def _plain(f: dict) -> bool:
+    return not (f.get("byTime") or f.get("effects") or f.get("uses") or f.get("inflow"))
+
+
+def _moved(g, ids, final, dy, read, states, flows, declared, bd) -> dict | None:
+    """g with S's moves to and from other measured stocks taken off S's row and each carried by its partner's outside
+    flow on that side (merged into the one plain flow there, or a new one where the side is free): the partner loses
+    (or gains) exactly what the move took, so its row is unchanged. None where S has no such move or one cannot be
+    carried (a partner side the boundary does not allow, a form other than a plain rate, several flows on the side)."""
+    if g is None:
+        return None
+    S = g["S"]
+    moved, net, base, k_base = [], g["net"].copy(), g["base"].copy(), g["k_base"]
+    for n, f in enumerate(flows):
+        a, b = f.get("from"), f.get("to")
+        if S not in (a, b) or a is None or b is None or a == b:
+            continue
+        A = b if a == S else a
+        if A not in ids or A in final and a == A:
+            continue
+        side = "out" if a == A else "in"                     # the partner's side that carries the move
+        if not _plain(f) or (declared and "estimate" not in ((bd.get(A) or {}).get(side) or [])):
+            return None
+        amt = _amounts(f, states)
+        tm = _terms(f.get("rate") or {})
+        if amt is None or tm is None:
+            return None
+        r = float(f.get("ratio") or 1)
+        c, terms = tm
+        if side == "out":                                    # A loses r x amount
+            c, terms = r * c, {k: r * v for k, v in terms.items()}
+        on = [m for m, h in enumerate(flows) if m != n and (h.get("from"), h.get("to")) == ((A, None) if side == "out"
+                                                                                           else (None, A))]
+        if len(on) > 1 or any(m in [x[3] for x in moved] for m in on):
+            return None
+        if on:
+            h = flows[on[0]]
+            th = _terms(h.get("rate") or {})
+            if not _plain(h) or th is None:
+                return None
+            c, terms = c + th[0], {**th[1], **{k: th[1].get(k, 0.0) + v for k, v in terms.items()}}
+        rate = ({"form": "proportional", "stock": next(iter(terms)), "k": next(iter(terms.values()))}
+                if not c and len(terms) == 1 else
+                {"form": "linear", "c": c, "terms": [{"stock": k, "k": v} for k, v in terms.items()]})
+        contrib = amt if b == S else -r * amt
+        net += contrib                                       # S's net now carries what the move did
+        base += contrib
+        k_base += _numbers(f)
+        moved.append((n, A, side, on[0] if on else None, rate))
+    if not moved:
+        return None
+    floor = g["floor"]
+    sse_base = float(((net - base) ** 2).sum())
+    return {**g, "net": net, "base": base, "k_base": k_base, "moved": moved,
+            "misfit": sse_base / (float(net @ net) + floor)}
 
 
 def _stock(si, S, ids, final, dy, read, states, flows, declared, bd) -> dict | None:
@@ -338,7 +450,7 @@ def _stock(si, S, ids, final, dy, read, states, flows, declared, bd) -> dict | N
         outside["in"] += [n for n in ns if n not in outside["in"]]
         k_base += sum(_numbers(flows[n]) for n in ns if flows[n].get("to") != S)
     return {"si": si, "S": S, "sides": sides, "outside": outside, "net": net, "base": base, "k_base": k_base,
-            "floor": floor, "misfit": sse_base / (float(net @ net) + floor)}
+            "floor": floor, "misfit": sse_base / (float(net @ net) + floor), "moved": []}
 
 
 def _stages(S: str, ids: list[str], flows: list[dict]) -> dict[str, list[int]]:
