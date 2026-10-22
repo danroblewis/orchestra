@@ -58,6 +58,7 @@ COND = 1e6             # (k-311) a column set more collinear than this (scaled c
 QUIET = 0.5            # a hinge's linear part holds exactly on at least this share of the steps
 SAMPLES = 300          # (k-311) random step sets a linear piece's numbers are solved on (regime)
 SMALL = 5              # (k-312) the fewest steps a last linear piece (fewer than a piece's share) is read from
+SCREEN = 64            # (k8s-317) column sets of each size an exact reader checks, the smallest misfits first (_Rows.ranked)
 EACH = 2.0             # (k8s-316) on finely rounded data, a branch fit's every step is within EACH x its ROUND x rounding
 
 
@@ -85,6 +86,70 @@ class _Rows:
 
     def __init__(self, data, cols: np.ndarray, names: list[str], q: float):
         self.data, self.Z, self.names, self.q = data, cols, names, q
+        self._posed_full: dict = {}                       # (k8s-317) a column set's conditioning, once per set
+        self._combos: dict = {}
+
+    def posed(self, sub) -> bool:
+        """_posed of these columns over every step, remembered: it does not depend on the row (k8s-317)."""
+        key = tuple(sub)
+        got = self._posed_full.get(key)
+        if got is None:
+            got = self._posed_full[key] = _posed(self.Z[list(sub)].T)
+        return got
+
+    def ranked(self, y: np.ndarray, n: int, on: np.ndarray | None = None, pool=None, posed_on: bool = False) -> list[tuple]:
+        """(k8s-317, a screen) The n-column sets of `pool` (default: every column) in the order of their least-squares
+        misfit to y on the steps `on`, the SCREEN best of them only. Solved for every set at once from the columns'
+        Gram matrix (normal equations, columns scaled), so the exact readers below check only the sets that can
+        reproduce y: a set that does is among the smallest misfits, and the readers' own exact test is unchanged.
+        A set more collinear than COND (over every step, or over `on` where posed_on) is left out, as _posed does."""
+        pool = list(range(self.Z.shape[0])) if pool is None else list(pool)
+        key = (n, tuple(pool))
+        c = self._combos.get(key)
+        if c is None:
+            c = self._combos[key] = np.array(list(itertools.combinations(pool, n)), dtype=int).reshape(-1, n)
+        if len(c) <= SCREEN:
+            return [tuple(int(j) for j in row) for row in c]
+        Zs = self.Z if on is None else self.Z[:, on]
+        yy = y if on is None else y[on]
+        nrm = np.sqrt(np.sum(Zs ** 2, axis=1))
+        ok = nrm > 0
+        Zn = Zs / np.where(ok, nrm, 1.0)[:, None]
+        G = Zn @ Zn.T
+        b = Zn @ yy
+        GS = G[c[:, :, None], c[:, None, :]]
+        bS = b[c]
+        good = np.all(ok[c], axis=1)
+        if n >= 2:
+            if posed_on or on is None:
+                ev = np.linalg.eigvalsh(GS)
+                good &= ev[:, 0] > 0
+                good &= np.sqrt(np.abs(ev[:, -1]) / np.maximum(ev[:, 0], 1e-300)) <= COND
+            else:
+                good &= np.array([self.posed(tuple(row)) for row in c]) if len(c) <= 4 * SCREEN else self._posed_all(c)
+        eye = np.eye(n)[None, :, :]
+        try:
+            k = np.linalg.solve(GS + 1e-14 * eye, bS[:, :, None])[:, :, 0]
+        except np.linalg.LinAlgError:
+            k = np.einsum("mij,mj->mi", np.linalg.pinv(GS), bS)
+        rss = float(yy @ yy) - np.sum(bS * k, axis=1)
+        rss[~good] = np.inf
+        order = np.argsort(rss, kind="stable")[:SCREEN]
+        return [tuple(int(j) for j in c[i]) for i in order if np.isfinite(rss[i])]
+
+    def _posed_all(self, c: np.ndarray) -> np.ndarray:
+        """_posed over every step for each column set of c (rows of c), batched and remembered by c's shape."""
+        key = ("all", c.shape, int(c.sum()), int(c[-1].sum()))
+        got = self._posed_full.get(key)
+        if got is None:
+            nrm = np.sqrt(np.sum(self.Z ** 2, axis=1))
+            ok = nrm > 0
+            Zn = self.Z / np.where(ok, nrm, 1.0)[:, None]
+            GS = (Zn @ Zn.T)[c[:, :, None], c[:, None, :]]
+            ev = np.linalg.eigvalsh(GS)
+            got = np.all(ok[c], axis=1) & (ev[:, 0] > 0) & (np.sqrt(np.abs(ev[:, -1]) / np.maximum(ev[:, 0], 1e-300)) <= COND)
+            self._posed_full[key] = got
+        return got
 
     def tol(self, y: np.ndarray, k: np.ndarray | None = None) -> float:
         """The rms residual below which y counts as reproduced (k: the numbers its fit reads)."""
@@ -102,12 +167,13 @@ class _Rows:
             return None
         for n in range(least, most + 1):
             best = None
-            for sub in itertools.combinations(range(Z.shape[0]), n):
+            subs = [()] if n == 0 else self.ranked(y, n, on=rows, posed_on=True)   # (k8s-317) the screen
+            for sub in subs:
                 if n == 0:
                     k, r = np.zeros(0), yy
                 else:
                     A = Z[list(sub)].T
-                    if not _posed(A):
+                    if not (self.posed(sub) if rows is None else _posed(A)):
                         continue
                     k, *_ = np.linalg.lstsq(A, yy, rcond=None)
                     r = yy - A @ k
@@ -121,15 +187,25 @@ class _Rows:
     def floored(self, r: np.ndarray, most: int = MAX_TERMS):
         """The smallest column set w with max(0, Z w) = r on every step, as (indices, numbers), or None.
         Fitted by censored least squares: every step at first, then without the steps where r is 0 and
-        Z w is clearly below 0 (the floor binds there), until they stop changing."""
+        Z w is clearly below 0 (the floor binds there), until they stop changing. (k8s-317) Remembered by r:
+        a row still on most steps leaves the same r under every linear part that reads nothing there."""
+        key = (r.tobytes(), most)
+        memo = self.__dict__.setdefault("_floored", {})
+        if key not in memo:
+            memo[key] = self._floored_read(r, most)
+        return memo[key]
+
+    def _floored_read(self, r: np.ndarray, most: int):
         T = len(r)
         zero = np.abs(r) <= self.tol(r)
         pool = [j for j, c in enumerate(self.names) if not c.startswith(COUNT)]   # a counted flow is an amount, never floored
+        moving = ~zero                                    # (k8s-317) where r is not 0 the rate is Z w itself: the screen
         for n in range(1, most + 1):
             best = None
-            for sub in itertools.combinations(pool, n):
+            subs = self.ranked(r, n, on=moving, pool=pool) if moving.sum() > n + 1 else itertools.combinations(pool, n)
+            for sub in subs:
                 A = self.Z[list(sub)].T
-                if not _posed(A):
+                if not self.posed(sub):
                     continue                              # (k-312) collinear columns read nothing here either (COND)
                 use = np.ones(T, bool)
                 for _ in range(12):
