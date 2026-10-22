@@ -45,6 +45,7 @@ from . import derived as _derived
 from . import subsets as _subsets
 
 PRICE = 6.0            # the margin a rebuild must win by, in log T
+SIMPLER = 2.0          # (316) ... where the row reads fewer numbers than the answer spends on the stock
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
 EXPLAINED = 0.5        # a rebuilt row explains at least this share of the stock's change's squares (counting noise leaves the rest)
 SUB = 3                # every subset up to this many readers is tried
@@ -690,7 +691,71 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                 if not room or any(n not in names or (n is not None and n not in ids) for n, _ in room):
                     continue
                 out.append((-float(h[1][Sx]), [names.index(n) for n, _ in room], np.array([k for _, k in room], dtype=float)))
+            if unit.get(Sx) != unit.get(St) and St in names:
+                got = _pool_seed(Sx, St)
+                if got is not None:
+                    out.append(got)
             return out
+
+        def _pool_seed(Sx, St):
+            """(316) across units, where counting noise hides the floored term: a pool's room, min(a X, max(0, c - b T)),
+            a constant less a share of the receiver's own level (K slots, each one held takes b of them; 311's room read
+            its receiver too), fitted on both rows at once with each row's other readers profiled out (least squares,
+            each row weighted by its misfit) over a grid of a and b, c by golden section, then polished."""
+            key = ("pool", Sx, St)
+            if key in cap_fits:
+                return cap_fits[key]
+            cap_fits[key] = None
+            from scipy.optimize import least_squares
+
+            ix, it = names.index(Sx), names.index(St)
+            x, tl = X[:, ix], X[:, it]
+            design = {}
+            for S in (Sx, St):
+                r = rows.get(S) or {}
+                use = {n for n in r.get("lin", {}) if n in names and not str(n).startswith("__")}
+                if r.get("hinge"):
+                    use |= {n for n in r["hinge"][1] if n in names}
+                use |= {S, None}
+                cols = [names.index(n) for n in sorted(use, key=lambda n: (n is None, str(n)))]
+                design[S] = (X[:, cols], dy[ids.index(S)], 1.0 / math.sqrt(max(r.get("sse", 1.0), floor[S])))
+
+            def resid_of(th):
+                col = _derived.cap_column(x, np.column_stack([tl, np.ones(T)]), th[0], np.array([-th[1], th[2]]))
+                out = []
+                for S, sgn in ((Sx, -1.0), (St, 1.0)):
+                    A, y, w = design[S]
+                    yy = y - sgn * col
+                    k = np.linalg.lstsq(A, yy, rcond=None)[0]
+                    out.append(w * (yy - A @ k))
+                return np.concatenate(out)
+
+            def sse(th):
+                r = resid_of(th)
+                return float(r @ r)
+
+            best = None
+            pos = x > 1e-9
+            if int(pos.sum()) < 2 * MIN_ON or time.monotonic() > deadline:
+                return None
+            for a in np.linspace(0.1, 1.0, 10):
+                for b in (0.0, 0.1, 0.25, 0.5, 1.0):
+                    v = a * x + b * tl                       # the room binds where c is below this
+                    grid = np.unique(np.quantile(v[pos], np.linspace(0.05, 0.95, 19)))
+                    c, s = _golden_min(lambda c: sse((a, b, c)), grid)
+                    if best is None or s < best[0]:
+                        best = (s, np.array([a, b, c]))
+            try:
+                got = least_squares(resid_of, best[1], method="lm", x_scale="jac", max_nfev=400)
+                th = got.x if float(got.fun @ got.fun) < best[0] else best[1]
+            except Exception:                              # noqa: BLE001 (a failed polish keeps the grid's numbers)
+                th = best[1]
+            a, b, c = (float(v) for v in th)
+            room = a * x - (c - b * tl)
+            if a <= 0 or int(np.sum(room > 0)) < MIN_ON or int(np.sum(room <= 0)) < MIN_ON:
+                return None                                  # both regimes act, or it is a linear rate
+            cap_fits[key] = (a, [it, names.index(None)], np.array([-b, c]))
+            return cap_fits[key]
         cand = [S for S in resid if S not in final and S in names]
         # (316) a receiver across units (movable) may be a stock whose row is already read (a floored inflow that is
         # the cap's other side): only the source's gain scores it then, and the judge below refits both rows
@@ -707,6 +772,9 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                 targets = [np.maximum(0.0, np.maximum(dy[ids.index(St)], -dy[ids.index(Sx)]))]
                 for a, zcols, b in seeds(Sx, St):
                     consider(Sx, St, ix, x, zcols, a, b)
+                if unit.get(St) != unit.get(Sx):
+                    continue                               # (316) across units: the seeds only (the room search over
+                                                           # every pair doubled counts-short's time, 436 -> 1015 s)
                 zs = [j for j in stock_cols if j != ix]
                 for k in range(1, _derived.CAP_READERS + 1):
                     for sub, const in itertools.product(itertools.combinations(zs, k), (False, True)):
@@ -866,8 +934,16 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     if opts.get("rows_trace"):
         for S, r in rows.items():
             print("rows", S, round(r["bic"], 1), round(bic(*old[S], S), 1), r["sse"], old[S], r["lin"], r["hinge"])
+    def margin(S, r):
+        """(316) PRICE log T; SIMPLER log T where the row is plain and reads fewer numbers than the answer spends on S
+        (a simpler row that also fits better: counts-long's one-step rows beat oefit's move-plus-compensating-inflow
+        on frontend_inflight by 43 and its bent link on pricing_queue by 28, under 6 log T = 46)."""
+        plain = r.get("sched") is None and r.get("delay") is None and r.get("integrator") is None
+        k = len(r["lin"]) + (len(r["hinge"][1]) if r.get("hinge") else 0)
+        return (SIMPLER if plain and k < old[S][1] else PRICE) * logT
+
     wins = {S for S, r in rows.items()
-            if r["bic"] + PRICE * logT < bic(*old[S], S) and r["sse"] <= (1 - EXPLAINED) * float(dy[ids.index(S)] @ dy[ids.index(S)])}
+            if r["bic"] + margin(S, r) < bic(*old[S], S) and r["sse"] <= (1 - EXPLAINED) * float(dy[ids.index(S)] @ dy[ids.index(S)])}
     if not wins:
         return result
     B = set(wins)
@@ -892,6 +968,8 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         if built is None:
             return result
         new_flows, bad = built
+        if opts.get("rows_trace"):
+            print("rows build", sorted(B), "bad", sorted(bad))
         if not bad:
             break
         B -= bad
@@ -1022,7 +1100,7 @@ def _finish(f: dict) -> dict:
     return g
 
 
-def _pair(R, B, unit, final, meta=None, movable=None):
+def _pair(R, B, unit, final, meta=None, movable=None, closed=None):
     """Moves, outside links in and out, each stock's drain and what its moves leave of it. (310) A derived column
     with base X (derived.py: X x a switch on another stock) that X's row loses and T's gains, T in X's unit, is a
     move X -> T too; where two stocks gain it, the move goes to the one that is not a counter (final). (316) A capped
@@ -1054,6 +1132,12 @@ def _pair(R, B, unit, final, meta=None, movable=None):
         if k <= left[x] * (1 + TOL_MOVE) + 1e-12:
             moves.append((x, Tt, {x: k}))
             left[x] = max(0.0, left[x] - k)
+        elif closed is not None and closed(Tt) and drain[x] > 0:
+            # (316) T may take nothing from outside, so what it gains reading X is a move even where it is more than X's
+            # drain (counting noise reads the two rows' ends apart: 0.623 against 0.607); _build refits X's row with
+            # its drain fixed at what its moves take
+            moves.append((x, Tt, {x: k}))
+            left[x] = 0.0
         else:
             link_in[Tt][x] = k
     dleft = dict(pool)
@@ -1161,7 +1245,9 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
     note_sched()
     fixed, excl = {}, {S: set() for S in B}
     for _ in range(REPAIRS + 1):
-        moves, link_in, link_out, drain, left = _pair(R, B, unit, final, meta, movable)
+        moves, link_in, link_out, drain, left = _pair(R, B, unit, final, meta, movable,
+                                                      lambda S: "in" not in _sides(S, declared, bd))
+        taken_by = {S: sum(t.get(S, 0.0) for x_, _, t in moves if x_ == S) for S in B}
         for S in B:                                          # a link that moves S by less than the data's
             res = 10.0 * math.sqrt(floor[S] / T)             # rounding is rounding, not a flow
             for links in (link_in[S], link_out[S]):
@@ -1180,6 +1266,8 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
             self_k = fixed.get(S)
             if "out" not in sides and left[S] > LEFT * drain[S] and drain[S] > left[S]:
                 self_k = -(drain[S] - left[S])
+            elif "out" not in sides and taken_by[S] > drain[S] * (1 + TOL_MOVE) + 1e-12:
+                self_k = -taken_by[S]                        # (316) overdrawn by a move into a closed stock
             if off - excl[S] or self_k != fixed.get(S):
                 excl[S] |= off
                 if self_k is not None:
@@ -1302,3 +1390,25 @@ def _together(new, B, y, R, series, floor, T, rounds: int = 4):
             break
         best, best_sse = trial, got
     return [(a, b, best[n], h) for n, (a, b, _, h) in enumerate(new)]
+
+
+def _golden_min(f, grid: np.ndarray) -> tuple[float, float]:
+    """(316) The minimum of f over grid, refined by golden section between the best point's neighbours."""
+    vals = [f(v) for v in grid]
+    j = int(np.argmin(vals))
+    lo, hi = float(grid[max(0, j - 1)]), float(grid[min(len(grid) - 1, j + 1)])
+    best = (float(grid[j]), vals[j])
+    for _ in range(30):
+        if hi - lo <= 1e-9 * max(1.0, abs(hi)):
+            break
+        a, b = hi - 0.618 * (hi - lo), lo + 0.618 * (hi - lo)
+        fa, fb = f(a), f(b)
+        if fa < fb:
+            hi = b
+            if fa < best[1]:
+                best = (a, fa)
+        else:
+            lo = a
+            if fb < best[1]:
+                best = (b, fb)
+    return best
