@@ -70,8 +70,10 @@ def _ols(M: np.ndarray, y: np.ndarray, w: np.ndarray, idx: list[int]) -> tuple[n
     return b, y - b @ M[idx]
 
 
-def select_row(M: np.ndarray, y: np.ndarray, w: np.ndarray, counts: bool, eps: float, allowed: list[int], groups: dict | None = None) -> dict[int, float]:
-    """One stock's regression: forward selection by BIC with a backward pass after each step.
+def select_row(M: np.ndarray, y: np.ndarray, w: np.ndarray, counts: bool, eps: float, allowed: list[int], groups: dict | None = None,
+               plain: list[int] | None = None) -> dict[int, float]:
+    """One stock's regression: forward selection by BIC with a backward pass after each step, checked against
+    the best small subset (best_subset; plain: the columns triples are drawn from, None for none).
     groups: {feature: [features added with it]} (a chain's start contents with its first feed)."""
     log_t = math.log(max(2, len(y)))
     groups = groups or {}
@@ -133,7 +135,76 @@ def select_row(M: np.ndarray, y: np.ndarray, w: np.ndarray, counts: bool, eps: f
                 break
         if bc < cur - 1e-9:
             idx, b = bidx, bb
+    # (k8s 315, docs/research/fixes/315-structures.md) the greedy path checked against the best small subset: where
+    # other stocks' levels nearly span this row's own (a caller's level is a callee queue's change plus its drain),
+    # the first greedy step picks a proxy and the row ends at 24 collinear columns with the exact 2 never tried
+    sub = best_subset(M, y, w, counts, eps, allowed, groups, plain)
+    if sub is not None:
+        _, r_now = _ols(M, y, w, idx)
+        if sub[0] < _crit(r_now, w, counts, eps, len(idx), log_t) - 1e-9:
+            idx, b = sub[1], sub[2]
     return {j: float(v) for j, v in zip(idx, b)}
+
+
+SUBSET_PAIRS = 400       # every pair of columns is tried up to this many columns (all of them, products included)
+SUBSET_TRIPLES = 40      # every triple of plain (non-product) columns up to this many
+SUBSET_TOP = 4           # the best few of each size by the batched normal equations, refitted by least squares
+
+
+def best_subset(M: np.ndarray, y: np.ndarray, w: np.ndarray, counts: bool, eps: float, allowed: list[int],
+                groups: dict | None = None, plain: list[int] | None = None) -> tuple[float, list[int], np.ndarray] | None:
+    """The row's best subset of 1-3 columns on the same BIC as select_row: every single and pair of the
+    allowed columns (a chain's start contents go with its feed, as in the forward pass) and every triple of
+    the plain ones (no product, no chain), ranked at once by the scaled normal equations (fast, imprecise
+    near exact) and the best SUBSET_TOP of each size refitted by least squares (exact). The same rule on every
+    row: nothing reads the case. Copied in spirit from kalman_lna's subsets.py (6fd4778): batched Gram stack,
+    refit of the few best."""
+    import itertools
+
+    groups = groups or {}
+    log_t = math.log(max(2, len(y)))
+    cols = [j for j in allowed if not groups.get(j)]           # a chain feed with its start contents: too wide
+    if not cols:
+        return None
+    sw = np.sqrt(w)
+    A = M[cols] * sw                                           # L x T
+    nrm = np.linalg.norm(A, axis=1)
+    keep = nrm > 0
+    cols = [c for c, k in zip(cols, keep) if k]
+    A = A[keep] / nrm[keep][:, None]
+    yw = y * sw
+    G = A @ A.T
+    g = A @ yw
+    yy = float(yw @ yw)
+    L = len(cols)
+    best = None
+
+    def consider(combos: np.ndarray):
+        nonlocal best
+        if not len(combos):
+            return
+        k = combos.shape[1]
+        Gs = G[combos[:, :, None], combos[:, None, :]] + 1e-12 * np.eye(k)[None]
+        rs = g[combos]
+        try:
+            bs = np.linalg.solve(Gs, rs[:, :, None])[:, :, 0]
+        except np.linalg.LinAlgError:
+            return
+        rss = yy - np.einsum("ni,ni->n", bs, rs)
+        for i in np.argsort(rss)[:SUBSET_TOP]:
+            idx = [cols[c] for c in combos[i]]
+            bb, rr = _ols(M, y, w, idx)
+            c = _crit(rr, w, counts, eps, len(idx), log_t)
+            if best is None or c < best[0] - 1e-9:
+                best = (c, idx, bb)
+
+    consider(np.arange(L)[:, None])
+    if L <= SUBSET_PAIRS:
+        consider(np.array(list(itertools.combinations(range(L), 2)), dtype=int).reshape(-1, 2))
+    tri = [i for i, c in enumerate(cols) if c in set(plain or ())]
+    if 3 <= len(tri) <= SUBSET_TRIPLES:
+        consider(np.array(list(itertools.combinations(tri, 3)), dtype=int).reshape(-1, 3))
+    return best
 
 
 def regress(rows: Rows, dy: np.ndarray, var: np.ndarray, counts: bool, eps: float, S: int, m: int,
@@ -147,9 +218,10 @@ def regress(rows: Rows, dy: np.ndarray, var: np.ndarray, counts: bool, eps: floa
     B, total = [], 0.0
     log_t = math.log(max(2, dy.shape[1]))
     allowed = [k for k, f in enumerate(feats) if f.stage is None]
+    plain = [k for k, f in enumerate(feats) if f.chain is None and f.stage is None and len(f.x) < 2]
     for s in range(S):
         w = 1.0 / var[s]
-        row = select_row(M, dy[s], w, counts, eps, allowed, groups)
+        row = select_row(M, dy[s], w, counts, eps, allowed, groups, plain)
         idx = list(row)
         r = dy[s] - (np.array([row[i] for i in idx]) @ M[idx] if idx else 0.0)
         total += _crit(r, w, counts, eps, len(idx), log_t)
