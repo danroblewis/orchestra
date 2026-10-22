@@ -70,6 +70,7 @@ model replaces the found one only when its output error is lower.
 from __future__ import annotations
 
 import copy
+import json
 import math
 import time
 
@@ -1113,6 +1114,10 @@ def refit(result: dict, stocks: list[dict], run: dict, opts: dict | None, cap: d
     names = [k for k in (opts.get("inputs") or {}) if k not in ids and not str(k).startswith(CAP)]
     if not _measurement_error(result["flows"], ids, run, opts):
         return result
+    if cap and cap.get("cap") is None and any(cap.get("name") in json.dumps(f.get("rate") or {}) for f in result["flows"]):
+        # (k8s 316) a fixed pool's limit (capmin._pool) is a form this refit does not run; its plain stand-in sent the
+        # refit searching for 30 min (316 counts-long, job 353) and rewrote the other rows (job 346)
+        return {**result, "oe": {"skipped": "a fixed pool's limit"}}
     bd = run.get("boundary") if run.get("boundary_declared") else None
     net = _parse(result["flows"], ids, names, cap, bd)
     plain = None
