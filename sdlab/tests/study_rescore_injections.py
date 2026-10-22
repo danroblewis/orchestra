@@ -31,7 +31,8 @@ def grade(batch):
         try:
             r = store.get(rid, found=True)
             c = casemod.load(cid)
-            noise = casemod.variant(c, var)["noise"]; model = casemod.truth_model(c, var)
+            noise = casemod.variant(c, var)["noise"]
+            model = casemod.truth_model(c, var)
             d = {**data.load(c, var), **casemod.announced(c)}
             fresh = data.load(c, var, fresh=True)
             flows = r.get("found") or []
@@ -54,4 +55,5 @@ if __name__ == "__main__":
     with ProcessPoolExecutor(jobs) as ex:
         for got in ex.map(grade, batches):
             res.update(got)
-    json.dump(res, open(sys.argv[2], "w")); print(len(res), "graded")
+    json.dump(res, open(sys.argv[2], "w"))
+    print(len(res), "graded")
