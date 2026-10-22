@@ -57,7 +57,10 @@ def hidden(name: str) -> dict:
 @router.get("/manifest")
 def manifest() -> dict:
     """The page's extra demos: every static/demos-<name>.js, loaded after demos.js (each registers its own tab)."""
-    return {"scripts": sorted(f"/static/{p.name}?v={int(p.stat().st_mtime)}" for p in STATIC.glob("demos-*.js")), "broken": BROKEN}
+    files = sorted(STATIC.glob("demos-*.js"))
+    return {"scripts": [f"/static/{p.name}" for p in files],                       # the addresses
+            "load": [f"/static/{p.name}?v={int(p.stat().st_mtime)}" for p in files],  # with their change time: what the page loads (the CDN keeps /static/* for hours)
+            "broken": BROKEN}
 
 
 # every other module in this package with a `router` (one demo each) adds its routes under /api/demos

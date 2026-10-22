@@ -221,7 +221,7 @@
   async function loadExtra() {
     try {
       const m = await get("/api/demos/manifest");
-      for (const src of m.scripts || []) {
+      for (const src of m.load || m.scripts || []) {
         const el = document.createElement("script"); el.src = src; el.async = false; document.body.appendChild(el);
       }
     } catch { /* no extra demos */ }
