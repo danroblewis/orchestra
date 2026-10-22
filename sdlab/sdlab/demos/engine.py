@@ -171,7 +171,7 @@ def _term(expr: str, m) -> str:
                 end = i
                 break
             depth -= 1
-        elif ch in "+-," and depth == 0 and expr[i - 1] == " ":
+        elif depth == 0 and (ch == "," or (ch in "+-" and expr[i - 1] == " ")):     # a comma ends an argument; + / - a term (not 1e-05)
             end = i
             break
         i += 1

@@ -30,6 +30,7 @@ Effort: S = about a day or less, M = a few days, L = a week or more.
 | 13 | **Agent work as stocks** | Tickets (backlog, in progress, review, done) simulated with agents as the flows; the discovered model's agent throughput, rework loop and bottleneck. Needs a new simulated system. | 42, 44, 45 | M-L | built ([doc](demos/agent-work.md)) |
 | 14 | **Game-day microworld** | Be on call in a simulated incident (scale, shed load, change retries); the true model responds; compare afterwards with what the found model predicted. | 57 | L | planned |
 | 15 | **Fleet view** | Many simulated services (promlab's fleet): model health, unexplained diffs and confidence per service, the maintenance staff's view. Needs per-service discovery at scale. | 8, 9 | L | planned |
+| 16 | **Verify an AI agent's effect** | A discrete-event simulation of on-call support (random arrivals, engineers on shifts, fixes, reopens); an AI agent, a separate program emitting events, joins on day 21. The design's intended effect, written as an edit of a best-effort SD model found from the counts, is checked through the model (counterfactual; closes it cannot explain) against the truth from the event log, for a good, a weak and a misrouting agent. | 42, 43 | M | built ([doc](demos/agent-verify.md)) |
 
 ## How the built demos work
 
@@ -96,6 +97,11 @@ Page: `/demos` (`sdlab/static/demos.html`, `demos.js`); API: `/api/demos` (`sdla
 - **13. Agent work as stocks** (a new simulated ticket system): per-agent throughput (12 a day) and the rework share
   (0.20) found exactly; the merge gate (52.8 a day) is missed or misread because the agent count changed only once,
   so in a busier month both found models promise 8-9% more than the truth delivers.
+
+- **16. Verify an AI agent's effect** (a new discrete-event system; censored): the good agent's success is confirmed
+  (true queue -87%, through the model -82%); the weak agent's shortfall is seen but its benefit underrated (true -39%,
+  model -13%); the misrouting agent gets a wrong "yes" from the model (wrong closes look like resolutions in the counts;
+  true +17.5 reopens a day): rework has to be measured before an agent ships.
 
 Common lesson: a found model is reliable inside the region its data visited and with clean data; outside that region
 (a cap never reached) or with counted noise, the demos show where it goes wrong, which is what an operator needs to
