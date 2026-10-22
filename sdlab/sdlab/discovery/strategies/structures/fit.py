@@ -275,7 +275,9 @@ def search(p: Problem, lib: list[Term], start: list[Term] | None = None, steps: 
     terms = covered(p, lib, terms)
     cur = fit(p, terms)
     cur = backward(p, cur)
+    _note(p, cur)
     for _ in range(steps):
+        _note(p, cur)
         p.check()
         w = _weights(p, cur)
         cands = [t for t in lib if t not in cur.terms]
@@ -305,7 +307,15 @@ def search(p: Problem, lib: list[Term], start: list[Term] | None = None, steps: 
             if best is None or best.bic >= cur.bic - 1e-9:
                 break
         cur = backward(p, best)
+    _note(p, cur)
     return cur
+
+
+def _note(p: Problem, cur: Fit) -> None:
+    """(k8s 316) The best model any search has reached so far, kept on the problem for a search that runs out of
+    time (discover.py answers with it rather than with nothing)."""
+    if getattr(p, "best", None) is None or cur.bic < p.best.bic:
+        p.best = cur
 
 
 def backward(p: Problem, cur: Fit) -> Fit:

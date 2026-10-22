@@ -177,7 +177,12 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
         if chains and not shut:
             best = _chains(p, lib, base, S, m, unit, final, T, trace)
     except OutOfTime:
-        return None
+        # (k8s 316, docs/research/fixes/316-structures.md) the best model reached before the cap, not nothing (316
+        # counts-long: the first search from the seeded pool move had the truth's rows when the cap fell)
+        best = getattr(p, "best", None)
+        if best is None:
+            return None
+        trace["out_of_time"] = True
     try:
         best = conventions(p, best, lib)
     except OutOfTime:
