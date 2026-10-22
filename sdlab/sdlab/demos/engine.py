@@ -69,6 +69,11 @@ def _scaled_input(v, k: float):
         return f"{k} * ({v})"
     if isinstance(v, dict) and "expr" in v:
         return {**v, "expr": f"{k} * ({v['expr']})"}
+    if isinstance(v, dict) and isinstance(v.get("terms"), list):   # {terms: [{fn, ...}]} (sdtruth._term_value): scale each magnitude
+        size = ("value", "height", "slope", "amplitude")
+        return {**v, "terms": [{**t, **{f: float(t[f]) * k for f in size if isinstance(t.get(f), (int, float))}} for t in v["terms"]]}
+    if isinstance(v, dict) and isinstance(v.get("values"), list):
+        return {**v, "values": [float(x) * k for x in v["values"]]}
     return v
 
 
@@ -109,12 +114,13 @@ def one_step(flows: list[dict], measured: list[str], t: list, levels: dict, inpu
 
 
 def free_run(flows: list[dict], measured: list[str], t: list, start: dict, inputs: dict) -> dict:
-    """The found model run free from the levels at t[0] (hidden stocks from start, else 0): {stock: [...]}."""
+    """The found model run free from `start` (the levels before step t[0]; hidden stocks 0 unless given): {stock: [...]},
+    each list the levels after each step, aligned with the truth's run."""
     ids = found_ids(flows, measured)
     mdl = _model(flows, ids, t, inputs)
-    L = np.array([float(start.get(s, 0.0)) for s in ids])[:, None]
-    out = {s: [float(L[k, 0])] for k, s in enumerate(ids)}
-    for i in range(1, len(t)):
+    L = np.array([float(start.get(s, 0.0)) for s in ids])[:, None]       # the levels before the first step
+    out = {s: [] for s in ids}
+    for i in range(len(t)):                                     # out[s][i]: after step t[i], as the truth's levels are
         L = mdl.step(L, np.array([t[i]]))
         for k, s in enumerate(ids):
             out[s].append(float(L[k, 0]))

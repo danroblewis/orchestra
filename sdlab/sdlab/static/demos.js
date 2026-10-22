@@ -4,7 +4,7 @@
   "use strict";
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const fmt = (x, d = 3) => (x === null || x === undefined || !isFinite(x) ? "–" : Math.abs(x) >= 1000 ? Math.round(x).toLocaleString() : (+x).toPrecision(d).replace(/\.?0+$/, ""));
+  const fmt = (x, d = 3) => (x === null || x === undefined || !isFinite(x) ? "–" : Math.abs(x) >= 1000 ? Math.round(x).toLocaleString() : (+x).toPrecision(d).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, ""));
   const pct = (x) => (x === null || x === undefined || !isFinite(x) ? "–" : `${x >= 0 ? "+" : ""}${(100 * x).toFixed(1)}%`);
   const SCEN = "memory-oom";
   const S = { model: null, overview: null, pick: null };
@@ -41,7 +41,7 @@
   // ---------- intro ----------
   function intro() {
     const o = S.overview.scenarios.find((x) => x.name === SCEN), src = o.source || {};
-    $("#intro").innerHTML = `<p><b>${esc(o.title)}</b></p><p>${esc(o.about)}</p>
+    $("#intro").innerHTML = `<p class="small muted">Demos 1, 3, 7 and 8 use this service; each other tab names its own case.</p><p><b>${esc(o.title)}</b></p><p>${esc(o.about)}</p>
       <p class="src">The found model: <b>${esc(src.strategy)}</b>'s stored result #${esc(src.result)} on <span class="mono">${esc(src.case)}</span> ${esc(src.variant)} (${esc(src.status)}, code ${esc(src.commit)}), discovered from the measured levels alone.
       Every demo runs on a simulation whose true model is known, so it shows what the found model says <i>and</i> what really happened.
       Plans for these and the other demos: <span class="mono">docs/DEMOS.md</span>; the ideas behind them: <span class="mono">OPERATIONALIZATION.md</span>.</p>`;
