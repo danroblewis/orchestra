@@ -46,9 +46,12 @@ def _found(con, rid: int) -> list[dict]:
 
 def _note(s: dict) -> str:
     for n in s.get("notes") or []:
-        if n.startswith(("fits, not proven", "equivalent (proven)", "pass by the conserving", "units:")):
+        if n.startswith(("fits, not proven", "fits, not robust", "equivalent (proven)", "pass by the conserving", "units:")):
             if s.get("algebra", {}).get("conserving"):
                 n = "[conserving] " + n
+            return n[:400]
+    for n in s.get("notes") or []:                             # (study_rescore_hidden.py) a found hidden stock matched
+        if " matched to the truth's " in n:
             return n[:400]
     return ""
 

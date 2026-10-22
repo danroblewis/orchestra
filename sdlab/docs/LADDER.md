@@ -2393,6 +2393,20 @@ the data need).
   (`fits, not proven equivalent: the net rate of P differs in the region around I=1.149e+04, P=7966: its
   1 term is 0 in the truth, 60 found`). Letter `~`, colour teal, in the squares, legends, leaderboard and
   case stats.
+  - **A schedule standing in for hidden state** (2026-10-21, the user) is "fits" too, never a pass: where a
+    true flow reads a hidden stock (directly or through an auxiliary) and the found flow between the same
+    ends, not reading a found hidden stock matched to it, is a schedule in time of more pieces than the run
+    announces eras (or the truth's own schedule of that flow has), it fits the one run and cannot predict
+    another (kalman_lna's 30 blocks for 310's leak). Note `fits, not robust: ...` (score._schedule_stand_ins).
+- **A found model's own hidden stock** (2026-10-21, the user; `sdlab/ladder/hidden_match.py`): a found hidden
+  stock that is neither a path between measured stocks nor an information smoothing is matched to at most
+  one such true hidden stock (one to one) when they share a measured neighbour and its trajectory (its own
+  flows stepped on the measured run) follows the truth's level up to scale and offset (h = alpha + beta L,
+  R^2 >= 0.9; the offset kept only where the run fixes it, by BIC with the residuals' effective length).
+  It is then written in the truth's coordinates and scored as a measured stock: its flows and the flows
+  reading it are parts, with the ordinary tolerances (no oracle covers such a stock, so no SE). The truth's
+  own flows of that stock are parts only when it is matched; an unmatched found stock sharing a true
+  hidden stock's name is renamed apart. Scores carry `hidden_match` ({true: {found, alpha, beta, r2}}).
 - **The older equivalence**, which "fits" needs (and "equivalent" needs as well as the proof): the found
   flows make the same linear system as the truth. Every measured stock's change is the same function of
   the levels, the measured inputs and the outside, within the same tolerances, in every window. So the

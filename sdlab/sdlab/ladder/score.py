@@ -74,6 +74,14 @@ merged; a second one is an "invented boundary"), and a side declared "input" (th
 series) must be fed by exactly 1 x the input, with no extra term or constant where every inflow it
 declares is an input; otherwise the result fails with the note "input altered" (never equivalent).
 
+**Hidden stocks of a found model** (the user, 2026-10-21; hidden_match.py). A found hidden stock that no
+older path reads (not a path between measured stocks, not a smoothing) is matched to at most one such true
+hidden stock by its connections and behaviour (its trajectory against the truth's level, up to scale and
+offset), written in the truth's coordinates, and scored as a measured stock (its flows and those reading it).
+A fitted time schedule standing in for hidden state is not robust: where a true flow reads a hidden stock
+and the found flow on its ends is a schedule of more pieces than the run announces eras, the result is
+"fits" (note "fits, not robust: ..."), never a pass (_schedule_stand_ins).
+
 **Behaviour.** skill@20 and skill@100 (sdlab/skill.py) on the run discovery saw and on a fresh run
 (another seed), each with a 95% bootstrap interval over the start moments. Only the truth's truly
 exogenous inflows are swapped in (skill.exogenous); a found model with a two-way flow or a signed
@@ -93,6 +101,7 @@ from ..skill import same_behaviour, truth_by_time, truth_runs
 from .noise_oracle import make_hidden_oracle, make_oracle
 from .parts import ONE, _hidden_chains, form_over, kind, label, linear_system, outside_end, outside_ends, parts, windows
 from .substep import per_step
+from . import hidden_match as _hidden_match
 from . import merge as _merge
 from . import sim as _sim
 
@@ -110,7 +119,7 @@ def score_hash() -> str:
     """The scoring code: a change re-scores stored results (without re-running discovery)."""
     here = Path(__file__).resolve().parent
     h = hashlib.sha256()
-    for p in (here / "score.py", here / "algebra.py", here / "parts.py", here / "merge.py", here / "oracle.py", here / "hidden_oracle.py",
+    for p in (here / "score.py", here / "algebra.py", here / "parts.py", here / "merge.py", here / "hidden_match.py", here / "oracle.py", here / "hidden_oracle.py",
               here / "noise_oracle.py", here / "noise_kf.py", here / "substep.py", here / "sim.py", here.parent / "skill.py", here.parent / "sdtruth_expr.py", here.parent / "discovery" / "simulate.py"):
         h.update(p.read_bytes())
     return h.hexdigest()[:16]
@@ -213,20 +222,25 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     truth_flows, _ = truth_by_time(truth_model, t)
     truth_flows, _ = per_step(truth_flows, data, truth_model)      # a truth at a sub-step: its per-recorded-step numbers (substep.py)
     truth_flows = _sim.mark(truth_flows, truth_model)             # 2d's expression, two-way, auxiliary and switch flows: compared as a whole
+    # (2026-10-21, the user) a found model's own hidden stock matched to the truth's (hidden_match.py): written in its
+    # coordinates and scored as a measured stock is; `seen` is the measured stocks and the matched hidden ones
+    found_flows, hmatch, hnotes = _hidden_match.match(truth_flows, found_flows, data, measured, inputs)
+    notes += hnotes
+    seen = measured | set(hmatch)
     found_flows = _merge.flows(found_flows)                         # flows between the same two stocks are one flow (merge.py)
     notes += [f"found: {x}" for x in _merge.notes(found_flows)]
     found_flows = _sim.mark_found(found_flows, truth_model)
-    effect_ends = {(f.get("from") if f.get("from") in measured else None, f.get("to") if f.get("to") in measured else None)
+    effect_ends = {(f.get("from") if f.get("from") in seen else None, f.get("to") if f.get("to") in seen else None)
                    for f in truth_model["flows"] if f.get("effects")}
-    ends_of = lambda f: (f.get("from") if f.get("from") in measured else None, f.get("to") if f.get("to") in measured else None)  # noqa: E731
+    ends_of = lambda f: (f.get("from") if f.get("from") in seen else None, f.get("to") if f.get("to") in seen else None)  # noqa: E731
     whole_ends = {ends_of(f) for f in truth_flows if f.get("whole")}
     two_way_ends = {ends_of(f) for f in truth_flows if f.get("whole") and f.get("two_way")}
     loose = whole_ends | {e[::-1] for e in two_way_ends}          # found parts on these ends are compared within the whole, never spurious
     effect_ends = effect_ends | whole_ends
     true_w, found_w = [], []
     for w in wins:
-        tp, tn = parts(truth_flows, measured, w, inputs)
-        fp, fn = parts(found_flows, measured, w, inputs)
+        tp, tn = parts(truth_flows, seen, w, inputs)
+        fp, fn = parts(found_flows, seen, w, inputs)
         true_w.append(tp)
         found_w.append(fp)
         notes += [f"truth: {x}" for x in tn] + [f"found: {x}" for x in fn]
@@ -242,8 +256,11 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
     hidden = make_hidden_oracle(truth_flows, data, wins, noise) if not oracle.ok and any(k[0] == "hidden" for k in true_keys) else None
     function_check: dict[tuple, tuple[bool, float]] = {}
     for ends in effect_ends:
-        want = _amounts(truth_flows, ends, measured, data, net=ends in two_way_ends)
-        got = _amounts(found_flows, ends, measured, data, net=ends in two_way_ends)
+        want = _amounts(truth_flows, ends, seen, data, net=ends in two_way_ends)
+        try:
+            got = _amounts(found_flows, ends, seen, data, net=ends in two_way_ends)
+        except Exception:                                          # noqa: BLE001 (a found rate reading a stock the run does not have:
+            got = None                                             # its own hidden stock, unmatched; hidden_match.py)
         if want is None or got is None:
             function_check[ends] = (False, math.inf)
             continue
@@ -344,7 +361,7 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
         entry = {"key": label(k), "kind": kind(k), "value": _show(_one([float(fp.get(k, 0.0)) for fp in found_w], weights) if k[0] in ("flow", "uses", "via")
                                                                    else next(fp[k] for fp in found_w if k in fp)), "size": size}
         end = outside_end(k) if declared is not None else None
-        if end and end not in declared and size != 0:              # an outside flow the case's boundary does not have: any size
+        if end and end[0] in measured and end not in declared and size != 0:   # an outside flow the boundary lacks (a hidden stock is inside it)
             invented.add(end)
             spurious.append({**entry, "kind": "invented boundary"})
             continue
@@ -407,6 +424,11 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
             notes.append("pass by the conserving drawing: " + book["note"])
         else:
             notes.append("equivalent (proven): " + book["note"])
+    # (2026-10-21, the user) a fitted time schedule standing in for hidden state is not robust: "fits", never a pass
+    stand_ins = _schedule_stand_ins(truth_model, truth_flows, found_flows, seen, inputs, data)
+    if stand_ins and (passed or equivalent):
+        passed, equivalent, fits = False, False, True
+        notes += [f"fits, not robust: {x}" for x in stand_ins]
     status = "pass" if passed else "equivalent" if equivalent else "fits" if fits else "fail"
     out = {"status": status, "pass": passed, "equivalent": equivalent, "fits": fits, "recall": recall, "precision": precision,
            "right": sum(r["ok"] for r in rows), "of": len(rows), "parts": rows, "spurious": spurious, "negligible": extra,
@@ -416,11 +438,63 @@ def equations(case: dict, noise: str, truth_model: dict, found_flows: list[dict]
         if book is not None:
             out["algebra"]["bookkeeping"] = book["note"]
             out["algebra"]["conserving"] = book["conserving"]
+    if hmatch:
+        out["hidden_match"] = hmatch
+    if stand_ins:
+        out["schedule_stand_ins"] = stand_ins
     if declared is not None:                                       # an undeclared case's scores are as before
         out.update(boundary_declared=True, invented_boundary=len(invented))
         if altered:
             out["input_altered"] = len(altered)
     return out
+
+
+def _truth_reads(f: dict, aux) -> set[str]:
+    """The names a true flow reads, through its auxiliaries too (an auxiliary's expression read in turn)."""
+    exprs = {}
+    for a in (aux.items() if isinstance(aux, dict) else ((x.get("id"), x) for x in aux or [])):
+        name, v = a
+        exprs[name] = v if isinstance(v, str) else str((v or {}).get("expr") or (v or {}).get("rate") or v)
+    out, todo = set(), list(_hidden_match._reads(f))
+    while todo:
+        x = todo.pop()
+        if x in out:
+            continue
+        out.add(x)
+        if x in exprs:
+            todo += _hidden_match.re.findall(r"[A-Za-z_][A-Za-z0-9_]*", exprs[x])
+    return out
+
+
+def _schedule_stand_ins(truth_model, truth_flows, found_flows, seen, inputs, data) -> list[str]:
+    """(2026-10-21, the user) The true flows that read a hidden stock the found model does not read in its place
+    (not one of its own hidden stocks matched to it), drawn by a found flow between the same ends as a schedule
+    in time of more pieces than the run announces eras (or the truth's own schedule of that flow has): such a
+    schedule fits the one run it was fitted on and cannot predict another (kalman_lna's 30 blocks for 310's
+    leak). Notes, one per such flow."""
+    hidden = set(data.get("all_levels") or {}) - set(data["levels"]) - set(inputs)
+    if not hidden:
+        return []
+    eras = max(1, len(data.get("eras") or []))
+    aux = truth_model.get("auxiliaries") or {}
+    ends = lambda f: (f.get("from") if f.get("from") in seen else None, f.get("to") if f.get("to") in seen else None)  # noqa: E731
+    out = []
+    for f in truth_flows:
+        reads = _truth_reads(f, aux) & hidden
+        if not reads or (f.get("from") in hidden and f.get("from") not in seen) or (f.get("to") in hidden and f.get("to") not in seen):
+            continue
+        allowed = max(eras, len(f.get("byTime") or []) or 1)
+        for g in found_flows:
+            if ends(g) != ends(f) or g.get("via"):
+                continue
+            pieces = len(g.get("byTime") or g.get("inflow") or [])
+            own = _hidden_match._reads(g) & seen & reads
+            if pieces > allowed and not own:
+                a, b = ends(f)
+                out.append(f"{a or 'outside'} -> {b or 'outside'} reads hidden {', '.join(sorted(reads))} in the truth; the found flow "
+                           f"stands in for it with a schedule of {pieces} pieces in time (the run announces {eras} era"
+                           f"{'s' if eras != 1 else ''}), which fits this run and cannot predict another")
+    return sorted(set(out))
 
 
 def _prove(truth_model, truth_flows, found_flows, ids, wins, inputs, data, tol, means, scale, oracle, true_w, found_w) -> tuple[dict, dict | None]:
@@ -536,8 +610,14 @@ def _same_function(truth_flows: list[dict], found_flows: list[dict], ids: list[s
     are equivalent. (Measured against the gross amount through a stock instead, a model with no flows
     at all came within 10% of a logistic stock whose births and deaths nearly cancel: too loose.)"""
     states = _levels_at(data)
-    T, F = _changes(truth_flows, ids, data, states), _changes(found_flows, ids, data, states)
-    if T is None or F is None:
+    T = _changes(truth_flows, ids, data, states)
+    if T is None:
+        return False
+    try:
+        F = _changes(found_flows, ids, data, states)
+    except Exception:                                              # noqa: BLE001 (reads a stock the run does not have)
+        return False
+    if F is None:
         return False
     (ct, _), (cf, _) = T, F
     for i in range(len(ids)):
