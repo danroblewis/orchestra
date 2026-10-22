@@ -251,6 +251,11 @@ class Data:
     def __init__(self, stocks: list[dict], run: dict, opts: dict):
         self.ids = [s["id"] for s in stocks]
         self.inputs = dict(opts.get("inputs") or {})
+        # (2026-10-22, k8s-311) the measured inputs from outside: an offered limit series (capmin.py) is a function
+        # of the levels, never a declared input side's series (311 counts-long: queue's input became 1 x one)
+        from .capmin import level_series
+
+        self.outside = {k: v for k, v in self.inputs.items() if not level_series(k)}
         t = np.asarray(run["t"], dtype=float)
         A = np.array([np.asarray(run["levels"].get(i, [np.nan] * len(t)), dtype=float) for i in self.ids])
         J = np.zeros((len(self.ids), len(t) - 1))
@@ -448,7 +453,7 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
             moved[i]["to"] = R
             out.append((f"{name} made the move {A} -> {R}", _joined(moved)))
             for j, g in enumerate(flows):
-                if g.get("from") is None and g.get("to") == R and kind_of(g, set(data.inputs)) == "estimate":
+                if g.get("from") is None and g.get("to") == R and kind_of(g, set(data.outside)) == "estimate":
                     both = [h for k, h in enumerate(moved) if k != j]
                     out.append((f"{name} and outside -> {R} made the move {A} -> {R}", _joined(both)))
         r = f.get("rate") or {}
@@ -459,7 +464,7 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
             # outflow read rises (a gap inflow, c - k X), the inflow's pieces taken at their mean (only
             # then: with no boundary declared, a stock's inflow and outflow are two claims, not a net one)
             for j, g in enumerate(flows):
-                if g.get("from") is not None or g.get("to") != A or g.get("byTime") or kind_of(g, set(data.inputs)) != "estimate":
+                if g.get("from") is not None or g.get("to") != A or g.get("byTime") or kind_of(g, set(data.outside)) != "estimate":
                     continue
                 q = g.get("rate") or {}
                 if g.get("inflow"):
@@ -491,8 +496,8 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
                 _set_rate(g, {"form": "proportional", "stock": S, "k": abs(float(r["terms"][0].get("k") or 0))})
                 g.pop("driver", None)
                 out.append((f"{name} (a link on {S}) made the move {S} -> {B}", _joined(rest + [g])))
-        if b.may(B, "in", "measured") and kind_of(f, set(data.inputs)) == "estimate":
-            for name_in, series in data.inputs.items():
+        if b.may(B, "in", "measured") and kind_of(f, set(data.outside)) == "estimate":
+            for name_in, series in data.outside.items():
                 if name_in in data.ids:
                     continue
                 v = np.asarray(series, dtype=float)
@@ -509,7 +514,7 @@ def alternatives(flows: list[dict], i: int, stocks: list[dict], b: Boundary, dat
 def guard(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, log: list[str]) -> list[dict]:
     """No flow outside a declared boundary survives: each, largest first, becomes its best-priced
     alternative (refitted); without enough data to refit, it is dropped."""
-    inputs = set(data.inputs)
+    inputs = set(data.outside)
     for _ in range(3 * len(flows) + 3):
         bad = violations(flows, data.ids, b, inputs)
         if not bad:
@@ -545,7 +550,7 @@ def pair_moves(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, l
     prices better; repeated while one is kept."""
     if not data.usable or _n_hidden(flows, data.ids):
         return flows
-    inputs = set(data.inputs)
+    inputs = set(data.outside)
     final = {s["id"] for s in stocks if s.get("final")}
     for _ in range(len(flows)):
         base: dict = {}
@@ -697,7 +702,7 @@ def gap_forms(flows: list[dict], stocks: list[dict], b: Boundary, data: Data, lo
     (docs/research/declared-boundary.md, cause 3: 104's 0.1 T - 7, 011's (300 - I) / 5)."""
     if not b.declared or not data.usable or _n_hidden(flows, data.ids):
         return flows
-    inputs = set(data.inputs)
+    inputs = set(data.outside)
     done = data.fits
     sides = []
     for f in flows:
@@ -767,7 +772,7 @@ def fill_declared(flows: list[dict], stocks: list[dict], b: Boundary, data: Data
     The declared flows alone, with fitted numbers, are so the floor of every model."""
     if not b.declared:
         return flows
-    inputs = set(data.inputs)
+    inputs = set(data.outside)
     for s, side in _missing(flows, data.ids, b, inputs):
         row = data.ids.index(s)
         sign = 1.0 if side == "in" else -1.0
@@ -784,7 +789,7 @@ def fill_declared(flows: list[dict], stocks: list[dict], b: Boundary, data: Data
                 rate = {"form": "proportional", "stock": s, "k": k}
                 cands.append((f"a drain k {s}", {"from": s, "to": None, "ratio": 1, "rate": rate, "rates": [rate]}))
         if "measured" in b.kinds(s, side) or not cands:
-            for name, series in data.inputs.items():
+            for name, series in data.outside.items():
                 if name in data.ids:
                     continue
                 v = np.asarray(series, dtype=float)
@@ -840,7 +845,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, final:
     out = {**result, "flows": flows}
     if final:
         out["boundary"] = {**b.summary(), "changed": log}
-        out["boundary_claims"] = claims(flows, data.ids, b, set(data.inputs))
+        out["boundary_claims"] = claims(flows, data.ids, b, set(data.outside))
     elif log:
         out["boundary_guard"] = log
     return out
@@ -1002,8 +1007,8 @@ def enforce_sides(flows: list[dict], stocks: list[dict], b: Boundary, data: Data
     around the fixed inflows, which are never refitted or rescaled."""
     if not b.declared or not (b.fixed or b.limit):
         return flows
-    inputs = set(data.inputs)
-    names = [n for n in data.inputs if n not in data.ids]
+    inputs = set(data.outside)
+    names = [n for n in data.outside if n not in data.ids]
     flows = copy.deepcopy(flows)
     touched: set = set()
     fixed: list[dict] = []
