@@ -50,6 +50,7 @@ from . import counted, hinge, rowrepair
 EXACT = 100.0         # as blocks.EXACT: a block is exact when its SSE is within this many times the rounding's variance
 FAR = 1e3             # the pick's block is replaced only when its SSE is over this many times the re-read's
 MAX_TERMS = 4         # columns one row may read
+RARE = 0.01          # (k8s-317) at most this share of the steps a rarely binding limit may leave unexplained (_rare)
 COND = 1e6            # a column set more collinear than this (scaled columns' condition number) reads nothing (engine_forms reread.COND)
 
 
@@ -57,7 +58,7 @@ def _plain(f: dict, levels) -> bool:
     if any(x and x not in levels for x in (f.get("from"), f.get("to"))):
         return False
     r = f.get("rate") or {}
-    if f.get("effects") or (r.get("form") not in ("proportional", "linear")):
+    if f.get("effects") or (r.get("form") not in ("proportional", "linear", "constant", "const")):   # (k8s-317) a constant too
         return False
     return hinge._linear(r) is not None
 
@@ -110,24 +111,91 @@ def _subset(y: np.ndarray, pool: dict, names: list[str], tol: float) -> dict | N
     return None
 
 
+def _masked_sse(x: str, flows: list[dict], levels, cols: dict, n: int, keep) -> float | None:
+    """(k8s-317) X's row's SSE on the kept steps (all of them when keep is None)."""
+    if keep is None:
+        return counted._row_sse(x, flows, levels, cols, n)
+    got = hinge.row_error(x, flows, levels, cols, n)
+    if got is None:
+        return None
+    r, sides = got
+    e = (r - sides["in"] + sides["out"])[keep]
+    return float(e @ e)
+
+
+def _rare(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n: int, finals: set, q: float):
+    """(2026-10-22, k8s-317, docs/research/fixes/317-combined2.md) The steps a block's rows leave unexplained when a
+    rarely binding limit is all that keeps a row from being linear: for each row no linear set reproduces, the best
+    set (at most MAX_TERMS columns) that reproduces it on all but RARE of the steps; their union, as a mask of the
+    steps kept (None when a row has no such set, or every row is linear already). 317 none-short: frontend's
+    dispatch MIN binds on 1 of 300 steps, so its queue and inflight rows are linear but for one step, and the whole
+    requests block (15 rows: three services' queues, retries, inflights and counters) was refused."""
+    held = [f for f in flows if (f.get("from") is None and f.get("to") in rows and _input_side(f["to"], run))
+            or _limit(f, rows, levels, cols, n)]
+    tol = EXACT * n * q * q / 6
+    names = sorted(c for c in cols if c not in finals and np.std(cols[c][:n]) > 0)
+    pool = {c: np.asarray(cols[c][:n], dtype=float) for c in names}
+    out = np.zeros(n, dtype=bool)
+    cut = max(1, int(RARE * n))
+    for x in rows:
+        got = hinge.row_error(x, held, levels, cols, n)
+        if got is None:
+            return None
+        r, sides = got
+        y = r - sides["in"] + sides["out"]
+        if _subset(y, pool, names, tol) is not None:
+            continue
+        best = None
+        for size in range(1, MAX_TERMS + 1):
+            for idx in itertools.combinations(names, size):
+                A = np.column_stack([pool[c] for c in idx])
+                nrm = np.sqrt(np.sum(A ** 2, axis=0))
+                if size > 1 and np.linalg.cond(A / nrm) > COND:
+                    continue
+                c, *_ = np.linalg.lstsq(A, y, rcond=None)
+                e = (y - A @ c) ** 2
+                worst = np.argsort(e)[-cut:]
+                ok = np.ones(n, dtype=bool)
+                ok[worst] = False
+                c, *_ = np.linalg.lstsq(A[ok], y[ok], rcond=None)       # refitted without them (they pull the fit)
+                e = (y - A @ c) ** 2
+                worst = np.argsort(e)[-cut:]
+                rest = float(e.sum() - e[worst].sum())
+                if rest <= tol * (n - cut) / n:
+                    big = np.zeros(n, dtype=bool)
+                    big[worst] = True
+                    big &= e > tol / n                     # only the steps it really misses
+                    if best is None or rest < best[0]:
+                        best = (rest, big)
+            if best is not None:
+                break
+        if best is None:
+            return None
+        out |= best[1]
+    if not out.any():
+        return None
+    return ~out
+
+
 def _reread(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n: int, finals: set, q: float,
-            unit: dict | None = None, pairs: set = frozenset()):
+            unit: dict | None = None, pairs: set = frozenset(), keep=None):
     """The block read again from the levels: each row's exact best subset, its terms joined into moves and outside
     flows (atoms), whose numbers are fitted together by non-negative least squares on the stacked rows, then each
     atom dropped (outside terms first: a move conserves) where the block stays exact. (flows, SSE, atoms) or None."""
     held = [f for f in flows if (f.get("from") is None and f.get("to") in rows and _input_side(f["to"], run))
             or _limit(f, rows, levels, cols, n)]
     unit = unit or {}
-    tol = EXACT * n * q * q / 6
+    m = n if keep is None else int(keep.sum())            # (k8s-317) the steps read: all, or those _rare keeps
+    tol = EXACT * m * q * q / 6
     names = sorted(c for c in cols if c not in finals and np.std(cols[c][:n]) > 0)
-    pool = {c: np.asarray(cols[c][:n], dtype=float) for c in names}
+    pool = {c: np.asarray(cols[c][:n], dtype=float)[keep if keep is not None else slice(None)] for c in names}
     ys, W = {}, {}
     for x in rows:
         got = hinge.row_error(x, held, levels, cols, n)
         if got is None:
             return None
         r, sides = got
-        ys[x] = r - sides["in"] + sides["out"]
+        ys[x] = (r - sides["in"] + sides["out"])[keep if keep is not None else slice(None)]
         w = _subset(ys[x], pool, names, tol)
         if w is None:
             return None                                  # a row no linear set reproduces: not this pass's
@@ -153,10 +221,10 @@ def _reread(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n
     for kind, a, b, c in atoms:
         v = np.zeros(len(y))
         if kind == "move":
-            v[pos[a] * n:(pos[a] + 1) * n] -= pool[a]
-            v[pos[b] * n:(pos[b] + 1) * n] += pool[a]
+            v[pos[a] * m:(pos[a] + 1) * m] -= pool[a]
+            v[pos[b] * m:(pos[b] + 1) * m] += pool[a]
         else:
-            v[pos[a] * n:(pos[a] + 1) * n] = pool[c] if kind == "in" else -pool[c]
+            v[pos[a] * m:(pos[a] + 1) * m] = pool[c] if kind == "in" else -pool[c]
         vecs.append(v)
     M = np.column_stack(vecs)
     chosen = list(range(len(atoms)))
@@ -192,7 +260,7 @@ def _reread(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n
             new.append({"id": f"sparse_in_{x}", "from": None, "to": x, "ratio": 1, "rate": rate})
         else:
             new.append({"id": f"sparse_out_{x}", "from": x, "to": None, "ratio": 1, "rate": rate})
-    sse = sum(counted._row_sse(x, new, levels, cols, n) or 0.0 for x in rows)
+    sse = sum(_masked_sse(x, new, levels, cols, n, keep) or 0.0 for x in rows)
     return new, sse, k_used
 
 
@@ -232,14 +300,39 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
             sse_pick += v
         if sse_pick is None or sse_pick <= exact:
             continue
+        keep = None
         got = _reread(rows, flows, run, levels, cols, n, finals, q, unit, pairs)
         if got is None:
-            continue
+            # (k8s-317) a row linear but for a rarely binding limit: the block read on the other steps, and compared
+            # with the pick's on the same steps; a limit the block holds is first held, then left out (a limit the
+            # rows do not need on the steps read is not kept: 317's offered room limit on frontend's queue)
+            bases = [flows]
+            free = [f for f in flows if not _limit(f, rows, levels, cols, n)]
+            if len(free) < len(flows):
+                bases.append(free)
+            for base in bases:
+                keep = _rare(rows, base, run, levels, cols, n, finals, q)
+                got = None if keep is None else _reread(rows, base, run, levels, cols, n, finals, q, unit, pairs, keep)
+                if got is not None:
+                    break
+            if got is None:
+                continue
+            exact = EXACT * len(rows) * int(keep.sum()) * q * q / 6
+            sse_pick = 0.0
+            for x in rows:
+                v = _masked_sse(x, flows, levels, cols, n, keep)
+                if v is None:
+                    sse_pick = None
+                    break
+                sse_pick += v
+            if sse_pick is None:
+                continue
         new, sse, k = got
         if sse > exact or sse_pick <= FAR * max(sse, 1e-300):
             continue
         flows = [f for f in flows if not (f.get("from") in rows or f.get("to") in rows)] + new
-        notes.append({"unit": u, "rows": rows, "sse_pick": sse_pick, "sse": sse, "atoms": k})
+        notes.append({"unit": u, "rows": rows, "sse_pick": sse_pick, "sse": sse, "atoms": k,
+                      **({"steps_set_aside": int(n - keep.sum())} if keep is not None else {})})
     if not notes:
         return result
     out = copy.deepcopy(result)

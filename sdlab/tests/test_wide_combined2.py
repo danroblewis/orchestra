@@ -64,3 +64,31 @@ def test_passes_stop_inside_the_callers_time(monkeypatch):
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, signal.SIG_DFL)
     assert got["flows"] == r["flows"] and got["passes_skipped"] == 16
+
+
+def test_block_read_but_for_one_kink_step():
+    """sparseblock: a block linear on every step but one (a limit binding once) is re-read on the other steps."""
+    from sdlab.discovery.strategies.combined2 import sparseblock
+
+    n = 300
+    t = np.arange(n + 1, dtype=float)
+    u = 10 + 3 * np.sin(t / 20.0)
+    a, b = [40.0], [20.0]
+    for i in range(n):
+        m = 0.5 * a[-1] - (3.0 if i == 100 else 0.0)
+        a.append(a[-1] + u[i + 1] - m)              # input i is read by step i - 1
+        b.append(b[-1] + m - 0.3 * b[-1])
+    lv = {"a": list(np.round(a, 4)), "b": list(np.round(b, 4))}
+    stocks = [{"id": "a", "unit": "q"}, {"id": "b", "unit": "q"}]
+    run = {"t": list(t), "levels": lv, "boundary_declared": True,
+           "boundary": {"a": {"in": ["input"]}, "b": {"out": ["estimate"]}}}
+    opts = {"inputs": {"u": list(u)}}
+    pick = {"flows": [{"from": None, "to": "a", "rate": {"form": "proportional", "stock": "u", "k": 1.0}},
+                      {"from": "a", "to": "b", "rate": {"form": "proportional", "stock": "a", "k": 0.4}},
+                      {"from": "b", "to": None, "rate": {"form": "proportional", "stock": "b", "k": 0.2}}]}
+    got = sparseblock.apply(pick, stocks, run, opts)
+    note = got["sparse_blocks"][0]
+    assert note["steps_set_aside"] == 1
+    move = next(f for f in got["flows"] if f.get("from") == "a" and f.get("to") == "b")
+    drain = next(f for f in got["flows"] if f.get("from") == "b" and f.get("to") is None)
+    assert abs(move["rate"]["k"] - 0.5) < 1e-4 and abs(drain["rate"]["terms"][0]["k"] - 0.3) < 1e-4
