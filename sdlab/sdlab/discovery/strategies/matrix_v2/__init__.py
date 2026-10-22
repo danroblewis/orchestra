@@ -171,4 +171,18 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
 
     o, cap = _capmin.offer(stocks, run, opts)
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    return _capmin.restore(r, cap)
+    # (2026-10-22, port-matrix_v2, docs/research/fixes/port-matrix_v2.md) kalman_lna's post-passes, copied at 9d3ca8e
+    # (fix ledger types 2, 3, 6, 7, 11, 12, 15): each stock's row read off the data (sparse linear, or linear plus one
+    # floored term on a declared side; derived columns, a hidden integrator, a capped move) and the flows of the stocks
+    # whose rows the answer misses rebuilt from the rows where that wins by BIC (rows.py), then a counted stock driven
+    # towards a target read off another stock written as a controller where it beats its outside flows (tracker.py)
+    from . import dead, rows, tracker
+
+    # (matrix_v2) the controller is read before the rows as well as after them: the matrix's answer draws a
+    # controller's stock with proxies the rows would otherwise rebuild as a hidden stage (308 none-short: a delayed
+    # inflow beside the controller, two flows on ready's one declared inflow)
+    r = tracker.revise(_capmin.restore(r, cap), stocks, run, opts)
+    r = rows.revise(r, stocks, run, opts, cap)
+    r = tracker.revise(r, stocks, run, opts)
+    # (port-matrix_v2) a move that is 0 on every nonnegative state is no flow (dead.py; ledger type 17's exact case)
+    return dead.apply(r, stocks, run, opts)
