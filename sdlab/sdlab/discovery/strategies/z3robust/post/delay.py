@@ -42,7 +42,7 @@ TAU_GRID = (1.25, 1.6, 2.0, 2.5, 3.2, 4.0, 5.0, 6.5, 8.0, 11.0, 16.0, 24.0)
 MAX_DRIVES = 3
 MAX_READS = 3
 ROUNDS = 3           # drives and outflow chosen in turn at most this many times
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 _ROOM = re.compile(r"^min\(([-\d.e+]+) \* (\w+), max\(0, ([-\d.e+]+) \* (\w+) - (\w+)\)\)$")
 
 

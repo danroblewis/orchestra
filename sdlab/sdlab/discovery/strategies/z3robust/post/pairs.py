@@ -32,7 +32,7 @@ MARGIN = 10.0
 EVENTS = 5
 A_GRID = np.geomspace(0.01, 1.0, 13)
 B_QUANTILES = np.linspace(0.0, 1.0, 11)
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 _MIN = re.compile(r"^min\(([-\d.e+]+) \* (\w+), ([-\d.e+]+) \* (\w+)\)$")
 
 

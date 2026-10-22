@@ -33,7 +33,7 @@ from .steps import Steps
 
 MARGIN = 10.0        # BIC units a set of gap flows must win by
 MAX_READS = 4        # a gap reads at most this many levels (and the constant)
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 EVENTS = 5          # a free flow acts, and a new gap's floor binds, on at least this many steps
 FLOOR = 1e-5        # a row's misfit is at least this share of its typical change (the answer's numbers are written to 6 digits),
                     # and at least the levels' rounding (_resolution)

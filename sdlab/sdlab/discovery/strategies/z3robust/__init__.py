@@ -14,7 +14,8 @@ numbers refitted by least squares on every step (rows weighted by their noise le
 left out once), declared inputs at 1, links kept as inflows.
 
 The classes tried: ends moves with the boundary as written ("kinds"), and, where a boundary is declared,
-by sides as the scorer reads it ("sides"); the lower L1 + price is kept (kinds on a tie). Steps of an
+by sides as the scorer reads it ("sides"); the lower L1 + price is kept (kinds on a tie; within robust.TIE,
+the fewer moves). Steps of an
 irregular spacing (samples missing from t) are left out.
 """
 
@@ -86,6 +87,21 @@ def refit(p: core.Problem, sup: list[int], sigma: np.ndarray, fixed: dict[int, f
     return k, float(np.abs(res).max()) if res.size else 0.0, dropped
 
 
+def _moves(c: dict) -> int:
+    return sum(c["p"].terms[m].kind == "move" for m in c["got"]["support"])
+
+
+def _better(a: dict, b: dict) -> bool:
+    """Is class answer a better than b? (port-z3robust) Within robust.TIE of each other on L1 + price the data
+    cannot rank them, so the one with fewer moves (a move claims conservation between two stocks), as robust's
+    band search already ranks the structures of one class; else the lower objective (305 counts-short: a
+    retries -> responses_total move in the "sides" class beat the "kinds" class's outside drain by 0.17)."""
+    oa, ob = a["got"]["objective"], b["got"]["objective"]
+    if abs(oa - ob) <= robust.TIE and _moves(a) != _moves(b):
+        return _moves(a) < _moves(b)
+    return oa < ob - 1e-9
+
+
 def _identify(stocks: list[dict], run: dict, opts: dict | None = None, skip=frozenset()) -> dict:
     opts = dict(opts or {})
     began = time.perf_counter()
@@ -115,9 +131,10 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None, skip=froz
                      f"from {got['m']} steps, {got['seconds']:.2f} s")
         if got["support"] is None:
             continue
-        if best is None or got["objective"] < best["got"]["objective"] - 1e-9:
-            best = {"p": p, "got": got, "sigma": sigma, "B": B, "fixed": fixed, "moves": moves, "rule": rule,
-                    "keys": [t.key(p.cols) for t in p.terms]}
+        here = {"p": p, "got": got, "sigma": sigma, "B": B, "fixed": fixed, "moves": moves, "rule": rule,
+                "keys": [t.key(p.cols) for t in p.terms]}
+        if best is None or _better(here, best):
+            best = here
     if best is None:
         return {"flows": [], "note": "z3robust: Z3 found no model within its time: " + "; ".join(tried),
                 "z3robust": {"tried": tried, "seconds": round(time.perf_counter() - began, 3)}}
@@ -128,6 +145,12 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None, skip=froz
     while any(robust.unsigned(p, m, sup) and v < 0 for m, v in zip(sup, k)):     # a link the refit turned negative: dropped
         worst = min((v, m) for m, v in zip(sup, k) if robust.unsigned(p, m, sup))[1]
         sup = [m for m in sup if m != worst]
+        k, miss, dropped = refit(p, sup, ss, best["fixed"])
+    for _ in range(len(sup)):                       # (port-z3robust) a one-sided outside flow that moves nothing: dropped
+        bad = [m for m in robust.idle(p, sup, dict(zip(sup, k))) if m not in best["fixed"]]
+        if not bad:
+            break
+        sup = [m for m in sup if m not in bad]
         k, miss, dropped = refit(p, sup, ss, best["fixed"])
     fl = flows.fixed_inputs(flows.flows_of(p, sup, k), run, (opts.get("inputs") or {}).keys())
     note = (f"z3robust: {len(sup)} terms in the class '{best['moves']}, {best['rule']}' (Z3 Optimize, {ENCODING}: "

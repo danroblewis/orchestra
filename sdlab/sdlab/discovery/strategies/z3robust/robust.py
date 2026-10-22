@@ -277,9 +277,33 @@ def unsigned(p: core.Problem, m: int, sup) -> bool:
     return link(p, m) and not gap_row(p, m, sup)
 
 
+IDLE_EVENTS = 5       # a one-sided outside flow moves something on at least this many steps (else it is no flow)
+
+
+def idle(p: core.Problem, sup: list[int], nums: dict) -> list[int]:
+    """(port-z3robust) The terms of each one-sided outside flow (a declared side) whose amount is above 0 on fewer
+    than IDLE_EVENTS steps of the record: the engine floors a rate at 0, so such a flow moves nothing, and as the
+    answer's own reading of the side it kept the floored gap search (post/hinge.py) from fitting the side
+    (k8s-311 none-long: ready's outflow read as -176 x mem by the warm start, which Z3's sign rows would refuse)."""
+    X, _ = core._floats(p)
+    groups: dict = {}
+    for m in sup:
+        t = p.terms[m]
+        if t.kind == "outside" and len(t.sides) == 1:
+            groups.setdefault((t.a, t.sides[0]), []).append(m)
+    out = []
+    for (_, side), ms in groups.items():
+        v = sum(nums[m] * X[:, p.terms[m].col] for m in ms)
+        amt = v if side == "in" else -v
+        if int((amt > 1e-9 * (float(np.abs(amt).max()) + 1e-300)).sum()) < IDLE_EVENTS:
+            out += ms
+    return out
+
+
 def _signed(p: core.Problem, B, sup: list[int], nums: dict, sigma: np.ndarray, price: float) -> float:
-    """objective() plus SIGN_PENALTY per link with a negative number."""
-    return objective(p, B, sup, nums, sigma, price) + SIGN_PENALTY * sum(1 for m in sup if unsigned(p, m, sup) and nums[m] < 0)
+    """objective() plus SIGN_PENALTY per link with a negative number and per term of an idle one-sided flow."""
+    return (objective(p, B, sup, nums, sigma, price) + SIGN_PENALTY * sum(1 for m in sup if unsigned(p, m, sup) and nums[m] < 0)
+            + SIGN_PENALTY * len(idle(p, sup, nums)))
 
 
 def warm(p: core.Problem, B, cand: list[int], sigma: np.ndarray, fixed: dict[int, float], price: float) -> tuple[list[int], dict, float]:

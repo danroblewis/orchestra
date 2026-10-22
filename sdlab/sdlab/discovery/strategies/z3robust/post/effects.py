@@ -45,7 +45,7 @@ FLOOR = 1e-5         # a row's misfit is at least this share of its typical chan
 QUIET = 2.0          # a row whose misfit is within this many times its rounding noise is explained (_quiet)
 MATERIAL = 1e-5      # an effect flow moves at least this share of the gross amount through its rows (rms): the numbers are
                      # written to 6 digits, so a smaller flow fits their rounding (k8s-312: 7e-7 x inflight on queue's row)
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 
 
 def _num(v: float) -> float:

@@ -21,7 +21,7 @@ from scipy.optimize import least_squares
 from .hinge import FLOOR, _Fit, _amount, _env, _plain, _rate, _resolution
 from .steps import Steps
 
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 
 
 _MIN = re.compile(r"^min\(([-\d.e+]+) \* (\w+), ([-\d.e+]+) \* (\w+)\)$")

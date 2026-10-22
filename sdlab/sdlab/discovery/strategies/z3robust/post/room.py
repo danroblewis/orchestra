@@ -52,7 +52,7 @@ MAX_FLOWS = 2
 SUBSET = 3           # an inflow on a room's rows is re-read from at most this many readers (k8s-316)
 SETTLE = 3           # rounds of re-reading those inflows and polishing the room with them
 CHECK = 3            # the best candidates by the least-squares gain that are checked (floored, where their share falls short)
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 
 
 def _num(v: float) -> float:

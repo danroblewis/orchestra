@@ -37,7 +37,7 @@ QUIET = 0.01         # a row whose misfit is within this share of its noise is l
                      # same steps differ by far less than the noise's own spread, so BIC decides above it)
 MAX_COLS = 8         # columns forward selection adds at most
 A_GRID = np.logspace(-4, 0, 13)
-DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
+DEBUG = bool(__import__("os").environ.get("Z3ROBUST_DEBUG"))
 
 
 def _num(v: float) -> float:
