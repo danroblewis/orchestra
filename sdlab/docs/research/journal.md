@@ -846,3 +846,45 @@ ask for a harness change instead: score a found flow that reads the found model'
 levels.
 
 2026-10-22T07:48:57Z 310 PROXY: move on to 311. All 5 strategies pass none-short and none-long 26/26 (real passes: each one's found hidden stock matches the leak at R^2 1.0). counts-short and counts-long are data-limited by three independent measured bounds (Cramér-Rao P(err<=10%) 0.22/0.38 with the true knots given; Fisher rel SE 0.35/0.20; free-knot Poisson ML misses the OOM move by 11.6-33.5%). So by the user's rule (pass = every ACHIEVABLE variant) 310 counts as passed for all 5; the gate shows it as not passed only because analyse does not cover hidden-stock truths. Still needed: (1) analyse should cover 310's truth (hidden leak + table move) so it labels counts data-limited itself; (2) method faults on counts to fix later in the noise/regression round: combined2 outside->cpu 13.5 vs 20 and mem drain 0.29 (hidden-row output-error refit), engine_forms counts-long pods block blowing up (coefficient guard, the same family as 309), milp's hidden SHARE on counts (likelihood over the hidden path). 311/312/317 reuse the OOM table, so expect their counts variants to be data-limited the same way. Judge them on none-* and treat counts as data-limited only with a measured bound.
+
+## 2026-10-22 (note: the kubernetes climb through 317, fix ledger extended)
+
+**Written:** [fix-ledger.md](fix-ledger.md) now covers every fix from 307 to 317 (65 fix docs, rounds 1 and 2),
+with the rung x strategy table to 317 and a table of rung verdicts. Store read at 22:40Z.
+
+**Where the climb stands (top 5: combined2, milp, structures, kalman_lna, engine_forms):**
+- **307-316 pass** on their achievable variants for all five, except structures on 307 (E/F, not fixed).
+- 310 and 311: PPFF for all five, and the counts variants are data-limited by measured kill-table bounds. 310
+  was moved on by PROXY, because `analyse` does not cover hidden-stock truths.
+- 312: PFFF as stored. none-long failed only the OOM counter part, and that was the scorer's fault: it read
+  levels without the step's injections. 5dca817 fixed it, and an offline re-score passes none-long for all five.
+  The store has not been re-scored yet.
+- 313, 314 and 315: PPPP for all five. On 315, three cells were fixed: combined2 none-short, milp counts-long,
+  structures none-short.
+- 316: PPFP for four strategies and PPPP for engine_forms. counts-short is data-limited (p 0.407).
+- **317 does not pass.** Only structures none-short passes (85/85). The other cells are scored fails, plus
+  timeouts or errors from milp (counts-long), kalman_lna (counts) and engine_forms (three variants).
+
+**Cells fixed by strategy code: 75** (310: 10, 311: 10, 312: 5, 315: 3, 316: 16, 317: 1, on top of 307-309's 30).
+
+**New fix types (11-19):**
+- hidden integrator written as a stock
+- room-limited move (with a rare regime, a fixed pool and a shared room)
+- boundary-forced cross-unit move
+- hidden DELAY1 stage
+- injection-aware rows and expression-aware evaluation
+- best-subset row/block re-read
+- spurious flows must earn their place
+- conserving drawing
+- count-noise weighting
+
+Types 0-10 also gained about 35 smaller fixes.
+
+**Regressions fixed:**
+- engine_forms 307 counts-long (5630b43).
+- kalman_lna 309 none-short and counts-long (b373e39, f9e24d4).
+
+No full regression run has been done yet.
+
+**Needs a decision (recorded, not asked):** all five agents read "a move needs one unit" as allowing a cross-unit
+move where the declared boundary leaves no other drawing (316).
