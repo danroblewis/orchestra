@@ -479,7 +479,7 @@ def _guarded(fn):
 
 def _after_program(result: dict, stocks: list[dict], run: dict, opts: dict | None, known: dict, notes) -> dict:
     """The passes after the program, in order (split out so a stored program answer can be re-run through them)."""
-    from . import delay, effects, hidden, hinge, oefit, pairs, polish, quantized, room, tidy
+    from . import conserve, delay, effects, hidden, hinge, oefit, pairs, polish, quantized, room, tidy
     pairs_refine, polish_refine, delay_refine, prune = (_guarded(pairs.refine), _guarded(polish.refine), _guarded(delay.refine),
                                                         _guarded(effects.prune))
     room_retry = _guarded(room.refine)
@@ -544,4 +544,7 @@ def _after_program(result: dict, stocks: list[dict], run: dict, opts: dict | Non
     flows, dl = delay_refine(result.get("flows") or [], stocks, run, opts, skip=known)   # a hidden delay on an inflow (k8s-312)
     if dl:
         result = {**result, "flows": flows, "delay": dl}
+    flows, cv = _guarded(conserve.refine)(result.get("flows") or [], stocks, run, opts, skip=known)   # links and own-level gaps
+    if cv:                                                     # written as the conserving moves they equal (k8s-317)
+        result = {**result, "flows": flows, "conserve": cv}
     return {**result, "quantized": notes} if notes else result
