@@ -42,6 +42,7 @@ import numpy as np
 
 from . import delayed as _delayed
 from . import derived as _derived
+from . import subsets as _subsets
 
 PRICE = 6.0            # the margin a rebuild must win by, in log T
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
@@ -52,7 +53,7 @@ BASE_SUB = 2           # the always-on part of a floored row: every support up t
 MIN_ON = 5             # a floored term acts on at least this many steps
 TIME = 600.0           # seconds for the rows and the derived-column search (310: 90; 311: 200, the capped move one
                        # round more; 312: 600, the delayed rows and a seeded limit: 272 s on the Mac for none-long,
-                       # node2 is up to 3 x slower; under the 1800 s case limit)
+                       # node2 is up to 3 x slower; under the 1800 s case limit; 312 round 2: 176 s, subsets.py)
 BUILD_TIME = 40.0      # seconds for the rebuild after them (the whole pass's budget before 310)
 TOL_MOVE = 0.02        # a move may take this share more than the source's drain (rounding)
 REPAIRS = 3            # rounds of refitting a row that needs a side the boundary lacks
@@ -153,7 +154,8 @@ def _lstsq(A: np.ndarray, y: np.ndarray):
 
 
 def _sparse(X: np.ndarray, y: np.ndarray, floor: float, cols: list[int] | None = None):
-    """(bic, support, coefs, sse) of the best sparse linear fit of y on X's columns (BIC; floor: rounding)."""
+    """(bic, support, coefs, sse) of the best sparse linear fit of y on X's columns (BIC; floor: rounding).
+    (312 round 2) Each size's subsets are ranked in one batch (subsets.py) and the best few refitted by least squares."""
     n, p = X.shape
     cols = list(range(p)) if cols is None else cols
     logn = math.log(max(n, 2))
@@ -161,24 +163,19 @@ def _sparse(X: np.ndarray, y: np.ndarray, floor: float, cols: list[int] | None =
     best = (bic(float(y @ y), 0), (), np.zeros(0), float(y @ y))
     by_size = {}
     for k in range(1, min(SUB, len(cols)) + 1):
-        for sub in itertools.combinations(cols, k):
-            b, sse = _lstsq(X[:, sub], y)
-            if k not in by_size or sse < by_size[k][3]:
-                by_size[k] = (bic(sse, k), sub, b, sse)
+        sub, b, sse = _subsets.best(X, y, list(itertools.combinations(cols, k)))
+        by_size[k] = (bic(sse, k), sub, b, sse)
     for k, got in by_size.items():
         if got[0] < best[0]:
             best = got
     cur = by_size.get(min(SUB, len(cols)))
     while cur is not None and len(cur[1]) < min(MOST_TERMS, len(cols)):
-        step = None
-        for j in cols:
-            if j in cur[1]:
-                continue
-            sub = tuple(sorted(cur[1] + (j,)))
-            b, sse = _lstsq(X[:, sub], y)
-            if step is None or sse < step[3]:
-                step = (bic(sse, len(sub)), sub, b, sse)
-        if step is None or step[3] >= cur[3] * (1 - 1e-9):
+        cands = [tuple(sorted(cur[1] + (j,))) for j in cols if j not in cur[1]]
+        if not cands:
+            break
+        sub, b, sse = _subsets.best(X, y, cands)
+        step = (bic(sse, len(sub)), sub, b, sse)
+        if step[3] >= cur[3] * (1 - 1e-9):
             break
         cur = step
         if cur[0] < best[0]:
@@ -261,16 +258,25 @@ def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: 
 
 def _joint(X, y, A, a, B, b, sign, floor, n, logn):
     """(bic, A, a, B, b, sse) of both parts refitted jointly, the active steps re-read from X_B b > 0."""
-    on1 = None
-    for _ in range(12):
+    on1, exact = None, False
+    for it in range(12):
         on2 = X[:, B] @ b > 0
         if int(on2.sum()) < MIN_ON:
             return None
         M = np.hstack([X[:, A], sign * X[:, B] * on2[:, None]])
-        coef, _ = _lstsq(M, y)
+        done = on1 is not None and np.array_equal(on2, on1)
+        # (312 round 2) the active set is found by the scaled normal equations (fast), the last fit by least squares,
+        # so the numbers are least squares' on the set it settles on (an active set that moves then goes on exactly)
+        coef = _subsets.normal(M, y) if not (exact or done or it == 11) else None
+        if coef is None:
+            coef, _ = _lstsq(M, y)
+            if done or it == 11:
+                a, b = coef[: len(A)], coef[len(A):]
+                if done and not np.array_equal(X[:, B] @ b > 0, on2) and not exact:
+                    exact, on1 = True, on2
+                    continue
+                break
         a, b = coef[: len(A)], coef[len(A):]
-        if on1 is not None and np.array_equal(on2, on1):
-            break
         on1 = on2
     pred = (X[:, A] @ a if len(A) else 0.0) + sign * np.maximum(0.0, X[:, B] @ b)
     sse = float(((y - pred) ** 2).sum())
@@ -279,40 +285,35 @@ def _joint(X, y, A, a, B, b, sign, floor, n, logn):
 
 def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[int] | None = None, reread: bool = False):
     """The floored term's best readers for what the always-on part leaves (r): each subset fitted on the steps
-    it acts (on) and scored on every step (off steps must read B . x <= 0); the top few (support, coefs)."""
+    it acts (on) and scored on every step (off steps must read B . x <= 0); the top few (support, coefs).
+    (312) Each subset's first fit from the columns' scaled Gram matrix on the acting steps; (312 round 2) all subsets
+    of a size at once (subsets.py), their active-set rereads too."""
     cols = list(range(X.shape[1])) if b_cols is None else b_cols
-    got = []
-    Xo, yo = X[on], sign * r[on]
-    # (312) each subset's first fit from the columns' scaled Gram matrix on the acting steps (a k x k solve; the 6.6
-    # million least-squares calls of 312 none-long's rows were most of its time), least squares where it is singular
-    sc = np.sqrt((Xo * Xo).sum(axis=0))
-    sc[sc == 0] = 1.0
-    Xs = Xo / sc
-    G, g = Xs.T @ Xs, Xs.T @ yo
+    target = sign * r
+    hinge = lambda P: np.maximum(0.0, P)  # noqa: E731
+    bics, subs, coefs = [], [], []
     for k in range(1, min(SUB, len(cols)) + 1):
-        for sub in itertools.combinations(cols, k):
-            idx = list(sub)
-            try:
-                b = np.linalg.solve(G[np.ix_(idx, idx)], g[idx]) / sc[idx]
-                if not np.all(np.isfinite(b)):
-                    raise np.linalg.LinAlgError
-            except np.linalg.LinAlgError:
-                b, _ = _lstsq(Xo[:, sub], yo)
-            sse = float(((sign * r - np.maximum(0.0, X[:, sub] @ b)) ** 2).sum())
-            for _ in range(ACTIVE_ROUNDS if reread else 0):
-                # (311) the steps re-read from where the term acts (X_B b > 0): a few steps the always-on part misses
-                # by a little (an imprecise kill threshold) pulled the true readers' fit toward 0 on the first read
-                act = X[:, sub] @ b > 0
-                if int(act.sum()) < MIN_ON:
-                    break
-                b2, _ = _lstsq(X[act][:, sub], sign * r[act])
-                sse2 = float(((sign * r - np.maximum(0.0, X[:, sub] @ b2)) ** 2).sum())
-                if not sse2 < sse * (1 - 1e-9):
-                    break
-                b, sse = b2, sse2
-            got.append((n * math.log((sse + floor) / n) + k * logn, sub, b))
-    got.sort(key=lambda g: g[0])
-    return [(g[1], g[2]) for g in got[:top]]
+        combos = list(itertools.combinations(cols, k))
+        C = np.asarray(combos, dtype=int).reshape(len(combos), k)
+        B, _ = _subsets.fits(X, target, C, rows=on)
+        sse = _subsets.sse(X, target, C, B, hinge)
+        live = np.arange(len(combos)) if reread else np.zeros(0, dtype=int)
+        for _ in range(ACTIVE_ROUNDS if reread else 0):
+            # (311) the steps re-read from where the term acts (X_B b > 0): a few steps the always-on part misses
+            # by a little (an imprecise kill threshold) pulled the true readers' fit toward 0 on the first read
+            if not len(live):
+                break
+            B2, s2, enough = _subsets.reread(X, target, C[live], B[live], MIN_ON, hinge)
+            better = enough & (s2 < sse[live] * (1 - 1e-9))
+            B[live[better]], sse[live[better]] = B2[better], s2[better]
+            live = live[better]
+        bics.append(n * np.log((sse + floor) / n) + k * logn)
+        subs += combos
+        coefs += list(B)
+    if not subs:
+        return []
+    order = np.argsort(np.concatenate(bics), kind="stable")[:top]
+    return [(subs[i], coefs[i]) for i in order]
 
 
 def _sides(S: str, declared: bool, bd: dict) -> set[str]:
