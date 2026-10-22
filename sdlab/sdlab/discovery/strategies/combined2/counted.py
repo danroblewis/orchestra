@@ -125,7 +125,7 @@ def _refit_moves(flows: list[dict], rows: set, levels: dict, cols: dict, n: int)
         a, b = f.get("from"), f.get("to")
         inner = a in rows and b in rows
         side = (a is None and b in rows) or (b is None and a in rows)
-        return (inner or side) and not f.get("effects") and not f.get("inflow") and not f.get("counted") \
+        return (inner or side) and not f.get("effects") and not f.get("inflow") and not f.get("counted") and not f.get("input") \
             and hinge._linear(f.get("rate") or {}) is not None and hinge.amount(f, cols, n) is not None
     idx = [i for i, f in enumerate(flows) if free(f)]
     if not idx:

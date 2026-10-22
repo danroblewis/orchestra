@@ -221,7 +221,9 @@ def allowed_sides(x: str, run: dict, flows: list[dict]) -> set:
     """The sides X may have: its declared ones where a boundary is declared, else those it already has."""
     if run.get("boundary_declared"):
         b = (run.get("boundary") or {}).get(x) or {}
-        return {s for s in ("in", "out") if b.get(s)}
+        # (2026-10-22, k8s-310 r2) a side declared only "input" is exactly 1 x the input (boundary.enforce_sides):
+        # never refitted here (310 none-short: queue's inflow had become 0.89 x traffic - 0.56 x queue)
+        return {s for s in ("in", "out") if b.get(s) and any(k != "input" for k in b.get(s))}
     return {s for f in flows for s in [_side(f, x)] if s}
 
 

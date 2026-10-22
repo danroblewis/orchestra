@@ -398,8 +398,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     revised on the output error (oefit.py: the model run through the whole record against the measured
     levels)."""
     from . import counted
+    from . import hiddenrow
     from . import hinge
     from . import oefit
+    from . import rowrepair
     from . import switch
 
     o, cap = _capmin.offer(stocks, run, opts)
@@ -416,5 +418,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (2026-10-21, k8s-310, docs/research/fixes/310-combined2.md) a counter that counts another flow: that
     # flow read off the counter's increase (counted.py: k x A x table(X), placed as a move by the rows it
     # repairs), and the floored sides refitted once more with it held
-    return hinge.apply(counted.apply(r, stocks, run, opts), stocks, run, opts)
+    # (2026-10-22, k8s-310 round 2) a block of one unit whose rows the pick leaves unexplained gets the moves
+    # it lacks, fitted together by non-negative least squares (rowrepair.py)
+    r = hinge.apply(rowrepair.apply(counted.apply(r, stocks, run, opts), stocks, run, opts), stocks, run, opts)
+    # (2026-10-22, k8s-310 round 2) a stock's inflow that reads a hidden integrator (a leak freed by the
+    # same event a counted flow measures) written as a hidden stock, which the scorer now credits (hiddenrow.py)
+    return hiddenrow.apply(r, stocks, run, opts)
 
