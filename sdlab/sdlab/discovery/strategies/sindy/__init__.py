@@ -853,7 +853,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     levels carry measurement error, the numbers are refitted and the structure revised on the output error
     and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
     record against the measured levels)."""
-    from . import controller, delay, earn, hidden, oefit, pool, reread, tidy
+    from . import coflows, controller, delay, earn, hidden, oefit, pool, reread, tidy
 
     o, cap = _capmin.offer(stocks, run, opts)
     r = _identify_linear(stocks, run, o, *args, **kw)
@@ -862,6 +862,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # types 1, 2, 3, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17)
     r = _guarded("tidy", lambda: tidy.apply(r, run, o), r)   # negligible terms dropped before the MIN is written back (type 1)
     r = _capmin.restore(r, cap)
+    r = _guarded("coflows", lambda: coflows.apply(r, stocks, run, opts), r)      # co-flows on rows the answer misses go (coflows.py)
     r = _guarded("reread", lambda: reread.apply(r, stocks, run, opts), r)        # exact rows read again: floored, counted, MIN moves (types 3, 6, 12, 16)
     r = _guarded("pool", lambda: pool.apply(r, stocks, run, opts), r)            # a move the declared boundary forces across units (type 13)
     r = _guarded("controller", lambda: controller.apply(r, stocks, run, opts), r)  # count stocks driven to a quantized target (type 2)
