@@ -126,14 +126,17 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
     return boundary.apply(apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts), stocks, run, opts)
 
 
+OEFIT_SHARE = 0.25   # (k8s 317) the output-error refit's most of the time left
 RESERVE = 90.0       # (k8s 317) seconds of the caller's timer each optional stage leaves for the stages after it
 
 
-def _timed(stage, r, *args, **kw):
+def _timed(stage, r, *args, share: float = 1.0, **kw):
     """(k8s 317, docs/research/fixes/317-structures.md) An optional stage that rewrites the answer, run under what
     is left of the caller's timer less RESERVE; past it, or with no time left, the answer stands as it came (the
     stage's name noted). 317 (36 stocks) ran 1000 s here and over 1800 s on node2, and a timeout scores nothing,
-    while each of these stages only improves an answer that already exists. With no timer, the stage just runs."""
+    while each of these stages only improves an answer that already exists. With no timer, the stage just runs.
+    share: the most of what is left the stage may take (the output-error refit: on 317 counts-short it had run
+    15 min with the room, the counted moves and the hidden stages still to come)."""
     left = outer_left()
     if left is None:
         return stage(r, *args, **kw)
@@ -141,7 +144,7 @@ def _timed(stage, r, *args, **kw):
     if left <= RESERVE + 1.0:
         return {**r, "skipped": [*(r.get("skipped") or []), name]} if isinstance(r, dict) else r
     try:
-        with deadline(left - RESERVE):
+        with deadline(min(left - RESERVE, share * left)):
             return stage(r, *args, **kw)
     except Overrun:
         return {**r, "skipped": [*(r.get("skipped") or []), f"{name} (stopped)"]} if isinstance(r, dict) else r
@@ -178,7 +181,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # the output-error refit, which would read a floored rate fitted as a drift as measurement error
     r = _timed(floor.apply, r, stocks, run, opts, judge_opts=o)
     try:
-        r = _timed(oefit.refit, r, stocks, run, o, cap)
+        r = _timed(oefit.refit, r, stocks, run, o, cap, share=OEFIT_SHARE)
     except Exception as e:                           # noqa: BLE001  (a failed refit leaves the answer as it was: 309 none-long)
         r = {**r, "oefit_error": f"{type(e).__name__}: {e}"[:300]}
     return _capmin.restore(r, cap)
