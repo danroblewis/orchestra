@@ -85,4 +85,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
 
     o, cap = _capmin.offer(stocks, run, opts)
     r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    return _capmin.restore(r, cap)
+    # (2026-10-22, port-common_cause, docs/research/fixes/port-common_cause.md) the kubernetes climb's row and
+    # controller passes, copied from kalman_lna at 7c3fb13 (fix ledger types 2, 3, 6, 7, 11, 12, 15): each stock's
+    # row read off the data (sparse linear, or linear plus one floored term on a declared side, with derived
+    # switch, ratio, capped-move, hidden-integrator and delayed-inflow columns) and the flows of the stocks the
+    # answer misses rebuilt from the rows where that wins by BIC (krows.py, kalman_lna's rows.py); then a counted stock driven to a
+    # target read off another stock (a controller) replaces its outside flows where it wins by BIC (tracker.py)
+    from . import krows, tracker
+
+    r = krows.revise(_capmin.restore(r, cap), stocks, run, opts, cap)
+    return tracker.revise(r, stocks, run, opts)
