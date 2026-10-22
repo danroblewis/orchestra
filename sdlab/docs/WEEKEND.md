@@ -1,5 +1,7 @@
 # Running SD Lab with no AI tokens
 
+What is waiting for the weekend, and the Saturday-morning steps: docs/SATURDAY.md.
+
 Everything here runs without an agent: the CPU pool re-runs the backlog of stale results while you are
 away, and the pages show them as they land. Nothing below changes code, cases or the scorer.
 
