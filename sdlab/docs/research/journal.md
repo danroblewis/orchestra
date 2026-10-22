@@ -810,3 +810,37 @@ numopt_bo, numopt_powell, realistic_hats.
 - No elimination is proposed. z3exact's "impossible" was refuted by both skeptics.
 - milp should formally enter the roster.
 - Whether to mark z3exact not-entered is your call: it adds no unique passing cell.
+
+## 2026-10-21 (note: the kubernetes climb, 307-310, fix ledger)
+
+**Written:** [fix-ledger.md](fix-ledger.md), which collects every fix from the climb on none-short, none-long,
+counts-short and counts-long for the top 5 strategies (combined2, milp, structures, kalman_lna, engine_forms).
+
+**How far the climb got:** to 310. 311 was not reached. 32 cells were fixed: 2 on 307 (engine_forms), 15 on 308
+(3 per strategy) and 13 on 309. On 310, kalman_lna passes none-short and none-long. Every other strategy fails all
+four 310 variants, though combined2, milp and engine_forms reach 21/23 parts on the none variants. The remaining
+misses are mem's two parts, which read the hidden leak.
+- 308 counts-short (p 0.094) and 309 counts-short (p 0.010) are data-limited.
+- 310 counts-short is data-limited too: it has 3 kill steps.
+
+**Fix types:**
+- zero-term prune
+- quantized controller
+- floored rate
+- removing an actuator's smeared moves
+- capmin guards
+- counted flow
+- table effects and derived columns
+- hidden drive as a schedule
+- joint active-set repair
+- guards and budgets
+
+**Regressions seen on the main line at bab9156:**
+- kalman_lna 309 counts-long went from pass to fail (13/18), after its 310 work.
+- engine_forms 307 counts-long went from pass to error, at `reread._table`, where `best` can be None.
+
+Neither is fixed. Pool jobs 273 (milp) and 274 (combined2) on 310 have not run.
+
+**Needs you:** 310 as scored. kalman_lna passes it by writing the leak's effect as a time schedule. The other agents
+ask for a harness change instead: score a found flow that reads the found model's own hidden stock on that model's
+levels.
