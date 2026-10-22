@@ -440,7 +440,7 @@ _identify_program = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  # noqa: F811
-    from . import effects, hinge, oefit, quantized
+    from . import effects, hidden, hinge, oefit, quantized
 
     known, notes = quantized.find(stocks, run, opts)          # whole-unit controllers (k8s-308): their rules, from the data
     result = _identify_program(stocks, run, opts, known)
@@ -457,4 +457,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  
     result = oefit.refit(result, stocks, run, opts or {})
     if known:                                                  # the output-error refit does not run the rules' forms
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
+    flows, hid = hidden.refine(result.get("flows") or [], stocks, run, opts, skip=known)   # hidden integrators (k8s-310)
+    if hid:
+        result = {**result, "flows": flows, "hidden": hid}
     return {**result, "quantized": notes} if notes else result
