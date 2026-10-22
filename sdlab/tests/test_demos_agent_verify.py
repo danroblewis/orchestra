@@ -81,3 +81,16 @@ def test_routes_answer_from_the_cache():
         assert r["log"] and r["true"]["new_items"] > 1000
     assert words == {"good": "yes", "weak": "partly", "misrouting": "no"}
     assert c.get(f"/api/demos/agent-verify/verify?strategy={s}&variant=nope").status_code == 404
+
+
+def test_model_view_source_moves_add_up_to_the_counts():
+    """The view's true flows are the event log's moves between the sampled states; they account for every count."""
+    import numpy as np
+    for variant in (None, "misrouting"):
+        mv, lv = A.moved(variant), A.levels(A.des(variant))
+        for s in A.STOCKS:
+            net = sum((np.asarray(mv[f["id"]]) * ((f["to"] == s) - (f["from"] == s))) for f in A.TRUE_FLOWS)
+            assert np.array_equal(np.diff(lv[s]), net[1:])
+    if "censored" in A.available():
+        v = A.view_source({"strategy": "censored", "variant": "good", "period": "before"})
+        assert len(v["t"]) == A.T and A.AGENT_CLOSES not in {f["id"] for f in v["true_flows"]}

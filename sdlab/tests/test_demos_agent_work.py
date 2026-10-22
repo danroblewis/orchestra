@@ -60,3 +60,11 @@ def test_routes_answer_from_the_cache():
     assert fc["agents"] == 12 and len(fc["found"]["done"]) == len(fc["truth"]["done"])
     assert c.get("/api/demos/agent-work/forecast?strategy=nope").status_code == 409
     assert "/static/demos-agent-work.js" in c.get("/api/demos/manifest").json()["scripts"]
+
+
+def test_model_view_source():
+    if not A.available():
+        pytest.skip("no cached found model")
+    from sdlab.demos import view
+    v = view._view("agent-work", (("strategy", A.available()[0]),))
+    assert set(v["stocks"]) == set(A.STOCKS) and all(f["true"] for f in v["flows"] if f["status"] != "found only")

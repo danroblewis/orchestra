@@ -38,6 +38,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from . import engine as E
+from .view import register
 
 router = APIRouter()
 
@@ -487,6 +488,32 @@ def changes() -> dict:
             rows.append({"key": k, "label": ch["label"], "ready": bool(got.get("flows")) and "error" not in src, "status": got.get("status")})
         out.append({"key": scen, "title": sc["title"], "source": src, "changes": rows})
     return {"scenarios": out, "command": COMMAND, "day2_about": DAY2_ABOUT}
+
+
+def view_source(params: dict) -> dict:
+    """The model view (view.py) of one day's found model on its own day's data: day 1 the stored model on day 1's
+    data, day 2 the model found on day 2's data (the change's, or the quiet day's) beside day 2's own true model."""
+    from ..ladder.diff import matched_names
+    scen, change, day = params.get("scenario") or "two-services", params.get("change") or "quiet", params.get("day") or "1"
+    if change not in _sc(scen)["changes"] or day not in ("1", "2"):
+        raise KeyError(f"{scen} {change} day {day}")
+    b, sc = _base(scen), _sc(scen)
+    if day == "1":
+        r, d, truth = b["result"], b["data"], b["truth"]
+        flows, title = matched_names(r.get("found") or [], r.get("scores")), f"Day 1: {sc['strategy']}'s stored model on {sc['case']} {sc['variant']}"
+        src = _source(b)
+    else:
+        got, d, truth = _day2(scen, change), _day2_data(scen, change), day2_truth(scen, change)
+        flows = matched_names(got["flows"], {"hidden_match": got.get("hidden_match")})
+        title = f"Day 2 ({sc['changes'][change]['label']}): {sc['strategy']}'s model found on day 2's data, scored {got.get('status')} against day 2's true model"
+        src = {"strategy": sc["strategy"], "status": got.get("status"), "commit": (got.get("commit") or "")[:9]}
+    return {"title": title, "t": list(d["t"]), "levels": d["levels"], "inputs": d.get("inputs") or {}, "flows": flows,
+            "true_flows": truth["flows"], "counters": d.get("counters") or {},
+            "hidden": {k: v for k, v in (d.get("all_levels") or {}).items() if k not in d["levels"]},
+            "units": {s["id"]: s.get("unit") for s in truth["stocks"]}, "source": src}
+
+
+register(NAME, view_source)
 
 
 @router.get("/daily-diff/changes")

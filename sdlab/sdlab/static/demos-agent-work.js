@@ -55,11 +55,20 @@
         <div class="controls"><label>add <input id="aw-add" type="number" value="4" min="-6" max="40" step="1" style="width:5em"> agents to today's ${ov.agents[1]}</label>
           <label>and <input id="aw-extra" type="number" value="0" min="-1.5" max="5" step="0.1" style="width:5em"> more tickets an hour arriving</label>
           <button class="primary" id="aw-run">Run two weeks</button></div>
-        <div id="aw-what"></div>`;
-      q("#aw-strategy").onchange = () => { st.strategy = q("#aw-strategy").value; foundUI(); sweepUI(); whatUI(); };
+        <div id="aw-what"></div>
+        <h3 style="margin:16px 0 4px">The found model over the measured month</h3>
+        <p class="small muted">The model's prediction of every stage beside the counts, and each flow's amount an hour beside the true model's (the simulation's record). The agents are set by hand (${ov.agents[0]} → ${ov.agents[1]} on day ${sw / d}); no flow moves them, so a model run free keeps the first day's ${ov.agents[0]}.</p>
+        <div id="aw-view"></div>`;
+      q("#aw-strategy").onchange = () => { st.strategy = q("#aw-strategy").value; foundUI(); sweepUI(); whatUI(); viewUI(); };
       q("#aw-run").onclick = whatUI;
       q("#aw-sx").onchange = sweepUI;
-      foundUI(); sweepUI(); whatUI();
+      foundUI(); sweepUI(); whatUI(); viewUI();
+    }
+
+    function viewUI() {
+      const el = q("#aw-view");
+      el.innerHTML = "";
+      h.modelView(el, { source: "agent-work", strategy: st.strategy });
     }
 
     function foundUI() {

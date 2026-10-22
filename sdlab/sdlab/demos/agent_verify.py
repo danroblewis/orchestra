@@ -44,6 +44,7 @@ from fastapi import APIRouter, HTTPException
 from ..ladder import sim as ladder_sim
 from . import agent_verify_des as DES
 from . import engine as E
+from .view import register
 
 router = APIRouter()
 
@@ -510,6 +511,61 @@ def _clean(o):
     if isinstance(o, (list, tuple)):
         return [_clean(v) for v in o]
     return o
+
+
+# ---- the model view (view.py): the found model on the counts, beside the true moves from the event log ----
+
+# The event log's moves between the sampled states, as true flows: (who, what) -> (flow id, from, to). The agent's
+# takes and hand-offs move nothing between them (an item the agent reads is counted as queued).
+MOVES = {("source", "opens"): ("new items", None, "queued"), ("engineer", "triages"): ("triage starts", "queued", "in_triage"),
+         ("engineer", "sends to fix"): ("sent to fix", "in_triage", "in_fix"), ("engineer", "resolves"): ("resolved at triage", "in_triage", "resolved"),
+         ("dev team", "fixes"): ("fixed", "in_fix", "resolved"), ("customer", "reopens"): ("reopened", "resolved", "queued"),
+         ("agent", "resolves"): ("the agent's closes", "queued", "resolved"), ("agent", "misroutes"): ("the agent's closes", "queued", "resolved")}
+TRUE_FLOWS = list({m[0]: {"id": m[0], "from": m[1], "to": m[2]} for m in MOVES.values()}.values())
+AGENT_CLOSES = "the agent's closes"                 # no such move before the agent joins
+PERIODS = {"before": (0, T), "after": (T, N), "all": (0, N)}
+
+
+class _Counted(DES.DES):
+    """The same run, counting every move between the sampled states in each sample step by its exact time (the log
+    rounds times to 3 decimals and starts at log_from)."""
+
+    def log(self, who: str, what: str, it) -> None:
+        super().log(who, what, it)
+        m = MOVES.get((who, "triages" if what.startswith("triages") else what))
+        if m:
+            i = max(0, math.ceil(self.now / self.every - 1e-6) - 1)       # the step (i - 1) * every < now <= i * every, as sampled
+            row = self.moved.setdefault(m[0], {})
+            row[i] = row.get(i, 0) + 1
+
+
+@functools.lru_cache(maxsize=4)
+def moved(variant: str | None) -> dict:
+    """Each true flow's items moved per sample step (N steps; entry i during the step ending at sample i)."""
+    sim = _Counted(HOURS + DRAIN, seed=SEED, agent=DES.AGENTS[variant] if variant else None,
+                   agent_from=DEPLOY_H if variant else math.inf, log_from=math.inf, every=EVERY)
+    sim.moved = {}
+    sim.run()
+    return {f["id"]: [float((sim.moved.get(f["id"]) or {}).get(i, 0)) for i in range(N)] for f in TRUE_FLOWS}
+
+
+def view_source(params: dict) -> dict:
+    strategy, variant, period = params.get("strategy") or STRATEGIES[0], params.get("variant") or "good", params.get("period") or "before"
+    if variant not in VARIANTS or period not in PERIODS:
+        raise KeyError(f"{variant} {period}")
+    fm, r = found(strategy), des(None if period == "before" else variant)
+    lo, hi = PERIODS[period]
+    mv = moved(None if period == "before" else variant)
+    what = {"before": "days 0-21, before the agent (what discovery saw)", "after": f"days 21-42, with the agent ({variant})",
+            "all": f"all 42 days, the agent ({variant}) from day 21"}[period]
+    return {"title": f"{strategy}'s model on the counts, {what}; true amounts are the event log's moves each quarter hour",
+            "t": list(r["t"][lo:hi]), "levels": {s: v[lo:hi] for s, v in levels(r).items()},
+            "inputs": {k: v[lo:hi] for k, v in inputs(r).items()}, "flows": fm["flows"], "true_flows": [f for f in TRUE_FLOWS if period != "before" or f["id"] != AGENT_CLOSES],
+            "counters": {k: v[lo:hi] for k, v in mv.items()}, "units": {s: "items" for s in STOCKS},
+            "source": {"strategy": strategy, "commit": (fm.get("code_commit") or "")[:9]}}
+
+
+register(NAME, view_source)
 
 
 # ---- the endpoints ----

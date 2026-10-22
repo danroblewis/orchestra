@@ -139,7 +139,12 @@
         </tbody></table>
         <details><summary class="small muted">${r.edges.filter((e) => e.kind === "same" && !e.verdict).length} edges the same on both days</summary><table><tbody>
         ${r.edges.filter((e) => e.kind === "same" && !e.verdict).map((e) => row(e)).join("")}</tbody></table></details></div>
-        ${Object.keys(r.hidden).length ? `<p class="small muted">Day 2's hidden stock ${Object.entries(r.hidden).map(([b, a]) => `<span class="mono">${esc(b)}</span>`).join(", ")} is matched to day 1's by what it touches (no truth needed); both are drawn in the place of the truth's <span class="mono">${esc(Object.values(r.hidden_truth)[0] || "")}</span>, which the scorer matched day 1's to.</p>` : ""}`;
+        ${Object.keys(r.hidden).length ? `<p class="small muted">Day 2's hidden stock ${Object.entries(r.hidden).map(([b, a]) => `<span class="mono">${esc(b)}</span>`).join(", ")} is matched to day 1's by what it touches (no truth needed); both are drawn in the place of the truth's <span class="mono">${esc(Object.values(r.hidden_truth)[0] || "")}</span>, which the scorer matched day 1's to.</p>` : ""}
+        <h3 style="margin:16px 0 4px">Each day's model on its own day's data</h3>
+        <p class="small muted">Day 1's stored model on day 1's data, then day 2's model on day 2's data (true amounts: each day's own simulation, with day 2's change).</p>`;
+      const mv = { source: "daily-diff", scenario: r.scenario, change: r.change.key };
+      h.modelView(out, { ...mv, day: "1" });
+      h.modelView(out, { ...mv, day: "2" });
     }
     function row(e) {
       const K = KIND[e.kind], vd = e.verdict && VERDICT[e.verdict];

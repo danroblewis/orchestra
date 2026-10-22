@@ -33,6 +33,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 
 from . import engine as E
+from .view import register
 
 router = APIRouter()
 
@@ -407,6 +408,20 @@ def sweep(strategy: str, extra: float = 0.0, horizon: int = 14 * DAY, top: int =
         _, _, summ = _pair(strategy, add, extra, horizon)
         rows.append({"add": add, "agents": AGENTS0 + ADDED + add, **summ})
     return _clean({"strategy": strategy, "extra": extra, "rows": rows, "arrivals_per_day": float(TRUE["arrivals_mean"] * DAY + extra * DAY)})
+
+
+def view_source(params: dict) -> dict:
+    """The model view (view.py) of a cached found model on the measured month, beside the true model's per-flow
+    amounts (the engine's counters)."""
+    strategy = params.get("strategy") or STRATEGIES[0]
+    f, r, tm = found(strategy), measured(), truth_model()
+    return {"title": f"{strategy}'s model of the agent team, on the 30 measured days (one step is an hour)", "t": list(r["t"]),
+            "levels": r["levels"], "inputs": r.get("inputs") or {}, "flows": f["flows"], "true_flows": tm["flows"],
+            "counters": r.get("counters") or {}, "units": {s["id"]: s["unit"] for s in tm["stocks"]},
+            "source": {"strategy": strategy, "commit": (f.get("code_commit") or "")[:9]}}
+
+
+register(NAME, view_source)
 
 
 def _call(fn, *a, **k):

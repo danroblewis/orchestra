@@ -118,3 +118,13 @@ def test_api():
     if _ready("two-services"):
         r = c.get("/api/demos/daily-diff/diff", params={"scenario": "two-services", "change": "slow-catalog"})
         assert r.status_code == 200 and r.json()["verdict"]["right"]
+
+
+def test_model_view_source_each_day():
+    from sdlab.demos import view
+    for day in ("1", "2"):
+        try:
+            v = view._view("daily-diff", (("change", "more-calls"), ("day", day), ("scenario", "two-services")))
+        except LookupError:
+            pytest.skip("no stored day 1 or cached day 2")
+        assert v["title"].startswith(f"Day {day}") and v["flows"] and v["diagram"]["flows"]
