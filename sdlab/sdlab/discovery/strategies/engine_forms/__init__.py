@@ -19,6 +19,8 @@ one-step changes of noisy levels are not the flows.
 
 from __future__ import annotations
 
+import numpy as np
+
 from ._kalman import boundary
 from ._kalman import identify as base
 from .judge import improve
@@ -69,15 +71,34 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     o, cap = _capmin.offer(stocks, run, opts)
     from . import tidy
 
-    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    r = tidy.apply(r, run, o)          # negligible terms dropped, before the MIN is written back (tidy.py, k8s-307)
+    r = _identify_linear(stocks, run, o, *args, **kw)
+    r = _guarded("oefit", lambda: oefit.refit(r, stocks, run, o, cap), r)
+    r = _guarded("tidy", lambda: tidy.apply(r, run, o), r)   # negligible terms dropped, before the MIN is written back (tidy.py, k8s-307)
     from . import controller, reread
 
-    r = reread.apply(_capmin.restore(r, cap), stocks, run, opts)         # exact rows read again where the answer misses them (k8s-309)
-    r = controller.apply(r, stocks, run, opts)   # count stocks driven to a quantized target (k8s-308)
+    r = _capmin.restore(r, cap)
+    r = _guarded("reread", lambda: reread.apply(r, stocks, run, opts), r)        # exact rows read again where the answer misses them (k8s-309)
+    r = _guarded("controller", lambda: controller.apply(r, stocks, run, opts), r)  # count stocks driven to a quantized target (k8s-308)
     from . import hidden
 
-    r = hidden.apply(r, stocks, run, opts)       # a row reading a hidden integrator, written as a hidden stock (k8s-310)
+    r = _guarded("hidden", lambda: hidden.apply(r, stocks, run, opts), r)      # a row reading a hidden integrator, written as a hidden stock (k8s-310)
     from . import delay
 
-    return delay.apply(r, stocks, run, opts)     # a stock fed from outside through a hidden DELAY1 stage (k8s-312); last
+    return _guarded("delay", lambda: delay.apply(r, stocks, run, opts), r)    # a stock fed from outside through a hidden DELAY1 stage (k8s-312); last
+
+
+def _guarded(name: str, step, r: dict) -> dict:
+    """A later pass whose linear algebra fails numerically (LAPACK's SVD not converging on a run that blows up:
+    k8s-312 counts-long on the Mac, job 316) keeps its input, and says so in the trace (fix-ledger type 10, the
+    refit-guard of structures 3bf52d6). Only numerical failures are caught; any other error still raises."""
+    try:
+        return step()
+    except (np.linalg.LinAlgError, FloatingPointError) as e:
+        import traceback
+
+        where = next((f"{fr.filename.rsplit('/', 1)[-1]}:{fr.lineno}" for fr in reversed(traceback.extract_tb(e.__traceback__))
+                      if "engine_forms" in fr.filename), "?")
+        note = f"{name}: {type(e).__name__} at {where} ({e}); its input kept"
+        ef = dict(r.get("engine_forms") or {})
+        ef["trace"] = list(ef.get("trace") or []) + [note]
+        return {**r, "engine_forms": ef, "guarded": list(r.get("guarded") or []) + [note]}

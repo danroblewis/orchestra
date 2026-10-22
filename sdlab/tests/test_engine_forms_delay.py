@@ -87,3 +87,21 @@ def test_noisy_levels_leave_the_stage_alone():
     wrong = [{"from": None, "to": "nodes", "rate": {"form": "constant", "value": 0.01}}]
     r = delay.apply({"flows": wrong}, stocks, run, {})
     assert not r.get("delay")
+
+
+def test_a_pass_whose_svd_fails_keeps_its_input():
+    # k8s-312 counts-long on the Mac (job 316): LAPACK's SVD did not converge and the whole cell errored
+    import numpy as np
+    import pytest
+
+    from sdlab.discovery.strategies.engine_forms import _guarded
+
+    r = {"flows": [{"from": None, "to": "A"}], "engine_forms": {"trace": ["base"]}}
+
+    def boom():
+        raise np.linalg.LinAlgError("SVD did not converge in Linear Least Squares")
+
+    out = _guarded("oefit", boom, r)
+    assert out["flows"] == r["flows"] and out["engine_forms"]["trace"][-1].startswith("oefit: LinAlgError")
+    with pytest.raises(KeyError):                                   # anything else still raises
+        _guarded("oefit", lambda: {}["x"], r)
