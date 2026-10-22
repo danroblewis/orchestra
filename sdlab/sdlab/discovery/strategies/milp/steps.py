@@ -13,14 +13,30 @@ import numpy as np
 class Steps:
     def same_unit(self, a: str, b: str) -> bool:
         """Can a move carry a's contents into b? (2026-10-21) Only between stocks of one unit (or where a unit is
-        not given): what leaves a arrives in b, so it is the same stuff. A capacity may read any unit."""
+        not given): what leaves a arrives in b, so it is the same stuff. A capacity may read any unit.
+        (k8s-316) Except where the declared boundary leaves no other drawing: a stock the boundary gives no outside
+        outflow and no stock of its own unit could receive (or no outside inflow and no stock of its unit could
+        feed) can only exchange with a stock of another unit (queries waiting for a pool acquire connections),
+        so a move across units is offered between it and a stock whose side the boundary leaves closed too
+        (no outside outflow from the source, no outside inflow into the receiver)."""
         ua, ub = self.units.get(a), self.units.get(b)
-        return not ua or not ub or ua == ub
+        if not ua or not ub or ua == ub:
+            return True
+        if self.open_sides is None or a in self.final or b in self.final:
+            return False
+        if "out" in self.open_sides.get(a, ()) or "in" in self.open_sides.get(b, ()):
+            return False                                           # an outside flow is declared on that side
+        alone_out = not any(x != a and self.units.get(x) == ua for x in self.ids)
+        alone_in = not any(x != b and x not in self.final and self.units.get(x) == ub for x in self.ids)
+        return alone_out or alone_in
 
     def __init__(self, stocks: list[dict], run: dict, opts: dict):
         self.ids = [s["id"] for s in stocks]
         self.final = {s["id"] for s in stocks if s.get("final")}
         self.units = {s["id"]: s.get("unit") for s in stocks}
+        raw = run.get("boundary") or {}                            # the sides the declared boundary opens, per stock (None: undeclared)
+        self.open_sides = {s: {side for side in ("in", "out") if (raw.get(s) or {}).get(side)} for s in self.ids} \
+            if run.get("boundary_declared") else None
         t = np.asarray(run["t"], dtype=float)
         L = np.nan_to_num(np.array([np.asarray(run["levels"].get(i, []), dtype=float) for i in self.ids]))
         self.t = t
