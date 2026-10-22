@@ -52,3 +52,19 @@ def test_pool_with_constant_ceiling_recovered():
     assert abs(a - 0.8) < 0.01 and abs(b - 80) < 0.5 and abs(e - 0.2) < 0.01
     inflow = next(f for f in flows if f["from"] is None and f["to"] == "waiting")
     assert {t["stock"] for t in inflow["rate"]["terms"]} == {"calls", "other"}, inflow
+
+
+def test_tidy_rereads_inflows_and_drops_a_needless_move():
+    from sdlab.discovery.strategies.milp import tidy
+    stocks, run, opts = _model()
+    answer = [{"from": "waiting", "to": "active", "ratio": 1, "id": "r", "room_fit": {"ceiling": None, "a": 0.8, "b": 80.0, "e": 0.2},
+               "rate": {"form": "expr", "expr": "min(0.8 * waiting, 80 - 0.2 * active)"}},
+              {"from": None, "to": "waiting", "ratio": 1, "id": "i",
+               "rate": {"form": "linear", "c": 3.0, "terms": [{"stock": "calls", "k": 0.09}, {"stock": "active", "k": 0.05}]}},
+              {"from": "active", "to": None, "ratio": 1, "id": "o", "rate": {"form": "proportional", "stock": "active", "k": 0.8}},
+              {"from": "calls", "to": "other", "ratio": 1, "id": "m", "rate": {"form": "proportional", "stock": "calls", "k": 0.001}}]
+    flows, note = tidy.refine(answer, stocks, run, opts)
+    inflow = next(f for f in flows if f["from"] is None and f["to"] == "waiting")
+    assert {t["stock"] for t in inflow["rate"]["terms"]} == {"calls", "other"}, note
+    assert not any((f["from"], f["to"]) == ("calls", "other") for f in flows), note
+    assert any(f.get("room_fit") for f in flows)

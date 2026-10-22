@@ -479,7 +479,7 @@ def _guarded(fn):
 
 def _after_program(result: dict, stocks: list[dict], run: dict, opts: dict | None, known: dict, notes) -> dict:
     """The passes after the program, in order (split out so a stored program answer can be re-run through them)."""
-    from . import delay, effects, hidden, hinge, oefit, pairs, polish, quantized, room
+    from . import delay, effects, hidden, hinge, oefit, pairs, polish, quantized, room, tidy
     pairs_refine, polish_refine, delay_refine, prune = (_guarded(pairs.refine), _guarded(polish.refine), _guarded(delay.refine),
                                                         _guarded(effects.prune))
     room_retry = _guarded(room.refine)
@@ -535,6 +535,9 @@ def _after_program(result: dict, stocks: list[dict], run: dict, opts: dict | Non
     result = oefit.refit(result, stocks, run, opts or {})
     if known:                                                  # the output-error refit does not run the rules' forms
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
+    flows, td = _guarded(tidy.refine)(result.get("flows") or [], stocks, run, opts, skip=known)   # inflows re-read, needless moves
+    if td:                                                     # dropped (k8s-316)
+        result = {**result, "flows": flows, "tidy": td}
     flows, hid = hidden.refine(result.get("flows") or [], stocks, run, opts, skip=known)   # hidden integrators (k8s-310)
     if hid:
         result = {**result, "flows": flows, "hidden": hid}

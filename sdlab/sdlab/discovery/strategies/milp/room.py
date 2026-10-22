@@ -179,6 +179,32 @@ class _Rows:
         return self.r0 - cp
 
 
+def _share(rss0, rss1, noise) -> float:
+    """The share of a row's misfit a candidate explains, the larger of the two rows'. (k8s-316) Measured against the
+    misfit above the row's expected noise: where the changes are counts, each step's change scatters by the counts
+    its flows move (Poisson: variance = amount), which no flow explains; a row already at its noise counts nothing."""
+    rss0, rss1, noise = (np.asarray(x, float) for x in (rss0, rss1, noise))
+    room = rss0 - noise
+    ok = room > 1e-9 * np.maximum(rss0, 1e-300)
+    return float(np.max(np.where(ok, (rss0 - rss1) / np.where(ok, room, 1.0), 0.0), initial=0.0))
+
+
+def _noise(st: Steps, flows: list[dict], amounts: list, scale) -> np.ndarray:
+    """Each row's expected residual sum of squares from count noise alone (zero unless the levels are counts): the
+    amounts its flows move, summed over the steps, in the rows' weights (1 / scale)."""
+    out = np.zeros(len(st.ids))
+    if not st.counts:
+        return out
+    pos = {s: i for i, s in enumerate(st.ids)}
+    for f, amt in zip(flows, amounts):
+        if amt is None:
+            continue
+        for e in {f.get("from"), f.get("to")}:
+            if e in pos:
+                out[pos[e]] += float(np.sum(np.abs(amt)))
+    return out / scale ** 2
+
+
 def _fit(rw: _Rows, S, D, Y, start=None, free_e: bool = False) -> tuple:
     """(a, b) (or (a, b, e) with free_e) by least squares on the profiled residual: from a grid (or a start), polished."""
     if start is None:
@@ -245,7 +271,7 @@ def _joint(st: Steps, rw: _Rows, free: list, S, D, Y, pm: tuple, scale, floor):
     return float(np.sum(st.T * np.log(rss / st.T)) + len(r.x) * np.log(2 * st.T)), tuple(float(v) for v in r.x[:k]), r.x[k:], rss
 
 
-def _floored(st: Steps, rw: _Rows, S, D, Y, pm: tuple, scale, floor):
+def _floored(st: Steps, rw: _Rows, S, D, Y, pm: tuple, scale, floor, noise):
     """The comparison redone with the outside flows floored as the engine runs them (hinge._Fit): the answer's
     flows (the replaced S -> D move in) against the room-limited move, (a, b) polished jointly with the free
     flows. A gap between like quantities that the least squares above cannot floor leaves most of a row's
@@ -258,7 +284,7 @@ def _floored(st: Steps, rw: _Rows, S, D, Y, pm: tuple, scale, floor):
     rss0 = np.maximum(np.sum(e0 * e0, axis=1), st.T * floor[rw.rows] ** 2)
     b0 = float(np.sum(st.T * np.log(rss0 / st.T)) + (len(th0) + rw.held_numbers) * np.log(2 * st.T))
     b1, pm, _, rss1 = _joint(st, rw, rw.free, S, D, Y, pm, scale, floor)
-    return b0 - b1, float(np.max(1.0 - rss1 / rss0)), pm, b0
+    return b0 - b1, _share(rss0, rss1, noise[rw.rows]), pm, b0
 
 
 def _with_counted(st: Steps, flows: list[dict], src: str, dst: str) -> list[dict] | None:
@@ -346,7 +372,7 @@ def _count(f: dict) -> int:
     return max(1, n)
 
 
-def _reread(st: Steps, flows: list[dict], env: dict, scale, floor) -> tuple[list[dict], list]:
+def _reread(st: Steps, flows: list[dict], env: dict, scale, floor, every: bool = False) -> tuple[list[dict], list]:
     """(k8s-316) Each outside inflow on a room move's two rows read again by best subset, with the room move and every
     other flow at their amounts. The program had no room to offer, so the inflow into the room's source took the room's
     misfit (readers that only stand in for it, pieces in time); fitted around that, the room's numbers bend in turn.
@@ -356,7 +382,7 @@ def _reread(st: Steps, flows: list[dict], env: dict, scale, floor) -> tuple[list
     each pay their numbers). Kept when better."""
     pos = {x: i for i, x in enumerate(st.ids)}
     rooms = [f for f in flows if f.get("room_fit")]
-    rows = {f["from"] for f in rooms} | {f["to"] for f in rooms}
+    rows = set(st.ids) if every else {f["from"] for f in rooms} | {f["to"] for f in rooms}
     done = []
     for k, f0 in enumerate(flows):
         j = f0.get("to")
@@ -397,7 +423,7 @@ def _reread(st: Steps, flows: list[dict], env: dict, scale, floor) -> tuple[list
                 b = bic(rss, m)
                 if best is None or b < best[0]:
                     best = (b, {names[q]: float(v) for q, v in zip(idx, th)})
-        if best is None or not best[0] < b0:
+        if best is None or not best[0] < b0 - 0.5:          # half a BIC unit: the same readers read again are no change
             continue
         rate = _rate(best[1])
         flows[k] = {kk: v for kk, v in f0.items() if kk not in ("byTime", "rates")} | {"rate": rate, "rates": [rate]}
@@ -462,6 +488,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
     notes += settled
     for _ in range(MAX_FLOWS):
         amounts = [_amount(f, st, env) for f in flows]
+        noise = _noise(st, flows, amounts, scale)
         have = {(f.get("from"), f.get("to")) for f in flows if f.get("room_fit")}
         best, tops = None, []
         for src, dst in pairs:
@@ -481,7 +508,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                 e1 = rw.resid(_amt(S, D, Y, pm))
                 gain = rw.base - rw.bic(e1, rw.p0 + len(pm), rw.n, rw.floor)
                 rss1 = np.sum(e1.reshape(2, rw.n) ** 2, axis=1)
-                tops.append((gain, float(np.max(1.0 - rss1 / np.maximum(rw.rss0, 1e-300))), src, dst, y, pm))
+                tops.append((gain, _share(rw.rss0, rss1, noise[rw.rows]), src, dst, y, pm))
         tops.sort(key=lambda z: -z[0])
         seen, uniq = set(), []                                 # (k8s-312) the best ceiling of each pair: one pair's many ceilings
         for z in tops:                                         # must not fill the CHECK list
@@ -499,14 +526,14 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             S, D, Y = st.series(src), st.series(dst), st.series(y)
             base = flows
             if share < SHARE:                                  # the floored comparison (the gaps the least squares bent)
-                gain, share, pm, b0 = _floored(st, rw, S, D, Y, pm, scale, floor)
+                gain, share, pm, b0 = _floored(st, rw, S, D, Y, pm, scale, floor, noise)
                 if DEBUG:
                     print("  room floored", src, dst, y, round(gain, 1), round(share, 3), [round(v, 4) for v in pm])
                 alt = _with_counted(st, flows, src, dst) if share < SHARE else None
                 if alt is not None:                            # (k8s-312) judged with a counter's kills placed as their move
                     rw2 = _Rows(st, alt, [_amount(f, st, env) for f in alt], src, dst, scale, floor)
                     if rw2.ok:
-                        g2, s2, pm2, b02 = _floored(st, rw2, S, D, Y, pm, scale, floor)
+                        g2, s2, pm2, b02 = _floored(st, rw2, S, D, Y, pm, scale, floor, noise)
                         if DEBUG:
                             print("  room with counted move", src, dst, y, round(g2, 1), round(s2, 3), [round(v, 4) for v in pm2], "move alone", round(b0 - b02, 1))
                         if s2 >= SHARE and g2 + (b0 - b02) > MARGIN:     # the placement and the room judged together
