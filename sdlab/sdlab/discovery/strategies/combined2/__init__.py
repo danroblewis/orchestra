@@ -400,6 +400,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import counted
     from . import hiddenrow
     from . import hinge
+    from . import lagrow
     from . import minrefit
     from . import oefit
     from . import rowrepair
@@ -428,5 +429,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     r = minrefit.apply(r, stocks, run, opts)
     # (2026-10-22, k8s-310 round 2) a stock's inflow that reads a hidden integrator (a leak freed by the
     # same event a counted flow measures) written as a hidden stock, which the scorer now credits (hiddenrow.py)
-    return hiddenrow.apply(r, stocks, run, opts)
+    r = hiddenrow.apply(r, stocks, run, opts)
+    # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a stock's outside inflow that arrives through a
+    # hidden first-order stage (a node ordered joins after a provisioning delay) written as that stage (lagrow.py)
+    return lagrow.apply(r, stocks, run, opts)
 

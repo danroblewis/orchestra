@@ -28,7 +28,15 @@ import math
 import numpy as np
 
 PRICE = 6.0            # the extra numbers' price (theta and the arm), in log T, plus a margin
-MIN_SHARE = 0.05       # each regime holds on at least this share of the steps
+MIN_SHARE = 0.05       # (before 2026-10-22, k8s-312) each regime held on at least this share of the steps
+MIN_STEPS = 6          # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) each regime holds on at least this
+                       # many steps: 312's limits bind on 1.4% (dispatch) and 4.6% (start) of none-long's steps, since the
+                       # cluster autoscaler adds nodes; the kink and gain are the evidence, not the share
+
+
+def _lo(T: int) -> float:
+    """The smallest share of T steps a regime may hold."""
+    return min(MIN_SHARE, MIN_STEPS / max(1, T))
 GRID = 24              # theta candidates (quantiles of X / Y)
 NAME = "capmin__"      # the offered series' name prefix
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
@@ -183,10 +191,10 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
             if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
                 continue
             ratio = X[Y > 0] / Y[Y > 0]
-            grid = np.unique(np.quantile(ratio, np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
+            grid = np.unique(np.quantile(ratio, np.linspace(_lo(len(X)), 1 - _lo(len(X)), GRID)))
             th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
             m = np.minimum(X, th * Y)
-            got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y,
+            got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y, units,
                          lambda rows: _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
                                                              for r in rows), grid)[0],
                          lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y)
@@ -217,7 +225,7 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
                     ok = R > 0
                     if ok.sum() < 10:
                         return None, math.inf
-                    tg = np.unique(np.quantile(X[ok] / R[ok], np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
+                    tg = np.unique(np.quantile(X[ok] / R[ok], np.linspace(_lo(len(X)), 1 - _lo(len(X)), GRID)))
                     tg = tg[tg > 0]
                     if not tg.size:
                         return None, math.inf
@@ -239,7 +247,7 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
                     return fit_th(b, rows)[0]
 
                 m = _room(X, Y, Z, beta, th)
-                got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), refine,
+                got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), units, refine,
                              lambda th, f=refine: _room(X, Y, Z, getattr(f, "beta", beta), th),
                              lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z))
                 if got and got.get("theta") is not None and (best is None or got["kink"] > best["kink"]):
@@ -247,15 +255,17 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
     return best
 
 
-def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, refine, series, regime) -> dict | None:
+def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, refine, series, regime) -> dict | None:
     """The offer rule for one candidate series m (module docstring): it takes from X; its receiver; the
-    threshold refined on X's row and the receiver's; each regime on MIN_SHARE of the steps; gain and kink."""
+    threshold refined on X's row and the receiver's; each regime on MIN_SHARE of the steps; gain and kink.
+    (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) The receiver is a stock of X's unit: a move
+    carries one thing (the user's rule), and 312 none-long's best offer had been requests moved into nodes."""
     gx, cx = _gain(B, m, dy[xi], floor[xi])
     if cx >= 0 or gx <= 0:                                 # a limited outflow of X takes from X
         return None
     to = None
     for z in range(len(ids)):
-        if z != xi:
+        if z != xi and units.get(ids[z]) == units.get(ids[xi]):
             gz, cz = _gain(B, m, dy[z], floor[z])
             if cz > 0 and gz > price and (to is None or gz > to[0]):
                 to = (gz, z)
@@ -264,13 +274,15 @@ def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, refine, series, reg
     if th is None:
         return None
     share = float(np.mean(regime(th)))
-    if not (MIN_SHARE <= share <= 1 - MIN_SHARE):
+    if not (_lo(len(m)) <= share <= 1 - _lo(len(m))):
         return None
     m = series(th)
     gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
     kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
     if gain > price and kink > price:
         k = -_gain(B, m, dy[xi], floor[xi])[1]             # the limited flow's coefficient on X's row (place())
+        if k <= 0 or (to and _gain(B, m, dy[to[1]], floor[to[1]])[1] <= 0):
+            return None                                    # (2026-10-22, k8s-312) refined, it must still take from X and enter its receiver
         return {"theta": th, "gain": gain, "kink": kink, "share": share, **({"to": ids[to[1]]} if to else {}), "series": m, "k": k}
     return None
 
