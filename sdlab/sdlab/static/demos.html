@@ -9,6 +9,8 @@
     --bg: #fbfaf7; --surface: #ffffff; --fg: #1d1d1b; --muted: #6b6a66; --faint: #a9a7a0; --rule: #e3e1db; --grid: #eeece7;
     --good: #1f7a4d; --bad: #c0392b; --warn: #b45309; --eq: #2a78d6; --accent: #2a78d6; --accent2: #eb6834;
     --mono: ui-monospace, "IBM Plex Mono", Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --canvas: var(--surface); --panel: var(--surface);          /* what diagram.js draws with (labels, stock boxes) */
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
@@ -68,6 +70,16 @@
   ul.flat { margin: 4px 0; padding-left: 18px; }
   .planned li { margin: 0 0 4px; }
   .busy { color: var(--muted); font-style: italic; }
+  .mdiag svg text { font-family: var(--sans); }
+  .mdiag .stock rect.box { fill: var(--panel); stroke: var(--fg); stroke-width: 1.5; }
+  .mdiag .flow .hit { stroke: transparent; stroke-width: 18; fill: none; }
+  details.mview { margin: 16px 0 0; border-top: 1px solid var(--rule); padding-top: 8px; }
+  details.mview > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  .mview .mdiag { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px; margin: 8px 0; }
+  .mview .mdiag svg { max-height: 520px; }
+  .mview h4 { font-size: 13px; margin: 12px 0 4px; }
+  .mview .grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .mview .panel h3 .err { margin-left: auto; font-weight: 500; font-size: 11px; color: var(--muted); }
   @media (max-width: 760px) { .split { grid-template-columns: 1fr; } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -93,6 +105,8 @@
   <section data-panel="leverage" hidden></section>
   <section data-panel="planned" hidden></section>
 </main>
+<script src="/static/diagram.js"></script>
+<script src="/static/ladder-compare.js"></script>
 <script src="/static/demos.js"></script>
 </body>
 </html>

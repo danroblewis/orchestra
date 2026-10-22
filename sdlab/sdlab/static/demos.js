@@ -59,6 +59,7 @@
       <div id="r-out"></div>`;
     $("#r-run").onclick = runResidual;
     runResidual();
+    modelView(panel("residual"), { case: S.overview.scenarios[0].source.case, variant: S.overview.scenarios[0].source.variant, strategy: S.overview.scenarios[0].source.strategy });
   }
   async function runResidual() {
     const out = $("#r-out");
@@ -120,6 +121,7 @@
       $("#w-run").disabled = false;
     }));
     $("#w-run").onclick = runWhatif;
+    modelView(panel("whatif"), { case: S.overview.scenarios[0].source.case, variant: S.overview.scenarios[0].source.variant, strategy: S.overview.scenarios[0].source.strategy });
     const first = [...panel("whatif").querySelectorAll("tr.pick")].find((tr) => m.numbers[+tr.dataset.i].ends === "retries → queue") || panel("whatif").querySelector("tr.pick");
     if (first) { first.click(); runWhatif(); }
   }
@@ -159,6 +161,7 @@
         <div class="panel" style="max-width:760px"><div class="legend"><span><span class="key" style="border-color:var(--accent)"></span>inferred by the found model, from measured levels only</span><span><span class="key" style="border-color:var(--accent2);border-top-style:dashed"></span>the true hidden level (the simulation's)</span></div>
         ${chart(r.t, [{ ys: h.level, color: "var(--accent)", width: 2, label: "inferred" }].concat(h.truth ? [{ ys: h.truth.level, color: "var(--accent2)", dash: "5 3", label: "true" }] : []), { h: 160, zero: true, label: "hidden stock" })}</div>`).join("")}
       ${r.hint ? `<div class="hint"><b>What to measure</b> (the scenario's reading, for a production system): ${esc(r.hint)}</div>` : ""}`;
+    modelView(p, { case: S.overview.scenarios[0].source.case, variant: S.overview.scenarios[0].source.variant, strategy: S.overview.scenarios[0].source.strategy });
   }
 
   // ---------- 8. leverage ----------
@@ -170,6 +173,7 @@
       <button class="primary" id="l-run">Rank the levers</button></div><div id="l-out"></div>`;
     $("#l-run").onclick = runLeverage;
     runLeverage();
+    modelView(panel("leverage"), { case: S.overview.scenarios[0].source.case, variant: S.overview.scenarios[0].source.variant, strategy: S.overview.scenarios[0].source.strategy });
   }
   async function runLeverage() {
     const out = $("#l-out");
@@ -198,6 +202,63 @@
       <ul class="planned">${PLANNED.map(([n, t, d]) => `<li><b>${n}. ${esc(t)}</b>: ${esc(d)}</li>`).join("")}</ul>`;
   }
 
+  // ---------- the model view (the user, 2026-10-22): a diagram of the found model, and every stock and flow over
+  // time, the data beside the model (/api/demos/view/data; view.py). params: {source: "ladder", case, variant,
+  // strategy, result?} or a demo's own source. Appended to el; loads when opened.
+  function modelView(el, params, opts = {}) {
+    const box = document.createElement("details");
+    box.className = "mview";
+    if (opts.open !== false) box.open = true;
+    box.innerHTML = `<summary>The model: its diagram, and every stock and flow over time beside the data</summary><div class="mbody"><p class="busy">Loading…</p></div>`;
+    el.appendChild(box);
+    let done = false;
+    const load = async () => {
+      if (done || !box.open) return;
+      done = true;
+      const q = new URLSearchParams({ source: "ladder", ...params });
+      let v;
+      try { v = await get(`/api/demos/view/data?${q}`); } catch (e) { box.querySelector(".mbody").innerHTML = `<p class="bad">${esc(e.message)}</p>`; return; }
+      renderModel(box.querySelector(".mbody"), v);
+    };
+    box.addEventListener("toggle", load);
+    load();
+    return box;
+  }
+  function renderModel(body, v) {
+    const L = window.SDLadder, D = window.SDDiagram, src = v.source || {};
+    const rate = (f) => { try { return f.rate && f.rate.form === "expr" ? f.rate.expr : L ? L.rateText(f.rate) : JSON.stringify(f.rate); } catch { return ""; } };
+    const short = (s) => (s.length > 34 ? s.slice(0, 33) + "…" : s);
+    const ends = (a, b) => `${a || "outside"} → ${b || "outside"}`;
+    body.innerHTML = `<p class="src">${esc(v.title || "")}${src.result ? ` · stored result #${esc(src.result)} (${esc(src.status || "")}, code ${esc(src.commit || "")})` : ""}.
+        The model was found from the measured levels alone; the true amounts come from the simulation.</p>
+      <div class="mdiag"><svg role="img" aria-label="diagram of the found model"></svg></div>
+      <h4>Stocks: the data and the model's prediction</h4>
+      <div class="legend"><span><span class="key" style="border-color:var(--faint)"></span>measured</span><span><span class="key" style="border-color:var(--accent2);border-top-style:dashed"></span>model, one step ahead from the data</span><span><span class="key" style="border-color:var(--accent)"></span>model, run free from the first level</span></div>
+      <div class="grid mstocks"></div>
+      ${Object.keys(v.hidden || {}).length ? `<h4>Stocks the model infers (not measured)</h4><div class="legend"><span><span class="key" style="border-color:var(--accent)"></span>the model's level</span><span><span class="key" style="border-color:var(--faint);border-top-style:dashed"></span>the true hidden level (the simulation's)</span></div><div class="grid mhidden"></div>` : ""}
+      <h4>Flows: the true amount per step and the model's</h4>
+      <div class="legend"><span><span class="key" style="border-color:var(--faint)"></span>true (the simulation's record)</span><span><span class="key" style="border-color:var(--accent)"></span>the found model's, read on the measured levels</span><span>"found only": a flow the truth does not have; "true only": one the model misses</span></div>
+      <div class="grid mflows"></div>`;
+    if (D && v.diagram) {
+      try {
+        const stocks = v.diagram.stocks.map((s) => ({ id: s.id, name: s.id.length > 14 ? s.id.slice(0, 13) + "…" : s.id, dashed: s.hidden, sub: s.hidden ? "inferred" : "", title: s.id }));
+        const flows = v.diagram.flows.filter((f) => f.from || f.to).map((f) => ({ from: f.from, to: f.to, cls: "plain", label: short(rate(f)), title: `${ends(f.from, f.to)}: ${rate(f)}`,
+          reads: (L ? [...L.readers(f)] : []).filter((x) => x !== "const" && x !== f.from && stocks.some((s) => s.id === x)).map((stock) => ({ stock })) }));
+        const BOX = { w: 96, h: 46 };
+        const pos = D.layout(stocks.map((s) => s.id), flows, { box: BOX, colw: BOX.w + 150, rowh: BOX.h + 100, maxCols: innerWidth >= 1150 ? 4 : innerWidth >= 600 ? 3 : 2 });
+        D.draw(body.querySelector(".mdiag svg"), { stocks, flows }, pos, { box: BOX, color: () => "var(--fg)", maxScale: 1.3 });
+      } catch (e) { body.querySelector(".mdiag").innerHTML = `<p class="muted small">The diagram could not be drawn: ${esc(e.message)}</p>`; }
+    } else body.querySelector(".mdiag").hidden = true;
+    const t = v.t;
+    body.querySelector(".mstocks").innerHTML = Object.entries(v.stocks).map(([s, x]) => `<div class="panel"><h3>${esc(s)} <span class="tag">${esc(x.unit || "")}</span><span class="err" title="mean one-step error, in units of the stock's spread">one-step error ${fmt((v.one_step_error || {})[s], 2)}</span></h3>
+      ${chart(t, [{ ys: x.data, color: "var(--faint)", width: 2, label: "measured" }, { ys: x.free, color: "var(--accent)", label: "run free" }, { ys: x.one_step, color: "var(--accent2)", dash: "3 2", label: "one step ahead" }], { h: 100, label: s })}</div>`).join("");
+    const mh = body.querySelector(".mhidden");
+    if (mh) mh.innerHTML = Object.entries(v.hidden).map(([h, x]) => `<div class="panel"><h3>${esc(h)} <span class="tag">inferred</span></h3>
+      ${chart(t, [{ ys: x.found, color: "var(--accent)", width: 2, label: "the model's" }].concat(x.true ? [{ ys: x.true, color: "var(--faint)", dash: "4 3", label: "true" }] : []), { h: 100, zero: true, label: h })}</div>`).join("");
+    body.querySelector(".mflows").innerHTML = v.flows.map((f) => `<div class="panel"><h3><span class="mono" style="font-size:12px">${esc(ends(f.from, f.to))}</span>${f.status !== "both" ? `<span class="alarm">${esc(f.status)}</span>` : ""}${f.error !== null && f.error !== undefined ? `<span class="err" title="relative rms of the model's amount against the true one">error ${(100 * f.error).toFixed(1)}%</span>` : ""}</h3>
+      ${chart(t, [f.true ? { ys: f.true, color: "var(--faint)", width: 2, label: "true" } : null, f.found ? { ys: f.found, color: "var(--accent)", label: "found" } : null].filter(Boolean), { h: 90, zero: true, label: ends(f.from, f.to) })}</div>`).join("");
+  }
+
   // ---------- extra demos: static/demos-<name>.js (listed by /api/demos/manifest) ----------
   // A demo script calls SDDemos.register({tab, title, ui(panelElement, helpers)}); it gets its own tab before
   // "More demos", and ui runs the first time the tab opens. helpers: get, esc, fmt, pct, chart, scenario, model.
@@ -217,7 +278,7 @@
     if (WANT === d.tab) show(d.tab);
   }
   const WANT = new URLSearchParams(location.search).get("demo");    // read before show() rewrites the URL: an extra tab opens once its script registers
-  window.SDDemos = { register, helpers: () => ({ get, esc, fmt, pct, chart, scenario: SCEN, model: S.model, overview: S.overview }) };
+  window.SDDemos = { register, modelView, helpers: () => ({ get, esc, fmt, pct, chart, modelView, scenario: SCEN, model: S.model, overview: S.overview }) };
   async function loadExtra() {
     try {
       const m = await get("/api/demos/manifest");
