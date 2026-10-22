@@ -371,8 +371,8 @@ def _one(s: str, flows: list[dict], levels: dict, cols: dict, n: int, pool: dict
         got = alternate(out0, TAUS)
         if got is not None and (best is None or got["bic"] < best["bic"]):
             best = got
-    if best is None or (with_out and not best.get("out_fit")):
-        return None
+    if best is None or (with_out and not best.get("out_fit")) or best["tau"] <= TAU_MIN * 1.01:
+        return None                                     # a stage at the fastest allowed is no evidence of one
     # the same refit without the stage (the order read directly, at the step's start)
     plain = alternate(best.get("out_fit"), (None,))
     bic_plain = plain["bic"] if plain is not None else math.inf

@@ -54,6 +54,8 @@ import math
 import os
 import time
 
+import numpy as np
+
 from sdlab.discovery.identify import identify as _main_line
 
 from . import boundary
@@ -389,6 +391,44 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 # limit, and every term that reads it is written back as MIN(a x X, a theta x Y).
 from . import capmin as _capmin  # noqa: E402
 
+
+def idle_dropped(result: dict, run: dict, opts: dict | None) -> dict:
+    """(2026-10-22, k8s-312) The answer without its flows between measured stocks (or outside) whose amount is 0 on
+    every step of the record (hinge.amount; a flow it cannot evaluate is kept)."""
+    from . import hinge
+
+    flows = (result or {}).get("flows") or []
+    levels, cols, n = hinge.columns(run, opts)
+    if n < 10:
+        return result
+    idle = []
+    for f in flows:
+        if any(x and x not in levels for x in (f.get("from"), f.get("to"))):
+            continue
+        a = hinge.amount(f, cols, n)
+        if a is not None and not np.any(a > 0):
+            idle.append(f)
+    if not idle:
+        return result
+    out = dict(result)
+    out["flows"] = [f for f in flows if not any(f is g for g in idle)]
+    out["idle_dropped"] = [f"{f.get('from') or 'outside'} -> {f.get('to') or 'outside'}" for f in idle]
+    return out
+
+
+def one_unit_moves(result: dict, stocks: list[dict]) -> dict:
+    """The answer without its moves between two measured stocks of different declared units (a move carries one
+    thing, the user's rule); the dropped ones are listed under "cross_unit_dropped"."""
+    unit = {s["id"]: s.get("unit") for s in stocks if s.get("unit")}
+    flows = (result or {}).get("flows") or []
+    bad = [f for f in flows if f.get("from") in unit and f.get("to") in unit and unit[f["from"]] != unit[f["to"]]]
+    if not bad:
+        return result
+    out = dict(result)
+    out["flows"] = [f for f in flows if not any(f is b for b in bad)]
+    out["cross_unit_dropped"] = [f"{f['from']} -> {f['to']}" for f in bad]
+    return out
+
 _identify_linear = identify
 
 
@@ -409,6 +449,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     o, cap = _capmin.offer(stocks, run, opts)
     # (2026-10-22, k8s-311) each offered limit read only by the flow it limits (capmin.place)
     r = _capmin.place(_identify_linear(stocks, run, o, *args, **kw), cap)
+    # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a move carries one thing: a move between stocks of
+    # different units is dropped, and the passes below refit the rows it touched (312 none-long: lna's nodes -> ready)
+    r = one_unit_moves(r, stocks)
     # (2026-10-21, k8s-308, docs/research/fixes/308-combined2.md) a discrete actuator's outside flows written
     # as switches on the levels (switch.py) before the output-error refit, which otherwise bends the
     # stocks the actuator drives to make up for its smeared linear rate
@@ -431,6 +474,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # same event a counted flow measures) written as a hidden stock, which the scorer now credits (hiddenrow.py)
     r = hiddenrow.apply(r, stocks, run, opts)
     # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a stock's outside inflow that arrives through a
-    # hidden first-order stage (a node ordered joins after a provisioning delay) written as that stage (lagrow.py)
-    return lagrow.apply(r, stocks, run, opts)
+    # hidden first-order stage (a node ordered joins after a provisioning delay) written as that stage (lagrow.py),
+    # and a flow that carries nothing on the record (a limit whose room is never open) is no flow
+    return idle_dropped(lagrow.apply(r, stocks, run, opts), run, opts)
 

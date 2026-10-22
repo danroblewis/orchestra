@@ -40,7 +40,7 @@ def _lo(T: int) -> float:
 GRID = 24              # theta candidates (quantiles of X / Y)
 NAME = "capmin__"      # the offered series' name prefix
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
-MAX_LIMITS = 3         # limits offered, one round each (2026-10-22, k8s-311)
+MAX_LIMITS = 4         # limits offered, one round each (2026-10-22, k8s-311)
 BETAS = 12             # pool-size candidates of a headroom limit (quantiles of Z / Y, and past the largest)
 
 

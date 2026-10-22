@@ -218,8 +218,8 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
     out = copy.deepcopy(result)
     flows = out["flows"]
     names = {x for f in flows for x in (f.get("from"), f.get("to")) if x}
-    if any(x not in levels for x in names):
-        return result                                   # the model already has a hidden stock: not this pass's to change
+    hidden = {x for x in names if x not in levels}       # (2026-10-22, k8s-312) a stock that already exchanges with a
+                                                        # hidden stock (lagrow's stage) is left alone, the others are not
     ratios = _ratios(levels, cols, finals, n)
     notes = []
     for s in sorted(levels):
@@ -228,6 +228,8 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
         kinds = ((run.get("boundary") or {}).get(s) or {}).get("in") or []
         if run.get("boundary_declared") and "input" in kinds:
             continue                                    # a measured input is the inflow, fixed at 1 x series
+        if any(s in (f.get("from"), f.get("to")) and ({f.get("from"), f.get("to")} & hidden) for f in flows):
+            continue
         fracs = _fractions(flows, levels, cols, n)
         got = _one(s, flows, levels, cols, n, fracs, ratios, finals)
         if got is None:
