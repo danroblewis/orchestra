@@ -449,6 +449,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import minrefit
     from . import oefit
     from . import rowrepair
+    from . import sparseblock
     from . import switch
 
     o, cap = _capmin.offer(stocks, run, opts)
@@ -457,6 +458,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a move carries one thing: a move between stocks of
     # different units is dropped, and the passes below refit the rows it touched (312 none-long: lna's nodes -> ready)
     r = one_unit_moves(r, stocks)
+    # (2026-10-22, k8s-315, docs/research/fixes/315-combined2.md) a unit's block of plain rows the pick leaves above
+    # the levels' rounding re-read from the levels (sparseblock.py: each row's exact best subset joined into moves
+    # and outside terms; 315 none-short: lna's crossed moves between the two callees that share one caller)
+    r = sparseblock.apply(r, stocks, run, opts)
     # (2026-10-21, k8s-308, docs/research/fixes/308-combined2.md) a discrete actuator's outside flows written
     # as switches on the levels (switch.py) before the output-error refit, which otherwise bends the
     # stocks the actuator drives to make up for its smeared linear rate
