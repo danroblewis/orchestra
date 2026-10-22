@@ -152,9 +152,15 @@ class Structure:
         return d
 
     def gross(self) -> np.ndarray:
-        """Per stock and step, the amount moved in or out of it (a count's scatter grows with it)."""
+        """Per stock and step, the amount moved in or out of it (a count's scatter grows with it). (k8s-315,
+        net-gross) A flow's amount is the sum of its parts before its size is taken: two terms of one flow
+        that cancel (+0.008 x one counter - 0.016 x another, each ~1800 a step) move next to nothing, and
+        counting each one's size made the stock's scatter flat and huge, so its own weights favoured them."""
         g = np.zeros_like(self.st.dy)
+        net: dict = {}
         for src, dst, amt in self.amounts(self.theta):
+            net[(src, dst)] = net.get((src, dst), 0.0) + amt
+        for (src, dst), amt in net.items():
             for e in (src, dst):
                 if e in self.pos:
                     g[self.pos[e]] += np.abs(amt)
@@ -275,6 +281,22 @@ def keeps(s: Structure, forced: list) -> bool:
     return all(k in have for k in forced)
 
 
+def pair_drops(s: Structure) -> list[Structure]:
+    """(k8s-315, pair-drop) Copies without two plain terms of one flow at once. Two readers that cancel
+    (+a x one counter - b x another: together a slow wander, each alone a huge drift) are kept by a
+    one-at-a-time search, because dropping either alone leaves the other's drift unexplained."""
+    out = []
+    by: dict = {}
+    for i, p in enumerate(s.parts):
+        if p[0] in ("term", "neg"):
+            by.setdefault((p[1], p[2]), []).append(i)
+    for ix in by.values():
+        for a in range(len(ix)):
+            for b in range(a + 1, len(ix)):
+                out.append(s.without(ix[b]).without(ix[a]))
+    return out
+
+
 def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets, forced: list = (), places=None,
           shape=None) -> Structure:
     """Drop a part, read a MIN as its demand alone, or send a flow from a stock to another of the
@@ -288,6 +310,7 @@ def prune(s: Structure, scale: np.ndarray, floor: np.ndarray, price, targets, fo
     while s.parts and work < PRUNE_WORK:
         best = None
         moves = [s.without(i) for i in range(len(s.parts))] + [x for x in (s.simplified(i) for i in range(len(s.parts))) if x]
+        moves += pair_drops(s)
         moves += [s.rerouted(i, d) for i, p in enumerate(s.parts) if p[1] is not None and p[0] in ("term", "min")
                   for d in targets(p[1]) if d != p[2] and not any(q[1:3] == (p[1], d) and q[0] == p[0] and q[3:] == p[3:] for q in s.parts)]
         if places:                                   # an inflow step: move it a little
