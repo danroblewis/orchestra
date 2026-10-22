@@ -50,5 +50,9 @@ def test_a_chosen_form_is_checked_against_the_boundary():
 
 
 def test_a_form_that_leaves_the_boundary_is_undone():
+    # judge.improve refuses such a form before it is weighed ("leaves the declared boundary") or, when
+    # only the chosen rewrite leaves it, undoes it ("undone"); either way it is never chosen
     trace = _run_case("196-concave-move-between-tanks")["engine_forms"]["trace"]
-    assert any("undone" in t for t in trace), trace
+    left = [t.split(":")[0] for t in trace if "leaves the declared boundary" in t]
+    assert left, trace
+    assert not any(t.startswith(f"{x}:") and "chosen" in t for x in left for t in trace), trace
