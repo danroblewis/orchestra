@@ -90,3 +90,17 @@ def test_an_offered_limit_is_read_only_by_the_flow_it_limits():
     assert got[("running", None)] == {"form": "linear", "c": 0.0, "terms": [{"stock": "running", "k": 0.1}]}
     assert (None, "total") not in got
     assert got[("waiting", "running")]["terms"] == [{"stock": cap["name"], "k": 0.5}]
+
+
+def test_a_limit_that_does_not_earn_its_numbers_goes():
+    """(312 round 2) A second limit on the reverse pair, offered on rows that still carried other flows, pins the
+    real one off its numbers; minrefit._earn drops it and the real limit refits exactly."""
+    stocks, run, opts = _setup()
+    junk = {"id": "junk", "from": "running", "to": "waiting", "ratio": 1,
+            "rate": {"form": "expr", "expr": "min(0.02 * running, max(0, 0.05 * waiting + -0.001 * running))"}}
+    rough = _true("min(0.47 * waiting, max(0, 3.8 * hosts + -0.95 * running))") + [junk]
+    out = minrefit.apply({"flows": rough}, stocks, run, opts)
+    assert not any(f.get("id") == "junk" for f in out["flows"]), out.get("limits_unearned")
+    assert [g["flow"] for g in out["limits_unearned"]] == ["running -> waiting"]
+    p = minrefit.parse(next(f for f in out["flows"] if f.get("id") == "start")["rate"]["expr"])
+    assert abs(p["k"] - 0.5) < 1e-6 and abs(p["cap"][0][0] - 4.0) < 1e-6 and abs(p["cap"][1][0] + 1.0) < 1e-6, p

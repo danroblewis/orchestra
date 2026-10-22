@@ -21,6 +21,7 @@ Adopting it: copy this file with counted.py and hinge.py (hinge.amount evaluates
 from __future__ import annotations
 
 import copy
+import math
 import re
 
 import numpy as np
@@ -28,6 +29,7 @@ import numpy as np
 from . import counted, hinge
 
 ROUNDS = 4
+GAIN = 2.0           # a limit kept must lower its block's BIC by more than GAIN log n (_earn)
 ITERS = 30
 FLOOR_REL = 1e-9
 
@@ -218,6 +220,61 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
         return result
     unit = {s["id"]: s.get("unit") for s in stocks if s["id"] in levels}
     finals = {s["id"] for s in stocks if s.get("final")}
+    out, notes = _refit_all(result, run, levels, cols, n, unit, finals)
+    out, gone = _earn(out, run, levels, cols, n, unit, finals)
+    if notes:
+        out["limits_refitted"] = notes
+    if gone:
+        out["limits_unearned"] = gone
+    return out
+
+
+def _limits(flows: list[dict], levels, cols) -> list[dict]:
+    out = []
+    for f in flows:
+        p = parse((f.get("rate") or {}).get("expr")) if (f.get("rate") or {}).get("form") == "expr" else None
+        if p is not None and f.get("from") in levels and f.get("to") in levels and float(f.get("ratio") or 1) == 1 \
+                and not f.get("effects") and all(v in cols for v in [p["x"]] + [v for _, v in p["cap"]]):
+            out.append(f)
+    return out
+
+
+def _earn(out: dict, run, levels, cols, n, unit, finals) -> tuple[dict, list]:
+    """(2026-10-22, k8s-312 round 2, docs/research/fixes/312-combined2-r2.md) Each limit must earn its numbers once
+    the block's other flows are placed: the answer without it, every other limit refitted (_refit_all), replaces
+    the answer where the block's BIC (its SSE floored at the levels' rounding, rowrepair.resolution) does not rise
+    by more than GAIN log n. capmin offers a limit on rows that still carry every flow the fit has not found
+    (312 none-long: ready -> pending = min(0.0017 ready, max(0, 0.0117 pending)) beside the counted OOM move
+    ready x table(mem)); held, it pins the real limit (the pods' start) at min(0.508 pending, 4.02 nodes - 1.005
+    ready), 2400 x the truth's misfit; dropped, the start refits to min(0.5 pending, 4 nodes - ready)."""
+    from . import rowrepair
+
+    gone = []
+    for key in [(g["from"], g["to"], g["rate"]["expr"]) for g in _limits(out["flows"], levels, cols)]:
+        f = next((g for g in _limits(out["flows"], levels, cols) if (g["from"], g["to"], g["rate"]["expr"]) == key), None)
+        if f is None:                                     # refitted when another limit went: judged as it now is
+            f = next((g for g in _limits(out["flows"], levels, cols) if (g["from"], g["to"]) == key[:2]), None)
+        if f is None:
+            continue
+        rows = {x for x in levels if unit.get(x) == unit.get(f["from"]) and x not in finals
+                and hinge.row_error(x, out["flows"], levels, cols, n) is not None}
+        if not {f["from"], f["to"]} <= rows:
+            continue
+        scale = max(1e-12, max(float(np.abs(hinge.delta(levels, x, n)).max()) for x in rows))
+        floor = len(rows) * n * max((FLOOR_REL * scale) ** 2, rowrepair.resolution(levels, rows) ** 2 / 6)
+        bic0 = _block_bic(out["flows"], rows, levels, cols, n, floor)
+        if bic0 is None:
+            continue
+        trial = dict(out, flows=[g for g in out["flows"] if g is not f])
+        trial, _ = _refit_all(trial, run, levels, cols, n, unit, finals)
+        bic1 = _block_bic(trial["flows"], rows, levels, cols, n, floor)
+        if bic1 is not None and bic1 < bic0 + GAIN * math.log(n):
+            gone.append({"flow": f"{f['from']} -> {f['to']}", "expr": f["rate"]["expr"], "bic_with": bic0, "bic_without": bic1})
+            out = trial
+    return out, gone
+
+
+def _refit_all(result: dict, run, levels, cols, n, unit, finals) -> tuple[dict, list]:
     out = copy.deepcopy(result)
     notes = []
     for i, f in enumerate(list(out["flows"])):
@@ -260,6 +317,4 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
             out["flows"] = cur
             notes.append({"flow": f"{src} -> {dst}", "before": write(p), "after": write(q), "bic_before": bic0, "bic_after": bic1,
                           **({"dropped": dropped} if dropped else {})})
-    if notes:
-        out["limits_refitted"] = notes
-    return out
+    return out, notes
