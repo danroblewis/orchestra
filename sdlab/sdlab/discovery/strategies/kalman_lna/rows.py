@@ -49,11 +49,15 @@ SUB = 3                # every subset up to this many readers is tried
 MOST_TERMS = 5         # then forward steps up to this many
 BASE_SUB = 2           # the always-on part of a floored row: every support up to this many readers
 MIN_ON = 5             # a floored term acts on at least this many steps
-TIME = 90.0            # seconds for the rows and the derived-column search (310)
+TIME = 200.0           # seconds for the rows and the derived-column search (310: 90; 311: 200, the capped move one
+                       # round more, under the 1800 s case limit)
 BUILD_TIME = 40.0      # seconds for the rebuild after them (the whole pass's budget before 310)
 TOL_MOVE = 0.02        # a move may take this share more than the source's drain (rounding)
 REPAIRS = 3            # rounds of refitting a row that needs a side the boundary lacks
 LEFT = 1e-4            # what a drain leaves below this share of itself after its moves is rounding
+ACTIVE_ROUNDS = 3      # (311) active-set rereads of a floored term's readers in the search
+REREAD_SUPPORTS = 3    # (311) ... for this many of the best always-on parts
+INTEGRATOR_ROUNDS = 4  # (311) rounds of a switched integrator's threshold and drain rate refitted in turn
 
 
 def _rate_value(rate: dict, state: dict) -> float | None:
@@ -202,6 +206,7 @@ def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: 
     res = math.sqrt(floor / n)
     a_cols = list(range(p)) if a_cols is None else a_cols
     supports = [()] + [s for k in range(1, BASE_SUB + 1) for s in itertools.combinations(a_cols, k)]
+    tried = []
     for A in supports:
         if time.monotonic() > deadline:
             break
@@ -213,7 +218,20 @@ def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: 
         on = sign * r > tol
         if int(on.sum()) < MIN_ON:
             continue
+        top_A = None
         for B, b in _hinge_readers(X, r, on, sign, floor, n, logn, b_cols=b_cols):
+            got = _joint(X, y, A, a, B, b, sign, floor, n, logn)
+            if got is not None and (top_A is None or got[0] < top_A):
+                top_A = got[0]
+            if got is not None and (best is None or got[0] < best[0]):
+                best = got
+        if top_A is not None:
+            tried.append((top_A, A, a, r, on))
+    # (311) the few best always-on parts searched again with each floored candidate's steps re-read (ACTIVE_ROUNDS)
+    for _, A, a, r, on in sorted(tried, key=lambda c: c[0])[:REREAD_SUPPORTS]:
+        if time.monotonic() > deadline:
+            break
+        for B, b in _hinge_readers(X, r, on, sign, floor, n, logn, b_cols=b_cols, reread=True):
             got = _joint(X, y, A, a, B, b, sign, floor, n, logn)
             if got is not None and (best is None or got[0] < best[0]):
                 best = got
@@ -252,7 +270,7 @@ def _joint(X, y, A, a, B, b, sign, floor, n, logn):
     return n * math.log((sse + floor) / n) + (len(A) + len(B)) * logn, A, a, B, b, sse
 
 
-def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[int] | None = None):
+def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[int] | None = None, reread: bool = False):
     """The floored term's best readers for what the always-on part leaves (r): each subset fitted on the steps
     it acts (on) and scored on every step (off steps must read B . x <= 0); the top few (support, coefs)."""
     cols = list(range(X.shape[1])) if b_cols is None else b_cols
@@ -262,6 +280,17 @@ def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[in
         for sub in itertools.combinations(cols, k):
             b, _ = _lstsq(Xo[:, sub], yo)
             sse = float(((sign * r - np.maximum(0.0, X[:, sub] @ b)) ** 2).sum())
+            for _ in range(ACTIVE_ROUNDS if reread else 0):
+                # (311) the steps re-read from where the term acts (X_B b > 0): a few steps the always-on part misses
+                # by a little (an imprecise kill threshold) pulled the true readers' fit toward 0 on the first read
+                act = X[:, sub] @ b > 0
+                if int(act.sum()) < MIN_ON:
+                    break
+                b2, _ = _lstsq(X[act][:, sub], sign * r[act])
+                sse2 = float(((sign * r - np.maximum(0.0, X[:, sub] @ b2)) ** 2).sum())
+                if not sse2 < sse * (1 - 1e-9):
+                    break
+                b, sse = b2, sse2
             got.append((n * math.log((sse + floor) / n) + k * logn, sub, b))
     got.sort(key=lambda g: g[0])
     return [(g[1], g[2]) for g in got[:top]]
@@ -417,6 +446,19 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         if top is None or not top[0] + PRICE * logT < plain["bic"] or not top[0] < best["bic"]:
             return best
         b, sse, sup, coef, extra, res, Q, a, sw = top
+        sw_meta = next((m for m in derived_meta.values() if m.get("switch") is sw), None)
+        if sw_meta is not None and sw_meta.get("hinge"):
+            # (311) the switch's threshold refitted on this row with the drain rate (the readers held): the integrator
+            # accumulates a threshold's error step after step, so its own row reads the threshold far more sharply than
+            # the rows of the switched flow (kalman_lna 311 none-short: 479.994 for 480 left 80 x the truth's misfit)
+            got = _integrator_threshold(S, yy, cs, sup, a, sw_meta)
+            if got is not None and got[0] < sse:
+                a, sw_meta = got[1], got[2]
+                sw = sw_meta["switch"]
+                h0, h1 = _derived.integrator(a, sw)
+                sup, coef, extra, res, Q = _with(np.vstack([h0, h1, np.ones(T)]).T, S, yy, cs)
+                sse = float(res @ res)
+                b = T * math.log((sse + floor[S]) / T) + (len(sup) + 4) * logT
         P = _derived.PIECES[0]
         out = {"bic": b, "sse": sse, "lin": {**dict(zip([names[j] for j in sup], map(float, coef))), f"__s_{S}": 1.0},
                "hinge": None, "res": res, "sched": extra, "sched_idx": _derived.blocks(T, P), "sched_q": Q,
@@ -426,9 +468,39 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         h0, h1 = _derived.integrator(a, sw)
         p, *_ = np.linalg.lstsq(np.vstack([h0, h1, np.ones(T)]).T, extra, rcond=None)
         if abs(p[1]) > 1e-12:
-            sw_meta = next((m for m in derived_meta.values() if m.get("switch") is sw), None)
             out["integrator"] = {"a": float(a), "switch": sw_meta, "p": [float(x) for x in p], "h": h1 + (p[0] / p[1]) * h0}
         return out
+
+    def _integrator_threshold(S, yy, cs, sup, a, meta):
+        """(sse, a, meta) with the switch's threshold and the drain rate refitted together on S's row, its readers sup
+        held (coordinate descent, golden section on each); None where nothing moves."""
+        ia, ib, up, theta = meta["hinge"]
+        yb = X[:, ib]
+        R0 = X[:, sup] if sup else np.zeros((T, 0))
+
+        def sw_of(th):
+            return np.maximum(0.0, yb - th) if up else np.maximum(0.0, th - yb)
+
+        def f(a_, th):
+            h0, h1 = _derived.integrator(a_, sw_of(th))
+            return _lstsq(np.hstack([R0, np.vstack([h0, h1, np.ones(T)]).T]), yy)[1]
+
+        span = 0.01 * float(np.ptp(yb)) or 1.0
+        best = (f(a, theta), a, theta)
+        for _ in range(INTEGRATOR_ROUNDS):
+            th, v = _derived.golden(lambda z: f(best[1], z), best[2] - span, best[2] + span)
+            if v < best[0]:
+                best = (v, best[1], th)
+            if best[1] > 0:
+                a2, v = _derived.golden(lambda z: f(z, best[2]), best[1] / 1.5, best[1] * 1.5)
+                if v < best[0]:
+                    best = (v, a2, best[2])
+            span /= 3.0
+        if best[2] == theta and best[1] == a:
+            return None
+        th = best[2]
+        expr = _derived.hinge_expr(names[ia], names[ib], th, up)
+        return best[0], best[1], {**meta, "expr": expr, "hinge": (ia, ib, up, th), "switch": sw_of(th)}
 
     def _ratio_hidden(resid, taken, stock_cols):
         """(310) a rate per unit of another stock and a hidden integrator are found together: on every row with an
@@ -473,6 +545,63 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
                     best = (g, {"expr": e, "reads": [names[ia], names[ib]], "base": names[ia], "row": S}, col)
         return best
 
+    cap_fits: dict = {}
+
+    def _capped(resid, spans, taken):
+        """(311, derived.py 4) a move X -> T capped by the room other levels leave, min(a X, max(0, B . z)): for every
+        pair of same-unit stocks whose rows are not at rounding, and every room of up to CAP_READERS levels (with or
+        without a constant), the cap is read off max(what T gains, what X loses) as a lower bound of the move, and
+        scored on what it adds to both rows beyond their span (the source must lose it, the receiver gain it), net of
+        its numbers; the CAP_TRY best as [(gain, meta, column)] (the caller judges them by refitting their rows)."""
+        found = []
+        one = names.index(None) if None in names else None
+        if one is None:
+            return []
+        cand = [S for S in resid if S not in final and S in names]
+        for Sx in cand:
+            ix = names.index(Sx)
+            x = X[:, ix]
+            for St in cand:
+                if St == Sx or unit.get(St) != unit.get(Sx) or time.monotonic() > deadline:
+                    continue
+                # what T gains or X loses, whichever is more: the move's amount where T has no other outflow or X no
+                # other inflow on the step (a lower bound elsewhere, fitted as one)
+                targets = [np.maximum(0.0, np.maximum(dy[ids.index(St)], -dy[ids.index(Sx)]))]
+                zs = [j for j in stock_cols if j != ix]
+                for k in range(1, _derived.CAP_READERS + 1):
+                    for sub, const in itertools.product(itertools.combinations(zs, k), (False, True)):
+                        zcols = list(sub) + [one] * const          # the room with or without a constant
+                        Z = X[:, zcols]
+                        for n0, f0 in enumerate(targets):
+                            key = (Sx, St, tuple(zcols), n0)
+                            if key not in cap_fits:              # the fit reads only the data: once for every round
+                                cap_fits[key] = _derived.capfit(f0, x, Z, MIN_ON, lower=True)
+                            got = cap_fits[key]
+                            if got is None:
+                                continue
+                            _, a, b = got
+                            col = _derived.cap_column(x, Z, a, b)
+                            g = 0.0
+                            for S, sgn in ((Sx, -1.0), (St, 1.0)):
+                                Q = spans.get(S)
+                                c = _derived.demean(col, Q) if Q is not None else col
+                                rr = _derived.demean(resid[S], Q) if Q is not None else resid[S]
+                                if float(c @ rr) * sgn <= 0:
+                                    g = -math.inf                   # the source must lose it and the receiver gain it
+                                    break
+                                g += _derived._gain(c, rr, float(rr @ rr), floor[S], T)
+                            g -= (len(zcols) + 1) * logT
+                            e = _derived.cap_expr(Sx, a, [(names[j], bb) for j, bb in zip(zcols, b)])
+                            if e in taken or not math.isfinite(g):
+                                continue
+                            if opts.get("rows_trace_cap") and g > -1e9:
+                                print("cap cand", Sx, St, round(g, 1), e)
+                            found.append((g, {"expr": e, "reads": [Sx] + [names[j] for j in sub], "base": Sx, "row": St,
+                                              "room": [names[j] for j in zcols],
+                                              "cap": (ix, zcols, float(a), np.asarray(b, dtype=float))}, col))
+        found.sort(key=lambda c: -c[0])
+        return found[:_derived.CAP_TRY]
+
     rows, old = {}, {}
     for i, S in enumerate(ids):
         if np.ptp(read[i]) <= 0 and not np.any(dy[i]):
@@ -504,21 +633,43 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         print("rows t base", round(t_der - deadline + TIME, 1))
     if time.monotonic() > deadline:
         return result                                        # the plain rows themselves ran out of time
-    for _ in range(_derived.ROUNDS):
+    for _ in range(_derived.ROUNDS + 1):                    # (311) a capped move is one round beyond ROUNDS
         if time.monotonic() > deadline:
             break
         before = (X, names, rows, dict(derived_meta))       # a round cut short by the clock is undone whole
         resid = {S: r["res"] for S, r in rows.items() if r["sse"] > 100 * floor[S]}
         if not resid:
             break
-        got = _derived.search(X, names, stock_cols, resid, floor, {S: _span(rows[S]) for S in resid}, T,
-                              {m["expr"] for m in derived_meta.values()})
-        joint = _ratio_hidden(resid, {m["expr"] for m in derived_meta.values()}, stock_cols)
+        spans = {S: _span(rows[S]) for S in resid}
+        got = joint = None
+        if sum(not m.get("cap") for m in derived_meta.values()) < _derived.ROUNDS:
+            got = _derived.search(X, names, stock_cols, resid, floor, spans, T, {m["expr"] for m in derived_meta.values()},
+                                  [m["hinge"] for m in derived_meta.values() if m.get("hinge")])
+            joint = _ratio_hidden(resid, {m["expr"] for m in derived_meta.values()}, stock_cols)
+        capped = None
+        if not any(m.get("cap") for m in derived_meta.values()):
+            # (311) the few best caps by what they add beyond the rows' spans, each then judged by its two rows refitted
+            # with it (a cap lets a row's floored term be read right, which no linear score sees), net of its numbers
+            for g0, meta_c, col_c in _capped(resid, spans, {m["expr"] for m in derived_meta.values()}):
+                if time.monotonic() > deadline:
+                    break
+                X0, names0 = X, names
+                X, names = np.hstack([X0, col_c[:, None]]), names0 + ["__try"]
+                pair = (meta_c["base"], meta_c["row"])
+                g = sum(rows[S]["bic"] - row(S, dy[ids.index(S)])["bic"] for S in pair) - len(meta_c["cap"][1]) * logT
+                X, names = X0, names0
+                if opts.get("rows_trace"):
+                    print("rows cap tried", round(g0, 1), round(g, 1), meta_c["expr"])
+                if capped is None or g > capped[0]:
+                    capped = (g, meta_c, col_c)
         if opts.get("rows_trace"):
             print("rows joint", None if joint is None else (round(joint[0], 1), joint[1]["expr"], joint[1]["row"]),
-                  None if got is None else round(got[0], 1))
+                  None if got is None else round(got[0], 1),
+                  "capped", None if capped is None else (round(capped[0], 1), capped[1]["expr"]))
         if joint is not None and (got is None or joint[0] > got[0]):
             got = joint
+        if capped is not None and (got is None or capped[0] > got[0]):
+            got = capped
         if got is None or got[0] < PRICE * logT:
             break
         name = f"__d{len(derived_meta)}"
@@ -528,15 +679,47 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         if opts.get("rows_trace"):
             print("rows derived", name, got[1], round(got[0], 1))
         rows = {S: row(S, dy[ids.index(S)]) for S in rows}
-        for _ in range(2):                                   # a switch's threshold refitted on the rows reading it
+        for _ in range(_derived.CAP_REFITS if derived_meta[name].get("cap") else 2):   # a switch's threshold (a cap's
+            # numbers) refitted on the rows reading it, the rows refitted after each
             j = names.index(name)
             parts = {S: r["res"] + r["lin"][name] * X[:, j] for S, r in rows.items() if r["lin"].get(name)}
-            meta, col = _derived.refine(X, names, derived_meta[name], parts)
+            if derived_meta[name].get("cap"):
+                meta, col = _derived.refine_cap(X, derived_meta[name], parts,
+                                                {S: r["lin"][name] for S, r in rows.items() if r["lin"].get(name)})
+            else:
+                # (311) each row weighted by how well it fits: the clean row (a counter that reads only the switch)
+                # fixes the threshold, rows whose other flows are not read yet only blur it (480.00 -> 480.27 on 311)
+                meta, col = _derived.refine(X, names, derived_meta[name], parts,
+                                            {S: 1.0 / max(rows[S]["sse"], floor[S]) for S in parts})
             if col is None:
                 break
+            keep = (derived_meta[name], X[:, j].copy(), rows)
             derived_meta[name] = meta
             X[:, j] = col
             rows = {S: row(S, dy[ids.index(S)]) for S in rows}
+            if meta.get("cap") and sum(r["bic"] for r in rows.values()) > sum(r["bic"] for r in keep[2].values()):
+                derived_meta[name], X[:, j], rows = keep[0], keep[1], keep[2]     # (311) a refit the rows lose by: undone
+                break
+        m = derived_meta[name]
+        if m.get("cap") and None in m["room"] and len(m["room"]) > 1 and time.monotonic() < deadline:
+            # (311) the room without its constant, kept where the rows lose less than the number it saves (on a short
+            # run the nodes' level barely moves where the room binds, so a constant and the nodes' number trade off)
+            ix, zcols, a_c, b_c = m["cap"]
+            k0 = m["room"].index(None)
+            zc = [z for n_, z in enumerate(zcols) if n_ != k0]
+            bc = np.array([v for n_, v in enumerate(b_c) if n_ != k0])
+            bc = np.linalg.lstsq(X[:, zc], X[:, zcols] @ b_c, rcond=None)[0]   # the same room as near as it goes
+            trial = {**m, "room": [r_ for r_ in m["room"] if r_ is not None],
+                     "cap": (ix, zc, a_c, bc), "expr": _derived.cap_expr(m["reads"][0], a_c, list(zip([r_ for r_ in m["room"] if r_ is not None], bc)))}
+            j = names.index(name)
+            parts = {S: r["res"] + r["lin"][name] * X[:, j] for S, r in rows.items() if r["lin"].get(name)}
+            got_t = _derived.refine_cap(X, trial, parts, {S: r["lin"][name] for S, r in rows.items() if r["lin"].get(name)})
+            trial, col = (got_t[0], got_t[1]) if got_t[1] is not None else (trial, _derived.cap_column(X[:, ix], X[:, zc], a_c, bc))
+            keep = (m, X[:, j].copy(), rows)
+            derived_meta[name], X[:, j] = trial, col
+            rows = {S: row(S, dy[ids.index(S)]) for S in rows}
+            if sum(r["bic"] for r in rows.values()) > sum(r["bic"] for r in keep[2].values()) + logT:
+                derived_meta[name], X[:, j], rows = keep[0], keep[1], keep[2]
         if opts.get("rows_trace"):
             print("rows derived refined", name, derived_meta[name]["expr"], "t", round(time.monotonic() - t_der, 1))
         if time.monotonic() > deadline:
@@ -640,6 +823,15 @@ def _flow(a, b, terms, ctx: dict | None = None) -> dict:
         return {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}"}
     # (310, derived.py) a rate reading a derived column is an expression; one carrying a schedule, one per block
     c = float(terms.get(None, 0.0))
+    only = [s_ for s_ in terms if s_ is not None]
+    if not c and len(only) == 1 and (meta.get(only[0]) or {}).get("cap") and terms[only[0]] > 0:
+        # (311) k min(a X, max(0, room)) = min(k a X, max(0, k room)): the capped move written as one MIN
+        m, k = meta[only[0]], float(terms[only[0]])
+        _, _, ca, cb = m["cap"]
+        e = _derived.cap_expr(m["reads"][0], k * ca, [(z, k * bb) for z, bb in zip(m["room"], cb)])
+        r = {"form": "expr", "expr": e}
+        return {"from": a, "to": b, "ratio": 1, "rate": r, "rates": [dict(r)], "id": f"rows_{a}_{b}",
+                "numbers": len(cb) + 1}
     parts = []
     for s_, k in terms.items():
         if s_ is None or str(s_).startswith("__s_"):
