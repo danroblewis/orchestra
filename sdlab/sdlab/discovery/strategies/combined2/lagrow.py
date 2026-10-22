@@ -48,6 +48,7 @@ ROUNDS = 4
 ITERS = 40
 TAUS = (1.25, 1.5, 2.0, 3.0, 4.0, 6.0, 9.0, 14.0)
 INITS = (1e-6, 0.25, 0.5)
+WIDE = 24              # (2026-10-22, k8s-317) more columns than this: the active-set paths are not re-walked (_lagfit fast)
 TAU_MIN = 1.15         # a stage empties at most 1 / TAU_MIN a step (a faster one is a one-step lag of a plain rate)
 MIN_ON = 5             # steps a fitted order u (or an arm) must be positive on
 
@@ -77,7 +78,7 @@ def _out_regimes(arms: list[np.ndarray], coefs: list[np.ndarray]) -> list[np.nda
 
 
 def _lagfit(Z: np.ndarray, y: np.ndarray, tau: float | None, h0: bool, arms: list[np.ndarray] | None = None,
-            coefs: list[np.ndarray] | None = None) -> dict | None:
+            coefs: list[np.ndarray] | None = None, fast: bool = False) -> dict | None:
     """min over (b, out arms' numbers, h0 >= 0) of sum (filt(max(0, Z b)) + h0 start - max(0, min(arms)) - y)^2
     by active-set least squares (the in side's and every arm's active steps recomputed from the fit until they
     settle), from several starts. {"sse", "b", "h0", "coefs", "in", "out", "order"}."""
@@ -90,15 +91,25 @@ def _lagfit(Z: np.ndarray, y: np.ndarray, tau: float | None, h0: bool, arms: lis
     h0 = h0 and tau is not None
     s = _start(n, tau) if h0 else None
     best = None
+    done: set = set()                                     # (fast, k8s-317) active sets an earlier start already solved
     for t0 in INITS:
         yy = y + (np.maximum(0.0, np.min(np.column_stack([A @ c for A, c in zip(arms, coefs)]), axis=1)) if arms else 0.0)
         A = np.r_[yy[1:] > t0 * top, False] if tau is not None else yy > t0 * top
         R = _out_regimes(arms, coefs) if arms else []
         b = None
+        mine: set = set()
         for _ in range(ITERS):
             if A.sum() < max(MIN_ON, m + 1):
                 b = None
                 break
+            if fast:                                      # a path an earlier start took (its end is scored), or a cycle
+                key = A.tobytes() + b"".join(x.tobytes() for x in R)
+                if key in done:
+                    b = None
+                    break
+                if key in mine:
+                    break
+                mine.add(key)
             M = [_filt(Z[:, j] * A, tau) for j in range(m)] + ([s] if h0 else [])
             for Zk, Rk in zip(arms, R):
                 M += [-(Zk[:, j] * Rk) for j in range(Zk.shape[1])]
@@ -113,6 +124,7 @@ def _lagfit(Z: np.ndarray, y: np.ndarray, tau: float | None, h0: bool, arms: lis
             if np.array_equal(A2, A) and all(np.array_equal(x, z) for x, z in zip(R, R2)):
                 break
             A, R = A2, R2
+        done |= mine
         if b is None or (h0 and h < 0) or int((Z @ b > 0).sum()) < MIN_ON:
             continue
         order = np.maximum(0.0, Z @ b)
@@ -159,7 +171,7 @@ def fit_in(y: np.ndarray, pool: dict, n: int, floor: float, taus=TAUS, out: dict
         Z = _design(names, const, pool, n)
         best1 = None
         for h0 in (False, True) if tau is not None else (False,):
-            got = _lagfit(Z, y, tau, h0, arms, coefs)
+            got = _lagfit(Z, y, tau, h0, arms, coefs, fast=len(pool) > WIDE)
             if got is None:
                 continue
             k = Z.shape[1] + (1 if h0 else 0) + (1 if tau is not None else 0) + k_out

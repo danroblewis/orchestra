@@ -31,6 +31,11 @@ FLOOR_REL = 1e-9      # SSE floor relative to the row's scale (exact data tie at
 MIN_OFF = 0.1         # a floored rate must be at its floor (rate <= 0) on at least this share of the steps:
                       # one that is positive throughout is an ordinary linear rate, not this mechanism's to refit
 INITS = (1e-6, 0.25, 0.5)
+# (2026-10-22, k8s-317, docs/research/fixes/317-combined2.md) a wide record (more than WIDE columns: 317 has 37 levels
+# and inputs, C(41, 3) = 10660 sets of three, 280 s a pass on 300 steps) searches its column sets by a beam: every
+# single column, then the BEAM best sets of each size extended by every column
+WIDE = 24
+BEAM = 6
 ITERS = 40
 
 
@@ -75,20 +80,40 @@ def amount(f: dict, cols: dict, n: int) -> np.ndarray | None:
     return r
 
 
-def hfit(Z: np.ndarray, y: np.ndarray) -> tuple[float, np.ndarray] | None:
-    """min_b sum (max(0, Z b) - y)^2 by active-set least squares from several starts: (sse, b)."""
+def _normal(Z: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """(k8s-317) Least squares by the normal equations (a few columns: several times faster than lstsq's SVD), lstsq
+    where they are singular."""
+    G = Z.T @ Z
+    try:
+        b = np.linalg.solve(G, Z.T @ y)
+        if np.all(np.isfinite(b)):
+            return b
+    except np.linalg.LinAlgError:
+        pass
+    return np.linalg.lstsq(Z, y, rcond=None)[0]
+
+
+def hfit(Z: np.ndarray, y: np.ndarray, fast: bool = False) -> tuple[float, np.ndarray] | None:
+    """min_b sum (max(0, Z b) - y)^2 by active-set least squares from several starts: (sse, b). fast (a wide
+    record, k8s-317): each active set solved by the normal equations."""
     n, m = Z.shape
     top = float(np.max(y)) if y.size else 0.0
     if top <= 0:
         return None
     best = None
-    for t in INITS:
+    seen: set = set()                                     # (fast) active sets already solved, by any start: a cycle or
+    for t in INITS:                                       # a path another start took ends here
         A = y > t * top
         b = None
         for _ in range(ITERS):
             if A.sum() < m + 1:
                 break
-            b, *_ = np.linalg.lstsq(Z[A], y[A], rcond=None)
+            if fast:
+                key = A.tobytes()
+                if key in seen:
+                    break
+                seen.add(key)
+            b = _normal(Z[A], y[A]) if fast else np.linalg.lstsq(Z[A], y[A], rcond=None)[0]
             A2 = (Z @ b) > 0
             if np.array_equal(A2, A):
                 break
@@ -110,23 +135,37 @@ def fit_side(y: np.ndarray, cols: dict, n: int, floor: float, base: np.ndarray |
     MAX_COLS, with or without a constant) with the lowest BIC of (y - fit) + base residual... base: the
     rest of the row's error that this side cannot change (added to the SSE). Returns {"c", "w", "sse", "k"}."""
     names = [k for k, v in cols.items() if np.std(v[:n]) > 0]
+    wide = len(names) > WIDE
     best = None
+    beam: dict = {}
     for size in range(1, MAX_COLS + 1):
-        for s in itertools.combinations(names, size):
+        if wide and size > 1:                             # (k8s-317) a wide record: a beam over the column sets
+            sets = sorted({tuple(sorted(set(b) | {k})) for b in beam.get(size - 1, ()) for k in names if k not in b})
+        else:
+            sets = itertools.combinations(names, size)
+        scored = []
+        for s in sets:
             M = np.column_stack([cols[k][:n] for k in s])
+            top = None
             for const in (False, True):
                 Z = np.column_stack([M, np.ones(n)]) if const else M
-                got = hfit(Z, y)
+                got = hfit(Z, y, fast=wide)
                 if got is None:
                     continue
                 sse, b = got
-                if np.mean(Z @ b <= 0) < MIN_OFF:
-                    continue
                 k = Z.shape[1]
                 bic = _bic(sse, k, n, floor)
+                top = bic if top is None else min(top, bic)   # (k8s-317) the beam ranks a set by its fit
+                if np.mean(Z @ b <= 0) < MIN_OFF:
+                    continue
                 if best is None or bic < best["bic"] - 1e-9:
                     best = {"bic": bic, "sse": sse, "k": k, "c": float(b[-1]) if const else 0.0,
                             "w": {nm: float(v) for nm, v in zip(s, b[:len(s)])}}
+            if wide:
+                scored.append((math.inf if top is None else top, s))
+        if wide:
+            scored.sort()
+            beam[size] = [s for _, s in scored[:BEAM]]
     return best
 
 

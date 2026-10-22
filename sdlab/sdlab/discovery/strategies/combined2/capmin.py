@@ -44,6 +44,15 @@ MAX_LIMITS = 4         # limits offered, one round each (2026-10-22, k8s-311)
 BETAS = 12             # pool-size candidates of a headroom limit (quantiles of Z / Y, and past the largest)
 ONE = "1"              # (2026-10-22, k8s-316) the constant capacity: a pool of fixed size, c - d x Z
 POOL_FAR = (1.25, 1.5, 2.0, 3.0, 5.0, 10.0)   # a fixed pool's size candidates beyond its occupant's largest level
+# (2026-10-22, k8s-317, docs/research/fixes/317-combined2.md) a wide record: with more than BIG measured columns
+# (levels and inputs), every product of two of them is more columns than a short record has steps (317: 37 columns,
+# 703 products on 300 steps), so the kink's smooth surface is the limit's own arguments times every column, and
+# each round's candidates are screened on a coarse grid on X's row (one matrix product each), the KEEP best of each
+# kind searched in full as before (317 none-short: one round took 585 s, four rounds 40 minutes)
+BIG = 24
+KEEP = 8
+COARSE_TH = 8          # the screen's theta and beta grids
+COARSE_BETA = 6
 
 
 def forced_pairs(stocks: list[dict], run: dict | None) -> set:
@@ -164,10 +173,35 @@ def _design(ids, read, inputs, opts, t, T):
         era = np.searchsorted(np.array(starts), t[1:T + 1], side="right") - 1
         cols = [c * (era == e) for e in sorted(set(era.tolist())) for c in cols]
     vals = [read[i] for i in range(len(ids))] + list(inputs.values())
-    prods = [vals[i] * vals[j] for i in range(len(vals)) for j in range(i, len(vals))]
     B = np.column_stack(cols)
+    if len(vals) > BIG:                                    # (k8s-317) a wide record: the kink's surface is local (_kinkq)
+        return B, None
+    prods = [vals[i] * vals[j] for i in range(len(vals)) for j in range(i, len(vals))]
     Q = np.column_stack(cols + prods)
     return B, Q
+
+
+def _kinkq(B: np.ndarray, Q, args, vals) -> np.ndarray:
+    """(k8s-317) The kink's smooth surface: Q, or on a wide record B with each of the limit's own arguments
+    (X, Y and the pool's occupant Z) times every measured column."""
+    if Q is not None:
+        return Q
+    return np.column_stack([B] + [a * v for a in args for v in vals])
+
+
+def _screen(P, E, X, M, xi, floor):
+    """(k8s-317) The best gain on X's row (as _gain: T log of how much the residual falls) over the candidate
+    series (columns of M) on the design P projects on, among those that take from X (a negative coefficient), by
+    projection; -inf if none."""
+    Mp = M - P.U @ (P.U.T @ M)
+    mm = np.einsum("ij,ij->j", Mp, Mp)
+    em = E[xi] @ Mp
+    ok = (mm > 1e-12 * np.maximum(1.0, np.einsum("ij,ij->j", M, M))) & (em < 0)
+    if not ok.any():
+        return -math.inf
+    ee = float(E[xi] @ E[xi])
+    r1 = float(np.min(np.maximum(0.0, ee - em[ok] ** 2 / mm[ok])))
+    return len(X) * math.log((ee + floor) / (r1 + floor))
 
 
 def _gain(B: np.ndarray, m: np.ndarray, y: np.ndarray, floor: float) -> tuple[float, float]:
@@ -201,18 +235,23 @@ def _room(X: np.ndarray, Y: np.ndarray, Z: np.ndarray, beta: float, th: float) -
     return np.minimum(X, th * np.maximum(0.0, beta * Y - Z))
 
 
-def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, pairs: set = frozenset()):
+def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, pairs: set = frozenset(), allv=None):
     """One round of offer(): the best limit (plain or headroom) on top of the design B, sources in skip left out.
     (2026-10-22, k8s-316) pairs: the cross-unit moves the declared boundary forces (forced_pairs), which may carry
     a limit too; and the headroom's pool may be a fixed size (Y = ONE: the cap c - d x Z, d > 0)."""
     caps = [(ids[i], read[i]) for i in range(len(ids)) if ids[i] not in final] + list(inputs.items())
     best = None
+    P = _Proj(B)
+    E = [P.perp(dy[i]) for i in range(len(ids))]
+    allowed = _screened(ids, final, units, read, caps, P, E, skip, pairs, floor) if Q is None else None
     for xi, x in enumerate(ids):
         X = read[xi]
         if x in final or x in skip or np.ptp(X) <= 0:
             continue
         for name, Y in caps:
             if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
+                continue
+            if allowed is not None and (x, name) not in allowed:
                 continue
             ratio = X[Y > 0] / Y[Y > 0]
             grid = np.unique(np.quantile(ratio, np.linspace(_lo(len(X)), 1 - _lo(len(X)), GRID)))
@@ -221,14 +260,12 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, 
             got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y, units, pairs,
                          lambda rows: _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
                                                              for r in rows), grid)[0],
-                         lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y)
+                         lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y, args=(X, Y), allv=allv)
             if got and (best is None or got["kink"] > best["kink"]):
                 best = {"source": x, "cap": name, **got}
     # (2026-10-22, k8s-311, docs/research/fixes/311-combined2.md) a headroom limit MIN(X, theta x max(0,
     # beta Y - Z)): X released into the room left in a pool of beta a unit of Y less what Z (a stock of X's unit)
     # already holds (pending pods start into the room the nodes leave: min(0.5 pending, 4 nodes - ready))
-    P = _Proj(B)
-    E = [P.perp(dy[i]) for i in range(len(ids))]
     for xi, x in enumerate(ids):
         X = read[xi]
         if x in final or x in skip or np.ptp(X) <= 0 or not units.get(x):
@@ -239,6 +276,8 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, 
             Z = read[zi]
             for name, Y in caps + ([(ONE, np.ones(len(X)))] if (x, z) in pairs else []):
                 if name in (x, z) or (name != ONE and (np.ptp(Y) <= 0 or (Y > 0).sum() < 10)):
+                    continue
+                if allowed is not None and (x, name, z) not in allowed:
                     continue
                 pos = Y > 0
                 zr = Z[pos] / Y[pos]
@@ -274,13 +313,58 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, 
                 m = _room(X, Y, Z, beta, th)
                 got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), units, pairs, refine,
                              lambda th, f=refine: _room(X, Y, Z, getattr(f, "beta", beta), th),
-                             lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z))
+                             lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z), args=(X, Y, Z), allv=allv)
                 if got and got.get("theta") is not None and (best is None or got["kink"] > best["kink"]):
                     best = {"source": x, "cap": name, "room": z, "beta": float(getattr(refine, "beta", beta)), **got}
     return best
 
 
-def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, pairs, refine, series, regime) -> dict | None:
+def _screened(ids, final, units, read, caps, P, E, skip, pairs, floor) -> set:
+    """(k8s-317) On a wide record, the candidates searched in full: the KEEP plain limits (X, Y) and the KEEP
+    headroom limits (X, Y, Z) whose coarse grid lowers X's row the most (_screen), each kind ranked on its own."""
+    plain, room = [], []
+    for xi, x in enumerate(ids):
+        X = read[xi]
+        if x in final or x in skip or np.ptp(X) <= 0:
+            continue
+        lo = _lo(len(X))
+        for name, Y in caps:
+            if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
+                continue
+            ratio = X[Y > 0] / Y[Y > 0]
+            th = np.unique(np.quantile(ratio, np.linspace(lo, 1 - lo, COARSE_TH)))
+            plain.append((-_screen(P, E, X, np.minimum(X[:, None], th[None, :] * Y[:, None]), xi, floor[xi]), x, name))
+        if not units.get(x):
+            continue
+        for zi, z in enumerate(ids):
+            if z in (x,) or z in final or (units.get(z) != units.get(x) and (x, z) not in pairs) or np.ptp(read[zi]) <= 0:
+                continue
+            Z = read[zi]
+            for name, Y in caps + ([(ONE, np.ones(len(X)))] if (x, z) in pairs else []):
+                if name in (x, z) or (name != ONE and (np.ptp(Y) <= 0 or (Y > 0).sum() < 10)):
+                    continue
+                pos = Y > 0
+                zr = Z[pos] / Y[pos]
+                far = [zr.max() * f for f in POOL_FAR] if name == ONE else []
+                cols = []
+                for beta in np.unique(np.concatenate([np.quantile(zr, np.linspace(0.5, 1.0, COARSE_BETA - 1)), [zr.max() * 1.05], far])):
+                    R = np.maximum(0.0, beta * Y - Z)
+                    ok = R > 0
+                    if ok.sum() < 10:
+                        continue
+                    tg = np.unique(np.quantile(X[ok] / R[ok], np.linspace(lo, 1 - lo, COARSE_TH)))
+                    tg = tg[tg > 0]
+                    cols.extend(np.minimum(X, t * R) for t in tg)
+                if cols:
+                    room.append((-_screen(P, E, X, np.column_stack(cols), xi, floor[xi]), x, name, z))
+    plain.sort(key=lambda c: c[0])
+    room.sort(key=lambda c: c[0])
+    keep = {(x, n) for r, x, n in plain[:KEEP] if r < 0}
+    keep |= {(x, n, z) for r, x, n, z in room[:KEEP] if r < 0}
+    return keep
+
+
+def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, pairs, refine, series, regime, args=(), allv=None) -> dict | None:
     """The offer rule for one candidate series m (module docstring): it takes from X; its receiver; the
     threshold refined on X's row and the receiver's; each regime on MIN_SHARE of the steps; gain and kink.
     (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) The receiver is a stock of X's unit: a move
@@ -303,7 +387,8 @@ def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, pairs, refin
         return None
     m = series(th)
     gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
-    kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
+    Qk = _kinkq(B, Q, args, allv)                          # (k8s-317) local on a wide record
+    kink = sum(_gain(Qk, m, dy[r], floor[r])[0] for r in rows)
     if gain > price and kink > price:
         k = -_gain(B, m, dy[xi], floor[xi])[1]             # the limited flow's coefficient on X's row (place())
         if k <= 0 or (to and _gain(B, m, dy[to[1]], floor[to[1]])[1] <= 0):
@@ -339,16 +424,17 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     pairs = forced_pairs(stocks, run)
     T = dy.shape[1]
     B, Q = _design(ids, read, inputs, opts, np.asarray(run["t"], dtype=float), T)
+    allv = [read[i] for i in range(len(ids))] + list(inputs.values())
     floor = [RESOLUTION * float(np.mean(dy[i] ** 2)) * T + 1e-300 for i in range(len(ids))]   # the data's resolution
     price = PRICE * math.log(T)
     found = []
     while len(found) < MAX_LIMITS:
-        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found}, pairs)
+        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found}, pairs, allv)
         if best is None:
             break
         m = best.pop("series")
         found.append(best)
-        B, Q = np.column_stack([B, m]), np.column_stack([Q, m])
+        B, Q = np.column_stack([B, m]), (None if Q is None else np.column_stack([Q, m]))
     if not found:
         return opts, None
     inp = dict(opts.get("inputs") or {})

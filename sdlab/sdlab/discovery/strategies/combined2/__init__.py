@@ -446,6 +446,20 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     written back, where the levels carry measurement error, the numbers are refitted and the structure
     revised on the output error (oefit.py: the model run through the whole record against the measured
     levels)."""
+    o, cap = _capmin.offer(stocks, run, opts)
+    # (2026-10-22, k8s-311) each offered limit read only by the flow it limits (capmin.place)
+    r = _capmin.place(_identify_linear(stocks, run, o, *args, **kw), cap)
+    # (2026-10-22, k8s-317, docs/research/fixes/317-combined2.md) every pass below runs within the caller's time, less
+    # RESERVE: one that would overrun answers with what it was given, and the passes after it are skipped (a 1800 s
+    # cap that falls in a pass loses the whole answer; 317 timed out on three variants)
+    return _passes(r, stocks, run, opts, o, cap)
+
+
+RESERVE = 45.0        # seconds of the caller's timer the passes leave (the answer is still to be written and scored)
+
+
+def _passes(r: dict, stocks: list[dict], run: dict, opts: dict | None, o: dict, cap) -> dict:
+    """The passes on the pick, in order, each within the caller's time (identify above)."""
     from . import counted
     from . import hiddenrow
     from . import hinge
@@ -456,44 +470,43 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import sparseblock
     from . import switch
 
-    o, cap = _capmin.offer(stocks, run, opts)
-    # (2026-10-22, k8s-311) each offered limit read only by the flow it limits (capmin.place)
-    r = _capmin.place(_identify_linear(stocks, run, o, *args, **kw), cap)
-    # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a move carries one thing: a move between stocks of
-    # different units is dropped, and the passes below refit the rows it touched (312 none-long: lna's nodes -> ready)
-    r = one_unit_moves(r, stocks, run)
-    # (2026-10-22, k8s-315, docs/research/fixes/315-combined2.md) a unit's block of plain rows the pick leaves above
-    # the levels' rounding re-read from the levels (sparseblock.py: each row's exact best subset joined into moves
-    # and outside terms; 315 none-short: lna's crossed moves between the two callees that share one caller)
-    r = sparseblock.apply(r, stocks, run, opts)
-    # (2026-10-21, k8s-308, docs/research/fixes/308-combined2.md) a discrete actuator's outside flows written
-    # as switches on the levels (switch.py) before the output-error refit, which otherwise bends the
-    # stocks the actuator drives to make up for its smeared linear rate
-    # (2026-10-21, k8s-309, docs/research/fixes/309-combined2.md) and each stock's outside sides refitted as
-    # floored linear rates (hinge.py: max(0, c + w . Z), a gap that closes) where its row says so
     plain = lambda name: not _capmin.level_series(name)   # noqa: E731
-    r = hinge.apply(switch.apply(r, stocks, run, o, readable=plain), stocks, run, o, readable=plain)
-    r = oefit.refit(r, stocks, run, o, _capmin.plain_cap(cap))
-    r = _capmin.restore(r, cap)
-    # (2026-10-22, k8s-316, docs/research/fixes/316-combined2.md) with the limits written back, a block that holds one
-    # (and the units a move the boundary forces across units joins) re-read around it: the pick fitted the block's
-    # other flows on rows that no longer carry the limit's series (316: -63.8 + 0.18 pricing_queue into db_waiting)
-    r = sparseblock.apply(r, stocks, run, opts)
-    r = hinge.apply(switch.apply(r, stocks, run, opts), stocks, run, opts)
-    # (2026-10-21, k8s-310, docs/research/fixes/310-combined2.md) a counter that counts another flow: that
-    # flow read off the counter's increase (counted.py: k x A x table(X), placed as a move by the rows it
-    # repairs), and the floored sides refitted once more with it held
-    # (2026-10-22, k8s-310 round 2) a block of one unit whose rows the pick leaves unexplained gets the moves
-    # it lacks, fitted together by non-negative least squares (rowrepair.py)
-    r = hinge.apply(rowrepair.apply(counted.apply(r, stocks, run, opts), stocks, run, opts), stocks, run, opts)
-    # (2026-10-22, k8s-311, docs/research/fixes/311-combined2.md) each capacity limit's numbers refitted on its
-    # rows now that the block's other flows are placed (minrefit.py: capmin offered it on rows still carrying them)
-    r = minrefit.apply(r, stocks, run, opts)
-    # (2026-10-22, k8s-310 round 2) a stock's inflow that reads a hidden integrator (a leak freed by the
-    # same event a counted flow measures) written as a hidden stock, which the scorer now credits (hiddenrow.py)
-    r = hiddenrow.apply(r, stocks, run, opts)
-    # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a stock's outside inflow that arrives through a
-    # hidden first-order stage (a node ordered joins after a provisioning delay) written as that stage (lagrow.py),
-    # and a flow that carries nothing on the record (a limit whose room is never open) is no flow
-    return idle_dropped(lagrow.apply(r, stocks, run, opts), run, opts)
-
+    steps = [
+        # (k8s-312, fixes/312-combined2.md) a move carries one thing: a move between stocks of different units dropped
+        lambda r: one_unit_moves(r, stocks, run),
+        # (k8s-315, fixes/315-combined2.md) a unit's block of plain rows the pick leaves above the levels' rounding
+        # re-read from the levels (each row's exact best subset joined into moves and outside terms)
+        lambda r: sparseblock.apply(r, stocks, run, opts),
+        # (k8s-308/309) a discrete actuator's outside flows as switches, then floored outside sides, before oefit
+        lambda r: switch.apply(r, stocks, run, o, readable=plain),
+        lambda r: hinge.apply(r, stocks, run, o, readable=plain),
+        lambda r: oefit.refit(r, stocks, run, o, _capmin.plain_cap(cap)),
+        lambda r: _capmin.restore(r, cap),
+        # (k8s-316, fixes/316-combined2.md) with the limits written back, a block holding one re-read around it
+        lambda r: sparseblock.apply(r, stocks, run, opts),
+        lambda r: switch.apply(r, stocks, run, opts),
+        lambda r: hinge.apply(r, stocks, run, opts),
+        # (k8s-310) a counter's counted flow read off its increase; (k8s-310 r2) a unit's missing moves by NNLS
+        lambda r: counted.apply(r, stocks, run, opts),
+        lambda r: rowrepair.apply(r, stocks, run, opts),
+        lambda r: hinge.apply(r, stocks, run, opts),
+        # (k8s-311) each limit refitted on its rows; (k8s-310 r2) a hidden integrator on an inflow; (k8s-312) a hidden
+        # first-order stage on an outside inflow; a flow idle on the whole record dropped
+        lambda r: minrefit.apply(r, stocks, run, opts),
+        lambda r: hiddenrow.apply(r, stocks, run, opts),
+        lambda r: lagrow.apply(r, stocks, run, opts),
+        lambda r: idle_dropped(r, run, opts),
+    ]
+    for i, step in enumerate(steps):
+        left = outer_left()
+        if left is None:
+            r = step(r)
+            continue
+        if left <= RESERVE:
+            return {**r, "passes_skipped": len(steps) - i}
+        try:
+            with deadline(left - RESERVE):
+                r = step(r)
+        except Overrun:
+            return {**r, "passes_skipped": len(steps) - i}
+    return r
