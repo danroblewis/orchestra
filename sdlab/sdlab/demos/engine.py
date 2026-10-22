@@ -114,13 +114,13 @@ def one_step(flows: list[dict], measured: list[str], t: list, levels: dict, inpu
 
 
 def free_run(flows: list[dict], measured: list[str], t: list, start: dict, inputs: dict) -> dict:
-    """The found model run free from `start` (the levels before step t[0]; hidden stocks 0 unless given): {stock: [...]},
-    each list the levels after each step, aligned with the truth's run."""
+    """The found model run free: out[s][0] is `start` (the levels at t[0]; hidden stocks 0 unless given), out[s][i] the
+    levels after step t[i]. To start from the levels before the first step, prepend a step (demos._free does)."""
     ids = found_ids(flows, measured)
     mdl = _model(flows, ids, t, inputs)
-    L = np.array([float(start.get(s, 0.0)) for s in ids])[:, None]       # the levels before the first step
-    out = {s: [] for s in ids}
-    for i in range(len(t)):                                     # out[s][i]: after step t[i], as the truth's levels are
+    L = np.array([float(start.get(s, 0.0)) for s in ids])[:, None]
+    out = {s: [float(L[k, 0])] for k, s in enumerate(ids)}
+    for i in range(1, len(t)):
         L = mdl.step(L, np.array([t[i]]))
         for k, s in enumerate(ids):
             out[s].append(float(L[k, 0]))

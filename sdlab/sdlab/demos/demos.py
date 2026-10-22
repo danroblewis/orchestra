@@ -146,8 +146,12 @@ def _start(b: dict) -> dict:
 
 
 def _free(b: dict, flows: list[dict], steps: int) -> dict:
+    """The found model from the case's initial levels (before step 1), each value after its step: aligned with the
+    truth's run. free_run's first value is its start, so a step 0 goes first and is dropped."""
     run_t = list(b["data"]["t"])[:steps]
-    return E.free_run(flows, b["measured"], run_t, _start(b), {k: list(v)[:steps] for k, v in b["data"]["inputs"].items()})
+    inputs = {k: [list(v)[0]] + list(v)[:steps] for k, v in b["data"]["inputs"].items()}
+    out = E.free_run(flows, b["measured"], [run_t[0] - 1] + run_t, _start(b), inputs)
+    return {s: v[1:] for s, v in out.items()}
 
 
 def _true_edit(b: dict, num: dict, old: float, new: float) -> tuple[str | None, object]:
