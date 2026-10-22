@@ -179,3 +179,20 @@ had two invented `outside -> inflight` flows that the errors-in-variables step p
 instrumented numbers were kept); now that step's instrumented numbers (0.93, 0.56, 0.47 against 1, 0.6,
 0.5) lose its own keep test by 0.003 in the judge, so the least-squares numbers (1.135, 0.68, 0.57,
 13% high) stay and fail on numbers.
+
+## Kubernetes 308-311: the climb's fixes ported (2026-10-22)
+
+docs/research/fixes/port-matrix_v2.md. kalman_lna's post-passes were copied at 9d3ca8e: rows, derived, delayed,
+subsets and tracker (fix ledger types 2, 3, 6, 7, 11, 12, 14, 15, 16). They run after `capmin.restore`, with the
+controller read before the rows and again after them. On top of them: type 4 (a still stock's smeared moves left
+out), the type 10 oefit and refit guards, and dead moves dropped (`dead.py`). The table gives none-short, none-long,
+counts-short and counts-long per rung.
+
+| rung | before (bab9156 / 793b5b5) | after (a1520e8, pool job 393) |
+|---|---|---|
+| 308 | FFFF | PPPP |
+| 309 | FFFF | PPFP |
+| 310 | FFFF | PPFF (counts data-limited) |
+| 311 | FFFX | PPFF (counts data-limited) |
+
+300-307 still pass on all four variants (32/32, job 394). The rest of the ladder has not been re-run on this code.
