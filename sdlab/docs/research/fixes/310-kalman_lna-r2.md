@@ -4,7 +4,7 @@
 none-short and none-long PASS 26/26 at 423dbb6 (pool job 280); counts-short and counts-long fail and are data-limited,
 so they are not targets. The rung passes for kalman_lna.
 
-## What I checked (commands rerunnable at HEAD eb88f3f)
+## What I checked (commands rerunnable at HEAD de2b09c)
 
 - `uv run sdlab-ladder show 310-k8s-memory-oom --strategy kalman_lna --variant V`:
 
