@@ -40,6 +40,7 @@ import time
 
 import numpy as np
 
+from . import delayed as _delayed
 from . import derived as _derived
 
 PRICE = 6.0            # the margin a rebuild must win by, in log T
@@ -49,8 +50,8 @@ SUB = 3                # every subset up to this many readers is tried
 MOST_TERMS = 5         # then forward steps up to this many
 BASE_SUB = 2           # the always-on part of a floored row: every support up to this many readers
 MIN_ON = 5             # a floored term acts on at least this many steps
-TIME = 200.0           # seconds for the rows and the derived-column search (310: 90; 311: 200, the capped move one
-                       # round more, under the 1800 s case limit)
+TIME = 400.0           # seconds for the rows and the derived-column search (310: 90; 311: 200, the capped move one
+                       # round more; 312: 400, the delayed rows and a seeded limit, under the 1800 s case limit)
 BUILD_TIME = 40.0      # seconds for the rebuild after them (the whole pass's budget before 310)
 TOL_MOVE = 0.02        # a move may take this share more than the source's drain (rounding)
 REPAIRS = 3            # rounds of refitting a row that needs a side the boundary lacks
@@ -198,8 +199,10 @@ def _trimmed(A: np.ndarray, y: np.ndarray, keep: float = 0.5, rounds: int = 6) -
 
 
 def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: float, a_cols: list[int] | None = None,
-             b_cols: list[int] | None = None):
-    """(bic, base support, a, floored support, b, sse) of y = X_A a + sign max(0, X_B b); None where none fits."""
+             b_cols: list[int] | None = None, strict: tuple = (1.0,)):
+    """(bic, base support, a, floored support, b, sse) of y = X_A a + sign max(0, X_B b); None where none fits.
+    strict: multiples of the noise threshold the floored term's steps are read at (312, delayed.py: (1, 4), where
+    the level's rounding puts a few steps past the first threshold and the term acts on only 20)."""
     n, p = X.shape
     logn = math.log(max(n, 2))
     best = None
@@ -214,19 +217,21 @@ def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: 
         r = y - (X[:, A] @ a if A else 0.0)
         small = np.abs(r) <= np.quantile(np.abs(r), 0.5)
         mad = float(np.median(np.abs(r[small]))) if small.any() else 0.0
-        tol = max(4.0 * 1.4826 * mad, 10 * res, 1e-9)
-        on = sign * r > tol
-        if int(on.sum()) < MIN_ON:
-            continue
-        top_A = None
-        for B, b in _hinge_readers(X, r, on, sign, floor, n, logn, b_cols=b_cols):
-            got = _joint(X, y, A, a, B, b, sign, floor, n, logn)
-            if got is not None and (top_A is None or got[0] < top_A):
-                top_A = got[0]
-            if got is not None and (best is None or got[0] < best[0]):
-                best = got
-        if top_A is not None:
-            tried.append((top_A, A, a, r, on))
+        tol0 = max(4.0 * 1.4826 * mad, 10 * res, 1e-9)
+        tol1 = max(tol0, _delayed.noise(r)) if len(strict) > 1 else tol0   # (312) zeros of a level held still left out
+        for mult in strict:
+            on = sign * r > mult * (tol0 if mult == 1.0 else tol1)
+            if int(on.sum()) < MIN_ON:
+                continue
+            top_A = None
+            for B, b in _hinge_readers(X, r, on, sign, floor, n, logn, b_cols=b_cols):
+                got = _joint(X, y, A, a, B, b, sign, floor, n, logn)
+                if got is not None and (top_A is None or got[0] < top_A):
+                    top_A = got[0]
+                if got is not None and (best is None or got[0] < best[0]):
+                    best = got
+            if top_A is not None:
+                tried.append((top_A, A, a, r, on))
     # (311) the few best always-on parts searched again with each floored candidate's steps re-read (ACTIVE_ROUNDS)
     for _, A, a, r, on in sorted(tried, key=lambda c: c[0])[:REREAD_SUPPORTS]:
         if time.monotonic() > deadline:
@@ -297,14 +302,33 @@ def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[in
 
 
 def _sides(S: str, declared: bool, bd: dict) -> set[str]:
+    """The sides a rebuilt row may put a flow on. (312) A side declared only "input" is fed by exactly 1 x the input
+    (boundary.py enforces it and _build keeps that flow), so no rebuilt flow goes there."""
     if not declared:
         return {"in", "out"}
     d = bd.get(S) or {}
-    return {s for s in ("in", "out") if d.get(s)}
+    return {s for s in ("in", "out") if d.get(s) and not _input_only(d.get(s))}
 
 
-def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
-    """The answer with the flows of the stocks whose rows it misses rebuilt from rows read off the data."""
+def _input_only(kinds) -> bool:
+    kinds = [kinds] if isinstance(kinds, str) else list(kinds or [])
+    return bool(kinds) and all(k == "input" for k in kinds)
+
+
+def _fixed_input(f: dict, declared: bool, bd: dict, inputs) -> bool:
+    """(312) The flow that feeds a side declared only "input": from outside, reading measured inputs only."""
+    if not declared or f.get("from") is not None or f.get("to") is None:
+        return False
+    if not _input_only((bd.get(f["to"]) or {}).get("in")):
+        return False
+    r = f.get("rate") or {}
+    reads = {r.get("stock")} if r.get("form") == "proportional" else {t.get("stock") for t in r.get("terms") or []}
+    return bool(reads) and reads <= set(inputs) and not f.get("byTime")
+
+
+def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offered: dict | None = None) -> dict:
+    """The answer with the flows of the stocks whose rows it misses rebuilt from rows read off the data; offered: the
+    limit capmin offered to the fit ({source, cap, theta, ...}), which the rows may read as a capped move (312)."""
     if not isinstance(result, dict) or not result.get("flows"):
         return result
     if result.get("lag") or result.get("scales") or (result.get("kalman") or {}).get("reading"):
@@ -369,11 +393,54 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
                            "hinge": (side, dict(zip([names[j] for j in h[3]], map(float, h[4])))), "res": yy - pred}
         if (out["sse"] > 100 * floor[S] and S not in final and "in" in _sides(S, declared, bd)
                 and f"__s_{S}" not in exclude):
-            out = _hidden(S, yy, cols, _schedule(S, yy, cols, out), out)
+            plain = out
+            out = _hidden(S, yy, cols, _schedule(S, yy, cols, plain), plain)
+            out = _with_delay(S, yy, cols, plain, out)
         if self_k is not None:
             out["lin"][S] = out["lin"].get(S, 0.0) + self_k
             out["bic"] += logT
         return out
+
+    delay_memo: dict = {}
+
+    def _with_delay(S, yy, cols, plain, best):
+        """(312, delayed.py) the row with its inflow through a hidden first-order delay (an order max(0, C . x) placed
+        into a stock nobody measures, a H of it arriving a step), beside the always-on part and a floored outflow,
+        where it beats the plain row by PRICE log T and the row's other forms (a schedule, an integrator)."""
+        if time.monotonic() > deadline or best["sse"] <= 100 * floor[S]:
+            return best                                      # (a schedule or an integrator already at the data's rounding)
+        # it reads levels, inputs and a constant only (no derived column), so it is fitted once for each row's change
+        b_cols = [j for j, n in enumerate(names) if not str(n).startswith("__")]
+        a_cols = [j for j in cols if j in b_cols]
+        key = (S, hash(yy.tobytes()), tuple(a_cols))
+        if key not in delay_memo:
+            out_side = "out" in _sides(S, declared, bd)
+
+            def floored(z, a_cols, keep=None):
+                keep = np.ones(len(z), dtype=bool) if keep is None else keep
+                h = _floored(X[keep], z[keep], -1.0, floor[S], deadline, a_cols, b_cols, (1.0, 4.0))
+                return None if h is None else (h[1], h[2], h[3], h[4])
+            delay_memo[key] = _delayed.fit(X, yy, floor[S], deadline, a_cols, b_cols, floored, out_side)
+        got = delay_memo[key]
+        if got is None:
+            return best
+        b = T * math.log((got["sse"] + floor[S]) / T) + got["k"] * logT
+        if opts.get("rows_trace"):
+            print("rows delayed", S, round(b, 1), "plain", round(plain["bic"], 1), "best", round(best["bic"], 1), got["a"],
+                  [names[j] for j in got["C"]], got["c"], [names[j] for j in got["B"]], got["b"],
+                  [names[j] for j in got["D"]], got["d"])
+        if not (b + PRICE * logT < plain["bic"] and b < best["bic"]):
+            return best
+        o = (got["A"], got["lin"], got["B"], got["b"], got["D"], got["d"])
+        pred = _delayed.predict(X, got["a"], got["C"], got["c"], got["h0"], o)
+        inflow = _delayed.inflow(X, got["a"], got["C"], got["c"], got["h0"])
+        return {"bic": b, "sse": got["sse"], "lin": dict(zip([names[j] for j in got["A"]], map(float, got["lin"]))),
+                "hinge": ("out", dict(zip([names[j] for j in got["B"]], map(float, got["b"])))) if got["B"] else None,
+                "res": yy - pred,
+                "delay": {"a": got["a"], "order": dict(zip([names[j] for j in got["C"]], map(float, got["c"]))),
+                          "h0": got["h0"], "inflow": inflow,
+                          "second": dict(zip([names[j] for j in got["D"]], map(float, got["d"]))),
+                          "levels": _delayed.hidden_levels(X, got["a"], got["C"], got["c"], got["h0"])}}
 
     qs: dict = {}
     derived_meta: dict[str, dict] = {}                     # (310, derived.py) columns beyond the levels
@@ -602,6 +669,18 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         found.sort(key=lambda c: -c[0])
         return found[:_derived.CAP_TRY]
 
+    if offered and offered.get("source") in names and offered.get("cap") in names:
+        # (312) the limit capmin offered the fit, MIN(X, theta Y), is a capped move the rows may read (min(1 X, max(0,
+        # theta Y))): the strategy's own search may leave it unread (312 none-short: queue -> inflight read 2.06 nodes),
+        # and a limit that binds on a few steps only is not one the capped search below reads off the rows' residuals
+        ix, iy = names.index(offered["source"]), names.index(offered["cap"])
+        th = float(offered["theta"])
+        X = np.hstack([X, _derived.cap_column(X[:, ix], X[:, [iy]], 1.0, np.array([th]))[:, None]])
+        derived_meta[f"__d{len(derived_meta)}"] = {
+            "expr": _derived.cap_expr(names[ix], 1.0, [(names[iy], th)]), "reads": [names[ix], names[iy]],
+            "base": names[ix], "row": offered.get("to"), "room": [names[iy]], "cap": (ix, [iy], 1.0, np.array([th])),
+            "offered": True}
+        names = names + [f"__d{len(derived_meta) - 1}"]
     rows, old = {}, {}
     for i, S in enumerate(ids):
         if np.ptp(read[i]) <= 0 and not np.any(dy[i]):
@@ -647,7 +726,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
                                   [m["hinge"] for m in derived_meta.values() if m.get("hinge")])
             joint = _ratio_hidden(resid, {m["expr"] for m in derived_meta.values()}, stock_cols)
         capped = None
-        if not any(m.get("cap") for m in derived_meta.values()):
+        if not any(m.get("cap") and not m.get("offered") for m in derived_meta.values()):
             # (311) the few best caps by what they add beyond the rows' spans, each then judged by its two rows refitted
             # with it (a cap lets a row's floored term be read right, which no linear score sees), net of its numbers
             for g0, meta_c, col_c in _capped(resid, spans, {m["expr"] for m in derived_meta.values()}):
@@ -766,6 +845,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             return result
     else:
         return result
+    full = {H[len("__full_"):]: hidden_lv.pop(H) for H in [k for k in hidden_lv if k.startswith("__full_")]}
     if hidden_lv:                                            # (310 round 2) the rows' hidden stocks at each step's start
         states = [{**st, **{H: float(h[k]) for H, h in hidden_lv.items()}} for k, st in enumerate(states)]
     new_amts = [_amounts(f, states, t_end) for f in new_flows]
@@ -789,6 +869,9 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
     if hidden_lv:                                            # their levels on the run (aligned with t), for the judge
         lv = dict(out.get("inferred_levels") or {})
         for H, h in hidden_lv.items():
+            if H in full:                                    # (312) a delayed inflow's stock: its levels as fitted
+                lv[H] = [float(v) for v in full[H]]
+                continue
             f = next((g for g in out["flows"] if g.get("from") == H), None)
             drain = _amounts(f, states, t_end) if f is not None and not f.get("effects") else None
             if f is not None and drain is None:
@@ -956,6 +1039,27 @@ def _hidden_flows(H: str, integ: dict, names: list, X) -> list[dict]:
     return out
 
 
+def _lin_expr(terms: dict) -> str:
+    return " + ".join(f"{float(k)!r}" if n is None else f"{float(k)!r} * {n}" for n, k in terms.items()) or "0.0"
+
+
+def _two_floors(f: dict, first: dict, second: dict) -> dict:
+    """(312) an outflow floored twice, max(0, min(B . z, D . z)), as an expression (its numbers: B's and D's)."""
+    r = {"form": "expr", "expr": f"max(0, min({_lin_expr(first)}, {_lin_expr(second)}))"}
+    return {**{k: v for k, v in f.items() if k not in ("rate", "rates")}, "rate": r, "rates": [dict(r)],
+            "numbers": len(first) + len(second)}
+
+
+def _delay_flows(H: str, S: str, d: dict) -> list[dict]:
+    """(312, delayed.py) a delayed inflow as the found model's own hidden stock H: outside -> H at the order
+    max(0, C . x) (an expression: the floor is the order's own), H -> S at a H."""
+    r_in = {"form": "expr", "expr": f"max(0, {_lin_expr(d['order'])})"}
+    r_out = {"form": "proportional", "stock": H, "k": float(d["a"])}
+    return [{"from": None, "to": H, "ratio": 1, "rate": r_in, "rates": [dict(r_in)], "id": f"rows_in_{H}",
+             "numbers": len(d["order"])},
+            {"from": H, "to": S, "ratio": 1, "rate": r_out, "rates": [dict(r_out)], "id": f"rows_{H}_{S}"}]
+
+
 def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, row, T, fine, floor, meta=None, t_end=None,
            hidden_out: dict | None = None):
     """(flows, stocks to leave out) of the rebuild over B; None where a flow cannot run."""
@@ -976,6 +1080,10 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
         a, b = f.get("from"), f.get("to")
         if a not in B and b not in B:
             kept.append(f)
+            continue
+        if _fixed_input(f, declared, bd, names) and amts[n] is not None:
+            kept.append(f)                                   # (312) 1 x the measured input: fixed, never rebuilt
+            kept_on[b] += amts[n]
             continue
         if a is None or b is None or (a in B and b in B):
             continue                                         # rebuilt
@@ -1035,6 +1143,11 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
         sides = _sides(S, declared, bd)
         h = R[S]["hinge"]
         need = {"in": bool(link_in[S]), "out": bool(link_out[S])}
+        if R[S].get("delay") is not None:
+            if need["in"]:
+                bad.add(S)                                   # (312) one flow per side: the delayed inflow alone
+                continue
+            need["in"] = True
         if h is not None:
             if need[h[0]]:
                 bad.add(S)                                   # one flow per side: the floored term alone
@@ -1053,13 +1166,27 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
             new.append((S, None, dict(link_out[S]), False))
         if h is not None:
             new.append((None, S, dict(h[1]), True) if h[0] == "in" else (S, None, dict(h[1]), True))
-    new = _together(new, B, y, R, series, floor, T)
+    left_y = {S: (y[S] - R[S]["delay"]["inflow"]) if R[S].get("delay") is not None else y[S] for S in B}
+    new = _together(new, B, left_y, R, series, floor, T)
     out = list(kept)
     taken = set(ids) | set(names)
     ctx = {"derived": meta or {}, "sched": sched, "t_end": t_end, "names": names, "X": X, "hid": hid,
            "hidden_names": {sn: _hidden_name(S, taken) for sn, (S, _) in hid.items()}}
     for a, b, terms, _ in new:
         out.append(_flow(a, b, terms, ctx))
+    for S in sorted(B):                                      # (312) a delayed inflow: outside -> H -> S
+        d = R[S].get("delay")
+        if d is None:
+            continue
+        if d.get("second") and R[S]["hinge"] is not None:   # its outflow floored twice: max(0, min(B . z, D . z))
+            for n_, f in enumerate(out):
+                if f.get("from") == S and f.get("to") is None and f.get("id") == f"rows_{S}_None":
+                    out[n_] = _two_floors(f, R[S]["hinge"][1], d["second"])
+        H = _hidden_name(S, taken)
+        out += _delay_flows(H, S, d)
+        if hidden_out is not None:
+            hidden_out[H] = d["levels"][:-1]
+            hidden_out[f"__full_{H}"] = d["levels"]
     for sn, H in ctx["hidden_names"].items():               # (310 round 2) each integrator a row reads is a hidden stock
         if any(H in str((f.get("rate") or {}).get("expr", "")) for f in out):
             out += _hidden_flows(H, hid[sn][1], names, X)
@@ -1070,11 +1197,14 @@ def _build(B, flows, amts, rows, ids, dy, X, names, unit, final, declared, bd, r
 
 def _together(new, B, y, R, series, floor, T, rounds: int = 4):
     """Every rebuilt flow's numbers refitted at once over the rebuilt stocks' rows (a move's number shows in
-    both its stocks), each row weighted by its own residual scale; a floored flow's active steps re-read."""
+    both its stocks), each row weighted by its own residual scale; a floored flow's active steps re-read. (312) The
+    flows of a row with a delayed inflow keep the numbers its own fit gave them (delayed.py fits them on the one-step
+    error; the run's error here carries the hidden stock's misfit forward)."""
     order = sorted(B)
     w = {S: 1.0 / math.sqrt(max(R[S]["sse"], floor[S]) / T) for S in order}
     yy = np.concatenate([w[S] * y[S] for S in order])
-    params = [(n, x) for n, (_, _, terms, _) in enumerate(new) for x in terms]
+    held = {S for S in order if R[S].get("delay") is not None}
+    params = [(n, x) for n, (a, b, terms, _) in enumerate(new) if not ({a, b} & held) for x in terms]
     if not params:
         return new
     cur = [dict(t) for _, _, t, _ in new]

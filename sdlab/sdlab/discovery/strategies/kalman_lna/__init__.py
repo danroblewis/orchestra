@@ -170,7 +170,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
 # A capacity limit offered to the fit (capmin.py, docs/research/k8s-306-s1.md, 2026-10-21): identify above
 # runs with the regime-clipped series MIN(X, theta x Y) as one more measured input where the data show a
 # limit, and every term that reads it is written back as MIN(a x X, a theta x Y).
-from . import capmin as _capmin  # noqa: E402
+# (k8s-312) capsteps.py: capmin.py with a regime allowed to hold on as few as 5 steps (a short run's rare limit)
+from . import capsteps as _capmin  # noqa: E402
 
 _identify_linear = identify
 
@@ -194,5 +195,5 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # misses rebuilt from the rows (moves paired by unit, the rest outside links) where that wins by BIC (rows.py)
     from . import rows
 
-    r = rows.revise(_capmin.restore(r, cap), stocks, run, opts)
+    r = rows.revise(_capmin.restore(r, cap), stocks, run, opts, cap)
     return tracker.revise(r, stocks, run, opts)
