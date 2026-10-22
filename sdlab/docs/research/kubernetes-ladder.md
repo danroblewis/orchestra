@@ -135,3 +135,17 @@ trying in round 2 before strategy-specific changes: estimate `mem`'s drain on sm
 one-step regression; check whether the OOM table is then found. If a measured bound shows the counts data
 cannot fix these numbers, record it (`analyse` cannot), and the rung moves on with none-short/none-long.
 On 309, three strategies now pass counts-long, so counts is not out of reach in general.
+
+## 317 after round 1 (coordinator, 2026-10-22)
+
+Round 1 (22:36Z): structures passes none-short 85/85 (1,043 s); every other cell fails (combined2 none-long 64/85,
+the rest 17-49/76-85) or times out (engine_forms none-long). `sdlab-ladder diff 317 --summary --strategies
+combined2,milp,structures,kalman_lna,engine_forms --variants none-short,none-long`: the misses are 310's and 312's
+mechanisms repeated per service, not anything new: the three per-service hidden leaks (`outside -> *_leak`), the
+cluster autoscaler's provisioning delay (`outside -> provisioned_d1 -> nodes`), the OOM kills (`*_ready -> *_pending
+x effect(*_mem)`) and the memory drains. Run times are 400-1,710 s against the 1,800 s limit: at 36 stocks and 68 flows
+the hidden-stock and effect searches look starved of time rather than wrong. Suggestions for round 2, before anything
+new: (1) read how structures' none-short pass finds the hidden stocks and effects at this size
+(docs/research/fixes/317-structures.md) and port it (copy, never import); (2) make sure each strategy's per-block
+budget scales with the number of services (a block per service, as 313-316 passed) rather than one search over all 36
+stocks; (3) the speed notes in docs/research/speed-profile-311.md apply here most.
