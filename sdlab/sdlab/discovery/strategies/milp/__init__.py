@@ -440,20 +440,38 @@ _identify_program = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:  # noqa: F811
-    from . import effects, hidden, hinge, oefit, quantized
+    from . import quantized
 
     known, notes = quantized.find(stocks, run, opts)          # whole-unit controllers (k8s-308): their rules, from the data
     result = _identify_program(stocks, run, opts, known)
+    return _after_program(result, stocks, run, opts, known, notes)
+
+
+def _after_program(result: dict, stocks: list[dict], run: dict, opts: dict | None, known: dict, notes) -> dict:
+    """The passes after the program, in order (split out so a stored program answer can be re-run through them)."""
+    from . import effects, hidden, hinge, oefit, quantized, room
+
     if known:
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
-    flows, eff = effects.refine(result.get("flows") or [], stocks, run, opts, skip=known)  # table-effect flows (k8s-310)
+    flows, rooms = room.refine(result.get("flows") or [], stocks, run, opts, skip=known)   # room-limited moves (k8s-311)
+    if rooms:                                                  # the gaps the room's misfit bent, floored; the room polished on them
+        flows, _ = hinge.refine(flows, stocks, run, opts, skip=known)
+        flows, more = room.refine(flows, stocks, run, opts, skip=known)
+        rooms = {"rooms": rooms["rooms"] + (more.get("rooms") or [])}
+    flows, eff = effects.refine(flows, stocks, run, opts, skip=known)  # table-effect flows (k8s-310)
+    if rooms:                                                  # a counted move the bent room hid (k8s-311)
+        flows, cm = room.counted(flows, stocks, run, opts, skip=known)
+        rooms.update(cm)
     flows, gaps = hinge.refine(flows, stocks, run, opts, skip=known)   # floored gap flows (k8s-309)
     if gaps.get("used"):                                       # the gaps may uncover an effect flow their misfit hid
         flows, more = effects.refine(flows, stocks, run, opts, skip=known)
         if more:
             eff = {"effects": (eff.get("effects") or []) + more["effects"]}
             flows, gaps = hinge.refine(flows, stocks, run, opts, skip=known)
-    result = {**result, "flows": flows, "gaps": gaps, **({"effects": eff} if eff else {})}
+    if rooms:                                                  # the room polished on the flows as they now are
+        flows, more = room.refine(flows, stocks, run, opts, skip=known)
+        rooms["rooms"] += more.get("rooms") or []
+    result = {**result, "flows": flows, "gaps": gaps, **({"effects": eff} if eff else {}), **({"room": rooms} if rooms else {})}
     result = oefit.refit(result, stocks, run, opts or {})
     if known:                                                  # the output-error refit does not run the rules' forms
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}

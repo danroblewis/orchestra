@@ -421,7 +421,10 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
 
     stuck: set = set()
     starts = [trial(rd, cur), trial({k: orig.get(k, v) for k, v in rd.items()}, cur)]
-    if not np.isfinite(min(z[0] for z in starts)) and stuck - set(avoid):
+    if not np.isfinite(starts[0][0]) and stuck - set(avoid):
+        # (k8s-311) a side whose gap cannot act and has no plain rate to go back to is left as the answer has it, and
+        # the other sides are still searched with their full readers (it used to block them whenever the answer's
+        # own readers fitted: on 311 none-long a mem outflow gap that never bound kept pending's and ready's gaps out)
         return refine(flows, stocks, run, opts, skip, frozenset(avoid) | frozenset(stuck))
     if DEBUG:
         for z in starts:
