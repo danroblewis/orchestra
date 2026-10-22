@@ -65,3 +65,11 @@ guarded; the candidate's own model goes to the errors-in-variables refit, and th
 outflow is not tied in the fit: the guard makes its leftover drain a move or drops it.
 tests/test_strategy_sindy.py's "products" ablation is read before the boundary step (identify prices
 its spurious link into b as an unearned boundary claim and drops it).
+
+## The kubernetes climb's fixes ported (2026-10-22, port-sindy)
+
+engine_forms' exact post passes (fix-ledger types 1-3, 5, 6, 10-17) were copied at 2bca23f and run after sindy's
+fit. Two sindy-specific changes went on top: co-flows on rows the answer does not reproduce are dropped
+(`coflows.py`), and reread's subset screen keeps 256 sets. sindy now passes 308-311 none-short and none-long, and
+308 counts-long (9 cells, job 377 -> job 396 at 6732e88). 300-307 still pass 32/32 (job 397). The remaining
+308-311 fails are data-limited counts cells. Details: [fixes/port-sindy.md](fixes/port-sindy.md).
