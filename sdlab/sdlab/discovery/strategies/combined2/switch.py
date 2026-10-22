@@ -345,8 +345,8 @@ def _try(x: str, flows: list[dict], levels: dict, cols: dict, n: int, T: int, fi
         lv = copy.copy(levels)
         repaired = []
         for y in partners:
-            if y in finals:
-                return None
+            # (2026-10-22, k8s-312 round 2) a final counter is a partner like any other: its declared inflow is refitted
+            # (a picked model wrote desired -> oom_kills_total = -0.007 retries + 0.028 nodes, and the actuator never switched)
             before = _row_sse(y, flows, lv, cols, n)
             allowed = hinge.allowed_sides(y, {"boundary": boundary, "boundary_declared": boundary is not None}, keep)
             got = hinge.refit_row(y, keep, lv, cols, n, allowed, force=True)
