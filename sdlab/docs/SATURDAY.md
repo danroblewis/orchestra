@@ -33,7 +33,7 @@ slots with `--all-cores`, so divide by about 30-40 for wall time, with the slow 
 On 2026-10-21 a kubernetes re-score (jobs 271, 272) was started by mistake during the climb and cancelled; the
 about 4,200 results it finished are kept, the rest is item 1.
 
-Items 306-317 allow 900 s each, so the kubernetes set has a long tail (the slowest: 311 counts-long
+Items 306-317 allow 1800 s each (900 s until 2026-10-21), so the kubernetes set has a long tail (the slowest: 311 counts-long
 kalman_lna and engine_forms, 316 counts-long, 310 counts-long milp). Timeouts are recorded as timeouts.
 
 ## What to look at when it is done

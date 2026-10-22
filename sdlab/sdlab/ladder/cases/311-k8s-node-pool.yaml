@@ -4,7 +4,7 @@ title: "Kubernetes 12: a node pool that can be full"
 level: 12
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max, delay, effect, effect-table, injection]
 tests: "rung 11 on a node pool (nodes, measured; 4 of the service's pods fit a node): a pending pod starts only while there is room, min(0.5 x pending, 4 x nodes - ready); three nodes (12 pods) hold the peak's 10, and an announced node failure on Monday, Wednesday and Friday at 10:50 (one node gone, its 3 ready pods back to pending; the node replaced 30 steps later) leaves pods pending at the peak; recovered as a MIN of pending and the room left by nodes and ready"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 311
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

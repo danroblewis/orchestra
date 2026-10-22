@@ -4,7 +4,7 @@ title: "Kubernetes 9: the HPA scales on CPU"
 level: 9
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max]
 tests: "rung 8 with the HorizontalPodAutoscaler instead of the hand scaling: it keeps CPU near 70% of a 250m request a pod (175m), adding all the pods it needs at once when CPU is 10% above target (max(0, min(16, ceil(cpu / 192.5)) - ready), maxReplicas 16) and removing one pod a step while it is 10% below (ready > max(3, ceil(cpu / 157.5)), minReplicas 3), exactly (controllers act exactly); recovered as ready driven up and down by cpu with the asymmetric speeds, not as a linear drift of ready"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 308
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

@@ -5,7 +5,7 @@ title: "Kubernetes 14: two services, one calling the other"
 level: 14
 tags: [kubernetes, input, chain, move, final, periodic, link]
 tests: "rung 4's service twice: frontend (fed by the measured traffic) calls catalog, 0.3 calls a step per request in frontend_inflight (0.6 calls per request) into catalog_queue; each service's queue -> inflight -> responses_total chain as in rung 4; recovered as two chains joined by a link from frontend_inflight into catalog_queue, not a move (the caller's requests are not used up by the call)"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 313
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

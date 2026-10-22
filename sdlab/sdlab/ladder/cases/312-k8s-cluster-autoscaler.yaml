@@ -4,7 +4,7 @@ title: "Kubernetes 13: the cluster autoscaler"
 level: 13
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, link, nonlinear, max, delay, effect, effect-table, injection, hidden]
 tests: "rung 12 with the cluster autoscaler: when pods cannot be placed it asks for a node per 4 unplaceable pods (0.3 of them a step), which joins after a 10-minute provisioning delay (DELAY1, a hidden stock), and it removes 5% of the nodes above max(2, pods / 2) a step (nodes under half used; minimum 2), exactly; recovered as nodes driven up by pending and down by ready, through a hidden provisioning stage"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 312
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

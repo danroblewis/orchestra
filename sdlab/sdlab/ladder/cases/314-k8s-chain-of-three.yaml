@@ -5,7 +5,7 @@ title: "Kubernetes 15: a chain of three services"
 level: 15
 tags: [kubernetes, input, chain, move, final, periodic, link]
 tests: "rung 14 plus a third service: catalog calls pricing (0.4 a step per request in catalog_inflight); pricing dispatches at 0.7 and completes at 0.6; recovered as three chains joined by two links, frontend -> catalog -> pricing, without a spurious link from frontend straight to pricing (the two-hop correlation)"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 314
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

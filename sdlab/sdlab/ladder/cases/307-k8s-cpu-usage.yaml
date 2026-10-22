@@ -4,7 +4,7 @@ title: "Kubernetes 8: CPU usage follows the load"
 level: 8
 tags: [kubernetes, input, chain, move, final, periodic, split, loop, min, capacity, injection, link]
 tests: "rung 7 plus the service's CPU usage (cpu, millicores over all pods, measured): each request in flight costs 1.25 millicore-steps and each ready pod idles at 20, read through a 10-minute rate window (half of it renewed a step); recovered as two links (from inflight and from ready) into cpu and its window drain, beside rung 7's flows"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 307
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)

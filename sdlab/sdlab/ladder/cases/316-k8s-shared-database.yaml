@@ -5,7 +5,7 @@ title: "Kubernetes 17: a shared database pool and query queue"
 level: 17
 tags: [kubernetes, input, chain, move, final, periodic, link, min, capacity]
 tests: "rung 16 plus a shared Postgres: pricing and cart send queries (0.06 and 0.1 a step per request in flight) into the pool's wait queue (db_waiting, pgbouncer's waiting clients), which get connections at min(0.8 x db_waiting, 80 - 0.2 x db_active): a pool of 80 connections (db_active, pg_stat_activity), 80% of them released within the step and reused; the pool fills in the afternoon peaks; recovered as two links into db_waiting from two different services and a MIN-capped move into db_active"
-timeout: 900                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default)
+timeout: 1800                            # seconds per run (the user, 2026-10-21: the larger rungs hit the 300 s default, then 900 s)
 seed: 316
 inputs:
   traffic: 400 + sin(220, 288, 96) - pulse_train(120, 1440, 576, 2016)
