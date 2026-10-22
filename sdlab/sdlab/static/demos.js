@@ -220,9 +220,9 @@
     planned.parentNode.insertBefore(btn, planned);
     const sec = document.createElement("section"); sec.dataset.panel = d.tab; sec.hidden = true;
     panel("planned").parentNode.insertBefore(sec, panel("planned"));
-    const want = new URLSearchParams(location.search).get("demo");
-    if (want === d.tab) show(d.tab);
+    if (WANT === d.tab) show(d.tab);
   }
+  const WANT = new URLSearchParams(location.search).get("demo");    // read before show() rewrites the URL: an extra tab opens once its script registers
   window.SDDemos = { register, helpers: () => ({ get, esc, fmt, pct, chart, scenario: SCEN, model: S.model, overview: S.overview }) };
   async function loadExtra() {
     try {

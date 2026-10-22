@@ -30,12 +30,11 @@ def stored_model(case_id: str, variant: str, strategy: str) -> dict | None:
     rows = store.latest(case_id, variant, strategy, found=True)
     r = next((x for x in rows if x.get("status") in GOOD), None)
     if r is None:
-        con = store.connect() if hasattr(store, "connect") else None
-        if con is not None:
+        with store.connect(readonly=True) as con:                # a context manager (store.connect yields)
             got = con.execute("SELECT id FROM results WHERE case_id = ? AND variant = ? AND strategy = ? AND status IN ('pass', 'equivalent', 'fits')"
                               " ORDER BY id DESC LIMIT 1", (case_id, variant, strategy)).fetchone()
-            if got:
-                r = store.get(int(got[0]), found=True)
+        if got:
+            r = store.get(int(got[0]), found=True)
     return r
 
 
