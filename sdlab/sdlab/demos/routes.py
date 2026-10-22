@@ -57,12 +57,17 @@ def hidden(name: str) -> dict:
 @router.get("/manifest")
 def manifest() -> dict:
     """The page's extra demos: every static/demos-<name>.js, loaded after demos.js (each registers its own tab)."""
-    return {"scripts": sorted(f"/static/{p.name}" for p in STATIC.glob("demos-*.js"))}
+    return {"scripts": sorted(f"/static/{p.name}?v={int(p.stat().st_mtime)}" for p in STATIC.glob("demos-*.js")), "broken": BROKEN}
 
 
 # every other module in this package with a `router` (one demo each) adds its routes under /api/demos
+BROKEN: dict[str, str] = {}                 # a demo module that fails to import is skipped (the server still starts)
 for _m in pkgutil.iter_modules([str(Path(__file__).resolve().parent)]):
     if _m.name not in CORE:
-        _mod = importlib.import_module(f"{__package__}.{_m.name}")
+        try:
+            _mod = importlib.import_module(f"{__package__}.{_m.name}")
+        except Exception as e:                                  # noqa: BLE001
+            BROKEN[_m.name] = f"{type(e).__name__}: {e}"
+            continue
         if isinstance(getattr(_mod, "router", None), APIRouter):
             router.include_router(_mod.router)

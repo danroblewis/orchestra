@@ -189,15 +189,7 @@
 
   // ---------- planned ----------
   const PLANNED = [
-    ["2", "Daily model diff", "two days of a service, the second changed; the diff of the two found models beside the true change"],
-    ["4", "Capacity projection", "traffic ramped through the model; when each capped flow saturates and the headroom left"],
-    ["5", "Risk calendar", "the next 30 days of known events through the model; the days a stock crosses a limit"],
-    ["6", "Metastability scan", "the retry loop's tipping point: the load spike after which the system stays broken"],
     ["9", "Always-on discovery", "a live service whose model improves over time and catches a change mid-stream"],
-    ["10", "Before/after attribution", "an SRE project's effect against the before model's counterfactual, with its uncertainty"],
-    ["11", "Canary guard", "baseline and canary fitted side by side; stop or go from the difference in their numbers"],
-    ["12", "Blast radius", "a slowdown in a shared database spreading through a multi-service model"],
-    ["13", "Agent work as stocks", "tickets by state with agents as the flows: throughput, rework, bottleneck"],
     ["14", "Game-day microworld", "be on call in a simulated incident, then compare with the found model's predictions"],
     ["15", "Fleet view", "model health, unexplained diffs and confidence across many simulated services"],
   ];
@@ -216,8 +208,10 @@
     const btn = document.createElement("button");
     btn.setAttribute("role", "tab"); btn.dataset.tab = d.tab; btn.textContent = d.title; btn.setAttribute("aria-selected", "false");
     btn.onclick = () => show(d.tab);
+    const num = (el) => parseFloat(el.textContent) || 999;            // tabs in demo-number order ("4. Capacity" before "10. ...")
     const planned = document.querySelector('#tabs [data-tab="planned"]');
-    planned.parentNode.insertBefore(btn, planned);
+    const after = [...document.querySelectorAll("#tabs [role=tab]")].find((x) => x !== planned && num(x) > num(btn)) || planned;
+    after.parentNode.insertBefore(btn, after);
     const sec = document.createElement("section"); sec.dataset.panel = d.tab; sec.hidden = true;
     panel("planned").parentNode.insertBefore(sec, panel("planned"));
     if (WANT === d.tab) show(d.tab);

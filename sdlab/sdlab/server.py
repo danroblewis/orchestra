@@ -465,8 +465,11 @@ def create_app() -> FastAPI:
     def page(file: str) -> HTMLResponse:
         # stamp each asset with its modification time so caches (Cloudflare's included) never serve a stale copy
         html = (STATIC / file).read_text()
-        for name in ("app.js", "sim.js", "simplify.js", "research.js", "diagram.js", "ladder.js", "ladder-compare.js", "ladder-board.js", "ladder-draw.js", "ladder-strategy.js", "ladder-newest.js", "style.css"):
-            html = html.replace(f"/static/{name}", f"/static/{name}?v={int((STATIC / name).stat().st_mtime)}")
+
+        def stamp(m: re.Match) -> str:                    # every /static/*.js and *.css the page names (a fixed list missed new files)
+            f = STATIC / m.group(1)
+            return f'"/static/{m.group(1)}?v={int(f.stat().st_mtime)}"' if f.is_file() else m.group(0)
+        html = re.sub(r'"/static/([A-Za-z0-9_.-]+\.(?:js|css))"', stamp, html)
         return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
     @app.get("/")
