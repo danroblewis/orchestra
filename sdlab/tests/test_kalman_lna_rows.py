@@ -85,3 +85,33 @@ def test_a_fixed_drain_leaves_the_floored_inflow_free_to_read_its_own_stock():
     got = {(f["from"], f["to"]): f["rate"] for f in rows.revise({"flows": proxy}, stocks, run, {})["flows"]}
     inflow = {t["stock"]: t["k"] for t in got[(None, "pending")]["terms"]}
     assert all(abs(inflow.get(s, 0.0) - k) < 1e-3 for s, k in {"desired": 1, "pending": -1, "ready": -1}.items())
+
+
+def test_a_derived_search_out_of_time_is_undone_and_the_rebuild_still_runs(monkeypatch):
+    """(309 counts-long on node2) the derived-column search used the whole pass, and the answer was kept unrebuilt;
+    now a round cut short by the clock is undone and the rebuild of the plain rows has its own budget."""
+    import time
+
+    from sdlab.discovery.strategies.kalman_lna import derived
+
+    stocks, run = _case()
+    rng = np.random.default_rng(0)                           # rounding-scale noise: rows above their floor search
+    for s in ("pending", "ready"):
+        run["levels"][s] = list(np.round(np.array(run["levels"][s]) + rng.normal(0, 0.01, len(run["levels"][s])), 3))
+    calls = []
+
+    def slow(X, *a, **k):                                    # a slow machine: one search takes past the deadline
+        calls.append(1)
+        time.sleep(1.2)
+        return 1e9, {"expr": "x", "reads": [], "base": None, "row": "pending"}, np.zeros(X.shape[0])
+
+    monkeypatch.setattr(derived, "search", slow)
+    monkeypatch.setattr(rows, "TIME", 1.0)
+    proxy = [{"from": None, "to": "pending", "ratio": 1, "rate": {"form": "constant", "value": 0.3}},
+             {"from": "pending", "to": "ready", "ratio": 1, "rate": {"form": "proportional", "stock": "pending", "k": 0.5}},
+             {"from": "ready", "to": None, "ratio": 1, "rate": {"form": "constant", "value": 0.1}}]
+    r = rows.revise({"flows": proxy}, stocks, run, {})
+    assert calls, "the derived search ran"
+    assert "derived" not in r["rows"]                         # the round was undone
+    got = {(f["from"], f["to"]): f["rate"] for f in r["flows"]}
+    assert abs(got[("pending", "ready")]["k"] - 0.4) < 1e-2

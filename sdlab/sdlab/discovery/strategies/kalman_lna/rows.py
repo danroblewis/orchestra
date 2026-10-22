@@ -49,7 +49,8 @@ SUB = 3                # every subset up to this many readers is tried
 MOST_TERMS = 5         # then forward steps up to this many
 BASE_SUB = 2           # the always-on part of a floored row: every support up to this many readers
 MIN_ON = 5             # a floored term acts on at least this many steps
-TIME = 90.0            # seconds for the whole pass (310: the derived-column search runs inside it)
+TIME = 90.0            # seconds for the rows and the derived-column search (310)
+BUILD_TIME = 40.0      # seconds for the rebuild after them (the whole pass's budget before 310)
 TOL_MOVE = 0.02        # a move may take this share more than the source's drain (rounding)
 REPAIRS = 3            # rounds of refitting a row that needs a side the boundary lacks
 LEFT = 1e-4            # what a drain leaves below this share of itself after its moves is rounding
@@ -490,9 +491,15 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         return U[:, sv > 1e-10 * sv[0]]
 
     stock_cols = [j for j, n in enumerate(names) if n in set(ids)]
+    t_der = time.monotonic()
+    if opts.get("rows_trace"):
+        print("rows t base", round(t_der - deadline + TIME, 1))
+    if time.monotonic() > deadline:
+        return result                                        # the plain rows themselves ran out of time
     for _ in range(_derived.ROUNDS):
         if time.monotonic() > deadline:
             break
+        before = (X, names, rows, dict(derived_meta))       # a round cut short by the clock is undone whole
         resid = {S: r["res"] for S, r in rows.items() if r["sse"] > 100 * floor[S]}
         if not resid:
             break
@@ -523,9 +530,15 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             X[:, j] = col
             rows = {S: row(S, dy[ids.index(S)]) for S in rows}
         if opts.get("rows_trace"):
-            print("rows derived refined", name, derived_meta[name]["expr"])
-    if time.monotonic() > deadline:
-        return result
+            print("rows derived refined", name, derived_meta[name]["expr"], "t", round(time.monotonic() - t_der, 1))
+        if time.monotonic() > deadline:
+            X, names, rows, derived_meta = before
+            if opts.get("rows_trace"):
+                print("rows derived round undone: out of time")
+            break
+    # the rebuild has its own budget after the derived search, so a slower machine loses derived columns, never the
+    # rebuild of the plain rows (309 counts-long on node2: the search used the whole pass and the answer was kept)
+    deadline = time.monotonic() + BUILD_TIME
     if opts.get("rows_trace"):
         for S, r in rows.items():
             print("rows", S, round(r["bic"], 1), round(bic(*old[S], S), 1), r["sse"], old[S], r["lin"], r["hinge"])
