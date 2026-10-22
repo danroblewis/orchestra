@@ -94,6 +94,8 @@ class Worker:
         self.stopping = 0.0                            # when the first stop signal came (0: running)
         self.stop_now = False
         self.update_to: str | None = None
+        self.update_since = 0.0                        # when update_to was set
+        self.update_grace = a.update_grace
         self.checked_heads: set[str] = set()
         self.wake = threading.Event()                  # cuts the main loop's waits short (a signal)
         self.ended = threading.Event()                 # set once the worker stops: the background threads end
@@ -229,6 +231,20 @@ class Worker:
         if self.own_changed(head):
             log.info("the worker's code changed at %s: finishing %d items, then restarting from it", head[:12], len(self.busy()))
             self.update_to = head
+            self.update_since = time.time()
+
+    def stop_for_update(self) -> None:
+        """The drain ran out of time (one slow item kept every other slot idle while it waited): an item
+        past its own timeout is stopped as a timeout (the guard's verdict, just sooner), any other is
+        stopped and its lease released, so the server hands it out again."""
+        for s in self.busy():
+            r = s.run
+            if r is None or r.abort:
+                continue
+            past = time.time() - r.started > float(r.item.get("timeout") or 300)
+            r.abort = "guard" if past else "shutdown"
+            log.info("slot %s: item %s %s for the update (%.0f s)", s.n, r.item.get("item_id"),
+                     "stopped as a timeout" if past else "released", time.time() - r.started)
 
     def exec_self(self, sha: str) -> None:
         """Run the supervisor from DIR/self at the commit (this process is replaced)."""
@@ -310,6 +326,8 @@ class Worker:
             if self.update_to:
                 if not self.busy():
                     self.exec_self(self.update_to)
+                elif time.time() - self.update_since > self.update_grace:
+                    self.stop_for_update()
                 self.wake.wait(1)
                 continue
             got = 0
@@ -369,6 +387,9 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--grace", type=float, default=600, help="seconds running items may take to finish after SIGTERM")
     ap.add_argument("--heartbeat", type=float, default=30)
     ap.add_argument("--poll", type=float, default=3, help="seconds between claims when idle")
+    ap.add_argument("--update-grace", type=float, default=300,
+                    help="seconds running items may take to finish before the worker restarts on new code (then: past their"
+                         " timeout, posted as timeouts; otherwise released to the queue)")
     ap.add_argument("--update-every", type=float, default=120, help="seconds between checks for a new worker")
     ap.add_argument("--recycle-items", type=int, default=slot_mod.RECYCLE_ITEMS, help="restart a slot's item process after this many items")
     ap.add_argument("--recycle-gb", type=float, help="restart it when it holds more than this after an item (default max(%.1f GB, %g x the slot's"

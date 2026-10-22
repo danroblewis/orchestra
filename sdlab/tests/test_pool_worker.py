@@ -417,3 +417,22 @@ def test_a_real_worker_runs_a_job_end_to_end(server):
             logf.close()
     left = subprocess.run(["pgrep", "-f", str(home)], capture_output=True, text=True).stdout.split()
     assert not left, f"item processes left running: {left}"
+
+
+def test_a_drain_for_an_update_has_a_time_limit():
+    """(2026-10-21) one slow item kept 22 of node2's slots idle for 45 min while the worker waited to restart on
+    new code: after --update-grace, an item past its own timeout is stopped as a timeout, any other released."""
+    from sdlab.ladder.pool import worker as wmod
+    now = time.time()
+    late = SimpleNamespace(n=1, run=slot.Running(item={"item_id": 1, "timeout": 900}, expected=1, limit=2, free_at_claim=0, started=now - 1000))
+    young = SimpleNamespace(n=2, run=slot.Running(item={"item_id": 2, "timeout": 900}, expected=1, limit=2, free_at_claim=0, started=now - 60))
+    w = SimpleNamespace(busy=lambda: [late, young])
+    wmod.Worker.stop_for_update(w)
+    assert late.run.abort == "guard" and young.run.abort == "shutdown"
+    assert "--update-grace" in wmod.parser().format_help()
+
+
+def test_an_item_stopped_as_a_timeout_for_an_update_is_posted_as_one(tmp_path, monkeypatch):
+    w = _run_slot(tmp_path, monkeypatch, [{"event": "start", "hashes": H3, "match": True}], abort="guard")
+    (b,) = w.posts
+    assert b["outcome"] == "result" and b["row"]["status"] == "timeout" and w.released == []

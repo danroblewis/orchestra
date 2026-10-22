@@ -47,7 +47,7 @@ class Running:
     limit: float
     free_at_claim: float
     started: float = field(default_factory=time.time)
-    abort: str | None = None         # lost | cancel | shutdown
+    abort: str | None = None         # lost | cancel | shutdown | guard (stop_for_update)
     peak: float = 0.0
 
 
