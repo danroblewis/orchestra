@@ -35,6 +35,7 @@ from ._vendored.combined import judge as J
 FIT_GAIN = 2.0      # the effect fit must beat the best plain rate by this x log n
 MIN_ACTIVE = 3      # the counter must move on at least this many steps
 MAX_SEG = 3
+TOP_B = 2          # (k8s 317) receivers tried in full: the ones whose rows the counted amount repairs most
 
 
 def _segments(x: np.ndarray, knots: list[float]) -> np.ndarray:
@@ -207,13 +208,11 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
             offered = set((jo.get("capmin") or {}).keys())
         note = {"counter": c, "reads": top["a"], "effect": top["x"], "points": eff[0]["points"], "move": None}
         best_flows, best = base, J.score(base, data)["bic"]
-        for b in same:
-            if b == top["a"]:
-                continue
+        for b in _receivers(base, data, top["a"], same, y):
             mv = {"id": f"counted_{top['a']}_{b}", "from": top["a"], "to": b, "ratio": 1, "rate": dict(rate), "rates": [dict(rate)],
                   "effects": copy.deepcopy(eff)}
             cand = floor._refit(base + [mv], data, mat, offered, near={top["a"], b})
-            cand = (floor.apply({"flows": cand}, stocks, run, opts, judge_opts=jo).get("flows")) or cand
+            cand = (floor.apply({"flows": cand}, stocks, run, opts, judge_opts=jo, only=_near(cand, {top["a"], b})).get("flows")) or cand
             # (2026-10-22) the rows the move lands on repaired with the plain moves they lack (repair.py):
             # 310 none-long on node2 had lost `pending -> ready`, which only pays once the kill move is in
             from . import repair
@@ -226,3 +225,39 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
     if not notes:
         return result
     return {**result, "flows": flows, "counted": notes}
+
+
+def _near(flows: list[dict], ends: set) -> set:
+    """(k8s 317) The stocks a floor search revisits after a move is inserted: its two ends and every stock a flow
+    joins to them (the rows its numbers were refitted on), not all 36 of 317's."""
+    out = set(ends)
+    for f in flows:
+        if f.get("from") in ends or f.get("to") in ends:
+            out |= {x for x in (f.get("from"), f.get("to")) if x}
+    return out
+
+
+def _receivers(flows: list[dict], data, a: str, same: list[str], m: np.ndarray) -> list[str]:
+    """(k8s 317) The stocks B a counted move A -> B is tried into, best first: the move takes the counted amount m
+    from A's row and gives it to B's, so each B is ranked by how much of the two rows' one-step residuals (under
+    the answer with the counter's rate in) that one column explains, and only the TOP_B that it repairs (a
+    positive gain) are refitted in full. 317 has nine stocks of the counters' unit (pods) for each of three
+    counters, and each full try (refit, floor search, repair) costs a minute and more on 36 stocks."""
+    try:
+        res = data.dy - J.one_step(flows, data)[0]
+    except Exception:                                 # noqa: BLE001  (unranked: every same-unit stock, in order)
+        return [b for b in same if b != a]
+    idx = {k: i for i, k in enumerate(data.ids)}
+    if a not in idx or len(m) != res.shape[1]:
+        return [b for b in same if b != a]
+    ra = res[idx[a]]
+    mm = 2.0 * float(m @ m)
+    ranked = []
+    for b in same:
+        if b == a or b not in idx:
+            continue
+        g = float(res[idx[b]] @ m - ra @ m)
+        if g > 0 and mm > 0:
+            ranked.append((g * g / mm, b))
+    ranked.sort(reverse=True)
+    return [b for _, b in ranked[:TOP_B]]

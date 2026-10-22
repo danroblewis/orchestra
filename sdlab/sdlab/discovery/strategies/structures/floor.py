@@ -285,20 +285,21 @@ def _post(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None) -
     return controller.apply({"flows": flows}, stocks, run, opts).get("flows") or flows
 
 
-def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, judge_opts: dict | None = None) -> dict:
+def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, judge_opts: dict | None = None, only: set | None = None) -> dict:
     """The answer with outside rates refitted under the floor where the judge prefers it (see the module).
     opts: what the caller was given (the controller's drivers); judge_opts: the opts the flows were fitted
-    with (a capacity series offered as an input, capmin.py), for the judge's inputs."""
+    with (a capacity series offered as an input, capmin.py), for the judge's inputs. only: the stocks whose sides
+    are searched (k8s 317: after one flow is inserted, its rows; every stock when None)."""
     if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras"):
         return result
     jo = judge_opts if judge_opts is not None else (opts or {})
     try:
-        return _apply(result, stocks, run, opts or {}, jo)
+        return _apply(result, stocks, run, opts or {}, jo, only)
     except Exception as e:                            # noqa: BLE001  (the answer stands as it was)
         return {**result, "floor": {"error": f"{type(e).__name__}: {e}"[:300]}}
 
 
-def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) -> dict:
+def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict, only: set | None = None) -> dict:
     data = J.Data(stocks, run, jo.get("injections"), jo.get("inputs"))
     ids = data.ids
     measured = set(ids)
@@ -324,7 +325,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
     for _ in range(ROUNDS):
         top = None
         for i, s in enumerate(ids):
-            if s in final:
+            if s in final or (only is not None and s not in only):
                 continue
             for side in ("in", "out"):
                 if side == "in":

@@ -713,11 +713,13 @@ def _parse(flows: list[dict], ids: list[str], names: list[str], cap: dict | None
         else:
             return None
         lin, mins = [], list(pre) if form == "expr" else []
+        caps = {c.get("name"): c for c in ([cap] + list(cap.get("also") or [])) if c} if cap else {}   # (k8s 317) every offer
         for name, k in terms:
-            if cap and name == cap.get("name") and cap.get("cap") is None:
+            one = caps.get(name)
+            if one and one.get("cap") is None:
                 return None                              # a fixed pool's limit (capmin._pool): a form this refit does not run
-            if cap and name == cap.get("name"):
-                mins.append((var[cap["source"]], var[cap["cap"]], float(cap["theta"]), k))
+            if one:
+                mins.append((var[one["source"]], var[one["cap"]], float(one["theta"]), k))
             elif name in var and not str(name).startswith(CAP):
                 lin.append((var[name], k))
             else:
@@ -1114,7 +1116,8 @@ def refit(result: dict, stocks: list[dict], run: dict, opts: dict | None, cap: d
     names = [k for k in (opts.get("inputs") or {}) if k not in ids and not str(k).startswith(CAP)]
     if not _measurement_error(result["flows"], ids, run, opts):
         return result
-    if cap and cap.get("cap") is None and any(cap.get("name") in json.dumps(f.get("rate") or {}) for f in result["flows"]):
+    pools = [c for c in ([cap] + list(cap.get("also") or [])) if c.get("cap") is None] if cap else []
+    if any(c.get("name") in json.dumps(f.get("rate") or {}) for c in pools for f in result["flows"]):
         # (k8s 316) a fixed pool's limit (capmin._pool) is a form this refit does not run; its plain stand-in sent the
         # refit searching for 30 min (316 counts-long, job 353) and rewrote the other rows (job 346)
         return {**result, "oe": {"skipped": "a fixed pool's limit"}}

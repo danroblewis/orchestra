@@ -146,6 +146,10 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (k8s 312, docs/research/fixes/312-structures.md) rows whose missing terms are moves rebuilt together by
     # best subset and their terms paired into moves, before the single-row rebuild below writes them as sides
     r = moves.coflows(moves.apply(r, stocks, run, o), stocks, run, o)
+    # (k8s 317, docs/research/fixes/317-structures.md) every row a candidate, not only those far from exact: on 36
+    # stocks the base's rows are exact but crossed (a retries loop written as outside terms reading the queue, a
+    # service's dispatch landing in another's inflight), and the best-subset rows paired into moves are sparser
+    r = moves.apply(r, stocks, run, o, every=True)
     # (k8s 311, docs/research/fixes/311-structures.md) rows the forward-stepwise fits left far from exact (a fast
     # equilibrium no single column explains) rebuilt by best subset, before the floor refits their sides
     r = rebuild.apply(r, stocks, run, o)

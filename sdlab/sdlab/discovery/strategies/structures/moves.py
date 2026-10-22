@@ -40,27 +40,30 @@ from .repair import _fit, _fixed_side, _linear, _numbers, _sign
 
 GATE = 100.0
 GAIN = 6.0
+TRIM = 2               # (k8s 317, every=True) steps a row may miss by more than the tolerance
 SNAP = 1e-3            # a leftover below this share of the column's largest term is rounding
 _DEBUG = bool(os.environ.get("SDLAB_MOVES_DEBUG"))
 
 
-def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
-    """opts: those the answer was fitted with (the capacity series offered as inputs, capmin.py)."""
+def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, every: bool = False) -> dict:
+    """opts: those the answer was fitted with (the capacity series offered as inputs, capmin.py). every: (k8s 317)
+    every measured row is a candidate for the set, not only those the answer leaves far from exact."""
     if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras"):
         return result
     try:
-        return _apply(result, stocks, run, opts or {})
+        return _apply(result, stocks, run, opts or {}, every)
     except Exception as e:                            # noqa: BLE001  (the answer stands as it was)
         return {**result, "moves": {"error": f"{type(e).__name__}: {e}"[:300]}}
 
 
 def _plain(f: dict) -> bool:
     return (_linear(f.get("rate")) is not None and not f.get("effects") and not f.get("byTime") and not f.get("via")
-            and not f.get("uses") and not f.get("two_way") and float(f.get("ratio") or 1) == 1 and not f.get("input")
+            and not f.get("uses") and not f.get("two_way") and float(f.get("ratio") or 1) == 1
+            and (not f.get("input") or (f.get("from") and f.get("to")))      # (k8s 317) a move reading an input is plain
             and len(f.get("inflow") or []) <= 1)
 
 
-def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
+def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool = False) -> dict:
     ids = [s["id"] for s in stocks if s["id"] in (run.get("levels") or {})]
     L = {k: np.asarray(run["levels"][k], dtype=float) for k in ids}
     T = min(len(v) for v in L.values())
@@ -88,6 +91,14 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
     def rms(r):
         return float(np.sqrt(np.mean(r * r)))
 
+    def rms_t(r):
+        # (k8s 317) the row's misfit with its TRIM worst steps set aside: a limit that binds on one step (317's
+        # dispatch, after a node failure) leaves one step off, and the row's terms are still the row's
+        if len(r) <= 10 * TRIM:
+            return rms(r)
+        a = np.sort(np.abs(r))[:-TRIM] if TRIM else np.abs(r)
+        return float(np.sqrt(np.mean(a * a)))
+
     def row_of(s, fl, am):
         net = np.zeros(n)
         for f, a in zip(fl, am):
@@ -106,8 +117,9 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         return any((f.get("to") == s and f.get("from") is None) if side == "in" else (f.get("from") == s and f.get("to") is None)
                    for f in flows)
 
+    forced = _forced(ids, finals, unit, bound) if declared else set()
     res0 = {s: row_of(s, flows, amt) for s in ids}
-    bad = {s for s in ids if res0[s] is not None and rms(res0[s]) > tol}
+    bad = {s for s in ids if res0[s] is not None and (every or rms(res0[s]) > tol)}
     if len(bad) < 2:
         return result
 
@@ -131,16 +143,20 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
 
     S = set(bad)
     fits = {}
+    memo: dict = {}                  # (k8s 317) a row's best subset depends only on what is held on it
     for _ in range(len(ids)):
         mine = [i for i in range(len(flows)) if replaceable(i, S)]
         fits = {}
         drop = set()
         for s in S:
-            held = sum((_sign(flows[i], s) * amt[i] for i in range(len(flows)) if i not in mine and _sign(flows[i], s)), np.zeros(n))
+            hold = tuple(i for i in range(len(flows)) if i not in mine and _sign(flows[i], s))
+            held = sum((_sign(flows[i], s) * amt[i] for i in hold), np.zeros(n))
             y = dy[s] - held
-            bic, names, beta = _best_subset(y, cols_for(s), n, floor)
+            if (s, hold) not in memo:
+                memo[(s, hold)] = _best_subset(y, cols_for(s), n, floor)
+            bic, names, beta = memo[(s, hold)]
             r = y - (np.column_stack([cols_for(s)[k] for k in names]) @ beta if names else 0.0)
-            if rms(r) > tol:
+            if (rms_t(r) if every else rms(r)) > tol:
                 drop.add(s)
             # a term that moves less than the row's tolerance on every step is no flow (best subset fills its
             # columns: 312 none-short wrote 1e-12 x traffic beside the queue's fixed input)
@@ -152,7 +168,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                     break
                 A = np.column_stack([cs[c] for c in rest])
                 bb = np.linalg.lstsq(A, y, rcond=None)[0]
-                if rms(y - A @ bb) <= tol:
+                if (rms_t(y - A @ bb) if every else rms(y - A @ bb)) <= tol:
                     use = rest
             if use != list(names):
                 A = np.column_stack([cs[c] for c in use])
@@ -163,7 +179,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
             print("moves set", sorted(S), "drop", sorted(drop), {k: {c: round(x, 4) for c, x in v.items()} for k, v in fits.items()})
         if not drop:
             # pair the terms
-            new, placed_ok, leftover_rows = _pair(fits, S, unit, side_ok)
+            new, placed_ok, leftover_rows = _pair(fits, S, _joined(unit, forced), side_ok)
             if leftover_rows:
                 if _DEBUG:
                     print("moves unplaced", sorted(leftover_rows))
@@ -193,11 +209,39 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
     bic0 = sum(n * math.log(max(v, floor) / n) for v in sse0.values()) + k0 * math.log(n)
     bic1 = sum(n * math.log(max(v, floor) / n) for v in sse1.values()) + k1 * math.log(n)
     worst = max(math.sqrt(v / n) for v in sse1.values())
+    if every:
+        am1 = [_amount(f, X, n) for f in cand]
+        worst = max((rms_t(r) for r in (row_of(s, cand, am1) for s in rows) if r is not None), default=worst)
     info = {"bad": sorted(bad), "set": rows, "bic": [round(bic0, 1), round(bic1, 1)], "worst_rms": worst,
             "flows": [f"{f.get('from') or 'outside'} -> {f.get('to') or 'outside'}" for f in new]}
     if worst > tol or not bic1 < bic0 - GAIN * math.log(n):
         return {**result, "moves": {**info, "kept": False}}
     return {**result, "flows": cand, "moves": {**info, "kept": True}}
+
+
+def _forced(ids: list[str], finals: set, unit: dict, bound: dict) -> set:
+    """(k8s 317; the rule of 316's limited move, docs/research/fixes/316-structures.md) The moves the declared boundary
+    forces across units: a source alone in its unit with no outside outflow, into a receiver alone in its unit with
+    no outside inflow (316/317: a waiting query takes a pool connection). Nothing else may cross units."""
+    count: dict = {}
+    for s in ids:
+        if s not in finals:
+            count[unit.get(s)] = count.get(unit.get(s), 0) + 1
+    alone = [s for s in ids if s not in finals and unit.get(s) is not None and count.get(unit.get(s)) == 1]
+    side = {s: (bound.get(s) or {}) for s in alone}
+    return {(a, b) for a in alone for b in alone if a != b and not side[a].get("out") and not side[b].get("in")}
+
+
+def _joined(unit: dict, forced: set) -> dict:
+    """The units with the two ends of each forced move made one (the pairing joins terms within a unit)."""
+    out = dict(unit)
+    for a, b in sorted(forced):
+        ua, ub = out.get(a), out.get(b)
+        if ua != ub:
+            for k, v in list(out.items()):
+                if v == ub:
+                    out[k] = ua
+    return out
 
 
 def _pair(fits: dict, S: set, unit: dict, side_ok) -> tuple[list[dict], bool, set]:

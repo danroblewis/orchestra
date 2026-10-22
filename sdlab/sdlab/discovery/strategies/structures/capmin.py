@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import copy
 import math
+import os
 
 import numpy as np
 
@@ -36,6 +37,14 @@ GRID = 24              # theta candidates (quantiles of X / Y)
 NAME = "capmin__"      # the offered series' name prefix
 TOP_POOL = 3           # (k8s 316) fixed-pool pairs (X, Z) refined after the coarse screen
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
+_DEBUG = bool(os.environ.get("SDLAB_CAPMIN_DEBUG"))
+MAX_OFFERS = 4         # (k8s 317) limits offered at once, one per source stock (317: three services' dispatch and the
+                       # database pool; one offer left the other three to linear proxies)
+
+
+def all_caps(cap: dict | None) -> list[dict]:
+    """(k8s 317) Every limit offer() made: the first and those it carries under "also"."""
+    return [] if not cap else [cap] + list(cap.get("also") or [])
 
 
 def level_series(name) -> bool:
@@ -149,6 +158,21 @@ def _gain(B: np.ndarray, m: np.ndarray, y: np.ndarray, floor: float) -> tuple[fl
     return len(y) * math.log((_rss(B, y) + floor) / (float(r1 @ r1) + floor)), float(coef[-1])
 
 
+TRIM_STEPS = 2         # (k8s 317) steps of the source's linear residual set aside before the limit's gain is counted
+
+
+def _trimmed(B: np.ndarray, m: np.ndarray, y: np.ndarray, floor: float) -> float:
+    """(k8s 317) m's gain on the row with the TRIM_STEPS steps its linear fit misses most left out: a limit that
+    binds on enough steps keeps its evidence, a series that only absorbs one shock does not (317 none-short: the
+    frontend's dispatch binds on 1 of 299 steps, after a node failure, and MIN(queue, 103 x catalog_ready) was
+    offered on that step alone, breaking the queue's and the inflight's rows)."""
+    coef, *_ = np.linalg.lstsq(B, y, rcond=None)
+    r = np.abs(y - B @ coef)
+    keep = np.ones(len(y), dtype=bool)
+    keep[np.argsort(r)[-TRIM_STEPS:]] = False
+    return _gain(B[keep], m[keep], y[keep], floor * keep.mean())[0]
+
+
 def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict | None]:
     """opts with the regime-clipped series added as a measured input where a capacity limit wins, and
     what restore() needs (None where none is offered).
@@ -172,6 +196,7 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     floor = [RESOLUTION * float(np.mean(dy[i] ** 2)) * T + 1e-300 for i in range(len(ids))]   # the data's resolution
     price = PRICE * math.log(T)
     best = None
+    per: dict = {}                                         # (k8s 317) the best limit of each source stock
     for xi, x in enumerate(ids):
         X = read[xi]
         if x in final or np.ptp(X) <= 0:
@@ -203,23 +228,41 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
             m = np.minimum(X, th * Y)
             gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
             kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
-            if gain > price and kink > price and (best is None or kink > best["kink"]):
-                best = {"source": x, "cap": name, "theta": th, "gain": gain, "kink": kink, "share": share}
+            if gain > price and kink > price and _trimmed(B, m, dy[xi], floor[xi]) <= price:
+                continue                                   # (k8s 317) its evidence is one or two steps
+            if gain > price and kink > price and (x not in per or kink > per[x]["kink"]):
+                per[x] = {"source": x, "cap": name, "theta": th, "gain": gain, "kink": kink, "share": share}
                 if to:
-                    best["to"] = ids[to[1]]
+                    per[x]["to"] = ids[to[1]]
     pool = _pool(ids, final, dy, read, B, Q, floor, price, T)
-    if pool is not None and (best is None or pool["kink"] > best["kink"] + math.log(T)):
-        best = pool
-    if best is None:
+    if pool is not None and (pool["source"] not in per or pool["kink"] > per[pool["source"]]["kink"] + math.log(T)):
+        per[pool["source"]] = pool
+    if _DEBUG:
+        for c in sorted(per.values(), key=lambda c: -c["kink"]):
+            print("capmin cand", {k: (round(v, 3) if isinstance(v, float) else v) for k, v in c.items()})
+    ranked = sorted(per.values(), key=lambda c: -c["kink"])
+    unit = {st["id"]: st.get("unit") for st in stocks}
+    # (k8s 317; ledger type 5's unit guard) a limit is offered only as a limited move, its receiver in the source's
+    # unit, or as a fixed pool (which may cross units, k8s 316): 317 none-short offered limits on controller rows
+    # (desired, nodes, mem) whose kinks are their switches, with no receiver or one in another unit
+    chosen = [c for c in ranked if c.get("cap") is None
+              or (c.get("to") is not None and unit.get(c["to"]) == unit.get(c["source"]))][:MAX_OFFERS]
+    if not chosen:
         return opts, None
-    m = _series(best, read, ids, inputs)
-    name = f"{NAME}{best['source']}__{best.get('cap') or 'pool'}"
-    series = np.concatenate([[m[0]], m])     # input i is read by step i - 1 (m[0]: the first level's own)
     inp = dict(opts.get("inputs") or {})
-    inp[name] = [float(v) for v in series]
+    offered = dict(opts.get("capmin") or {})
+    for c in chosen:
+        m = _series(c, read, ids, inputs)
+        name = f"{NAME}{c['source']}__{c.get('cap') or 'pool'}"
+        series = np.concatenate([[m[0]], m])     # input i is read by step i - 1 (m[0]: the first level's own)
+        inp[name] = [float(v) for v in series]
+        c["name"] = name
+        offered[name] = {"source": c["source"], "to": c.get("to")}
     opts["inputs"] = inp
-    best["name"] = name
-    opts["capmin"] = {**(opts.get("capmin") or {}), name: {"source": best["source"], "to": best.get("to")}}
+    opts["capmin"] = offered
+    best = chosen[0]
+    if len(chosen) > 1:
+        best["also"] = chosen[1:]
     return opts, best
 
 
@@ -376,20 +419,24 @@ def restore(result: dict, cap: dict | None) -> dict:
     if not cap or not isinstance(result, dict):
         return result
     out = copy.deepcopy(result)
-    for n, f in enumerate(out.get("flows") or []):
-        for g in f.get("byTime") or []:
-            if g.get("rate"):
-                g["rate"] = _expr(g["rate"], cap)
-        if f.get("rate"):
-            f["rate"] = _expr(f["rate"], cap)
-        if f.get("rates"):
-            f["rates"] = [_expr(r, cap) for r in f["rates"]]
-        if f.get("input") == cap["name"]:
-            f.pop("input", None)
-        rates = [g.get("rate") or {} for g in f.get("byTime") or []] + [f.get("rate") or {}]
-        if any(r.get("form") == "expr" for r in rates):
-            f.setdefault("id", f"capmin{n}")             # an expression flow is named (the engine's compiler wants one)
-    out["capmin"] = {k: cap[k] for k in ("source", "cap", "occupant", "a", "b", "to", "theta", "gain", "kink", "share") if k in cap}
+    for one in all_caps(cap):
+        for n, f in enumerate(out.get("flows") or []):
+            for g in f.get("byTime") or []:
+                if g.get("rate"):
+                    g["rate"] = _expr(g["rate"], one)
+            if f.get("rate"):
+                f["rate"] = _expr(f["rate"], one)
+            if f.get("rates"):
+                f["rates"] = [_expr(r, one) for r in f["rates"]]
+            if f.get("input") == one["name"]:
+                f.pop("input", None)
+            rates = [g.get("rate") or {} for g in f.get("byTime") or []] + [f.get("rate") or {}]
+            if any(r.get("form") == "expr" for r in rates):
+                f.setdefault("id", f"capmin{n}")         # an expression flow is named (the engine's compiler wants one)
+    keys = ("source", "cap", "occupant", "a", "b", "to", "theta", "gain", "kink", "share")
+    out["capmin"] = {k: cap[k] for k in keys if k in cap}
+    if cap.get("also"):
+        out["capmin"]["also"] = [{k: c[k] for k in keys if k in c} for c in cap["also"]]
     return out
 
 
