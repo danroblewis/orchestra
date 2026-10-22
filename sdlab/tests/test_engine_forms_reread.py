@@ -117,3 +117,47 @@ def test_a_table_with_no_start_inside_the_data_range_is_none():
     y = x * (z == 0)
     assert reread._table(y, x, z, 1) is None
     assert reread._table(y, x, z, 2) is None
+
+
+def _room_run(n=600):
+    """(k-311) The pod chain with a node pool: a pending pod starts only into the room the nodes leave,
+    started = min(0.3 pending, max(0, nodes - ready)) (one pod a node); nodes measured, added one by one."""
+    t = np.arange(n)
+    goal = np.round(8 + 4 * np.sin(2 * math.pi * t / 90))
+    nodes = 4 + np.floor((t % 30) / 3)
+    P, R = [0.0], [8.0]
+    for i in range(n - 1):
+        created = max(0.0, goal[i] - P[i] - R[i])
+        started = min(0.3 * P[i], max(0.0, nodes[i] - R[i]))
+        deleted = max(0.0, R[i] - goal[i])
+        P.append(P[i] + created - started)
+        R.append(R[i] + started - deleted)
+    P, R = np.round(np.array(P), 4), np.round(np.array(R), 4)
+    seconds = np.round(np.concatenate([[0.0], np.cumsum(R[:-1])]), 4)      # a linear counter: the data are exact
+    run = _run(n=n)
+    run["levels"] = {"goal": list(goal), "pending": list(P), "ready": list(R), "nodes": list(nodes), "pod_seconds": list(seconds)}
+    run["boundary"] = {**run["boundary"], "nodes": {}, "pod_seconds": {"in": ["estimate"]}}
+    return run
+
+
+def test_a_start_limited_by_room_is_a_min_move():
+    stocks = STOCKS + [{"id": "nodes", "unit": "nodes"}, {"id": "pod_seconds", "unit": "s", "final": True}]
+    r = reread.apply({"flows": WRONG}, stocks, _room_run(), {})
+    assert r.get("reread"), r
+    got = {(f["from"], f["to"]): f for f in r["flows"]}
+    move = got[("pending", "ready")]
+    assert move["rate"]["form"] == "expr" and move.get("id")
+    expr = move["rate"]["expr"]
+    env = {"min": min, "max": max}
+    for p, rd, nd in [(4.0, 6.0, 12.0), (10.0, 10.0, 11.0), (6.0, 9.0, 8.0), (0.0, 5.0, 7.0)]:
+        want = min(0.3 * p, max(0.0, nd - rd))
+        assert abs(max(0.0, eval(expr, {"__builtins__": {}}, {**env, "pending": p, "ready": rd, "nodes": nd})) - want) < 1e-3
+    created = _terms(got[(None, "pending")])
+    assert all(abs(created.get(k, 0) - v) < 1e-3 for k, v in {"goal": 1, "pending": -1, "ready": -1}.items())
+
+
+def test_collinear_columns_read_nothing():
+    a = np.arange(1.0, 51.0)
+    Z = np.vstack([a, 0.06 * a + 1e-9 * np.sin(a), np.ones(50)])
+    assert not reread._posed(Z[:2].T)
+    assert reread._posed(Z[[0, 2]].T)

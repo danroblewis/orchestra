@@ -22,6 +22,14 @@ stock's unit (the only ones a move can join) are read again row by row, from the
    joins as any other (its source the row reading it negatively, its receivers the same-unit rows
    reading it positively), is written as the counter's own rate (X x T(Y), scaled by the term's
    number), and the counter itself gets it as its outside inflow.
+6. (k-311) Two rows of one unit that neither form reproduces are read as a pair joined by a floored-MIN
+   move (a start limited by the room left): their sum, where the move cancels, is linear plus at most one
+   floored inflow and one floored outflow on declared sides; what is left of one row is lin + s x
+   max(0, min(u, v)), read from its linear pieces (found by a seeded exact-sample search, each column's
+   rounding counted only where it moves) and fitted on every step at once; the other row must be the
+   sum's rest less the same move. The move is written as an expression, min(u, max(0, v)) when u never
+   goes below 0. Runs only where some moving row is exact. Column sets more collinear than COND read
+   nothing (their huge numbers scaled the rounding tolerance until a counter's row looked linear).
 
 The block is replaced only when every row the answer explained is still explained, at least one row
 it did not explain now is, and nothing leaves the declared boundary. On data with noise no row is
@@ -45,7 +53,20 @@ REL = 1e-6             # a row is reproduced when its rms residual is below this
 ROUND = 3.0            # ... or below ROUND x the rounding of what it reads (where rounding is fine: FINE)
 FINE = 1e-3            # the rounding counts only where it is below this share of the row's largest change
 SNAP = 1e-4           # a term's remainder below this share of the column's largest number is the fit's precision
+COND = 1e6             # (k-311) a column set more collinear than this (scaled columns' condition number) reads nothing:
+                       # its huge numbers would scale the rounding tolerance up until any row is "exact"
 QUIET = 0.5            # a hinge's linear part holds exactly on at least this share of the steps
+SAMPLES = 300          # (k-311) random step sets a linear piece's numbers are solved on (regime)
+
+
+def _posed(A: np.ndarray) -> bool:
+    """Are these columns (steps x columns) clearly independent? (COND)"""
+    if A.shape[1] < 2:
+        return True
+    n = np.sqrt(np.sum(A ** 2, axis=0))
+    if np.any(n <= 0):
+        return False
+    return bool(np.linalg.cond(A / n) <= COND)
 
 
 def _quantum(a: np.ndarray) -> float:
@@ -82,6 +103,8 @@ class _Rows:
                     k, r = np.zeros(0), yy
                 else:
                     A = Z[list(sub)].T
+                    if not _posed(A):
+                        continue
                     k, *_ = np.linalg.lstsq(A, yy, rcond=None)
                     r = yy - A @ k
                 rms = float(np.sqrt(np.mean(r ** 2)))
@@ -154,8 +177,247 @@ class _Rows:
         return None if best is None else best[1:]
 
 
+    def regime(self, y: np.ndarray, use: np.ndarray, most: int = BASE_TERMS, share: float = 0.05):
+        """The linear piece of y exact on the most steps of `use` (at least `share` of all steps), as
+        (indices, numbers, mask of the steps it holds on), or None. Exact data: for each column set, the
+        numbers solved exactly on SAMPLES random sets of as many steps (a seeded draw), the one exact on the
+        most steps kept and refitted on them (least squares over a mixture of pieces fits none of them)."""
+        T = len(y)
+        least = max(5, int(share * T))
+        on = np.flatnonzero(use)
+        if len(on) < least:
+            return None
+        rng = np.random.default_rng(0)
+        scale = REL * float(np.sqrt(np.mean(y[on] ** 2)))
+        fine = bool(self.q and self.q <= FINE * float(np.max(np.abs(y[on]))))
+        best = None
+        for n in range(1, most + 1):
+            picks = np.array([rng.choice(on, n, replace=False) for _ in range(SAMPLES)])
+            for sub in itertools.combinations(range(self.Z.shape[0]), n):
+                Zs = self.Z[list(sub)]
+                M = np.transpose(Zs[:, picks], (1, 2, 0))          # samples x steps x columns
+                k = np.einsum("sij,sj->si", np.linalg.pinv(M), y[picks])
+                r = np.abs(y[on][None, :] - k @ Zs[:, on])
+                moves = (np.abs(Zs[:, on]) > 0).astype(float)       # a column rounds only where it is not 0
+                tol = np.maximum(scale, ROUND * self.q * (1.0 + np.abs(k) @ moves)) if fine else np.full(r.shape, scale)
+                cnt = (r <= tol).sum(1)
+                j = int(np.argmax(cnt))
+                if cnt[j] < least or (best is not None and cnt[j] <= best[2].sum()):
+                    continue
+                hold = np.zeros(T, bool)
+                hold[on[r[j] <= tol[j]]] = True
+                A = Zs.T
+                if not _posed(A[hold]):
+                    continue
+                nz = (np.abs(Zs) > 0).astype(float)
+                for _ in range(2):
+                    kk, *_ = np.linalg.lstsq(A[hold], y[hold], rcond=None)
+                    tk = np.maximum(scale, ROUND * self.q * (1.0 + np.abs(kk) @ nz)) if fine else np.full(T, scale)
+                    hold = use & (np.abs(y - A @ kk) <= tk)
+                    if hold.sum() < least:
+                        break
+                if hold.sum() >= least and (best is None or hold.sum() > best[2].sum()):
+                    best = (list(sub), kk, hold)
+        return best
+
+    def pieces(self, y: np.ndarray, most: int = 3):
+        """y's largest linear pieces, peeled one after another (each on the steps the earlier ones leave),
+        every column a piece does not need dropped: [(indices, mask)]."""
+        use, out = np.ones(len(y), bool), []
+        for _ in range(most):
+            got = self.regime(y, use)
+            if got is None:
+                break
+            sub, _, hold = got
+            for j in list(sub):                              # a column the piece holds as well without
+                rest = [c for c in sub if c != j]
+                if not rest:
+                    continue
+                A = self.Z[rest].T
+                k, *_ = np.linalg.lstsq(A[hold], y[hold], rcond=None)
+                if float(np.sqrt(np.mean((y[hold] - A[hold] @ k) ** 2))) <= self.tol(y[hold], k):
+                    sub = rest
+            out.append((list(sub), hold))
+            use = use & ~hold
+            if use.sum() < 5:
+                break
+        return out
+
+    def two_regimes(self, y: np.ndarray):
+        """y = lin + s x max(0, min(u, v)), read from its linear pieces: one piece is lin (where the floor
+        binds; or, with two pieces only, their common columns), the others lin + s u and lin + s v. The
+        numbers are fitted on every step at once, each step on the branch it is on, until the branches stop
+        changing; the result must be exact on every step. (lin, s, u, v) as {column index: number}, or None."""
+        T = len(y)
+        regs = self.pieces(y)
+        if len(regs) < 2:
+            return None
+        roles = []
+        for perm in itertools.permutations(range(len(regs))):
+            if len(regs) >= 3:
+                roles.append((regs[perm[0]], regs[perm[1]], regs[perm[2]]))
+            if perm[-1] != len(regs) - 1 or len(regs) == 2:
+                roles.append((None, regs[perm[0]], regs[perm[1]]))
+        for F, U, V in roles:
+            if F is not None:
+                lc, uc, vc = list(F[0]), list(U[0]), list(V[0])
+            else:
+                lc = [c for c in U[0] if c in V[0]]
+                uc, vc = [c for c in U[0] if c not in lc], [c for c in V[0] if c not in lc]
+            if not uc or not vc:
+                continue
+            act = np.full(T, -1)
+            if F is not None:
+                act[F[1]] = 0
+            act[U[1]], act[V[1]] = 1, 2
+            for s in (1.0, -1.0):
+                got = self._branches(y, lc, uc, vc, s, act, F is not None)
+                if got is None:
+                    continue
+                cols, a = [lc, uc, vc], got[1]
+                for part in (1, 2, 0):                       # the fewest columns that stay exact (a column every
+                    for c in list(cols[part]):               # branch holds is lin's, never u's or v's)
+                        if part and len(cols[part]) == 1:
+                            continue
+                        trial = [list(x) for x in cols]
+                        trial[part].remove(c)
+                        g2 = self._branches(y, *trial, s, a, F is not None)
+                        if g2 is not None:
+                            cols, got, a = trial, g2, g2[1]
+                kl, ku, kv = got[0]
+                lc, uc, vc = cols
+                return ({i: float(x) for i, x in zip(lc, kl)}, s, {i: float(x) for i, x in zip(uc, ku)},
+                        {i: float(x) for i, x in zip(vc, kv)})
+        return None
+
+    def _branches(self, y, lc, uc, vc, s, act, floor):
+        """The numbers of lin + s max(0, min(u, v)) fitted on every step at once, each step on its branch
+        (act: 0 the floor, 1 u, 2 v, -1 unknown), the branches re-read until they stop changing:
+        ((lin, u, v numbers), branches) when exact on every step, else None."""
+        T = len(y)
+        a = act.copy()
+        for _ in range(5):
+            on = a >= 0
+            D = np.zeros((T, len(lc) + len(uc) + len(vc)))
+            D[:, :len(lc)] = self.Z[lc].T
+            D[a == 1, len(lc):len(lc) + len(uc)] = s * self.Z[uc].T[a == 1]
+            D[a == 2, len(lc) + len(uc):] = s * self.Z[vc].T[a == 2]
+            if on.sum() <= D.shape[1]:
+                return None
+            k, *_ = np.linalg.lstsq(D[on], y[on], rcond=None)
+            kl, ku, kv = k[:len(lc)], k[len(lc):len(lc) + len(uc)], k[len(lc) + len(uc):]
+            L0, Uv, Vv = self.Z[lc].T @ kl, self.Z[uc].T @ ku, self.Z[vc].T @ kv
+            m = np.minimum(Uv, Vv)
+            b = np.where(m <= 0, 0 if floor else -1, np.where(Uv <= Vv, 1, 2))
+            if float(np.sqrt(np.mean((L0 + s * np.maximum(0.0, m) - y) ** 2))) <= self.tol(y, k):
+                return (kl, ku, kv), b
+            if np.array_equal(b, a):
+                return None
+            a = b
+        return None
+
+    def hinges(self, y: np.ndarray):
+        """y = linear + max(0, h_in) - max(0, h_out), one or both hinges present: (linear part, [(sign,
+        hinge part)]), or None. The linear part (up to BASE_TERMS columns) holds exactly on at least QUIET
+        of the steps; what is left is split by sign, and each sign's part is one floored linear function."""
+        T = len(y)
+        best = None
+        for n in range(0, BASE_TERMS + 1):
+            for sub in itertools.combinations(range(self.Z.shape[0]), n):
+                A = self.Z[list(sub)].T if n else np.zeros((T, 0))
+                keep = np.ones(T, bool)
+                k = np.zeros(n)
+                while n:
+                    k, *_ = np.linalg.lstsq(A[keep], y[keep], rcond=None)
+                    r = y - A @ k
+                    if np.sqrt(np.mean(r[keep] ** 2)) <= self.tol(y[keep], k) or keep.sum() < QUIET * T:
+                        break
+                    on = np.flatnonzero(keep)
+                    keep[on[np.argsort(-np.abs(r[on]), kind="stable")[:max(1, len(on) // 20)]]] = False
+                r = y - (A @ k if n else 0.0)
+                quiet = np.abs(r) <= max(self.tol(y[keep], k), 1e-300)
+                if quiet.sum() < QUIET * T or quiet.all():
+                    continue
+                parts, cost = [], n
+                for sign in (1.0, -1.0):
+                    part = np.where(quiet, 0.0, np.maximum(0.0, sign * r))
+                    if not np.any(part > 0):
+                        continue
+                    got = self.floored(part)
+                    if got is None:
+                        parts = None
+                        break
+                    parts.append((sign, got))
+                    cost += len(got[0])
+                if not parts:
+                    continue
+                if best is None or cost < best[0]:
+                    best = (cost, (list(sub), k), parts)
+            if best is not None:
+                break
+        return None if best is None else best[1:]
+
+
 COUNT = "flow:"        # the column of a counter's one-step change (a measured flow)
 INNER = (1, 2)         # inner knots tried for a counter's table
+
+
+def _lin_expr(d: dict, names: list[str]) -> str:
+    parts = [repr(float(v)) if names[i] == "1" else f"{float(v)!r} * {names[i]}" for i, v in d.items() if v]
+    return " + ".join(parts) or "0"
+
+
+def _pair(a: str, b: str, y: dict, rows: "_Rows", may) -> dict | None:
+    """(k-311) Two rows of one unit that neither form reproduces, read as a pair joined by a floored-MIN move:
+    their sum (the move cancels) is linear plus at most one floored inflow and one floored outflow, each on
+    a declared side of one of the two; what is left of one row is lin + s x max(0, min(u, v)) (two_regimes),
+    and the other row is the sum's linear part less that lin, less the same move. Returns the pieces or None."""
+    names, T = rows.names, len(y[a])
+    ysum = y[a] + y[b]
+    e = rows.exact(ysum)
+    if e is not None:
+        lin_sum, hs = {i: float(v) for i, v in zip(*e)}, []
+    else:
+        h = rows.hinges(ysum)
+        if h is None:
+            return None
+        (sub, k), hs = h
+        lin_sum = {i: float(v) for i, v in zip(sub, k)}
+    ev = lambda d: sum((w * rows.Z[i] for i, w in d.items()), np.zeros(T))  # noqa: E731
+    for owners in itertools.product((a, b), repeat=len(hs)):
+        if any(not may(s, "in" if sign > 0 else "out") for s, (sign, _) in zip(owners, hs)):
+            continue
+        if len(set(owners)) < len(owners):
+            continue                                     # one hinge a stock
+        r = {a: y[a].copy(), b: y[b].copy()}
+        hinge_of = {}
+        for s, (sign, (idx, w)) in zip(owners, hs):
+            amt = np.maximum(0.0, rows.Z[idx].T @ w)
+            r[s] -= sign * amt
+            hinge_of[s] = (sign, {i: float(v) for i, v in zip(idx, w)})
+        for fitted, other in ((a, b), (b, a)):
+            got = rows.two_regimes(r[fitted])
+            if got is None:
+                continue
+            lin_g, s, u, v = got                         # r[fitted] = lin_g + s m, m = max(0, min(u, v)) >= 0
+            U, V = ev(u), ev(v)
+            m = np.maximum(0.0, np.minimum(U, V))
+            lin_o = {i: lin_sum.get(i, 0.0) - lin_g.get(i, 0.0) for i in set(lin_sum) | set(lin_g)}
+            lin_o = {i: x for i, x in lin_o.items() if abs(x) > 1e-12}
+            if float(np.sqrt(np.mean((ev(lin_o) - s * m - r[other]) ** 2))) > rows.tol(r[other], np.array(list(lin_o.values()) or [0.0])):
+                continue
+            tu, tv = _lin_expr(u, names), _lin_expr(v, names)
+            if np.all(U >= -rows.tol(U)):
+                expr = f"min({tu}, max(0, {tv}))"          # the argument that never goes below 0 needs no floor
+            elif np.all(V >= -rows.tol(V)):
+                expr = f"min(max(0, {tu}), {tv})"
+            else:
+                expr = f"max(0, min({tu}, {tv}))"
+            src, dst = (other, fitted) if s > 0 else (fitted, other)
+            return {"lin": {fitted: lin_g, other: lin_o}, "hinges": hinge_of,
+                    "move": {"id": f"reread_min:{src}:{dst}", "from": src, "to": dst, "rate": {"form": "expr", "expr": expr}},
+                    "numbers": np.array(list(lin_g.values()) + list(u.values()) + list(v.values()))}
+    return None
 
 
 def _hats(z: np.ndarray, knots: np.ndarray) -> np.ndarray:
@@ -215,7 +477,11 @@ def _counter_rate(y: np.ndarray, rows: "_Rows", ids: list[str], L: np.ndarray, s
                 z = L[zi]
                 if Y == skip or Y == X or np.ptp(z) <= 0:
                     continue
-                kn16 = np.unique(np.quantile(z, np.linspace(0, 1, 16)))   # a quick screen: some table of Y at all
+                kn16 = np.quantile(z, np.linspace(0, 1, 16))   # a quick screen: some table of Y at all
+                on = np.abs(y) > tol
+                if on.any() and (~on).any():                   # (k-311) and the table's onset, where the counter starts
+                    kn16 = np.concatenate([kn16, [z[on].min(), z[~on & (z < z[on].min())].max() if np.any(~on & (z < z[on].min())) else z.min()]])
+                kn16 = np.unique(kn16)
                 H = _hats(z, kn16) * x[:, None]
                 h16, _ = nnls(H, y)
                 if float(np.sqrt(np.mean((H @ h16 - y) ** 2))) > 0.05 * float(np.sqrt(np.mean(y ** 2))):
@@ -253,7 +519,7 @@ def _flow(a, b, rate: dict, inputs: set) -> dict:
     return f
 
 
-def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, inputs: set, fixed=(), counted=None):
+def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, inputs: set, fixed=(), counted=None, may=None):
     """The block's flows from its rows, and the rows they do not reproduce."""
     names = rows.names
     lin, hinges, left, tols = {}, {}, [], {}
@@ -274,12 +540,30 @@ def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, input
         lin[s] = {names[i]: float(v) for i, v in zip(sub, k)}
         hinges[s] = (sign, {names[i]: float(v) for i, v in zip(idx, w)})
         tols[s] = rows.tol(y[s], np.concatenate([k, w]))
+    moves = []
+    if may is not None:                                   # (k-311) two rows left: a pair joined by a floored-MIN move
+        free = [s for s in left if s not in final]
+        for a, b in itertools.combinations(free, 2):
+            if a not in left or b not in left or unit.get(a) != unit.get(b):
+                continue
+            got = _pair(a, b, y, rows, may)
+            if got is None:
+                continue
+            for s in (a, b):
+                left.remove(s)
+                lin[s] = {names[i]: float(v) for i, v in got["lin"][s].items()}
+                if s in got["hinges"]:
+                    sign, w = got["hinges"][s]
+                    hinges[s] = (sign, {names[i]: float(v) for i, v in w.items()})
+                tols[s] = rows.tol(y[s], got["numbers"])
+            moves.append(got["move"])
     pair: dict = {}
 
     def add(a, b, col, v):
         pair.setdefault((a, b), {})
         pair[(a, b)][col] = pair[(a, b)].get(col, 0.0) + v
 
+    size_of = lambda c: float(np.sqrt(np.mean(rows.Z[names.index(c)] ** 2)))  # noqa: E731
     cols = sorted({c for d in lin.values() for c in d})
     for col in cols:
         got = {s: d[col] for s, d in lin.items() if abs(d.get(col, 0.0)) > 0}
@@ -295,6 +579,8 @@ def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, input
                 if unit.get(p) != unit.get(src) or give <= 0 or col == COUNT + p:   # a counter counts: its own column is its inflow
                     continue
                 m = min(got[p], give)
+                if m <= SNAP * max(abs(x) for x in lin_col.values()) and m * size_of(col) <= tols[p]:
+                    continue                              # (k-311) a move at the fit's precision is no move
                 add(src, p, col, m)
                 give -= m
                 got[p] -= m
@@ -328,7 +614,7 @@ def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, input
         if key in pair:
             return None                                   # a hinge and a linear outside flow on one side
         flows.append(_flow(*key, _rate(dict(w), names), inputs))
-    return flows, left, tols
+    return flows + moves, left, tols
 
 
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: list | None = None) -> dict:
@@ -341,10 +627,6 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
     if not data.usable:
         return result
     ids = data.ids
-    try:
-        resid = data.dy - data.change(result["flows"])
-    except Exception:                                     # noqa: BLE001  (a flow the simulator cannot evaluate)
-        return result
     t = [float(x) for x in run["t"]]
     at = {x: i for i, x in enumerate(t)}
     ins = []
@@ -355,6 +637,14 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
         if len(v) != len(t):
             continue
         ins.append((name, np.array([v[at[float(x)]] for x in data.tt])))
+    from .hidden import _change                           # expression rates (a MIN) evaluated as the engine does (k-311)
+    try:
+        resid = data.dy - _change(result["flows"], data, dict(ins))
+    except Exception:                                     # noqa: BLE001  (an expression reading what is not measured)
+        try:
+            resid = data.dy - data.change(result["flows"])
+        except Exception:                                 # noqa: BLE001  (a flow the simulator cannot evaluate)
+            return result
     names = ids + [n for n, _ in ins] + ["1"]
     Z = np.vstack([data.L] + [u[None, :] for _, u in ins] + [np.ones((1, data.T))])
     levels = np.array([np.asarray(run["levels"][i], dtype=float) for i in ids])
@@ -370,10 +660,12 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
         names = names + [COUNT + s for s in counted]
         Z = np.vstack([Z] + [data.dy[ids.index(s)][None, :] for s in counted])
         rows = _Rows(data, Z, names, rows.q)
-    ok = {}
+    ok, exact_any = {}, bool(counted)
     for i, s in enumerate(ids):
         e = rows.exact(data.dy[i])
-        ok[s] = float(np.sqrt(np.mean(resid[i] ** 2))) <= rows.tol(data.dy[i], None if e is None else e[1])
+        if e is not None and np.any(np.abs(data.dy[i]) > rows.tol(data.dy[i])):
+            exact_any = True                              # some row that moves is reproduced: the data are exact
+        ok[s] = float(np.sqrt(np.mean(resid[i] ** 2))) <= 2 * rows.tol(data.dy[i], None if e is None else e[1])   # as the check below
     bad = [s for s in ids if not ok[s]]
     if not bad:
         return result
@@ -388,11 +680,14 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
         touches = lambda f: bool({f.get("from"), f.get("to")} & inside)  # noqa: E731
         kept = [f for f in flows if not touches(f)]
         y = {s: data.dy[ids.index(s)] for s in block}
-        got = _block(block, y, rows, unit, final, inputs, set(b.fixed), counted)
+        got = _block(block, y, rows, unit, final, inputs, set(b.fixed), counted,
+                     may=(lambda s_, side: b.may(s_, side, "estimate")) if exact_any else None)
         if got is None:
             continue
         new, left, tols = got
-        if any(ok[s] for s in left) or not any(s not in left for s in block if not ok[s]):
+        moved = lambda s_: any(s_ in (f.get("from"), f.get("to")) and f.get("from") is not None  # noqa: E731
+                               and f.get("to") is not None for f in flows)
+        if any(ok[s] and moved(s) for s in left) or not any(s not in left for s in block if not ok[s]):
             continue
         own = [f for f in flows if touches(f) and ((f.get("from") in left and f.get("to") is None)
                                                   or (f.get("to") in left and f.get("from") is None))]
@@ -400,7 +695,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
         if _boundary.violations(new, ids, b, inputs | {n for n in (opts.get("inputs") or {})}):
             continue
         try:
-            r2 = data.dy - data.change(cand)
+            r2 = data.dy - _change(cand, data, dict(ins))
         except Exception:                                 # noqa: BLE001
             continue
         if any(float(np.sqrt(np.mean(r2[ids.index(s)] ** 2))) > 2 * tols[s] for s in block if s not in left):
