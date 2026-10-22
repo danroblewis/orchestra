@@ -44,6 +44,7 @@ def pair(flows: list[dict], opts: dict | None) -> list[dict]:
         outs = [i for i, f in enumerate(out) if f.get("from") == src and f.get("to") is None and _k(f, name) is not None]
         ins = [i for i, f in enumerate(out) if f.get("from") is None and f.get("to") == to and _k(f, name) is not None]
         if len(outs) != 1 or len(ins) != 1:
+            out = _pair_terms(out, name, src, to)
             continue
         a, b = out[outs[0]], out[ins[0]]
         k = (_k(a, name) + _k(b, name)) / 2
@@ -52,6 +53,43 @@ def pair(flows: list[dict], opts: dict | None) -> list[dict]:
                 "perStep": (float(a.get("perStep") or 0) + float(b.get("perStep") or 0)) / 2}
         out = [f for i, f in enumerate(out) if i not in (outs[0], ins[0])] + [move]
     return out
+
+
+def _term_k(f: dict, name: str) -> float | None:
+    """The number on `name` in a plain linear rate that reads it among other terms (else None)."""
+    r = f.get("rate") or {}
+    if f.get("byTime") or f.get("inflow") or r.get("form") != "linear":
+        return None
+    ks = [float(t.get("k") or 0.0) for t in r.get("terms") or [] if t.get("stock") == name]
+    return ks[0] if len(ks) == 1 else None
+
+
+def _pair_terms(flows: list[dict], name: str, src: str, to: str) -> list[dict]:
+    """(k8s 316, docs/research/fixes/316-structures.md) The offered series' term taken out of the source's one
+    outside outflow and the receiver's one outside inflow that read it beside other terms, and made the move
+    (at the mean of the two numbers, which must be of the right signs); the flows keep their other terms. 316
+    counts-long: `outside -> db_active` and `db_waiting -> outside` each read the pool series with a constant and
+    a level, so pair() left them and the declared boundary's guard dropped both, and the pool move with them."""
+    outs = [i for i, f in enumerate(flows) if f.get("from") == src and f.get("to") is None and _term_k(f, name) is not None]
+    ins = [i for i, f in enumerate(flows) if f.get("from") is None and f.get("to") == to and _term_k(f, name) is not None]
+    if len(outs) != 1 or len(ins) != 1:
+        return flows
+    a, b = flows[outs[0]], flows[ins[0]]
+    ka, kb = _term_k(a, name), _term_k(b, name)
+    if not (ka > 0 and kb > 0):
+        return flows
+    out = []
+    for i, f in enumerate(flows):
+        if i in (outs[0], ins[0]):
+            r = f["rate"]
+            terms = [t for t in r.get("terms") or [] if t.get("stock") != name]
+            if terms or float(r.get("c") or 0.0):
+                rate = {**r, "terms": terms}
+                out.append({**f, "rate": rate, "rates": [rate]})
+            continue
+        out.append(f)
+    rate = {"form": "linear", "c": 0, "terms": [{"stock": name, "k": (ka + kb) / 2}]}
+    return out + [{"id": a.get("id") or f"move_{src}_{to}", "from": src, "to": to, "rate": rate, "rates": [rate]}]
 
 
 def _end(f: dict) -> tuple[str, str] | None:
