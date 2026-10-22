@@ -115,3 +115,23 @@ No strategy passes rung 7 or anything above it on the long variants run so far; 
 - Rungs 8-18 and every short variant: not run yet (the watcher will). The kubernetes column group on the leaderboard updates as they land.
 - sd-k8s-small: its current results are all errors (node2's watcher ran out of memory at 22:13: `BrokenProcessPool`; another agent has since marked it heavy, commit cc5f8d2); earlier valid results are in [k8s-model.md](k8s-model.md) and [blockwise.md](blockwise.md) (blockwise 96-98% skill@20).
 - The scorer's noise oracle for input-driven meas variants (harness, reported, not changed).
+
+## 310 after round 1 (coordinator, 2026-10-22)
+
+Round 1 (`~/.sdlab/rung-progress.log`, 07:29Z): all five of the top 5 pass none-short and none-long; all five fail
+counts-short and counts-long. `sdlab-ladder analyse 310` gives no verdict ("a truth this analysis does not cover":
+switches, tables, effects), so the counts variants count as achievable until shown otherwise.
+
+`sdlab-ladder diff 310 --summary --strategies combined2,milp,structures,kalman_lna,engine_forms --variants
+counts-short,counts-long`: the counts failures are about memory, the same way in every strategy:
+- `~ mem -> outside` too low (6 of 10 results, all 5 strategies);
+- `ready -> pending × effect(mem)` (the OOM kill) missed or its table off (10 of 10 lines between them);
+- then 309's known counts misses on `retries` (high/low) and `pending -> ready`.
+
+One shared error across five independent methods points at the data, not a method: Poisson noise on `mem` (a
+level in MiB, counted) biases a drain fitted against the noisy level low (errors-in-variables attenuation). Worth
+trying in round 2 before strategy-specific changes: estimate `mem`'s drain on smoothed or instrumented levels
+(lagged level as the instrument), or fit the drain and the inflow jointly by simulation error rather than by
+one-step regression; check whether the OOM table is then found. If a measured bound shows the counts data
+cannot fix these numbers, record it (`analyse` cannot), and the rung moves on with none-short/none-long.
+On 309, three strategies now pass counts-long, so counts is not out of reach in general.
