@@ -223,18 +223,16 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
     not read is still used to evaluate the model's other flows."""
     if not isinstance(result, dict) or not result.get("flows"):
         return result
-    levels = {k: np.asarray(v, dtype=float) for k, v in (run.get("levels") or {}).items()}
+    from . import hinge
+
+    # each step reads the levels at its start (announced injections added, and taken off its change:
+    # hinge.columns, 2026-10-22 k8s-311) and an input's value during the step (the engine's convention)
+    levels, cols, n = hinge.columns(run, opts)
     if not levels:
         return result
-    T = min(len(v) for v in levels.values())
-    n = T - 1
+    T = n + 1
     if n < 10:
         return result
-    cols = {k: v[:n] for k, v in levels.items()}             # each step reads the levels at its start
-    for k, v in ((opts or {}).get("inputs") or {}).items():
-        a = np.asarray(v, dtype=float)
-        if k not in cols and len(a) >= T:
-            cols[k] = a[1:T]                                  # and an input's value during the step (the engine's convention)
     finals = {s["id"] for s in stocks if s.get("final")}
     boundary = run.get("boundary") if run.get("boundary_declared") else None
     out = copy.deepcopy(result)
@@ -267,7 +265,7 @@ def _try(x: str, flows: list[dict], levels: dict, cols: dict, n: int, T: int, fi
     end no worse than before."""
     from . import hinge
 
-    d = np.diff(levels[x][:T])
+    d = hinge.delta(levels, x, T - 1)
     chain = _own_chain(flows, x, set(levels))
     inner = [f for f in flows if f.get("from") and f.get("to") and x in (f["from"], f["to"]) and not _touches(f, chain)]
     dropped = []
@@ -344,7 +342,7 @@ def _try(x: str, flows: list[dict], levels: dict, cols: dict, n: int, T: int, fi
     note = {"stock": x, "sides": sides, "sse_before": err_old, "sse_after": err_new, **({"dropped": sorted(chain)} if chain else {})}
     if drop:
         partners = sorted({f["to"] if f["from"] == x else f["from"] for f in dropped})
-        lv = {k: v for k, v in levels.items()}
+        lv = copy.copy(levels)
         repaired = []
         for y in partners:
             if y in finals:
@@ -366,7 +364,7 @@ def _row_sse(y: str, flows: list[dict], levels: dict, cols: dict, n: int) -> flo
     """Y's row error under these flows (switches evaluated as written), None where a flow cannot be run."""
     from . import hinge
 
-    d = np.diff(levels[y][:n + 1])
+    d = hinge.delta(levels, y, n)
     m = np.zeros(n)
     for f in flows:
         a, b = f.get("from"), f.get("to")

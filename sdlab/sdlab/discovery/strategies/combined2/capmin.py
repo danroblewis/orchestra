@@ -32,6 +32,8 @@ MIN_SHARE = 0.05       # each regime holds on at least this share of the steps
 GRID = 24              # theta candidates (quantiles of X / Y)
 NAME = "capmin__"      # the offered series' name prefix
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
+MAX_LIMITS = 3         # limits offered, one round each (2026-10-22, k8s-311)
+BETAS = 12             # pool-size candidates of a headroom limit (quantiles of Z / Y, and past the largest)
 
 
 def level_series(name) -> bool:
@@ -145,6 +147,133 @@ def _gain(B: np.ndarray, m: np.ndarray, y: np.ndarray, floor: float) -> tuple[fl
     return len(y) * math.log((_rss(B, y) + floor) / (float(r1 @ r1) + floor)), float(coef[-1])
 
 
+class _Proj:
+    """Least squares on a fixed design B by projection: the residual sum of squares of y on B plus one more
+    column m, without a refit (rss(B + m) = rss(B) - (e . m_perp)^2 / |m_perp|^2)."""
+
+    def __init__(self, B: np.ndarray):
+        U, sv, _ = np.linalg.svd(B, full_matrices=False)
+        self.U = U[:, sv > sv[0] * 1e-12] if sv.size and sv[0] > 0 else U[:, :0]
+
+    def perp(self, v: np.ndarray) -> np.ndarray:
+        return v - self.U @ (self.U.T @ v)
+
+    def rss(self, e: np.ndarray, m: np.ndarray) -> float:
+        """e: y's residual on B (perp(y))."""
+        mp = self.perp(m)
+        mm = float(mp @ mp)
+        ee = float(e @ e)
+        return ee if mm <= 1e-12 * max(1.0, float(m @ m)) else max(0.0, ee - float(e @ mp) ** 2 / mm)
+
+
+def _room(X: np.ndarray, Y: np.ndarray, Z: np.ndarray, beta: float, th: float) -> np.ndarray:
+    """MIN(X, theta x max(0, beta Y - Z)): what X releases into the room left in a pool of beta per Y."""
+    return np.minimum(X, th * np.maximum(0.0, beta * Y - Z))
+
+
+def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
+    """One round of offer(): the best limit (plain or headroom) on top of the design B, sources in skip left out."""
+    caps = [(ids[i], read[i]) for i in range(len(ids)) if ids[i] not in final] + list(inputs.items())
+    best = None
+    for xi, x in enumerate(ids):
+        X = read[xi]
+        if x in final or x in skip or np.ptp(X) <= 0:
+            continue
+        for name, Y in caps:
+            if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
+                continue
+            ratio = X[Y > 0] / Y[Y > 0]
+            grid = np.unique(np.quantile(ratio, np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
+            th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
+            m = np.minimum(X, th * Y)
+            got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y,
+                         lambda rows: _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
+                                                             for r in rows), grid)[0],
+                         lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y)
+            if got and (best is None or got["kink"] > best["kink"]):
+                best = {"source": x, "cap": name, **got}
+    # (2026-10-22, k8s-311, docs/research/fixes/311-combined2.md) a headroom limit MIN(X, theta x max(0,
+    # beta Y - Z)): X released into the room left in a pool of beta a unit of Y less what Z (a stock of X's unit)
+    # already holds (pending pods start into the room the nodes leave: min(0.5 pending, 4 nodes - ready))
+    P = _Proj(B)
+    E = [P.perp(dy[i]) for i in range(len(ids))]
+    for xi, x in enumerate(ids):
+        X = read[xi]
+        if x in final or x in skip or np.ptp(X) <= 0 or not units.get(x):
+            continue
+        for zi, z in enumerate(ids):
+            if z in (x,) or z in final or units.get(z) != units.get(x) or np.ptp(read[zi]) <= 0:
+                continue
+            Z = read[zi]
+            for name, Y in caps:
+                if name in (x, z) or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
+                    continue
+                pos = Y > 0
+                zr = Z[pos] / Y[pos]
+                bgrid = np.unique(np.concatenate([np.quantile(zr, np.linspace(0.5, 1.0, BETAS - 1)), [zr.max() * 1.05]]))
+
+                def fit_th(beta, rows=(xi,)):
+                    R = np.maximum(0.0, beta * Y - Z)
+                    ok = R > 0
+                    if ok.sum() < 10:
+                        return None, math.inf
+                    tg = np.unique(np.quantile(X[ok] / R[ok], np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
+                    tg = tg[tg > 0]
+                    if not tg.size:
+                        return None, math.inf
+                    return _golden(lambda th: sum(math.log(P.rss(E[r], _room(X, Y, Z, beta, th)) + floor[r]) for r in rows), tg)
+
+                vals = [fit_th(b) for b in bgrid]
+                j = int(np.argmin([v[1] for v in vals]))
+                if vals[j][0] is None:
+                    continue
+                lo, hi = bgrid[max(0, j - 1)], bgrid[min(len(bgrid) - 1, j + 1)]
+                beta, _ = _golden(lambda b: fit_th(b)[1], np.array([lo, bgrid[j], hi]))
+                th, _ = fit_th(beta)
+                if th is None:
+                    continue
+
+                def refine(rows, X=X, Y=Y, Z=Z, beta=beta, lo=lo, hi=hi):
+                    b, _ = _golden(lambda b: fit_th(b, rows)[1], np.unique(np.array([lo, beta, hi])))
+                    refine.beta = b
+                    return fit_th(b, rows)[0]
+
+                m = _room(X, Y, Z, beta, th)
+                got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), refine,
+                             lambda th, f=refine: _room(X, Y, Z, getattr(f, "beta", beta), th),
+                             lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z))
+                if got and got.get("theta") is not None and (best is None or got["kink"] > best["kink"]):
+                    best = {"source": x, "cap": name, "room": z, "beta": float(getattr(refine, "beta", beta)), **got}
+    return best
+
+
+def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, refine, series, regime) -> dict | None:
+    """The offer rule for one candidate series m (module docstring): it takes from X; its receiver; the
+    threshold refined on X's row and the receiver's; each regime on MIN_SHARE of the steps; gain and kink."""
+    gx, cx = _gain(B, m, dy[xi], floor[xi])
+    if cx >= 0 or gx <= 0:                                 # a limited outflow of X takes from X
+        return None
+    to = None
+    for z in range(len(ids)):
+        if z != xi:
+            gz, cz = _gain(B, m, dy[z], floor[z])
+            if cz > 0 and gz > price and (to is None or gz > to[0]):
+                to = (gz, z)
+    rows = [xi] + ([to[1]] if to else [])
+    th = refine(rows)
+    if th is None:
+        return None
+    share = float(np.mean(regime(th)))
+    if not (MIN_SHARE <= share <= 1 - MIN_SHARE):
+        return None
+    m = series(th)
+    gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
+    kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
+    if gain > price and kink > price:
+        return {"theta": th, "gain": gain, "kink": kink, "share": share, **({"to": ids[to[1]]} if to else {}), "series": m}
+    return None
+
+
 def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict | None]:
     """opts with the regime-clipped series added as a measured input where a capacity limit wins, and
     what restore() needs (None where none is offered).
@@ -154,7 +283,13 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     enters with a positive coefficient and lowers the residual most (none: an outflow to outside), and
     theta is refined on X's row and the receiver's together. The evidence is the kink: what m adds to
     each of those rows on top of every product of two levels or inputs (a smooth curve is not a limit),
-    summed over the two rows; it must exceed PRICE x log T, and so must m's gain on the linear rows."""
+    summed over the two rows; it must exceed PRICE x log T, and so must m's gain on the linear rows.
+
+    (2026-10-22, k8s-311) The capacity may also be the room left in a pool, max(0, beta Y - Z) for a stock Z
+    of X's unit (_search). And after the best limit, the search runs again with it among the columns, for
+    another source, up to MAX_LIMITS: a model may have more than one limit (a queue's dispatch by the pods
+    ready, and the pods' start by the nodes' room). The first limit is returned as before; the others
+    under "more"."""
     opts = dict(opts or {})
     if any(str(k).startswith(NAME) for k in (opts.get("inputs") or {})):
         return opts, None                                  # already offered (a strategy calling itself)
@@ -162,63 +297,66 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     if got is None:
         return opts, None
     ids, final, dy, read, inputs = got
+    units = {s["id"]: s.get("unit") for s in stocks}
     T = dy.shape[1]
     B, Q = _design(ids, read, inputs, opts, np.asarray(run["t"], dtype=float), T)
-    caps = [(ids[i], read[i]) for i in range(len(ids)) if ids[i] not in final] + list(inputs.items())
     floor = [RESOLUTION * float(np.mean(dy[i] ** 2)) * T + 1e-300 for i in range(len(ids))]   # the data's resolution
     price = PRICE * math.log(T)
-    best = None
-    for xi, x in enumerate(ids):
-        X = read[xi]
-        if x in final or np.ptp(X) <= 0:
-            continue
-        for name, Y in caps:
-            if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
-                continue
-            ratio = X[Y > 0] / Y[Y > 0]
-            grid = np.unique(np.quantile(ratio, np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
-            th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
-            m = np.minimum(X, th * Y)
-            gx, cx = _gain(B, m, dy[xi], floor[xi])
-            if cx >= 0 or gx <= 0:                         # a limited outflow of X takes from X
-                continue
-            to = None
-            for z in range(len(ids)):
-                if z != xi:
-                    gz, cz = _gain(B, m, dy[z], floor[z])
-                    if cz > 0 and gz > price and (to is None or gz > to[0]):
-                        to = (gz, z)
-            rows = [xi] + ([to[1]] if to else [])
-            th, _ = _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
-                                           for r in rows), grid)
-            share = float(np.mean(X <= th * Y))
-            if not (MIN_SHARE <= share <= 1 - MIN_SHARE):
-                continue
-            m = np.minimum(X, th * Y)
-            gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
-            kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
-            if gain > price and kink > price and (best is None or kink > best["kink"]):
-                best = {"source": x, "cap": name, "theta": th, "gain": gain, "kink": kink, "share": share}
-                if to:
-                    best["to"] = ids[to[1]]
-    if best is None:
+    found = []
+    while len(found) < MAX_LIMITS:
+        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found})
+        if best is None:
+            break
+        m = best.pop("series")
+        found.append(best)
+        B, Q = np.column_stack([B, m]), np.column_stack([Q, m])
+    if not found:
         return opts, None
-    X = read[ids.index(best["source"])]
-    Y = read[ids.index(best["cap"])] if best["cap"] in ids else inputs[best["cap"]]
-    m = np.minimum(X, best["theta"] * Y)
-    name = f"{NAME}{best['source']}__{best['cap']}"
-    series = np.concatenate([[min(X[0], best["theta"] * Y[0])], m])     # input i is read by step i - 1
     inp = dict(opts.get("inputs") or {})
-    inp[name] = [float(v) for v in series]
+    reg = dict(opts.get("capmin") or {})
+    for best in found:
+        X = read[ids.index(best["source"])]
+        Y = read[ids.index(best["cap"])] if best["cap"] in ids else inputs[best["cap"]]
+        if best.get("room"):
+            Z = read[ids.index(best["room"])]
+            m = _room(X, Y, Z, best["beta"], best["theta"])
+            first = float(_room(X[:1], Y[:1], Z[:1], best["beta"], best["theta"])[0])
+            name = f"{NAME}{best['source']}__{best['cap']}__{best['room']}"
+        else:
+            m = np.minimum(X, best["theta"] * Y)
+            first = min(X[0], best["theta"] * Y[0])
+            name = f"{NAME}{best['source']}__{best['cap']}"
+        series = np.concatenate([[first], m])              # input i is read by step i - 1
+        inp[name] = [float(v) for v in series]
+        best["name"] = name
+        reg[name] = {"source": best["source"], "to": best.get("to")}
     opts["inputs"] = inp
-    best["name"] = name
-    opts["capmin"] = {**(opts.get("capmin") or {}), name: {"source": best["source"], "to": best.get("to")}}
-    return opts, best
+    opts["capmin"] = reg
+    cap = dict(found[0])
+    if len(found) > 1:
+        cap["more"] = found[1:]
+    return opts, cap
 
 
-def _expr(rate: dict, cap: dict) -> dict:
-    """A linear rate with a term reading the offered series, as an expression with the MIN written out."""
-    name, x, y, th = cap["name"], cap["source"], cap["cap"], cap["theta"]
+def plain_cap(cap: dict | None) -> dict | None:
+    """The first limit alone where it is a plain MIN(X, theta Y) (what oefit can run), else None."""
+    if not cap or cap.get("room"):
+        return None
+    return {k: v for k, v in cap.items() if k != "more"}
+
+
+def _min_text(k: float, cap: dict) -> str:
+    x, y, th = cap["source"], cap["cap"], cap["theta"]
+    if cap.get("room"):
+        z, b = cap["room"], cap["beta"]
+        if k >= 0:
+            return f"min({k!r} * {x}, max(0, {k * th * b!r} * {y} + {-k * th!r} * {z}))"
+        return f"{k!r} * min({x}, max(0, {th * b!r} * {y} + {-th!r} * {z}))"
+    return f"min({k!r} * {x}, {k * th!r} * {y})" if k >= 0 else f"{k!r} * min({x}, {th!r} * {y})"
+
+
+def _expr(rate: dict, caps: dict) -> dict:
+    """A linear rate with terms reading offered series, as an expression with each MIN written out."""
     form = rate.get("form")
     if form == "proportional":
         terms, c = [{"stock": rate.get("stock"), "k": rate.get("k", 0.0)}], 0.0
@@ -226,37 +364,41 @@ def _expr(rate: dict, cap: dict) -> dict:
         terms, c = list(rate.get("terms") or []), float(rate.get("c") or 0.0)
     else:
         return rate
-    if not any(t.get("stock") == name for t in terms):
+    if not any(t.get("stock") in caps for t in terms):
         return rate
     parts = [repr(c)] if c else []
     for t in terms:
         k = float(t.get("k") or 0.0)
-        if t.get("stock") == name:
-            parts.append(f"min({k!r} * {x}, {k * th!r} * {y})" if k >= 0 else f"{k!r} * min({x}, {th!r} * {y})")
+        if t.get("stock") in caps:
+            parts.append(_min_text(k, caps[t.get("stock")]))
         else:
             parts.append(f"{k!r} * {t.get('stock')}")
     return {"form": "expr", "expr": " + ".join(parts) or "0"}
 
 
 def restore(result: dict, cap: dict | None) -> dict:
-    """The strategy's answer with every rate that reads the offered series written as its MIN."""
+    """The strategy's answer with every rate that reads an offered series written as its MIN."""
     if not cap or not isinstance(result, dict):
         return result
+    caps = {c["name"]: c for c in [cap] + list(cap.get("more") or [])}
     out = copy.deepcopy(result)
     for n, f in enumerate(out.get("flows") or []):
         for g in f.get("byTime") or []:
             if g.get("rate"):
-                g["rate"] = _expr(g["rate"], cap)
+                g["rate"] = _expr(g["rate"], caps)
         if f.get("rate"):
-            f["rate"] = _expr(f["rate"], cap)
+            f["rate"] = _expr(f["rate"], caps)
         if f.get("rates"):
-            f["rates"] = [_expr(r, cap) for r in f["rates"]]
-        if f.get("input") == cap["name"]:
+            f["rates"] = [_expr(r, caps) for r in f["rates"]]
+        if f.get("input") in caps:
             f.pop("input", None)
         rates = [g.get("rate") or {} for g in f.get("byTime") or []] + [f.get("rate") or {}]
         if any(r.get("form") == "expr" for r in rates):
             f.setdefault("id", f"capmin{n}")             # an expression flow is named (the engine's compiler wants one)
-    out["capmin"] = {k: cap[k] for k in ("source", "cap", "to", "theta", "gain", "kink", "share") if k in cap}
+    keys = ("source", "cap", "room", "beta", "to", "theta", "gain", "kink", "share")
+    out["capmin"] = {k: cap[k] for k in keys if k in cap}
+    if cap.get("more"):
+        out["capmin"]["more"] = [{k: c[k] for k in keys if k in c} for c in cap["more"]]
     return out
 
 

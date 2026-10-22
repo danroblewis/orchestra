@@ -163,12 +163,12 @@ def _one(s: str, flows: list[dict], levels: dict, cols: dict, n: int, fracs, rat
     if got is None:
         return None
     y, sse_cur, k_cur = got
-    energy = float(np.sum(np.diff(levels[s][:n + 1]) ** 2))
+    energy = float(np.sum(hinge.delta(levels, s, n) ** 2))
     if sse_cur <= SKIP_REL * energy:
         return None
-    scale = max(1e-12, float(np.abs(np.diff(levels[s][:n + 1])).max()))
+    scale = max(1e-12, float(np.abs(hinge.delta(levels, s, n)).max()))
     floor = n * (FLOOR_REL * scale) ** 2
-    one, S = np.ones(n), levels[s][:n]
+    one, S = np.ones(n), cols[s][:n]
     pool = {c: cols[c][:n] for c in cols if c != s and c not in finals and np.std(cols[c][:n]) > 0}
     pool.update(ratios)
     plain = _fit(y, [one, S], pool, n, floor, 0)

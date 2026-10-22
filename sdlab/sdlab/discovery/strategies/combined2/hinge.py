@@ -53,12 +53,19 @@ def amount(f: dict, cols: dict, n: int) -> np.ndarray | None:
     if f.get("byTime") or f.get("uses") or f.get("two_way") or f.get("via"):
         return None
     lf = _linear(f.get("rate") or {})
-    if lf is None or any(j not in cols for j in lf[1]):
+    if lf is None:
+        # (2026-10-22, k8s-311) an expression of arithmetic and MIN / MAX on measured columns (a capacity
+        # limit written back by capmin.restore) is evaluated too; one with a comparison (a switch) is not
+        r = expr_amount((f.get("rate") or {}).get("expr"), cols, n) if (f.get("rate") or {}).get("form") == "expr" else None
+        if r is None:
+            return None
+    elif any(j not in cols for j in lf[1]):
         return None
-    c, ks = lf
-    r = np.full(n, c, dtype=float)
-    for j, k in ks.items():
-        r = r + k * cols[j][:n]
+    else:
+        c, ks = lf
+        r = np.full(n, c, dtype=float)
+        for j, k in ks.items():
+            r = r + k * cols[j][:n]
     r = np.maximum(0.0, r)
     for e in f.get("effects") or []:              # (2026-10-21, k8s-310) a table effect on a measured column
         pts = sorted((float(a), float(b)) for a, b in (e.get("points") or []))
@@ -127,14 +134,40 @@ def _rate(side: dict) -> dict:
     return {"form": "linear", "c": side["c"], "terms": [{"stock": k, "k": v} for k, v in side["w"].items()]}
 
 
+class Levels(dict):
+    """The measured levels, with each stock's announced injections per step (`inj`: added before the step's
+    flows, as the engine does), so a row is the change the flows made: delta()."""
+    inj: dict = {}
+
+
+def delta(levels: dict, x: str, n: int) -> np.ndarray:
+    """X's one-step changes less its announced injections."""
+    d = np.diff(levels[x][:n + 1])
+    j = getattr(levels, "inj", {}).get(x)
+    return d - j[:n] if j is not None else d
+
+
 def columns(run: dict, opts: dict | None, readable=None) -> tuple[dict, dict, int]:
-    """(levels, cols, n): cols read at each step's start (an input during the step, the engine's convention)."""
-    levels = {k: np.asarray(v, dtype=float) for k, v in (run.get("levels") or {}).items()}
+    """(levels, cols, n): cols read at each step's start (an input during the step, the engine's convention).
+    (2026-10-22, k8s-311) An announced injection is added to the level its step's rates read, and taken off
+    that step's change (levels.inj, delta()): before, a node failure's 3 pods moved ready -> pending were
+    read as flow."""
+    levels = Levels({k: np.asarray(v, dtype=float) for k, v in (run.get("levels") or {}).items()})
     if not levels:
         return levels, {}, 0
     T = min(len(v) for v in levels.values())
     n = T - 1
-    cols = {k: v[:n] for k, v in levels.items()}
+    cols = {k: v[:n].copy() for k, v in levels.items()}
+    t = np.asarray(run.get("t") or [], dtype=float)
+    inj = {}
+    if len(t) >= T:
+        at = {float(x): k for k, x in enumerate(t[1:T])}
+        for j in (opts or {}).get("injections") or []:
+            k, x = at.get(float(j.get("t", -1e300))), j.get("stock")
+            if k is not None and x in levels:
+                inj.setdefault(x, np.zeros(n))[k] += float(j["amount"])
+                cols[x][k] = max(0.0, cols[x][k] + float(j["amount"]))
+    levels.inj = inj
     for k, v in ((opts or {}).get("inputs") or {}).items():
         a = np.asarray(v, dtype=float)
         if k not in cols and len(a) >= T and (readable is None or readable(k)):
@@ -142,11 +175,57 @@ def columns(run: dict, opts: dict | None, readable=None) -> tuple[dict, dict, in
     return levels, cols, n
 
 
+_EXPR_FN = {"min": np.minimum, "max": np.maximum}
+
+
+def expr_amount(expr, cols: dict, n: int) -> np.ndarray | None:
+    """An expression rate's value per step on the columns (numbers, names, + - * /, unary minus, min, max of
+    two or more), not yet floored; None for anything else (a comparison, ceil, a name not measured)."""
+    import ast
+
+    if not isinstance(expr, str):
+        return None
+    try:
+        tree = ast.parse(expr, mode="eval").body
+    except SyntaxError:
+        return None
+
+    def ev(e):
+        if isinstance(e, ast.Constant) and isinstance(e.value, (int, float)):
+            return np.full(n, float(e.value))
+        if isinstance(e, ast.Name):
+            if e.id not in cols:
+                raise KeyError(e.id)
+            return np.asarray(cols[e.id][:n], dtype=float)
+        if isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.USub):
+            return -ev(e.operand)
+        if isinstance(e, ast.BinOp) and isinstance(e.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
+            a, b = ev(e.left), ev(e.right)
+            if isinstance(e.op, ast.Add):
+                return a + b
+            if isinstance(e.op, ast.Sub):
+                return a - b
+            if isinstance(e.op, ast.Mult):
+                return a * b
+            return a / np.where(b == 0, np.inf, b)
+        if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id in _EXPR_FN and len(e.args) >= 2 \
+                and not e.keywords:
+            out = ev(e.args[0])
+            for a in e.args[1:]:
+                out = _EXPR_FN[e.func.id](out, ev(a))
+            return out
+        raise ValueError(type(e).__name__)
+
+    try:
+        return ev(tree)
+    except (KeyError, ValueError):
+        return None
+
+
 def row_error(x: str, flows: list[dict], levels: dict, cols: dict, n: int) -> tuple[np.ndarray, dict] | None:
     """X's row: (residual after its inner flows, {"in": amounts, "out": amounts} of its outside flows), None
     where a flow touching X cannot be evaluated."""
-    d = np.diff(levels[x][:n + 1])
-    r = d.copy()
+    r = delta(levels, x, n)
     sides = {"in": np.zeros(n), "out": np.zeros(n)}
     for f in flows:
         a, b = f.get("from"), f.get("to")
@@ -171,7 +250,7 @@ def refit_row(x: str, flows: list[dict], levels: dict, cols: dict, n: int, allow
     if got is None:
         return None
     r, sides = got
-    scale = max(1e-12, float(np.abs(np.diff(levels[x][:n + 1])).max()))
+    scale = max(1e-12, float(np.abs(delta(levels, x, n)).max()))
     floor = n * (FLOOR_REL * scale) ** 2
     k_old = {s: sum(_k(f) for f in flows if _side(f, x) == s) for s in ("in", "out")}
     sse_old = float(np.sum((r - sides["in"] + sides["out"]) ** 2))

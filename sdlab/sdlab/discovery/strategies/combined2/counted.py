@@ -233,22 +233,52 @@ def _quick(flows: list[dict], rows: set, levels: dict, cols: dict, n: int) -> tu
     return sse, cur
 
 
+def _refit_limits(flows: list[dict], rows: set, levels: dict, cols: dict, n: int) -> list[dict] | None:
+    """(2026-10-22, k8s-311) each capacity limit between two of the rows (a move written as capmin writes
+    it) refitted jointly with the rows' linear flows (minrefit._fit), so a placement is judged with the
+    limit fitted to it rather than held at the numbers it was offered with; None where the rows have none"""
+    from . import minrefit
+
+    cur, done = flows, 0
+    for f in list(cur):
+        p = minrefit.parse((f.get("rate") or {}).get("expr")) if (f.get("rate") or {}).get("form") == "expr" else None
+        if p is None or not f.get("id") or f.get("from") not in rows or f.get("to") not in rows or f.get("effects") \
+                or any(v not in cols for v in [p["x"]] + [v for _, v in p["cap"]]):
+            continue
+        got = minrefit._fit(p, f["from"], f["to"], cur, f["id"], levels, cols, n, rows)
+        if got is not None:
+            cur, done = got[1], done + 1
+    return cur if done else None
+
+
+def _sse(flows: list[dict], rows: set, levels: dict, cols: dict, n: int) -> float | None:
+    sse = 0.0
+    for x in rows:
+        s = _row_sse(x, flows, levels, cols, n)
+        if s is None:
+            return None
+        sse += s
+    return sse
+
+
 def _repair_once(flows: list[dict], rows: set, levels: dict, cols: dict, n: int, run: dict) -> tuple[list[dict], float, int] | None:
-    cur = flows
+    cur, best = flows, None
     for _ in range(ROUNDS):
-        cur = _refit_moves(cur, rows, levels, cols, n)
+        # (2026-10-22, k8s-311) where the rows hold a capacity limit, it and the moves are refitted together
+        # (the moves alone, with the limit held, can fall into a worse active set: 311 none-long), and the
+        # best round is kept
+        cur = _refit_limits(cur, rows, levels, cols, n) or _refit_moves(cur, rows, levels, cols, n)
         for x in sorted(rows):
             have = {s for f in cur for s in [hinge._side(f, x)] if s}
             got = hinge.refit_row(x, cur, levels, cols, n, hinge.allowed_sides(x, run, cur) & have, force=True)
             if got is not None:
                 cur = got[0]
-    sse = 0.0
-    for x in rows:
-        s = _row_sse(x, cur, levels, cols, n)
-        if s is None:
+        sse = _sse(cur, rows, levels, cols, n)
+        if sse is None:
             return None
-        sse += s
-    return cur, sse, _nums(cur, rows)
+        if best is None or sse < best[1]:
+            best = (cur, sse)
+    return best[0], best[1], _nums(best[0], rows)
 
 
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None, readable=None) -> dict:
@@ -268,7 +298,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
             continue                                       # something leaves it: not a counter
         if run.get("boundary_declared") and not ((run.get("boundary") or {}).get(c) or {}).get("in"):
             continue
-        y = np.diff(levels[c][:n + 1])
+        y = hinge.delta(levels, c, n)
         if np.any(y < -1e-9) or (y > 0).sum() < MIN_ACTIVE:
             continue
         scale = max(1e-12, float(np.abs(y).max()))
@@ -284,7 +314,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
         readers = [x for x in cols if x not in finals and x != c]
         best = None
         for a in bases:
-            base = np.maximum(0.0, levels[a][:n]) if a else np.ones(n)
+            base = np.maximum(0.0, cols[a][:n]) if a else np.ones(n)
             for x in readers:
                 t = fit_table(y, base, cols[x][:n], floor)
                 if t and (best is None or t["bic"] < best[0]["bic"] - 1e-9):

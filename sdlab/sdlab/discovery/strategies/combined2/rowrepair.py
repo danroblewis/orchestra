@@ -93,10 +93,10 @@ def _nnls(cur, rows: set, trials, levels, cols, n) -> list[tuple[str, str | None
     M = np.zeros((len(y), len(trials)))
     for j, (a, b) in enumerate(trials):
         i = order.index(a)
-        M[i * n:(i + 1) * n, j] -= levels[a][:n]
+        M[i * n:(i + 1) * n, j] -= cols[a][:n]
         if b is not None:
             i = order.index(b)
-            M[i * n:(i + 1) * n, j] += levels[a][:n]
+            M[i * n:(i + 1) * n, j] += cols[a][:n]
     k, _ = nnls(M, y)
     spread = float(np.std(y)) or 1.0
     return [t for t, v, c in zip(trials, k, M.T) if v > 0 and float(np.std(v * c)) > TINY * spread]
@@ -153,12 +153,12 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
             if v is None:
                 loose = False
                 break
-            energy = float(np.sum(np.diff(levels[x][:n + 1]) ** 2))
+            energy = float(np.sum(hinge.delta(levels, x, n) ** 2))
             bare = not any(x in (f.get("from"), f.get("to")) for f in flows)
             loose = loose or (bare and v > LOOSE * max(energy, 1e-300))
         if not loose:
             continue
-        scale = max(1e-12, max(float(np.abs(np.diff(levels[x][:n + 1])).max()) for x in rows))
+        scale = max(1e-12, max(float(np.abs(hinge.delta(levels, x, n)).max()) for x in rows))
         floor = len(rows) * n * max((FLOOR_REL * scale) ** 2, resolution(levels, rows) ** 2 / 6)
         got = _block(flows, rows, finals, run, levels, cols, n, floor)
         if got is None:

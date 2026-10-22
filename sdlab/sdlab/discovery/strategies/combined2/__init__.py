@@ -400,6 +400,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import counted
     from . import hiddenrow
     from . import hinge
+    from . import minrefit
     from . import oefit
     from . import rowrepair
     from . import switch
@@ -413,7 +414,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # floored linear rates (hinge.py: max(0, c + w . Z), a gap that closes) where its row says so
     plain = lambda name: not _capmin.level_series(name)   # noqa: E731
     r = hinge.apply(switch.apply(r, stocks, run, o, readable=plain), stocks, run, o, readable=plain)
-    r = oefit.refit(r, stocks, run, o, cap)
+    r = oefit.refit(r, stocks, run, o, _capmin.plain_cap(cap))
     r = hinge.apply(switch.apply(_capmin.restore(r, cap), stocks, run, opts), stocks, run, opts)
     # (2026-10-21, k8s-310, docs/research/fixes/310-combined2.md) a counter that counts another flow: that
     # flow read off the counter's increase (counted.py: k x A x table(X), placed as a move by the rows it
@@ -421,6 +422,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # (2026-10-22, k8s-310 round 2) a block of one unit whose rows the pick leaves unexplained gets the moves
     # it lacks, fitted together by non-negative least squares (rowrepair.py)
     r = hinge.apply(rowrepair.apply(counted.apply(r, stocks, run, opts), stocks, run, opts), stocks, run, opts)
+    # (2026-10-22, k8s-311, docs/research/fixes/311-combined2.md) each capacity limit's numbers refitted on its
+    # rows now that the block's other flows are placed (minrefit.py: capmin offered it on rows still carrying them)
+    r = minrefit.apply(r, stocks, run, opts)
     # (2026-10-22, k8s-310 round 2) a stock's inflow that reads a hidden integrator (a leak freed by the
     # same event a counted flow measures) written as a hidden stock, which the scorer now credits (hiddenrow.py)
     return hiddenrow.apply(r, stocks, run, opts)
