@@ -150,12 +150,25 @@ def _size(key: tuple, value, means: dict, among: dict) -> float:
 
 
 def _levels_at(data: dict) -> list[dict]:
-    """The state at the start of every step: every stock's level, and each measured input's value
-    during the step (read as a stock is; the oracle's convention)."""
+    """The state at the start of every step: every stock's level, with that step's announced injections added (the
+    engine adds them at the start of their step, before its flows, and never below 0: the levels its rates read;
+    2026-10-22, a fix: without them a whole flow read at a node loss missed its own truth, 312 none-long's counter at
+    2.018% against 2%), and each measured input's value during the step (read as a stock is; the oracle's convention)."""
     lv = data.get("all_levels") or data["levels"]
-    n = len(data["t"])
+    t = data["t"]
+    n = len(t)
     ins = {k: v for k, v in (data.get("inputs") or {}).items() if k not in lv}
-    return [{**{s: v[i] for s, v in lv.items()}, **{k: v[i + 1] for k, v in ins.items() if i + 1 < len(v)}} for i in range(n - 1)]
+    at: dict = {}
+    for j in data.get("injections") or []:
+        if j.get("stock") in lv:
+            at.setdefault(j["t"], []).append((j["stock"], float(j["amount"])))
+    out = []
+    for i in range(n - 1):
+        st = {s: v[i] for s, v in lv.items()}
+        for s, amount in at.get(t[i + 1], ()):
+            st[s] = max(0.0, st[s] + amount)
+        out.append({**st, **{k: v[i + 1] for k, v in ins.items() if i + 1 < len(v)}})
+    return out
 
 
 def _flow_amounts(flows: list[dict], data: dict, states: list[dict] | None = None) -> np.ndarray | None:
