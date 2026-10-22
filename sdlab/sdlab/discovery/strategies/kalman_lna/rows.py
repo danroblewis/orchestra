@@ -62,6 +62,9 @@ LEFT = 1e-4            # what a drain leaves below this share of itself after it
 ACTIVE_ROUNDS = 3      # (311) active-set rereads of a floored term's readers in the search
 REREAD_SUPPORTS = 3    # (311) ... for this many of the best always-on parts
 INTEGRATOR_ROUNDS = 4  # (311) rounds of a switched integrator's threshold and drain rate refitted in turn
+RICH_SHARE = 0.4       # (317) the share of TIME the rows' richer forms (schedule, integrator, delay) may use, after
+                       # every stock's plain row is read; each row's delay fit gets an even slice of what is left
+RICH_SLICE = 20.0      # (317) ... and at least this many seconds
 
 
 def _rate_value(rate: dict, state: dict) -> float | None:
@@ -398,7 +401,10 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
             k += _numbers(f)
         return float(((dy[i] - pred) ** 2).sum()), k
 
-    def row(S, y, self_k=None, exclude=frozenset()):
+    rich_ok: set = set()                                 # (317) the stocks whose richer forms have been read
+    slice_end = [math.inf]                               # (317) the delay fit's own deadline (its slice of the pass)
+
+    def row(S, y, self_k=None, exclude=frozenset(), rich=None):
         """The best row for S's change y: {bic, sse, lin: {name: k}, hinge: (side, {name: k}) | None}; with
         self_k, S's own term is fixed at self_k (its drain is what its moves take) and the rest is searched;
         the always-on part reads no name in exclude (links on a side the boundary does not allow)."""
@@ -421,7 +427,8 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                     pred = (X[:, list(h[1])] @ h[2] if len(h[1]) else 0.0) + sign * np.maximum(0.0, X[:, list(h[3])] @ h[4])
                     out = {"bic": h[0], "sse": h[5], "lin": dict(zip([names[j] for j in h[1]], map(float, h[2]))),
                            "hinge": (side, dict(zip([names[j] for j in h[3]], map(float, h[4])))), "res": yy - pred}
-        if (out["sse"] > 100 * floor[S] and S not in final and "in" in _sides(S, declared, bd)
+        rich = S in rich_ok if rich is None else rich
+        if (rich and out["sse"] > 100 * floor[S] and S not in final and "in" in _sides(S, declared, bd)
                 and f"__s_{S}" not in exclude):
             plain = out
             out = _hidden(S, yy, cols, _schedule(S, yy, cols, plain), plain)
@@ -450,7 +457,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                 keep = np.ones(len(z), dtype=bool) if keep is None else keep
                 h = _floored(X[keep], z[keep], -1.0, floor[S], deadline, a_cols, b_cols, (1.0, 4.0))
                 return None if h is None else (h[1], h[2], h[3], h[4])
-            delay_memo[key] = _delayed.fit(X, yy, floor[S], deadline, a_cols, b_cols, floored, out_side)
+            delay_memo[key] = _delayed.fit(X, yy, floor[S], min(deadline, slice_end[0]), a_cols, b_cols, floored, out_side)
         got = delay_memo[key]
         if got is None:
             return best
@@ -811,7 +818,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         if a is None:
             continue
         old[S] = a
-        rows[S] = row(S, dy[i])
+        rows[S] = row(S, dy[i], rich=False)
     def _span(r):
         """An orthonormal basis of what row r already reads (its readers, its floored term, its schedule): a
         new column is scored on what it adds beyond them."""
@@ -834,7 +841,13 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         print("rows t base", round(t_der - deadline + TIME, 1))
     if time.monotonic() > deadline:
         return result                                        # the plain rows themselves ran out of time
-    for _ in range(_derived.ROUNDS + 1):                    # (311) a capped move is one round beyond ROUNDS
+    # (317) a larger model may need more derived columns: ROUNDS (and one capped move) for every 12 stocks (317's three
+    # services each have an OOM switch, a per-pod memory ratio and a pod start capped by the room); the rounds leave
+    # RICH_SHARE of the pass to the richer row forms after them
+    per = max(1, len(ids) // 12)
+    rounds, caps = _derived.ROUNDS * per, per
+    full_deadline, deadline = deadline, deadline - RICH_SHARE * TIME
+    for _ in range(rounds + caps):                           # (311) a capped move is one round beyond ROUNDS
         if time.monotonic() > deadline:
             break
         before = (X, names, rows, dict(derived_meta))       # a round cut short by the clock is undone whole
@@ -843,12 +856,12 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
             break
         spans = {S: _span(rows[S]) for S in resid}
         got = joint = None
-        if sum(not m.get("cap") for m in derived_meta.values()) < _derived.ROUNDS:
+        if sum(not m.get("cap") for m in derived_meta.values()) < rounds:
             got = _derived.search(X, names, stock_cols, resid, floor, spans, T, {m["expr"] for m in derived_meta.values()},
                                   [m["hinge"] for m in derived_meta.values() if m.get("hinge")])
             joint = _ratio_hidden(resid, {m["expr"] for m in derived_meta.values()}, stock_cols)
         capped = None
-        if not any(m.get("cap") and not m.get("offered") for m in derived_meta.values()):
+        if sum(bool(m.get("cap") and not m.get("offered")) for m in derived_meta.values()) < caps:
             # (311) the few best caps by what they add beyond the rows' spans, each then judged by its two rows refitted
             # with it (a cap lets a row's floored term be read right, which no linear score sees), net of its numbers
             for g0, meta_c, col_c in _capped(resid, spans, {m["expr"] for m in derived_meta.values()}):
@@ -928,6 +941,21 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
             if opts.get("rows_trace"):
                 print("rows derived round undone: out of time")
             break
+    deadline = full_deadline
+    # (317) every stock's plain row first (above), the derived columns on them, then the richer forms (a schedule, a hidden integrator, a delayed inflow) for
+    # the rows that miss most, each delay fit on its slice of RICH_SHARE of the pass: on 317 (36 stocks) the delay fits
+    # of the first rows took the whole 600 s, so the rows of the rest were never read and nothing was rebuilt
+    rich_end = deadline
+    todo = sorted((S for S in rows if rows[S]["sse"] > 100 * floor[S] and S not in final and "in" in _sides(S, declared, bd)),
+                  key=lambda S: -rows[S]["sse"] / floor[S])
+    rich_ok |= set(rows) - set(todo)                     # (nothing richer is tried on them)
+    for n_, S in enumerate(todo):
+        if time.monotonic() > rich_end:
+            break
+        slice_end[0] = time.monotonic() + max(RICH_SLICE, (rich_end - time.monotonic()) / (len(todo) - n_))
+        rich_ok.add(S)
+        rows[S] = row(S, dy[ids.index(S)])
+    slice_end[0] = math.inf
     # the rebuild has its own budget after the derived search, so a slower machine loses derived columns, never the
     # rebuild of the plain rows (309 counts-long on node2: the search used the whole pass and the answer was kept)
     deadline = time.monotonic() + BUILD_TIME
