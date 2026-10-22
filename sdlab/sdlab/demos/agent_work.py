@@ -418,6 +418,7 @@ def view_source(params: dict) -> dict:
     return {"title": f"{strategy}'s model of the agent team, on the 30 measured days (one step is an hour)", "t": list(r["t"]),
             "levels": r["levels"], "inputs": r.get("inputs") or {}, "flows": f["flows"], "true_flows": tm["flows"],
             "counters": r.get("counters") or {}, "units": {s["id"]: s["unit"] for s in tm["stocks"]},
+            "injections": r.get("injections") or tm.get("injections") or [],     # the agents added on day 12: the free run follows them
             "source": {"strategy": strategy, "commit": (f.get("code_commit") or "")[:9]}}
 
 

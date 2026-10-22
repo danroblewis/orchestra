@@ -91,7 +91,17 @@ def _model(flows: list[dict], ids: list[str], t: list, inputs: dict):
     return ladder_sim.found_model(flows, ids, inputs={"t": list(t), "values": inputs} if inputs else None)
 
 
-def one_step(flows: list[dict], measured: list[str], t: list, levels: dict, inputs: dict, hidden0: dict | None = None) -> dict:
+def _pulses(injections: list | None, ids: list[str]) -> dict:
+    """Announced injections by step: {t: [(row, amount)]} (the engine adds them at the start of their step)."""
+    out: dict = {}
+    for j in injections or []:
+        if j.get("stock") in ids:
+            out.setdefault(j["t"], []).append((ids.index(j["stock"]), float(j["amount"])))
+    return out
+
+
+def one_step(flows: list[dict], measured: list[str], t: list, levels: dict, inputs: dict, hidden0: dict | None = None,
+             injections: list | None = None) -> dict:
     """The found model's one-step-ahead prediction of every measured stock from the measured levels; its own hidden
     stocks are carried by the model itself (stepped from its own last prediction). {predicted: {stock: [...]},
     hidden: {stock: [...]}}; predicted[s][i] is the prediction for step i from step i - 1 (nan at i = 0)."""
@@ -99,11 +109,14 @@ def one_step(flows: list[dict], measured: list[str], t: list, levels: dict, inpu
     mdl = _model(flows, ids, t, inputs)
     n = len(t)
     H = [s for s in ids if s not in measured]
+    pulses = _pulses(injections, ids)
     h = np.array([float((hidden0 or {}).get(s, 0.0)) for s in H])
     pred = {s: [float("nan")] for s in measured}
     hid = {s: [float(h[j])] for j, s in enumerate(H)}
     for i in range(1, n):
         L = np.array([float(levels[s][i - 1]) for s in measured] + list(h))[:, None]
+        for row, amount in pulses.get(t[i], ()):                # the step's announced injections first, as the engine
+            L[row, 0] = max(0.0, L[row, 0] + amount)
         nxt = mdl.step(L, np.array([t[i]]))[:, 0]                # levels[i] are after step t[i]: that step reads t[i]'s inputs
         for k, s in enumerate(measured):
             pred[s].append(float(nxt[k]))
@@ -113,14 +126,17 @@ def one_step(flows: list[dict], measured: list[str], t: list, levels: dict, inpu
     return {"predicted": pred, "hidden": hid}
 
 
-def free_run(flows: list[dict], measured: list[str], t: list, start: dict, inputs: dict) -> dict:
+def free_run(flows: list[dict], measured: list[str], t: list, start: dict, inputs: dict, injections: list | None = None) -> dict:
     """The found model run free: out[s][0] is `start` (the levels at t[0]; hidden stocks 0 unless given), out[s][i] the
     levels after step t[i]. To start from the levels before the first step, prepend a step (demos._free does)."""
     ids = found_ids(flows, measured)
     mdl = _model(flows, ids, t, inputs)
     L = np.array([float(start.get(s, 0.0)) for s in ids])[:, None]
     out = {s: [float(L[k, 0])] for k, s in enumerate(ids)}
+    pulses = _pulses(injections, ids)
     for i in range(1, len(t)):
+        for row, amount in pulses.get(t[i], ()):                # announced injections at the start of their step
+            L[row, 0] = max(0.0, L[row, 0] + amount)
         L = mdl.step(L, np.array([t[i]]))
         for k, s in enumerate(ids):
             out[s].append(float(L[k, 0]))

@@ -227,7 +227,8 @@
   function renderModel(body, v) {
     const L = window.SDLadder, D = window.SDDiagram, src = v.source || {};
     const rate = (f) => { try { return f.rate && f.rate.form === "expr" ? f.rate.expr : L ? L.rateText(f.rate) : JSON.stringify(f.rate); } catch { return ""; } };
-    const short = (s) => (s.length > 34 ? s.slice(0, 33) + "…" : s);
+    const round = (s) => String(s).replace(/-?\d+\.\d{4,}(e[-+]?\d+)?|-?\d+(\.\d+)?e[-+]?\d+/g, (m) => String(+(+m).toPrecision(3)));   // 0.000327020866 -> 0.000327
+    const short = (s) => { s = round(s); return s.length > 34 ? s.slice(0, 33) + "…" : s; };
     const ends = (a, b) => `${a || "outside"} → ${b || "outside"}`;
     body.innerHTML = `<p class="src">${esc(v.title || "")}${src.result ? ` · stored result #${esc(src.result)} (${esc(src.status || "")}, code ${esc(src.commit || "")})` : ""}.
         The model was found from the measured levels alone; the true amounts come from the simulation.</p>
@@ -236,7 +237,7 @@
       <div class="legend"><span><span class="key" style="border-color:var(--faint)"></span>measured</span><span><span class="key" style="border-color:var(--accent2);border-top-style:dashed"></span>model, one step ahead from the data</span><span><span class="key" style="border-color:var(--accent)"></span>model, run free from the first level</span></div>
       <div class="grid mstocks"></div>
       ${Object.keys(v.hidden || {}).length ? `<h4>Stocks the model infers (not measured)</h4><div class="legend"><span><span class="key" style="border-color:var(--accent)"></span>the model's level</span><span><span class="key" style="border-color:var(--faint);border-top-style:dashed"></span>the true hidden level (the simulation's)</span></div><div class="grid mhidden"></div>` : ""}
-      <h4>Flows: the true amount per step and the model's</h4>
+      <h4>Flows: the true amount per step and the model's${v.every > 1 ? ` <span class="muted small">(each point the mean of ${v.every} steps)</span>` : ""}</h4>
       <div class="legend"><span><span class="key" style="border-color:var(--faint)"></span>true (the simulation's record)</span><span><span class="key" style="border-color:var(--accent)"></span>the found model's, read on the measured levels</span><span>"found only": a flow the truth does not have; "true only": one the model misses</span></div>
       <div class="grid mflows"></div>`;
     if (D && v.diagram) {
@@ -256,7 +257,7 @@
     if (mh) mh.innerHTML = Object.entries(v.hidden).map(([h, x]) => `<div class="panel"><h3>${esc(h)} <span class="tag">inferred</span></h3>
       ${chart(t, [{ ys: x.found, color: "var(--accent)", width: 2, label: "the model's" }].concat(x.true ? [{ ys: x.true, color: "var(--faint)", dash: "4 3", label: "true" }] : []), { h: 100, zero: true, label: h })}</div>`).join("");
     body.querySelector(".mflows").innerHTML = v.flows.map((f) => `<div class="panel"><h3><span class="mono" style="font-size:12px">${esc(ends(f.from, f.to))}</span>${f.status !== "both" ? `<span class="alarm">${esc(f.status)}</span>` : ""}${f.error !== null && f.error !== undefined ? `<span class="err" title="relative rms of the model's amount against the true one">error ${(100 * f.error).toFixed(1)}%</span>` : ""}</h3>
-      ${chart(t, [f.true ? { ys: f.true, color: "var(--faint)", width: 2, label: "true" } : null, f.found ? { ys: f.found, color: "var(--accent)", label: "found" } : null].filter(Boolean), { h: 90, zero: true, label: ends(f.from, f.to) })}</div>`).join("");
+      ${chart(v.flow_t || t, [f.true ? { ys: f.true, color: "var(--faint)", width: 2, label: "true" } : null, f.found ? { ys: f.found, color: "var(--accent)", label: "found" } : null].filter(Boolean), { h: 90, zero: true, label: ends(f.from, f.to) })}</div>`).join("");
   }
 
   // ---------- extra demos: static/demos-<name>.js (listed by /api/demos/manifest) ----------

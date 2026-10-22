@@ -5,7 +5,7 @@ between the same two stocks).
 
 A demo names its model by a source: "ladder" (a stored result: case, variant, strategy, optional result id) is built
 in; a demo with its own simulated system registers one with `register(name, fn)`, where fn(params) returns
-{"title", "t", "levels", "inputs", "flows", "true_flows"?, "counters"?, "hidden"?, "source"?} (counters: the true flows'
+{"title", "t", "levels", "inputs", "flows", "true_flows"?, "counters"?, "hidden"?, "injections"?, "source"?} (counters: the true flows'
 amounts per step, entry i during the step that ends at levels[i]; true_flows: their {id, from, to})."""
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _ladder(params: dict) -> dict:
     return {"title": f"{strategy} on {case_id} {variant}", "t": list(d["t"]), "levels": d["levels"], "inputs": d.get("inputs") or {},
             "flows": matched_names(r.get("found") or [], r.get("scores")), "true_flows": truth["flows"], "counters": d.get("counters") or {},
             "hidden": {k: v for k, v in (d.get("all_levels") or {}).items() if k not in d["levels"]},
-            "units": {s["id"]: s.get("unit") for s in truth["stocks"]},
+            "units": {s["id"]: s.get("unit") for s in truth["stocks"]}, "injections": d.get("injections") or [],
             "source": {"strategy": strategy, "result": r.get("id"), "status": r.get("status"), "commit": (r.get("code_commit") or "")[:9],
                        "case": case_id, "variant": variant}}
 
@@ -54,6 +54,14 @@ register("ladder", _ladder)
 
 def _thin(xs, every):
     return [None if (x is None or not math.isfinite(x)) else round(float(x), 4) for x in list(xs)[::every]]
+
+
+def _mean(xs, every):
+    """Block means (a flow's amount per step, averaged over each shown point's steps: event counts stay readable)."""
+    v = np.asarray(list(xs), dtype=float)
+    n = len(v) // every * every
+    m = v[:n].reshape(-1, every).mean(axis=1) if n else v
+    return [None if not math.isfinite(x) else round(float(x), 4) for x in m]
 
 
 def _ends(f: dict) -> tuple:
@@ -69,8 +77,9 @@ def _view(source: str, key: tuple) -> dict:
     measured = list(levels)
     n = len(t)
     # stocks: one step ahead (hidden stocks carried by the model) and free from the first measured levels
-    o = E.one_step(flows, measured, t, levels, inputs)
-    free = E.free_run(flows, measured, t, {s: levels[s][0] for s in measured}, inputs)
+    inj = src.get("injections") or []                      # announced events (a node lost, agents added): applied as the engine does
+    o = E.one_step(flows, measured, t, levels, inputs, injections=inj)
+    free = E.free_run(flows, measured, t, {s: levels[s][0] for s in measured}, inputs, injections=inj)
     ids = E.found_ids(flows, measured)
     hidden_found = [s for s in ids if s not in measured]
     # flows: the found model's amount in each step, read on the measured levels (and its own hidden stocks' carried levels)
@@ -106,14 +115,14 @@ def _view(source: str, key: tuple) -> dict:
         return float(np.sqrt(np.mean((a - b) ** 2)) / sc)
     flow_rows = []
     for (a, b), p in pairs.items():
-        flow_rows.append({"from": a, "to": b, "found": None if p["found"] is None or not p["found_rates"] else _thin(p["found"], every),
-                          "true": None if p["true"] is None else _thin(p["true"], every), "true_ids": p["true_ids"],
+        flow_rows.append({"from": a, "to": b, "found": None if p["found"] is None or not p["found_rates"] else _mean(p["found"], every),
+                          "true": None if p["true"] is None else _mean(p["true"], every), "true_ids": p["true_ids"],
                           "error": fit(p["found"] if p["found_rates"] else None, p["true"]),
                           "status": "both" if p["found_rates"] and p["true"] is not None else "found only" if p["found_rates"] else "true only"})
     flow_rows.sort(key=lambda r: (r["status"] != "both", -(r["error"] or 0)))
     err = {s: float(np.nanmean(np.abs(np.asarray(o["predicted"][s][1:], float) - np.asarray(levels[s][1:], float))) /
                     (float(np.nanstd(levels[s])) or 1.0)) for s in measured}
-    return {"title": src.get("title"), "source": src.get("source"), "t": t[::every], "stocks": stocks, "hidden": hidden, "flows": flow_rows,
+    return {"title": src.get("title"), "source": src.get("source"), "t": t[::every], "flow_t": t[::every][: max(1, n // every)], "every": every, "stocks": stocks, "hidden": hidden, "flows": flow_rows,
             "one_step_error": err, "diagram": {"stocks": [{"id": s, "hidden": False} for s in measured] + [{"id": h, "hidden": True} for h in hidden_found],
                                                 "flows": flows}}
 
