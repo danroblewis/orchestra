@@ -42,6 +42,7 @@ from .ladder import head_hashes as ladder_head_hashes
 from .ladder import newest as ladder_newest
 from .ladder import runs as ladder_runs
 from .research import router as research_router
+from .demos.routes import router as demos_router
 from .runner import LiveRun, available_programs, program_path
 
 HERE = Path(__file__).parent
@@ -508,6 +509,10 @@ def create_app() -> FastAPI:
     def pool_page() -> HTMLResponse:
         return page("pool.html")
 
+    @app.get("/demos")
+    def demos_page() -> HTMLResponse:
+        return page("demos.html")
+
     app.include_router(research_router)
     app.include_router(ladder_router)
     app.include_router(compact_router)
@@ -516,6 +521,7 @@ def create_app() -> FastAPI:
     app.include_router(newest_router)
     app.include_router(timing_router)
     app.include_router(pool_router)
+    app.include_router(demos_router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

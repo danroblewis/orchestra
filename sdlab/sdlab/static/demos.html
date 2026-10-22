@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SD Lab demos</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --surface: #ffffff; --fg: #1d1d1b; --muted: #6b6a66; --faint: #a9a7a0; --rule: #e3e1db; --grid: #eeece7;
+    --good: #1f7a4d; --bad: #c0392b; --warn: #b45309; --eq: #2a78d6; --accent: #2a78d6; --accent2: #eb6834;
+    --mono: ui-monospace, "IBM Plex Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --surface: #1f1e1c; --fg: #ecebe6; --muted: #a3a19a; --faint: #5f5d58; --rule: #34332f; --grid: #2a2a27;
+      --good: #4fae74; --bad: #e0685a; --warn: #e0a33a; --eq: #6b9cf0; --accent: #6b9cf0; --accent2: #e88a5c;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --surface: #1f1e1c; --fg: #ecebe6; --muted: #a3a19a; --faint: #5f5d58; --rule: #34332f; --grid: #2a2a27;
+    --good: #4fae74; --bad: #e0685a; --warn: #e0a33a; --eq: #6b9cf0; --accent: #6b9cf0; --accent2: #e88a5c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: inherit; }
+  header.top { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
+  header.top a.nav { text-decoration: none; border: 1px solid var(--rule); border-radius: 6px; padding: 3px 9px; font-size: 13px; }
+  header.top h1 { font-size: 17px; margin: 0 6px 0 0; }
+  select, input, button { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 3px 7px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  main { padding: 14px 16px 40px; max-width: 1400px; margin: 0 auto; }
+  .muted { color: var(--muted); } .small { font-size: 12px; } .mono { font-family: var(--mono); }
+  .intro { max-width: 1000px; margin: 0 0 12px; }
+  .intro p { margin: 0 0 6px; }
+  .src { font-size: 12px; color: var(--muted); }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; border-bottom: 1px solid var(--rule); padding-bottom: 8px; }
+  .tabs button[aria-selected="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 0 0 10px; }
+  .controls label { color: var(--muted); font-size: 13px; }
+  .what { max-width: 1000px; margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .verdict { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 6px; padding: 8px 12px; margin: 0 0 12px; max-width: 1100px; }
+  .verdict.good { border-left-color: var(--good); } .verdict.bad { border-left-color: var(--bad); } .verdict.warn { border-left-color: var(--warn); }
+  .verdict p { margin: 0 0 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .panel h3 { font-size: 13px; margin: 0 0 4px; display: flex; gap: 8px; align-items: baseline; }
+  .panel h3 .tag { font-size: 11px; font-weight: 500; color: var(--muted); }
+  .panel h3 .alarm { color: var(--bad); font-weight: 600; font-size: 11px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .key { display: inline-block; width: 16px; height: 0; border-top: 2px solid; vertical-align: 4px; margin-right: 4px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { font-size: 10px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--grid); } tr.on td { background: var(--grid); }
+  .bar { display: inline-block; height: 8px; background: var(--accent); border-radius: 2px; vertical-align: 0; }
+  .bar.neg { background: var(--accent2); }
+  .tablewrap { overflow-x: auto; }
+  .split { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 12px; align-items: start; }
+  .hint { background: var(--surface); border: 1px dashed var(--rule); border-radius: 6px; padding: 8px 12px; margin: 10px 0; max-width: 1000px; }
+  ul.flat { margin: 4px 0; padding-left: 18px; }
+  .planned li { margin: 0 0 4px; }
+  .busy { color: var(--muted); font-style: italic; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Demos</h1>
+  <a class="nav" href="/" title="The model editor">Editor</a>
+  <a class="nav" href="/ladder" title="The ladder: every case and strategy">Ladder</a>
+  <a class="nav" href="/ladder/glossary" title="Words the ladder uses, in plain language">Glossary</a>
+</header>
+<main>
+  <section class="intro" id="intro"><p class="busy">Loading the scenario…</p></section>
+  <nav class="tabs" role="tablist" id="tabs">
+    <button role="tab" data-tab="residual" aria-selected="true">1. Residual watch</button>
+    <button role="tab" data-tab="whatif">3. What-if before rollout</button>
+    <button role="tab" data-tab="hidden">7. Hidden stock as a clue</button>
+    <button role="tab" data-tab="leverage">8. Leverage</button>
+    <button role="tab" data-tab="planned">More demos (planned)</button>
+  </nav>
+  <section data-panel="residual"></section>
+  <section data-panel="whatif" hidden></section>
+  <section data-panel="hidden" hidden></section>
+  <section data-panel="leverage" hidden></section>
+  <section data-panel="planned" hidden></section>
+</main>
+<script src="/static/demos.js"></script>
+</body>
+</html>
