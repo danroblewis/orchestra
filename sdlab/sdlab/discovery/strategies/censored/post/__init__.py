@@ -82,7 +82,7 @@ def before_refit(r: dict, stocks: list[dict], run: dict, opts: dict | None, o: d
 
 def after_restore(r: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
     """The stages structures runs after the MIN is written back."""
-    from . import controller, counted, delay, hidden, repair, room
+    from . import controller, counted, delay, earn, hidden, repair, room
 
     r = timed(controller.apply, r, stocks, run, opts)
     r = timed(room.apply, r, stocks, run, opts)
@@ -95,4 +95,5 @@ def after_restore(r: dict, stocks: list[dict], run: dict, opts: dict | None) -> 
     r = timed(delay.apply, r, stocks, run, opts)
     r = timed(repair.apply, r, stocks, run, opts)
     r = timed(room.earn, r, stocks, run, opts)          # (censored port, type 17) a room that stood in for later stages
+    r = timed(earn.apply, r, stocks, run, opts)         # (censored port, type 17) terms that move nothing on the run
     return declared_last(r, stocks, run, opts)

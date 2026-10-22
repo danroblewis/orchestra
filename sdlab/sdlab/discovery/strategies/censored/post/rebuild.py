@@ -176,7 +176,10 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                 cols[k] = X[k]
         for k in inputs:
             rd = capmin.readers(k, opts)
-            if (rd is None or s in rd) and np.ptp(X[k]) > 0:
+            # (censored port) an offered MIN series is not a rebuild column: a side rebuilt on it is one floor.apply
+            # keeps as it is (it reads an offered series), and censored's offers include a series whose kink is the
+            # pods' floor (310 none-long: MIN(ready, 2801 pending) in ready's and pending's gap sides)
+            if rd is None and np.ptp(X[k]) > 0:
                 cols[k] = X[k]
         bic, names, beta = _best_subset(y, cols, n, floor)
         if not names:

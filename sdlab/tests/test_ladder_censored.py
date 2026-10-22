@@ -186,3 +186,13 @@ def test_inflow_pieces_are_read_as_their_pieces():
     assert _amount(f, {"A": np.ones(9)}, 9) is None
     steps.adjust({}, {}, {"t": list(range(10))}, {}, 9)
     assert list(_amount(f, {"A": np.ones(9)}, 9)) == [10.0] * 4 + [40.0] * 5   # (the first piece covering t, as simulate._Segments)
+
+
+def test_earn_drops_numbers_of_a_rate():
+    """post/earn.py: a linear rate with its constant and one term dropped (311 none-long's `12 - 4 nodes`)."""
+    from sdlab.discovery.strategies.censored.post.earn import _numbers, _without
+
+    r = {"form": "linear", "c": 12.0, "terms": [{"stock": "ready", "k": 1.0}, {"stock": "desired", "k": -1.0}, {"stock": "nodes", "k": -4.0}]}
+    assert _numbers(r) == ["1", "ready", "desired", "nodes"]
+    assert _without(r, ("1", "nodes")) == {"form": "linear", "c": 0.0, "terms": [{"stock": "ready", "k": 1.0}, {"stock": "desired", "k": -1.0}]}
+    assert _without(r, ("1", "desired", "nodes")) == {"form": "proportional", "stock": "ready", "k": 1.0}

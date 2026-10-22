@@ -94,6 +94,21 @@ def _steps(stocks: list[dict], run: dict, opts: dict):
     return ids, final, dy, read, inputs
 
 
+TRIM_STEPS = 2         # steps of the source's linear residual set aside before the limit's gain is counted
+
+
+def _trimmed(B: np.ndarray, m: np.ndarray, y: np.ndarray, floor: float) -> float:
+    """m's gain on the row with the TRIM_STEPS steps its linear fit misses most left out: a limit that binds on
+    enough steps keeps its evidence, a series that only absorbs a few shocks does not. (Copied from structures'
+    capmin.py at dd9d8d1, the ledger's type 5 "limit guards (trimmed gain)", c6fa9ea; 310 none-long: censored offered
+    MIN(ready, theta pending), whose evidence was the OOM kills' steps, and the gap rows then read it.)"""
+    coef, *_ = np.linalg.lstsq(B, y, rcond=None)
+    r = np.abs(y - B @ coef)
+    keep = np.ones(len(y), dtype=bool)
+    keep[np.argsort(r)[-TRIM_STEPS:]] = False
+    return _gain(B[keep], m[keep], y[keep], floor * keep.mean())[0]
+
+
 def _same_unit(unit: dict, a: str, b: str) -> bool:
     """May material move between a and b? Only when both carry the same unit (or a unit is not announced).
     (Copied from engine_forms' capmin.py at 740ed95.)"""
@@ -207,6 +222,8 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
             m = np.minimum(X, th * Y)
             gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
             kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
+            if gain > price and kink > price and _trimmed(B, m, dy[xi], floor[xi]) <= price:
+                continue                                   # (type 5, trimmed gain) its evidence is one or two steps
             if gain > price and kink > price and (best is None or kink > best["kink"]):
                 best = {"source": x, "cap": name, "theta": th, "gain": gain, "kink": kink, "share": share}
                 if to:
