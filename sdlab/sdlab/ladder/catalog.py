@@ -21,6 +21,7 @@ import importlib.util
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 
 from ..discovery import strategies as _strategies
@@ -175,6 +176,23 @@ def availability(name: str) -> tuple[bool, str | None]:
 
 
 _cache: dict = {}
+
+
+_checked = [0.0]                 # when listing_nowait last started a check
+
+
+def listing_nowait(check: bool = True) -> list[dict]:
+    """listing(), but never waits for a rebuild once one listing exists: a changed tree is rebuilt in the
+    background (one thread at a time) and the last listing is returned meanwhile (the pages poll; agents
+    commit strategies all the time, and a rebuild under load took 16 s, holding every request)."""
+    if "value" not in _cache:
+        return listing(check)
+    now = time.monotonic()
+    if now - _checked[0] > 5 and _BUILD.acquire(blocking=False):     # at most every 5 s, and only when nobody is rebuilding
+        _checked[0] = now
+        _BUILD.release()
+        threading.Thread(target=listing, args=(check,), daemon=True, name="catalog-rebuild").start()
+    return [dict(x) for x in _cache["value"]]
 
 
 def listing(check: bool = True) -> list[dict]:

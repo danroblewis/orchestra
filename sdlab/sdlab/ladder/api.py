@@ -64,7 +64,7 @@ def strategies() -> list[dict]:
     return jsonable([{**s, "about": explain.about(s["name"]),
                       "standing": "retired" if s["name"] in gone else "parked" if s["name"] in park else "",
                       "why": gone.get(s["name"]) or park.get(s["name"]) or "",
-                      "eliminated": {k: v[s["name"]] for k, v in rosters.items() if s["name"] in v}} for s in catalog.listing()])
+                      "eliminated": {k: v[s["name"]] for k, v in rosters.items() if s["name"] in v}} for s in catalog.listing_nowait()])
 
 
 def glossary() -> dict:

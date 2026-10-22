@@ -65,7 +65,7 @@ def strategies(request: Request) -> Response:
     from . import runner
 
     marks = [p.stat().st_mtime for p in (explain.PATH, runner.RETIRED, runner.PARKED, *runner.ROSTERS.glob("*.yaml")) if p.exists()]
-    version = hash((*marks, *(s["hash"] for s in catalog.listing())))       # the listing, its notes and standings: not the results
+    version = hash((*marks, *(s["hash"] for s in catalog.listing_nowait())))       # the listing, its notes and standings: not the results
     return compact.respond_at(("strategies",), version, api.strategies, request)   # as does a strategy that changes
 
 
