@@ -270,7 +270,8 @@ def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, refine, series, reg
     gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
     kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
     if gain > price and kink > price:
-        return {"theta": th, "gain": gain, "kink": kink, "share": share, **({"to": ids[to[1]]} if to else {}), "series": m}
+        k = -_gain(B, m, dy[xi], floor[xi])[1]             # the limited flow's coefficient on X's row (place())
+        return {"theta": th, "gain": gain, "kink": kink, "share": share, **({"to": ids[to[1]]} if to else {}), "series": m, "k": k}
     return None
 
 
@@ -336,6 +337,51 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     if len(found) > 1:
         cap["more"] = found[1:]
     return opts, cap
+
+
+def place(result: dict, cap: dict | None) -> dict:
+    """(2026-10-22, k8s-311) Each offered series read only by the flow it limits: the move from its source to its
+    receiver (or the source's outflow where it has none). A fit may write a series' term into any row that may
+    read it (311 none-long: the pods' limit as -0.51 x it on ready's outflow, the start left 0.015 x pending; the
+    queue's limit on mem's drain); those terms are dropped, and the limited flow is added where it is missing,
+    at the coefficient the offer fitted on the source's row. The later passes repair the rows around it."""
+    if not cap or not isinstance(result, dict) or not result.get("flows"):
+        return result
+    caps = [cap] + list(cap.get("more") or [])
+    out = copy.deepcopy(result)
+    notes = []
+    for c in caps:
+        name, src, dst = c["name"], c["source"], c.get("to")
+        flows = []
+        has = False
+        for f in out["flows"]:
+            r = f.get("rate") or {}
+            terms = [{"stock": r.get("stock"), "k": r.get("k")}] if r.get("form") == "proportional" else \
+                list(r.get("terms") or []) if r.get("form") == "linear" else []
+            if not any(t.get("stock") == name for t in terms) or f.get("byTime"):
+                flows.append(f)
+                continue
+            if f.get("from") == src and f.get("to") == dst:
+                has = True
+                flows.append(f)
+                continue
+            rest = [t for t in terms if t.get("stock") != name]
+            notes.append(f"{name} dropped from {f.get('from') or 'outside'} -> {f.get('to') or 'outside'}")
+            const = float(r.get("c") or 0.0) if r.get("form") == "linear" else 0.0
+            if not rest and not const:
+                continue
+            g = copy.deepcopy(f)
+            g["rate"] = {"form": "linear", "c": const, "terms": rest} if rest else {"form": "constant", "value": const}
+            g.pop("rates", None)
+            flows.append(g)
+        if not has and dst is not None and c.get("k", 0) > 0:          # a move (an outflow may not be declared)
+            flows.append({"id": f"limit_{src}_{dst or 'out'}", "from": src, "to": dst, "ratio": 1,
+                          "rate": {"form": "linear", "c": 0, "terms": [{"stock": name, "k": float(c["k"])}]}})
+            notes.append(f"{src} -> {dst or 'outside'} added at {float(c['k']):.4g} x {name}")
+        out["flows"] = flows
+    if notes:
+        out["capmin_placed"] = notes
+    return out
 
 
 def plain_cap(cap: dict | None) -> dict | None:

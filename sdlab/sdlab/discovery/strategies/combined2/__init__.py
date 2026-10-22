@@ -406,7 +406,8 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import switch
 
     o, cap = _capmin.offer(stocks, run, opts)
-    r = _identify_linear(stocks, run, o, *args, **kw)
+    # (2026-10-22, k8s-311) each offered limit read only by the flow it limits (capmin.place)
+    r = _capmin.place(_identify_linear(stocks, run, o, *args, **kw), cap)
     # (2026-10-21, k8s-308, docs/research/fixes/308-combined2.md) a discrete actuator's outside flows written
     # as switches on the levels (switch.py) before the output-error refit, which otherwise bends the
     # stocks the actuator drives to make up for its smeared linear rate

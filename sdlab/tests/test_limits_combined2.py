@@ -77,3 +77,16 @@ def test_the_limit_numbers_are_refitted_on_its_rows():
     assert abs(p["k"] - 0.5) < 1e-6 and abs(p["cap"][0][0] - 4.0) < 1e-6 and abs(p["cap"][1][0] + 1.0) < 1e-6, p
     drain = next(f for f in out["flows"] if f["from"] == "running" and f["to"] is None)
     assert abs(hinge._linear(drain["rate"])[1]["running"] - 0.1) < 1e-6
+
+
+def test_an_offered_limit_is_read_only_by_the_flow_it_limits():
+    cap = {"name": "capmin__waiting__hosts__running", "source": "waiting", "to": "running", "cap": "hosts", "room": "running",
+           "beta": 4.0, "theta": 1.0, "k": 0.5}
+    flows = [{"from": "running", "to": None, "ratio": 1, "rate": {"form": "linear", "c": 0.0, "terms": [
+                 {"stock": "running", "k": 0.1}, {"stock": cap["name"], "k": -0.4}]}},
+             {"from": None, "to": "total", "ratio": 1, "rate": {"form": "proportional", "stock": cap["name"], "k": 0.2}}]
+    out = capmin.place({"flows": flows}, cap)
+    got = {(f["from"], f["to"]): f["rate"] for f in out["flows"]}
+    assert got[("running", None)] == {"form": "linear", "c": 0.0, "terms": [{"stock": "running", "k": 0.1}]}
+    assert (None, "total") not in got
+    assert got[("waiting", "running")]["terms"] == [{"stock": cap["name"], "k": 0.5}]
