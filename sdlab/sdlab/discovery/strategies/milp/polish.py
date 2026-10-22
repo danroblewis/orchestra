@@ -43,7 +43,23 @@ def _shaped(f: dict, pos: dict, inputs) -> tuple | None:
     return None
 
 
-def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, skip=()) -> tuple[list[dict], dict]:
+def _tabled(f: dict, pos: dict, inputs) -> tuple | None:
+    """(k8s-312 r2) (reader, k, effect stock, knots, heights) for k * reader x table(effect stock): one table effect on a
+    proportional rate, else None. Its amount is linear in the table's heights."""
+    r = f.get("rate") or {}
+    eff = f.get("effects") or []
+    if f.get("byTime") or r.get("form") != "proportional" or len(eff) != 1 or eff[0].get("shape") != "table" or not eff[0].get("points"):
+        return None
+    if r.get("stock") not in pos and r.get("stock") not in inputs or eff[0].get("stock") not in pos:
+        return None
+    pts = sorted((float(a), float(b)) for a, b in eff[0]["points"])
+    return (r["stock"], float(r["k"]), eff[0]["stock"], tuple(p[0] for p in pts), tuple(p[1] for p in pts))
+
+
+def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, skip=(), tables: bool = False) -> tuple[list[dict], dict]:
+    """tables (k8s-312 r2, joint-polish-tables): also the heights of each table effect (flows that share a table, a
+    move and the counter that counts it, share its heights), fitted with the rest: a table polished alone takes
+    the misfit of a room or gap next to it, which then bends to fit the table."""
     opts = opts or {}
     st = Steps(stocks, run, opts)
     if st.T < 10 or not st.ids:
@@ -54,6 +70,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
     flows = list(flows or [])
     free_at, free, th0 = [], [], []
     shaped_at, shaped = [], []
+    tab_at, tab, tkeys, theights = [], [], [], []           # flows with a table effect, the table each uses; the tables
     fixed = np.zeros_like(st.dy)
     bd = run.get("boundary") or {}
     amounts = [_amount(f, st, env) for f in flows]
@@ -74,6 +91,15 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             shaped_at.append(i)
             shaped.append(sh)
             continue
+        tb = _tabled(f, pos, st.inputs) if tables and ends_ok and not held else None
+        if tb is not None:
+            key = tb[:4]
+            if key not in tkeys:
+                tkeys.append(key)
+                theights.append(tb[4])
+            tab_at.append(i)
+            tab.append(tkeys.index(key))
+            continue
         amt = amounts[i]
         if amt is None:
             continue
@@ -81,8 +107,23 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             fixed[pos[a]] -= amt
         if b in pos:
             fixed[pos[b]] += amt
+    if tab and not tables:
+        tab_at, tab = [], []
     if not free and not shaped:
         return flows, {}
+    tab_base, tfree = [], []
+    for j, (key, hs) in enumerate(zip(tkeys, theights)):
+        x = np.asarray(env.get(key[2]), float)
+        base = np.maximum(0.0, key[1] * np.asarray(st.series(key[0]), float))
+        tfree.append([m for m, h in enumerate(hs) if h != 0.0])   # a knot the effect search put at 0 (a flat) stays there
+        basis = np.zeros((len(tfree[-1]), st.T))
+        for r, m in enumerate(tfree[-1]):                    # the interpolation weight of knot m on each step
+            e = np.zeros(len(key[3]))
+            e[m] = 1.0
+            basis[r] = np.interp(x, key[3], e) * base
+        tab_base.append(basis)
+    nt = sum(len(h) for h in tfree)
+    toff = np.cumsum([0] + [len(h) for h in tfree])
     rows = [pos[s] for s in st.ids if s not in skip]
     scale = np.sqrt(np.mean(st.dy ** 2, axis=1)) + 1e-12
     res = np.zeros(len(st.ids)) if st.counts else np.array([_resolution(st.L[i]) for i in range(len(st.ids))])
@@ -101,8 +142,21 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             out[pos[dst]] += amt
         return out
 
+    def table_net(p):
+        out = np.zeros_like(st.dy)
+        for i, j in zip(tab_at, tab):
+            amt = np.maximum(0.0, p[toff[j]:toff[j + 1]]) @ tab_base[j]
+            src, dst = flows[i].get("from"), flows[i].get("to")
+            if src in pos:
+                out[pos[src]] -= amt
+            if dst in pos:
+                out[pos[dst]] += amt
+        return out
+
+    ns = 2 * len(shaped)
+
     def resid(th):
-        e = (st.dy - fit.predict(free, th[:nf]) - shaped_net(th[nf:]))[rows]
+        e = (st.dy - fit.predict(free, th[:nf]) - shaped_net(th[nf:nf + ns]) - (table_net(th[nf + ns:]) if tab else 0.0))[rows]
         return (e / scale[rows, None]).ravel()
 
     def bic(th):
@@ -110,8 +164,10 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
         rss = np.maximum(np.sum(e * e, axis=1), st.T * floor[rows] ** 2)
         return float(np.sum(st.T * np.log(rss / st.T)))
 
-    t0 = np.concatenate(th0 + [np.array([v for sh in shaped for v in sh[3:5]], float)])
-    lo = np.r_[[0.0 if (x in pos and y in pos and r == x) else -np.inf for x, y, rd in free for r in rd], np.full(2 * len(shaped), 1e-12)]
+    t0 = np.concatenate(th0 + [np.array([v for sh in shaped for v in sh[3:5]], float)]
+                        + [np.array([h[m] for h, fr in zip(theights, tfree) for m in fr], float) if tab else np.zeros(0)])
+    lo = np.r_[[0.0 if (x in pos and y in pos and r == x) else -np.inf for x, y, rd in free for r in rd], np.full(2 * len(shaped), 1e-12),
+               np.zeros(nt if tab else 0)]
     t0 = np.maximum(np.where(np.isfinite(t0), t0, 0.0), lo + 1e-12 * np.isfinite(lo))
     b0 = bic(t0)
     r = least_squares(resid, t0, method="trf", x_scale="jac", max_nfev=400, bounds=(lo, np.full(len(lo), np.inf)),
@@ -136,8 +192,16 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
         out[i] = {**out[i], "rate": {"form": "expr", "expr": expr}}
         if sh[0] == "room" and out[i].get("room_fit"):
             out[i]["room_fit"] = {**out[i]["room_fit"], "a": float(th[nf + 2 * j]), "b": float(th[nf + 2 * j + 1])}
+    for i, j in zip(tab_at, tab):
+        key, hs = tkeys[j], list(theights[j])
+        for m, h in zip(tfree[j], th[nf + ns + toff[j]:nf + ns + toff[j + 1]]):
+            hs[m] = float(h)
+        e = dict(out[i]["effects"][0])
+        e["points"] = [[_num(float(k)), _num(float(max(0.0, h)))] for k, h in zip(key[3], hs)]
+        out[i] = {**out[i], "effects": [e]}
     out = [f for i, f in enumerate(out) if i not in drop]
-    return out, {"bic": [round(b0, 1), round(b1, 1)], "numbers": int(len(t0)), "shaped": len(shaped), "dropped": len(drop)}
+    return out, {"bic": [round(b0, 1), round(b1, 1)], "numbers": int(len(t0)), "shaped": len(shaped), "tables": len(tkeys) if tab else 0,
+                 "dropped": len(drop)}
 
 
 def _num(v: float) -> float:

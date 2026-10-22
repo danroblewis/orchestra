@@ -30,6 +30,7 @@ NEAR = 10             # after the first solve, each solve searches within this m
 SHAPED = False                   # counts: the local search weighs steps by each structure's own moved amounts
 STEP_ROUNDS = 5                  # drain and inflow steps found in turn at most this many times
 STEP_SPACING = 100               # a start with more than one step per this many steps per inflow is not searched
+STEP_HEADROOM = 2                # (k8s-312 r2) inflow steps refitted per inflow: this many times the number finally kept
 STEP_FACTORS = (2.0, 1.0)        # change-point prices (x log T x noise variance) the inflow steps are first sought at
 SCREEN = 6            # MIN flows offered beyond those on the flows found: the best by the screen
 SAMPLE = 150          # steps the program reads (evenly spaced over the run when it is longer)
@@ -196,6 +197,25 @@ def _changes(e: np.ndarray, penalty: float, gap: int) -> list[int]:
     return sorted(k for k in out if k > 0)
 
 
+def _step_cap(T: int) -> int:
+    """Inflow steps kept per estimated inflow: more than one per STEP_SPACING steps chases noise."""
+    return max(2, T // STEP_SPACING)
+
+
+def _largest(e: np.ndarray, ks: list[int], keep: int) -> list[int]:
+    """(k8s-312 r2, step-budget) At most keep of the change points ks: those whose stretches' means differ
+    most. The partition of a long run's rounding found ~450 steps per inflow, and refitting all of them
+    together on every step (an SVD of (stocks x steps) x ~950 numbers per iteration) took 145 s of 312
+    none-long's program before all but the largest few were dropped anyway."""
+    if len(ks) <= keep:
+        return ks
+    edges = [0] + list(ks) + [len(e)]
+    means = [float(np.mean(e[a:b])) for a, b in zip(edges[:-1], edges[1:])]
+    jumps = [abs(means[j + 1] - means[j]) for j in range(len(ks))]
+    top = sorted(range(len(ks)), key=lambda j: (-jumps[j], j))[:keep]
+    return sorted(ks[j] for j in top)
+
+
 def _with_steps(s: Structure, scale: np.ndarray, factor: float, into: list) -> Structure:
     """Each estimated inflow constant given the steps that what the rest of s leaves of its stock's
     change asks for (optimal partitioning at factor x log T x the noise variance per change, the noise
@@ -220,7 +240,7 @@ def _with_steps(s: Structure, scale: np.ndarray, factor: float, into: list) -> S
             var = (np.median(np.abs(np.diff(e))) / 0.6745) ** 2 / 2.0
             if var <= 0:
                 var = max(float(np.var(e)) * 1e-6, 1e-18)
-            for k in _changes(e, factor * np.log(max(st.T, 2)) * var, candidates.PIECE_MIN):
+            for k in _largest(e, _changes(e, factor * np.log(max(st.T, 2)) * var, candidates.PIECE_MIN), STEP_HEADROOM * _step_cap(st.T)):
                 new = new.with_piece(dst, k)
         new.refit(scale)
         if sorted(map(str, new.parts)) == sorted(map(str, s.parts)):
@@ -372,7 +392,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, known: dic
                     print("  steps", f, round(w.bic(scale, _floor(st)), 1), len(w.parts), [(p, [round(y, 4) for y in v]) for p, v in w.numbers()][:4])
             for f in STEP_FACTORS:
                 w = _with_steps(best.without(len(best.parts)), scale, f, into)
-                cap = max(2, st.T // STEP_SPACING) * len(into)
+                cap = _step_cap(st.T) * len(into)
                 pieces = [(abs(v[0]), i) for i, (p, v) in enumerate(w.numbers()) if p[0] == "piece"]
                 for _, i in sorted(sorted(pieces)[:max(0, len(pieces) - cap)], key=lambda z: -z[1]):
                     w = w.without(i)             # more steps than that chases noise: keep the largest
@@ -507,8 +527,11 @@ def _after_program(result: dict, stocks: list[dict], run: dict, opts: dict | Non
     flows, pr = prune(flows, stocks, run, opts, skip=known)   # (k8s-312) effects the settled rows no longer need
     if pr:
         eff = {**(eff or {}), **pr}
-    result = {**result, "flows": flows, "gaps": gaps, **({"effects": eff} if eff else {}), **({"room": rooms} if rooms else {}),
-              **({"pairs": revised} if revised else {})}
+    joint = {}
+    if rooms and eff:                                          # (k8s-312 r2) the room, the gaps and the effect tables beside it
+        flows, joint = polish_refine(flows, stocks, run, opts, skip=known, tables=True)   # refitted together: each pass
+    result = {**result, "flows": flows, "gaps": gaps, **({"effects": eff} if eff else {}), **({"room": rooms} if rooms else {}),   # alone
+              **({"pairs": revised} if revised else {}), **({"joint_polish": joint} if joint else {})}   # bent to the others' misfit
     result = oefit.refit(result, stocks, run, opts or {})
     if known:                                                  # the output-error refit does not run the rules' forms
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
