@@ -63,6 +63,8 @@ def _fit(y: np.ndarray, a: np.ndarray, x: np.ndarray, active: np.ndarray) -> dic
             knots = [th] + [float(k) for k in inner if k > th]
             if len(knots) < m:
                 continue
+            if len(knots) > 1:
+                knots = _refine(y, a, x, knots, float(above.max()))
             B = a[:, None] * _segments(x, knots)
             s, _ = nnls(B, y)
             sse = float(np.sum((y - B @ s) ** 2))
@@ -70,6 +72,34 @@ def _fit(y: np.ndarray, a: np.ndarray, x: np.ndarray, active: np.ndarray) -> dic
             if best is None or bic < best["bic"]:
                 best = {"bic": bic, "sse": sse, "knots": knots, "slopes": [float(v) for v in s]}
     return best
+
+
+def _refine(y: np.ndarray, a: np.ndarray, x: np.ndarray, knots: list[float], top: float, rounds: int = 3) -> list[float]:
+    """(k8s 312, docs/research/fixes/312-structures.md) the inner knots moved, one at a time, to where the NNLS fit's
+    SSE is least (golden section between the neighbouring knots). Quantile knots of the kills' mem bunch where
+    the kills are (312 none-long: 480.0, 481.1, 482.7 for the truth's 480, 512, 560), and the slope above the
+    second knot, which few steps reach, came out the first one's: the counter's whole flow 2.0% off."""
+    def sse(ks):
+        B = a[:, None] * _segments(x, ks)
+        s, _ = nnls(B, y)
+        return float(np.sum((y - B @ s) ** 2))
+    ks = list(knots)
+    for _ in range(rounds):
+        for j in range(1, len(ks)):
+            lo, hi = ks[j - 1], (ks[j + 1] if j + 1 < len(ks) else top)
+            if not hi > lo:
+                continue
+            a_, b_ = lo, hi
+            for _ in range(40):
+                c_, d_ = b_ - 0.618 * (b_ - a_), a_ + 0.618 * (b_ - a_)
+                if sse(ks[:j] + [c_] + ks[j + 1:]) < sse(ks[:j] + [d_] + ks[j + 1:]):
+                    b_ = d_
+                else:
+                    a_ = c_
+            cand = ks[:j] + [0.5 * (a_ + b_)] + ks[j + 1:]
+            if sse(cand) < sse(ks):
+                ks = cand
+    return ks
 
 
 def _points(knots: list[float], slopes: list[float], xmin: float) -> list[list[float]] | None:
@@ -134,8 +164,13 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
         ins = [f for f in flows if f.get("from") is None and f.get("to") == c]
         if not declared and not ins:
             continue
-        if any(f.get("from") == c for f in flows) or any(f.get("to") == c and f.get("from") for f in flows):
+        movers = [f for f in flows if f.get("to") == c and f.get("from")]
+        if any(f.get("from") == c for f in flows) or any(not floor._plain(f) or f.get("effects") for f in movers):
             continue                                    # the counter has a move: not counting one
+        # (k8s 312, docs/research/fixes/312-structures.md) a plain move into the counter (312 none-long's base:
+        # `pending -> oom_kills_total = 0.07 pending`, a stand-in for the counted kills) is one more rate the
+        # counted fit must beat, and goes with the counter's outside inflows when it does
+        ins = ins + movers
         active = y > 1e-9 * max(1.0, float(np.max(np.abs(y))))
         if int(active.sum()) < MIN_ACTIVE:
             continue

@@ -19,6 +19,9 @@ leaves unexplained:
   (311: the OOM kills move pods ready -> pending on a few steps, against the room move's direction, and an
   untrimmed fit bends the room to take them: 4.96 nodes - 1.26 ready for 4 nodes - ready) are left out of the
   numbers' fit, by the rows' residuals against TRIM x their robust spread (median absolute deviation), twice;
+- (k8s 312) c and theta are chosen on the untrimmed BIC (OBJ): on 312 none-long, with the kills not yet in, the
+  trimmed one ran theta to 0.14 for 2 and a proxy capacity (queue) won; polish() refits the numbers last, with
+  the kill move in, so the trimmed numbers are no longer needed there;
 - the best is kept when the touched rows' BIC falls by more than PRICE x log n (c and theta are two numbers
   more than a plain move), and written as `min(k X, max(0, k theta c Y - k theta Z))`.
 """
@@ -40,11 +43,19 @@ TRIM = 5.0
 _DEBUG = bool(os.environ.get("SDLAB_ROOM_DEBUG"))
 
 GATE = 100.0
+MIN_STEPS = 5
+OBJ = int(os.environ.get("SDLAB_ROOM_OBJ", "0"))   # (k8s 312) theta and c on the untrimmed BIC (4: the trimmed one)
 PRICE = 6.0
 GRID = 10
 TOP = 3
 SERIES = "room__"
 ITERS = 16         # golden-section steps (polish() refits the numbers exactly at the end)
+
+
+def _theta_q(m: int) -> np.ndarray:
+    """The quantiles of X / room the theta grid takes: up to all but the top MIN_STEPS steps (k8s 312: with the
+    autoscaler adding nodes the room binds on 92 of 1999 steps, beyond the 95% quantile the grid stopped at)."""
+    return np.linspace(0.05, max(0.95, 1.0 - MIN_STEPS / max(m, 1)), GRID)
 
 
 def _golden(f, grid: np.ndarray, iters: int = ITERS) -> tuple[float, float]:
@@ -178,7 +189,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                         R = np.maximum(0.0, c * Y - Z)
                         if (R > 0).sum() < 10:
                             continue
-                        for th in np.unique(np.quantile(A[R > 0] / R[R > 0], np.linspace(0.05, 0.95, GRID))):
+                        for th in np.unique(np.quantile(A[R > 0] / R[R > 0], _theta_q(int((R > 0).sum())))):
                             m = np.minimum(A, th * R)
                             # the move takes k m from a and gives it to b: k by least squares on both residuals
                             v = np.concatenate([-m, m])
@@ -216,8 +227,8 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
             R = np.maximum(0.0, c * Y - Z)
             if (R > 0).sum() < 10:
                 return math.inf, 1.0
-            grid = np.unique(np.quantile(A[R > 0] / R[R > 0], np.linspace(0.05, 0.95, GRID)))
-            th, v = _golden(lambda th: (trial(c, th) or (math.inf,) * 5)[4], grid)
+            grid = np.unique(np.quantile(A[R > 0] / R[R > 0], _theta_q(int((R > 0).sum()))))
+            th, v = _golden(lambda th: (trial(c, th) or (math.inf,) * 5)[OBJ], grid)
             return v, th
         c, _ = _golden(lambda c: by_theta(c)[0], np.linspace(0.8 * c0, 1.2 * c0, 5))
         th = by_theta(c)[1]

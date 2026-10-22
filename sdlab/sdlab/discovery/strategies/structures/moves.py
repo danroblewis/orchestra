@@ -284,7 +284,7 @@ def _coflows(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
     q = J.quantum(np.vstack([v[:T] for v in L.values()]))
     floor = n * q * q / 12.0
     flows = copy.deepcopy(result["flows"])
-    dropped = []
+    dropped, added = [], []
     for f in flows:
         for u in list(f.get("uses") or []):
             s = u.get("stock")
@@ -314,9 +314,30 @@ def _coflows(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
             if b_without <= b_with:
                 f["uses"] = [x for x in f["uses"] if x is not u]
                 dropped.append(f"{f.get('from')} -> {f.get('to')} uses {s}")
+                continue
+            # a draw that pays is written out as what it is, an outflow of the drawn stock at per x the flow's
+            # rate, where the drawn stock may have one (312 none-long: `pending -> oom_kills_total` drew 1.79 ready
+            # per unit; as a co-flow it left the pod rows unreadable to every later stage)
+            lin = _linear(bare.get("rate"))
+            if lin is None or bare.get("effects") or bare.get("byTime") or not _side_ok(s, "out", flows, run):
+                continue
+            per = float(u.get("per") or 0.0)
+            c, ks = lin
+            rate = {"form": "linear", "c": per * c, "terms": [{"stock": k, "k": per * v} for k, v in ks.items()]}
+            added.append({"id": f"coflow_{s}_out", "from": s, "to": None, "ratio": 1, "rate": rate, "rates": [rate]})
+            f["uses"] = [x for x in f["uses"] if x is not u]
+            dropped.append(f"{f.get('from')} -> {f.get('to')} uses {s}: written as {s} -> outside")
         if "uses" in f and not f["uses"]:
             f.pop("uses")
             f.pop("note", None)
     if not dropped:
         return result
-    return {**result, "flows": flows, "coflows": {"dropped": dropped}}
+    return {**result, "flows": flows + added, "coflows": {"dropped": dropped}}
+
+
+def _side_ok(s: str, side: str, flows: list[dict], run: dict) -> bool:
+    if run.get("boundary_declared"):
+        k = ((run.get("boundary") or {}).get(s) or {}).get(side) or []
+        k = [k] if isinstance(k, str) else list(k)
+        return "estimate" in k
+    return True

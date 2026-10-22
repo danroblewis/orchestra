@@ -173,6 +173,82 @@ class _Row:
         return b, cin, cout, got
 
 
+def _clamped(z: np.ndarray, A: np.ndarray, iS: int, w0: np.ndarray, starts: list[float]) -> tuple[float, np.ndarray, float] | None:
+    """z ~ max(0, min(A w, w_S S - m)): a floored gap whose goal has a floor (S above max(L, goal) goes, L = m / w_S),
+    S the column iS of A; active-set Gauss-Newton from each start m: (SSE, w, m)."""
+    n = len(z)
+    S = A[:, iS]
+    best = None
+    for m0 in starts:
+        w, m = w0.copy(), float(m0)
+        prev = None
+        for _ in range(GN_ITERS):
+            r1, r2 = A @ w, w[iS] * S - m
+            on = np.minimum(r1, r2) > 0
+            two = on & (r2 < r1)
+            key = np.concatenate([on, two])
+            if prev is not None and np.array_equal(key, prev):
+                break
+            prev = key
+            D = np.zeros((n, A.shape[1] + 1))
+            one = on & ~two
+            D[one, :A.shape[1]] = A[one]
+            D[two, iS] = S[two]
+            D[two, -1] = -1.0
+            try:
+                sol = np.linalg.lstsq(D, z, rcond=None)[0]
+            except np.linalg.LinAlgError:
+                break
+            w, m = sol[:-1], float(sol[-1])
+        pred = np.maximum(0.0, np.minimum(A @ w, w[iS] * S - m))
+        sse = float(np.sum((z - pred) ** 2))
+        if best is None or sse < best[0]:
+            best = (sse, w.copy(), m)
+    return best
+
+
+def _floor_goal(row: "_Row", S: str, cin: list[str], cout: list[str], tau: float, got) -> tuple | None:
+    """The outflow block refitted as a gap whose goal has a floor (_clamped), its columns chosen forward on BIC
+    with S always in, the inflow block and the stage held: (bic, cout, w, m, sse) or None."""
+    if S not in row.cols:
+        return None
+    n, th = row.n, got[2]
+    ki = len(cin)
+    a = 1.0 - 1.0 / tau
+    Ai = np.column_stack([row.cols[k] for k in cin])
+    o_in = _filt(a, np.maximum(0.0, Ai @ th[:ki])) / tau + th[ki] * a ** np.arange(n) / tau
+    z = o_in - row.y                                    # what the outflow carries
+    names = [k for k in row.cols]
+
+    def fit(use):
+        A = np.column_stack([row.cols[k] for k in use])
+        w0 = np.linalg.lstsq(A[z > row.thr], z[z > row.thr], rcond=None)[0] if (z > row.thr).sum() > len(use) else np.zeros(len(use))
+        iS = use.index(S)
+        if w0[iS] <= 0:
+            return None
+        goal = row.cols[S] - (A @ w0) / w0[iS]
+        starts = [w0[iS] * float(np.quantile(goal, p)) for p in (0.02, 0.05, 0.1, 0.2, 0.35, 0.5)]
+        r = _clamped(z, A, iS, w0, starts)
+        if r is None or r[1][iS] <= 0:
+            return None
+        return n * math.log(max(r[0], row.floor) / n) + (len(use) + 1 + ki + 2) * math.log(n), use, r[1], r[2], r[0]
+    best = None
+    cur = [S]
+    while len(cur) <= MAX_TERMS:
+        tries = [cur + [c] for c in names if c not in cur]
+        if len(cur) == 1:
+            tries += [cur + [p, q] for j, p in enumerate(names) for q in names[j + 1:] if S not in (p, q)]
+        step = None
+        for use in tries:
+            r = fit(use)
+            if r is not None and (step is None or r[0] < step[0]):
+                step = r
+        if step is None or (best is not None and not step[0] < best[0]):
+            break
+        best, cur = step, list(step[1])
+    return best
+
+
 def _golden(f, lo: float, hi: float, iters: int = 30) -> float:
     a, b = math.log(lo), math.log(hi)
     for _ in range(iters):
@@ -295,16 +371,29 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         th = got[2]
         ki = len(cin)
         wi, h0, wo = th[:ki], float(th[ki]), th[ki + 1:]
+        # the outflow's goal may have a floor (312 none-long: nodes go above max(2, pods / 2); the floor binds on 84
+        # of 1999 steps): kept when it beats the plain floored gap by PRICE x log n
+        clamp = _floor_goal(row, S, cin, cout, tau, got) if out_ok else None
+        if clamp is not None and clamp[0] < b - price:
+            note["goal_floor"] = {"bic": round(clamp[0], 1), "out": list(clamp[1]), "floor": clamp[3] / clamp[2][list(clamp[1]).index(S)]}
+            cout, wo = list(clamp[1]), clamp[2]
         H = f"delay_{S}"
         c_in = sum(float(w) for c, w in zip(cin, wi) if c == "1")
         t_in = [(c, float(w)) for c, w in zip(cin, wi) if c != "1"]
         new = [{"id": f"delay_{S}_in", "from": None, "to": H, "ratio": 1, "rate": {"form": "expr", "expr": _hinge_text(c_in, t_in)}},
                {"id": f"delay_{S}_stage", "from": H, "to": S, "ratio": 1, "rate": {"form": "proportional", "stock": H, "k": 1.0 / tau}}]
         if cout:
-            c_out = sum(float(w) for c, w in zip(cout, wo) if c == "1")
+            c_out = float(sum(float(w) for c, w in zip(cout, wo) if c == "1"))
             t_out = [(c, float(w)) for c, w in zip(cout, wo) if c != "1"]
-            rate = ({"form": "expr", "expr": _hinge_text(c_out, t_out)} if any(c.startswith(SUB) for c, _ in t_out)
-                    else {"form": "linear", "c": c_out, "terms": [{"stock": c, "k": w} for c, w in t_out]})
+            if "goal_floor" in note:
+                body = " + ".join([repr(c_out)] + [f"{w!r} * {_col_text(c)}" for c, w in t_out])
+                wS = float(dict(t_out)[S])
+                note["goal_floor"]["floor"] = float(note["goal_floor"]["floor"])
+                rate = {"form": "expr", "expr": f"max(0, min({body}, {wS!r} * {S} - {float(wS * note['goal_floor']['floor'])!r}))"}
+            elif any(c.startswith(SUB) for c, _ in t_out):
+                rate = {"form": "expr", "expr": _hinge_text(c_out, t_out)}
+            else:
+                rate = {"form": "linear", "c": c_out, "terms": [{"stock": c, "k": w} for c, w in t_out]}
             new.append({"id": f"delay_{S}_out", "from": S, "to": None, "ratio": 1, "rate": rate})
         g = np.maximum(0.0, np.column_stack([base_cols[c] for c in cin]) @ wi)
         a = 1.0 - 1.0 / tau
