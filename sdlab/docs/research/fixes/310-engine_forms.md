@@ -1,5 +1,74 @@
 # 310 (k8s-memory-oom): engine_forms on the noise-free and counts variants
 
+**Status (round 1, 2026-10-21, agent k8s310-r1-engine_forms, engine_forms lock held and released): 310 passes for
+engine_forms on every achievable variant.** none-short and none-long pass (26/26 parts) at commit 7e7bd2b, pool job 282
+(`uv run sdlab-ladder job 282`). counts-short and counts-long fail and are data-limited (measured below), so they are
+not targets.
+
+| variant | before (ec6265e/f9e24d4, store) | after (7e7bd2b, job 282) | note |
+|---|---|---|---|
+| none-short | FAIL 21/23 | **PASS 26/26** (43 s) | the leak matched: found `hidden_mem` = 0.0238 + 1.0000 x leak, R^2 1.0000 |
+| none-long | FAIL 21/23 (mem inflow a time schedule) | **PASS 26/26** (317 s) | matched: 0 + 1.0000 x leak |
+| counts-short | FAIL 9/23 | FAIL (data-limited) | 6 kills on 3 steps |
+| counts-long | FAIL 11/23 | FAIL (data-limited) | 91 kills on 44 steps. Unchanged code path: hidden.py leaves noisy rows alone (checked on the stored answer). The diff differs from the store's (cpu's inflow) because of the base fit on another worker |
+
+## Round 1: why the mem block now passes
+
+The user decided on 2026-10-21 to credit a strategy's own hidden stock. The scorer change is 198baf2,
+`sdlab/ladder/hidden_match.py`. It matches a found free hidden stock to the truth's by a shared measured neighbour and
+its trajectory (affine, R^2 >= 0.9), then scores the flows reading it. Round 0 had said "rebuilding the hidden leak would
+only turn a fail into an error", and that no longer holds. Diagnosis with `uv run sdlab-ladder diff 310-k8s-memory-oom
+--strategy engine_forms --variant none-short --context` (store at f9e24d4) showed every block right except mem. The
+truth's `outside -> mem` was "not scored" (no found hidden stock), mem's drain was 0.032 against 0.5, and the drain
+absorbed the leak. On none-long, mem's inflow was a 2000-step byTime schedule, which the new scorer calls "fits, not
+robust".
+
+mem's row on exact data is `dmem = 75 + 0.5 leak + inflight / max(1, ready) - 0.5 mem`, with `leak' = 1 - leak x
+T(mem)`. T is the same table whose share of ready pods the OOM kills take, and the exact re-read had already found it
+as the counter's rate `ready x T(mem)` (ec6265e). For a given drain g, the hidden level is linear in its unknown start
+and its inflow. So the row reads two more columns (h0, h1) and is fitted by least squares. With g = the counted flow's
+per-unit fraction and the column inflight / max(1, ready), the row is exact: rms 1.2e-4 against a tolerance of 3e-4 at
+rounding 1e-4. Without the hidden pair no row is exact.
+
+## Round 1 fix kept
+
+| type | mechanism | where | commit | how another strategy adopts it |
+|---|---|---|---|---|
+| **hidden-integrator stock** (new type; the stock-writing counterpart of ledger type 8) | **When it applies:** exact data, and a non-final measured stock S whose row the answer does not reproduce. **The fit:** S's outside sides are re-read (its moves kept) as all levels and inputs plus a constant, plus at most one per-unit column `X_a / max(1, X_b)` (every ordered pair, X_b never negative), plus a hidden integrator `h_{k+1} = h_k + 1 - g_k h_k`. The drain g is one of: none; a constant fraction (20-point log grid, golden-section refined, < 1); or the per-unit fraction `k x prod(effects)` of any answer flow carrying an effect table (here the OOM-kill share, read off the counter by reread.py). Each drain's per-unit columns are screened at once by projection. The best exact candidates are reduced to the smallest exact set by backward elimination, with the hidden pair and the ratio kept as groups. **The guards:** the row's tolerance is its rounding, not scaled by the numbers, because collinear columns' huge numbers would excuse any row. The hidden pair must be needed. S's declared sides must exist. The written flows, evaluated here as the engine floors them, must reproduce the row. **What is written:** `hidden_<S>` with inflow 1 and the drain's form (the counted flow's table copied), `outside -> S` as an expression reading `hidden_<S>` and the ratio, and `S -> outside` as the negative terms. Every flow carries an `id`, because the scorer's expression compiler needs one. The pass runs last, since the strategy's own simulator steps neither a hidden stock nor an expression | `engine_forms/hidden.py`; called last in `engine_forms/__init__.py` | 7e7bd2b | Copy `hidden.py` whole. It needs `_kalman/boundary.py`'s `Data` and `Boundary` and reread.py's `_quantum` and `_Rows` (only `tol`), or replace those with the strategy's own one-step changes and rounding. Call it on the final answer. It reuses any answer flow that carries an effect table as a candidate drain, so it pairs best with a counted-flow pass (ledger type 6). Strategies with noisy-row machinery (kalman_lna's `_hidden`) can swap their schedule write-out for this stock write-out: the stock is what the scorer now credits, and a schedule is "fits" |
+
+Tests: `tests/test_engine_forms_hidden.py`. A synthetic per-pod working set fed by a hidden leak that a table of it
+drains is rebuilt with `hidden_mem`, its drain the counter's table, and its inflow reading `inflight / max(1, pods)`. A
+noisy copy is left alone. The other engine_forms tests (reread, controller, tidy) and `test_isolation.py` pass.
+
+## Data limits of the counts variants (rule 4b, measured)
+
+`analyse` does not cover 310 ("not analysed"), so the bound was computed directly (scratchpad `ef310r1`). The counts
+variants are process noise: integer levels of a stochastic run. The kills are Poisson in `ready x T(mem)`. Take the
+Fisher information of the truth's own table form, with its knots 480/512/560 given and its heights free, on each run's
+measured ready and mem:
+
+| variant | kills (steps) | rel. SE of the total killed | expected rel. rms error of the kill flow's amounts | tolerance |
+|---|---|---|---|---|
+| counts-short | 6 (3) | 0.35 | 0.35 | 0.10 |
+| counts-long | 91 (44) | 0.10 | 0.20 | 0.10 |
+
+Even knowing where the table bends, no method can be expected to get the kill flow (`outside -> oom_kills_total` as a
+whole, and the effect of mem on ready -> pending) within the 10% tolerance. So both counts variants are data-limited on
+310. engine_forms's other counts-long faults (the pods gap flows, retries) are method faults, also seen on 309 counts-long
+(engine_forms PPFF since 309). They are left for the regression or counts round.
+
+## Notes for the regression run
+
+- hidden.py acts only on exact data, on a row the answer misses that only a hidden integrator makes exact. A passing
+  noise-free result has no missed row, so it is untouched. On noisy data the scan costs about 1.3 s at 2000 steps
+  (counts-long) and changes nothing.
+- 309 none-short and none-long should be checked once in the regression run. Their rows are exact under the answer,
+  so the pass should not fire there.
+
+---
+
+# Round 0 (ec6265e, earlier the same day)
+
 **Status:** 0 of 4 pass, and no variant can pass at the moment. Work done 2026-10-21 by agent k8s310-engine_forms, which held the engine_forms lock and released it afterwards.
 The fix is commit ec6265e. Pool job 265 ran at ec6265e (`uv run sdlab-ladder job 265`):
 
