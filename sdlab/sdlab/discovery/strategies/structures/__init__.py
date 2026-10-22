@@ -242,4 +242,30 @@ _identify_hidden = identify
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
     from . import repair
 
-    return _timed(repair.apply, _identify_hidden(stocks, run, opts, *args, **kw), stocks, run, opts)
+    r = _timed(repair.apply, _identify_hidden(stocks, run, opts, *args, **kw), stocks, run, opts)
+    return _declared_last(r, stocks, run, opts)
+
+
+def _declared_last(r: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
+    """(k8s 317, docs/research/fixes/317-structures.md) A declared side is always present (the user, 2026-10-21):
+    the stages after the boundary's guard may drop one (317 none-short: the floor's refit dropped `nodes -> outside`,
+    a scale-down that never acts on the short run). It is filled again here (boundary.fill_declared), and where
+    the data leave it nothing to carry (its least-squares number at or below fill_declared's 1e-6 floor) it is
+    written at 0: the data's estimate, not the floor."""
+    if not isinstance(r, dict) or not r.get("flows") or not boundary.Boundary(run).declared:
+        return r
+    b = boundary.Boundary(run)
+    data = boundary.Data(stocks, run, opts or {})
+    log: list[str] = []
+    before = {id(f) for f in r["flows"]}
+    flows = boundary.fill_declared(r["flows"], stocks, b, data, log)
+    if not log:
+        return r
+    out = []
+    for f in flows:
+        rt = f.get("rate") or {}
+        if id(f) not in before and rt.get("form") in ("proportional", "constant") and float(rt.get("k", rt.get("value", 1.0)) or 0.0) <= 1e-6:
+            rt = {**rt, ("k" if rt.get("form") == "proportional" else "value"): 0.0}
+            f = {**f, "rate": rt, "rates": [rt]}
+        out.append(f)
+    return {**r, "flows": out, "declared_last": log}
