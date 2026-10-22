@@ -78,6 +78,9 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
 
     r = _capmin.restore(r, cap)
     r = _guarded("reread", lambda: reread.apply(r, stocks, run, opts), r)        # exact rows read again where the answer misses them (k8s-309)
+    from . import pool
+
+    r = _guarded("pool", lambda: pool.apply(r, stocks, run, opts), r)            # a move the declared boundary forces across units, from its two rows (k8s-316)
     r = _guarded("controller", lambda: controller.apply(r, stocks, run, opts), r)  # count stocks driven to a quantized target (k8s-308)
     from . import hidden
 

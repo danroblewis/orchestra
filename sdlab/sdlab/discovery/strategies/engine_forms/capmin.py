@@ -100,6 +100,27 @@ def _same_unit(unit: dict, a: str, b: str) -> bool:
     return not ua or not ub or ua == ub
 
 
+def forced_pairs(stocks: list[dict], run: dict) -> list[tuple[str, str]]:
+    """(k8s-316) The pairs (x, z) the declared boundary joins across units: x and z are each the only non-final
+    stock of their (announced, different) units, x has no outside outflow declared and z no outside inflow, so
+    what leaves x can only go into z (pgbouncer's waiting queries getting pool connections). A move joins
+    stocks of one unit everywhere else (the user's rule); this is the one place the case's own boundary leaves
+    no other drawing. Same rule as combined2's capmin.forced_pairs (6b1c269), written here (rule 11)."""
+    if not run.get("boundary_declared"):
+        return []
+    raw = run.get("boundary") or {}
+    unit = {s["id"]: s.get("unit") for s in stocks if not s.get("final")}
+    members: dict = {}
+    for i, u in unit.items():
+        members.setdefault(u, []).append(i)
+    alone = [i for i, u in unit.items() if u and len(members[u]) == 1]
+    sides = lambda i, side: list(((raw.get(i) or {}).get(side)) or [])  # noqa: E731
+    return [(x, z) for x in alone for z in alone if x != z and unit[x] != unit[z] and not sides(x, "out") and not sides(z, "in")]
+
+
+POOLS = (1.05, 1.25, 1.5, 2.0, 3.0, 5.0, 10.0)   # (k8s-316) a fixed pool's size, in multiples of its occupant's largest level
+
+
 def _rss(B: np.ndarray, y: np.ndarray) -> float:
     coef, *_ = np.linalg.lstsq(B, y, rcond=None)
     r = y - B @ coef
@@ -208,12 +229,34 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
                 best = {"source": x, "cap": name, "theta": th, "gain": gain, "kink": kink, "share": share}
                 if to:
                     best["to"] = ids[to[1]]
+    for x, z in forced_pairs(stocks, run):              # (k8s-316) a fixed pool the receiver occupies: MIN(X, theta (beta - Z))
+        xi, zi = ids.index(x), ids.index(z)
+        X, Z = read[xi], read[zi]
+        if np.ptp(X) <= 0 or np.ptp(Z) <= 0 or np.max(Z) <= 0:
+            continue
+        rows = [xi, zi]
+        for beta in (f * float(np.max(Z)) for f in POOLS):
+            Y = beta - Z
+            ratio = X / Y
+            grid = np.unique(np.quantile(ratio, np.linspace(MIN_SHARE, 1 - MIN_SHARE, GRID)))
+            th, _ = _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
+                                           for r in rows), grid)
+            m = np.minimum(X, th * Y)
+            share = float(np.mean(X <= th * Y))
+            (gx, cx), (gz, cz) = _gain(B, m, dy[xi], floor[xi]), _gain(B, m, dy[zi], floor[zi])
+            if not (MIN_SHARE <= share <= 1 - MIN_SHARE) or cx >= 0 or cz <= 0:
+                continue
+            gain, kink = gx + gz, sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
+            if gain > price and kink > price and (best is None or kink > best["kink"]):
+                best = {"source": x, "cap": z, "pool": beta, "theta": th, "gain": gain, "kink": kink, "share": share, "to": z}
     if best is None:
         return opts, None
     X = read[ids.index(best["source"])]
     Y = read[ids.index(best["cap"])] if best["cap"] in ids else inputs[best["cap"]]
+    if best.get("pool") is not None:
+        Y = best["pool"] - Y                               # (k8s-316) the pool's headroom
     m = np.minimum(X, best["theta"] * Y)
-    name = f"{NAME}{best['source']}__{best['cap']}"
+    name = f"{NAME}{best['source']}__{best['cap']}" + ("__pool" if best.get("pool") is not None else "")
     series = np.concatenate([[min(X[0], best["theta"] * Y[0])], m])     # input i is read by step i - 1
     inp = dict(opts.get("inputs") or {})
     inp[name] = [float(v) for v in series]
@@ -238,7 +281,10 @@ def _expr(rate: dict, cap: dict) -> dict:
     parts = [repr(c)] if c else []
     for t in terms:
         k = float(t.get("k") or 0.0)
-        if t.get("stock") == name:
+        if t.get("stock") == name and cap.get("pool") is not None:     # (k8s-316) k MIN(X, theta (beta - Z))
+            b = float(cap["pool"])
+            parts.append(f"min({k!r} * {x}, {k * th * b!r} + {-k * th!r} * {y})" if k >= 0 else f"{k!r} * min({x}, {th * b!r} + {-th!r} * {y})")
+        elif t.get("stock") == name:
             parts.append(f"min({k!r} * {x}, {k * th!r} * {y})" if k >= 0 else f"{k!r} * min({x}, {th!r} * {y})")
         else:
             parts.append(f"{k!r} * {t.get('stock')}")
@@ -263,7 +309,7 @@ def restore(result: dict, cap: dict | None) -> dict:
         rates = [g.get("rate") or {} for g in f.get("byTime") or []] + [f.get("rate") or {}]
         if any(r.get("form") == "expr" for r in rates):
             f.setdefault("id", f"capmin{n}")             # an expression flow is named (the engine's compiler wants one)
-    out["capmin"] = {k: cap[k] for k in ("source", "cap", "to", "theta", "gain", "kink", "share") if k in cap}
+    out["capmin"] = {k: cap[k] for k in ("source", "cap", "to", "theta", "pool", "gain", "kink", "share") if k in cap}
     return out
 
 

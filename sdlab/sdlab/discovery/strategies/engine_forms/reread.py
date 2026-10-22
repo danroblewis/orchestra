@@ -693,21 +693,14 @@ def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, input
     return flows + moves, left, tols
 
 
-def _bridges(bad: list[str], unit: dict, final: set, b) -> list[tuple[str, str]]:
-    """(k8s-316) Pairs (x, z) of unexplained rows of different units that the declared boundary joins: x has no
-    outside outflow declared and z no outside inflow, so what leaves x (its row loses it) can only go into a
-    measured stock, and what enters z can only come from one. A move joins stocks of one unit; this is the one
-    place it may cross units, where the declared boundary leaves no other way (pgbouncer's waiting clients
-    getting pool connections: queries -> connections). Counters are never sources."""
-    out = []
-    for x in bad:
-        for z in bad:
-            if x == z or x in final or unit.get(x) == unit.get(z):
-                continue
-            if b.limit.get((x, "out")) or b.limit.get((z, "in")):
-                continue
-            out.append((x, z))
-    return out
+def _bridges(bad: list[str], stocks: list[dict], run: dict) -> list[tuple[str, str]]:
+    """(k8s-316) Pairs (x, z) of unexplained rows that the declared boundary joins across units (capmin.forced_pairs:
+    each the only non-final stock of its unit, x with no outside outflow declared, z with no outside inflow), so what
+    leaves x can only go into z. A move joins stocks of one unit everywhere else (pgbouncer's waiting clients getting
+    pool connections: queries -> connections)."""
+    from .capmin import forced_pairs
+
+    return [(x, z) for x, z in forced_pairs(stocks, run) if x in bad and z in bad]
 
 
 def _per_side(flows: list[dict], b) -> list[dict]:
@@ -827,7 +820,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
             r3 = None
         if r3 is not None:
             ok3 = {s: float(np.sqrt(np.mean(r3[i] ** 2))) <= 2 * rows.tol(data.dy[i]) or ok[s] for i, s in enumerate(ids)}
-            for x, z in _bridges([s for s in ids if not ok3[s]], unit, final, b):
+            for x, z in _bridges([s for s in ids if not ok3[s]], stocks, run):
                 if not ok3[x] and not ok3[z]:
                     read([x, z], {**unit, z: unit[x]}, f"{unit[x]} -> {unit[z]}", ok3)
                     try:
