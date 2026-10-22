@@ -215,11 +215,13 @@ def _pool_progress(recent: int) -> dict | None:
         con = sqlite3.connect(f"file:{store.path()}?mode=ro", uri=True, timeout=5)
         con.row_factory = sqlite3.Row
         running = [{"case": r["case_id"], "variant": r["variant"], "strategy": r["strategy"], "state": "running", "reason": f"pool job {r['job_id']}",
-                    "started": r["leased_at"], "finished": None, "status": None}
-                   for r in con.execute("SELECT job_id, case_id, variant, strategy, leased_at FROM pool_items WHERE state = 'leased' ORDER BY leased_at DESC LIMIT 200")]
+                    "started": r["leased_at"], "finished": None, "status": None, "job": r["job_id"], "by": r["by"], "worker": r["worker"],
+                    "timeout": r["timeout"] or 300, "mode": r["mode"]}
+                   for r in con.execute("SELECT i.job_id, i.case_id, i.variant, i.strategy, i.leased_at, i.worker, i.timeout, i.mode, j.by"
+                                        " FROM pool_items i JOIN pool_jobs j ON j.id = i.job_id WHERE i.state = 'leased' ORDER BY i.leased_at DESC LIMIT 200")]
         done = [{"case": r["case_id"], "variant": r["variant"], "strategy": r["strategy"], "state": "done", "reason": f"pool job {r['job_id']}",
-                 "started": None, "finished": r["at"], "status": r["status"], "seconds": r["seconds"], "machine": r["machine"]}
-                for r in con.execute("SELECT job_id, case_id, variant, strategy, status, at, seconds, machine FROM pool_results ORDER BY id DESC LIMIT ?", (max(1, recent),))]
+                 "started": None, "finished": r["at"], "status": r["status"], "seconds": r["seconds"], "machine": r["machine"], "id": r["promoted_id"]}
+                for r in con.execute("SELECT job_id, case_id, variant, strategy, status, at, seconds, machine, promoted_id FROM pool_results ORDER BY id DESC LIMIT ?", (max(1, recent),))]
         # the timing chart: the last 120 results' times (also when the caller asked for fewer items)
         times = [{"case": r[0], "variant": r[1], "strategy": r[2], "status": r[3], "seconds": r[4], "timeout": r[5] or 300, "id": r[6]}
                  for r in con.execute("SELECT p.case_id, p.variant, p.strategy, p.status, p.seconds, i.timeout, p.promoted_id FROM pool_results p"

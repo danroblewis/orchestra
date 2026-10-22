@@ -142,6 +142,20 @@
     return { vb, alias, cmp };
   }
 
+  // only the differences, in the truth's layout (the Now page's running cards): before a result, the true stocks alone.
+  // Returns {caption, alias}.
+  function drawDiff(c, r, svg, cmp, cols) {
+    const found = L.foundOf(r);
+    cmp = cmp || L.compare(c.model, found, r && r.scores);
+    const { dD, vias, alias } = diagrams(c, cmp, found);
+    const pos = sharedLayout(c, found, vias, cols);
+    const vb = D.bounds(pos, r ? dD.flows : [], BOX);
+    const color = (cls) => CLS_COLOR[cls] || "var(--fg)";
+    D.draw(svg, r ? focus(dD, tStockIds(c), cmp.api && cmp.api.hunk) : { stocks: dD.stocks, flows: [] }, pos,
+      { box: BOX, viewBox: { ...vb, y: vb.y - 26, h: vb.h + 26 }, color, outline: { label: c.boundary ? "system boundary" : "boundary not declared" } });
+    return { caption: r ? diffStat(cmp) : "", alias };
+  }
+
   // The differences show only what changed, like a git diff's hunks (the user, 2026-10-21): a changed flow (removed, added,
   // value wrong, equivalent, a claim) with the stocks at its ends; a stock only the found model has, with every flow into or
   // out of it. Everything else stays where it is (one layout for all three panels), faded, without labels.
@@ -234,5 +248,5 @@
     return D.draw(svg, { stocks, flows }, pos, { box, viewBox: vb, color: (k) => REPAIR_COLOR[k] || "var(--fg)", maxScale: opts.maxScale });
   }
 
-  root.SDLadderDraw = { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, diagrams, sharedLayout, drawPair, diffHtml, drawRepairs, compareOf, focus, diffStat };
+  root.SDLadderDraw = { BOX, LAYOUT, CLS_COLOR, CLS_WORD, LEGEND, short2, maxCols, diagrams, sharedLayout, drawPair, drawDiff, diffHtml, drawRepairs, compareOf, focus, diffStat };
 })(window);

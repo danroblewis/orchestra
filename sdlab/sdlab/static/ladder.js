@@ -21,7 +21,7 @@
 
   const S = {
     view: "now", cases: [], byId: {}, strategies: [], summary: null, progress: null,
-    sel: { case: null, variant: null, strategy: null, id: null }, follow: false, shown: null, nowMode: "board",
+    sel: { case: null, variant: null, strategy: null, id: null }, follow: false, shown: null, nowMode: "running",
     hsel: { case: null, strategy: null }, csel: { case: null, variant: null, fresh: false }, cache: {},
   };
 
@@ -153,9 +153,11 @@
       </div>
       <div class="pbar" role="progressbar" aria-valuemin="0" aria-valuemax="${r.total}" aria-valuenow="${r.done}">${bar}</div>
       ${timingChart(p)}
-      ${running.length ? `<div class="chips running-now"><span class="muted small">running now:</span>${running.slice(0, 6).map((i) => `<button class="chip" data-case="${esc(i.case)}" data-variant="${esc(i.variant)}" data-strategy="${esc(i.strategy)}">${esc(i.case)} · ${esc(i.variant)} · ${esc(i.strategy)}</button>`).join("")}${running.length > 6 ? `<span class="muted small">+${running.length - 6}</span>` : ""}</div>` : ""}`;
-    $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; if (S.follow) { S.nowMode = "one"; followTick(true); } remember(); });
+      ${running.length && S.nowMode !== "running" ? `<div class="chips running-now"><span class="muted small">running now:</span>${running.slice(0, 6).map((i) => `<button class="chip" data-case="${esc(i.case)}" data-variant="${esc(i.variant)}" data-strategy="${esc(i.strategy)}">${esc(i.case)} · ${esc(i.variant)} · ${esc(i.strategy)}</button>`).join("")}${running.length > 6 ? `<span class="muted small">+${running.length - 6}</span>` : ""}</div>` : ""}`;
+    // following the run: the cards (ladder-running.js), the running items and then the newest results (the user, 2026-10-21)
+    $("follow").addEventListener("change", (e) => { S.follow = e.target.checked; S.nowMode = "running"; showNow(); });
     box.querySelectorAll(".chip[data-case]").forEach((b) => b.addEventListener("click", () => pick({ case: b.dataset.case, variant: b.dataset.variant, strategy: b.dataset.strategy })));
+    if (S.nowMode === "running" && window.SDLadderRunning && !$("running-wrap").hidden) window.SDLadderRunning.render($("running-cards"), p, { follow: S.follow });
     const t = (p && p.times) || [];
     box.querySelectorAll(".tbar").forEach((b) => b.addEventListener("click", () => openTime(t[+b.dataset.ti])));
     const step = (d) => { const i = timesAt(t); openTime(t[i === -1 ? (d < 0 ? t.length - 1 : 0) : Math.max(0, Math.min(t.length - 1, i + d))]); renderLive(); };
@@ -250,7 +252,7 @@
     } catch { /* the next poll tries again */ }
   }
   function followTick(force) {
-    if (!S.follow) return;
+    if (!S.follow || window.SDLadderRunning) return;        // the cards follow the run themselves
     const f = liveFocus(S.progress);
     if (!f) { if (force || !S.sel.case) defaultSel(); return; }
     const key = `${f.case}|${f.variant}|${f.strategy}|${f.state}|${f.finished}`;
@@ -280,13 +282,21 @@
   // The all-cases board is the default; picking a case (or following the run) shows one result.
   // If the board cannot load (an older server without /api/ladder/board), the single view stays.
   async function showNow() {
+    const running = S.nowMode === "running" && window.SDLadderRunning;
     const board = S.nowMode === "board" && window.SDLadderBoard;
+    $("running-wrap").hidden = !running;
     $("board-wrap").hidden = !board;
-    $("one-wrap").hidden = !!board;
+    $("one-wrap").hidden = !!(board || running);
     remember();
+    if (running) { renderLive(); return; }
     if (!board) return showCompare();
     const ok = await window.SDLadderBoard.render(false);
     if (!ok && S.nowMode === "board") { S.nowMode = "one"; if (!S.sel.case) defaultSel(); else showNow(); }
+  }
+  function toRunning() {
+    S.follow = false; S.nowMode = "running";
+    const f = $("follow"); if (f) f.checked = false;
+    showNow();
   }
   function toBoard() {
     S.follow = false; S.nowMode = "board";
@@ -298,7 +308,7 @@
   function renderPick() {
     const c = S.byId[S.sel.case]; if (!c) return;
     const i = S.cases.indexOf(c);
-    $("pick").innerHTML = `${window.SDLadderBoard ? `<button class="btn" id="to-board" title="Every case on one page">&#8592; All cases</button>` : ""}
+    $("pick").innerHTML = `<button class="btn" id="to-running" title="Everything the pool is running now, one card each">&#8592; Running now</button>${window.SDLadderBoard ? `<button class="btn" id="to-board" title="Every case on one page">All cases</button>` : ""}
       <span class="stepper"><button class="btn" id="prev" ${i <= 0 ? "disabled" : ""} title="The case before (←)" aria-label="Previous case">&#9664;</button>
       <select id="p-case" aria-label="Case">${S.cases.map((x) => `<option value="${esc(x.id)}" ${x.id === c.id ? "selected" : ""}>${esc(x.id)}</option>`).join("")}</select>
       <button class="btn" id="next" ${i >= S.cases.length - 1 ? "disabled" : ""} title="The case after (→)" aria-label="Next case">&#9654;</button></span>
@@ -307,6 +317,7 @@
       ${S.sel.id ? `<span class="badge">result #${esc(S.sel.id)} from history</span> <button class="btn" id="latest">latest</button>` : ""}
       <span class="sqwrap muted small">${squares(c.id, S.sel.strategy, { current: S.sel.id ? null : S.sel.variant })}</span>`;
     if ($("to-board")) $("to-board").onclick = toBoard;
+    $("to-running").onclick = toRunning;
     const step = (d) => { const n = S.cases[i + d]; if (n) pick({ case: n.id }); };
     $("prev").onclick = () => step(-1);
     $("next").onclick = () => step(1);
@@ -366,6 +377,7 @@
     </div>`;
   }
 
+  if (window.SDLadderRunning) window.SDLadderRunning.init({ toBoard: () => toBoard(), cases: () => S.byId, open: (sel) => pick(sel), compareOf, drawDiff: window.SDLadderDraw.drawDiff });
   if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml, compareOf, legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
 
   // the verdicts come from the server's diff (compareOf: diff.py), the page's own comparison only if that fails
@@ -913,7 +925,8 @@
   addEventListener("resize", () => {
     clearTimeout(resizeT);
     resizeT = setTimeout(() => {
-      if (S.view === "now" && S.nowMode === "board" && window.SDLadderBoard) window.SDLadderBoard.redraw();
+      if (S.view === "now" && S.nowMode === "running" && window.SDLadderRunning) window.SDLadderRunning.resize($("running-cards"));
+      else if (S.view === "now" && S.nowMode === "board" && window.SDLadderBoard) window.SDLadderBoard.redraw();
       else if (S.view === "now" && S.shown !== undefined && S.sel.case) renderCompare(S.byId[S.sel.case], S.shown);
       if (S.view === "cases") renderCase();
       if (S.view === "history") renderHistory();
