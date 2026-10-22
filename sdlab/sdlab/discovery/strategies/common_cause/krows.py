@@ -429,6 +429,15 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                     pred = (X[:, list(h[1])] @ h[2] if len(h[1]) else 0.0) + sign * np.maximum(0.0, X[:, list(h[3])] @ h[4])
                     out = {"bic": h[0], "sse": h[5], "lin": dict(zip([names[j] for j in h[1]], map(float, h[2]))),
                            "hinge": (side, dict(zip([names[j] for j in h[3]], map(float, h[4])))), "res": yy - pred}
+                    if np.all(X[:, list(h[3])] @ h[4] > -10.0 * math.sqrt(floor[S] / T)):
+                        # (port-common_cause; the ledger's "unbound floor", type 3) a floor that never binds on the run
+                        # by more than the data's rounding is no floor: its terms join the always-on part, so a drain is
+                        # written as a drain (060 none-long, at equilibrium: outside -> C = 10.5 - 0.0374 C floored on
+                        # the rounding, "fits", for C's own outflow)
+                        lin_ = dict(out["lin"])
+                        for n_, k_ in out["hinge"][1].items():
+                            lin_[n_] = lin_.get(n_, 0.0) + sign * k_
+                        out = {**out, "lin": lin_, "hinge": None}
         rich = S in rich_ok if rich is None else rich
         if (rich and out["sse"] > 100 * floor[S] and S not in final and "in" in _sides(S, declared, bd)
                 and f"__s_{S}" not in exclude):
@@ -527,7 +536,10 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         """(310, derived.py 3) the row reading a hidden integrator (constant inflow, a drain at a constant rate or
         switched by a derived switch), written out as a schedule, where it wins by BIC over the plain row."""
         cs = [j for j in cols if names[j] is not None]
-        switches = [np.ones(T)] + [m["switch"] for m in derived_meta.values() if m.get("switch") is not None]
+        # (port-common_cause) only an integrator whose drain is switched by the state earns a hidden stock: with no
+        # switch (or no drain) h is a fixed curve in time, a schedule (056#7 none-long: A's start transient read as
+        # a hidden stock beside a floor that binds; 060 none-long likewise)
+        switches = [m["switch"] for m in derived_meta.values() if m.get("switch") is not None]
         top = None
         for sw in switches:
             if time.monotonic() > deadline:
@@ -539,7 +551,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
                 sup, coef, extra, res, Q = _with(Z, S, yy, cs)
                 return float(res @ res), (sup, coef, extra, res, Q)
 
-            grid = _derived.decays(sw)
+            grid = _derived.decays(sw)[1:]                   # (port-common_cause) a = 0: h is t, a ramp in time
             vals = [sse_at(a)[0] for a in grid]
             k = int(np.argmin(vals))
             a = grid[k]
@@ -972,8 +984,12 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         k = len(r["lin"]) + (len(r["hinge"][1]) if r.get("hinge") else 0)
         return (SIMPLER if plain and k < old[S][1] else PRICE) * logT
 
+    # (port-common_cause) a stock the answer already fits to the data's resolution is not rebuilt: below the floor the
+    # BIC reads rounding (045#7 none-long: an exact move-and-drain answer, rows 0.04 and 0.8 of the floor, was rebuilt
+    # with a capped move that never binds)
     wins = {S for S, r in rows.items()
-            if r["bic"] + margin(S, r) < bic(*old[S], S) and r["sse"] <= (1 - EXPLAINED) * float(dy[ids.index(S)] @ dy[ids.index(S)])}
+            if old[S][0] > floor[S]
+            and r["bic"] + margin(S, r) < bic(*old[S], S) and r["sse"] <= (1 - EXPLAINED) * float(dy[ids.index(S)] @ dy[ids.index(S)])}
     if not wins:
         return result
     B = set(wins)

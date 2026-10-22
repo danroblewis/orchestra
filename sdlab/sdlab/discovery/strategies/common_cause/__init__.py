@@ -93,5 +93,12 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # target read off another stock (a controller) replaces its outside flows where it wins by BIC (tracker.py)
     from . import krows, tracker
 
-    r = krows.revise(_capmin.restore(r, cap), stocks, run, opts, cap)
-    return tracker.revise(r, stocks, run, opts)
+    import numpy as _np
+
+    r = _capmin.restore(r, cap)
+    for step in (lambda x: krows.revise(x, stocks, run, opts, cap), lambda x: tracker.revise(x, stocks, run, opts)):
+        try:                                     # (fix ledger type 10, refit-guard) a pass that fails keeps its input
+            r = step(r)                          # (159 none-long: an SVD that did not converge in krows)
+        except (_np.linalg.LinAlgError, FloatingPointError, ValueError, ZeroDivisionError):
+            pass
+    return r
