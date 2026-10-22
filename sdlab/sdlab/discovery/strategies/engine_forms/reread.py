@@ -58,7 +58,10 @@ COND = 1e6             # (k-311) a column set more collinear than this (scaled c
 QUIET = 0.5            # a hinge's linear part holds exactly on at least this share of the steps
 SAMPLES = 300          # (k-311) random step sets a linear piece's numbers are solved on (regime)
 SMALL = 5              # (k-312) the fewest steps a last linear piece (fewer than a piece's share) is read from
-SCREEN = 64            # (k8s-317) column sets of each size an exact reader checks, the smallest misfits first (_Rows.ranked)
+SCREEN = 256           # (k8s-317) column sets of each size an exact reader checks, the smallest misfits first (_Rows.ranked)
+                       # 256, not 64 (2026-10-22, coordinator; found by port-sindy): at 64 the near-collinear counters crowd
+                       # out the pods rows' true set on 311 and the block is refused: 311 none-short and none-long passed
+                       # before 2bca23f and failed after it (job 399); 128 keeps it, 256 for margin
 EACH = 2.0             # (k8s-316) on finely rounded data, a branch fit's every step is within EACH x its ROUND x rounding
 
 
