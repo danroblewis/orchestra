@@ -188,8 +188,15 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dic
         return result
     levels = {k: np.asarray(v, dtype=float) for k, v in (run.get("levels") or {}).items()}
     inputs = {k: np.asarray(v, dtype=float) for k, v in ((opts or {}).get("inputs") or {}).items()}
-    if opts and opts.get("injections"):
-        return result                                       # injected amounts would break the exact rule
+    # (k8s 311, docs/research/fixes/311-structures.md) announced injections: each stock's change less what was
+    # injected, and every level read at the step's start with that step's injection in (the engine adds an
+    # injection before the step's flows); before 311 any injection turned the module off for every stock
+    t = np.asarray(run.get("t") or [], dtype=float)
+    inj = {}
+    for j in (opts or {}).get("injections") or []:
+        k = np.nonzero(t == float(j["t"]))[0]
+        if j.get("stock") in levels and len(k) and k[0] >= 1:
+            inj.setdefault(j["stock"], np.zeros(len(t)))[k[0] - 1] += float(j["amount"])
     declared = bool(run.get("boundary_declared"))
     bound = run.get("boundary") or {}
     flows = list(result["flows"])
@@ -199,10 +206,10 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dic
         L = levels.get(sid)
         if L is None or len(L) < 3 or not _whole(L):
             continue
-        d = np.diff(L)
+        d = np.diff(L) - (inj[sid][: len(L) - 1] if sid in inj else 0.0)
         if not np.any(d != 0):
             continue
-        s = L[:-1]
+        s = L[:-1] + (inj[sid][: len(L) - 1] if sid in inj else 0.0)
         mine = [f for f in flows if sid in (f.get("from"), f.get("to"))]
         # (k8s 310, 2026-10-22) a move with another stock no longer rules the stock out: the form must reproduce
         # the stock's whole change on every step by itself, so where it does the moves are spurious (310
@@ -211,7 +218,8 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dic
         # change at least: on a few steps some form always fits
         if any(f.get("from") and f.get("to") for f in mine) and int(np.sum(d != 0)) < MOVE_EVIDENCE:
             continue
-        drivers = {k: v[:-1] for k, v in {**levels, **inputs}.items() if k != sid and len(v) == len(L)}
+        drivers = {k: v[:-1] + (inj[k][: len(L) - 1] if k in inj else 0.0) for k, v in {**levels, **inputs}.items()
+                   if k != sid and len(v) == len(L)}
         up, dn = np.maximum(d, 0), np.maximum(-d, 0)
         sides = {}
         ok = True

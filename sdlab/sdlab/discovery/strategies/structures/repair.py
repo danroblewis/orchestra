@@ -28,6 +28,7 @@ import math
 import numpy as np
 
 from ._vendored.combined import judge as J
+from . import steps
 from .hidden import _amount
 
 GATE = 100.0
@@ -70,8 +71,9 @@ def _sign(f: dict, s: str) -> float:
     return (1.0 if f.get("to") == s else 0.0) - (1.0 if f.get("from") == s else 0.0)
 
 
-def _fit(flows: list[dict], free: list[int], rows: list[str], X: dict, dy: dict, n: int) -> tuple[list[dict], dict] | None:
-    """The free flows' numbers fitted jointly on `rows` (active set, see the module): (flows, {row: SSE})."""
+def _fit(flows: list[dict], free: list[int], rows: list[str], X: dict, dy: dict, n: int, keep=None) -> tuple[list[dict], dict] | None:
+    """The free flows' numbers fitted jointly on `rows` (active set, see the module): (flows, {row: SSE}).
+    keep (room.py, k8s 311): the steps the fit counts (all by default)."""
     held = np.zeros((len(rows), n))
     for f in [g for i, g in enumerate(flows) if i not in set(free)]:
         if not any(_sign(f, s) for s in rows):
@@ -81,7 +83,7 @@ def _fit(flows: list[dict], free: list[int], rows: list[str], X: dict, dy: dict,
             return None
         for j, s in enumerate(rows):
             held[j] += _sign(f, s) * a
-    y = np.concatenate([dy[s] - held[j] for j, s in enumerate(rows)])
+    y = np.concatenate([(dy[s] - held[j]) * (1.0 if keep is None else keep) for j, s in enumerate(rows)])
     params = []
     for i in free:
         c, ks = _linear(flows[i]["rate"])
@@ -94,6 +96,7 @@ def _fit(flows: list[dict], free: list[int], rows: list[str], X: dict, dy: dict,
             cols = []
             for (i, names), on in zip(params, masks):
                 sg = _sign(flows[i], s)
+                on = on if keep is None else (on & keep)
                 cols += [sg * on * (np.ones(n) if nm == "1" else X[nm]) for nm in names]
             blocks.append(np.column_stack(cols))
         A = np.vstack(blocks)
@@ -154,8 +157,8 @@ def _bic(sse: dict, k: int, n: int, floor: float) -> float:
 
 
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
-    if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras") or (opts or {}).get("injections"):
-        return result
+    if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras"):
+        return result                                 # (k8s 311) injections are taken into the rows (steps.py)
     try:
         return _apply(result, stocks, run, opts or {})
     except Exception as e:                            # noqa: BLE001  (the answer stands as it was)
@@ -174,6 +177,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         if k not in X and len(v) >= T:
             X[k] = np.asarray(v, dtype=float)[1:T]
     dy = {k: np.diff(v[:T]) for k, v in L.items()}
+    steps.adjust(X, dy, run, opts, n)
     q = J.quantum(np.vstack([v[:T] for v in L.values()]))
     floor = n * q * q / 12.0
     unit = {s["id"]: s.get("unit") for s in stocks}

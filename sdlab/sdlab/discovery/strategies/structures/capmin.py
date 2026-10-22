@@ -216,9 +216,20 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     return opts, best
 
 
+def _min_text(k: float, cap: dict) -> str:
+    """k x a limit written out: MIN(k X, k theta Y); with a room (room.py, k8s 311) MIN(k X, max(0, k theta c Y - k theta Z))."""
+    x, y, th = cap["source"], cap["cap"], cap["theta"]
+    if cap.get("room"):
+        z, c = cap["occupant"], cap["c"]
+        if k >= 0:
+            return f"min({k!r} * {x}, max(0, {k * th * c!r} * {y} - {k * th!r} * {z}))"
+        return f"{k!r} * min({x}, max(0, {th * c!r} * {y} - {th!r} * {z}))"
+    return f"min({k!r} * {x}, {k * th!r} * {y})" if k >= 0 else f"{k!r} * min({x}, {th!r} * {y})"
+
+
 def _expr(rate: dict, cap: dict) -> dict:
     """A linear rate with a term reading the offered series, as an expression with the MIN written out."""
-    name, x, y, th = cap["name"], cap["source"], cap["cap"], cap["theta"]
+    name = cap["name"]
     form = rate.get("form")
     if form == "proportional":
         terms, c = [{"stock": rate.get("stock"), "k": rate.get("k", 0.0)}], 0.0
@@ -232,7 +243,7 @@ def _expr(rate: dict, cap: dict) -> dict:
     for t in terms:
         k = float(t.get("k") or 0.0)
         if t.get("stock") == name:
-            parts.append(f"min({k!r} * {x}, {k * th!r} * {y})" if k >= 0 else f"{k!r} * min({x}, {th!r} * {y})")
+            parts.append(_min_text(k, cap))
         else:
             parts.append(f"{k!r} * {t.get('stock')}")
     return {"form": "expr", "expr": " + ".join(parts) or "0"}

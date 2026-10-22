@@ -29,7 +29,7 @@ from scipy.optimize import nnls
 
 from sdlab.discovery.simulate import Model
 
-from . import floor
+from . import floor, steps
 from ._vendored.combined import judge as J
 
 FIT_GAIN = 2.0      # the effect fit must beat the best plain rate by this x log n
@@ -101,8 +101,8 @@ def _plain_bic(y: np.ndarray, cols: dict[str, np.ndarray]) -> float:
 
 
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, judge_opts: dict | None = None) -> dict:
-    if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras") or (opts or {}).get("injections"):
-        return result
+    if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras"):
+        return result                                 # (k8s 311) injections are taken into the rows (steps.py)
     try:
         return _apply(result, stocks, run, opts or {}, judge_opts if judge_opts is not None else (opts or {}))
     except Exception as e:                            # noqa: BLE001  (the answer stands as it was)
@@ -123,7 +123,8 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
         L = levels.get(c)
         if L is None or len(L) < 10:
             continue
-        y = np.diff(L)
+        inj = steps.injected(run, opts, len(L) - 1)
+        y = np.diff(L) - inj.get(c, 0.0)
         if np.any(y < -1e-9 * max(1.0, np.max(np.abs(L)))) and not st.get("final"):
             continue                                    # not a counter
         if declared and not (bound.get(c) or {}).get("in"):
@@ -139,7 +140,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
         if int(active.sum()) < MIN_ACTIVE:
             continue
         n = len(y)
-        prev = {k: v[:-1] for k, v in levels.items() if len(v) == len(L)}
+        prev = {k: v[:-1] + inj.get(k, 0.0) for k, v in levels.items() if len(v) == len(L)}
         prev.update({k: v[1:len(L)] for k, v in inputs.items() if len(v) >= len(L)})   # an input's value during the step
         same = [a for a in prev if a != c and a in unit and unit[a] == unit[c] and np.ptp(prev[a]) > 0 and np.min(prev[a]) >= 0]
         drivers = [x for x in prev if x != c and np.ptp(prev[x]) > 0]

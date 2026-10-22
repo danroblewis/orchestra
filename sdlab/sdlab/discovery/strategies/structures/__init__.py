@@ -139,10 +139,13 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     levels carry measurement error, the numbers are refitted and the structure revised on the output error
     and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
     record against the measured levels)."""
-    from . import floor, oefit
+    from . import floor, oefit, rebuild
 
     o, cap = _capmin.offer(stocks, run, opts)
     r = _identify_linear(stocks, run, o, *args, **kw)
+    # (k8s 311, docs/research/fixes/311-structures.md) rows the forward-stepwise fits left far from exact (a fast
+    # equilibrium no single column explains) rebuilt by best subset, before the floor refits their sides
+    r = rebuild.apply(r, stocks, run, o)
     # (k8s-309, docs/research/fixes/309-structures.md) outside rates refitted under the engine's floor before
     # the output-error refit, which would read a floored rate fitted as a drift as measurement error
     r = floor.apply(r, stocks, run, opts, judge_opts=o)
@@ -171,9 +174,12 @@ _identify_controller = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    from . import counted, repair
+    from . import counted, repair, room
 
     r = _identify_controller(stocks, run, opts, *args, **kw)
+    # (k8s 311, docs/research/fixes/311-structures.md) a move limited by the room a capacity leaves, searched on
+    # the rows the answer leaves unexplained, before the repair and the counted move
+    r = room.apply(r, stocks, run, opts)
     # (k8s 310, 2026-10-22) the rows repaired first (repair.py): a counted move is placed by the rows it
     # repairs, and 310 none-long had lost `pending -> ready`, so the OOM move could not be placed
     r = repair.apply(r, stocks, run, opts)
@@ -189,9 +195,11 @@ _identify_counted = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    from . import hidden
+    from . import hidden, room
 
-    return hidden.apply(_identify_counted(stocks, run, opts, *args, **kw), stocks, run, opts)
+    r = hidden.apply(_identify_counted(stocks, run, opts, *args, **kw), stocks, run, opts)
+    # (k8s 311) the room move's numbers refitted last, its rows explained by everything else by then
+    return room.polish(r, stocks, run, opts)
 
 
 # Rows left unexplained repaired with the plain moves and outflows they lack (repair.py,

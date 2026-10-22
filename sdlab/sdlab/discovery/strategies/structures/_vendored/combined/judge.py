@@ -26,8 +26,30 @@ import math
 
 import numpy as np
 
-from sdlab.discovery.simulate import Model, behaviour_error, levels_array
-from sdlab.discovery.strategies.structures._vendored.combined.params import numbers
+from sdlab.discovery.simulate import Model as _SharedModel, behaviour_error, levels_array
+
+
+class Model(_SharedModel):
+    """(structures, k8s 311, docs/research/fixes/311-structures.md) the shared simulator with expression rates
+    run (structures/exprs.py): the shared one reads every expression rate as 0, so the judge was blind to the
+    MIN, room and controller forms the later stages write. Flows of the other forms run exactly as before."""
+
+    def __init__(self, flows, ids, inputs=None, *args, **kw):
+        super().__init__(flows, ids, inputs, *args, **kw)
+        from sdlab.discovery.strategies.structures import exprs
+
+        index = {s: i for i, s in enumerate(ids)}
+        if inputs and inputs.get("values"):
+            for j, k in enumerate([k for k in inputs["values"] if k not in index]):
+                index[k] = len(ids) + j
+        for p, f in enumerate(flows):
+            r = f.get("rate") or {}
+            if r.get("form") == "expr" and r.get("expr") and not f.get("byTime") and not f.get("inflow"):
+                src, dst, ratio, segs, _, vals = self.parts[p]
+                self.parts[p] = (src, dst, ratio, segs, exprs.Rate(r["expr"], index), vals)
+
+
+from sdlab.discovery.strategies.structures._vendored.combined.params import numbers  # noqa: E402
 
 QUANTA = (1.0, 0.1, 0.01, 1e-3, 1e-4, 1e-5, 1e-6)
 

@@ -60,6 +60,9 @@ def _rate_amount(r: dict | None, X: dict, n: int) -> np.ndarray | None:
                 return None
             out = out + float(t.get("k") or 0.0) * s
         return out
+    if f == "expr" and r.get("expr"):                  # (k8s 311) a MIN, room or controller form (exprs.py)
+        from . import exprs
+        return exprs.amount(r["expr"], X, n)
     return None
 
 
@@ -145,8 +148,8 @@ def _select(y: np.ndarray, base: list, C: np.ndarray, names: list[str], floor: f
 
 
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
-    if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras") or (opts or {}).get("injections"):
-        return result
+    if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras"):
+        return result                                 # (k8s 311) injections are taken into the rows (steps.py)
     try:
         return _apply(result, stocks, run, opts or {})
     except Exception as e:                            # noqa: BLE001  (the answer stands as it was)
@@ -165,6 +168,8 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         if k not in X and len(v) >= T:
             X[k] = np.asarray(v, dtype=float)[1:T]            # an input's value during the step
     dy = {k: np.diff(v[:T]) for k, v in L.items()}
+    from . import steps
+    steps.adjust(X, dy, run, opts, n)
     quantum = J.quantum(np.vstack([v[:T] for v in L.values()]))
     declared = bool(run.get("boundary_declared"))
     bound = run.get("boundary") or {}
