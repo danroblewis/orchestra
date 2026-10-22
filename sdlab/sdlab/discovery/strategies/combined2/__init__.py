@@ -58,6 +58,7 @@ import numpy as np
 
 from sdlab.discovery.identify import identify as _main_line
 
+from . import blocks
 from . import boundary
 from . import judge as J2
 from . import screens
@@ -269,7 +270,11 @@ def base(stocks: list[dict], run: dict, opts: dict, cfg: dict, cached: dict) -> 
     if best is None:
         return {"flows": [], "combined2": {"chosen": None, "candidates": _summary(cands, cfg)}}
     r = dict(best["result"])
-    r["combined2"] = {"chosen": best["name"], "candidates": _summary(cands, cfg)}
+    # (2026-10-22, k8s-312 round 2, docs/research/fixes/312-combined2-r2.md) a unit's block of rows that another
+    # candidate explains to the levels' rounding, where the pick does not, is taken from it (blocks.py)
+    r = blocks.compose(r, [{"name": c["name"], **c["result"]} for c in cands if c is not best and c.get("result")], stocks, run, opts)
+    r["combined2"] = {"chosen": best["name"], "candidates": _summary(cands, cfg),
+                      **({"blocks_taken": r.pop("blocks_taken")} if r.get("blocks_taken") else {})}
     return r
 
 
