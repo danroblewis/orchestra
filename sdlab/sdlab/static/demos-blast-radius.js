@@ -118,7 +118,7 @@
           <text x="${P.x}" y="${P.y - 4}" text-anchor="middle" style="fill:${txt};font-size:12px;font-weight:600">${esc(s)}${fault ? " ⚡" : ""}</text>
           <text x="${P.x}" y="${P.y + 12}" text-anchor="middle" style="fill:${txt};font-size:10px">${esc(line2)}</text></g>`;
       }).join("");
-      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${side} model: services coloured by impact"><defs>${marks}</defs>${arrows}${boxes}</svg>`;
+      return `<svg class="zp" viewBox="0 0 ${W} ${H}" role="img" aria-label="${side} model: services coloured by impact"><defs>${marks}</defs>${arrows}${boxes}</svg>`;
     }
 
     async function run() {

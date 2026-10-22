@@ -35,8 +35,43 @@
     const axes = `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" stroke="var(--rule)"/>
       <text x="${m.l - 4}" y="${Y(hi) + 4}" text-anchor="end">${fmt(hi)}</text><text x="${m.l - 4}" y="${Y(lo) + 3}" text-anchor="end">${fmt(lo)}</text>
       <text x="${m.l}" y="${H - 3}">step ${t0}</text><text x="${W - m.r}" y="${H - 3}" text-anchor="end">${t1}</text>`;
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || "chart")}">${axes}${hl}${lines}${marks}</svg>`;
+    const id = `ch${++CHARTN}`;                       // the hover (the user, 2026-10-22): the data stays with the chart's id
+    CHARTS.set(id, { t, series: series.filter((x) => x && x.ys), X, m, H, W });
+    if (CHARTS.size > 4000) CHARTS.delete(CHARTS.keys().next().value);
+    return `<svg viewBox="0 0 ${W} ${H}" role="img" data-chart="${id}" aria-label="${esc(opts.label || "chart")}">${axes}${hl}${lines}${marks}<line class="hov" x1="-10" x2="-10" y1="${m.t}" y2="${H - m.b}" stroke="var(--fg)" stroke-width="0.8" opacity="0.6"/></svg>`;
   }
+
+  // ---------- hover on every line chart: the step and each line's value there ----------
+  const CHARTS = new Map();
+  let CHARTN = 0;
+  const tipEl = document.createElement("div");
+  tipEl.className = "ctip";
+  tipEl.hidden = true;
+  document.body.appendChild(tipEl);
+  let hovSvg = null;
+  function hideTip() { tipEl.hidden = true; if (hovSvg) { const l = hovSvg.querySelector("line.hov"); if (l) { l.setAttribute("x1", -10); l.setAttribute("x2", -10); } } hovSvg = null; }
+  document.addEventListener("mousemove", (e) => {
+    const svg = e.target.closest && e.target.closest("svg[data-chart]");
+    if (!svg) { if (hovSvg) hideTip(); return; }
+    const c = CHARTS.get(svg.dataset.chart);
+    if (!c || !c.t.length) return;
+    if (hovSvg && hovSvg !== svg) hideTip();
+    hovSvg = svg;
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const ctm = svg.getScreenCTM(); if (!ctm) return;
+    const x = pt.matrixTransform(ctm.inverse()).x;
+    let lo = 0, hi = c.t.length - 1;                  // the nearest step
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (c.X(c.t[mid]) < x) lo = mid; else hi = mid; }
+    const i = Math.abs(c.X(c.t[lo]) - x) <= Math.abs(c.X(c.t[hi]) - x) ? lo : hi;
+    const l = svg.querySelector("line.hov");
+    if (l) { l.setAttribute("x1", c.X(c.t[i])); l.setAttribute("x2", c.X(c.t[i])); }
+    tipEl.innerHTML = `<b>step ${esc(c.t[i])}</b>` + c.series.map((x) => `<div><span class="sw" style="background:${x.color}"></span>${esc(x.label || "")} <b>${fmt(x.ys[i], 4)}</b></div>`).join("");
+    tipEl.hidden = false;
+    const w = tipEl.offsetWidth, h = tipEl.offsetHeight;
+    tipEl.style.left = `${Math.max(4, Math.min(innerWidth - w - 8, e.clientX + 14)) + scrollX}px`;
+    tipEl.style.top = `${(e.clientY + h + 24 > innerHeight ? e.clientY - h - 10 : e.clientY + 16) + scrollY}px`;
+  });
+  document.addEventListener("scroll", hideTip, { passive: true });
 
   // ---------- intro ----------
   function intro() {
@@ -210,7 +245,7 @@
     box.className = "mview";
     if (opts.open !== false) box.open = true;
     box.innerHTML = `<summary>The model: its diagram, and every stock and flow over time beside the data</summary><div class="mbody"><p class="busy">Loading…</p></div>`;
-    el.appendChild(box);
+    el.insertBefore(box, el.firstChild);                          // at the top of the demo (the user, 2026-10-22)
     let done = false;
     const load = async () => {
       if (done || !box.open) return;
@@ -223,6 +258,15 @@
     box.addEventListener("toggle", load);
     load();
     return box;
+  }
+  // move a block to the top of its demo's panel (the model view sits at the top, the user 2026-10-22); a block moved
+  // earlier with the same key (a re-render's) is removed first
+  function toTop(el, key) {
+    const pnl = el && el.closest("[data-panel]");
+    if (!pnl) return;
+    pnl.querySelectorAll(`[data-top="${key}"]`).forEach((x) => { if (x !== el) x.remove(); });
+    el.dataset.top = key;
+    if (pnl.firstChild !== el) pnl.insertBefore(el, pnl.firstChild);
   }
   function renderModel(body, v) {
     const L = window.SDLadder, D = window.SDDiagram, src = v.source || {};
@@ -279,7 +323,7 @@
     if (WANT === d.tab) show(d.tab);
   }
   const WANT = new URLSearchParams(location.search).get("demo");    // read before show() rewrites the URL: an extra tab opens once its script registers
-  window.SDDemos = { register, modelView, helpers: () => ({ get, esc, fmt, pct, chart, modelView, scenario: SCEN, model: S.model, overview: S.overview }) };
+  window.SDDemos = { register, modelView, toTop, helpers: () => ({ get, esc, fmt, pct, chart, modelView, toTop, scenario: SCEN, model: S.model, overview: S.overview }) };
   async function loadExtra() {
     try {
       const m = await get("/api/demos/manifest");

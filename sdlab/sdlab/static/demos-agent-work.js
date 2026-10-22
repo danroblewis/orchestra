@@ -69,6 +69,7 @@
       const el = q("#aw-view");
       el.innerHTML = "";
       h.modelView(el, { source: "agent-work", strategy: st.strategy });
+      if (h.toTop) h.toTop(el, "aw-view");
     }
 
     function foundUI() {

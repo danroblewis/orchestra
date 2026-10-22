@@ -73,7 +73,9 @@
   .mdiag svg text { font-family: var(--sans); }
   .mdiag .stock rect.box { fill: var(--panel); stroke: var(--fg); stroke-width: 1.5; }
   .mdiag .flow .hit { stroke: transparent; stroke-width: 18; fill: none; }
-  details.mview { margin: 16px 0 0; border-top: 1px solid var(--rule); padding-top: 8px; }
+  .ctip { position: absolute; z-index: 60; background: var(--surface); color: var(--fg); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 8px; font-size: 12px; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,.15); max-width: 320px; }
+  .ctip .sw { display: inline-block; width: 10px; height: 3px; margin-right: 5px; vertical-align: 3px; }
+  details.mview { margin: 0 0 16px; border-bottom: 1px solid var(--rule); padding-bottom: 8px; }
   details.mview > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   .mview .mdiag { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px; margin: 8px 0; }
   .mview .mdiag svg { max-height: 520px; }
@@ -108,5 +110,6 @@
 <script src="/static/diagram.js"></script>
 <script src="/static/ladder-compare.js"></script>
 <script src="/static/demos.js"></script>
+<script src="/static/zoompan.js"></script>
 </body>
 </html>

@@ -113,18 +113,19 @@
             Reopened items a day: ${fmt(tr.reopens_per_day.without)} without the agent, ${fmt(tr.reopens_per_day.with)} with it. ${tr.still_open ? `${tr.still_open} items opened in those weeks were still open 3 days after the end.` : ""}</p>
           <div class="tablewrap"><table><thead><tr><th class="num">hour</th><th>who</th><th>what</th><th class="num">item</th></tr></thead><tbody>
           ${r.log.map((e) => `<tr><td class="num">${fmt(e[0], 6)}</td><td>${esc(e[1])}</td><td${e[2] === "misroutes" ? ` style="color:var(--bad)"` : ""}>${esc(e[2])}</td><td class="num">#${e[3]}</td></tr>`).join("")}</tbody></table></div></details>
-        <h3 style="margin:16px 0 4px">The found model against the counts and the event log</h3>
+        <div id="av-mvsec"><h3 style="margin:0 0 4px">The found model against the counts and the event log</h3>
         <p class="small muted">There is no true SD model here, so the "true" flows are what the event log moves between the sampled states each quarter hour:
           new items (outside → queued), triage starting (queued → in triage), sent to fix (in triage → in fix), resolved at triage (in triage → resolved), fixed (in fix → resolved), reopened (resolved → queued), and from day ${dep} the agent's closes, right or wrong (queued → resolved).
           These add up exactly to the sampled counts. What has no true counterpart: the found model's equations (the truth is events, not rates); its flows between stocks no event links (marked "found only", e.g. a flow straight from the queue to a fix: triage that starts and ends inside one quarter hour); and the agent's takes and hand-offs, which happen inside "queued" (an item the agent reads is counted as waiting).
           Before day ${dep} there is no agent, so a found queued → resolved flow is "found only" there.</p>
         <div class="controls"><label>Period <select id="av-period"><option value="before">days 0-${dep}: before the agent (what discovery saw)</option><option value="after">days ${dep}-${ov.days}: with the agent</option><option value="all">all ${ov.days} days</option></select></label></div>
-        <div id="av-view"></div>`;
+        <div id="av-view"></div></div>`;
       const ps = q("#av-period");
       ps.value = st.period || "before";
       const view = () => { st.period = ps.value; const el = q("#av-view"); el.innerHTML = ""; h.modelView(el, { source: "agent-verify", strategy: r.strategy, variant: r.variant, period: ps.value }); };
       ps.onchange = view;
       view();
+      if (h.toTop) h.toTop(q("#av-mvsec"), "av-mvsec");
     }
     function pad(ys, at, n) { const out = new Array(n).fill(null); (ys || []).forEach((y, i) => { if (at + i < n) out[at + i] = y; }); return out; }
 
