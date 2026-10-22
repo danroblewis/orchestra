@@ -245,6 +245,10 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
         if gain > PRICE * math.log(n) and (best is None or gain > best[0]):
             best = (gain, got[1], {"source": a, "to": b, "cap": y, "occupant": z, "c": float(c), "theta": float(th),
                                    "bic": [round(base[0], 1), round(got[0], 1)]})
+    fam = _family(coarse, flows, plain_mv, X, dy, n, q, floor, bound, declared, measured, unit, caps, resid)
+    if fam is not None and (best is None or fam[0] > best[0]):
+        gain, fl, info = fam
+        return {**result, "flows": fl, "room": {**info, "kept": True}}
     if best is None:
         return {**result, "room": {"bad": bad, "kept": False}}
     gain, fl, info = best
@@ -265,6 +269,211 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
                                   and (_amount(f, X, n) is not None and float(np.max(_amount(f, X, n))) <= 0.0))]
     X.pop(SERIES, None)
     return {**result, "flows": out, "room": {**info, "kept": True}}
+
+
+FAMILY = 4          # (k8s 317) moves that may share one room
+SEEDS = 3           # (k8s 317) the best single pairs a family is grown from
+GROW = 1.05         # (k8s 317) a pair joins the family when the shared room's gain rises by this factor
+FAM_SERIES = "roomf__"
+
+
+def _family(coarse, flows, plain_mv, X, dy, n, q, floor, bound, declared, measured, unit, caps, resid):
+    """(k8s 317, docs/research/fixes/317-structures.md) Moves that start into one shared room: several sources of
+    one unit (pending pods of three services) whose moves into their receivers (ready pods) are limited together
+    by what a capacity leaves after all the receivers hold, each taking its share by its own level,
+
+        A_i -> B_i  at  min(k_i A_i, k_i theta max(0, c Y - (B_1 + ... + B_m)) A_i / max(1, A_1 + ... + A_m)).
+
+    With one move this is the single room above (a share of A / max(1, A) = 1 for A >= 1). 317 shares one node pool
+    among three services, and a single room took one service's pending into another's (catalog_pending ->
+    cart_pending). The pairs come from the single rooms' coarse ranking (each source's best receiver); a family is
+    grown from the best pair while one shared (Y, c, theta) explains the stacked rows better (least squares on a
+    number k_i per move after the rows' free flows are projected off), then c and theta are refined by golden
+    section on the touched rows' BIC with every plain flow refitted (as the single room), and the family is kept
+    when the rows' BIC falls by more than PRICE x log n."""
+    first: dict = {}
+    for sc, a, b, y, z, c in coarse:
+        if (a, b) not in first:
+            first[(a, b)] = (sc, y)
+    pairs = sorted(((sc, a, b, y) for (a, b), (sc, y) in first.items()), key=lambda r: r[0])
+    if len(pairs) < 2:
+        return None
+
+    def rows_of_set(fl, ends):
+        rows = set(ends)
+        for f in fl:
+            if (f.get("from") in rows or f.get("to") in rows) and _free(f, X, bound, declared):
+                rows |= {x for x in (f.get("from"), f.get("to")) if x in measured}
+        return sorted(rows)
+
+    def series(fam, y, c, th):
+        A = [X[a] for a, _ in fam]
+        R = np.maximum(0.0, c * X[y] - sum(X[b] for _, b in fam))
+        tot = np.maximum(1.0, sum(A))
+        return [np.minimum(Ai, th * R * Ai / tot) for Ai in A]
+
+    def coarse_gain(fam, y):
+        others = [f for f in flows if not any(f is plain_mv.get(p) for p in fam)]
+        rows = sorted({x for p in fam for x in p})
+        r = []
+        for s in rows:
+            rs = resid(others, s)
+            if rs is None:
+                return -math.inf, None
+            r.append(rs)
+        r = np.concatenate(r)
+        Q = _set_basis(others, rows, X, n, bound, declared)
+        if Q is not None:
+            r = r - Q @ (Q.T @ r)
+        A_sum = sum(X[a] for a, _ in fam)
+        Zs = sum(X[b] for _, b in fam)
+        Y = X[y]
+        pos = Y > 0
+        if pos.sum() < 10:
+            return -math.inf, None
+        top = (-math.inf, None)
+        for c in np.unique(np.quantile(Zs[pos] / Y[pos], np.linspace(0.5, 1.0, GRID))):
+            R = np.maximum(0.0, c * Y - Zs)
+            share = R / np.maximum(1.0, A_sum)
+            on = share > 0
+            if on.sum() < 10:
+                continue
+            # A_i binds when the sources' total passes theta x the room: theta over quantiles of max(1, total) / room
+            for th in np.unique(np.quantile(1.0 / share[on], _theta_q(int(on.sum())))):
+                ms = series(fam, y, c, th)
+                cols = []
+                for (a, b), m in zip(fam, ms):
+                    v = np.zeros(len(rows) * n)
+                    ia, ib = rows.index(a), rows.index(b)
+                    v[ia * n:(ia + 1) * n] -= m
+                    v[ib * n:(ib + 1) * n] += m
+                    cols.append(v)
+                V = np.column_stack(cols)
+                if Q is not None:
+                    V = V - Q @ (Q.T @ V)
+                kk, *_ = np.linalg.lstsq(V, r, rcond=None)
+                if np.any(kk <= 0):
+                    continue
+                g = float(r @ r) - float((r - V @ kk) @ (r - V @ kk))
+                if g > top[0]:
+                    top = (g, (float(c), float(th)))
+        return top
+
+    # grown greedily for each capacity the best single rooms read: from each of the best few pairs, the pair (of
+    # stocks not yet in it, in its unit) that raises the shared room's gain most, while it rises by GROW
+    best = None
+    for y in list(dict.fromkeys(p[3] for p in pairs[:3])):
+        for _, a0, b0, _y in pairs[:SEEDS]:
+            fam = [(a0, b0)]
+            g0, _ = coarse_gain(fam, y)
+            while len(fam) < FAMILY:
+                used = {x for p in fam for x in p}
+                top = None
+                for _, a, b, _y2 in pairs:
+                    if a in used or b in used or unit.get(a) != unit.get(a0):
+                        continue
+                    g1, _ = coarse_gain(fam + [(a, b)], y)
+                    if top is None or g1 > top[0]:
+                        top = (g1, (a, b))
+                if top is None or not top[0] > g0 * GROW:
+                    break
+                fam, g0 = fam + [top[1]], top[0]
+            if len(fam) < 2:
+                continue
+            g, ct = coarse_gain(fam, y)
+            if ct is not None and (best is None or g > best[0]):
+                best = (g, fam, y, ct)
+    if best is None:
+        return None
+    _, fam, y, (c0, th0) = best
+    others = [f for f in flows if not any(f is plain_mv.get(p) for p in fam)]
+    ends = sorted({x for p in fam for x in p})
+
+    def evaluate(fl):
+        rows = rows_of_set(fl, ends)
+        if any(resid(fl, s) is None for s in rows):
+            return None
+        free = [i for i, f in enumerate(fl) if (f.get("from") in rows or f.get("to") in rows) and _free(f, X, bound, declared)]
+        got = _fit(fl, free, rows, X, dy, n)
+        if got is None:
+            return None
+        sse = {s: float(resid(got[0], s) @ resid(got[0], s)) for s in rows}
+        return _bic(sse, _numbers(got[0], free), n, floor), got[0]
+
+    def moves_for(c, th):
+        ms = series(fam, y, c, th)
+        mv = []
+        for i, ((a, b), m) in enumerate(zip(fam, ms)):
+            X[f"{FAM_SERIES}{i}"] = m
+            mv.append({"id": f"room_{a}_{b}", "from": a, "to": b, "ratio": 1, "rate": {"form": "proportional", "stock": f"{FAM_SERIES}{i}", "k": 0.1}})
+        return mv
+
+    def trial(c, th):
+        got = evaluate(others + moves_for(c, th))
+        return math.inf if got is None else got[0]
+
+    def clear():
+        for i in range(len(fam)):
+            X.pop(f"{FAM_SERIES}{i}", None)
+    try:
+        base = evaluate(flows)
+        if base is None:
+            return None
+        c = _golden(lambda c: _golden(lambda th: trial(c, th), np.linspace(0.6 * th0, 1.6 * th0, 5), 8)[1],
+                    np.linspace(0.8 * c0, 1.2 * c0, 5), 8)[0]
+        th = _golden(lambda th: trial(c, th), np.linspace(0.6 * th0, 1.6 * th0, 5))[0]
+        got = evaluate(others + moves_for(c, th))
+        if got is None:
+            return None
+        gain = base[0] - got[0]
+        if _DEBUG:
+            print("room family", fam, y, "c", round(c, 4), "th", round(th, 4), "gain", round(gain, 1))
+        if not gain > PRICE * math.log(n):
+            return None
+        occ = " + ".join(b for _, b in fam)
+        tot = " + ".join(a for a, _ in fam)
+        out = []
+        for f in got[1]:
+            r = f.get("rate") or {}
+            if r.get("form") == "proportional" and str(r.get("stock", "")).startswith(FAM_SERIES):
+                k = float(r.get("k") or 0.0)
+                if k <= 0:
+                    return None
+                a = f["from"]
+                expr = f"min({k!r} * {a}, max(0, {k * th * c!r} * {y} - {k * th!r} * ({occ})) * {a} / max(1, ({tot})))"
+                rate = {"form": "expr", "expr": expr}
+                f = {**f, "rate": rate, "rates": [rate]}
+            out.append(f)
+        X_ = {k: v for k, v in X.items() if not k.startswith(FAM_SERIES)}
+        out = [f for f in out if not (_free(f, X_, bound, declared) and f.get("rate", {}).get("form") != "expr"
+                                      and (_amount(f, X_, n) is not None and float(np.max(_amount(f, X_, n))) <= 0.0))]
+        return gain, out, {"family": [f"{a} -> {b}" for a, b in fam], "cap": y, "c": float(c), "theta": float(th),
+                           "bic": [round(base[0], 1), round(got[0], 1)]}
+    finally:
+        clear()
+
+
+def _set_basis(flows: list[dict], rows: list[str], X: dict, n: int, bound: dict, declared: bool):
+    """(k8s 317) _free_basis for any set of rows (stacked in the order given)."""
+    from .repair import _linear
+
+    cols = []
+    for f in flows:
+        if not any(s in (f.get("from"), f.get("to")) for s in rows) or not _free(f, X, bound, declared):
+            continue
+        c, ks = _linear(f.get("rate"))
+        names = (["1"] if (c or not ks) else []) + list(ks)
+        for nm in names:
+            col = np.ones(n) if nm == "1" else X[nm]
+            cols.append(np.concatenate([_sign(f, s) * col for s in rows]))
+    if not cols:
+        return None
+    M = np.column_stack(cols)
+    M = M[:, np.abs(M).max(axis=0) > 0]
+    if M.shape[1] == 0:
+        return None
+    U, sv, _ = np.linalg.svd(M / np.abs(M).max(axis=0), full_matrices=False)
+    return U[:, sv > 1e-10 * sv[0]]
 
 
 def _free_basis(flows: list[dict], a: str, b: str, skip, X: dict, n: int, bound: dict, declared: bool):
@@ -297,13 +506,94 @@ _NUM = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 def polish(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dict:
     """The room move's three numbers refitted last, with every other flow of the answer held (the counted kill
     move, the hidden drive and the floors are in by then, so its two rows are explained but for it): least
-    squares on both rows. Kept when the rows' misfit falls."""
+    squares on both rows. Kept when the rows' misfit falls. (k8s 317) A family's numbers likewise (_polish_family)."""
     if not isinstance(result, dict) or not result.get("flows") or (opts or {}).get("eras"):
         return result
     try:
+        if (result.get("room") or {}).get("family"):
+            return _polish_family(result, stocks, run, opts or {})
         return _polish(result, stocks, run, opts or {})
     except Exception as e:                            # noqa: BLE001  (the answer stands as it was)
         return {**result, "room_polish": {"error": f"{type(e).__name__}: {e}"[:300]}}
+
+
+def _polish_family(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:
+    """(k8s 317) A shared room's numbers (each move's k_i, the shared theta and c) refitted by least squares on
+    every row its moves touch, every other flow held; kept when the rows' misfit falls."""
+    import re
+
+    from scipy.optimize import least_squares
+
+    flows = list(result["flows"])
+    pat = re.compile(rf"min\(({_NUM}) \* (\w+), max\(0, ({_NUM}) \* (\w+) - ({_NUM}) \* \(([\w +]+)\)\) \* (\w+) / max\(1, \(([\w +]+)\)\)\)")
+    idx, parts = [], []
+    for i, f in enumerate(flows):
+        m = pat.fullmatch((f.get("rate") or {}).get("expr") or "") if str(f.get("id", "")).startswith("room_") else None
+        if m:
+            idx.append(i)
+            parts.append(m)
+    if len(idx) < 2:
+        return result
+    y = parts[0].group(4)
+    occ, tot = parts[0].group(6), parts[0].group(8)
+    if any(m.group(4) != y or m.group(6) != occ or m.group(8) != tot for m in parts):
+        return result
+    ids = [s["id"] for s in stocks if s["id"] in (run.get("levels") or {})]
+    L = {k: np.asarray(run["levels"][k], dtype=float) for k in ids}
+    T = min(len(v) for v in L.values())
+    n = T - 1
+    X = {k: v[:n] for k, v in L.items()}
+    for k, v in (opts.get("inputs") or {}).items():
+        if k not in X and len(v) >= T:
+            X[k] = np.asarray(v, dtype=float)[1:T]
+    dy = {k: np.diff(v[:T]) for k, v in L.items()}
+    steps.adjust(X, dy, run, opts, n)
+    names_o, names_t = [x.strip() for x in occ.split("+")], [x.strip() for x in tot.split("+")]
+    if any(k not in X for k in names_o + names_t + [y]):
+        return result
+    Zs, As = sum(X[k] for k in names_o), np.maximum(1.0, sum(X[k] for k in names_t))
+    srcs = [flows[i]["from"] for i in idx]
+    rows = sorted({x for i in idx for x in (flows[i].get("from"), flows[i].get("to")) if x in dy})
+    held = {}
+    for s in rows:
+        on = [g for j, g in enumerate(flows) if j not in idx and s in (g.get("from"), g.get("to"))]
+        amts = [_amount(g, X, n) for g in on]
+        if any(a is None for a in amts):
+            return result
+        held[s] = dy[s] - sum((_sign(g, s) * a for g, a in zip(on, amts)), np.zeros(n))
+
+    def amounts(p):
+        th, c = p[-2], p[-1]
+        R = np.maximum(0.0, c * X[y] - Zs)
+        return [np.maximum(0.0, np.minimum(k * X[a], k * th * R * X[a] / As)) for k, a in zip(p[:-2], srcs)]
+
+    def res(p):
+        am = amounts(p)
+        out = []
+        for s in rows:
+            r = held[s].copy()
+            for i, a in zip(idx, am):
+                r -= _sign(flows[i], s) * a
+            out.append(r)
+        return np.concatenate(out)
+    k0 = [float(m.group(1)) for m in parts]
+    th0 = float(parts[0].group(5)) / k0[0]
+    c0 = float(parts[0].group(3)) / (k0[0] * th0)
+    p0 = np.array(k0 + [th0, c0])
+    r0 = res(p0)
+    fit = least_squares(res, p0, method="trf", x_scale="jac", max_nfev=300)
+    if np.any(fit.x <= 0) or not float(fit.fun @ fit.fun) < float(r0 @ r0):
+        return result
+    p = fit.x
+    th, c = float(p[-2]), float(p[-1])
+    out = list(flows)
+    for i, k, a in zip(idx, p[:-2], srcs):
+        k = float(k)
+        expr = f"min({k!r} * {a}, max(0, {k * th * c!r} * {y} - {k * th!r} * ({occ})) * {a} / max(1, ({tot})))"
+        rate = {"form": "expr", "expr": expr}
+        out[i] = {**out[i], "rate": rate, "rates": [rate]}
+    return {**result, "flows": out, "room_polish": {"sse": [round(float(r0 @ r0), 6), round(float(fit.fun @ fit.fun), 6)],
+                                                    "k": [float(v) for v in p[:-2]], "theta": th, "c": c}}
 
 
 def _polish(result: dict, stocks: list[dict], run: dict, opts: dict) -> dict:

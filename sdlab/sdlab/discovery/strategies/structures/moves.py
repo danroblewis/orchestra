@@ -87,6 +87,11 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
     bound = run.get("boundary") or {}
     flows = copy.deepcopy(result["flows"])
     amt = [_amount(f, X, n) for f in flows]
+    tt = np.asarray(run["t"], dtype=float)[:n]
+    if every:
+        # (k8s 317) an outside flow written as a profile (a schedule of pieces, the base's stand-in for terms it
+        # did not find) is one the rows may replace: its amount is its pieces' values, as the engine reads them
+        amt = [_profile(f, tt) if _scheduled(f) else a for f, a in zip(flows, amt)]
 
     def rms(r):
         return float(np.sqrt(np.mean(r * r)))
@@ -126,7 +131,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
     def replaceable(i, S):
         f = flows[i]
         a, b = f.get("from"), f.get("to")
-        if not _plain(f) or amt[i] is None or _fixed_side(f, bound, declared):
+        if not (_plain(f) or (every and _scheduled(f))) or amt[i] is None or _fixed_side(f, bound, declared):
             return False
         return (a is None or a in S) and (b is None or b in S) and (a in S or b in S)
 
@@ -144,6 +149,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
     S = set(bad)
     fits = {}
     memo: dict = {}                  # (k8s 317) a row's best subset depends only on what is held on it
+    wrow: dict = {}                  # (k8s 317) each row's steps kept by the robust fit
     for _ in range(len(ids)):
         mine = [i for i in range(len(flows)) if replaceable(i, S)]
         fits = {}
@@ -153,7 +159,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
             held = sum((_sign(flows[i], s) * amt[i] for i in hold), np.zeros(n))
             y = dy[s] - held
             if (s, hold) not in memo:
-                memo[(s, hold)] = _best_subset(y, cols_for(s), n, floor)
+                memo[(s, hold)] = _robust_subset(y, cols_for(s), n, floor) if every else _best_subset(y, cols_for(s), n, floor)
             bic, names, beta = memo[(s, hold)]
             r = y - (np.column_stack([cols_for(s)[k] for k in names]) @ beta if names else 0.0)
             if (rms_t(r) if every else rms(r)) > tol:
@@ -162,19 +168,23 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
             # columns: 312 none-short wrote 1e-12 x traffic beside the queue's fixed input)
             cs = cols_for(s)
             use = list(names)
+            w = np.ones(n, dtype=bool)
+            if every and TRIM and n > 10 * TRIM:
+                w[np.argsort(np.abs(r))[-TRIM:]] = False      # (k8s 317) the steps the robust subset set aside
             for k in sorted(names, key=lambda k: float(np.max(np.abs(dict(zip(names, beta))[k] * cs[k])))):
                 rest = [c for c in use if c != k]
                 if not rest:
                     break
                 A = np.column_stack([cs[c] for c in rest])
-                bb = np.linalg.lstsq(A, y, rcond=None)[0]
+                bb = np.linalg.lstsq(A[w], y[w], rcond=None)[0]
                 if (rms_t(y - A @ bb) if every else rms(y - A @ bb)) <= tol:
                     use = rest
             if use != list(names):
                 A = np.column_stack([cs[c] for c in use])
-                beta = np.linalg.lstsq(A, y, rcond=None)[0]
+                beta = np.linalg.lstsq(A[w], y[w], rcond=None)[0]
                 names = tuple(use)
             fits[s] = {k: float(b) for k, b in zip(names, beta)}
+            wrow[s] = w
         if _DEBUG:
             print("moves set", sorted(S), "drop", sorted(drop), {k: {c: round(x, 4) for c, x in v.items()} for k, v in fits.items()})
         if not drop:
@@ -196,11 +206,18 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
     mine = [i for i in range(len(flows)) if replaceable(i, S)]
     rows = sorted(S)
     k0 = _numbers(flows, mine)
-    sse0 = {s: float(res0[s] @ res0[s]) for s in rows}
+    wm = None
+    if every:
+        # (k8s 317) both models judged, and the new one fitted, on the steps every row of the set kept
+        wm = np.ones(n, dtype=bool)
+        for s in rows:
+            if s in wrow:
+                wm &= wrow[s]
+    sse0 = {s: float(res0[s][wm] @ res0[s][wm]) if wm is not None else float(res0[s] @ res0[s]) for s in rows}
     keep = [f for i, f in enumerate(flows) if i not in mine]
     cand = keep + new
     free = list(range(len(keep), len(cand)))
-    got = _fit(cand, free, rows, X, dy, n)
+    got = _fit(cand, free, rows, X, dy, n, wm)
     if got is None:
         return {**result, "moves": {"bad": sorted(bad), "set": rows, "kept": False, "why": "the refit failed"}}
     cand, sse1 = got
@@ -210,13 +227,47 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, every: bool 
     bic1 = sum(n * math.log(max(v, floor) / n) for v in sse1.values()) + k1 * math.log(n)
     worst = max(math.sqrt(v / n) for v in sse1.values())
     if every:
-        am1 = [_amount(f, X, n) for f in cand]
+        am1 = [_profile(f, tt) if _scheduled(f) else _amount(f, X, n) for f in cand]
         worst = max((rms_t(r) for r in (row_of(s, cand, am1) for s in rows) if r is not None), default=worst)
     info = {"bad": sorted(bad), "set": rows, "bic": [round(bic0, 1), round(bic1, 1)], "worst_rms": worst,
             "flows": [f"{f.get('from') or 'outside'} -> {f.get('to') or 'outside'}" for f in new]}
     if worst > tol or not bic1 < bic0 - GAIN * math.log(n):
         return {**result, "moves": {**info, "kept": False}}
     return {**result, "flows": cand, "moves": {**info, "kept": True}}
+
+
+def _robust_subset(y: np.ndarray, cols: dict, n: int, floor: float):
+    """(k8s 317) The best subset chosen again with the TRIM steps its first choice misses most left out: one step
+    a rare limit binds on (a node failure's) otherwise picks columns that only spike there (pending pods in the
+    queue's row). The numbers are those of the trimmed fit."""
+    got = _best_subset(y, cols, n, floor)
+    if not TRIM or n <= 10 * TRIM:
+        return got
+    _, names, beta = got
+    r = y - (np.column_stack([cols[k] for k in names]) @ beta if names else 0.0)
+    keep = np.ones(n, dtype=bool)
+    keep[np.argsort(np.abs(r))[-TRIM:]] = False
+    m = int(keep.sum())
+    return _best_subset(y[keep], {k: v[keep] for k, v in cols.items()}, m, floor * m / n)
+
+
+def _scheduled(f: dict) -> bool:
+    """(k8s 317) An outside flow whose amount is a profile of pieces in time (`inflow`), nothing else on it."""
+    return (len(f.get("inflow") or []) > 1 and (f.get("from") is None) != (f.get("to") is None) and not f.get("effects")
+            and not f.get("byTime") and not f.get("via") and not f.get("uses") and float(f.get("ratio") or 1) == 1)
+
+
+def _profile(f: dict, t: np.ndarray) -> np.ndarray:
+    """A profile's amount at each step's time: the first piece that covers it, else the last (simulate._Segments)."""
+    segs = f["inflow"]
+    order = sorted(range(len(segs)), key=lambda i: segs[i]["from"])
+    froms = np.array([segs[i]["from"] for i in order], dtype=float)
+    tos = np.array([segs[i]["to"] for i in order], dtype=float)
+    vals = np.maximum(0.0, np.array([float(segs[i]["value"]) for i in order]))
+    pos = np.searchsorted(froms, t, side="right") - 1
+    ok = (pos >= 0) & (t <= tos[np.clip(pos, 0, None)])
+    last = vals[int(np.argmax(np.array(order) == len(segs) - 1))]
+    return np.where(ok, vals[np.clip(pos, 0, None)], last)
 
 
 def _forced(ids: list[str], finals: set, unit: dict, bound: dict) -> set:
@@ -256,7 +307,10 @@ def _pair(fits: dict, S: set, unit: dict, side_ok) -> tuple[list[dict], bool, se
             for u in sorted({unit.get(s) for s in on}, key=str):
                 grp = {s: v for s, v in on.items() if unit.get(s) == u and u is not None}
                 src = {s: -v for s, v in grp.items() if v < 0}
-                snk = sorted(((v, s) for s, v in grp.items() if v > 0), reverse=True)
+                # (k8s 317) receivers with no outside inflow first: their term can only be a move, while one
+                # with a side may take the rest as a link (317: cart_inflight feeds responses 0.5 and errors 0.03 by
+                # moves and catalog_queue 0.2 by a link; largest first gave catalog_queue the errors' share)
+                snk = sorted(((v, s) for s, v in grp.items() if v > 0), key=lambda vs: (side_ok(vs[1], "in"), -vs[0]))
                 for v, b in snk:
                     while v > SNAP * big and src:
                         a = min(src, key=lambda s: (src[s] < v * (1 - 1e-6), abs(src[s] - v)))
