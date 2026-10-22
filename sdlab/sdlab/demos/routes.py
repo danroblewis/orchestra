@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import importlib
+import pkgutil
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 
 from . import demos as D
 
 router = APIRouter(prefix="/api/demos")
+STATIC = Path(__file__).resolve().parent.parent / "static"
+CORE = {"demos", "engine", "routes", "scenarios", "__init__"}
 
 
 def _call(fn, *a, **k):
@@ -46,3 +52,17 @@ def leverage(name: str, goal: str) -> dict:
 @router.get("/{name}/hidden")
 def hidden(name: str) -> dict:
     return _call(D.hidden, name)
+
+
+@router.get("/manifest")
+def manifest() -> dict:
+    """The page's extra demos: every static/demos-<name>.js, loaded after demos.js (each registers its own tab)."""
+    return {"scripts": sorted(f"/static/{p.name}" for p in STATIC.glob("demos-*.js"))}
+
+
+# every other module in this package with a `router` (one demo each) adds its routes under /api/demos
+for _m in pkgutil.iter_modules([str(Path(__file__).resolve().parent)]):
+    if _m.name not in CORE:
+        _mod = importlib.import_module(f"{__package__}.{_m.name}")
+        if isinstance(getattr(_mod, "router", None), APIRouter):
+            router.include_router(_mod.router)

@@ -41,3 +41,8 @@ def get(name: str) -> dict:
     if name not in SCENARIOS:
         raise KeyError(name)
     return SCENARIOS[name]
+
+
+def add(name: str, scenario: dict) -> None:
+    """A demo module's own scenario (same keys as above; "changes", "goals" and "hidden_hint" may be empty)."""
+    SCENARIOS.setdefault(name, {"changes": {}, "goals": {}, **scenario})

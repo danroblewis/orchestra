@@ -206,6 +206,33 @@
       <ul class="planned">${PLANNED.map(([n, t, d]) => `<li><b>${n}. ${esc(t)}</b>: ${esc(d)}</li>`).join("")}</ul>`;
   }
 
+  // ---------- extra demos: static/demos-<name>.js (listed by /api/demos/manifest) ----------
+  // A demo script calls SDDemos.register({tab, title, ui(panelElement, helpers)}); it gets its own tab before
+  // "More demos", and ui runs the first time the tab opens. helpers: get, esc, fmt, pct, chart, scenario, model.
+  const extra = {};
+  function register(d) {
+    if (!d || !d.tab || extra[d.tab] || panel(d.tab)) return;
+    extra[d.tab] = d;
+    const btn = document.createElement("button");
+    btn.setAttribute("role", "tab"); btn.dataset.tab = d.tab; btn.textContent = d.title; btn.setAttribute("aria-selected", "false");
+    btn.onclick = () => show(d.tab);
+    const planned = document.querySelector('#tabs [data-tab="planned"]');
+    planned.parentNode.insertBefore(btn, planned);
+    const sec = document.createElement("section"); sec.dataset.panel = d.tab; sec.hidden = true;
+    panel("planned").parentNode.insertBefore(sec, panel("planned"));
+    const want = new URLSearchParams(location.search).get("demo");
+    if (want === d.tab) show(d.tab);
+  }
+  window.SDDemos = { register, helpers: () => ({ get, esc, fmt, pct, chart, scenario: SCEN, model: S.model, overview: S.overview }) };
+  async function loadExtra() {
+    try {
+      const m = await get("/api/demos/manifest");
+      for (const src of m.scripts || []) {
+        const el = document.createElement("script"); el.src = src; el.async = false; document.body.appendChild(el);
+      }
+    } catch { /* no extra demos */ }
+  }
+
   // ---------- tabs ----------
   const built = {};
   function show(tab) {
@@ -214,6 +241,7 @@
     try { history.replaceState(null, "", `?demo=${tab}`); } catch { /* fine */ }
     if (built[tab]) return;
     built[tab] = true;
+    if (extra[tab]) { try { extra[tab].ui(panel(tab), window.SDDemos.helpers()); } catch (e) { panel(tab).innerHTML = `<p class="bad">${esc(e.message)}</p>`; } return; }
     ({ residual: residualUI, whatif: whatifUI, hidden: hiddenUI, leverage: leverageUI, planned: plannedUI })[tab]();
   }
   document.querySelectorAll("#tabs [role=tab]").forEach((b) => (b.onclick = () => show(b.dataset.tab)));
@@ -225,5 +253,6 @@
     intro();
     const want = new URLSearchParams(location.search).get("demo");
     show(["residual", "whatif", "hidden", "leverage", "planned"].includes(want) ? want : "residual");
+    loadExtra();
   })();
 })();
