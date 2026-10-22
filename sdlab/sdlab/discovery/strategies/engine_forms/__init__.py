@@ -77,4 +77,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     r = controller.apply(r, stocks, run, opts)   # count stocks driven to a quantized target (k8s-308)
     from . import hidden
 
-    return hidden.apply(r, stocks, run, opts)    # a row reading a hidden integrator, written as a hidden stock (k8s-310); last
+    r = hidden.apply(r, stocks, run, opts)       # a row reading a hidden integrator, written as a hidden stock (k8s-310)
+    from . import delay
+
+    return delay.apply(r, stocks, run, opts)     # a stock fed from outside through a hidden DELAY1 stage (k8s-312); last

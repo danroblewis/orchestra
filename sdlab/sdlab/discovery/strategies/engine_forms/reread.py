@@ -57,6 +57,7 @@ COND = 1e6             # (k-311) a column set more collinear than this (scaled c
                        # its huge numbers would scale the rounding tolerance up until any row is "exact"
 QUIET = 0.5            # a hinge's linear part holds exactly on at least this share of the steps
 SAMPLES = 300          # (k-311) random step sets a linear piece's numbers are solved on (regime)
+SMALL = 5              # (k-312) the fewest steps a last linear piece (fewer than a piece's share) is read from
 
 
 def _posed(A: np.ndarray) -> bool:
@@ -79,6 +80,8 @@ def _quantum(a: np.ndarray) -> float:
 
 
 class _Rows:
+    fine = FINE            # (k-312) the rounding counts where it is below this share of a row's largest change
+
     def __init__(self, data, cols: np.ndarray, names: list[str], q: float):
         self.data, self.Z, self.names, self.q = data, cols, names, q
 
@@ -86,7 +89,7 @@ class _Rows:
         """The rms residual below which y counts as reproduced (k: the numbers its fit reads)."""
         scale = float(np.sqrt(np.mean(y ** 2)))
         t = REL * scale
-        if self.q and self.q <= FINE * float(np.max(np.abs(y))):
+        if self.q and self.q <= self.fine * float(np.max(np.abs(y))):
             t = max(t, ROUND * self.q * (1.0 + (float(np.sum(np.abs(k))) if k is not None else 0.0)))
         return t
 
@@ -125,6 +128,8 @@ class _Rows:
             best = None
             for sub in itertools.combinations(pool, n):
                 A = self.Z[list(sub)].T
+                if not _posed(A):
+                    continue                              # (k-312) collinear columns read nothing here either (COND)
                 use = np.ones(T, bool)
                 for _ in range(12):
                     w, *_ = np.linalg.lstsq(A[use], r[use], rcond=None)
@@ -177,19 +182,19 @@ class _Rows:
         return None if best is None else best[1:]
 
 
-    def regime(self, y: np.ndarray, use: np.ndarray, most: int = BASE_TERMS, share: float = 0.05):
+    def regime(self, y: np.ndarray, use: np.ndarray, most: int = BASE_TERMS, share: float = 0.05, least: int | None = None):
         """The linear piece of y exact on the most steps of `use` (at least `share` of all steps), as
         (indices, numbers, mask of the steps it holds on), or None. Exact data: for each column set, the
         numbers solved exactly on SAMPLES random sets of as many steps (a seeded draw), the one exact on the
         most steps kept and refitted on them (least squares over a mixture of pieces fits none of them)."""
         T = len(y)
-        least = max(5, int(share * T))
+        least = max(5, int(share * T)) if least is None else least
         on = np.flatnonzero(use)
         if len(on) < least:
             return None
         rng = np.random.default_rng(0)
         scale = REL * float(np.sqrt(np.mean(y[on] ** 2)))
-        fine = bool(self.q and self.q <= FINE * float(np.max(np.abs(y[on]))))
+        fine = bool(self.q and self.q <= self.fine * float(np.max(np.abs(y[on]))))
         best = None
         for n in range(1, most + 1):
             picks = np.array([rng.choice(on, n, replace=False) for _ in range(SAMPLES)])
@@ -220,12 +225,14 @@ class _Rows:
                     best = (list(sub), kk, hold)
         return best
 
-    def pieces(self, y: np.ndarray, most: int = 3):
+    def pieces(self, y: np.ndarray, most: int = 3, relaxed: bool = False):
         """y's largest linear pieces, peeled one after another (each on the steps the earlier ones leave),
         every column a piece does not need dropped: [(indices, mask)]."""
         use, out = np.ones(len(y), bool), []
         for _ in range(most):
             got = self.regime(y, use)
+            if got is None and out and relaxed and use.sum() >= SMALL:   # (k-312) a branch that binds on few steps:
+                got = self.regime(y, use, least=max(SMALL, int(0.05 * use.sum())))   # a share of the steps left
             if got is None:
                 break
             sub, _, hold = got
@@ -248,8 +255,16 @@ class _Rows:
         binds; or, with two pieces only, their common columns), the others lin + s u and lin + s v. The
         numbers are fitted on every step at once, each step on the branch it is on, until the branches stop
         changing; the result must be exact on every step. (lin, s, u, v) as {column index: number}, or None."""
+        strict = self.pieces(y)
+        got = self._two_regimes(y, strict)
+        if got is None:                                  # (k-312) again with a later piece read from a share of
+            relaxed = self.pieces(y, relaxed=True)       # the steps left (a branch binding on under 5% of all)
+            if len(relaxed) > len(strict):
+                got = self._two_regimes(y, relaxed)
+        return got
+
+    def _two_regimes(self, y: np.ndarray, regs: list):
         T = len(y)
-        regs = self.pieces(y)
         if len(regs) < 2:
             return None
         roles = []
@@ -258,11 +273,20 @@ class _Rows:
                 roles.append((regs[perm[0]], regs[perm[1]], regs[perm[2]]))
             if perm[-1] != len(regs) - 1 or len(regs) == 2:
                 roles.append((None, regs[perm[0]], regs[perm[1]]))
-        for F, U, V in roles:
+        vanish = lambda P, Q, lc: [c for c in P[0] if c not in lc and not np.any(np.abs(self.Z[c][Q[1]]) > (self.q or 0.0))]  # noqa: E731
+        more = []                                              # (k-312) two pieces: lin is their common columns, and also
+        for F, U, V in roles:                                  # each column one piece reads that is 0 on the other's steps
+            common = [c for c in U[0] if c in V[0]]            # (dropped there as unneeded: it may be lin's)
+            if F is None and vanish(U, V, common) + vanish(V, U, common):
+                more.append((F, U, V, True))
+        for role in roles + more:
+            F, U, V = role[:3]
             if F is not None:
                 lc, uc, vc = list(F[0]), list(U[0]), list(V[0])
             else:
                 lc = [c for c in U[0] if c in V[0]]
+                if len(role) == 4:
+                    lc = lc + vanish(U, V, lc) + vanish(V, U, lc)
                 uc, vc = [c for c in U[0] if c not in lc], [c for c in V[0] if c not in lc]
             if not uc or not vc:
                 continue
@@ -541,6 +565,41 @@ def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, input
         hinges[s] = (sign, {names[i]: float(v) for i, v in zip(idx, w)})
         tols[s] = rows.tol(y[s], np.concatenate([k, w]))
     moves = []
+    if may is not None:                                   # (k-312) two rows of one unit with equal and opposite hinges
+        for a, b in itertools.combinations([s for s in block if s in hinges], 2):   # carry one amount from one to the
+            (sa, wa), (sb, wb) = hinges.get(a, (0, None)), hinges.get(b, (0, None))  # other: a move, read as a pair
+            if wa is None or wb is None or sa != -sb or unit.get(a) != unit.get(b) or set(wa) != set(wb):
+                continue
+            if any(abs(wa[c] - wb[c]) > 1e-3 * max(abs(wa[c]), abs(wb[c])) for c in wa):
+                continue
+            got = _pair(a, b, y, rows, may)
+            if got is None:
+                continue
+            for s in (a, b):
+                hinges.pop(s)
+                lin[s] = {names[i]: float(v) for i, v in got["lin"][s].items()}
+                if s in got["hinges"]:
+                    sign, w = got["hinges"][s]
+                    hinges[s] = (sign, {names[i]: float(v) for i, v in w.items()})
+                tols[s] = rows.tol(y[s], got["numbers"])
+            moves.append(got["move"])
+    if may is not None:                                   # (k-312) a row left and a hinged row of its unit: the hinge
+        for a in [s for s in left if s not in final]:     # may be one side of a MIN move between them
+            for b in [s for s in block if s in hinges and unit.get(s) == unit.get(a)]:
+                if a not in left or b not in hinges:
+                    continue
+                got = _pair(a, b, y, rows, may)
+                if got is None:
+                    continue
+                left.remove(a)
+                hinges.pop(b)
+                for s in (a, b):
+                    lin[s] = {names[i]: float(v) for i, v in got["lin"][s].items()}
+                    if s in got["hinges"]:
+                        sign, w = got["hinges"][s]
+                        hinges[s] = (sign, {names[i]: float(v) for i, v in w.items()})
+                    tols[s] = rows.tol(y[s], got["numbers"])
+                moves.append(got["move"])
     if may is not None:                                   # (k-311) two rows left: a pair joined by a floored-MIN move
         free = [s for s in left if s not in final]
         for a, b in itertools.combinations(free, 2):
