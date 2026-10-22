@@ -262,7 +262,9 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
         same = [x for x in st.ids if x not in st.final and st.units.get(x) and st.units.get(x) == st.units.get(s)]
         extra = sorted(_reads(flows[i])) if i is not None else []
         readers = [None] + list(dict.fromkeys(same + [x for x in extra if x in pos or x in st.inputs]))
-        if len(readers) - 1 > MAX_READS:
+        if len(readers) - 1 > MAX_READS:                 # (k8s-312) too many with the present flow's readers: the gap compares
+            readers = [None] + same                      # like with like, so its own unit's levels alone (the present flow was
+        if len(readers) - 1 > MAX_READS:                 # a program stand-in reading traffic and queue for pending's creations)
             continue
         gaps.append((s, side, readers))
     cands = [c for c in cands if any(g[:2] == c[:2] for g in gaps)]

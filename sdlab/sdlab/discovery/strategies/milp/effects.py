@@ -42,6 +42,7 @@ GRID = 40            # hinges tried: this many quantiles of X (from LOW to HIGH)
 LOW, HIGH = 0.02, 0.995
 MAX_FLOWS = 3        # effect flows added at most per call
 FLOOR = 1e-5         # a row's misfit is at least this share of its typical change (and the levels' rounding)
+QUIET = 2.0          # a row whose misfit is within this many times its rounding noise is explained (_quiet)
 DEBUG = bool(__import__("os").environ.get("MILP_DEBUG"))
 
 
@@ -61,6 +62,43 @@ def _table(x: np.ndarray, hs: list, ss: list, up: bool) -> list:
     f = lambda v: float(sum(s * (max(0.0, v - h) if up else max(0.0, h - v)) for h, s in zip(hs, ss)))  # noqa: E731
     pts = sorted({*map(float, hs), lo - span, hi + span})
     return [[_num(p), _num(f(p))] for p in pts]
+
+
+def _quiet(st: Steps, flows: list[dict], env: dict, amounts: list) -> set:
+    """(k8s-312) The rows whose misfit under the flows as they stand is within QUIET times their rounding noise: each
+    one-step change's own rounding, and the rounding of every level the flows read carried through their slopes (a
+    MIN arm 40 x ready, ready written to 4 decimals, misfits by 40 x that). The levels are written in one format, so a
+    level's rounding is the run's finest resolution (a stock whose levels happen to be whole is not rounded to 1).
+    Such a row offers no misfit for an effect flow to explain (on 312 a slope of 1e-6 on queue's row fitted it)."""
+    if st.counts:
+        return set()
+    res = [r for r in (_resolution(st.L[i]) for i in range(len(st.ids))) if r > 0]
+    if not res:
+        return set()
+    r0 = min(res)
+    pos = {s: i for i, s in enumerate(st.ids)}
+
+    def net(env2, amts=None):
+        out = np.zeros_like(st.dy)
+        for i, f in enumerate(flows):
+            a = amts[i] if amts is not None else (_amount(f, st, env2) if amounts[i] is not None else None)
+            if a is None:
+                continue
+            if f.get("from") in pos:
+                out[pos[f["from"]]] -= a
+            if f.get("to") in pos:
+                out[pos[f["to"]]] += a
+        return out
+
+    base = net(env, amounts)
+    var = np.zeros_like(st.dy)
+    for x in st.ids:
+        e2 = dict(env)
+        e2[x] = np.asarray(env[x], float) + r0 / 2.0
+        var += (net(e2) - base) ** 2 / 3.0                  # uniform rounding: var r0^2 / 12 = (half-step change)^2 / 3
+    e = st.dy - base
+    noise = var.sum(axis=1) + st.T * r0 ** 2 / 6.0
+    return {i for i in range(len(st.ids)) if float(e[i] @ e[i]) <= QUIET * noise[i]}
 
 
 class _Rows:
@@ -210,6 +248,7 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                 if e in st.ids:
                     read.setdefault(e, set()).update(x.get("stock") for x in f.get("effects") or [])
         best, tops = None, []
+        quiet = _quiet(st, flows, env, amounts)
         for cand in cands:
             src, dst, reader, counter = cand
             if (src, dst) in have or (counter and (None, counter) in have):
@@ -246,7 +285,8 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                         e1 = r0 - s * cp
                         b = rw.bic(e1, B.shape[1] + 2)
                         rss1 = np.sum(e1.reshape(len(rw.rows), n) ** 2, axis=1)
-                        share = float(np.max(1.0 - rss1 / np.maximum(rss0, 1e-300)))
+                        loud = [j for j, r in enumerate(rw.rows) if r not in quiet]
+                        share = float(np.max(1.0 - rss1[loud] / np.maximum(rss0[loud], 1e-300))) if loud else 0.0
                         if DEBUG:
                             tops.append((round(base - b, 1), round(share, 3), cand, x, up, round(float(h), 3)))
                         if share >= SHARE and (best is None or base - b > best[0]):

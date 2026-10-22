@@ -56,6 +56,16 @@ def _num(v: float) -> float:
     return float(f"{v:.6g}")
 
 
+def _numbers(f: dict) -> int:
+    """The numbers in a flow's rate (an expression's numeric literals; a linear rate's terms)."""
+    r = f.get("rate") or {}
+    if r.get("form") == "expr":
+        import re
+        return max(1, len(re.findall(r"(?<![A-Za-z_])\d+\.?\d*(?:e[-+]?\d+)?", str(r.get("expr")))))
+    d = _plain(f)
+    return len(d) if d else 1
+
+
 def amount(S: np.ndarray, D: np.ndarray, Y: np.ndarray, a: float, b: float) -> np.ndarray:
     return np.minimum(a * S, np.maximum(0.0, b * Y - D))
 
@@ -74,6 +84,9 @@ class _Rows:
         free, dropped = [], []
         self.free_at = []                                    # the index in flows of each free flow
         self.drop = [i for i, f in enumerate(flows) if (f.get("from"), f.get("to")) == (src, dst)]
+        self.drop_plain = []                                 # the plain ones among them (refitted as columns)
+        held = np.zeros((2, n))                              # (k8s-312) replaced moves that are not plain (the program's MIN on
+        held_numbers = 0                                     # the pair): in the answer's side at their amounts, charged their numbers
         for i, f in enumerate(flows):
             e = [x for x in (f.get("from"), f.get("to")) if x in pos]
             if not {pos[x] for x in e} & set(rows):
@@ -81,8 +94,14 @@ class _Rows:
             d = _plain(f)
             if i in self.drop:
                 if d is None:
-                    return                                   # the answer's move is not a plain rate: leave it
+                    if amounts[i] is None or f.get("room_fit") or f.get("effects"):
+                        return                               # not a rate this comparison can run: leave it
+                    held[0] -= amounts[i]
+                    held[1] += amounts[i]
+                    held_numbers += _numbers(f)
+                    continue
                 dropped.append((src, dst, d))
+                self.drop_plain.append(i)
                 continue
             if d is not None and all(pos[x] in rows for x in e):
                 if extend and None in (f.get("from"), f.get("to")):     # an outside side reads, in this comparison, its own unit's levels too
@@ -115,15 +134,19 @@ class _Rows:
         self.free, self.dropped, self.rows = free, dropped, rows
         self.fixed = np.zeros_like(st.dy)                    # the held flows' net amounts on every stock (for _floored)
         self.fixed[rows] = st.dy[rows] - target
+        self.held = np.zeros_like(st.dy)                     # the replaced non-plain moves' net amounts (the answer's side only)
+        self.held[rows] = held
+        self.held_numbers = held_numbers
         B = columns(free)
         D = columns(dropped)
         self.y = (target * w[:, None]).ravel()
         self.Q = np.linalg.qr(np.column_stack(B))[0] if B else np.zeros((2 * n, 0))
         QD = np.linalg.qr(np.column_stack(B + D))[0] if B + D else np.zeros((2 * n, 0))
         self.r0 = self.y - self.Q @ (self.Q.T @ self.y)
-        eD = self.y - QD @ (QD.T @ self.y)
+        yD = ((target - held) * w[:, None]).ravel()
+        eD = yD - QD @ (QD.T @ yD)
         self.p0 = len(B)
-        self.base = self.bic(eD, len(B) + len(D), n, floor[rows])
+        self.base = self.bic(eD, len(B) + len(D) + held_numbers, n, floor[rows])
         self.rss0 = np.sum(eD.reshape(2, n) ** 2, axis=1)
         self.w, self.n, self.floor = w, n, floor[rows]
         self.ok = True
@@ -202,15 +225,39 @@ def _floored(st: Steps, rw: _Rows, S, D, Y, a: float, b: float, scale, floor):
     flows (the replaced S -> D move in) against the room-limited move, (a, b) polished jointly with the free
     flows. A gap between like quantities that the least squares above cannot floor leaves most of a row's
     misfit to both, which hides how much of the rest the room explains. (gain, share, a, b)."""
-    fit = _Fit(st, rw.rows, rw.fixed, scale, floor)
+    fit = _Fit(st, rw.rows, rw.fixed + rw.held, scale, floor)
     base_free = [(x, y, list(d)) for x, y, d in rw.free + rw.dropped]
     lo = _lower(st, base_free)
     th0 = fit.fit(base_free, np.maximum(_start(rw.free + rw.dropped), lo + 1e-12 * np.isfinite(lo)))
     e0 = fit.resid(base_free, th0).reshape(2, st.T)
     rss0 = np.maximum(np.sum(e0 * e0, axis=1), st.T * floor[rw.rows] ** 2)
-    b0 = float(np.sum(st.T * np.log(rss0 / st.T)) + len(th0) * np.log(2 * st.T))
+    b0 = float(np.sum(st.T * np.log(rss0 / st.T)) + (len(th0) + rw.held_numbers) * np.log(2 * st.T))
     b1, a, b, _, rss1 = _joint(st, rw, rw.free, S, D, Y, a, b, scale, floor)
-    return b0 - b1, float(np.max(1.0 - rss1 / rss0)), a, b
+    return b0 - b1, float(np.max(1.0 - rss1 / rss0)), a, b, b0
+
+
+def _with_counted(st: Steps, flows: list[dict], src: str, dst: str) -> list[dict] | None:
+    """(k8s-312) flows with each counter's effect inflow (effects.py: into a final counter C, reading R of C's unit) placed
+    as the move it counts between the pair's two stocks (R one of them, the other its receiver), as counted() places it;
+    None when there is none to place. The kills a counted move carries off ready onto pending stay in both rows'
+    misfit while the counter's inflow alone carries them, and keep the room's share below SHARE."""
+    out, placed = [dict(f) for f in flows], False
+    for k, f0 in enumerate(flows):
+        fit = f0.get("effect_fit") or {}
+        c, R = f0.get("to"), fit.get("reader")
+        if f0.get("from") is not None or c not in st.final or fit.get("counter") or f0.get("counts"):
+            continue
+        if R not in (src, dst) or st.units.get(R) != st.units.get(c):
+            continue
+        X = dst if R == src else src
+        if st.units.get(X) != st.units.get(R) or any((g.get("from"), g.get("to")) == (R, X) and g.get("effects") for g in flows):
+            continue
+        mid = f"milp:effect:{R}->{X}"
+        out[k] = {kk: v for kk, v in f0.items() if kk != "effect_fit"} | {"counts": mid}
+        out.append({"from": R, "to": X, "ratio": 1, "id": mid, "rate": dict(f0["rate"]), "effects": [dict(e) for e in f0["effects"]],
+                    "effect_fit": {**fit, "counter": c}})
+        placed = True
+    return out if placed else None
 
 
 def _polish(st: Steps, flows: list[dict], env: dict, scale, floor) -> tuple[list[dict], list]:
@@ -229,7 +276,7 @@ def _polish(st: Steps, flows: list[dict], env: dict, scale, floor) -> tuple[list
             continue
         S, D, Y = st.series(src), st.series(dst), st.series(y)
         free = rw.free + rw.dropped
-        at = rw.free_at + rw.drop
+        at = rw.free_at + rw.drop_plain
         cur = np.concatenate([[d[r] for r in d] for _, _, d in free]) if free else np.zeros(0)
         fitc = _Fit(st, rw.rows, rw.fixed, scale, floor)
         sgn = np.zeros((len(st.ids), 1))
@@ -302,6 +349,12 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                 rss1 = np.sum(e1.reshape(2, rw.n) ** 2, axis=1)
                 tops.append((gain, float(np.max(1.0 - rss1 / np.maximum(rw.rss0, 1e-300))), src, dst, y, a, b))
         tops.sort(key=lambda z: -z[0])
+        seen, uniq = set(), []                                 # (k8s-312) the best ceiling of each pair: one pair's many ceilings
+        for z in tops:                                         # must not fill the CHECK list
+            if (z[2], z[3]) not in seen:
+                seen.add((z[2], z[3]))
+                uniq.append(z)
+        tops = uniq
         if DEBUG:
             for z in tops[:6]:
                 print("  room cand", [round(v, 4) if isinstance(v, float) else v for v in z])
@@ -310,23 +363,33 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
                 break
             rw = _Rows(st, flows, amounts, src, dst, scale, floor)
             S, D, Y = st.series(src), st.series(dst), st.series(y)
+            base = flows
             if share < SHARE:                                  # the floored comparison (the gaps the least squares bent)
-                gain, share, a, b = _floored(st, rw, S, D, Y, a, b, scale, floor)
+                gain, share, a, b, b0 = _floored(st, rw, S, D, Y, a, b, scale, floor)
                 if DEBUG:
                     print("  room floored", src, dst, y, round(gain, 1), round(share, 3), round(a, 4), round(b, 4))
+                alt = _with_counted(st, flows, src, dst) if share < SHARE else None
+                if alt is not None:                            # (k8s-312) judged with a counter's kills placed as their move
+                    rw2 = _Rows(st, alt, [_amount(f, st, env) for f in alt], src, dst, scale, floor)
+                    if rw2.ok:
+                        g2, s2, a2, b2, b02 = _floored(st, rw2, S, D, Y, a, b, scale, floor)
+                        if DEBUG:
+                            print("  room with counted move", src, dst, y, round(g2, 1), round(s2, 3), round(a2, 4), round(b2, 4), "move alone", round(b0 - b02, 1))
+                        if b02 <= b0 and s2 >= SHARE:
+                            gain, share, a, b, rw, base = g2 + (b0 - b02), s2, a2, b2, rw2, alt
             amt = amount(S, D, Y, a, b)
             moves = amt > 1e-9 * (np.abs(amt).max() + 1e-300)
             room = np.maximum(0.0, b * Y - D) < a * S
             if int(np.sum(moves & room)) < EVENTS or int(np.sum(moves & ~room)) < EVENTS:
                 continue
             if share >= SHARE and gain > MARGIN and (best is None or gain > best[0]):
-                best = (gain, src, dst, y, a, b, rw.drop)
+                best = (gain, src, dst, y, a, b, rw.drop, base)
         if best is None:
             break
-        gain, src, dst, y, a, b, drop = best
+        gain, src, dst, y, a, b, drop, base = best
         new = {"from": src, "to": dst, "ratio": 1, "id": f"milp:room:{src}->{dst}", "rate": {"form": "expr", "expr": _expr(src, dst, y, a, b)},
                "room_fit": {"ceiling": y, "a": a, "b": b}}
-        flows = [f for i, f in enumerate(flows) if i not in drop] + [new]
+        flows = [f for i, f in enumerate(base) if i not in drop] + [new]
         notes.append({"flow": f"{src}->{dst}", "ceiling": y, "a": _num(a), "b": _num(b), "gain": round(gain, 1), "replaced": len(drop)})
         if DEBUG:
             print("room", notes[-1])
