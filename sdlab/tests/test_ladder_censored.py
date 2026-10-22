@@ -146,3 +146,37 @@ def test_an_exact_integral_among_counted_stocks():
     # pieces (earned.py, docs/research/k8s-302.md) it finds 1 x r itself and the rewrite has nothing to do
     into_i = [f for f in r["flows"] if f.get("to") == "I"]
     assert len(into_i) == 1 and into_i[0]["rate"]["terms"] == [{"stock": "r", "k": 1.0}]
+
+
+# the kubernetes climb's post-stages (censored/post/, copied from structures at dd9d8d1; docs/research/fixes/port-censored.md)
+
+def _k8s(case_id, variant="none-short"):
+    from sdlab.ladder import runner
+
+    c = casemod.load(case_id)
+    model = casemod.truth_model(c, variant)
+    d = {**data.load(c, variant), **casemod.announced(c)}
+    r = runner.discover("censored", model, d)
+    return r, score.equations(c, casemod.variant(c, variant)["noise"], model, r["flows"], d)
+
+
+def test_hpa_controller_is_written_as_its_rule():
+    """308: ready's outside sides are the HPA's discrete rule (controller.py), not linear drifts."""
+    r, s = _k8s("308-k8s-hpa")
+    assert s["status"] == "pass", s["parts"]
+    assert any("ceil(cpu" in str((f.get("rate") or {}).get("expr")) for f in r["flows"] if f.get("to") == "ready")
+
+
+def test_pod_floors_and_no_false_min():
+    """309: the source-row guard refuses MIN(desired, ready) (capmin.py), and the floored gaps are fitted (floor.py)."""
+    r, s = _k8s("309-k8s-pod-startup")
+    assert s["status"] == "pass", s["parts"]
+    assert not any("capmin__desired" in str(f.get("rate")) for f in r["flows"])
+
+
+def test_inflow_pieces_are_not_rebuilt_as_their_rate():
+    """An inflow in pieces carries a placeholder rate: the post-stages leave its row alone (024 stays a pass)."""
+    from sdlab.discovery.strategies.censored.post.hidden import _amount
+
+    f = {"from": None, "to": "A", "rate": {"form": "constant", "value": 20.0}, "inflow": [{"from": 0, "to": 5, "value": 10.0}, {"from": 5, "to": 9, "value": 40.0}]}
+    assert _amount(f, {"A": np.ones(9)}, 9) is None

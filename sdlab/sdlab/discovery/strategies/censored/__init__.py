@@ -411,8 +411,14 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     levels carry measurement error, the numbers are refitted and the structure revised on the output error
     and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
     record against the measured levels)."""
-    from . import oefit
+    from . import oefit, post
 
     o, cap = _capmin.offer(stocks, run, opts)
-    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
-    return _capmin.restore(r, cap)
+    r = _identify_linear(stocks, run, o, *args, **kw)
+    # (2026-10-22, docs/research/fixes/port-censored.md) the kubernetes climb's post-stages, copied from structures
+    # at dd9d8d1 (post/): rows rebuilt and paired into moves, outside rates refitted under the floor
+    r = post.before_refit(r, stocks, run, opts, o)
+    r = post.timed(oefit.refit, r, stocks, run, o, cap, share=post.OEFIT_SHARE)
+    r = _capmin.restore(r, cap)
+    # then the controller, room, repair, counted move, hidden stock, delay stage and the declared sides
+    return post.after_restore(r, stocks, run, opts)
