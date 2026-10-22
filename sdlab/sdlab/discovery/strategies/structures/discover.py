@@ -9,7 +9,7 @@ import time
 import numpy as np
 
 from ._vendored.combined import judge as J
-from . import boundary
+from . import boundary, capmin
 from .fit import OutOfTime, Problem, conventions, fit, search, variance
 from . import rowwise
 from .gaps import gap_stage
@@ -108,6 +108,18 @@ def required(run: dict, ids: list[str]) -> set:
     return {(ids.index(s), side) for s, e in b.sides.items() if s in ids for side, kinds in e.items() if kinds}
 
 
+def _limited(opts: dict, names: list[str], S: int) -> list[Term]:
+    """(k8s 316, docs/research/fixes/316-structures.md) The move each offered capacity series limits (capmin.py:
+    its source and receiver named by the offer from the data), reading the series: a move the library's own
+    moves (read off the source, between stocks of one unit) cannot say. The receiver may be of another unit:
+    the offer found it gaining what the source loses (316: queries waiting take connections from the pool)."""
+    out = []
+    for name, (src, to) in capmin.offered(opts).items():
+        if to is not None and src in names[:S] and to in names[:S] and name in names[S:]:
+            out.append(Term("move", src=names.index(src), dst=names.index(to), x=(names.index(name),)))
+    return out
+
+
 def _keep(p: Problem, terms: list[Term]) -> list[Term]:
     ok = getattr(p, "term_ok", None)
     return terms if ok is None else [t for t in terms if ok(t)]
@@ -127,10 +139,10 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
     p = Problem(rows, np.nan_to_num(data.dy), data.counts, data.q, deadline=began + seconds)
     p.term_ok = term_filter(run, list(data.ids))
     p.required = required(run, list(data.ids))
-    lib = _keep(p, library(S, m, unit, final, group, products=products))
+    lib = _keep(p, library(S, m, unit, final, group, products=products)) + _limited(opts, names, S)
     if products and S * T * len(lib) > CELLS:
         products = False                                 # (too large to screen: plain terms only)
-        lib = _keep(p, library(S, m, unit, final, group, products=False))
+        lib = _keep(p, library(S, m, unit, final, group, products=False)) + _limited(opts, names, S)
     if S * T * len(lib) > CELLS:
         return None
     trace: dict = {}
@@ -144,6 +156,7 @@ def discover(stocks: list[dict], run: dict, opts: dict, seconds: float = 60.0, c
             if shut:
                 first = [t for t in first if t.kind == "move"]
             first = _keep(p, first)
+            first = first + [t for t in _limited(opts, names, S) if t not in first]   # (k8s 316) the limited move seeded
             p.check()
             g = search(p, lib, first)
             if base is None or g.bic < base.bic:

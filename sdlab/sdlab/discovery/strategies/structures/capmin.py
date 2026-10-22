@@ -34,6 +34,7 @@ MIN_STEPS = 5          # ... and on at least this many (k8s 312, docs/research/f
                        # steps; at 5% the grid stopped at theta 61 for 66.7 and the base lost the dispatch move)
 GRID = 24              # theta candidates (quantiles of X / Y)
 NAME = "capmin__"      # the offered series' name prefix
+TOP_POOL = 3           # (k8s 316) fixed-pool pairs (X, Z) refined after the coarse screen
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
 
 
@@ -206,13 +207,14 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
                 best = {"source": x, "cap": name, "theta": th, "gain": gain, "kink": kink, "share": share}
                 if to:
                     best["to"] = ids[to[1]]
+    pool = _pool(ids, final, dy, read, B, Q, floor, price, T)
+    if pool is not None and (best is None or pool["kink"] > best["kink"] + math.log(T)):
+        best = pool
     if best is None:
         return opts, None
-    X = read[ids.index(best["source"])]
-    Y = read[ids.index(best["cap"])] if best["cap"] in ids else inputs[best["cap"]]
-    m = np.minimum(X, best["theta"] * Y)
-    name = f"{NAME}{best['source']}__{best['cap']}"
-    series = np.concatenate([[min(X[0], best["theta"] * Y[0])], m])     # input i is read by step i - 1
+    m = _series(best, read, ids, inputs)
+    name = f"{NAME}{best['source']}__{best.get('cap') or 'pool'}"
+    series = np.concatenate([[m[0]], m])     # input i is read by step i - 1 (m[0]: the first level's own)
     inp = dict(opts.get("inputs") or {})
     inp[name] = [float(v) for v in series]
     opts["inputs"] = inp
@@ -221,9 +223,124 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     return opts, best
 
 
+def _series(cap: dict, read: np.ndarray, ids: list[str], inputs: dict) -> np.ndarray:
+    """The offered series MIN(X, theta Y), or MIN(X, max(0, a - b Z)) for a fixed pool (_pool)."""
+    X = read[ids.index(cap["source"])]
+    if cap.get("cap") is None:
+        return np.minimum(X, np.maximum(0.0, cap["a"] - cap["b"] * read[ids.index(cap["occupant"])]))
+    Y = read[ids.index(cap["cap"])] if cap["cap"] in ids else inputs[cap["cap"]]
+    return np.minimum(X, cap["theta"] * Y)
+
+
+class _Proj:
+    """Fast residual sums of squares of a row on [B, m] for many m: B's QR once."""
+
+    def __init__(self, B: np.ndarray, y: np.ndarray, floor: float):
+        q, r = np.linalg.qr(B)
+        keep = np.abs(np.diag(r)) > 1e-10 * max(1.0, float(np.abs(np.diag(r)).max()))
+        self.q = q[:, keep]
+        self.r = y - self.q @ (self.q.T @ y)
+        self.rss0 = float(self.r @ self.r)
+        self.floor = floor
+
+    def rss(self, m: np.ndarray) -> float:
+        u = m - self.q @ (self.q.T @ m)
+        uu = float(u @ u)
+        if uu <= 1e-12 * max(1.0, float(m @ m)):
+            return self.rss0
+        g = float(self.r @ u)
+        return max(self.rss0 - g * g / uu, 0.0)
+
+
+def _pool(ids, final, dy, read, B, Q, floor, price, T) -> dict | None:
+    """(k8s 316, docs/research/fixes/316-structures.md) A fixed pool: the flow out of X limited by the room a
+    fixed capacity leaves after what already holds it, MIN(X, max(0, a - b Z)) (a connection pool of a fixed
+    size, Z the connections in use: no measured stock is the capacity, so MIN(X, theta Y) cannot say it). For
+    each non-final X and each other non-final measured Z: b on a log grid around the two stocks' spreads, a over
+    quantiles of X + b Z (where the two arms cross), both refined by golden section on X's row; the receiver and
+    the guards as offer()'s (each regime on MIN_SHARE and MIN_STEPS steps, gain and kink above the price)."""
+    # a coarse screen of every (X, Z) on X's row (a few b, a by golden section), then the TOP_POOL best refined
+    screen = []
+    projs = {}
+    for xi, x in enumerate(ids):
+        X = read[xi]
+        if x in final or np.ptp(X) <= 0:
+            continue
+        px = _Proj(B, dy[xi], floor[xi])
+        if px.rss0 <= floor[xi]:
+            continue                                       # X's row is already linear to the data's resolution
+        projs[xi] = px
+        for zi, z in enumerate(ids):
+            Z = read[zi]
+            if zi == xi or z in final or np.ptp(Z) <= 0:
+                continue
+            scale = float(np.std(X)) / max(float(np.std(Z)), 1e-12)
+            got = math.inf
+            for b in scale * np.geomspace(0.02, 50.0, 8):
+                S = X + b * Z
+                grid = np.unique(np.quantile(S, np.linspace(0.05, 0.95, 12)))
+                got = min(got, _golden(lambda a: px.rss(np.minimum(X, np.maximum(0.0, a - b * Z))), grid)[1])
+            screen.append((math.log((got + px.floor) / (px.rss0 + px.floor)), xi, zi))
+    screen.sort()
+    best = None
+    for _, xi, zi in screen[:TOP_POOL]:
+        x, X, Z, px = ids[xi], read[xi], read[zi], projs[xi]
+        z = ids[zi]
+        scale = float(np.std(X)) / max(float(np.std(Z)), 1e-12)
+
+        def at_b(b, f):
+            S = X + b * Z
+            lo = max(MIN_SHARE, MIN_STEPS / len(S))
+            grid = np.unique(np.quantile(S, np.linspace(lo, 1 - lo, GRID)))
+            return _golden(lambda a: f(np.minimum(X, np.maximum(0.0, a - b * Z))), grid)
+
+        f1 = px.rss
+        lbs = np.log(scale) + np.linspace(math.log(0.02), math.log(50.0), 12)
+        lb, _ = _golden(lambda lb: at_b(math.exp(lb), f1)[1], lbs)
+        b = math.exp(lb)
+        a, _ = at_b(b, f1)
+        m = np.minimum(X, np.maximum(0.0, a - b * Z))
+        gx, cx = _gain(B, m, dy[xi], floor[xi])
+        if cx >= 0 or gx <= price:
+            continue
+        to = None
+        for r in range(len(ids)):
+            if r != xi:
+                gz, cz = _gain(B, m, dy[r], floor[r])
+                if cz > 0 and gz > price and (to is None or gz > to[0]):
+                    to = (gz, r)
+        rows = [xi] + ([to[1]] if to else [])
+        both = [px] + [_Proj(B, dy[r], floor[r]) for r in rows[1:]]
+
+        def f2(m):
+            return sum(math.log(p.rss(m) + p.floor) for p in both)
+        for _ in range(2):                                 # a and b refined on both rows, in turn
+            lb, _ = _golden(lambda lb: at_b(math.exp(lb), f2)[1], np.linspace(lb - 0.7, lb + 0.7, 7))
+            b = math.exp(lb)
+            a, _ = at_b(b, f2)
+        m = np.minimum(X, np.maximum(0.0, a - b * Z))
+        held = int(np.sum(m >= X))
+        share = held / len(X)
+        if not (MIN_SHARE <= share <= 1 - MIN_SHARE) or min(held, T - held) < MIN_STEPS or a <= 0:
+            continue
+        gain = sum(_gain(B, m, dy[r], floor[r])[0] for r in rows)
+        kink = sum(_gain(Q, m, dy[r], floor[r])[0] for r in rows)
+        if gain > price and kink > price and (best is None or kink > best["kink"]):
+            best = {"source": x, "cap": None, "occupant": z, "a": float(a), "b": float(b), "theta": float(b),
+                    "c": float(a / b), "gain": gain, "kink": kink, "share": share}
+            if to:
+                best["to"] = ids[to[1]]
+    return best
+
+
 def _min_text(k: float, cap: dict) -> str:
     """k x a limit written out: MIN(k X, k theta Y); with a room (room.py, k8s 311) MIN(k X, max(0, k theta c Y - k theta Z))."""
     x, y, th = cap["source"], cap["cap"], cap["theta"]
+    if y is None:                                          # a fixed pool (_pool): MIN(k X, max(0, k a - k b Z))
+        z, a, b = cap["occupant"], cap["a"], cap["b"]
+        if k >= 0:
+            return f"min({k!r} * {x}, max(0, {k * a!r} - {k * b!r} * {z}))"
+        return f"{k!r} * min({x}, max(0, {a!r} - {b!r} * {z}))"
     if cap.get("room"):
         z, c = cap["occupant"], cap["c"]
         if k >= 0:
@@ -272,7 +389,7 @@ def restore(result: dict, cap: dict | None) -> dict:
         rates = [g.get("rate") or {} for g in f.get("byTime") or []] + [f.get("rate") or {}]
         if any(r.get("form") == "expr" for r in rates):
             f.setdefault("id", f"capmin{n}")             # an expression flow is named (the engine's compiler wants one)
-    out["capmin"] = {k: cap[k] for k in ("source", "cap", "to", "theta", "gain", "kink", "share") if k in cap}
+    out["capmin"] = {k: cap[k] for k in ("source", "cap", "occupant", "a", "b", "to", "theta", "gain", "kink", "share") if k in cap}
     return out
 
 

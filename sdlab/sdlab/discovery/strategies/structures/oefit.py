@@ -713,6 +713,8 @@ def _parse(flows: list[dict], ids: list[str], names: list[str], cap: dict | None
             return None
         lin, mins = [], list(pre) if form == "expr" else []
         for name, k in terms:
+            if cap and name == cap.get("name") and cap.get("cap") is None:
+                return None                              # a fixed pool's limit (capmin._pool): a form this refit does not run
             if cap and name == cap.get("name"):
                 mins.append((var[cap["source"]], var[cap["cap"]], float(cap["theta"]), k))
             elif name in var and not str(name).startswith(CAP):
