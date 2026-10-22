@@ -62,3 +62,26 @@ def test_rows_leave_a_fitted_answer_alone():
              {"from": "b", "to": None, "ratio": 1, "rate": {"form": "proportional", "stock": "b", "k": 0.2}}]
     r = rows.revise({"flows": flows}, stocks, run, {})
     assert "rows" not in r and r["flows"] == flows
+
+
+def test_a_fixed_drain_leaves_the_floored_inflow_free_to_read_its_own_stock():
+    """(309 regression from 065afa3) where pending's first row reads pending plain and max(0, desired - ready) floored,
+    the refit with its drain fixed at what the move takes must let the floored term read pending itself, or the gap
+    desired - pending - ready is lost (without the fix: 0.895 desired - 0.897 ready)."""
+    T, move = 300, 0.6
+    D = np.clip(np.round(8 + 5 * np.sin(2 * np.pi * np.arange(T + 1) / 90)), 3, 16).astype(float)
+    P, R = [0.0], [6.0]
+    for k in range(T):
+        c, m, d = max(0.0, D[k] - P[-1] - R[-1]), move * P[-1], max(0.0, R[-1] - D[k])
+        P.append(round(P[-1] + c - m, 6))
+        R.append(round(R[-1] + m - d, 6))
+    stocks = [{"id": "desired", "unit": "pods"}, {"id": "pending", "unit": "pods"}, {"id": "ready", "unit": "pods"}]
+    run = {"t": list(range(T + 1)), "levels": {"desired": list(D), "pending": P, "ready": R},
+           "boundary": {"desired": {"in": ["estimate"], "out": ["estimate"]}, "pending": {"in": ["estimate"], "out": []},
+                        "ready": {"in": [], "out": ["estimate"]}}, "boundary_declared": True}
+    proxy = [{"from": None, "to": "pending", "ratio": 1, "rate": {"form": "constant", "value": 0.3}},
+             {"from": "pending", "to": "ready", "ratio": 1, "rate": {"form": "proportional", "stock": "pending", "k": 0.5}},
+             {"from": "ready", "to": None, "ratio": 1, "rate": {"form": "constant", "value": 0.1}}]
+    got = {(f["from"], f["to"]): f["rate"] for f in rows.revise({"flows": proxy}, stocks, run, {})["flows"]}
+    inflow = {t["stock"]: t["k"] for t in got[(None, "pending")]["terms"]}
+    assert all(abs(inflow.get(s, 0.0) - k) < 1e-3 for s, k in {"desired": 1, "pending": -1, "ready": -1}.items())

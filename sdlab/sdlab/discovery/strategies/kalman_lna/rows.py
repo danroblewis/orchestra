@@ -327,7 +327,9 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         out = {"bic": lin[0], "sse": lin[3], "lin": dict(zip([names[j] for j in lin[1]], map(float, lin[2]))),
                "hinge": None, "res": yy - (X[:, list(lin[1])] @ lin[2] if len(lin[1]) else 0.0)}
         if lin[3] > floor[S] and S not in final:
-            b_cols = [j for j in cols if not str(names[j]).startswith("__")]   # a floored term reads levels only
+            # a floored term reads levels only, S's own among them even where its always-on term is fixed (309: the
+            # gap desired - pending - ready once pending's drain is fixed at what its move takes; cols lacks it then)
+            b_cols = [j for j, n in enumerate(names) if not str(n).startswith("__")]
             for side in sorted(_sides(S, declared, bd)):
                 sign = 1.0 if side == "in" else -1.0
                 h = _floored(X, yy, sign, floor[S], deadline, cols, b_cols)
