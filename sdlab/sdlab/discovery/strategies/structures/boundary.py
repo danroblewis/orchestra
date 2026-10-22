@@ -892,7 +892,8 @@ def enforce_sides(flows: list[dict], stocks: list[dict], b: Boundary, data: Data
     if not b.declared or not (b.fixed or b.limit):
         return flows
     inputs = set(data.inputs)
-    names = [n for n in data.inputs if n not in data.ids]
+    # (k8s 316) an offered capacity series (capmin.py) is a function of the levels, never a declared input
+    names = [n for n in data.inputs if n not in data.ids and not str(n).startswith("capmin__")]
     flows = copy.deepcopy(flows)
     touched: set = set()
     fixed: list[dict] = []
