@@ -254,6 +254,7 @@ nearly every survivor.
 | precision-snap | engine_forms ec6265e | a joined term's remainder below the row's tolerance is no flow (a 2e-4 leftover had refused the whole block) |
 | prune-budget | milp 8ff75a7, 573c5a5 | refit.prune stops after counted work sum(T x stocks x numbers^2) >= 1.5e10, which keeps the run deterministic |
 | one-per-side | milp 573c5a5 | on a declared side holding a MIN beside its plain flow, BIC keeps one |
+| batched-subsets | kalman_lna 6fd4778 (312 round 2) | `subsets.py`: every subset of a size fitted at once (scaled Gram stack), scored on its own residuals, the best 3 refitted by least squares, so the choice is unchanged (found models byte-identical on 312); discovery 30-50% faster (312 none-long 527 -> 369 s); docs/research/fixes/312-kalman_lna-r2.md |
 | pipeline-order | combined2 2a1db63 | floored refit right after each switch pass, before oefit, so oefit no longer fires; 309 none-long > 300 s -> 252 s |
 
 - **Cells fixed:** 1 counted to pipeline-order (combined2 309 none-long). The rest prevent errors and timeouts.
