@@ -58,6 +58,7 @@ COND = 1e6             # (k-311) a column set more collinear than this (scaled c
 QUIET = 0.5            # a hinge's linear part holds exactly on at least this share of the steps
 SAMPLES = 300          # (k-311) random step sets a linear piece's numbers are solved on (regime)
 SMALL = 5              # (k-312) the fewest steps a last linear piece (fewer than a piece's share) is read from
+EACH = 2.0             # (k8s-316) on finely rounded data, a branch fit's every step is within EACH x its ROUND x rounding
 
 
 def _posed(A: np.ndarray) -> bool:
@@ -279,15 +280,18 @@ class _Rows:
             common = [c for c in U[0] if c in V[0]]            # (dropped there as unneeded: it may be lin's)
             if F is None and vanish(U, V, common) + vanish(V, U, common):
                 more.append((F, U, V, True))
-        for role in roles + more:
-            F, U, V = role[:3]
+        keep = [(F, U, V, False, c) for F, U, V in roles if F is None for c in U[0] if c in V[0]]
+        for role in roles + more + keep:                       # (k8s-316) keep: a column both pieces read is lin's and
+            F, U, V = role[:3]                                 # also stays in V's branch (a cap 80 - 0.2 x the receiver)
             if F is not None:
                 lc, uc, vc = list(F[0]), list(U[0]), list(V[0])
             else:
                 lc = [c for c in U[0] if c in V[0]]
-                if len(role) == 4:
+                if len(role) == 4 and role[3]:
                     lc = lc + vanish(U, V, lc) + vanish(V, U, lc)
                 uc, vc = [c for c in U[0] if c not in lc], [c for c in V[0] if c not in lc]
+                if len(role) == 5:
+                    vc = vc + [role[4]]
             if not uc or not vc:
                 continue
             act = np.full(T, -1)
@@ -333,12 +337,23 @@ class _Rows:
             L0, Uv, Vv = self.Z[lc].T @ kl, self.Z[uc].T @ ku, self.Z[vc].T @ kv
             m = np.minimum(Uv, Vv)
             b = np.where(m <= 0, 0 if floor else -1, np.where(Uv <= Vv, 1, 2))
-            if float(np.sqrt(np.mean((L0 + s * np.maximum(0.0, m) - y) ** 2))) <= self.tol(y, k):
+            res = L0 + s * np.maximum(0.0, m) - y
+            if float(np.sqrt(np.mean(res ** 2))) <= self.tol(y, k) and self._each(y, res, k, lc + uc + vc):
                 return (kl, ku, kv), b
             if np.array_equal(b, a):
                 return None
             a = b
         return None
+
+    def _each(self, y: np.ndarray, res: np.ndarray, k: np.ndarray, cols: list) -> bool:
+        """(k8s-316) On finely rounded data, is every step's residual within its rounding? The rms check alone lets
+        a branch drop a column that matters on a few steps only (the pool's cap 80 - 0.2 x active, where active
+        sits at 80 on every capped step but the first of each spell: one step in 300 off by 0.018, rms 0.001).
+        A step's rounding is the change's and each rounded column's (the constant is not rounded) times its number."""
+        if not (self.q and self.q <= self.fine * float(np.max(np.abs(y)))):
+            return True
+        w = sum(abs(float(x)) for c, x in zip(cols, k) if self.names[c] != "1")
+        return float(np.max(np.abs(res))) <= EACH * ROUND * self.q * (1.0 + w)
 
     def hinges(self, y: np.ndarray):
         """y = linear + max(0, h_in) - max(0, h_out), one or both hinges present: (linear part, [(sign,
@@ -431,7 +446,9 @@ def _pair(a: str, b: str, y: dict, rows: "_Rows", may) -> dict | None:
             if float(np.sqrt(np.mean((ev(lin_o) - s * m - r[other]) ** 2))) > rows.tol(r[other], np.array(list(lin_o.values()) or [0.0])):
                 continue
             tu, tv = _lin_expr(u, names), _lin_expr(v, names)
-            if np.all(U >= -rows.tol(U)):
+            if np.all(U >= -rows.tol(U)) and np.all(V >= -rows.tol(V)):
+                expr = f"min({tu}, {tv})"                  # (k8s-316) a floor that never binds is not written (the engine floors the rate)
+            elif np.all(U >= -rows.tol(U)):
                 expr = f"min({tu}, max(0, {tv}))"          # the argument that never goes below 0 needs no floor
             elif np.all(V >= -rows.tol(V)):
                 expr = f"min(max(0, {tu}), {tv})"
@@ -676,6 +693,43 @@ def _block(block: list[str], y: dict, rows: _Rows, unit: dict, final: set, input
     return flows + moves, left, tols
 
 
+def _bridges(bad: list[str], unit: dict, final: set, b) -> list[tuple[str, str]]:
+    """(k8s-316) Pairs (x, z) of unexplained rows of different units that the declared boundary joins: x has no
+    outside outflow declared and z no outside inflow, so what leaves x (its row loses it) can only go into a
+    measured stock, and what enters z can only come from one. A move joins stocks of one unit; this is the one
+    place it may cross units, where the declared boundary leaves no other way (pgbouncer's waiting clients
+    getting pool connections: queries -> connections). Counters are never sources."""
+    out = []
+    for x in bad:
+        for z in bad:
+            if x == z or x in final or unit.get(x) == unit.get(z):
+                continue
+            if b.limit.get((x, "out")) or b.limit.get((z, "in")):
+                continue
+            out.append((x, z))
+    return out
+
+
+def _per_side(flows: list[dict], b) -> list[dict]:
+    """(k8s-316) One flow per declared side: an outside flow of plain linear terms on a stock whose side the
+    boundary declares n > 1 times (estimate) is split into n flows when it has exactly n terms and no constant,
+    one term each (the two services' queries into one wait queue). Anything else is left as it is."""
+    out = []
+    for f in flows:
+        r = f.get("rate") or {}
+        side = ("in", f.get("to")) if f.get("from") is None else ("out", f.get("from")) if f.get("to") is None else None
+        n = b.limit.get((side[1], side[0])) if side else None
+        terms = r.get("terms") or []
+        if not n or n < 2 or r.get("form") != "linear" or float(r.get("c") or 0.0) or len(terms) != n or f.get("effects"):
+            out.append(f)
+            continue
+        for t in terms:
+            g = {k: v for k, v in f.items() if k not in ("rate", "input", "id")}
+            g["rate"] = {"form": "proportional", "stock": t["stock"], "k": float(t["k"])}
+            out.append(g)
+    return out
+
+
 def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: list | None = None) -> dict:
     """The result with each unit's flows read again from its rows where the answer leaves a row of
     exact data unexplained (see the module docstring)."""
@@ -733,34 +787,54 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None, log: l
     b = _boundary.Boundary(run)
     flows = copy.deepcopy(result["flows"])
     trace = []
-    for u in sorted({unit[s] for s in bad}):
-        block = [s for s in ids if unit[s] == u]
+
+    def read(block: list[str], unit_of: dict, label: str, ok: dict) -> None:
+        nonlocal flows
         inside = set(block)
         touches = lambda f: bool({f.get("from"), f.get("to")} & inside)  # noqa: E731
         kept = [f for f in flows if not touches(f)]
         y = {s: data.dy[ids.index(s)] for s in block}
-        got = _block(block, y, rows, unit, final, inputs, set(b.fixed), counted,
+        got = _block(block, y, rows, unit_of, final, inputs, set(b.fixed), counted,
                      may=(lambda s_, side: b.may(s_, side, "estimate")) if exact_any else None)
         if got is None:
-            continue
+            return
         new, left, tols = got
         moved = lambda s_: any(s_ in (f.get("from"), f.get("to")) and f.get("from") is not None  # noqa: E731
                                and f.get("to") is not None for f in flows)
         if any(ok[s] and moved(s) for s in left) or not any(s not in left for s in block if not ok[s]):
-            continue
+            return
         own = [f for f in flows if touches(f) and ((f.get("from") in left and f.get("to") is None)
                                                   or (f.get("to") in left and f.get("from") is None))]
+        new = _per_side(new, b)
         cand = kept + new + own
         if _boundary.violations(new, ids, b, inputs | {n for n in (opts.get("inputs") or {})}):
-            continue
+            return
         try:
             r2 = data.dy - _change(cand, data, dict(ins))
         except Exception:                                 # noqa: BLE001
-            continue
+            return
         if any(float(np.sqrt(np.mean(r2[ids.index(s)] ** 2))) > 2 * tols[s] for s in block if s not in left):
-            continue                                      # the written flows (floored by the engine) must reproduce the rows
+            return                                        # the written flows (floored by the engine) must reproduce the rows
         flows = cand
-        trace.append(f"{u}: {len(new)} flows re-read from {len(block) - len(left)} exact rows; kept {left}")
+        trace.append(f"{label}: {len(new)} flows re-read from {len(block) - len(left)} exact rows; kept {left}")
+
+    for u in sorted({unit[s] for s in bad}):
+        read([s for s in ids if unit[s] == u], unit, u, ok)
+    if b.declared:                                        # (k8s-316) a move the declared boundary forces across units
+        try:
+            r3 = data.dy - _change(flows, data, dict(ins))
+        except Exception:                                 # noqa: BLE001
+            r3 = None
+        if r3 is not None:
+            ok3 = {s: float(np.sqrt(np.mean(r3[i] ** 2))) <= 2 * rows.tol(data.dy[i]) or ok[s] for i, s in enumerate(ids)}
+            for x, z in _bridges([s for s in ids if not ok3[s]], unit, final, b):
+                if not ok3[x] and not ok3[z]:
+                    read([x, z], {**unit, z: unit[x]}, f"{unit[x]} -> {unit[z]}", ok3)
+                    try:
+                        r3 = data.dy - _change(flows, data, dict(ins))
+                        ok3 = {s: float(np.sqrt(np.mean(r3[i] ** 2))) <= 2 * rows.tol(data.dy[i]) or ok3[s] for i, s in enumerate(ids)}
+                    except Exception:                     # noqa: BLE001
+                        break
     if not trace:
         return result
     out = dict(result)

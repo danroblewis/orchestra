@@ -161,3 +161,44 @@ def test_collinear_columns_read_nothing():
     Z = np.vstack([a, 0.06 * a + 1e-9 * np.sin(a), np.ones(50)])
     assert not reread._posed(Z[:2].T)
     assert reread._posed(Z[[0, 2]].T)
+
+
+def _pool_run(n=300):
+    """(k8s-316) A connection pool: two services' queries wait (waiting, unit queries) and get connections at
+    min(0.8 waiting, 80 - 0.2 active) (active, unit connections), released at 0.8 active; the cap binds in the
+    peaks, where active sits at 80, so its slope in active shows only on the first step of each capped spell."""
+    t = np.arange(n)
+    a_in = np.round(300 + 250 * np.sin(2 * math.pi * t / 120), 4)
+    b_in = np.round(250 + 200 * np.sin(2 * math.pi * (t + 30) / 120), 4)
+    W, A = [10.0], [60.0]
+    for i in range(n - 1):
+        got = min(0.8 * W[i], 80 - 0.2 * A[i])
+        W.append(W[i] + 0.06 * a_in[i] + 0.1 * b_in[i] - got)
+        A.append(A[i] + got - 0.8 * A[i])
+    levels = {"svc_a": list(a_in), "svc_b": list(b_in), "waiting": list(np.round(W, 4)), "active": list(np.round(A, 4))}
+    return {"t": [float(x) for x in t], "levels": levels, "boundary_declared": True,
+            "boundary": {"svc_a": {"in": ["estimate"], "out": ["estimate"]}, "svc_b": {"in": ["estimate"], "out": ["estimate"]},
+                         "waiting": {"in": ["estimate", "estimate"]}, "active": {"out": ["estimate"]}}}
+
+
+def test_a_pool_the_boundary_joins_across_units_is_a_min_move():
+    stocks = [{"id": "svc_a", "unit": "requests"}, {"id": "svc_b", "unit": "requests"},
+              {"id": "waiting", "unit": "queries"}, {"id": "active", "unit": "connections"}]
+    run = _pool_run()
+    W, A = np.array(run["levels"]["waiting"]), np.array(run["levels"]["active"])
+    assert 0.2 < np.mean(0.8 * W > 80 - 0.2 * A) < 0.6                 # the cap binds on a good share of the steps
+    wrong = [{"from": None, "to": "waiting", "rate": {"form": "proportional", "stock": "svc_b", "k": 0.2}},
+             {"from": "active", "to": None, "rate": {"form": "proportional", "stock": "active", "k": 0.1}}]
+    r = reread.apply({"flows": wrong}, stocks, run, {})
+    assert r.get("reread"), r
+    got = {}
+    for f in r["flows"]:
+        got.setdefault((f["from"], f["to"]), []).append(f)
+    move = got[("waiting", "active")][0]["rate"]
+    assert move["form"] == "expr" and "max" not in move["expr"]       # the cap's floor never binds: not written
+    for w, a in [(10.0, 60.0), (120.0, 80.0), (90.0, 70.0), (50.0, 30.0)]:
+        val = eval(move["expr"], {"__builtins__": {}}, {"min": min, "max": max, "waiting": w, "active": a})
+        assert abs(val - min(0.8 * w, 80 - 0.2 * a)) < 1e-3
+    ins = sorted((_terms(f) for f in got[(None, "waiting")]), key=lambda d: sorted(d))
+    assert len(ins) == 2 and abs(ins[0]["svc_a"] - 0.06) < 1e-4 and abs(ins[1]["svc_b"] - 0.1) < 1e-4   # one flow a declared side
+    assert abs(_terms(got[("active", None)][0])["active"] - 0.8) < 1e-4
