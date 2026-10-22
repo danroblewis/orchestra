@@ -74,4 +74,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     from . import controller, reread
 
     r = reread.apply(_capmin.restore(r, cap), stocks, run, opts)         # exact rows read again where the answer misses them (k8s-309)
-    return controller.apply(r, stocks, run, opts)   # count stocks driven to a quantized target (k8s-308)
+    r = controller.apply(r, stocks, run, opts)   # count stocks driven to a quantized target (k8s-308)
+    from . import hidden
+
+    return hidden.apply(r, stocks, run, opts)    # a row reading a hidden integrator, written as a hidden stock (k8s-310); last
