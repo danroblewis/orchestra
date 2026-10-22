@@ -20,8 +20,9 @@ level the data reached (H: the highest level an inflow reached, L: the lowest an
 a is written as the number with fewest significant digits inside its interval.
 
 The stock's fitted outside flows are replaced only when both its sides are explained (a side with no
-movement is explained by no flow) and the stock has no move with another stock; a declared boundary
-(run["boundary"]) must have the side the form uses.
+movement is explained by no flow); a declared boundary (run["boundary"]) must have the side the form uses.
+Since 2026-10-22 (k8s 310) its moves with other stocks go too: the form reproduces the stock's whole change
+alone, so a move on it is spurious.
 """
 
 from __future__ import annotations
@@ -31,6 +32,9 @@ import math
 import numpy as np
 
 TOL = 1e-9
+
+
+MOVE_EVIDENCE = 10   # steps of change a stock with moves needs before its controller form replaces them
 
 
 def _whole(v: np.ndarray) -> bool:
@@ -200,8 +204,13 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> dic
             continue
         s = L[:-1]
         mine = [f for f in flows if sid in (f.get("from"), f.get("to"))]
-        if any(f.get("from") and f.get("to") for f in mine):
-            continue                                        # a move with another stock: not a controller alone
+        # (k8s 310, 2026-10-22) a move with another stock no longer rules the stock out: the form must reproduce
+        # the stock's whole change on every step by itself, so where it does the moves are spurious (310
+        # none-long: `desired -> ready` and `ready -> desired` beside the HPA) and go with its fitted flows;
+        # the other stock's row is left to the repair after (repair.py). That takes MOVE_EVIDENCE steps of
+        # change at least: on a few steps some form always fits
+        if any(f.get("from") and f.get("to") for f in mine) and int(np.sum(d != 0)) < MOVE_EVIDENCE:
+            continue
         drivers = {k: v[:-1] for k, v in {**levels, **inputs}.items() if k != sid and len(v) == len(L)}
         up, dn = np.maximum(d, 0), np.maximum(-d, 0)
         sides = {}

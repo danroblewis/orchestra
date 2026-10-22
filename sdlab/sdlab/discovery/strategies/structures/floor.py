@@ -44,9 +44,15 @@ PLAIN = ("constant", "proportional", "linear")
 _DEBUG = bool(os.environ.get("SDLAB_FLOOR_DEBUG"))
 
 
+def _profile(f: dict) -> bool:
+    """An inflow written as a profile of more than one piece (k8s 310: a one-piece profile is a constant,
+    and its side may still be refitted under the floor)."""
+    return len(f.get("inflow") or []) > 1
+
+
 def _plain(f: dict) -> bool:
     r = f.get("rate") or {}
-    return (r.get("form") in PLAIN and not f.get("byTime") and not f.get("inflow") and not f.get("effects")
+    return (r.get("form") in PLAIN and not f.get("byTime") and not _profile(f) and not f.get("effects")
             and not f.get("uses") and not f.get("via") and float(f.get("ratio") or 1) == 1)
 
 
@@ -263,6 +269,7 @@ def _refit(flows: list[dict], data: J.Data, mat: dict, offered: set, held=lambda
     new = {}
     for f, c in free:
         g = copy.deepcopy(f)
+        g.pop("inflow", None)
         for key, _ in c:
             _set(g["rate"], key, th[k])
             k += 1
@@ -328,7 +335,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                     continue                              # no such side, or one fixed to a measured series
                 if not declared and not here:
                     continue
-                if any((f.get("rate") or {}).get("form") == "expr" or f.get("inflow") or (_reads(f) & offered) for f in here):
+                if any((f.get("rate") or {}).get("form") == "expr" or _profile(f) or (_reads(f) & offered) for f in here):
                     continue                              # an expression (a limit written back), a profile, an offered series: kept
                 moves = [f for f in cur if f.get("from") in measured and f.get("to") in measured and s in (f["from"], f["to"])
                          and _plain(f) and not (_reads(f) & offered)]
@@ -364,6 +371,7 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
                     upd = {}
                     for (f, c), th in zip(free_f, nums):
                         g = copy.deepcopy(f)
+                        g.pop("inflow", None)
                         for (key, _), v in zip(c, th):
                             _set(g["rate"], key, v)
                         if g.get("rates"):

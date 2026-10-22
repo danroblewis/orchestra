@@ -171,7 +171,36 @@ _identify_controller = identify
 
 
 def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
-    from . import counted
+    from . import counted, repair
 
     r = _identify_controller(stocks, run, opts, *args, **kw)
+    # (k8s 310, 2026-10-22) the rows repaired first (repair.py): a counted move is placed by the rows it
+    # repairs, and 310 none-long had lost `pending -> ready`, so the OOM move could not be placed
+    r = repair.apply(r, stocks, run, opts)
+    if "repair" in r:
+        r = {**{k: v for k, v in r.items() if k != "repair"}, "repair_before_counted": r["repair"]}
     return counted.apply(r, stocks, run, opts)
+
+
+# A row that reads a hidden integrator and per-unit columns (hidden.py, docs/research/fixes/310-structures.md,
+# 2026-10-22): an inflow side the answer leaves far from exact refitted with X / max(1, Y) columns and a hidden
+# stock filled at 1 a step and drained at a constant rate or by a table effect the answer already carries.
+_identify_counted = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    from . import hidden
+
+    return hidden.apply(_identify_counted(stocks, run, opts, *args, **kw), stocks, run, opts)
+
+
+# Rows left unexplained repaired with the plain moves and outflows they lack (repair.py,
+# docs/research/fixes/310-structures.md, 2026-10-22): the plain flows on rows far from exact refitted jointly
+# (active set under the floor) and same-unit moves / declared outflows added one at a time on the rows' BIC.
+_identify_hidden = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    from . import repair
+
+    return repair.apply(_identify_hidden(stocks, run, opts, *args, **kw), stocks, run, opts)
