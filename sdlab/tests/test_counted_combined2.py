@@ -63,3 +63,11 @@ def test_a_smeared_move_into_a_counter_is_replaced():
     flows = flows[:2] + [{"from": "wait", "to": "falls", "rate": {"form": "proportional", "stock": "wait", "k": 0.03}}]
     out = counted.apply({"flows": flows}, stocks, run, {})
     assert out["counted"][0]["base"] == "up" and not any(f["from"] == "wait" and f["to"] == "falls" for f in out["flows"])
+
+
+def test_a_move_the_rows_need_is_added_back():
+    stocks, run, flows, _ = _setup()
+    flows = flows[1:]                                                   # the model lost wait -> up
+    out = counted.apply({"flows": flows}, stocks, run, {})
+    back = [f for f in out["flows"] if f["from"] == "wait" and f["to"] == "up"]
+    assert out["counted"][0]["move"] == "wait" and len(back) == 1 and abs(back[0]["rate"]["k"] - 0.5) < 1e-3

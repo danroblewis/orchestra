@@ -130,12 +130,16 @@ def _refit_moves(flows: list[dict], rows: set, levels: dict, cols: dict, n: int)
     idx = [i for i, f in enumerate(flows) if free(f)]
     if not idx:
         return flows
-    held = [f for i, f in enumerate(flows) if i not in idx]
+    held = [f for i, f in enumerate(flows) if i not in idx or not ((["1"] if hinge._linear(f["rate"])[0] else []) + list(hinge._linear(f["rate"])[1]))]
     order = sorted(rows)
     params = []
     for i in idx:
         c, ks = hinge._linear(flows[i]["rate"])
-        params.append((i, (["1"] if c else []) + list(ks)))
+        names = (["1"] if c else []) + list(ks)
+        if names:
+            params.append((i, names))
+    if not params:
+        return flows
     ys = []
     for x in order:
         got = hinge.row_error(x, held, levels, cols, n)
@@ -184,8 +188,52 @@ def _refit_moves(flows: list[dict], rows: set, levels: dict, cols: dict, n: int)
     return out
 
 
-def _repair(flows: list[dict], rows: set, levels: dict, cols: dict, n: int, run: dict) -> tuple[list[dict], float, int] | None:
-    """The rows' moves and outside sides refitted with every counted flow held: (flows, rows' SSE, numbers)."""
+def _bic_rows(sse: float, k: int, n: int, m: int, floor: float) -> float:
+    return n * m * math.log(max(sse, floor) / (n * m)) + k * math.log(n * m)
+
+
+def _repair(flows: list[dict], rows: set, levels: dict, cols: dict, n: int, run: dict, floor: float = 0.0,
+            unit: dict | None = None) -> tuple[list[dict], float, int] | None:
+    """The rows' flows refitted with every counted flow held, then (unit given) the proportional moves
+    between the rows that the model lacks added one at a time where they lower the rows' BIC by more than
+    GAIN log n (a model fitted without the counted flow may have dropped one its rows need):
+    (flows, rows' SSE, numbers)."""
+    got = _repair_once(flows, rows, levels, cols, n, run)
+    if got is None or unit is None:
+        return got
+    for _ in range(len(rows)):
+        have = {(f.get("from"), f.get("to")) for f in got[0]}
+        best = None
+        for a in sorted(rows):
+            for b in sorted(rows):
+                if a == b or (a, b) in have or unit.get(a) != unit.get(b):
+                    continue
+                trial = got[0] + [{"id": f"move_{a}_{b}", "from": a, "to": b, "ratio": 1,
+                                   "rate": {"form": "proportional", "stock": a, "k": 0.0}}]
+                t = _quick(trial, rows, levels, cols, n)           # screened by the joint refit alone (cheap)
+                if t is not None and (best is None or t[0] < best[0]):
+                    best = (t[0], trial)
+        if best is not None:
+            best = _repair_once(best[1], rows, levels, cols, n, run)
+        if best is None or not (_bic_rows(best[1], best[2], n, len(rows), floor)
+                                < _bic_rows(got[1], got[2], n, len(rows), floor) - GAIN * math.log(n)):
+            break
+        got = best
+    return got
+
+
+def _quick(flows: list[dict], rows: set, levels: dict, cols: dict, n: int) -> tuple[float, list[dict]] | None:
+    cur = _refit_moves(flows, rows, levels, cols, n)
+    sse = 0.0
+    for x in rows:
+        v = _row_sse(x, cur, levels, cols, n)
+        if v is None:
+            return None
+        sse += v
+    return sse, cur
+
+
+def _repair_once(flows: list[dict], rows: set, levels: dict, cols: dict, n: int, run: dict) -> tuple[list[dict], float, int] | None:
     cur = flows
     for _ in range(ROUNDS):
         cur = _refit_moves(cur, rows, levels, cols, n)
@@ -257,11 +305,11 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None,
             scored = []
             for name, b, fl in trials:
                 rows = {a} | set(peers)                   # the same rows for every placement: comparable
-                got = _repair(fl, rows, levels, cols, n, run)
+                got = _repair(fl, rows, levels, cols, n, run, floor, unit)
                 if got is None:
                     continue
                 cur, sse, k = got
-                scored.append((n * len(rows) * math.log(max(sse, floor) / (n * len(rows))) + k * math.log(n * len(rows)), name, cur, sse))
+                scored.append((_bic_rows(sse, k, n, len(rows), floor), name, cur, sse))
             if scored:
                 scored.sort(key=lambda s: s[0])
                 none = next((s for s in scored if s[1] == "none"), None)
