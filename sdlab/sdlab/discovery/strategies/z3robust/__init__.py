@@ -25,7 +25,8 @@ import time
 import numpy as np
 
 from . import capmin as _capmin
-from . import core, flows, robust
+from . import core, flows, post, robust
+from .post import quantized
 
 TOTAL = 90.0                  # seconds for everything (the ladder's item timeout is 120 s; Z3 is not interruptible)
 SOLVE = 25.0                  # seconds of Z3 per class at most
@@ -85,7 +86,7 @@ def refit(p: core.Problem, sup: list[int], sigma: np.ndarray, fixed: dict[int, f
     return k, float(np.abs(res).max()) if res.size else 0.0, dropped
 
 
-def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None, skip=frozenset()) -> dict:
     opts = dict(opts or {})
     began = time.perf_counter()
     declared = bool(run.get("boundary_declared"))
@@ -97,7 +98,7 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
         if left < 5:
             tried.append(f"[{moves}, {rule}] not tried (out of time)")
             break
-        p = core.prepare(stocks, run, opts, moves=moves, boundary=rule, pooled=True)
+        p = core.prepare(stocks, run, opts, moves=moves, boundary=rule, pooled=True, skip=skip)
         if p.steps < MIN_STEPS:
             return {"flows": [], "note": "z3robust: too few steps."}
         if best is not None and [t.key(p.cols) for t in p.terms] == best["keys"]:
@@ -140,6 +141,12 @@ def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
             "k_min": got.get("k_min"), "warm": got.get("warm")}}
 
 
-def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:
-    """_identify with a capacity limit MIN(a X, b Y) offered where the data show one (capmin.py)."""
-    return _capmin.wrap(_identify, stocks, run, opts, *args, **kw)
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """(port-z3robust, 2026-10-22) Whole-unit controllers first (post/quantized.py, fix ledger type 2): their
+    stocks' rows are left out of the Z3 problem. Then _identify with a capacity limit MIN(a X, b Y) offered
+    where the data show one (capmin.py; never from or into a controlled stock), and the passes after the
+    linear search (post/__init__.py: milp's, copied)."""
+    known, notes = quantized.find(stocks, run, opts)
+    skip = frozenset(known)
+    result = _capmin.wrap(_identify, stocks, run, opts, skip=skip)
+    return post.after(result, stocks, run, opts, known, notes)

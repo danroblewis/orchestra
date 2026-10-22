@@ -51,3 +51,26 @@ def test_noise_scale_is_at_least_the_rounding():
     sigma = robust.noise_scales(p, B)
     assert np.all(sigma >= np.array([float(e) for e in p.eps]) - 1e-15)
     assert B.n <= len(p.cols) and B.Y.shape == (2, B.n)
+
+
+def test_counters_are_not_readers_and_skipped_rows_are_out():
+    """(port-z3robust) a final stock's level is no term's reader; a skipped stock has no row and no term, but
+    stays a column the other rows may read."""
+    stocks, run = _chain()
+    stocks = stocks + [{"id": "C", "name": "C", "final": True}]
+    run = {**run, "levels": {**run["levels"], "C": [float(i) for i in range(len(run["t"]))]}}
+    p = core.prepare(stocks, run, {}, pooled=True)
+    assert not any(p.cols[t.col].name == "C" for t in p.terms)
+    q = core.prepare(stocks, run, {}, pooled=True, skip=frozenset({"B"}))
+    assert q.ids == ["A", "C"] and any(c.name == "B" for c in q.cols)
+    assert not any(t.a == "B" or t.b == "B" for t in q.terms)
+
+
+def test_negligible_move_is_dropped():
+    from sdlab.discovery.strategies.z3robust.post import negligible
+    stocks, run = _chain()
+    flows = [{"from": "A", "to": "B", "rate": {"form": "proportional", "stock": "A", "k": 0.1}},
+             {"from": "B", "to": "A", "rate": {"form": "proportional", "stock": "B", "k": 1e-7}},
+             {"from": "B", "to": None, "rate": {"form": "proportional", "stock": "B", "k": 0.0}}]
+    kept, note = negligible.refine(flows, stocks, run, {})
+    assert [(f["from"], f["to"]) for f in kept] == [("A", "B"), ("B", None)] and note == {"dropped": ["B->A"]}

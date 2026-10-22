@@ -108,7 +108,7 @@ MOVE_CLASSES = ("ends", "any")
 
 
 def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str = "ends", boundary: str = "kinds",
-            pooled: bool = False) -> Problem:
+            pooled: bool = False, skip=frozenset()) -> Problem:
     """The class and the exact data for what a page gets (stocks, run, opts as runner.discover builds them).
     moves: "ends" (a move's rate reads the level of one of its two stocks: SD's usual drain or transfer)
     or "any" (a move's rate may read any column: every linear system's decompositions)."""
@@ -117,29 +117,33 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
     if boundary not in BOUNDARY_RULES:
         raise ValueError(f"boundary: one of {BOUNDARY_RULES}")
     opts = opts or {}
-    ids = [s["id"] for s in stocks]
+    # (z3robust, k8s-308 port) skip: stocks whose changes a rule outside the class explains (a whole-unit
+    # controller, post/quantized.py): their rows and every term on them are left out (milp takes them out of its
+    # program the same way); their levels stay columns the other rows may read
+    every = [s["id"] for s in stocks]
+    ids = [i for i in every if i not in skip]
     units = {s["id"]: s.get("unit") for s in stocks}
     t = list(run["t"])
-    raw = {i: [float("nan") if v is None else float(v) for v in run["levels"].get(i, [])] for i in ids}
-    decimals = _decimals(v for i in ids for v in raw[i])
-    inputs = {k: [float(x) for x in v] for k, v in (opts.get("inputs") or {}).items() if k not in ids}
+    raw = {i: [float("nan") if v is None else float(v) for v in run["levels"].get(i, [])] for i in every}
+    decimals = _decimals(v for i in every for v in raw[i])
+    inputs = {k: [float(x) for x in v] for k, v in (opts.get("inputs") or {}).items() if k not in every}
     eras = opts.get("eras") or []
     starts = sorted(float(e["start"]) for e in eras)[1:] if len(eras) > 1 else []
     era_of = lambda time_: sum(1 for s in starts if time_ >= s)
     inj = {}
     for j in opts.get("injections") or []:
-        if j.get("stock") in ids and j["t"] in t:
+        if j.get("stock") in every and j["t"] in t:
             inj[(j["stock"], t.index(j["t"]))] = inj.get((j["stock"], t.index(j["t"])), Fraction(0)) + Fraction(float(j["amount"]))
     cols = []
     for e in (range(len(starts) + 1) if starts else [None]):     # announced eras: every number may change at each
-        cols += [Column(i, "stock", era=e, unit=units[i]) for i in ids] + [Column(k, "input", era=e) for k in sorted(inputs)]
+        cols += [Column(i, "stock", era=e, unit=units[i]) for i in every] + [Column(k, "input", era=e) for k in sorted(inputs)]
         cols.append(Column("1", "const", era=e))
     if starts and pooled:     # (z3robust) with eras, also every column over the whole run (era None): a number that
         # does not change at an era is one term, and an era's change is a term of its own on top of it
-        cols += [Column(i, "stock", era=None, unit=units[i]) for i in ids] + [Column(k, "input", era=None) for k in sorted(inputs)]
+        cols += [Column(i, "stock", era=None, unit=units[i]) for i in every] + [Column(k, "input", era=None) for k in sorted(inputs)]
         cols.append(Column("1", "const", era=None))
     keep = [i for i in range(len(t) - 1)
-            if all(not math.isnan(raw[s][i]) and not math.isnan(raw[s][i + 1]) for s in ids)
+            if all(not math.isnan(raw[s][i]) and not math.isnan(raw[s][i + 1]) for s in every)
             and all(i + 1 < len(v) and not math.isnan(v[i + 1]) for v in inputs.values())]
     # (z3robust) reported with gaps (samples missing from t): a change over several steps is not a one-step
     # change, so only the steps of the commonest spacing are kept
@@ -148,7 +152,7 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
         vals, counts = np.unique(dts, return_counts=True)
         step = vals[int(np.argmax(counts))]
         keep = [i for i in keep if dts[i] == step]
-    L = {s: [_frac(v, decimals) if not math.isnan(v) else Fraction(0) for v in raw[s]] for s in ids}
+    L = {s: [_frac(v, decimals) if not math.isnan(v) else Fraction(0) for v in raw[s]] for s in every}
     in_dec = {k: max(0, INPUT_DIGITS - 1 - int(np.floor(np.log10(max(1e-12, max(abs(x) for x in v if not math.isnan(x)) if any(not math.isnan(x) for x in v) else 1.0)))))
               for k, v in inputs.items()}
     X: list[list[Fraction]] = [[] for _ in cols]
@@ -174,20 +178,25 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
     # outside term reading it is judged as one reading a level, not a measured input
     from . import capmin as _cm
     lim = {k: v for k, v in ((k, _cm.readers(k, opts)) for k in inputs) if v is not None}
+    # (z3robust, port-z3robust 2026-10-22) a final stock (a counter: a running total) is never a reader: its level
+    # is a trend that runs away off the run (structures 824f241, fix ledger type 11), and on noise-free data its
+    # columns' huge t values crowded the true terms out of the screened candidates (k8s-310: queue -> retries)
+    counters = {s["id"] for s in stocks if s.get("final")}
+    reader = {c: not (col.kind == "stock" and col.name in counters) for c, col in enumerate(cols)}
     for a_i, a in enumerate(ids):
         for b in ids[a_i + 1:]:
             if units[a] == units[b]:
                 terms += [Term("move", c, a, b) for c, col in enumerate(cols)
-                          if (col.name not in lim or set(lim[col.name]) == {a, b})
+                          if reader[c] and (col.name not in lim or set(lim[col.name]) == {a, b})
                           and (moves == "any" or col.name in (a, b) and col.kind == "stock" or set(lim.get(col.name) or ()) == {a, b})]
     for s in ids:
         for c, col in enumerate(cols):
-            if col.name in lim and tuple(lim[col.name]) != (s,):
+            if not reader[c] or col.name in lim and tuple(lim[col.name]) != (s,):
                 continue
             sides = _kind_sides(run.get("boundary"), declared, s, "stock" if col.name in lim else col.kind, boundary)
             if sides:
                 terms.append(Term("outside", c, s, sides=sides))
-    top = max([abs(v) for s in ids for v in raw[s] if not math.isnan(v)] or [1.0])
+    top = max([abs(v) for s in every for v in raw[s] if not math.isnan(v)] or [1.0])
     h = Fraction(1, 2 * 10 ** decimals) if decimals is not None else Fraction(0)
     slack = Fraction(FLOAT_SLACK) * Fraction(max(1.0, top))
     h_in = {k: Fraction(1, 2 * 10 ** d) for k, d in in_dec.items()}

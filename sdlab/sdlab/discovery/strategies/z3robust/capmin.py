@@ -145,7 +145,14 @@ def _gain(B: np.ndarray, m: np.ndarray, y: np.ndarray, floor: float) -> tuple[fl
     return len(y) * math.log((_rss(B, y) + floor) / (float(r1 @ r1) + floor)), float(coef[-1])
 
 
-def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict | None]:
+def _same_unit(unit: dict, a: str, b: str) -> bool:
+    """May material move between a and b? Only when both carry the same unit (or a unit is not announced).
+    (engine_forms' capmin.py at 740ed95, k8s-309; fix ledger type 5, the unit guard.)"""
+    ua, ub = unit.get(a), unit.get(b)
+    return not ua or not ub or ua == ub
+
+
+def offer(stocks: list[dict], run: dict, opts: dict | None, skip=()) -> tuple[dict, dict | None]:
     """opts with the regime-clipped series added as a measured input where a capacity limit wins, and
     what restore() needs (None where none is offered).
 
@@ -168,9 +175,10 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     floor = [RESOLUTION * float(np.mean(dy[i] ** 2)) * T + 1e-300 for i in range(len(ids))]   # the data's resolution
     price = PRICE * math.log(T)
     best = None
+    unit = {s["id"]: s.get("unit") for s in stocks}
     for xi, x in enumerate(ids):
         X = read[xi]
-        if x in final or np.ptp(X) <= 0:
+        if x in final or x in skip or np.ptp(X) <= 0:
             continue
         for name, Y in caps:
             if name == x or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
@@ -180,11 +188,11 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
             th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
             m = np.minimum(X, th * Y)
             gx, cx = _gain(B, m, dy[xi], floor[xi])
-            if cx >= 0 or gx <= 0:                         # a limited outflow of X takes from X
-                continue
+            if cx >= 0 or gx <= price:                     # a limited outflow of X takes from X: X's own row shows it
+                continue                                   # (the source-row guard, engine_forms 740ed95; ledger type 5)
             to = None
             for z in range(len(ids)):
-                if z != xi:
+                if z != xi and ids[z] not in skip and _same_unit(unit, x, ids[z]):   # a move joins one unit (type 5)
                     gz, cz = _gain(B, m, dy[z], floor[z])
                     if cz > 0 and gz > price and (to is None or gz > to[0]):
                         to = (gz, z)
@@ -261,6 +269,7 @@ def restore(result: dict, cap: dict | None) -> dict:
 
 
 def wrap(identify, stocks: list[dict], run: dict, opts: dict | None, *args, **kw) -> dict:
-    """identify(stocks, run, opts) with a capacity limit offered where the data show one."""
-    o, cap = offer(stocks, run, opts)
+    """identify(stocks, run, opts) with a capacity limit offered where the data show one. (z3robust) kw "skip":
+    stocks a rule outside the class explains (a whole-unit controller) are never a limit's source or receiver."""
+    o, cap = offer(stocks, run, opts, skip=kw.get("skip") or ())
     return restore(identify(stocks, run, o, *args, **kw), cap)
