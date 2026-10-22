@@ -25,6 +25,13 @@ variance) and the pick's is over FAR times its SSE, and only when every flow the
 plain linear or proportional rate between measured stocks (a switch, table, MIN or hidden stock is left to the
 passes that wrote it). A side's terms are written as one linear flow (one flow per declared side).
 
+(2026-10-22, k8s-316, docs/research/fixes/316-combined2.md) A block is one unit, or the units a move the declared
+boundary forces across units joins (capmin.forced_pairs: a waiting query takes a connection). And a capacity limit
+the block already has (a move whose rate is a MIN expression capmin.restore wrote, which hinge.amount evaluates)
+is held: the rows are re-read with its amounts taken off, and it is kept as it is. 316 none-short: the limit
+db_waiting -> db_active was exact, but the pick had fitted the two rows' outside flows without it (-63.8 +
+0.18 pricing_queue into db_waiting); re-read, they are 0.06 pricing_inflight + 0.1 cart_inflight and 0.8 db_active.
+
 Adopting it: copy this file (it needs hinge.py's columns / delta / row_error / allowed_sides / _linear / amount,
 counted.py's _row_sse and rowrepair.resolution) and call `apply(result, stocks, run, opts)` on the pick before
 the passes that refit rows.
@@ -55,6 +62,27 @@ def _plain(f: dict, levels) -> bool:
     return hinge._linear(r) is not None
 
 
+def _limit(f: dict, rows, levels, cols: dict, n: int) -> bool:
+    """(2026-10-22, k8s-316) A move inside the block whose rate is an expression hinge.amount evaluates (a capacity
+    limit capmin.restore wrote): held while the block is re-read."""
+    r = f.get("rate") or {}
+    return r.get("form") == "expr" and f.get("from") in rows and f.get("to") in rows and not f.get("effects") \
+        and hinge.amount(f, cols, n) is not None
+
+
+def _blocks(unit: dict, flows: list[dict], pairs: set) -> list[list[str]]:
+    """(2026-10-22, k8s-316) The rows of each unit, with the units a forced cross-unit move of the flows joins merged."""
+    groups = {u: {x for x, v in unit.items() if v == u} for u in set(unit.values())}
+    for f in flows:
+        a, b = f.get("from"), f.get("to")
+        if (a, b) in pairs and a in unit and b in unit and unit[a] != unit[b]:
+            ga, gb = next(g for g in groups.values() if a in g), next(g for g in groups.values() if b in g)
+            if ga is not gb:
+                ga |= gb
+                groups = {k: g for k, g in groups.items() if g is not gb}
+    return sorted((sorted(g) for g in groups.values()), key=lambda r: "+".join(sorted({unit[x] for x in r})))
+
+
 def _input_side(x: str, run: dict) -> bool:
     kinds = ((run.get("boundary") or {}).get(x) or {}).get("in") or []
     return bool(run.get("boundary_declared")) and "input" in kinds
@@ -82,11 +110,14 @@ def _subset(y: np.ndarray, pool: dict, names: list[str], tol: float) -> dict | N
     return None
 
 
-def _reread(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n: int, finals: set, q: float):
+def _reread(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n: int, finals: set, q: float,
+            unit: dict | None = None, pairs: set = frozenset()):
     """The block read again from the levels: each row's exact best subset, its terms joined into moves and outside
     flows (atoms), whose numbers are fitted together by non-negative least squares on the stacked rows, then each
     atom dropped (outside terms first: a move conserves) where the block stays exact. (flows, SSE, atoms) or None."""
-    held = [f for f in flows if (f.get("from") is None and f.get("to") in rows and _input_side(f["to"], run))]
+    held = [f for f in flows if (f.get("from") is None and f.get("to") in rows and _input_side(f["to"], run))
+            or _limit(f, rows, levels, cols, n)]
+    unit = unit or {}
     tol = EXACT * n * q * q / 6
     names = sorted(c for c in cols if c not in finals and np.std(cols[c][:n]) > 0)
     pool = {c: np.asarray(cols[c][:n], dtype=float) for c in names}
@@ -106,7 +137,7 @@ def _reread(rows: list[str], flows: list[dict], run: dict, levels, cols: dict, n
         if a in finals or W[a].get(a, 0.0) >= 0:
             continue
         for b in rows:
-            if b != a and W[b].get(a, 0.0) > 0:
+            if b != a and W[b].get(a, 0.0) > 0 and (unit.get(a) == unit.get(b) or (a, b) in pairs):
                 atoms.append(("move", a, b, a))
     for x in rows:
         sides = hinge.allowed_sides(x, run, flows)
@@ -176,15 +207,17 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
     finals = {s["id"] for s in stocks if s.get("final")}
     flows = list(result["flows"])
     notes = []
-    for u in sorted(set(unit.values())):
-        rows = sorted(x for x, v in unit.items() if v == u)
+    from .capmin import forced_pairs
+    pairs = forced_pairs(stocks, run)
+    for rows in _blocks(unit, flows, pairs):
+        u = "+".join(sorted({unit[x] for x in rows}))
         if len(rows) < 2:
             continue
         q = rowrepair.resolution(levels, rows)
         if q <= 0:
             continue
         mine = [f for f in flows if f.get("from") in rows or f.get("to") in rows]
-        if not mine or not all(_plain(f, levels) for f in mine):
+        if not mine or not all(_plain(f, levels) or _limit(f, rows, levels, cols, n) for f in mine):
             continue
         if any(f.get("from") in rows and f.get("to") and f.get("to") not in rows for f in mine) or \
                 any(f.get("to") in rows and f.get("from") and f.get("from") not in rows for f in mine):
@@ -199,7 +232,7 @@ def apply(result: dict, stocks: list[dict], run: dict, opts: dict | None = None)
             sse_pick += v
         if sse_pick is None or sse_pick <= exact:
             continue
-        got = _reread(rows, flows, run, levels, cols, n, finals, q)
+        got = _reread(rows, flows, run, levels, cols, n, finals, q, unit, pairs)
         if got is None:
             continue
         new, sse, k = got

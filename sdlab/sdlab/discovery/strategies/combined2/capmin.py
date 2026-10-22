@@ -42,6 +42,28 @@ NAME = "capmin__"      # the offered series' name prefix
 RESOLUTION = 1e-8      # a residual variance below this share of the mean squared change is rounding
 MAX_LIMITS = 4         # limits offered, one round each (2026-10-22, k8s-311)
 BETAS = 12             # pool-size candidates of a headroom limit (quantiles of Z / Y, and past the largest)
+ONE = "1"              # (2026-10-22, k8s-316) the constant capacity: a pool of fixed size, c - d x Z
+POOL_FAR = (1.25, 1.5, 2.0, 3.0, 5.0, 10.0)   # a fixed pool's size candidates beyond its occupant's largest level
+
+
+def forced_pairs(stocks: list[dict], run: dict | None) -> set:
+    """(2026-10-22, k8s-316, docs/research/fixes/316-combined2.md) The pairs (A, B) of measured stocks of different
+    units between which a move is the only drawing the declared boundary admits: A is the only stock of its unit
+    and has no declared outside outflow, B is the only stock of its unit and has no declared outside inflow. What A
+    loses cannot leave the system, and what B gains cannot come from outside, so the transfer between them is a
+    move although it changes what is counted (a waiting query takes a connection). Without a declared boundary,
+    or where either unit holds another stock, a move needs both stocks in one unit (the user's rule)."""
+    if not (run or {}).get("boundary_declared"):
+        return set()
+    bnd = (run or {}).get("boundary") or {}
+    unit = {s["id"]: s.get("unit") for s in stocks if not s.get("hidden")}
+    count: dict = {}
+    for u in unit.values():
+        count[u] = count.get(u, 0) + 1
+    finals = {s["id"] for s in stocks if s.get("final")}
+    alone = [x for x, u in unit.items() if u and count[u] == 1 and x not in finals]
+    side = lambda x, d: list(((bnd.get(x) or {}).get(d)) or [])   # noqa: E731
+    return {(a, b) for a in alone for b in alone if a != b and not side(a, "out") and not side(b, "in")}
 
 
 def level_series(name) -> bool:
@@ -179,8 +201,10 @@ def _room(X: np.ndarray, Y: np.ndarray, Z: np.ndarray, beta: float, th: float) -
     return np.minimum(X, th * np.maximum(0.0, beta * Y - Z))
 
 
-def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
-    """One round of offer(): the best limit (plain or headroom) on top of the design B, sources in skip left out."""
+def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, pairs: set = frozenset()):
+    """One round of offer(): the best limit (plain or headroom) on top of the design B, sources in skip left out.
+    (2026-10-22, k8s-316) pairs: the cross-unit moves the declared boundary forces (forced_pairs), which may carry
+    a limit too; and the headroom's pool may be a fixed size (Y = ONE: the cap c - d x Z, d > 0)."""
     caps = [(ids[i], read[i]) for i in range(len(ids)) if ids[i] not in final] + list(inputs.items())
     best = None
     for xi, x in enumerate(ids):
@@ -194,7 +218,7 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
             grid = np.unique(np.quantile(ratio, np.linspace(_lo(len(X)), 1 - _lo(len(X)), GRID)))
             th, _ = _golden(lambda th: _rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[xi]), grid)
             m = np.minimum(X, th * Y)
-            got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y, units,
+            got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y, units, pairs,
                          lambda rows: _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
                                                              for r in rows), grid)[0],
                          lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y)
@@ -210,15 +234,16 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
         if x in final or x in skip or np.ptp(X) <= 0 or not units.get(x):
             continue
         for zi, z in enumerate(ids):
-            if z in (x,) or z in final or units.get(z) != units.get(x) or np.ptp(read[zi]) <= 0:
+            if z in (x,) or z in final or (units.get(z) != units.get(x) and (x, z) not in pairs) or np.ptp(read[zi]) <= 0:
                 continue
             Z = read[zi]
-            for name, Y in caps:
-                if name in (x, z) or np.ptp(Y) <= 0 or (Y > 0).sum() < 10:
+            for name, Y in caps + ([(ONE, np.ones(len(X)))] if (x, z) in pairs else []):
+                if name in (x, z) or (name != ONE and (np.ptp(Y) <= 0 or (Y > 0).sum() < 10)):
                     continue
                 pos = Y > 0
                 zr = Z[pos] / Y[pos]
-                bgrid = np.unique(np.concatenate([np.quantile(zr, np.linspace(0.5, 1.0, BETAS - 1)), [zr.max() * 1.05]]))
+                far = [zr.max() * f for f in POOL_FAR] if name == ONE else []
+                bgrid = np.unique(np.concatenate([np.quantile(zr, np.linspace(0.5, 1.0, BETAS - 1)), [zr.max() * 1.05], far]))
 
                 def fit_th(beta, rows=(xi,)):
                     R = np.maximum(0.0, beta * Y - Z)
@@ -247,7 +272,7 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
                     return fit_th(b, rows)[0]
 
                 m = _room(X, Y, Z, beta, th)
-                got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), units, refine,
+                got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), units, pairs, refine,
                              lambda th, f=refine: _room(X, Y, Z, getattr(f, "beta", beta), th),
                              lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z))
                 if got and got.get("theta") is not None and (best is None or got["kink"] > best["kink"]):
@@ -255,7 +280,7 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set):
     return best
 
 
-def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, refine, series, regime) -> dict | None:
+def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, pairs, refine, series, regime) -> dict | None:
     """The offer rule for one candidate series m (module docstring): it takes from X; its receiver; the
     threshold refined on X's row and the receiver's; each regime on MIN_SHARE of the steps; gain and kink.
     (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) The receiver is a stock of X's unit: a move
@@ -265,7 +290,7 @@ def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, refine, seri
         return None
     to = None
     for z in range(len(ids)):
-        if z != xi and units.get(ids[z]) == units.get(ids[xi]):
+        if z != xi and (units.get(ids[z]) == units.get(ids[xi]) or (ids[xi], ids[z]) in pairs):   # (k8s-316) or forced
             gz, cz = _gain(B, m, dy[z], floor[z])
             if cz > 0 and gz > price and (to is None or gz > to[0]):
                 to = (gz, z)
@@ -311,13 +336,14 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
         return opts, None
     ids, final, dy, read, inputs = got
     units = {s["id"]: s.get("unit") for s in stocks}
+    pairs = forced_pairs(stocks, run)
     T = dy.shape[1]
     B, Q = _design(ids, read, inputs, opts, np.asarray(run["t"], dtype=float), T)
     floor = [RESOLUTION * float(np.mean(dy[i] ** 2)) * T + 1e-300 for i in range(len(ids))]   # the data's resolution
     price = PRICE * math.log(T)
     found = []
     while len(found) < MAX_LIMITS:
-        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found})
+        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found}, pairs)
         if best is None:
             break
         m = best.pop("series")
@@ -329,7 +355,7 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     reg = dict(opts.get("capmin") or {})
     for best in found:
         X = read[ids.index(best["source"])]
-        Y = read[ids.index(best["cap"])] if best["cap"] in ids else inputs[best["cap"]]
+        Y = read[ids.index(best["cap"])] if best["cap"] in ids else np.ones(T) if best["cap"] == ONE else inputs[best["cap"]]
         if best.get("room"):
             Z = read[ids.index(best["room"])]
             m = _room(X, Y, Z, best["beta"], best["theta"])

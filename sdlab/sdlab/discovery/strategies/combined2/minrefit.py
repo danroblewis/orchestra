@@ -74,6 +74,17 @@ def _names(f: dict) -> list[str]:
     return (["1"] if c else []) + list(ks)
 
 
+def _known(nm: str, cols: dict) -> bool:
+    """(2026-10-22, k8s-316) a measured column, or the constant 1 (a fixed pool's size, capmin.ONE)."""
+    return nm == "1" or nm in cols
+
+
+def _block(unit: dict, src: str, dst: str):
+    """(2026-10-22, k8s-316) The units whose rows a limit's move touches: its source's, and its receiver's where the
+    declared boundary forces a move across units (capmin.forced_pairs); one unit otherwise, as before."""
+    return {unit.get(src), unit.get(dst)}
+
+
 def _col(nm: str, cols: dict, n: int) -> np.ndarray:
     return np.ones(n) if nm == "1" else np.asarray(cols[nm][:n], dtype=float)
 
@@ -208,7 +219,7 @@ def _prune(q, src, dst, flows, fid, rows, levels, cols, n, floor):
 
 
 def _amount(p: dict, cols, n) -> np.ndarray:
-    cap = sum(c * cols[v][:n] for c, v in p["cap"])
+    cap = sum(c * _col(v, cols, n) for c, v in p["cap"])
     return np.maximum(0.0, np.minimum(p["k"] * cols[p["x"]][:n], np.maximum(0.0, cap) if p["room"] else cap))
 
 
@@ -234,7 +245,7 @@ def _limits(flows: list[dict], levels, cols) -> list[dict]:
     for f in flows:
         p = parse((f.get("rate") or {}).get("expr")) if (f.get("rate") or {}).get("form") == "expr" else None
         if p is not None and f.get("from") in levels and f.get("to") in levels and float(f.get("ratio") or 1) == 1 \
-                and not f.get("effects") and all(v in cols for v in [p["x"]] + [v for _, v in p["cap"]]):
+                and not f.get("effects") and all(_known(v, cols) for v in [p["x"]] + [v for _, v in p["cap"]]):
             out.append(f)
     return out
 
@@ -256,7 +267,7 @@ def _earn(out: dict, run, levels, cols, n, unit, finals) -> tuple[dict, list]:
             f = next((g for g in _limits(out["flows"], levels, cols) if (g["from"], g["to"]) == key[:2]), None)
         if f is None:
             continue
-        rows = {x for x in levels if unit.get(x) == unit.get(f["from"]) and x not in finals
+        rows = {x for x in levels if unit.get(x) in _block(unit, f["from"], f["to"]) and x not in finals
                 and hinge.row_error(x, out["flows"], levels, cols, n) is not None}
         if not {f["from"], f["to"]} <= rows:
             continue
@@ -281,11 +292,11 @@ def _refit_all(result: dict, run, levels, cols, n, unit, finals) -> tuple[dict, 
         src, dst = f.get("from"), f.get("to")
         p = parse((f.get("rate") or {}).get("expr")) if (f.get("rate") or {}).get("form") == "expr" else None
         if p is None or src not in levels or dst not in levels or float(f.get("ratio") or 1) != 1 or f.get("effects") \
-                or any(v not in cols for v in [p["x"]] + [v for _, v in p["cap"]]):
+                or any(not _known(v, cols) for v in [p["x"]] + [v for _, v in p["cap"]]):
             continue
         fid = f.setdefault("id", f"limit_{src}_{dst}")
         flows = out["flows"]
-        rows = {x for x in levels if unit.get(x) == unit.get(src) and x not in finals
+        rows = {x for x in levels if unit.get(x) in _block(unit, src, dst) and x not in finals
                 and hinge.row_error(x, flows, levels, cols, n) is not None}
         if not {src, dst} <= rows:
             continue

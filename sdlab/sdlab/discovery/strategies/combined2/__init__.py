@@ -421,12 +421,16 @@ def idle_dropped(result: dict, run: dict, opts: dict | None) -> dict:
     return out
 
 
-def one_unit_moves(result: dict, stocks: list[dict]) -> dict:
+def one_unit_moves(result: dict, stocks: list[dict], run: dict | None = None) -> dict:
     """The answer without its moves between two measured stocks of different declared units (a move carries one
-    thing, the user's rule); the dropped ones are listed under "cross_unit_dropped"."""
+    thing, the user's rule); the dropped ones are listed under "cross_unit_dropped". (2026-10-22, k8s-316) A move
+    the declared boundary forces (capmin.forced_pairs: each stock alone in its unit, the source with no outside
+    outflow, the receiver with no outside inflow) is kept."""
     unit = {s["id"]: s.get("unit") for s in stocks if s.get("unit")}
+    forced = _capmin.forced_pairs(stocks, run)
     flows = (result or {}).get("flows") or []
-    bad = [f for f in flows if f.get("from") in unit and f.get("to") in unit and unit[f["from"]] != unit[f["to"]]]
+    bad = [f for f in flows if f.get("from") in unit and f.get("to") in unit and unit[f["from"]] != unit[f["to"]]
+           and (f["from"], f["to"]) not in forced]
     if not bad:
         return result
     out = dict(result)
@@ -457,7 +461,7 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     r = _capmin.place(_identify_linear(stocks, run, o, *args, **kw), cap)
     # (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) a move carries one thing: a move between stocks of
     # different units is dropped, and the passes below refit the rows it touched (312 none-long: lna's nodes -> ready)
-    r = one_unit_moves(r, stocks)
+    r = one_unit_moves(r, stocks, run)
     # (2026-10-22, k8s-315, docs/research/fixes/315-combined2.md) a unit's block of plain rows the pick leaves above
     # the levels' rounding re-read from the levels (sparseblock.py: each row's exact best subset joined into moves
     # and outside terms; 315 none-short: lna's crossed moves between the two callees that share one caller)
@@ -470,7 +474,12 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     plain = lambda name: not _capmin.level_series(name)   # noqa: E731
     r = hinge.apply(switch.apply(r, stocks, run, o, readable=plain), stocks, run, o, readable=plain)
     r = oefit.refit(r, stocks, run, o, _capmin.plain_cap(cap))
-    r = hinge.apply(switch.apply(_capmin.restore(r, cap), stocks, run, opts), stocks, run, opts)
+    r = _capmin.restore(r, cap)
+    # (2026-10-22, k8s-316, docs/research/fixes/316-combined2.md) with the limits written back, a block that holds one
+    # (and the units a move the boundary forces across units joins) re-read around it: the pick fitted the block's
+    # other flows on rows that no longer carry the limit's series (316: -63.8 + 0.18 pricing_queue into db_waiting)
+    r = sparseblock.apply(r, stocks, run, opts)
+    r = hinge.apply(switch.apply(r, stocks, run, opts), stocks, run, opts)
     # (2026-10-21, k8s-310, docs/research/fixes/310-combined2.md) a counter that counts another flow: that
     # flow read off the counter's increase (counted.py: k x A x table(X), placed as a move by the rows it
     # repairs), and the floored sides refitted once more with it held
