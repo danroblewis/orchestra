@@ -1,5 +1,7 @@
 """Re-grade stored results as runner.run_item grades them, before and after 5dca817 (score._levels_at adds a step's announced
-injections; the old function is swapped back in for "before"; 2026-10-22). Rows: [id, case, variant, strategy, set] (as
+injections
+the old function is swapped back in for "before"
+2026-10-22). Rows: [id, case, variant, strategy, set] (as
 study_rescore_input.py rows makes them, filtered to the cases with announced injections). Nothing is written to the store.
 
     uv run python tests/study_rescore_input.py rows all.json      # then keep the rows of the injection cases (rows.json)
@@ -27,9 +29,11 @@ def grade(batch):
     out = {}
     for rid, cid, var, strat, _ in batch:
         try:
-            r = store.get(rid, found=True); c = casemod.load(cid)
+            r = store.get(rid, found=True)
+            c = casemod.load(cid)
             noise = casemod.variant(c, var)["noise"]; model = casemod.truth_model(c, var)
-            d = {**data.load(c, var), **casemod.announced(c)}; fresh = data.load(c, var, fresh=True)
+            d = {**data.load(c, var), **casemod.announced(c)}
+            fresh = data.load(c, var, fresh=True)
             flows = r.get("found") or []
             if d.get("clean"):
                 s = {**score.equations(c, noise, model, flows, d)}
@@ -41,8 +45,10 @@ def grade(batch):
     return out
 
 if __name__ == "__main__":
-    rows = json.load(open(sys.argv[1])); jobs = int(sys.argv[3])
-    import sdlab; print("sdlab from", sdlab.__file__, flush=True)
+    rows = json.load(open(sys.argv[1]))
+    jobs = int(sys.argv[3])
+    import sdlab
+    print("sdlab from", sdlab.__file__, flush=True)
     batches = [rows[i::jobs * 4] for i in range(jobs * 4)]
     res = {}
     with ProcessPoolExecutor(jobs) as ex:
