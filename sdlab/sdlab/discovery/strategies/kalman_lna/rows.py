@@ -50,8 +50,9 @@ SUB = 3                # every subset up to this many readers is tried
 MOST_TERMS = 5         # then forward steps up to this many
 BASE_SUB = 2           # the always-on part of a floored row: every support up to this many readers
 MIN_ON = 5             # a floored term acts on at least this many steps
-TIME = 400.0           # seconds for the rows and the derived-column search (310: 90; 311: 200, the capped move one
-                       # round more; 312: 400, the delayed rows and a seeded limit, under the 1800 s case limit)
+TIME = 600.0           # seconds for the rows and the derived-column search (310: 90; 311: 200, the capped move one
+                       # round more; 312: 600, the delayed rows and a seeded limit: 272 s on the Mac for none-long,
+                       # node2 is up to 3 x slower; under the 1800 s case limit)
 BUILD_TIME = 40.0      # seconds for the rebuild after them (the whole pass's budget before 310)
 TOL_MOVE = 0.02        # a move may take this share more than the source's drain (rounding)
 REPAIRS = 3            # rounds of refitting a row that needs a side the boundary lacks
@@ -201,8 +202,9 @@ def _trimmed(A: np.ndarray, y: np.ndarray, keep: float = 0.5, rounds: int = 6) -
 def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: float, a_cols: list[int] | None = None,
              b_cols: list[int] | None = None, strict: tuple = (1.0,)):
     """(bic, base support, a, floored support, b, sse) of y = X_A a + sign max(0, X_B b); None where none fits.
-    strict: multiples of the noise threshold the floored term's steps are read at (312, delayed.py: (1, 4), where
-    the level's rounding puts a few steps past the first threshold and the term acts on only 20)."""
+    strict: multiples of the noise threshold the floored term's steps are read at (312, delayed.py: (1, 4), the second
+    from the nonzero residuals, where the level's rounding put a few steps past the first one and the term acts on
+    only 20)."""
     n, p = X.shape
     logn = math.log(max(n, 2))
     best = None
@@ -218,7 +220,7 @@ def _floored(X: np.ndarray, y: np.ndarray, sign: float, floor: float, deadline: 
         small = np.abs(r) <= np.quantile(np.abs(r), 0.5)
         mad = float(np.median(np.abs(r[small]))) if small.any() else 0.0
         tol0 = max(4.0 * 1.4826 * mad, 10 * res, 1e-9)
-        tol1 = max(tol0, _delayed.noise(r)) if len(strict) > 1 else tol0   # (312) zeros of a level held still left out
+        tol1 = max(tol0, _delayed.noise(r)) if strict != (1.0,) else tol0   # (312) zeros of a level held still left out
         for mult in strict:
             on = sign * r > mult * (tol0 if mult == 1.0 else tol1)
             if int(on.sum()) < MIN_ON:
@@ -281,9 +283,21 @@ def _hinge_readers(X, r, on, sign, floor, n, logn, top: int = 3, b_cols: list[in
     cols = list(range(X.shape[1])) if b_cols is None else b_cols
     got = []
     Xo, yo = X[on], sign * r[on]
+    # (312) each subset's first fit from the columns' scaled Gram matrix on the acting steps (a k x k solve; the 6.6
+    # million least-squares calls of 312 none-long's rows were most of its time), least squares where it is singular
+    sc = np.sqrt((Xo * Xo).sum(axis=0))
+    sc[sc == 0] = 1.0
+    Xs = Xo / sc
+    G, g = Xs.T @ Xs, Xs.T @ yo
     for k in range(1, min(SUB, len(cols)) + 1):
         for sub in itertools.combinations(cols, k):
-            b, _ = _lstsq(Xo[:, sub], yo)
+            idx = list(sub)
+            try:
+                b = np.linalg.solve(G[np.ix_(idx, idx)], g[idx]) / sc[idx]
+                if not np.all(np.isfinite(b)):
+                    raise np.linalg.LinAlgError
+            except np.linalg.LinAlgError:
+                b, _ = _lstsq(Xo[:, sub], yo)
             sse = float(((sign * r - np.maximum(0.0, X[:, sub] @ b)) ** 2).sum())
             for _ in range(ACTIVE_ROUNDS if reread else 0):
                 # (311) the steps re-read from where the term acts (X_B b > 0): a few steps the always-on part misses
