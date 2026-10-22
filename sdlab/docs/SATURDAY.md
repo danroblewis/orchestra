@@ -50,4 +50,9 @@ kalman_lna and engine_forms, 316 counts-long, 310 counts-long milp). Timeouts ar
 Agents append rows here (what, why, the command if it is not covered by `backlog.sh start`, the cost
 estimate) instead of submitting broad jobs to the pool.
 
-- (none yet)
+- **Scorer fix 5dca817 (announced injections in the levels a step's rates read), every strategy on the 35 cases with
+  injections.** Already covered by item 2 (`backlog.sh start` re-scores everything stale). To list its flips for the
+  user (rule 5), before the backlog runs: freeze the rows (`uv run python tests/study_rescore_input.py rows all.json`,
+  keep the injection cases), then grade them twice with `tests/study_rescore_injections.py` (OLD_LEVELS=1 for before)
+  and compare. About 4 CPU-hours per side (8,999 rows); the top 5's 650 rows were done on 2026-10-22: 7 flips, all up
+  (312 none-long fail -> pass for all five; 196 none-long fail -> fits for kalman_lna and structures).
