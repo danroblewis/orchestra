@@ -1,4 +1,6 @@
-"""Conserving rewrites: the same levels written with the moves that conserve, never a new number (k8s-317, 2026-10-22).
+"""(Copied from milp's conserve.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+Conserving rewrites: the same levels written with the moves that conserve, never a new number (k8s-317, 2026-10-22).
 
 Two drawings of one stock's rows give the same levels on every state, and the passes after the program
 can leave the one with more numbers or a link standing in for a move:

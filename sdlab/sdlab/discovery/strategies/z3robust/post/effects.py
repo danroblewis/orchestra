@@ -1,4 +1,6 @@
-"""Table-effect flows: a flow that reads one stock and is switched on by the level of another (k8s-310, 2026-10-21).
+"""(Copied from milp's effects.py at a72bb0d for z3robust, post/__init__.py; one change, marked "z3robust's change".)
+
+Table-effect flows: a flow that reads one stock and is switched on by the level of another (k8s-310, 2026-10-21).
 
 A rate R x effect(X), with effect a table of X (Sterman's lookup), is zero or small over most of X's
 range and grows past a threshold: pods killed in proportion to the pods ready once memory nears its
@@ -230,7 +232,9 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
     for a in st.ids:
         for b in st.ids:
             if a != b and a not in st.final and unit(a) and st.same_unit(a, b) and not ({a, b} & skip):
-                cands.append((a, b, a, None))
+                if b not in counters:             # (z3robust's change, port-z3robust) a counter the declared boundary feeds
+                    cands.append((a, b, a, None))  # from outside counts a flow elsewhere: no move fills it (k8s-310 none-short:
+                                                   # ready -> oom_kills_total had beaten the counted move ready -> pending)
                 if b not in st.final:
                     cands += [(a, b, a, c) for c in counters if unit(c) == unit(a)]
     for s in st.ids:

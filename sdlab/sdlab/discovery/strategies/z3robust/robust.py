@@ -278,6 +278,7 @@ def unsigned(p: core.Problem, m: int, sup) -> bool:
 
 
 IDLE_EVENTS = 5       # a one-sided outside flow moves something on at least this many steps (else it is no flow)
+IDLE_IN_WARM = False  # the warm start penalises idle flows too (tried: it changed 310's warm start and lost 310 none)
 
 
 def idle(p: core.Problem, sup: list[int], nums: dict) -> list[int]:
@@ -303,7 +304,7 @@ def idle(p: core.Problem, sup: list[int], nums: dict) -> list[int]:
 def _signed(p: core.Problem, B, sup: list[int], nums: dict, sigma: np.ndarray, price: float) -> float:
     """objective() plus SIGN_PENALTY per link with a negative number and per term of an idle one-sided flow."""
     return (objective(p, B, sup, nums, sigma, price) + SIGN_PENALTY * sum(1 for m in sup if unsigned(p, m, sup) and nums[m] < 0)
-            + SIGN_PENALTY * len(idle(p, sup, nums)))
+            + (SIGN_PENALTY * len(idle(p, sup, nums)) if IDLE_IN_WARM else 0.0))
 
 
 def warm(p: core.Problem, B, cand: list[int], sigma: np.ndarray, fixed: dict[int, float], price: float) -> tuple[list[int], dict, float]:

@@ -1,4 +1,6 @@
-"""Every plain flow refitted on every row (k8s-312, 2026-10-22).
+"""(Copied from milp's polish.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+Every plain flow refitted on every row (k8s-312, 2026-10-22).
 
 The program's numbers are fitted on a sample of the steps beside its own misfits (a capacity read from the wrong level,
 a row it could not explain), and each later pass refits only the flows on the rows it touches. So numbers on rows no

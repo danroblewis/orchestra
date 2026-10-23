@@ -183,9 +183,14 @@ def prepare(stocks: list[dict], run: dict, opts: dict | None = None, moves: str 
     # columns' huge t values crowded the true terms out of the screened candidates (k8s-310: queue -> retries)
     counters = {s["id"] for s in stocks if s.get("final")}
     reader = {c: not (col.kind == "stock" and col.name in counters) for c, col in enumerate(cols)}
+    # (port-z3robust) a counter the declared boundary feeds from outside counts something that happens elsewhere
+    # (oom_kills_total: the kills); no move fills it in the linear class: a linear stand-in move into it (pending ->
+    # oom_kills_total on k8s-310) led the counted-flow pass (post/effects.py) to place the counted flow as a move
+    # into the counter instead of the move it counts
+    counted = {s for s in counters if declared and "in" in _kind_sides(run.get("boundary"), True, s, "const", "sides")}
     for a_i, a in enumerate(ids):
         for b in ids[a_i + 1:]:
-            if units[a] == units[b]:
+            if units[a] == units[b] and not ({a, b} & counted):
                 terms += [Term("move", c, a, b) for c, col in enumerate(cols)
                           if reader[c] and (col.name not in lim or set(lim[col.name]) == {a, b})
                           and (moves == "any" or col.name in (a, b) and col.kind == "stock" or set(lim.get(col.name) or ()) == {a, b})]

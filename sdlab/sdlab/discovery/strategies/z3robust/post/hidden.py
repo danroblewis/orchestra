@@ -1,4 +1,6 @@
-"""A hidden integrator read by a measured stock's outside inflow (k8s-310, 2026-10-21; the user: "credit a
+"""(Copied from milp's hidden.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+A hidden integrator read by a measured stock's outside inflow (k8s-310, 2026-10-21; the user: "credit a
 strategy's hidden stock", a schedule standing in for hidden state is "fits", not robust).
 
 A stock's inflow may read something nothing measures: a memory leak that grows a fixed amount a step and

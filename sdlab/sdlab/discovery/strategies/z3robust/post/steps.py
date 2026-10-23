@@ -1,4 +1,6 @@
-"""What the program fits: each measured stock's one-step change and the values the rates may read.
+"""(Copied from milp's steps.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+What the program fits: each measured stock's one-step change and the values the rates may read.
 
 A step k runs from the levels at t[k] to those at t[k+1]: its change is L[k+1] - L[k] less the announced
 injections at t[k+1] (they are added at the start of the step, as the engine adds them); a rate in it

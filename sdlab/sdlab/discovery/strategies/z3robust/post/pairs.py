@@ -1,4 +1,6 @@
-"""Same-pair revision on every step (k8s-312, 2026-10-22).
+"""(Copied from milp's pairs.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+Same-pair revision on every step (k8s-312, 2026-10-22).
 
 The program reads a sample of the steps (SAMPLE, evenly spaced). A capacity that binds on a few short stretches (the
 dispatch limit 40 x ready while pods are lost to a node failure: 24 of 2,000 steps) is mostly outside the sample, so

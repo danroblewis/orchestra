@@ -1,4 +1,6 @@
-"""Gap flows: outside flows whose rate is a linear gap the engine floors at 0 (k8s-309, 2026-10-21).
+"""(Copied from milp's hinge.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+Gap flows: outside flows whose rate is a linear gap the engine floors at 0 (k8s-309, 2026-10-21).
 
 The engine floors every rate at 0: a flow's amount is max(0, w . levels), not w . levels. A rate that is
 a gap between like quantities ("create what is missing": desired - pending - ready; "delete the

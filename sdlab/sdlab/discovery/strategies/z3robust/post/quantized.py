@@ -1,4 +1,6 @@
-"""Whole-unit controllers: a stock counted in whole units that a rule steps up and down (k8s-308, 2026-10-21).
+"""(Copied from milp's quantized.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+Whole-unit controllers: a stock counted in whole units that a rule steps up and down (k8s-308, 2026-10-21).
 
 A controller (an autoscaler, an order-up-to rule, anything that acts on a count) moves a stock S that only
 ever holds whole numbers, in rare whole steps, when a reading X of another stock crosses a line drawn in

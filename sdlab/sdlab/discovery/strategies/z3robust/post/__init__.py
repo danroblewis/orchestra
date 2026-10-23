@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from . import conserve, delay, effects, hidden, hinge, negligible, pairs, polish, quantized, room, tidy
 
+PRE_GAPS = True       # (z3robust) the floored gap pass also runs first (after.__doc__)
+
 
 def _guarded(fn):
     """A pass that raises leaves its input as it was (refit-guard, fix ledger type 10)."""
@@ -34,7 +36,11 @@ def _guarded(fn):
 
 
 def after(result: dict, stocks: list[dict], run: dict, opts: dict | None, known: dict, notes) -> dict:
-    """The passes after the linear search, in milp's order."""
+    """The passes after the linear search, in milp's order, with z3robust's changes: the floored gap pass
+    (hinge.py) also runs first (PRE_GAPS: the robust search leaves out the gross steps, which on a row with
+    floored or switched flows are its informative ones, so such a row can come back bare; read first, its gaps
+    let the counted-flow pass see the rows it repairs: k8s-310 none-long 14/23 -> 26/26 locally), and moves of
+    next to nothing are dropped last (negligible.py)."""
     opts = opts or {}
     pairs_refine, polish_refine, delay_refine, prune = (_guarded(pairs.refine), _guarded(polish.refine), _guarded(delay.refine),
                                                         _guarded(effects.prune))
@@ -42,7 +48,11 @@ def after(result: dict, stocks: list[dict], run: dict, opts: dict | None, known:
     hinge_refine, effects_refine = _guarded(hinge.refine), _guarded(effects.refine)
     if known:
         result = {**result, "flows": quantized.put(result.get("flows") or [], known)}
-    flows, revised = pairs_refine(result.get("flows") or [], stocks, run, opts, skip=known)
+    pre = {}
+    if PRE_GAPS:          # (z3robust's change) the floored gaps first, so the rows the robust search left bare (their
+        flows, pre = hinge_refine(result.get("flows") or [], stocks, run, opts, skip=known)    # informative steps were
+        result = {**result, "flows": flows}                                                      # its gross steps) are
+    flows, revised = pairs_refine(result.get("flows") or [], stocks, run, opts, skip=known)     # read before the effects
     revised = revised if revised.get("pairs") else {}
     flows, rooms = room_refine(flows, stocks, run, opts, skip=known)
     rooms = rooms if rooms.get("rooms") else {}
@@ -107,4 +117,6 @@ def after(result: dict, stocks: list[dict], run: dict, opts: dict | None, known:
     flows, ng = _guarded(negligible.refine)(result.get("flows") or [], stocks, run, opts)   # (z3robust's own) moves of next
     if ng:                                                                                   # to nothing dropped
         result = {**result, "flows": flows, "negligible": ng}
+    if pre.get("used"):
+        result = {**result, "pre_gaps": pre}
     return {**result, "quantized": notes} if notes else result

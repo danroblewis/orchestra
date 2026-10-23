@@ -1,4 +1,6 @@
-"""A hidden first-order delay in front of a measured stock's outside inflow (k8s-312, 2026-10-22; the user: "credit a
+"""(Copied from milp's delay.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+A hidden first-order delay in front of a measured stock's outside inflow (k8s-312, 2026-10-22; the user: "credit a
 strategy's hidden stock").
 
 What arrives in a stock is often what was asked for a while ago: nodes join some minutes after the autoscaler asks

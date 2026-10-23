@@ -1,4 +1,6 @@
-"""The finished answer's outside inflows read again, and the plain moves they make needless dropped (k8s-316, 2026-10-22).
+"""(Copied from milp's tidy.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+The finished answer's outside inflows read again, and the plain moves they make needless dropped (k8s-316, 2026-10-22).
 
 The program reads every estimated outside inflow and every move together, on a sample of steps, with its noise
 scales still settling; where a mechanism it cannot offer (a pool with a constant ceiling, room.py) leaves misfit,

@@ -1,4 +1,6 @@
-"""Room-limited moves: a move that fills its receiver only up to a ceiling another level sets (k8s-311, 2026-10-22).
+"""(Copied from milp's room.py at a72bb0d for z3robust, post/__init__.py: flow ids "z3robust:", debug flag Z3ROBUST_DEBUG.)
+
+Room-limited moves: a move that fills its receiver only up to a ceiling another level sets (k8s-311, 2026-10-22).
 
 A move S -> D often carries what S offers until D is full, where "full" is a ceiling proportional to another
 measured level Y: pods start onto nodes while the nodes have room (4 pods a node), stock is shelved while the
