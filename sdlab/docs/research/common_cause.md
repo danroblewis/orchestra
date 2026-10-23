@@ -146,6 +146,18 @@ Robustness on other seeds (10 seeds each, counts-short / counts-long passes): 03
 8 / 0, matrix 1 / 0); 029 8 / 9; 031 9 / 9; 034 10 / 9; 038 10 / 9; 020 9 / 10; 037 3 / 5
 (earned_pieces 1 / 1, lna 8 / 3).
 
+### Kubernetes 300-311 (2026-10-22, port-common_cause)
+
+kalman_lna's row and controller passes were copied in at 7c3fb13 (`krows.py`, `derived.py`, `delayed.py`,
+`subsets.py`, `tracker.py`), with common_cause's own fixes. Details are in docs/research/fixes/port-common_cause.md.
+At 5bb4c2b:
+- **308-311 (none-short, none-long, counts-short, counts-long):** 11 of 16 pass (job 405), against 0 before. Every
+  achievable cell passes. The 5 fails are 309 counts-short and the 310/311 counts variants, all data-limited.
+- **300-307:** 32 of 32 still pass (job 406).
+- **Non-kubernetes ladder:** no pass lost (job 407, 1164 cells), and 38 cells gained. Some realistic counts cells that
+  failed before now time out.
+- **034/035 noise-free:** these fail because of c7cade0 (boundary.py), not the port. They are still open.
+
 ## Bench results
 
 **Not completed.** The examples bench (`tests/bench/evaluate.py --strategy common_cause --baseline v2.1
