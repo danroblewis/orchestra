@@ -86,8 +86,9 @@ def _rate_value(rate: dict, state: dict) -> float | None:
 
 
 def _amounts(f: dict, states: list[dict], t_end: np.ndarray) -> np.ndarray | None:
-    """The flow's amount on each step (floored at 0), pieces and eras included; None where it cannot run."""
-    if f.get("effects") or f.get("uses"):
+    """The flow's amount on each step (floored at 0), pieces and eras included; None where it cannot run. (regress-
+    kalman_lna) A co-flow runs: what it also takes from its "uses" stocks is per x this amount (answer, _co_group)."""
+    if f.get("effects"):
         return None
     T = len(states)
     out = np.zeros(T)
@@ -106,6 +107,15 @@ def _amounts(f: dict, states: list[dict], t_end: np.ndarray) -> np.ndarray | Non
             return None
         out[k] = max(0.0, v)
     return out
+
+
+def _co_group(f: dict) -> set:
+    """(regress-kalman_lna) The measured stocks a co-flow touches: its ends and every stock it draws on; empty for a
+    flow without "uses". 309 none-long since febd195 (capsteps): the base answer's pending -> ready co-flow (uses
+    desired) made answer() None on pending and ready, so the rows never rebuilt them and the gap flows were lost."""
+    if not f.get("uses"):
+        return set()
+    return ({f.get("from"), f.get("to")} | {u.get("stock") for u in f["uses"]}) - {None}
 
 
 def _numbers(f: dict) -> int:
@@ -393,12 +403,17 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
         i = ids.index(S)
         pred, k = np.zeros(T), 0
         for n, f in enumerate(flows):
-            if n in skip or S not in (f.get("from"), f.get("to")):
+            uses = [u for u in f.get("uses") or [] if u.get("stock") == S]
+            if n in skip or (S not in (f.get("from"), f.get("to")) and not uses):
                 continue
             if amts[n] is None:
                 return None
-            pred += amts[n] if f.get("to") == S else -float(f.get("ratio") or 1) * amts[n]
-            k += _numbers(f)
+            if S in (f.get("from"), f.get("to")):
+                pred += amts[n] if f.get("to") == S else -float(f.get("ratio") or 1) * amts[n]
+                k += _numbers(f)
+            for u in uses:                                   # (regress-kalman_lna) a co-flow's draw on S
+                pred -= float(u.get("per") or 0.0) * amts[n]
+                k += 1
         return float(((dy[i] - pred) ** 2).sum()), k
 
     rich_ok: set = set()                                 # (317) the stocks whose richer forms have been read
@@ -985,6 +1000,12 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
             X_ = b if a in B else a
             if X_ in rows and rows[X_]["bic"] <= bic(*old[X_], X_) + PRICE * logT:
                 grow.add(X_)
+        for f in flows:                                      # (regress-kalman_lna) a co-flow is rebuilt whole or kept
+            group = _co_group(f)                             # whole: its ends and the stocks it draws on join together
+            if group & B and not group <= B:
+                if not (group - B) <= set(rows):
+                    return result                            # one of them has no row to rebuild it from
+                grow |= group - B
         if not grow:
             break
         B |= grow

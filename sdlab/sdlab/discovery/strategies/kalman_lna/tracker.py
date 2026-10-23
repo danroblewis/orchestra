@@ -51,8 +51,8 @@ def _rate_value(rate: dict, state: dict) -> float | None:
     if form == "linear":
         return float(rate.get("c") or 0.0) + sum(float(t.get("k") or 0.0) * state.get(t.get("stock"), 0.0)
                                                  for t in rate.get("terms") or [])
-    if form == "constant":
-        return float(rate.get("c", rate.get("k", 0.0)) or 0.0)
+    if form == "constant":                                 # (regress-kalman_lna) kalman_lna writes "value" too (309)
+        return float(rate.get("value", rate.get("c", rate.get("k", 0.0))) or 0.0)
     if form == "expr":
         try:
             return float(eval(rate["expr"], {"__builtins__": {}}, {"min": min, "max": max, "ceil": math.ceil,
@@ -112,7 +112,11 @@ def _predict(side: str, form: str, S: np.ndarray, target: np.ndarray, d: float) 
 
 def _breakpoints(X: np.ndarray, S: np.ndarray, y: np.ndarray) -> np.ndarray:
     """Every threshold a at which ceil(X_t / a) crosses a whole number near S_t."""
-    top = int(np.ceil(np.max(y))) + 2 if len(y) else 2
+    top = float(np.max(y)) if len(y) else 0.0
+    if not np.isfinite(top) or top > MOST:
+        return np.zeros(0)                                   # (regress-kalman_lna, from matrix_v2's copy at 307af7c) no
+                                                             # whole-number controller moves this much a step (a runaway net)
+    top = int(np.ceil(top)) + 2
     ms = np.arange(-2, top + 1)
     m = np.round(S)[:, None] + ms[None, :]
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -216,6 +220,13 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
     if got is None:
         return result
     ids, final, dy, read, inputs, states = got
+    # (regress-kalman_lna, from common_cause's copy at 7778159) the answer's own hidden stocks read at their inferred
+    # levels (a step's start), so a hidden stage feeding S (outside -> H -> S, rows.py's delayed inflow) is priced as
+    # what it delivers
+    for H, lv in (result.get("inferred_levels") or {}).items():
+        if H not in ids and len(lv) >= dy.shape[1]:
+            for k, st in enumerate(states):
+                st[H] = float(lv[k])
     T = dy.shape[1]
     logT = math.log(T)
     flows = list(result["flows"])
@@ -247,14 +258,20 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
             if c["clamp"] is not None:
                 target = np.minimum(c["clamp"], target) if s == "in" else np.maximum(c["clamp"], target)
             p = _predict(s, c["form"], Sv, target, c["d"])
+            c["idle"] = int((p <= 0).sum())
             pred += p if s == "in" else -p
+        if any(c["idle"] < MIN_FIRES for c in fits.values()):
+            continue                                         # (regress-kalman_lna, as common_cause's and matrix_v2's
+                                                             # copies) a rule acting on every step is a rate, not a controller
         k_new = sum(c["numbers"] for c in fits.values())
         for s in sides:                                      # a side the tracker leaves keeps its flows
             if s not in fits:
                 for n in outside[s]:
+                    k_new += _numbers(flows[n])
+                    if S not in (flows[n].get("from"), flows[n].get("to")):
+                        continue                             # a hidden stage's own inflow: numbers, no amount on S
                     amt = _amounts(flows[n], states)
                     pred += amt if s == "in" else -amt
-                    k_new += _numbers(flows[n])
         bic = lambda sse, k: T * math.log((sse + floor) / T) + k * logT  # noqa: E731
         sse_new = float(((net - pred) ** 2).sum())
         sse_base = float(((net - base) ** 2).sum())
@@ -270,6 +287,10 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
         return result
     out = copy.copy(result)
     out["flows"] = [f for n, f in enumerate(flows) if n not in drop] + added
+    gone = {x for n in drop for x in (flows[n].get("from"), flows[n].get("to"))} - {x for f in out["flows"]
+                                                                                   for x in (f.get("from"), f.get("to"))}
+    if gone and out.get("inferred_levels"):                  # (regress-kalman_lna) a replaced hidden stage's levels go too
+        out["inferred_levels"] = {h: v for h, v in out["inferred_levels"].items() if h not in gone}
     out["tracker"] = changed
     return out
 
@@ -286,9 +307,13 @@ def _stock(si, S, ids, final, dy, read, states, flows, declared, bd) -> dict | N
         return None
     inside = np.zeros(T)
     outside = {"in": [], "out": []}
+    stages = _stages(S, ids, flows)
     for n, f in enumerate(flows):
         a, b = f.get("from"), f.get("to")
         if S not in (a, b):
+            continue
+        if a in stages:                                      # (regress-kalman_lna) a hidden stage is an outside inflow
+            outside["in"].append(n)
             continue
         if a is None or b is None:
             outside["in" if b == S else "out"].append(n)
@@ -309,9 +334,29 @@ def _stock(si, S, ids, final, dy, read, states, flows, declared, bd) -> dict | N
                 return None
             base += amt if s == "in" else -amt
             k_base += _numbers(flows[n])
+    for H, ns in stages.items():                             # the stage's own flows leave with the side it feeds
+        outside["in"] += [n for n in ns if n not in outside["in"]]
+        k_base += sum(_numbers(flows[n]) for n in ns if flows[n].get("to") != S)
     floor = RESOLUTION * float(np.mean(dy[si] ** 2)) * T + 1e-300
     sse_base = float(((net - base) ** 2).sum())
     if sse_base <= floor:
         return None                                          # the answer already fits S to the data's resolution
     return {"si": si, "S": S, "sides": sides, "outside": outside, "net": net, "base": base, "k_base": k_base,
             "floor": floor, "misfit": sse_base / (float(net @ net) + floor)}
+
+
+def _stages(S: str, ids: list[str], flows: list[dict]) -> dict[str, list[int]]:
+    """(regress-kalman_lna; copied from common_cause/tracker.py at 7778159, port-common_cause) The hidden stages feeding
+    S: a stock H nobody measures whose only outflow is H -> S and whose inflows come from outside (rows.py's delayed
+    inflow, outside -> H -> S, since febd195). What H delivers is S's outside inflow, so a tracker taking S's inflow side
+    replaces the whole stage: {H: indices of every flow touching H}. Before, H -> S read as an inside flow at 0 (H has no
+    measured level), so the tracker's inflow was added beside the stage: two inflows on one declared side (308, 309
+    none-short, "invented boundary")."""
+    out: dict[str, list[int]] = {}
+    known = set(ids)
+    for H in {f.get("from") for f in flows if f.get("to") == S} - known - {None}:
+        ns = [n for n, f in enumerate(flows) if H in (f.get("from"), f.get("to"))]
+        if all((f.get("from") == H and f.get("to") == S) or (f.get("to") == H and f.get("from") is None)
+               for f in (flows[n] for n in ns)):
+            out[H] = ns
+    return out
