@@ -1,11 +1,12 @@
 # z3robust: Z3 under a noise band, for noisy data
 
-**Status:** round 2 done (2026-10-21; commits 5f0f3aa, round 1, and 79d7da5, round 2). Keep as an active
+**Status:** round 2 done (2026-10-21; commits 5f0f3aa, round 1, and 79d7da5, round 2); kubernetes 308-311
+fixes ported 2026-10-22 (27df2d1, see Results). Keep as an active
 strategy: on the Tests sample it now passes more than z3exact and matrix and fewer than milp and
 structures; it is the best of the five on outliers and gaps, the worst on measurement error.
 **Code:** `sdlab/discovery/strategies/z3robust/` (`robust.py` the formulation, `__init__.py` the
 strategy, `core.py`, `flows.py` and `capmin.py` copies of z3exact's at 45bfaac, `compare.py` the
-encoding timings). **Tests:** `tests/test_z3robust.py`. **Dependency:** `z3-solver` 5.3.1 (as z3exact).
+encoding timings, `post/` milp's post-program passes copied at a72bb0d). **Tests:** `tests/test_z3robust.py`. **Dependency:** `z3-solver` 5.3.1 (as z3exact).
 
 ## The question
 
@@ -143,6 +144,14 @@ with eras, where Z3 uses its 25 s per class and the warm start often decides.
 engine (MaxRes) timed out on 18+ candidates, its screen dropped needed moves (043#4 kept 30 of 72
 candidates by the larger |t| of a move's two rows), and a negative link was written as an outflow.
 Round 2 fixed those three (the cardinality search, the both-rows screen, the link rule): Tests 222 + 57.
+
+**Kubernetes 308-311 port** (2026-10-22, `docs/research/fixes/port-z3robust.md`; commits 8edfe20, 9032b6b and 27df2d1;
+pool job 404). The climb's fixes were added around the Z3 search. milp's post-program passes were copied into
+`post/`: controllers, floored gaps, counted moves and table effects, the hidden integrator, room-limited moves, the
+delay stage, and tidy and conserve. Controlled stocks' rows are taken out of the Z3 problem, counters are never
+readers, the capmin guards are in, and gaps are also read first. Result: 308-311 pass every achievable cell (none-*
+on all four rungs and 308 counts-long, 8 of 8, 0 before). On 300-307, everything that passed before still passes,
+and 307 counts-short now passes too.
 
 ## Verdict
 
