@@ -93,10 +93,18 @@ def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **k
     # target read off another stock (a controller) replaces its outside flows where it wins by BIC (tracker.py)
     from . import krows, tracker
 
+    import signal
+
     import numpy as _np
 
     r = _capmin.restore(r, cap)
-    for step in (lambda x: krows.revise(x, stocks, run, opts, cap), lambda x: tracker.revise(x, stocks, run, opts)):
+    po = dict(opts or {})
+    left = signal.getitimer(signal.ITIMER_REAL)[0]       # (fix ledger type 10, stage budget) what the runner's timer
+    if left > 0:                                         # leaves: the rows half of it, the rebuild and tracker less
+        room = max(0.0, left - 20.0)                     # (sd-print-shop counts-long: krows 230 s of a 300 s limit)
+        po.update(rows_time=min(krows.TIME, 0.5 * room), rows_build_time=min(krows.BUILD_TIME, 0.15 * room),
+                  tracker_time=min(tracker.TIME, 0.1 * room))
+    for step in (lambda x: krows.revise(x, stocks, run, po, cap), lambda x: tracker.revise(x, stocks, run, po)):
         try:                                     # (fix ledger type 10, refit-guard) a pass that fails keeps its input
             r = step(r)                          # (159 none-long: an SVD that did not converge in krows)
         except (_np.linalg.LinAlgError, FloatingPointError, ValueError, ZeroDivisionError):

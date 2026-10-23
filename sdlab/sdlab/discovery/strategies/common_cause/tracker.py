@@ -238,7 +238,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None) -> di
     flows = list(result["flows"])
     declared = bool(run.get("boundary_declared"))
     bd = run.get("boundary") or {}
-    deadline = time.monotonic() + TIME
+    deadline = time.monotonic() + float(opts.get("tracker_time", TIME))   # (port-common_cause) the caller's share
     todo = []
     for si, S in enumerate(ids):
         got = _stock(si, S, ids, final, dy, read, states, flows, declared, bd)

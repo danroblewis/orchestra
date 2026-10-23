@@ -359,7 +359,8 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     if got is None:
         return result
     ids, dy, read, inputs, states, t_end = got
-    deadline = time.monotonic() + TIME
+    budget = float(opts.get("rows_time", TIME))              # (port-common_cause) the caller's share of its timer
+    deadline = time.monotonic() + budget
     T = dy.shape[1]
     logT = math.log(T)
     unit = {s["id"]: s.get("unit") or "" for s in stocks}
@@ -852,7 +853,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     stock_cols = [j for j, n in enumerate(names) if n in set(ids)]
     t_der = time.monotonic()
     if opts.get("rows_trace"):
-        print("rows t base", round(t_der - deadline + TIME, 1))
+        print("rows t base", round(t_der - deadline + budget, 1))
     if time.monotonic() > deadline:
         return result                                        # the plain rows themselves ran out of time
     # (317) a larger model may need more derived columns: ROUNDS (and one capped move) for every 12 stocks (317's three
@@ -860,7 +861,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     # RICH_SHARE of the pass to the richer row forms after them
     per = max(1, len(ids) // 12)
     rounds, caps = _derived.ROUNDS * per, per
-    full_deadline, deadline = deadline, deadline - RICH_SHARE * TIME
+    full_deadline, deadline = deadline, deadline - RICH_SHARE * budget
     for _ in range(rounds + caps):                           # (311) a capped move is one round beyond ROUNDS
         if time.monotonic() > deadline:
             break
@@ -972,7 +973,7 @@ def revise(result: dict, stocks: list[dict], run: dict, opts: dict | None, offer
     slice_end[0] = math.inf
     # the rebuild has its own budget after the derived search, so a slower machine loses derived columns, never the
     # rebuild of the plain rows (309 counts-long on node2: the search used the whole pass and the answer was kept)
-    deadline = time.monotonic() + BUILD_TIME
+    deadline = time.monotonic() + float(opts.get("rows_build_time", BUILD_TIME))
     if opts.get("rows_trace"):
         for S, r in rows.items():
             print("rows", S, round(r["bic"], 1), round(bic(*old[S], S), 1), r["sse"], old[S], r["lin"], r["hinge"])
