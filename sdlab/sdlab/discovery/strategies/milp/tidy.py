@@ -52,11 +52,28 @@ def _rows_bic(st: Steps, flows: list[dict], env: dict, rows: list[str], scale, f
     return float(out)
 
 
+def _free(f: dict) -> bool:
+    return _plain(f) is not None and not (f.get("room_fit") or f.get("effects") or f.get("counts") or f.get("input"))
+
+
+def _span(st: Steps, flows: list[dict], rows: list[str]) -> list[str]:
+    """(regress-milp) rows with the other measured end of every plain flow _refit frees on them. A flow is
+    refitted on all its rows: on two rows alone, two drains of one stock (inflight into two counters) are one
+    column twice, and least squares split their sum evenly (0.5 and 0.03 -> 0.263 each, 306/307 counts-long)."""
+    pos = set(st.ids)
+    out = list(rows)
+    for f in flows:
+        if {f.get("from"), f.get("to")} & set(rows) and _free(f):
+            out += [x for x in (f.get("from"), f.get("to")) if x in pos and x not in out]
+    return out
+
+
 def _refit(st: Steps, flows: list[dict], env: dict, rows: list[str], scale) -> list[dict]:
-    """The plain flows on the rows refitted jointly by least squares, each with its own readers, the rest at their amounts."""
+    """The plain flows on the rows refitted jointly by least squares, each with its own readers on every row it
+    touches (_span), the rest at their amounts."""
     pos = {s: i for i, s in enumerate(st.ids)}
-    at = [i for i, f in enumerate(flows) if {f.get("from"), f.get("to")} & set(rows) and _plain(f) is not None
-          and not (f.get("room_fit") or f.get("effects") or f.get("counts") or f.get("input"))]
+    at = [i for i, f in enumerate(flows) if {f.get("from"), f.get("to")} & set(rows) and _free(f)]
+    rows = _span(st, flows, rows)
     target = np.concatenate([st.dy[pos[s]] for s in rows])
     for i, f in enumerate(flows):
         if i in at or not {f.get("from"), f.get("to")} & set(rows):
@@ -110,12 +127,13 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             continue
         rows = [x for x in (f0.get("from"), f0.get("to")) if x in pos]
         base = _refit(st, flows, env, rows, scale)
-        b0 = _rows_bic(st, base, env, rows, scale, floor)
         demand = {"form": "proportional", "stock": m.group(2), "k": float(m.group(1))}
         trial = [({kk: v for kk, v in f.items() if kk != "rates"} | {"rate": demand, "rates": [demand]}) if key(f) == k0 else f for f in flows]
         trial, _ = _reread(st, trial, env, scale, floor, every=True)
+        judged = _span(st, trial, _span(st, flows, rows))           # (regress-milp) every row a refit touched
         trial = _refit(st, trial, env, rows, scale)
-        b1 = _rows_bic(st, trial, env, rows, scale, floor)
+        b0 = _rows_bic(st, base, env, judged, scale, floor)
+        b1 = _rows_bic(st, trial, env, judged, scale, floor)
         if b0 is None or b1 is None or not b1 < b0:
             continue
         flows = trial
@@ -135,11 +153,12 @@ def refine(flows: list[dict], stocks: list[dict], run: dict, opts: dict | None, 
             continue
         rows = [f0["from"], f0["to"]]
         base = _refit(st, flows, env, rows, scale)
-        b0 = _rows_bic(st, base, env, rows, scale, floor)
         trial = [f for f in flows if key(f) != k0]
         trial, _ = _reread(st, trial, env, scale, floor, every=True)
+        judged = _span(st, trial, _span(st, flows, rows))           # (regress-milp) every row a refit touched
         trial = _refit(st, trial, env, rows, scale)
-        b1 = _rows_bic(st, trial, env, rows, scale, floor)
+        b0 = _rows_bic(st, base, env, judged, scale, floor)
+        b1 = _rows_bic(st, trial, env, judged, scale, floor)
         if b0 is None or b1 is None or not b1 < b0 - MARGIN:
             continue
         flows = trial
