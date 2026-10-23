@@ -593,6 +593,27 @@ On 317 the type-10 rows turned 10 timeout or error cells into scored results; wi
 | runner: SystemError at the alarm is a timeout | 317-engine_forms, 317-kalman_lna | harness; the X cells on 317 are really timeouts |
 | analyse coverage of hidden-stock truths | 310 PROXY | so the gate itself labels 310-312 and 317 counts data-limited |
 
+## Ports to the next five strategies (2026-10-22; the user: "pick another 5 models and apply the same fixes")
+
+Each port was one agent holding the strategy's lock, copying (never importing) the climb's code by fix type, testing
+308-311 (none/counts variants) on the pool and checking 300-307 for regressions. Details: docs/research/fixes/port-<s>.md.
+
+| strategy | copied from (commit) | fix types | 308-311 before -> after | 300-307 | commits, jobs |
+|---|---|---|---|---|---|
+| matrix_v2 | kalman_lna's rows/derived/delayed/subsets/tracker (9d3ca8e), combined2's oefit guard | 2, 3, 4, 6, 7, 10, 11, 12, 14, 15, 16, 17 | 0/16 -> 11/16 (every achievable cell; 308 counts-short and 309 counts-long pass despite the data limit) | 32/32 kept | 307af7c, a1520e8; jobs 393, 394 |
+| sindy | engine_forms' exact post passes (2bca23f), plus coflow-strip and a 256-set reread screen | 1-3, 5, 6, 10-17 | 0/16 -> 9/16 (every achievable cell) | 32/32 kept | 29f3a1b, 1a640aa, 6732e88; jobs 377 -> 396, 397 |
+| censored | structures' post-stages whole (dd9d8d1), capmin guards (engine_forms 740ed95, structures c6fa9ea) | 0, 2-6, 9-17 | 0/16 -> 9/16 (every achievable cell) | 32/32 kept | cce1df6, 3ee7e17, 3de593d; jobs 383, 395, 398 |
+| z3robust | milp's post-program passes (a72bb0d, without the output-error refit), capmin guards | 1-3, 5-7, 9-12, 14-18 | 0/16 -> 8/16 (every achievable cell) | kept; 307 counts-short fail -> pass | 8edfe20, 9032b6b, 27df2d1; job 404 |
+| common_cause | kalman_lna's rows (as krows)/derived/delayed/subsets/tracker (7c3fb13) | 2, 3, 4, 6, 7, 10-14 | 0/16 -> 11/16 (every achievable cell) | 32/32 kept; no pass lost on the other 1,164 cells | 7778159, 09b045c, 02a3f60, 5bb4c2b; jobs 405-407 |
+
+What the ports taught about the fixes: the post-fit stages (row re-reading by best subset, the controller tracker,
+hidden delay stages, floors, earn rules, the capmin guards) carry from one method family to another as whole copies,
+run after the method's own fit; each port needed only a few base-specific changes (reading the base's own flow formats,
+an always-on step rule refused as a controller, budgets from the runner's timer). Regressions found in the climb's own
+strategies through the ports: engine_forms' reread screen of 64 (2bca23f, a 317 speed change) failed 311 none-short and
+none-long; raised to 256 in 49d3645 (job 400: 311 passes again; 317 unchanged). kalman_lna's tracker (a hidden delay
+stage read as an inside flow since febd195; a `{"value": v}` constant read as 0) is being checked (job 408).
+
 ## What is left
 
 - **317 does not pass.** Only structures passes a cell (none-short 85/85). The misses are 310-312's mechanisms per
