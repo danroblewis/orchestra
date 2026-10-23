@@ -75,6 +75,15 @@ def forced_pairs(stocks: list[dict], run: dict | None) -> set:
     return {(a, b) for a in alone for b in alone if a != b and not side(a, "out") and not side(b, "in")}
 
 
+def counters_fed_from_outside(stocks: list[dict], run: dict | None) -> frozenset:
+    """(2026-10-23, regress-combined2) The final stocks the declared boundary gives an outside inflow: counters of
+    some flow (counted.py), never a limited move's receiver. Empty where no boundary is declared."""
+    if not (run or {}).get("boundary_declared"):
+        return frozenset()
+    b = (run or {}).get("boundary") or {}
+    return frozenset(s["id"] for s in stocks if s.get("final") and ((b.get(s["id"]) or {}).get("in")))
+
+
 def level_series(name) -> bool:
     """Is this input the offered series? It is a function of measured levels, not something from
     outside, so a row reads it wherever it may read the levels (a declared boundary's rule for
@@ -235,7 +244,8 @@ def _room(X: np.ndarray, Y: np.ndarray, Z: np.ndarray, beta: float, th: float) -
     return np.minimum(X, th * np.maximum(0.0, beta * Y - Z))
 
 
-def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, pairs: set = frozenset(), allv=None):
+def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, pairs: set = frozenset(), allv=None,
+            closed: frozenset = frozenset()):
     """One round of offer(): the best limit (plain or headroom) on top of the design B, sources in skip left out.
     (2026-10-22, k8s-316) pairs: the cross-unit moves the declared boundary forces (forced_pairs), which may carry
     a limit too; and the headroom's pool may be a fixed size (Y = ONE: the cap c - d x Z, d > 0)."""
@@ -260,7 +270,7 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, 
             got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * Y, units, pairs,
                          lambda rows: _golden(lambda th: sum(math.log(_rss(np.column_stack([B, np.minimum(X, th * Y)]), dy[r]) + floor[r])
                                                              for r in rows), grid)[0],
-                         lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y, args=(X, Y), allv=allv)
+                         lambda th: np.minimum(X, th * Y), lambda th: X <= th * Y, args=(X, Y), allv=allv, closed=closed)
             if got and (best is None or got["kink"] > best["kink"]):
                 best = {"source": x, "cap": name, **got}
     # (2026-10-22, k8s-311, docs/research/fixes/311-combined2.md) a headroom limit MIN(X, theta x max(0,
@@ -313,7 +323,8 @@ def _search(ids, final, units, dy, read, inputs, B, Q, floor, price, skip: set, 
                 m = _room(X, Y, Z, beta, th)
                 got = _judge(xi, m, ids, dy, B, Q, floor, price, X <= th * np.maximum(0.0, beta * Y - Z), units, pairs, refine,
                              lambda th, f=refine: _room(X, Y, Z, getattr(f, "beta", beta), th),
-                             lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z), args=(X, Y, Z), allv=allv)
+                             lambda th, f=refine: X <= th * np.maximum(0.0, getattr(f, "beta", beta) * Y - Z), args=(X, Y, Z), allv=allv,
+                             closed=closed)
                 if got and got.get("theta") is not None and (best is None or got["kink"] > best["kink"]):
                     best = {"source": x, "cap": name, "room": z, "beta": float(getattr(refine, "beta", beta)), **got}
     return best
@@ -364,21 +375,30 @@ def _screened(ids, final, units, read, caps, P, E, skip, pairs, floor) -> set:
     return keep
 
 
-def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, pairs, refine, series, regime, args=(), allv=None) -> dict | None:
+def _judge(xi, m, ids, dy, B, Q, floor, price, first_regime, units, pairs, refine, series, regime, args=(), allv=None,
+           closed: frozenset = frozenset()) -> dict | None:
     """The offer rule for one candidate series m (module docstring): it takes from X; its receiver; the
     threshold refined on X's row and the receiver's; each regime on MIN_SHARE of the steps; gain and kink.
     (2026-10-22, k8s-312, docs/research/fixes/312-combined2.md) The receiver is a stock of X's unit: a move
-    carries one thing (the user's rule), and 312 none-long's best offer had been requests moved into nodes."""
+    carries one thing (the user's rule), and 312 none-long's best offer had been requests moved into nodes.
+    (2026-10-23, regress-combined2, docs/research/fixes/regress-combined2.md) A limit is a move: one with no receiver
+    (an outflow to outside) is not offered, since MIN(X, theta Y) = X - max(0, X - theta Y) is a floored outside side,
+    hinge.py's to fit; nor is one into a stock of `closed` (a final counter the declared boundary feeds from outside,
+    which counts a flow rather than receiving one; counted.py). 309/310 none-long: a pod controller's floored gaps
+    max(0, desired - pending - ready) and max(0, ready - desired) had been offered as limits into outside, desired
+    and oom_kills_total, and the candidates fitted on them lost the controller."""
     gx, cx = _gain(B, m, dy[xi], floor[xi])
     if cx >= 0 or gx <= 0:                                 # a limited outflow of X takes from X
         return None
     to = None
     for z in range(len(ids)):
-        if z != xi and (units.get(ids[z]) == units.get(ids[xi]) or (ids[xi], ids[z]) in pairs):   # (k8s-316) or forced
+        if z != xi and ids[z] not in closed and (units.get(ids[z]) == units.get(ids[xi]) or (ids[xi], ids[z]) in pairs):   # (k8s-316) or forced
             gz, cz = _gain(B, m, dy[z], floor[z])
             if cz > 0 and gz > price and (to is None or gz > to[0]):
                 to = (gz, z)
-    rows = [xi] + ([to[1]] if to else [])
+    if to is None:                                         # (regress-combined2) a limit is a move
+        return None
+    rows = [xi, to[1]]
     th = refine(rows)
     if th is None:
         return None
@@ -422,6 +442,7 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     ids, final, dy, read, inputs = got
     units = {s["id"]: s.get("unit") for s in stocks}
     pairs = forced_pairs(stocks, run)
+    closed = counters_fed_from_outside(stocks, run)
     T = dy.shape[1]
     B, Q = _design(ids, read, inputs, opts, np.asarray(run["t"], dtype=float), T)
     allv = [read[i] for i in range(len(ids))] + list(inputs.values())
@@ -429,7 +450,8 @@ def offer(stocks: list[dict], run: dict, opts: dict | None) -> tuple[dict, dict 
     price = PRICE * math.log(T)
     found = []
     while len(found) < MAX_LIMITS:
-        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found}, pairs, allv)
+        best = _search(ids, final, units, dy, read, inputs, B, Q, floor, price, {c["source"] for c in found}, pairs, allv,
+                       closed)
         if best is None:
             break
         m = best.pop("series")
