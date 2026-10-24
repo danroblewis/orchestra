@@ -70,9 +70,20 @@
     return el;
   }
 
+  const CARD_MAX = { stocks: 24, flows: 50 };     // larger models: a summary on the card, not a drawing (the user, 2026-10-24)
   async function fill(el, i, done) {
     const c = H.cases()[i.case];
     if (!c) return;
+    const ns = ((c.model || {}).stocks || []).length, nf = ((c.model || {}).flows || []).length;
+    if (ns > CARD_MAX.stocks || nf > CARD_MAX.flows) {        // drawing it (and fetching its result and diff) slowed the page
+      const svg = el.querySelector(".rcdiag");
+      const box = document.createElement("div");
+      box.className = "rcbig";
+      box.innerHTML = `<b>${ns}</b> stocks · <b>${nf}</b> flows<br><span class="small muted">too large to draw here; click for the full run</span>`;
+      svg.replaceWith(box);
+      el.querySelector(".rccap").textContent = done ? "" : "running";
+      return;
+    }
     const r = await latest(i);
     const cmp = r ? await H.compareOf(c, r) : null;
     if (![...drawn.values()].includes(el)) return;          // gone while its result loaded

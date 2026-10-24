@@ -380,6 +380,22 @@
   if (window.SDLadderRunning) window.SDLadderRunning.init({ toBoard: () => toBoard(), cases: () => S.byId, open: (sel) => pick(sel), compareOf, drawDiff: window.SDLadderDraw.drawDiff });
   if (window.SDLadderBoard) window.SDLadderBoard.init({ strategies: () => S.strategies, drawPair, diffHtml, compareOf, legend: () => LEGEND, open: (sel) => pick(sel), drawHtml });
 
+  // a very large model (sd-k8s-platform: 479 stocks, 1,130 flows) is not drawn unless asked: drawing it froze the page
+  // (the user, 2026-10-24); "Draw it anyway" draws it once for that case
+  const DRAW_MAX = { stocks: 80, flows: 200 };
+  const drawAnyway = new Set();
+  function tooBig(c, host, redraw) {
+    const ns = ((c.model || {}).stocks || []).length, nf = ((c.model || {}).flows || []).length;
+    const big = (ns > DRAW_MAX.stocks || nf > DRAW_MAX.flows) && !drawAnyway.has(c.id);
+    let note = host.parentNode.querySelector(":scope > .bigmodel");
+    if (!big) { if (note) note.remove(); host.hidden = false; return false; }
+    host.hidden = true;
+    if (!note) { note = document.createElement("div"); note.className = "bigmodel"; host.parentNode.insertBefore(note, host); }
+    note.innerHTML = `<b>${ns}</b> stocks and <b>${nf}</b> flows: too large to draw quickly. <button class="btn small" type="button">Draw it anyway</button>`;
+    note.querySelector("button").onclick = () => { drawAnyway.add(c.id); note.remove(); host.hidden = false; redraw(); };
+    return true;
+  }
+
   // the verdicts come from the server's diff (compareOf: diff.py), the page's own comparison only if that fails
   async function renderCompare(c, r, err) {
     const my = (S.rctoken = (S.rctoken || 0) + 1);
@@ -393,7 +409,8 @@
       ${err ? `<p class="note error">${esc(err.message)}</p>` : ""}
       ${scoreTable(r)}`;
     $("found-cap").textContent = r ? `Found by ${r.strategy}` : `Found by ${S.sel.strategy}: not run yet`;
-    const { alias } = drawPair(c, r, $("d-true"), $("d-found"), cmp, innerWidth >= 900 ? 2 : null, $("d-diff"));
+    const big = tooBig(c, $("dpair"), () => renderCompare(c, r, err));
+    const { alias } = big ? { alias: {} } : drawPair(c, r, $("d-true"), $("d-found"), cmp, innerWidth >= 900 ? 2 : null, $("d-diff"));
     $("dpair").classList.toggle("stack", innerWidth < 900);
     $("dlegend").innerHTML = LEGEND + Object.entries(alias).filter(([id, n]) => id !== n).map(([id, n]) => ` · <span class="mono">${esc(n)} = ${esc(id)}</span>`).join("");
     $("dlist").innerHTML = r ? `${diffHtml(cmp)}<p class="bexplain">${esc(L.explain(r.scores))}</p>` : "";
@@ -780,7 +797,8 @@
     const cmp = await compareOf(c, r);
     if (my !== S.crtoken || !$("c-run")) return;
     $("c-run-scores").innerHTML = `${err ? `<p class="note error">${esc(err.message)}</p>` : ""}${scoreTable(r)}`;
-    const { alias } = drawPair(c, r, $("c-true"), $("c-found"), cmp, innerWidth >= 900 ? 2 : null, $("c-diff"));
+    const big = tooBig(c, $("c-dpair"), () => showCaseRun(c));
+    const { alias } = big ? { alias: {} } : drawPair(c, r, $("c-true"), $("c-found"), cmp, innerWidth >= 900 ? 2 : null, $("c-diff"));
     $("c-dpair").classList.toggle("stack", innerWidth < 900);
     $("c-dlegend").innerHTML = LEGEND + Object.entries(alias).filter(([id, n]) => id !== n).map(([id, n]) => ` · <span class="mono">${esc(n)} = ${esc(id)}</span>`).join("");
     $("c-dlist").innerHTML = r ? `${diffHtml(cmp)}<p class="bexplain">${esc(L.explain(r.scores))}</p>` : "";
