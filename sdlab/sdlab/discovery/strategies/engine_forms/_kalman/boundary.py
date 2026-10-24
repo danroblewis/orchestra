@@ -894,7 +894,10 @@ def enforce_sides(flows: list[dict], stocks: list[dict], b: Boundary, data: Data
     if not b.declared or not (b.fixed or b.limit):
         return flows
     inputs = set(data.inputs)
-    names = [n for n in data.inputs if n not in data.ids]
+    # (regress-engine_forms, 2026-10-22) an offered capacity series (capmin.py, capmin__*) is a MIN of two levels
+    # handed to the fit, never a measured input: a declared input side is never fixed to it (316 counts-long on
+    # node2: frontend_queue's input fixed at 1 x MIN(db_waiting, 0.296 (351 - db_active)) in place of traffic)
+    names = [n for n in data.inputs if n not in data.ids and not str(n).startswith("capmin__")]
     flows = copy.deepcopy(flows)
     touched: set = set()
     fixed: list[dict] = []

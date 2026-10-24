@@ -212,6 +212,10 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
             mv = {"id": f"counted_{top['a']}_{b}", "from": top["a"], "to": b, "ratio": 1, "rate": dict(rate), "rates": [dict(rate)],
                   "effects": copy.deepcopy(eff)}
             cand = floor._refit(base + [mv], data, mat, offered, near={top["a"], b})
+            # (regress-structures) a room move's numbers refitted with the candidate in (room.polish): fitted before
+            # the kills were in, the room bends to stand in for them (311 none-short since b6f2b6e's untrimmed
+            # objective: 4.96 nodes - 1.26 ready for 4 nodes - ready), and the kill move then never pays
+            cand = _repolish(cand, result, stocks, run, opts)
             cand = (floor.apply({"flows": cand}, stocks, run, opts, judge_opts=jo, only=_near(cand, {top["a"], b})).get("flows")) or cand
             # (2026-10-22) the rows the move lands on repaired with the plain moves they lack (repair.py):
             # 310 none-long on node2 had lost `pending -> ready`, which only pays once the kill move is in
@@ -225,6 +229,15 @@ def _apply(result: dict, stocks: list[dict], run: dict, opts: dict, jo: dict) ->
     if not notes:
         return result
     return {**result, "flows": flows, "counted": notes}
+
+
+def _repolish(flows: list[dict], result: dict, stocks: list[dict], run: dict, opts: dict) -> list[dict]:
+    """The room move's numbers refitted with every other flow held (room.polish), where the answer has one."""
+    if not (result.get("room") or {}).get("kept"):
+        return flows
+    from . import room
+
+    return room.polish({"flows": flows, "room": result.get("room")}, stocks, run, opts).get("flows") or flows
 
 
 def _near(flows: list[dict], ends: set) -> set:
