@@ -87,7 +87,7 @@ Where the research stands, for picking up later: `docs/research/kubernetes-ladde
 | `status` says the daemon is not running | `sh scripts/backlog.sh start` |
 | the pages do not load, the server does not answer | wait a minute (the daemon restarts it). If it is running but stuck: `curl -s -H "X-Pool-Token: $(cat ~/.sdlab/pool.token)" localhost:8020/api/pool/debug/threads > ~/hang.json`, then `pkill -9 -f "sdlab --port 8020"` (the daemon starts it again; queued work is kept in the store) |
 | a worker is not live in `pool status` | Mac: `rm -f ~/.sdlab/pool-worker.paused` (the daemon starts it); node2: `sh scripts/backlog.sh node2 start`, logs `ssh ubuntu@10.198.1.109 journalctl --user -u sdlab-pool-worker -n 50` |
-| items keep timing out | expected on the biggest cases (rungs 306-317 allow 1800 s; others 300 s); they are recorded as timeouts, not lost |
+| items keep timing out | every item gets at least 7200 s (2 h) since 2026-10-24; a timeout under a shorter limit than today's runs again by itself |
 | node2 runs out of memory | its service is capped (47 GB soft, 49 GB hard); an item is killed and retried once on a machine with more room |
 | the disk fills | the store is `~/.cache/sdlab/ladder/results.sqlite`; backups are `~/.sdlab/backups/` (hourly, about 85 MB each): delete old backups first |
 | you want the store back as it was | stop the daemon and server first (`pkill -f sdlab-daemon.sh; pkill -f "sdlab --port 8020"`), then `uv run sdlab-ladder restore` (unpacks the newest backup in `~/.sdlab/backups/` to a file and checks its row counts) and `uv run sdlab-ladder restore --replace` to put it in place of the store; then `sh scripts/backlog.sh start` |

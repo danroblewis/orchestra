@@ -36,7 +36,7 @@ EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 ID_RE = re.compile(r"^sd-[a-z0-9][a-z0-9-]{0,60}$")
 KEYS = {"example", "title", "level", "tags", "tests", "timeout", "lengths", "tolerance"}
 TAG = "realistic"
-TIMEOUT = 300.0                                   # seconds per item unless the case says otherwise (the watcher's own)
+TIMEOUT = 7200.0                                   # seconds per item unless the case says otherwise (the watcher's own)
 GOAL_SKILL20, GOAL_SKILL100 = 0.9, 0.8            # tests/bench/evaluate.py
 
 

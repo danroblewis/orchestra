@@ -71,7 +71,7 @@ def submit(body: dict) -> dict:
         raise Refused(400, "cases: '*' is the main line's own spec")
     try:
         priority = int(body.get("priority", AGENT_PRIORITY))
-        timeout = float(body.get("timeout") or 300)
+        timeout = float(body.get("timeout") or 7200)   # the default: very high (the user, 2026-10-24); the cap is 7200
     except (TypeError, ValueError):
         raise Refused(400, "priority: an integer; timeout: seconds") from None
     if not 1 <= priority <= MAX_PRIORITY:

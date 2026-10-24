@@ -155,7 +155,7 @@ def main(argv: list[str]) -> int:
     s.add_argument("--note")
     s.add_argument("--check-tree", default="all", choices=("all", "strategies", "none"))
     s.add_argument("--fresh", action="store_true", help="run items even when a result with exactly their hashes is stored")
-    s.add_argument("--timeout", type=float, default=300)
+    s.add_argument("--timeout", type=float, default=7200)
     s.add_argument("--every-variant", action="store_true", help="also none-long where none-short has not passed (it only confirms a short pass by default)")
     s.add_argument("--estimate-only", action="store_true")
     st = sub.add_parser("status", help="the pool, or one job")

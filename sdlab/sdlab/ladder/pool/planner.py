@@ -13,6 +13,7 @@ private ladder cache (an empty store): it reads no result. Tests replace RUN wit
 
 from __future__ import annotations
 
+
 import hashlib
 import json
 import os
@@ -22,12 +23,15 @@ from pathlib import Path
 
 from . import gitcode
 
+DEFAULT_TIMEOUT = 7200.0   # seconds per item when a job names none (2026-10-24, the user: very high; the pool's cap)
+
 LOCK = threading.Lock()
 
 SNIPPET = r'''
 import json, os, sys
 from sdlab.ladder import runner
 from sdlab.ladder import cases as casemod
+
 spec = json.loads(os.environ["SDLAB_POOL_SPEC"])
 try:
     strategies, skipped = runner.select_strategies(spec.get("strategies") or "all")
@@ -48,7 +52,7 @@ if not probe:
     from sdlab.ladder import catalog
     probe = [s for s in catalog.listing() if s["available"]][:1]
 cases = {}
-timeout = float(spec.get("timeout") or 300)
+timeout = float(spec.get("timeout") or 7200)   # planner.DEFAULT_TIMEOUT (this runs in a checkout of its own)
 for it in runner.plan(ids, probe, None, force=True) if probe else []:
     c = cases.get(it["case"])
     if c is None:

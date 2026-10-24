@@ -32,7 +32,7 @@ from . import realistic as _realistic
 from .real import data as _real_data
 from .real import score as _real_score
 
-TIMEOUT = 120
+TIMEOUT = 3600
 
 
 def select_cases(spec: str | None, exclude: str | None = None) -> list[str]:
@@ -204,12 +204,13 @@ def discover(strategy: str, model: dict, d: dict) -> dict:
 
 
 def case_timeout(case_id: str, timeout: float) -> float:
-    """The item's timeout: a realistic case's own (realistic.py; slower, so it sets its own), else the run's."""
+    """The item's timeout: the longest of the run's, the case's own and (a realistic case) realistic.TIMEOUT."""
     try:
         c = casemod.load(case_id)
     except Exception:                                          # noqa: BLE001  (reported when the item runs)
         return timeout
-    return float(c.get("timeout") or (_realistic.TIMEOUT if c.get("example") else timeout))
+    # (2026-10-24, the user: "a very high default limit") the run's limit is a floor: a case's own limit only raises it
+    return max(float(c.get("timeout") or 0), float(_realistic.TIMEOUT if c.get("example") else 0), float(timeout))
 
 
 def run_item(item: dict, timeout: float = TIMEOUT, run_id: int | None = None, queued: float | None = None) -> dict:
