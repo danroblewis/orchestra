@@ -908,11 +908,14 @@
   // injections ticked; hover for the values at a step
   function plotLevels(box, legend, d, c, given, label) {
     const ids = c.model.stocks.map((s) => s.id), measured = new Set(d.measured);
-    const series = given || ids.map((id) => ({ id, ys: (measured.has(id) ? d.levels[id] : d.all_levels[id]) || [], hidden: !measured.has(id) }));
+    const all = given || ids.map((id) => ({ id, ys: (measured.has(id) ? d.levels[id] : d.all_levels[id]) || [], hidden: !measured.has(id) }));
+    const MAXLINES = 60;                             // a very large model (sd-k8s-platform: 479 stocks, 1,130 flows): the first 60
+    const series = all.slice(0, MAXLINES);
     const longest = Math.max(4, ...series.map((x) => String(x.short || x.id).length));
     const W = Math.max(320, box.clientWidth || 800), H = given ? 200 : 260, m = { l: 52, r: Math.max(56, 7 * longest + 12), t: 14, b: 26 };   // room for the end labels
     const t = d.t, n = t.length, stride = Math.max(1, Math.ceil(n / 900));
-    const hi = Math.max(1e-9, ...series.flatMap((s) => s.ys)), lo = Math.min(0, ...series.flatMap((s) => s.ys));
+    let hi = 1e-9, lo = 0;                           // a loop, not Math.max(...all values): that overflowed the stack on large models
+    for (const x of series) for (const y of x.ys) { if (y > hi) hi = y; if (y < lo) lo = y; }
     const X = (i) => m.l + (t[i] - t[0]) / Math.max(1, t[n - 1] - t[0]) * (W - m.l - m.r), Y = (y) => m.t + (1 - (y - lo) / (hi - lo)) * (H - m.t - m.b);
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((g) => lo + g * (hi - lo));
     const eras = (d.eras || []).length > 1 ? d.eras.map((e, k) => {
@@ -933,7 +936,8 @@
       ${eras}${ticks.map((y) => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(y)}" y2="${Y(y)}"/><text class="axis" x="${m.l - 6}" y="${Y(y) + 4}" text-anchor="end">${esc(fmt(y))}</text>`).join("")}
       <text class="axis" x="${m.l}" y="${H - 6}">${t[0]}</text><text class="axis" x="${W - m.r}" y="${H - 6}" text-anchor="end">step ${t[n - 1]}</text>
       ${inj}${lines}<line id="xhair" class="xhair" y1="${m.t}" y2="${H - m.b}" x1="-10" x2="-10"/><rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit"/></svg>`;
-    legend.innerHTML = series.map((s, k) => `<span><span class="sw c${(k % SERIES) + 1}${s.hidden ? " hid" : ""}"></span>${esc(s.id)}${s.hidden ? " (not measured)" : ""}</span>`).join("");
+    legend.innerHTML = series.map((s, k) => `<span><span class="sw c${(k % SERIES) + 1}${s.hidden ? " hid" : ""}"></span>${esc(s.id)}${s.hidden ? " (not measured)" : ""}</span>`).join("")
+      + (all.length > series.length ? `<span class="muted">… and ${all.length - series.length} more not drawn (${all.length} in all)</span>` : "");
     const hit = box.querySelector("#hit"), xh = box.querySelector("#xhair");
     hit.addEventListener("mousemove", (e) => {
       const r = box.querySelector("svg").getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width;
