@@ -504,3 +504,16 @@ def test_an_agent_job_past_the_cap_fails_and_the_coordinator_is_not_capped(pool,
     j = submit(pool, strategies="s1,s2", cases="c1")             # 4 items
     assert j["state"] == "failed" and "too big" in (j["error"] or "")
     assert submit(pool, strategies="s1,s2", cases="c1", by="coordinator")["state"] == "queued"
+
+
+def test_a_raised_limit_reruns_its_timeouts_once():
+    """(2026-10-23, the user) a timeout recorded under a shorter limit than the item's limit now is stale; at the same
+    limit (or with no limit given) it stays current, so it is not run again and again."""
+    from sdlab.ladder import store
+    row = {"case_hash": "c", "strategy_hash": "s", "score_hash": "h", "status": "timeout", "error": "took longer than 300 s"}
+    assert store.staleness(row, "c", "s", "h") is None
+    assert store.staleness(row, "c", "s", "h", limit=300) is None
+    assert store.staleness(row, "c", "s", "h", limit=1800) == "timed out under 300 s, limit now 1800 s"
+    guard = {**row, "error": "stopped by the worker after 2700.4 s (its own timeout covers discovery, not scoring)"}
+    assert store.timed_out_under(guard["error"]) == 900.2 and store.staleness(guard, "c", "s", "h", limit=900) is None
+    assert store.staleness({**row, "status": "fail"}, "c", "s", "h", limit=1800) is None

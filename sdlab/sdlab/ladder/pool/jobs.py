@@ -326,7 +326,7 @@ def refresh_mainline(force: bool = False) -> dict:
         if not standing(p, cid, s) or (cid, v["name"], s) in busy:
             continue
         row = latest.get((cid, v["name"], s))
-        why = store.staleness(row, c["hash"], sh, v["score_hash"])
+        why = store.staleness(row, c["hash"], sh, v["score_hash"], limit=c.get("timeout"))   # a raised limit re-runs its timeouts
         if not why:
             continue
         mode = "rescore" if why == "score_only" else "run"

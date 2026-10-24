@@ -22,6 +22,7 @@ earlier runs are dropped when a new run starts.
 
 from __future__ import annotations
 
+import re
 import json
 import sqlite3
 import time
@@ -227,8 +228,20 @@ def times_after(last_id: int) -> list[tuple]:
         return [tuple(r) for r in con.execute(f"SELECT {TIMES} FROM results WHERE id > ? ORDER BY id", (int(last_id),))]
 
 
-def staleness(row: dict | None, case_hash: str, strategy_hash: str, score_hash: str) -> str | None:
-    """Why a pair must run again (None: its latest result is current)."""
+def timed_out_under(error: str | None) -> float | None:
+    """The time limit a timed-out result ran under, from its error: "took longer than 300 s" (the runner's own timer), or
+    "stopped by the worker after 2700 s" (the pool worker's guard, 2 x the limit + 900 s: pool/slot.py); None if neither."""
+    m = re.search(r"took longer than ([0-9.]+) s", error or "")
+    if m:
+        return float(m.group(1))
+    m = re.search(r"stopped by the worker after ([0-9.]+) s", error or "")
+    return max(1.0, (float(m.group(1)) - 900.0) / 2.0) if m else None
+
+
+def staleness(row: dict | None, case_hash: str, strategy_hash: str, score_hash: str, limit: float | None = None) -> str | None:
+    """Why a pair must run again (None: its latest result is current). limit: the item's time limit now (the case's own
+    or the run's); a timeout recorded under a shorter limit runs again (2026-10-23, the user: raising a limit re-runs
+    the timeouts it would let finish, once)."""
     if row is None:
         return "new"
     if row["case_hash"] != case_hash:
@@ -239,6 +252,10 @@ def staleness(row: dict | None, case_hash: str, strategy_hash: str, score_hash: 
         return "score_only" if row["status"] not in ("error", "timeout") else "scoring changed"
     if row["status"] == "error" and _crashed(row.get("error")):
         return "worker crashed"                       # the machine, not the strategy: run it again
+    if row["status"] == "timeout" and limit:
+        then = timed_out_under(row.get("error"))
+        if then is not None and float(limit) > then * 1.01:
+            return f"timed out under {then:g} s, limit now {float(limit):g} s"
     return None
 
 
