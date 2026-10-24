@@ -707,3 +707,5 @@ figure.conv figcaption { font-size: 12px; color: var(--muted); }
 .rcbig b { color: var(--fg); font-size: 16px; }
 .bigmodel { padding: 18px; text-align: center; color: var(--muted); border: 1px dashed var(--rule); border-radius: 6px; margin: 8px 0; }
 .bigmodel b { color: var(--fg); }
+
+.plothead { font-size: 13px; margin: 12px 0 2px; }

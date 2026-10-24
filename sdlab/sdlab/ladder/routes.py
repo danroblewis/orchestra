@@ -8,7 +8,8 @@
     GET /api/ladder/results/{case}/{variant}/{strategy}       the latest one, with the found flows
     GET /api/ladder/results/{case}/{variant}/{strategy}/history   every result for it, newest first
     GET /api/ladder/diff/{case}/{variant}/{strategy}?result=   the found model as a git diff of the truth (diff.py)
-    GET /api/ladder/cases/{case}/data/{variant}?fresh=        the case's data in a variant (levels, every stock's levels, eras)
+    GET /api/ladder/cases/{case}/data/{variant}?fresh=&flows=  the case's data in a variant (levels, every stock's levels, eras,
+                                                              measured inputs; with flows, every true flow's amount per step)
     GET /api/ladder/result/{id}                               one stored result by id, with the found flows
     GET /api/ladder/strategies/{strategy}/timeline            the strategy's totals after each version
     GET /api/ladder/board?strategy=&variant=                  every case with one strategy's latest results (default: the best strategy; variant all)
@@ -112,9 +113,9 @@ def diff(case_id: str, variant: str, strategy: str, result: int | None = None) -
 
 
 @router.get("/cases/{case_id}/data/{variant}")
-def case_data(case_id: str, variant: str, fresh: bool = False) -> dict:
+def case_data(case_id: str, variant: str, fresh: bool = False, flows: bool = False) -> dict:
     _variant(_case(case_id), variant)
-    return api.case_data(case_id, variant, fresh)
+    return api.case_data(case_id, variant, fresh, flows=flows)
 
 
 @router.get("/result/{result_id}")

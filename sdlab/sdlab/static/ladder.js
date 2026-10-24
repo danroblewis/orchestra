@@ -839,10 +839,14 @@
       <p class="note">Stocks: ${c.model.stocks.map((s) => `${esc(s.id)} starts at ${esc(fmt(s.initial))}${measured.has(s.id) ? "" : " (not measured)"}`).join("; ")}.
         ${(c.model.injections || []).length ? `Injections: ${c.model.injections.length} announced.` : ""}
         ${Object.keys(c.tolerance || {}).length ? `Tolerance overrides: ${esc(JSON.stringify(c.tolerance))}.` : ""}</p>
-      <h3>Its data <span class="muted small">what discovery sees: the measured stocks' levels${measured.size < c.model.stocks.length ? "; dashed: not measured, for reference" : ""}</span></h3>
+      <h3>Its data <span class="muted small">what discovery sees: the measured stocks' levels${measured.size < c.model.stocks.length ? "; dashed: not measured, for reference" : ""}, and the measured inputs the equations read</span></h3>
       <div class="rcontrols"><span class="seg-btns" role="group" aria-label="Variant">${c.variants.map((v) => `<button class="btn${v.name === S.csel.variant ? " on" : ""}" data-v="${esc(v.name)}">${esc(v.name)}</button>`).join("")}</span>
         <label><input type="checkbox" id="c-fresh" ${S.csel.fresh ? "checked" : ""}> fresh run (next seed)</label></div>
-      <div class="chartbox" id="c-plot"></div><div class="legend" id="c-legend"></div>`;
+      <h4 class="plothead">Stocks</h4><div class="chartbox" id="c-plot"></div><div class="legend" id="c-legend"></div>
+      <div id="c-inputs-wrap" hidden><h4 class="plothead">Inputs <span class="muted small">measured series the equations read (given to discovery)</span></h4>
+        <div class="note mono small" id="c-inputs-def"></div><div class="chartbox" id="c-plot-in"></div><div class="legend" id="c-legend-in"></div></div>
+      <div id="c-flows-wrap" hidden><h4 class="plothead">Flows <span class="muted small">each flow's amount per step in the simulation (discovery never sees these; it infers them)</span></h4>
+        <div class="chartbox" id="c-plot-fl"></div><div class="legend" id="c-legend-fl"></div></div>`;
     const pos = D.layout(c.model.stocks.map((s) => s.id), c.model.flows, { ...LAYOUT, maxCols: maxCols() });
     D.draw($("c-diagram"), {
       stocks: c.model.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured" })),
@@ -864,18 +868,50 @@
     const my = (S.ctoken = (S.ctoken || 0) + 1);
     $("c-plot").innerHTML = `<p class="note">Loading the data…</p>`;
     try {
-      const d = await cached(`/api/ladder/cases/${enc(c.id)}/data/${enc(S.csel.variant)}${S.csel.fresh ? "?fresh=true" : ""}`);
-      if (my === S.ctoken) plotLevels($("c-plot"), $("c-legend"), d, c);
+      const d = await cached(`/api/ladder/cases/${enc(c.id)}/data/${enc(S.csel.variant)}?flows=true${S.csel.fresh ? "&fresh=true" : ""}`);
+      if (my === S.ctoken) {
+        plotLevels($("c-plot"), $("c-legend"), d, c);
+        const ins = Object.keys(d.inputs || {});
+        $("c-inputs-wrap").hidden = !ins.length;
+        if (ins.length) {
+          $("c-inputs-def").innerHTML = ins.map((k) => `${esc(k)} = ${esc(inputText((c.model.inputs || {})[k]))}`).join("<br>");
+          plotLevels($("c-plot-in"), $("c-legend-in"), d, c, ins.map((k) => ({ id: k, ys: d.inputs[k] || [] })), "Measured inputs over time");
+        }
+        const fl = c.model.flows.filter((f) => (d.flows || {})[f.id]);
+        $("c-flows-wrap").hidden = !fl.length;
+        if (fl.length) plotLevels($("c-plot-fl"), $("c-legend-fl"), d, c,
+          fl.map((f) => ({ id: `${f.id} (${f.from || "outside"} → ${f.to || "outside"})`, short: f.id, ys: d.flows[f.id] })), "Flows' amounts per step");
+      }
     } catch (e) { $("c-plot").innerHTML = `<p class="note error">${esc(e.message)}</p>`; }
+  }
+
+  // a measured input's definition as the case writes it: terms of constant, step, pulse, ramp, pulse_train, sin
+  // (sdtruth._term_value), each with what its numbers mean
+  function inputText(v) {
+    if (v === undefined || v === null) return "a measured series";
+    if (typeof v === "number" || typeof v === "string") return String(v);
+    if (v.expr) return v.expr;
+    if (Array.isArray(v.values)) return `a recorded series of ${v.values.length} values`;
+    const T = {
+      constant: (x) => `${fmt(x.value)}`,
+      step: (x) => `step(+${fmt(x.height)} from step ${fmt(x.start)})`,
+      pulse: (x) => `pulse(${fmt(x.height)} for ${fmt(x.width ?? 1)} steps from step ${fmt(x.start)})`,
+      ramp: (x) => `ramp(${fmt(x.slope)} a step from step ${fmt(x.start)}${x.end != null ? ` to ${fmt(x.end)}` : ""})`,
+      pulse_train: (x) => `pulse_train(${fmt(x.height)} for ${fmt(x.width ?? 1)} steps, first at step ${fmt(x.first)}, every ${fmt(x.every)} steps${x.last != null ? `, until ${fmt(x.last)}` : ""})`,
+      sin: (x) => `sin(amplitude ${fmt(x.amplitude)}, period ${fmt(x.period)} steps${x.phase ? `, phase ${fmt(x.phase)}` : ""})`,
+    };
+    const terms = (v.terms || []).map((x) => (T[x.fn] ? T[x.fn](x) : JSON.stringify(x)));
+    return terms.length ? terms.join(" + ").replace(/\+ -/g, "− ") : JSON.stringify(v);
   }
 
   // levels over time, one line per stock (categorical colours in fixed order), eras shaded,
   // injections ticked; hover for the values at a step
-  function plotLevels(box, legend, d, c) {
+  function plotLevels(box, legend, d, c, given, label) {
     const ids = c.model.stocks.map((s) => s.id), measured = new Set(d.measured);
-    const W = Math.max(320, box.clientWidth || 800), H = 260, m = { l: 52, r: 56, t: 14, b: 26 };
+    const series = given || ids.map((id) => ({ id, ys: (measured.has(id) ? d.levels[id] : d.all_levels[id]) || [], hidden: !measured.has(id) }));
+    const longest = Math.max(4, ...series.map((x) => String(x.short || x.id).length));
+    const W = Math.max(320, box.clientWidth || 800), H = given ? 200 : 260, m = { l: 52, r: Math.max(56, 7 * longest + 12), t: 14, b: 26 };   // room for the end labels
     const t = d.t, n = t.length, stride = Math.max(1, Math.ceil(n / 900));
-    const series = ids.map((id) => ({ id, ys: (measured.has(id) ? d.levels[id] : d.all_levels[id]) || [], hidden: !measured.has(id) }));
     const hi = Math.max(1e-9, ...series.flatMap((s) => s.ys)), lo = Math.min(0, ...series.flatMap((s) => s.ys));
     const X = (i) => m.l + (t[i] - t[0]) / Math.max(1, t[n - 1] - t[0]) * (W - m.l - m.r), Y = (y) => m.t + (1 - (y - lo) / (hi - lo)) * (H - m.t - m.b);
     const ticks = [0, 0.25, 0.5, 0.75, 1].map((g) => lo + g * (hi - lo));
@@ -891,9 +927,9 @@
     const lines = series.map((s, k) => {
       let p = "";
       for (let i = 0; i < n; i += stride) p += `${p ? "L" : "M"}${X(i).toFixed(1)} ${Y(s.ys[i] || 0).toFixed(1)}`;
-      return `<path class="ln c${(k % SERIES) + 1}${s.hidden ? " hid" : ""}" d="${p}"/><text class="dl c${(k % SERIES) + 1}" x="${W - m.r + 6}" y="${endY[k] + 4}">${esc(s.id)}</text>`;
+      return `<path class="ln c${(k % SERIES) + 1}${s.hidden ? " hid" : ""}" d="${p}"/><text class="dl c${(k % SERIES) + 1}" x="${W - m.r + 6}" y="${endY[k] + 4}">${esc(s.short || s.id)}</text>`;
     }).join("");
-    box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Levels over time">
+    box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label || "Levels over time")}">
       ${eras}${ticks.map((y) => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(y)}" y2="${Y(y)}"/><text class="axis" x="${m.l - 6}" y="${Y(y) + 4}" text-anchor="end">${esc(fmt(y))}</text>`).join("")}
       <text class="axis" x="${m.l}" y="${H - 6}">${t[0]}</text><text class="axis" x="${W - m.r}" y="${H - 6}" text-anchor="end">step ${t[n - 1]}</text>
       ${inj}${lines}<line id="xhair" class="xhair" y1="${m.t}" y2="${H - m.b}" x1="-10" x2="-10"/><rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit"/></svg>`;
