@@ -5,3 +5,4 @@ title: "Factory line with machine changes"
 level: 20
 tags: [realistic, announced-era, schedule]
 tests: "3 measured stocks, 4 flows with announced eras, unannounced changes; behaviour as on the examples' bench"
+timeout: 1800

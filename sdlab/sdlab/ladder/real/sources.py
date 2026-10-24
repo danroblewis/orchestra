@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 BLS_SNAPSHOT = HERE / "data" / "bls_cps_flows.csv"
 AGENT = "sdlab-research/0.1 (SD Lab real-data cases)"
-TIMEOUT = 60
+TIMEOUT = 3600
 
 SOURCES = {
     "bls": {"url": "https://api.bls.gov/publicAPI/v2/timeseries/data/", "licence": "US public domain (Bureau of Labor Statistics)",

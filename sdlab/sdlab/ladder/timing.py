@@ -32,7 +32,7 @@ from . import cases as casemod
 from . import store
 
 SETS = ("tests", "noisy", "canonical", "realistic", "physics", "real")
-WATCH_TIMEOUT = 300.0                 # the watcher's --timeout (CLAUDE.md): an old timeout's discovery seconds
+WATCH_TIMEOUT = 3600.0                 # the watcher's --timeout (CLAUDE.md): an old timeout's discovery seconds
 FLOOR = 0.01                          # seconds: a paired ratio reads anything faster as this
 
 

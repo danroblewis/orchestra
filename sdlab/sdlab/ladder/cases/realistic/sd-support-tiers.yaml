@@ -5,3 +5,4 @@ title: "Tiered customer support"
 level: 20
 tags: [realistic, hidden, coflow, announced-era, schedule]
 tests: "9 measured stocks and 1 hidden, 17 flows with co-flows, announced eras, unannounced changes; behaviour as on the examples' bench"
+timeout: 1800

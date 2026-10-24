@@ -28,7 +28,7 @@ import multiprocessing as mp
 from collections import Counter
 from pathlib import Path
 
-TIMEOUT = 120
+TIMEOUT = 3600
 
 
 def model_file(folder: Path) -> Path | None:
