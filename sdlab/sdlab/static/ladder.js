@@ -842,11 +842,11 @@
       <h3>Its data <span class="muted small">what discovery sees: the measured stocks' levels${measured.size < c.model.stocks.length ? "; dashed: not measured, for reference" : ""}, and the measured inputs the equations read</span></h3>
       <div class="rcontrols"><span class="seg-btns" role="group" aria-label="Variant">${c.variants.map((v) => `<button class="btn${v.name === S.csel.variant ? " on" : ""}" data-v="${esc(v.name)}">${esc(v.name)}</button>`).join("")}</span>
         <label><input type="checkbox" id="c-fresh" ${S.csel.fresh ? "checked" : ""}> fresh run (next seed)</label></div>
-      <h4 class="plothead">Stocks</h4><div class="chartbox" id="c-plot"></div><div class="legend" id="c-legend"></div>
       <div id="c-inputs-wrap" hidden><h4 class="plothead">Inputs <span class="muted small">measured series the equations read (given to discovery)</span></h4>
         <div class="note mono small" id="c-inputs-def"></div><div class="chartbox" id="c-plot-in"></div><div class="legend" id="c-legend-in"></div></div>
       <div id="c-flows-wrap" hidden><h4 class="plothead">Flows <span class="muted small">each flow's amount per step in the simulation (discovery never sees these; it infers them)</span></h4>
-        <div class="chartbox" id="c-plot-fl"></div><div class="legend" id="c-legend-fl"></div></div>`;
+        <div class="chartbox" id="c-plot-fl"></div><div class="legend" id="c-legend-fl"></div></div>
+      <h4 class="plothead">Stocks</h4><div class="chartbox" id="c-plot"></div><div class="legend" id="c-legend"></div>`;
     const pos = D.layout(c.model.stocks.map((s) => s.id), c.model.flows, { ...LAYOUT, maxCols: maxCols() });
     D.draw($("c-diagram"), {
       stocks: c.model.stocks.map((s) => ({ id: s.id, name: s.id, dashed: !measured.has(s.id), sub: measured.has(s.id) ? "" : "not measured" })),
