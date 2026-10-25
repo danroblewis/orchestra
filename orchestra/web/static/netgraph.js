@@ -46,6 +46,42 @@ const NetGraph = (() => {
     return { x: n.x + dx * k, y: n.y + dy * k };
   }
 
+  // ---- the frame and the clouds (pure: the renderer and the layout tests share them) ----
+  const PAD = 34, GAP = 34;
+  // the box around the nodes ``inside`` the system, padded
+  function frameOf(nodes, inside) {
+    const ins = nodes.filter((n) => inside(n) && n.x !== undefined);
+    if (!ins.length) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of ins) { const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+    return { x0: x0 - PAD, y0: y0 - PAD - 12, x1: x1 + PAD, y1: y1 + PAD };
+  }
+  // where each tethered node goes: just outside the frame, on the side nearest the node it belongs
+  // to, level with it (several on one side of one node sit side by side). {id: [x, y]}
+  function tetherPlaces(nodes, b) {
+    const byId = new Map(nodes.map((n) => [n.id, n])), count = new Map(), out = {};
+    if (!b) return out;
+    for (const n of nodes) {
+      const s = n.tether && !n.pin && byId.get(n.tether);
+      if (!s || s.x === undefined) continue;
+      const side = [[s.x - b.x0, "l"], [b.x1 - s.x, "r"], [s.y - b.y0, "t"], [b.y1 - s.y, "b"]].sort((a, c) => a[0] - c[0])[0][1];
+      const k = `${s.id}|${side}`, i = count.get(k) || 0;
+      count.set(k, i + 1);
+      const off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 38;              // 0, -38, +38, -76…: clouds side by side, not on top of each other
+      out[n.id] = side === "t" ? [s.x + off, b.y0 - GAP] : side === "b" ? [s.x + off, b.y1 + GAP]
+        : side === "l" ? [b.x0 - GAP, s.y + off] : [b.x1 + GAP, s.y + off];
+      out[n.id].side = side;
+    }
+    // clouds on one side never sit on each other: spread them along it, at least SPREAD apart
+    const SPREAD = 38;
+    for (const side of ["t", "b", "l", "r"]) {
+      const along = side === "t" || side === "b" ? 0 : 1;
+      const row = Object.values(out).filter((p) => p.side === side).sort((p, q) => p[along] - q[along]);
+      for (let i = 1; i < row.length; i++) row[i][along] = Math.max(row[i][along], row[i - 1][along] + SPREAD);
+    }
+    return out;
+  }
+
   // ---- elementary cycles (small graphs): each cycle once, as a list of node ids ----
   function cycles(nodeIds, edges, { max = 40, maxLen = 14 } = {}) {
     const adj = new Map(nodeIds.map((id) => [id, []]));
@@ -70,7 +106,9 @@ const NetGraph = (() => {
   // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
   // with every other node kept outside it, so what crosses the frame is visibly what crosses the
   // system's boundary (its sources, sinks and outside conditions).
-  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary } = {}) {
+  // ``layout``: an async function (nodes, edges) -> {id: [x, y]} that places a whole graph (ELK on
+  // the Dynamics page); used for the first layout, tidy and reset instead of the forces.
+  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
@@ -80,18 +118,10 @@ const NetGraph = (() => {
     const defs = svg.append("defs");
     defs.html(`<linearGradient id="ng-halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient>`);
     const root = svg.append("g"), gFrame = root.append("g"), gEdges = root.append("g"), gLabels = root.append("g"), gNodes = root.append("g");
-    const PAD = 34;
     const frameRect = gFrame.append("rect").attr("class", "ng-frame").attr("rx", 18).style("display", "none");
     const frameLabel = gFrame.append("text").attr("class", "ng-frame-label").style("display", "none");
     // the frame: the box around the inside nodes, padded
-    function frameBox() {
-      if (!boundary) return null;
-      const ins = NODES.filter((n) => boundary.inside(n) && n.x !== undefined);
-      if (!ins.length) return null;
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const n of ins) { const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
-      return { x0: x0 - PAD, y0: y0 - PAD - 12, x1: x1 + PAD, y1: y1 + PAD };
-    }
+    function frameBox() { return boundary ? frameOf(NODES, boundary.inside) : null; }
     // a force that pushes outside nodes out of the frame, to its nearest side
     function keepOutside(alpha) {
       const b = frameBox(); if (!b) return;
@@ -107,21 +137,9 @@ const NetGraph = (() => {
     }
     // a tethered node's place: just outside the frame, on the side nearest the node it belongs to,
     // level with it (several on one side of one node sit side by side)
-    const GAP = 34;
     function placeTethered() {
-      const b = frameBox(); if (!b) return;
-      const byId = new Map(NODES.map((n) => [n.id, n])), count = new Map();
-      for (const n of NODES) {
-        const s = n.tether && !n.pin && byId.get(n.tether);
-        if (!s || s.x === undefined) continue;
-        const side = [[s.x - b.x0, "l"], [b.x1 - s.x, "r"], [s.y - b.y0, "t"], [b.y1 - s.y, "b"]].sort((a, c) => a[0] - c[0])[0][1];
-        const k = `${s.id}|${side}`, i = count.get(k) || 0;
-        count.set(k, i + 1);
-        const off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 30;              // 0, -30, +30, -60…
-        [n.x, n.y] = side === "t" ? [s.x + off, b.y0 - GAP] : side === "b" ? [s.x + off, b.y1 + GAP]
-          : side === "l" ? [b.x0 - GAP, s.y + off] : [b.x1 + GAP, s.y + off];
-        n.vx = n.vy = 0;
-      }
+      const at = tetherPlaces(NODES, frameBox());
+      for (const n of NODES) if (at[n.id]) { [n.x, n.y] = at[n.id]; n.vx = n.vy = 0; }
     }
     // a force drawing ``edgeward`` nodes toward the nearest side of the frame (nothing for a node
     // already at it, so the frame does not grow)
@@ -279,8 +297,10 @@ const NetGraph = (() => {
       for (const group of par.values()) group.forEach((e, k) => { e.bend = (e.bend ?? 22) + (k - (group.length - 1) / 2) * 44; });
       // a layout still settling carries on (with any new nodes added to it); otherwise only the
       // new nodes move, or nothing does
+      RAW_EDGES = edges;
       const fresh = NODES.filter((n) => n._new);
-      if (settling) settle(new Set([...settling.movable].filter((id) => byId.has(id)).concat(fresh.map((n) => n.id))), Math.max(0.5, sim ? sim.alpha() : 0.5), true);
+      if (layout && fresh.length === NODES.length && !settling) placeAll(false);
+      else if (settling) settle(new Set([...settling.movable].filter((id) => byId.has(id)).concat(fresh.map((n) => n.id))), Math.max(0.5, sim ? sim.alpha() : 0.5), true);
       else if (fresh.length === NODES.length) settle(new Set(NODES.map((n) => n.id)), 1, true);
       else if (fresh.length) settle(new Set(fresh.map((n) => n.id)), 0.5, true);
       else tick();                                               // nothing new: nothing moves
@@ -301,7 +321,19 @@ const NetGraph = (() => {
     }
     // run the forces on ``movable`` nodes only; every other node, and every node the viewer placed,
     // is held where it is
-    let settling = null, drawnOnce = false;
+    let settling = null, drawnOnce = false, RAW_EDGES = [], placing = 0;
+    // place every node with ``layout`` (keeping the viewer's placements unless ``all``), then fit
+    async function placeAll(all) {
+      const ticket = ++placing;
+      if (sim) sim.stop();
+      settling = null;
+      let at;
+      try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
+      if (ticket !== placing) return;                            // a newer layout was asked for
+      for (const n of NODES) if (at[n.id] && (all || !n.pin)) { [n.x, n.y] = at[n.id]; n._new = false; n.fx = n.fy = null; }
+      tick(); save();
+      if (!userZoomed) fit(false);
+    }
     function settle(movable, alpha, refit) {
       if (sim) sim.stop();
       settling = { movable, refit };
@@ -322,6 +354,12 @@ const NetGraph = (() => {
     // lay it out again: around the viewer's placements, or (``reset``) from nothing
     function tidy(reset) {
       if (!NODES.length) return;
+      if (layout) {                                              // the layout engine, not the forces
+        if (reset) for (const n of NODES) { n.pin = false; delete saved[n.id]; }
+        userZoomed = false;
+        placeAll(reset);
+        return;
+      }
       if (reset) {
         for (const n of NODES) { n.pin = false; n._new = true; delete saved[n.id]; }
         placeNew(ALLEDGES.filter((e) => !e.toEdge).map((e) => ({ source: e.source.id, target: e.target.id })), new Map(NODES.map((n) => [n.id, n])));
@@ -402,5 +440,5 @@ const NetGraph = (() => {
     }));
   }
 
-  return { create, cycles, loopList, size };
+  return { create, cycles, loopList, size, frameOf, tetherPlaces };
 })();

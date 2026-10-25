@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "description": "Layout tests for the Dynamics graph: node --test, after npm ci",
+  "type": "module",
+  "dependencies": { "elkjs": "0.9.3" }
+}
