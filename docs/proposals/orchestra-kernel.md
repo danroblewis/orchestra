@@ -236,6 +236,58 @@ The engagement side of machines (requests, drivers, jobs, the dispatcher) is not
 6. **The first intervention on Orchestra itself.** For example, reviewer slots from 1 to 2, with a
    target written down beforehand and a verdict from re-fitting.
 
+## 4a. First slice: a basic task and work system on the kernel (proposed 2026-10-25)
+
+What exists so far *observes* the old loop: bus, collectors, metrics, model, fitter. Nothing yet
+*does* work through the new primitives. The first slice is the smallest task and work system built
+only from them, running beside the old loop and visible in the web UI.
+
+**Items and stocks.**
+- A task is an **item**: id, kind, attributes, and which stock it's in.
+- A **stock is a bin of items**: its level is the count, written by the collector.
+- Items are the bookkeeping; stocks are the measurement of it.
+
+**Flows are the allowed moves.**
+- The model declares which moves exist.
+- Every move is one event, `item_moved {item, flow, from, to, machine, job, evidence}`. The
+  collector generalises from `ticket_transition` to it.
+- Nothing moves an item along an undeclared flow (invariant 1, generalised).
+
+**Machines engaged through the dispatcher, in the bootstrap host.** Each tick:
+1. For each machine with an engagement, free capacity, and budget, apply its **take rule**:
+   which stocks it takes from, in what order.
+2. Lease the item.
+3. Put a **request** on the bus with a correlation id.
+4. Hand it to the machine's **driver**, which creates a **job**.
+
+When the job ends, its **claim** names an output of the flow. The dispatcher moves the item there,
+recorded with `evidence: claimed`.
+- A lease that expires (job `unknown`, `lost`, or past its timeout) returns the item along a
+  recovery flow. That is "no zombies" without a recovery machine.
+- **Claims move items for bookkeeping; observed evidence judges them.** A later verifier machine
+  (tests, review, a collector) records `evidence: observed`. Fitting and interventions weigh
+  evidence; the dispatcher doesn't.
+
+**The smallest factory to prove it:**
+- **Stocks:** backlog → doing → done, or failed; failed → backlog (retry).
+- **Machines:** the dispatcher's take moves backlog → doing; a worker moves doing → done or failed.
+- **Two drivers:**
+  - `process`: a shell command, so the mechanics are proven without spending tokens;
+  - `harness`: an agent through the existing harness layer. The local Pi model costs nothing.
+- **Cost events per job** (tokens, dollars where known), so spend becomes a measured flow at last.
+
+**In the web UI: a Factory page.**
+- Stocks with live levels.
+- Flows with fitted rates and their origin.
+- Machines with running jobs and their state, including `unknown`.
+- The items in each stock.
+
+This is where the replacement becomes visible as it's built.
+
+**Then grow it toward today's task system, one machine at a time:** worktree keeper, test runner,
+reviewer, batcher, gate. Each is a machine with a driver and a take rule, until the old loop has
+nothing left to do.
+
 ## 5. Invariants that change
 
 To be stated in the commits that change them, per AGENTS.md:
