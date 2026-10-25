@@ -283,10 +283,17 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 
 - **Dashboard:** the machines active on the bus; the host's CPU, GPU, memory and disk; a Core
   status strip.
-- **Machines:** every machine seen on the bus, the graph of who publishes and listens for which
-  event types, and each machine's metrics.
-- **Dynamics:** the model, drawn as stocks and flows with their equations and machines, stepping
-  through its versions.
+- **Machines:** every machine seen on the bus, the event map (machines and the event types they
+  publish and listen for), its feedback loops, and each machine's metrics.
+- **Dynamics:** the model as a stock-and-flow network (stocks with their level, tank fill and
+  sparkline; a valve per flow with its equation and machine; influences as dashed +/− links),
+  its feedback loops marked balancing or reinforcing, the stocks' history, and drawers with each
+  stock's and flow's history (a flow's observed rate against its equation's prediction). It shows
+  the host's latest discovery and steps through saved versions.
+
+Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). Loops are
+elementary cycles; clicking one highlights it. Pages read only the web server's background caches
+(`web/background.py`) and the host's cached discovery, never the stores on request.
 - **Core:** the host, the bus and the metrics store, each probed against its real backend within
   a time limit; explorers for the metrics (a catalogue and a PromQL editor) and the events (types,
   volumes, sources); logs. It imports only the bus, the metrics store and the runtime record.
