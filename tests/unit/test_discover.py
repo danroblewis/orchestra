@@ -175,7 +175,8 @@ def test_two_counters_of_the_same_thing_are_one_flow(tmp_path):
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=60)
     own = store.raw("bakery_loaves_baked_total", {"project": "p", "machine": "oven"}, start=start, end=end)
-    store.write([Point("orchestra_events_total", v, t + 1, {"project": "p", "source": "oven", "type": "loaf.baked"}) for t, v in own if t < end - 60])
+    changes = [(t, v) for i, (t, v) in enumerate(own) if i == 0 or v != own[i - 1][1]]     # written when an event comes, as Orchestra's collector does
+    store.write([Point("orchestra_events_total", v, t, {"project": "p", "source": "oven", "type": "loaf.baked"}) for t, v in changes if t < end - 60])
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert any(why.startswith("the same as bakery_loaves_baked_total") for k, why in m.discovery["left_out"].items() if k.startswith("orchestra_events_total"))
     assert not any(f.counter and f.counter.name == "orchestra_events_total" for f in m.flows)
