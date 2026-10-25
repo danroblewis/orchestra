@@ -16,7 +16,10 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    machine is its CloudEvents `source` (`<machine>/<instance>` for one of
    several instances), the events it publishes and listens for, how it says it
    is engaged (continuous, scheduled, ad hoc), and the series it writes. The Machines page, the collectors and the
-   model read what is observed, never a machine's description of itself.
+   model read what is observed, never a machine's description of itself. The
+   exceptions are what an instance announces in `orchestra.machine.started`:
+   its mode, what it listens for and where its log is. A log is read only
+   within the project's repository or state directory (`web/machine_logs.py`).
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
    belongs to the machines that use it.

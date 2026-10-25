@@ -51,7 +51,11 @@ others write is still a machine). Orchestra's own machine is the **bootstrap hos
 is: **continuous** (long-running instances that take work as it comes), **scheduled** (run by
 the clock) or **ad hoc** (a fresh instance per piece of work). An instance announces its mode and
 what it listens for when it starts (`orchestra.machine.started`, `data.mode`,
-`data.listens_for`). Running scheduled and ad hoc machines is the host's job (its clock and
+`data.listens_for`), and may say where its log is (`data.log`, a file path). These
+announcements are Orchestra's own event type, so Orchestra reads their `data`. The web server
+shows an announced log only when its real path is a regular file inside the project's repository
+or state directory (`web/machine_logs.py`), because anything that can publish could name any
+file. Running scheduled and ad hoc machines is the host's job (its clock and
 process driver); neither is built yet.
 
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
@@ -307,20 +311,31 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 - **Dashboard:** the machines active on the bus; the host's CPU, GPU, memory and disk; a Core
   status strip.
 - **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (machines and the event types they
-  publish and listen for), its feedback loops, and each machine's metrics.
+  publish and listen for), its feedback loops, and each machine's metrics. Clicking a machine
+  (its card or its node) opens its dialog: instances, what it publishes and listens for, its
+  series' latest values, its last events (envelopes only) and the tail of its announced log,
+  refreshed while open.
 - **Dynamics:** the model as a stock-and-flow network (stocks with their level, tank fill and
   sparkline; a valve per flow with its equation and machine; influences as dashed +/− links),
   its feedback loops marked balancing or reinforcing, the stocks' history, and drawers with each
-  stock's and flow's history (a flow's observed rate against its equation's prediction). It shows
-  the host's latest discovery and steps through saved versions.
+  stock's and flow's history (a flow's observed rate against its equation's prediction). A
+  stock's drawer also runs the equations (`sd/simulate.py`, SD Lab's simulator): from the measured
+  levels at the start of the era to now, and from now a horizon the viewer chooses; flows with no
+  form the simulator steps are replayed from their observed rates, and named. Its flows are split
+  into what fills it and what drains it (drawn below zero). It shows the host's latest discovery
+  and steps through saved versions.
 
 The model's graph frames **the system**: stocks inside, sources and sinks outside, so what
 crosses the frame is what crosses the boundary (where simulations will set the outside
 conditions). A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes).
 
-Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). Loops are
-elementary cycles; clicking one highlights it. Pages read only the web server's background caches
+Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). A layout keeps
+its shape: the forces place only new nodes (the known ones held still), every position is
+remembered per viewer, dragging moves one node, and "tidy" or "reset" lay it out again on
+purpose. On the Dynamics page each stock has one source cloud (pulled top left) and one sink cloud
+(pulled bottom right), and measured inputs sit to the left. Loops are elementary cycles; clicking
+one highlights it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
 - **Core:** the host, the bus and the metrics store, each probed against its real backend within
   a time limit; explorers for the metrics (a catalogue and a PromQL editor) and the events (types,

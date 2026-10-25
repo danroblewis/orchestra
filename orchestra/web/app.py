@@ -196,6 +196,41 @@ def create_app(project: Project) -> FastAPI:
             out["errors"] = bg.errors
         return out
 
+    @app.get("/api/machines/{machine}/events")
+    def machine_events(machine: str) -> dict:
+        """A machine's last events, newest first: envelopes only."""
+        return {"ok": True, "machine": machine, "events": bg.index.events_of(machine)}
+
+    @app.get("/api/machines/{machine}/metrics")
+    def machine_metrics(machine: str) -> dict:
+        """The latest value of each series labelled with this machine."""
+        out = []
+        for name, labels in bg.series:
+            if labels.get("machine") != machine:
+                continue
+            try:
+                last = core.metrics.latest(name, labels) if core.metrics is not None else None
+            except Exception:  # noqa: BLE001 - one bad series does not hide the rest
+                last = None
+            out.append({"name": name, "labels": {k: v for k, v in labels.items() if k not in ("project", "machine")},
+                        "t": last[0] if last else None, "v": last[1] if last else None})
+        return {"ok": True, "machine": machine, "series": sorted(out, key=lambda x: (x["name"], sorted(x["labels"].items())))}
+
+    @app.get("/api/machines/{machine}/log")
+    def machine_log(machine: str, instance: str | None = None, lines: int = 200) -> dict:
+        """The tail of the log the machine (or one instance) announced; only a file within the
+        project is read (machine_logs.py). Orchestra's own host: its log in the state directory."""
+        from ..events import HOST
+        from .machine_logs import readable, tail
+        lines = max(10, min(lines, 2000))
+        if machine == HOST:
+            return {"ok": True, **core.logs("host", lines)}
+        inst = None if instance is None else ("" if instance == machine else instance)
+        path, why = readable(bg.index.log_path(machine, inst), [project.repo_root, project.state_dir])
+        if path is None:
+            return {"ok": False, "error": why}
+        return {"ok": True, "path": str(path), "lines": tail(path, lines)}
+
     gpu_history: list[dict] = []
 
     def gpu_sample() -> dict | None:

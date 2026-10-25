@@ -16,6 +16,8 @@ result says which flows were replayed. Hidden stocks start at 0."""
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 from .discover import UNITS
 from .model import Equation, Model
 from .strategies import _scale
@@ -71,7 +73,7 @@ def simulate(model: Model, history: dict, *, now: float, start: float, horizon_s
         obs = (history.get("flows") or {}).get(f.id) or []
         recent = [v for t, v in obs if t >= now - HOLD_S]
         hold = sum(recent) / len(recent) if recent else 0.0
-        segs = [{"from": a[0], "to": b[0], "value": a[1] * g} for a, b in zip(obs, obs[1:])]
+        segs = [{"from": a[0], "to": b[0], "value": a[1] * g} for a, b in pairwise(obs)]
         segs.append({"from": obs[-1][0] if obs else start, "to": float("inf"), "value": hold * g})
         flows.append({"id": f.id, "from": f.src, "to": f.dst, "inflow": segs})
         replayed.append(f.id)
