@@ -1,20 +1,110 @@
 {
+ "loops": [
+  {
+   "id": "R-learning",
+   "polarity": "reinforcing",
+   "stocks": [
+    "t_failed",
+    "t_lessons",
+    "t_playbook",
+    "t_attempted"
+   ],
+   "says": "Failures become lessons; lessons become playbook; a better playbook means fewer failures and flaws."
+  },
+  {
+   "id": "B-decay",
+   "polarity": "balancing",
+   "stocks": [
+    "t_playbook",
+    "t_landed_recent"
+   ],
+   "says": "The playbook goes stale as the code it describes changes; the faster we land, the faster it rots."
+  },
+  {
+   "id": "B-overload",
+   "polarity": "balancing",
+   "stocks": [
+    "t_playbook"
+   ],
+   "says": "Past about 120 entries a bigger playbook lowers success: too much context."
+  },
+  {
+   "id": "R-trap",
+   "polarity": "reinforcing",
+   "stocks": [
+    "t_open",
+    "t_lessons",
+    "t_playbook"
+   ],
+   "says": "When the backlog is long, lessons are not captured; the playbook decays; more work fails; the backlog grows."
+  },
+  {
+   "id": "B-trust",
+   "polarity": "balancing",
+   "stocks": [
+    "t_trust",
+    "t_check_flawed",
+    "t_review_flawed",
+    "t_latent",
+    "t_bugs"
+   ],
+   "says": "Clean landings raise trust; trust lowers how much I check; more flaws escape; late findings cut trust."
+  },
+  {
+   "id": "B-fatigue",
+   "polarity": "balancing",
+   "stocks": [
+    "t_review_sound",
+    "t_review_flawed"
+   ],
+   "says": "A long review queue slows reviewers and lowers how many flaws they catch."
+  },
+  {
+   "id": "R-debt",
+   "polarity": "reinforcing",
+   "stocks": [
+    "t_debt",
+    "t_attempted",
+    "t_latent"
+   ],
+   "says": "Landings, especially flawed ones, add debt; debt slows attempts and raises flaws; paying it down competes for agents."
+  },
+  {
+   "id": "R-reputation",
+   "polarity": "reinforcing",
+   "stocks": [
+    "t_reputation",
+    "t_asks",
+    "t_landed_recent"
+   ],
+   "says": "Delivering builds requesters' confidence, which brings more asks; bugs erode it."
+  }
+ ],
  "id": "story-1-simple-task",
- "name": "Story 1: a simple task for another team",
- "description": "A member of another team asks for a simple task. I collect the requirements; everything from research to the requester being told is carried by agents and programs, with my approval at each point where something is said or pushed as me. The company's side (checks, AI review, human review, SAIL) is the environment. Time unit: a working hour; horizon four weeks.",
+ "name": "Story 1: simple tasks, done by agents that learn",
+ "description": "Other teams ask me for simple tasks. I collect the requirements; agents research, write the ticket, attempt it, and learn from failures by writing their own playbook. Whether an attempt succeeds, fails, or hides a flaw depends on the playbook and the code's debt. My trust in the agents decides how much I check; what I don't check goes to the company, whose checks and reviewers catch some flaws and miss others, which land and come back as bugs. Delivering builds requesters' confidence, which brings more asks. Time unit: a working hour; horizon 26 weeks.",
  "time_unit": "working hour",
- "horizon": 160,
+ "horizon": 1040,
  "dt": 0.25,
  "stocks": [
   {
-   "id": "t_inbox",
+   "id": "t_reputation",
+   "name": "Requesters' confidence",
+   "unit": "points",
+   "initial": 20,
+   "side": "company",
+   "x": 0,
+   "y": 620,
+   "note": "How much other teams expect me to deliver. It brings asks, grows with landings, falls with bugs."
+  },
+  {
+   "id": "t_asks",
    "name": "Asks",
    "unit": "requests",
    "initial": 4,
    "side": "interface",
-   "x": 112,
-   "y": 360,
-   "note": "Requests waiting for me to collect requirements"
+   "x": 0,
+   "y": 420
   },
   {
    "id": "t_scoped",
@@ -22,119 +112,125 @@
    "unit": "requests",
    "initial": 0,
    "side": "ours",
-   "x": 336,
-   "y": 140,
-   "note": "Requirements collected"
-  },
-  {
-   "id": "t_researched",
-   "name": "Researched",
-   "unit": "requests",
-   "initial": 0,
-   "side": "ours",
-   "x": 560,
-   "y": 140,
-   "note": "Researched: problem, stakeholders, related projects"
+   "x": 200,
+   "y": 100,
+   "note": "Scoped"
   },
   {
    "id": "t_ticket_draft",
    "name": "Ticket draft",
    "unit": "requests",
    "initial": 0,
-   "side": "ours",
-   "x": 784,
-   "y": 140,
-   "note": "Ticket drafted, waiting for my approval"
+   "side": "interface",
+   "x": 400,
+   "y": 420,
+   "note": "Researched and written up; waiting for my approval."
   },
   {
-   "id": "t_ready",
-   "name": "Ready",
+   "id": "t_open",
+   "name": "Open tickets",
    "unit": "requests",
+   "initial": 2,
+   "side": "ours",
+   "x": 600,
+   "y": 100,
+   "note": "Ready for an implementation attempt: new tickets, diagnosed failures, bugs coming back."
+  },
+  {
+   "id": "t_attempted",
+   "name": "Attempted",
+   "unit": "attempts",
    "initial": 0,
    "side": "ours",
-   "x": 1008,
-   "y": 140,
-   "note": "Ticket approved, waiting for an implementer"
+   "x": 800,
+   "y": 100,
+   "note": "An attempt finished; its outcome is decided by the playbook and the debt."
   },
   {
-   "id": "t_verifying",
-   "name": "Verifying",
-   "unit": "requests",
+   "id": "t_sound",
+   "name": "Done, sound",
+   "unit": "changes",
    "initial": 0,
    "side": "ours",
-   "x": 1232,
-   "y": 140,
-   "note": "Implemented, being tested and reviewed by AI"
+   "x": 1000,
+   "y": 100
   },
   {
-   "id": "t_pr_draft",
-   "name": "PR draft",
-   "unit": "requests",
+   "id": "t_flawed",
+   "name": "Done, hidden flaw",
+   "unit": "changes",
    "initial": 0,
    "side": "ours",
-   "x": 1456,
-   "y": 140,
-   "note": "PR ready, description waiting for my approval"
+   "x": 1000,
+   "y": 240,
+   "note": "Looks done, tests pass, but has a defect nobody has seen yet."
   },
   {
-   "id": "t_ci",
-   "name": "Checks running",
-   "unit": "PRs",
+   "id": "t_failed",
+   "name": "Failed or caught",
+   "unit": "attempts",
    "initial": 0,
-   "side": "company",
-   "x": 1680,
-   "y": 580,
-   "note": "PR checks running"
+   "side": "ours",
+   "x": 800,
+   "y": 240,
+   "note": "Visibly failed attempts, flaws I caught, and flaws reviewers caught: to be diagnosed."
   },
   {
-   "id": "t_ci_failed",
-   "name": "Checks failed",
-   "unit": "PRs",
+   "id": "t_lessons",
+   "name": "Lessons not written down",
+   "unit": "lessons",
    "initial": 0,
-   "side": "company",
-   "x": 1680,
-   "y": 760,
-   "note": "PR checks failed"
+   "side": "ours",
+   "x": 700,
+   "y": -80
   },
   {
-   "id": "t_bot_review",
-   "name": "AI review",
-   "unit": "PRs",
-   "initial": 0,
-   "side": "company",
-   "x": 1904,
-   "y": 580,
-   "note": "Company AI review running"
+   "id": "t_playbook",
+   "name": "Agent playbook",
+   "unit": "entries",
+   "initial": 20,
+   "side": "ours",
+   "x": 950,
+   "y": -80,
+   "note": "Policies, docs, skills and tools the agents use for this class of task, written by the agents from lessons."
   },
   {
-   "id": "t_bot_comments",
-   "name": "AI comments",
-   "unit": "PRs",
-   "initial": 0,
-   "side": "company",
-   "x": 1904,
-   "y": 760,
-   "note": "Company AI review comments to address"
+   "id": "t_debt",
+   "name": "Technical debt",
+   "unit": "points",
+   "initial": 20,
+   "side": "ours",
+   "x": 1250,
+   "y": -80,
+   "note": "Shortcuts in the code the agents work in."
   },
   {
-   "id": "t_post_draft",
-   "name": "Review post draft",
-   "unit": "PRs",
+   "id": "t_trust",
+   "name": "My trust in the agents",
+   "unit": "points",
+   "initial": 30,
+   "side": "ours",
+   "x": 1550,
+   "y": -80,
+   "note": "Decides how much of the agents' work I check myself."
+  },
+  {
+   "id": "t_check_sound",
+   "name": "To check (sound)",
+   "unit": "changes",
    "initial": 0,
    "side": "interface",
-   "x": 2128,
-   "y": 360,
-   "note": "Review request post drafted, waiting for my approval"
+   "x": 1200,
+   "y": 420
   },
   {
-   "id": "t_awaiting_review",
-   "name": "Awaiting review",
-   "unit": "PRs",
+   "id": "t_check_flawed",
+   "name": "To check (flawed)",
+   "unit": "changes",
    "initial": 0,
-   "side": "company",
-   "x": 2352,
-   "y": 580,
-   "note": "Waiting for human reviewers"
+   "side": "interface",
+   "x": 1400,
+   "y": 420
   },
   {
    "id": "t_nudges",
@@ -142,29 +238,65 @@
    "unit": "pings",
    "initial": 0,
    "side": "interface",
-   "note": "Recent review pings. An information stock: pings sent recently. It speeds reviewers up, with diminishing returns.",
-   "x": 2352,
-   "y": 360
+   "x": 1700,
+   "y": 420,
+   "note": "Recent pings"
   },
   {
-   "id": "t_changes_requested",
-   "name": "Changes requested",
+   "id": "t_pr_sound",
+   "name": "PR checks (sound)",
    "unit": "PRs",
    "initial": 0,
    "side": "company",
-   "x": 2576,
-   "y": 760,
-   "note": "Changes requested by reviewers"
+   "x": 1250,
+   "y": 620
   },
   {
-   "id": "t_reply_draft",
-   "name": "Replies draft",
+   "id": "t_pr_flawed",
+   "name": "PR checks (flawed)",
    "unit": "PRs",
    "initial": 0,
-   "side": "interface",
-   "x": 2576,
-   "y": 360,
-   "note": "Fixes pushed, replies waiting for my approval"
+   "side": "company",
+   "x": 1250,
+   "y": 800
+  },
+  {
+   "id": "t_review_sound",
+   "name": "In review (sound)",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1500,
+   "y": 620
+  },
+  {
+   "id": "t_review_flawed",
+   "name": "In review (flawed)",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1500,
+   "y": 800
+  },
+  {
+   "id": "t_nits",
+   "name": "Nits requested",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1750,
+   "y": 800,
+   "note": "Change requests on sound PRs: style, naming, small asks. A fix round, not a flaw."
+  },
+  {
+   "id": "t_changes",
+   "name": "Flaw found late",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 2000,
+   "y": 800,
+   "note": "A real flaw found by company checks or reviewers. It costs trust and teaches a lesson."
   },
   {
    "id": "t_approved",
@@ -172,9 +304,9 @@
    "unit": "PRs",
    "initial": 0,
    "side": "company",
-   "x": 2576,
-   "y": 580,
-   "note": "Approved, waiting for the SAIL label"
+   "x": 1750,
+   "y": 620,
+   "note": "Approved"
   },
   {
    "id": "t_sailing",
@@ -182,8 +314,8 @@
    "unit": "PRs",
    "initial": 0,
    "side": "company",
-   "x": 2800,
-   "y": 580,
+   "x": 2000,
+   "y": 620,
    "note": "In SAIL"
   },
   {
@@ -192,44 +324,52 @@
    "unit": "PRs",
    "initial": 0,
    "side": "company",
-   "x": 2800,
-   "y": 760,
+   "x": 2250,
+   "y": 800,
    "note": "SAIL failed"
   },
   {
-   "id": "t_landed",
-   "name": "Landed",
+   "id": "t_landed_recent",
+   "name": "Landed recently",
    "unit": "PRs",
    "initial": 0,
    "side": "company",
-   "x": 3024,
-   "y": 580,
-   "note": "Landed on master"
+   "x": 2250,
+   "y": 620,
+   "note": "Landed in about the last two weeks: the code churn that ages the playbook, and the evidence that builds trust and reputation."
   },
   {
-   "id": "t_close_draft",
-   "name": "Close-out draft",
-   "unit": "requests",
+   "id": "t_latent",
+   "name": "Landed with a hidden flaw",
+   "unit": "PRs",
    "initial": 0,
-   "side": "interface",
-   "x": 3248,
-   "y": 360,
-   "note": "Jira update and requester message drafted"
+   "side": "company",
+   "x": 2500,
+   "y": 800
+  },
+  {
+   "id": "t_bugs",
+   "name": "Bugs found in production",
+   "unit": "bugs",
+   "initial": 0,
+   "side": "company",
+   "x": 2750,
+   "y": 800
   },
   {
    "id": "t_delivered",
    "name": "Delivered",
-   "unit": "requests",
+   "unit": "PRs",
    "initial": 0,
    "side": "ours",
    "final": true,
    "target": {
-    "value": 20,
-    "by": 160
+    "value": 100,
+    "by": 1040
    },
-   "x": 3472,
-   "y": 140,
-   "note": "Delivered: landed, Jira updated, requester told"
+   "x": 2500,
+   "y": 100,
+   "note": "Landed and out of the recent window."
   },
   {
    "id": "budget",
@@ -237,30 +377,105 @@
    "unit": "dollars",
    "initial": 120,
    "side": "ours",
-   "note": "Agent budget. Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
+   "note": "Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
    "x": 1300,
    "y": -60
   }
  ],
  "flows": [
   {
-   "id": "t_arrive",
+   "id": "t_ask",
    "name": "ask",
    "from": null,
-   "to": "t_inbox",
+   "to": "t_asks",
    "rate": {
-    "form": "constant",
-    "value": 0.15
+    "form": "linear",
+    "c": 0.06,
+    "terms": [
+     {
+      "stock": "t_reputation",
+      "k": 0.003
+     }
+    ]
    },
    "machine": "environment",
    "side": "company",
    "crosses": "slack/jira in",
-   "note": "Someone asks me for a simple task"
+   "note": "Someone asks me for a simple task; more asks when requesters trust me to deliver."
+  },
+  {
+   "id": "t_rep_gain",
+   "name": "confidence grows",
+   "from": null,
+   "to": "t_reputation",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_landed_recent",
+    "k": 0.05
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "t_rep_loss",
+   "name": "confidence fades",
+   "from": "t_reputation",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "t_reputation",
+    "k": 0.012
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "t_bugs",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       2,
+       1.6
+      ],
+      [
+       5,
+       2.5
+      ]
+     ]
+    },
+    {
+     "stock": "t_open",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       10,
+       1.3
+      ],
+      [
+       25,
+       2
+      ],
+      [
+       50,
+       3
+      ]
+     ]
+    }
+   ],
+   "note": "Confidence fades on its own, faster while bugs are open, and faster when asks sit in my backlog."
   },
   {
    "id": "t_collect",
    "name": "collect reqs",
-   "from": "t_inbox",
+   "from": "t_asks",
    "to": "t_scoped",
    "rate": {
     "form": "available"
@@ -268,66 +483,47 @@
    "machine": "me",
    "side": "interface",
    "work": 0.25,
-   "note": "Collect the requirements (me, in the conversation)"
+   "note": "collect reqs"
   },
   {
    "id": "t_research",
    "name": "research",
    "from": "t_scoped",
-   "to": "t_researched",
+   "to": "t_ticket_draft",
    "rate": {
     "form": "available"
    },
    "machine": "analyst",
    "side": "ours",
-   "work": 0.5,
+   "work": 0.6,
    "uses": [
     {
      "stock": "budget",
-     "per": 1.5
+     "per": 2
     }
    ],
    "crosses": "read: jira, docs, slack, code",
-   "note": "Research the problem, find stakeholders and related projects"
-  },
-  {
-   "id": "t_author",
-   "name": "write ticket",
-   "from": "t_researched",
-   "to": "t_ticket_draft",
-   "rate": {
-    "form": "available"
-   },
-   "machine": "drafter",
-   "side": "ours",
-   "work": 0.2,
-   "uses": [
-    {
-     "stock": "budget",
-     "per": 0.5
-    }
-   ],
-   "note": "Author the ticket with requirements and completion criteria"
+   "note": "research + ticket"
   },
   {
    "id": "t_approve_ticket",
    "name": "approve ticket",
    "from": "t_ticket_draft",
-   "to": "t_ready",
+   "to": "t_open",
    "rate": {
     "form": "available"
    },
    "machine": "me",
-   "side": "ours",
+   "side": "interface",
    "work": 0.1,
    "crosses": "jira write (via outbox)",
-   "note": "Approve the ticket (me)"
+   "note": "approve ticket"
   },
   {
-   "id": "t_implement",
-   "name": "implement",
-   "from": "t_ready",
-   "to": "t_verifying",
+   "id": "t_attempt",
+   "name": "attempt",
+   "from": "t_open",
+   "to": "t_attempted",
    "rate": {
     "form": "available"
    },
@@ -340,143 +536,602 @@
      "per": 6
     }
    ],
-   "note": "Implement on a branch"
+   "effects": [
+    {
+     "stock": "t_debt",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.2
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       0.7
+      ],
+      [
+       120,
+       0.5
+      ]
+     ]
+    }
+   ],
+   "note": "An implementation attempt with tests. Slower where the debt is high."
   },
   {
-   "id": "t_verify",
-   "name": "test + AI review",
-   "from": "t_verifying",
-   "to": "t_pr_draft",
+   "id": "t_ok",
+   "name": "sound",
+   "from": "t_attempted",
+   "to": "t_sound",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_attempted",
+    "k": 2.2
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_playbook",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.7
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       1.35
+      ],
+      [
+       120,
+       1.45
+      ],
+      [
+       220,
+       1.1
+      ]
+     ]
+    },
+    {
+     "stock": "t_debt",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.1
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       80,
+       0.75
+      ],
+      [
+       150,
+       0.55
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_flaw",
+   "name": "hidden flaw",
+   "from": "t_attempted",
+   "to": "t_flawed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_attempted",
+    "k": 0.8
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_playbook",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.4
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       0.6
+      ],
+      [
+       120,
+       0.5
+      ],
+      [
+       220,
+       0.85
+      ]
+     ]
+    },
+    {
+     "stock": "t_debt",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.8
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       80,
+       1.6
+      ],
+      [
+       150,
+       2.2
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_fail",
+   "name": "fails",
+   "from": "t_attempted",
+   "to": "t_failed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_attempted",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_playbook",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.4
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       0.55
+      ],
+      [
+       120,
+       0.45
+      ],
+      [
+       220,
+       0.75
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_diagnose",
+   "name": "diagnose + requeue",
+   "from": "t_failed",
+   "to": "t_open",
    "rate": {
     "form": "available"
    },
-   "machine": "implementer",
+   "machine": "analyst",
    "side": "ours",
-   "work": 0.5,
+   "work": 0.4,
    "uses": [
     {
      "stock": "budget",
      "per": 1.5
     }
-   ],
-   "outputs": [
-    "t_ready"
-   ],
-   "split": {
-    "t_pr_draft": 0.75,
-    "t_ready": 0.25
-   },
-   "note": "Run tests, internal AI review; sent back or passed. Internal rework loop: a quarter go back for another implementation pass."
+   ]
   },
   {
-   "id": "t_submit",
-   "name": "approve + open PR",
-   "from": "t_pr_draft",
-   "to": "t_ci",
+   "id": "t_lesson",
+   "name": "capture lessons",
+   "from": null,
+   "to": "t_lessons",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "t_failed",
+      "k": 3
+     },
+     {
+      "stock": "t_changes",
+      "k": 2
+     },
+     {
+      "stock": "t_bugs",
+      "k": 2
+     },
+     {
+      "stock": "t_sound",
+      "k": 1.5
+     }
+    ]
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "t_open",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       10,
+       0.8
+      ],
+      [
+       25,
+       0.4
+      ],
+      [
+       50,
+       0.15
+      ]
+     ]
+    }
+   ],
+   "note": "Failures and late findings leave lessons, and successes leave patterns worth keeping, unless the backlog is long and nobody stops to write them down."
+  },
+  {
+   "id": "t_codify",
+   "name": "write playbook",
+   "from": "t_lessons",
+   "to": "t_playbook",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "drafter",
+   "side": "ours",
+   "work": 0.3,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 1
+    }
+   ],
+   "note": "The agents turn lessons into policies, docs, skills and tools for themselves."
+  },
+  {
+   "id": "t_obsolete",
+   "name": "goes stale",
+   "from": "t_playbook",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "t_playbook",
+    "k": 0.003
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_landed_recent",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.5
+      ],
+      [
+       10,
+       1
+      ],
+      [
+       30,
+       1.8
+      ]
+     ]
+    }
+   ],
+   "note": "About six weeks' half-life, faster when much is landing in the area."
+  },
+  {
+   "id": "t_debt_in",
+   "name": "debt added",
+   "from": null,
+   "to": "t_debt",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "t_landed_recent",
+      "k": 0.01
+     },
+     {
+      "stock": "t_latent",
+      "k": 0.1
+     }
+    ]
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_playbook",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.5
+      ],
+      [
+       60,
+       0.7
+      ],
+      [
+       150,
+       0.6
+      ]
+     ]
+    }
+   ],
+   "note": "Every landing adds some debt; flawed ones add more; a good playbook adds less."
+  },
+  {
+   "id": "t_refactor",
+   "name": "pay down debt",
+   "from": "t_debt",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "t_debt",
+    "k": 0.01
+   },
+   "machine": "implementer",
+   "side": "ours",
+   "work": 0.2,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 0.4
+    }
+   ],
+   "note": "Agents pay debt down when they have time; under load this is the first thing squeezed."
+  },
+  {
+   "id": "t_route_check_s",
+   "name": "route to my check",
+   "from": "t_sound",
+   "to": "t_check_sound",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_sound",
+    "k": 2
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "t_trust",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       40,
+       0.6
+      ],
+      [
+       70,
+       0.25
+      ],
+      [
+       100,
+       0.1
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_route_pass_s",
+   "name": "auto-pass",
+   "from": "t_sound",
+   "to": "t_pr_sound",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_sound",
+    "k": 2
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "t_trust",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.05
+      ],
+      [
+       40,
+       0.6
+      ],
+      [
+       70,
+       1.2
+      ],
+      [
+       100,
+       1.6
+      ]
+     ]
+    }
+   ],
+   "crosses": "github push + open PR"
+  },
+  {
+   "id": "t_route_check_f",
+   "name": "route to my check",
+   "from": "t_flawed",
+   "to": "t_check_flawed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_flawed",
+    "k": 2
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "t_trust",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       40,
+       0.6
+      ],
+      [
+       70,
+       0.25
+      ],
+      [
+       100,
+       0.1
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_route_pass_f",
+   "name": "auto-pass",
+   "from": "t_flawed",
+   "to": "t_pr_flawed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_flawed",
+    "k": 2
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "t_trust",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.05
+      ],
+      [
+       40,
+       0.6
+      ],
+      [
+       70,
+       1.2
+      ],
+      [
+       100,
+       1.6
+      ]
+     ]
+    }
+   ],
+   "crosses": "github push + open PR"
+  },
+  {
+   "id": "t_check_s",
+   "name": "my check: fine",
+   "from": "t_check_sound",
+   "to": "t_pr_sound",
    "rate": {
     "form": "available"
    },
    "machine": "me",
    "side": "interface",
-   "work": 0.15,
-   "crosses": "github push + open PR",
-   "note": "Approve the PR description; push and open the PR"
+   "work": 0.3,
+   "crosses": "github push + open PR"
   },
   {
-   "id": "t_checks",
-   "name": "PR checks",
-   "from": "t_ci",
-   "to": "t_bot_review",
+   "id": "t_check_f",
+   "name": "my check: caught",
+   "from": "t_check_flawed",
+   "to": "t_failed",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.4
+  },
+  {
+   "id": "t_ci_s",
+   "name": "checks + AI review",
+   "from": "t_pr_sound",
+   "to": "t_review_sound",
    "rate": {
     "form": "proportional",
-    "stock": "t_ci",
+    "stock": "t_pr_sound",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "t_ci_f",
+   "name": "checks + AI review",
+   "from": "t_pr_flawed",
+   "to": "t_review_flawed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_pr_flawed",
     "k": 1.0
    },
    "machine": "environment",
    "side": "company",
    "outputs": [
-    "t_ci_failed"
+    "t_changes"
    ],
    "split": {
-    "t_bot_review": 0.85,
-    "t_ci_failed": 0.15
+    "t_review_flawed": 0.6,
+    "t_changes": 0.4
    },
-   "note": "Company PR checks"
-  },
-  {
-   "id": "t_fix_ci",
-   "name": "fix checks",
-   "from": "t_ci_failed",
-   "to": "t_ci",
-   "rate": {
-    "form": "available"
-   },
-   "machine": "implementer",
-   "side": "interface",
-   "work": 0.5,
-   "uses": [
-    {
-     "stock": "budget",
-     "per": 1.5
-    }
-   ],
-   "crosses": "read: check logs; github push",
-   "note": "Fix check failures"
-  },
-  {
-   "id": "t_bot",
-   "name": "company AI review",
-   "from": "t_bot_review",
-   "to": "t_post_draft",
-   "rate": {
-    "form": "proportional",
-    "stock": "t_bot_review",
-    "k": 2.0
-   },
-   "machine": "environment",
-   "side": "company",
-   "outputs": [
-    "t_bot_comments"
-   ],
-   "split": {
-    "t_post_draft": 0.5,
-    "t_bot_comments": 0.5
-   },
-   "note": "Company AI review"
-  },
-  {
-   "id": "t_fix_bot",
-   "name": "fix AI comments",
-   "from": "t_bot_comments",
-   "to": "t_ci",
-   "rate": {
-    "form": "available"
-   },
-   "machine": "implementer",
-   "side": "interface",
-   "work": 0.5,
-   "uses": [
-    {
-     "stock": "budget",
-     "per": 1.5
-    }
-   ],
-   "crosses": "read: PR comments; github push",
-   "note": "Address the AI review's comments"
-  },
-  {
-   "id": "t_post",
-   "name": "post for review",
-   "from": "t_post_draft",
-   "to": "t_awaiting_review",
-   "rate": {
-    "form": "available"
-   },
-   "machine": "me",
-   "side": "interface",
-   "work": 0.05,
-   "crosses": "slack write (via outbox)",
-   "note": "Post for review in our and owning teams' channels (me approves)"
+   "note": "Company checks and the AI reviewer catch about 40% of flaws."
   },
   {
    "id": "t_ping",
@@ -484,15 +1139,24 @@
    "from": null,
    "to": "t_nudges",
    "rate": {
-    "form": "proportional",
-    "stock": "t_awaiting_review",
-    "k": 0.125
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "t_review_sound",
+      "k": 0.125
+     },
+     {
+      "stock": "t_review_flawed",
+      "k": 0.125
+     }
+    ]
    },
    "machine": "orchestra",
    "side": "interface",
-   "work": 0.001,
+   "work": 0,
    "crosses": "slack write",
-   "note": "Ping reviewers about a waiting PR, about once a day. Auto after the template earned autonomy; until then each ping is an outbox item."
+   "note": "ping"
   },
   {
    "id": "t_forget",
@@ -506,27 +1170,20 @@
    },
    "machine": "environment",
    "side": "company",
-   "note": "Pings fade from reviewers' minds"
+   "note": "fade"
   },
   {
-   "id": "t_review",
-   "name": "human review",
-   "from": "t_awaiting_review",
+   "id": "t_rev_ok",
+   "name": "approve",
+   "from": "t_review_sound",
    "to": "t_approved",
    "rate": {
     "form": "proportional",
-    "stock": "t_awaiting_review",
-    "k": 0.0625
+    "stock": "t_review_sound",
+    "k": 0.041666666666666664
    },
    "machine": "environment",
    "side": "company",
-   "outputs": [
-    "t_changes_requested"
-   ],
-   "split": {
-    "t_approved": 0.6,
-    "t_changes_requested": 0.4
-   },
    "effects": [
     {
      "stock": "t_nudges",
@@ -537,55 +1194,227 @@
        0.6
       ],
       [
-       0.5,
+       1,
        1
       ],
       [
-       2,
-       1.5
+       3,
+       1.4
       ],
       [
-       6,
-       1.7
+       8,
+       1.6
+      ]
+     ]
+    },
+    {
+     "stock": "t_review_sound",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.2
+      ],
+      [
+       5,
+       1
+      ],
+      [
+       15,
+       0.7
+      ],
+      [
+       30,
+       0.45
       ]
      ]
     }
-   ],
-   "note": "Human review. Mean first response 16 working hours at one recent ping per waiting PR; slower with none."
+   ]
   },
   {
-   "id": "t_fix_review",
-   "name": "address comments",
-   "from": "t_changes_requested",
-   "to": "t_reply_draft",
+   "id": "t_rev_nit",
+   "name": "request nits",
+   "from": "t_review_sound",
+   "to": "t_nits",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_review_sound",
+    "k": 0.020833333333333332
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "t_nudges",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       3,
+       1.4
+      ],
+      [
+       8,
+       1.6
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_fix_nits",
+   "name": "fix nits",
+   "from": "t_nits",
+   "to": "t_pr_sound",
    "rate": {
     "form": "available"
    },
    "machine": "implementer",
    "side": "interface",
-   "work": 1.0,
+   "work": 0.5,
    "uses": [
     {
      "stock": "budget",
-     "per": 3
+     "per": 1.5
     }
    ],
-   "crosses": "read: review threads",
-   "note": "Address reviewers' comments; draft replies"
+   "crosses": "read: threads; github push; replies via outbox"
   },
   {
-   "id": "t_send_replies",
-   "name": "send replies",
-   "from": "t_reply_draft",
-   "to": "t_ci",
+   "id": "t_rev_catch",
+   "name": "reviewer catches flaw",
+   "from": "t_review_flawed",
+   "to": "t_changes",
    "rate": {
-    "form": "available"
+    "form": "proportional",
+    "stock": "t_review_flawed",
+    "k": 0.04375
    },
-   "machine": "me",
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "t_nudges",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       3,
+       1.4
+      ],
+      [
+       8,
+       1.6
+      ]
+     ]
+    },
+    {
+     "stock": "t_review_sound",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.1
+      ],
+      [
+       5,
+       1
+      ],
+      [
+       15,
+       0.6
+      ],
+      [
+       30,
+       0.3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_rev_miss",
+   "name": "reviewer misses flaw",
+   "from": "t_review_flawed",
+   "to": "t_latent",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_review_flawed",
+    "k": 0.01875
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "t_nudges",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       3,
+       1.4
+      ],
+      [
+       8,
+       1.6
+      ]
+     ]
+    },
+    {
+     "stock": "t_review_sound",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.8
+      ],
+      [
+       15,
+       1.4
+      ],
+      [
+       30,
+       2
+      ]
+     ]
+    }
+   ],
+   "note": "Approved with the flaw still in it; it lands, and surfaces later."
+  },
+  {
+   "id": "t_back",
+   "name": "back to diagnosis",
+   "from": "t_changes",
+   "to": "t_failed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_changes",
+    "k": 0.5
+   },
+   "machine": "orchestra",
    "side": "interface",
-   "work": 0.15,
-   "crosses": "github push + replies (via outbox)",
-   "note": "Approve replies; push; re-request review"
+   "work": 0
   },
   {
    "id": "t_label",
@@ -599,13 +1428,13 @@
    "side": "interface",
    "work": 0.02,
    "crosses": "github label",
-   "note": "Add the SAIL label"
+   "note": "SAIL label"
   },
   {
    "id": "t_sail",
    "name": "SAIL",
    "from": "t_sailing",
-   "to": "t_landed",
+   "to": "t_landed_recent",
    "rate": {
     "form": "proportional",
     "stock": "t_sailing",
@@ -617,65 +1446,151 @@
     "t_sail_failed"
    ],
    "split": {
-    "t_landed": 0.7,
-    "t_sail_failed": 0.3
+    "t_landed_recent": 0.75,
+    "t_sail_failed": 0.25
    },
    "note": "SAIL"
   },
   {
-   "id": "t_triage",
-   "name": "triage failure",
+   "id": "t_relabel",
+   "name": "re-label flake",
    "from": "t_sail_failed",
    "to": "t_sailing",
    "rate": {
-    "form": "available"
+    "form": "proportional",
+    "stock": "t_sail_failed",
+    "k": 0.5
    },
    "machine": "orchestra",
    "side": "interface",
-   "work": 0.01,
-   "outputs": [
-    "t_ci_failed"
-   ],
-   "split": {
-    "t_sailing": 0.67,
-    "t_ci_failed": 0.33
-   },
-   "crosses": "read: SAIL logs; github label",
-   "note": "Triage the SAIL failure: known flake gets a re-label, real failure goes to a fix"
+   "work": 0,
+   "crosses": "read: SAIL logs; github label"
   },
   {
-   "id": "t_close",
-   "name": "draft close-out",
-   "from": "t_landed",
-   "to": "t_close_draft",
-   "rate": {
-    "form": "available"
-   },
-   "machine": "drafter",
-   "side": "ours",
-   "work": 0.1,
-   "uses": [
-    {
-     "stock": "budget",
-     "per": 0.3
-    }
-   ],
-   "crosses": "read: jira, slack",
-   "note": "Draft the Jira update and the message to the requester"
-  },
-  {
-   "id": "t_send_close",
-   "name": "send close-out",
-   "from": "t_close_draft",
+   "id": "t_settle",
+   "name": "leaves the recent window",
+   "from": "t_landed_recent",
    "to": "t_delivered",
    "rate": {
-    "form": "available"
+    "form": "proportional",
+    "stock": "t_landed_recent",
+    "k": 0.0125
    },
-   "machine": "me",
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "t_surface",
+   "name": "bug surfaces",
+   "from": "t_latent",
+   "to": "t_bugs",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_latent",
+    "k": 0.008333333333333333
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "t_bug_ticket",
+   "name": "bug becomes a ticket",
+   "from": "t_bugs",
+   "to": "t_open",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_bugs",
+    "k": 0.1
+   },
+   "machine": "orchestra",
    "side": "interface",
-   "work": 0.05,
-   "crosses": "jira write + slack write (via outbox)",
-   "note": "Approve and send: Jira comment and status, Slack reply"
+   "work": 0,
+   "crosses": "read: jira; jira write"
+  },
+  {
+   "id": "t_trust_gain",
+   "name": "trust earned",
+   "from": null,
+   "to": "t_trust",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_landed_recent",
+    "k": 0.03
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_trust",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.5
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "t_trust_loss",
+   "name": "trust lost",
+   "from": "t_trust",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "t_trust",
+    "k": 0.002
+   },
+   "machine": "environment",
+   "side": "ours",
+   "effects": [
+    {
+     "stock": "t_changes",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       3
+      ],
+      [
+       3,
+       6
+      ]
+     ]
+    },
+    {
+     "stock": "t_bugs",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       4
+      ],
+      [
+       3,
+       8
+      ]
+     ]
+    }
+   ],
+   "note": "Trust erodes slowly on its own, and sharply when flaws are found late or bugs appear."
   },
   {
    "id": "fund",

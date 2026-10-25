@@ -1,0 +1,361 @@
+{
+ "measures": {
+  "my_hours": {
+   "name": "My hours per week on this story",
+   "unit": "hours / week",
+   "machine_hours_per_week": "me"
+  },
+  "waiting_for_me": {
+   "name": "Work waiting for me",
+   "unit": "items",
+   "waiting_for": "me"
+  },
+  "spend": {
+   "name": "Agent spend per week",
+   "unit": "dollars / week",
+   "agent_spend_per_week": true
+  },
+  "spend_total": {
+   "name": "Agent spend, cumulative",
+   "unit": "dollars",
+   "agent_spend_total": true
+  },
+  "budget": {
+   "name": "Agent budget balance",
+   "unit": "dollars",
+   "stocks": [
+    "budget"
+   ]
+  },
+  "asks_week": {
+   "name": "Asks per week",
+   "unit": "requests / week",
+   "flows": [
+    "t_ask"
+   ],
+   "per_week": true
+  },
+  "playbook": {
+   "name": "Agent playbook",
+   "unit": "entries",
+   "stocks": [
+    "t_playbook"
+   ]
+  },
+  "going_wrong": {
+   "name": "Attempts that fail or hide a flaw",
+   "unit": "% of attempts",
+   "share": {
+    "of": [
+     "t_flaw",
+     "t_fail"
+    ],
+    "in": [
+     "t_ok",
+     "t_flaw",
+     "t_fail"
+    ]
+   }
+  },
+  "confidence": {
+   "name": "Requesters' confidence",
+   "unit": "points",
+   "stocks": [
+    "t_reputation"
+   ]
+  },
+  "backlog": {
+   "name": "Backlog",
+   "unit": "requests",
+   "stocks": [
+    "t_asks",
+    "t_scoped",
+    "t_ticket_draft",
+    "t_open"
+   ]
+  },
+  "trust": {
+   "name": "My trust in the agents",
+   "unit": "points",
+   "stocks": [
+    "t_trust"
+   ]
+  },
+  "delivered": {
+   "name": "Delivered (cumulative)",
+   "unit": "tasks",
+   "stocks": [
+    "t_landed_recent",
+    "t_delivered",
+    "t_latent",
+    "t_bugs"
+   ]
+  }
+ },
+ "charts": [
+  {
+   "title": "Asks per week (the demand driving everything else)",
+   "unit": "requests / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "asks_week",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "asks_week",
+     "label": "manual (today)",
+     "color": "manual"
+    },
+    {
+     "variant": "surge",
+     "measure": "asks_week",
+     "label": "surge of asks",
+     "color": "red"
+    }
+   ],
+   "why": "Not a fixed input: asks are 0.06 an hour plus 0.003 \u00d7 requesters' confidence, so they rise as I deliver."
+  },
+  {
+   "title": "Agent playbook: learning against decay and the capability trap",
+   "unit": "entries",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "playbook",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "playbook",
+     "label": "no learning",
+     "color": "manual"
+    },
+    {
+     "variant": "surge",
+     "measure": "playbook",
+     "label": "surge of asks",
+     "color": "red"
+    },
+    {
+     "variant": "surge-protected",
+     "measure": "playbook",
+     "label": "surge, lesson capture protected",
+     "color": "purple"
+    }
+   ],
+   "why": "Starts at 20 entries in every variant."
+  },
+  {
+   "title": "Attempts that fail or hide a flaw",
+   "unit": "% of attempts",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "going_wrong",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "going_wrong",
+     "label": "no learning",
+     "color": "manual"
+    },
+    {
+     "variant": "surge",
+     "measure": "going_wrong",
+     "label": "surge of asks",
+     "color": "red"
+    }
+   ],
+   "why": "The outcome split moves with the playbook and the debt."
+  },
+  {
+   "title": "Requesters' confidence: success breeds demand",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "confidence",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "confidence",
+     "label": "no learning",
+     "color": "manual"
+    },
+    {
+     "variant": "manual",
+     "measure": "confidence",
+     "label": "manual (today)",
+     "color": "yellow"
+    }
+   ],
+   "why": "Starts at 20 in every variant."
+  },
+  {
+   "title": "Backlog: asks and open tickets",
+   "unit": "requests",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "manual",
+     "measure": "backlog",
+     "label": "manual (today)",
+     "color": "yellow"
+    },
+    {
+     "variant": "designed",
+     "measure": "backlog",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "backlog",
+     "label": "no learning",
+     "color": "manual"
+    },
+    {
+     "variant": "surge",
+     "measure": "backlog",
+     "label": "surge of asks",
+     "color": "red"
+    }
+   ],
+   "why": "Starts at 6 (4 asks, 2 open tickets) in every variant."
+  },
+  {
+   "title": "Agent spend per week",
+   "unit": "dollars / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "spend",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "spend",
+     "label": "no learning",
+     "color": "manual"
+    },
+    {
+     "variant": "surge",
+     "measure": "spend",
+     "label": "surge of asks",
+     "color": "red"
+    }
+   ],
+   "why": "What the agents' LLM work costs, summed from every agent flow's rate \u00d7 its cost per item. The budget refills at $120 a week; spend above that draws down the balance."
+  },
+  {
+   "title": "Agent budget balance",
+   "unit": "dollars",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "budget",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "budget",
+     "label": "no learning",
+     "color": "manual"
+    }
+   ],
+   "why": "A stock: starts at $120, refilled at $3 per working hour, drained by agent spend. At zero, agent work stops."
+  },
+  {
+   "title": "My trust in the agents",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "trust",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "blind-trust",
+     "measure": "trust",
+     "label": "starting from blind trust",
+     "color": "purple"
+    }
+   ],
+   "why": "Starts at 30 (designed) or 80 (blind trust)."
+  },
+  {
+   "title": "My hours per week on this story",
+   "unit": "hours / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "my_hours",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "my_hours",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "My free time is 0.6 of each working hour: 24 hours a week at most."
+  },
+  {
+   "title": "Delivered (cumulative)",
+   "unit": "tasks",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "manual",
+     "measure": "delivered",
+     "label": "manual (today)",
+     "color": "yellow"
+    },
+    {
+     "variant": "designed",
+     "measure": "delivered",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-learning",
+     "measure": "delivered",
+     "label": "no learning",
+     "color": "manual"
+    }
+   ],
+   "why": "Landed changes, sound or flawed."
+  }
+ ]
+}

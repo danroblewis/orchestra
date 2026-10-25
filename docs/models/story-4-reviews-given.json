@@ -1,40 +1,173 @@
 {
+ "loops": [
+  {
+   "id": "R-reciprocity",
+   "polarity": "reinforcing",
+   "stocks": [
+    "r_recent",
+    "r_goodwill"
+   ],
+   "says": "Reviews I give build goodwill; in the desk model goodwill speeds reviews of my own PRs."
+  },
+  {
+   "id": "B-fatigue",
+   "polarity": "balancing",
+   "stocks": [
+    "r_briefed_clean",
+    "r_judged_flawed",
+    "r_escaped"
+   ],
+   "says": "A long queue means I skim and miss more defects."
+  },
+  {
+   "id": "B-coaching",
+   "polarity": "balancing",
+   "stocks": [
+    "r_substantive",
+    "r_skill",
+    "r_req_flawed"
+   ],
+   "says": "Substantive comments raise the team's skill; skilled authors send fewer flawed PRs, so there is less to catch."
+  },
+  {
+   "id": "R-reputation",
+   "polarity": "reinforcing",
+   "stocks": [
+    "r_substantive",
+    "r_reputation",
+    "r_req_clean",
+    "r_req_flawed"
+   ],
+   "says": "Catching real defects makes me the reviewer people ask for; more requests, until the queue blunts me."
+  },
+  {
+   "id": "R-knowledge",
+   "polarity": "reinforcing",
+   "stocks": [
+    "r_recent",
+    "r_knowledge",
+    "r_judged_flawed"
+   ],
+   "says": "Briefs teach the agent's map of the codebase; better maps make faster, sharper reviews; it decays as code changes."
+  },
+  {
+   "id": "R-goodhart",
+   "polarity": "reinforcing",
+   "stocks": [
+    "r_nits",
+    "r_goodwill"
+   ],
+   "says": "A comment quota adds nitpicks; nitpicks cost goodwill."
+  },
+  {
+   "id": "B-escapes",
+   "polarity": "balancing",
+   "stocks": [
+    "r_escaped",
+    "r_bugs",
+    "r_reputation"
+   ],
+   "says": "Defects I miss come back as production bugs and cut my reputation as a reviewer."
+  }
+ ],
  "id": "story-4-reviews-given",
  "name": "Story 4: reviewing teammates' PRs",
- "description": "Teammates ask me for reviews. An agent prepares a brief; I review and post. Reviews given recently stand in for goodwill, which (in the desk model) speeds up reviews of my own PRs. Time unit: a working hour; horizon four weeks.",
+ "description": "Teammates ask me for reviews; some PRs carry a real defect, fewer as the team's skill rises. An agent writes a pre-read brief from its map of the codebase, which it improves with every review. I review: whether I catch a defect depends on the brief and how long my queue is. Caught defects teach authors and build my reputation, which brings more requests; missed ones land and come back as bugs. Reviews given build goodwill (which, in the desk model, speeds reviews of my own PRs); nitpicks spend it. Time unit: a working hour; horizon 26 weeks.",
  "time_unit": "working hour",
- "horizon": 160,
+ "horizon": 1040,
  "dt": 0.25,
  "stocks": [
   {
-   "id": "r_requests",
-   "name": "Review requests",
+   "id": "r_reputation",
+   "name": "My reputation as a reviewer",
+   "unit": "points",
+   "initial": 50,
+   "side": "company",
+   "x": 0,
+   "y": 620
+  },
+  {
+   "id": "r_skill",
+   "name": "Team's skill",
+   "unit": "points",
+   "initial": 50,
+   "side": "company",
+   "x": 0,
+   "y": 800,
+   "note": "How often teammates' PRs arrive without real defects."
+  },
+  {
+   "id": "r_req_clean",
+   "name": "Requests (clean PR)",
    "unit": "PRs",
-   "initial": 3,
+   "initial": 2,
    "side": "interface",
-   "x": 112,
-   "y": 360,
-   "note": "Review requests to me"
+   "x": 250,
+   "y": 420
   },
   {
-   "id": "r_briefed",
-   "name": "Briefed",
+   "id": "r_req_flawed",
+   "name": "Requests (PR with a defect)",
+   "unit": "PRs",
+   "initial": 1,
+   "side": "interface",
+   "x": 250,
+   "y": 800
+  },
+  {
+   "id": "r_briefed_clean",
+   "name": "Briefed (clean)",
    "unit": "PRs",
    "initial": 0,
    "side": "ours",
-   "x": 336,
-   "y": 140,
-   "note": "Pre-read brief ready: what changed, risk, likely bugs, related commits"
+   "x": 500,
+   "y": 100
   },
   {
-   "id": "r_comments_draft",
-   "name": "Review written",
+   "id": "r_briefed_flawed",
+   "name": "Briefed (defect)",
    "unit": "PRs",
    "initial": 0,
    "side": "ours",
-   "x": 560,
-   "y": 140,
-   "note": "My review written, comments waiting to be posted"
+   "x": 500,
+   "y": 240
+  },
+  {
+   "id": "r_judged_flawed",
+   "name": "Reviewed (defect)",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "interface",
+   "x": 750,
+   "y": 420,
+   "note": "I have reviewed it; whether I caught the defect depends on the brief and my queue."
+  },
+  {
+   "id": "r_substantive",
+   "name": "Defect caught: comments posted",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1000,
+   "y": 620
+  },
+  {
+   "id": "r_escaped",
+   "name": "Approved with the defect",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1000,
+   "y": 800
+  },
+  {
+   "id": "r_bugs",
+   "name": "Bugs from PRs I approved",
+   "unit": "bugs",
+   "initial": 0,
+   "side": "company",
+   "x": 1250,
+   "y": 800
   },
   {
    "id": "r_recent",
@@ -42,9 +175,47 @@
    "unit": "reviews",
    "initial": 0,
    "side": "company",
-   "note": "Reviews I gave recently. Stands in for reviewer goodwill toward me; decays over about two weeks.",
-   "x": 784,
-   "y": 580
+   "x": 1250,
+   "y": 620,
+   "note": "Reviews given recently"
+  },
+  {
+   "id": "r_given",
+   "name": "Reviews given",
+   "unit": "reviews",
+   "initial": 0,
+   "side": "ours",
+   "final": true,
+   "x": 1500,
+   "y": 100
+  },
+  {
+   "id": "r_goodwill",
+   "name": "Teammates' goodwill toward me",
+   "unit": "points",
+   "initial": 30,
+   "side": "company",
+   "x": 1500,
+   "y": 620
+  },
+  {
+   "id": "r_nits",
+   "name": "Nitpicks, recently",
+   "unit": "comments",
+   "initial": 0,
+   "side": "interface",
+   "x": 1500,
+   "y": 420
+  },
+  {
+   "id": "r_knowledge",
+   "name": "Agent's map of the codebase",
+   "unit": "entries",
+   "initial": 30,
+   "side": "ours",
+   "x": 750,
+   "y": -80,
+   "note": "What the brief writer knows about the code: owners, risky areas, past bugs, conventions."
   },
   {
    "id": "budget",
@@ -52,31 +223,96 @@
    "unit": "dollars",
    "initial": 120,
    "side": "ours",
-   "note": "Agent budget. Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
+   "note": "Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
    "x": 1300,
    "y": -60
   }
  ],
  "flows": [
   {
-   "id": "r_arrive",
-   "name": "request",
+   "id": "r_ask_clean",
+   "name": "review requested",
    "from": null,
-   "to": "r_requests",
+   "to": "r_req_clean",
    "rate": {
-    "form": "constant",
-    "value": 0.2
+    "form": "linear",
+    "c": 0.15,
+    "terms": [
+     {
+      "stock": "r_reputation",
+      "k": 0.001
+     }
+    ]
    },
    "machine": "environment",
    "side": "company",
    "crosses": "github in",
-   "note": "A teammate requests my review"
+   "effects": [
+    {
+     "stock": "r_skill",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.5
+      ],
+      [
+       50,
+       0.7
+      ],
+      [
+       100,
+       0.9
+      ]
+     ]
+    }
+   ]
   },
   {
-   "id": "r_brief",
+   "id": "r_ask_flawed",
+   "name": "review requested",
+   "from": null,
+   "to": "r_req_flawed",
+   "rate": {
+    "form": "linear",
+    "c": 0.15,
+    "terms": [
+     {
+      "stock": "r_reputation",
+      "k": 0.001
+     }
+    ]
+   },
+   "machine": "environment",
+   "side": "company",
+   "crosses": "github in",
+   "effects": [
+    {
+     "stock": "r_skill",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.5
+      ],
+      [
+       50,
+       0.3
+      ],
+      [
+       100,
+       0.1
+      ]
+     ]
+    }
+   ],
+   "note": "Six to eight a week; the share with a real defect falls as the team's skill rises."
+  },
+  {
+   "id": "r_brief_clean",
    "name": "pre-read brief",
-   "from": "r_requests",
-   "to": "r_briefed",
+   "from": "r_req_clean",
+   "to": "r_briefed_clean",
    "rate": {
     "form": "available"
    },
@@ -90,48 +326,537 @@
     }
    ],
    "crosses": "read: PR, code, git log",
-   "note": "Pre-read the change and prepare a brief"
+   "effects": [
+    {
+     "stock": "r_knowledge",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       1.4
+      ]
+     ]
+    }
+   ]
   },
   {
-   "id": "r_review",
-   "name": "my review",
-   "from": "r_briefed",
-   "to": "r_comments_draft",
+   "id": "r_brief_flawed",
+   "name": "pre-read brief",
+   "from": "r_req_flawed",
+   "to": "r_briefed_flawed",
    "rate": {
     "form": "available"
    },
-   "machine": "me",
+   "machine": "analyst",
    "side": "ours",
-   "work": 0.4,
-   "note": "Review it myself (the verdict is mine)"
+   "work": 0.2,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 0.5
+    }
+   ],
+   "crosses": "read: PR, code, git log",
+   "effects": [
+    {
+     "stock": "r_knowledge",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       1.4
+      ]
+     ]
+    }
+   ]
   },
   {
-   "id": "r_post",
-   "name": "post review",
-   "from": "r_comments_draft",
+   "id": "r_review_clean",
+   "name": "my review",
+   "from": "r_briefed_clean",
    "to": "r_recent",
    "rate": {
     "form": "available"
    },
    "machine": "me",
    "side": "interface",
-   "work": 0.02,
-   "crosses": "github write",
-   "note": "Post the review"
+   "work": 0.4,
+   "crosses": "github write (approve, comments)",
+   "effects": [
+    {
+     "stock": "r_knowledge",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       1.3
+      ]
+     ]
+    }
+   ]
   },
   {
-   "id": "r_fade",
-   "name": "fade",
-   "from": "r_recent",
+   "id": "r_review_flawed",
+   "name": "my review",
+   "from": "r_briefed_flawed",
+   "to": "r_judged_flawed",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.5,
+   "effects": [
+    {
+     "stock": "r_knowledge",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       1.3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_catch",
+   "name": "I catch the defect",
+   "from": "r_judged_flawed",
+   "to": "r_substantive",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_judged_flawed",
+    "k": 3.4
+   },
+   "machine": "environment",
+   "side": "interface",
+   "crosses": "github write (comments)",
+   "effects": [
+    {
+     "stock": "r_knowledge",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.7
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       1.15
+      ]
+     ]
+    },
+    {
+     "stock": "r_briefed_clean",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       5,
+       0.85
+      ],
+      [
+       15,
+       0.6
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_miss",
+   "name": "I miss it",
+   "from": "r_judged_flawed",
+   "to": "r_escaped",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_judged_flawed",
+    "k": 0.6
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "r_knowledge",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.6
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       0.6
+      ]
+     ]
+    },
+    {
+     "stock": "r_briefed_clean",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       5,
+       1.5
+      ],
+      [
+       15,
+       3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_fixed",
+   "name": "author fixes it",
+   "from": "r_substantive",
+   "to": "r_recent",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_substantive",
+    "k": 0.125
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "r_lands",
+   "name": "lands, defect surfaces",
+   "from": "r_escaped",
+   "to": "r_bugs",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_escaped",
+    "k": 0.008333333333333333
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "r_bug_done",
+   "name": "bug fixed",
+   "from": "r_bugs",
    "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "r_bugs",
+    "k": 0.025
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "r_settle",
+   "name": "leaves the recent window",
+   "from": "r_recent",
+   "to": "r_given",
    "rate": {
     "form": "proportional",
     "stock": "r_recent",
     "k": 0.0125
    },
    "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "r_nit",
+   "name": "nitpicks",
+   "from": null,
+   "to": "r_nits",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_recent",
+    "k": 0.005
+   },
+   "machine": "environment",
+   "side": "interface",
+   "crosses": "github write (comments)",
+   "note": "Style and naming comments; more under a comment quota."
+  },
+  {
+   "id": "r_nit_fade",
+   "name": "forgotten",
+   "from": "r_nits",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "r_nits",
+    "k": 0.025
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "r_gw_gain",
+   "name": "goodwill earned",
+   "from": null,
+   "to": "r_goodwill",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_recent",
+    "k": 0.05
+   },
+   "machine": "environment",
    "side": "company",
-   "note": "Goodwill fades"
+   "effects": [
+    {
+     "stock": "r_goodwill",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.5
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    },
+    {
+     "stock": "r_req_clean",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.2
+      ],
+      [
+       5,
+       1
+      ],
+      [
+       15,
+       0.5
+      ]
+     ]
+    }
+   ],
+   "note": "Reviews given build goodwill, more when they come quickly."
+  },
+  {
+   "id": "r_gw_loss",
+   "name": "goodwill fades",
+   "from": "r_goodwill",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "r_goodwill",
+    "k": 0.01
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "r_nits",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       3,
+       1.5
+      ],
+      [
+       10,
+       3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_rep_gain",
+   "name": "reputation earned",
+   "from": null,
+   "to": "r_reputation",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_substantive",
+    "k": 0.4
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "r_reputation",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.5
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_rep_loss",
+   "name": "reputation lost",
+   "from": "r_reputation",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "r_reputation",
+    "k": 0.002
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "r_bugs",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       3
+      ],
+      [
+       3,
+       6
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_teach",
+   "name": "authors learn",
+   "from": null,
+   "to": "r_skill",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_substantive",
+    "k": 0.3
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "r_skill",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.5
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "r_turnover",
+   "name": "new joiners, forgetting",
+   "from": "r_skill",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "r_skill",
+    "k": 0.0015
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "r_learn",
+   "name": "agent learns the code",
+   "from": null,
+   "to": "r_knowledge",
+   "rate": {
+    "form": "proportional",
+    "stock": "r_recent",
+    "k": 0.02
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0
+  },
+  {
+   "id": "r_forget",
+   "name": "code changes under it",
+   "from": "r_knowledge",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "r_knowledge",
+    "k": 0.004
+   },
+   "machine": "environment",
+   "side": "ours"
   },
   {
    "id": "fund",

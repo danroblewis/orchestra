@@ -18,7 +18,7 @@
   },
   {
    "id": "V",
-   "story": "story-1-simple-task/rising",
+   "story": "story-1-simple-task/no-learning",
    "kind": "validity",
    "text": "SD Lab's validator accepts the model",
    "ok": true,
@@ -26,7 +26,7 @@
   },
   {
    "id": "V",
-   "story": "story-1-simple-task/manual-rising",
+   "story": "story-1-simple-task/surge",
    "kind": "validity",
    "text": "SD Lab's validator accepts the model",
    "ok": true,
@@ -34,7 +34,15 @@
   },
   {
    "id": "V",
-   "story": "story-1-simple-task/better-first-pass",
+   "story": "story-1-simple-task/surge-protected",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-1-simple-task/blind-trust",
    "kind": "validity",
    "text": "SD Lab's validator accepts the model",
    "ok": true,
@@ -66,6 +74,22 @@
   },
   {
    "id": "V",
+   "story": "story-2-prod-command/no-runbooks",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-2-prod-command/no-evidence",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
    "story": "story-3-status-request/designed",
    "kind": "validity",
    "text": "SD Lab's validator accepts the model",
@@ -82,6 +106,22 @@
   },
   {
    "id": "V",
+   "story": "story-3-status-request/no-nudges",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-3-status-request/nagging",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
    "story": "story-4-reviews-given/designed",
    "kind": "validity",
    "text": "SD Lab's validator accepts the model",
@@ -91,6 +131,22 @@
   {
    "id": "V",
    "story": "story-4-reviews-given/manual",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-4-reviews-given/comment-quota",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-4-reviews-given/no-agent-learning",
    "kind": "validity",
    "text": "SD Lab's validator accepts the model",
    "ok": true,
@@ -116,65 +172,89 @@
    "id": "1.1",
    "story": "story-1-simple-task",
    "kind": "validity",
-   "text": "Manual reproduces today: I am fully busy, work piles up waiting for me, few requests finish",
+   "text": "Manual reproduces today: I am fully busy and the backlog keeps growing",
    "ok": true,
-   "detail": "busy 100%, waiting for me 4.00 → 22, 3.96 of 24 delivered"
+   "detail": "busy 100%, backlog 6.00 → 42 in 26 weeks, 51 delivered"
   },
   {
    "id": "1.2",
    "story": "story-1-simple-task",
    "kind": "requirement",
-   "text": "Designed: nothing piles up waiting for me",
+   "text": "Designed: learning beats decay: the playbook at least doubles and fewer attempts go wrong",
    "ok": true,
-   "detail": "waiting for me at the end: 0.29"
+   "detail": "playbook 20 → 89 entries; attempts failing or flawed 33% (weeks 2–4) → 24% (last 4 weeks)"
   },
   {
    "id": "1.3",
    "story": "story-1-simple-task",
-   "kind": "requirement",
-   "text": "Designed: most requests are delivered within four weeks",
-   "ok": true,
-   "detail": "22 delivered of 24 asked (manual: 3.96)"
+   "kind": "info",
+   "text": "Without learning: the playbook rots, more attempts go wrong, debt grows, and the budget runs out sooner",
+   "ok": null,
+   "detail": "playbook → 0.83; going wrong 68% vs 24%; debt 55 vs 29; budget empty from week 14 vs 23; delivered 151 vs 242"
   },
   {
    "id": "1.4",
    "story": "story-1-simple-task",
    "kind": "requirement",
-   "text": "Designed: at most one hour of my time per delivered request",
-   "ok": true,
-   "detail": "0.94 h per delivered request (busy 22% of my free time)"
+   "text": "Under a surge of asks, the playbook keeps growing (no capability trap)",
+   "ok": false,
+   "detail": "surge: playbook peaks at 61, ends at 29; with lesson capture protected it ends at 98"
   },
   {
    "id": "1.5",
    "story": "story-1-simple-task",
    "kind": "requirement",
-   "text": "Designed: at most $20 of agent work per delivered request",
-   "ok": false,
-   "detail": "$22 per delivered"
+   "text": "Designed: at most one hour of my time per delivered task",
+   "ok": true,
+   "detail": "0.47 h per delivered (manual 12 h); my busy share 18%"
   },
   {
    "id": "1.6",
    "story": "story-1-simple-task",
    "kind": "requirement",
-   "text": "Designed: started to merged within 4 working days (32 working hours, Little's law)",
-   "ok": false,
-   "detail": "mean cycle 42 working hours (5.20 days); 90% of work in progress sits in company stocks"
-  },
-  {
-   "id": "1.6b",
-   "story": "story-1-simple-task",
-   "kind": "info",
-   "text": "Fewer rounds at each boundary (better first pass): cost and cycle",
-   "ok": null,
-   "detail": "$16 per delivered, cycle 4.26 days, 23 delivered"
+   "text": "Escaped flaws stay under 5 per 100 delivered, even when I start out trusting blindly",
+   "ok": true,
+   "detail": "0.34 per 100 designed, 0.35 with blind trust"
   },
   {
    "id": "1.7",
    "story": "story-1-simple-task",
+   "kind": "info",
+   "text": "Trust: earned slowly, cut by late findings",
+   "ok": null,
+   "detail": "designed 30 → low 29 → 87; blind trust 80 → low 68 → 87"
+  },
+  {
+   "id": "1.8",
+   "story": "story-1-simple-task",
    "kind": "requirement",
-   "text": "Requests rising to 10 a week: designed still keeps up; manual falls further behind",
+   "text": "Designed: the backlog stays small for all 26 weeks",
+   "ok": false,
+   "detail": "largest backlog 15; at the end 15"
+  },
+  {
+   "id": "1.9",
+   "story": "story-1-simple-task",
+   "kind": "info",
+   "text": "Success breeds demand until the budget binds (limits to growth)",
+   "ok": null,
+   "detail": "asks 4.80 → 12 a week; requesters' confidence 20 → 77; budget empty from week 23"
+  },
+  {
+   "id": "1.10",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "At most $20 of agent work per delivered task",
    "ok": true,
-   "detail": "waiting for me: designed 0.34, manual 39; my busy 29%"
+   "detail": "$13 per delivered"
+  },
+  {
+   "id": "1.11",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Designed: ticket to landed within 4 working days (Little's law over 26 weeks)",
+   "ok": false,
+   "detail": "mean 4.16 days (manual 70 days)"
   },
   {
    "id": "2.1",
@@ -188,49 +268,129 @@
    "id": "2.2",
    "story": "story-2-prod-command",
    "kind": "requirement",
-   "text": "Designed: full due diligence costs me under a quarter of doing it all myself",
+   "text": "Full due diligence costs me under a quarter of doing it all myself",
    "ok": true,
-   "detail": "0.70 h per request vs 5.26 h doing it all myself (today's shortcut: 2.87 h)"
+   "detail": "1.20 h per request vs 6.77 h doing it all myself (today's shortcut 3.60 h)"
   },
   {
    "id": "2.3",
    "story": "story-2-prod-command",
    "kind": "requirement",
-   "text": "Designed: prevention is adopted, and requests become rarer",
+   "text": "Prevention bends the curve: by week 26 requests run at most 75% of what they would without it",
    "ok": true,
-   "detail": "2.78 adopted in 12 weeks; arrivals 2.00 → 1.37 a week (today's shortcut adopts 0.00)"
+   "detail": "2.78 a week vs 7.20 without prevention (started at 2.40); 8.83 preventions in force"
   },
   {
    "id": "2.4",
    "story": "story-2-prod-command",
    "kind": "requirement",
-   "text": "Designed: every repeat needed in other environments becomes a ticket",
+   "text": "Commands causing incidents: under 5% over the last 8 weeks",
+   "ok": false,
+   "detail": "5% designed; 11% without runbook updates; 11% today"
+  },
+  {
+   "id": "2.5",
+   "story": "story-2-prod-command",
+   "kind": "requirement",
+   "text": "No repeat in another environment is left to come back as a surprise",
    "ok": true,
-   "detail": "3.80 filed, 0.00 waiting (today: 4.49 never filed)"
+   "detail": "0.02 surprises designed vs 21 today; 5.67 unfiled at the end today"
+  },
+  {
+   "id": "2.6",
+   "story": "story-2-prod-command",
+   "kind": "info",
+   "text": "Evidence speeds adoption; runbooks learn against decay; requesters learn the process",
+   "ok": null,
+   "detail": "preventions in force 8.83 vs 8.21 without evidence; runbook coverage 32 vs 2.50 without updates (2.50 today); compliance 30 → 39"
   },
   {
    "id": "3.1",
    "story": "story-3-status-request",
-   "kind": "requirement",
-   "text": "Designed: the status page stays current (at most 10 stale items)",
+   "kind": "validity",
+   "text": "Manual reproduces the spiral: confidence falls, questions multiply, I am nearly always busy",
    "ok": true,
-   "detail": "mean stale 0.99 (manual 56)"
+   "detail": "confidence 50 → 15; questions 4.00 → 25 a week; busy 96%"
   },
   {
    "id": "3.2",
    "story": "story-3-status-request",
    "kind": "requirement",
-   "text": "Designed: an answer costs me at most 15 minutes; manual at least an hour",
+   "text": "The status page stays current: under 10% of items stale on average",
    "ok": true,
-   "detail": "0.21 h vs 1.72 h per answer"
+   "detail": "1% stale (today 99%)"
+  },
+  {
+   "id": "3.3",
+   "story": "story-3-status-request",
+   "kind": "requirement",
+   "text": "An answer costs me at most 15 minutes, including corrections and firefights",
+   "ok": false,
+   "detail": "0.33 h per answer (today 2.07 h)"
+  },
+  {
+   "id": "3.4",
+   "story": "story-3-status-request",
+   "kind": "requirement",
+   "text": "My manager's confidence ends higher than it started, and questions do not multiply",
+   "ok": true,
+   "detail": "confidence 50 → 76; questions 4.00 → 3.31 a week"
+  },
+  {
+   "id": "3.5",
+   "story": "story-3-status-request",
+   "kind": "requirement",
+   "text": "I learn of at least 85% of blocked projects before my manager does",
+   "ok": true,
+   "detail": "95% (today 0%)"
+  },
+  {
+   "id": "3.6",
+   "story": "story-3-status-request",
+   "kind": "info",
+   "text": "Nudging: none lets sources rot; too much wears out patience and they rot anyway (fixes that fail)",
+   "ok": null,
+   "detail": "source hygiene at week 26: designed 38, no nudges 0.00, nagging 0.37; patience: designed 85, nagging 0.12"
   },
   {
    "id": "4.1",
    "story": "story-4-reviews-given",
    "kind": "requirement",
-   "text": "Designed: review requests to me don't pile up",
+   "text": "A review costs me at most half an hour, brief included",
    "ok": true,
-   "detail": "0.10 waiting (manual 0.10)"
+   "detail": "0.42 h per review (today 1.23 h)"
+  },
+  {
+   "id": "4.2",
+   "story": "story-4-reviews-given",
+   "kind": "requirement",
+   "text": "I miss at most 15% of real defects over the last 8 weeks",
+   "ok": true,
+   "detail": "12% missed (today 29%; agent not learning 29%)"
+  },
+  {
+   "id": "4.3",
+   "story": "story-4-reviews-given",
+   "kind": "requirement",
+   "text": "At least 8 review comments a week, most of them substantive",
+   "ok": false,
+   "detail": "4.68 a week; substantive 1.95, nitpicks 2.74"
+  },
+  {
+   "id": "4.4",
+   "story": "story-4-reviews-given",
+   "kind": "info",
+   "text": "A comment quota hits the count and spends goodwill (Goodhart)",
+   "ok": null,
+   "detail": "comments 18 a week vs 4.68; goodwill at week 26 24 vs 43"
+  },
+  {
+   "id": "4.5",
+   "story": "story-4-reviews-given",
+   "kind": "info",
+   "text": "The agent's map of the code, the team's skill, and my reputation",
+   "ok": null,
+   "detail": "map 71 vs 0.47 today; team skill 52 vs 46; reputation 38 vs 24"
   },
   {
    "id": "D.1",
@@ -238,7 +398,7 @@
    "kind": "validity",
    "text": "Manual desk reproduces today: fully busy, and work piles up waiting for me",
    "ok": true,
-   "detail": "busy 100%, waiting for me 9.00 → 55"
+   "detail": "busy 100%, waiting for me 31 → 753"
   },
   {
    "id": "D.2",
@@ -246,7 +406,7 @@
    "kind": "requirement",
    "text": "Designed desk: everything fits in my free time, with slack",
    "ok": true,
-   "detail": "busy 46% of my free time, waiting for me 0.40"
+   "detail": "busy 41% of my free time, waiting for me 0.24"
   },
   {
    "id": "D.3",
@@ -262,121 +422,130 @@
    "kind": "requirement",
    "text": "Designed desk: agent work fits the $120 weekly share without drawing down savings",
    "ok": false,
-   "detail": "$150 a week wanted; balance $120 → $0.75"
+   "detail": "$125 a week wanted; balance $120 → $0.75"
   },
   {
    "id": "D.5",
    "story": "desk",
    "kind": "info",
-   "text": "Coupling: reviews I give speed up reviews of my PRs (reciprocity)",
+   "text": "Coupling: reviews I give shorten the wait for reviews of my PRs (reciprocity)",
    "ok": null,
-   "detail": "22 simple tasks delivered with reviews given vs 21 without"
+   "detail": "my PRs wait 2.16 days in human review with reviews given vs 3.05 without; delivered 175 vs 175 (the budget, not review, limits deliveries)"
   }
  ],
  "leverage_desk": [
   {
    "flow": "fund",
-   "pct": 1.5
+   "pct": 13.1
   },
   {
-   "flow": "t_review",
-   "pct": 0.7
+   "flow": "t_ok",
+   "pct": 2.3
   },
   {
-   "flow": "t_sail",
-   "pct": 0.3
+   "flow": "t_settle",
+   "pct": 1.7
   },
   {
-   "flow": "t_checks",
-   "pct": 0.2
+   "flow": "t_rev_ok",
+   "pct": 0.6
   },
   {
-   "flow": "t_bot",
-   "pct": 0.1
+   "flow": "s_retire",
+   "pct": 0.5
+  },
+  {
+   "flow": "t_rep_loss",
+   "pct": 0.4
   },
   {
    "flow": "p_adopt",
-   "pct": 0
+   "pct": 0.2
   },
   {
-   "flow": "t_collect",
-   "pct": 0
-  },
-  {
-   "flow": "p_propose",
-   "pct": 0
+   "flow": "r_gw_gain",
+   "pct": 0.2
   }
  ],
  "leverage_story1": [
   {
-   "flow": "t_arrive",
-   "pct": 8.6
+   "flow": "fund",
+   "pct": 2.4
   },
   {
-   "flow": "t_review",
-   "pct": 1
+   "flow": "t_ok",
+   "pct": 1.6
   },
   {
-   "flow": "t_sail",
-   "pct": 0.4
+   "flow": "t_rev_ok",
+   "pct": 0.8
   },
   {
-   "flow": "t_checks",
-   "pct": 0.3
+   "flow": "t_ask",
+   "pct": 0.7
   },
   {
-   "flow": "t_bot",
+   "flow": "t_rep_gain",
+   "pct": 0.6
+  },
+  {
+   "flow": "t_rev_catch",
    "pct": 0.1
   },
   {
-   "flow": "t_implement",
-   "pct": 0
+   "flow": "t_ping",
+   "pct": 0.1
   },
   {
-   "flow": "t_verify",
-   "pct": 0
-  },
-  {
-   "flow": "t_fix_bot",
-   "pct": 0
+   "flow": "t_sail",
+   "pct": 0.1
   }
  ],
  "crossings": {
   "story-1-simple-task": [
-   "t_arrive: slack/jira in",
+   "t_ask: slack/jira in",
    "t_research: read: jira, docs, slack, code",
    "t_approve_ticket: jira write (via outbox)",
-   "t_submit: github push + open PR",
-   "t_fix_ci: read: check logs; github push",
-   "t_fix_bot: read: PR comments; github push",
-   "t_post: slack write (via outbox)",
+   "t_route_pass_s: github push + open PR",
+   "t_route_pass_f: github push + open PR",
+   "t_check_s: github push + open PR",
    "t_ping: slack write",
-   "t_fix_review: read: review threads",
-   "t_send_replies: github push + replies (via outbox)",
+   "t_fix_nits: read: threads; github push; replies via outbox",
    "t_label: github label",
-   "t_triage: read: SAIL logs; github label",
-   "t_close: read: jira, slack",
-   "t_send_close: jira write + slack write (via outbox)"
+   "t_relabel: read: SAIL logs; github label",
+   "t_bug_ticket: read: jira; jira write"
   ],
   "story-2-prod-command": [
-   "p_arrive: slack/jira in",
+   "p_ask: slack/jira in",
    "p_explain: read: runbooks, code, docs",
-   "p_authority: read: jira approvals, change tickets, org chart",
+   "p_auth_ok: read: jira approvals, change tickets, org chart",
+   "p_auth_gap: slack write (the question back, via outbox)",
    "p_context: read: customer jira, flag history, deploys, release calendars",
    "p_run: bastion host (human only)",
+   "p_respond: pagerduty, slack, incident process",
+   "p_pm: read: slack, pagerduty, deploys, flags",
    "p_log: jira/slack write (via outbox)",
-   "p_file_followups: jira write (via outbox)",
+   "p_file: jira write (via outbox)",
+   "p_runbook: wiki/runbook write (via outbox)",
    "p_propose: docs write; slack post for review"
   ],
   "story-3-status-request": [
    "s_refresh: read: jira, docs, slack",
+   "s_nudge: slack write (via outbox; earned autonomy)",
    "s_ask: slack/meeting in",
-   "s_answer: slack write"
+   "s_answer: slack write",
+   "s_correct: slack write",
+   "s_escalate: slack/jira write",
+   "s_firefight: slack/meetings"
   ],
   "story-4-reviews-given": [
-   "r_arrive: github in",
-   "r_brief: read: PR, code, git log",
-   "r_post: github write"
+   "r_ask_clean: github in",
+   "r_ask_flawed: github in",
+   "r_brief_clean: read: PR, code, git log",
+   "r_brief_flawed: read: PR, code, git log",
+   "r_review_clean: github write (approve, comments)",
+   "r_catch: github write (comments)",
+   "r_nit: github write (comments)"
   ]
  }
 }

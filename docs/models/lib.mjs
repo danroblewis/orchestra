@@ -23,6 +23,11 @@ export function applyVariant(model, variants, name) {
   const v = variants[name];
   if (!v) throw new Error(`no variant ${name}`);
   const m = applyVariant(model, variants, v.base);
+  for (const [id, patch] of Object.entries(v.stocks || {})) {
+    const st = m.stocks.find((x) => x.id === id);
+    if (!st) throw new Error(`variant ${name}: no stock ${id}`);
+    Object.assign(st, clone(patch));
+  }
   for (const [id, patch] of Object.entries(v.flows || {})) {
     const f = m.flows.find((g) => g.id === id);
     if (!f) throw new Error(`variant ${name}: no flow ${id}`);
@@ -39,7 +44,7 @@ export function desk(variant) {
     for (const st of m.stocks) if (st.id !== "budget") st.y += 900 * i;   // stack the stories on one canvas
     return m;
   });
-  const out = { id: `desk-${variant}`, name: `Desk (${variant})`, time_unit: "working hour", horizon: 160, dt: 0.25,
+  const out = { id: `desk-${variant}`, name: `Desk (${variant})`, time_unit: "working hour", horizon: Math.max(...parts.map((p) => p.horizon || 160)), dt: 0.25,
                 description: "Every story in one model: they share my time, the agents and the budget.",
                 stocks: [], flows: [], machines: [] };
   for (const p of parts) for (const key of ["stocks", "flows", "machines"]) {

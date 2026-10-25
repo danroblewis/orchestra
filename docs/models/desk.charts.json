@@ -1,0 +1,110 @@
+{
+ "measures": {
+  "my_hours": {
+   "name": "My hours per week on this story",
+   "unit": "hours / week",
+   "machine_hours_per_week": "me"
+  },
+  "waiting_for_me": {
+   "name": "Work waiting for me",
+   "unit": "items",
+   "waiting_for": "me"
+  },
+  "spend": {
+   "name": "Agent spend per week",
+   "unit": "dollars / week",
+   "agent_spend_per_week": true
+  },
+  "spend_total": {
+   "name": "Agent spend, cumulative",
+   "unit": "dollars",
+   "agent_spend_total": true
+  },
+  "budget": {
+   "name": "Agent budget balance",
+   "unit": "dollars",
+   "stocks": [
+    "budget"
+   ]
+  },
+  "busy": {
+   "name": "Share of my free time in use",
+   "unit": "%",
+   "machine_busy_share": "me"
+  }
+ },
+ "charts": [
+  {
+   "title": "Work waiting for me, every story together",
+   "unit": "items",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "waiting_for_me",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "waiting_for_me",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "The sum of every stock that only I drain, across the four stories."
+  },
+  {
+   "title": "Share of my free time in use",
+   "unit": "%",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "busy",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "busy",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "My machine's busy share each working hour (100% = all 24 free hours a week)."
+  },
+  {
+   "title": "Agent spend per week, every story together",
+   "unit": "dollars / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "spend",
+     "label": "designed",
+     "color": "designed"
+    }
+   ],
+   "why": "Summed from every agent flow's rate \u00d7 its cost per item, across the four stories. The budget refills at $120 a week."
+  },
+  {
+   "title": "Agent budget balance",
+   "unit": "dollars",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "budget",
+     "label": "designed",
+     "color": "designed"
+    }
+   ],
+   "why": "A stock shared by every story: starts at $120, refilled at $3 per working hour, drained by agent spend."
+  }
+ ]
+}

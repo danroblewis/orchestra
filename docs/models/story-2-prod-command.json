@@ -1,20 +1,115 @@
 {
+ "loops": [
+  {
+   "id": "B-prevention",
+   "polarity": "balancing",
+   "stocks": [
+    "p_asks",
+    "p_logged",
+    "p_cases",
+    "p_statements",
+    "p_in_review",
+    "p_policies"
+   ],
+   "says": "Cases become problem statements and proposals; adopted policies make these requests rarer."
+  },
+  {
+   "id": "R-evidence",
+   "polarity": "reinforcing",
+   "stocks": [
+    "p_cases",
+    "p_in_review",
+    "p_policies"
+   ],
+   "says": "The more cases logged, the stronger the proposal and the sooner it is adopted."
+  },
+  {
+   "id": "R-crisis",
+   "polarity": "reinforcing",
+   "stocks": [
+    "p_incidents",
+    "p_postmortem",
+    "p_statements",
+    "p_in_review"
+   ],
+   "says": "An incident caused by a command speeds adoption and becomes a postmortem and a problem statement."
+  },
+  {
+   "id": "R-runbooks",
+   "polarity": "reinforcing",
+   "stocks": [
+    "p_lessons",
+    "p_runbooks",
+    "p_explained",
+    "p_incidents"
+   ],
+   "says": "Cases and incidents teach the runbooks; better runbooks explain faster and cause fewer incidents."
+  },
+  {
+   "id": "B-decay",
+   "polarity": "balancing",
+   "stocks": [
+    "p_runbooks",
+    "p_policies"
+   ],
+   "says": "Runbooks go stale as systems change; policies erode as people work around them."
+  },
+  {
+   "id": "B-compliance",
+   "polarity": "balancing",
+   "stocks": [
+    "p_authority_gap",
+    "p_compliance"
+   ],
+   "says": "Asking for missing authority teaches requesters to bring it; fewer requests arrive incomplete."
+  },
+  {
+   "id": "R-repeats",
+   "polarity": "reinforcing",
+   "stocks": [
+    "p_followups",
+    "p_repeat_due",
+    "p_asks"
+   ],
+   "says": "Repeats needed in other environments come back as requests: as surprises if never filed."
+  }
+ ],
+ "inputs": {
+  "company_growth": {
+   "terms": [
+    {
+     "fn": "ramp",
+     "slope": 0.0009615384615384616,
+     "start": 0
+    }
+   ]
+  }
+ },
  "id": "story-2-prod-command",
- "name": "Story 2: a request to run a production command",
- "description": "Someone asks me to run a command on a production bastion. Before I run it: what it does, its impact and risk, who authorised it, why it is needed, and whether it repeats in other environments. After: it is logged, and patterns become problem statements that, once adopted, make these requests rarer. Agents never run the command. Time unit: a working hour; horizon twelve weeks.",
+ "name": "Story 2: production command requests, made rarer and safer",
+ "description": "People ask me to run commands on production bastions. Agents explain the command from runbooks, check the authority chain (asking back when it is missing, which teaches requesters the process), and gather context, including repeats needed in other environments. I decide and run it; nobody else can. Every case is logged; patterns and incidents become problem statements and proposals, which the company adopts faster with more evidence and right after an incident. Runbooks learn from every case and incident and go stale on their own. Time unit: a working hour; horizon 26 weeks.",
  "time_unit": "working hour",
- "horizon": 480,
+ "horizon": 1040,
  "dt": 0.25,
  "stocks": [
   {
-   "id": "p_inbox",
+   "id": "p_compliance",
+   "name": "Requesters following the process",
+   "unit": "points",
+   "initial": 30,
+   "side": "company",
+   "x": 0,
+   "y": 620,
+   "note": "Share of requesters who bring the change ticket and approvals with the ask, out of 100."
+  },
+  {
+   "id": "p_asks",
    "name": "Command asks",
    "unit": "requests",
    "initial": 1,
    "side": "interface",
-   "x": 112,
-   "y": 360,
-   "note": "Requests to run a production command"
+   "x": 0,
+   "y": 420
   },
   {
    "id": "p_explained",
@@ -22,9 +117,19 @@
    "unit": "requests",
    "initial": 0,
    "side": "ours",
-   "x": 336,
-   "y": 140,
-   "note": "Command explained: runbooks, impact, risks"
+   "x": 200,
+   "y": 100,
+   "note": "What the command does, runbooks, blast radius, risks, how to undo it."
+  },
+  {
+   "id": "p_authority_gap",
+   "name": "Authority missing",
+   "unit": "requests",
+   "initial": 0,
+   "side": "interface",
+   "x": 300,
+   "y": 420,
+   "note": "Asked back for the change ticket or approvals."
   },
   {
    "id": "p_authorised",
@@ -32,9 +137,9 @@
    "unit": "requests",
    "initial": 0,
    "side": "ours",
-   "x": 560,
-   "y": 140,
-   "note": "Chain of authority verified"
+   "x": 400,
+   "y": 100,
+   "note": "Authorised"
   },
   {
    "id": "p_briefed",
@@ -42,19 +147,9 @@
    "unit": "requests",
    "initial": 0,
    "side": "ours",
-   "x": 784,
-   "y": 140,
-   "note": "Context ready: customer ticket, unsafe ramp, rollout follow-up, other environments"
-  },
-  {
-   "id": "p_approved_to_run",
-   "name": "To run",
-   "unit": "requests",
-   "initial": 0,
-   "side": "ours",
-   "x": 1008,
-   "y": 140,
-   "note": "Decided to run, waiting for me to run it"
+   "x": 600,
+   "y": 100,
+   "note": "Root cause and context: customer ticket, unsafe ramp, rollout follow-up, other environments."
   },
   {
    "id": "p_declined",
@@ -63,71 +158,67 @@
    "initial": 0,
    "side": "interface",
    "final": true,
-   "x": 784,
-   "y": 360,
+   "x": 600,
+   "y": 420,
    "note": "Declined or redirected"
+  },
+  {
+   "id": "p_to_run",
+   "name": "To run",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 800,
+   "y": 100
   },
   {
    "id": "p_ran",
    "name": "Ran",
    "unit": "requests",
    "initial": 0,
-   "side": "ours",
-   "x": 1232,
-   "y": 360,
-   "note": "Ran; being logged"
-  },
-  {
-   "id": "p_gov_followups",
-   "name": "Other-env repeats",
-   "unit": "follow-ups",
-   "initial": 0,
-   "side": "ours",
-   "x": 784,
-   "y": 20,
-   "note": "Manual repeats needed in government and monthly environments"
-  },
-  {
-   "id": "p_gov_tickets",
-   "name": "Follow-up tickets",
-   "unit": "tickets",
-   "initial": 0,
    "side": "interface",
-   "final": true,
-   "x": 1008,
-   "y": 360,
-   "note": "Follow-up tickets filed"
+   "x": 900,
+   "y": 420,
+   "note": "Ran"
   },
   {
-   "id": "p_candidates",
+   "id": "p_logged",
    "name": "Logged",
    "unit": "requests",
    "initial": 0,
    "side": "ours",
-   "x": 1456,
-   "y": 140,
-   "note": "Logged; candidate for prevention"
+   "x": 1000,
+   "y": 100
+  },
+  {
+   "id": "p_cases",
+   "name": "Cases on file",
+   "unit": "cases",
+   "initial": 0,
+   "side": "ours",
+   "x": 1200,
+   "y": 100,
+   "note": "Logged requests that are evidence for prevention, until they are too old to matter."
   },
   {
    "id": "p_archived",
    "name": "Archived",
-   "unit": "requests",
+   "unit": "cases",
    "initial": 0,
    "side": "ours",
    "final": true,
-   "x": 1680,
-   "y": 20,
-   "note": "No pattern worth acting on"
+   "x": 1200,
+   "y": 240,
+   "note": "Archived"
   },
   {
-   "id": "p_problem_statements",
+   "id": "p_statements",
    "name": "Problem statements",
    "unit": "documents",
    "initial": 0,
    "side": "ours",
-   "x": 1680,
-   "y": 140,
-   "note": "Problem statements drafted from patterns"
+   "x": 1400,
+   "y": 100
   },
   {
    "id": "p_in_review",
@@ -135,24 +226,95 @@
    "unit": "documents",
    "initial": 0,
    "side": "company",
-   "x": 1904,
-   "y": 580,
-   "note": "Problem statements and proposals in company review"
+   "x": 1400,
+   "y": 620,
+   "note": "Proposals in review"
   },
   {
-   "id": "p_policies",
-   "name": "Preventions adopted",
-   "unit": "policies",
+   "id": "p_rejected",
+   "name": "Rejected",
+   "unit": "documents",
    "initial": 0,
    "side": "company",
    "final": true,
-   "target": {
-    "value": 2,
-    "by": 480
-   },
-   "x": 1008,
-   "y": 580,
-   "note": "Prevention adopted: policy or automation"
+   "x": 1650,
+   "y": 800
+  },
+  {
+   "id": "p_policies",
+   "name": "Preventions in force",
+   "unit": "policies",
+   "initial": 0,
+   "side": "company",
+   "x": 1650,
+   "y": 620,
+   "note": "Policies and automation that remove the need for these requests."
+  },
+  {
+   "id": "p_incidents",
+   "name": "Incidents caused by a command",
+   "unit": "incidents",
+   "initial": 0,
+   "side": "company",
+   "x": 1000,
+   "y": 620
+  },
+  {
+   "id": "p_postmortem",
+   "name": "Postmortems in progress",
+   "unit": "documents",
+   "initial": 0,
+   "side": "ours",
+   "x": 1400,
+   "y": 240
+  },
+  {
+   "id": "p_lessons",
+   "name": "Runbook lessons",
+   "unit": "lessons",
+   "initial": 0,
+   "side": "ours",
+   "x": 400,
+   "y": -80
+  },
+  {
+   "id": "p_runbooks",
+   "name": "Runbook coverage",
+   "unit": "entries",
+   "initial": 20,
+   "side": "ours",
+   "x": 650,
+   "y": -80,
+   "note": "How much of what gets asked is covered by an accurate runbook."
+  },
+  {
+   "id": "p_followups",
+   "name": "Repeats not yet filed",
+   "unit": "follow-ups",
+   "initial": 0,
+   "side": "interface",
+   "x": 1150,
+   "y": 420,
+   "note": "Repeats needed in government and monthly-deployed environments."
+  },
+  {
+   "id": "p_followup_tickets",
+   "name": "Repeats filed",
+   "unit": "tickets",
+   "initial": 0,
+   "side": "interface",
+   "x": 1400,
+   "y": 420
+  },
+  {
+   "id": "p_repeat_due",
+   "name": "Repeats coming due",
+   "unit": "follow-ups",
+   "initial": 0,
+   "side": "company",
+   "x": 250,
+   "y": 800,
+   "note": "Repeats that will come back as requests when the next monthly deploy lands."
   },
   {
    "id": "budget",
@@ -160,20 +322,26 @@
    "unit": "dollars",
    "initial": 120,
    "side": "ours",
-   "note": "Agent budget. Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
+   "note": "Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
    "x": 1300,
    "y": -60
   }
  ],
  "flows": [
   {
-   "id": "p_arrive",
+   "id": "p_ask",
    "name": "ask",
    "from": null,
-   "to": "p_inbox",
+   "to": "p_asks",
    "rate": {
-    "form": "constant",
-    "value": 0.05
+    "form": "linear",
+    "c": 0.06,
+    "terms": [
+     {
+      "stock": "company_growth",
+      "k": 0.12
+     }
+    ]
    },
    "machine": "environment",
    "side": "company",
@@ -202,12 +370,40 @@
      ]
     }
    ],
-   "note": "Someone asks me to run a command on a bastion. Adopted prevention lowers how often these requests come at all: the long balancing loop."
+   "note": "About 2.4 a week to start, rising to about 7 as the company's systems grow; fewer as preventions take hold."
+  },
+  {
+   "id": "p_repeat",
+   "name": "repeat comes due",
+   "from": "p_repeat_due",
+   "to": "p_asks",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_repeat_due",
+    "k": 0.00625
+   },
+   "machine": "environment",
+   "side": "company",
+   "note": "Monthly deploys bring the repeats back."
+  },
+  {
+   "id": "p_surprise",
+   "name": "surprise repeat",
+   "from": "p_followups",
+   "to": "p_asks",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_followups",
+    "k": 0.00625
+   },
+   "machine": "environment",
+   "side": "company",
+   "note": "A repeat nobody filed comes back as a surprise."
   },
   {
    "id": "p_explain",
    "name": "explain + runbooks",
-   "from": "p_inbox",
+   "from": "p_asks",
    "to": "p_explained",
    "rate": {
     "form": "available"
@@ -222,28 +418,181 @@
     }
    ],
    "crosses": "read: runbooks, code, docs",
-   "note": "Find runbooks; explain what the command does, its impact and risks"
+   "effects": [
+    {
+     "stock": "p_runbooks",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.5
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       1.8
+      ],
+      [
+       120,
+       2.5
+      ]
+     ]
+    }
+   ],
+   "note": "Faster where runbooks already cover the command."
   },
   {
-   "id": "p_authority",
-   "name": "check authority",
+   "id": "p_auth_ok",
+   "name": "authority complete",
    "from": "p_explained",
    "to": "p_authorised",
    "rate": {
-    "form": "available"
+    "form": "proportional",
+    "stock": "p_explained",
+    "k": 2
    },
    "machine": "orchestra",
    "side": "ours",
-   "work": 0.02,
-   "outputs": [
-    "p_declined"
-   ],
-   "split": {
-    "p_authorised": 0.9,
-    "p_declined": 0.1
-   },
+   "work": 0,
    "crosses": "read: jira approvals, change tickets, org chart",
-   "note": "Verify the chain of authority for a production change"
+   "effects": [
+    {
+     "stock": "p_compliance",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.2
+      ],
+      [
+       30,
+       0.6
+      ],
+      [
+       70,
+       1.2
+      ],
+      [
+       100,
+       1.5
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "p_auth_gap",
+   "name": "authority missing",
+   "from": "p_explained",
+   "to": "p_authority_gap",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_explained",
+    "k": 2
+   },
+   "machine": "orchestra",
+   "side": "interface",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "p_compliance",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.6
+      ],
+      [
+       30,
+       1
+      ],
+      [
+       70,
+       0.4
+      ],
+      [
+       100,
+       0.1
+      ]
+     ]
+    }
+   ],
+   "crosses": "slack write (the question back, via outbox)"
+  },
+  {
+   "id": "p_completed",
+   "name": "requester completes it",
+   "from": "p_authority_gap",
+   "to": "p_authorised",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_authority_gap",
+    "k": 0.125
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "p_gave_up",
+   "name": "requester gives up",
+   "from": "p_authority_gap",
+   "to": "p_declined",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_authority_gap",
+    "k": 0.025
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "p_learn_process",
+   "name": "requesters learn the process",
+   "from": null,
+   "to": "p_compliance",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_authority_gap",
+    "k": 0.6
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "p_compliance",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.4
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "p_forget_process",
+   "name": "turnover, new requesters",
+   "from": "p_compliance",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "p_compliance",
+    "k": 0.003
+   },
+   "machine": "environment",
+   "side": "company"
   },
   {
    "id": "p_context",
@@ -263,20 +612,20 @@
     }
    ],
    "outputs": [
-    "p_gov_followups"
+    "p_followups"
    ],
    "split": {
     "p_briefed": 0.8,
-    "p_gov_followups": 0.2
+    "p_followups": 0.2
    },
    "crosses": "read: customer jira, flag history, deploys, release calendars",
-   "note": "Root cause and context: customer ticket? unsafe ramp? rollout follow-up? repeats elsewhere?. Simplification: a fifth of requests need a repeat in other environments; the split moves that share into follow-ups rather than duplicating the request."
+   "note": "root cause + context"
   },
   {
    "id": "p_decide",
    "name": "decide",
    "from": "p_briefed",
-   "to": "p_approved_to_run",
+   "to": "p_to_run",
    "rate": {
     "form": "available"
    },
@@ -287,15 +636,15 @@
     "p_declined"
    ],
    "split": {
-    "p_approved_to_run": 0.85,
+    "p_to_run": 0.85,
     "p_declined": 0.15
    },
-   "note": "Read the brief and decide (me)"
+   "note": "decide"
   },
   {
    "id": "p_run",
    "name": "run (me only)",
-   "from": "p_approved_to_run",
+   "from": "p_to_run",
    "to": "p_ran",
    "rate": {
     "form": "available"
@@ -304,13 +653,96 @@
    "side": "interface",
    "work": 0.25,
    "crosses": "bastion host (human only)",
-   "note": "Run the command (me only, never an agent)"
+   "note": "run (me only)"
+  },
+  {
+   "id": "p_clean",
+   "name": "goes as expected",
+   "from": "p_ran",
+   "to": "p_logged",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_ran",
+    "k": 3.75
+   },
+   "machine": "environment",
+   "side": "interface"
+  },
+  {
+   "id": "p_incident",
+   "name": "causes an incident",
+   "from": "p_ran",
+   "to": "p_incidents",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_ran",
+    "k": 0.25
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "p_runbooks",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       2
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       0.5
+      ],
+      [
+       120,
+       0.3
+      ]
+     ]
+    }
+   ],
+   "note": "About 6% of commands cause an incident at today's runbook coverage; more when thinner, fewer as they improve."
+  },
+  {
+   "id": "p_respond",
+   "name": "respond to the incident",
+   "from": "p_incidents",
+   "to": "p_postmortem",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 2.0,
+   "crosses": "pagerduty, slack, incident process"
+  },
+  {
+   "id": "p_pm",
+   "name": "postmortem \u2192 problem statement",
+   "from": "p_postmortem",
+   "to": "p_statements",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "analyst",
+   "side": "ours",
+   "work": 1.0,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 3
+    }
+   ],
+   "crosses": "read: slack, pagerduty, deploys, flags"
   },
   {
    "id": "p_log",
    "name": "log",
-   "from": "p_ran",
-   "to": "p_candidates",
+   "from": "p_logged",
+   "to": "p_cases",
    "rate": {
     "form": "available"
    },
@@ -324,13 +756,13 @@
     }
    ],
    "crosses": "jira/slack write (via outbox)",
-   "note": "Log what happened and why, where the company will see it"
+   "note": "log for the company"
   },
   {
-   "id": "p_file_followups",
-   "name": "file follow-ups",
-   "from": "p_gov_followups",
-   "to": "p_gov_tickets",
+   "id": "p_file",
+   "name": "file the repeats",
+   "from": "p_followups",
+   "to": "p_followup_tickets",
    "rate": {
     "form": "available"
    },
@@ -343,39 +775,172 @@
      "per": 0.3
     }
    ],
-   "crosses": "jira write (via outbox)",
-   "note": "File follow-up tickets for the other environments"
+   "crosses": "jira write (via outbox)"
   },
   {
-   "id": "p_pattern",
-   "name": "find patterns",
-   "from": "p_candidates",
+   "id": "p_plan_repeat",
+   "name": "repeat scheduled",
+   "from": "p_followup_tickets",
+   "to": "p_repeat_due",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_followup_tickets",
+    "k": 0.1
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "p_policies",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       5,
+       0.6
+      ],
+      [
+       10,
+       0.3
+      ]
+     ]
+    }
+   ],
+   "note": "Filed repeats come back as planned work; preventions automate some of them away."
+  },
+  {
+   "id": "p_automated",
+   "name": "repeat automated away",
+   "from": "p_followup_tickets",
    "to": "p_archived",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_followup_tickets",
+    "k": 0.02
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "p_policies",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.2
+      ],
+      [
+       5,
+       1.5
+      ],
+      [
+       10,
+       3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "p_lesson",
+   "name": "runbook lessons",
+   "from": null,
+   "to": "p_lessons",
+   "rate": {
+    "form": "linear",
+    "c": 0,
+    "terms": [
+     {
+      "stock": "p_cases",
+      "k": 0.03
+     },
+     {
+      "stock": "p_incidents",
+      "k": 3
+     },
+     {
+      "stock": "p_postmortem",
+      "k": 2
+     }
+    ]
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0
+  },
+  {
+   "id": "p_runbook",
+   "name": "update runbooks",
+   "from": "p_lessons",
+   "to": "p_runbooks",
    "rate": {
     "form": "available"
    },
-   "machine": "analyst",
+   "machine": "drafter",
    "side": "ours",
-   "work": 0.2,
+   "work": 0.3,
    "uses": [
     {
      "stock": "budget",
-     "per": 0.8
+     "per": 1
     }
    ],
-   "outputs": [
-    "p_problem_statements"
-   ],
-   "split": {
-    "p_archived": 0.75,
-    "p_problem_statements": 0.25
+   "crosses": "wiki/runbook write (via outbox)"
+  },
+  {
+   "id": "p_runbook_stale",
+   "name": "runbooks go stale",
+   "from": "p_runbooks",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "p_runbooks",
+    "k": 0.002
    },
-   "note": "Look for a pattern across requests worth preventing"
+   "machine": "environment",
+   "side": "ours"
+  },
+  {
+   "id": "p_pattern",
+   "name": "find a pattern",
+   "from": "p_cases",
+   "to": "p_statements",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_cases",
+    "k": 0.01
+   },
+   "machine": "analyst",
+   "side": "ours",
+   "work": 0.5,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 2
+    }
+   ],
+   "note": "A problem statement needs several cases; the more on file, the more often a pattern appears."
+  },
+  {
+   "id": "p_age",
+   "name": "cases age out",
+   "from": "p_cases",
+   "to": "p_archived",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_cases",
+    "k": 0.01
+   },
+   "machine": "environment",
+   "side": "ours"
   },
   {
    "id": "p_propose",
    "name": "propose",
-   "from": "p_problem_statements",
+   "from": "p_statements",
    "to": "p_in_review",
    "rate": {
     "form": "available"
@@ -390,7 +955,7 @@
     }
    ],
    "crosses": "docs write; slack post for review",
-   "note": "Turn a problem statement into a proposal (me edits, agent drafts)"
+   "note": "propose"
   },
   {
    "id": "p_adopt",
@@ -404,7 +969,76 @@
    },
    "machine": "environment",
    "side": "company",
-   "note": "Company reviews and adopts the prevention. About two working weeks from proposal to adoption, when it is adopted at all."
+   "effects": [
+    {
+     "stock": "p_cases",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       5,
+       1
+      ],
+      [
+       15,
+       1.6
+      ],
+      [
+       30,
+       2
+      ]
+     ]
+    },
+    {
+     "stock": "p_incidents",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       1.5
+      ],
+      [
+       3,
+       2.5
+      ]
+     ]
+    }
+   ],
+   "note": "Faster with more evidence on file, and much faster right after an incident."
+  },
+  {
+   "id": "p_reject",
+   "name": "reject",
+   "from": "p_in_review",
+   "to": "p_rejected",
+   "rate": {
+    "form": "proportional",
+    "stock": "p_in_review",
+    "k": 0.00625
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "p_erode",
+   "name": "policies erode",
+   "from": "p_policies",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "p_policies",
+    "k": 0.001
+   },
+   "machine": "environment",
+   "side": "company",
+   "note": "People find ways around policies; automation drifts."
   },
   {
    "id": "fund",

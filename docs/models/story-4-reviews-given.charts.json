@@ -1,0 +1,215 @@
+{
+ "measures": {
+  "my_hours": {
+   "name": "My hours per week on this story",
+   "unit": "hours / week",
+   "machine_hours_per_week": "me"
+  },
+  "waiting_for_me": {
+   "name": "Work waiting for me",
+   "unit": "items",
+   "waiting_for": "me"
+  },
+  "spend": {
+   "name": "Agent spend per week",
+   "unit": "dollars / week",
+   "agent_spend_per_week": true
+  },
+  "spend_total": {
+   "name": "Agent spend, cumulative",
+   "unit": "dollars",
+   "agent_spend_total": true
+  },
+  "budget": {
+   "name": "Agent budget balance",
+   "unit": "dollars",
+   "stocks": [
+    "budget"
+   ]
+  },
+  "requests_week": {
+   "name": "Review requests per week",
+   "unit": "PRs / week",
+   "flows": [
+    "r_ask_clean",
+    "r_ask_flawed"
+   ],
+   "per_week": true
+  },
+  "knowledge": {
+   "name": "Agent's map of the codebase",
+   "unit": "entries",
+   "stocks": [
+    "r_knowledge"
+   ]
+  },
+  "missed": {
+   "name": "Defects I miss",
+   "unit": "% of defective PRs",
+   "share": {
+    "of": [
+     "r_miss"
+    ],
+    "in": [
+     "r_catch",
+     "r_miss"
+    ]
+   }
+  },
+  "goodwill": {
+   "name": "Teammates' goodwill",
+   "unit": "points",
+   "stocks": [
+    "r_goodwill"
+   ]
+  },
+  "reputation": {
+   "name": "My reputation as a reviewer",
+   "unit": "points",
+   "stocks": [
+    "r_reputation"
+   ]
+  },
+  "skill": {
+   "name": "Team's skill",
+   "unit": "points",
+   "stocks": [
+    "r_skill"
+   ]
+  }
+ },
+ "charts": [
+  {
+   "title": "Review requests per week",
+   "unit": "PRs / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "requests_week",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "requests_week",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Not a fixed input: 0.15 an hour plus 0.001 \u00d7 my reputation as a reviewer (about 7 a week at 50)."
+  },
+  {
+   "title": "Agent's map of the codebase: learning against code churn",
+   "unit": "entries",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "knowledge",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-agent-learning",
+     "measure": "knowledge",
+     "label": "agent not learning",
+     "color": "red"
+    },
+    {
+     "variant": "manual",
+     "measure": "knowledge",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 30 entries."
+  },
+  {
+   "title": "Defects I miss",
+   "unit": "% of defective PRs",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "missed",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "missed",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "The catch/miss split moves with the code map and my review queue."
+  },
+  {
+   "title": "Teammates' goodwill toward me",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "goodwill",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "comment-quota",
+     "measure": "goodwill",
+     "label": "comment quota",
+     "color": "red"
+    }
+   ],
+   "why": "Starts at 30."
+  },
+  {
+   "title": "Team's skill",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "skill",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "skill",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 50."
+  },
+  {
+   "title": "My reputation as a reviewer",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "reputation",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "reputation",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 50."
+  }
+ ]
+}

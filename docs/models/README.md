@@ -40,6 +40,8 @@ check fails. **Design gaps** (requirements the design doesn't yet meet) are repo
 | `*.variants.json` | Other machine assignments for the same model: `manual` (today: everything on me), plus what-ifs (`rising` demand, `better-first-pass`, `manual-thorough`). A variant overrides fields of named flows. |
 | `desk.couplings.json` | The declared effects one story's stocks have on another story's flows. The desk model is the four stories together, sharing my time, the agents, and the budget, plus these couplings. |
 | `build.py` | The source of the model files: stocks, flows, machines, layout, variants, couplings. |
+| `*.charts.json` | What each story's charts plot, as data: named **measures** (a stock, a sum of stocks, a flow's rate per week, a share of flows, a machine's hours, the agents' spend), and charts that pick a measure per variant. Written by `build.py`. |
+| `../user-story-equations.md` | Generated: every stock's starting value and every flow's equation, effects, machine time and cost, per story. |
 | `render.mjs` | Draws every story with SD Lab's own diagram renderer (`diagram.js`) into `svg/`, with the three sides as bands. Writes `../user-story-diagrams.md`: each story's diagram, Mermaid charts of the simulation (manual against designed), a Mermaid flowchart, its machines, crossings and checks. Also writes `diagrams.html`. |
 | `lib.mjs` | Shared by `check.mjs` and `render.mjs`: loading, variants, the desk, the validator, the simulator, measures. |
 | `check.mjs` | The model-level acceptance checks; with `EXPORT=<dir>`, also writes every variant as a model file. |
@@ -47,8 +49,25 @@ check fails. **Design gaps** (requirements the design doesn't yet meet) are repo
 
 ## Conventions
 
-- **Time unit:** a working hour. 40 a week. Horizons are 160 (four weeks), or 480 (twelve weeks)
-  for story 2's prevention loop.
+- **Time unit:** a working hour (40 a week). Horizon: 26 weeks (1,040 hours), long enough for slow
+  loops (learning, decay, trust, reputation) to show.
+- **Feedback first.** Every model lists its named loops in a `loops` key:
+  - an id;
+  - reinforcing or balancing;
+  - the stocks it runs through;
+  - what it does.
+
+  `render.mjs` prints them on the diagrams page. A chain of stocks with no loop through it isn't
+  a model of anything dynamic.
+- **Rates depend on stocks.** The success rate, how much I check, how fast reviewers respond, how
+  often managers ask, how fast runbooks rot: each is a table effect of another stock's level. Those
+  effects are the loops.
+- **How effects bite in SD Lab.**
+  - On a flow with machine time (`work` above 0), an effect changes the machine's speed.
+  - On a flow with none (environment, or a program with `work: 0`), it changes the rate itself.
+  - So outcomes and routing decisions (success or flaw, check or pass, catch or miss) are
+    parallel environment or program flows whose rates carry opposite effects. The split moves
+    with the system's state. Work that takes time (attempts, checks, reviews) runs on machines.
 - **Machines are shared by every story:**
 
   | Machine | Kind | Capacity | Notes |
@@ -57,83 +76,128 @@ check fails. **Design gaps** (requirements the design doesn't yet meet) are repo
   | `analyst` | agent | 1 | |
   | `drafter` | agent | 1 | Everything it writes goes to my outbox |
   | `implementer` | agent | 2 | Two slots |
-  | `orchestra` | code | 5 | Programs; no model calls |
+  | `orchestra` | code | 5 | Programs, no model calls |
   | `environment` | — | — | The company and its people. They aren't ours to schedule. |
+- **The budget** is a stock refilled at $3 an hour (about $120 a week of the $190). Agent flows draw
+  on it through co-flows (`uses`) and stop when it's empty.
+- **Annotations.** Stocks and flows carry:
+  - `side`: `ours`, `interface`, or `company`;
+  - `crosses`, on flows that touch a company system;
+  - `note`, the long description.
 
-  A flow's `work` is machine-hours per item. A machine with too much work shares its capacity
-  across its flows, so everything it runs slows down.
-- **The budget is a stock.** It is refilled at $3 per working hour, about $120 of the $190 weekly
-  total. Agent flows draw on it through co-flows (`uses`), so they stop when it's empty.
-- **Annotations.** Stocks and flows carry `side` (`ours`, `interface`, `company`). Flows that
-  touch a company system carry `crosses` (which system, read or write, and whether it goes
-  through my outbox). Some carry a `note`. SD Lab ignores keys it doesn't know. These are proposed
-  extensions (below).
-- **Information stocks.** `t_nudges` (recent pings) and `r_recent` (recent reviews given, standing
-  in for goodwill) aren't work. They act on flows through table effects.
+  SD Lab ignores keys it doesn't know.
+- **Inputs.** Story 2 uses a measured input (`company_growth`, a ramp) to grow demand over 26 weeks.
+
+## The models
+
+| Model | Stocks | Flows | Loops | What it's about |
+|---|---|---|---|---|
+| Story 1, simple tasks | 30 | 41 | 8 | Agents that learn (or don't). Playbook against decay and overload; the capability trap; trust deciding how much I check; reviewer fatigue; debt; reputation bringing more asks. |
+| Story 2, production commands | 24 | 31 | 7 | Prevention against rising demand; evidence and crises speeding adoption; runbooks learning and decaying; requesters learning the process; repeats coming back. |
+| Story 3, status | 18 | 27 | 6 | Freshness; source hygiene and nudges; nagging that backfires; manager confidence against the micromanagement spiral; early warning of blocked projects. |
+| Story 4, reviews given | 16 | 23 | 7 | Reciprocity; fatigue; coaching raising the team's skill; reviewer reputation; the agent's map of the code; comment quotas (Goodhart); escaped defects. |
+| Desk | all of them | | | Shared time, agents and budget, plus declared couplings: my goodwill speeds reviews of my PRs; the team's skill raises how many flaws reviewers catch. |
+
+## Where the numbers come from, and what is repeatable
+
+The method for producing analyses like `user-story-diagrams.md` from a model, for any ask, is in
+`../analysis-method.md`.
+
+- **Authored, not derived.** Claude wrote by hand, in `build.py`, from what you described of your
+  work:
+  - every equation, starting value and input;
+  - every variant;
+  - every chart, and every measure behind a chart.
+
+  None of it was fitted to data or discovered.
+- **Running it is repeatable.** The simulation is deterministic (SD Lab's simulator, no noise), so
+  `build.py` → `check.mjs` → `render.mjs` gives the same files every time. The diagrams page prints:
+  - for every chart, the measure it plots and that measure's formula;
+  - for every story, its starting values, the drivers from outside, and what each variant
+    changes.
+
+  `user-story-equations.md` lists every flow.
+- **Authoring it again would not be.** Asked again, an AI would write different numbers and choose
+  different charts. To make authoring repeatable, each number needs a recorded origin:
+  - an assumption, with its reason;
+  - a value from you;
+  - a value fitted from history by a named method and data window.
+
+  Fitting should be done by code (SD Lab's fit, or discovery), not by an agent. The agent's job
+  becomes proposing structure, which you review. That is the next step, not done yet.
 
 ## Assumptions
 
-All are estimates for planning, to be replaced by fitted values from GitHub, Jira and Slack
-history.
+All are estimates for planning. The structure (which stocks affect which rates, and with what
+sign) is the claim. The numbers are placeholders to be fitted from GitHub, Jira and Slack history.
 
-| Assumption | Value | Where |
-|---|---|---|
-| Simple-task requests | 6 a week (0.15/h); 10 a week in `rising` | `t_arrive` |
-| My time per simple task, designed | 0.25 h collecting requirements + about 0.5 h of approvals | `t_collect`, approvals |
-| My time per simple task, manual | About 10 h across research, ticket, code, tests, PR, fixes, pings, replies, SAIL, Jira, Slack | `manual` variant |
-| Agent hours and cost per task | Research 0.5 h/$1.50; ticket 0.2 h/$0.50; implementation 2 h/$6; verification 0.5 h/$1.50; each fix round 0.5–1 h/$1.50–3 | `work`, `uses` |
-| Internal rework | 25% sent back by internal verification | `t_verify` split |
-| Company PR checks | 1 h; 15% fail | `t_checks` |
-| Company AI review | 0.5 h; comments on 50% | `t_bot` |
-| Human review | 16 working hours mean first response with one recent ping, 0.6× speed with none; 40% request changes | `t_review` |
-| SAIL | 4 h; 30% fail; two thirds of failures are known flakes | `t_sail`, `t_triage` |
-| Production command requests | 2 a week, falling as prevention is adopted | `p_arrive` |
-| Prevention adoption | About two working weeks in company review | `p_adopt` |
-| Status | 60 tracked items; 5% go stale each hour; managers ask 4 times a week; 1.5 h to answer from scratch, under 10 minutes when current | story 3 |
-| Review requests to me | 8 a week; 0.4 h each with a brief, 0.75 h without | story 4 |
-| Reciprocity | Reviews given recently speed my PRs' reviews by up to 1.4× | `desk.couplings.json` |
+- **Demand:**
+  - simple tasks start near 5 a week and rise with requesters' confidence;
+  - command requests start at 2.4 a week and rise toward 7 as the company grows, less any adopted
+    prevention;
+  - managers ask about 4 times a week, scaled by their confidence and recent surprises;
+  - review requests run 6–8 a week, scaled by my reputation as a reviewer.
+- **Agent outcomes:**
+  - at a 20-entry playbook, attempts are 55% sound, 20% hidden flaw, and 25% visible failure;
+  - a good playbook moves that toward about 75/10/15, and an oversized one partly back;
+  - debt pushes toward flaws.
+- **Learning and decay:**
+  - each failure, late finding or bug leaves lessons, and successes leave patterns;
+  - the playbook halves in about six weeks without upkeep, faster when much is landing;
+  - runbooks and the agent's code map decay more slowly.
+- **Company side:**
+  - checks plus AI review catch about 40% of flaws;
+  - reviewers respond in about 24 working hours at one recent ping, slower with long queues;
+  - reviewers catch 70% of flaws when fresh, much less when overloaded;
+  - SAIL takes about 4 hours, and a quarter of runs fail as flakes.
+- **Trust and confidence** move slowly up with good outcomes, and sharply down with late findings,
+  bugs and surprises.
 
 ## Results (last run)
 
-18 validity checks pass. 3 design gaps.
+`node docs/models/check.mjs`: 26 validity checks pass, 7 design gaps. The full table is in
+`results.json` and on the diagrams page. The behaviour the models produce:
 
-| Check | Result |
+| Story | Behaviour |
 |---|---|
-| **Manual reproduces today** (1.1, D.1) | I'm 100% busy, work waiting for me grows from 9 to 55 items in four weeks, and 4 of 24 simple tasks are delivered. This matches what you described, which is the face-validity test. |
-| **Designed, story 1** | 22 of 24 delivered, 0.94 h of my time each, 22% of my free time. |
-| **Designed, story 2** | Full due diligence at 0.70 h of my time per request, against 5.26 h doing it all myself and 2.87 h for today's shortcut (which skips root cause and prevention). Three preventions adopted in twelve weeks; requests fall from 2.0 to 1.4 a week. |
-| **Designed, story 3** | 0.21 h per answer against 1.72 h. |
-| **Designed, desk** | Everything together uses 46% of my free time, with nothing piling up. |
-| **Gap 1.5: cost** | $22 per simple task against a $20 target. |
-| **Gap 1.6: turnaround** | 5.2 working days against 4. 90% of work in progress sits in company stocks (review, checks, SAIL). |
-| **Gap D.4: budget** | The four stories want $150 a week against a $120 share. The budget becomes the binding constraint by week four. |
-| **Info 1.6b: better first pass** | Fewer rounds at each boundary (internal rework 10%, AI review comments 35%, change requests 25%) gives $16 per task and 4.3 days. This is the largest lever on both gaps. |
-| **Info: leverage** | Making agent flows 10% faster changes nothing: they aren't the bottleneck. Human review is the largest lever, then SAIL and checks. In the desk, the budget comes first. (Leverage also ranks more demand as "more delivered", which is true and useless.) |
-| **Info D.5: reciprocity** | Reviews given lift delivered simple tasks from 21 to 22: real but small at these assumptions. |
+| 1 | **Learning beats decay.** Playbook 20 → 89 entries, and attempts going wrong 33% → 24%. Without learning: playbook rots to 1, 68% go wrong, debt doubles, the budget runs out 9 weeks sooner. |
+| 1 | **Capability trap (gap).** Under a surge, the playbook peaks at 61 and falls to 29. With lesson capture protected it reaches 98. |
+| 1 | **Limits to growth.** Requesters' confidence 20 → 77, and asks 5 → 12 a week, until the budget binds in week 23 and the backlog grows to 15 (gap). |
+| 1 | **Trust.** From 30 to 87. Starting from blind trust dips to 68 and recovers. Escaped flaws stay under 0.4 per 100. |
+| 2 | **Prevention bends the curve.** 2.8 requests a week at week 26, against 7.2 without prevention, with about 9 preventions in force. Runbooks 20 → 32, against 2.5 without updates. |
+| 2 | **Incidents (gap).** 5% of commands cause one, against 11% today. |
+| 2 | **Repeats.** 21 surprise repeats today; none designed. |
+| 3 | **The spiral.** Without a status page: confidence 50 → 15, questions 4 → 25 a week, me 96% busy. With one: confidence 50 → 76, questions 4 → 3.3, and 95% of blocked projects noticed by me first. |
+| 3 | **Nudging.** None or too many both leave sources rotten (hygiene 0, against 38 with moderate nudging). |
+| 4 | **The code map.** Grows 30 → 71 and halves missed defects (12% against 29%). |
+| 4 | **Comment quota.** Triples comments and cuts goodwill 43 → 24. Review volume is under my 8-a-week target (gap). |
+| Desk | **Budget, not my time, is the limit:** about $125 a week wanted against $120 (gap). Reciprocity shortens my PRs' wait in review from 3.1 to 2.2 days. |
 
 ## What this says about the design
 
-1. **Agents remove the overload, not the wait.** My time per task falls tenfold, but turnaround is
-   set by the company's side. The four-day expectation can't be met by faster agents, only by fewer
-   round trips across the boundary and faster human review.
-2. **Iterate inside, cross once.** Every crossing back from the company (a failed check, an AI
-   review comment, a change request, a SAIL failure) costs a company delay plus agent money. First-
-   pass quality at our side is worth more than agent speed.
-3. **The budget binds before my time does.** With agents carrying the work, dollars are the
-   constraint. Cheaper steps (programs instead of agents), fewer rounds, and choosing which
-   requests get the full treatment are the levers.
+1. **Agents that learn are worth more than faster agents.** The playbook, runbooks, and code map
+   are the stocks that move outcomes, and they decay. Their upkeep has to be a protected flow,
+   especially under pressure. Otherwise the capability trap takes it.
+2. **The binding constraints are outside my time:** the budget, the company's reviewers, and the
+   company's adoption of prevention. The design's leverage is in what reaches them (fewer flaws,
+   better evidence, timely reviews of others' work), not in raw agent speed.
+3. **Trust and confidence are stocks with slow inflows and fast outflows.** Late findings and
+   surprises are the expensive events. Early detection (my checks, the status page, early warning)
+   pays for itself through those loops.
+4. **Several "obvious" policies backfire through feedback:** nagging, comment quotas, and blind
+   trust at high load. The models make that visible before trying them on real people.
 
 ## Proposed SD Lab extensions (found while writing these)
 
-- **`side` and `crosses` as first-class fields,** so the editor can draw the boundary and list the
+- **Named loops as a first-class part of a model** (`loops`), drawn on the diagram as polarity
+  markers, and checked: does each listed loop actually close through the flows and effects?
+- **`side` and `crosses` as first-class fields,** so the editor draws the boundary and lists
   crossings.
-- **Variants as a model feature:** named machine assignments and what-ifs of one model. Today they
-  live in a separate file, applied by `check.mjs`.
-- **Declared couplings between models,** so several small models can run as one without being
-  merged by hand.
-- **A busy-based overload measure.** The editor's machine "load" (asked ÷ capacity) is very large
-  for flows whose rate is `available`, so it doesn't indicate overload. Busy share plus the levels
-  of stocks a machine drains does.
-- **Leverage over parameters and splits,** not just flow speed: the strongest levers here
-  (the share of PRs needing changes, SAIL failure rate) are splits, which the 10%-faster test can't
-  vary.
+- **Variants** (machine assignments, initial values, what-ifs) as a model feature, not a separate
+  file applied by `check.mjs`.
+- **Declared couplings between models,** so several small models run as one.
+- **Auxiliaries in the editor format.** Several effects here want a ratio or a sum (reviewer load
+  across two queues, a share of stale items). The editor's effects read one stock, so the models
+  use the closest single stock.
+- **Leverage over parameters, splits and effect tables,** not only flow speed: the strongest levers
+  here are effect strengths and decay rates.

@@ -1,9 +1,74 @@
 {
+ "loops": [
+  {
+   "id": "B-freshness",
+   "polarity": "balancing",
+   "stocks": [
+    "s_current",
+    "s_stale",
+    "s_hygiene"
+   ],
+   "says": "Projects drift and the page goes stale; refreshing brings it back, faster when the sources are kept up."
+  },
+  {
+   "id": "B-hygiene",
+   "polarity": "balancing",
+   "stocks": [
+    "s_stale",
+    "s_nudges",
+    "s_hygiene"
+   ],
+   "says": "Stale sources prompt nudges to owners, which keep their tickets current."
+  },
+  {
+   "id": "R-nagging",
+   "polarity": "reinforcing",
+   "stocks": [
+    "s_nudges",
+    "s_patience",
+    "s_hygiene"
+   ],
+   "says": "Too many nudges wear out patience; without patience nudges stop working and sources rot anyway."
+  },
+  {
+   "id": "B-confidence",
+   "polarity": "balancing",
+   "stocks": [
+    "s_good_recent",
+    "s_confidence",
+    "s_asks"
+   ],
+   "says": "Accurate, quick answers build confidence; a confident manager asks less and reads the page."
+  },
+  {
+   "id": "R-spiral",
+   "polarity": "reinforcing",
+   "stocks": [
+    "s_bad_recent",
+    "s_surprise_recent",
+    "s_confidence",
+    "s_asks",
+    "s_stale"
+   ],
+   "says": "Wrong answers and surprises cut confidence; more check-ins take my time; more answers come from stale knowledge."
+  },
+  {
+   "id": "B-early-warning",
+   "polarity": "balancing",
+   "stocks": [
+    "s_blocked_hidden",
+    "s_blocked_known",
+    "s_surprises",
+    "s_surprise_recent"
+   ],
+   "says": "A current page shows blocked projects before my manager finds them."
+  }
+ ],
  "id": "story-3-status-request",
- "name": "Story 3: a manager asks for status",
- "description": "Managers ask me about projects assuming I remember. If the status page is current I send it; if not I redo the research. The analyst keeps the page current as tickets, docs and threads change. Time unit: a working hour; horizon four weeks.",
+ "name": "Story 3: a manager asks for an update",
+ "description": "One of my managers asks me for an update, assuming I already have the context. Today I don't: I re-read tickets, docs and Slack threads to reconstruct it before I can give a small update. With a status page the analyst keeps current, the update is already prepared. Around that core are the loops that decide whether it stays that way: the page is refreshed faster when owners keep their sources up; nudges keep them up until they wear out the team's patience. Accurate, quick answers build my manager's confidence and they ask less; wrong answers and surprises (blocked projects they found before me) send them checking in more. Time unit: a working hour; horizon 26 weeks.",
  "time_unit": "working hour",
- "horizon": 160,
+ "horizon": 1040,
  "dt": 0.25,
  "stocks": [
   {
@@ -12,9 +77,9 @@
    "unit": "items",
    "initial": 30,
    "side": "ours",
-   "x": 336,
-   "y": 140,
-   "note": "Status items current in my status page"
+   "x": 200,
+   "y": 100,
+   "note": "Status current"
   },
   {
    "id": "s_stale",
@@ -22,9 +87,37 @@
    "unit": "items",
    "initial": 30,
    "side": "ours",
-   "x": 336,
-   "y": 580,
-   "note": "Status items stale: something changed since they were read"
+   "x": 200,
+   "y": 240,
+   "note": "Something changed in the ticket, doc or thread since the page last read it."
+  },
+  {
+   "id": "s_hygiene",
+   "name": "Source hygiene",
+   "unit": "points",
+   "initial": 50,
+   "side": "company",
+   "x": 450,
+   "y": 620,
+   "note": "How well owners keep their tickets and docs current, out of 100."
+  },
+  {
+   "id": "s_nudges",
+   "name": "Recent nudges to owners",
+   "unit": "nudges",
+   "initial": 0,
+   "side": "interface",
+   "x": 450,
+   "y": 420
+  },
+  {
+   "id": "s_patience",
+   "name": "Team's patience with nudges",
+   "unit": "points",
+   "initial": 80,
+   "side": "company",
+   "x": 450,
+   "y": 800
   },
   {
    "id": "s_asks",
@@ -32,9 +125,36 @@
    "unit": "questions",
    "initial": 1,
    "side": "interface",
-   "x": 784,
-   "y": 360,
-   "note": "Questions from managers waiting for an answer"
+   "x": 800,
+   "y": 420,
+   "note": "Manager questions"
+  },
+  {
+   "id": "s_drafted",
+   "name": "Answer given, accuracy unknown",
+   "unit": "questions",
+   "initial": 0,
+   "side": "interface",
+   "x": 1050,
+   "y": 420
+  },
+  {
+   "id": "s_good_recent",
+   "name": "Good answers, recently",
+   "unit": "questions",
+   "initial": 0,
+   "side": "company",
+   "x": 1300,
+   "y": 620
+  },
+  {
+   "id": "s_wrong",
+   "name": "Answers found wrong",
+   "unit": "questions",
+   "initial": 0,
+   "side": "company",
+   "x": 1300,
+   "y": 800
   },
   {
    "id": "s_answered",
@@ -43,13 +163,75 @@
    "initial": 0,
    "side": "interface",
    "final": true,
-   "target": {
-    "value": 14,
-    "by": 160
-   },
-   "x": 1120,
-   "y": 360,
-   "note": "Questions answered"
+   "x": 1550,
+   "y": 420,
+   "note": "Answered"
+  },
+  {
+   "id": "s_confidence",
+   "name": "Manager's confidence in me",
+   "unit": "points",
+   "initial": 50,
+   "side": "company",
+   "x": 800,
+   "y": 620
+  },
+  {
+   "id": "s_blocked_hidden",
+   "name": "Blocked, not yet noticed",
+   "unit": "projects",
+   "initial": 0,
+   "side": "ours",
+   "x": 550,
+   "y": -80
+  },
+  {
+   "id": "s_blocked_known",
+   "name": "Blocked, I know",
+   "unit": "projects",
+   "initial": 0,
+   "side": "ours",
+   "x": 850,
+   "y": -80
+  },
+  {
+   "id": "s_surprises",
+   "name": "Blocked, manager found it first",
+   "unit": "projects",
+   "initial": 0,
+   "side": "company",
+   "x": 1050,
+   "y": 800
+  },
+  {
+   "id": "s_escalated",
+   "name": "Escalated and handled",
+   "unit": "projects",
+   "initial": 0,
+   "side": "ours",
+   "final": true,
+   "x": 1150,
+   "y": -80
+  },
+  {
+   "id": "s_bad_recent",
+   "name": "Wrong answers, recently",
+   "unit": "questions",
+   "initial": 0,
+   "side": "company",
+   "x": 1550,
+   "y": 800,
+   "note": "Remembered for about two weeks."
+  },
+  {
+   "id": "s_surprise_recent",
+   "name": "Surprises, recently",
+   "unit": "projects",
+   "initial": 0,
+   "side": "company",
+   "x": 1300,
+   "y": 240,
+   "note": "Remembered for about a month."
   },
   {
    "id": "budget",
@@ -57,12 +239,38 @@
    "unit": "dollars",
    "initial": 120,
    "side": "ours",
-   "note": "Agent budget. Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
+   "note": "Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
    "x": 1300,
    "y": -60
   }
  ],
  "flows": [
+  {
+   "id": "s_new",
+   "name": "new items to track",
+   "from": null,
+   "to": "s_stale",
+   "rate": {
+    "form": "constant",
+    "value": 0.05
+   },
+   "machine": "environment",
+   "side": "company",
+   "note": "About two new projects, tickets or threads a week."
+  },
+  {
+   "id": "s_retire",
+   "name": "items finish",
+   "from": "s_current",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "s_current",
+    "k": 0.002
+   },
+   "machine": "environment",
+   "side": "company"
+  },
   {
    "id": "s_drift",
    "name": "projects move on",
@@ -75,7 +283,7 @@
    },
    "machine": "environment",
    "side": "company",
-   "note": "Projects move on: tickets, docs and threads change. About a twentieth of what I know goes stale every working hour across 60 tracked items."
+   "note": "projects move on"
   },
   {
    "id": "s_refresh",
@@ -95,11 +303,200 @@
     }
    ],
    "crosses": "read: jira, docs, slack",
-   "note": "Re-read changed tickets, docs and threads; update the status page"
+   "effects": [
+    {
+     "stock": "s_hygiene",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.3
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       1.5
+      ]
+     ]
+    }
+   ],
+   "note": "Slow where sources are out of date: the agent has to reconstruct what happened."
+  },
+  {
+   "id": "s_nudge",
+   "name": "nudge owners",
+   "from": null,
+   "to": "s_nudges",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_current",
+    "k": 0.005
+   },
+   "machine": "orchestra",
+   "side": "interface",
+   "work": 0,
+   "crosses": "slack write (via outbox; earned autonomy)",
+   "effects": [
+    {
+     "stock": "s_hygiene",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       2
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       0.2
+      ]
+     ]
+    }
+   ],
+   "note": "When a refresh finds a source out of date, its owner gets a nudge; more often when hygiene is poor."
+  },
+  {
+   "id": "s_nudge_fade",
+   "name": "fade",
+   "from": "s_nudges",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "s_nudges",
+    "k": 0.25
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_hygiene_up",
+   "name": "owners update",
+   "from": null,
+   "to": "s_hygiene",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_nudges",
+    "k": 0.6
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "s_patience",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0
+      ],
+      [
+       30,
+       0.3
+      ],
+      [
+       60,
+       1
+      ],
+      [
+       100,
+       1.2
+      ]
+     ]
+    },
+    {
+     "stock": "s_hygiene",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.5
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s_hygiene_down",
+   "name": "sources rot",
+   "from": "s_hygiene",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "s_hygiene",
+    "k": 0.01
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_patience_loss",
+   "name": "patience wears",
+   "from": "s_patience",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "s_nudges",
+    "k": 0.1
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "s_nudges",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       1
+      ],
+      [
+       3,
+       3
+      ],
+      [
+       6,
+       5
+      ]
+     ]
+    }
+   ],
+   "note": "A few nudges are fine; many wear patience out much faster."
+  },
+  {
+   "id": "s_patience_gain",
+   "name": "patience recovers",
+   "from": null,
+   "to": "s_patience",
+   "rate": {
+    "form": "gap",
+    "stock": "s_patience",
+    "goal": 100,
+    "time": 200
+   },
+   "machine": "environment",
+   "side": "company"
   },
   {
    "id": "s_ask",
-   "name": "ask",
+   "name": "manager asks",
    "from": null,
    "to": "s_asks",
    "rate": {
@@ -109,13 +506,51 @@
    "machine": "environment",
    "side": "company",
    "crosses": "slack/meeting in",
-   "note": "A manager asks for an update"
+   "effects": [
+    {
+     "stock": "s_confidence",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       2.5
+      ],
+      [
+       50,
+       1
+      ],
+      [
+       100,
+       0.4
+      ]
+     ]
+    },
+    {
+     "stock": "s_surprise_recent",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       2
+      ],
+      [
+       3,
+       3
+      ]
+     ]
+    }
+   ],
+   "note": "Four a week at middling confidence; fewer when confident, many more after surprises."
   },
   {
    "id": "s_answer",
    "name": "answer",
    "from": "s_asks",
-   "to": "s_answered",
+   "to": "s_drafted",
    "rate": {
     "form": "available"
    },
@@ -151,7 +586,309 @@
      ]
     }
    ],
-   "note": "Answer: send the prepared update, or do the research first. 1.5 hours of my research per answer when everything is stale; under 10 minutes when the status page is current."
+   "note": "1.5 hours of research when everything is stale; minutes when the page is current."
+  },
+  {
+   "id": "s_right",
+   "name": "turns out right",
+   "from": "s_drafted",
+   "to": "s_good_recent",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_drafted",
+    "k": 3.8
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "s_stale",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.05
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       0.85
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s_wrong_flow",
+   "name": "turns out wrong",
+   "from": "s_drafted",
+   "to": "s_wrong",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_drafted",
+    "k": 0.2
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "s_stale",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.2
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       3
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s_correct",
+   "name": "correct it",
+   "from": "s_wrong",
+   "to": "s_bad_recent",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.5,
+   "crosses": "slack write"
+  },
+  {
+   "id": "s_bad_settle",
+   "name": "forgotten",
+   "from": "s_bad_recent",
+   "to": "s_answered",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_bad_recent",
+    "k": 0.0125
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_surprise_settle",
+   "name": "forgotten",
+   "from": "s_surprise_recent",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "s_surprise_recent",
+    "k": 0.00625
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_settle",
+   "name": "leaves recent memory",
+   "from": "s_good_recent",
+   "to": "s_answered",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_good_recent",
+    "k": 0.025
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_conf_gain",
+   "name": "confidence earned",
+   "from": null,
+   "to": "s_confidence",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_good_recent",
+    "k": 0.25
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "s_confidence",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       80,
+       0.5
+      ],
+      [
+       100,
+       0
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s_conf_loss",
+   "name": "confidence lost",
+   "from": "s_confidence",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "s_confidence",
+    "k": 0.003
+   },
+   "machine": "environment",
+   "side": "company",
+   "effects": [
+    {
+     "stock": "s_bad_recent",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       3
+      ],
+      [
+       3,
+       6
+      ]
+     ]
+    },
+    {
+     "stock": "s_surprise_recent",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1
+      ],
+      [
+       1,
+       4
+      ],
+      [
+       3,
+       8
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s_block",
+   "name": "a project gets blocked",
+   "from": null,
+   "to": "s_blocked_hidden",
+   "rate": {
+    "form": "constant",
+    "value": 0.025
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_notice",
+   "name": "page shows the block",
+   "from": "s_blocked_hidden",
+   "to": "s_blocked_known",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_blocked_hidden",
+    "k": 0.3
+   },
+   "machine": "orchestra",
+   "side": "ours",
+   "work": 0,
+   "effects": [
+    {
+     "stock": "s_stale",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       1.5
+      ],
+      [
+       20,
+       1
+      ],
+      [
+       60,
+       0.1
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s_found_first",
+   "name": "manager finds it first",
+   "from": "s_blocked_hidden",
+   "to": "s_surprises",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_blocked_hidden",
+    "k": 0.025
+   },
+   "machine": "environment",
+   "side": "company"
+  },
+  {
+   "id": "s_escalate",
+   "name": "escalate early",
+   "from": "s_blocked_known",
+   "to": "s_escalated",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.5,
+   "crosses": "slack/jira write"
+  },
+  {
+   "id": "s_firefight",
+   "name": "firefight the surprise",
+   "from": "s_surprises",
+   "to": "s_escalated",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 1.5,
+   "crosses": "slack/meetings"
+  },
+  {
+   "id": "s_remember",
+   "name": "remembered",
+   "from": null,
+   "to": "s_surprise_recent",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_surprises",
+    "k": 4
+   },
+   "machine": "orchestra",
+   "side": "company",
+   "work": 0,
+   "note": "Each surprise is remembered while it is handled, and for weeks after."
   },
   {
    "id": "fund",

@@ -2,9 +2,9 @@
  "description": "Effects one story's stocks have on another story's flows. Every coupling is declared here.",
  "effects": [
   {
-   "flow": "t_review",
+   "flow": "t_rev_ok",
    "effect": {
-    "stock": "r_recent",
+    "stock": "r_goodwill",
     "shape": "table",
     "points": [
      [
@@ -12,20 +12,42 @@
       0.7
      ],
      [
-      10,
+      30,
       1
      ],
      [
-      25,
+      60,
       1.3
      ],
      [
-      50,
-      1.4
+      100,
+      1.5
      ]
     ]
    },
-   "note": "Reciprocity: reviewers I recently reviewed for respond faster to my PRs."
+   "note": "Reciprocity: teammates who feel well treated by my reviews review my PRs sooner."
+  },
+  {
+   "flow": "t_rev_catch",
+   "effect": {
+    "stock": "r_skill",
+    "shape": "table",
+    "points": [
+     [
+      0,
+      0.8
+     ],
+     [
+      50,
+      1
+     ],
+     [
+      100,
+      1.2
+     ]
+    ]
+   },
+   "note": "A team I've helped grow catches more flaws in my agents' PRs."
   }
  ]
 }

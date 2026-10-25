@@ -1,0 +1,201 @@
+{
+ "measures": {
+  "my_hours": {
+   "name": "My hours per week on this story",
+   "unit": "hours / week",
+   "machine_hours_per_week": "me"
+  },
+  "waiting_for_me": {
+   "name": "Work waiting for me",
+   "unit": "items",
+   "waiting_for": "me"
+  },
+  "spend": {
+   "name": "Agent spend per week",
+   "unit": "dollars / week",
+   "agent_spend_per_week": true
+  },
+  "spend_total": {
+   "name": "Agent spend, cumulative",
+   "unit": "dollars",
+   "agent_spend_total": true
+  },
+  "budget": {
+   "name": "Agent budget balance",
+   "unit": "dollars",
+   "stocks": [
+    "budget"
+   ]
+  },
+  "confidence": {
+   "name": "Manager's confidence in me",
+   "unit": "points",
+   "stocks": [
+    "s_confidence"
+   ]
+  },
+  "questions_week": {
+   "name": "Manager questions per week",
+   "unit": "questions / week",
+   "flows": [
+    "s_ask"
+   ],
+   "per_week": true
+  },
+  "stale": {
+   "name": "Stale status items",
+   "unit": "items",
+   "stocks": [
+    "s_stale"
+   ]
+  },
+  "hygiene": {
+   "name": "Source hygiene",
+   "unit": "points",
+   "stocks": [
+    "s_hygiene"
+   ]
+  },
+  "patience": {
+   "name": "Team's patience with nudges",
+   "unit": "points",
+   "stocks": [
+    "s_patience"
+   ]
+  }
+ },
+ "charts": [
+  {
+   "title": "Manager questions per week: confidence or the spiral",
+   "unit": "questions / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "questions_week",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "questions_week",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Not a fixed input: 0.1 an hour (4 a week) \u00d7 an effect of my manager's confidence (2.5\u00d7 at 0, 1\u00d7 at 50, 0.4\u00d7 at 100) \u00d7 an effect of recent surprises (up to 3\u00d7)."
+  },
+  {
+   "title": "Manager's confidence in me",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "confidence",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "confidence",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 50 of 100."
+  },
+  {
+   "title": "Stale status items",
+   "unit": "items",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "stale",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "stale",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 30 stale of 60 tracked; about 5% of current items go stale each working hour; 2 new items a week."
+  },
+  {
+   "title": "Source hygiene: no nudges, enough, too many",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "hygiene",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-nudges",
+     "measure": "hygiene",
+     "label": "no nudges",
+     "color": "manual"
+    },
+    {
+     "variant": "nagging",
+     "measure": "hygiene",
+     "label": "nagging",
+     "color": "red"
+    }
+   ],
+   "why": "Starts at 50 of 100."
+  },
+  {
+   "title": "Team's patience with nudges",
+   "unit": "points",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "patience",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "nagging",
+     "measure": "patience",
+     "label": "nagging",
+     "color": "red"
+    }
+   ],
+   "why": "Starts at 80 of 100."
+  },
+  {
+   "title": "My hours per week on this story",
+   "unit": "hours / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "my_hours",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "my_hours",
+     "label": "manual (today)",
+     "color": "manual"
+    }
+   ],
+   "why": "My free time is at most 24 hours a week."
+  }
+ ]
+}

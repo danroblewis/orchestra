@@ -1,16 +1,49 @@
 {
  "manual": {
-  "description": "Today: no brief; I read each change cold.",
+  "description": "Today: no brief; I read each change cold, and nothing learns the codebase for me.",
   "flows": {
-   "r_brief": {
+   "r_brief_clean": {
     "machine": "me",
     "work": 0.01,
     "uses": []
    },
-   "r_review": {
+   "r_brief_flawed": {
+    "machine": "me",
+    "work": 0.01,
+    "uses": []
+   },
+   "r_review_clean": {
     "machine": "me",
     "work": 0.75,
     "uses": []
+   },
+   "r_review_flawed": {
+    "machine": "me",
+    "work": 0.9,
+    "uses": []
+   },
+   "r_learn": {
+    "machine": null
+   }
+  }
+ },
+ "comment-quota": {
+  "description": "Briefs, plus a quota of comments per review: five times the nitpicks.",
+  "flows": {
+   "r_nit": {
+    "rate": {
+     "form": "proportional",
+     "stock": "r_recent",
+     "k": 0.03
+    }
+   }
+  }
+ },
+ "no-agent-learning": {
+  "description": "Briefs, but the agent never updates its map of the codebase.",
+  "flows": {
+   "r_learn": {
+    "machine": null
    }
   }
  }

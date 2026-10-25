@@ -1,9 +1,35 @@
 {
  "manual": {
-  "description": "Today: nobody keeps a status page; every answer starts from scratch.",
+  "description": "Today: no status page and no nudges; every answer starts from memory or scratch.",
   "flows": {
    "s_refresh": {
     "machine": null
+   },
+   "s_nudge": {
+    "machine": null
+   },
+   "s_notice": {
+    "machine": null
+   }
+  }
+ },
+ "no-nudges": {
+  "description": "A status page, but nobody nudges owners.",
+  "flows": {
+   "s_nudge": {
+    "machine": null
+   }
+  }
+ },
+ "nagging": {
+  "description": "A status page, nudging four times as hard.",
+  "flows": {
+   "s_nudge": {
+    "rate": {
+     "form": "proportional",
+     "stock": "s_current",
+     "k": 0.02
+    }
    }
   }
  }

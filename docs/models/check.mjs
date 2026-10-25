@@ -43,71 +43,124 @@ if (process.env.EXPORT) {
 }
 for (const [k, errs] of Object.entries(errors)) check("V", k, "validity", "SD Lab's validator accepts the model", errs.length === 0, errs.join("; ") || "ok");
 
+const pct = (x) => `${Math.round(x * 100)}%`;
+const weekEmpty = (X) => { const i = X.series.levels.budget.findIndex((v) => v < 5); return i < 0 ? "never" : Math.round(i / 40); };
 const f1 = (x) => (Math.abs(x) >= 10 ? x.toFixed(0) : x.toFixed(2));
 
-// Story 1
+// Story 1: agents that learn
 {
-  const S = "story-1-simple-task", D = sims[`${S}/designed`], M = sims[`${S}/manual`], R = sims[`${S}/rising`], MR = sims[`${S}/manual-rising`], B = sims[`${S}/better-first-pass`];
-  const mD = models[`${S}/designed`], mM = models[`${S}/manual`];
-  const arrivals = 0.15 * D.H;
-  check("1.1", S, "validity", "Manual reproduces today: I am fully busy, work piles up waiting for me, few requests finish",
-        M.mach.me.avgBusy > 0.95 && myQueue(mM, M, M.n) > myQueue(mM, M, 0) + 10 && M.end("t_delivered") < 0.3 * arrivals,
-        `busy ${(M.mach.me.avgBusy * 100).toFixed(0)}%, waiting for me ${f1(myQueue(mM, M, 0))} → ${f1(myQueue(mM, M, M.n))}, ${f1(M.end("t_delivered"))} of ${f1(arrivals)} delivered`);
-  check("1.2", S, "requirement", "Designed: nothing piles up waiting for me", myQueue(mD, D, D.n) <= 3,
-        `waiting for me at the end: ${f1(myQueue(mD, D, D.n))}`);
-  check("1.3", S, "requirement", "Designed: most requests are delivered within four weeks",
-        D.end("t_delivered") >= 0.6 * arrivals, `${f1(D.end("t_delivered"))} delivered of ${f1(arrivals)} asked (manual: ${f1(M.end("t_delivered"))})`);
-  const myPer = D.hours("me") / Math.max(1e-9, D.end("t_delivered"));
-  check("1.4", S, "requirement", "Designed: at most one hour of my time per delivered request", myPer <= 1.0,
-        `${f1(myPer)} h per delivered request (busy ${(D.mach.me.avgBusy * 100).toFixed(0)}% of my free time)`);
-  check("1.5", S, "requirement", "Designed: at most $20 of agent work per delivered request",
-        D.spent / Math.max(1e-9, D.end("t_delivered")) <= 20, `$${f1(D.spent / D.end("t_delivered"))} per delivered`);
-  const ours = sideOf(mD, "ours"), co = sideOf(mD, "company"), itf = sideOf(mD, "interface");
-  const wip = (X, ids) => ids.reduce((a, id) => a + X.avg(id), 0);
-  const cycle = (X) => (wip(X, ours) + wip(X, co) + wip(X, itf)) / Math.max(1e-9, X.end("t_delivered") / X.H);
-  const share = wip(D, co) / Math.max(1e-9, wip(D, ours) + wip(D, co) + wip(D, itf));
-  check("1.6", S, "requirement", "Designed: started to merged within 4 working days (32 working hours, Little's law)",
-        cycle(D) <= 32, `mean cycle ${f1(cycle(D))} working hours (${f1(cycle(D) / 8)} days); ${(share * 100).toFixed(0)}% of work in progress sits in company stocks`);
-  check("1.6b", S, "info", "Fewer rounds at each boundary (better first pass): cost and cycle", null,
-        `$${f1(B.spent / B.end("t_delivered"))} per delivered, cycle ${f1(cycle(B) / 8)} days, ${f1(B.end("t_delivered"))} delivered`);
-  check("1.7", S, "requirement", "Requests rising to 10 a week: designed still keeps up; manual falls further behind",
-        myQueue(mD, R, R.n) <= 4 && myQueue(mM, MR, MR.n) > myQueue(mM, M, M.n),
-        `waiting for me: designed ${f1(myQueue(mD, R, R.n))}, manual ${f1(myQueue(mM, MR, MR.n))}; my busy ${(R.mach.me.avgBusy * 100).toFixed(0)}%`);
+  const S = "story-1-simple-task", V = (v) => sims[`${S}/${v}`], mod = (v) => models[`${S}/${v}`];
+  const D = V("designed"), M = V("manual"), NL = V("no-learning"), SU = V("surge"), SP = V("surge-protected"), BT = V("blind-trust");
+  const WEEK = 40;
+  const at = (X, id, i) => X.series.levels[id][Math.min(i, X.n)];
+  const backlog = (X, i) => ["t_asks", "t_scoped", "t_ticket_draft", "t_open"].reduce((a, id) => a + at(X, id, i), 0);
+  const delivered = (X) => X.end("t_landed_recent") + X.end("t_delivered") + X.end("t_latent") + X.end("t_bugs");
+  const badShare = (X, i) => { const r = X.series.rates, ok = r.t_ok[i], fl = r.t_flaw[i], fa = r.t_fail[i]; return (fl + fa) / Math.max(1e-9, ok + fl + fa); };
+  const avgBad = (X, from, to) => { let a = 0, n = 0; for (let i = from; i <= to; i++) { a += badShare(X, i); n++; } return a / n; };
+  const early = (X) => avgBad(X, 2 * WEEK, 4 * WEEK), late = (X) => avgBad(X, X.n - 4 * WEEK, X.n);
+  const bugsPer100 = (X) => 100 * (X.end("t_bugs") + X.end("t_latent")) / Math.max(1e-9, delivered(X));
+
+  check("1.1", S, "validity", "Manual reproduces today: I am fully busy and the backlog keeps growing",
+        M.mach.me.avgBusy > 0.95 && backlog(M, M.n) > backlog(M, 0) + 20,
+        `busy ${(M.mach.me.avgBusy * 100).toFixed(0)}%, backlog ${f1(backlog(M, 0))} → ${f1(backlog(M, M.n))} in 26 weeks, ${f1(delivered(M))} delivered`);
+  check("1.2", S, "requirement", "Designed: learning beats decay: the playbook at least doubles and fewer attempts go wrong",
+        D.end("t_playbook") >= 2 * at(D, "t_playbook", 0) && late(D) < early(D),
+        `playbook ${f1(at(D, "t_playbook", 0))} → ${f1(D.end("t_playbook"))} entries; attempts failing or flawed ${pct(early(D))} (weeks 2–4) → ${pct(late(D))} (last 4 weeks)`);
+  check("1.3", S, "info", "Without learning: the playbook rots, more attempts go wrong, debt grows, and the budget runs out sooner", null,
+        `playbook → ${f1(NL.end("t_playbook"))}; going wrong ${pct(late(NL))} vs ${pct(late(D))}; debt ${f1(NL.end("t_debt"))} vs ${f1(D.end("t_debt"))}; budget empty from week ${weekEmpty(NL)} vs ${weekEmpty(D)}; delivered ${f1(delivered(NL))} vs ${f1(delivered(D))}`);
+  check("1.4", S, "requirement", "Under a surge of asks, the playbook keeps growing (no capability trap)",
+        SU.end("t_playbook") >= at(SU, "t_playbook", 8 * WEEK),
+        `surge: playbook peaks at ${f1(Math.max(...SU.series.levels.t_playbook))}, ends at ${f1(SU.end("t_playbook"))}; with lesson capture protected it ends at ${f1(SP.end("t_playbook"))}`);
+  const myPer = D.hours("me") / Math.max(1e-9, delivered(D));
+  check("1.5", S, "requirement", "Designed: at most one hour of my time per delivered task", myPer <= 1,
+        `${f1(myPer)} h per delivered (manual ${f1(M.hours("me") / Math.max(1e-9, delivered(M)))} h); my busy share ${(D.mach.me.avgBusy * 100).toFixed(0)}%`);
+  check("1.6", S, "requirement", "Escaped flaws stay under 5 per 100 delivered, even when I start out trusting blindly",
+        bugsPer100(D) <= 5 && bugsPer100(BT) <= 5, `${f1(bugsPer100(D))} per 100 designed, ${f1(bugsPer100(BT))} with blind trust`);
+  const tr = (X) => `${f1(at(X, "t_trust", 0))} → low ${f1(Math.min(...X.series.levels.t_trust))} → ${f1(X.end("t_trust"))}`;
+  check("1.7", S, "info", "Trust: earned slowly, cut by late findings", null, `designed ${tr(D)}; blind trust ${tr(BT)}`);
+  check("1.8", S, "requirement", "Designed: the backlog stays small for all 26 weeks", Math.max(...D.series.t.map((_, i) => backlog(D, i))) <= 10,
+        `largest backlog ${f1(Math.max(...D.series.t.map((_, i) => backlog(D, i))))}; at the end ${f1(backlog(D, D.n))}`);
+  const asksPerWeek = (X, i) => X.series.rates.t_ask[i] * WEEK;
+  check("1.9", S, "info", "Success breeds demand until the budget binds (limits to growth)", null,
+        `asks ${f1(asksPerWeek(D, 0))} → ${f1(asksPerWeek(D, D.n))} a week; requesters' confidence ${f1(at(D, "t_reputation", 0))} → ${f1(D.end("t_reputation"))}; budget empty from week ${weekEmpty(D)}`);
+  check("1.10", S, "requirement", "At most $20 of agent work per delivered task", D.spent / Math.max(1e-9, delivered(D)) <= 20,
+        `$${f1(D.spent / Math.max(1e-9, delivered(D)))} per delivered`);
+  const wipIds = mod("designed").stocks.filter((x) => ["requests", "attempts", "changes", "PRs"].includes(x.unit) && !x.final &&
+    !["t_landed_recent", "t_latent", "t_asks"].includes(x.id)).map((x) => x.id);
+  const cyc = (X) => wipIds.reduce((a, id) => a + X.avg(id), 0) / Math.max(1e-9, (X.end("t_landed_recent") + X.end("t_delivered")) / X.H);
+  check("1.11", S, "requirement", "Designed: ticket to landed within 4 working days (Little's law over 26 weeks)", cyc(D) <= 32,
+        `mean ${f1(cyc(D) / 8)} days (manual ${f1(cyc(M) / 8)} days)`);
 }
 
-// Story 2
+// Story 2: production commands, made rarer and safer
 {
-  const S = "story-2-prod-command", D = sims[`${S}/designed`], M = sims[`${S}/manual`], T = sims[`${S}/manual-thorough`];
+  const S = "story-2-prod-command", V = (v) => sims[`${S}/${v}`];
+  const D = V("designed"), M = V("manual"), T = V("manual-thorough"), NR = V("no-runbooks"), NE = V("no-evidence");
   const run = models[`${S}/designed`].flows.find((f) => f.id === "p_run");
   const allRunsByMe = Object.entries(models).filter(([k]) => k.startsWith(S) || k.startsWith("desk"))
     .every(([, m]) => { const f = m.flows.find((g) => g.id === "p_run"); return !f || f.machine === "me"; });
   check("2.1", S, "validity", "Structural: only I run production commands, in every variant", run.machine === "me" && allRunsByMe, "p_run machine = me everywhere");
-  const handled = (X) => X.end("p_declined") + X.end("p_candidates") + X.end("p_archived") + X.end("p_problem_statements") + X.end("p_in_review") + X.end("p_policies");
-  const per = (X) => X.hours("me") / Math.max(1e-9, handled(X));
-  check("2.2", S, "requirement", "Designed: full due diligence costs me under a quarter of doing it all myself",
-        per(D) <= 0.25 * per(T), `${f1(per(D))} h per request vs ${f1(per(T))} h doing it all myself (today's shortcut: ${f1(per(M))} h)`);
-  check("2.3", S, "requirement", "Designed: prevention is adopted, and requests become rarer",
-        D.end("p_policies") >= 1 && D.rate("p_arrive")[D.n] < D.rate("p_arrive")[0],
-        `${f1(D.end("p_policies"))} adopted in 12 weeks; arrivals ${f1(D.rate("p_arrive")[0] * 40)} → ${f1(D.rate("p_arrive")[D.n] * 40)} a week (today's shortcut adopts ${f1(M.end("p_policies"))})`);
-  check("2.4", S, "requirement", "Designed: every repeat needed in other environments becomes a ticket",
-        D.end("p_gov_followups") < 0.5 && D.end("p_gov_tickets") > 0, `${f1(D.end("p_gov_tickets"))} filed, ${f1(D.end("p_gov_followups"))} waiting (today: ${f1(M.end("p_gov_followups"))} never filed)`);
+  const total = (X, id, from = 0, to = X.n) => X.series.rates[id].slice(from, to + 1).reduce((a, b) => a + b, 0);
+  const per = (X) => X.hours("me") / Math.max(1e-9, total(X, "p_decide"));
+  check("2.2", S, "requirement", "Full due diligence costs me under a quarter of doing it all myself",
+        per(D) <= 0.25 * per(T), `${f1(per(D))} h per request vs ${f1(per(T))} h doing it all myself (today's shortcut ${f1(per(M))} h)`);
+  const wk = (X, id, i) => X.series.rates[id][i] * 40;
+  check("2.3", S, "requirement", "Prevention bends the curve: by week 26 requests run at most 75% of what they would without it",
+        wk(D, "p_ask", D.n) <= 0.75 * wk(M, "p_ask", M.n),
+        `${f1(wk(D, "p_ask", D.n))} a week vs ${f1(wk(M, "p_ask", M.n))} without prevention (started at ${f1(wk(D, "p_ask", 0))}); ${f1(D.end("p_policies"))} preventions in force`);
+  const incShare = (X) => { const from = X.n - 320; const i = total(X, "p_incident", from), c = total(X, "p_clean", from); return i / Math.max(1e-9, i + c); };
+  check("2.4", S, "requirement", "Commands causing incidents: under 5% over the last 8 weeks", incShare(D) <= 0.05,
+        `${pct(incShare(D))} designed; ${pct(incShare(NR))} without runbook updates; ${pct(incShare(M))} today`);
+  check("2.5", S, "requirement", "No repeat in another environment is left to come back as a surprise",
+        D.end("p_followups") < 0.5 && total(D, "p_surprise") < 1,
+        `${f1(total(D, "p_surprise"))} surprises designed vs ${f1(total(M, "p_surprise"))} today; ${f1(M.end("p_followups"))} unfiled at the end today`);
+  check("2.6", S, "info", "Evidence speeds adoption; runbooks learn against decay; requesters learn the process", null,
+        `preventions in force ${f1(D.end("p_policies"))} vs ${f1(NE.end("p_policies"))} without evidence; runbook coverage ${f1(D.end("p_runbooks"))} vs ${f1(NR.end("p_runbooks"))} without updates (${f1(M.end("p_runbooks"))} today); compliance 30 → ${f1(D.end("p_compliance"))}`);
 }
 
-// Story 3
+// Story 3: being the one who knows
 {
-  const S = "story-3-status-request", D = sims[`${S}/designed`], M = sims[`${S}/manual`];
-  const per = (X) => X.hours("me") / Math.max(1e-9, X.end("s_answered"));
-  check("3.1", S, "requirement", "Designed: the status page stays current (at most 10 stale items)", D.avg("s_stale") <= 10,
-        `mean stale ${f1(D.avg("s_stale"))} (manual ${f1(M.avg("s_stale"))})`);
-  check("3.2", S, "requirement", "Designed: an answer costs me at most 15 minutes; manual at least an hour",
-        per(D) <= 0.25 && per(M) >= 1.0, `${f1(per(D))} h vs ${f1(per(M))} h per answer`);
+  const S = "story-3-status-request", V = (v) => sims[`${S}/${v}`];
+  const D = V("designed"), M = V("manual"), NN = V("no-nudges"), NG = V("nagging");
+  const total = (X, id) => X.series.rates[id].reduce((a, b) => a + b, 0);
+  const items = (X) => X.avg("s_current") + X.avg("s_stale");
+  check("3.1", S, "validity", "Manual reproduces the spiral: confidence falls, questions multiply, I am nearly always busy",
+        M.end("s_confidence") < 25 && M.series.rates.s_ask[M.n] > 3 * M.series.rates.s_ask[0] && M.mach.me.avgBusy > 0.9,
+        `confidence 50 → ${f1(M.end("s_confidence"))}; questions ${f1(M.series.rates.s_ask[0] * 40)} → ${f1(M.series.rates.s_ask[M.n] * 40)} a week; busy ${pct(M.mach.me.avgBusy)}`);
+  check("3.2", S, "requirement", "The status page stays current: under 10% of items stale on average",
+        D.avg("s_stale") <= 0.1 * items(D), `${pct(D.avg("s_stale") / items(D))} stale (today ${pct(M.avg("s_stale") / items(M))})`);
+  const perAnswer = (X) => X.hours("me") / Math.max(1e-9, total(X, "s_answer"));
+  check("3.3", S, "requirement", "An answer costs me at most 15 minutes, including corrections and firefights", perAnswer(D) <= 0.25,
+        `${f1(perAnswer(D))} h per answer (today ${f1(perAnswer(M))} h)`);
+  check("3.4", S, "requirement", "My manager's confidence ends higher than it started, and questions do not multiply",
+        D.end("s_confidence") > 50 && D.series.rates.s_ask[D.n] <= 1.25 * D.series.rates.s_ask[0],
+        `confidence 50 → ${f1(D.end("s_confidence"))}; questions ${f1(D.series.rates.s_ask[0] * 40)} → ${f1(D.series.rates.s_ask[D.n] * 40)} a week`);
+  const firstShare = (X) => { const n = total(X, "s_notice"), f = total(X, "s_found_first"); return n / Math.max(1e-9, n + f); };
+  check("3.5", S, "requirement", "I learn of at least 85% of blocked projects before my manager does", firstShare(D) >= 0.85,
+        `${pct(firstShare(D))} (today ${pct(firstShare(M))})`);
+  check("3.6", S, "info", "Nudging: none lets sources rot; too much wears out patience and they rot anyway (fixes that fail)", null,
+        `source hygiene at week 26: designed ${f1(D.end("s_hygiene"))}, no nudges ${f1(NN.end("s_hygiene"))}, nagging ${f1(NG.end("s_hygiene"))}; patience: designed ${f1(D.end("s_patience"))}, nagging ${f1(NG.end("s_patience"))}`);
 }
 
-// Story 4
+// Story 4: reviewing teammates' PRs
 {
-  const S = "story-4-reviews-given", D = sims[`${S}/designed`], M = sims[`${S}/manual`];
-  check("4.1", S, "requirement", "Designed: review requests to me don't pile up", D.end("r_requests") + D.end("r_briefed") <= 2,
-        `${f1(D.end("r_requests") + D.end("r_briefed"))} waiting (manual ${f1(M.end("r_requests") + M.end("r_briefed"))})`);
+  const S = "story-4-reviews-given", V = (v) => sims[`${S}/${v}`];
+  const D = V("designed"), M = V("manual"), Q = V("comment-quota"), NL = V("no-agent-learning");
+  const total = (X, id, from = 0) => X.series.rates[id].slice(from).reduce((a, b) => a + b, 0);
+  const reviews = (X) => total(X, "r_review_clean") + total(X, "r_review_flawed");
+  const missShare = (X) => { const from = X.n - 320, c = total(X, "r_catch", from), m = total(X, "r_miss", from); return m / Math.max(1e-9, c + m); };
+  const perReview = (X) => X.hours("me") / Math.max(1e-9, reviews(X));
+  check("4.1", S, "requirement", "A review costs me at most half an hour, brief included", perReview(D) <= 0.5,
+        `${f1(perReview(D))} h per review (today ${f1(perReview(M))} h)`);
+  check("4.2", S, "requirement", "I miss at most 15% of real defects over the last 8 weeks", missShare(D) <= 0.15,
+        `${pct(missShare(D))} missed (today ${pct(missShare(M))}; agent not learning ${pct(missShare(NL))})`);
+  const comments = (X) => (total(X, "r_catch") + total(X, "r_nit")) / (X.H / 40);
+  check("4.3", S, "requirement", "At least 8 review comments a week, most of them substantive", comments(D) >= 8 && total(D, "r_catch") >= total(D, "r_nit"),
+        `${f1(comments(D))} a week; substantive ${f1(total(D, "r_catch") / (D.H / 40))}, nitpicks ${f1(total(D, "r_nit") / (D.H / 40))}`);
+  check("4.4", S, "info", "A comment quota hits the count and spends goodwill (Goodhart)", null,
+        `comments ${f1(comments(Q))} a week vs ${f1(comments(D))}; goodwill at week 26 ${f1(Q.end("r_goodwill"))} vs ${f1(D.end("r_goodwill"))}`);
+  check("4.5", S, "info", "The agent's map of the code, the team's skill, and my reputation", null,
+        `map ${f1(D.end("r_knowledge"))} vs ${f1(M.end("r_knowledge"))} today; team skill ${f1(D.end("r_skill"))} vs ${f1(M.end("r_skill"))}; reputation ${f1(D.end("r_reputation"))} vs ${f1(M.end("r_reputation"))}`);
 }
 
 // The desk: every story together
@@ -123,10 +176,12 @@ const f1 = (x) => (Math.abs(x) >= 10 ? x.toFixed(0) : x.toFixed(2));
   const weekly = D.spent / (D.H / 40);
   check("D.4", "desk", "requirement", "Designed desk: agent work fits the $120 weekly share without drawing down savings",
         weekly <= 120, `$${f1(weekly)} a week wanted; balance $120 → $${f1(D.end("budget"))}`);
-  const noRec = clone(mD); noRec.flows.find((f) => f.id === "r_arrive").rate.value = 0;
+  const noRec = clone(mD);
+  for (const id of ["r_ask_clean", "r_ask_flawed"]) noRec.flows.find((f) => f.id === id).rate = { form: "constant", value: 0 };
   const NR = measure(noRec);
-  check("D.5", "desk", "info", "Coupling: reviews I give speed up reviews of my PRs (reciprocity)", null,
-        `${f1(D.end("t_delivered"))} simple tasks delivered with reviews given vs ${f1(NR.end("t_delivered"))} without`);
+  const waitDays = (X) => (X.avg("t_review_sound") + X.avg("t_review_flawed")) / Math.max(1e-9, (X.series.rates.t_rev_ok.reduce((a, b) => a + b, 0) + X.series.rates.t_rev_catch.reduce((a, b) => a + b, 0) + X.series.rates.t_rev_miss.reduce((a, b) => a + b, 0)) / X.H) / 8;
+  check("D.5", "desk", "info", "Coupling: reviews I give shorten the wait for reviews of my PRs (reciprocity)", null,
+        `my PRs wait ${f1(waitDays(D))} days in human review with reviews given vs ${f1(waitDays(NR))} without; delivered ${f1(D.end("t_delivered"))} vs ${f1(NR.end("t_delivered"))} (the budget, not review, limits deliveries)`);
 }
 
 // ---- report ----

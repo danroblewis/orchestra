@@ -1,0 +1,245 @@
+{
+ "measures": {
+  "my_hours": {
+   "name": "My hours per week on this story",
+   "unit": "hours / week",
+   "machine_hours_per_week": "me"
+  },
+  "waiting_for_me": {
+   "name": "Work waiting for me",
+   "unit": "items",
+   "waiting_for": "me"
+  },
+  "spend": {
+   "name": "Agent spend per week",
+   "unit": "dollars / week",
+   "agent_spend_per_week": true
+  },
+  "spend_total": {
+   "name": "Agent spend, cumulative",
+   "unit": "dollars",
+   "agent_spend_total": true
+  },
+  "budget": {
+   "name": "Agent budget balance",
+   "unit": "dollars",
+   "stocks": [
+    "budget"
+   ]
+  },
+  "asks_week": {
+   "name": "Command requests per week",
+   "unit": "requests / week",
+   "flows": [
+    "p_ask",
+    "p_repeat",
+    "p_surprise"
+   ],
+   "per_week": true
+  },
+  "new_asks_week": {
+   "name": "New command requests per week",
+   "unit": "requests / week",
+   "flows": [
+    "p_ask"
+   ],
+   "per_week": true
+  },
+  "policies": {
+   "name": "Preventions in force",
+   "unit": "policies",
+   "stocks": [
+    "p_policies"
+   ]
+  },
+  "runbooks": {
+   "name": "Runbook coverage",
+   "unit": "entries",
+   "stocks": [
+    "p_runbooks"
+   ]
+  },
+  "incidents_week": {
+   "name": "Incidents caused by commands per week",
+   "unit": "incidents / week",
+   "flows": [
+    "p_incident"
+   ],
+   "per_week": true
+  },
+  "unfiled": {
+   "name": "Repeats nobody filed",
+   "unit": "follow-ups",
+   "stocks": [
+    "p_followups"
+   ]
+  }
+ },
+ "charts": [
+  {
+   "title": "Command requests per week: growth against prevention",
+   "unit": "requests / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "asks_week",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "asks_week",
+     "label": "today's shortcut (no prevention)",
+     "color": "manual"
+    }
+   ],
+   "why": "New requests start at 0.06 an hour (2.4 a week) and grow by 0.12 \u00d7 company growth, a ramp from 0 to 1 over the 26 weeks; adopted preventions scale them down. Repeats and surprises come on top."
+  },
+  {
+   "title": "Preventions in force",
+   "unit": "policies",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "policies",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-evidence",
+     "measure": "policies",
+     "label": "no evidence logged",
+     "color": "purple"
+    },
+    {
+     "variant": "manual",
+     "measure": "policies",
+     "label": "today's shortcut",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 0."
+  },
+  {
+   "title": "Runbook coverage: learning against decay",
+   "unit": "entries",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "runbooks",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-runbooks",
+     "measure": "runbooks",
+     "label": "no runbook updates",
+     "color": "red"
+    },
+    {
+     "variant": "manual",
+     "measure": "runbooks",
+     "label": "today's shortcut",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 20 entries."
+  },
+  {
+   "title": "Incidents caused by commands, per week",
+   "unit": "incidents / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "incidents_week",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "no-runbooks",
+     "measure": "incidents_week",
+     "label": "no runbook updates",
+     "color": "red"
+    },
+    {
+     "variant": "manual",
+     "measure": "incidents_week",
+     "label": "today's shortcut",
+     "color": "manual"
+    }
+   ],
+   "why": "About 6% of commands at 20 runbook entries; the share moves with coverage."
+  },
+  {
+   "title": "Repeats in other environments nobody filed",
+   "unit": "follow-ups",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "unfiled",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "unfiled",
+     "label": "today's shortcut",
+     "color": "manual"
+    }
+   ],
+   "why": "Starts at 0."
+  },
+  {
+   "title": "My hours per week on these requests",
+   "unit": "hours / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "my_hours",
+     "label": "designed",
+     "color": "designed"
+    },
+    {
+     "variant": "manual",
+     "measure": "my_hours",
+     "label": "today's shortcut",
+     "color": "manual"
+    },
+    {
+     "variant": "manual-thorough",
+     "measure": "my_hours",
+     "label": "doing it all properly myself",
+     "color": "yellow"
+    }
+   ],
+   "why": "My free time is at most 24 hours a week."
+  },
+  {
+   "title": "Agent spend per week",
+   "unit": "dollars / week",
+   "every": 40,
+   "x": "week",
+   "series": [
+    {
+     "variant": "designed",
+     "measure": "spend",
+     "label": "designed",
+     "color": "designed"
+    }
+   ],
+   "why": "Summed from every agent flow's rate \u00d7 its cost per item."
+  }
+ ]
+}

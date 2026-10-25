@@ -1,15 +1,10 @@
 {
  "manual": {
-  "description": "Today: I explain and check it myself, and there is no time for root cause, logging for others, follow-up tickets or prevention.",
+  "description": "Today's shortcut: I explain and check it myself, shallowly. No runbook updates, no logging for others, no filing of repeats, no patterns or proposals; postmortems only when an incident forces one.",
   "flows": {
    "p_explain": {
     "machine": "me",
     "work": 1.0,
-    "uses": []
-   },
-   "p_authority": {
-    "machine": "me",
-    "work": 0.5,
     "uses": []
    },
    "p_context": {
@@ -19,10 +14,13 @@
    },
    "p_log": {
     "machine": "me",
-    "work": 0.1,
+    "work": 0.05,
     "uses": []
    },
-   "p_file_followups": {
+   "p_runbook": {
+    "machine": null
+   },
+   "p_file": {
     "machine": null
    },
    "p_pattern": {
@@ -30,20 +28,20 @@
    },
    "p_propose": {
     "machine": null
+   },
+   "p_pm": {
+    "machine": "me",
+    "work": 3.0,
+    "uses": []
    }
   }
  },
  "manual-thorough": {
-  "description": "Me doing all of it properly: root cause, logging, follow-ups, patterns and proposals.",
+  "description": "Me doing all of it properly myself: runbooks, logs, repeats, patterns, proposals.",
   "flows": {
    "p_explain": {
     "machine": "me",
     "work": 1.0,
-    "uses": []
-   },
-   "p_authority": {
-    "machine": "me",
-    "work": 0.5,
     "uses": []
    },
    "p_context": {
@@ -56,20 +54,79 @@
     "work": 0.25,
     "uses": []
    },
-   "p_file_followups": {
+   "p_file": {
     "machine": "me",
     "work": 0.25,
     "uses": []
    },
-   "p_pattern": {
+   "p_runbook": {
     "machine": "me",
     "work": 0.5,
+    "uses": []
+   },
+   "p_pattern": {
+    "machine": "me",
+    "work": 1.0,
     "uses": []
    },
    "p_propose": {
     "machine": "me",
     "work": 4.0,
     "uses": []
+   },
+   "p_pm": {
+    "machine": "me",
+    "work": 3.0,
+    "uses": []
+   }
+  }
+ },
+ "no-runbooks": {
+  "description": "Agents, but nobody updates the runbooks.",
+  "flows": {
+   "p_runbook": {
+    "machine": null
+   }
+  }
+ },
+ "no-evidence": {
+  "description": "Agents, but cases are not logged where the company sees them: proposals carry no evidence.",
+  "flows": {
+   "p_adopt": {
+    "effects": [
+     {
+      "stock": "p_incidents",
+      "shape": "table",
+      "points": [
+       [
+        0,
+        1
+       ],
+       [
+        1,
+        1.5
+       ],
+       [
+        3,
+        2.5
+       ]
+      ]
+     },
+     {
+      "stock": "p_cases",
+      "shape": "table",
+      "points": [
+       [
+        0,
+        0.6
+       ],
+       [
+        100,
+        0.6
+       ]
+      ]
+     }
+    ]
    }
   }
  }
