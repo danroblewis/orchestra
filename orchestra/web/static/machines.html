@@ -43,8 +43,9 @@
   <div class="note" id="note"></div>
 </div>
 <script src="/static/app.js?v={{v}}"></script>
+<script src="/static/netgraph.js?v={{v}}"></script>
 <script>
-let DATA = null, EVSIM = null, EVSIG = null;
+let DATA = null;
 // one colour per machine, the same every time for the same id
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c", "#2dd4bf"];
 const mcolor = (id) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return MPAL[h % MPAL.length]; };
@@ -92,97 +93,35 @@ function agentGraph(d) {
   // every machine is drawn, connected or not; events only when something links them
   return { nodes: [...Object.values(nodes), ...Object.values(evNodes).filter((n) => used.has(n.id))], links: ls };
 }
-function sccs(nodes, links) {   // Tarjan: the feedback loops
-  const adj = {}; nodes.forEach((n) => adj[n.id] = []); links.forEach((l) => adj[l.source].push(l.target));
-  let idx = 0; const index = {}, low = {}, on = new Set(), st = [], out = [];
-  const go = (v) => { index[v] = low[v] = idx++; st.push(v); on.add(v);
-    for (const w of adj[v]) { if (index[w] === undefined) { go(w); low[v] = Math.min(low[v], low[w]); } else if (on.has(w)) low[v] = Math.min(low[v], index[w]); }
-    if (low[v] === index[v]) { const c = []; let w; do { w = st.pop(); on.delete(w); c.push(w); } while (w !== v); if (c.length > 1 || adj[v].includes(v)) out.push(c); } };
-  nodes.forEach((n) => { if (index[n.id] === undefined) go(n.id); });
-  return out;
-}
+let GRAPH = null;
 function eventMap(d) {
   const g = agentGraph(d);
-  const cycles = sccs(g.nodes, g.links), inCyc = new Set(cycles.flat());
-  const name = (id) => { const n = g.nodes.find((x) => x.id === id); return n ? (n.labels ? n.labels.join("/") : n.label) : id; };
-  const loops = cycles.map((c) => { const es = g.links.filter((l) => c.includes(l.source) && c.includes(l.target));
-    const ms = c.filter((id) => !id.startsWith("ev:")).map(name);
-    return `<div><b>${esc(ms.join(" ⇄ "))}</b>: ${es.map((l) => `${esc(name(l.source))} → ${esc(name(l.target))}`).join(", ")}</div>`; }).join("");
-  // redraw only when the graph's shape changes, so dragged nodes and the layout stay put
-  const sig = JSON.stringify([g.nodes.map((n) => n.id), g.links.map((l) => l.source + ">" + l.target)]);
-  if (sig !== EVSIG || !document.getElementById("evsvg")) {
-    EVSIG = sig;
-    $("evmap-host").innerHTML = `<div class="evmap"><svg id="evsvg"></svg>
-      <div class="legend"><span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span><span>○ machine</span><span>halo: active in the last two minutes</span><span><i style="border-color:#22c55e"></i>seen on the bus, last 24h</span><span><i style="border-color:#fcd34d"></i>part of a feedback loop</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;EVSIG=null;render()"> show events nobody listens for</label><span>· drag nodes, hover to isolate, click a machine to find its card</span></div>
-      <div class="loops" id="loops"></div></div>`;
-    setTimeout(() => drawGraph(g, inCyc), 0);
+  if (!$("evsvg-host")) {
+    $("evmap-host").innerHTML = `<div class="evmap"><div id="evsvg-host"></div>
+      <div class="legend"><span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span><span>○ machine</span><span>halo: active in the last two minutes</span><span><i style="border-color:#22c55e"></i>seen on the bus, last 24h</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes, scroll to zoom, hover to isolate, click a machine to find its card</span></div>
+      <div class="ng-loops" id="loops"></div></div>`;
+    GRAPH = NetGraph.create($("evsvg-host"), { key: "machines", height: 600, isolateHops: 2,
+      onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.label); },
+      tip: (x, kind) => kind === "node" ? (x.machine ? `<div class="tt">${esc(x.label)}</div><div class="hint">${x.active ? "active in the last two minutes" : "quiet"} · click to find its card</div>` : `<div class="tt">${esc((x.labels || [x.label]).join(", "))}</div><div class="tr"><span>last 24h</span><b>${x.cnt}</b></div>`)
+        : `<div>${esc(x.source.label)} → ${esc(x.target.label)}</div>${x.seen ? `<div class="tr"><span>last 24h</span><b>${x.seen}</b></div>` : ""}` });
   }
-  else halos(g);
-  $("loops").innerHTML = loops ? "<div class='muted' style='margin-bottom:3px'>Feedback loops</div>" + loops : "<span class='muted'>No feedback loops: nothing any machine publishes reaches a machine that can publish back to it.</span>";
-}
-function drawGraph(g, inCyc) {
-  const svgEl = document.getElementById("evsvg"); if (!svgEl || typeof d3 === "undefined") return;
-  const W = svgEl.clientWidth || 1000, H = 600;
-  const svg = d3.select(svgEl).attr("viewBox", `0 0 ${W} ${H}`); svg.selectAll("*").remove();
-  svg.append("defs").html(`<linearGradient id="halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient><marker id="arr" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#6b7280"></path></marker><marker id="arrc" viewBox="0 -4 8 8" refX="8" refY="0" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,-4L8,0L0,4" fill="#fcd34d"></path></marker>`);
-  const links = g.links.map((l) => ({ ...l })), nodes = g.nodes.map((n) => ({ ...n }));
-  const R = 22;
-  if (EVSIM) EVSIM.stop();
-  const sim = EVSIM = d3.forceSimulation(nodes).force("link", d3.forceLink(links).id((d) => d.id).distance(110)).force("charge", d3.forceManyBody().strength(-520))
-    .force("center", d3.forceCenter(W / 2, H / 2)).force("collide", d3.forceCollide((n) => n.kind === "event" ? Math.max(46, 10 + ((n.labels || [1]).length - 1) * 6.5 + 26, Math.max(...(n.labels || [n.label]).map((l) => l.length)) * 3.4 + 20) : R + 30));
-  const cyc = (l) => inCyc.has(l.source.id || l.source) && inCyc.has(l.target.id || l.target);
-  const path = svg.append("g").selectAll("path").data(links).join("path").attr("class", (l) => `e ${l.seen ? "seen" : ""} ${cyc(l) ? "cyc" : ""}`).attr("marker-end", (l) => cyc(l) ? "url(#arrc)" : "url(#arr)")
-    .attr("data-from", (l) => l.source.id || l.source).attr("data-to", (l) => l.target.id || l.target);
-  path.append("title").text((l) => `${(l.source.label || l.source)} → ${(l.target.label || l.target)}${l.seen ? ` · ${l.seen} in 24h` : ""}`);
-  const node = svg.append("g").selectAll("g").data(nodes).join("g")
-    .attr("class", (n) => `n ${n.kind} ${n.bootstrap ? "bootstrap" : ""} ${inCyc.has(n.id) ? "cyc" : ""}`)
-    .attr("style", (n) => n.kind === "machine" ? `--rc:${mcolor(n.label)}` : "").attr("data-id", (n) => n.id)
-    .on("mouseenter", (ev, n) => evHover(n.id)).on("mouseleave", () => evHover(null)).on("click", (ev, n) => { if (n.machine) openMachine(n.label); })
-    .call(d3.drag().on("start", (ev, d) => { if (!ev.active) sim.alphaTarget(.3).restart(); d.fx = d.x; d.fy = d.y; }).on("drag", (ev, d) => { d.fx = ev.x; d.fy = ev.y; }).on("end", (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = d.fy = null; }));
-  node.filter((n) => n.kind !== "event").append("circle").attr("class", "body").attr("r", R);
-  halos(g);
-  const evLines = (n) => n.labels || [n.label], evHW = (n) => Math.max(40, Math.max(...evLines(n).map((l) => l.length)) * 3.4 + 12), evHH = (n) => 10 + (evLines(n).length - 1) * 6.5;
-  node.filter((n) => n.kind === "event").append("rect").attr("x", (n) => -evHW(n)).attr("y", (n) => -evHH(n)).attr("width", (n) => 2 * evHW(n)).attr("height", (n) => 2 * evHH(n)).attr("rx", 5);
-  const evText = node.filter((n) => n.kind === "event").append("text").attr("text-anchor", "middle").attr("class", "ev");
-  evText.selectAll("tspan").data((n) => evLines(n).map((l, i, arr) => ({ l, i, n: arr.length }))).join("tspan").attr("x", 0).attr("dy", (d) => d.i === 0 ? 3 - (d.n - 1) * 6.5 : 13).text((d) => d.l);
-  // like the Dashboard avatars: the initial inside the colour, the name beneath it
-  node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", 5).attr("class", "initial").text((n) => n.label[0].toUpperCase());
-  node.filter((n) => n.kind !== "event").append("text").attr("text-anchor", "middle").attr("dy", R + 13).attr("class", "name").text((n) => n.label);
-  node.append("text").attr("class", "sub").attr("text-anchor", "middle").attr("dy", (n) => n.kind === "event" ? evHH(n) + 12 : R + 24).text((n) => n.kind === "event" ? (n.cnt ? n.cnt + "/24h" : "") : n.bootstrap ? "bootstrap" : "");
-  node.append("title").text((n) => n.label);
-  sim.on("tick", () => {
-    nodes.forEach((n) => { const hw = n.kind === "event" ? evHW(n) + 4 : Math.max(R + 4, n.label.length * 3.3); const hh = n.kind === "event" ? evHH(n) + 14 : R + 10; n.x = Math.max(hw, Math.min(W - hw, n.x)); n.y = Math.max(hh, Math.min(H - hh - 20, n.y)); });
-    path.attr("d", (l) => { const s = l.source, t = l.target;
-      if (s === t) return `M${s.x},${s.y - R} C${s.x + 50},${s.y - 70} ${s.x + 70},${s.y - 20} ${s.x + R},${s.y}`;
-      const dx = t.x - s.x, dy = t.y - s.y, dist = Math.hypot(dx, dy) || 1, nx = -dy / dist, ny = dx / dist;       // curve so a reverse edge takes the other side
-      const mx = (s.x + t.x) / 2 + nx * 28, my = (s.y + t.y) / 2 + ny * 28;
-      const tr = t.kind === "event" ? evHH(t) + 4 : R + 2;
-      const ex = t.x - (dx / dist) * tr, ey = t.y - (dy / dist) * tr;
-      return `M${s.x},${s.y} Q${mx},${my} ${ex},${ey}`; });
-    node.attr("transform", (n) => `translate(${n.x},${n.y})`);
+  const nodes = g.nodes.map((n) => n.kind === "event"
+    ? { id: n.id, kind: "box", cls: "ng-event", label: n.label, lines: n.labels || [n.label], sub: n.cnt ? n.cnt + "/24h" : "", color: "#6b5313", hop: true, cnt: n.cnt, labels: n.labels }
+    : { id: n.id, kind: "circle", label: n.label, machine: true, active: n.active, halo: n.active, color: n.bootstrap ? "var(--panel3)" : mcolor(n.label),
+        stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: n.bootstrap ? "bootstrap" : "" });
+  const edges = g.links.map((l) => ({ id: l.source + ">" + l.target, source: l.source, target: l.target, seen: l.seen, color: l.seen ? "#22c55e" : "#4b5563" }));
+  GRAPH.render(nodes, edges);
+  // feedback loops: cycles of machine → event → machine
+  const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
+  const loops = NetGraph.cycles(nodes.map((n) => n.id), edges).map((c) => {
+    const es = c.map((id, k) => `${id}>${c[(k + 1) % c.length]}`);
+    return { nodes: c, edges: es, html: `<b>${esc(c.filter((id) => !id.startsWith("ev:")).map(name).join(" ⇄ "))}</b>: ${[...c, c[0]].map((id) => esc(name(id))).join(" → ")}` };
   });
-}
-// the animated ring on machines active in the last two minutes, updated without a redraw
-function halos(g) {
-  const active = new Set(g.nodes.filter((n) => n.active).map((n) => n.id));
-  d3.selectAll("#evsvg g.n").each(function (n) {
-    const g0 = d3.select(this), has = !g0.select("circle.halo").empty();
-    if (active.has(n.id) && !has) g0.insert("circle", ":first-child").attr("class", "halo").attr("r", 29).append("title").text("active in the last two minutes");
-    if (!active.has(n.id) && has) g0.select("circle.halo").remove();
-  });
-}
-function evHover(id) {
-  const svg = document.querySelector(".evmap svg"); if (!svg) return;
-  const es = [...svg.querySelectorAll(".e")], ns = [...svg.querySelectorAll(".n")];
-  if (!id) { [...es, ...ns].forEach((x) => x.classList.remove("dim")); return; }
-  // The node, its edges, the events on them, and then every edge of those events and the
-  // machines at their far ends: what this machine publishes and who it reaches, and what reaches it.
-  const keep = new Set([id]), lit = new Set();
-  const touch = (nid) => es.forEach((e, i) => { if (e.dataset.from === nid || e.dataset.to === nid) { lit.add(i); keep.add(e.dataset.from); keep.add(e.dataset.to); } });
-  touch(id);
-  if (!id.startsWith("ev:")) [...keep].filter((n) => n.startsWith("ev:")).forEach(touch);
-  es.forEach((e, i) => e.classList.toggle("dim", !lit.has(i)));
-  ns.forEach((n) => n.classList.toggle("dim", !keep.has(n.dataset.id)));
+  const lsig = JSON.stringify(loops.map((l) => l.nodes));
+  if (lsig === window.LOOPSIG) return;                  // unchanged: keep the selected loop
+  window.LOOPSIG = lsig; GRAPH.highlight(null);
+  $("loops").innerHTML = loops.length ? "" : "<span class='muted'>No feedback loops: nothing any machine publishes reaches a machine that can publish back to it.</span>";
+  if (loops.length) { $("loops").innerHTML = `<div class="head">Feedback loops · click one to highlight it</div><div id="looplist"></div>`; NetGraph.loopList($("looplist"), GRAPH, loops); }
 }
 function openMachine(id) {
   const el = document.querySelector(`.cards .panel[data-id="${CSS.escape(id)}"]`); if (!el) return;

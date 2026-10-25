@@ -1,4 +1,4 @@
-// The Dynamics page's live layer, on top of the diagram SD Lab's code draws (sd-diagram.js):
+// The Dynamics page's live layer, on top of the network the shared renderer draws (netgraph.js):
 // - each stock box shows its current value, a tank fill (now ÷ the highest seen in the window)
 //   and a sparkline of the window;
 // - each flow carries moving dashes whose speed follows its recent rate;
@@ -8,7 +8,7 @@
 // Data: MODEL (/api/dynamics/model) and HISTORY (/api/dynamics/history), both read from the web
 // server's caches; nothing here queries the metrics store directly.
 const Live = (() => {
-  let HISTORY = null, CTX = null;          // CTX: {D, box, color}: what draw() laid out
+  let HISTORY = null;
   const stored = (() => { try { return JSON.parse(localStorage.getItem("orchestra.dyn.hidden")); } catch (e) { return null; } })();
   // until the viewer chooses, stocks that only fill start hidden: their scale flattens the rest
   let HIDDEN = stored ? new Set(stored) : null;
@@ -29,81 +29,34 @@ const Live = (() => {
   }
   const flowsOf = (sid) => ({ in: MODEL.flows.filter((f) => f.to === sid), out: MODEL.flows.filter((f) => f.from === sid) });
 
-  // ---- the diagram ----
-  function stockGroup(id) { return document.querySelector(`#sd g.dstock.st-${CSS.escape(id)}`); }
-  function decorate() {
-    if (!CTX || !MODEL) return;
-    const { box, color } = CTX;
-    for (const s of MODEL.stocks) {
-      const g = stockGroup(s.id); if (!g) continue;
-      g.querySelectorAll(".live").forEach((x) => x.remove());
-      g.querySelectorAll("title").forEach((x) => x.remove());
-      const h = stockHist(s.id), vals = h.map((p) => p[1]), v = now(s.id);
-      const max = Math.max(1e-9, ...vals, v || 0), min = Math.min(0, ...vals);
-      const col = color("st-" + s.id), NS = "http://www.w3.org/2000/svg";
-      const mk = (tag, attrs, before) => { const e = document.createElementNS(NS, tag); for (const [k, x] of Object.entries(attrs)) e.setAttribute(k, x); e.classList.add("live"); before ? g.insertBefore(e, before) : g.appendChild(e); return e; };
-      // the tank: how full the stock is against the highest level seen in the window
-      const frac = v == null ? 0 : Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
-      const firstText = g.querySelector("text");
-      mk("rect", { x: 1.5, y: box.h - 1.5 - (box.h - 3) * frac, width: box.w - 3, height: (box.h - 3) * frac, rx: 2, fill: col, opacity: 0.16, "pointer-events": "none" }, firstText);
-      // the value, under the name
-      const sub = g.querySelectorAll("text")[1];
-      if (sub) sub.textContent = v == null ? "no data" : `${fmt(v)} now · max ${fmt(max)}`;
-      // the sparkline, along the bottom of the box
-      if (h.length > 1) {
-        const x0 = 10, x1 = box.w - 10, y0 = box.h - 8, y1 = box.h - 30, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
-        const d = h.map(([t, y], i) => `${i ? "L" : "M"}${(x0 + (x1 - x0) * (t - t0) / (t1 - t0)).toFixed(1)},${(y0 + (y1 - y0) * (y - min) / (max - min || 1)).toFixed(1)}`).join(" ");
-        mk("path", { d, fill: "none", stroke: col, "stroke-width": 1.4, opacity: 0.9, "pointer-events": "none" });
-      }
+  // ---- the diagram: what the network renderer draws inside each stock's box ----
+  // the tank (now against the highest level in the hour), the value, and the hour's sparkline
+  function decorateStock(g, n, sz) {
+    const id = n.sid, h = stockHist(id), vals = h.map((p) => p[1]), v = now(id);
+    const max = Math.max(1e-9, ...vals, v || 0), min = Math.min(0, ...vals), col = n.color;
+    const frac = v == null ? 0 : Math.max(0, Math.min(1, (v - min) / (max - min || 1)));
+    const x0 = -sz.w / 2, y0 = -sz.h / 2;
+    g.append("rect").attr("x", x0 + 1.5).attr("y", y0 + 1.5 + (sz.h - 3) * (1 - frac)).attr("width", sz.w - 3).attr("height", (sz.h - 3) * frac).attr("rx", 3).attr("fill", col).attr("opacity", 0.16);
+    g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + 32).attr("fill", col).text(v == null ? "no data" : `${fmt(v)} now · max ${fmt(max)}`);
+    if (h.length > 1) {
+      const a = x0 + 10, b = -x0 - 10, top = -y0 - 34, bot = -y0 - 8, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
+      g.append("path").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.4)
+        .attr("d", h.map(([t, y], i) => `${i ? "L" : "M"}${(a + (b - a) * (t - t0) / (t1 - t0)).toFixed(1)},${(bot + (top - bot) * (y - min) / (max - min || 1)).toFixed(1)}`).join(" "));
     }
-    // moving dashes on each flow, faster the higher its recent rate
-    const flowGs = [...document.querySelectorAll("#sd g.dflow")];
-    CTX.D.flows.forEach((f, i) => {
-      const g = flowGs[i]; if (!g) return;
-      g.querySelectorAll(".flowdash").forEach((x) => x.remove());
-      g.querySelectorAll("title").forEach((x) => x.remove());
-      const r = recentRate(f.fid), line = g.querySelector("path");
-      if (!line || !r || r <= 0.01) return;
-      const dash = line.cloneNode(); dash.removeAttribute("marker-end"); dash.setAttribute("class", "flowdash");
-      dash.style.animationDuration = `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(r))).toFixed(2)}s`;
-      g.appendChild(dash);
-    });
-    document.querySelectorAll("#sd g.dlabel title").forEach((x) => x.remove());
   }
 
   // ---- hover and click ----
-  const tip = () => { let t = document.getElementById("sdtip"); if (!t) { t = document.createElement("div"); t.id = "sdtip"; t.className = "sdtip"; document.body.appendChild(t); } return t; };
   function stockSummary(id) {
     const s = MODEL.stocks.find((x) => x.id === id), h = stockHist(id).map((p) => p[1]), v = now(id), io = flowsOf(id);
     const rows = [...io.in.map((f) => ["+", f]), ...io.out.map((f) => ["−", f])].map(([sg, f]) => `<div class="tr"><span>${sg} ${esc(f.name)}</span><b>${fmt(recentRate(f.id))}${per()}</b></div>`).join("");
     return `<div class="tt">${esc(s.name)}</div><div class="tr"><span>now</span><b>${fmt(v)}</b></div><div class="tr"><span>range, last hour</span><b>${fmt(h.length ? Math.min(...h) : null)} – ${fmt(h.length ? Math.max(...h) : null)}</b></div>${rows}<div class="hint">click for history and details</div>`;
   }
-  function flowSummary(f) {
+  function flowSummary(fid) {
+    const f = MODEL.flows.find((x) => x.id === fid); if (!f) return "";
     const r = recentRate(f.id), pr = predicted(f, Date.now() / 1000);
     return `<div class="tt">${esc(f.name)}</div><div class="muted">${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
       <div class="tr"><span>observed, last 2 min</span><b>${fmt(r)}${per()}</b></div><div class="tr"><span>equation says now</span><b>${fmt(pr)}${per()}</b></div>
       <div class="tr"><span>equation</span><b>${esc(eqText(f))}</b></div>${f.machine ? `<div class="tr"><span>machine</span><b>${esc(f.machine)}</b></div>` : ""}<div class="hint">click for history and fit</div>`;
-  }
-  function wire() {
-    const show = (html, ev) => { const t = tip(); t.innerHTML = html; t.style.display = "block"; place(ev); };
-    const place = (ev) => { const t = tip(), r = t.getBoundingClientRect(); t.style.left = Math.min(innerWidth - r.width - 8, ev.clientX + 14) + "px"; t.style.top = Math.min(innerHeight - r.height - 8, ev.clientY + 14) + "px"; };
-    const hide = () => { tip().style.display = "none"; };
-    for (const s of MODEL.stocks) {
-      const g = stockGroup(s.id); if (!g) continue;
-      g.style.cursor = "pointer";
-      g.onmouseenter = (ev) => show(stockSummary(s.id), ev); g.onmousemove = place; g.onmouseleave = hide;
-      g.onclick = () => { hide(); openStock(s.id); };
-    }
-    const flowGs = [...document.querySelectorAll("#sd g.dflow")], labelGs = [...document.querySelectorAll("#sd g.dlabel")];
-    CTX.D.flows.forEach((df, i) => {
-      const f = MODEL.flows.find((x) => x.id === df.fid);
-      for (const g of [flowGs[i], labelGs[i]]) {
-        if (!g || !f) continue;
-        g.style.cursor = "pointer";
-        g.onmouseenter = (ev) => show(flowSummary(f), ev); g.onmousemove = place; g.onmouseleave = hide;
-        g.onclick = () => { hide(); openFlow(f.id); };
-      }
-    });
   }
   function openStock(id) {
     const s = MODEL.stocks.find((x) => x.id === id), io = flowsOf(id), ev = s.evidence || {};
@@ -144,11 +97,16 @@ const Live = (() => {
   }
   function toggle(id) { HIDDEN = HIDDEN || new Set(); HIDDEN.has(id) ? HIDDEN.delete(id) : HIDDEN.add(id); try { localStorage.setItem("orchestra.dyn.hidden", JSON.stringify([...HIDDEN])); } catch (e) {} chart(); }
 
+  let GRAPH = null;
   async function refresh() {
     try { const d = await (await fetch("/api/dynamics/history")).json(); if (d.ok) HISTORY = d; } catch (e) {}
-    decorate(); chart();
+    if (GRAPH) {
+      GRAPH.refreshNodes((n) => (n.sid ? {} : null));
+      GRAPH.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0));
+    }
+    chart();
   }
-  function drawn(ctx) { CTX = ctx; decorate(); wire(); chart(); }
-  return { refresh, drawn, toggle, openStock, openFlow };
+  function drawn(graph) { GRAPH = graph; graph.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0)); chart(); }
+  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, stockSummary, flowSummary };
 })();
 Live.refresh(); setInterval(Live.refresh, 15000);

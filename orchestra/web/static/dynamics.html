@@ -15,9 +15,7 @@
   .ver button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:12px; padding:1px 8px; cursor:pointer }
   .ver button:disabled { opacity:.35; cursor:default } .ver b { color:var(--text) } .ver .past { color:#fcd34d }
   .dynhead .sum { font-size:12px; color:var(--text2) }
-  .diagram { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px; overflow:auto }
-  .diagram svg { width:100%; height:auto; min-height:0; display:block }
-  .diagram .dflow { cursor:default } .diagram .dim { opacity:.12 }
+  .diagram { border:1px solid var(--border); border-radius:10px; overflow:hidden }
   .legend { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 }
   .legend .lg { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text2); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 9px; cursor:pointer }
   .legend .lg i { width:14px; height:3px; border-radius:2px; background:var(--c) } .legend .lg.prog i { height:3px; outline:1px dashed var(--c) }
@@ -52,6 +50,7 @@
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span></div>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
+  <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
   <div class="panel histp"><h2 style="margin-top:0"><span>Stocks, last hour</span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2><div class="hkeys" id="hist-keys"></div><div id="hist"></div></div>
   <div class="tables">
     <div>
@@ -66,7 +65,8 @@
 </div>
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
-<script src="/static/sd-diagram.js?v={{v}}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="/static/netgraph.js?v={{v}}"></script>
 <script src="/static/charts.js?v={{v}}"></script>
 <script>
 // one colour per machine, the same every time for the same id
@@ -87,40 +87,77 @@ function eqText(f, short) {
 }
 // a flow whose rate reads a stock other than its own source: an influence, the link that closes loops
 const influence = (f) => f.current && f.current.form === "linear" && f.current.inputs && f.current.inputs[0] && f.current.inputs[0] !== f.from ? f.current.inputs[0] : null;
+let GRAPH = null, GSIG = null;
+// The model as a network: stocks as boxes, each flow as a valve between its source and its
+// destination (a cloud when either is outside), influences as dashed links into the valve whose
+// rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
+// (+) and takes from its source (−); a rate depends on its input stock with the sign of its
+// coefficient. A loop with an odd number of − links is balancing (B), otherwise reinforcing (R).
 function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
-  const D = {
-    stocks: m.stocks.map((s) => ({ id: s.id, name: nice(s.id), cls: "st-" + s.id,
-      sub: " ", title: s.name })),
-    flows: m.flows.filter((f) => (f.current && f.current.quality && f.current.quality.events > 0) || window.SHOW_ALL)
-      .map((f) => ({ from: f.from, to: f.to, cls: "m-" + (f.machine || "none"), label: eqText(f, true),
-        reads: influence(f) ? [{ stock: influence(f), label: f.current.params.k < 0 ? "−" : "+", cls: "m-" + (f.machine || "none") }] : [],
-        label2: f.machine ? (byMachine[f.machine] || {}).name || f.machine : "", thin: !f.current || f.current.origin !== "fitted",
-        title: `${nice(f.from)} → ${nice(f.to)} · ${f.current ? f.current.form + ", " + f.current.origin + " from " + f.current.quality.events + " events" : "no equation"}`, fid: f.id })),
-  };
-  const pos = SDDiagram.layout(m.stocks.map((s) => s.id), D.flows, { maxCols: 5 });
-  // spread the boxes out: the layout's grid is tight for labelled flows
-  // spread the boxes out: the layout's grid is tight for labelled flows and wide stock names
-  const boxW = Math.max(150, ...D.stocks.map((s) => (s.name || s.id).length * 8.2 + 24));
-  const P = {}; for (const [id, p] of Object.entries(pos)) P[id] = { x: p.x * 1.55 * Math.max(1, boxW / 190), y: p.y * 1.5 };
-  // stocks: outlined in the colour of the machine that writes them (neutral when none does)
-  const stockOwner = Object.fromEntries(m.stocks.map((s) => [s.id, (s.evidence && s.evidence.machine) || ""]));
-  const color = (cls) => cls.startsWith("st-") ? (stockOwner[cls.slice(3)] ? mcolor(stockOwner[cls.slice(3)]) : "#cbd5e1") : cls.startsWith("m-") ? mcolor(cls.slice(2)) : "var(--fg)";
-  $("diagram").innerHTML = '<svg id="sd"></svg>';
-  // flow labels sit outside the stocks' bounds: leave room for them, so nothing is clipped
-  // boxes as wide as the longest stock name needs
-  const box = { w: boxW, h: 96 };
-  const vb = SDDiagram.bounds(P, D.flows, box, 60);
-  SDDiagram.draw($("sd"), D, P, { color, box, viewBox: { x: vb.x - 140, y: vb.y - 30, w: vb.w + 280, h: vb.h + 60 } });
-  // stocks above the flow labels, so a label beside a stock never hides its name
-  const stocks = $("sd").querySelector("g.dstock");
-  if (stocks && stocks.parentNode) $("sd").appendChild(stocks.parentNode);
-  Live.drawn({ D, box, color });
-  // legend: machines, hover to isolate their flows
-  const used = [...new Set(D.flows.map((f) => f.cls.slice(2)))];
+  const owner = Object.fromEntries(m.stocks.map((s) => [s.id, (s.evidence && s.evidence.machine) || ""]));
+  // stocks that only fill (like the event bus's length) start hidden, with their flows
+  const acc = new Set(m.stocks.filter((s) => s.evidence && s.evidence.accumulator).map((s) => s.id));
+  const hiddenStock = (id) => !window.SHOW_ACC && acc.has(id);
+  const flows = m.flows.filter((f) => ((f.current && f.current.quality && f.current.quality.events > 0) || window.SHOW_ALL)
+    && !hiddenStock(f.from) && !hiddenStock(f.to));
+  const nodes = [], edges = [], causal = [];
+  for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: s.name, lines: [s.name], w: Math.max(180, s.name.length * 7 + 30), h: 92,
+    color: owner[s.id] ? mcolor(owner[s.id]) : "#cbd5e1", fill: "#0b0e14", charge: -1600, decorate: Live.decorateStock, sub: " " });
+  for (const f of flows) {
+    const col = mcolor(f.machine), v = "f:" + f.id, e = f.current || {};
+    nodes.push({ id: v, kind: "valve", fid: f.id, label: f.name, color: col, charge: -420 });
+    const src = f.from ? "s:" + f.from : "c:" + f.id + ":in", dst = f.to ? "s:" + f.to : "c:" + f.id + ":out";
+    if (!f.from) nodes.push({ id: src, kind: "cloud", charge: -120 });
+    if (!f.to) nodes.push({ id: dst, kind: "cloud", charge: -120 });
+    edges.push({ id: `${src}>${v}`, source: src, target: v, color: col, width: 3.2, arrow: false, distance: 110, fid: f.id, flowPart: true });
+    edges.push({ id: `${v}>${dst}`, source: v, target: dst, color: col, width: 3.2, distance: 110, fid: f.id, flowPart: true,
+      label: [eqText(f, true), f.machine ? (byMachine[f.machine] || {}).name || f.machine : ""] });
+    if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
+    if (f.from) causal.push({ source: v, target: "s:" + f.from, sign: -1 });
+    const x = e.inputs && e.inputs[0];
+    if (x && !hiddenStock(x) && (e.form === "proportional" || e.form === "linear")) {
+      const sign = e.form === "proportional" ? 1 : Math.sign(e.params.k) || 1;
+      causal.push({ source: "s:" + x, target: v, sign });
+      if (x !== f.from || e.form === "linear") edges.push({ id: `s:${x}>${v}:info`, source: "s:" + x, target: v, color: col, dashed: true, width: 1.3, distance: 220, strength: 0.06, sign: sign < 0 ? "−" : "+", bend: 40 });
+    }
+  }
+  const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
+  if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
+    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics", height: 620,
+      tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
+      onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
+    GSIG = sig;
+    GRAPH.render(nodes, edges);
+    loops(nodes, causal);
+  } else GRAPH.render(nodes, edges);
+  Live.drawn(GRAPH);
+  const used = [...new Set(flows.map((f) => f.machine || "none"))];
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
-    return `<span class="lg ${mc.kind === "agent" ? "" : "prog"}" style="--c:${mcolor(id)}" onmouseenter="isolate('${id}')" onmouseleave="isolate(null)"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
-    + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`;
+    return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
+    + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
+    + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
+    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange · scroll to zoom · hover or click a stock or a valve</span>`;
+}
+function loops(nodes, causal) {
+  const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;
+  const signOf = new Map(causal.map((c) => [c.source + ">" + c.target, c.sign]));
+  const cyc = NetGraph.cycles(nodes.filter((n) => n.kind !== "cloud").map((n) => n.id), causal);
+  const all = cyc.map((c) => {
+    const pairs = c.map((id, k) => [id, c[(k + 1) % c.length]]);
+    const neg = pairs.filter(([a, b]) => signOf.get(a + ">" + b) < 0).length;
+    // drawn edges along the loop, in either direction (a flow out of a stock is drawn stock → valve)
+    const es = []; for (const [a, b] of pairs) for (const id of [`${a}>${b}`, `${b}>${a}`, `${a}>${b}:info`]) es.push(id);
+    const stocks = c.filter((id) => id.startsWith("s:"));
+    const steps = pairs.map(([a, b]) => `${esc(name(a))} <span class="muted">${signOf.get(a + ">" + b) < 0 ? "(−)" : "(+)"}</span>`).join(" → ") + " → " + esc(name(c[0]));
+    return { nodes: c, edges: es, stocks: stocks.length, pol: neg % 2 ? "B" : "R",
+      html: `<span class="ng-pol ${neg % 2 ? "B" : "R"}" title="${neg % 2 ? "balancing" : "reinforcing"}">${neg % 2 ? "B" : "R"}</span><b>${esc(stocks.map(name).join(" → "))}</b>: ${steps}` };
+  }).sort((a, b) => b.stocks - a.stocks || b.nodes.length - a.nodes.length);
+  const main = all.filter((l) => l.stocks > 1), first = all.length - main.length;
+  GRAPH.highlight(null);
+  $("loops").innerHTML = `<div class="head">Feedback loops · click one to highlight it · <span class="ng-pol B">B</span>balancing <span class="ng-pol R">R</span>reinforcing</div><div id="looplist"></div>`
+    + (first ? `<div class="muted" style="margin-top:4px">and ${first} first-order loop${first === 1 ? "" : "s"}: a stock whose outflow depends on itself, which always balances it</div>` : "");
+  if (main.length) NetGraph.loopList($("looplist"), GRAPH, main); else $("looplist").innerHTML = '<span class="muted">No loops through more than one stock.</span>';
 }
 // series left out, grouped by why: the ones that changed but didn't balance are worth reading;
 // the ones that didn't move in the window are collapsed
@@ -135,9 +172,6 @@ function leftOut(lo) {
     const rows = groups[g].map(([k, why]) => `<tr><td class="num">${esc(k)}</td>${g.startsWith("changed") ? `<td class="muted">${esc(why.replace(/^no counters balance it /, ""))}</td>` : ""}</tr>`).join("");
     return `<details ${g.startsWith("changed") ? "open" : ""}><summary>${esc(g)} <span class="count">${groups[g].length}</span></summary><table class="dt">${rows}</table></details>`;
   }).join("");
-}
-function isolate(id) {
-  document.querySelectorAll("#sd g.dflow, #sd g.dlabel").forEach((g) => g.classList.toggle("dim", !!id && !g.classList.contains("m-" + id)));
 }
 function tables() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
