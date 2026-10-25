@@ -82,6 +82,39 @@ const NetGraph = (() => {
     return out;
   }
 
+  // ---- edge labels (pure, shared with the layout tests) ----
+  // a label's box, from its text (10.5 px type: about 5.9 px a character, 12 px a line), centred on
+  // its anchor; a sign alone (+, −) is a small box
+  function labelSize(e) {
+    const lines = e.label ? (Array.isArray(e.label) ? e.label : [e.label]).filter(Boolean) : [];
+    if (!lines.length) return e.sign ? { w: 12, h: 16 } : null;
+    return { w: Math.max(...lines.map((l) => String(l).length)) * 5.9 + 6, h: lines.length * 12 + 4 };
+  }
+  const OFFSETS = [[0, 0]];
+  for (const r of [16, 30, 46, 64, 84, 106]) for (const [ux, uy] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) OFFSETS.push([ux * r * (ux && uy ? 0.8 : 1) * (ux ? 1.6 : 1), uy * r * (ux && uy ? 0.8 : 1)]);
+  // where each label goes: the nearest spot to its line's middle (``mids``: {edge id: {x, y}})
+  // where it covers no node and no label already placed; if there is none, where it covers least.
+  // Longer labels are placed first. {edge id: [dx, dy]}
+  function placeLabels(nodes, edges, mids) {
+    const boxes = nodes.filter((n) => n.x !== undefined).map((n) => { const s = size(n), hw = (s.r || s.w / 2) + 2, hh = (s.r || s.h / 2) + 2; return [n.x - hw, n.y - hh, n.x + hw, n.y + hh]; });
+    const area = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+    const out = {}, placed = [];
+    const todo = edges.filter((e) => mids[e.id] && labelSize(e)).sort((a, b) => labelSize(b).w - labelSize(a).w);
+    for (const e of todo) {
+      const m = mids[e.id], s = labelSize(e);
+      let best = null;
+      for (const [dx, dy] of OFFSETS) {
+        const b = [m.x + dx - s.w / 2, m.y + dy - s.h / 2, m.x + dx + s.w / 2, m.y + dy + s.h / 2];
+        const cost = boxes.reduce((a, x) => a + area(b, x), 0) + placed.reduce((a, x) => a + 2 * area(b, x), 0);
+        if (!best || cost < best.cost - 1e-9) best = { cost, dx, dy, b };
+        if (cost === 0) break;
+      }
+      out[e.id] = [best.dx, best.dy];
+      placed.push(best.b);
+    }
+    return out;
+  }
+
   // ---- elementary cycles (small graphs): each cycle once, as a list of node ids ----
   function cycles(nodeIds, edges, { max = 40, maxLen = 14 } = {}) {
     const adj = new Map(nodeIds.map((id) => [id, []]));
@@ -108,7 +141,9 @@ const NetGraph = (() => {
   // system's boundary (its sources, sinks and outside conditions).
   // ``layout``: an async function (nodes, edges) -> {id: [x, y]} that places a whole graph (ELK on
   // the Dynamics page); used for the first layout, tidy and reset instead of the forces.
-  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout } = {}) {
+  // ``polish``: an optional async function (nodes, edges, at) -> {id: [x, y]} run after it (in a
+  // worker), whose result the nodes glide to unless the viewer has moved something meanwhile.
+  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary, layout, polish } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
@@ -290,7 +325,8 @@ const NetGraph = (() => {
         .on("mouseleave", () => { isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
         // dragging moves this node alone (nothing else is pushed around), and it stays where it is dropped
         .call(d3.drag().on("start", () => { if (sim) sim.stop(); if (settling) { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } } })
-          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = !d.tether; tick(); save(); }))   // a cloud goes back beside its stock
+          .on("start.place", () => { placing++; })                 // a layout in progress gives way to the viewer
+          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = !d.tether; tick(); save(); relabel(); }))   // a cloud goes back beside its stock
         .on("dblclick", (ev, d) => { ev.stopPropagation(); d.pin = false; settle(new Set([d.id]), 0.3, false); });   // let the forces place it again
       // parallel edges (several flows between the same two nodes) spread apart
       const par = new Map();
@@ -304,7 +340,7 @@ const NetGraph = (() => {
       else if (settling) settle(new Set([...settling.movable].filter((id) => byId.has(id)).concat(fresh.map((n) => n.id))), Math.max(0.5, sim ? sim.alpha() : 0.5), true);
       else if (fresh.length === NODES.length) settle(new Set(NODES.map((n) => n.id)), 1, true);
       else if (fresh.length) settle(new Set(fresh.map((n) => n.id)), 0.5, true);
-      else tick();                                               // nothing new: nothing moves
+      else { tick(); relabel(); }                                // nothing new: nothing moves
       // the first drawing fits the view (a layout still settling fits when it is done)
       if (!drawnOnce) { drawnOnce = true; if (!settling) requestAnimationFrame(() => fit(false)); }
       if (pinned) highlight(pinned.nodes, pinned.edges);
@@ -331,9 +367,39 @@ const NetGraph = (() => {
       let at;
       try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
       if (ticket !== placing) return;                            // a newer layout was asked for
-      for (const n of NODES) if (at[n.id] && (all || !n.pin)) { [n.x, n.y] = at[n.id]; n._new = false; n.fx = n.fy = null; }
-      tick(); save();
-      if (!userZoomed) fit(false);
+      const first = NODES.every((n) => n._new);
+      await glide(at, all, first ? 0 : 650);
+      if (!polish || ticket !== placing) return;
+      const plain = (n) => Object.fromEntries(Object.entries(n).filter(([, v]) => typeof v !== "function"));
+      let better;
+      try { better = await polish(NODES.map(plain), RAW_EDGES.map(plain), Object.fromEntries(NODES.map((n) => [n.id, [n.x, n.y]]))); } catch (e) { console.error("polish failed", e); return; }
+      if (ticket !== placing) return;                            // the viewer dragged, or asked again
+      await glide(better, all, 650);
+    }
+    // move the nodes to ``at`` (the viewer's placements stay, unless ``all``), over ``ms``, then
+    // place the labels and fit the view
+    function glide(at, all, ms) {
+      const moving = NODES.filter((n) => at[n.id] && (all || !n.pin)).map((n) => ({ n, x0: n.x ?? at[n.id][0], y0: n.y ?? at[n.id][1], x1: at[n.id][0], y1: at[n.id][1] }));
+      for (const m of moving) { m.n._new = false; m.n.fx = m.n.fy = null; }
+      return new Promise((resolve) => {
+        const t0 = performance.now(), ticket = placing;
+        const frame = (t) => {
+          const k = ms ? Math.min(1, (t - t0) / ms) : 1, e = k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
+          if (ticket !== placing) return resolve();
+          for (const m of moving) { m.n.x = m.x0 + (m.x1 - m.x0) * e; m.n.y = m.y0 + (m.y1 - m.y0) * e; }
+          tick();
+          if (k < 1) return requestAnimationFrame(frame);
+          save(); relabel(); if (!userZoomed) fit(); resolve();
+        };
+        ms ? requestAnimationFrame(frame) : frame(t0 + 1);
+      });
+    }
+    // labels: placed where they cover no box and no other label (placeLabels), whenever the graph rests
+    let LABEL_AT = {};
+    function relabel() {
+      const mids = Object.fromEntries(ALLEDGES.filter((e) => e._mid).map((e) => [e.id, e._mid]));
+      LABEL_AT = placeLabels(NODES, ALLEDGES, mids);
+      tick();
     }
     function settle(movable, alpha, refit) {
       if (sim) sim.stop();
@@ -349,7 +415,7 @@ const NetGraph = (() => {
         .force("boundary", boundary ? keepOutside : null)
         .force("edge", boundary ? towardEdge : null)
         .alpha(alpha);
-      sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); if (refit && !userZoomed) fit(); });
+      sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); relabel(); if (refit && !userZoomed) fit(); });
       tick();
     }
     // lay it out again: around the viewer's placements, or (``reset``) from nothing
@@ -384,7 +450,12 @@ const NetGraph = (() => {
           d3.select(this).selectAll("path").attr("d", d);
         });
       }
-      gLabels.selectAll("g.ng-label").attr("transform", (e) => (e._mid ? `translate(${e._mid.x},${e._mid.y - 6})` : null));
+      // a label's box is centred where placeLabels put it; text sits from its top (first baseline 11 px down)
+      gLabels.selectAll("g.ng-label").attr("transform", (e) => {
+        if (!e._mid) return null;
+        const [dx, dy] = LABEL_AT[e.id] || [0, 0], s = labelSize(e) || { h: 16 };
+        return `translate(${e._mid.x + dx},${e._mid.y + dy - s.h / 2 + (e.label ? 11 : 13)})`;
+      });
       gNodes.selectAll("g.ng-node").attr("transform", (n) => (n.x === undefined ? null : `translate(${n.x},${n.y})`));
     }
     // hover: a node, its edges and their far ends; with two hops, also what those reach (a
@@ -448,5 +519,5 @@ const NetGraph = (() => {
     }));
   }
 
-  return { create, cycles, loopList, size, frameOf, tetherPlaces };
+  return { create, cycles, loopList, size, frameOf, tetherPlaces, labelSize, placeLabels };
 })();

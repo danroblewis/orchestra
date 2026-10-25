@@ -73,13 +73,15 @@
   // where they overlap, and a stock keeps ``ROOM`` px more room per flow so its flows can be seen.
   // A stock with flows from or to outside is drawn toward the nearest side of the frame, so its
   // clouds' stubs are short. Returns new positions; clouds placed by the cloud rule.
-  function refine(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, iterations = 300, gap = 70, outwardK = 0.06, influenceGap = 40 }) {
+  // A flow with a label is given room for it (``labelSize``): its rest length is at least the
+  // label's width, so the words fit beside the line instead of on a box.
+  function refine(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, iterations = 300, gap = 70, outwardK = 0.06, influenceGap = 40, labelSize = null }) {
     const P = new Map(nodes.filter((n) => at[n.id] && inside(n)).map((n) => [n.id, { n, x: at[n.id][0], y: at[n.id][1] }]));
     const half = (n) => { const s = size(n); return s.r ? [s.r, s.r] : [s.w / 2, s.h / 2]; };
     const byEdge = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
     const springs = [], degree = new Map([...P.keys()].map((id) => [id, 0]));
     const spring = (a, b, extra) => { if (a !== b && P.has(a) && P.has(b)) { springs.push([a, b, extra]); degree.set(a, degree.get(a) + 1); degree.set(b, degree.get(b) + 1); } };
-    for (const e of byEdge.values()) spring(e.source, e.target, gap);
+    for (const e of byEdge.values()) { const ls = labelSize && labelSize(e); spring(e.source, e.target, Math.max(gap, ls ? ls.w * 0.8 + 16 : 0)); }
     for (const e of edges.filter((x) => x.toEdge)) { const f = byEdge.get(e.toEdge); if (f) for (const end of [f.source, f.target]) spring(e.source, end, gap + influenceGap); }
     const outward = new Set(nodes.filter((n) => n.kind === "cloud" && n.tether).map((n) => n.tether));
     const room = (id) => 14 + ROOM * (degree.get(id) || 0);
@@ -122,5 +124,56 @@
     return out;
   }
 
-  return { layout, refine, OPTIONS };
+  // Untangle a layout by local search: try moving each node a step in eight directions, and
+  // swapping two nodes of a kind (stock and stock, auxiliary and auxiliary); keep a change only
+  // when it lowers the cost, which counts most what reads worst (a line hidden behind a box,
+  // flows crossing, nodes overlapping), then any crossing, then length and spread. ``score`` is
+  // LayoutScore.score. Clouds are placed by the cloud rule after every change.
+  const COST = (s) => 40 * s.through.length + 25 * s.crossings + 8 * s.allCrossings + 300 * s.overlaps.length
+    + 40 * (s.labelsOnNodes ? s.labelsOnNodes.length : 0) + 25 * (s.labelsOnLabels || 0)
+    + 0.02 * s.nearest.max + 0.02 * s.influenceLength.median + 2 * (s.emptiness || 0);
+  // ``labels(placed)``, when given, places the edge labels ({edge id: [x, y]}) so words covered by
+  // boxes or other words count too (``labelSize`` sizes them)
+  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, labels = null, labelSize = null, passes = 4, steps = [60, 120] }) {
+    const ids = nodes.filter((n) => inside(n) && at[n.id]).map((n) => n.id), byId = new Map(nodes.map((n) => [n.id, n]));
+    let cur = { ...at };
+    const evaluate = (pos) => {
+      const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
+      const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame);
+      for (const n of placed) if (clouds[n.id]) [n.x, n.y] = clouds[n.id];
+      return { cost: COST(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize })), clouds };
+    };
+    let best = evaluate(cur);
+    // only nodes in a problem are moved: the ends of a line through a box or crossing another, a box
+    // under a label and the ends of the label's line (``tangled`` from the score)
+    const tangledNow = (pos) => {
+      const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
+      const frame = frameOf(placed, inside), clouds = tetherPlaces(placed, frame);
+      for (const n of placed) if (clouds[n.id]) [n.x, n.y] = clouds[n.id];
+      return new Set(score(placed, edges, { size, frame, inside, labels: labels ? labels(placed) : null, labelSize }).tangled || ids);
+    };
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    for (let pass = 0; pass < passes; pass++) {
+      let improved = false;
+      const busy = tangledNow(cur), movable = ids.filter((id) => busy.has(id));
+      if (!movable.length) break;
+      for (const id of movable) {
+        for (const step of steps) for (const [dx, dy] of dirs) {
+          const next = { ...cur, [id]: [cur[id][0] + dx * step, cur[id][1] + dy * step] }, r = evaluate(next);
+          if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
+        }
+      }
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+        if (!busy.has(ids[i]) && !busy.has(ids[j])) continue;
+        const a = byId.get(ids[i]), b = byId.get(ids[j]);
+        if (!!a.sid !== !!b.sid) continue;                            // stocks with stocks, auxiliaries with auxiliaries
+        const next = { ...cur, [ids[i]]: cur[ids[j]], [ids[j]]: cur[ids[i]] }, r = evaluate(next);
+        if (r.cost < best.cost - 1e-6) { cur = next; best = r; improved = true; }
+      }
+      if (!improved) break;
+    }
+    return { ...cur, ...best.clouds };
+  }
+
+  return { layout, refine, untangle, OPTIONS, COST };
 });

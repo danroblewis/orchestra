@@ -338,8 +338,11 @@ re-reads the metrics and may save a version, as the host does every 5 minutes).
 
 Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
 ELK's layered algorithm (`static/sd-layout.js`: the system as a box of its own, in layers along
-its flows), then refined by springs so nothing is left far from what it is connected to and busy
-stocks keep room for their flows; the Machines page's event map uses d3's forces, its lines in
+its flows), refined by springs so nothing is left far from what it is connected to, busy stocks
+keep room for their flows and a labelled flow is long enough for its label, then untangled by a
+local search in a worker (`static/layout-worker.js`) for the fewest lines behind boxes or crossing
+and no covered labels; nodes glide to each stage. Edge labels sit where they cover no box and no
+other label (`placeLabels`); the Machines page's event map uses d3's forces, its lines in
 their machine's colour, toned down (`static/edge-color.js`: solid, it publishes; dashed, it
 listens; near-grey, not seen in 24 hours; full colour on hover). A layout keeps its shape: only
 new nodes are placed (the known ones held still), every position is remembered per viewer,

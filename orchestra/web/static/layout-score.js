@@ -32,10 +32,11 @@
     }
     return false;
   }
+  const labelsOnNodesHas = (out, id) => out.labelsOnNodes.includes(id);
   const median = (xs) => { if (!xs.length) return 0; const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 
   // ``frame``: the system's box ({x0, y0, x1, y1}) when there is one
-  function score(nodes, edges, { size, frame = null, inside = (n) => n.kind !== "cloud" } = {}) {
+  function score(nodes, edges, { size, frame = null, inside = (n) => n.kind !== "cloud", labels = null, labelSize = null } = {}) {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const flows = edges.filter((e) => !e.toEdge && byId.has(e.source) && byId.has(e.target)).map((e) => {
       const a = byId.get(e.source), b = byId.get(e.target), p = exit(a, size, b.x, b.y), q = exit(b, size, a.x, a.y);
@@ -59,6 +60,15 @@
       if ([f.a, f.b].some((n) => n === g.a || n === g.b)) continue;
       if (cross(f.p, f.q, g.p, g.q)) out.crossings++;
     }
+    // any two lines (flows and influences) that cross, not at a shared end or on a flow an influence ends on
+    out.allCrossings = 0;
+    const tangled = new Set();                    // nodes at the ends of lines that cross
+    const all = [...flows.map((f) => ({ f, ends: [f.a, f.b] })), ...links.map((l) => ({ f: l, ends: [l.a, flowById.get(l.e.toEdge).a, flowById.get(l.e.toEdge).b], on: l.e.toEdge }))];
+    for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) {
+      const u = all[i], v = all[j];
+      if (u.ends.some((n) => v.ends.includes(n)) || u.on === v.f.e.id || v.on === u.f.e.id) continue;
+      if (cross(u.f.p, u.f.q, v.f.p, v.f.q)) { out.allCrossings++; for (const n of [...u.ends, ...v.ends]) tangled.add(n.id); }
+    }
     // flows and influences drawn through a node that is not one of their ends
     out.through = [];
     for (const f of [...flows, ...links]) for (const n of nodes) {
@@ -78,6 +88,18 @@
     const far = [...near.entries()].filter(([, v]) => isFinite(v)).sort((a, b) => b[1] - a[1]);
     out.nearest = { max: Math.round(far.length ? far[0][1] : 0), median: Math.round(median(far.map(([, v]) => v))), worst: far.slice(0, 3).map(([id, v]) => [id, Math.round(v)]) };
     out.longest = [...inner, ...stubs, ...links].sort((a, b) => b.len - a.len).slice(0, 3).map((f) => [f.e.id, Math.round(f.len)]);
+    // edge labels (where ``labels`` puts them: {edge id: [x, y]} centres, sized by ``labelSize``)
+    // that cover a node or another label: words that cannot be read
+    if (labels && labelSize) {
+      const lb = edges.filter((e) => labels[e.id] && labelSize(e)).map((e) => { const s = labelSize(e), [x, y] = labels[e.id]; return { id: e.id, b: { x0: x - s.w / 2, x1: x + s.w / 2, y0: y - s.h / 2, y1: y + s.h / 2 } }; });
+      out.labelsOnNodes = lb.filter((l) => nodes.some((n) => overlap(l.b, box(n, size, -2)))).map((l) => l.id);
+      for (const l of lb) for (const n of nodes) if (overlap(l.b, box(n, size, -2))) tangled.add(n.id);
+      for (const l of lb) { const e = edges.find((x) => x.id === l.id); if (e && labelsOnNodesHas(out, l.id)) { tangled.add(e.source); if (e.target) tangled.add(e.target); } }
+      out.labelsOnLabels = 0;
+      for (let i = 0; i < lb.length; i++) for (let j = i + 1; j < lb.length; j++) if (overlap(lb[i].b, lb[j].b)) out.labelsOnLabels++;
+    }
+    for (const [eid, nid] of out.through) { tangled.add(nid); const e = edges.find((x) => x.id === eid); if (e) { tangled.add(e.source); if (e.target) tangled.add(e.target); } }
+    out.tangled = [...tangled].map((x) => (typeof x === "string" ? x : x.id));
     if (frame) {
       out.cloudsInside = nodes.filter((n) => !inside(n) && overlap(box(n, size), frame)).map((n) => n.id);
       out.outsideFrame = nodes.filter((n) => inside(n) && !overlap(box(n, size), frame)).map((n) => n.id);
@@ -86,5 +108,23 @@
     }
     return out;
   }
-  return { score };
+  // where each line's middle is as the renderer draws it (for placing labels): a flow bows to
+  // one side by its ``bend`` (parallel flows between the same two nodes spread 44 px apart, as
+  // netgraph spreads them), so its middle is off the straight line by half the bend. {id: {x, y}}
+  function mids(nodes, edges, size) {
+    const byId = new Map(nodes.map((n) => [n.id, n])), out = {}, par = new Map();
+    const flows = edges.filter((x) => !x.toEdge && byId.has(x.source) && byId.has(x.target));
+    for (const e of flows) { const k = e.source + ">" + e.target; par.set(k, [...(par.get(k) || []), e]); }
+    for (const group of par.values()) group.forEach((e, k) => {
+      const a = byId.get(e.source), b = byId.get(e.target), p = exit(a, size, b.x, b.y), q = exit(b, size, a.x, a.y);
+      const bend = (e.bend ?? 22) + (k - (group.length - 1) / 2) * 44, dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+      out[e.id] = { x: (p.x + q.x) / 2 - dy / d * bend / 2, y: (p.y + q.y) / 2 + dx / d * bend / 2 };
+    });
+    for (const e of edges.filter((x) => x.toEdge && byId.has(x.source) && out[x.toEdge])) {
+      const a = byId.get(e.source), m = out[e.toEdge], p = exit(a, size, m.x, m.y);
+      out[e.id] = { x: (p.x + m.x) / 2, y: (p.y + m.y) / 2 };
+    }
+    return out;
+  }
+  return { score, mids };
 });
