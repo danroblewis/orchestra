@@ -315,8 +315,10 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 
 - **Dashboard:** the machines active on the bus; the host's CPU, GPU, memory and disk; a Core
   status strip.
-- **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (machines and the event types they
-  publish and listen for), its feedback loops, and each machine's metrics. Clicking a machine
+- **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (by default machines only: an
+  arrow where one publishes an event type the other listens for, one line with two arrowheads where
+  two talk both ways, thicker with more traffic, the event types on hover; or with the event types
+  as boxes; event families, the name up to its first dot, can be hidden), its feedback loops, and each machine's metrics. Clicking a machine
   (its card or its node) opens its dialog: instances, what it publishes and listens for, its
   series' latest values, its last events (envelopes only) and the tail of its announced log,
   refreshed while open.

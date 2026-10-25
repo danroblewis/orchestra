@@ -254,9 +254,9 @@ const NetGraph = (() => {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(POS_KEY(key)) || "{}"); } catch (e) {}
     const markers = new Set();
-    const marker = (col) => {
-      const id = "ng-arr-" + col.replace(/[^a-z0-9]/gi, "");
-      if (!markers.has(id)) { markers.add(id); defs.append("marker").attr("id", id).attr("viewBox", "0 -4 8 8").attr("refX", 8).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto").append("path").attr("d", "M0,-4L8,0L0,4").attr("fill", col); }
+    const marker = (col, start = false) => {
+      const id = "ng-arr-" + (start ? "s-" : "") + col.replace(/[^a-z0-9]/gi, "");
+      if (!markers.has(id)) { markers.add(id); defs.append("marker").attr("id", id).attr("viewBox", "0 -4 8 8").attr("refX", 8).attr("refY", 0).attr("markerUnits", "userSpaceOnUse").attr("markerWidth", 10).attr("markerHeight", 10).attr("orient", start ? "auto-start-reverse" : "auto").append("path").attr("d", "M0,-4L8,0L0,4").attr("fill", col); }
       return `url(#${id})`;
     };
     let sim = null, NODES = [], EDGES = [], ALLEDGES = [], sig = null, pinned = null;
@@ -281,7 +281,7 @@ const NetGraph = (() => {
       if (s === t) return `M${s.x},${s.y - 20} C${s.x + 50},${s.y - 70} ${s.x + 70},${s.y - 20} ${s.x + 20},${s.y}`;
       const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy) || 1, bend = e.bend ?? 22;
       const mx = (s.x + t.x) / 2 - dy / d * bend, my = (s.y + t.y) / 2 + dx / d * bend;
-      const a = edgePoint(s, mx, my, 1), b = edgePoint(t, mx, my, 3);
+      const a = edgePoint(s, mx, my, e.both ? 3 : 1), b = edgePoint(t, mx, my, 3);
       e._mid = { x: (a.x + 2 * mx + b.x) / 4, y: (a.y + 2 * my + b.y) / 4 };
       return `M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}`;
     }
@@ -348,7 +348,9 @@ const NetGraph = (() => {
       edgeSel.each(function (e) {
         const g = d3.select(this); g.selectAll("*").remove();
         const col = e.color || "#4b5563";
-        g.append("path").attr("class", "ng-line").attr("stroke", col).attr("stroke-width", e.width || 1.6).attr("stroke-dasharray", e.dashed ? "5 4" : null).attr("marker-end", e.arrow === false ? null : marker(col));
+        // ``both``: one line for two nodes linked both ways, an arrowhead at each end
+        g.append("path").attr("class", "ng-line").attr("stroke", col).attr("stroke-width", e.width || 1.6).attr("stroke-dasharray", e.dashed ? "5 4" : null).attr("marker-end", e.arrow === false ? null : marker(col))
+          .attr("marker-start", e.both ? marker(col, true) : null);
         g.append("path").attr("class", "ng-hit");
         if (e.rate) g.append("path").attr("class", "ng-flowdash").style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(e.rate))).toFixed(2)}s`);
         g.on("mouseenter", (ev) => showTip(tip && tip(e, "edge"), ev)).on("mousemove", moveTip).on("mouseleave", hideTip)
@@ -513,7 +515,7 @@ const NetGraph = (() => {
       const paint = (lit) => es.each(function (e) {
         if (!e.hoverColor) return;
         const col = lit && lit.has(e.id) ? e.hoverColor : e.color || "#4b5563";
-        d3.select(this).select(".ng-line").attr("stroke", col).attr("marker-end", e.arrow === false ? null : marker(col)).classed("ng-hover", !!(lit && lit.has(e.id)));
+        d3.select(this).select(".ng-line").attr("stroke", col).attr("marker-end", e.arrow === false ? null : marker(col)).attr("marker-start", e.both ? marker(col, true) : null).classed("ng-hover", !!(lit && lit.has(e.id)));
       });
       if (!id) { ns.classed("ng-dim", false); es.classed("ng-dim", false); ls.classed("ng-dim", false); paint(null); return; }
       const keep = new Set([id]), lit = new Set();
