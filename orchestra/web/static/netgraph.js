@@ -17,7 +17,13 @@
 // them again on "tidy" (around the ones the viewer placed) or "reset" (from scratch). Dragging
 // moves just that node, which then stays where it was dropped (double-click lets the forces place it
 // again). Weak gravity keeps nodes from drifting off; a node with an ``anchor`` ([fx, fy], fractions
-// of the view) is pulled toward that spot (sources top-left, sinks bottom-right).
+// of the view) is pulled toward that spot.
+//
+// With a ``boundary``, a node outside it that is ``tether``ed to one inside (a source or sink
+// cloud and its stock) is not placed by the forces: it sits just outside the frame, on the side
+// nearest its node, level with it, and follows it when it moves (until the viewer drags it). A
+// node inside marked ``edgeward`` (a stock with flows from or to outside) is drawn gently toward
+// the nearest side of the frame, so those crossings stay short.
 const NetGraph = (() => {
   const NS = "http://www.w3.org/2000/svg";
   const POS_KEY = (k) => `orchestra.netgraph.${k}`;
@@ -26,7 +32,7 @@ const NetGraph = (() => {
   function size(n) {
     if (n.kind === "circle") return { r: n.r || 22 };
     if (n.kind === "valve") return { r: 7 };
-    if (n.kind === "cloud") return { r: 14 };
+    if (n.kind === "cloud") return { r: 11 };
     const lines = n.lines || [n.label];
     const w = n.w || Math.max(80, Math.max(...lines.map((l) => String(l).length)) * 7 + 22);
     const h = n.h || 14 + lines.length * 14 + (n.sub ? 14 : 0);
@@ -90,13 +96,43 @@ const NetGraph = (() => {
     function keepOutside(alpha) {
       const b = frameBox(); if (!b) return;
       for (const n of NODES) {
-        if (boundary.inside(n) || n.fx != null) continue;          // held or placed by the viewer: left where it is
+        if (boundary.inside(n) || n.fx != null || (n.tether && !n.pin)) continue;   // held, placed by the viewer, or placed by its tether
         const r = (size(n).r || 14) + 6;
         if (n.x > b.x0 - r && n.x < b.x1 + r && n.y > b.y0 - r && n.y < b.y1 + r) {
           const d = [[n.x - (b.x0 - r), -1, 0], [(b.x1 + r) - n.x, 1, 0], [n.y - (b.y0 - r), 0, -1], [(b.y1 + r) - n.y, 0, 1]].sort((a, c) => a[0] - c[0])[0];
           // a hard rule, not a nudge: put it just outside the nearest side
           n.x += d[1] * d[0]; n.y += d[2] * d[0]; n.vx = 0; n.vy = 0;
         }
+      }
+    }
+    // a tethered node's place: just outside the frame, on the side nearest the node it belongs to,
+    // level with it (several on one side of one node sit side by side)
+    const GAP = 34;
+    function placeTethered() {
+      const b = frameBox(); if (!b) return;
+      const byId = new Map(NODES.map((n) => [n.id, n])), count = new Map();
+      for (const n of NODES) {
+        const s = n.tether && !n.pin && byId.get(n.tether);
+        if (!s || s.x === undefined) continue;
+        const side = [[s.x - b.x0, "l"], [b.x1 - s.x, "r"], [s.y - b.y0, "t"], [b.y1 - s.y, "b"]].sort((a, c) => a[0] - c[0])[0][1];
+        const k = `${s.id}|${side}`, i = count.get(k) || 0;
+        count.set(k, i + 1);
+        const off = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 30;              // 0, -30, +30, -60…
+        [n.x, n.y] = side === "t" ? [s.x + off, b.y0 - GAP] : side === "b" ? [s.x + off, b.y1 + GAP]
+          : side === "l" ? [b.x0 - GAP, s.y + off] : [b.x1 + GAP, s.y + off];
+        n.vx = n.vy = 0;
+      }
+    }
+    // a force drawing ``edgeward`` nodes toward the nearest side of the frame (nothing for a node
+    // already at it, so the frame does not grow)
+    function towardEdge(alpha) {
+      const b = frameBox(); if (!b) return;
+      for (const n of NODES) {
+        if (!n.edgeward || n.fx != null) continue;
+        const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2;
+        const [d, dx, dy] = [[n.x - hw - (b.x0 + PAD), -1, 0], [(b.x1 - PAD) - (n.x + hw), 1, 0], [n.y - hh - (b.y0 + PAD + 12), 0, -1], [(b.y1 - PAD) - (n.y + hh), 0, 1]]
+          .sort((a, c) => a[0] - c[0])[0];
+        if (d > 6) { n.vx += dx * d * 0.04 * alpha; n.vy += dy * d * 0.04 * alpha; }
       }
     }
     let userZoomed = false;
@@ -180,7 +216,7 @@ const NetGraph = (() => {
         g.append("circle").attr("r", s.r).attr("fill", n.color || "#94a3b8").attr("stroke", "var(--panel)").attr("stroke-width", 2);
       } else if (n.kind === "cloud") {
         g.append("circle").attr("class", "ng-grab").attr("r", 18);          // an outline alone is too thin to grab
-        g.append("path").attr("class", "ng-cloud").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
+        g.append("path").attr("class", "ng-cloud").attr("transform", "scale(.8)").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
       } else {
         g.append("rect").attr("class", "ng-box").attr("x", -s.w / 2).attr("y", -s.h / 2).attr("width", s.w).attr("height", s.h).attr("rx", n.rx ?? 5)
           .attr("stroke", n.color || "#6b5313").attr("fill", n.fill || "#0b0e14").attr("stroke-dasharray", n.dashed ? "6 4" : null);
@@ -276,6 +312,7 @@ const NetGraph = (() => {
         .force("y", d3.forceY(ay).strength((n) => (n.anchor ? 0.15 : 0.04)))
         .force("collide", d3.forceCollide((n) => { const s = size(n); return (s.r || Math.max(s.w, s.h) / 2) + 24; }))
         .force("boundary", boundary ? keepOutside : null)
+        .force("edge", boundary ? towardEdge : null)
         .alpha(alpha);
       sim.on("tick", tick).on("end", () => { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } save(); if (refit && !userZoomed) fit(); });
       tick();
@@ -291,6 +328,7 @@ const NetGraph = (() => {
       settle(new Set(NODES.map((n) => n.id)), 1, true);
     }
     function tick() {
+      if (boundary) placeTethered();
       const b = frameBox();
       frameRect.style("display", b ? null : "none"); frameLabel.style("display", b ? null : "none");
       if (b) {

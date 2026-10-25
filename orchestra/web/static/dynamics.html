@@ -160,12 +160,16 @@ function draw() {
     // in the causal graph used for loops, it is a node between them ("f:<id>")
     const col = mcolor(f.machine), v = "f:" + f.id, e = f.current || {};
     // one cloud per stock and direction, named for the stock (flow ids change between discoveries;
-    // a stock's place outside does not): sources pulled to the top left, sinks to the bottom right
+    // a stock's place outside does not)
     const src = f.from ? "s:" + f.from : "c:in:" + (f.to || f.id), dst = f.to ? "s:" + f.to : "c:out:" + (f.from || f.id);
-    if (!f.from && !nodes.some((n) => n.id === src)) nodes.push({ id: src, kind: "cloud", charge: -160, anchor: [0.05, 0.08] });
-    if (!f.to && !nodes.some((n) => n.id === dst)) nodes.push({ id: dst, kind: "cloud", charge: -160, anchor: [0.95, 0.92] });
+    // a cloud sits just outside the frame, on the side nearest its stock (tethered to it), and the
+    // stock is drawn toward that side, so a flow across the boundary is a short stub
+    if (!f.from && f.to && !nodes.some((n) => n.id === src)) nodes.push({ id: src, kind: "cloud", charge: -20, tether: "s:" + f.to });
+    if (!f.to && f.from && !nodes.some((n) => n.id === dst)) nodes.push({ id: dst, kind: "cloud", charge: -20, tether: "s:" + f.from });
     const fe = `${src}>${dst}:${f.id}`;
-    edges.push({ id: fe, source: src, target: dst, color: col, width: 3.4, distance: 230, fid: f.id, flowPart: true, bend: 18,
+    const outside = !f.from || !f.to;
+    edges.push({ id: fe, source: src, target: dst, color: col, width: outside ? 2 : 3.4, distance: outside ? 60 : 230, strength: outside ? 0.05 : 0.6,
+      cls: outside ? "ng-outside" : "", fid: f.id, flowPart: true, bend: outside ? 10 : 18,
       label: [((t) => (t.length > 44 ? t.slice(0, 42) + "…" : t))(eqText(f, true)), f.machine ? (byMachine[f.machine] || {}).name || f.machine : ""] });
     FLOWEDGE[v] = fe;
     if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
@@ -182,6 +186,8 @@ function draw() {
       if (!plain) edges.push({ id: `${node}>${fe}:info`, source: node, toEdge: fe, color: col, dashed: true, width: 1.4, sign: sign < 0 ? "−" : sign > 0 ? "+" : "~", bend: 36, fid: f.id });
     }
   }
+  // stocks with flows from or to outside are drawn toward the frame's edge, so those stubs stay short
+  for (const n of nodes) if (n.sid) n.edgeward = flows.some((f) => (f.to === n.sid && !f.from) || (f.from === n.sid && !f.to));
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
     if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics", height: 620,

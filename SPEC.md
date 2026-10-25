@@ -338,8 +338,11 @@ re-reads the metrics and may save a version, as the host does every 5 minutes).
 Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). A layout keeps
 its shape: the forces place only new nodes (the known ones held still), every position is
 remembered per viewer, dragging moves one node, and "tidy" or "reset" lay it out again on
-purpose. On the Dynamics page each stock has one source cloud (pulled top left) and one sink cloud
-(pulled bottom right), and measured inputs sit to the left. Loops are elementary cycles; clicking
+purpose. On the Dynamics page each stock has at most one source cloud and one sink cloud. A cloud is
+placed by rule, not by the forces: just outside the frame, on the side nearest its stock, level
+with it, following it when it moves. A stock with flows across the boundary is drawn toward the
+nearest side, and those flows are drawn thinner and dimmer, so a boundary crossing is a short,
+quiet stub (still visible: it is what the model does not explain). Measured inputs sit to the left. Loops are elementary cycles; clicking
 one highlights it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
 - **Core:** the host, the bus and the metrics store, each probed against its real backend within
