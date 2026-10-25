@@ -4,7 +4,8 @@
 //           stock: lines of text, optional decoration), valve (a flow: a small dot with a label),
 //           cloud (outside: a source or a sink);
 //   edges   solid or dashed, coloured, with an arrow, an optional label and sign, and optional
-//           moving dashes whose speed follows a rate;
+//           moving dashes whose speed follows a rate; an edge may end on another edge
+//           (``toEdge``), drawn to its middle: an influence on a flow;
 //   loops   elementary cycles of a directed graph, listed and clickable: clicking one highlights
 //           its nodes and edges and fades the rest;
 // plus drag (a dropped node stays pinned where it was put; double-click lets it float again), zoom
@@ -72,7 +73,7 @@ const NetGraph = (() => {
       if (!markers.has(id)) { markers.add(id); defs.append("marker").attr("id", id).attr("viewBox", "0 -4 8 8").attr("refX", 8).attr("refY", 0).attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto").append("path").attr("d", "M0,-4L8,0L0,4").attr("fill", col); }
       return `url(#${id})`;
     };
-    let sim = null, NODES = [], EDGES = [], sig = null, pinned = null;
+    let sim = null, NODES = [], EDGES = [], ALLEDGES = [], sig = null, pinned = null;
     const tipEl = () => { let t = document.getElementById("ng-tip"); if (!t) { t = document.createElement("div"); t.id = "ng-tip"; t.className = "ng-tip"; document.body.appendChild(t); } return t; };
     const showTip = (html, ev) => { if (!html) return; const t = tipEl(); t.innerHTML = html; t.style.display = "block"; moveTip(ev); };
     const moveTip = (ev) => { const t = tipEl(), r = t.getBoundingClientRect(); t.style.left = Math.min(innerWidth - r.width - 8, ev.clientX + 14) + "px"; t.style.top = Math.min(innerHeight - r.height - 8, ev.clientY + 14) + "px"; };
@@ -83,6 +84,7 @@ const NetGraph = (() => {
       try { localStorage.setItem(POS_KEY(key), JSON.stringify(pos)); } catch (e) {}
     }
     function path(e) {
+      if (e.toEdge) return linkPath(e);
       const s = e.source, t = e.target;
       if (s === t) return `M${s.x},${s.y - 20} C${s.x + 50},${s.y - 70} ${s.x + 70},${s.y - 20} ${s.x + 20},${s.y}`;
       const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy) || 1, bend = e.bend ?? 22;
@@ -90,6 +92,17 @@ const NetGraph = (() => {
       const a = edgePoint(s, mx, my, 1), b = edgePoint(t, mx, my, 3);
       e._mid = { x: (a.x + 2 * mx + b.x) / 4, y: (a.y + 2 * my + b.y) / 4 };
       return `M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}`;
+    }
+    // a link into another edge (an influence on a flow): from its node to the middle of that edge
+    function linkPath(e) {
+      const s = e.source, m = e.toEdge._mid;
+      if (!m || s.x === undefined) return "";
+      const dx = m.x - s.x, dy = m.y - s.y, d = Math.hypot(dx, dy) || 1, bend = e.bend ?? 30;
+      const cx = (s.x + m.x) / 2 - dy / d * bend, cy = (s.y + m.y) / 2 + dx / d * bend;
+      const a = edgePoint(s, cx, cy, 1), L = Math.hypot(m.x - cx, m.y - cy) || 1;
+      const bx = m.x - (m.x - cx) / L * 7, by = m.y - (m.y - cy) / L * 7;   // stop just short of the line
+      e._mid = { x: (a.x + 2 * cx + bx) / 4, y: (a.y + 2 * cy + by) / 4 };
+      return `M${a.x},${a.y} Q${cx},${cy} ${bx},${by}`;
     }
     function drawNode(g, n) {
       const s = size(n);
@@ -127,10 +140,17 @@ const NetGraph = (() => {
         return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined, fx: pin ? p[0] : null, fy: pin ? p[1] : null };
       });
       const byId = new Map(NODES.map((n) => [n.id, n]));
-      EDGES = edges.filter((e) => byId.has(e.source) && byId.has(e.target)).map((e) => ({ ...e, source: byId.get(e.source), target: byId.get(e.target) }));
+      EDGES = edges.filter((e) => !e.toEdge && byId.has(e.source) && byId.has(e.target)).map((e) => ({ ...e, source: byId.get(e.source), target: byId.get(e.target) }));
+      // links that end on another edge (``toEdge``: its id), drawn to that edge's middle; for
+      // hovering they touch both of its ends
+      const edgeById = new Map(EDGES.map((e) => [e.id, e]));
+      const LINKS = edges.filter((e) => e.toEdge && byId.has(e.source) && edgeById.has(e.toEdge))
+        .map((e) => { const t = edgeById.get(e.toEdge); return { ...e, source: byId.get(e.source), toEdge: t, target: t.target }; });
+      const ALL = [...EDGES, ...LINKS];
+      ALLEDGES = ALL;
       const structural = newSig !== sig;
       sig = newSig;
-      const edgeSel = gEdges.selectAll("g.ng-edge").data(EDGES, (e) => e.id).join("g").attr("class", (e) => `ng-edge ${e.cls || ""}`).attr("data-id", (e) => e.id);
+      const edgeSel = gEdges.selectAll("g.ng-edge").data(ALL, (e) => e.id).join("g").attr("class", (e) => `ng-edge ${e.cls || ""}`).attr("data-id", (e) => e.id);
       edgeSel.each(function (e) {
         const g = d3.select(this); g.selectAll("*").remove();
         const col = e.color || "#4b5563";
@@ -140,7 +160,7 @@ const NetGraph = (() => {
         g.on("mouseenter", (ev) => showTip(tip && tip(e, "edge"), ev)).on("mousemove", moveTip).on("mouseleave", hideTip)
           .on("click", (ev) => { hideTip(); onClick && onClick(e, "edge"); });
       });
-      const labelSel = gLabels.selectAll("g.ng-label").data(EDGES.filter((e) => e.label || e.sign), (e) => e.id).join("g").attr("class", "ng-label").attr("data-id", (e) => e.id);
+      const labelSel = gLabels.selectAll("g.ng-label").data(ALL.filter((e) => e.label || e.sign), (e) => e.id).join("g").attr("class", "ng-label").attr("data-id", (e) => e.id);
       labelSel.each(function (e) {
         const g = d3.select(this); g.selectAll("*").remove();
         if (e.sign) g.append("text").attr("class", "ng-sign").attr("text-anchor", "middle").attr("fill", e.color || "var(--muted)").text(e.sign);
@@ -167,11 +187,14 @@ const NetGraph = (() => {
       if (pinned) highlight(pinned.nodes, pinned.edges);
     }
     function tick() {
-      gEdges.selectAll("g.ng-edge").each(function (e) {
-        if (e.source.x === undefined) return;
-        const d = path(e), g = d3.select(this);
-        g.selectAll("path").attr("d", d);
-      });
+      const sel = gEdges.selectAll("g.ng-edge");
+      for (const links of [false, true]) {       // edges first: links aim at their middles
+        sel.filter((e) => !!e.toEdge === links).each(function (e) {
+          if (e.source.x === undefined) return;
+          const d = path(e);
+          d3.select(this).selectAll("path").attr("d", d);
+        });
+      }
       gLabels.selectAll("g.ng-label").attr("transform", (e) => (e._mid ? `translate(${e._mid.x},${e._mid.y - 6})` : null));
       gNodes.selectAll("g.ng-node").attr("transform", (n) => (n.x === undefined ? null : `translate(${n.x},${n.y})`));
     }
@@ -185,7 +208,12 @@ const NetGraph = (() => {
       let frontier = [id];
       for (let h = 0; h < isolateHops; h++) {
         const next = [];
-        EDGES.forEach((e) => { for (const [a, b] of [[e.source.id, e.target.id], [e.target.id, e.source.id]]) if (frontier.includes(a)) { lit.add(e.id); if (!keep.has(b)) { keep.add(b); next.push(b); } } });
+        ALLEDGES.forEach((e) => {
+          const ends = e.toEdge ? [e.source.id, e.toEdge.source.id, e.toEdge.target.id] : [e.source.id, e.target.id];
+          if (!ends.some((x) => frontier.includes(x))) return;
+          lit.add(e.id); if (e.toEdge) lit.add(e.toEdge.id);
+          for (const b of ends) if (!keep.has(b)) { keep.add(b); next.push(b); }
+        });
         frontier = next.filter((x) => (NODES.find((n) => n.id === x) || {}).hop);
       }
       ns.classed("ng-dim", (n) => !keep.has(n.id)); es.classed("ng-dim", (e) => !lit.has(e.id)); ls.classed("ng-dim", (e) => !lit.has(e.id));

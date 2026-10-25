@@ -87,10 +87,10 @@ function eqText(f, short) {
 }
 // a flow whose rate reads a stock other than its own source: an influence, the link that closes loops
 const influence = (f) => f.current && f.current.form === "linear" && f.current.inputs && f.current.inputs[0] && f.current.inputs[0] !== f.from ? f.current.inputs[0] : null;
-let GRAPH = null, GSIG = null;
-// The model as a network: stocks as boxes, each flow as a valve between its source and its
-// destination (a cloud when either is outside), influences as dashed links into the valve whose
-// rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
+let GRAPH = null, GSIG = null, FLOWEDGE = {};
+// The model as a network: stocks as boxes, each flow as one arrow from its source to its
+// destination (a cloud when either is outside), influences as dashed links from a stock to the
+// middle of the flow whose rate they drive. Feedback loops are cycles of the causal graph: a flow adds to its destination
 // (+) and takes from its source (−); a rate depends on its input stock with the sign of its
 // coefficient. A loop with an odd number of − links is balancing (B), otherwise reinforcing (R).
 function draw() {
@@ -105,21 +105,24 @@ function draw() {
   for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: s.name, lines: [s.name], w: Math.max(180, s.name.length * 7 + 30), h: 92,
     color: owner[s.id] ? mcolor(owner[s.id]) : "#cbd5e1", fill: "#0b0e14", charge: -1600, decorate: Live.decorateStock, sub: " " });
   for (const f of flows) {
+    // a flow is one arrow from its source to its destination (a cloud when either is outside);
+    // in the causal graph used for loops, it is a node between them ("f:<id>")
     const col = mcolor(f.machine), v = "f:" + f.id, e = f.current || {};
-    nodes.push({ id: v, kind: "valve", fid: f.id, label: f.name, color: col, charge: -420 });
     const src = f.from ? "s:" + f.from : "c:" + f.id + ":in", dst = f.to ? "s:" + f.to : "c:" + f.id + ":out";
-    if (!f.from) nodes.push({ id: src, kind: "cloud", charge: -120 });
-    if (!f.to) nodes.push({ id: dst, kind: "cloud", charge: -120 });
-    edges.push({ id: `${src}>${v}`, source: src, target: v, color: col, width: 3.2, arrow: false, distance: 110, fid: f.id, flowPart: true });
-    edges.push({ id: `${v}>${dst}`, source: v, target: dst, color: col, width: 3.2, distance: 110, fid: f.id, flowPart: true,
+    if (!f.from) nodes.push({ id: src, kind: "cloud", charge: -160 });
+    if (!f.to) nodes.push({ id: dst, kind: "cloud", charge: -160 });
+    const fe = `${src}>${dst}:${f.id}`;
+    edges.push({ id: fe, source: src, target: dst, color: col, width: 3.4, distance: 230, fid: f.id, flowPart: true, bend: 18,
       label: [eqText(f, true), f.machine ? (byMachine[f.machine] || {}).name || f.machine : ""] });
+    FLOWEDGE[v] = fe;
     if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
     if (f.from) causal.push({ source: v, target: "s:" + f.from, sign: -1 });
     const x = e.inputs && e.inputs[0];
     if (x && !hiddenStock(x) && (e.form === "proportional" || e.form === "linear")) {
       const sign = e.form === "proportional" ? 1 : Math.sign(e.params.k) || 1;
       causal.push({ source: "s:" + x, target: v, sign });
-      if (x !== f.from || e.form === "linear") edges.push({ id: `s:${x}>${v}:info`, source: "s:" + x, target: v, color: col, dashed: true, width: 1.3, distance: 220, strength: 0.06, sign: sign < 0 ? "−" : "+", bend: 40 });
+      // an influence: a dashed link from the stock to the middle of the flow it drives
+      if (x !== f.from || e.form === "linear") edges.push({ id: `s:${x}>${fe}:info`, source: "s:" + x, toEdge: fe, color: col, dashed: true, width: 1.4, sign: sign < 0 ? "−" : "+", bend: 36, fid: f.id });
     }
   }
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
@@ -137,17 +140,23 @@ function draw() {
     return `<span class="lg prog" style="--c:${mcolor(id)}"><i></i>${esc(mc.name)} <span class="muted">${mc.kind === "agent" ? "AI agent" : "program"}</span></span>`; }).join("")
     + `<label class="lg" style="cursor:pointer"><input type="checkbox" ${window.SHOW_ALL ? "checked" : ""} onchange="window.SHOW_ALL=this.checked;draw()" style="margin:0"> flows with no events</label>`
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
-    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it; double-click to release) · scroll to zoom · hover or click a stock or a valve</span>`;
+    + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it; double-click to release) · scroll to zoom · hover or click a stock or a flow</span>`;
 }
 function loops(nodes, causal) {
   const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;
   const signOf = new Map(causal.map((c) => [c.source + ">" + c.target, c.sign]));
-  const cyc = NetGraph.cycles(nodes.filter((n) => n.kind !== "cloud").map((n) => n.id), causal);
+  // the causal graph's own nodes: stocks, and flows (which are drawn as arrows, not nodes)
+  const ids = [...new Set(causal.flatMap((c) => [c.source, c.target]))];
+  const cyc = NetGraph.cycles(ids, causal);
   const all = cyc.map((c) => {
     const pairs = c.map((id, k) => [id, c[(k + 1) % c.length]]);
     const neg = pairs.filter(([a, b]) => signOf.get(a + ">" + b) < 0).length;
-    // drawn edges along the loop, in either direction (a flow out of a stock is drawn stock → valve)
-    const es = []; for (const [a, b] of pairs) for (const id of [`${a}>${b}`, `${b}>${a}`, `${a}>${b}:info`]) es.push(id);
+    // drawn edges along the loop: each flow on it (its arrow) and each influence into one
+    const es = [];
+    for (const [a, b] of pairs) {
+      if (a.startsWith("f:")) es.push(FLOWEDGE[a]);
+      if (b.startsWith("f:")) { es.push(FLOWEDGE[b]); es.push(`${a}>${FLOWEDGE[b]}:info`); }
+    }
     const stocks = c.filter((id) => id.startsWith("s:"));
     const steps = pairs.map(([a, b]) => `${esc(name(a))} <span class="muted">${signOf.get(a + ">" + b) < 0 ? "(−)" : "(+)"}</span>`).join(" → ") + " → " + esc(name(c[0]));
     return { nodes: c, edges: es, stocks: stocks.length, pol: neg % 2 ? "B" : "R",
