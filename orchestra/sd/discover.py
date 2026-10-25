@@ -43,6 +43,8 @@ from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
 FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
+SAME_STEPS = 0.03          # counters that differ in no more than this share of steps are one
+EVENT_COUNTER = "orchestra_events_total"   # Orchestra's own count of each event type
 MIN_GAIN = 0.01         # each added counter must explain at least this share of the level's variance
 MAX_TERMS = 8
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
@@ -466,6 +468,21 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             left_out[ser.key] = f"no longer written: its last point is {round((end - last) / 60)} min before the end of the window"
     series = current
     counters = [s for s in series if s.counter and any(s.deltas)]
+    # counters that moved together in (almost) every step measure the same thing (a machine's own
+    # count and Orchestra's count of the event it publishes for it; they may differ by a step at the
+    # edge, where one was collected later): balances could not tell them apart, and two stocks
+    # choosing different ones would lose the flow that joins them. One is kept: the machine's own,
+    # then the shortest name.
+    counters.sort(key=lambda c: (c.name.startswith(EVENT_COUNTER), len(c.key), c.key))
+    kept_counters: list[Series] = []
+    for c in counters:
+        twin = next((k for k in kept_counters if sum(1 for x, y in zip(c.deltas, k.deltas) if x != y) <= SAME_STEPS * n
+                     and abs(sum(c.deltas) - sum(k.deltas)) <= max(1.0, SAME_STEPS * sum(k.deltas))), None)
+        if twin is None:
+            kept_counters.append(c)
+        else:
+            left_out[c.key] = f"the same as {twin.key} (in all but a few steps)"
+    counters = kept_counters
     for s in series:
         if s.counter and not any(s.deltas):
             left_out[s.key] = "a counter that did not move in the window"
