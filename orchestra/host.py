@@ -82,25 +82,16 @@ class Host:
                 self.log(f"collector: {type(e).__name__}: {e}")
 
     def _discover(self) -> None:
-        """Rediscover the model every interval; cache it; version it when its structure changed."""
-        from .sd.discover import discover, structure
-        from .sd.store import ModelStore
+        """Rediscover the model every interval (``orchestra.sd.rediscover``)."""
+        from .sd.rediscover import rediscover
 
-        store = ModelStore.for_state(self.project.state_dir)
         wait = 5.0                                    # soon after starting, then every interval
         while not self._stop.wait(wait):
             wait = DISCOVER_EVERY_S
             try:
-                end = time.time()
-                dump = metrics_for(self.project).dump("", {"project": self.project.key})
-                m = discover(dump, start=end - DISCOVER_WINDOW_S, end=end, step=DISCOVER_STEP_S)
-                store.write_discovery(m, at=end)
-                cur = store.load()
-                if m.stocks and (cur is None or structure(cur) != structure(m)):
-                    n = store.save(m, note="discovered: the structure changed")
-                    self.log(f"discovery: {len(m.stocks)} stocks, {len(m.flows)} flows; structure changed, saved as version {n}")
-                else:
-                    self.log(f"discovery: {len(m.stocks)} stocks, {len(m.flows)} flows; structure unchanged")
+                r = rediscover(self.project, metrics_for(self.project), window_s=DISCOVER_WINDOW_S, step_s=DISCOVER_STEP_S)
+                what = f"saved as version {r.version}" if r.version else "structure unchanged"
+                self.log(f"discovery: {len(r.model.stocks)} stocks, {len(r.model.flows)} flows; {what}")
             except Exception as e:  # noqa: BLE001 - try again next interval
                 self.log(f"discovery: {type(e).__name__}: {e}")
 
@@ -111,6 +102,7 @@ class Host:
         runtime.update(self.project, lambda d: d.__setitem__("host", {"pid": os.getpid(), "since": time.time()}))
         signal.signal(signal.SIGTERM, self.stop)
         self.events.publish("orchestra.host.started", {"pid": os.getpid()})
+        self.events.publish("orchestra.machine.started", {"mode": "continuous", "listens_for": []})
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")
         if not once:
             threading.Thread(target=self._collect, name="collector", daemon=True).start()

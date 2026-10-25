@@ -95,23 +95,20 @@ def cmd_sd(args) -> int:
     project = _project(args)
     models = ModelStore.for_state(project.state_dir)
     if args.action == "discover":
-        from .sd.discover import discover
+        from .sd.rediscover import rediscover
 
-        store = metrics_for(project)
-        end = time.time()
-        start = end - args.minutes * 60
-        m = discover(store.dump("", {"project": project.key}), start=start, end=end, step=args.step_s, time_unit=args.unit)
-        print(f"{len(m.discovery['left_out']) + len(m.stocks) + len(m.flows)} series over the last {args.minutes:g} min, "
-              f"in {args.step_s:g} s steps: {len(m.stocks)} stocks, {len(m.flows)} flows, {len(m.machines)} machines")
+        r = rediscover(project, metrics_for(project), window_s=args.minutes * 60, step_s=args.step_s,
+                       note=f"discovered from the last {args.minutes:g} min of metrics")
+        m = r.model
+        print(f"over the last {args.minutes:g} min, in {args.step_s:g} s steps: {len(m.stocks)} stocks, "
+              f"{len(m.flows)} flows, {len(m.machines)} machines")
         for st in m.stocks:
             terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
             print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps)")
         print("left out:")
         for k, why in m.discovery["left_out"].items():
             print(f"  {k}: {why}")
-        models.write_discovery(m, at=end)
-        if m.stocks:
-            print(f"saved as version {models.save(m, note=f'discovered from the last {args.minutes:g} min of metrics')}")
+        print(f"saved as version {r.version}" if r.version else "structure unchanged: no new version")
         args.version = None
     if args.action == "versions":
         for v in models.versions():

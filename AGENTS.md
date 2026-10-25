@@ -13,8 +13,9 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    do and what their events mean is theirs. Never add a domain concept (ticket,
    task, build) to the core.
 2. **Machines are outside Orchestra, and known only by observation.** A
-   machine is its CloudEvents `source`, the events it publishes and listens
-   for, and the series it writes. The Machines page, the collectors and the
+   machine is its CloudEvents `source` (`<machine>/<instance>` for one of
+   several instances), the events it publishes and listens for, how it says it
+   is engaged (continuous, scheduled, ad hoc), and the series it writes. The Machines page, the collectors and the
    model read what is observed, never a machine's description of itself.
 3. **Every event carries the CloudEvents envelope.** `orchestra.events`
    writes it; Orchestra reads the envelope and never the `data` payload, which
@@ -41,8 +42,10 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
    time limit, so the Core page works when the model or every machine is
    broken.
 9. **Humans talk only to the Supervisor.** The web UI and CLI are read-only
-   for humans. The Supervisor is being rebuilt; until it returns, there is no
-   human path that changes the system.
+   for humans, except for observations: rediscovering the model (the Dynamics
+   page's button, `orchestra sd discover`) re-reads the metrics and may save a
+   model version, and changes no machine. The Supervisor is being rebuilt;
+   until it returns, there is no human path that changes the system.
 10. **The harness's session file is the only transcript.** Do not write a
     parallel log of agent messages; `orchestra.harness.read_transcript` parses
     whichever harness wrote it.

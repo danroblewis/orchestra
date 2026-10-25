@@ -1,12 +1,16 @@
-"""The Machines page's data: the machines seen on the event bus, and the network of which machine
-publishes and which listens for which event types.
+"""The Machines page's data: the machines seen on the event bus, their instances and how they are
+engaged, and the network of which machine publishes and which listens for which event types.
 
 Everything here is observed, not declared:
-- a **machine** is a CloudEvents ``source`` seen on the bus (plus Orchestra's own host);
-- **publishes**: the event types it emitted, with counts (all time and the last 24 hours);
-- **listens for**: until the bus adapters provide subscriptions the backend can list
-  (docs/proposals/empty-orchestra.md §3), a machine announces its own with an
-  ``orchestra.machine.subscribed`` event (``data.types``); the latest announcement stands;
+- a **machine** is the machine part of a CloudEvents ``source``; a source ``<machine>/<instance>``
+  is one **instance** of it (``baker/1``, ``baker/2``: one machine, two instances). Orchestra's own
+  host is a machine too;
+- **how it is engaged** (continuous, scheduled or ad hoc) and **what it listens for**: until the
+  bus adapters provide subscriptions the backend can list (docs/proposals/empty-orchestra.md §3),
+  an instance announces both when it starts, with ``orchestra.machine.started`` (``data.mode``,
+  ``data.listens_for``; ``orchestra.machine.subscribed`` with ``data.types`` is read too). The
+  latest announcement stands;
+- **publishes**: the event types its instances emitted, with counts (all time and the last day);
 - **metrics**: the series in the metrics store labelled ``machine=<id>``.
 
 The index reads the bus incrementally: the whole log once, then only what is new, so a refresh
@@ -19,9 +23,9 @@ import threading
 import time
 from collections import Counter, defaultdict, deque
 
-from ..events import HOST, event_time
+from ..events import HOST, event_time, machine_and_instance
 
-SUBSCRIBED = "orchestra.machine.subscribed"
+ANNOUNCE = ("orchestra.machine.started", "orchestra.machine.subscribed")
 DAY = 86400.0
 ACTIVE_S = 120.0
 
@@ -30,11 +34,11 @@ class MachineIndex:
     def __init__(self, events):
         self.events = events
         self.offset = 0
-        self.total: dict[str, Counter] = defaultdict(Counter)            # source -> type -> count
-        self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (source, type) -> times in the last day
-        self.subs: dict[str, list[str]] = {}
-        self.first: dict[str, float] = {}
-        self.last: dict[str, float] = {}
+        self.total: dict[str, Counter] = defaultdict(Counter)            # machine -> type -> count
+        self.recent: dict[tuple[str, str], deque] = defaultdict(deque)   # (machine, type) -> times in the last day
+        self.subs: dict[str, set] = defaultdict(set)                     # machine -> types its instances listen for
+        self.mode: dict[str, str] = {}
+        self.instances: dict[str, dict[str, dict]] = defaultdict(dict)  # machine -> instance -> first/last seen
         self.unattributed = 0
         self._lock = threading.Lock()
 
@@ -51,18 +55,21 @@ class MachineIndex:
             self.offset = end
 
     def _fold(self, ev: dict) -> None:
-        src = ev.get("source")
-        if not src:
+        machine, instance = machine_and_instance(ev.get("source"))
+        if not machine:
             self.unattributed += 1
             return
         t = event_time(ev) or 0.0
-        self.first.setdefault(src, t)
-        self.last[src] = max(self.last.get(src, 0.0), t)
-        if ev.get("type") == SUBSCRIBED:
-            self.subs[src] = list((ev.get("data") or {}).get("types") or [])
+        inst = self.instances[machine].setdefault(instance or "", {"first": t, "last": t})
+        inst["last"] = max(inst["last"], t)
+        if ev.get("type") in ANNOUNCE:
+            d = ev.get("data") or {}
+            self.subs[machine].update(d.get("listens_for") or d.get("types") or [])
+            if d.get("mode"):
+                self.mode[machine] = d["mode"]
             return
-        self.total[src][ev["type"]] += 1
-        self.recent[(src, ev["type"])].append(t)
+        self.total[machine][ev["type"]] += 1
+        self.recent[(machine, ev["type"])].append(t)
 
     def view(self, series: list[tuple[str, dict]], now: float | None = None) -> dict:
         now = now or time.time()
@@ -73,9 +80,9 @@ class MachineIndex:
             metrics: dict[str, set] = defaultdict(set)
             for name, labels in series:
                 if labels.get("machine"):
-                    extra = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()) if k not in ("project", "machine"))
+                    extra = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()) if k not in ("project", "machine", "instance"))
                     metrics[labels["machine"]].add(name + (f"{{{extra}}}" if extra else ""))
-            ids = sorted(set(self.total) | set(self.subs) | set(metrics) | {HOST}, key=lambda m: (m != HOST, m))
+            ids = sorted(set(self.total) | set(self.subs) | set(metrics) | set(self.instances) | {HOST}, key=lambda m: (m != HOST, m))
             machines = []
             for m in ids:
                 pubs = []
@@ -83,10 +90,14 @@ class MachineIndex:
                     q = self.recent.get((m, ty), ())
                     pubs.append({"type": ty, "count": n, "day": len(q),
                                  "per_min_10m": round(sum(1 for t in q if t >= now - 600) / 10, 2)})
-                machines.append({"id": m, "bootstrap": m == HOST, "publishes": pubs, "subscribes": self.subs.get(m, []),
-                                 "metrics": sorted(metrics.get(m, [])), "first_seen": self.first.get(m),
-                                 "last_seen": self.last.get(m),
-                                 "active": bool(self.last.get(m) and now - self.last[m] < ACTIVE_S)})
+                insts = [{"id": i or m, "first_seen": v["first"], "last_seen": v["last"], "active": now - v["last"] < ACTIVE_S}
+                         for i, v in sorted(self.instances[m].items())]
+                last = max((v["last"] for v in self.instances[m].values()), default=None)
+                first = min((v["first"] for v in self.instances[m].values()), default=None)
+                machines.append({"id": m, "bootstrap": m == HOST, "mode": self.mode.get(m), "publishes": pubs,
+                                 "subscribes": sorted(self.subs.get(m, ())), "metrics": sorted(metrics.get(m, [])),
+                                 "instances": [i for i in insts if i["id"] != m] if any(k for k in self.instances[m]) else [],
+                                 "first_seen": first, "last_seen": last, "active": bool(last and now - last < ACTIVE_S)})
             types = sorted({p["type"] for x in machines for p in x["publishes"]} | {t for x in machines for t in x["subscribes"]})
             edges = [{"from": x["id"], "to": p["type"], "kind": "publishes", "count": p["count"], "day": p["day"]}
                      for x in machines for p in x["publishes"]]

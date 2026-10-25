@@ -40,10 +40,19 @@ This document is the design of what exists. `AGENTS.md` lists the rules that mus
 
 ## 2. Machines and events
 
-A **machine** is identified by the CloudEvents `source` it publishes under. It may publish to the
+A **machine** is identified by the CloudEvents `source` it publishes under. Several instances of
+one machine publish as `<machine>/<instance>` (`baker/1`, `baker/2`: one machine, two instances)
+and label their metrics `machine=<machine>, instance=<instance>`. A machine may publish to the
 bus, listen to it, write metrics, all of these, or none (a machine that only changes measures
 others write is still a machine). Orchestra's own machine is the **bootstrap host**,
 `orchestra-host` (section 5).
+
+**How a machine is engaged** is one of three modes, a property of how it is run, not of what it
+is: **continuous** (long-running instances that take work as it comes), **scheduled** (run by
+the clock) or **ad hoc** (a fresh instance per piece of work). An instance announces its mode and
+what it listens for when it starts (`orchestra.machine.started`, `data.mode`,
+`data.listens_for`). Running scheduled and ad hoc machines is the host's job (its clock and
+process driver); neither is built yet.
 
 Every event carries the **CloudEvents 1.0** envelope (`orchestra.events.envelope`):
 
@@ -63,7 +72,8 @@ Events written before the envelope (flat records with `ts`) stay readable; `even
 
 **Subscriptions.** Until the bus adapters provide subscriptions with leases
 (`docs/proposals/empty-orchestra.md` §3), a machine reads the bus by offset and announces what it
-listens for with an `orchestra.machine.subscribed` event (`data.types`). The Machines page draws
+listens for in `orchestra.machine.started` (the older `orchestra.machine.subscribed` with
+`data.types` is read too). The Machines page draws
 the graph of publishers, event types and listeners from what it observes.
 
 ---
@@ -283,13 +293,18 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
 
 - **Dashboard:** the machines active on the bus; the host's CPU, GPU, memory and disk; a Core
   status strip.
-- **Machines:** every machine seen on the bus, the event map (machines and the event types they
+- **Machines:** every machine seen on the bus with its instances and how it is engaged, the event map (machines and the event types they
   publish and listen for), its feedback loops, and each machine's metrics.
 - **Dynamics:** the model as a stock-and-flow network (stocks with their level, tank fill and
   sparkline; a valve per flow with its equation and machine; influences as dashed +/− links),
   its feedback loops marked balancing or reinforcing, the stocks' history, and drawers with each
   stock's and flow's history (a flow's observed rate against its equation's prediction). It shows
   the host's latest discovery and steps through saved versions.
+
+The model's graph frames **the system**: stocks inside, sources and sinks outside, so what
+crosses the frame is what crosses the boundary (where simulations will set the outside
+conditions). A **rediscover now** button reruns discovery in the background (an observation: it
+re-reads the metrics and may save a version, as the host does every 5 minutes).
 
 Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). Loops are
 elementary cycles; clicking one highlights it. Pages read only the web server's background caches

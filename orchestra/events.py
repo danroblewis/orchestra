@@ -6,7 +6,8 @@ by ``[events] url`` in ``orchestra.toml`` or the ``ORCHESTRA_EVENTS_URL`` enviro
 
 Every event published now carries the **CloudEvents** envelope (``specversion`` 1.0):
 
-- ``id``, ``type``, ``source`` (the machine that emitted it), ``time`` (RFC 3339);
+- ``id``, ``type``, ``source`` (the machine that emitted it, or ``<machine>/<instance>`` for one
+  of several instances of a machine), ``time`` (RFC 3339);
 - optional ``subject`` (what it is about), ``correlationid`` and ``causationid`` (extensions);
 - ``data``: the payload, which belongs to the machines that use it; Orchestra never reads it.
 
@@ -61,8 +62,17 @@ def event_time(ev: dict) -> float | None:
 
 
 def event_source(ev: dict) -> str | None:
-    """The machine that emitted an event, when the event says so (CloudEvents ``source``)."""
+    """The machine instance that emitted an event, when the event says so (CloudEvents ``source``)."""
     return ev.get("source")
+
+
+def machine_and_instance(source: str | None) -> tuple[str | None, str | None]:
+    """A source names a machine, or one instance of it as ``<machine>/<instance>`` (``baker/2``:
+    the second of several bakers, all one machine)."""
+    if not source:
+        return None, None
+    machine, _, instance = source.partition("/")
+    return machine, instance or None
 
 
 class Events:

@@ -47,7 +47,8 @@
 <nav id="nav"><a href="/">Dashboard</a><a href="/machines">Machines</a><a href="/dynamics" class="on">Dynamics</a><a href="/core">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="dynwrap">
   <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (AI agents and programs) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
-  <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span></div>
+  <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
+    <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now from the last hour of metrics (the host also does this every 5 minutes)">rediscover now</button></span></div>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
@@ -133,6 +134,9 @@ function draw() {
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
     if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics", height: 620,
+      // the model's boundary: stocks inside; sources and sinks (clouds) outside, where a simulation
+      // will set the conditions the system runs under
+      boundary: { inside: (n) => n.kind === "box", label: "the system · outside: sources and sinks" },
       tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
       onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;
@@ -231,6 +235,24 @@ function step(d) {
   if (!n) return;
   VERSION = n.version;
   load();
+}
+// rediscover now: in the background on the server; the page waits for it, then shows the result
+async function rediscover() {
+  const btn = $("redisc"), note = $("redisc-note");
+  btn.disabled = true; note.textContent = "discovering from the last hour of metrics…";
+  try {
+    await fetch("/api/dynamics/rediscover", { method: "POST" });
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const st = await (await fetch("/api/dynamics/rediscover")).json();
+      if (st.running) continue;
+      if (st.error) note.textContent = "failed: " + st.error;
+      else { const r = st.result || {}; note.textContent = `found ${r.stocks} stocks, ${r.flows} flows · ${r.version ? "the structure changed: saved as version " + r.version : "structure unchanged"}`; }
+      VERSION = null; await load(); Live.refresh();
+      break;
+    }
+  } catch (e) { note.textContent = "failed: " + e; }
+  btn.disabled = false;
 }
 async function load() {
   try {

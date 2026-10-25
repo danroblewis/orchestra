@@ -83,7 +83,7 @@ def _title(s: Series) -> str:
 def machine_of(s: Series) -> str | None:
     """The machine a series belongs to: its ``machine`` label, or, for Orchestra's event counters,
     the ``source`` that emitted the events (``unknown`` is no machine)."""
-    who = s.labels.get("machine") or s.labels.get("source")
+    who = s.labels.get("machine") or (s.labels.get("source") or "").partition("/")[0]   # baker/2 is the machine baker
     return who if who and who != "unknown" else None
 
 

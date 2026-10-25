@@ -54,7 +54,10 @@ const NetGraph = (() => {
   }
 
   // ---- the renderer ----
-  function create(container, { key, height = 600, isolateHops = 1, onClick, tip } = {}) {
+  // ``boundary``: {inside: node => bool, label}: a frame around the nodes inside (the system),
+  // with every other node kept outside it, so what crosses the frame is visibly what crosses the
+  // system's boundary (its sources, sinks and outside conditions).
+  function create(container, { key, height = 600, isolateHops = 1, onClick, tip, boundary } = {}) {
     container.innerHTML = "";
     const svgEl = document.createElementNS(NS, "svg");
     svgEl.setAttribute("class", "netgraph");
@@ -63,8 +66,48 @@ const NetGraph = (() => {
     const svg = d3.select(svgEl).attr("viewBox", `0 0 ${W()} ${H}`).style("height", H + "px");
     const defs = svg.append("defs");
     defs.html(`<linearGradient id="ng-halo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="60" y2="60"><stop offset="0" stop-color="#60a5fa"/><stop offset=".5" stop-color="#c084fc"/><stop offset="1" stop-color="#22c55e"/></linearGradient>`);
-    const root = svg.append("g"), gEdges = root.append("g"), gLabels = root.append("g"), gNodes = root.append("g");
-    svg.call(d3.zoom().scaleExtent([0.25, 4]).filter((ev) => ev.type === "wheel" || !ev.target.closest(".ng-node")).on("zoom", (ev) => root.attr("transform", ev.transform)));
+    const root = svg.append("g"), gFrame = root.append("g"), gEdges = root.append("g"), gLabels = root.append("g"), gNodes = root.append("g");
+    const PAD = 34;
+    const frameRect = gFrame.append("rect").attr("class", "ng-frame").attr("rx", 18).style("display", "none");
+    const frameLabel = gFrame.append("text").attr("class", "ng-frame-label").style("display", "none");
+    // the frame: the box around the inside nodes, padded
+    function frameBox() {
+      if (!boundary) return null;
+      const ins = NODES.filter((n) => boundary.inside(n) && n.x !== undefined);
+      if (!ins.length) return null;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const n of ins) { const s = size(n), hw = s.r || s.w / 2, hh = s.r || s.h / 2; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+      return { x0: x0 - PAD, y0: y0 - PAD - 12, x1: x1 + PAD, y1: y1 + PAD };
+    }
+    // a force that pushes outside nodes out of the frame, to its nearest side
+    function keepOutside(alpha) {
+      const b = frameBox(); if (!b) return;
+      for (const n of NODES) {
+        if (boundary.inside(n) || n.fx != null) continue;
+        const r = (size(n).r || 14) + 6;
+        if (n.x > b.x0 - r && n.x < b.x1 + r && n.y > b.y0 - r && n.y < b.y1 + r) {
+          const d = [[n.x - (b.x0 - r), -1, 0], [(b.x1 + r) - n.x, 1, 0], [n.y - (b.y0 - r), 0, -1], [(b.y1 + r) - n.y, 0, 1]].sort((a, c) => a[0] - c[0])[0];
+          n.vx += d[1] * d[0] * alpha * 0.9; n.vy += d[2] * d[0] * alpha * 0.9;
+        }
+      }
+    }
+    let userZoomed = false;
+    const zoom = d3.zoom().scaleExtent([0.2, 4]).filter((ev) => ev.type === "wheel" || !ev.target.closest(".ng-node"))
+      .on("zoom", (ev) => { root.attr("transform", ev.transform); if (ev.sourceEvent) userZoomed = true; });
+    svg.call(zoom).on("dblclick.zoom", null);
+    // fit everything in view: after a new layout settles (unless the viewer has zoomed), and on demand
+    function fit(animate = true) {
+      if (!NODES.length || NODES.some((n) => n.x === undefined)) return;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const n of NODES) { const s = size(n), hw = (s.r || s.w / 2) + 40, hh = (s.r || s.h / 2) + 40; x0 = Math.min(x0, n.x - hw); x1 = Math.max(x1, n.x + hw); y0 = Math.min(y0, n.y - hh); y1 = Math.max(y1, n.y + hh); }
+      const w = W(), k = Math.min(w / (x1 - x0), H / (y1 - y0), 1.4);
+      const t = d3.zoomIdentity.translate(w / 2 - k * (x0 + x1) / 2, H / 2 - k * (y0 + y1) / 2).scale(k);
+      (animate ? svg.transition().duration(400) : svg).call(zoom.transform, t);
+    }
+    const fitBtn = document.createElement("button");
+    fitBtn.className = "ctl ng-fit"; fitBtn.textContent = "fit"; fitBtn.title = "fit the whole graph in view";
+    fitBtn.onclick = () => { userZoomed = false; fit(); };
+    container.style.position = "relative"; container.appendChild(fitBtn);
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(POS_KEY(key)) || "{}"); } catch (e) {}
     const markers = new Set();
@@ -179,14 +222,21 @@ const NetGraph = (() => {
         .force("link", d3.forceLink(EDGES).id((d) => d.id).distance((e) => e.distance || 110).strength((e) => e.strength ?? 0.6))
         .force("charge", d3.forceManyBody().strength((n) => n.charge ?? -480))
         .force("center", d3.forceCenter(w / 2, H / 2))
-        .force("collide", d3.forceCollide((n) => { const s = size(n); return (s.r || Math.max(s.w, s.h) / 2) + 24; }));
+        .force("collide", d3.forceCollide((n) => { const s = size(n); return (s.r || Math.max(s.w, s.h) / 2) + 24; }))
+        .force("boundary", boundary ? keepOutside : null);
       if (!structural && NODES.every((n) => n.x !== undefined)) sim.alpha(0.02);   // live update: barely move
       else if (NODES.every((n) => n.x !== undefined)) sim.alpha(0.15);
-      sim.on("tick", tick).on("end", save);
+      sim.on("tick", tick).on("end", () => { save(); if (structural && !userZoomed) fit(); });
       tick();
       if (pinned) highlight(pinned.nodes, pinned.edges);
     }
     function tick() {
+      const b = frameBox();
+      frameRect.style("display", b ? null : "none"); frameLabel.style("display", b ? null : "none");
+      if (b) {
+        frameRect.attr("x", b.x0).attr("y", b.y0).attr("width", b.x1 - b.x0).attr("height", b.y1 - b.y0);
+        frameLabel.attr("x", b.x0 + 14).attr("y", b.y0 + 16).text(boundary.label || "the system");
+      }
       const sel = gEdges.selectAll("g.ng-edge");
       for (const links of [false, true]) {       // edges first: links aim at their middles
         sel.filter((e) => !!e.toEdge === links).each(function (e) {
@@ -237,7 +287,7 @@ const NetGraph = (() => {
         if (r && r > 0.01) g.append("path").attr("class", "ng-flowdash").attr("d", g.select(".ng-line").attr("d")).style("animation-duration", `${Math.max(0.25, Math.min(6, 8 / Math.sqrt(r))).toFixed(2)}s`);
       });
     }
-    return { render, highlight, refreshNodes, setRates, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
+    return { render, highlight, refreshNodes, setRates, fit, edgesBetween: (ids) => EDGES.filter((e) => ids.includes(e.source.id) && ids.includes(e.target.id)) };
   }
 
   // a clickable list of loops under a graph: clicking one highlights it; clicking it again clears

@@ -215,3 +215,6 @@ svg.netgraph { display:block; width:100%; min-height:0; font-size:11px; cursor:g
 .ng-loop.on { border-color:#fcd34d; background:#2a2208 } .ng-loop b { color:#fcd34d }
 .ng-pol { display:inline-block; min-width:18px; text-align:center; font-weight:800; border-radius:4px; margin-right:6px; padding:0 4px }
 .ng-pol.B { background:#1e3a5f; color:#93c5fd } .ng-pol.R { background:#4c1d1d; color:#fca5a5 }
+.ng-frame { fill:rgba(148,163,184,.035); stroke:var(--muted); stroke-width:1.4; stroke-dasharray:9 6; pointer-events:none }
+.ng-frame-label { fill:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; pointer-events:none }
+.ng-fit { position:absolute; top:8px; right:8px; z-index:2 }

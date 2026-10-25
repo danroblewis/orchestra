@@ -4,6 +4,7 @@ changes the system (AGENTS.md rule 7)."""
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from pathlib import Path
 
@@ -109,6 +110,34 @@ def create_app(project: Project) -> FastAPI:
     @app.get("/api/dynamics/model")
     def dynamics_model(version: int | None = None) -> dict:
         return model_view(project, version, bg.levels, bg.errors.get("levels"))
+
+    rediscovery: dict = {"running": False}
+
+    @app.post("/api/dynamics/rediscover")
+    def dynamics_rediscover() -> dict:
+        """Rediscover the model now, in the background. An observation, not a change to the
+        system: it re-reads the metrics store, as the host does every few minutes."""
+        if rediscovery["running"]:
+            return {"ok": True, "started": False, "running": True}
+        if core.metrics is None:
+            return {"ok": False, "error": "the metrics store could not be opened"}
+
+        def go():
+            from ..sd.rediscover import rediscover
+            try:
+                r = rediscover(project, core.metrics, note="discovered on request: the structure changed")
+                rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version}, error=None)
+            except Exception as e:  # noqa: BLE001 - reported to the page
+                rediscovery.update(error=f"{type(e).__name__}: {e}")
+            finally:
+                rediscovery["running"] = False
+        rediscovery["running"] = True
+        threading.Thread(target=go, name="rediscover", daemon=True).start()
+        return {"ok": True, "started": True, "running": True}
+
+    @app.get("/api/dynamics/rediscover")
+    def dynamics_rediscover_status() -> dict:
+        return {"ok": True, **rediscovery}
 
     @app.get("/api/dynamics/history")
     def dynamics_history() -> dict:
