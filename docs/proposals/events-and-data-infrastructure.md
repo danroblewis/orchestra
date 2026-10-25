@@ -129,7 +129,7 @@ directly.
 | System | Why |
 |---|---|
 | Kafka | Operations far beyond the need (a JVM cluster for far under 100 events a second) |
-| RabbitMQ | Queues are consumed and gone; we need replay |
+| RabbitMQ (classic queues) | Messages are consumed and gone; we need replay. RabbitMQ **Streams** (3.9+) do replay, and are a fair backend. |
 | Redis Streams | Weaker durability (fine as a cache) |
 | Prometheus alone | Built for scraping; awkward backfill and out-of-order writes, short retention |
 
@@ -169,7 +169,49 @@ Choose A for a single service and SQL.
 - **Rule 2 (no zombies)** needs a lease or heartbeat once agents run on other machines, because a
   dead remote process can't move its own ticket back.
 
-## 6. Open questions
+## 6. Decided direction for the event bus (2026-10-24)
+
+- **A real `EventBus` interface** in Orchestra: append or publish, subscribe, replay from an
+  offset, per-subject ordering, consumer groups.
+  - A local implementation is the default (the current file log).
+  - The loop, probes and agents' `wake_on` go through the interface only.
+- **End-to-end acceptance tests against real backends:** Redis (Streams) and RabbitMQ (Streams),
+  maybe Kafka.
+  - The same suite runs against every backend, as the loop e2e tests run against every harness
+    fake.
+  - Backends run in containers.
+  - The tests are opt-in, by environment variable, like the existing acceptance tests: never
+    required for the default suite.
+  - NATS JetStream stays a candidate, since §5 recommends it.
+- **The interface must hold what Orchestra needs from any backend:**
+  - replay for crash recovery and for re-deriving flows;
+  - the cause-chain depth limit;
+  - emission rate limits;
+  - our own subject namespace (`orchestra.*`), kept separate from company topics.
+- **The event log is the observation source for flows.** Every event that moves something between
+  stocks is a flow observation, so the bus is where system dynamics data comes from.
+
+## 7. Candidate first version of the system dynamics core (not decided)
+
+A way to start without breaking what runs. Each step keeps the current loop working.
+
+1. **`EventBus` interface and backends** (§6).
+2. **Model types and a model store:** stocks, flows, machines, attributions, eras.
+   - Declare Orchestra's own factory as a model: ticket states as stocks, transitions as flows,
+     the worker, reviewer and gate as machines attributed to their flows.
+   - Data only. The loop still runs as today.
+3. **An observer:**
+   - derives flow counts per interval, and stock levels, from the event log;
+   - samples levels directly where it can;
+   - writes both to a `MetricsStore` (files first).
+4. **A first fitter:** the simplest strategies brought over from SD Lab (constant and
+   proportional rates per flow, per era), to fit Orchestra's own flows from its own history.
+5. **Validation of machine intent:** a machine's declared expected effect against the fitted
+   equations across its era.
+6. **Only then,** let the model drive behaviour: the loop as one set of machines on flows (the
+   loop-as-event-bus topic in `teams-and-roles.md`).
+
+## 8. Open questions
 
 1. NATS + VictoriaMetrics, or Postgres + TimescaleDB? Recommendation B, not yet decided.
 2. Which machine hosts the bus and the time-series database, and what are the retention and backup

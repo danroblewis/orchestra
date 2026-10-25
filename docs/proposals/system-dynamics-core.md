@@ -15,6 +15,27 @@ Builds on:
 
 ---
 
+## Decided, 2026-10-24 (supersedes anything below that conflicts)
+
+1. **Orchestra is system-dynamics-first, now and permanently.** It isn't a task management system.
+   Task management, agent invocation, review and the merge gate are **use cases**, implemented in
+   the framework by adding **machines** to the **factory** (the model).
+2. **Machines are attributed to flows.** A machine may be attributed to several flows. A machine
+   doesn't define a flow's equation or values.
+3. **Flow equations are observed, not proclaimed.** They are fitted or discovered from the actual
+   data: events and sampled levels. A machine's *intended* effect on a flow is a hypothesis.
+   It's validated by comparing the observed equations before and after the machine is attributed
+   (an era), never asserted.
+4. **The SD Lab work's value is its strategies for inferring system dynamics equations from raw
+   data.** Those strategies are what moves into Orchestra (open: as `orchestra.sd` or as a
+   dependency). The SD Lab editor and ladder stay where they are.
+5. **The work happens in the Orchestra application** (this repository), not in `sdlab/`.
+
+How to refactor the current task system into this shape is **not decided**. A candidate first
+version is in `events-and-data-infrastructure.md` §7.
+
+---
+
 ## 1. The claim
 
 Orchestra's core today is a **task queue with a state machine and a merge gate**. That's a
