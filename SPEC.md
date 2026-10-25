@@ -149,9 +149,14 @@ that join them; its flows are matched back to the counters and their machines
 effects) are kept in each equation's `spec`, and its hidden stocks are drawn dashed.
 
 Conservation (`sd/discover.py`):
-1. every series is sampled onto a grid of steps;
+1. every series is sampled onto a grid of steps. A series written on a schedule that is no
+   longer written at the end of the window (its machine is gone or was replaced) is left out.
+   Counters that move together in all but 3% of steps (a machine's own count and Orchestra's
+   count of the event it publishes) are one: the machine's own is kept;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
-   (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). The counters are found by least squares on all
+   (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). A level that only takes two values is
+   usually a flag (busy or not) and is a stock only when its balance is exact in 97% of steps (a
+   shelf that holds nothing or one item). The counters are found by least squares on all
    counters, rounded to ±1, then a local search (change one coefficient, or swap one counter for
    another) with a penalty per counter;
 3. a counter that leaves one stock and enters another is a **flow** between them; otherwise it
