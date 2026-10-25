@@ -83,6 +83,18 @@ class Machine:
         dt, self._last = (now - self._last) / 60, now
         return dt
 
+    def run(self, step) -> None:
+        """Tick forever. A failed tick (the bus or the store slow or down) is logged and the next
+        one tries again; the machine keeps its state. Note: an event published in a tick that
+        failed afterwards is not retried, so a failure can lose a little bookkeeping."""
+        while True:
+            dt = self.tick()
+            try:
+                step(dt)
+            except Exception as e:  # noqa: BLE001 - a toy machine keeps going
+                print(f"{time.strftime('%H:%M:%S')} {self.name}: tick failed: {type(e).__name__}: {e}", flush=True)
+                time.sleep(2)
+
     def inbox(self) -> list[dict]:
         evs, self.offset = self.events.read(self.offset, limit=10_000)
         return [e for e in evs if e.get("type") in self.listens_for]
@@ -97,68 +109,74 @@ class Machine:
 
     def resume_counters(self, *series: str) -> None:
         """Counters continue from what the store already holds, so a restart doesn't reset them."""
-        lab = {"project": self.project.key, "machine": self.name}
         for s in series:
-            last = self.metrics.latest(s, lab)
-            self.counters[s] = last[1] if last else 0.0
+            last = self.last_value(s)
+            self.counters[s] = last if last is not None else 0.0
+
+    def last_value(self, series: str) -> float | None:
+        """The series' last stored value, however long ago (``latest`` only looks back minutes)."""
+        pts = self.metrics.raw(series, {"project": self.project.key, "machine": self.name}, start=time.time() - 7 * 86400)
+        return pts[-1][1] if pts else None
 
 
 def oven() -> None:
     m = Machine("oven", ["bread.ordered"])
     m.resume_counters("bakery_loaves_baked_total", "bakery_orders_filled_total")
-    pending = 0
-    while True:
-        dt = m.tick()
+    st = {"pending": 0}
+
+    def step(dt: float) -> None:
         for ev in m.inbox():
-            pending += int((ev.get("data") or {}).get("loaves", 0))
+            st["pending"] += int((ev.get("data") or {}).get("loaves", 0))
         base = DAY if int(time.time() // (SHIFT_MIN * 60)) % 2 == 0 else NIGHT
-        baked = poisson((base + ORDER_BAKE * pending) * dt)
-        filled = min(pending, baked)
-        pending -= filled
+        baked = poisson((base + ORDER_BAKE * st["pending"]) * dt)
+        filled = min(st["pending"], baked)
+        st["pending"] -= filled
         if baked:
             m.events.publish("bread.baked", {"loaves": baked})
             m.count("bakery_loaves_baked_total", baked)
             m.count("bakery_orders_filled_total", filled)
-        m.write({"bakery_oven_orders_pending": pending})
+        m.write({"bakery_oven_orders_pending": st["pending"]})
+    m.run(step)
 
 
 def shop() -> None:
     m = Machine("shop", ["bread.baked"])
     m.resume_counters("bakery_loaves_sold_total", "bakery_loaves_discarded_total", "bakery_loaves_ordered_total")
-    last = m.metrics.latest("bakery_shelf_loaves", {"project": m.project.key, "machine": "shop"})
-    shelf = int(last[1]) if last else 0
-    ordered_at = 0.0
-    while True:
-        dt = m.tick()
+    last = m.last_value("bakery_shelf_loaves")
+    st = {"shelf": int(last) if last is not None else 0, "ordered_at": 0.0}
+
+    def step(dt: float) -> None:
         for ev in m.inbox():
-            shelf += int((ev.get("data") or {}).get("loaves", 0))
-        sold = min(shelf, poisson(SELL * shelf * dt))
-        shelf -= sold
-        stale = min(shelf, poisson(STALE * shelf * dt))
-        shelf -= stale
+            st["shelf"] += int((ev.get("data") or {}).get("loaves", 0))
+        sold = min(st["shelf"], poisson(SELL * st["shelf"] * dt))
+        st["shelf"] -= sold
+        stale = min(st["shelf"], poisson(STALE * st["shelf"] * dt))
+        st["shelf"] -= stale
         if sold:
             m.events.publish("bread.sold", {"loaves": sold})
             m.count("bakery_loaves_sold_total", sold)
         if stale:
             m.events.publish("bread.discarded", {"loaves": stale})
             m.count("bakery_loaves_discarded_total", stale)
-        if shelf < LOW_SHELF and time.time() - ordered_at > 60:     # at most one order a minute
+        if st["shelf"] < LOW_SHELF and time.time() - st["ordered_at"] > 60:     # at most one order a minute
             m.events.publish("bread.ordered", {"loaves": ORDER_SIZE})
             m.count("bakery_loaves_ordered_total", ORDER_SIZE)
-            ordered_at = time.time()
-        m.write({"bakery_shelf_loaves": shelf})
+            st["ordered_at"] = time.time()
+        m.write({"bakery_shelf_loaves": st["shelf"]})
+    m.run(step)
 
 
 def weather() -> None:
     m = Machine("weather", [])
-    temp, n = 15.0, 0
-    while True:
-        m.tick()
-        temp += random.gauss(0, 0.15) + (15.0 - temp) * 0.01
-        n += 1
-        if n % 10 == 0:
-            m.events.publish("weather.reported", {"celsius": round(temp, 2)})
-        m.write({"weather_temperature_celsius": round(temp, 2)})
+    st = {"temp": 15.0, "n": 0}
+
+    def step(dt: float) -> None:
+        st["temp"] += random.gauss(0, 0.15) + (15.0 - st["temp"]) * 0.01
+        st["n"] += 1
+        if st["n"] % 10 == 0:
+            m.events.publish("weather.reported", {"celsius": round(st["temp"], 2)})
+        m.write({"weather_temperature_celsius": round(st["temp"], 2)})
+    m.run(step)
 
 
 if __name__ == "__main__":

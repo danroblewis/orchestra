@@ -22,7 +22,7 @@ def poisson(rng, mean):
         k += 1
 
 
-def simulate(store, minutes=90, seed=1, t0=1_800_000_000.0):
+def simulate(store, minutes=90, seed=1, t0=1_800_000_000.0, outage=None):
     rng = random.Random(seed)
     lab = lambda m: {"project": "p", "machine": m}
     shelf = pending = 0
@@ -32,6 +32,8 @@ def simulate(store, minutes=90, seed=1, t0=1_800_000_000.0):
     for i in range(minutes * 60):
         t, dt = t0 + i, 1 / 60
         base = DAY if (i // (SHIFT_MIN * 60)) % 2 == 0 else NIGHT     # the oven's shifts
+        if outage and outage[0] <= i < outage[1]:
+            continue          # the machines are down: nothing happens and nothing is written
         b = poisson(rng, (base + ORDER_BAKE * pending) * dt)
         f = min(pending, b)
         pending -= f
@@ -47,6 +49,8 @@ def simulate(store, minutes=90, seed=1, t0=1_800_000_000.0):
             ordered += ORDER
             last_order = t
         temp += rng.gauss(0, 0.15) + (15 - temp) * 0.01
+        if outage and i == outage[1]:
+            sold = stale = ordered = 0          # the shop restarts and its counters start again from zero
         pts += [Point("bakery_loaves_baked_total", baked, t, lab("oven")), Point("bakery_orders_filled_total", filled, t, lab("oven")),
                 Point("bakery_oven_orders_pending", pending, t, lab("oven")), Point("bakery_shelf_loaves", shelf, t, lab("shop")),
                 Point("bakery_loaves_sold_total", sold, t, lab("shop")), Point("bakery_loaves_discarded_total", stale, t, lab("shop")),
@@ -97,3 +101,17 @@ def test_nothing_to_find_in_noise(tmp_path):
     m = discover(store.dump("", {"project": "p"}), start=1_800_000_000, end=1_800_000_600, step=10)
     assert m.stocks == [] and m.flows == []
     assert set(m.discovery["left_out"]) == {"noise_level", "noise_total"}
+
+
+def test_an_outage_is_missing_data_not_a_rate_of_zero(tmp_path):
+    """While the machines are down nothing is written; levels must not be carried through the gap
+    as if the shelf sat still with no sales, and counters that restart from zero are resets."""
+    store = FileMetrics(tmp_path / "m.jsonl")
+    start, end = simulate(store, minutes=100, outage=(40 * 60, 55 * 60))
+    m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
+    assert {s.id for s in m.stocks} == {"bakery_shelf_loaves", "bakery_oven_orders_pending"}
+    f = {x.id: x for x in m.flows}
+    assert "bakery_loaves_sold_total" in f, "the shop's counters still count after their reset"
+    sold = f["bakery_loaves_sold_total"].current()
+    assert abs(sold.quality["proportional_k"] - SELL) < 0.03, sold.quality
+    assert 80 < m.discovery["live_minutes"] < 90, m.discovery["live_minutes"]

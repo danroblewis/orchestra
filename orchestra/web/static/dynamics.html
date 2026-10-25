@@ -89,8 +89,10 @@ function draw() {
   const color = (cls) => cls.startsWith("st-") ? `var(--${cls.slice(3)})` : cls.startsWith("m-") ? mcolor(cls.slice(2)) : "var(--fg)";
   $("diagram").innerHTML = '<svg id="sd"></svg>';
   // flow labels sit outside the stocks' bounds: leave room for them, so nothing is clipped
-  const vb = SDDiagram.bounds(P, D.flows, SDDiagram.BOX, 60);
-  SDDiagram.draw($("sd"), D, P, { color, viewBox: { x: vb.x - 140, y: vb.y - 30, w: vb.w + 280, h: vb.h + 60 } });
+  // boxes as wide as the longest stock name needs
+  const box = { w: Math.max(150, ...D.stocks.map((s) => (s.name || s.id).length * 8.2 + 24)), h: 64 };
+  const vb = SDDiagram.bounds(P, D.flows, box, 60);
+  SDDiagram.draw($("sd"), D, P, { color, box, viewBox: { x: vb.x - 140, y: vb.y - 30, w: vb.w + 280, h: vb.h + 60 } });
   // legend: machines, hover to isolate their flows
   const used = [...new Set(D.flows.map((f) => f.cls.slice(2)))];
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
@@ -137,17 +139,26 @@ function versionBar() {
   const m = MODEL, vs = m.versions || [], i = vs.findIndex((v) => v.version === m.version);
   $("mname").textContent = m.name;
   if (!vs.length) { $("ver").innerHTML = ""; return; }
+  if (m.live && VERSION === null) {
+    $("ver").innerHTML = `<button ${!vs.length ? "disabled" : ""} onclick="step(-1)" title="saved versions">‹</button>
+      <span><b>latest discovery</b> · ${m.as_of ? ago(Date.now() / 1000 - m.as_of) + " ago" : ""}</span>
+      <span class="muted">rediscovered by the host every few minutes; saved as a version when its structure changes (now version ${m.current ?? "—"})${m.discovery && m.discovery.live_minutes != null ? ` · fitted over ${m.discovery.live_minutes} min when every series involved was being written` : ""}</span>`;
+    return;
+  }
   const v = vs[i] || {}, past = m.version !== m.current;
   const when = v.saved_at ? new Date(v.saved_at * 1000).toLocaleString() : "";
   $("ver").innerHTML = `<button ${i <= 0 ? "disabled" : ""} onclick="step(-1)" title="older version">‹</button>
     <span>version <b>${m.version}</b> of ${vs.length}${past ? ' <span class="past">· a past version</span>' : " · current"}</span>
-    <button ${i >= vs.length - 1 ? "disabled" : ""} onclick="step(1)" title="newer version">›</button>
+    <button onclick="step(1)" title="${i >= vs.length - 1 ? "the latest discovery" : "newer version"}">›</button>
     <span class="muted" title="${esc(when)}">${esc(v.note || "")}${when ? " · " + esc(ago(Date.now() / 1000 - v.saved_at)) + " ago" : ""}</span>`;
 }
 function step(d) {
-  const vs = MODEL.versions, i = vs.findIndex((v) => v.version === MODEL.version), n = vs[i + d];
+  const vs = MODEL.versions;
+  if (MODEL.live && VERSION === null) { if (d < 0 && vs.length) { VERSION = vs[vs.length - 1].version; load(); } return; }
+  const i = vs.findIndex((v) => v.version === MODEL.version), n = vs[i + d];
+  if (!n && d > 0) { VERSION = null; load(); return; }          // past the newest version: back to the latest discovery
   if (!n) return;
-  VERSION = n.version === MODEL.current ? null : n.version;
+  VERSION = n.version;
   load();
 }
 async function load() {

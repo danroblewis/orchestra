@@ -6,7 +6,10 @@ In an empty Orchestra it does little, on purpose:
   ``orchestra_host_up`` to the metrics store, so the host is observed like any machine;
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
   and source (``orchestra.collectors``). It replays the whole bus once at start, so the counters
-  continue from the full history, then follows the bus.
+  continue from the full history, then follows the bus;
+- it rediscovers the model in the background (``orchestra.sd.discover``, over the last
+  ``DISCOVER_WINDOW_S``, every ``DISCOVER_EVERY_S``), caches the result for readers, and saves a
+  new model version when the structure changed.
  Hosting drivers and starting the machines that
 packages declare come later (docs/proposals/empty-orchestra.md)."""
 
@@ -26,6 +29,9 @@ from .metrics import Point
 from .metrics import for_project as metrics_for
 
 HOST_LOG_MAX = 5_000_000
+DISCOVER_EVERY_S = 300.0
+DISCOVER_WINDOW_S = 3600.0
+DISCOVER_STEP_S = 30.0
 
 
 class Host:
@@ -75,6 +81,29 @@ class Host:
             except Exception as e:  # noqa: BLE001 - keep following; the next read retries
                 self.log(f"collector: {type(e).__name__}: {e}")
 
+    def _discover(self) -> None:
+        """Rediscover the model every interval; cache it; version it when its structure changed."""
+        from .sd.discover import discover, structure
+        from .sd.store import ModelStore
+
+        store = ModelStore.for_state(self.project.state_dir)
+        wait = 5.0                                    # soon after starting, then every interval
+        while not self._stop.wait(wait):
+            wait = DISCOVER_EVERY_S
+            try:
+                end = time.time()
+                dump = metrics_for(self.project).dump("", {"project": self.project.key})
+                m = discover(dump, start=end - DISCOVER_WINDOW_S, end=end, step=DISCOVER_STEP_S)
+                store.write_discovery(m, at=end)
+                cur = store.load()
+                if m.stocks and (cur is None or structure(cur) != structure(m)):
+                    n = store.save(m, note="discovered: the structure changed")
+                    self.log(f"discovery: {len(m.stocks)} stocks, {len(m.flows)} flows; structure changed, saved as version {n}")
+                else:
+                    self.log(f"discovery: {len(m.stocks)} stocks, {len(m.flows)} flows; structure unchanged")
+            except Exception as e:  # noqa: BLE001 - try again next interval
+                self.log(f"discovery: {type(e).__name__}: {e}")
+
     def stop(self, *_):
         self._stop.set()
 
@@ -85,6 +114,7 @@ class Host:
         self.log(f"host started (pid {os.getpid()}) for {self.project.key}")
         if not once:
             threading.Thread(target=self._collect, name="collector", daemon=True).start()
+            threading.Thread(target=self._discover, name="discovery", daemon=True).start()
         try:
             while not self._stop.is_set():
                 self._beat(1.0)

@@ -1,6 +1,6 @@
-"""The Dynamics page's data: the system dynamics model (there is one) at its current version or a
-past one, with each stock's current level from the metrics store and each flow's equation and the
-machines attributed to it.
+"""The Dynamics page's data: the system dynamics model (there is one), as the host last discovered
+it or at a past version, with each flow's equation and the machines attributed to it. Nothing here
+queries the metrics store or discovers anything: it reads files and the web server's caches.
 
 Version 1 renders the model and steps through its history. Simulation, prospective versions,
 comparisons with observed metrics, collectors and sub-models come later
@@ -8,39 +8,47 @@ comparisons with observed metrics, collectors and sub-models come later
 
 from __future__ import annotations
 
-from ..metrics import for_project as metrics_for
 from ..sd.store import ModelStore
 
 
-def model_view(project, version: int | None = None) -> dict:
+def model_view(project, version: int | None = None, levels: dict | None = None, levels_error: str | None = None) -> dict:
+    """The model to show: a past version when asked; otherwise the host's latest discovery (cached
+    by ``orchestra run``; nothing is discovered here), else the current version. ``levels`` are the
+    stocks' current levels, read in the background by the web server."""
     store = ModelStore.for_state(project.state_dir)
     versions = store.versions()
     current = versions[-1]["version"] if versions else None
-    model = store.load(version)
-    if model is None and version is not None:
-        return {"ok": False, "error": f"there is no version {version}"}
-    stored = model is not None
+    as_of, live = None, False
+    if version is not None:
+        model = store.load(version)
+        if model is None:
+            return {"ok": False, "error": f"there is no version {version}"}
+    else:
+        cached = store.latest_discovery()
+        if cached and not cached[1].stocks and not versions:
+            n = len(cached[1].discovery.get("left_out", {}))
+            return {"ok": False, "error": f"There is no model yet: the host's last discovery found no stocks among "
+                                          f"{n} series (nothing balances yet). It looks again every few minutes; "
+                                          "`orchestra sd discover` does it now."}
+        if cached:
+            as_of, model = cached
+            live = True
+        else:
+            model = store.load()
     if model is None:
-        return {"ok": False, "error": "There is no model yet. `orchestra sd discover` builds one from the metrics store."}
+        return {"ok": False, "error": "There is no model yet. The bootstrap host (`orchestra run`) discovers it from the "
+                                      "metrics store every few minutes; `orchestra sd discover` does it now."}
     out = model.to_json()
-    out["stored"] = stored
-    out["version"] = (version or current) if stored else None
+    out["stored"] = bool(versions)
+    out["version"] = version or current
     out["current"] = current
     out["versions"] = versions
+    out["live"] = live                       # the latest discovery, which may be newer than any version
+    out["as_of"] = as_of
     owner = {f: m.id for m in model.machines for f in m.attributed}
     for f in out["flows"]:
         f["machine"] = owner.get(f["id"])
         f["current"] = f["equations"][-1] if f["equations"] else None
-    levels, error = {}, None
-    try:
-        ms = metrics_for(project)
-        for s in model.stocks:
-            if s.series:
-                last = ms.latest(s.series.name, s.series.labels)
-                if last:
-                    levels[s.id] = {"t": last[0], "v": last[1]}
-    except Exception as e:  # noqa: BLE001 - the model still renders without levels
-        error = f"{type(e).__name__}: {e}"
-    out["levels"] = levels
-    out["levels_error"] = error
+    out["levels"] = levels or {}
+    out["levels_error"] = levels_error
     return {"ok": True, "model": out}

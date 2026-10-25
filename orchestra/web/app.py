@@ -12,15 +12,22 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from .. import runtime
 from ..config import Project
 from ..events import Events
+from .background import Refresher
 from .core import CoreProbe
 from .core_explore import Explorer
 from .dynamics import model_view
-from .machines import machines_view
 
 STATIC = Path(__file__).parent / "static"
-MACHINES_CACHE_S = 5.0
+
+
+def _alive(pid) -> bool:
+    try:
+        return bool(pid) and psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError):
+        return False
 
 
 def create_app(project: Project) -> FastAPI:
@@ -28,6 +35,7 @@ def create_app(project: Project) -> FastAPI:
     events = Events.for_project(project)
     core = CoreProbe(project, events)
     explore = Explorer(core)
+    bg = Refresher(project, events, core.metrics)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
     @app.middleware("http")
@@ -100,28 +108,22 @@ def create_app(project: Project) -> FastAPI:
 
     @app.get("/api/dynamics/model")
     def dynamics_model(version: int | None = None) -> dict:
-        return model_view(project, version)
-
-    machines_cache: dict = {}
+        return model_view(project, version, bg.levels, bg.errors.get("levels"))
 
     @app.get("/api/machines")
     def machines() -> dict:
-        """The machines seen on the bus and the publish/subscribe graph; read in Core's pool
-        under its time limit, cached briefly."""
-        hit = machines_cache.get("v")
-        if hit and time.time() - hit[0] < MACHINES_CACHE_S:
-            return hit[1]
-
-        def go():
-            evs, _ = events.read(0, limit=10_000_000)
-            series = core.metrics.series("") if core.metrics else []
-            mine = [(n, lab) for n, lab in series if lab.get("project") == project.key]
-            return {"ok": True, **machines_view(evs, mine)}
-        try:
-            out = core._pool.submit(go).result(timeout=8)
-        except Exception as e:  # noqa: BLE001 - shown on the page
-            out = {"ok": False, "error": f"{type(e).__name__}: {e}"}
-        machines_cache["v"] = (time.time(), out)
+        """The machines seen on the bus and who publishes and listens for what: from the web
+        server's background index, never a read of the bus on request."""
+        if not bg.ready("index"):
+            return {"ok": False, "error": "reading the event bus for the first time…", "warming": True}
+        out = {"ok": True, **bg.index.view(bg.series)}
+        # the host publishes only when it starts and stops; whether it runs is in the runtime record
+        rec = runtime.read(project).get("host") or {}
+        for m in out["machines"]:
+            if m["bootstrap"]:
+                m["active"] = _alive(rec.get("pid"))
+        if bg.errors:
+            out["errors"] = bg.errors
         return out
 
     gpu_history: list[dict] = []

@@ -108,6 +108,7 @@ def cmd_sd(args) -> int:
         print("left out:")
         for k, why in m.discovery["left_out"].items():
             print(f"  {k}: {why}")
+        models.write_discovery(m, at=end)
         if m.stocks:
             print(f"saved as version {models.save(m, note=f'discovered from the last {args.minutes:g} min of metrics')}")
         args.version = None

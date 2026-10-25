@@ -5,6 +5,11 @@ saved as a new **version**, ``<state>/model/v0001.json``, ``v0002.json``, …, a
 current model. Past versions stay readable, so the model can be compared with what it was.
 Prospective versions (proposed changes, tested before they are adopted) will live beside these.
 
+**The latest discovery** is cached in ``<state>/model/discovered.json``: the bootstrap host
+rediscovers the model in the background, writes it here every time, and saves it as a new version
+only when its structure (stocks, flows, forms and influences) changed. Readers (the web UI) read
+the cache; nothing rediscovers on request.
+
 Declared structure and fitted equations live together in each version; every equation carries
 its origin, so a reader can always tell a fit from an assumption."""
 
@@ -83,6 +88,21 @@ class ModelStore:
                         "stocks": len(m.get("stocks", [])), "flows": len(flows),
                         "fitted": sum(1 for f in flows if f.get("equations")), "machines": len(m.get("machines", []))})
         return out
+
+    def write_discovery(self, model: Model, at: float | None = None) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        p = self.dir / "discovered.json"
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"at": at or time.time(), "model": model.to_json()}) + "\n", encoding="utf-8")
+        tmp.replace(p)
+
+    def latest_discovery(self) -> tuple[float, Model] | None:
+        p = self.dir / "discovered.json"
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            return d["at"], Model.from_json(d["model"])
+        except (OSError, ValueError, KeyError):
+            return None
 
     def _import_legacy(self) -> None:
         """Before 2026-10-25 models were stored by id under ``<state>/models/``; the one that existed

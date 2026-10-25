@@ -62,6 +62,10 @@ class Series:
 
     @property
     def deltas(self) -> list[float]:
+        """Change per step; for a counter, a drop is a reset (as in Prometheus): the new value is
+        what was counted since."""
+        if self.counter:
+            return [(b - a) if b >= a else b for a, b in pairwise(self.values)]
         return [b - a for a, b in pairwise(self.values)]
 
 
@@ -84,7 +88,56 @@ def machine_of(s: Series) -> str | None:
 
 
 def _is_counter(name: str, values: list[float]) -> bool:
-    return name.endswith("_total") and all(b >= a for a, b in pairwise(values))
+    """Named like a counter, and never falls except for the odd reset (a machine restarting)."""
+    drops = sum(1 for a, b in pairwise(values) if b < a)
+    return name.endswith("_total") and drops <= max(2, len(values) // 100)
+
+
+GAP_FACTOR, MIN_GAP_S = 10.0, 60.0
+
+
+def live_intervals(points: list[tuple[float, float]], start: float, end: float) -> list[tuple[float, float]]:
+    """When a series was being written: between consecutive points no further apart than ten times
+    its usual interval (at least a minute). A longer silence is missing data (its machine was down
+    or cut off), not a measurement: carrying the last value through it would read as "nothing
+    happened at this level", which is false."""
+    ts = [t for t, _ in points if start - 3600 <= t <= end]
+    if len(ts) < 2:
+        return []
+    gaps = sorted(b - a for a, b in pairwise(ts))
+    limit = max(MIN_GAP_S, GAP_FACTOR * gaps[len(gaps) // 2])
+    out: list[tuple[float, float]] = []
+    for a, b in pairwise(ts):
+        if b - a > limit:
+            continue
+        a, b = max(a, start), min(b, end)
+        if b <= a:
+            continue
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    if out and ts[-1] >= end - limit:                 # still being written at the end of the window
+        out[-1] = (out[-1][0], end)
+    return out
+
+
+def intersect(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    out, i, j = [], 0, 0
+    while i < len(a) and j < len(b):
+        lo, hi = max(a[i][0], b[j][0]), min(a[i][1], b[j][1])
+        if lo < hi:
+            out.append((lo, hi))
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return out
+
+
+def _within(t: float, live: list[tuple[float, float]]) -> bool:
+    i = bisect_right([a for a, _ in live], t) - 1
+    return i >= 0 and live[i][0] < t <= live[i][1]
 
 
 def sample(dump, start: float, step: float, n: int) -> list[Series]:
@@ -263,18 +316,20 @@ class Path:
     time_at: dict[float, float]
 
     @classmethod
-    def of(cls, points: list[tuple[float, float]], start: float, end: float, unit_s: float) -> Path:
+    def of(cls, points: list[tuple[float, float]], live: list[tuple[float, float]], unit_s: float) -> Path:
+        """The path, counting time only inside ``live`` (when every series involved was written)."""
         times, values = [p[0] for p in points], [p[1] for p in points]
         time_at: dict[float, float] = defaultdict(float)
-        i = bisect_right(times, start) - 1
-        level = values[i] if i >= 0 else (values[0] if values else 0.0)
-        t0 = start
-        for t, v in points[max(0, i + 1):]:
-            if t >= end:
-                break
-            time_at[level] += (t - t0) / unit_s
-            t0, level = t, v
-        time_at[level] += (end - t0) / unit_s
+        for start, end in live:
+            i = bisect_right(times, start) - 1
+            level = values[i] if i >= 0 else (values[0] if values else 0.0)
+            t0 = start
+            for t, v in points[max(0, i + 1):]:
+                if t >= end:
+                    break
+                time_at[level] += (t - t0) / unit_s
+                t0, level = t, v
+            time_at[level] += (end - t0) / unit_s
         return cls(times, values, dict(time_at))
 
     def before(self, t: float) -> float:
@@ -287,12 +342,14 @@ class Path:
         return sum(d * max(0.0, c + k * x) for x, d in self.time_at.items())
 
 
-def events_of(points: list[tuple[float, float]], start: float, end: float) -> list[tuple[float, float]]:
-    """A counter's increments inside the window, as (time, count)."""
+def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """A counter's increments inside the live time, as (time, count); a drop is a reset."""
     out, prev = [], None
     for t, v in points:
-        if prev is not None and start < t <= end and v > prev:
-            out.append((t, v - prev))
+        if prev is not None and _within(t, live):
+            d = v - prev if v >= prev else v
+            if d > 0:
+                out.append((t, d))
         prev = v
     return out
 
@@ -399,24 +456,30 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
 
     end = start + n * step
     unit_s = UNITS[time_unit]
-    # fit only over the time every series involved has existed: a window that begins before a
-    # machine started would count its silence as a rate of zero
-    firsts = [s.points[0][0] for s, _, _, _ in found] + [e["series"].points[0][0] for e in ends.values()]
-    i0 = min(n - 1, max(0, math.ceil((max([start, *firsts]) - start) / step)))
-    fit_start = start + i0 * step
-    levels = {sid_of[s.key]: [_average(s.points, start + i * step, start + (i + 1) * step) for i in range(i0, n)]
+    # fit only over the time every series involved was being written: before a machine started,
+    # or while it was down, its silence is not a rate of zero
+    live = [(start, end)]
+    for ser in [s for s, _, _, _ in found] + [e["series"] for e in ends.values()]:
+        live = intersect(live, live_intervals(ser.points, start, end))
+    live_s = sum(b - a for a, b in live)
+    steps_live = [i for i in range(n) if any(a <= start + i * step and start + (i + 1) * step <= b for a, b in live)]
+    fit_start = live[0][0] if live else end
+    levels = {sid_of[s.key]: [_average(s.points, start + i * step, start + (i + 1) * step) for i in steps_live]
               for s, _, _, _ in found}
-    paths = {sid_of[s.key]: Path.of(s.points, fit_start, end, unit_s) for s, _, _, _ in found}
+    paths = {sid_of[s.key]: Path.of(s.points, live, unit_s) for s, _, _, _ in found}
     flows, by_machine = [], defaultdict(list)
     for e in ends.values():
         c = e["series"]
-        y = c.deltas[i0:]
-        best, *rest = fit_flow(events_of(c.points, fit_start, end), (end - fit_start) / unit_s, paths, e["src"])
+        if live_s <= 0:
+            continue
+        dl = c.deltas
+        y = [dl[i] for i in steps_live]
+        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, e["src"])
         best["dispersion"] = dispersion(y, dt, best, levels)
         alt = {f"aic_{x['form']}" + (f"_{x['inputs'][0]}" if x["form"] == "linear" else ""): round(x["aic"], 2) for x in rest[:4]}
         alt.update({f"{x['form']}_k": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})
         q = {"events": float(sum(y)), "loglik": round(best["loglik"], 3), "aic": round(best["aic"], 3),
-             "dispersion": round(best["dispersion"], 3), "steps": float(n - i0), **alt}
+             "dispersion": round(best["dispersion"], 3), "steps": float(len(steps_live)), "live_minutes": round(live_s / 60, 2), **alt}
         fid = _slug(c)
         flows.append(Flow(fid, _title(c), e["src"], e["dst"], SeriesRef(c.name, c.labels),
                           [Equation(best["form"], {k: round(v, 6) for k, v in best["params"].items()}, "fitted", "poisson-mle",
@@ -432,7 +495,17 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
                   "Discovered from the metrics store: stocks are levels that counters balance; flows are those "
                   "counters, with equations fitted by Poisson maximum likelihood.",
                   time_unit, stocks, flows, machines)
-    model.discovery = {"start": start, "end": end, "fit_start": fit_start, "step": step, "series": len(series),
+    model.discovery = {"start": start, "end": end, "fit_start": fit_start, "live_minutes": round(live_s / 60, 2) if found else 0,
+                       "gaps": [[a, b] for (_, a), (b, _) in pairwise(live)] if found else [],
+                       "step": step, "series": len(series),
                        "stocks": len(stocks), "flows": len(flows), "min_r2": MIN_R2,
                        "left_out": dict(sorted(left_out.items()))}
     return model
+
+
+def structure(model: Model) -> list:
+    """What a discovery found, without its numbers: stocks, and each flow's ends, form and inputs.
+    A new model version is worth saving only when this changes."""
+    return [sorted(s.id for s in model.stocks),
+            sorted((f.id, f.src or "", f.dst or "", f.current().form if f.current() else "",
+                    tuple(f.current().inputs) if f.current() else ()) for f in model.flows)]
