@@ -58,14 +58,14 @@ class Refresher:
         if self.metrics is not None:
             self.series = [(n, lab) for n, lab in self.metrics.series("") if lab.get("project") == self.project.key]
 
-    def _model(self):
+    def model(self):
         cached = self.models.latest_discovery()
         return cached[1] if cached and cached[1].stocks else self.models.load()
 
     def _history(self) -> None:
         """Each stock's level every STOCK_STEP_S, and each flow's rate (per the model's time unit)
         every FLOW_STEP_S, over the last HISTORY_S."""
-        model = self._model()
+        model = self.model()
         if model is None or self.metrics is None:
             self.history = {}
             return
@@ -98,7 +98,7 @@ class Refresher:
                         "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs}
 
     def _levels(self) -> None:
-        model = self._model()
+        model = self.model()
         out = {}
         if model is not None and self.metrics is not None:
             for s in model.stocks:

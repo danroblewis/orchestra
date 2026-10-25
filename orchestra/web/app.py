@@ -163,6 +163,23 @@ def create_app(project: Project) -> FastAPI:
             return {"ok": False, "error": "reading the history for the first time…"}
         return {"ok": True, **bg.history, "error": bg.errors.get("history")}
 
+    @app.get("/api/dynamics/simulate")
+    def dynamics_simulate(horizon_min: float = 30.0) -> dict:
+        """The model's equations run forward: from the start of the era to now, and from now
+        ``horizon_min`` ahead (sd/simulate.py). Cheap: a few hundred steps over the cached history."""
+        from ..sd.strategies import sd_installed
+        if not sd_installed():
+            return {"ok": False, "error": "simulating needs orchestra[sd] installed"}
+        if not bg.ready("history") or not bg.history:
+            return {"ok": False, "error": "reading the history for the first time…"}
+        from ..sd.simulate import simulate
+        model, h = bg.model(), bg.history
+        start = max(h["start"], float((model.discovery or {}).get("fit_start") or h["start"]))
+        try:
+            return {"ok": True, **simulate(model, h, now=h["at"], start=start, horizon_s=max(1.0, min(horizon_min, 24 * 60)) * 60)}
+        except Exception as e:  # noqa: BLE001 - shown in the drawer
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
     @app.get("/api/machines")
     def machines() -> dict:
         """The machines seen on the bus and who publishes and listens for what: from the web
