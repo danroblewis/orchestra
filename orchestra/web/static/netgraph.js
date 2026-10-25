@@ -284,6 +284,8 @@ const NetGraph = (() => {
       else if (fresh.length === NODES.length) settle(new Set(NODES.map((n) => n.id)), 1, true);
       else if (fresh.length) settle(new Set(fresh.map((n) => n.id)), 0.5, true);
       else tick();                                               // nothing new: nothing moves
+      // the first drawing fits the view (a layout still settling fits when it is done)
+      if (!drawnOnce) { drawnOnce = true; if (!settling) requestAnimationFrame(() => fit(false)); }
       if (pinned) highlight(pinned.nodes, pinned.edges);
     }
     // a new node starts by the nodes it is linked to (or at its anchor, or the middle)
@@ -299,7 +301,7 @@ const NetGraph = (() => {
     }
     // run the forces on ``movable`` nodes only; every other node, and every node the viewer placed,
     // is held where it is
-    let settling = null;
+    let settling = null, drawnOnce = false;
     function settle(movable, alpha, refit) {
       if (sim) sim.stop();
       settling = { movable, refit };
