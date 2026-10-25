@@ -600,6 +600,25 @@ last value equals the sampled count. The shift is reported, as a measure of
 what the log missed. `orchestra metrics backfill|series|show` replays the
 log, lists series, and prints a stock or flow over time.
 
+### 6.7 The system dynamics model
+
+`orchestra/sd/` holds the model (stocks bound to series, flows bound to
+counters, equations, machines, eras), a model store (`<state>/models/`), and
+inference. Every equation records its **origin**: `fitted` (with method,
+window and quality), `discovered`, or `declared` (an assumption until
+fitted). A **machine** is a record of something outside Orchestra,
+attributed to flows as a hypothesis; it never defines a flow's equation.
+Exactly one machine is the **bootstrap** host.
+
+`orchestra sd declare` writes Orchestra's own task system as a model
+(ticket states as stocks, transitions as flows, today's loop steps as
+machines; descriptive only). `orchestra sd fit` fits every flow from the
+metrics store: each step's count is Poisson, with mean `c × running hours`
+(constant) or `k × the source stock's item-hours` (proportional, the exact
+integral of its level while the loop runs), fitted by maximum likelihood;
+the form with the higher likelihood is kept, with its standard error,
+dispersion and event count. Hours with the loop stopped are left out.
+
 ---
 
 ## 7. The merge gate

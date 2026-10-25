@@ -368,6 +368,51 @@ def cmd_metrics(args) -> int:
     return 2
 
 
+def cmd_sd(args) -> int:
+    """The system dynamics model: declare Orchestra's own factory, fit its flows, show it."""
+    from .metrics import for_project as metrics_for
+    from .sd.factory import ticket_factory
+    from .sd.fit import fit_model
+    from .sd.store import ModelStore
+
+    project = load_project()
+    models = ModelStore(project.state_dir / "models")
+    if args.action == "declare":
+        m = ticket_factory(project.key)
+        print(f"declared {m.id}: {len(m.stocks)} stocks, {len(m.flows)} flows, {len(m.machines)} machines → {models.save(m)}")
+        return 0
+    m = models.load(args.model) or ticket_factory(project.key)
+    if args.action == "fit":
+        fit_model(m, metrics_for(project), project.key, step=args.step * 3600)
+        models.save(m)
+    store = metrics_for(project)
+    print(f"{m.name} ({m.id})")
+    print("\nstocks (latest level):")
+    for s in m.stocks:
+        last = store.latest(s.series.name, s.series.labels) if s.series else None
+        print(f"  {s.id:<18} {last[1] if last else '-':>6}")
+    print("\nflows (fitted per hour while the loop runs; ± one standard error):")
+    for f in m.flows:
+        eq = f.current()
+        if not eq:
+            print(f"  {f.id:<30} no data")
+            continue
+        q = eq.quality
+        (p, v), = eq.params.items()
+        rate = f"{v:.3f}/h" if eq.form == "constant" else f"{v:.4f} × {f.src}/h"
+        alt = [k for k in q if k.startswith("loglik_") and k != f"loglik_{eq.form}"]
+        gap = f"  Δll {q['loglik'] - q[alt[0]]:+.1f}" if alt and q[alt[0]] != float("-inf") else ""
+        stopped = f"  ({q['events_while_stopped']:.0f} while stopped)" if q.get("events_while_stopped") else ""
+        print(f"  {f.id:<30} {eq.form:<12} {rate:<28} ±{q['se']:.4f}  n={q['events']:.0f}  disp={q['dispersion']:.1f}{gap}{stopped}")
+    print("\nmachines (attributed flows are hypotheses):")
+    for mc in m.machines:
+        tag = " [bootstrap]" if mc.bootstrap else ""
+        eng = ", ".join(f"{e.mode} via {e.driver}" for e in mc.engagement) or "observed only"
+        print(f"  {mc.id:<16} {mc.kind:<8} {eng}{tag}")
+        print(f"      flows: {', '.join(mc.attributed)}")
+    return 0
+
+
 def cmd_doctor(args) -> int:
     from .git import Git
 
@@ -462,6 +507,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--step", type=float, default=24.0, help="for show: hours per step (default 24)")
     s.add_argument("--append", action="store_true", help="for backfill: keep existing points instead of replacing them")
     s.set_defaults(fn=cmd_metrics)
+
+    s = sub.add_parser("sd", help="the system dynamics model: declare Orchestra's own factory, fit it, show it")
+    s.add_argument("action", choices=["declare", "fit", "show"])
+    s.add_argument("--model", default="tickets")
+    s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
+    s.set_defaults(fn=cmd_sd)
 
     s = sub.add_parser("doctor")
     s.add_argument("--fix", action="store_true")

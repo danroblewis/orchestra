@@ -1,0 +1,137 @@
+"""The system dynamics model (the factory): stocks, flows, equations, machines, eras.
+
+Principles (docs/proposals/system-dynamics-core.md, docs/proposals/orchestra-kernel.md §2a):
+
+- A **stock** is a measured quantity: it is bound to a series in the metrics store.
+- A **flow** moves material between stocks (or from or to outside). It is bound to a cumulative
+  counter series when one exists; its **equation** is observed (fitted or discovered), and every
+  equation records its **origin**: ``fitted`` (with method, window and quality), ``discovered``,
+  or ``declared`` (an assumption, labelled as one until it is fitted).
+- A **machine** is a record of something outside Orchestra and outside the model (an agent, a
+  program, a team, a device). It is attributed to flows as a hypothesis, observed through series,
+  and may be engaged through drivers. A machine never defines a flow's equation.
+- An **era** is a stretch of time with one configuration; fits are per era.
+
+The JSON form follows SD Lab's model format (MODEL.md) where the concepts coincide (stocks, flows
+with from/to, machines) and adds what Orchestra needs (series bindings, equation origins, machine
+records, eras)."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+
+@dataclass
+class SeriesRef:
+    name: str
+    labels: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class Equation:
+    form: str                           # constant | proportional (more forms as inference grows)
+    params: dict[str, float]            # constant: {"c"}; proportional: {"k"} (per hour, per unit of the source stock)
+    origin: str                         # fitted | discovered | declared
+    method: str = ""                    # e.g. "poisson-mle" for fitted
+    window: tuple[float, float] | None = None   # unix seconds the fit used
+    era: str | None = None
+    quality: dict[str, float] = field(default_factory=dict)   # se, loglik, dispersion, events, hours
+
+
+@dataclass
+class Stock:
+    id: str
+    name: str
+    unit: str = "items"
+    series: SeriesRef | None = None
+
+
+@dataclass
+class Flow:
+    id: str
+    name: str
+    src: str | None                     # stock id, or None for outside
+    dst: str | None
+    counter: SeriesRef | None = None    # cumulative count of what moved
+    equations: list[Equation] = field(default_factory=list)   # one per era once fitted
+
+    def current(self) -> Equation | None:
+        return self.equations[-1] if self.equations else None
+
+
+@dataclass
+class Engagement:
+    mode: str                           # continuous | ad_hoc | scheduled
+    driver: str                         # e.g. harness, process, ssh, container, k8s_job, http, slack, outbox, bus
+
+
+@dataclass
+class Machine:
+    id: str
+    name: str
+    kind: str                           # agent | program | person | team | device | external
+    description: str = ""
+    attributed: list[str] = field(default_factory=list)       # flow ids: hypotheses, validated by fits across eras
+    observed_by: list[SeriesRef] = field(default_factory=list)
+    engagement: list[Engagement] = field(default_factory=list)  # empty: observed only, never invoked
+    bootstrap: bool = False             # Orchestra's own host: runs the dispatcher, hosts the drivers
+
+
+@dataclass
+class Era:
+    id: str
+    start: float
+    label: str
+
+
+@dataclass
+class Model:
+    id: str
+    name: str
+    description: str = ""
+    time_unit: str = "hour"
+    stocks: list[Stock] = field(default_factory=list)
+    flows: list[Flow] = field(default_factory=list)
+    machines: list[Machine] = field(default_factory=list)
+    eras: list[Era] = field(default_factory=list)
+
+    def stock(self, sid: str) -> Stock:
+        return next(s for s in self.stocks if s.id == sid)
+
+    def flow(self, fid: str) -> Flow:
+        return next(f for f in self.flows if f.id == fid)
+
+    def to_json(self) -> dict[str, Any]:
+        d = asdict(self)
+        for f in d["flows"]:                  # SD Lab's names for the ends
+            f["from"], f["to"] = f.pop("src"), f.pop("dst")
+        return d
+
+    @classmethod
+    def from_json(cls, d: dict[str, Any]) -> Model:
+        def ref(r):
+            return SeriesRef(**r) if r else None
+        return cls(
+            id=d["id"], name=d["name"], description=d.get("description", ""), time_unit=d.get("time_unit", "hour"),
+            stocks=[Stock(s["id"], s["name"], s.get("unit", "items"), ref(s.get("series"))) for s in d.get("stocks", [])],
+            flows=[Flow(f["id"], f["name"], f.get("from"), f.get("to"), ref(f.get("counter")),
+                        [Equation(**{**e, "window": tuple(e["window"]) if e.get("window") else None})
+                         for e in f.get("equations", [])]) for f in d.get("flows", [])],
+            machines=[Machine(m["id"], m["name"], m["kind"], m.get("description", ""), list(m.get("attributed", [])),
+                              [SeriesRef(**r) for r in m.get("observed_by", [])],
+                              [Engagement(**e) for e in m.get("engagement", [])], bool(m.get("bootstrap", False)))
+                      for m in d.get("machines", [])],
+            eras=[Era(**e) for e in d.get("eras", [])],
+        )
+
+    def check(self) -> list[str]:
+        """Structural problems: flows naming unknown stocks, machines attributed to unknown flows."""
+        ids = {s.id for s in self.stocks}
+        fids = {f.id for f in self.flows}
+        errs = [f"flow {f.id}: unknown stock {end}" for f in self.flows for end in (f.src, f.dst) if end and end not in ids]
+        errs += [f"machine {m.id}: attributed to unknown flow {a}" for m in self.machines for a in m.attributed if a not in fids]
+        errs += [f"flow {f.id} connects nothing" for f in self.flows if not f.src and not f.dst]
+        if sum(m.bootstrap for m in self.machines) > 1:
+            errs.append("more than one bootstrap machine")
+        return errs
