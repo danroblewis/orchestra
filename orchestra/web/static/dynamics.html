@@ -177,9 +177,10 @@ function draw() {
     for (const [x, sign] of readsWithSign(f)) {
       const isInput = x.startsWith("input:"), name = isInput ? x.slice(6) : x, node = (isInput ? "i:" : "s:") + name;
       if (!isInput && hiddenStock(name)) continue;
-      // a measured input the rate reads: a node outside the system, where simulations will set it
+      // a measured level the rate reads that no counters balance: an auxiliary, inside the system
+      // like everything but the clouds, drawn round so it does not read as a stock
       if (isInput && !nodes.some((n) => n.id === node)) nodes.push({ id: node, kind: "box", input: name, label: name.replace(/_/g, " "), lines: [name.replace(/_/g, " ")],
-        w: Math.max(150, name.length * 6.4 + 24), h: 64, color: "#94a3b8", fill: "#0e1118", charge: -700, decorate: Live.decorateInput, sub: " ", anchor: [0.04, 0.5] });
+        w: Math.max(140, name.length * 6.2 + 30), h: 52, rx: 26, color: "#64748b", fill: "#0e1118", charge: -600, decorate: Live.decorateInput, sub: " " });
       if (sign !== 0) causal.push({ source: node, target: v, sign });
       // an influence: a dashed link to the middle of the flow it drives (not a flow's plain dependence on its own source)
       const plain = !isInput && name === f.from && (e.form === "proportional" || (e.spec && e.spec.form === "proportional"));
@@ -193,7 +194,8 @@ function draw() {
     if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics", height: 620,
       // the model's boundary: stocks inside; sources and sinks (clouds) outside, where a simulation
       // will set the conditions the system runs under
-      boundary: { inside: (n) => n.kind === "box" && !n.input, label: "the system · outside: sources, sinks and measured inputs" },
+      // one system: everything is inside but the clouds, the environment flows come from and go to
+      boundary: { inside: (n) => n.kind !== "cloud", label: "the system · outside: the environment (sources and sinks)" },
       tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
       onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;

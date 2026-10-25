@@ -59,13 +59,13 @@ const Live = (() => {
     }
   }
 
-  // a measured input, outside the system: its value now and its hour
+  // an auxiliary (a measured level a rate reads, which no counters balance): its value now and its hour
   function decorateInput(g, n, sz) {
     const h = inputHist(n.input), vals = h.map((p) => p[1]), v = vals.length ? vals[vals.length - 1] : null;
     const max = Math.max(...vals, 1e-9), min = Math.min(...vals, 0), x0 = -sz.w / 2, y0 = -sz.h / 2;
-    g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + 30).text(v == null ? "measured input" : `${fmt(v)} now · input`);
+    g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + 30).text(v == null ? "auxiliary · measured" : `${fmt(v)} now · auxiliary`);
     if (h.length > 1) {
-      const a = x0 + 8, b = -x0 - 8, top = -y0 - 24, bot = -y0 - 6, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
+      const a = x0 + 22, b = -x0 - 22, top = -y0 - 20, bot = -y0 - 6, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
       g.append("path").attr("fill", "none").attr("stroke", "#94a3b8").attr("stroke-width", 1.2)
         .attr("d", h.map(([t, y], i) => `${i ? "L" : "M"}${(a + (b - a) * (t - t0) / (t1 - t0)).toFixed(1)},${(bot + (top - bot) * (y - min) / (max - min || 1)).toFixed(1)}`).join(" "));
     }

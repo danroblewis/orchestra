@@ -330,9 +330,10 @@ Read-only for humans. Navigation: Dashboard, Machines, Dynamics, Core.
   into what fills it and what drains it (drawn below zero). It shows the host's latest discovery
   and steps through saved versions.
 
-The model's graph frames **the system**: stocks inside, sources and sinks outside, so what
-crosses the frame is what crosses the boundary (where simulations will set the outside
-conditions). A **rediscover now** button reruns discovery in the background (an observation: it
+The model's graph frames **the system**. There is one system: every stock and auxiliary is
+inside it, and only the environment (the clouds flows come from and go to) is outside, so what
+crosses the frame is what the model does not explain. Subsystems (perhaps feedback loops in boxes
+of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes).
 
 Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). A layout keeps
@@ -342,7 +343,8 @@ purpose. On the Dynamics page each stock has at most one source cloud and one si
 placed by rule, not by the forces: just outside the frame, on the side nearest its stock, level
 with it, following it when it moves. A stock with flows across the boundary is drawn toward the
 nearest side, and those flows are drawn thinner and dimmer, so a boundary crossing is a short,
-quiet stub (still visible: it is what the model does not explain). Measured inputs sit to the left. Loops are elementary cycles; clicking
+quiet stub (still visible: it is what the model does not explain). A measured level that a rate reads but no counters balance is an **auxiliary**: inside the
+system, drawn round so it does not read as a stock. Loops are elementary cycles; clicking
 one highlights it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
 - **Core:** the host, the bus and the metrics store, each probed against its real backend within
