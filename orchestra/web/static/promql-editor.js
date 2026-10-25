@@ -81,6 +81,30 @@ const PromEditor = (() => {
     if (m) return { kind: "name", prefix: m[1], from: pos - m[1].length };
     return null;
   }
+  // where the value being replaced ends: the rest of a quoted value up to its closing quote, if
+  // that quote comes before anything that can't be in a typed value; else the rest of a bare word
+  function valueEnd(v, pos, quote) {
+    if (quote) {
+      const close = v.indexOf(quote, pos);
+      const stop = v.slice(pos).search(/[\n,{}()\[\]]/);
+      if (close >= 0 && (stop < 0 || close < pos + stop)) return close + 1;
+    }
+    let end = pos;
+    while (end < v.length && /[\w:.>-]/.test(v[end])) end++;
+    return end;
+  }
+  // is the { open before pos closed later, before the selector ends?
+  function braceClosed(v, pos) {
+    let q = null;
+    for (let i = pos; i < v.length; i++) {
+      const ch = v[i];
+      if (q) { if (ch === "\\") i++; else if (ch === q) q = null; continue; }
+      if (ch === '"' || ch === "'") q = ch;
+      else if (ch === "}") return true;
+      else if ("{[()\n".includes(ch)) return false;
+    }
+    return false;
+  }
   // split "a=\"x,y\", b" on top-level commas
   function splitTop(s) {
     const parts = [""];
@@ -169,32 +193,69 @@ const PromEditor = (() => {
       const it = items[i];
       if (!it || it.info) return;
       const v = ta.value, pos = ta.selectionStart;
-      let end = pos;
-      if (it.value) { while (end < v.length && /[^"',}\s]/.test(v[end])) end++; if (v[end] === '"' || v[end] === "'") end++; }
-      else while (end < v.length && /[\w:]/.test(v[end])) end++;
-      ta.value = v.slice(0, ctx.from) + it.insert + v.slice(end);
+      let end = pos, insert = it.insert;
+      if (it.value) {
+        end = valueEnd(v, pos, ctx.quoted ? v[ctx.from] : null);
+        // the matcher list was left open: close it, unless more matchers or a } follow
+        if (!/^\s*[,}]/.test(v.slice(end)) && !braceClosed(v, end)) insert += "}";
+      } else while (end < v.length && /[\w:]/.test(v[end])) end++;
       const caret = ctx.from + it.insert.length;
-      ta.setSelectionRange(caret, caret);
-      sync();
+      edit(ctx.from, end, insert, caret);
       if (it.again) suggest(true); else { items = []; render(); }
       ta.focus();
     }
     const PAIRS = { "{": "}", "(": ")", "[": "]" };
+
+    // undo and redo: the editor's own history, since its programmatic edits bypass the browser's
+    const past = [], future = [];
+    let lastKind = "", lastAt = 0;
+    const snap = () => ({ v: ta.value, a: ta.selectionStart, b: ta.selectionEnd });
+    function record(kind) {
+      const now = Date.now();
+      // a run of typing (or of deleting) with no pause over a second is one step
+      if (kind && kind === lastKind && now - lastAt < 1000 && past.length) { lastAt = now; return; }
+      past.push(snap());
+      if (past.length > 200) past.shift();
+      future.length = 0;
+      lastKind = kind; lastAt = now;
+    }
+    function restore(from, to) {
+      if (!from.length) return;
+      to.push(snap());
+      const s0 = from.pop();
+      ta.value = s0.v; ta.setSelectionRange(s0.a, s0.b);
+      lastKind = ""; items = []; render(); sync();
+    }
+    function edit(a, b, text, caret) {
+      record("");
+      ta.value = ta.value.slice(0, a) + text + ta.value.slice(b);
+      ta.setSelectionRange(caret, caret);
+      sync();
+    }
+    ta.addEventListener("beforeinput", (e) => {
+      if (e.inputType === "historyUndo") { e.preventDefault(); restore(past, future); return; }
+      if (e.inputType === "historyRedo") { e.preventDefault(); restore(future, past); return; }
+      const typing = e.inputType === "insertText" || e.inputType === "insertLineBreak";
+      record(typing ? "type" : e.inputType.startsWith("delete") ? "delete" : "");
+    });
     ta.addEventListener("keydown", (e) => {
       const open = ac.style.display === "block" && items.length && !items[0].info;
       if (!open && items.length && items[0].info && (e.key === "Escape" || e.key === "Enter")) { items = []; render(); }
       if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); sel = (sel + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length; render(); return; }
       if (open && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); accept(sel); return; }
       if (open && e.key === "Escape") { e.preventDefault(); items = []; render(); return; }
+      const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      if (mod && k === "z" && !e.shiftKey) { e.preventDefault(); restore(past, future); return; }
+      if (mod && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); restore(future, past); return; }
       if (e.key === " " && e.ctrlKey) { e.preventDefault(); suggest(true); return; }
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); items = []; render(); onRun(ta.value); return; }
       const s = ta.selectionStart, nxt = ta.value[s];
-      if (PAIRS[e.key] && ta.selectionStart === ta.selectionEnd && (!nxt || /[\s)}\],]/.test(nxt))) {
-        e.preventDefault(); ta.setRangeText(e.key + PAIRS[e.key], s, s, "end"); ta.setSelectionRange(s + 1, s + 1); sync(); suggest(false); return;
+      if (PAIRS[e.key] && ta.selectionStart === ta.selectionEnd && (!nxt || !/[\w:"']/.test(nxt))) {
+        e.preventDefault(); edit(s, s, e.key + PAIRS[e.key], s + 1); suggest(false); return;
       }
       if ((e.key === "}" || e.key === ")" || e.key === "]") && nxt === e.key) { e.preventDefault(); ta.setSelectionRange(s + 1, s + 1); items = []; render(); return; }
       if (e.key === "Backspace" && ta.selectionStart === ta.selectionEnd && PAIRS[ta.value[s - 1]] === nxt) {
-        e.preventDefault(); ta.setRangeText("", s - 1, s + 1, "end"); sync(); suggest(false);
+        e.preventDefault(); edit(s - 1, s + 1, "", s - 1); suggest(false);
       }
     });
     ta.addEventListener("input", () => { sync(); suggest(false); });
@@ -208,7 +269,7 @@ const PromEditor = (() => {
     sync();
     return {
       get value() { return ta.value; },
-      set value(v) { ta.value = v; sync(); },
+      set value(v) { if (v !== ta.value) { record(""); ta.value = v; } sync(); },
       focus() { ta.focus(); },
     };
   }
