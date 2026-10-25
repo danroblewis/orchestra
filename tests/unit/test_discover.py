@@ -170,12 +170,12 @@ def test_a_level_no_longer_written_is_left_out_not_a_reason_to_fit_nothing(tmp_p
 
 
 def test_two_counters_of_the_same_thing_are_one_flow(tmp_path):
-    # Orchestra's count of an event and the machine's own count of it move together (here one is
-    # a second late): both stocks the flow joins must use the same one, or the flow between them is lost
+    # Orchestra's count of an event and the machine's own count of it move together (here the
+    # collector has not caught up with the last minute): both stocks the flow joins must use the same one, or the flow between them is lost
     store = FileMetrics(tmp_path / "m.jsonl")
     start, end = simulate(store, minutes=60)
     own = store.raw("bakery_loaves_baked_total", {"project": "p", "machine": "oven"}, start=start, end=end)
-    store.write([Point("orchestra_events_total", v, t + 1, {"project": "p", "source": "oven", "type": "loaf.baked"}) for t, v in own])
+    store.write([Point("orchestra_events_total", v, t + 1, {"project": "p", "source": "oven", "type": "loaf.baked"}) for t, v in own if t < end - 60])
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert any(why.startswith("the same as bakery_loaves_baked_total") for k, why in m.discovery["left_out"].items() if k.startswith("orchestra_events_total"))
     assert not any(f.counter and f.counter.name == "orchestra_events_total" for f in m.flows)
