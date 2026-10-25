@@ -221,7 +221,7 @@ async function loadEvents() {
 refreshCore(); refreshSources(); refreshLog(); loadCatalog(); loadEvents();
 let RESIZE = 0;   // charts are drawn at their width: redraw when it changes
 window.addEventListener("resize", () => { clearTimeout(RESIZE); RESIZE = setTimeout(() => { runQuery(); loadEvents(); }, 300); });
-setInterval(loadCatalog, 60000); setInterval(loadEvents, 60000);
+setInterval(loadCatalog, 10000); setInterval(loadEvents, 10000);
 setInterval(refreshCore, 5000); setInterval(refreshLog, 3000); setInterval(refreshSources, 30000);
 </script>
 </body>

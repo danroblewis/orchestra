@@ -20,7 +20,7 @@ from ..metrics import promql
 MAX_LINES = 30
 NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400]
 RESIDENT = {"supervisor": "supervisor", "coordinator": "coordinator", "pipeline-manager": "pipeline-manager"}
-CACHE_S = 20.0
+CACHE_S = 8.0
 
 
 def _ts(ev: dict) -> float | None:
