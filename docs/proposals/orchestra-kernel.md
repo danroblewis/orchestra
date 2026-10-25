@@ -238,6 +238,11 @@ The engagement side of machines (requests, drivers, jobs, the dispatcher) is not
 
 ## 4a. First slice: a basic task and work system on the kernel (proposed 2026-10-25)
 
+> **Superseded** by `empty-orchestra.md` (2026-10-25): Orchestra holds no items or tasks, and
+> there is no item store. The task system becomes the first loadable system, its machines talk
+> over topics and subscriptions with leases, and stocks are discovered rather than configured.
+> Kept below for the record.
+
 What exists so far *observes* the old loop: bus, collectors, metrics, model, fitter. Nothing yet
 *does* work through the new primitives. The first slice is the smallest task and work system built
 only from them, running beside the old loop and visible in the web UI.
