@@ -65,5 +65,62 @@
     }
     return at;
   }
-  return { layout, OPTIONS };
+  const ROOM = 7;
+
+  // Refine a layout (ELK's) by springs: every flow, influence and cloud is a spring toward a
+  // sensible length, and a node moves in inverse proportion to how connected it is, so a node with
+  // one connection comes in to it while busy stocks hold the structure. Nodes push apart only
+  // where they overlap, and a stock keeps ``ROOM`` px more room per flow so its flows can be seen.
+  // A stock with flows from or to outside is drawn toward the nearest side of the frame, so its
+  // clouds' stubs are short. Returns new positions; clouds placed by the cloud rule.
+  function refine(nodes, edges, at, { size, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, iterations = 300, gap = 70, outwardK = 0.06, influenceGap = 40 }) {
+    const P = new Map(nodes.filter((n) => at[n.id] && inside(n)).map((n) => [n.id, { n, x: at[n.id][0], y: at[n.id][1] }]));
+    const half = (n) => { const s = size(n); return s.r ? [s.r, s.r] : [s.w / 2, s.h / 2]; };
+    const byEdge = new Map(edges.filter((e) => !e.toEdge).map((e) => [e.id, e]));
+    const springs = [], degree = new Map([...P.keys()].map((id) => [id, 0]));
+    const spring = (a, b, extra) => { if (a !== b && P.has(a) && P.has(b)) { springs.push([a, b, extra]); degree.set(a, degree.get(a) + 1); degree.set(b, degree.get(b) + 1); } };
+    for (const e of byEdge.values()) spring(e.source, e.target, gap);
+    for (const e of edges.filter((x) => x.toEdge)) { const f = byEdge.get(e.toEdge); if (f) for (const end of [f.source, f.target]) spring(e.source, end, gap + influenceGap); }
+    const outward = new Set(nodes.filter((n) => n.kind === "cloud" && n.tether).map((n) => n.tether));
+    const room = (id) => 14 + ROOM * (degree.get(id) || 0);
+    const ids = [...P.keys()];
+    for (let it = 0; it < iterations; it++) {
+      const t = 1 - it / iterations, k = 0.08 * t + 0.01;
+      for (const [a, b, extra] of springs) {              // springs: toward the touching distance plus a gap
+        const A = P.get(a), B = P.get(b), dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
+        const [ha, va] = half(A.n), [hb, vb] = half(B.n);
+        const touch = Math.abs(dx) / d * (ha + hb) + Math.abs(dy) / d * (va + vb);
+        const pull = (d - (touch + extra)) * k;
+        if (pull <= 0) continue;                           // never pushes: overlap removal does that
+        const wa = 1 / (1 + degree.get(a)), wb = 1 / (1 + degree.get(b)), w = wa + wb;
+        A.x += dx / d * pull * wa / w; A.y += dy / d * pull * wa / w;
+        B.x -= dx / d * pull * wb / w; B.y -= dy / d * pull * wb / w;
+      }
+      const b = frameOf ? frameOf([...P.values()].map((p) => ({ ...p.n, x: p.x, y: p.y })), inside) : null;
+      if (b) for (const id of outward) {                   // toward the nearest side of the frame
+        const p = P.get(id); if (!p) continue;
+        const [h, v] = half(p.n);
+        const [d, dx, dy] = [[p.x - h - (b.x0 + 34), -1, 0], [(b.x1 - 34) - (p.x + h), 1, 0], [p.y - v - (b.y0 + 46), 0, -1], [(b.y1 - 34) - (p.y + v), 0, 1]].sort((u, w) => u[0] - w[0])[0];
+        if (d > 4) { p.x += dx * d * outwardK * t; p.y += dy * d * outwardK * t; }
+      }
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {   // overlaps, with room
+        const A = P.get(ids[i]), B = P.get(ids[j]), [ha, va] = half(A.n), [hb, vb] = half(B.n);
+        const r = (room(ids[i]) + room(ids[j])) / 2;
+        const ox = ha + hb + r - Math.abs(B.x - A.x), oy = va + vb + r - Math.abs(B.y - A.y);
+        if (ox <= 0 || oy <= 0) continue;
+        const wa = degree.get(ids[i]) <= degree.get(ids[j]) ? 0.6 : 0.4;        // the less connected one moves more
+        if (ox < oy) { const s = Math.sign(B.x - A.x) || 1; A.x -= s * ox * wa; B.x += s * ox * (1 - wa); }
+        else { const s = Math.sign(B.y - A.y) || 1; A.y -= s * oy * wa; B.y += s * oy * (1 - wa); }
+      }
+    }
+    const out = { ...at };
+    for (const [id, p] of P) out[id] = [p.x, p.y];
+    if (frameOf && tetherPlaces) {
+      const placed = nodes.map((n) => (P.has(n.id) ? { ...n, x: out[n.id][0], y: out[n.id][1] } : { ...n, x: undefined, y: undefined }));
+      Object.assign(out, tetherPlaces(placed, frameOf(placed, inside)));
+    }
+    return out;
+  }
+
+  return { layout, refine, OPTIONS };
 });

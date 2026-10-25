@@ -336,12 +336,17 @@ crosses the frame is what the model does not explain. Subsystems (perhaps feedba
 of their own) are a later question. A **rediscover now** button reruns discovery in the background (an observation: it
 re-reads the metrics and may save a version, as the host does every 5 minutes).
 
-Both graphs are drawn by one renderer (`static/netgraph.js`, a d3 force layout). A layout keeps
-its shape: the forces place only new nodes (the known ones held still), every position is
-remembered per viewer, dragging moves one node, and "tidy" or "reset" lay it out again on
-purpose. On the Dynamics page each stock has at most one source cloud and one sink cloud. A cloud is
-placed by rule, not by the forces: just outside the frame, on the side nearest its stock, level
-with it, following it when it moves. A stock with flows across the boundary is drawn toward the
+Both graphs are drawn by one renderer (`static/netgraph.js`). The Dynamics graph is laid out by
+ELK's layered algorithm (`static/sd-layout.js`: the system as a box of its own, in layers along
+its flows), then refined by springs so nothing is left far from what it is connected to and busy
+stocks keep room for their flows; the Machines page's event map uses d3's forces, its lines in
+their machine's colour, toned down (`static/edge-color.js`: solid, it publishes; dashed, it
+listens; near-grey, not seen in 24 hours; full colour on hover). A layout keeps its shape: only
+new nodes are placed (the known ones held still), every position is remembered per viewer,
+dragging moves one node, and "tidy" or "reset" lay it out again on purpose. The layout is measured
+(`static/layout-score.js`) by `tests/layout` on saved models (`tests/fixtures/dynamics`). On the Dynamics page each stock has at most one source cloud and one sink cloud. A cloud is
+placed by rule: just outside the frame, on the side nearest its stock, level with it, following
+it when it moves, never pinned elsewhere (a cloud far from the boundary means nothing). A stock with flows across the boundary is drawn toward the
 nearest side, and those flows are drawn thinner and dimmer, so a boundary crossing is a short,
 quiet stub (still visible: it is what the model does not explain). A measured level that a rate reads but no counters balance is an **auxiliary**: inside the
 system, drawn round so it does not read as a stock. Loops are elementary cycles; clicking

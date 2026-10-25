@@ -62,7 +62,7 @@ const NetGraph = (() => {
     const byId = new Map(nodes.map((n) => [n.id, n])), count = new Map(), out = {};
     if (!b) return out;
     for (const n of nodes) {
-      const s = n.tether && !n.pin && byId.get(n.tether);
+      const s = n.tether && byId.get(n.tether);
       if (!s || s.x === undefined) continue;
       const side = [[s.x - b.x0, "l"], [b.x1 - s.x, "r"], [s.y - b.y0, "t"], [b.y1 - s.y, "b"]].sort((a, c) => a[0] - c[0])[0][1];
       const k = `${s.id}|${side}`, i = count.get(k) || 0;
@@ -252,7 +252,8 @@ const NetGraph = (() => {
       // a node keeps its place across redraws and structures; one the viewer dropped is marked so
       NODES = nodes.map((n) => {
         const o = old.get(n.id), sv = saved[n.id];
-        const p = o && o.x !== undefined ? [o.x, o.y] : sv, pin = o ? !!o.pin : !!(sv && sv[2]);
+        // a tethered node (a cloud) is never pinned: it always sits by the node it belongs to
+        const p = o && o.x !== undefined ? [o.x, o.y] : sv, pin = !n.tether && (o ? !!o.pin : !!(sv && sv[2]));
         return { ...n, x: p ? p[0] : undefined, y: p ? p[1] : undefined, pin, fx: null, fy: null, _new: !p };
       });
       const byId = new Map(NODES.map((n) => [n.id, n]));
@@ -289,7 +290,7 @@ const NetGraph = (() => {
         .on("mouseleave", () => { isolate(null); hideTip(); }).on("click", (ev, n) => { hideTip(); onClick && onClick(n, "node"); })
         // dragging moves this node alone (nothing else is pushed around), and it stays where it is dropped
         .call(d3.drag().on("start", () => { if (sim) sim.stop(); if (settling) { settling = null; for (const n of NODES) { n.fx = n.fy = null; n._new = false; } } })
-          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = true; save(); }))
+          .on("drag", (ev, d) => { d.x = ev.x; d.y = ev.y; tick(); }).on("end", (ev, d) => { d.pin = !d.tether; tick(); save(); }))   // a cloud goes back beside its stock
         .on("dblclick", (ev, d) => { ev.stopPropagation(); d.pin = false; settle(new Set([d.id]), 0.3, false); });   // let the forces place it again
       // parallel edges (several flows between the same two nodes) spread apart
       const par = new Map();
@@ -391,7 +392,13 @@ const NetGraph = (() => {
     function isolate(id) {
       if (pinned) return;
       const ns = gNodes.selectAll("g.ng-node"), es = gEdges.selectAll("g.ng-edge"), ls = gLabels.selectAll("g.ng-label");
-      if (!id) { ns.classed("ng-dim", false); es.classed("ng-dim", false); ls.classed("ng-dim", false); return; }
+      // an edge with a ``hoverColor`` shows it while its neighbourhood is isolated, and goes back after
+      const paint = (lit) => es.each(function (e) {
+        if (!e.hoverColor) return;
+        const col = lit && lit.has(e.id) ? e.hoverColor : e.color || "#4b5563";
+        d3.select(this).select(".ng-line").attr("stroke", col).attr("marker-end", e.arrow === false ? null : marker(col)).classed("ng-hover", !!(lit && lit.has(e.id)));
+      });
+      if (!id) { ns.classed("ng-dim", false); es.classed("ng-dim", false); ls.classed("ng-dim", false); paint(null); return; }
       const keep = new Set([id]), lit = new Set();
       let frontier = [id];
       for (let h = 0; h < isolateHops; h++) {
@@ -405,6 +412,7 @@ const NetGraph = (() => {
         frontier = next.filter((x) => (NODES.find((n) => n.id === x) || {}).hop);
       }
       ns.classed("ng-dim", (n) => !keep.has(n.id)); es.classed("ng-dim", (e) => !lit.has(e.id)); ls.classed("ng-dim", (e) => !lit.has(e.id));
+      paint(lit);
     }
     // a loop or any set: these nodes and edges in gold, everything else faded
     function highlight(nodeIds, edgeIds) {

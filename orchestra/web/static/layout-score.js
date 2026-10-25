@@ -69,6 +69,14 @@
     out.flowLength = { max: Math.round(Math.max(0, ...inner.map((f) => f.len))), median: Math.round(median(inner.map((f) => f.len))) };
     out.stubLength = { max: Math.round(Math.max(0, ...stubs.map((f) => f.len))), median: Math.round(median(stubs.map((f) => f.len))) };
     out.influenceLength = { max: Math.round(Math.max(0, ...links.map((f) => f.len))), median: Math.round(median(links.map((f) => f.len))) };
+    // how far each node is from the nearest thing it is connected to (by a flow or an influence):
+    // a node left far from everything it touches is what reads as "floating off"
+    const near = new Map();
+    const touch = (a, b, len) => { for (const n of [a, b]) if (n) near.set(n.id, Math.min(near.get(n.id) ?? Infinity, len)); };
+    for (const f of flows) touch(f.a, f.b, f.len);
+    for (const f of links) touch(f.a, null, f.len);
+    const far = [...near.entries()].filter(([, v]) => isFinite(v)).sort((a, b) => b[1] - a[1]);
+    out.nearest = { max: Math.round(far.length ? far[0][1] : 0), median: Math.round(median(far.map(([, v]) => v))), worst: far.slice(0, 3).map(([id, v]) => [id, Math.round(v)]) };
     out.longest = [...inner, ...stubs, ...links].sort((a, b) => b.len - a.len).slice(0, 3).map((f) => [f.e.id, Math.round(f.len)]);
     if (frame) {
       out.cloudsInside = nodes.filter((n) => !inside(n) && overlap(box(n, size), frame)).map((n) => n.id);

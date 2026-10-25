@@ -50,6 +50,7 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeMachine()"><div id="drawer" class="drawer mdlg"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
+<script src="/static/edge-color.js?v={{v}}"></script>
 <script>
 let DATA = null;
 // one colour per machine, the same every time for the same id
@@ -106,7 +107,7 @@ function eventMap(d) {
   const g = agentGraph(d);
   if (!$("evsvg-host")) {
     $("evmap-host").innerHTML = `<div class="evmap"><div id="evsvg-host"></div>
-      <div class="legend"><span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span><span>○ machine</span><span>halo: active in the last two minutes</span><span><i style="border-color:#22c55e"></i>seen on the bus, last 24h</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
+      <div class="legend"><span><i style="border-color:#4b5563"></i>publishes / listens for</span><span><span style="color:#fcd34d">▭</span> event type</span><span>○ machine</span><span>halo: active in the last two minutes</span><span>lines take their machine's colour: solid, it publishes; dashed, it listens; grey, not seen in 24 h</span><label style="cursor:pointer"><input type="checkbox" ${window.EV_SHOW_ALL ? "checked" : ""} onchange="window.EV_SHOW_ALL=this.checked;window.LOOPSIG=null;render()"> show events nobody listens for</label><span>· drag nodes (they stay where dropped; double-click to release), scroll to zoom, hover to isolate, click a machine for its details and log</span></div>
       <div class="ng-loops" id="loops"></div></div>`;
     GRAPH = NetGraph.create($("evsvg-host"), { key: "machines", height: 600, isolateHops: 2,
       onClick: (x, kind) => { if (kind === "node" && x.machine) openMachine(x.label); },
@@ -117,7 +118,15 @@ function eventMap(d) {
     ? { id: n.id, kind: "box", cls: "ng-event", label: n.label, lines: n.labels || [n.label], sub: n.cnt ? n.cnt + "/24h" : "", color: "#6b5313", hop: true, cnt: n.cnt, labels: n.labels }
     : { id: n.id, kind: "circle", label: n.label, machine: true, active: n.active, halo: n.active, color: n.bootstrap ? "var(--panel3)" : mcolor(n.label),
         stroke: n.bootstrap ? "#fbbf24" : null, strokeWidth: n.bootstrap ? 2 : null, sub: machineSub(n) });
-  const edges = g.links.map((l) => ({ id: l.source + ">" + l.target, source: l.source, target: l.target, seen: l.seen, color: l.seen ? "#22c55e" : "#4b5563" }));
+  // an edge takes the colour of its machine (the publisher's, or the listener's: dashed), toned
+  // down so the machines stand out (edge-color.js); unseen in 24 h: near-grey and fainter
+  const nodeColor = (id) => { const n = nodes.find((x) => x.id === id); return !n ? "#94a3b8" : n.stroke === "#fbbf24" ? "#fbbf24" : n.color; };
+  const edges = g.links.map((l) => {
+    const listen = l.source.startsWith("ev:"), base = nodeColor(listen ? l.target : l.source);
+    return { id: l.source + ">" + l.target, source: l.source, target: l.target, seen: l.seen, dashed: listen,
+             color: edgeColor(base, l.seen ? (listen ? "listen" : "publish") : "unseen"), hoverColor: base,
+             width: l.seen ? 1.5 : 1, cls: l.seen ? "ev-seen" : "ev-unseen" };
+  });
   GRAPH.render(nodes, edges);
   // feedback loops: cycles of machine → event → machine
   const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };

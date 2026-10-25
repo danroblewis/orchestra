@@ -116,12 +116,15 @@ function draw() {
   for (const n of nodes) n.decorate = n.sid ? Live.decorateStock : n.input ? Live.decorateInput : undefined;
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
   if (!GRAPH || sig !== GSIG || !document.querySelector("#diagram svg")) {
-    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics", height: 620,
+    if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics.v2", height: 620,   // v2: layouts saved before ELK are not reused
       // one system: everything is inside but the clouds, the environment flows come from and go to
       boundary: { inside: (n) => n.kind !== "cloud", label: "the system · outside: the environment (sources and sinks)" },
       // laid out by ELK (sd-layout.js): the system in layers along its flows, clouds beside their stocks
-      layout: window.ELK ? (nodes, edges) => SDLayout.layout(nodes, edges, { elk: new ELK(), size: NetGraph.size, frameOf: NetGraph.frameOf,
-        tetherPlaces: NetGraph.tetherPlaces, hierarchy: true }) : null,
+      // then refined by springs, so nothing is left far from what it is connected to
+      layout: window.ELK ? async (nodes, edges) => {
+        const geo = { size: NetGraph.size, frameOf: NetGraph.frameOf, tetherPlaces: NetGraph.tetherPlaces };
+        return SDLayout.refine(nodes, edges, await SDLayout.layout(nodes, edges, { elk: new ELK(), ...geo, hierarchy: true }), geo);
+      } : null,
       tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
       onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;
