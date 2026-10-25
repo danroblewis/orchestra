@@ -110,6 +110,13 @@ def create_app(project: Project) -> FastAPI:
     def dynamics_model(version: int | None = None) -> dict:
         return model_view(project, version, bg.levels, bg.errors.get("levels"))
 
+    @app.get("/api/dynamics/history")
+    def dynamics_history() -> dict:
+        """The model's recent history (stock levels, flow rates), from the background cache."""
+        if not bg.ready("history"):
+            return {"ok": False, "error": "reading the history for the first time…"}
+        return {"ok": True, **bg.history, "error": bg.errors.get("history")}
+
     @app.get("/api/machines")
     def machines() -> dict:
         """The machines seen on the bus and who publishes and listens for what: from the web

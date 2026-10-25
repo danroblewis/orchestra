@@ -4,7 +4,9 @@ One thread keeps three caches warm:
 - the **machine index** (``machines.MachineIndex``), following the bus every few seconds;
 - the project's **series list** from the metrics store (an export on VictoriaMetrics), every
   minute;
-- the **current levels** of the model's stocks, every few seconds.
+- the **current levels** of the model's stocks, every few seconds;
+- the model's **recent history**: each stock's level and each flow's rate over the last
+  ``HISTORY_S``, for the Dynamics page's sparklines, charts and flow animation.
 
 Endpoints read the caches and report how old they are. The model itself is rediscovered by the
 bootstrap host, not here (``orchestra.host``); this only reads what the host cached."""
@@ -13,13 +15,19 @@ from __future__ import annotations
 
 import threading
 import time
+from itertools import pairwise
 
+from ..metrics import step_sample
 from ..sd.store import ModelStore
 from .machines import MachineIndex
 
 INDEX_EVERY_S = 5.0
 SERIES_EVERY_S = 60.0
 LEVELS_EVERY_S = 15.0
+HISTORY_EVERY_S = 15.0
+HISTORY_S = 3600.0
+STOCK_STEP_S = 15.0
+FLOW_STEP_S = 30.0
 
 
 class Refresher:
@@ -30,6 +38,7 @@ class Refresher:
         self.models = ModelStore.for_state(project.state_dir)
         self.series: list[tuple[str, dict]] = []
         self.levels: dict[str, dict] = {}
+        self.history: dict = {}
         self.at: dict[str, float] = {}
         self.errors: dict[str, str] = {}
         self._stop = threading.Event()
@@ -49,9 +58,38 @@ class Refresher:
         if self.metrics is not None:
             self.series = [(n, lab) for n, lab in self.metrics.series("") if lab.get("project") == self.project.key]
 
-    def _levels(self) -> None:
+    def _model(self):
         cached = self.models.latest_discovery()
-        model = cached[1] if cached else self.models.load()
+        return cached[1] if cached and cached[1].stocks else self.models.load()
+
+    def _history(self) -> None:
+        """Each stock's level every STOCK_STEP_S, and each flow's rate (per the model's time unit)
+        every FLOW_STEP_S, over the last HISTORY_S."""
+        model = self._model()
+        if model is None or self.metrics is None:
+            self.history = {}
+            return
+        end = time.time()
+        start = end - HISTORY_S
+        unit = {"second": 1.0, "minute": 60.0, "hour": 3600.0}.get(model.time_unit, 60.0)
+        stocks, flows = {}, {}
+        for s in model.stocks:
+            if s.series:
+                pts = self.metrics.raw(s.series.name, s.series.labels, start=start - 300, end=end)
+                t0 = start - start % STOCK_STEP_S
+                stocks[s.id] = [[round(t), v] for t, v in step_sample(pts, t0, end, STOCK_STEP_S)]
+        for f in model.flows:
+            if f.counter:
+                pts = self.metrics.raw(f.counter.name, f.counter.labels, start=start - 300, end=end)
+                t0 = start - start % FLOW_STEP_S
+                sampled = step_sample(pts, t0, end, FLOW_STEP_S)
+                flows[f.id] = [[round(b[0]), ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S]
+                               for a, b in pairwise(sampled)]
+        self.history = {"at": end, "start": start, "stock_step": STOCK_STEP_S, "flow_step": FLOW_STEP_S,
+                        "time_unit": model.time_unit, "stocks": stocks, "flows": flows}
+
+    def _levels(self) -> None:
+        model = self._model()
         out = {}
         if model is not None and self.metrics is not None:
             for s in model.stocks:
@@ -66,6 +104,7 @@ class Refresher:
             self._do("index", INDEX_EVERY_S, self.index.update)
             self._do("series", SERIES_EVERY_S, self._series)
             self._do("levels", LEVELS_EVERY_S, self._levels)
+            self._do("history", HISTORY_EVERY_S, self._history)
             self._stop.wait(1.0)
 
     def ready(self, name: str) -> bool:

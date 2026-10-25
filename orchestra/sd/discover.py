@@ -259,6 +259,26 @@ def balance(level: Series, counters: list[Series], ls: LeastSquares | None = Non
             else:
                 coef.pop(j, None)
         sse = e
+    # Two near-identical counters with opposite signs cancel to almost nothing and only soak up
+    # noise: drop such a pair when the balance barely needs it.
+    def corr(a: list[float], b: list[float]) -> float:
+        ma, mb = sum(a) / len(a), sum(b) / len(b)
+        num = sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=True))
+        den = math.sqrt(sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b)) or 1e-12
+        return num / den
+    changed = True
+    while changed:
+        changed = False
+        for j in list(coef):
+            for k in list(coef):
+                if j < k and j in coef and k in coef and coef[j] == -coef[k] and corr(xs[j], xs[k]) > 0.9:
+                    r2 = [r + coef[j] * a + coef[k] * b for r, a, b in zip(resid, xs[j], xs[k], strict=True)]
+                    e = sum(r * r for r in r2)
+                    if e - sse < 0.05 * sst:
+                        resid, sse = r2, e
+                        coef.pop(j)
+                        coef.pop(k)
+                        changed = True
     chosen = [(counters[j], sign) for j, sign in sorted(coef.items())]
     exact = sum(1 for r in resid if abs(r) <= 0.5) / len(resid)
     return chosen, 1 - sse / sst, exact
@@ -369,7 +389,8 @@ def events_of(points: list[tuple[float, float]], live: list[tuple[float, float]]
     return out
 
 
-def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, Path], src: str | None) -> list[dict]:
+def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, Path], src: str | None,
+             drivers: set[str] | None = None) -> list[dict]:
     """Every candidate form for one flow, best (lowest AIC) first, scored with the exact
     point-process likelihood: each event against the rate just before it, the rate integrated
     over the stocks' actual paths:
@@ -403,7 +424,7 @@ def fit_flow(events: list[tuple[float, float]], window: float, paths: dict[str, 
             cands.append({"form": "proportional", "params": {"k": k}, "inputs": [src], "loglik": ll(0.0, k, src), "k": 1})
     for sid, p in paths.items():
         xs = list(p.time_at)
-        if not xs or max(xs) - min(xs) < 1e-9:
+        if not xs or max(xs) - min(xs) < 1e-9 or (drivers is not None and sid not in drivers and sid != src):
             continue
         span = max(xs) - min(xs)
 
@@ -450,16 +471,36 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             why = f"no counters balance it (best R² {r2:.2f}" + (f" with {', '.join(c.key for c, _ in terms)}" if terms else "") + ")"
             left_out[s.key] = why
 
+    # An accumulator (a stock whose balance only adds) may only be balanced by counters no ordinary
+    # stock uses: otherwise it borrows the system's flows as stand-ins for what it really counts.
+    ordinary = [x for x in found if not all(sign > 0 for _, sign in x[1])]
+    taken = {c.key for _, terms, _, _ in ordinary for c, _ in terms}
+    free = [c for c in counters if c.key not in taken]
+    kept = list(ordinary)
+    for s, terms, r2, exact in found:
+        if not all(sign > 0 for _, sign in terms):
+            continue
+        if not any(c.key in taken for c, _ in terms):
+            kept.append((s, terms, r2, exact))
+            continue
+        terms2, r2b, exact2 = balance(s, free, LeastSquares([c.deltas for c in free]) if free else None)
+        if terms2 and r2b >= MIN_R2:
+            kept.append((s, terms2, r2b, exact2))
+        else:
+            left_out[s.key] = f"only an accumulator of other stocks' flows (R² {r2b:.2f} with counters of its own)"
+    found = kept
     stocks, sid_of = [], {}
     for s, terms, r2, exact in found:
         sid = _slug(s)
         sid_of[s.key] = sid
         stocks.append(Stock(sid, _title(s), "items", SeriesRef(s.name, s.labels),
                             {"balance_r2": round(r2, 4), "exact_steps": round(exact, 4), "steps": n,
-                             "machine": machine_of(s),
+                             "machine": machine_of(s), "accumulator": all(sign > 0 for _, sign in terms),
                              "balance": [{"series": c.key, "sign": sign} for c, sign in terms]}))
     ends: dict[str, dict] = defaultdict(lambda: {"src": None, "dst": None, "series": None})
-    for s, terms, _, _ in found:
+    # a counter in two balances connects those stocks; when an accumulator (a stock that only
+    # fills) and an ordinary stock both claim the same end of it, the ordinary stock keeps it
+    for s, terms, _, _ in sorted(found, key=lambda x: not all(sign > 0 for _, sign in x[1])):
         for c, sign in terms:
             e = ends[c.key]
             e["series"] = c
@@ -483,6 +524,11 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
     levels = {sid_of[s.key]: [_average(s.points, start + i * step, start + (i + 1) * step) for i in steps_live]
               for s, _, _, _ in found}
     paths = {sid_of[s.key]: Path.of(s.points, live, unit_s) for s, _, _, _ in found}
+    # A stock that only fills (no outflow in its balance) grows with time whatever else happens,
+    # so as a driver of another flow's rate it stands in for time itself and finds spurious
+    # influences. It stays a stock; it just may not explain other flows.
+    accumulators = {sid_of[s.key] for s, terms, _, _ in found if all(sign > 0 for _, sign in terms)}
+    drivers = set(paths) - accumulators
     flows, by_machine = [], defaultdict(list)
     for e in ends.values():
         c = e["series"]
@@ -490,7 +536,7 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
             continue
         dl = c.deltas
         y = [dl[i] for i in steps_live]
-        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, e["src"])
+        best, *rest = fit_flow(events_of(c.points, live), live_s / unit_s, paths, e["src"], drivers)
         best["dispersion"] = dispersion(y, dt, best, levels)
         alt = {f"aic_{x['form']}" + (f"_{x['inputs'][0]}" if x["form"] == "linear" else ""): round(x["aic"], 2) for x in rest[:4]}
         alt.update({f"{x['form']}_k": round(x["params"]["k"], 6) for x in [best, *rest] if x["form"] == "proportional"})

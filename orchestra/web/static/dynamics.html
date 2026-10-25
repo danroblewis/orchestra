@@ -29,6 +29,19 @@
   .origin.fitted { color:#bbf7d0; border-color:#166534 } .origin.declared { color:#fde68a; border-color:#92400e }
   details { margin:4px 0 } summary { cursor:pointer; font-size:12px; color:var(--text2); padding:3px 0 }
   .bal { font-size:12px; margin:4px 0; line-height:1.9 } .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono) }
+  .flowdash { stroke:#fff; stroke-width:2.2; stroke-dasharray:2 14; opacity:.75; pointer-events:none; animation:flowdash linear infinite }
+  @keyframes flowdash { to { stroke-dashoffset:-32 } }
+  .sdtip { display:none; position:fixed; z-index:60; pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:7px 10px; font-size:12px; box-shadow:0 8px 24px #0008; max-width:420px }
+  .sdtip .tt { font-weight:700; margin-bottom:3px } .sdtip .tr { display:flex; gap:14px; justify-content:space-between; white-space:nowrap } .sdtip .tr b { font-family:var(--mono); font-weight:600 } .sdtip .hint { color:var(--muted); font-size:10.5px; margin-top:4px }
+  .histp { margin-top:10px } .hkeys { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px }
+  .hk { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text2); background:var(--panel2); border:1px solid var(--border); border-radius:999px; padding:2px 10px; cursor:pointer; user-select:none }
+  .hk i { width:12px; height:3px; border-radius:2px } .hk b { font-family:var(--mono); font-weight:600; color:var(--text) } .hk.off { opacity:.4 } .hk.off i { background:var(--border2) !important }
+  svg.chart { width:100%; height:auto; min-height:0; display:block } .chart .ax { stroke:var(--border2); stroke-width:1 } .chart text { fill:var(--muted); font-size:10px; font-family:var(--mono) } .chart path { fill:none; stroke-width:1.6 }
+  .ckeys { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; color:var(--text2); margin-top:4px } .ckeys i { display:inline-block; width:10px; height:3px; border-radius:2px; margin-right:4px; vertical-align:middle }
+  .charttip { display:none; position:fixed; z-index:70; pointer-events:none; background:var(--panel2); border:1px solid var(--border2); border-radius:8px; padding:6px 9px; font-size:11.5px; box-shadow:0 8px 24px #0008 }
+  .charttip .tt { color:var(--muted); font-size:10.5px; margin-bottom:3px } .charttip .tr { display:flex; align-items:center; gap:6px; white-space:nowrap } .charttip .tr i { width:9px; height:3px; border-radius:2px } .charttip .tl { color:var(--text2); font-family:var(--mono); font-size:11px } .charttip .tr b { margin-left:auto; padding-left:12px; font-family:var(--mono) }
+  svg .xh { stroke:var(--text2); stroke-width:1; stroke-dasharray:3 3; vector-effect:non-scaling-stroke }
+  .drawer h4 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:14px 0 6px } .drawer .def { display:grid; grid-template-columns:110px 1fr; gap:5px 12px; font-size:12.5px } .drawer .def > div:nth-child(odd) { color:var(--muted) }
   .tables h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
 </style>
 </head>
@@ -39,6 +52,7 @@
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span></div>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
+  <div class="panel histp"><h2 style="margin-top:0"><span>Stocks, last hour</span><span class="hctl muted" style="font-size:11px">click a name to show or hide it</span></h2><div class="hkeys" id="hist-keys"></div><div id="hist"></div></div>
   <div class="tables">
     <div>
       <div class="panel"><h2 style="margin-top:0"><span>Flows</span><span class="count" id="nflows"></span></h2><table class="dt" id="flows"></table></div>
@@ -53,6 +67,7 @@
 <div id="overlay" class="overlay" onclick="if(event.target===this)closeDrawer()"><div id="drawer" class="drawer"></div></div>
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/sd-diagram.js?v={{v}}"></script>
+<script src="/static/charts.js?v={{v}}"></script>
 <script>
 // one colour per machine, the same every time for the same id
 const MPAL = ["#60a5fa", "#f59e0b", "#e879f9", "#22c55e", "#f87171", "#38bdf8", "#facc15", "#a78bfa", "#fb923c"];
@@ -76,7 +91,7 @@ function draw() {
   const m = MODEL, byMachine = Object.fromEntries(m.machines.map((x) => [x.id, x]));
   const D = {
     stocks: m.stocks.map((s) => ({ id: s.id, name: nice(s.id), cls: "st-" + s.id,
-      sub: m.levels[s.id] ? `${m.levels[s.id].v} now` : (s.series ? "no data" : "not measured"), title: s.name })),
+      sub: " ", title: s.name })),
     flows: m.flows.filter((f) => (f.current && f.current.quality && f.current.quality.events > 0) || window.SHOW_ALL)
       .map((f) => ({ from: f.from, to: f.to, cls: "m-" + (f.machine || "none"), label: eqText(f, true),
         reads: influence(f) ? [{ stock: influence(f), label: f.current.params.k < 0 ? "−" : "+", cls: "m-" + (f.machine || "none") }] : [],
@@ -94,12 +109,13 @@ function draw() {
   $("diagram").innerHTML = '<svg id="sd"></svg>';
   // flow labels sit outside the stocks' bounds: leave room for them, so nothing is clipped
   // boxes as wide as the longest stock name needs
-  const box = { w: boxW, h: 64 };
+  const box = { w: boxW, h: 96 };
   const vb = SDDiagram.bounds(P, D.flows, box, 60);
   SDDiagram.draw($("sd"), D, P, { color, box, viewBox: { x: vb.x - 140, y: vb.y - 30, w: vb.w + 280, h: vb.h + 60 } });
   // stocks above the flow labels, so a label beside a stock never hides its name
   const stocks = $("sd").querySelector("g.dstock");
   if (stocks && stocks.parentNode) $("sd").appendChild(stocks.parentNode);
+  Live.drawn({ D, box, color });
   // legend: machines, hover to isolate their flows
   const used = [...new Set(D.flows.map((f) => f.cls.slice(2)))];
   $("legend").innerHTML = used.map((id) => { const mc = byMachine[id] || { name: id, kind: "?" };
@@ -182,10 +198,11 @@ setInterval(async () => {
   try {
     const d = await (await fetch("/api/dynamics/model")).json();
     if (!d.ok) return;
-    const changed = !MODEL || d.model.version !== MODEL.version;
+    const changed = !MODEL || d.model.version !== MODEL.version || d.model.as_of !== MODEL.as_of;
     MODEL = d.model; versionBar(); if (changed) draw(); tables();
   } catch (e) {}
 }, 15000);
 </script>
+<script src="/static/dynamics-live.js?v={{v}}"></script>
 </body>
 </html>
