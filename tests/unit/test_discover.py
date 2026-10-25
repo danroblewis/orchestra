@@ -128,3 +128,30 @@ def test_event_driven_counters_do_not_shrink_the_live_time(tmp_path):
     m = discover(store.dump("", {"project": "p"}), start=start, end=end, step=30)
     assert m.discovery["live_minutes"] > 55, m.discovery["live_minutes"]
     assert len(m.flows) >= 4
+
+
+def test_a_two_valued_level_is_a_stock_only_when_counters_balance_it_exactly(tmp_path):
+    # a shelf that holds nothing or one item (in = put on it, out = picked up) is a stock; a
+    # worker's busy flag that only moves with the work, with no counter of its own, is not
+    rng, t0 = random.Random(3), 1_800_000_000.0
+    lab = lambda m: {"project": "p", "machine": m}
+    on, put, taken, busy, done = 0, 0, 0, 0, 0
+    pts = []
+    for i in range(60 * 60):
+        t = t0 + i
+        if on == 0 and rng.random() < 0.05:
+            on, put = 1, put + 1
+        elif on == 1 and rng.random() < 0.2:
+            on, taken = 0, taken + 1
+        if busy == 0 and rng.random() < 0.1:
+            busy = 1
+        elif busy == 1 and rng.random() < 0.1:
+            busy, done = 0, done + 1
+        pts += [Point("shelf_items", on, t, lab("shelf")), Point("shelf_put_total", put, t, lab("chef")),
+                Point("shelf_taken_total", taken, t, lab("shelf")), Point("worker_busy", busy, t, lab("worker")),
+                Point("worker_done_total", done, t, lab("worker"))]
+    store = FileMetrics(tmp_path / "m.jsonl")
+    store.write(pts)
+    m = discover(store.dump("", {"project": "p"}), start=t0, end=t0 + 3600, step=30)
+    assert [s.series.name for s in m.stocks] == ["shelf_items"]
+    assert any(k.startswith("worker_busy") and "flag" in why for k, why in m.discovery["left_out"].items()), m.discovery["left_out"]

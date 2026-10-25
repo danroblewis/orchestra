@@ -42,6 +42,7 @@ from ..metrics import step_sample
 from .model import Equation, Flow, Machine, Model, SeriesRef, Stock
 
 MIN_R2 = 0.9            # how well a balance must fit for a level to count as a stock
+FLAG_EXACT = 0.97         # a two-valued level is a stock only if its balance is exact in this share of steps
 MIN_GAIN = 0.01         # each added counter must explain at least this share of the level's variance
 MAX_TERMS = 8
 UNITS = {"second": 1.0, "minute": 60.0, "hour": 3600.0}
@@ -464,10 +465,13 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if not any(s.deltas):
             left_out[s.key] = "a level that did not change in the window"
             continue
-        if len({v for _, v in s.points}) <= 2:
-            left_out[s.key] = "a flag (it only ever takes two values), not a quantity that accumulates"
-            continue
         terms, r2, exact = balance(s, counters, ls)
+        # a level that only ever takes two values is usually a flag (a baker is busy or not), and
+        # least squares will balance a flag with counters that merely move with it; it is a stock
+        # only when counters balance it exactly (a shelf that holds nothing or one item)
+        if len({v for _, v in s.points}) <= 2 and not (terms and r2 >= MIN_R2 and exact >= FLAG_EXACT):
+            left_out[s.key] = "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates"
+            continue
         if terms and r2 >= MIN_R2:
             found.append((s, terms, r2, exact))
         else:
