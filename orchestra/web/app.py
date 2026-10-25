@@ -64,9 +64,14 @@ def create_app(project: Project) -> FastAPI:
     async def tickets_page() -> str:
         return page("tickets.html")
 
-    @app.get("/agents", response_class=HTMLResponse)
-    async def agents_page() -> str:
-        return page("agents.html")
+    @app.get("/agents")
+    async def agents_redirect():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/machines", status_code=308)
+
+    @app.get("/machines", response_class=HTMLResponse)
+    async def machines_page() -> str:
+        return page("machines.html")
 
     @app.get("/api/roles")
     async def roles() -> dict:

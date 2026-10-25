@@ -69,6 +69,7 @@ def machines_view(project, store, snapshot: dict) -> dict:
                        "rate": next(iter(eq.params.values())) if eq else None,
                        "se": eq.quality.get("se") if eq else None,
                        "events": eq.quality.get("events") if eq else None,
+                       "dispersion": eq.quality.get("dispersion") if eq else None,
                        "src": f.src if f else None, "origin": eq.origin if eq else None})
         out.append({"id": m.id, "name": m.name, "kind": m.kind, "description": m.description, "bootstrap": m.bootstrap,
                     "engagement": [{"mode": e.mode, "driver": e.driver} for e in m.engagement],

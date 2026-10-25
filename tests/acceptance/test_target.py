@@ -81,7 +81,7 @@ def test_loop_is_running_with_resident_agents():
 
 
 def test_pages_and_assets():
-    for path, needle in (("/", 'href="/tickets"'), ("/tickets", 'href="/"'), ("/agents", 'href="/"'),
+    for path, needle in (("/", 'href="/tickets"'), ("/tickets", 'href="/"'), ("/machines", 'href="/"'),
                          ("/static/app.js", "openTicket"), ("/static/style.css", ".cores")):
         status, _, body = get(path)
         assert status == 200 and needle in body, path

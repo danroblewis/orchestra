@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/style.css?v={{v}}">
 </head>
 <body>
-<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="tabs"><button class="on" onclick="showCol(0,this)">Machines</button><button onclick="showCol(1,this)">Core</button><button onclick="showCol(2,this)">Host</button></div>
 <div class="layout">
   <div class="col on">
@@ -62,31 +62,13 @@ async function refresh() {
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
 
-// ---- machines: AI agents and programs, from the factory model ----
-const MACHINE_COLOR = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", "pipeline-manager": "var(--r-pipeline)",
-  worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
-const STATUS_CHIP = { running: "resident", working: "working", waiting: "resident", idle: "", stopped: "down", "not running": "down", observed: "" };
-function flowText(f) {
-  const [a, b] = f.id.split(">");
-  const arrow = `<span class="fl">${esc(a.toLowerCase().replace(/_/g, " "))} → ${esc(b.toLowerCase().replace(/_/g, " "))}</span>`;
-  if (f.rate == null) return `${arrow}<span class="muted">no data</span>`;
-  const rate = f.form === "proportional" ? `${f.rate.toFixed(2)} × ${esc((f.src || "").toLowerCase().replace(/_/g, " "))}` : f.rate.toFixed(2);
-  return `${arrow}<span class="num" title="${esc(f.form)} · fitted (${esc(f.origin)}) from ${f.events} events · ± ${(f.se || 0).toFixed(3)}">${rate} /h</span>`;
-}
+// ---- machines that are running now; every machine is on the Machines page ----
 function renderMachines() {
-  const ms = MACHINES.machines, working = ms.reduce((n, m) => n + m.jobs.length, 0);
-  $("machines-sub").textContent = `${ms.length} machines · ${working} job${working === 1 ? "" : "s"} running` + (MACHINES.fitted ? "" : " · not fitted yet");
-  $("machines").innerHTML = ms.map((m) => {
-    const agent = m.kind === "agent", rc = MACHINE_COLOR[m.id] || (agent ? "#c4b5fd" : "#94a3b8");
-    const eng = m.engagement.map((e) => `${e.mode.replace("_", " ")} · ${e.driver}`).join(", ") || "observed only";
-    const jobs = m.jobs.map((j) => `<div class="job" onclick="event.stopPropagation();openTranscript('${esc(j.session)}')"><span class="id">${esc(j.ticket || j.session)}</span><span class="msg">${esc(j.text || "working")}</span></div>`).join("");
-    const ctl = m.id === "worker" && STATE ? `<div class="mctl">${capacityCtl(STATE)}${STATE.pickup_paused ? "<span>new work PAUSED</span>" : ""}<button class="ctl ${STATE.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()">${STATE.pickup_paused ? "▶ resume" : "⏸ pause new work"}</button></div>` : "";
-    return `<div class="machine" style="--rc:${rc}" title="${esc(m.description)}">
-      <div class="mhead"><div class="av ${agent ? "" : "prog"}">${agent ? esc(m.name[0]) : "⚙"}</div>
-        <div class="mname">${esc(m.name)}${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<div class="msub">${agent ? "AI agent" : "program"} · ${esc(eng)}</div></div>
-        <span class="chip ${STATUS_CHIP[m.status] ?? ""}"><span class="dot"></span>${esc(m.status)}</span></div>
-      ${jobs}${m.flows.length ? `<div class="mflows">${m.flows.map(flowText).map((x) => `<div>${x}</div>`).join("")}</div>` : ""}${ctl}</div>`;
-  }).join("");
+  const all = MACHINES.machines, ms = all.filter((m) => !MACHINE_STOPPED.includes(m.status));
+  const working = ms.reduce((n, m) => n + m.jobs.length, 0);
+  $("machines-sub").textContent = `${ms.length} of ${all.length} running · ${working} job${working === 1 ? "" : "s"}`;
+  $("machines").innerHTML = ms.map((m) => machineCard(m, { controls: m.id === "worker" && STATE ? `<div class="mctl">${capacityCtl(STATE)}${STATE.pickup_paused ? "<span>new work PAUSED</span>" : ""}<button class="ctl ${STATE.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()">${STATE.pickup_paused ? "▶ resume" : "⏸ pause new work"}</button></div>` : "" })).join("")
+    || `<div class="empty">No machines running. Machines that run inside Orchestra come up with <code>orchestra run</code>. Every machine, running or not, is on the <a href="/machines">Machines</a> page.</div>`;
 }
 
 async function control(body) {

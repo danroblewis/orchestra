@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Orchestra · Agents</title>
+<title>Orchestra · Machines</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
@@ -65,9 +65,10 @@
 </style>
 </head>
 <body>
-<nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents" class="on">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
+<nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines" class="on">Machines</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="org">
   <p class="intro">Who is in this project and what they are for; the Dashboard shows what they are doing right now. A <b>role</b> is a job description. An <b>agent</b> is an instance of roles in a team and is what runs: <span class="tag k-continuous">continuous</span> agents are processes that are always up and wake on events, <span class="tag k-scheduled">scheduled</span> agents run on an interval or a daily time, <span class="tag k-ad_hoc">ad hoc</span> agents get a fresh session each time their lead briefs them or a subscribed event fires. A <b>team</b> has one lead, responsibilities it keeps true, access, and a space in the repository. All of it is created in conversation with the Supervisor and stored under <code>.orchestra/</code>.</p>
+  <div id="machines-host"></div>
   <div id="evmap-host"></div>
   <div id="list"></div>
 </div>
@@ -418,7 +419,12 @@ async function openRole(name) {
 }
 async function refresh() {
   try {
-    const [st, org, evm] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json()), fetch("/api/eventmap").then((r) => r.json())]);
+    const [st, org, evm, mc] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/org").then((r) => r.json()), fetch("/api/eventmap").then((r) => r.json()), fetch("/api/machines").then((r) => r.json())]);
+    const running = mc.machines.filter((m) => !MACHINE_STOPPED.includes(m.status)), stopped = mc.machines.filter((m) => MACHINE_STOPPED.includes(m.status));
+    $("machines-host").innerHTML = `<h2>Machines <span class="count">${mc.machines.length}</span></h2>
+      <div class="muted" style="font-size:12px;margin:-4px 0 10px">Every machine in the factory model (<code>${esc(mc.model)}</code>): AI agents and programs. A machine is a record of something outside the model, attributed to the flows it is believed to cause; the rates beside each flow are fitted from the history${mc.fitted ? "" : " (not fitted yet: run <code>orchestra sd fit</code>)"}.</div>
+      <h3 class="subh">Running <span class="count">${running.length}</span></h3><div class="mgrid">${running.map((m) => machineCard(m, { detail: true })).join("") || '<div class="empty">none</div>'}</div>
+      <h3 class="subh">Stopped <span class="count">${stopped.length}</span></h3><div class="mgrid">${stopped.map((m) => machineCard(m, { detail: true })).join("") || '<div class="empty">none</div>'}</div>`;
     STATE = st; ORG = org; renderNav("agents", st.project); $("conn").textContent = "live";
     const byName = Object.fromEntries(org.agents.map((a) => [a.name, a]));
     const top = org.teams.filter((t) => !t.parent);
