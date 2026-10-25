@@ -1,0 +1,382 @@
+{
+ "results": [
+  {
+   "id": "V",
+   "story": "story-1-simple-task/designed",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-1-simple-task/manual",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-1-simple-task/rising",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-1-simple-task/manual-rising",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-1-simple-task/better-first-pass",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-2-prod-command/designed",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-2-prod-command/manual",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-2-prod-command/manual-thorough",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-3-status-request/designed",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-3-status-request/manual",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-4-reviews-given/designed",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "story-4-reviews-given/manual",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "desk/designed",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "V",
+   "story": "desk/manual",
+   "kind": "validity",
+   "text": "SD Lab's validator accepts the model",
+   "ok": true,
+   "detail": "ok"
+  },
+  {
+   "id": "1.1",
+   "story": "story-1-simple-task",
+   "kind": "validity",
+   "text": "Manual reproduces today: I am fully busy, work piles up waiting for me, few requests finish",
+   "ok": true,
+   "detail": "busy 100%, waiting for me 4.00 → 22, 3.96 of 24 delivered"
+  },
+  {
+   "id": "1.2",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Designed: nothing piles up waiting for me",
+   "ok": true,
+   "detail": "waiting for me at the end: 0.29"
+  },
+  {
+   "id": "1.3",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Designed: most requests are delivered within four weeks",
+   "ok": true,
+   "detail": "22 delivered of 24 asked (manual: 3.96)"
+  },
+  {
+   "id": "1.4",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Designed: at most one hour of my time per delivered request",
+   "ok": true,
+   "detail": "0.94 h per delivered request (busy 22% of my free time)"
+  },
+  {
+   "id": "1.5",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Designed: at most $20 of agent work per delivered request",
+   "ok": false,
+   "detail": "$22 per delivered"
+  },
+  {
+   "id": "1.6",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Designed: started to merged within 4 working days (32 working hours, Little's law)",
+   "ok": false,
+   "detail": "mean cycle 42 working hours (5.20 days); 90% of work in progress sits in company stocks"
+  },
+  {
+   "id": "1.6b",
+   "story": "story-1-simple-task",
+   "kind": "info",
+   "text": "Fewer rounds at each boundary (better first pass): cost and cycle",
+   "ok": null,
+   "detail": "$16 per delivered, cycle 4.26 days, 23 delivered"
+  },
+  {
+   "id": "1.7",
+   "story": "story-1-simple-task",
+   "kind": "requirement",
+   "text": "Requests rising to 10 a week: designed still keeps up; manual falls further behind",
+   "ok": true,
+   "detail": "waiting for me: designed 0.34, manual 39; my busy 29%"
+  },
+  {
+   "id": "2.1",
+   "story": "story-2-prod-command",
+   "kind": "validity",
+   "text": "Structural: only I run production commands, in every variant",
+   "ok": true,
+   "detail": "p_run machine = me everywhere"
+  },
+  {
+   "id": "2.2",
+   "story": "story-2-prod-command",
+   "kind": "requirement",
+   "text": "Designed: full due diligence costs me under a quarter of doing it all myself",
+   "ok": true,
+   "detail": "0.70 h per request vs 5.26 h doing it all myself (today's shortcut: 2.87 h)"
+  },
+  {
+   "id": "2.3",
+   "story": "story-2-prod-command",
+   "kind": "requirement",
+   "text": "Designed: prevention is adopted, and requests become rarer",
+   "ok": true,
+   "detail": "2.78 adopted in 12 weeks; arrivals 2.00 → 1.37 a week (today's shortcut adopts 0.00)"
+  },
+  {
+   "id": "2.4",
+   "story": "story-2-prod-command",
+   "kind": "requirement",
+   "text": "Designed: every repeat needed in other environments becomes a ticket",
+   "ok": true,
+   "detail": "3.80 filed, 0.00 waiting (today: 4.49 never filed)"
+  },
+  {
+   "id": "3.1",
+   "story": "story-3-status-request",
+   "kind": "requirement",
+   "text": "Designed: the status page stays current (at most 10 stale items)",
+   "ok": true,
+   "detail": "mean stale 0.99 (manual 56)"
+  },
+  {
+   "id": "3.2",
+   "story": "story-3-status-request",
+   "kind": "requirement",
+   "text": "Designed: an answer costs me at most 15 minutes; manual at least an hour",
+   "ok": true,
+   "detail": "0.21 h vs 1.72 h per answer"
+  },
+  {
+   "id": "4.1",
+   "story": "story-4-reviews-given",
+   "kind": "requirement",
+   "text": "Designed: review requests to me don't pile up",
+   "ok": true,
+   "detail": "0.10 waiting (manual 0.10)"
+  },
+  {
+   "id": "D.1",
+   "story": "desk",
+   "kind": "validity",
+   "text": "Manual desk reproduces today: fully busy, and work piles up waiting for me",
+   "ok": true,
+   "detail": "busy 100%, waiting for me 9.00 → 55"
+  },
+  {
+   "id": "D.2",
+   "story": "desk",
+   "kind": "requirement",
+   "text": "Designed desk: everything fits in my free time, with slack",
+   "ok": true,
+   "detail": "busy 46% of my free time, waiting for me 0.40"
+  },
+  {
+   "id": "D.3",
+   "story": "desk",
+   "kind": "validity",
+   "text": "Structural: agents can never spend more than the budget holds",
+   "ok": true,
+   "detail": "lowest balance $0.75"
+  },
+  {
+   "id": "D.4",
+   "story": "desk",
+   "kind": "requirement",
+   "text": "Designed desk: agent work fits the $120 weekly share without drawing down savings",
+   "ok": false,
+   "detail": "$150 a week wanted; balance $120 → $0.75"
+  },
+  {
+   "id": "D.5",
+   "story": "desk",
+   "kind": "info",
+   "text": "Coupling: reviews I give speed up reviews of my PRs (reciprocity)",
+   "ok": null,
+   "detail": "22 simple tasks delivered with reviews given vs 21 without"
+  }
+ ],
+ "leverage_desk": [
+  {
+   "flow": "fund",
+   "pct": 1.5
+  },
+  {
+   "flow": "t_review",
+   "pct": 0.7
+  },
+  {
+   "flow": "t_sail",
+   "pct": 0.3
+  },
+  {
+   "flow": "t_checks",
+   "pct": 0.2
+  },
+  {
+   "flow": "t_bot",
+   "pct": 0.1
+  },
+  {
+   "flow": "p_adopt",
+   "pct": 0
+  },
+  {
+   "flow": "t_collect",
+   "pct": 0
+  },
+  {
+   "flow": "p_propose",
+   "pct": 0
+  }
+ ],
+ "leverage_story1": [
+  {
+   "flow": "t_arrive",
+   "pct": 8.6
+  },
+  {
+   "flow": "t_review",
+   "pct": 1
+  },
+  {
+   "flow": "t_sail",
+   "pct": 0.4
+  },
+  {
+   "flow": "t_checks",
+   "pct": 0.3
+  },
+  {
+   "flow": "t_bot",
+   "pct": 0.1
+  },
+  {
+   "flow": "t_implement",
+   "pct": 0
+  },
+  {
+   "flow": "t_verify",
+   "pct": 0
+  },
+  {
+   "flow": "t_fix_bot",
+   "pct": 0
+  }
+ ],
+ "crossings": {
+  "story-1-simple-task": [
+   "t_arrive: slack/jira in",
+   "t_research: read: jira, docs, slack, code",
+   "t_approve_ticket: jira write (via outbox)",
+   "t_submit: github push + open PR",
+   "t_fix_ci: read: check logs; github push",
+   "t_fix_bot: read: PR comments; github push",
+   "t_post: slack write (via outbox)",
+   "t_ping: slack write",
+   "t_fix_review: read: review threads",
+   "t_send_replies: github push + replies (via outbox)",
+   "t_label: github label",
+   "t_triage: read: SAIL logs; github label",
+   "t_close: read: jira, slack",
+   "t_send_close: jira write + slack write (via outbox)"
+  ],
+  "story-2-prod-command": [
+   "p_arrive: slack/jira in",
+   "p_explain: read: runbooks, code, docs",
+   "p_authority: read: jira approvals, change tickets, org chart",
+   "p_context: read: customer jira, flag history, deploys, release calendars",
+   "p_run: bastion host (human only)",
+   "p_log: jira/slack write (via outbox)",
+   "p_file_followups: jira write (via outbox)",
+   "p_propose: docs write; slack post for review"
+  ],
+  "story-3-status-request": [
+   "s_refresh: read: jira, docs, slack",
+   "s_ask: slack/meeting in",
+   "s_answer: slack write"
+  ],
+  "story-4-reviews-given": [
+   "r_arrive: github in",
+   "r_brief: read: PR, code, git log",
+   "r_post: github write"
+  ]
+ }
+}

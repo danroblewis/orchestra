@@ -1,0 +1,17 @@
+{
+ "manual": {
+  "description": "Today: no brief; I read each change cold.",
+  "flows": {
+   "r_brief": {
+    "machine": "me",
+    "work": 0.01,
+    "uses": []
+   },
+   "r_review": {
+    "machine": "me",
+    "work": 0.75,
+    "uses": []
+   }
+  }
+ }
+}

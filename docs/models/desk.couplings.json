@@ -1,0 +1,31 @@
+{
+ "description": "Effects one story's stocks have on another story's flows. Every coupling is declared here.",
+ "effects": [
+  {
+   "flow": "t_review",
+   "effect": {
+    "stock": "r_recent",
+    "shape": "table",
+    "points": [
+     [
+      0,
+      0.7
+     ],
+     [
+      10,
+      1
+     ],
+     [
+      25,
+      1.3
+     ],
+     [
+      50,
+      1.4
+     ]
+    ]
+   },
+   "note": "Reciprocity: reviewers I recently reviewed for respond faster to my PRs."
+  }
+ ]
+}

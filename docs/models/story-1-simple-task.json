@@ -1,0 +1,736 @@
+{
+ "id": "story-1-simple-task",
+ "name": "Story 1: a simple task for another team",
+ "description": "A member of another team asks for a simple task. I collect the requirements; everything from research to the requester being told is carried by agents and programs, with my approval at each point where something is said or pushed as me. The company's side (checks, AI review, human review, SAIL) is the environment. Time unit: a working hour; horizon four weeks.",
+ "time_unit": "working hour",
+ "horizon": 160,
+ "dt": 0.25,
+ "stocks": [
+  {
+   "id": "t_inbox",
+   "name": "Asks",
+   "unit": "requests",
+   "initial": 4,
+   "side": "interface",
+   "x": 112,
+   "y": 360,
+   "note": "Requests waiting for me to collect requirements"
+  },
+  {
+   "id": "t_scoped",
+   "name": "Scoped",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 336,
+   "y": 140,
+   "note": "Requirements collected"
+  },
+  {
+   "id": "t_researched",
+   "name": "Researched",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 560,
+   "y": 140,
+   "note": "Researched: problem, stakeholders, related projects"
+  },
+  {
+   "id": "t_ticket_draft",
+   "name": "Ticket draft",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 784,
+   "y": 140,
+   "note": "Ticket drafted, waiting for my approval"
+  },
+  {
+   "id": "t_ready",
+   "name": "Ready",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 1008,
+   "y": 140,
+   "note": "Ticket approved, waiting for an implementer"
+  },
+  {
+   "id": "t_verifying",
+   "name": "Verifying",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 1232,
+   "y": 140,
+   "note": "Implemented, being tested and reviewed by AI"
+  },
+  {
+   "id": "t_pr_draft",
+   "name": "PR draft",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "x": 1456,
+   "y": 140,
+   "note": "PR ready, description waiting for my approval"
+  },
+  {
+   "id": "t_ci",
+   "name": "Checks running",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1680,
+   "y": 580,
+   "note": "PR checks running"
+  },
+  {
+   "id": "t_ci_failed",
+   "name": "Checks failed",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1680,
+   "y": 760,
+   "note": "PR checks failed"
+  },
+  {
+   "id": "t_bot_review",
+   "name": "AI review",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1904,
+   "y": 580,
+   "note": "Company AI review running"
+  },
+  {
+   "id": "t_bot_comments",
+   "name": "AI comments",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 1904,
+   "y": 760,
+   "note": "Company AI review comments to address"
+  },
+  {
+   "id": "t_post_draft",
+   "name": "Review post draft",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "interface",
+   "x": 2128,
+   "y": 360,
+   "note": "Review request post drafted, waiting for my approval"
+  },
+  {
+   "id": "t_awaiting_review",
+   "name": "Awaiting review",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 2352,
+   "y": 580,
+   "note": "Waiting for human reviewers"
+  },
+  {
+   "id": "t_nudges",
+   "name": "Recent pings",
+   "unit": "pings",
+   "initial": 0,
+   "side": "interface",
+   "note": "Recent review pings. An information stock: pings sent recently. It speeds reviewers up, with diminishing returns.",
+   "x": 2352,
+   "y": 360
+  },
+  {
+   "id": "t_changes_requested",
+   "name": "Changes requested",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 2576,
+   "y": 760,
+   "note": "Changes requested by reviewers"
+  },
+  {
+   "id": "t_reply_draft",
+   "name": "Replies draft",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "interface",
+   "x": 2576,
+   "y": 360,
+   "note": "Fixes pushed, replies waiting for my approval"
+  },
+  {
+   "id": "t_approved",
+   "name": "Approved",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 2576,
+   "y": 580,
+   "note": "Approved, waiting for the SAIL label"
+  },
+  {
+   "id": "t_sailing",
+   "name": "In SAIL",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 2800,
+   "y": 580,
+   "note": "In SAIL"
+  },
+  {
+   "id": "t_sail_failed",
+   "name": "SAIL failed",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 2800,
+   "y": 760,
+   "note": "SAIL failed"
+  },
+  {
+   "id": "t_landed",
+   "name": "Landed",
+   "unit": "PRs",
+   "initial": 0,
+   "side": "company",
+   "x": 3024,
+   "y": 580,
+   "note": "Landed on master"
+  },
+  {
+   "id": "t_close_draft",
+   "name": "Close-out draft",
+   "unit": "requests",
+   "initial": 0,
+   "side": "interface",
+   "x": 3248,
+   "y": 360,
+   "note": "Jira update and requester message drafted"
+  },
+  {
+   "id": "t_delivered",
+   "name": "Delivered",
+   "unit": "requests",
+   "initial": 0,
+   "side": "ours",
+   "final": true,
+   "target": {
+    "value": 20,
+    "by": 160
+   },
+   "x": 3472,
+   "y": 140,
+   "note": "Delivered: landed, Jira updated, requester told"
+  },
+  {
+   "id": "budget",
+   "name": "Agent budget",
+   "unit": "dollars",
+   "initial": 120,
+   "side": "ours",
+   "note": "Agent budget. Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
+   "x": 1300,
+   "y": -60
+  }
+ ],
+ "flows": [
+  {
+   "id": "t_arrive",
+   "name": "ask",
+   "from": null,
+   "to": "t_inbox",
+   "rate": {
+    "form": "constant",
+    "value": 0.15
+   },
+   "machine": "environment",
+   "side": "company",
+   "crosses": "slack/jira in",
+   "note": "Someone asks me for a simple task"
+  },
+  {
+   "id": "t_collect",
+   "name": "collect reqs",
+   "from": "t_inbox",
+   "to": "t_scoped",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.25,
+   "note": "Collect the requirements (me, in the conversation)"
+  },
+  {
+   "id": "t_research",
+   "name": "research",
+   "from": "t_scoped",
+   "to": "t_researched",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "analyst",
+   "side": "ours",
+   "work": 0.5,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 1.5
+    }
+   ],
+   "crosses": "read: jira, docs, slack, code",
+   "note": "Research the problem, find stakeholders and related projects"
+  },
+  {
+   "id": "t_author",
+   "name": "write ticket",
+   "from": "t_researched",
+   "to": "t_ticket_draft",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "drafter",
+   "side": "ours",
+   "work": 0.2,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 0.5
+    }
+   ],
+   "note": "Author the ticket with requirements and completion criteria"
+  },
+  {
+   "id": "t_approve_ticket",
+   "name": "approve ticket",
+   "from": "t_ticket_draft",
+   "to": "t_ready",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "ours",
+   "work": 0.1,
+   "crosses": "jira write (via outbox)",
+   "note": "Approve the ticket (me)"
+  },
+  {
+   "id": "t_implement",
+   "name": "implement",
+   "from": "t_ready",
+   "to": "t_verifying",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "implementer",
+   "side": "ours",
+   "work": 2,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 6
+    }
+   ],
+   "note": "Implement on a branch"
+  },
+  {
+   "id": "t_verify",
+   "name": "test + AI review",
+   "from": "t_verifying",
+   "to": "t_pr_draft",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "implementer",
+   "side": "ours",
+   "work": 0.5,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 1.5
+    }
+   ],
+   "outputs": [
+    "t_ready"
+   ],
+   "split": {
+    "t_pr_draft": 0.75,
+    "t_ready": 0.25
+   },
+   "note": "Run tests, internal AI review; sent back or passed. Internal rework loop: a quarter go back for another implementation pass."
+  },
+  {
+   "id": "t_submit",
+   "name": "approve + open PR",
+   "from": "t_pr_draft",
+   "to": "t_ci",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.15,
+   "crosses": "github push + open PR",
+   "note": "Approve the PR description; push and open the PR"
+  },
+  {
+   "id": "t_checks",
+   "name": "PR checks",
+   "from": "t_ci",
+   "to": "t_bot_review",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_ci",
+    "k": 1.0
+   },
+   "machine": "environment",
+   "side": "company",
+   "outputs": [
+    "t_ci_failed"
+   ],
+   "split": {
+    "t_bot_review": 0.85,
+    "t_ci_failed": 0.15
+   },
+   "note": "Company PR checks"
+  },
+  {
+   "id": "t_fix_ci",
+   "name": "fix checks",
+   "from": "t_ci_failed",
+   "to": "t_ci",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "implementer",
+   "side": "interface",
+   "work": 0.5,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 1.5
+    }
+   ],
+   "crosses": "read: check logs; github push",
+   "note": "Fix check failures"
+  },
+  {
+   "id": "t_bot",
+   "name": "company AI review",
+   "from": "t_bot_review",
+   "to": "t_post_draft",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_bot_review",
+    "k": 2.0
+   },
+   "machine": "environment",
+   "side": "company",
+   "outputs": [
+    "t_bot_comments"
+   ],
+   "split": {
+    "t_post_draft": 0.5,
+    "t_bot_comments": 0.5
+   },
+   "note": "Company AI review"
+  },
+  {
+   "id": "t_fix_bot",
+   "name": "fix AI comments",
+   "from": "t_bot_comments",
+   "to": "t_ci",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "implementer",
+   "side": "interface",
+   "work": 0.5,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 1.5
+    }
+   ],
+   "crosses": "read: PR comments; github push",
+   "note": "Address the AI review's comments"
+  },
+  {
+   "id": "t_post",
+   "name": "post for review",
+   "from": "t_post_draft",
+   "to": "t_awaiting_review",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.05,
+   "crosses": "slack write (via outbox)",
+   "note": "Post for review in our and owning teams' channels (me approves)"
+  },
+  {
+   "id": "t_ping",
+   "name": "ping",
+   "from": null,
+   "to": "t_nudges",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_awaiting_review",
+    "k": 0.125
+   },
+   "machine": "orchestra",
+   "side": "interface",
+   "work": 0.001,
+   "crosses": "slack write",
+   "note": "Ping reviewers about a waiting PR, about once a day. Auto after the template earned autonomy; until then each ping is an outbox item."
+  },
+  {
+   "id": "t_forget",
+   "name": "fade",
+   "from": "t_nudges",
+   "to": null,
+   "rate": {
+    "form": "proportional",
+    "stock": "t_nudges",
+    "k": 0.25
+   },
+   "machine": "environment",
+   "side": "company",
+   "note": "Pings fade from reviewers' minds"
+  },
+  {
+   "id": "t_review",
+   "name": "human review",
+   "from": "t_awaiting_review",
+   "to": "t_approved",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_awaiting_review",
+    "k": 0.0625
+   },
+   "machine": "environment",
+   "side": "company",
+   "outputs": [
+    "t_changes_requested"
+   ],
+   "split": {
+    "t_approved": 0.6,
+    "t_changes_requested": 0.4
+   },
+   "effects": [
+    {
+     "stock": "t_nudges",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       0.6
+      ],
+      [
+       0.5,
+       1
+      ],
+      [
+       2,
+       1.5
+      ],
+      [
+       6,
+       1.7
+      ]
+     ]
+    }
+   ],
+   "note": "Human review. Mean first response 16 working hours at one recent ping per waiting PR; slower with none."
+  },
+  {
+   "id": "t_fix_review",
+   "name": "address comments",
+   "from": "t_changes_requested",
+   "to": "t_reply_draft",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "implementer",
+   "side": "interface",
+   "work": 1.0,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 3
+    }
+   ],
+   "crosses": "read: review threads",
+   "note": "Address reviewers' comments; draft replies"
+  },
+  {
+   "id": "t_send_replies",
+   "name": "send replies",
+   "from": "t_reply_draft",
+   "to": "t_ci",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.15,
+   "crosses": "github push + replies (via outbox)",
+   "note": "Approve replies; push; re-request review"
+  },
+  {
+   "id": "t_label",
+   "name": "SAIL label",
+   "from": "t_approved",
+   "to": "t_sailing",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.02,
+   "crosses": "github label",
+   "note": "Add the SAIL label"
+  },
+  {
+   "id": "t_sail",
+   "name": "SAIL",
+   "from": "t_sailing",
+   "to": "t_landed",
+   "rate": {
+    "form": "proportional",
+    "stock": "t_sailing",
+    "k": 0.25
+   },
+   "machine": "environment",
+   "side": "company",
+   "outputs": [
+    "t_sail_failed"
+   ],
+   "split": {
+    "t_landed": 0.7,
+    "t_sail_failed": 0.3
+   },
+   "note": "SAIL"
+  },
+  {
+   "id": "t_triage",
+   "name": "triage failure",
+   "from": "t_sail_failed",
+   "to": "t_sailing",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "orchestra",
+   "side": "interface",
+   "work": 0.01,
+   "outputs": [
+    "t_ci_failed"
+   ],
+   "split": {
+    "t_sailing": 0.67,
+    "t_ci_failed": 0.33
+   },
+   "crosses": "read: SAIL logs; github label",
+   "note": "Triage the SAIL failure: known flake gets a re-label, real failure goes to a fix"
+  },
+  {
+   "id": "t_close",
+   "name": "draft close-out",
+   "from": "t_landed",
+   "to": "t_close_draft",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "drafter",
+   "side": "ours",
+   "work": 0.1,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 0.3
+    }
+   ],
+   "crosses": "read: jira, slack",
+   "note": "Draft the Jira update and the message to the requester"
+  },
+  {
+   "id": "t_send_close",
+   "name": "send close-out",
+   "from": "t_close_draft",
+   "to": "t_delivered",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 0.05,
+   "crosses": "jira write + slack write (via outbox)",
+   "note": "Approve and send: Jira comment and status, Slack reply"
+  },
+  {
+   "id": "fund",
+   "name": "weekly budget",
+   "from": null,
+   "to": "budget",
+   "rate": {
+    "form": "constant",
+    "value": 3
+   },
+   "machine": "environment",
+   "side": "ours",
+   "note": "Weekly budget, spread over working hours"
+  }
+ ],
+ "machines": [
+  {
+   "id": "me",
+   "name": "Me",
+   "kind": "person",
+   "color": "#b45309",
+   "capacity": 0.6,
+   "note": "About 60% of my working hours are free for this work; the rest is meetings and duties not modelled."
+  },
+  {
+   "id": "analyst",
+   "name": "Analyst agent",
+   "kind": "agent",
+   "color": "#7c3aed",
+   "capacity": 1,
+   "note": "Research, context, stakeholders, runbooks, root cause. Ad hoc sessions."
+  },
+  {
+   "id": "drafter",
+   "name": "Drafter agent",
+   "kind": "agent",
+   "color": "#2563eb",
+   "capacity": 1,
+   "note": "Tickets, PR descriptions, replies, Slack and Jira messages. Everything it writes goes to my outbox."
+  },
+  {
+   "id": "implementer",
+   "name": "Implementation agents",
+   "kind": "agent",
+   "color": "#0f766e",
+   "capacity": 2,
+   "note": "Two worker slots. Code, tests, fixes."
+  },
+  {
+   "id": "orchestra",
+   "name": "Orchestra programs",
+   "kind": "code",
+   "color": "#475569",
+   "capacity": 5,
+   "note": "Probes, routing, pings, labels, pattern-matched SAIL triage. No model calls."
+  }
+ ]
+}

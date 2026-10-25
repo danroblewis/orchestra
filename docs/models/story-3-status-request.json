@@ -1,0 +1,212 @@
+{
+ "id": "story-3-status-request",
+ "name": "Story 3: a manager asks for status",
+ "description": "Managers ask me about projects assuming I remember. If the status page is current I send it; if not I redo the research. The analyst keeps the page current as tickets, docs and threads change. Time unit: a working hour; horizon four weeks.",
+ "time_unit": "working hour",
+ "horizon": 160,
+ "dt": 0.25,
+ "stocks": [
+  {
+   "id": "s_current",
+   "name": "Status current",
+   "unit": "items",
+   "initial": 30,
+   "side": "ours",
+   "x": 336,
+   "y": 140,
+   "note": "Status items current in my status page"
+  },
+  {
+   "id": "s_stale",
+   "name": "Status stale",
+   "unit": "items",
+   "initial": 30,
+   "side": "ours",
+   "x": 336,
+   "y": 580,
+   "note": "Status items stale: something changed since they were read"
+  },
+  {
+   "id": "s_asks",
+   "name": "Manager asks",
+   "unit": "questions",
+   "initial": 1,
+   "side": "interface",
+   "x": 784,
+   "y": 360,
+   "note": "Questions from managers waiting for an answer"
+  },
+  {
+   "id": "s_answered",
+   "name": "Answered",
+   "unit": "questions",
+   "initial": 0,
+   "side": "interface",
+   "final": true,
+   "target": {
+    "value": 14,
+    "by": 160
+   },
+   "x": 1120,
+   "y": 360,
+   "note": "Questions answered"
+  },
+  {
+   "id": "budget",
+   "name": "Agent budget",
+   "unit": "dollars",
+   "initial": 120,
+   "side": "ours",
+   "note": "Agent budget. Refilled at $3 per working hour (about $120 a week) from the $190 weekly total.",
+   "x": 1300,
+   "y": -60
+  }
+ ],
+ "flows": [
+  {
+   "id": "s_drift",
+   "name": "projects move on",
+   "from": "s_current",
+   "to": "s_stale",
+   "rate": {
+    "form": "proportional",
+    "stock": "s_current",
+    "k": 0.05
+   },
+   "machine": "environment",
+   "side": "company",
+   "note": "Projects move on: tickets, docs and threads change. About a twentieth of what I know goes stale every working hour across 60 tracked items."
+  },
+  {
+   "id": "s_refresh",
+   "name": "refresh",
+   "from": "s_stale",
+   "to": "s_current",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "analyst",
+   "side": "ours",
+   "work": 0.05,
+   "uses": [
+    {
+     "stock": "budget",
+     "per": 0.1
+    }
+   ],
+   "crosses": "read: jira, docs, slack",
+   "note": "Re-read changed tickets, docs and threads; update the status page"
+  },
+  {
+   "id": "s_ask",
+   "name": "ask",
+   "from": null,
+   "to": "s_asks",
+   "rate": {
+    "form": "constant",
+    "value": 0.1
+   },
+   "machine": "environment",
+   "side": "company",
+   "crosses": "slack/meeting in",
+   "note": "A manager asks for an update"
+  },
+  {
+   "id": "s_answer",
+   "name": "answer",
+   "from": "s_asks",
+   "to": "s_answered",
+   "rate": {
+    "form": "available"
+   },
+   "machine": "me",
+   "side": "interface",
+   "work": 1.5,
+   "crosses": "slack write",
+   "effects": [
+    {
+     "stock": "s_stale",
+     "shape": "table",
+     "points": [
+      [
+       0,
+       10
+      ],
+      [
+       5,
+       6
+      ],
+      [
+       20,
+       2
+      ],
+      [
+       45,
+       1
+      ],
+      [
+       60,
+       0.8
+      ]
+     ]
+    }
+   ],
+   "note": "Answer: send the prepared update, or do the research first. 1.5 hours of my research per answer when everything is stale; under 10 minutes when the status page is current."
+  },
+  {
+   "id": "fund",
+   "name": "weekly budget",
+   "from": null,
+   "to": "budget",
+   "rate": {
+    "form": "constant",
+    "value": 3
+   },
+   "machine": "environment",
+   "side": "ours",
+   "note": "Weekly budget, spread over working hours"
+  }
+ ],
+ "machines": [
+  {
+   "id": "me",
+   "name": "Me",
+   "kind": "person",
+   "color": "#b45309",
+   "capacity": 0.6,
+   "note": "About 60% of my working hours are free for this work; the rest is meetings and duties not modelled."
+  },
+  {
+   "id": "analyst",
+   "name": "Analyst agent",
+   "kind": "agent",
+   "color": "#7c3aed",
+   "capacity": 1,
+   "note": "Research, context, stakeholders, runbooks, root cause. Ad hoc sessions."
+  },
+  {
+   "id": "drafter",
+   "name": "Drafter agent",
+   "kind": "agent",
+   "color": "#2563eb",
+   "capacity": 1,
+   "note": "Tickets, PR descriptions, replies, Slack and Jira messages. Everything it writes goes to my outbox."
+  },
+  {
+   "id": "implementer",
+   "name": "Implementation agents",
+   "kind": "agent",
+   "color": "#0f766e",
+   "capacity": 2,
+   "note": "Two worker slots. Code, tests, fixes."
+  },
+  {
+   "id": "orchestra",
+   "name": "Orchestra programs",
+   "kind": "code",
+   "color": "#475569",
+   "capacity": 5,
+   "note": "Probes, routing, pings, labels, pattern-matched SAIL triage. No model calls."
+  }
+ ]
+}

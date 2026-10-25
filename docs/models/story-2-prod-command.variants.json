@@ -1,0 +1,76 @@
+{
+ "manual": {
+  "description": "Today: I explain and check it myself, and there is no time for root cause, logging for others, follow-up tickets or prevention.",
+  "flows": {
+   "p_explain": {
+    "machine": "me",
+    "work": 1.0,
+    "uses": []
+   },
+   "p_authority": {
+    "machine": "me",
+    "work": 0.5,
+    "uses": []
+   },
+   "p_context": {
+    "machine": "me",
+    "work": 0.5,
+    "uses": []
+   },
+   "p_log": {
+    "machine": "me",
+    "work": 0.1,
+    "uses": []
+   },
+   "p_file_followups": {
+    "machine": null
+   },
+   "p_pattern": {
+    "machine": null
+   },
+   "p_propose": {
+    "machine": null
+   }
+  }
+ },
+ "manual-thorough": {
+  "description": "Me doing all of it properly: root cause, logging, follow-ups, patterns and proposals.",
+  "flows": {
+   "p_explain": {
+    "machine": "me",
+    "work": 1.0,
+    "uses": []
+   },
+   "p_authority": {
+    "machine": "me",
+    "work": 0.5,
+    "uses": []
+   },
+   "p_context": {
+    "machine": "me",
+    "work": 1.5,
+    "uses": []
+   },
+   "p_log": {
+    "machine": "me",
+    "work": 0.25,
+    "uses": []
+   },
+   "p_file_followups": {
+    "machine": "me",
+    "work": 0.25,
+    "uses": []
+   },
+   "p_pattern": {
+    "machine": "me",
+    "work": 0.5,
+    "uses": []
+   },
+   "p_propose": {
+    "machine": "me",
+    "work": 4.0,
+    "uses": []
+   }
+  }
+ }
+}

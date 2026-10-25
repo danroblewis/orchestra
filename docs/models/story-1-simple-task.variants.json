@@ -1,0 +1,132 @@
+{
+ "manual": {
+  "description": "Today: I do every step myself, with no agents and no budget spent.",
+  "flows": {
+   "t_research": {
+    "machine": "me",
+    "work": 1.5,
+    "uses": []
+   },
+   "t_author": {
+    "machine": "me",
+    "work": 1.0,
+    "uses": []
+   },
+   "t_approve_ticket": {
+    "machine": "me",
+    "work": 0.01,
+    "uses": []
+   },
+   "t_implement": {
+    "machine": "me",
+    "work": 3.0,
+    "uses": []
+   },
+   "t_verify": {
+    "machine": "me",
+    "work": 1.0,
+    "uses": []
+   },
+   "t_submit": {
+    "machine": "me",
+    "work": 0.5,
+    "uses": []
+   },
+   "t_fix_ci": {
+    "machine": "me",
+    "work": 0.75,
+    "uses": []
+   },
+   "t_fix_bot": {
+    "machine": "me",
+    "work": 0.5,
+    "uses": []
+   },
+   "t_post": {
+    "machine": "me",
+    "work": 0.15,
+    "uses": []
+   },
+   "t_ping": {
+    "machine": "me",
+    "work": 0.1,
+    "rate": {
+     "form": "proportional",
+     "stock": "t_awaiting_review",
+     "k": 0.041666666666666664
+    }
+   },
+   "t_fix_review": {
+    "machine": "me",
+    "work": 1.0,
+    "uses": []
+   },
+   "t_send_replies": {
+    "machine": "me",
+    "work": 0.25,
+    "uses": []
+   },
+   "t_label": {
+    "machine": "me",
+    "work": 0.05,
+    "uses": []
+   },
+   "t_triage": {
+    "machine": "me",
+    "work": 0.25,
+    "uses": []
+   },
+   "t_close": {
+    "machine": "me",
+    "work": 0.25,
+    "uses": []
+   }
+  }
+ },
+ "rising": {
+  "description": "Orchestrated, with requests rising to 10 a week (0.25 an hour).",
+  "flows": {
+   "t_arrive": {
+    "rate": {
+     "form": "constant",
+     "value": 0.25
+    }
+   }
+  }
+ },
+ "manual-rising": {
+  "base": "manual",
+  "description": "Manual, with requests rising to 10 a week.",
+  "flows": {
+   "t_arrive": {
+    "rate": {
+     "form": "constant",
+     "value": 0.25
+    }
+   }
+  }
+ },
+ "better-first-pass": {
+  "description": "Orchestrated, with fewer rounds at every boundary: internal rework 10%, company AI review comments on 35%, human change requests on 25%.",
+  "flows": {
+   "t_verify": {
+    "split": {
+     "t_pr_draft": 0.9,
+     "t_ready": 0.1
+    }
+   },
+   "t_bot": {
+    "split": {
+     "t_post_draft": 0.65,
+     "t_bot_comments": 0.35
+    }
+   },
+   "t_review": {
+    "split": {
+     "t_approved": 0.75,
+     "t_changes_requested": 0.25
+    }
+   }
+  }
+ }
+}

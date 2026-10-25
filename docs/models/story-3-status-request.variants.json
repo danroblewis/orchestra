@@ -1,0 +1,10 @@
+{
+ "manual": {
+  "description": "Today: nobody keeps a status page; every answer starts from scratch.",
+  "flows": {
+   "s_refresh": {
+    "machine": null
+   }
+  }
+ }
+}
