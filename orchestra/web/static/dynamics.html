@@ -129,11 +129,11 @@ function draw() {
         return SDLayout.refine(nodes, edges, SDLayout.pack(nodes, edges, elk, geo), { ...geo, labelSize: NetGraph.labelSize });
       } : null,
       // and then untangled in a worker (fewest lines behind boxes or crossing, every label readable)
-      polish: window.Worker ? (nodes, edges, at) => new Promise((resolve, reject) => {
+      polish: window.Worker ? (nodes, edges, at, fixed) => new Promise((resolve, reject) => {
         const w = new Worker("/static/layout-worker.js?v={{v}}");
         w.onmessage = (ev) => { resolve(ev.data.at); w.terminate(); };
         w.onerror = (ev) => { reject(ev.message || ev); w.terminate(); };
-        w.postMessage({ nodes, edges, at });
+        w.postMessage({ nodes, edges, at, fixed });
       }) : null,
       tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
       onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });

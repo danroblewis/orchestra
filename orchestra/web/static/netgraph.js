@@ -401,21 +401,26 @@ const NetGraph = (() => {
     // is held where it is
     let settling = null, drawnOnce = false, RAW_EDGES = [], placing = 0;
     // place every node with ``layout`` (keeping the viewer's placements unless ``all``), then fit
-    async function placeAll(all) {
+    // Reset (``all``) and the first layout: the whole layout (``layout``, then ``polish``) is worked
+    // out in the background, and the nodes glide once, to where it ends. Tidy (``fromHere``): only
+    // ``polish``, from where the nodes are now (the viewer's placements held), then one glide.
+    const plain = (n) => Object.fromEntries(Object.entries(n).filter(([, v]) => typeof v !== "function"));
+    async function placeAll(all, fromHere = false) {
       const ticket = ++placing;
       if (sim) sim.stop();
       settling = null;
-      let at;
-      try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
-      if (ticket !== placing) return;                            // a newer layout was asked for
       const first = NODES.every((n) => n._new);
-      await glide(at, all, first ? 0 : 650);
-      if (!polish || ticket !== placing) return;
-      const plain = (n) => Object.fromEntries(Object.entries(n).filter(([, v]) => typeof v !== "function"));
-      let better;
-      try { better = await polish(NODES.map(plain), RAW_EDGES.map(plain), Object.fromEntries(NODES.map((n) => [n.id, [n.x, n.y]]))); } catch (e) { console.error("polish failed", e); return; }
-      if (ticket !== placing) return;                            // the viewer dragged, or asked again
-      await glide(better, all, 650);
+      let at = Object.fromEntries(NODES.filter((n) => n.x !== undefined).map((n) => [n.id, [n.x, n.y]]));
+      if (!fromHere) {
+        try { at = await layout(NODES, RAW_EDGES); } catch (e) { console.error("layout failed; using the forces", e); settle(new Set(NODES.map((n) => n.id)), 1, true); return; }
+        if (ticket !== placing) return;                          // a newer layout was asked for
+      }
+      if (polish) {
+        const fixed = all ? [] : NODES.filter((n) => n.pin).map((n) => n.id);
+        try { at = await polish(NODES.map(plain), RAW_EDGES.map(plain), at, fixed); } catch (e) { console.error("polish failed", e); }
+        if (ticket !== placing) return;                          // the viewer dragged, or asked again
+      }
+      await glide(at, all, first ? 0 : 650);                     // the first layout appears at once, finished
     }
     // move the nodes to ``at`` (the viewer's placements stay, unless ``all``), over ``ms``, then
     // place the labels and fit the view
@@ -465,7 +470,7 @@ const NetGraph = (() => {
       if (layout) {                                              // the layout engine, not the forces
         if (reset) for (const n of NODES) { n.pin = false; delete saved[n.id]; }
         userZoomed = false;
-        placeAll(reset);
+        placeAll(reset, !reset);                                 // tidy: from where the nodes are
         return;
       }
       if (reset) {

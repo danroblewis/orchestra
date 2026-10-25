@@ -1,0 +1,4752 @@
+{
+ "ok": true,
+ "model": {
+  "id": "system",
+  "name": "The system",
+  "description": "Discovered by SD Lab's kalman_lna from the stocks' levels, with Orchestra's counters attached to its flows.",
+  "time_unit": "minute",
+  "stocks": [
+   {
+    "id": "bakery_bake_queue",
+    "name": "bakery bake queue",
+    "unit": "items",
+    "series": {
+     "name": "bakery_bake_queue",
+     "labels": {
+      "machine": "expo",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 0.9603,
+     "exact_steps": 0.9167,
+     "steps": 120,
+     "machine": "expo",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_offers_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_inspections_started_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_orders_cancelled_waiting_total",
+       "sign": -1
+      },
+      {
+       "series": "orchestra_events_total{source=\"board\",type=\"order.queued\"}",
+       "sign": 1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_bakers_free",
+    "name": "bakery bakers free",
+    "unit": "items",
+    "series": {
+     "name": "bakery_bakers_free",
+     "labels": {
+      "machine": "expo",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 0.9697,
+     "exact_steps": 0.9833,
+     "steps": 120,
+     "machine": "expo",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_offers_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_late_results_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_orders_baked_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_inspections_started_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_orders_cancelled_inspecting_total",
+       "sign": -1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_chef_busy",
+    "name": "bakery chef busy",
+    "unit": "items",
+    "series": {
+     "name": "bakery_chef_busy",
+     "labels": {
+      "machine": "head_chef",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "head_chef",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_inspections_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_inspections_started_total",
+       "sign": 1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_customers_waiting",
+    "name": "bakery customers waiting",
+    "unit": "items",
+    "series": {
+     "name": "bakery_customers_waiting",
+     "labels": {
+      "machine": "customers",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 0.9936,
+     "exact_steps": 0.9833,
+     "steps": 120,
+     "machine": "customers",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_orders_placed_total",
+       "sign": 1
+      },
+      {
+       "series": "orchestra_events_total{source=\"customers\",type=\"review.posted\"}",
+       "sign": -1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_orders_accepting",
+    "name": "bakery orders accepting",
+    "unit": "items",
+    "series": {
+     "name": "bakery_orders_accepting",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "board",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_orders_accepted_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_customers_served_total",
+       "sign": 1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_orders_baking",
+    "name": "bakery orders baking",
+    "unit": "items",
+    "series": {
+     "name": "bakery_orders_baking",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "board",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_orders_baked_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_orders_assigned_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_orders_cancelled_baking_total",
+       "sign": -1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_orders_inspecting",
+    "name": "bakery orders inspecting",
+    "unit": "items",
+    "series": {
+     "name": "bakery_orders_inspecting",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "board",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_orders_baked_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_inspections_failed_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_inspections_passed_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_orders_cancelled_inspecting_total",
+       "sign": -1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_orders_on_shelf",
+    "name": "bakery orders on shelf",
+    "unit": "items",
+    "series": {
+     "name": "bakery_orders_on_shelf",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "board",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_pickups_handed_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_inspections_passed_total",
+       "sign": 1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_orders_waiting",
+    "name": "bakery orders waiting",
+    "unit": "items",
+    "series": {
+     "name": "bakery_orders_waiting",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "board",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_orders_assigned_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_orders_cancelled_waiting_total",
+       "sign": -1
+      },
+      {
+       "series": "orchestra_events_total{source=\"board\",type=\"order.queued\"}",
+       "sign": 1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_shelf_items",
+    "name": "bakery shelf items",
+    "unit": "items",
+    "series": {
+     "name": "bakery_shelf_items",
+     "labels": {
+      "machine": "shelf",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 1.0,
+     "exact_steps": 1.0,
+     "steps": 120,
+     "machine": "shelf",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_pickups_handed_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_inspections_passed_total",
+       "sign": 1
+      },
+      {
+       "series": "bakery_orders_cancelled_inspecting_total",
+       "sign": 1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_takers_free",
+    "name": "bakery takers free",
+    "unit": "items",
+    "series": {
+     "name": "bakery_takers_free",
+     "labels": {
+      "machine": "expo",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "evidence": {
+     "balance_r2": 0.9677,
+     "exact_steps": 0.9833,
+     "steps": 120,
+     "machine": "expo",
+     "accumulator": false,
+     "balance": [
+      {
+       "series": "bakery_app_orders_total",
+       "sign": -1
+      },
+      {
+       "series": "bakery_orders_placed_total",
+       "sign": 1
+      },
+      {
+       "series": "orchestra_events_total{source=\"expo\",type=\"customer.called\"}",
+       "sign": -1
+      }
+     ]
+    }
+   },
+   {
+    "id": "bakery_orders_on_shelf_hidden",
+    "name": "bakery orders on shelf hidden",
+    "unit": "items",
+    "series": null,
+    "evidence": {
+     "hidden": true,
+     "strategy": "kalman_lna"
+    }
+   }
+  ],
+  "flows": [
+   {
+    "id": "bakery_inspections_total",
+    "name": "bakery inspections",
+    "counter": {
+     "name": "bakery_inspections_total",
+     "labels": {
+      "machine": "head_chef",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 1.999999999999
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 108.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "bakery_chef_busy"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_chef_busy",
+       "k": 1.999999999999
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_inspections_total",
+      "labels": {
+       "machine": "head_chef",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_chef_busy",
+    "to": null,
+    "machine": "head_chef",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 1.999999999999
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 108.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "bakery_chef_busy"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_chef_busy",
+      "k": 1.999999999999
+     }
+    }
+   },
+   {
+    "id": "bakery_inspections_started_total",
+    "name": "bakery inspections started",
+    "counter": {
+     "name": "bakery_inspections_started_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "constant",
+      "params": {
+       "value": 0.49007813333374095
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 108.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "constant",
+       "value": 0.49007813333374095
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_inspections_started_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": null,
+    "to": "bakery_chef_busy",
+    "machine": "board",
+    "current": {
+     "form": "constant",
+     "params": {
+      "value": 0.49007813333374095
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 108.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "constant",
+      "value": 0.49007813333374095
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_bake_queue",
+    "name": "outside \u2192 bakery bake queue (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 1.28404
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 1.0452136131579972
+      },
+      "inputs": [
+       "input:bakery_customer_demand_per_min"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_customer_demand_per_min",
+         "k": 1.28404
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_bake_queue",
+    "machine": null,
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 1.28404
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 1.0452136131579972
+     },
+     "inputs": [
+      "input:bakery_customer_demand_per_min"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_customer_demand_per_min",
+        "k": 1.28404
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "unmeasured:bakery_bake_queue>outside",
+    "name": "bakery bake queue \u2192 outside (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 0.0014646454018208568
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "input:bakery_shelf_mean_age_s"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_shelf_mean_age_s",
+       "k": 0.0014646454018208568
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_bake_queue",
+    "to": null,
+    "machine": null,
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 0.0014646454018208568
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "input:bakery_shelf_mean_age_s"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_shelf_mean_age_s",
+      "k": 0.0014646454018208568
+     }
+    }
+   },
+   {
+    "id": "bakery_inspections_started_total",
+    "name": "bakery inspections started",
+    "counter": {
+     "name": "bakery_inspections_started_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 1.562784
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 108.0,
+       "steps": 120.0,
+       "per_step": 0.07162759805691211
+      },
+      "inputs": [
+       "input:bakery_pass_queue"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_pass_queue",
+         "k": 1.562784
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_inspections_started_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": null,
+    "to": "bakery_chef_busy",
+    "machine": "board",
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 1.562784
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 108.0,
+      "steps": 120.0,
+      "per_step": 0.07162759805691211
+     },
+     "inputs": [
+      "input:bakery_pass_queue"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_pass_queue",
+        "k": 1.562784
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "orchestra_events_total_board_order_queued",
+    "name": "orchestra events (board, order.queued)",
+    "counter": {
+     "name": "orchestra_events_total",
+     "labels": {
+      "type": "order.queued",
+      "project": "orchestra-bakery-5ba3c6da",
+      "source": "board"
+     }
+    },
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 1.279568
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 135.0,
+       "steps": 120.0,
+       "per_step": 1.0415741760656791
+      },
+      "inputs": [
+       "input:bakery_customer_demand_per_min"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_customer_demand_per_min",
+         "k": 1.279568
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.queued",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     }
+    ],
+    "from": null,
+    "to": "bakery_orders_waiting",
+    "machine": "board",
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 1.279568
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 135.0,
+      "steps": 120.0,
+      "per_step": 1.0415741760656791
+     },
+     "inputs": [
+      "input:bakery_customer_demand_per_min"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_customer_demand_per_min",
+        "k": 1.279568
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "bakery_orders_cancelled_waiting_total",
+    "name": "bakery orders cancelled waiting",
+    "counter": {
+     "name": "bakery_orders_cancelled_waiting_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 0.0014556460131890585
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 5.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "input:bakery_shelf_mean_age_s"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_shelf_mean_age_s",
+       "k": 0.0014556460131890585
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_orders_cancelled_waiting_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_orders_waiting",
+    "to": null,
+    "machine": "board",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 0.0014556460131890585
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 5.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "input:bakery_shelf_mean_age_s"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_shelf_mean_age_s",
+      "k": 0.0014556460131890585
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_orders_inspecting",
+    "name": "outside \u2192 bakery orders inspecting (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 3.500232
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.1604273232434175
+      },
+      "inputs": [
+       "input:bakery_pass_queue"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_pass_queue",
+         "k": 3.500232
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_orders_inspecting",
+    "machine": null,
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 3.500232
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.1604273232434175
+     },
+     "inputs": [
+      "input:bakery_pass_queue"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_pass_queue",
+        "k": 3.500232
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_orders_inspecting",
+    "name": "outside \u2192 bakery orders inspecting (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "constant",
+      "params": {
+       "value": 0.4935121975409202
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "constant",
+       "value": 0.4935121975409202
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_orders_inspecting",
+    "machine": null,
+    "current": {
+     "form": "constant",
+     "params": {
+      "value": 0.4935121975409202
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "constant",
+      "value": 0.4935121975409202
+     }
+    }
+   },
+   {
+    "id": "bakery_inspections_failed_total",
+    "name": "bakery inspections failed",
+    "counter": {
+     "name": "bakery_inspections_failed_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 1.915234096779773
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 23.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "bakery_orders_inspecting"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_orders_inspecting",
+       "k": 1.915234096779773
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_inspections_failed_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_orders_inspecting",
+    "to": null,
+    "machine": "board",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 1.915234096779773
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 23.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "bakery_orders_inspecting"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_orders_inspecting",
+      "k": 1.915234096779773
+     }
+    }
+   },
+   {
+    "id": "bakery_late_results_total",
+    "name": "bakery late results",
+    "counter": {
+     "name": "bakery_late_results_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "constant",
+      "params": {
+       "value": 5.541176715848657
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 7.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "constant",
+       "value": 5.541176715848657
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_late_results_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": null,
+    "to": "bakery_bakers_free",
+    "machine": "board",
+    "current": {
+     "form": "constant",
+     "params": {
+      "value": 5.541176715848657
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 7.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "constant",
+      "value": 5.541176715848657
+     }
+    }
+   },
+   {
+    "id": "bakery_offers_total",
+    "name": "bakery offers",
+    "counter": {
+     "name": "bakery_offers_total",
+     "labels": {
+      "machine": "expo",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 2.1963517789750826,
+       "k2": 1.8800494850239942,
+       "k3": 1.5332643997271185,
+       "k4": 1.8633058530816826
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 221.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "input:bakery_baker_busy_1",
+       "input:bakery_baker_busy_2",
+       "input:bakery_baker_busy_3",
+       "bakery_bakers_free"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_baker_busy_1",
+         "k": 2.1963517789750826
+        },
+        {
+         "stock": "bakery_baker_busy_2",
+         "k": 1.8800494850239942
+        },
+        {
+         "stock": "bakery_baker_busy_3",
+         "k": 1.5332643997271185
+        },
+        {
+         "stock": "bakery_bakers_free",
+         "k": 1.8633058530816826
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_offers_total",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_bakers_free",
+    "to": null,
+    "machine": "expo",
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 2.1963517789750826,
+      "k2": 1.8800494850239942,
+      "k3": 1.5332643997271185,
+      "k4": 1.8633058530816826
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 221.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "input:bakery_baker_busy_1",
+      "input:bakery_baker_busy_2",
+      "input:bakery_baker_busy_3",
+      "bakery_bakers_free"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_baker_busy_1",
+        "k": 2.1963517789750826
+       },
+       {
+        "stock": "bakery_baker_busy_2",
+        "k": 1.8800494850239942
+       },
+       {
+        "stock": "bakery_baker_busy_3",
+        "k": 1.5332643997271185
+       },
+       {
+        "stock": "bakery_bakers_free",
+        "k": 1.8633058530816826
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_customers_waiting",
+    "name": "outside \u2192 bakery customers waiting (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 4.203903482276784,
+       "k1": 0.7007410067109073
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "input:bakery_customer_demand_per_min"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 4.203903482276784,
+       "terms": [
+        {
+         "stock": "bakery_customer_demand_per_min",
+         "k": 0.7007410067109073
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_customers_waiting",
+    "machine": null,
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 4.203903482276784,
+      "k1": 0.7007410067109073
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "input:bakery_customer_demand_per_min"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 4.203903482276784,
+      "terms": [
+       {
+        "stock": "bakery_customer_demand_per_min",
+        "k": 0.7007410067109073
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "orchestra_events_total_customers_review_posted",
+    "name": "orchestra events (customers, review.posted)",
+    "counter": {
+     "name": "orchestra_events_total",
+     "labels": {
+      "type": "review.posted",
+      "project": "orchestra-bakery-5ba3c6da",
+      "source": "customers"
+     }
+    },
+    "equations": [
+     {
+      "form": "expr",
+      "params": {
+       "per_step_of_time_unit": 0.5
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 90.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "expr",
+       "expr": "0.0 + 0.8037360467301182 * bakery_orders_inspecting + 1.1671377845187694 * bakery_takers_free + 0.09361161968360862 * (bakery_bake_queue / max(1, bakery_orders_baking))",
+       "per_step_of_time_unit": 0.5
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "review.posted",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     }
+    ],
+    "from": "bakery_customers_waiting",
+    "to": null,
+    "machine": "customers",
+    "current": {
+     "form": "expr",
+     "params": {
+      "per_step_of_time_unit": 0.5
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 90.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "expr",
+      "expr": "0.0 + 0.8037360467301182 * bakery_orders_inspecting + 1.1671377845187694 * bakery_takers_free + 0.09361161968360862 * (bakery_bake_queue / max(1, bakery_orders_baking))",
+      "per_step_of_time_unit": 0.5
+     }
+    }
+   },
+   {
+    "id": "bakery_customers_served_total",
+    "name": "bakery customers served",
+    "counter": {
+     "name": "bakery_customers_served_total",
+     "labels": {
+      "machine": "customers",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 0.08219178082191783
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 76.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "bakery_orders_inspecting"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_orders_inspecting",
+       "k": 0.08219178082191783
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_customers_served_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": null,
+    "to": "bakery_orders_accepting",
+    "machine": "customers",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 0.08219178082191783
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 76.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "bakery_orders_inspecting"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_orders_inspecting",
+      "k": 0.08219178082191783
+     }
+    }
+   },
+   {
+    "id": "bakery_orders_accepted_total",
+    "name": "bakery orders accepted",
+    "counter": {
+     "name": "bakery_orders_accepted_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 1.9999999999999996
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 76.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "bakery_orders_accepting"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_orders_accepting",
+       "k": 1.9999999999999996
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_orders_accepted_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_orders_accepting",
+    "to": null,
+    "machine": "board",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 1.9999999999999996
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 76.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "bakery_orders_accepting"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_orders_accepting",
+      "k": 1.9999999999999996
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_orders_baking",
+    "name": "outside \u2192 bakery orders baking (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "expr",
+      "params": {
+       "per_step_of_time_unit": 0.5
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "expr",
+       "expr": "0.08472123636255455 + 0.9728543370400086 * bakery_baker_busy_1 + 0.9392239890238817 * bakery_baker_busy_2 + 0.8924755440381383 * bakery_baker_busy_3",
+       "per_step_of_time_unit": 0.5
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_orders_baking",
+    "machine": null,
+    "current": {
+     "form": "expr",
+     "params": {
+      "per_step_of_time_unit": 0.5
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "expr",
+      "expr": "0.08472123636255455 + 0.9728543370400086 * bakery_baker_busy_1 + 0.9392239890238817 * bakery_baker_busy_2 + 0.8924755440381383 * bakery_baker_busy_3",
+      "per_step_of_time_unit": 0.5
+     }
+    }
+   },
+   {
+    "id": "bakery_orders_cancelled_baking_total",
+    "name": "bakery orders cancelled baking",
+    "counter": {
+     "name": "bakery_orders_cancelled_baking_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "expr",
+      "params": {
+       "per_step_of_time_unit": 0.5
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 8.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "expr",
+       "expr": "0.0 + 0.08606429273369681 * (bakery_bake_queue / max(1, bakery_orders_baking)) + 0.937373471136949 * bakery_orders_baking",
+       "per_step_of_time_unit": 0.5
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_orders_cancelled_baking_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_orders_baking",
+    "to": null,
+    "machine": "board",
+    "current": {
+     "form": "expr",
+     "params": {
+      "per_step_of_time_unit": 0.5
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 8.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "expr",
+      "expr": "0.0 + 0.08606429273369681 * (bakery_bake_queue / max(1, bakery_orders_baking)) + 0.937373471136949 * bakery_orders_baking",
+      "per_step_of_time_unit": 0.5
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_orders_on_shelf",
+    "name": "outside \u2192 bakery orders on shelf (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "expr",
+      "params": {
+       "per_step_of_time_unit": 0.5
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "expr",
+       "expr": "0.19955978367231805 + 0.015668730476514407 * bakery_orders_on_shelf_hidden + 0.06936882986638326 * yelp_rating + 0.012441822371417584 * (bakery_bake_queue / max(1, bakery_orders_baking))",
+       "per_step_of_time_unit": 0.5
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_orders_on_shelf",
+    "machine": null,
+    "current": {
+     "form": "expr",
+     "params": {
+      "per_step_of_time_unit": 0.5
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "expr",
+      "expr": "0.19955978367231805 + 0.015668730476514407 * bakery_orders_on_shelf_hidden + 0.06936882986638326 * yelp_rating + 0.012441822371417584 * (bakery_bake_queue / max(1, bakery_orders_baking))",
+      "per_step_of_time_unit": 0.5
+     }
+    }
+   },
+   {
+    "id": "unmeasured:bakery_orders_on_shelf>outside",
+    "name": "bakery orders on shelf \u2192 outside (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 0.7498885104802707,
+       "k2": 0.001036859730194751,
+       "k3": 1.32326853056068
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "bakery_shelf_items",
+       "input:bakery_shelf_mean_age_s",
+       "bakery_orders_on_shelf"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_shelf_items",
+         "k": 0.7498885104802707
+        },
+        {
+         "stock": "bakery_shelf_mean_age_s",
+         "k": 0.001036859730194751
+        },
+        {
+         "stock": "bakery_orders_on_shelf",
+         "k": 1.32326853056068
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_orders_on_shelf",
+    "to": null,
+    "machine": null,
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 0.7498885104802707,
+      "k2": 0.001036859730194751,
+      "k3": 1.32326853056068
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "bakery_shelf_items",
+      "input:bakery_shelf_mean_age_s",
+      "bakery_orders_on_shelf"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_shelf_items",
+        "k": 0.7498885104802707
+       },
+       {
+        "stock": "bakery_shelf_mean_age_s",
+        "k": 0.001036859730194751
+       },
+       {
+        "stock": "bakery_orders_on_shelf",
+        "k": 1.32326853056068
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_shelf_items",
+    "name": "outside \u2192 bakery shelf items (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "expr",
+      "params": {
+       "per_step_of_time_unit": 0.5
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "expr",
+       "expr": "3.8953821363727053",
+       "per_step_of_time_unit": 0.5
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_shelf_items",
+    "machine": null,
+    "current": {
+     "form": "expr",
+     "params": {
+      "per_step_of_time_unit": 0.5
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "expr",
+      "expr": "3.8953821363727053",
+      "per_step_of_time_unit": 0.5
+     }
+    }
+   },
+   {
+    "id": "bakery_pickups_handed_total",
+    "name": "bakery pickups handed",
+    "counter": {
+     "name": "bakery_pickups_handed_total",
+     "labels": {
+      "machine": "shelf",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 0.0017417412812154468,
+       "k2": 2.023472197908864
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 84.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "input:bakery_shelf_mean_age_s",
+       "bakery_shelf_items"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_shelf_mean_age_s",
+         "k": 0.0017417412812154468
+        },
+        {
+         "stock": "bakery_shelf_items",
+         "k": 2.023472197908864
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_pickups_handed_total",
+      "labels": {
+       "machine": "shelf",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": "bakery_shelf_items",
+    "to": null,
+    "machine": "shelf",
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 0.0017417412812154468,
+      "k2": 2.023472197908864
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 84.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "input:bakery_shelf_mean_age_s",
+      "bakery_shelf_items"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_shelf_mean_age_s",
+        "k": 0.0017417412812154468
+       },
+       {
+        "stock": "bakery_shelf_items",
+        "k": 2.023472197908864
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "bakery_orders_placed_total",
+    "name": "bakery orders placed",
+    "counter": {
+     "name": "bakery_orders_placed_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "constant",
+      "params": {
+       "value": 4.041519900152542
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 104.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "constant",
+       "value": 4.041519900152542
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_orders_placed_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     }
+    ],
+    "from": null,
+    "to": "bakery_takers_free",
+    "machine": "board",
+    "current": {
+     "form": "constant",
+     "params": {
+      "value": 4.041519900152542
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 104.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "constant",
+      "value": 4.041519900152542
+     }
+    }
+   },
+   {
+    "id": "bakery_app_orders_total+orchestra_events_total_expo_customer_called",
+    "name": "bakery app orders + orchestra events (expo, customer.called)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 0.0,
+       "k1": 2.0322840105394606,
+       "k2": 1.9578144501456078,
+       "k3": 2.1181805574816273,
+       "k4": 2.025710719733735
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 105.0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "input:bakery_front_line",
+       "input:bakery_taker_busy_1",
+       "input:bakery_taker_busy_2",
+       "bakery_takers_free"
+      ],
+      "spec": {
+       "form": "linear",
+       "c": 0.0,
+       "terms": [
+        {
+         "stock": "bakery_front_line",
+         "k": 2.0322840105394606
+        },
+        {
+         "stock": "bakery_taker_busy_1",
+         "k": 1.9578144501456078
+        },
+        {
+         "stock": "bakery_taker_busy_2",
+         "k": 2.1181805574816273
+        },
+        {
+         "stock": "bakery_takers_free",
+         "k": 2.025710719733735
+        }
+       ]
+      }
+     }
+    ],
+    "measured_by": [
+     {
+      "name": "bakery_app_orders_total",
+      "labels": {
+       "machine": "app",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "customer.called",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "expo"
+      }
+     }
+    ],
+    "from": "bakery_takers_free",
+    "to": null,
+    "machine": "expo",
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 0.0,
+      "k1": 2.0322840105394606,
+      "k2": 1.9578144501456078,
+      "k3": 2.1181805574816273,
+      "k4": 2.025710719733735
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 105.0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "input:bakery_front_line",
+      "input:bakery_taker_busy_1",
+      "input:bakery_taker_busy_2",
+      "bakery_takers_free"
+     ],
+     "spec": {
+      "form": "linear",
+      "c": 0.0,
+      "terms": [
+       {
+        "stock": "bakery_front_line",
+        "k": 2.0322840105394606
+       },
+       {
+        "stock": "bakery_taker_busy_1",
+        "k": 1.9578144501456078
+       },
+       {
+        "stock": "bakery_taker_busy_2",
+        "k": 2.1181805574816273
+       },
+       {
+        "stock": "bakery_takers_free",
+        "k": 2.025710719733735
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "unmeasured:outside>bakery_orders_on_shelf_hidden",
+    "name": "outside \u2192 bakery orders on shelf hidden (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "constant",
+      "params": {
+       "value": 2.0
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [],
+      "spec": {
+       "form": "constant",
+       "value": 2.0
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": null,
+    "to": "bakery_orders_on_shelf_hidden",
+    "machine": null,
+    "current": {
+     "form": "constant",
+     "params": {
+      "value": 2.0
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [],
+     "spec": {
+      "form": "constant",
+      "value": 2.0
+     }
+    }
+   },
+   {
+    "id": "unmeasured:bakery_orders_on_shelf_hidden>outside",
+    "name": "bakery orders on shelf hidden \u2192 outside (unmeasured)",
+    "counter": null,
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 0.010914751701381483
+      },
+      "origin": "discovered",
+      "method": "sdlab:kalman_lna",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 0,
+       "steps": 120.0,
+       "per_step": 0.0
+      },
+      "inputs": [
+       "bakery_orders_on_shelf_hidden"
+      ],
+      "spec": {
+       "form": "proportional",
+       "stock": "bakery_orders_on_shelf_hidden",
+       "k": 0.010914751701381483
+      }
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_orders_on_shelf_hidden",
+    "to": null,
+    "machine": null,
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 0.010914751701381483
+     },
+     "origin": "discovered",
+     "method": "sdlab:kalman_lna",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 0,
+      "steps": 120.0,
+      "per_step": 0.0
+     },
+     "inputs": [
+      "bakery_orders_on_shelf_hidden"
+     ],
+     "spec": {
+      "form": "proportional",
+      "stock": "bakery_orders_on_shelf_hidden",
+      "k": 0.010914751701381483
+     }
+    }
+   },
+   {
+    "id": "bakery_orders_baked_total",
+    "name": "bakery orders baked",
+    "counter": {
+     "name": "bakery_orders_baked_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 1.107996
+      },
+      "origin": "fitted",
+      "method": "poisson-mle",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 108.0,
+       "loglik": 3.119,
+       "aic": -4.239,
+       "dispersion": 0.78,
+       "steps": 87.0,
+       "live_minutes": 44.92,
+       "aic_linear_bakery_orders_baking": -2.24,
+       "aic_linear_bakery_bakers_free": 20.64,
+       "aic_linear_bakery_orders_inspecting": 22.3,
+       "aic_linear_bakery_customers_waiting": 24.9,
+       "proportional_k": 1.107996,
+       "no_flow_from_levels": 1.0
+      },
+      "inputs": [
+       "bakery_orders_baking"
+      ],
+      "spec": {}
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_orders_baking",
+    "to": "bakery_orders_inspecting",
+    "machine": "board",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 1.107996
+     },
+     "origin": "fitted",
+     "method": "poisson-mle",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 108.0,
+      "loglik": 3.119,
+      "aic": -4.239,
+      "dispersion": 0.78,
+      "steps": 87.0,
+      "live_minutes": 44.92,
+      "aic_linear_bakery_orders_baking": -2.24,
+      "aic_linear_bakery_bakers_free": 20.64,
+      "aic_linear_bakery_orders_inspecting": 22.3,
+      "aic_linear_bakery_customers_waiting": 24.9,
+      "proportional_k": 1.107996,
+      "no_flow_from_levels": 1.0
+     },
+     "inputs": [
+      "bakery_orders_baking"
+     ],
+     "spec": {}
+    }
+   },
+   {
+    "id": "bakery_orders_cancelled_inspecting_total",
+    "name": "bakery orders cancelled inspecting",
+    "counter": {
+     "name": "bakery_orders_cancelled_inspecting_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 0.043227
+      },
+      "origin": "fitted",
+      "method": "poisson-mle",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 1.0,
+       "loglik": -4.141,
+       "aic": 10.283,
+       "dispersion": 1.407,
+       "steps": 87.0,
+       "live_minutes": 44.92,
+       "aic_linear_bakery_shelf_items": 10.6,
+       "aic_linear_bakery_chef_busy": 11.5,
+       "aic_constant": 11.61,
+       "aic_linear_bakery_orders_waiting": 12.02,
+       "proportional_k": 0.043227,
+       "no_flow_from_levels": 1.0
+      },
+      "inputs": [
+       "bakery_orders_inspecting"
+      ],
+      "spec": {}
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_orders_inspecting",
+    "to": "bakery_shelf_items",
+    "machine": "board",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 0.043227
+     },
+     "origin": "fitted",
+     "method": "poisson-mle",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 1.0,
+      "loglik": -4.141,
+      "aic": 10.283,
+      "dispersion": 1.407,
+      "steps": 87.0,
+      "live_minutes": 44.92,
+      "aic_linear_bakery_shelf_items": 10.6,
+      "aic_linear_bakery_chef_busy": 11.5,
+      "aic_constant": 11.61,
+      "aic_linear_bakery_orders_waiting": 12.02,
+      "proportional_k": 0.043227,
+      "no_flow_from_levels": 1.0
+     },
+     "inputs": [
+      "bakery_orders_inspecting"
+     ],
+     "spec": {}
+    }
+   },
+   {
+    "id": "bakery_orders_assigned_total",
+    "name": "bakery orders assigned",
+    "counter": {
+     "name": "bakery_orders_assigned_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "linear",
+      "params": {
+       "c": 6.293511,
+       "k": -1.704524
+      },
+      "origin": "fitted",
+      "method": "poisson-mle",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 113.0,
+       "loglik": 7.892,
+       "aic": -11.783,
+       "dispersion": 1.787,
+       "steps": 87.0,
+       "live_minutes": 44.92,
+       "aic_linear_bakery_bakers_free": -5.66,
+       "aic_linear_bakery_orders_inspecting": -3.99,
+       "aic_linear_bakery_orders_waiting": 11.54,
+       "aic_linear_bakery_customers_waiting": 12.35,
+       "proportional_k": 0.255198,
+       "no_flow_from_levels": 1.0
+      },
+      "inputs": [
+       "bakery_orders_baking"
+      ],
+      "spec": {}
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_orders_waiting",
+    "to": "bakery_orders_baking",
+    "machine": "board",
+    "current": {
+     "form": "linear",
+     "params": {
+      "c": 6.293511,
+      "k": -1.704524
+     },
+     "origin": "fitted",
+     "method": "poisson-mle",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 113.0,
+      "loglik": 7.892,
+      "aic": -11.783,
+      "dispersion": 1.787,
+      "steps": 87.0,
+      "live_minutes": 44.92,
+      "aic_linear_bakery_bakers_free": -5.66,
+      "aic_linear_bakery_orders_inspecting": -3.99,
+      "aic_linear_bakery_orders_waiting": 11.54,
+      "aic_linear_bakery_customers_waiting": 12.35,
+      "proportional_k": 0.255198,
+      "no_flow_from_levels": 1.0
+     },
+     "inputs": [
+      "bakery_orders_baking"
+     ],
+     "spec": {}
+    }
+   },
+   {
+    "id": "bakery_inspections_passed_total",
+    "name": "bakery inspections passed",
+    "counter": {
+     "name": "bakery_inspections_passed_total",
+     "labels": {
+      "machine": "board",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "equations": [
+     {
+      "form": "proportional",
+      "params": {
+       "k": 3.631108
+      },
+      "origin": "fitted",
+      "method": "poisson-mle",
+      "window": [
+       1792964749.2118871,
+       1792968349.2118871
+      ],
+      "era": null,
+      "quality": {
+       "events": 84.0,
+       "loglik": 47.601,
+       "aic": -93.201,
+       "dispersion": 8.061,
+       "steps": 87.0,
+       "live_minutes": 44.92,
+       "aic_linear_bakery_orders_inspecting": -92.48,
+       "aic_linear_bakery_chef_busy": -5.26,
+       "aic_linear_bakery_shelf_items": 22.42,
+       "aic_linear_bakery_orders_on_shelf": 57.01,
+       "proportional_k": 3.631108,
+       "no_flow_from_levels": 1.0
+      },
+      "inputs": [
+       "bakery_orders_inspecting"
+      ],
+      "spec": {}
+     }
+    ],
+    "measured_by": [],
+    "from": "bakery_orders_inspecting",
+    "to": "bakery_shelf_items",
+    "machine": "board",
+    "current": {
+     "form": "proportional",
+     "params": {
+      "k": 3.631108
+     },
+     "origin": "fitted",
+     "method": "poisson-mle",
+     "window": [
+      1792964749.2118871,
+      1792968349.2118871
+     ],
+     "era": null,
+     "quality": {
+      "events": 84.0,
+      "loglik": 47.601,
+      "aic": -93.201,
+      "dispersion": 8.061,
+      "steps": 87.0,
+      "live_minutes": 44.92,
+      "aic_linear_bakery_orders_inspecting": -92.48,
+      "aic_linear_bakery_chef_busy": -5.26,
+      "aic_linear_bakery_shelf_items": 22.42,
+      "aic_linear_bakery_orders_on_shelf": 57.01,
+      "proportional_k": 3.631108,
+      "no_flow_from_levels": 1.0
+     },
+     "inputs": [
+      "bakery_orders_inspecting"
+     ],
+     "spec": {}
+    }
+   }
+  ],
+  "machines": [
+   {
+    "id": "app",
+    "name": "app",
+    "kind": "program",
+    "description": "Seen in the metrics store: it writes the series these flows are bound to.",
+    "attributed": [
+     "bakery_app_orders_total+orchestra_events_total_expo_customer_called"
+    ],
+    "observed_by": [
+     {
+      "name": "bakery_app_orders_total",
+      "labels": {
+       "machine": "app",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "orchestra.machine.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "app"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.placed",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "app"
+      }
+     }
+    ],
+    "engagement": [],
+    "bootstrap": false
+   },
+   {
+    "id": "board",
+    "name": "board",
+    "kind": "program",
+    "description": "Seen in the metrics store: it writes the series these flows are bound to.",
+    "attributed": [
+     "bakery_inspections_started_total",
+     "orchestra_events_total_board_order_queued",
+     "bakery_orders_cancelled_waiting_total",
+     "bakery_inspections_failed_total",
+     "bakery_late_results_total",
+     "bakery_orders_accepted_total",
+     "bakery_orders_cancelled_baking_total",
+     "bakery_orders_placed_total",
+     "bakery_orders_baked_total",
+     "bakery_orders_cancelled_inspecting_total",
+     "bakery_orders_assigned_total",
+     "bakery_inspections_passed_total"
+    ],
+    "observed_by": [
+     {
+      "name": "bakery_bake_leases_expired_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_inspection_leases_expired_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_inspections_failed_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_inspections_passed_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_inspections_started_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_late_results_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_accepted_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_accepting",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_assigned_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_baked_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_baking",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_cancelled_baking_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_cancelled_inspecting_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_cancelled_on_shelf_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_cancelled_waiting_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_inspecting",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_on_shelf",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_picked_up_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_placed_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_refunded_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_rejected_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_shelf_expired_total",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_orders_waiting",
+      "labels": {
+       "machine": "board",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "inspection.requested",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "inspection.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "orchestra.machine.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.assigned",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.discarded",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.queued",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.ready",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.result_ignored",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "board"
+      }
+     }
+    ],
+    "engagement": [],
+    "bootstrap": false
+   },
+   {
+    "id": "customers",
+    "name": "customers",
+    "kind": "program",
+    "description": "Seen in the metrics store: it writes the series these flows are bound to.",
+    "attributed": [
+     "orchestra_events_total_customers_review_posted",
+     "bakery_customers_served_total"
+    ],
+    "observed_by": [
+     {
+      "name": "bakery_customer_demand_per_min",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_arrived_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_balked_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_gave_up_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_in_line",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_joined_line_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_left_line_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_ordered_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_refunded_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_served_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_customers_waiting",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_returns_total",
+      "labels": {
+       "machine": "customers",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "customer.in_line",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "customer.ordered_online",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "orchestra.machine.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.accepted",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.cancelled",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.complained",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.rejected",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "pickup.request",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "review.posted",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "customers"
+      }
+     }
+    ],
+    "engagement": [],
+    "bootstrap": false
+   },
+   {
+    "id": "expo",
+    "name": "expo",
+    "kind": "program",
+    "description": "Seen in the metrics store: it writes the series these flows are bound to.",
+    "attributed": [
+     "bakery_offers_total",
+     "bakery_app_orders_total+orchestra_events_total_expo_customer_called"
+    ],
+    "observed_by": [
+     {
+      "name": "bakery_bake_queue",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_bakers_free",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_front_line",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_offers_declined_total",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_offers_total",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_offers_withdrawn_total",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_pass_queue",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_takers_free",
+      "labels": {
+       "machine": "expo",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "customer.called",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "expo"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "expo.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "expo"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "orchestra.machine.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "expo"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "order.offered",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "expo"
+      }
+     }
+    ],
+    "engagement": [],
+    "bootstrap": false
+   },
+   {
+    "id": "head_chef",
+    "name": "head_chef",
+    "kind": "program",
+    "description": "Seen in the metrics store: it writes the series these flows are bound to.",
+    "attributed": [
+     "bakery_inspections_total"
+    ],
+    "observed_by": [
+     {
+      "name": "bakery_chef_busy",
+      "labels": {
+       "machine": "head_chef",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_inspections_total",
+      "labels": {
+       "machine": "head_chef",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "inspection.done",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "head_chef"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "orchestra.machine.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "head_chef"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "staff.idle",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "head_chef"
+      }
+     }
+    ],
+    "engagement": [],
+    "bootstrap": false
+   },
+   {
+    "id": "shelf",
+    "name": "shelf",
+    "kind": "program",
+    "description": "Seen in the metrics store: it writes the series these flows are bound to.",
+    "attributed": [
+     "bakery_pickups_handed_total"
+    ],
+    "observed_by": [
+     {
+      "name": "bakery_pickups_handed_total",
+      "labels": {
+       "machine": "shelf",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_pickups_missing_total",
+      "labels": {
+       "machine": "shelf",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_shelf_binned_total",
+      "labels": {
+       "machine": "shelf",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_shelf_items",
+      "labels": {
+       "machine": "shelf",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "bakery_shelf_mean_age_s",
+      "labels": {
+       "machine": "shelf",
+       "project": "orchestra-bakery-5ba3c6da"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "orchestra.machine.started",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "shelf"
+      }
+     },
+     {
+      "name": "orchestra_events_total",
+      "labels": {
+       "type": "pickup.handed",
+       "project": "orchestra-bakery-5ba3c6da",
+       "source": "shelf"
+      }
+     }
+    ],
+    "engagement": [],
+    "bootstrap": false
+   }
+  ],
+  "eras": [],
+  "discovery": {
+   "start": 1792964749.2118871,
+   "end": 1792968349.2118871,
+   "fit_start": 1792964749.2118871,
+   "live_minutes": 44.92,
+   "gaps": [
+    [
+     1792964937.367,
+     1792965309.368
+    ],
+    [
+     1792965345.856,
+     1792965689.415
+    ],
+    [
+     1792967779.65,
+     1792967969.084
+    ]
+   ],
+   "step": 30.0,
+   "series": 125,
+   "stocks": 11,
+   "flows": 19,
+   "min_r2": 0.9,
+   "left_out": {
+    "bakery_bake_leases_expired_total": "a counter that did not move in the window",
+    "bakery_baker_busy{instance=\"1\"}": "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates",
+    "bakery_baker_busy{instance=\"2\"}": "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates",
+    "bakery_baker_busy{instance=\"3\"}": "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates",
+    "bakery_bakers_idle": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_customer_demand_per_min": "no counters balance it (best R\u00b2 -0.00)",
+    "bakery_customers_arrived_total": "a counter no stock's balance needed",
+    "bakery_customers_balked_total": "a counter that did not move in the window",
+    "bakery_customers_gave_up_total": "a counter no stock's balance needed",
+    "bakery_customers_in_line": "no counters balance it (best R\u00b2 0.75 with bakery_customers_joined_line_total, orchestra_events_total{source=\"expo\",type=\"customer.called\"})",
+    "bakery_customers_joined_line_total": "a counter no stock's balance needed",
+    "bakery_customers_left_line_total": "a counter that did not move in the window",
+    "bakery_customers_left_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_customers_ordered_total": "the same as bakery_orders_placed_total (in all but a few steps)",
+    "bakery_customers_refunded_total": "a counter that did not move in the window",
+    "bakery_front_line": "no counters balance it (best R\u00b2 0.00)",
+    "bakery_inspection_leases_expired_total": "a counter that did not move in the window",
+    "bakery_items_made_total{instance=\"1\"}": "a counter no stock's balance needed",
+    "bakery_items_made_total{instance=\"2\"}": "a counter no stock's balance needed",
+    "bakery_items_made_total{instance=\"3\"}": "a counter no stock's balance needed",
+    "bakery_late_bakes_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_leases_expired_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_offers_declined_total": "a counter that did not move in the window",
+    "bakery_offers_withdrawn_total": "a counter that did not move in the window",
+    "bakery_orders_assigned_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_baked_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_baking": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_cancelled_on_shelf_total": "a counter that did not move in the window",
+    "bakery_orders_cancelled_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_discarded_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_misheard_total{instance=\"1\"}": "a counter that did not move in the window",
+    "bakery_orders_misheard_total{instance=\"2\"}": "a counter that did not move in the window",
+    "bakery_orders_picked_up_total": "the same as bakery_pickups_handed_total (in all but a few steps)",
+    "bakery_orders_placed_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_ready": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_refunded_total": "a counter that did not move in the window",
+    "bakery_orders_rejected_total": "the same as bakery_returns_total (in all but a few steps)",
+    "bakery_orders_remade_total": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_orders_shelf_expired_total": "a counter that did not move in the window",
+    "bakery_orders_taken_total{instance=\"1\"}": "a counter no stock's balance needed",
+    "bakery_orders_taken_total{instance=\"2\"}": "a counter no stock's balance needed",
+    "bakery_orders_waiting": "no longer written: its last point is 100 min before the end of the window",
+    "bakery_pass_queue": "no counters balance it (best R\u00b2 0.89 with bakery_orders_baked_total, bakery_inspections_started_total)",
+    "bakery_pickups_missing_total": "a counter that did not move in the window",
+    "bakery_returns_total": "a counter no stock's balance needed",
+    "bakery_shelf_binned_total": "a counter that did not move in the window",
+    "bakery_shelf_mean_age_s": "no counters balance it (best R\u00b2 -0.00)",
+    "bakery_taker_busy{instance=\"1\"}": "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates",
+    "bakery_taker_busy{instance=\"2\"}": "a flag (it only ever takes two values, and no counters balance it exactly), not a quantity that accumulates",
+    "orchestra_core_bus_events": "no counters balance it (best R\u00b2 -0.04 with yelp_stars_total, yelp_reviews_total, bakery_offers_total, bakery_orders_placed_total, bakery_orders_assigned_total, bakery_customers_arrived_total, orchestra_events_total{source=\"board\",type=\"order.queued\"}, orchestra_events_total{source=\"weather\",type=\"weather.reported\"})",
+    "orchestra_core_bus_read_ms": "no counters balance it (best R\u00b2 -0.00)",
+    "orchestra_core_metrics_read_ms": "no counters balance it (best R\u00b2 -0.00)",
+    "orchestra_core_metrics_visible_ms": "no counters balance it (best R\u00b2 -0.00)",
+    "orchestra_core_metrics_write_ms": "no counters balance it (best R\u00b2 0.02 with yelp_stars_total)",
+    "orchestra_core_probe": "a level that did not change in the window",
+    "orchestra_events_total{source=\"app\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"app\",type=\"order.placed\"}": "the same as bakery_app_orders_total (in all but a few steps)",
+    "orchestra_events_total{source=\"baker/1\",type=\"baker.idle\"}": "no longer written: its last point is 103 min before the end of the window",
+    "orchestra_events_total{source=\"baker/1\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"baker/1\",type=\"order.baked\"}": "the same as bakery_items_made_total{instance=\"1\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"baker/1\",type=\"staff.idle\"}": "the same as bakery_items_made_total{instance=\"1\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"baker/2\",type=\"baker.idle\"}": "no longer written: its last point is 100 min before the end of the window",
+    "orchestra_events_total{source=\"baker/2\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"baker/2\",type=\"order.baked\"}": "the same as bakery_items_made_total{instance=\"2\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"baker/2\",type=\"staff.idle\"}": "the same as bakery_items_made_total{instance=\"2\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"baker/3\",type=\"baker.idle\"}": "no longer written: its last point is 133 min before the end of the window",
+    "orchestra_events_total{source=\"baker/3\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"baker/3\",type=\"order.baked\"}": "the same as bakery_items_made_total{instance=\"3\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"baker/3\",type=\"staff.idle\"}": "the same as bakery_items_made_total{instance=\"3\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"board\",type=\"inspection.requested\"}": "the same as bakery_orders_baked_total (in all but a few steps)",
+    "orchestra_events_total{source=\"board\",type=\"inspection.started\"}": "the same as bakery_inspections_started_total (in all but a few steps)",
+    "orchestra_events_total{source=\"board\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"board\",type=\"order.assigned\"}": "the same as bakery_orders_assigned_total (in all but a few steps)",
+    "orchestra_events_total{source=\"board\",type=\"order.discarded\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"board\",type=\"order.ready\"}": "the same as bakery_inspections_passed_total (in all but a few steps)",
+    "orchestra_events_total{source=\"board\",type=\"order.result_ignored\"}": "the same as bakery_late_results_total (in all but a few steps)",
+    "orchestra_events_total{source=\"counter\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"counter\",type=\"order.assigned\"}": "no longer written: its last point is 101 min before the end of the window",
+    "orchestra_events_total{source=\"counter\",type=\"order.ready\"}": "no longer written: its last point is 100 min before the end of the window",
+    "orchestra_events_total{source=\"customers\",type=\"customer.in_line\"}": "the same as bakery_customers_joined_line_total (in all but a few steps)",
+    "orchestra_events_total{source=\"customers\",type=\"customer.ordered_online\"}": "a counter no stock's balance needed",
+    "orchestra_events_total{source=\"customers\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"customers\",type=\"order.accepted\"}": "the same as bakery_customers_served_total (in all but a few steps)",
+    "orchestra_events_total{source=\"customers\",type=\"order.cancelled\"}": "the same as bakery_customers_gave_up_total (in all but a few steps)",
+    "orchestra_events_total{source=\"customers\",type=\"order.complained\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"customers\",type=\"order.picked_up\"}": "no longer written: its last point is 100 min before the end of the window",
+    "orchestra_events_total{source=\"customers\",type=\"order.placed\"}": "no longer written: its last point is 101 min before the end of the window",
+    "orchestra_events_total{source=\"customers\",type=\"order.rejected\"}": "the same as bakery_returns_total (in all but a few steps)",
+    "orchestra_events_total{source=\"customers\",type=\"pickup.request\"}": "the same as bakery_inspections_passed_total (in all but a few steps)",
+    "orchestra_events_total{source=\"expo\",type=\"expo.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"expo\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"expo\",type=\"order.offered\"}": "the same as bakery_offers_total (in all but a few steps)",
+    "orchestra_events_total{source=\"head_chef\",type=\"inspection.done\"}": "the same as bakery_inspections_total (in all but a few steps)",
+    "orchestra_events_total{source=\"head_chef\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"head_chef\",type=\"staff.idle\"}": "the same as bakery_inspections_total (in all but a few steps)",
+    "orchestra_events_total{source=\"orchestra-host\",type=\"orchestra.host.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"orchestra-host\",type=\"orchestra.host.stopped\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"orchestra-host\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"shelf\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"shelf\",type=\"pickup.handed\"}": "the same as bakery_pickups_handed_total (in all but a few steps)",
+    "orchestra_events_total{source=\"taker/1\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"taker/1\",type=\"order.placed\"}": "the same as bakery_orders_taken_total{instance=\"1\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"taker/1\",type=\"staff.idle\"}": "the same as bakery_orders_taken_total{instance=\"1\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"taker/2\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"taker/2\",type=\"order.placed\"}": "the same as bakery_orders_taken_total{instance=\"2\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"taker/2\",type=\"staff.idle\"}": "the same as bakery_orders_taken_total{instance=\"2\"} (in all but a few steps)",
+    "orchestra_events_total{source=\"weather\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"weather\",type=\"weather.reported\"}": "a counter no stock's balance needed",
+    "orchestra_events_total{source=\"yelp\",type=\"orchestra.machine.started\"}": "a counter that did not move in the window",
+    "orchestra_events_total{source=\"yelp\",type=\"yelp.rating_changed\"}": "a counter no stock's balance needed",
+    "orchestra_host_up": "a level that did not change in the window",
+    "weather_temperature_celsius": "no counters balance it (best R\u00b2 0.02 with bakery_inspections_total, bakery_pickups_handed_total, bakery_customers_gave_up_total, bakery_inspections_failed_total, bakery_orders_cancelled_baking_total, bakery_orders_cancelled_waiting_total, bakery_orders_cancelled_inspecting_total)",
+    "yelp_rating": "no counters balance it (best R\u00b2 -0.00)",
+    "yelp_reviews_total": "a counter no stock's balance needed",
+    "yelp_stars_total": "a counter no stock's balance needed"
+   },
+   "strategy": "kalman_lna",
+   "sd_flows": 26,
+   "options": {},
+   "steps": 120,
+   "inputs": {
+    "bakery_baker_busy_1": {
+     "name": "bakery_baker_busy",
+     "labels": {
+      "instance": "1",
+      "machine": "baker",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_baker_busy_2": {
+     "name": "bakery_baker_busy",
+     "labels": {
+      "instance": "2",
+      "machine": "baker",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_baker_busy_3": {
+     "name": "bakery_baker_busy",
+     "labels": {
+      "instance": "3",
+      "machine": "baker",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_customer_demand_per_min": {
+     "name": "bakery_customer_demand_per_min",
+     "labels": {
+      "machine": "customers",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_customers_in_line": {
+     "name": "bakery_customers_in_line",
+     "labels": {
+      "machine": "customers",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_front_line": {
+     "name": "bakery_front_line",
+     "labels": {
+      "machine": "expo",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_pass_queue": {
+     "name": "bakery_pass_queue",
+     "labels": {
+      "machine": "expo",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_shelf_mean_age_s": {
+     "name": "bakery_shelf_mean_age_s",
+     "labels": {
+      "machine": "shelf",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_taker_busy_1": {
+     "name": "bakery_taker_busy",
+     "labels": {
+      "instance": "1",
+      "machine": "taker",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "bakery_taker_busy_2": {
+     "name": "bakery_taker_busy",
+     "labels": {
+      "instance": "2",
+      "machine": "taker",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "weather_temperature_celsius": {
+     "name": "weather_temperature_celsius",
+     "labels": {
+      "machine": "weather",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    },
+    "yelp_rating": {
+     "name": "yelp_rating",
+     "labels": {
+      "machine": "yelp",
+      "project": "orchestra-bakery-5ba3c6da"
+     }
+    }
+   },
+   "chosen": "forward, constant inflows, trust receivers",
+   "method": "identify",
+   "unexplained": {},
+   "hidden": [
+    "bakery_orders_on_shelf_hidden"
+   ],
+   "compute_ms": 760676,
+   "window_s": 3600.0,
+   "step_s": 30.0
+  },
+  "stored": true,
+  "version": 117,
+  "current": 117,
+  "versions": [
+   {
+    "version": 1,
+    "saved_at": 1792937581.223485,
+    "note": "discovered on request: the structure changed",
+    "stocks": 3,
+    "flows": 3,
+    "fitted": 3,
+    "machines": 3
+   },
+   {
+    "version": 2,
+    "saved_at": 1792937598.993346,
+    "note": "discovered on request: the structure changed",
+    "stocks": 4,
+    "flows": 5,
+    "fitted": 5,
+    "machines": 3
+   },
+   {
+    "version": 3,
+    "saved_at": 1792937606.2379699,
+    "note": "discovered on request: the structure changed",
+    "stocks": 5,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 3
+   },
+   {
+    "version": 4,
+    "saved_at": 1792937622.076127,
+    "note": "discovered on request: the structure changed",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 4
+   },
+   {
+    "version": 5,
+    "saved_at": 1792937627.695605,
+    "note": "discovered on request: the structure changed",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 5
+   },
+   {
+    "version": 6,
+    "saved_at": 1792937742.333382,
+    "note": "discovered: the structure changed",
+    "stocks": 3,
+    "flows": 6,
+    "fitted": 6,
+    "machines": 2
+   },
+   {
+    "version": 7,
+    "saved_at": 1792938023.687964,
+    "note": "discovered on request: the structure changed",
+    "stocks": 5,
+    "flows": 8,
+    "fitted": 8,
+    "machines": 4
+   },
+   {
+    "version": 8,
+    "saved_at": 1792938042.45133,
+    "note": "discovered: the structure changed",
+    "stocks": 5,
+    "flows": 10,
+    "fitted": 10,
+    "machines": 3
+   },
+   {
+    "version": 9,
+    "saved_at": 1792938117.680202,
+    "note": "discovered on request: the structure changed",
+    "stocks": 4,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 2
+   },
+   {
+    "version": 10,
+    "saved_at": 1792938153.645935,
+    "note": "discovered with orchestra sd discover (kalman_lna)",
+    "stocks": 7,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 3
+   },
+   {
+    "version": 11,
+    "saved_at": 1792938311.1369128,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 12,
+    "saved_at": 1792938356.196693,
+    "note": "discovered on request: the structure changed (combined2)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 4
+   },
+   {
+    "version": 13,
+    "saved_at": 1792938537.304197,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 3,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 2
+   },
+   {
+    "version": 14,
+    "saved_at": 1792938642.819438,
+    "note": "discovered on request: the structure changed (combined2)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 15,
+    "saved_at": 1792938850.127846,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 3,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 1
+   },
+   {
+    "version": 16,
+    "saved_at": 1792939155.815447,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 3,
+    "flows": 10,
+    "fitted": 10,
+    "machines": 2
+   },
+   {
+    "version": 17,
+    "saved_at": 1792939476.48557,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 3
+   },
+   {
+    "version": 18,
+    "saved_at": 1792939794.833089,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 10,
+    "fitted": 10,
+    "machines": 3
+   },
+   {
+    "version": 19,
+    "saved_at": 1792940118.056268,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 20,
+    "saved_at": 1792940436.570824,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 3
+   },
+   {
+    "version": 21,
+    "saved_at": 1792940762.742686,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 3
+   },
+   {
+    "version": 22,
+    "saved_at": 1792941101.712853,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 23,
+    "saved_at": 1792941427.6812758,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 24,
+    "saved_at": 1792941742.322083,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 25,
+    "saved_at": 1792942119.371233,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 26,
+    "saved_at": 1792942454.9794838,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 27,
+    "saved_at": 1792942760.261908,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 2
+   },
+   {
+    "version": 28,
+    "saved_at": 1792943087.064512,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 29,
+    "saved_at": 1792943434.232793,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 30,
+    "saved_at": 1792943788.116135,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 31,
+    "saved_at": 1792944149.438953,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 32,
+    "saved_at": 1792944515.6012852,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 33,
+    "saved_at": 1792944835.348203,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 3,
+    "flows": 10,
+    "fitted": 10,
+    "machines": 2
+   },
+   {
+    "version": 34,
+    "saved_at": 1792945156.140689,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 35,
+    "saved_at": 1792945487.5353541,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 36,
+    "saved_at": 1792945862.002698,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 37,
+    "saved_at": 1792946201.7300758,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 38,
+    "saved_at": 1792946526.977639,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 39,
+    "saved_at": 1792946860.919758,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 40,
+    "saved_at": 1792947185.7230809,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 41,
+    "saved_at": 1792947545.1007009,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 10,
+    "fitted": 10,
+    "machines": 2
+   },
+   {
+    "version": 42,
+    "saved_at": 1792947884.457721,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 2
+   },
+   {
+    "version": 43,
+    "saved_at": 1792948216.200381,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 44,
+    "saved_at": 1792948539.4636931,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 2
+   },
+   {
+    "version": 45,
+    "saved_at": 1792948892.57181,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 2
+   },
+   {
+    "version": 46,
+    "saved_at": 1792949243.263598,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 2
+   },
+   {
+    "version": 47,
+    "saved_at": 1792949599.8868842,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 48,
+    "saved_at": 1792949937.84534,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 3
+   },
+   {
+    "version": 49,
+    "saved_at": 1792950274.177901,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 22,
+    "fitted": 22,
+    "machines": 2
+   },
+   {
+    "version": 50,
+    "saved_at": 1792950670.2884102,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 51,
+    "saved_at": 1792951034.8506439,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 1
+   },
+   {
+    "version": 52,
+    "saved_at": 1792951355.5798988,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 11,
+    "fitted": 11,
+    "machines": 2
+   },
+   {
+    "version": 53,
+    "saved_at": 1792951706.818719,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 54,
+    "saved_at": 1792952027.9672372,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 55,
+    "saved_at": 1792952393.713448,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 2
+   },
+   {
+    "version": 56,
+    "saved_at": 1792952715.281733,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 57,
+    "saved_at": 1792953045.65733,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 58,
+    "saved_at": 1792953367.163059,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 59,
+    "saved_at": 1792953687.0090501,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 2
+   },
+   {
+    "version": 60,
+    "saved_at": 1792954013.148512,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 61,
+    "saved_at": 1792954377.506343,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 62,
+    "saved_at": 1792954698.821019,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 2
+   },
+   {
+    "version": 63,
+    "saved_at": 1792955045.4038742,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 2
+   },
+   {
+    "version": 64,
+    "saved_at": 1792955375.051457,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 65,
+    "saved_at": 1792955778.8060522,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 2
+   },
+   {
+    "version": 66,
+    "saved_at": 1792956169.1410758,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 7,
+    "flows": 18,
+    "fitted": 18,
+    "machines": 3
+   },
+   {
+    "version": 67,
+    "saved_at": 1792956510.1572192,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 2
+   },
+   {
+    "version": 68,
+    "saved_at": 1792956852.8794959,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 69,
+    "saved_at": 1792957187.771116,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 70,
+    "saved_at": 1792957550.684236,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 2
+   },
+   {
+    "version": 71,
+    "saved_at": 1792957913.5541708,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 72,
+    "saved_at": 1792958283.9105768,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 73,
+    "saved_at": 1792958646.7137349,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 2
+   },
+   {
+    "version": 74,
+    "saved_at": 1792959010.3838642,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 75,
+    "saved_at": 1792959328.692278,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 2
+   },
+   {
+    "version": 76,
+    "saved_at": 1792959654.738776,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 14,
+    "fitted": 14,
+    "machines": 3
+   },
+   {
+    "version": 77,
+    "saved_at": 1792959678.299176,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 12,
+    "fitted": 12,
+    "machines": 3
+   },
+   {
+    "version": 78,
+    "saved_at": 1792960033.990219,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 7,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 2
+   },
+   {
+    "version": 79,
+    "saved_at": 1792960357.071615,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 3
+   },
+   {
+    "version": 80,
+    "saved_at": 1792960623.587265,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 10,
+    "fitted": 10,
+    "machines": 4
+   },
+   {
+    "version": 81,
+    "saved_at": 1792960670.503053,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 4,
+    "flows": 13,
+    "fitted": 13,
+    "machines": 3
+   },
+   {
+    "version": 82,
+    "saved_at": 1792961001.2174988,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 3
+   },
+   {
+    "version": 83,
+    "saved_at": 1792961361.928195,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 3
+   },
+   {
+    "version": 84,
+    "saved_at": 1792961374.6311228,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 3
+   },
+   {
+    "version": 85,
+    "saved_at": 1792961551.417963,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 3
+   },
+   {
+    "version": 86,
+    "saved_at": 1792961707.6600478,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 3
+   },
+   {
+    "version": 87,
+    "saved_at": 1792962029.077143,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 3
+   },
+   {
+    "version": 88,
+    "saved_at": 1792962357.0162811,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 15,
+    "fitted": 15,
+    "machines": 3
+   },
+   {
+    "version": 89,
+    "saved_at": 1792962406.783922,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 5,
+    "flows": 19,
+    "fitted": 19,
+    "machines": 2
+   },
+   {
+    "version": 90,
+    "saved_at": 1792962705.5118668,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 91,
+    "saved_at": 1792963006.1162639,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 8,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 92,
+    "saved_at": 1792963306.845629,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 9,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 93,
+    "saved_at": 1792963607.564847,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 2
+   },
+   {
+    "version": 94,
+    "saved_at": 1792963908.304822,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 11,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 95,
+    "saved_at": 1792963998.53523,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 5,
+    "flows": 9,
+    "fitted": 9,
+    "machines": 5
+   },
+   {
+    "version": 96,
+    "saved_at": 1792964008.3660958,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 11,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 97,
+    "saved_at": 1792964034.312942,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 9,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 5
+   },
+   {
+    "version": 98,
+    "saved_at": 1792964063.954016,
+    "note": "discovered on request: the structure changed (conservation)",
+    "stocks": 11,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 99,
+    "saved_at": 1792964067.790003,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 10,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 100,
+    "saved_at": 1792964200.50008,
+    "note": "discovered on request: the structure changed (conservation)",
+    "stocks": 11,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 5
+   },
+   {
+    "version": 101,
+    "saved_at": 1792964200.884816,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 9,
+    "flows": 0,
+    "fitted": 0,
+    "machines": 4
+   },
+   {
+    "version": 102,
+    "saved_at": 1792964227.7130728,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 9,
+    "flows": 20,
+    "fitted": 20,
+    "machines": 6
+   },
+   {
+    "version": 103,
+    "saved_at": 1792964242.5976892,
+    "note": "discovered on request: the structure changed (conservation)",
+    "stocks": 9,
+    "flows": 19,
+    "fitted": 19,
+    "machines": 7
+   },
+   {
+    "version": 104,
+    "saved_at": 1792964285.74822,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 9,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 5
+   },
+   {
+    "version": 105,
+    "saved_at": 1792964303.2410839,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 8,
+    "flows": 23,
+    "fitted": 23,
+    "machines": 5
+   },
+   {
+    "version": 106,
+    "saved_at": 1792964304.086532,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 9,
+    "flows": 20,
+    "fitted": 20,
+    "machines": 4
+   },
+   {
+    "version": 107,
+    "saved_at": 1792964334.908072,
+    "note": "discovered with orchestra sd discover (conservation)",
+    "stocks": 8,
+    "flows": 18,
+    "fitted": 18,
+    "machines": 6
+   },
+   {
+    "version": 108,
+    "saved_at": 1792964421.175721,
+    "note": "discovered on request: the structure changed (conservation)",
+    "stocks": 12,
+    "flows": 24,
+    "fitted": 24,
+    "machines": 6
+   },
+   {
+    "version": 109,
+    "saved_at": 1792964743.74652,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 7,
+    "flows": 17,
+    "fitted": 17,
+    "machines": 6
+   },
+   {
+    "version": 110,
+    "saved_at": 1792965362.717717,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 18,
+    "fitted": 18,
+    "machines": 4
+   },
+   {
+    "version": 111,
+    "saved_at": 1792966101.400322,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 7,
+    "flows": 21,
+    "fitted": 21,
+    "machines": 6
+   },
+   {
+    "version": 112,
+    "saved_at": 1792966989.266455,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 8,
+    "flows": 24,
+    "fitted": 24,
+    "machines": 6
+   },
+   {
+    "version": 113,
+    "saved_at": 1792967256.712737,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 9,
+    "flows": 24,
+    "fitted": 24,
+    "machines": 6
+   },
+   {
+    "version": 114,
+    "saved_at": 1792967711.706058,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 6,
+    "flows": 16,
+    "fitted": 16,
+    "machines": 5
+   },
+   {
+    "version": 115,
+    "saved_at": 1792968030.330843,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 9,
+    "flows": 27,
+    "fitted": 27,
+    "machines": 4
+   },
+   {
+    "version": 116,
+    "saved_at": 1792968734.8466592,
+    "note": "discovered on request: the structure changed (kalman_lna)",
+    "stocks": 8,
+    "flows": 19,
+    "fitted": 19,
+    "machines": 5
+   },
+   {
+    "version": 117,
+    "saved_at": 1792969110.974968,
+    "note": "discovered: the structure changed (kalman_lna)",
+    "stocks": 12,
+    "flows": 30,
+    "fitted": 30,
+    "machines": 6
+   }
+  ],
+  "live": true,
+  "as_of": 1792968349.2118871,
+  "levels": {
+   "bakery_bake_queue": {
+    "t": 1792969602.808,
+    "v": 16
+   },
+   "bakery_bakers_free": {
+    "t": 1792969602.808,
+    "v": 0
+   },
+   "bakery_chef_busy": {
+    "t": 1792969602.585,
+    "v": 0
+   },
+   "bakery_customers_waiting": {
+    "t": 1792969602.808,
+    "v": 17
+   },
+   "bakery_orders_accepting": {
+    "t": 1792969602.495,
+    "v": 0
+   },
+   "bakery_orders_baking": {
+    "t": 1792969602.495,
+    "v": 1
+   },
+   "bakery_orders_inspecting": {
+    "t": 1792969602.495,
+    "v": 0
+   },
+   "bakery_orders_on_shelf": {
+    "t": 1792969602.495,
+    "v": 0
+   },
+   "bakery_orders_waiting": {
+    "t": 1792969602.495,
+    "v": 16
+   },
+   "bakery_shelf_items": {
+    "t": 1792969602.811,
+    "v": 3
+   },
+   "bakery_takers_free": {
+    "t": 1792969602.808,
+    "v": 1
+   }
+  },
+  "levels_error": null
+ }
+}

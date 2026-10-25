@@ -174,8 +174,10 @@
     + 150 * Math.max(0, 1 - (s.scale ?? 1));   // shrunk to fit the view: smaller words, so worth about five crossings at half size
   // ``labels(placed)``, when given, places the edge labels ({edge id: [x, y]}) so words covered by
   // boxes or other words count too (``labelSize`` sizes them)
-  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600] }) {
-    const ids = nodes.filter((n) => inside(n) && at[n.id]).map((n) => n.id), byId = new Map(nodes.map((n) => [n.id, n]));
+  // ``fixed``: node ids that stay where they are (the viewer's placements)
+  function untangle(nodes, edges, at, { size, score, inside = (n) => n.kind !== "cloud", frameOf, tetherPlaces, labels = null, labelSize = null, passes = 4, steps = [60, 120], groupSteps = [120, 240, 400], view = [1300, 600], fixed = [] }) {
+    const hold = new Set(fixed);
+    const ids = nodes.filter((n) => inside(n) && at[n.id] && !hold.has(n.id)).map((n) => n.id), byId = new Map(nodes.map((n) => [n.id, n]));
     let cur = { ...at };
     const evaluate = (pos) => {
       const placed = nodes.map((n) => (inside(n) ? { ...n, x: pos[n.id][0], y: pos[n.id][1] } : { ...n, x: undefined, y: undefined }));
@@ -199,7 +201,7 @@
     };
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
     // groups move as a whole too, so a group can step out of another's way instead of sitting among its lines
-    const groups = groupsOf(nodes, edges, inside);
+    const groups = groupsOf(nodes, edges, inside).filter((g) => !g.some((id) => hold.has(id)));   // a group with a held node stays
     const shift = (pos, members, dx, dy) => { const next = { ...pos }; for (const id of members) next[id] = [pos[id][0] + dx, pos[id][1] + dy]; return next; };
     const centre = (pos, members) => [members.reduce((a, id) => a + pos[id][0], 0) / members.length, members.reduce((a, id) => a + pos[id][1], 0) / members.length];
     for (let pass = 0; pass < passes; pass++) {
