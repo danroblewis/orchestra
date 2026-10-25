@@ -37,7 +37,7 @@ def _alive(pid) -> bool:
 
 def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
-    events = Events(project.events_file)
+    events = Events.for_project(project)
     store = LocalStore(project, events)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 

@@ -558,8 +558,25 @@ sessions idle, delete any gate worktree, and verify each ticket's worktree.
 
 Every state change, session start and stop, gate step, and wake-up is an
 event: `{ts, type, ticket?, session?, gate_run?, data}`. Events are appended
-to `<state>/events.jsonl`, published in-process to subscribers (the web
+to the project's **event bus**, published in-process to subscribers (the web
 server's WebSocket, the wake-up scheduler), and are the audit trail.
+
+The bus (`orchestra/bus/`) is one ordered, replayable stream per project,
+named `orchestra.<key>.events`. Offsets are integers: the number of events
+before a point, so `read(0)` starts at the beginning and every read returns
+the offset to read from next. Backends, chosen by `[events] url` in
+`orchestra.toml` or `ORCHESTRA_EVENTS_URL`:
+
+| URL | Backend |
+|---|---|
+| `file` (default) | `<state>/events.jsonl`, one event per line |
+| `redis://…` | A Redis Stream, ids assigned atomically so offsets stay dense |
+| `amqp://…` | A RabbitMQ stream queue (RabbitMQ 3.9+), publisher confirms |
+| `kafka://host:port` | One Kafka topic with one partition |
+
+One conformance suite (`tests/bus/`) runs against every backend. Server
+backends need their client library (`orchestra[bus-redis]`,
+`[bus-rabbitmq]`, `[bus-kafka]`).
 
 ---
 

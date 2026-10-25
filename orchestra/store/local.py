@@ -47,7 +47,7 @@ class LocalStore:
     def __init__(self, project: Project, events: Events | None = None):
         self.project = project
         self.prefix = project.config.ticket_prefix
-        self.events = events or Events(project.events_file)
+        self.events = events or Events.for_project(project)
         project.ensure_dirs()
 
     @contextmanager

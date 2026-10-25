@@ -22,9 +22,15 @@ that must not be broken without updating the spec and saying so in the commit.
    lands code, and only the gate's success promotes a build to staging. The
    gate is not valid without a build artifact and acceptance tests that run
    against it.
-5. **State lives in `~/.orchestrator/<key>/`.** Business logic goes through
-   the `TicketBackend` interface and the runtime store. No module reads or
-   writes those JSON files directly except `orchestra/store/`.
+5. **State lives in `~/.orchestrator/<key>/`, except the event log, which
+   lives in the configured event bus.** Business logic goes through the
+   `TicketBackend` interface and the runtime store. No module reads or writes
+   those JSON files directly except `orchestra/store/`. Events go through
+   `orchestra.events.Events` over an `orchestra.bus.EventBus` (a JSONL file in
+   the state directory by default; Redis Streams, a RabbitMQ stream or Kafka
+   by `[events] url`); nothing else touches a backend directly. Orchestra's
+   streams are named `orchestra.<key>.events` and never share a topic with
+   anyone else's.
 6. **The harness's session file is the only transcript.** Do not write a
    parallel log of agent messages. Pi and Claude Code each keep their own;
    `orchestra.harness.read_transcript` parses whichever wrote it.

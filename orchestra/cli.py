@@ -25,7 +25,7 @@ def _project(args) -> Project:
 
 
 def _store(project: Project) -> tuple[LocalStore, Events]:
-    events = Events(project.events_file)
+    events = Events.for_project(project)
     return LocalStore(project, events), events
 
 

@@ -47,7 +47,7 @@ class Server:
             from ..events import Events
             from ..store import LocalStore
             self._project = load_project(os.environ.get("ORCHESTRA_REPO") or None)
-            self._store = LocalStore(self._project, Events(self._project.events_file))
+            self._store = LocalStore(self._project, Events.for_project(self._project))
         return self._project, self._store
 
     def call(self, name: str, args: dict) -> dict:

@@ -85,6 +85,7 @@ class Config:
     staging_stop: str | None = None
     tunnel_name: str | None = None
     tunnel_hostname: str | None = None
+    events_url: str | None = None      # [events] url: file (default), redis://, amqp://, kafka://
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -143,6 +144,7 @@ class Config:
             staging_stop=st.get("stop"),
             tunnel_name=tun.get("name"),
             tunnel_hostname=tun.get("hostname"),
+            events_url=(raw.get("events", {}) or {}).get("url"),
             raw=raw,
         )
 
