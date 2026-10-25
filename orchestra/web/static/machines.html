@@ -51,6 +51,7 @@
 <script src="/static/app.js?v={{v}}"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
 <script src="/static/edge-color.js?v={{v}}"></script>
+<script src="/static/loops.js?v={{v}}"></script>
 <script>
 let DATA = null;
 // one colour per machine, the same every time for the same id
@@ -128,17 +129,33 @@ function eventMap(d) {
              width: l.seen ? 1.5 : 1, cls: l.seen ? "ev-seen" : "ev-unseen" };
   });
   GRAPH.render(nodes, edges);
-  // feedback loops: cycles of machine → event → machine
+  // communication cycles (loops.js): machine → machine when one publishes an event type the other
+  // listens for. Two machines that talk both ways directly are an exchange (a request and its reply);
+  // the rest is shown as its feedback structures and their independent loops, not every cycle
   const name = (id) => { const n = nodes.find((x) => x.id === id); return n ? (n.lines ? n.lines.join("/") : n.label) : id; };
-  const loops = NetGraph.cycles(nodes.map((n) => n.id), edges).map((c) => {
-    const es = c.map((id, k) => `${id}>${c[(k + 1) % c.length]}`);
-    return { nodes: c, edges: es, html: `<b>${esc(c.filter((id) => !id.startsWith("ev:")).map(name).join(" ⇄ "))}</b>: ${[...c, c[0]].map((id) => esc(name(id))).join(" → ")}` };
-  });
-  const lsig = JSON.stringify(loops.map((l) => l.nodes));
-  if (lsig === window.LOOPSIG) return;                  // unchanged: keep the selected loop
+  const mm = [];
+  for (const a of edges) if (a.source.startsWith("m:") && a.target.startsWith("ev:"))
+    for (const b of edges) if (b.source === a.target && b.target.startsWith("m:")) mm.push({ source: a.source, target: b.target, via: a.target, ids: [a.id, b.id] });
+  const machineIds = nodes.filter((n) => n.machine).map((n) => n.id);
+  const r = Loops.analyse(machineIds, mm, { exchanges: true });
+  const vias = (ls) => [...new Set(ls.map((l) => l.via))];
+  const viaText = (ls) => vias(ls).map((v) => esc(name(v))).join(", ");
+  const items = [];
+  for (const x of r.exchanges) items.push({ nodes: [...x.nodes, ...vias(x.there), ...vias(x.back)], edges: [...x.there, ...x.back].flatMap((l) => l.ids),
+    html: `<span class="ng-pol X" title="an exchange: each publishes something the other listens for">⇄</span><b>${esc(name(x.nodes[0]))} ⇄ ${esc(name(x.nodes[1]))}</b>: <span class="muted">→</span> ${viaText(x.there)} <span class="muted">←</span> ${viaText(x.back)}` });
+  for (const st of r.structures) for (const l of st.loops) {
+    const links = l.links.flat();
+    items.push({ nodes: [...l.nodes, ...vias(links)], edges: links.flatMap((x) => x.ids),
+      html: `<span class="ng-pol L" title="a loop of at least three machines">↻</span><b>${l.nodes.map((id) => esc(name(id))).join(" → ")} → ${esc(name(l.nodes[0]))}</b>${l.routes.length > 1 ? ` <span class="muted">(${l.routes.length} routes)</span>` : ""}: `
+        + l.links.map((ls, j) => `${esc(name(l.nodes[j]))} <span class="muted">via</span> ${viaText(ls)}`).join(" · ") });
+  }
+  const lsig = JSON.stringify(items.map((l) => l.nodes));
+  if (lsig === window.LOOPSIG) return;                  // unchanged: keep the selected one
   window.LOOPSIG = lsig; GRAPH.highlight(null);
-  $("loops").innerHTML = loops.length ? "" : "<span class='muted'>No feedback loops: nothing any machine publishes reaches a machine that can publish back to it.</span>";
-  if (loops.length) { $("loops").innerHTML = `<div class="head">Feedback loops · click one to highlight it</div><div id="looplist"></div>`; NetGraph.loopList($("looplist"), GRAPH, loops); }
+  const st = r.structures[0];
+  $("loops").innerHTML = items.length ? `<div class="head">Communication cycles · click one to highlight it · ${r.exchanges.length} exchange${r.exchanges.length === 1 ? "" : "s"} (two machines talking both ways)${st ? ` · ${r.structures.reduce((a, x) => a + x.loops.length, 0)} independent loop${r.structures.reduce((a, x) => a + x.loops.length, 0) === 1 ? "" : "s"} of three or more machines, which make up all ${r.structures.reduce((a, x) => a + x.cycles, 0)}${r.structures.some((x) => x.cycles >= 2000) ? "+" : ""} cycles between them` : ""}</div><div id="looplist"></div>`
+    : "<span class='muted'>No communication cycles: nothing any machine publishes reaches a machine that can publish back to it.</span>";
+  if (items.length) NetGraph.loopList($("looplist"), GRAPH, items);
 }
 // a machine's dialog: what it is, its instances, what it publishes and listens for, its metrics
 // now, its last events and the tail of its log (refreshed while open)

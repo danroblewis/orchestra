@@ -1,0 +1,1 @@
+{ "private": true, "description": "Loop tests (node --test); no dependencies", "type": "module" }

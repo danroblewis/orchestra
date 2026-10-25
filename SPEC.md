@@ -355,8 +355,15 @@ influences into it) crosses fewest lines and boxes, nearest first, a crossing wo
 more stub; it follows its stock when it moves, never pinned elsewhere (a cloud far from the boundary means nothing). A stock with flows across the boundary is drawn toward the
 nearest side, and those flows are drawn thinner and dimmer, so a boundary crossing is a short,
 quiet stub (still visible: it is what the model does not explain). A measured level that a rate reads but no counters balance is an **auxiliary**: inside the
-system, drawn round so it does not read as a stock. Loops are elementary cycles; clicking
-one highlights it. Pages read only the web server's background caches
+system, drawn round so it does not read as a stock. Loops (`static/loops.js`, the same for both graphs) are
+not every cycle: a graph's feedback structures (its strongly connected parts) are found, and in
+each an independent loop set (the shortest cycle through each link, kept only when it adds a link,
+after Oliva 2004), with cycles through the same nodes merged as routes of one loop; all other
+cycles are combinations of these. On the event map two machines that talk both ways are an
+exchange, listed apart, and a loop has at least three machines ("communication cycles"). On the
+Dynamics page each loop is balancing or reinforcing and either "items circulate" (every link
+material moving along a flow) or "information" (a level steering a rate). Clicking one highlights
+it. Pages read only the web server's background caches
 (`web/background.py`) and the host's cached discovery, never the stores on request.
 - **Core:** the host, the bus and the metrics store, each probed against its real backend within
   a time limit; explorers for the metrics (a catalogue and a PromQL editor) and the events (types,

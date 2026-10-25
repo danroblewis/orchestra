@@ -82,6 +82,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="/static/netgraph.js?v={{v}}"></script>
 <script src="/static/sd-graph.js?v={{v}}"></script>
+<script src="/static/loops.js?v={{v}}"></script>
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script src="/static/sd-layout.js?v={{v}}"></script>
 <script src="/static/charts.js?v={{v}}"></script>
@@ -148,29 +149,42 @@ function draw() {
     + (acc.size ? `<label class="lg" style="cursor:pointer" title="stocks that only fill, such as the event bus's length"><input type="checkbox" ${window.SHOW_ACC ? "checked" : ""} onchange="window.SHOW_ACC=this.checked;draw()" style="margin:0"> stocks that only fill (${acc.size})</label>` : "")
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it, through rediscoveries; double-click to release) · tidy lays out the rest · reset starts over · scroll to zoom · hover or click a stock or a flow</span>`;
 }
+// Feedback loops (loops.js): the causal graph's feedback structures and an independent set of
+// loops in each, not every cycle. A loop is balancing (B) with an odd number of − links, else
+// reinforcing (R). Its kind: items circulate when every link is material moving (a flow drawing
+// from the stock before it and filling the stock after it); otherwise it is information feedback
+// (a level steering a rate). A loop of one stock (its outflow depends on itself) is first order.
 function loops(nodes, causal) {
   const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : id.startsWith("i:") ? id.slice(2).replace(/_/g, " ") : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;
-  const signOf = new Map(causal.map((c) => [c.source + ">" + c.target, c.sign]));
-  // the causal graph's own nodes: stocks, and flows (which are drawn as arrows, not nodes)
+  const flowOf = (id) => MODEL.flows.find((f) => "f:" + f.id === id);
   const ids = [...new Set(causal.flatMap((c) => [c.source, c.target]))];
-  const cyc = NetGraph.cycles(ids, causal);
-  const all = cyc.map((c) => {
-    const pairs = c.map((id, k) => [id, c[(k + 1) % c.length]]);
-    const neg = pairs.filter(([a, b]) => signOf.get(a + ">" + b) < 0).length;
-    // drawn edges along the loop: each flow on it (its arrow) and each influence into one
+  const r = Loops.analyse(ids, causal);
+  const all = [];
+  for (const st of r.structures) for (const l of st.loops) {
+    const c = l.nodes, pairs = c.map((id, k) => [id, c[(k + 1) % c.length]]);
     const es = [];
     for (const [a, b] of pairs) {
       if (a.startsWith("f:")) es.push(FLOWEDGE[a]);
       if (b.startsWith("f:")) { es.push(FLOWEDGE[b]); es.push(`${a}>${FLOWEDGE[b]}:info`); }
     }
     const stocks = c.filter((id) => id.startsWith("s:"));
-    const steps = pairs.map(([a, b]) => `${esc(name(a))} <span class="muted">${signOf.get(a + ">" + b) < 0 ? "(−)" : "(+)"}</span>`).join(" → ") + " → " + esc(name(c[0]));
-    return { nodes: c, edges: es, stocks: stocks.length, pol: neg % 2 ? "B" : "R",
-      html: `<span class="ng-pol ${neg % 2 ? "B" : "R"}" title="${neg % 2 ? "balancing" : "reinforcing"}">${neg % 2 ? "B" : "R"}</span><b>${esc(stocks.map(name).join(" → "))}</b>: ${steps}` };
-  }).sort((a, b) => b.stocks - a.stocks || b.nodes.length - a.nodes.length);
+    const material = c.every((id, k) => {
+      if (!id.startsWith("f:")) return true;
+      const f = flowOf(id), before = c[(k - 1 + c.length) % c.length], after = c[(k + 1) % c.length];
+      return f && before === "s:" + f.from && after === "s:" + f.to;
+    });
+    const signOf = (a, b) => (l.links[pairs.findIndex(([x, y]) => x === a && y === b)] || [{}])[0].sign;
+    const steps = pairs.map(([a, b]) => `${esc(name(a))} <span class="muted">${signOf(a, b) < 0 ? "(−)" : "(+)"}</span>`).join(" → ") + " → " + esc(name(c[0]));
+    all.push({ nodes: c, edges: es, stocks: stocks.length, pol: l.polarity, structure: st,
+      html: `<span class="ng-pol ${l.polarity}" title="${l.polarity === "B" ? "balancing" : "reinforcing"}">${l.polarity}</span><span class="ng-kind ${material ? "mat" : "inf"}" title="${material ? "every link is material moving along a flow" : "at least one link is a level steering a rate"}">${material ? "items circulate" : "information"}</span><b>${esc(stocks.map(name).join(" → "))}</b>: ${steps}` });
+  }
+  all.sort((a, b) => b.stocks - a.stocks || b.nodes.length - a.nodes.length);
   const main = all.filter((l) => l.stocks > 1), first = all.length - main.length;
+  const multi = r.structures.filter((x) => main.some((l) => l.structure === x));     // structures with a loop through two stocks or more
+  const cycles = multi.reduce((a, x) => a + x.cycles, 0);
   GRAPH.highlight(null);
-  $("loops").innerHTML = `<div class="head">Feedback loops · click one to highlight it · <span class="ng-pol B">B</span>balancing <span class="ng-pol R">R</span>reinforcing</div><div id="looplist"></div>`
+  $("loops").innerHTML = `<div class="head">Feedback loops · click one to highlight it · <span class="ng-pol B">B</span>balancing <span class="ng-pol R">R</span>reinforcing`
+    + (multi.length ? ` · ${multi.length} feedback structure${multi.length === 1 ? "" : "s"}; the ${main.length} loop${main.length === 1 ? "" : "s"} shown ${main.length === 1 ? "is" : "are"} independent and make${main.length === 1 ? "s" : ""} up all ${cycles}${cycles >= 2000 ? "+" : ""} cycles through them` : "") + `</div><div id="looplist"></div>`
     + (first ? `<div class="muted" style="margin-top:4px">and ${first} first-order loop${first === 1 ? "" : "s"}: a stock whose outflow depends on itself, which always balances it</div>` : "");
   if (main.length) NetGraph.loopList($("looplist"), GRAPH, main); else $("looplist").innerHTML = '<span class="muted">No loops through more than one stock.</span>';
 }
