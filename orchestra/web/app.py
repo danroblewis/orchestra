@@ -19,6 +19,8 @@ from ..events import Events
 from ..model import State
 from ..harness import read_transcript
 from ..store import LocalStore, StoreError
+from .core import CoreProbe
+from .machines import machines_view
 
 STATIC = Path(__file__).parent / "static"
 
@@ -39,6 +41,7 @@ def create_app(project: Project) -> FastAPI:
     app = FastAPI(title="Orchestra")
     events = Events.for_project(project)
     store = LocalStore(project, events)
+    core = CoreProbe(project, events)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
     @app.middleware("http")
@@ -194,6 +197,22 @@ def create_app(project: Project) -> FastAPI:
             snap["agents"] = []
         snap["loop"] = store.runtime().get("control") or {}
         return snap
+
+    @app.get("/api/core")
+    def core_status() -> dict:
+        """The event bus and the metrics store, probed against their real backends."""
+        return core.status()
+
+    @app.post("/api/core/probe")
+    def core_probe() -> dict:
+        """Append a probe event to the event bus and read it back by offset."""
+        return core.write_probe()
+
+    @app.get("/api/machines")
+    async def machines() -> dict:
+        snap = store.snapshot()
+        snap["gate_runs"] = store.gate_runs()[-30:]
+        return machines_view(project, store, snap)
 
     gpu_history: list[dict] = []
 

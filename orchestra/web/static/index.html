@@ -12,19 +12,15 @@
 </head>
 <body>
 <nav id="nav"><a href="/" class="on">Dashboard</a><a href="/tickets">Tickets</a><a href="/agents">Agents</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
-<div class="tabs"><button class="on" onclick="showCol(0,this)">Agents</button><button onclick="showCol(1,this)">Merge gate</button><button onclick="showCol(2,this)">Host</button></div>
+<div class="tabs"><button class="on" onclick="showCol(0,this)">Machines</button><button onclick="showCol(1,this)">Core</button><button onclick="showCol(2,this)">Host</button></div>
 <div class="layout">
   <div class="col on">
-    <div class="col-head"><h1>Agents</h1><span class="sub"><span id="agents-sub"></span></span></div>
-    <div id="agents"></div>
+    <div class="col-head"><h1>Machines</h1><span class="sub" id="machines-sub"></span></div>
+    <div id="machines"></div>
   </div>
   <div class="col">
-    <div class="col-head"><h1>Merge gate</h1><span class="sub" id="gate-sub"></span></div>
-    <h2><span>Burndown <select id="burn-range" class="range"><option value="1">1h</option><option value="6">6h</option><option value="24" selected>24h</option><option value="72">3d</option><option value="168">7d</option><option value="720">30d</option></select></span><span class="count" id="burn-sum"></span></h2>
-    <div class="panel"><svg id="burndown" class="landings" viewBox="0 0 300 100" preserveAspectRatio="none"></svg><div class="lbl-row"><span id="burn-from"></span><span><span style="color:#6ea8fe">■</span> remaining &nbsp;<span style="color:#6f7889">■</span> total &nbsp;now</span></div></div>
-    <h2><span>Landings <select id="land-range" class="range"><option value="6">6h</option><option value="24" selected>24h</option><option value="72">3d</option><option value="168">7d</option><option value="720">30d</option></select></span><span class="count" id="land-sum"></span></h2>
-    <div class="panel"><svg id="landings" class="landings" viewBox="0 0 300 90" preserveAspectRatio="none"></svg><div class="lbl-row"><span id="land-from"></span><span>now</span></div></div>
-    <div id="queue"></div>
+    <div class="col-head"><h1>Core services</h1><span class="sub" id="core-sub"></span></div>
+    <div id="core"></div>
   </div>
   <div class="col">
     <div class="col-head"><h1>Host</h1><span class="sub" id="host-sub"></span></div>
@@ -54,127 +50,119 @@ function showCol(i, btn) {
   try { localStorage.setItem("orchestra.tab", String(i)); } catch (e) {}
 }
 try { const t = Number(localStorage.getItem("orchestra.tab") || 0); if (t) showCol(t); } catch (e) {}
-const BASE_AGENTS = [["supervisor", "supervisor", "S"], ["coordinator", "coordinator", "C"], ["pipeline-manager", "pipeline_manager", "P"]];
-const ROLE_COLOR = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", pipeline_manager: "var(--r-pipeline)", worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
 const TERMINAL = ["DONE", "CANCELLED"];
-let STATE = null;
+let STATE = null, MACHINES = null, CORE = null, PROBE = null;
 
 async function refresh() {
   try {
-    STATE = await (await fetch("/api/state")).json();
+    const [st, mc] = await Promise.all([fetch("/api/state").then((r) => r.json()), fetch("/api/machines").then((r) => r.json())]);
+    STATE = st; MACHINES = mc;
     renderNav("dashboard", STATE.project); $("conn").textContent = "live";
-    renderAgents(STATE); renderQueue(STATE);
+    renderMachines();
   } catch (e) { $("conn").textContent = "disconnected"; }
 }
 
-function chip(s) { return sessionChip(s, STATE.now); }
-
-function renderAgents(s) {
-  const byId = Object.fromEntries(s.sessions.map((x) => [x.id, x]));
-  const live = s.sessions.filter((x) => x.status === "running").length;
-  $("agents-sub").textContent = `${live} turn${live === 1 ? "" : "s"} running`;
-  // Only live processes belong here. A role that is paused or not started, and a ticket
-  // whose worker finished its turn (waiting on a dependency, in review, rejected, or
-  // between retries) has a session file but no agent; those live on the Agents and
-  // Tickets pages. Resident agents between wake-ups are real processes, so they stay.
-  const isLive = (x) => x && x.status === "running";
-  const customs = (s.agents || []).filter((r) => !r.builtin && r.resident).map((r) => [r.session_id, r.name, r.name[0].toUpperCase(), r]);
-  const residents = [...BASE_AGENTS, ...customs].filter(([id, kind, letter, r]) => byId[id] && byId[id].alive && !(r && r.paused));
-  let html = residents.map(([id, kind, letter, r]) => {
-    const x = byId[id];
-    return `<div class="agent" style="--rc:${ROLE_COLOR[kind] || "#94a3b8"}" onclick="openTranscript('${id}')" title="${esc(r ? r.description || "" : kind.replace("_", " "))}">
-      <div class="av">${letter}</div><div class="name">${id}</div><div class="say">${esc((x.status === "running" && x.partial_text ? x.partial_text.slice(-160) : x.last_text) || "waiting for work")}</div>${chip(x)}</div>`;
+// ---- machines: AI agents and programs, from the factory model ----
+const MACHINE_COLOR = { supervisor: "var(--r-supervisor)", coordinator: "var(--r-coordinator)", "pipeline-manager": "var(--r-pipeline)",
+  worker: "var(--r-worker)", reviewer: "var(--r-reviewer)" };
+const STATUS_CHIP = { running: "resident", working: "working", waiting: "resident", idle: "", stopped: "down", "not running": "down", observed: "" };
+function flowText(f) {
+  const [a, b] = f.id.split(">");
+  const arrow = `<span class="fl">${esc(a.toLowerCase().replace(/_/g, " "))} → ${esc(b.toLowerCase().replace(/_/g, " "))}</span>`;
+  if (f.rate == null) return `${arrow}<span class="muted">no data</span>`;
+  const rate = f.form === "proportional" ? `${f.rate.toFixed(2)} × ${esc((f.src || "").toLowerCase().replace(/_/g, " "))}` : f.rate.toFixed(2);
+  return `${arrow}<span class="num" title="${esc(f.form)} · fitted (${esc(f.origin)}) from ${f.events} events · ± ${(f.se || 0).toFixed(3)}">${rate} /h</span>`;
+}
+function renderMachines() {
+  const ms = MACHINES.machines, working = ms.reduce((n, m) => n + m.jobs.length, 0);
+  $("machines-sub").textContent = `${ms.length} machines · ${working} job${working === 1 ? "" : "s"} running` + (MACHINES.fitted ? "" : " · not fitted yet");
+  $("machines").innerHTML = ms.map((m) => {
+    const agent = m.kind === "agent", rc = MACHINE_COLOR[m.id] || (agent ? "#c4b5fd" : "#94a3b8");
+    const eng = m.engagement.map((e) => `${e.mode.replace("_", " ")} · ${e.driver}`).join(", ") || "observed only";
+    const jobs = m.jobs.map((j) => `<div class="job" onclick="event.stopPropagation();openTranscript('${esc(j.session)}')"><span class="id">${esc(j.ticket || j.session)}</span><span class="msg">${esc(j.text || "working")}</span></div>`).join("");
+    const ctl = m.id === "worker" && STATE ? `<div class="mctl">${capacityCtl(STATE)}${STATE.pickup_paused ? "<span>new work PAUSED</span>" : ""}<button class="ctl ${STATE.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()">${STATE.pickup_paused ? "▶ resume" : "⏸ pause new work"}</button></div>` : "";
+    return `<div class="machine" style="--rc:${rc}" title="${esc(m.description)}">
+      <div class="mhead"><div class="av ${agent ? "" : "prog"}">${agent ? esc(m.name[0]) : "⚙"}</div>
+        <div class="mname">${esc(m.name)}${m.bootstrap ? ' <span class="tag">bootstrap</span>' : ""}<div class="msub">${agent ? "AI agent" : "program"} · ${esc(eng)}</div></div>
+        <span class="chip ${STATUS_CHIP[m.status] ?? ""}"><span class="dot"></span>${esc(m.status)}</span></div>
+      ${jobs}${m.flows.length ? `<div class="mflows">${m.flows.map(flowText).map((x) => `<div>${x}</div>`).join("")}</div>` : ""}${ctl}</div>`;
   }).join("");
-  // Ephemeral agents (ad hoc, or scheduled without memory) run under a timestamped session
-  // id. While one is mid-turn it is a live process and belongs here too.
-  const shownIds = new Set(residents.map(([id]) => id));
-  const ephemeral = s.sessions.filter((x) => x.status === "running" && !shownIds.has(x.id) && !/^(worker|reviewer)-/.test(x.id) && x.kind);
-  html += ephemeral.map((x) => `<div class="agent" style="--rc:#c4b5fd" onclick="openTranscript('${x.id}')" title="${esc(x.kind)}: a fresh session for this run">
-      <div class="av">${x.kind[0].toUpperCase()}</div><div class="name">${esc(x.kind)} <span class="muted" style="font-weight:400">one run</span></div><div class="say">${esc(x.last_text || "starting")}</div>${chip(x)}</div>`).join("");
-  html = html || '<div class="empty">No resident agents running. They come up with <code>orchestra run</code>.</div>';
-  const cards = s.tickets.filter((t) => !TERMINAL.includes(t.state) && (isLive(byId[`worker-${t.id}`]) || isLive(byId[`reviewer-${t.id}`])))
-    .map((t) => ({ t, w: byId[`worker-${t.id}`], r: byId[`reviewer-${t.id}`] }));
-  const lane = (who, x) => isLive(x) ? `<div class="lane"><span class="who">${who}</span><span class="msg">${esc((x.partial_text || "").slice(-160) || x.last_text || "")}</span>${chip(x)}</div>` : "";
-  // The pause control sits here because this is all it governs: no new worker starts while
-  // it is on. Resident agents, reviews, the gate, and staging keep going.
-  html += `<h2><span>Agents on tickets</span><span class="hctl"><span class="count">${cards.length}</span>${capacityCtl(s)}${s.pickup_paused ? "<span>new workers PAUSED</span>" : ""}<button id="pause-btn" class="ctl ${s.pickup_paused ? "paused" : ""}" onclick="event.stopPropagation();togglePause()" title="${s.pickup_paused ? "Resume starting new workers." : "Stop starting new workers. Running turns finish; reviews, the gate, staging, and resident agents are unaffected."}">${s.pickup_paused ? "▶ resume" : "⏸ pause new workers"}</button></span></h2>` + (cards.map(({ t, w, r }) =>
-    `<div class="work" style="--c:${color(t.state)}" onclick="openTranscript('${isLive(w) ? w.id : r.id}')" title="Open the running agent's transcript; the ticket is one click away from there"><div class="top"><span><span class="id" onclick="event.stopPropagation();openTicket('${t.id}')" title="Open the ticket">${esc(t.id)}</span> <span class="title">${esc(t.title)}</span></span><span class="right">${turns(t)}<span class="pill">${t.state.replace(/_/g, " ")}</span></span></div>${lane("worker", w)}${lane("reviewer", r)}</div>`).join("")
-    || '<div class="empty">No agent is working a ticket right now. Ready tickets start as soon as a worker slot is free.</div>');
-  $("agents").innerHTML = html;
-}
-
-// How many times the worker has been re-engaged on this ticket, and why. Shown only once
-// there is a second turn, so a clean first attempt stays uncluttered.
-function turns(t) {
-  // Compact: ↺N is the worker turn count; ✗ reviewer rejections, ⛔ gate send-backs, ⟳ other
-  // retries follow only when non-zero. The full wording is in the hover title and the drawer.
-  if (!t.worker_turns || t.worker_turns < 2) return "";
-  const other = t.worker_turns - 1 - (t.reviewer_rejections || 0) - (t.gate_rejections || 0);
-  const bits = [`↺${t.worker_turns}`];
-  if (t.reviewer_rejections) bits.push(`✗${t.reviewer_rejections}`);
-  if (t.gate_rejections) bits.push(`⛔${t.gate_rejections}`);
-  if (other > 0) bits.push(`⟳${other}`);
-  const title = `worker opened ${t.worker_turns} times: ${t.reviewer_rejections || 0} after a reviewer rejection, ${t.gate_rejections || 0} after the merge gate sent it back` + (other > 0 ? `, ${other} after a crash, timeout, or operator stop` : "");
-  return `<span class="turns" title="${esc(title)}">${bits.join(" ")}</span>`;
-}
-
-function renderQueue(s) {
-  const byT = Object.fromEntries(s.tickets.map((t) => [t.id, t]));
-  const cur = (s.gate_runs || []).find((r) => r.status === "running");
-  const queue = s.tickets.filter((t) => t.state === "APPROVED").sort((a, b) => a.state_since.localeCompare(b.state_since));
-  const last = [...(s.gate_runs || [])].reverse().find((r) => r.status !== "running");
-  const bs = s.batch_size || 1;
-  $("gate-sub").textContent = cur ? "running" : queue.length ? `${queue.length} waiting` : "idle";
-  let html = s.pipeline.paused ? `<div class="banner">Pipeline paused<div style="font-weight:400;margin-top:4px">${esc(s.pipeline.reason)}</div></div>` : "";
-  html += `<h2><span>In this run</span><span class="count">${cur ? cur.batch.length : 0}</span></h2>`;
-  if (cur) {
-    const plan = ["assemble", "build", "unit", "start", "acceptance"];
-    const got = new Map((cur.stages || []).map((st) => [st.stage, st]));
-    const failed = (cur.stages || []).some((st) => st.status === "failed");
-    let marked = false;
-    const steps = plan.map((p) => { const st = got.get(p); let cls = st ? (st.status === "passed" ? "pass" : "fail") : ""; if (!st && !failed && !marked) { cls = "run"; marked = true; } return { p, st, cls }; });
-    html += `<div class="run"><div class="hdr"><b>${cur.id}</b><span class="muted num">${ago(s.now - Date.parse(cur.started_at) / 1000)}</span></div>
-      ${cur.batch.map((id) => `<div class="qitem" onclick="openTicket('${id}')"><div class="n">▶</div><div><span class="id">${esc(id)}</span> ${esc((byT[id] || {}).title || "")}</div></div>`).join("")}
-      <div class="steps">${steps.map((x) => `<div class="step ${x.cls}"><span class="ic"></span><span>${x.p}${x.st ? " · " + esc(x.st.name) : ""}</span><span class="t">${x.st ? (x.st.duration ? x.st.duration + "s" : x.st.status) : ""}</span></div>`).join("")}</div>
-      <a href="#" class="muted" style="font-size:11px" onclick="openGateRun('${cur.id}');return false">open run</a></div>`;
-  } else html += `<div class="empty">${last ? `Gate idle. Last run ${esc(last.status)}: ${esc(last.summary || "")}` : "Gate idle. Nothing has been through it yet."}</div>`;
-  html += `<h2><span>Next run</span><span class="count">${Math.min(queue.length, bs)}</span></h2>`;
-  html += (queue.slice(0, bs).map((t, i) => `<div class="qitem" onclick="openTicket('${t.id}')"><div class="n">${i + 1}</div><div><span class="id">${esc(t.id)}</span> ${esc(t.title)}<div class="m">approved ${ago(s.now - Date.parse(t.state_since) / 1000)} ago · ${esc((t.reviewed_commit || "").slice(0, 10))}</div></div></div>`).join("")
-    || '<div class="empty">Nothing approved yet. Tickets arrive here after review.</div>');
-  if (queue.length > bs) html += `<h2><span>Waiting for a later run</span><span class="count">${queue.length - bs}</span></h2>` +
-    queue.slice(bs).map((t, i) => `<div class="qitem" onclick="openTicket('${t.id}')"><div class="n">${i + 1 + bs}</div><div><span class="id">${esc(t.id)}</span> ${esc(t.title)}</div></div>`).join("");
-  $("queue").innerHTML = html;
 }
 
 async function control(body) {
   const r = await fetch("/api/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) alert(await r.text()); refresh();
 }
-// The operator's ceiling on concurrent workers and reviewers, adjustable live. The
-// Coordinator's own dial can lower the effective number further but never raise it past this.
 function capacityCtl(s) {
   const c = s.capacity || {};
   const step = (kind, n) => `<button class="ctl" style="padding:0 6px" onclick="event.stopPropagation();setCapacity('${kind}',${n})" title="${n < 0 ? "one fewer" : "one more"} ${kind}">${n < 0 ? "−" : "+"}</button>`;
-  const reset = c.operator_set ? `<button class="ctl" style="padding:0 6px" onclick="event.stopPropagation();setCapacity(null,0)" title="Back to orchestra.toml: ${c.configured_workers} workers, ${c.configured_reviewers} reviewers">↺</button>` : "";
-  const eff = (kind) => c[kind] !== c["max_" + kind] ? ` <span class="muted" title="The Coordinator has dialled the effective number down to ${c[kind]}">(${c[kind]} in use)</span>` : "";
-  return `<span title="Concurrent workers and reviewers. Takes effect at the next tick; running turns finish.">${step("workers", -1)}<b>${c.max_workers ?? "?"}</b>${step("workers", 1)} workers${eff("workers")} · ${step("reviewers", -1)}<b>${c.max_reviewers ?? "?"}</b>${step("reviewers", 1)} reviewers${eff("reviewers")}${reset}</span>`;
+  return `<span title="Concurrent workers and reviewers: the machines' capacity.">${step("workers", -1)}<b>${c.max_workers ?? "?"}</b>${step("workers", 1)} workers · ${step("reviewers", -1)}<b>${c.max_reviewers ?? "?"}</b>${step("reviewers", 1)} reviewers</span>`;
 }
 function setCapacity(kind, delta) {
   const c = (STATE && STATE.capacity) || {};
-  if (kind === null) return control({ action: "capacity" });
   const body = { action: "capacity", workers: c.max_workers, reviewers: c.max_reviewers };
   body[kind] = Math.max(0, (c["max_" + kind] || 0) + delta);
   control(body);
 }
 function togglePause() { control({ action: STATE && STATE.pickup_paused ? "resume" : "pause" }); }
-function killAgent(id) { if (confirm(`Stop the agent working on ${id}? The ticket goes back to OPEN (or back to review) and its branch and session are kept.`)) control({ action: "kill", ticket: id }); }
+
+// ---- core services: the event bus and the metrics store, probed live ----
+function spark(points, { unit = "", w = 300, h = 34, cls = "" } = {}) {
+  if (!points || points.length < 2) return `<div class="spark empty">collecting…</div>`;
+  const t0 = points[0][0], t1 = points[points.length - 1][0] || t0 + 1;
+  const vs = points.map((p) => p[1]), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
+  const xy = points.map(([t, v]) => [(w * (t - t0) / Math.max(1, t1 - t0)).toFixed(1), (h - 3 - (h - 6) * (v - lo) / span).toFixed(1)]);
+  const d = xy.map((p, i) => (i ? "L" : "M") + p[0] + "," + p[1]).join(" ");
+  return `<svg class="spark ${cls}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:${h}px;width:100%"><path class="a" d="${d} L${w},${h} L0,${h} Z"/><path class="l" d="${d}"/></svg>
+    <div class="lbl-row"><span>${fmtNum(lo)}–${fmtNum(hi)}${unit}</span><span>last 15m · ${points.length} points from the store</span></div>`;
+}
+const fmtNum = (v) => (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (+v).toFixed(v >= 10 ? 0 : 1));
+function ledCard(title, ok, body) {
+  return `<div class="panel env core" style="--ec:${ok ? "#22c55e" : "#ef4444"}"><div class="chead"><span><span class="led"></span><b>${title}</b></span>${body.right || ""}</div>${body.html}</div>`;
+}
+function renderCore() {
+  const { bus: b, metrics: m } = CORE;
+  $("core-sub").textContent = `${b.backend} · ${m.backend} · probed ${ago(Date.now() / 1000 - CORE.probed_at)} ago`;
+  const types = (b.recent_types || []).map(([t, n]) => `<span class="ty">${esc(t)} <b>${n}</b></span>`).join("");
+  const probe = PROBE ? (PROBE.ok
+      ? `<div class="probe ok">✓ appended at offset ${PROBE.offset.toLocaleString()} in ${PROBE.append_ms} ms · read back by offset in ${PROBE.read_back_ms} ms</div>`
+      : `<div class="probe bad">✗ ${esc(PROBE.error || "the probe event was not read back")}</div>`) : "";
+  const busHtml = b.ok ? `<div class="kv">
+      <div>backend</div><div><b>${esc(b.backend)}</b></div>
+      <div>at</div><div class="num">${esc(b.url)}</div>
+      <div>stream</div><div class="num">${esc(b.stream)}</div>
+      <div>events</div><div class="num">${(b.events || 0).toLocaleString()}</div>
+      <div>rate</div><div class="num">${b.per_min_10m} / min over the last 10 min</div>
+      <div>last event</div><div>${b.last_event ? `${esc(b.last_event.type)} · ${ago(b.last_event.age_s)} ago` : "—"}</div>
+      <div>read</div><div class="num">${b.read_ms} ms for the end and the latest 200</div></div>
+      <div class="types">${types}</div>
+      <div class="sl">events stored</div>${spark((m.spark || {}).bus_events, { cls: "blue" })}
+      <div class="sl">read latency</div>${spark((m.spark || {}).bus_read_ms, { unit: " ms" })}
+      ${probe}` : `<div class="probe bad">${esc(b.error)}</div>`;
+  const metHtml = m.ok ? `<div class="kv">
+      <div>backend</div><div><b>${esc(m.backend)}</b></div>
+      <div>at</div><div class="num">${esc(m.url)}</div>
+      <div>series</div><div class="num">${m.series} for this project</div>
+      <div>round trip</div><div class="num">${m.round_trip_ok ? "✓" : "✗"} write ${m.write_ms} ms · readable after ${m.visible_ms} ms · read ${m.read_ms} ms</div></div>
+      <div class="sl">write latency</div>${spark((m.spark || {}).metrics_write_ms, { unit: " ms" })}
+      <div class="sl">write → readable</div>${spark((m.spark || {}).metrics_visible_ms, { unit: " ms", cls: "amber" })}
+      <div class="muted" style="font-size:11px;margin-top:6px">Every probe writes its own measurements into the store; these lines are read back from it.</div>`
+      : `<div class="probe bad">${esc(m.error)}</div>`;
+  $("core").innerHTML = ledCard("Event bus", b.ok, { html: busHtml, right: `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>` })
+    + ledCard("Metrics store", m.ok, { html: metHtml });
+}
+async function refreshCore() { try { CORE = await (await fetch("/api/core")).json(); renderCore(); } catch (e) {} }
+async function probeBus() {
+  try { PROBE = await (await fetch("/api/core/probe", { method: "POST" })).json(); } catch (e) { PROBE = { ok: false, error: String(e) }; }
+  renderCore(); setTimeout(refreshCore, 300);
+}
 
 const SYSTEM_POLL_MS = 2000; let coreBars = [];
-const RANGE_KEYS = ["gpu-range", "burn-range", "land-range"];
+const RANGE_KEYS = ["gpu-range"];
 function rangeOf(id) { return Number($(id).value); }
 RANGE_KEYS.forEach((id) => {
   try { const v = localStorage.getItem("orchestra." + id); if (v && [...$(id).options].some((o) => o.value === v)) $(id).value = v; } catch (e) {}
-  $(id).addEventListener("change", () => { try { localStorage.setItem("orchestra." + id, $(id).value); } catch (e) {} ({ "gpu-range": refreshSystem, "burn-range": refreshBurndown, "land-range": refreshLandings })[id](); });
+  $(id).addEventListener("change", () => { try { localStorage.setItem("orchestra." + id, $(id).value); } catch (e) {} ({ "gpu-range": refreshSystem })[id](); });
   $(id).addEventListener("click", (e) => e.stopPropagation());
 });
 async function refreshSystem() {
@@ -209,75 +197,6 @@ function renderGpu(d) {
   $("gpu").setAttribute("title", `GPU utilization, last ${win >= 3600 ? win / 3600 + "h" : win / 60 + "m"}`);
 }
 
-let burnData = null, landData = null;
-function showTip(ev, html) { const t = $("tip"); t.innerHTML = html; t.hidden = false; const x = ev.clientX + 14, y = ev.clientY + 14; t.style.left = Math.min(x, window.innerWidth - t.offsetWidth - 8) + "px"; t.style.top = Math.min(y, window.innerHeight - t.offsetHeight - 8) + "px"; }
-function hideTip() { $("tip").hidden = true; }
-const fmtT = (t, hrs) => hrs >= 48 ? new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-(function wireChartHover() {
-  const bd = $("burndown");
-  bd.addEventListener("mousemove", (ev) => {
-    if (!burnData) return;
-    const r = bd.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width;
-    const { s, t0, t1, W, H, X, Y } = burnData, tx = t0 + fx * (t1 - t0);
-    let p = s[0]; for (const q of s) { if (q.t <= tx) p = q; else break; }
-    const xl = $("burn-x"), dot = $("burn-dot"); xl.hidden = false; dot.hidden = false;
-    xl.setAttribute("x1", (fx * W).toFixed(1)); xl.setAttribute("x2", (fx * W).toFixed(1)); dot.setAttribute("cx", (fx * W).toFixed(1)); dot.setAttribute("cy", Y(p.remaining).toFixed(1));
-    showTip(ev, `<b>${fmtT(tx, rangeOf("burn-range"))}</b><br>remaining <b>${p.remaining}</b> · total <b>${p.total}</b> · done <b>${p.total - p.remaining}</b>`);
-  });
-  bd.addEventListener("mouseleave", () => { hideTip(); const xl = $("burn-x"), dot = $("burn-dot"); if (xl) { xl.hidden = true; dot.hidden = true; } });
-  const ld = $("landings");
-  ld.addEventListener("mousemove", (ev) => {
-    if (!landData) return;
-    const r = ld.getBoundingClientRect(), i = Math.min(landData.buckets.length - 1, Math.max(0, Math.floor((ev.clientX - r.left) / r.width * landData.buckets.length)));
-    const b = landData.buckets[i];
-    ld.querySelectorAll(".lbar").forEach((el, j) => el.classList.toggle("hover", j === i));
-    const span = landData.bucket === 24 ? new Date(b.t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : fmtT(b.t, rangeOf("land-range")) + " – " + fmtT(b.t + 3600, 0);
-    showTip(ev, `<b>${span}</b><br>landed <b>${b.landed}</b> · gate runs <b>${b.runs}</b>${b.failed ? ` · failed <b>${b.failed}</b>` : ""}`);
-  });
-  ld.addEventListener("mouseleave", () => { hideTip(); ld.querySelectorAll(".lbar.hover").forEach((el) => el.classList.remove("hover")); });
-})();
-
-async function refreshBurndown() {
-  try {
-    const d = await (await fetch(`/api/burndown?hours=${rangeOf("burn-range")}`)).json();
-    const W = 300, H = 100, s = d.series; if (!s.length) return;
-    const t0 = s[0].t, t1 = s[s.length - 1].t || t0 + 1, max = Math.max(1, ...s.map((p) => p.total));
-    const X = (t) => (W * (t - t0) / Math.max(1, t1 - t0)), Y = (v) => H - 12 - (H - 18) * v / max;
-    const step = (key) => s.map((p, i) => (i ? `L${X(p.t).toFixed(1)},${Y(s[i - 1][key]).toFixed(1)} ` : "M") + `${X(p.t).toFixed(1)},${Y(p[key]).toFixed(1)}`).join(" ");
-    let svg = "";
-    for (let y = 1; y <= 4; y++) { const yy = Y(max * y / 4); svg += `<line x1="0" x2="${W}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/><text class="tick" x="2" y="${(yy - 2).toFixed(1)}">${Math.round(max * y / 4)}</text>`; }
-    svg += `<path d="${step("total")}" class="total"/>`;
-    svg += `<path d="${step("remaining")} L${W},${(H - 12).toFixed(1)} L0,${(H - 12).toFixed(1)} Z" class="remain-area"/><path d="${step("remaining")}" class="remain"/>`;
-    svg += `<line id="burn-x" class="xhair" y1="0" y2="${H - 12}" hidden/><circle id="burn-dot" class="xdot" r="3" hidden/>`;
-    $("burndown").innerHTML = svg;
-    burnData = { s, t0, t1, max, W, H, X, Y };
-    $("burn-sum").textContent = `${d.remaining} remaining of ${d.total}`;
-    $("burn-from").textContent = d.hours >= 48 ? new Date(t0 * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : new Date(t0 * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch (e) {}
-}
-
-async function refreshLandings() {
-  try {
-    const hrs = rangeOf("land-range"), bucket = hrs > 72 ? 24 : 1;
-    const d = await (await fetch(`/api/landings?hours=${hrs}&bucket=${bucket}`)).json();
-    const W = 300, H = 90, pad = 2, n = d.buckets.length, bw = (W - pad * (n + 1)) / n;
-    const tickEvery = Math.max(1, Math.round(n / 5));
-    const tickLabel = (t) => bucket === 24 ? new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : new Date(t * 1000).getHours() + "h";
-    const max = Math.max(1, ...d.buckets.map((b) => b.landed));
-    let svg = "";
-    for (let y = 1; y <= max && y <= 8; y++) { const yy = H - 12 - (H - 16) * y / max; svg += `<line x1="0" x2="${W}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`; }
-    d.buckets.forEach((b, i) => {
-      const x = pad + i * (bw + pad), hh = (H - 16) * b.landed / max;
-      svg += `<rect class="lbar ${b.failed && !b.landed ? "bad" : ""}" x="${x.toFixed(1)}" y="${(H - 12 - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hh, b.landed ? 1 : 0).toFixed(1)}"/>`;
-      if (i % tickEvery === 0) svg += `<text class="tick" x="${(x + bw / 2).toFixed(1)}" y="${H - 2}" text-anchor="middle">${tickLabel(b.t)}</text>`;
-    });
-    $("landings").innerHTML = svg;
-    landData = d;
-    $("land-sum").textContent = `${d.total} in ${hrs >= 24 ? hrs / 24 + "d" : hrs + "h"} · ${d.per_hour}/h`;
-    $("land-from").textContent = new Date(d.buckets[0].t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch (e) {}
-}
-
 async function refreshStaging() {
   try {
     const d = await (await fetch("/api/staging")).json();
@@ -298,8 +217,8 @@ async function refreshStaging() {
   } catch (e) {}
 }
 
-refresh(); refreshSystem(); refreshStaging(); refreshLandings(); refreshBurndown();
-setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshLandings, 30000); setInterval(refreshBurndown, 30000);
+refresh(); refreshSystem(); refreshStaging(); refreshCore();
+setInterval(refresh, 2500); setInterval(refreshSystem, SYSTEM_POLL_MS); setInterval(refreshStaging, 3000); setInterval(refreshCore, 5000);
 openFromHash();
 try { const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/events"); ws.onmessage = () => refresh(); } catch (e) {}
 </script>

@@ -43,9 +43,13 @@ MACHINES = {
              ["MERGING>DONE", "MERGING>REJECTED", "MERGING>APPROVED"], [Engagement("ad_hoc", "process")]),
     "recovery": ("Recovery", "program", "Returns tickets whose owner stopped to the state before.",
                  ["IN_PROGRESS>OPEN", "IN_REVIEW>READY_FOR_REVIEW"], [Engagement("ad_hoc", "process")]),
-    "planners": ("Supervisor and Coordinator", "agent", "Create, unblock and cancel tickets.",
-                 ["outside>OPEN", "BLOCKED>OPEN", "OPEN>CANCELLED", "BLOCKED>CANCELLED", "REJECTED>CANCELLED",
-                  "READY_FOR_REVIEW>CANCELLED", "APPROVED>CANCELLED"], [Engagement("continuous", "harness")]),
+    "supervisor": ("Supervisor", "agent", "Talks with the human and creates tickets from the conversation.",
+                   ["outside>OPEN", "OPEN>CANCELLED", "BLOCKED>CANCELLED", "REJECTED>CANCELLED",
+                    "READY_FOR_REVIEW>CANCELLED", "APPROVED>CANCELLED"], [Engagement("continuous", "harness")]),
+    "coordinator": ("Coordinator", "agent", "Keeps the plan executable: splits, orders and unblocks tickets.",
+                    ["BLOCKED>OPEN"], [Engagement("continuous", "harness")]),
+    "pipeline-manager": ("Pipeline manager", "agent", "On call for the merge pipeline; files fix tickets.",
+                         [], [Engagement("continuous", "harness")]),
 }
 
 

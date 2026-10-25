@@ -413,6 +413,39 @@ def cmd_sd(args) -> int:
     return 0
 
 
+def cmd_events(args) -> int:
+    """The event log: where it lives, how much it holds, and copying it to another backend."""
+    from .bus import open_bus
+
+    project = load_project()
+    events = Events.for_project(project)
+    if args.action == "info":
+        print(f"{events.bus.name}: {events.end()} events")
+        return 0
+    if args.action == "copy":
+        if not args.to:
+            print("copy needs --to URL (redis://, amqp://, kafka://, or file)")
+            return 2
+        target = open_bus(args.to, project_key=project.key, file_path=project.events_file.with_name("events.copy.jsonl"))
+        if target.end() and not args.force:
+            print(f"{args.to} already holds {target.end()} events for this project; use --force to append anyway")
+            return 1
+        offset, n = 0, 0
+        while True:
+            batch, end = events.bus.read(offset, limit=10_000_000)
+            for ev in batch:
+                target.append(ev)
+            n += len(batch)
+            if end <= offset + len(batch) or not batch:
+                break
+            offset = end
+        print(f"copied {n} events from {events.bus.name} to {target.name}: it now holds {target.end()}")
+        print(f"to use it, set [events] url = \"{args.to}\" in orchestra.toml")
+        target.close()
+        return 0
+    return 2
+
+
 def cmd_doctor(args) -> int:
     from .git import Git
 
@@ -513,6 +546,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--model", default="tickets")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
     s.set_defaults(fn=cmd_sd)
+
+    s = sub.add_parser("events", help="the event log: info, or copy it to another bus backend")
+    s.add_argument("action", choices=["info", "copy"])
+    s.add_argument("--to", help="for copy: the target bus URL")
+    s.add_argument("--force", action="store_true", help="for copy: append even if the target already has events")
+    s.set_defaults(fn=cmd_events)
 
     s = sub.add_parser("doctor")
     s.add_argument("--fix", action="store_true")

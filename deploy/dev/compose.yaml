@@ -50,7 +50,7 @@ services:
 
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.106.1
-    command: ["-storageDataPath=/storage", "-retentionPeriod=100y", "-httpListenAddr=:8428"]
+    command: ["-storageDataPath=/storage", "-retentionPeriod=100y", "-httpListenAddr=:8428", "-search.latencyOffset=0s", "-search.disableCache"]
     ports: ["127.0.0.1:8428:8428"]
     volumes: ["victoriametrics:/storage"]
 
