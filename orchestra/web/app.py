@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 import psutil
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -113,10 +113,24 @@ def create_app(project: Project) -> FastAPI:
 
     rediscovery: dict = {"running": False}
 
+    @app.get("/api/dynamics/strategies")
+    def dynamics_strategies() -> dict:
+        """The discovery strategies there are, and what orchestra.toml configures."""
+        from ..sd.rediscover import configured_strategy
+        from ..sd.strategies import available
+        cfg = project.config
+        return {"ok": True, **available(), "configured": {"strategy": configured_strategy(project), "window_s": cfg.discovery_window,
+                                                           "step_s": cfg.discovery_step, "every_s": cfg.discovery_every,
+                                                           "options": cfg.discovery_options}}
+
     @app.post("/api/dynamics/rediscover")
-    def dynamics_rediscover() -> dict:
+    async def dynamics_rediscover(request: Request) -> dict:
         """Rediscover the model now, in the background. An observation, not a change to the
         system: it re-reads the metrics store, as the host does every few minutes."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001 - no body: the configured strategy
+            body = {}
         if rediscovery["running"]:
             return {"ok": True, "started": False, "running": True}
         if core.metrics is None:
@@ -125,8 +139,11 @@ def create_app(project: Project) -> FastAPI:
         def go():
             from ..sd.rediscover import rediscover
             try:
-                r = rediscover(project, core.metrics, note="discovered on request: the structure changed")
-                rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version}, error=None)
+                r = rediscover(project, core.metrics, strategy=body.get("strategy") or None, options=body.get("options"),
+                               window_s=body.get("window_s") or None, step_s=body.get("step_s") or None,
+                               note="discovered on request: the structure changed")
+                rediscovery.update(result={"at": r.at, "stocks": len(r.model.stocks), "flows": len(r.model.flows), "version": r.version,
+                                           "strategy": r.strategy, "compute_ms": r.model.discovery.get("compute_ms")}, error=None)
             except Exception as e:  # noqa: BLE001 - reported to the page
                 rediscovery.update(error=f"{type(e).__name__}: {e}")
             finally:

@@ -25,6 +25,10 @@
   table.dt tr:hover td { background:var(--panel3) } .mdot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--c); margin-right:5px }
   .origin { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border-radius:4px; padding:0 4px; border:1px solid var(--border2); color:var(--text2) }
   .origin.fitted { color:#bbf7d0; border-color:#166534 } .origin.declared { color:#fde68a; border-color:#92400e }
+  .dset { margin:0 0 10px; font-size:12px } .dset summary { color:var(--text2) }
+  .dgrid { display:grid; grid-template-columns:repeat(3, auto) 1fr; gap:8px 16px; align-items:center; padding:8px 0 } .dgrid .wide { grid-column:1 / -1 }
+  .dgrid input, .dgrid select, .dgrid textarea { background:var(--panel3); color:var(--text); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:12px; padding:2px 6px }
+  .dgrid input { width:70px } .dgrid textarea { width:100%; font-family:var(--mono); box-sizing:border-box }
   details { margin:4px 0 } summary { cursor:pointer; font-size:12px; color:var(--text2); padding:3px 0 }
   .bal { font-size:12px; margin:4px 0; line-height:1.9 } .ty { background:var(--panel3); border:1px solid var(--border); border-radius:999px; padding:0 8px; font-size:11px; font-family:var(--mono) }
   .flowdash { stroke:#fff; stroke-width:2.2; stroke-dasharray:2 14; opacity:.75; pointer-events:none; animation:flowdash linear infinite }
@@ -48,7 +52,16 @@
 <div class="dynwrap">
   <div class="intro">The system dynamics model of the system Orchestra covers. There is one model; it changes over time, and each change is kept as a version. Stocks are measured quantities (each bound to a series in the metrics store), flows move material between them with equations fitted from the history, and machines (AI agents and programs) are attributed to the flows they are believed to cause. Every equation says whether it was fitted or only declared.</div>
   <div class="dynhead"><h1 id="mname">The system</h1><span class="ver" id="ver"></span><span class="sum" id="sum"></span>
-    <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now from the last hour of metrics (the host also does this every 5 minutes)">rediscover now</button></span></div>
+    <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center"><span class="muted" id="redisc-note" style="font-size:11.5px"></span><button class="ctl" id="redisc" onclick="rediscover()" title="Discover the model again now, with the settings below">rediscover now</button></span></div>
+  <details class="dset" id="dset"><summary>discovery: <b id="dset-sum">…</b></summary>
+    <div class="dgrid">
+      <label>strategy <select id="d-strategy"></select></label>
+      <label>window <input id="d-window" type="number" min="5" step="5"> min</label>
+      <label>step <input id="d-step" type="number" min="5" step="5"> s</label>
+      <label class="wide">options (JSON, passed to the strategy) <textarea id="d-options" rows="2" spellcheck="false"></textarea></label>
+      <div class="wide muted" id="d-desc"></div>
+      <div class="wide muted">These apply to "rediscover now" only. The host rediscovers every <span id="d-every"></span> with <code>[discovery]</code> in orchestra.toml.</div>
+    </div></details>
   <div class="diagram" id="diagram"></div>
   <div class="legend" id="legend"></div>
   <div class="ng-loops panel" id="loops" style="margin:0 0 10px"></div>
@@ -77,14 +90,45 @@ let MODEL = null, VERSION = null;   // null: follow the current version
 const nice = (s) => (s || "outside").toLowerCase().replace(/_/g, " ");
 const stockName = (id) => { const s = MODEL && MODEL.stocks.find((x) => x.id === id); return s ? s.name : nice(id); };
 const num = (v, short) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(short ? 2 : 3));
+// what an equation reads, by name: a stock, or a measured input (input:<name>)
+const readName = (x) => { if (!x) return "?"; const n = x.startsWith("input:") ? x.slice(6) : x;
+  return MODEL && MODEL.stocks.some((s) => s.id === n) ? stockName(n) : n.replace(/_/g, " "); };
+const refOf = (x) => (MODEL && MODEL.stocks.some((s) => s.id === x) ? x : "input:" + x);
 function eqText(f, short) {
   const e = f.current; if (!e) return "no equation yet";
-  const p = e.params, x = (e.inputs && e.inputs[0]) || f.from, unit = (MODEL && MODEL.time_unit) || "hour";
-  const per = `/${unit === "minute" ? "min" : unit === "hour" ? "h" : "s"}`;
+  const unit = (MODEL && MODEL.time_unit) || "hour", per = `/${unit === "minute" ? "min" : unit === "hour" ? "h" : "s"}`;
+  const sp = e.spec && e.spec.form ? e.spec : null, p = e.params;
+  if (sp) {                                   // SD Lab's rate, in full
+    const fx = (sp.effects || []).map((ef) => ` × f(${readName(ef.stock)})`).join("");
+    const t = { constant: () => num(sp.value, short),
+      proportional: () => `${num(sp.k, short)} × ${readName(sp.stock)}`,
+      linear: () => [num(sp.c || 0, short), ...(sp.terms || []).map((t) => `${t.k < 0 ? "−" : "+"} ${num(Math.abs(t.k), short)} × ${readName(t.stock)}`)].join(" "),
+      gap: () => `(${num(sp.goal, short)} − ${readName(sp.stock)}) / ${num(sp.time, short)}`,
+      available: () => `all of ${f.from ? stockName(f.from) : "it"}`,
+      expr: () => sp.expr }[sp.form];
+    return (t ? t() : sp.form) + fx + (sp.form === "expr" ? "" : " " + per);
+  }
+  const x = (e.inputs && e.inputs[0]) || f.from;
   if (e.form === "constant") return `${num(p.c, short)} ${per}`;
-  if (e.form === "proportional") return `${num(p.k, short)} × ${stockName(x)} ${per}`;
-  if (e.form === "linear") return `${num(p.c, short)} ${p.k < 0 ? "−" : "+"} ${num(Math.abs(p.k), short)} × ${stockName(x)} ${per}`;
+  if (e.form === "proportional") return `${num(p.k, short)} × ${readName(x)} ${per}`;
+  if (e.form === "linear") return `${num(p.c, short)} ${p.k < 0 ? "−" : "+"} ${num(Math.abs(p.k), short)} × ${readName(x)} ${per}`;
   return JSON.stringify(p);
+}
+// the sign of each thing a rate reads: + more of it, more flow; − more of it, less flow; ~ unknown
+function readsWithSign(f) {
+  const e = f.current; if (!e) return [];
+  const sp = e.spec && e.spec.form ? e.spec : null, out = [];
+  if (sp) {
+    if (sp.form === "proportional" && sp.stock) out.push([refOf(sp.stock), 1]);
+    if (sp.form === "gap" && sp.stock) out.push([refOf(sp.stock), -1]);
+    for (const t of sp.terms || []) out.push([refOf(t.stock), Math.sign(t.k) || 1]);
+    for (const ef of sp.effects || []) out.push([refOf(ef.stock), 0]);
+    return out;
+  }
+  const x = e.inputs && e.inputs[0];
+  if (x && e.form === "proportional") out.push([x, 1]);
+  if (x && e.form === "linear") out.push([x, Math.sign(e.params.k) || 1]);
+  return out;
 }
 // a flow whose rate reads a stock other than its own source: an influence, the link that closes loops
 const influence = (f) => f.current && f.current.form === "linear" && f.current.inputs && f.current.inputs[0] && f.current.inputs[0] !== f.from ? f.current.inputs[0] : null;
@@ -108,6 +152,7 @@ function draw() {
     && !hiddenStock(f.from) && !hiddenStock(f.to));
   const nodes = [], edges = [], causal = [];
   for (const s of m.stocks.filter((s) => !hiddenStock(s.id))) nodes.push({ id: "s:" + s.id, kind: "box", sid: s.id, label: s.name, lines: [s.name], w: Math.max(180, s.name.length * 7 + 30), h: 92,
+    dashed: !!(s.evidence && s.evidence.hidden),
     color: stockColor(s.id),
     fill: "#0b0e14", charge: -1600, decorate: Live.decorateStock, sub: " " });
   for (const f of flows) {
@@ -123,12 +168,16 @@ function draw() {
     FLOWEDGE[v] = fe;
     if (f.to) causal.push({ source: v, target: "s:" + f.to, sign: 1 });
     if (f.from) causal.push({ source: v, target: "s:" + f.from, sign: -1 });
-    const x = e.inputs && e.inputs[0];
-    if (x && !hiddenStock(x) && (e.form === "proportional" || e.form === "linear")) {
-      const sign = e.form === "proportional" ? 1 : Math.sign(e.params.k) || 1;
-      causal.push({ source: "s:" + x, target: v, sign });
-      // an influence: a dashed link from the stock to the middle of the flow it drives
-      if (x !== f.from || e.form === "linear") edges.push({ id: `s:${x}>${fe}:info`, source: "s:" + x, toEdge: fe, color: col, dashed: true, width: 1.4, sign: sign < 0 ? "−" : "+", bend: 36, fid: f.id });
+    for (const [x, sign] of readsWithSign(f)) {
+      const isInput = x.startsWith("input:"), name = isInput ? x.slice(6) : x, node = (isInput ? "i:" : "s:") + name;
+      if (!isInput && hiddenStock(name)) continue;
+      // a measured input the rate reads: a node outside the system, where simulations will set it
+      if (isInput && !nodes.some((n) => n.id === node)) nodes.push({ id: node, kind: "box", input: name, label: name.replace(/_/g, " "), lines: [name.replace(/_/g, " ")],
+        w: Math.max(150, name.length * 6.4 + 24), h: 64, color: "#94a3b8", fill: "#0e1118", charge: -700, decorate: Live.decorateInput, sub: " " });
+      if (sign !== 0) causal.push({ source: node, target: v, sign });
+      // an influence: a dashed link to the middle of the flow it drives (not a flow's plain dependence on its own source)
+      const plain = !isInput && name === f.from && (e.form === "proportional" || (e.spec && e.spec.form === "proportional"));
+      if (!plain) edges.push({ id: `${node}>${fe}:info`, source: node, toEdge: fe, color: col, dashed: true, width: 1.4, sign: sign < 0 ? "−" : sign > 0 ? "+" : "~", bend: 36, fid: f.id });
     }
   }
   const sig = JSON.stringify([nodes.map((n) => n.id), edges.map((e) => e.id)]);
@@ -136,7 +185,7 @@ function draw() {
     if (!GRAPH || !document.querySelector("#diagram svg")) GRAPH = NetGraph.create($("diagram"), { key: "dynamics", height: 620,
       // the model's boundary: stocks inside; sources and sinks (clouds) outside, where a simulation
       // will set the conditions the system runs under
-      boundary: { inside: (n) => n.kind === "box", label: "the system · outside: sources and sinks" },
+      boundary: { inside: (n) => n.kind === "box" && !n.input, label: "the system · outside: sources, sinks and measured inputs" },
       tip: (x, kind) => kind === "node" ? (x.sid ? Live.stockSummary(x.sid) : x.fid ? Live.flowSummary(x.fid) : "") : (x.fid ? Live.flowSummary(x.fid) : ""),
       onClick: (x, kind) => { if (x.sid) Live.openStock(x.sid); else if (x.fid) Live.openFlow(x.fid); } });
     GSIG = sig;
@@ -152,7 +201,7 @@ function draw() {
     + `<span class="muted" style="font-size:11px;align-self:center">drag to arrange (it stays where you drop it; double-click to release) · scroll to zoom · hover or click a stock or a flow</span>`;
 }
 function loops(nodes, causal) {
-  const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;
+  const name = (id) => id.startsWith("s:") ? stockName(id.slice(2)) : id.startsWith("i:") ? id.slice(2).replace(/_/g, " ") : (MODEL.flows.find((f) => "f:" + f.id === id) || {}).name || id;
   const signOf = new Map(causal.map((c) => [c.source + ">" + c.target, c.sign]));
   // the causal graph's own nodes: stocks, and flows (which are drawn as arrows, not nodes)
   const ids = [...new Set(causal.flatMap((c) => [c.source, c.target]))];
@@ -236,18 +285,37 @@ function step(d) {
   VERSION = n.version;
   load();
 }
+// discovery settings: the strategies there are, prefilled from orchestra.toml
+let STRATS = null;
+async function loadStrategies() {
+  try {
+    const d = await (await fetch("/api/dynamics/strategies")).json(); STRATS = d;
+    const c = d.configured;
+    $("d-strategy").innerHTML = d.strategies.map((s) => `<option value="${esc(s.name)}" ${s.name === c.strategy ? "selected" : ""} title="${esc(s.description)}">${esc(s.name)}</option>`).join("");
+    $("d-window").value = Math.round(c.window_s / 60); $("d-step").value = Math.round(c.step_s); $("d-every").textContent = ago(c.every_s);
+    $("d-options").value = Object.keys(c.options || {}).length ? JSON.stringify(c.options) : "";
+    const desc = () => { const s = d.strategies.find((x) => x.name === $("d-strategy").value); $("d-desc").textContent = s ? s.description : ""; $("dset-sum").textContent = `${$("d-strategy").value} · ${$("d-window").value} min · ${$("d-step").value} s steps`; };
+    ["d-strategy", "d-window", "d-step"].forEach((id) => $(id).addEventListener("change", desc)); desc();
+    if (!d.sd_installed) $("d-desc").textContent += " · SD Lab's strategies need orchestra[sd] installed";
+  } catch (e) {}
+}
+loadStrategies();
 // rediscover now: in the background on the server; the page waits for it, then shows the result
 async function rediscover() {
   const btn = $("redisc"), note = $("redisc-note");
   btn.disabled = true; note.textContent = "discovering from the last hour of metrics…";
   try {
-    await fetch("/api/dynamics/rediscover", { method: "POST" });
+    let options = null;
+    try { options = $("d-options").value.trim() ? JSON.parse($("d-options").value) : {}; } catch (e) { note.textContent = "options are not JSON: " + e.message; btn.disabled = false; return; }
+    note.textContent = `discovering with ${$("d-strategy").value}…`;
+    await fetch("/api/dynamics/rediscover", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strategy: $("d-strategy").value, window_s: +$("d-window").value * 60, step_s: +$("d-step").value, options }) });
     for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       const st = await (await fetch("/api/dynamics/rediscover")).json();
       if (st.running) continue;
       if (st.error) note.textContent = "failed: " + st.error;
-      else { const r = st.result || {}; note.textContent = `found ${r.stocks} stocks, ${r.flows} flows · ${r.version ? "the structure changed: saved as version " + r.version : "structure unchanged"}`; }
+      else { const r = st.result || {}; note.textContent = `${r.strategy}: ${r.stocks} stocks, ${r.flows} flows in ${((r.compute_ms || 0) / 1000).toFixed(1)} s · ${r.version ? "the structure changed: saved as version " + r.version : "structure unchanged"}`; }
       VERSION = null; await load(); Live.refresh();
       break;
     }

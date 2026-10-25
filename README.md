@@ -21,6 +21,7 @@ uv tool install /path/to/orchestra          # or: uv tool install -e /path/to/or
 
 For working on Orchestra itself: `uv sync --extra dev` and `uv run orchestra ...`. Server event
 buses need an extra: `--extra bus-redis`, `bus-rabbitmq`, `bus-kafka`, or `bus` for all three.
+SD Lab's discovery strategies (`orchestra/sdlab`) need `--extra sd`.
 
 ## Use it on a project
 

@@ -79,14 +79,23 @@ class Refresher:
                 t0 = start - start % STOCK_STEP_S
                 stocks[s.id] = [[round(t), v] for t, v in step_sample(pts, t0, end, STOCK_STEP_S)]
         for f in model.flows:
-            if f.counter:
-                pts = self.metrics.raw(f.counter.name, f.counter.labels, start=start - 300, end=end)
+            refs = f.measured_by or ([f.counter] if f.counter else [])
+            total: dict[int, float] = {}
+            for c in refs:                     # a flow measured by several counters: their sum
+                pts = self.metrics.raw(c.name, c.labels, start=start - 300, end=end)
                 t0 = start - start % FLOW_STEP_S
-                sampled = step_sample(pts, t0, end, FLOW_STEP_S)
-                flows[f.id] = [[round(b[0]), ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S]
-                               for a, b in pairwise(sampled)]
+                for a, b in pairwise(step_sample(pts, t0, end, FLOW_STEP_S)):
+                    total[round(b[0])] = total.get(round(b[0]), 0.0) + ((b[1] - a[1]) if b[1] >= a[1] else b[1]) * unit / FLOW_STEP_S
+            if refs:
+                flows[f.id] = [[t, v] for t, v in sorted(total.items())]
+        # measured inputs the model's equations read (levels that are not stocks)
+        inputs = {}
+        for name, ref in (model.discovery.get("inputs") or {}).items():
+            pts = self.metrics.raw(ref["name"], ref["labels"], start=start - 300, end=end)
+            t0 = start - start % STOCK_STEP_S
+            inputs[name] = [[round(t), v] for t, v in step_sample(pts, t0, end, STOCK_STEP_S)]
         self.history = {"at": end, "start": start, "stock_step": STOCK_STEP_S, "flow_step": FLOW_STEP_S,
-                        "time_unit": model.time_unit, "stocks": stocks, "flows": flows}
+                        "time_unit": model.time_unit, "stocks": stocks, "flows": flows, "inputs": inputs}
 
     def _levels(self) -> None:
         model = self._model()

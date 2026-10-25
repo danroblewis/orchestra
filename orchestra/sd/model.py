@@ -37,7 +37,8 @@ class Equation:
     window: tuple[float, float] | None = None   # unix seconds the fit used
     era: str | None = None
     quality: dict[str, float] = field(default_factory=dict)   # se, loglik, dispersion, events, hours
-    inputs: list[str] = field(default_factory=list)            # stock ids the form reads (proportional: the source; linear: its driver)
+    inputs: list[str] = field(default_factory=list)            # what the form reads: stock ids, or input:<name> for a measured input
+    spec: dict[str, Any] = field(default_factory=dict)         # the full rate as SD Lab writes it (terms, effects, expr), when it found it
 
 
 @dataclass
@@ -57,6 +58,7 @@ class Flow:
     dst: str | None
     counter: SeriesRef | None = None    # cumulative count of what moved
     equations: list[Equation] = field(default_factory=list)   # one per era once fitted
+    measured_by: list[SeriesRef] = field(default_factory=list)  # every counter it sums, when several flows look like one from the levels
 
     def current(self) -> Equation | None:
         return self.equations[-1] if self.equations else None
@@ -121,8 +123,9 @@ class Model:
                     for s in d.get("stocks", [])],
             flows=[Flow(f["id"], f["name"], f.get("from"), f.get("to"), ref(f.get("counter")),
                         [Equation(**{**e, "window": tuple(e["window"]) if e.get("window") else None,
-                                     "inputs": list(e.get("inputs") or [])})
-                         for e in f.get("equations", [])]) for f in d.get("flows", [])],
+                                     "inputs": list(e.get("inputs") or []), "spec": dict(e.get("spec") or {})})
+                         for e in f.get("equations", [])], [SeriesRef(**r) for r in f.get("measured_by") or []])
+                   for f in d.get("flows", [])],
             machines=[Machine(m["id"], m["name"], m["kind"], m.get("description", ""), list(m.get("attributed", [])),
                               [SeriesRef(**r) for r in m.get("observed_by", [])],
                               [Engagement(**e) for e in m.get("engagement", [])], bool(m.get("bootstrap", False)))

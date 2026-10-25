@@ -50,7 +50,10 @@ tracker, loop and merge gate were removed (`docs/proposals/empty-orchestra.md`).
     parallel log of agent messages; `orchestra.harness.read_transcript` parses
     whichever harness wrote it.
 11. **One package, no path hacks.** Everything importable is under
-    `orchestra/`. No `sys.path` manipulation. Machines and test systems live in
+    `orchestra/`. No `sys.path` manipulation. `orchestra/sdlab` is SD Lab's
+    discovery research brought in as it was benchmarked (imports rewritten,
+    nothing else; see its README): change it only deliberately, say so in the
+    commit, and keep it out of lint. Machines and test systems live in
     their own repositories (the bakery: `~/orchestra-bakery`) and use Orchestra
     as a library, like any other program would; nothing in this repository is
     an example system.

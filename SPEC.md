@@ -132,8 +132,19 @@ version (`<state>/model/vNNNN.json`), the highest is current, and past versions 
 level), fitted by maximum likelihood; the form with the higher likelihood is kept, with its
 standard error and dispersion.
 
-**Discovery** (`sd/discover.py`, `orchestra sd discover --minutes N`) builds the model from the
-metrics store without being told what anything is:
+**Discovery** builds the model from the metrics store without being told what anything is. It
+runs with a **strategy** (`[discovery] strategy` in `orchestra.toml`, or chosen for one run on the
+Dynamics page): `conservation`, Orchestra's own (below), or one of SD Lab's ~70
+(`orchestra/sdlab`, brought in from SD Lab's discovery research; `kalman_lna` by default when the
+`sd` extra is installed; `combined2` and `matrix_v2` are the other strong ones). With an SD Lab
+strategy, conservation still runs first and finds the stocks and the counters that measure flows;
+the SD Lab strategy then finds the equations from the stocks' levels (on the time every series
+was written), with the other measured gauges as inputs, and stocks grouped by the measured flows
+that join them; its flows are matched back to the counters and their machines
+(`sd/strategies.py`). Its richer forms (gap, linear in several stocks or inputs, expressions,
+effects) are kept in each equation's `spec`, and its hidden stocks are drawn dashed.
+
+Conservation (`sd/discover.py`):
 1. every series is sampled onto a grid of steps;
 2. a level is a **stock** when counters, added or subtracted, balance its changes
    (`Δlevel ≈ Σ inflows − Σ outflows`, R² ≥ 0.9). The counters are found by least squares on all
@@ -263,6 +274,8 @@ inside the repository except `orchestra.toml`.
 url = "file"            # or redis://, amqp://, kafka://
 [metrics]
 url = "file"            # or http://host:8428 (VictoriaMetrics)
+[discovery]             # strategy, window, step, every, [discovery.options]
+strategy = "kalman_lna"
 [agents]                # the agent driver
 harness = "pi"
 provider = ""
@@ -282,7 +295,7 @@ Unknown sections are ignored, so files written for older versions still load.
 | `orchestra web [--port]` | Serve the web UI |
 | `orchestra events info\|copy --to URL` | The event log |
 | `orchestra metrics backfill\|series` | Replay the log into event counters; list series |
-| `orchestra sd discover\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
+| `orchestra sd discover [--strategy S] [--minutes N] [--step-s S]\|show\|fit\|versions` | The model: discover it from the metrics, show, refit, list versions |
 | `orchestra tools [--json]` | The agent tool catalogue |
 
 ---
@@ -322,7 +335,8 @@ orchestra/
   cli.py  config.py  events.py  runtime.py  host.py  collectors.py
   bus/       file, redis_streams, rabbitmq_streams, kafka
   metrics/   file, victoria, promql
-  sd/        model, store, fit, discover
+  sd/        model, store, fit, discover (conservation), strategies, rediscover
+  sdlab/     SD Lab's discovery research: ~70 strategies (needs the sd extra)
   harness/   base, pi, claude_code, codex, mcp, tools, pi_extension.ts
   web/       app, core, core_explore, machines, dynamics, static/
 tests/

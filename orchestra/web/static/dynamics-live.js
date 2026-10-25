@@ -18,10 +18,21 @@ const Live = (() => {
   const flowHist = (id) => (HISTORY && HISTORY.flows && HISTORY.flows[id]) || [];
   const now = (id) => { const h = stockHist(id); return h.length ? h[h.length - 1][1] : (MODEL.levels[id] || {}).v; };
   const recentRate = (fid) => { const h = flowHist(fid).slice(-4); return h.length ? h.reduce((a, p) => a + p[1], 0) / h.length : null; };
-  const levelAt = (sid, t) => { const h = stockHist(sid); let v = null; for (const [tt, x] of h) { if (tt > t) break; v = x; } return v; };
+  const inputHist = (name) => (HISTORY && HISTORY.inputs && HISTORY.inputs[name]) || [];
+  // a stock's (or, by its SD Lab name, a measured input's) level at time t
+  const levelAt = (sid, t) => { const h = stockHist(sid).length ? stockHist(sid) : inputHist(sid); let v = null; for (const [tt, x] of h) { if (tt > t) break; v = x; } return v; };
   // what the flow's fitted equation says its rate is, given the levels at time t
   function predicted(f, t) {
     const e = f.current; if (!e) return null;
+    const sp = e.spec && e.spec.form ? e.spec : null;
+    if (sp) {                                  // SD Lab's rate (effects left out: their curves are not shown here)
+      const L = (x) => levelAt(x, t);
+      if (sp.form === "constant") return sp.value;
+      if (sp.form === "proportional") { const x = L(sp.stock); return x == null ? null : sp.k * x; }
+      if (sp.form === "linear") { let r = sp.c || 0; for (const tm of sp.terms || []) { const x = L(tm.stock); if (x == null) return null; r += tm.k * x; } return Math.max(0, r); }
+      if (sp.form === "gap") { const x = L(sp.stock); return x == null ? null : Math.max(0, (sp.goal - x) / sp.time); }
+      return null;
+    }
     const p = e.params, x = e.inputs && e.inputs[0] ? levelAt(e.inputs[0], t) : null;
     if (e.form === "constant") return p.c;
     if (x == null) return null;
@@ -44,6 +55,18 @@ const Live = (() => {
     if (h.length > 1) {
       const a = x0 + 10, b = -x0 - 10, top = -y0 - 34, bot = -y0 - 8, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
       g.append("path").attr("fill", "none").attr("stroke", col).attr("stroke-width", 1.4)
+        .attr("d", h.map(([t, y], i) => `${i ? "L" : "M"}${(a + (b - a) * (t - t0) / (t1 - t0)).toFixed(1)},${(bot + (top - bot) * (y - min) / (max - min || 1)).toFixed(1)}`).join(" "));
+    }
+  }
+
+  // a measured input, outside the system: its value now and its hour
+  function decorateInput(g, n, sz) {
+    const h = inputHist(n.input), vals = h.map((p) => p[1]), v = vals.length ? vals[vals.length - 1] : null;
+    const max = Math.max(...vals, 1e-9), min = Math.min(...vals, 0), x0 = -sz.w / 2, y0 = -sz.h / 2;
+    g.append("text").attr("class", "ng-sub").attr("text-anchor", "middle").attr("y", y0 + 30).text(v == null ? "measured input" : `${fmt(v)} now · input`);
+    if (h.length > 1) {
+      const a = x0 + 8, b = -x0 - 8, top = -y0 - 24, bot = -y0 - 6, t0 = h[0][0], t1 = h[h.length - 1][0] || t0 + 1;
+      g.append("path").attr("fill", "none").attr("stroke", "#94a3b8").attr("stroke-width", 1.2)
         .attr("d", h.map(([t, y], i) => `${i ? "L" : "M"}${(a + (b - a) * (t - t0) / (t1 - t0)).toFixed(1)},${(bot + (top - bot) * (y - min) / (max - min || 1)).toFixed(1)}`).join(" "));
     }
   }
@@ -82,7 +105,8 @@ const Live = (() => {
     openDrawer(`<h3>${esc(f.name)} <span class="tag">flow</span></h3>
       <div class="def"><div>moves</div><div>${esc(f.from ? stockName(f.from) : "outside")} → ${esc(f.to ? stockName(f.to) : "outside")}</div>
       <div>equation</div><div class="num">${esc(eqText(f))}</div><div>machine</div><div>${esc(f.machine || "none")}</div>
-      <div>fit</div><div class="num">${esc(e.origin || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events over ${q.live_minutes ?? "?"} min · dispersion ${fmt(q.dispersion)}</div>
+      <div>fit</div><div class="num">${esc(e.origin || "")} by ${esc(e.method || "")} · ${esc(e.form || "")} · ${q.events ?? 0} events${q.live_minutes ? ` over ${q.live_minutes} min` : ""}${q.dispersion != null ? ` · dispersion ${fmt(q.dispersion)}` : ""}</div>
+      ${(f.measured_by || []).length > 1 ? `<div>measured by</div><div class="num">${f.measured_by.map((c) => esc(c.name)).join(" + ")}</div>` : ""}
       <div>counter</div><div class="num">${esc(f.counter ? f.counter.name : "—")}</div></div>
       <h4>Rate, last hour (${per()}): observed and what the equation predicts from the levels</h4>
       ${Charts.line([{ label: "observed", points: obs, color: mcolor(f.machine) }, { label: "equation", points: model, color: "#e5e7eb" }], { W: 700, H: 240, unit: per() })}
@@ -109,12 +133,12 @@ const Live = (() => {
   async function refresh() {
     try { const d = await (await fetch("/api/dynamics/history")).json(); if (d.ok) HISTORY = d; } catch (e) {}
     if (GRAPH) {
-      GRAPH.refreshNodes((n) => (n.sid ? {} : null));
+      GRAPH.refreshNodes((n) => (n.sid || n.input ? {} : null));
       GRAPH.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0));
     }
     chart();
   }
   function drawn(graph) { GRAPH = graph; graph.setRates((e) => (e.flowPart ? recentRate(e.fid) : 0)); chart(); }
-  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, stockSummary, flowSummary };
+  return { refresh, drawn, toggle, openStock, openFlow, decorateStock, decorateInput, stockSummary, flowSummary };
 })();
 Live.refresh(); setInterval(Live.refresh, 15000);

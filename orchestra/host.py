@@ -7,9 +7,9 @@ In an empty Orchestra it does little, on purpose:
 - it runs Orchestra's event collector: every event on the bus, from any machine, counted by type
   and source (``orchestra.collectors``). It replays the whole bus once at start, so the counters
   continue from the full history, then follows the bus;
-- it rediscovers the model in the background (``orchestra.sd.discover``, over the last
-  ``DISCOVER_WINDOW_S``, every ``DISCOVER_EVERY_S``), caches the result for readers, and saves a
-  new model version when the structure changed.
+- it rediscovers the model in the background (``orchestra.sd.rediscover``, with the strategy,
+  window and interval in ``[discovery]``), caches the result for readers, and saves a new model
+  version when the structure changed.
  Hosting drivers and starting the machines that
 packages declare come later (docs/proposals/empty-orchestra.md)."""
 
@@ -29,9 +29,6 @@ from .metrics import Point
 from .metrics import for_project as metrics_for
 
 HOST_LOG_MAX = 5_000_000
-DISCOVER_EVERY_S = 300.0
-DISCOVER_WINDOW_S = 3600.0
-DISCOVER_STEP_S = 30.0
 
 
 class Host:
@@ -87,11 +84,11 @@ class Host:
 
         wait = 5.0                                    # soon after starting, then every interval
         while not self._stop.wait(wait):
-            wait = DISCOVER_EVERY_S
+            wait = self.project.config.discovery_every
             try:
-                r = rediscover(self.project, metrics_for(self.project), window_s=DISCOVER_WINDOW_S, step_s=DISCOVER_STEP_S)
+                r = rediscover(self.project, metrics_for(self.project))
                 what = f"saved as version {r.version}" if r.version else "structure unchanged"
-                self.log(f"discovery: {len(r.model.stocks)} stocks, {len(r.model.flows)} flows; {what}")
+                self.log(f"discovery ({r.strategy}): {len(r.model.stocks)} stocks, {len(r.model.flows)} flows; {what}")
             except Exception as e:  # noqa: BLE001 - try again next interval
                 self.log(f"discovery: {type(e).__name__}: {e}")
 

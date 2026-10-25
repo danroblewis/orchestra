@@ -464,6 +464,9 @@ def discover(dump, *, start: float, end: float, step: float, time_unit: str = "m
         if not any(s.deltas):
             left_out[s.key] = "a level that did not change in the window"
             continue
+        if len({v for _, v in s.points}) <= 2:
+            left_out[s.key] = "a flag (it only ever takes two values), not a quantity that accumulates"
+            continue
         terms, r2, exact = balance(s, counters, ls)
         if terms and r2 >= MIN_R2:
             found.append((s, terms, r2, exact))

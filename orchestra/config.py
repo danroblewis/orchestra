@@ -55,6 +55,11 @@ class Config:
     compact_tokens: int = 100_000      # harnesses that compact themselves (Claude Code) are told to do so past this
     events_url: str | None = None      # [events] url: file (default), redis://, amqp://, kafka://
     metrics_url: str | None = None     # [metrics] url: file (default) or http://host:port (VictoriaMetrics)
+    discovery_strategy: str | None = None   # [discovery] strategy: conservation, or an SD Lab strategy (default: kalman_lna when installed)
+    discovery_window: float = 3600.0        # [discovery] window: how far back each discovery looks
+    discovery_step: float = 30.0            # [discovery] step: the grid it samples on
+    discovery_every: float = 300.0          # [discovery] every: how often the host rediscovers
+    discovery_options: dict[str, Any] = field(default_factory=dict)   # [discovery.options]: passed to the strategy
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -72,6 +77,11 @@ class Config:
             compact_tokens=int(a.get("compact_tokens", 100_000)),
             events_url=(raw.get("events", {}) or {}).get("url"),
             metrics_url=(raw.get("metrics", {}) or {}).get("url"),
+            discovery_strategy=(raw.get("discovery", {}) or {}).get("strategy"),
+            discovery_window=parse_duration((raw.get("discovery", {}) or {}).get("window"), 3600.0),
+            discovery_step=parse_duration((raw.get("discovery", {}) or {}).get("step"), 30.0),
+            discovery_every=parse_duration((raw.get("discovery", {}) or {}).get("every"), 300.0),
+            discovery_options=dict((raw.get("discovery", {}) or {}).get("options") or {}),
             raw=raw,
         )
 
@@ -83,6 +93,13 @@ url = "file"             # file (default), redis://host:6379/0, amqp://user:pass
 
 [metrics]
 url = "file"             # file (default) or http://host:8428 (VictoriaMetrics)
+
+[discovery]              # how the model is discovered from the metrics
+# strategy = "kalman_lna" # conservation (Orchestra's own), or an SD Lab strategy (needs orchestra[sd])
+window = "60m"           # how far back each discovery looks
+step = "30s"             # the grid it samples on
+every = "5m"             # how often the host rediscovers
+# [discovery.options]    # passed to the strategy as they are
 
 [agents]                 # the agent driver, for machines that are AI agents
 harness = "pi"           # pi | claude_code | codex

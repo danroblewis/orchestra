@@ -97,12 +97,15 @@ def cmd_sd(args) -> int:
     if args.action == "discover":
         from .sd.rediscover import rediscover
 
-        r = rediscover(project, metrics_for(project), window_s=args.minutes * 60, step_s=args.step_s,
-                       note=f"discovered from the last {args.minutes:g} min of metrics")
+        r = rediscover(project, metrics_for(project), strategy=args.strategy, window_s=args.minutes * 60 if args.minutes else None,
+                       step_s=args.step_s, note="discovered with orchestra sd discover")
         m = r.model
-        print(f"over the last {args.minutes:g} min, in {args.step_s:g} s steps: {len(m.stocks)} stocks, "
+        print(f"{r.strategy}, over the last {m.discovery['window_s'] / 60:g} min in {m.discovery['step_s']:g} s steps: {len(m.stocks)} stocks, "
               f"{len(m.flows)} flows, {len(m.machines)} machines")
         for st in m.stocks:
+            if "balance" not in st.evidence:
+                print(f"  stock {st.id}: hidden (found by {r.strategy}, measured by no series)")
+                continue
             terms = " ".join(("+ " if b["sign"] > 0 else "− ") + b["series"] for b in st.evidence["balance"])
             print(f"  stock {st.id}: Δ = {terms}   (R² {st.evidence['balance_r2']:.3f}, exact in {st.evidence['exact_steps']:.0%} of steps)")
         print("left out:")
@@ -208,9 +211,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("sd", help="the system dynamics model: discover it from the metrics, show it, fit it, list its versions")
     s.add_argument("action", choices=["show", "fit", "versions", "discover"])
-    s.add_argument("--minutes", type=float, default=60.0, help="for discover: the window, in minutes back from now (default 60)")
-    s.add_argument("--step-s", dest="step_s", type=float, default=30.0, help="for discover: seconds per step (default 30)")
-    s.add_argument("--unit", default="minute", choices=["second", "minute", "hour"], help="for discover: the model's time unit")
+    s.add_argument("--minutes", type=float, help="for discover: the window, in minutes back from now (default: [discovery] window)")
+    s.add_argument("--step-s", dest="step_s", type=float, help="for discover: seconds per step (default: [discovery] step)")
+    s.add_argument("--strategy", help="for discover: conservation or an SD Lab strategy (default: [discovery] strategy)")
     s.add_argument("--version", type=int, help="for show and fit: start from this past version (default: the current one)")
     s.add_argument("--step", type=float, default=1.0, help="for fit: hours per step (default 1)")
     s.set_defaults(fn=cmd_sd)

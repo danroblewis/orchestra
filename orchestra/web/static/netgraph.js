@@ -87,7 +87,8 @@ const NetGraph = (() => {
         const r = (size(n).r || 14) + 6;
         if (n.x > b.x0 - r && n.x < b.x1 + r && n.y > b.y0 - r && n.y < b.y1 + r) {
           const d = [[n.x - (b.x0 - r), -1, 0], [(b.x1 + r) - n.x, 1, 0], [n.y - (b.y0 - r), 0, -1], [(b.y1 + r) - n.y, 0, 1]].sort((a, c) => a[0] - c[0])[0];
-          n.vx += d[1] * d[0] * alpha * 0.9; n.vy += d[2] * d[0] * alpha * 0.9;
+          // a hard rule, not a nudge: put it just outside the nearest side
+          n.x += d[1] * d[0]; n.y += d[2] * d[0]; n.vx = 0; n.vy = 0;
         }
       }
     }
@@ -164,7 +165,7 @@ const NetGraph = (() => {
         g.append("path").attr("class", "ng-cloud").attr("d", "M-10,6 a6,6 0 0 1 0,-12 a8,8 0 0 1 14,-3 a6,6 0 0 1 8,9 a5,5 0 0 1 -4,6 Z");
       } else {
         g.append("rect").attr("class", "ng-box").attr("x", -s.w / 2).attr("y", -s.h / 2).attr("width", s.w).attr("height", s.h).attr("rx", n.rx ?? 5)
-          .attr("stroke", n.color || "#6b5313").attr("fill", n.fill || "#0b0e14");
+          .attr("stroke", n.color || "#6b5313").attr("fill", n.fill || "#0b0e14").attr("stroke-dasharray", n.dashed ? "6 4" : null);
         if (n.decorate) n.decorate(g, n, s);
         const lines = n.lines || [n.label], top = -s.h / 2 + 15;
         g.append("text").attr("class", "ng-boxtext").attr("text-anchor", "middle").attr("fill", n.textColor || "var(--text)")

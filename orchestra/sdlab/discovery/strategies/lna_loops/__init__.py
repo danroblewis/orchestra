@@ -1,0 +1,62 @@
+"""lna_loops: lna, with feedback the data cannot rule out kept rather than priced away.
+
+lna drops a flow when keeping it does not pay the BIC price (log T / 2 per number). A link that
+closes a loop (B's level drives A's inflow while A feeds B) is often a small number with a standard
+error larger than itself on a few hundred noisy steps: BIC drops it, and the model is the loop's
+equivalent without it. Here, after lna's search, every loop-closing link (outside -> a reading b,
+where a moves into b) that is not in the model is offered back, fitted by the same likelihood, and
+kept when its likelihood gain is above `price` (default 0: kept whenever its maximum-likelihood
+number is above zero). This is the "Bayesian structure / complexity budget" idea: a prior that
+favours closing a loop over BIC's Occam price, for one kind of term only.
+
+The cost is complexity (an extra flow where the truth has none, at a number within its standard
+error of zero); docs/research/revisit.md measures both. Verdict there: do not adopt. A stage on
+lna's hooks (run.py): lna's data, search, budget, fallbacks and guard are lna's own.
+"""
+
+from __future__ import annotations
+
+from ._vendored.lna import boundary
+from ._vendored import lna
+from .run import PRICE, close_loops, stage  # noqa: F401  (close_loops: the stage's step, for tests)
+
+
+def _identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    opts = dict(opts or {})
+    price = float(opts.pop("loop_price", PRICE))
+    state: dict = {}
+    r = lna.identify(stocks, run, opts, hooks=stage(state, price))
+    if r.get("method") == "lna":
+        r["loops_closed"] = state.get("loops_closed", [])
+    return r
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None) -> dict:
+    """The answer above with its numbers refitted by instrumental variables where the levels carry
+    measurement error (eiv.py), then kept inside the announced boundary (the lna copy's boundary.py,
+    docs/research/declared-boundary.md: the guard and paired moves where one is declared, each outside
+    flow priced as a boundary claim where none is)."""
+    from .eiv import apply
+
+    r = apply(_identify(stocks, run, dict(opts or {})), stocks, run, opts)
+    return boundary.apply(r, stocks, run, opts, searched=r.get("method") == "lna")   # lna's own reading: its search tried the moves and priced the claims
+
+
+# A capacity limit offered to the fit (capmin.py, docs/research/k8s-306-s1.md, 2026-10-21): identify above
+# runs with the regime-clipped series MIN(X, theta x Y) as one more measured input where the data show a
+# limit, and every term that reads it is written back as MIN(a x X, a theta x Y).
+from . import capmin as _capmin  # noqa: E402
+
+_identify_linear = identify
+
+
+def identify(stocks: list[dict], run: dict, opts: dict | None = None, *args, **kw) -> dict:  # noqa: F811
+    """(2026-10-21, k8s-307, docs/research/k8s-307-c1.md) Between the fit and the MIN written back, where the
+    levels carry measurement error, the numbers are refitted and the structure revised on the output error
+    and judged on a Kalman likelihood (oefit.py, a copy of combined2's: the model run through the whole
+    record against the measured levels)."""
+    from . import oefit
+
+    o, cap = _capmin.offer(stocks, run, opts)
+    r = oefit.refit(_identify_linear(stocks, run, o, *args, **kw), stocks, run, o, cap)
+    return _capmin.restore(r, cap)
