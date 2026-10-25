@@ -9,10 +9,12 @@ const Charts = (() => {
   const tlabel = (t, span) => { const d = new Date(t * 1000); return span > 2 * 86400 ? `${d.getMonth() + 1}/${d.getDate()}` : d.toTimeString().slice(0, 5); };
   const register = (spec) => { const id = "c" + ++seq; REG.set(id, spec); if (REG.size > 60) REG.delete(REG.keys().next().value); return id; };
 
-  function line(lines, { unit = "", H = 200 } = {}) {
+  // W is the drawing width in pixels: pass the container's width so text and lines keep their size
+  function line(lines, { unit = "", H = 200, W = 720 } = {}) {
     const pts = lines.flatMap((l) => l.points);
     if (!pts.length) return `<div class="empty">no points in this range</div>`;
-    const W = 720, L = 46, B = 18, T = 6, R = 8;
+    W = Math.max(320, Math.round(W));
+    const L = 46, B = 18, T = 6, R = 8;
     const t0 = Math.min(...pts.map((p) => p[0])), t1 = Math.max(...pts.map((p) => p[0])) || t0 + 1;
     const hi = Math.max(0, ...pts.map((p) => p[1])), lo = Math.min(0, ...pts.map((p) => p[1])), span = hi - lo || 1;
     const x = (t) => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0), y = (v) => T + (H - T - B) * (1 - (v - lo) / span);

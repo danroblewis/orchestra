@@ -8,14 +8,17 @@
 <style>
   .corewrap { max-width:1400px; margin:0 auto; padding:16px 20px }
   .corewrap .intro { font-size:12.5px; color:var(--text2); margin-bottom:12px; max-width:1000px }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:12px; align-items:start }
-  .cards .panel { margin:0 }
   .logs { margin-top:16px } .logs .bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px }
   .logs .bar button.on { color:var(--text); border-color:var(--accent) } .logs select { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); border-radius:6px; font:inherit; font-size:11px; padding:2px 6px }
   .logs .term { height:520px; white-space:pre; overflow:auto; font-size:11.5px }
   .proc { font-size:11.5px; color:var(--text2) } .stale { color:#fcd34d }
-  .explore { margin-top:16px; display:grid; grid-template-columns:repeat(auto-fit, minmax(560px, 1fr)); gap:12px; align-items:start }
-  .explore .panel { margin:0 } .explore h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
+  .svc { margin-top:12px; display:grid; grid-template-columns:minmax(300px, 380px) minmax(0, 1fr); gap:12px; align-items:start }
+  .svc .panel, #host-card .panel { margin:0 } .svc > div:first-child { position:sticky; top:12px }
+  .svc > * { min-width:0 } .svc .panel { overflow-x:auto }
+  @media (max-width: 960px) { .svc { grid-template-columns:minmax(0, 1fr) } .svc > div:first-child { position:static } }
+  #host-card .kv { grid-template-columns:max-content minmax(0, 1fr) max-content minmax(0, 1fr) max-content minmax(0, 1.4fr) }
+  @media (max-width: 960px) { #host-card .kv { grid-template-columns:auto 1fr } }
+  .svc h3 { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 6px }
   .qbar { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size:11.5px; color:var(--muted); margin-top:6px }
   .seg button { background:var(--panel3); color:var(--text2); border:1px solid var(--border2); font:inherit; font-size:11px; padding:2px 8px; cursor:pointer; margin-left:-1px }
   .seg button:first-child { border-radius:6px 0 0 6px } .seg button:last-child { border-radius:0 6px 6px 0 } .seg button.on { color:var(--text); border-color:var(--accent); position:relative }
@@ -47,25 +50,29 @@
 <nav id="nav"><a href="/">Dashboard</a><a href="/tickets">Tickets</a><a href="/machines">Machines</a><a href="/dynamics">Dynamics</a><a href="/core" class="on">Core</a><span class="muted" id="proj"></span><span class="muted" id="conn" style="margin-left:auto"></span></nav>
 <div class="corewrap">
   <div class="intro">Orchestra's fundamental services: the bootstrap host, the event bus and the metrics store. Each is probed against its real backend every few seconds, separately and with a time limit, so this page keeps working when the model or the other machines do not. <span id="core-sub" class="muted"></span></div>
-  <div class="cards" id="cards"></div>
-  <div class="explore">
-    <div class="panel" id="mx">
-      <h2 style="margin-top:0"><span>Metrics store explorer</span><span class="hctl"><span class="muted" id="mx-note"></span></span></h2>
-      <div id="mx-cat" class="scroll"></div>
-      <h3>Query <span style="text-transform:none;letter-spacing:0;font-weight:400">· PromQL · Enter runs, Shift+Enter adds a line, Ctrl+Space suggests · click a metric above to start from it</span></h3>
-      <div id="mx-q"></div>
-      <div class="qbar"><span class="seg" id="mx-range"></span><span id="mx-engine"></span></div>
-      <div id="mx-out"></div>
-    </div>
+  <div id="host-card"></div>
+  <section class="svc">
+    <div id="bus-card"></div>
     <div class="panel" id="ex">
-      <h2 style="margin-top:0"><span>Event bus explorer</span><span class="hctl"><select id="ex-hours" onchange="loadEvents()" style="background:var(--panel3);color:var(--text);border:1px solid var(--border2);border-radius:6px;font:inherit;font-size:11px;padding:1px 6px"><option value="1">1 h</option><option value="24" selected>24 h</option><option value="168">7 d</option><option value="0">all</option></select> <span class="muted" id="ex-note"></span></span></h2>
+      <h2 style="margin-top:0"><span>Explore events</span><span class="hctl"><select id="ex-hours" onchange="loadEvents()" style="background:var(--panel3);color:var(--text);border:1px solid var(--border2);border-radius:6px;font:inherit;font-size:11px;padding:1px 6px"><option value="1">1 h</option><option value="24" selected>24 h</option><option value="168">7 d</option><option value="0">all</option></select> <span class="muted" id="ex-note"></span></span></h2>
       <div id="ex-vol"></div>
       <h3>Emitters, by machine</h3>
       <div id="ex-mach"></div>
       <h3>Event types</h3>
       <div id="ex-types" class="scroll"></div>
     </div>
-  </div>
+  </section>
+  <section class="svc">
+    <div id="met-card"></div>
+    <div class="panel" id="mx">
+      <h2 style="margin-top:0"><span>Explore metrics</span><span class="hctl"><span class="muted" id="mx-note"></span></span></h2>
+      <div id="mx-cat" class="scroll"></div>
+      <h3>Query <span style="text-transform:none;letter-spacing:0;font-weight:400">· PromQL · Enter runs, Shift+Enter adds a line, Ctrl+Space suggests · click a metric above to start from it</span></h3>
+      <div id="mx-q"></div>
+      <div class="qbar"><span class="seg" id="mx-range"></span><span id="mx-engine"></span></div>
+      <div id="mx-out"></div>
+    </div>
+  </section>
   <div class="logs">
     <h2><span>Logs</span><span class="hctl"><span class="muted" id="log-note"></span></span></h2>
     <div class="bar" id="log-bar"></div>
@@ -114,7 +121,9 @@ function renderCore() {
       <div>round trip</div><div class="num">${m.round_trip_ok ? "✓" : "✗"} write ${m.write_ms ?? "—"} ms · readable after ${m.visible_ms ?? "—"} ms · read ${m.read_ms ?? "—"} ms</div></div>
       <div class="sl">write latency</div>${spark(sp.metrics_write_ms, { unit: " ms", label: "write latency" })}<div class="sl">write → readable</div>${spark(sp.metrics_visible_ms, { unit: " ms", cls: "amber", label: "write → readable" })}
       <div class="muted" style="font-size:11px;margin-top:6px">Every probe writes its own measurements into the store; these lines are read back from it.</div>` : "";
-  $("cards").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive)) + card("Event bus", b, busHtml, `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>`) + card("Metrics store", m, metHtml);
+  $("host-card").innerHTML = card("Bootstrap host", h, hostHtml, "", !(h.loop && h.loop.alive));
+  $("bus-card").innerHTML = card("Event bus", b, busHtml, `<button class="ctl" onclick="probeBus()" title="Append a bus_probe event to the stream and read it back by its offset">test write</button>`);
+  $("met-card").innerHTML = card("Metrics store", m, metHtml);
 }
 async function refreshCore() {
   try { CORE = await (await fetch("/api/core")).json(); $("conn").textContent = "live"; renderCore(); } catch (e) { $("conn").textContent = "disconnected"; }
@@ -185,7 +194,7 @@ async function runQuery() {
     const d = await (await fetch("/api/core/metrics/query?" + new URLSearchParams({ q, hours: HOURS }))).json();
     if (!d.ok) { $("mx-out").innerHTML = `<div class="probe bad" style="margin-top:8px;white-space:pre-wrap">${esc(d.error)}</div>`; $("mx-engine").textContent = ""; return; }
     $("mx-engine").textContent = `${d.matched} series${d.matched > d.lines.length ? `, top ${d.lines.length} shown` : ""} · step ${ago(d.step)} · ${d.engine}`;
-    $("mx-out").innerHTML = d.lines.length ? Charts.line(d.lines) : `<div class="empty" style="margin-top:8px">no data in this range</div>`;
+    $("mx-out").innerHTML = d.lines.length ? Charts.line(d.lines, { W: $("mx-out").clientWidth }) : `<div class="empty" style="margin-top:8px">no data in this range</div>`;
   } catch (e) { $("mx-out").innerHTML = `<div class="probe bad">${esc(String(e))}</div>`; }
 }
 const EDITOR = PromEditor.create($("mx-q"), { onRun: runQuery, catalog: () => CAT, placeholder: "sum by (type) (increase(orchestra_events_total[1h]))" });
@@ -197,7 +206,7 @@ async function loadEvents() {
     const d = await (await fetch("/api/core/events?hours=" + $("ex-hours").value)).json();
     if (!d.ok) { $("ex-vol").innerHTML = `<div class="probe bad">${esc(d.error)}</div>`; $("ex-note").textContent = ""; return; }
     $("ex-note").textContent = `${d.backend} · ${d.in_range.toLocaleString()} of ${d.total.toLocaleString()} events in range`;
-    $("ex-vol").innerHTML = `<div class="sl">events per ${ago(d.bucket_s)} bucket, top types</div>` + Charts.line(d.volume);
+    $("ex-vol").innerHTML = `<div class="sl">events per ${ago(d.bucket_s)} bucket, top types</div>` + Charts.line(d.volume, { W: $("ex-vol").clientWidth });
     const max = Math.max(1, ...d.machines.map((m) => m.events));
     $("ex-mach").innerHTML = `<table class="ct"><tr><th>machine</th><th>events</th><th></th><th>mostly</th></tr>${d.machines.map((m) =>
       `<tr><td>${esc(m.machine)}</td><td class="num">${m.events.toLocaleString()}</td><td style="width:30%"><div style="height:6px;border-radius:3px;background:var(--accent);width:${(100 * m.events / max).toFixed(1)}%"></div></td>
@@ -210,6 +219,8 @@ async function loadEvents() {
   } catch (e) { $("ex-note").textContent = "unreachable"; }
 }
 refreshCore(); refreshSources(); refreshLog(); loadCatalog(); loadEvents();
+let RESIZE = 0;   // charts are drawn at their width: redraw when it changes
+window.addEventListener("resize", () => { clearTimeout(RESIZE); RESIZE = setTimeout(() => { runQuery(); loadEvents(); }, 300); });
 setInterval(loadCatalog, 60000); setInterval(loadEvents, 60000);
 setInterval(refreshCore, 5000); setInterval(refreshLog, 3000); setInterval(refreshSources, 30000);
 </script>
